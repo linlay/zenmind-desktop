@@ -21,6 +21,7 @@ export function createBrowserSurfaceRegistry_validateSurfaceRegistration_1(conte
         "agent-overview",
         "agent-debug",
         "agent-btw",
+        "agent-selection-explain",
         "agent-project",
         "agent-management",
         "project",

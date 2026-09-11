@@ -4,7 +4,10 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/modules/agent-platform/ipc.js");
+const {
+  redactSelectionReferencesForTrace,
+  registerAgentWebclientBridgeIpcHandlers,
+} = require("../dist-electron/main/modules/agent-platform/ipc.js");
 const {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
@@ -21,6 +24,24 @@ const EPOCH_MS = 1_788_000_000_000;
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+test("selection reference text is redacted from Desktop realtime traces", () => {
+  const frame = {
+    frame: "request",
+    type: "/api/btw",
+    payload: {
+      message: "explain",
+      references: [{
+        id: "selection-1",
+        type: "selection",
+        meta: { text: "private selected text", sourceKind: "message" },
+      }],
+    },
+  };
+  const redacted = redactSelectionReferencesForTrace(frame);
+  assert.equal(redacted.payload.references[0].meta.text, "<REDACTED_SELECTION>");
+  assert.equal(frame.payload.references[0].meta.text, "private selected text");
+});
 
 function createSender(id, url) {
   const sender = new EventEmitter();
@@ -110,12 +131,16 @@ function createRuntime(targets, overrides = {}) {
     releasedRuns: [],
     cloneUnsubscribes: 0,
     debugTraces: [],
+    pushSubscriptions: [],
+    connectionSubscriptions: [],
+    connections: [],
     grants: [],
   };
   let activeRoot = null;
   let mainChatRoot = null;
+  const auxiliaryRoots = new Map();
   const broker = {
-    ensureConnected: async () => undefined,
+    ensureConnected: async (baseUrl, token, lane) => { calls.connections.push({ baseUrl, lane }); },
     getConnectionState: () => ({
       phase: "connected",
       generation: 1,
@@ -124,15 +149,20 @@ function createRuntime(targets, overrides = {}) {
       key: { endpoint: "http://127.0.0.1:7078", identitySessionId: "identity-1" },
       physicalSessionId: "platform-1",
     }),
-    subscribeConnection: ({ onState }) => {
+    subscribeConnection: ({ onState, ...input }) => {
+      calls.connectionSubscriptions.push(input);
       onState(broker.getConnectionState());
       return () => undefined;
     },
-    subscribePush: () => () => undefined,
+    subscribePush: (input) => {
+      calls.pushSubscriptions.push(input);
+      return () => undefined;
+    },
     activateRootObserver: (observer) => {
       const next = { ...observer, contextEpoch: `context:${observer.token}`, runIds: new Set() };
       if (observer.kind === "main_chat") mainChatRoot = next;
-      activeRoot = next;
+      if (observer.kind === "selection_explain") auxiliaryRoots.set(observer.token, next);
+      else activeRoot = next;
       return next;
     },
     getActiveRootObserver: () => activeRoot,
@@ -146,6 +176,7 @@ function createRuntime(targets, overrides = {}) {
       calls.releasedRoots.push(token);
       if (activeRoot?.token === token) activeRoot = null;
       if (mainChatRoot?.token === token) mainChatRoot = null;
+      auxiliaryRoots.delete(token);
       return true;
     },
     releaseObservedRun: (token, runId, reason) => {
@@ -347,6 +378,39 @@ function emitRegisteredTarget(runtime, target) {
       guestWebContentsIds: [target.webContentsId],
     },
   });
+}
+
+for (const lane of ["primary", "selection-explain"]) {
+  for (const disposition of ["closed", "destroyed"]) {
+    test(`${lane} FramePort does not connect after its ${disposition} sender finishes a cold availability probe`, async () => {
+      const target = lane === "primary" ? mainTarget() : mainTarget(107, {
+        registrationId: "selection-explain-g1",
+        surfaceId: "selection-explain",
+        surfaceType: "agent-selection-explain",
+        surfaceRole: "selection-explain",
+        surfaceLevel: "root",
+        pageRoute: "/selection-explain/chat-1?runId=run-explain",
+        pageRouteIdentity: "/selection-explain/chat-1?runId=run-explain",
+        currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=run-explain",
+      });
+      let completeAvailability;
+      const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+        getServiceState: () => new Promise((resolve) => { completeAvailability = resolve; }),
+      });
+      const sender = createSender(target.webContentsId, target.currentUrl);
+      await openSession(runtime, sender, "cold-availability");
+      assert.equal(typeof completeAvailability, "function");
+      assert.equal(runtime.calls.connections.length, 0);
+      assert.equal(runtime.calls.connectionSubscriptions.at(-1).lane, lane);
+      if (disposition === "destroyed") sender.destroy();
+      else runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL)(
+        { sender }, { sessionId: "cold-availability", reason: "surface_inactive" },
+      );
+      completeAvailability({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } });
+      await flush();
+      assert.equal(runtime.calls.connections.length, 0, "a retired FramePort must not resurrect its physical lane");
+    });
+  }
 }
 
 test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2 ids", async () => {
@@ -988,7 +1052,7 @@ test("Overview cannot survive without an active Main Chat observer", async () =>
   assert.equal(runtime.calls.clones.length, 0);
 });
 
-test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", async () => {
+test("Main Chat, Copilot Dock, Kanban Chat and isolated explanations use bounded Root Observers", async () => {
   const kanban = mainTarget(105, {
     registrationId: "kanban-g1",
     surfaceId: "kanban-chat",
@@ -998,7 +1062,17 @@ test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", a
     currentUrl: "http://127.0.0.1:7079/kanban?chatId=chat-1",
   });
   const project = childTarget(106, "project", "agent-project");
-  const runtime = createRuntime(new Map([[105, kanban], [106, project]]));
+  const explanation = mainTarget(107, {
+    registrationId: "selection-explain-g1",
+    surfaceId: "selection-explain",
+    surfaceType: "agent-selection-explain",
+    surfaceRole: "selection-explain",
+    surfaceLevel: "root",
+    pageRoute: "/selection-explain/chat-1?runId=run-explain",
+    pageRouteIdentity: "/selection-explain/chat-1?runId=run-explain",
+    currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=run-explain",
+  });
+  const runtime = createRuntime(new Map([[105, kanban], [106, project], [107, explanation]]));
   const kanbanSender = createSender(105, kanban.currentUrl);
   await openSession(runtime, kanbanSender, "kanban");
   send(runtime, kanbanSender, "kanban", {
@@ -1006,6 +1080,21 @@ test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", a
     payload: { requestId: "rk", runId: "run-k", chatId: "chat-1", agentKey: "agent-1", message: "run" },
   });
   await flush();
+  assert.equal(runtime.broker.getActiveRootObserver().kind, "kanban_chat");
+
+  const explanationSender = createSender(107, explanation.currentUrl);
+  const pushSubscriptionCount = runtime.calls.pushSubscriptions.length;
+  await openSession(runtime, explanationSender, "selection-explain");
+  assert.equal(runtime.calls.pushSubscriptions.length, pushSubscriptionCount);
+  assert.equal(runtime.calls.connectionSubscriptions.at(-1).lane, "selection-explain");
+  assert.equal(runtime.calls.connections.at(-1).lane, "selection-explain");
+  send(runtime, explanationSender, "selection-explain", {
+    frame: "request", id: "ea", type: "/api/attach",
+    payload: { runId: "run-explain", chatId: "chat-1", agentKey: "agent-1", lastSeq: 0 },
+  });
+  await flush();
+  assert.equal(runtime.calls.attaches.at(-1).lane, "selection-explain");
+  assert.match(runtime.calls.attaches.at(-1).observerToken, /^selection-explain:/u);
   assert.equal(runtime.broker.getActiveRootObserver().kind, "kanban_chat");
 
   const projectSender = createSender(106, project.currentUrl);
@@ -1017,6 +1106,93 @@ test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", a
   await flush();
   assert.equal(sentFrames(projectSender).at(-1).type, "surface_unavailable");
   assert.equal(runtime.calls.queries.length, 1);
+});
+
+test("Main Chat explanation starts once on its own lane and strips local transport metadata", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[101, target]]));
+  const sender = createSender(101, target.currentUrl);
+  await openSession(runtime, sender, "main");
+  const identity = { chatId: "chat-1", runId: "explain-run", agentKey: "agent-1" };
+  send(runtime, sender, "main", {
+    frame: "request", id: "explain-start", type: "/api/btw",
+    payload: { ...identity, message: "Explain selection", _desktopTransportPurpose: "selection-explain" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 1);
+  assert.equal(runtime.calls.queries[0].lane, "selection-explain");
+  assert.equal(runtime.calls.queries[0].requestType, "/api/btw");
+  assert.equal("_desktopTransportPurpose" in runtime.calls.queries[0].payload, false);
+  send(runtime, sender, "main", {
+    frame: "request", id: "explain-stop", type: "/api/interrupt",
+    payload: { ...identity, _desktopTransportPurpose: "selection-explain" },
+  });
+  await flush();
+  assert.equal(runtime.calls.forwarded.at(-1).lane, "selection-explain");
+  assert.deepEqual(runtime.calls.forwarded.at(-1).payload, identity);
+  send(runtime, sender, "main", {
+    frame: "request", id: "ordinary-side-chat", type: "/api/btw",
+    payload: { ...identity, runId: "side-run", message: "Side question" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 2);
+  assert.equal(runtime.calls.queries.at(-1).lane, "btw");
+});
+
+test("Explanation surface routes follow-ups and Run control independently but keeps data on Primary", async () => {
+  const target = mainTarget(107, {
+    registrationId: "selection-explain-g1", surfaceId: "selection-explain",
+    surfaceType: "agent-selection-explain", surfaceRole: "selection-explain",
+    pageRoute: "/selection-explain/chat-1?runId=explain-run",
+    pageRouteIdentity: "/selection-explain/chat-1?runId=explain-run",
+    currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=explain-run",
+  });
+  const runtime = createRuntime(new Map([[107, target]]));
+  const sender = createSender(107, target.currentUrl);
+  await openSession(runtime, sender, "explain");
+  const identity = { chatId: "chat-1", runId: "explain-run", agentKey: "agent-1" };
+  send(runtime, sender, "explain", {
+    frame: "request", id: "follow-up", type: "/api/btw",
+    payload: { ...identity, message: "Continue", btwId: "explain-branch" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.at(-1).lane, "selection-explain");
+  for (const type of ["/api/interrupt", "/api/submit", "/api/steer"]) {
+    send(runtime, sender, "explain", { frame: "request", id: type, type, payload: identity });
+    await flush();
+    assert.equal(runtime.calls.forwarded.at(-1).lane, "selection-explain");
+  }
+  send(runtime, sender, "explain", { frame: "request", id: "data", type: "/api/chat", payload: { chatId: "chat-1" } });
+  await flush();
+  assert.equal(runtime.calls.forwarded.at(-1).lane, undefined);
+  send(runtime, sender, "explain", { frame: "request", id: "detach", type: "/api/detach", payload: identity });
+  await flush();
+  assert.equal(runtime.calls.releasedRuns.at(-1).runId, "explain-run");
+  assert.equal(runtime.calls.queries.length, 1);
+});
+
+test("Explanation routing rejects invalid purpose, non-Run requests, foreign Chat and child spoofing", async () => {
+  for (const sample of [
+    { purpose: "primary", type: "/api/btw", chatId: "chat-1" },
+    { purpose: "selection-explain", type: "/api/query", chatId: "chat-1" },
+    { purpose: "selection-explain", type: "/api/agents", chatId: "chat-1" },
+    { purpose: "selection-explain", type: "/api/btw", chatId: "foreign-chat" },
+    { purpose: "selection-explain", type: "/api/btw", chatId: "chat-1", child: true },
+  ]) {
+    const target = sample.child ? childTarget(101, "btw", "agent-btw") : mainTarget();
+    const runtime = createRuntime(new Map([[101, target]]));
+    const sender = createSender(101, target.currentUrl);
+    await openSession(runtime, sender, "test");
+    send(runtime, sender, "test", {
+      frame: "request", id: "invalid", type: sample.type,
+      payload: { chatId: sample.chatId, agentKey: "agent-1", message: "no", _desktopTransportPurpose: sample.purpose },
+    });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "protocol_error", JSON.stringify(sample));
+    assert.equal(runtime.calls.queries.length, 0);
+    assert.equal(runtime.calls.forwarded.length, 0);
+    assert.equal(runtime.calls.attaches.length, 0);
+  }
 });
 
 test("Registry inactivity releases the Root Observer without closing the FramePort session", async () => {

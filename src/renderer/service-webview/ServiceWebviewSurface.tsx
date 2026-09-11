@@ -101,7 +101,10 @@ import {
   resolveAgentWebclientWebviewSurfaceType,
   type WebviewContextMenuSurfaceType,
 } from "../../shared/webview-context-menu";
-import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
+import {
+  WEBVIEW_SELECTION_TOOLBAR_VERSION,
+  type WebviewSelectionToolbarState,
+} from "../../shared/webview-selection-toolbar";
 import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
@@ -111,7 +114,8 @@ import {
   type SurfaceIdentity
 } from "../../shared/surface-identity";
 import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
-import { useAppearance } from "../appearance/AppearanceProvider";
+import { useAppearanceSnapshot } from "../appearance/AppearanceProvider";
+import { createAppearanceSnapshot } from "../appearance/model";
 import {
   isWebclientHostBackgroundSurface,
   readWebclientAppearanceProjection
@@ -690,7 +694,11 @@ export function ServiceWebviewSurface({
   const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const mainChatSurface = isAgentWebclientChatSurface(serviceId, surfaceId);
-  const appearance = useAppearance();
+  const appearanceSnapshot = useAppearanceSnapshot();
+  const appearance = useMemo(
+    () => appearanceSnapshot ?? createAppearanceSnapshot(hostTheme ?? "light", false),
+    [appearanceSnapshot, hostTheme],
+  );
   const [appearanceRouteTheme, setAppearanceRouteTheme] = useState<"light" | "dark" | null>(null);
   const [hostSkinBackground, setHostSkinBackground] = useState(false);
   const appearanceHostRef = useRef<ReturnType<typeof createWebclientAppearanceHost> | null>(null);
@@ -3703,6 +3711,13 @@ export function ServiceWebviewSurface({
               <WebviewSelectionToolbar
                 anchor={selectionToolbarState.rect}
                 selectionId={selectionToolbarState.selectionId}
+                onAction={(action) =>
+                  window.electronAPI.serviceWebview.executeSelectionToolbarAction({
+                    version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
+                    selectionId: selectionToolbarState.selectionId,
+                    action,
+                  })
+                }
                 onDismiss={() => setSelectionToolbarState(null)}
               />
             ) : null}

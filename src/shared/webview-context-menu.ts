@@ -14,6 +14,7 @@ export type WebviewContextMenuSurfaceType =
   | "agent-overview"
   | "agent-debug"
   | "agent-btw"
+  | "agent-selection-explain"
   | "agent-project"
   | "agent-management"
   | "project"
@@ -40,6 +41,8 @@ export function resolveAgentWebclientWebviewSurfaceType(
       return "agent-debug";
     case "btw":
       return "agent-btw";
+    case "selection-explain":
+      return "agent-selection-explain";
     case "project":
       return "agent-project";
     default:

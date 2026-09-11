@@ -4,6 +4,8 @@ import { ConfigProvider, type ThemeConfig } from "antd";
 import { readDocumentAntAppearanceTheme } from "./antdTheme";
 
 const AppearanceContext = createContext<ReturnType<typeof createBrowserAppearanceController> | null>(null);
+const subscribeWithoutAppearance = () => () => {};
+const readWithoutAppearance = () => null;
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const [controller] = useState(createBrowserAppearanceController);
@@ -38,4 +40,12 @@ export function useAppearance() {
     resetBackground: controller.resetBackground,
     refreshAppearanceFromCanonical: controller.refreshFromCanonical
   };
+}
+
+// Embedded service views also exist in auxiliary windows, which must not start
+// the main window's skin controller or call its owner-restricted settings IPC.
+export function useAppearanceSnapshot() {
+  const controller = useContext(AppearanceContext);
+  const read = controller?.getSnapshot ?? readWithoutAppearance;
+  return useSyncExternalStore(controller?.subscribe ?? subscribeWithoutAppearance, read, read);
 }

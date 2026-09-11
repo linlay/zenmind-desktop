@@ -22,6 +22,7 @@ export function RealtimeBroker_getConnectionStates_3(self: RealtimeBrokerMethodC
     return {
         primary: self.clients.primary.getState(),
         btw: self.clients.btw.getState(),
+        "selection-explain": self.clients["selection-explain"].getState(),
     };
 }
 
@@ -54,7 +55,7 @@ export function RealtimeBroker_findRootObserver_8(self: RealtimeBrokerMethodCont
         return self.mainChatRootObserver;
     if (self.activeRootObserver?.token === token)
         return self.activeRootObserver;
-    return null;
+    return self.auxiliaryRootObservers.get(token) || null;
 }
 
 export function RealtimeBroker_snapshotRootObserver_9(self: RealtimeBrokerMethodContext, observer: RootObserverState | null) {
@@ -103,7 +104,14 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     const expectedRunId = options.runId?.trim() || "";
     const expectedChatId = options.chatId?.trim() || "";
     const lane = options.lane ?? (options.requestType === "/api/btw" ? "btw" : "primary");
-    const requestType = options.requestType ?? (lane === "btw" ? "/api/btw" : "/api/query");
+    const requestType = options.requestType ?? (lane === "primary" ? "/api/query" : "/api/btw");
+    if (lane === "selection-explain" && (requestType !== "/api/btw" || options.siteCdpScope)) {
+        const error = brokerError("invalid_request", "The selection explanation lane only accepts BTW queries without page-control authority");
+        options.siteCdpScope?.release("The query was not accepted.");
+        accepted.reject(error);
+        completed.reject(error);
+        return { accepted: accepted.promise, completed: completed.promise };
+    }
     if (!self.acceptingDelivery) {
         const error = brokerError("connection_unavailable", "Realtime Broker is shutting down");
         options.siteCdpScope?.release("The query was not accepted.");
@@ -112,6 +120,14 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         return { accepted: accepted.promise, completed: completed.promise };
     }
     self.prepareConnectionIdentity(options.baseUrl, options.token);
+    const registeredLane = expectedRunId ? self.getRunChannel(expectedRunId)?.lane : undefined;
+    if (options.lane && registeredLane && options.lane !== registeredLane) {
+        const error = brokerError("invalid_request", "runId belongs to a different Realtime lane");
+        options.siteCdpScope?.release("The query was not accepted.");
+        accepted.reject(error);
+        completed.reject(error);
+        return { accepted: accepted.promise, completed: completed.promise };
+    }
     if (!operationId) {
         const error = brokerError("invalid_request", "query id is required");
         options.siteCdpScope?.release("The query was not accepted.");
@@ -124,6 +140,13 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     if (observerToken && !observer) {
         const error = brokerError("surface_generation_superseded", "Root Observer is no longer active");
         options.siteCdpScope?.release("The query was not accepted.");
+        accepted.reject(error);
+        completed.reject(error);
+        return { accepted: accepted.promise, completed: completed.promise };
+    }
+    if (observer?.kind === "selection_explain" &&
+        (lane !== "selection-explain" || observer.contextId !== expectedChatId)) {
+        const error = brokerError("invalid_request", "The selection explanation observer must use its own Chat and lane");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -212,6 +235,12 @@ export async function RealtimeBroker_forwardRequest_12(self: RealtimeBrokerMetho
     const payloadRunId = readText(options.payload?.runId);
     const registeredLane = payloadRunId ? self.getRunChannel(payloadRunId)?.lane : undefined;
     const lane = options.lane ?? registeredLane ?? (type === "/api/btw" ? "btw" : "primary");
+    if (options.lane && registeredLane && options.lane !== registeredLane) {
+        throw brokerError("invalid_request", "runId belongs to a different Realtime lane");
+    }
+    if (lane === "selection-explain" && type === "/api/query") {
+        throw brokerError("invalid_request", "The selection explanation lane does not accept ordinary queries");
+    }
     if (!localId || !type) {
         throw brokerError("invalid_request", "request id and type are required");
     }
@@ -262,9 +291,13 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
     }
     const current = input.kind === "main_chat"
         ? self.mainChatRootObserver
-        : self.activeRootObserver?.kind === input.kind
-            ? self.activeRootObserver
-            : null;
+        : input.kind === "selection_explain"
+            ? [...self.auxiliaryRootObservers.values()].find(
+                (observer) => observer.surfaceId === surfaceId,
+            ) || null
+            : self.activeRootObserver?.kind === input.kind
+                ? self.activeRootObserver
+                : null;
     if (current?.token === token) {
         if (current.kind !== input.kind || current.surfaceId !== surfaceId ||
             current.generation !== generation || current.webContentsId !== input.webContentsId ||
@@ -280,7 +313,9 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
         }
         return input.kind === "main_chat"
             ? self.getMainChatRootObserver()
-            : self.getActiveRootObserver();
+            : input.kind === "selection_explain"
+                ? self.snapshotRootObserver(current)
+                : self.getActiveRootObserver();
     }
     const contextEpoch = `root-context-${randomUUID()}`;
     const next: RootObserverState = {
@@ -310,6 +345,13 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
             self.activeRootObserver = next;
         }
     }
+    else if (input.kind === "selection_explain") {
+        if (current) {
+            self.auxiliaryRootObservers.delete(current.token);
+            self.retireRootObserver(current, "surface_generation_superseded");
+        }
+        self.auxiliaryRootObservers.set(token, next);
+    }
     else {
         const previousActive = self.activeRootObserver;
         self.activeRootObserver = next;
@@ -317,11 +359,13 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
             self.retireRootObserver(previousActive, "surface_generation_superseded");
         }
     }
-    if (current)
+    if (current && input.kind !== "selection_explain")
         self.retireRootObserver(current, "surface_generation_superseded");
     return input.kind === "main_chat"
         ? self.getMainChatRootObserver()
-        : self.getActiveRootObserver();
+        : input.kind === "selection_explain"
+            ? self.snapshotRootObserver(next)
+            : self.getActiveRootObserver();
 }
 
 export function RealtimeBroker_getActiveRootObserver_14(self: RealtimeBrokerMethodContext) {
@@ -361,6 +405,7 @@ export function RealtimeBroker_releaseRootObserver_17(self: RealtimeBrokerMethod
     if (self.activeRootObserver === observer) {
         self.activeRootObserver = self.mainChatRootObserver;
     }
+    self.auxiliaryRootObservers.delete(observer.token);
     self.retireRootObserver(observer, reason);
     return true;
 }

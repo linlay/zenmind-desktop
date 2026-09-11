@@ -244,7 +244,7 @@ export class AgentPlatformRealtimeClient {
     heartbeatTimeoutMs?: number;
     maxFrameBytes?: number;
     random?: () => number;
-    source?: "desktop-main" | "desktop-btw";
+    source?: "desktop-main" | "desktop-btw" | "desktop-selection-explain";
     surfaceId?: string;
     onFrame(frame: AgentPlatformRealtimeFrame, generation: number): void;
     onStaleFrame?(): void;

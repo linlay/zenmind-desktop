@@ -269,8 +269,10 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleOpen_3(facto
     factoryContext.senderSessionKeys.set(event.sender.id, keys);
     factoryContext.installSenderCleanup(event.sender);
     try {
+        const connectionLane = context.kind === "agent-selection-explain" ? "selection-explain" : "primary";
         const unsubscribeConnection = factoryContext.options.realtimeBroker.subscribeConnection({
             consumerId: session.consumerId,
+            lane: connectionLane,
             onState: (state) => {
                 if (state.phase === "closed" &&
                     state.lastError?.startsWith("PLATFORM_WS_PROTOCOL_MISMATCH")) {
@@ -292,15 +294,17 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleOpen_3(facto
             return;
         }
         session.unsubscribeConnection = unsubscribeConnection;
-        session.unsubscribePush = factoryContext.options.realtimeBroker.subscribePush({
-            types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
-            kind: "surface",
-            consumerId: session.consumerId,
-            onPush: (frame) => factoryContext.sendFrame(session, frame),
-        });
+        if (context.kind !== "agent-selection-explain") {
+            session.unsubscribePush = factoryContext.options.realtimeBroker.subscribePush({
+                types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
+                kind: "surface",
+                consumerId: session.consumerId,
+                onPush: (frame) => factoryContext.sendFrame(session, frame),
+            });
+        }
         const { baseUrl, token } = await factoryContext.availability();
         if (session.closed || session.sender.isDestroyed()) return;
-        await factoryContext.options.realtimeBroker.ensureConnected(baseUrl, token);
+        await factoryContext.options.realtimeBroker.ensureConnected(baseUrl, token, connectionLane);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);

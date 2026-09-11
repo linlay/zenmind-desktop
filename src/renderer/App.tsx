@@ -25,6 +25,11 @@ const AgentRealtimeInspectorPage = lazy(() =>
     default: module.AgentRealtimeInspectorPage
   }))
 );
+const SelectionExplainWindowPage = lazy(() =>
+  import("./pages/SelectionExplainWindowPage").then((module) => ({
+    default: module.SelectionExplainWindowPage,
+  }))
+);
 
 export function App() {
   const location = useLocation();
@@ -62,6 +67,19 @@ export function App() {
         <Suspense fallback={null}>
           <AgentRealtimeInspectorPage />
         </Suspense>
+      </AppErrorBoundary>
+    );
+  } else if (location.pathname === "/selection-explain-window") {
+    content = (
+      <AppErrorBoundary
+        resetKey={resetKey}
+        onExit={() => { void window.electronAPI.selectionExplain.close(); }}
+      >
+        <ServicesProvider>
+          <Suspense fallback={null}>
+            <SelectionExplainWindowPage />
+          </Suspense>
+        </ServicesProvider>
       </AppErrorBoundary>
     );
   } else {

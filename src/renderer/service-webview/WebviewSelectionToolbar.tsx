@@ -1,8 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   resolveWebviewSelectionToolbarPosition,
+  WEBVIEW_SELECTION_TOOLBAR_VERSION,
+  type WebviewSelectionToolbarExecuteResult,
   type WebviewSelectionToolbarRect,
 } from "../../shared/webview-selection-toolbar";
+import type { AgentWebclientSelectionActionId } from "../../shared/contracts/agent-webclient-bridge";
 import { useI18n } from "../i18n/useI18n";
 
 type ToolbarMeasurements = {
@@ -22,10 +25,14 @@ const EMPTY_MEASUREMENTS: ToolbarMeasurements = {
 export function WebviewSelectionToolbar({
   anchor,
   selectionId,
+  onAction,
   onDismiss,
 }: {
   anchor: WebviewSelectionToolbarRect;
   selectionId: string;
+  onAction: (
+    action: AgentWebclientSelectionActionId,
+  ) => Promise<WebviewSelectionToolbarExecuteResult>;
   onDismiss: () => void;
 }) {
   const { t } = useI18n();
@@ -34,6 +41,7 @@ export function WebviewSelectionToolbar({
   const [measurements, setMeasurements] = useState<ToolbarMeasurements>(
     EMPTY_MEASUREMENTS,
   );
+  const [busyAction, setBusyAction] = useState<AgentWebclientSelectionActionId | null>(null);
 
   useLayoutEffect(() => {
     const layer = layerRef.current;
@@ -70,11 +78,26 @@ export function WebviewSelectionToolbar({
     [anchor, measurements],
   );
   const measured = measurements.toolbarWidth > 0 && measurements.toolbarHeight > 0;
-  const dismissFromPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const preserveGuestSelection = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    onDismiss();
   };
+
+  const execute = async (action: AgentWebclientSelectionActionId) => {
+    if (busyAction) return;
+    setBusyAction(action);
+    try {
+      await onAction(action);
+    } finally {
+      onDismiss();
+    }
+  };
+
+  const actions = [
+    ["add-to-chat", "webviewSelectionToolbar.addToChat"],
+    ["more-details", "webviewSelectionToolbar.moreDetails"],
+    ["ask-in-side-chat", "webviewSelectionToolbar.askInSideChat"],
+  ] as const;
 
   return (
     <div
@@ -86,6 +109,7 @@ export function WebviewSelectionToolbar({
         ref={toolbarRef}
         className="webview-selection-toolbar"
         role="toolbar"
+        aria-busy={Boolean(busyAction)}
         aria-label={t("webviewSelectionToolbar.label")}
         data-placement={position.placement}
         style={{
@@ -94,16 +118,15 @@ export function WebviewSelectionToolbar({
           visibility: measured ? "visible" : "hidden",
         }}
       >
-        {([
-          "webviewSelectionToolbar.addToChat",
-          "webviewSelectionToolbar.moreDetails",
-          "webviewSelectionToolbar.askInSideChat",
-        ] as const).map((labelKey) => (
+        {actions.map(([action, labelKey]) => (
           <button
-            key={labelKey}
+            key={action}
             type="button"
-            onPointerDown={dismissFromPointer}
-            onClick={onDismiss}
+            disabled={Boolean(busyAction)}
+            data-action={action}
+            data-version={WEBVIEW_SELECTION_TOOLBAR_VERSION}
+            onPointerDown={preserveGuestSelection}
+            onClick={() => void execute(action)}
           >
             {t(labelKey)}
           </button>

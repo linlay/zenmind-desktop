@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { readHelpSettings } from "../modules/settings";
 import {
   app,
@@ -69,7 +70,17 @@ import { createStartupRestoreController } from "./lifecycle/startup-restore";
 import { configureSystemIdentity } from "./system-identity";
 import { createCdpIntegration } from "../modules/web-surfaces";
 import { createWebSurfaceRuntime } from "../modules/webs";
-import { createWebviewContextMenuController } from "../modules/web-surfaces";
+import {
+  createWebviewContextMenuController,
+  resolveWebviewOpenDisposition,
+  shouldDownloadUrlFromWebview
+} from "../modules/web-surfaces";
+import {
+  SelectionExplainWindowController,
+  configureMainWindowWebContents
+} from "../modules/shell";
+import { getServiceWebviewPreloadPath } from "../infrastructure/electron/bundle-paths";
+import { loadRendererRoute } from "../infrastructure/electron/renderer-route";
 import { parseSafeLoopbackWebUrl } from "../infrastructure/network/loopback-url";
 import { cleanupProgramDataForVersion } from "./lifecycle/program-data-cleanup";
 import {
@@ -279,7 +290,9 @@ export function createMainProcessRuntime_webviewContextMenuController_7(factoryC
             new URL(liveUrl.toString()).origin === new URL(serviceUrl.toString()).origin);
     },
     t,
-    report: factoryContext.reportRendererDiagnostic
+    report: factoryContext.reportRendererDiagnostic,
+    updateSelectionExplainWindow: (input) =>
+      factoryContext.selectionExplainWindowController?.update(input)
 }); }
 
 export function createMainProcessRuntime_enterpriseChatRuntime_8(factoryContext: CreateMainProcessRuntimeContext) { return new EnterpriseChatRuntime({
@@ -477,4 +490,40 @@ export function createMainProcessRuntime_delay_13(factoryContext: CreateMainProc
     return new Promise<void>((resolve) => {
         setTimeout(resolve, ms);
     });
+}
+
+export function createMainProcessRuntime_selectionExplainWindowController_14(
+  factoryContext: CreateMainProcessRuntimeContext
+) {
+  return new SelectionExplainWindowController({
+    platform: factoryContext.startupPlatform,
+    preloadPath: factoryContext.MAIN_PRELOAD_PATH,
+    routePath: factoryContext.SELECTION_EXPLAIN_WINDOW_ROUTE,
+    title: t("webviewSelectionToolbar.moreDetails"),
+    loadRendererRoute,
+    getAnchorWindow: () => factoryContext.getMainWindow(),
+    onRendererError: safeConsoleError,
+    configureWindow: (targetWindow) => {
+      const servicePreloadPath = getServiceWebviewPreloadPath(
+        factoryContext.MAIN_PROCESS_DIR,
+        factoryContext.startupPlatform
+      );
+      configureMainWindowWebContents(targetWindow, {
+        platform: factoryContext.startupPlatform,
+        getMainWindow: () => targetWindow,
+        servicePreloadPath,
+        servicePreloadUrl: pathToFileURL(servicePreloadPath).toString(),
+        isSafeServiceUrl: parseSafeLoopbackWebUrl,
+        isDevToolsShortcut: () => false,
+        shouldDownloadUrl: shouldDownloadUrlFromWebview,
+        resolveOpenDisposition: resolveWebviewOpenDisposition,
+        collectLoadDiagnostics: factoryContext.collectWebviewLoadDiagnostics,
+        report: factoryContext.reportRendererDiagnostic,
+        onWebviewNavigation: factoryContext.handleDesktopSsoWebviewNavigation,
+        attachWebviewContextMenu: factoryContext.webviewContextMenuController.attach,
+        openExternal: shell.openExternal,
+        schedule: setImmediate
+      });
+    }
+  });
 }

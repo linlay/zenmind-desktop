@@ -55,7 +55,7 @@ Desktop 设备身份与账号会话分开管理，但共同参与 Realtime gener
 
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary 与 BTW 两条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
+Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary、BTW 与 Selection Explain 三条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
 
 ```text
 页面发送 Platform request frame

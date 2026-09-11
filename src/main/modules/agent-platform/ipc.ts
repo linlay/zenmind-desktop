@@ -25,7 +25,8 @@ import {
   RealtimeBroker
 } from "./realtime/realtime-broker";
 import {
-  MAIN_CHAT_SURFACE_ID
+  MAIN_CHAT_SURFACE_ID,
+  SELECTION_EXPLAIN_SURFACE_ID,
 } from "../../../shared/surface-identity";
 import { isDesktopDevelopmentRuntime } from "../../infrastructure/electron/development-runtime";
 import type { RegisterAgentWebclientBridgeIpcHandlersContext } from "./ipc.shared";
@@ -134,6 +135,25 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   ) => { return registerAgentWebclientBridgeIpcHandlers_releaseSessionRootObserver_8(factoryContext, session, observerToken); };
 
   options.browserSurfaces.subscribeLifecycle?.((event) => {
+    if (
+      event.surface.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+      event.surface.surfaceRole === "selection-explain"
+    ) {
+      if (event.type === "unregistered") {
+        const guestWebContentsId = event.surface.guestWebContentsIds[0];
+        if (Number.isSafeInteger(guestWebContentsId)) {
+          const contextId = rootObserverContextId(event.surface);
+          options.realtimeBroker.releaseRootObserver([
+            event.surface.surfaceId,
+            event.surface.registrationId,
+            event.surface.ownerWebContentsId,
+            guestWebContentsId,
+            contextId,
+          ].join(":"), "surface_inactive");
+        }
+      }
+      return;
+    }
     if (
       event.surface.surfaceId !== MAIN_CHAT_SURFACE_ID ||
       event.surface.surfaceRole !== "main-chat"

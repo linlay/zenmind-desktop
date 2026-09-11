@@ -288,7 +288,13 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     consumeFirstInstallBootstrapNavigation: options.consumeFirstInstallBootstrapNavigation
   });
 
-  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces, {
+    isMainWindow: (senderWebContentsId) => {
+      const mainWindow = options.getMainWindow();
+      return Boolean(mainWindow && !mainWindow.isDestroyed() &&
+        !mainWindow.webContents.isDestroyed() && mainWindow.webContents.id === senderWebContentsId);
+    },
+  });
   const canonicalChatSync = registerCanonicalChatSyncIpc(ipcMain, {
     resolveRenderer: (ownerWebContentsId) => {
       const mainWindow = options.getMainWindow();
@@ -481,9 +487,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       total + item.bytes,
     0);
     const mapConnection = (
-      source: "desktop-main" | "desktop-btw",
+      source: "desktop-main" | "desktop-btw" | "desktop-selection-explain",
       connection: typeof brokerDiagnostics.connections.primary,
-      lane: "primary" | "btw",
+      lane: "primary" | "btw" | "selection-explain",
     ) => ({
       source,
       phase: connection.phase,
@@ -507,6 +513,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       connections: {
         primary: mapConnection("desktop-main", brokerDiagnostics.connections.primary, "primary"),
         btw: mapConnection("desktop-btw", brokerDiagnostics.connections.btw, "btw"),
+        "selection-explain": mapConnection("desktop-selection-explain", brokerDiagnostics.connections["selection-explain"], "selection-explain"),
       },
       broker: {
         pendingRequestCount: brokerDiagnostics.pendingRequestCount,
@@ -567,7 +574,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
           : {}),
       })),
       runRecovery: brokerDiagnostics.replay.map((run: {
-        lane: "primary" | "btw"; runId: string; chatId: string; lastSeq: number;
+        lane: "primary" | "btw" | "selection-explain"; runId: string; chatId: string; lastSeq: number;
         lastEventType?: string; lastEventSeq?: number; lastPlanTaskEventType?: string;
         lastPlanTaskEventSeq?: number; state: string; terminalReason?: string;
         terminalSource?: string; rootObserverCount: number; cloneCount: number;

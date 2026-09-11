@@ -50,6 +50,9 @@ export const zhCNMessages = {
   "common.cancel": "取消",
   "common.clear": "清空",
   "common.close": "关闭",
+  "window.minimize": "最小化",
+  "selectionExplain.preparing": "正在准备解释…",
+  "selectionExplain.failed": "无法打开详细解释，请重新选择后再试。",
   "common.confirm": "确认",
   "common.copy": "复制",
   "common.delete": "删除",
@@ -3067,6 +3070,7 @@ export const zhCNMessages = {
 
   "appError.title": "页面遇到错误",
   "appError.description": "Desktop 已捕获这次异常，日志会写到主进程控制台。你可以重新加载，或先进入控制中心处理服务状态。",
+  "appError.auxiliaryDescription": "Desktop 已记录这次异常。你可以重新加载或关闭此窗口，主聊天不受影响。",
   "appError.reload": "重新加载",
   "appError.openControlCenter": "进入控制中心",
   "pageFeedback.dismiss": "知道了",

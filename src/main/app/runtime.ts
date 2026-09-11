@@ -2,7 +2,7 @@ import { app, clipboard, globalShortcut, protocol } from "electron";
 import { getDesktopDeviceId, issueAgentAccessToken } from "../modules/identity";
 import { getDesktopSsoAccessToken } from "../modules/identity";
 import { createWebsFacade, type WebsFacade } from "../modules/webs";
-import { type AppShellRuntime } from "../modules/shell";
+import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
 import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
 import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
 import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
@@ -36,7 +36,7 @@ import { type ResourceDirectoryWatcher } from "./resource-directory-watcher";
 import { configureAgentMarketPlatformCaller } from "../modules/marketplace";
 import { configureSkillMarketPlatformCaller } from "../modules/marketplace";
 import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
-import { createMainProcessRuntime_block14_2, createMainProcessRuntime_block17_3, createMainProcessRuntime_block18_4, createMainProcessRuntime_startupRestoreController_5, createMainProcessRuntime_webSurfaceRuntime_6, createMainProcessRuntime_webviewContextMenuController_7, createMainProcessRuntime_enterpriseChatRuntime_8, createMainProcessRuntime_cdpIntegration_9, createMainProcessRuntime_systemIdentityRuntime_10, createMainProcessRuntime_setStartupPhase_11, createMainProcessRuntime_initializeUserDataRootsAndSettings_12, createMainProcessRuntime_delay_13 } from "./runtime.operations-1";
+import { createMainProcessRuntime_block14_2, createMainProcessRuntime_block17_3, createMainProcessRuntime_block18_4, createMainProcessRuntime_startupRestoreController_5, createMainProcessRuntime_webSurfaceRuntime_6, createMainProcessRuntime_webviewContextMenuController_7, createMainProcessRuntime_enterpriseChatRuntime_8, createMainProcessRuntime_cdpIntegration_9, createMainProcessRuntime_systemIdentityRuntime_10, createMainProcessRuntime_setStartupPhase_11, createMainProcessRuntime_initializeUserDataRootsAndSettings_12, createMainProcessRuntime_delay_13, createMainProcessRuntime_selectionExplainWindowController_14 } from "./runtime.operations-1";
 import { createMainProcessRuntime_logsRuntime_1, createMainProcessRuntime_block68_2, createMainProcessRuntime_startupEnvironmentRuntime_3, createMainProcessRuntime_block71_4, createMainProcessRuntime_block72_5, createMainProcessRuntime_desktopSsoController_6, createMainProcessRuntime_block74_7, createMainProcessRuntime_block75_8, createMainProcessRuntime_settingsRuntime_9, createMainProcessRuntime_block77_10, createMainProcessRuntime_startupPipeline_11 } from "./runtime.operations-2";
 import { createMainProcessRuntime_runShutdownCleanup_1, createMainProcessRuntime_handleDesktopSsoWebviewNavigation_2, createMainProcessRuntime_clearDesktopPetIdleResetTimer_3, createMainProcessRuntime_refreshDesktopPetState_4, createMainProcessRuntime_hideDesktopPetWindow_5, createMainProcessRuntime_showAssistantTargetWindow_6, createMainProcessRuntime_showDesktopPetWindow_7, createMainProcessRuntime_restoreDesktopPetWindowLayering_8, createMainProcessRuntime_openLogViewerWindow_9, createMainProcessRuntime_openAgentPlatformMonitorWindow_10, createMainProcessRuntime_openDesktopActionWorkbenchWindow_11, createMainProcessRuntime_openAgentRealtimeInspectorWindow_12, createMainProcessRuntime_closeDesktopActionWorkbenchWindow_13, createMainProcessRuntime_closeLogViewerWindow_14, createMainProcessRuntime_getServiceWebviewPreloadPath_15, createMainProcessRuntime_getServiceWebviewPreloadUrl_16, createMainProcessRuntime_minimizeLogViewerWindow_17, createMainProcessRuntime_maximizeLogViewerWindow_18, createMainProcessRuntime_captureAssistantScreenshot_19, createMainProcessRuntime_captureDesktopScreenshotForWebview_20, createMainProcessRuntime_captureEnterpriseChatScreenshot_21, createMainProcessRuntime_refreshPluginDesktopGlobalShortcuts_22, createMainProcessRuntime_registerFocusedWebviewDevToolsShortcut_23, createMainProcessRuntime_collectWebviewLoadDiagnostics_24, createMainProcessRuntime_reportRendererDiagnostic_25, createMainProcessRuntime_createWindow_26, createMainProcessRuntime_configureAppMediaPermissions_27, createMainProcessRuntime_showMainWindow_28, createMainProcessRuntime_notifyServicesChanged_29 } from "./runtime.operations-3";
 import { createMainProcessRuntime_notifyCoreServicesChanged_1, createMainProcessRuntime_notifyDesktopDecorationsChanged_2, createMainProcessRuntime_emitWebsChanged_3, createMainProcessRuntime_startResourceDirectoryWatcher_4, createMainProcessRuntime_stopResourceDirectoryWatcher_5, createMainProcessRuntime_emitKanbanChanged_6, createMainProcessRuntime_emitAssistantNavigationAgentsChanged_7, createMainProcessRuntime_emitAssistantNavigationPushEvent_8, createMainProcessRuntime_navigateMainWindow_9, createMainProcessRuntime_openAssistantWorker_10, createMainProcessRuntime_createAppTray_11, createMainProcessRuntime_runNonCoreStartupTask_12, createMainProcessRuntime_startSsoCredentialDependentRuntimes_13, createMainProcessRuntime_applyDesktopSsoRestoreResult_14, createMainProcessRuntime_startNonCoreDesktopRuntime_15, createMainProcessRuntime_showFileDialog_16, createMainProcessRuntime_showSaveDialog_17, createMainProcessRuntime_showMessageBox_18, createMainProcessRuntime_emitAssistantAttachmentProgress_19, createMainProcessRuntime_buildApplicationMenu_20, createMainProcessRuntime_showArchiveDialog_21 } from "./runtime.operations-4";
@@ -61,6 +61,7 @@ export function createMainProcessRuntime() {
     get LOG_VIEWER_ROUTE() { return LOG_VIEWER_ROUTE; },
     get AGENT_REALTIME_INSPECTOR_ROUTE() { return AGENT_REALTIME_INSPECTOR_ROUTE; },
     get DESKTOP_ACTION_WORKBENCH_ROUTE() { return DESKTOP_ACTION_WORKBENCH_ROUTE; },
+    get SELECTION_EXPLAIN_WINDOW_ROUTE() { return SELECTION_EXPLAIN_WINDOW_ROUTE; },
     get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; },
     get MAIN_PRELOAD_PATH() { return MAIN_PRELOAD_PATH; },
     get FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT() { return FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT; },
@@ -79,6 +80,7 @@ export function createMainProcessRuntime() {
     get servicesRuntime() { return servicesRuntime; },
     get webSurfaceRuntime() { return webSurfaceRuntime; },
     get webviewContextMenuController() { return webviewContextMenuController; },
+    get selectionExplainWindowController() { return selectionExplainWindowController; },
     get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; }, set refreshDesktopSsoIdentityToken(value) { refreshDesktopSsoIdentityToken = value; },
     get enterpriseChatRuntime() { return enterpriseChatRuntime; },
     get cdpIntegration() { return cdpIntegration; },
@@ -191,6 +193,7 @@ export function createMainProcessRuntime() {
   const LOG_VIEWER_ROUTE = "/log-viewer";
   const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
   const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
+  const SELECTION_EXPLAIN_WINDOW_ROUTE = "/selection-explain-window";
   const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, startupPlatform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, startupPlatform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(startupPlatform);
@@ -234,7 +237,9 @@ export function createMainProcessRuntime() {
   registerChatWorkPanelLocalFileProtocolScheme(protocol);
   
   const webSurfaceRuntime = createMainProcessRuntime_webSurfaceRuntime_6(factoryContext);
+  let selectionExplainWindowController: SelectionExplainWindowController | null = null;
   const webviewContextMenuController = createMainProcessRuntime_webviewContextMenuController_7(factoryContext);
+  selectionExplainWindowController = createMainProcessRuntime_selectionExplainWindowController_14(factoryContext);
   let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
   const enterpriseChatRuntime = createMainProcessRuntime_enterpriseChatRuntime_8(factoryContext);
   const cdpIntegration = createMainProcessRuntime_cdpIntegration_9(factoryContext);

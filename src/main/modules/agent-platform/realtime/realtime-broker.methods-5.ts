@@ -72,7 +72,9 @@ export function RealtimeBroker_handleInboundRequest_2(self: RealtimeBrokerMethod
             code: 409,
             msg: lane === "primary"
                 ? "Desktop cannot handle this request in the current view"
-                : "Desktop BTW lane does not support inbound requests",
+                : lane === "btw"
+                    ? "Desktop BTW lane does not support inbound requests"
+                    : "Desktop selection explanation lane does not support inbound requests",
             data: {
                 code: errorType,
                 message: lane === "primary"

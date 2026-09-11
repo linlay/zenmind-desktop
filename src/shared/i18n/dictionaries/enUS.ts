@@ -50,6 +50,9 @@ export const enUSMessages = {
   "common.cancel": "Cancel",
   "common.clear": "Clear",
   "common.close": "Close",
+  "window.minimize": "Minimize",
+  "selectionExplain.preparing": "Preparing explanation…",
+  "selectionExplain.failed": "Could not open the explanation. Select the text and try again.",
   "common.confirm": "Confirm",
   "common.copy": "Copy",
   "common.delete": "Delete",
@@ -3067,6 +3070,7 @@ export const enUSMessages = {
 
   "appError.title": "Page error",
   "appError.description": "Desktop caught this exception and wrote details to the main process console. Reload, or open Control Center to check service status.",
+  "appError.auxiliaryDescription": "Desktop recorded this exception. Reload or close this window; the main chat is not affected.",
   "appError.reload": "Reload",
   "appError.openControlCenter": "Open Control Center",
   "pageFeedback.dismiss": "Got it",

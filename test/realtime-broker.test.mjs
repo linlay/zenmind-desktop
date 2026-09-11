@@ -63,8 +63,8 @@ function createHarness(t, options = {}) {
 
     send(data) { this.sent.push(JSON.parse(data)); }
     emit(frame) { this.onmessage?.({ data: JSON.stringify(frame) }); }
-    disconnect() { this.onclose?.(); }
-    close() {}
+    disconnect() { this.closed = true; this.onclose?.(); }
+    close() { this.closed = true; }
   }
 
   const broker = new RealtimeBroker({
@@ -81,9 +81,8 @@ function createHarness(t, options = {}) {
     broker.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const socket = (lane) => sockets.find((candidate) =>
-    candidate.source === (lane === "primary" ? "desktop-main" : "desktop-btw"),
-  );
+  const sourceByLane = { primary: "desktop-main", btw: "desktop-btw", "selection-explain": "desktop-selection-explain" };
+  const socket = (lane) => sockets.find((candidate) => candidate.source === sourceByLane[lane]);
   return { broker, diagnostics, sockets, socket, token: jwt() };
 }
 
@@ -114,6 +113,247 @@ function runEvent(type, runId, chatId, seq, extra = {}) {
 function requestOfType(socket, type) {
   return socket.sent.filter((frame) => frame.frame === "request" && frame.type === type);
 }
+
+function explanationObserver(overrides = {}) {
+  return rootObserver({ token: "explanation:g1:2:202", kind: "selection_explain", surfaceId: "selection-explain",
+    generation: "g1", contextId: "chat-1", webContentsId: 202, ...overrides });
+}
+
+async function acceptedRun(h, { lane, runId, observerToken, onEvent = () => {}, signal }) {
+  const type = lane === "primary" ? "/api/query" : "/api/btw";
+  const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: `op-${runId}`,
+    lane, runId, chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" }, observerToken,
+    consumerId: `source:${runId}`, signal, payload: { runId, chatId: "chat-1", agentKey: "agent-1", message: runId }, onEvent });
+  await waitUntil(() => h.socket(lane)?.sent.some((frame) => frame.type === type && frame.payload?.runId === runId));
+  const socket = h.socket(lane);
+  const request = socket.sent.find((frame) => frame.type === type && frame.payload?.runId === runId);
+  socket.emit({ frame: "stream", id: request.id, event: runEvent("run.start", runId, "chat-1", 1) });
+  await query.accepted;
+  await nextTurn();
+  return { query, socket, request };
+}
+
+for (const platform of ["darwin", "win32"]) {
+  test(`Desktop explanation lane is lazy and separately identified on ${platform}`, async (t) => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { ...originalPlatform, value: platform });
+    t.after(() => Object.defineProperty(process, "platform", originalPlatform));
+    const h = createHarness(t);
+    const states = [];
+    h.broker.subscribeConnection({ lane: "selection-explain", consumerId: "explain-window", onState: (state) => states.push(state) });
+    assert.equal(h.sockets.length, 0);
+    assert.equal(h.broker.getConnectionStates()["selection-explain"].physicalConnectionCount, 0);
+    await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "primary");
+    await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "btw");
+    assert.equal(h.sockets.length, 2);
+    assert.equal(states.length, 1, "other lanes must not publish into the explanation connection subscription");
+    const observer = explanationObserver(); h.broker.activateRootObserver(observer);
+    const run = await acceptedRun(h, { lane: "selection-explain", runId: "run-explain", observerToken: observer.token });
+    assert.equal(h.sockets.length, 3);
+    const url = new URL(run.socket.url);
+    assert.equal(url.searchParams.get("source"), "desktop-selection-explain");
+    assert.equal(url.searchParams.get("surfaceId"), "desktop-selection-explain");
+    assert.equal(url.searchParams.get("deviceId"), "desktop-test");
+    assert.equal(states.at(-1).phase, "connected");
+    assert.equal(h.broker.getDiagnostics().connections["selection-explain"].physicalConnectionCount, 1);
+    assert.equal(requestOfType(run.socket, "/api/query").length, 0);
+  });
+}
+
+test("explanation handoff keeps one upstream stream, detaches only its source, and closes independently", async (t) => {
+  const h = createHarness(t), main = rootObserver();
+  h.broker.activateRootObserver(main);
+  await acceptedRun(h, { lane: "primary", runId: "run-main", observerToken: main.token });
+  await acceptedRun(h, { lane: "btw", runId: "run-side", observerToken: main.token });
+  const sourceEvents = [], explanationEvents = [], sourceAbort = new AbortController();
+  const run = await acceptedRun(h, { lane: "selection-explain", runId: "run-explain", observerToken: main.token,
+    signal: sourceAbort.signal, onEvent: (event) => sourceEvents.push(event.type) });
+  run.socket.emit({ frame: "stream", id: run.request.id, event: runEvent("content.delta", "run-explain", "chat-1", 2) });
+  await nextTurn();
+  const observer = explanationObserver(); h.broker.activateRootObserver(observer);
+  const observed = h.broker.subscribeRun({ baseUrl: "http://127.0.0.1:8080", token: h.token, lane: "selection-explain",
+    runId: "run-explain", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" }, kind: "surface",
+    role: "root_observer", observerToken: observer.token, consumerId: "explanation-window",
+    onEvent: (event) => explanationEvents.push(event.type) });
+  await observed.ready;
+  assert.deepEqual(await run.query.completed, { reason: "detached", lastSeq: 2 });
+  assert.deepEqual([...h.broker.getMainChatRootObserver().runIds].sort(), ["run-main", "run-side"]);
+  assert.deepEqual([...h.broker.getDiagnostics().auxiliaryRootObservers[0].runIds], ["run-explain"]);
+  assert.equal(requestOfType(run.socket, "/api/btw").length, 1);
+  assert.equal(requestOfType(run.socket, "/api/attach").length, 0);
+  assert.equal(requestOfType(run.socket, "/api/detach").length, 0);
+  sourceAbort.abort();
+  h.broker.cleanupConsumer("source:run-explain");
+  run.socket.emit({ frame: "stream", id: run.request.id, event: runEvent("content.delta", "run-explain", "chat-1", 3) });
+  await nextTurn();
+  assert.deepEqual(sourceEvents, ["run.start", "content.delta"]);
+  assert.deepEqual(explanationEvents, ["run.start", "content.delta", "content.delta"]);
+
+  h.broker.releaseRootObserver(observer.token);
+  await waitUntil(() => requestOfType(run.socket, "/api/detach").length === 1);
+  const detach = requestOfType(run.socket, "/api/detach")[0];
+  run.socket.emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: run.request.id, lastSeq: 3 } });
+  await nextTurn();
+  assert.equal(requestOfType(run.socket, "/api/interrupt").length, 0);
+  assert.equal(requestOfType(h.socket("primary"), "/api/detach").length, 0);
+  assert.equal(requestOfType(h.socket("btw"), "/api/detach").length, 0);
+  assert.equal(h.broker.getDiagnostics().replay.find((item) => item.runId === "run-explain").state, "dormant");
+  assert.deepEqual([...h.broker.getMainChatRootObserver().runIds].sort(), ["run-main", "run-side"]);
+
+  const reopened = explanationObserver({ token: "explanation:g2:2:203", generation: "g2", webContentsId: 203 });
+  h.broker.activateRootObserver(reopened);
+  const restored = h.broker.subscribeRun({ baseUrl: "http://127.0.0.1:8080", token: h.token, lane: "selection-explain",
+    runId: "run-explain", chatId: "chat-1", lastSeq: 3, owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface", observerToken: reopened.token, consumerId: "reopened-explanation", onEvent() {} });
+  await restored.ready;
+  assert.equal(requestOfType(run.socket, "/api/attach").length, 1);
+  assert.equal(requestOfType(run.socket, "/api/attach")[0].payload.lastSeq, 3);
+  assert.equal(requestOfType(run.socket, "/api/btw").length, 1);
+});
+
+test("explanation-only reconnect restores a handed-off stream repeatedly without replaying the query", async (t) => {
+  const h = createHarness(t), main = rootObserver(); h.broker.activateRootObserver(main);
+  const primary = await acceptedRun(h, { lane: "primary", runId: "main", observerToken: main.token });
+  const btw = await acceptedRun(h, { lane: "btw", runId: "side", observerToken: main.token });
+  const explanation = await acceptedRun(h, { lane: "selection-explain", runId: "explain", observerToken: main.token });
+  const observer = explanationObserver(); h.broker.activateRootObserver(observer);
+  await h.broker.subscribeRun({ baseUrl: "http://127.0.0.1:8080", token: h.token, lane: "selection-explain",
+    runId: "explain", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" }, kind: "surface",
+    observerToken: observer.token, consumerId: "explanation", onEvent() {} }).ready;
+  await explanation.query.completed;
+  const before = h.broker.getConnectionStates();
+  let current = explanation.socket;
+  for (const seq of [2, 3]) {
+    const upstream = current.sent.find((frame) => frame.type === "/api/btw" || frame.type === "/api/attach");
+    current.emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "explain", "chat-1", seq) });
+    await nextTurn();
+    current.disconnect();
+    await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "selection-explain");
+    current = h.sockets.filter((item) => item.source === "desktop-selection-explain").at(-1);
+    await waitUntil(() => requestOfType(current, "/api/attach").length === 1);
+    assert.equal(requestOfType(current, "/api/attach")[0].payload.lastSeq, seq);
+    assert.equal(requestOfType(current, "/api/btw").length, 0);
+    assert.equal(h.broker.getConnectionStates().primary.generation, before.primary.generation);
+    assert.equal(h.broker.getConnectionStates().btw.generation, before.btw.generation);
+    assert.equal(primary.socket.closed, undefined);
+    assert.equal(btw.socket.closed, undefined);
+  }
+  assert.equal(h.broker.getDiagnostics().replay.find((run) => run.runId === "explain").restoreCount, 2);
+  assert.equal(h.sockets.flatMap((socket) => requestOfType(socket, "/api/btw")).filter((frame) => frame.payload.runId === "explain").length, 1);
+});
+
+test("explanation controls infer the registered lane and reject explicit cross-lane requests", async (t) => {
+  const h = createHarness(t), observer = explanationObserver(); h.broker.activateRootObserver(observer);
+  const run = await acceptedRun(h, { lane: "selection-explain", runId: "explain", observerToken: observer.token });
+  const request = { baseUrl: "http://127.0.0.1:8080", token: h.token, localId: "stop-explanation", consumerId: "explanation",
+    type: "/api/interrupt", payload: { runId: "explain", agentKey: "agent-1" }, onFrame() {}, onError() {} };
+  const upstreamId = await h.broker.forwardRequest(request);
+  assert.equal(requestOfType(run.socket, "/api/interrupt").length, 1);
+  assert.equal(h.sockets.length, 1);
+  run.socket.emit({ frame: "response", id: upstreamId, data: { accepted: true } });
+  await assert.rejects(h.broker.forwardRequest({ ...request, lane: "primary" }), { name: "invalid_request" });
+  await assert.rejects(h.broker.forwardRequest({ ...request, lane: "btw" }), { name: "invalid_request" });
+  assert.throws(() => h.broker.subscribeRun({ baseUrl: request.baseUrl, token: h.token, lane: "btw", runId: "explain", chatId: "chat-1",
+    kind: "surface", observerToken: observer.token, consumerId: "wrong-lane", onEvent() {} }), { name: "invalid_request" });
+  const main = rootObserver(); h.broker.activateRootObserver(main);
+  assert.throws(() => h.broker.subscribeRun({ baseUrl: request.baseUrl, token: h.token, lane: "primary", runId: "explain", chatId: "chat-1",
+    kind: "surface", observerToken: main.token, consumerId: "main-wrong-lane", onEvent() {} }), { name: "invalid_request" });
+  const wrongQuery = h.broker.query({ baseUrl: request.baseUrl, token: h.token, lane: "btw", id: "wrong-lane-query", runId: "explain",
+    payload: {}, onEvent() {} });
+  await assert.rejects(wrongQuery.accepted, { name: "invalid_request" });
+  await assert.rejects(wrongQuery.completed, { name: "invalid_request" });
+  assert.equal(h.sockets.length, 1);
+  assert.equal(h.broker.getDiagnostics().runCount, 1);
+});
+
+test("selection explanation lane rejects ordinary queries without connecting", async (t) => {
+  const h = createHarness(t);
+  const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: "invalid-explanation",
+    lane: "selection-explain", requestType: "/api/query", payload: {}, onEvent() {} });
+  await assert.rejects(query.accepted, { name: "invalid_request" });
+  await assert.rejects(query.completed, { name: "invalid_request" });
+  await assert.rejects(h.broker.forwardRequest({ baseUrl: "http://127.0.0.1:8080", token: h.token, localId: "invalid-forward",
+    consumerId: "explanation", lane: "selection-explain", type: "/api/query", onFrame() {}, onError() {} }), { name: "invalid_request" });
+  assert.equal(h.sockets.length, 0);
+});
+
+test("an explanation disconnect fails only its unaccepted query and pending requests", async (t) => {
+  const h = createHarness(t), main = rootObserver(); h.broker.activateRootObserver(main);
+  const primary = await acceptedRun(h, { lane: "primary", runId: "main", observerToken: main.token });
+  const btw = await acceptedRun(h, { lane: "btw", runId: "side", observerToken: main.token });
+  let otherRunCompleted = false;
+  void primary.query.completed.then(() => { otherRunCompleted = true; }, () => { otherRunCompleted = true; });
+  void btw.query.completed.then(() => { otherRunCompleted = true; }, () => { otherRunCompleted = true; });
+  const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: "pending-explain", lane: "selection-explain",
+    chatId: "chat-1", observerToken: main.token, payload: { chatId: "chat-1" }, onEvent() {} });
+  await waitUntil(() => h.socket("selection-explain")?.sent.some((frame) => frame.type === "/api/btw"));
+  const requestErrors = [];
+  await h.broker.forwardRequest({ baseUrl: "http://127.0.0.1:8080", token: h.token, localId: "pending-read", consumerId: "explain",
+    lane: "selection-explain", type: "/api/chat", payload: { chatId: "chat-1" }, onFrame() {}, onError: (error) => requestErrors.push(error) });
+  h.socket("selection-explain").disconnect();
+  await assert.rejects(query.accepted, { name: "connection_lost_before_acceptance" });
+  await assert.rejects(query.completed, { name: "connection_lost_before_acceptance" });
+  await nextTurn();
+  assert.equal(requestErrors.length, 1);
+  assert.equal(otherRunCompleted, false);
+  assert.equal(h.broker.getConnectionState("primary").phase, "connected");
+  assert.equal(h.broker.getConnectionState("btw").phase, "connected");
+  assert.equal(h.broker.getConnectionState("selection-explain").phase, "reconnecting");
+});
+
+test("an explanation stream error after handoff is delivered only to its current observer", async (t) => {
+  const h = createHarness(t), main = rootObserver(); h.broker.activateRootObserver(main);
+  await acceptedRun(h, { lane: "primary", runId: "main", observerToken: main.token });
+  const run = await acceptedRun(h, { lane: "selection-explain", runId: "explain", observerToken: main.token });
+  const observer = explanationObserver(); h.broker.activateRootObserver(observer);
+  const failures = [], completed = [];
+  await h.broker.subscribeRun({ baseUrl: "http://127.0.0.1:8080", token: h.token, lane: "selection-explain", runId: "explain",
+    chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" }, kind: "surface", observerToken: observer.token,
+    consumerId: "explanation", onEvent() {}, onError: (error) => failures.push(error), onComplete: (result) => completed.push(result) }).ready;
+  assert.equal((await run.query.completed).reason, "detached");
+  run.socket.emit({ frame: "error", id: run.request.id, type: "invalid_request", msg: "explanation failed" });
+  await nextTurn();
+  assert.equal(failures.length, 1);
+  assert.equal(completed.length, 0);
+  assert.equal(h.broker.getDiagnostics().replay.find((item) => item.runId === "explain").state, "terminal");
+  assert.equal(h.broker.getDiagnostics().replay.find((item) => item.runId === "explain").terminalSource, "query_stream");
+  assert.equal(h.broker.getDiagnostics().replay.find((item) => item.runId === "main").state, "observed");
+});
+
+test("global push and Desktop actions never escape the dedicated explanation lane", async (t) => {
+  const h = createHarness(t), pushes = [], actions = [];
+  h.broker.subscribePush({ types: ["chat.updated"], kind: "internal", consumerId: "navigation", onPush: (frame) => pushes.push(frame) });
+  h.broker.setDesktopBridgeProvider({
+    action: async (request) => { actions.push(request); return {}; },
+    cdp: async (request) => { actions.push(request); return {}; },
+  });
+  await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "selection-explain");
+  const socket = h.socket("selection-explain");
+  socket.emit({ frame: "push", type: "chat.updated", data: { chatId: "chat-1" } });
+  socket.emit({ frame: "request", id: "unexpected-action", type: "desktop.runtime.info", payload: {},
+    source: { runId: "explain", chatId: "chat-1", agentKey: "agent-1" } });
+  await nextTurn();
+  assert.deepEqual(pushes, []);
+  assert.deepEqual(actions, []);
+  assert.ok(socket.sent.some((frame) => frame.id === "unexpected-action" && frame.frame === "error"));
+});
+
+test("identity changes see an explanation-only connection and dispose closes every instantiated lane", async (t) => {
+  const h = createHarness(t), observer = explanationObserver(); h.broker.activateRootObserver(observer);
+  const run = await acceptedRun(h, { lane: "selection-explain", runId: "explain", observerToken: observer.token });
+  await h.broker.ensureConnected("http://127.0.0.1:8080", jwt({ sid: "different-session" }), "primary");
+  assert.equal(run.socket.closed, true);
+  assert.deepEqual(h.broker.getDiagnostics().auxiliaryRootObservers, []);
+  assert.equal(h.broker.getDiagnostics().runCount, 0);
+  assert.equal(h.broker.getDiagnostics().laneRotationCount, 3);
+  await assert.rejects(run.query.completed, { name: "connection_unavailable" });
+  const token = jwt({ sid: "different-session" });
+  await h.broker.ensureConnected("http://127.0.0.1:8080", token, "btw");
+  await h.broker.ensureConnected("http://127.0.0.1:8080", token, "selection-explain");
+  h.broker.dispose();
+  assert.ok(h.sockets.every((socket) => socket.closed));
+  assert.equal(h.broker.getConnectionStates()["selection-explain"].physicalConnectionCount, 0);
+});
 
 test("physical realtime connection waits for the Platform v2 handshake", async (t) => {
   const { broker, sockets, token } = createHarness(t, { autoHandshake: false });
@@ -374,6 +614,38 @@ test("ownerless Main Chat promotes its Overview lease in place", (t) => {
   assert.equal(promoted.contextId, "chat-canonical");
   assert.equal(broker.getDiagnostics().overviewLease.state, "ready");
   assert.equal(broker.getDiagnostics().overviewLease.chatId, "chat-canonical");
+});
+
+test("selection explanation observer stays isolated from Main Chat and active roots", (t) => {
+  const { broker } = createHarness(t);
+  const main = rootObserver();
+  const copilot = rootObserver({
+    token: "copilot-dock:g2:2:202",
+    kind: "copilot_dock",
+    surfaceId: "copilot-dock",
+    generation: "g2",
+    contextId: "context-2:chat-2",
+    webContentsId: 202,
+  });
+  const explanation = rootObserver({
+    token: "selection-explain:g3:3:303:chat-1",
+    kind: "selection_explain",
+    surfaceId: "selection-explain",
+    generation: "g3",
+    contextId: "chat-1",
+    webContentsId: 303,
+  });
+  broker.activateRootObserver(main);
+  broker.activateRootObserver(copilot);
+  const activated = broker.activateRootObserver(explanation);
+  assert.equal(activated.token, explanation.token);
+  assert.equal(broker.getDiagnostics().auxiliaryRootObservers[0].token, explanation.token);
+  assert.equal(broker.getMainChatRootObserver().token, main.token);
+  assert.equal(broker.getActiveRootObserver().token, copilot.token);
+  assert.equal(broker.releaseRootObserver(explanation.token, "surface_inactive"), true);
+  assert.deepEqual(broker.getDiagnostics().auxiliaryRootObservers, []);
+  assert.equal(broker.getMainChatRootObserver().token, main.token);
+  assert.equal(broker.getActiveRootObserver().token, copilot.token);
 });
 
 test("Root Observer token cannot silently change context or registration identity", (t) => {

@@ -1,0 +1,99 @@
+.selection-explain-window {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  grid-template-rows: 46px minmax(0, 1fr);
+  background: var(--app-bg, #fff);
+  color: var(--text-primary, #1f2329);
+}
+
+.selection-explain-window-header {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color, rgba(31, 35, 41, 0.12));
+  padding-left: 16px;
+  background: var(--app-bg, #fff);
+  user-select: none;
+}
+
+.selection-explain-window-header strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-explain-window-controls {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-self: stretch;
+}
+
+.selection-explain-window-controls button {
+  display: grid;
+  width: 46px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.selection-explain-window-controls button:hover,
+.selection-explain-window-controls button:focus-visible {
+  background: rgba(127, 127, 127, 0.14);
+  outline: none;
+}
+
+.selection-explain-window-controls button:last-child:hover,
+.selection-explain-window-controls button:last-child:focus-visible {
+  background: #e5484d;
+  color: #fff;
+}
+
+.selection-explain-window-body {
+  position: relative;
+  min-height: 0;
+}
+
+.selection-explain-window-body > .embedded-surface-page {
+  position: absolute;
+  inset: 0;
+}
+
+.selection-explain-window-status {
+  display: grid;
+  height: 100%;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--text-secondary, #646a73);
+  text-align: center;
+}
+
+.selection-explain-window-status p,
+.selection-explain-window-status small {
+  margin: 0;
+}
+
+.selection-explain-window-status.is-error {
+  color: var(--danger, #d4380d);
+}
+
+.selection-explain-window-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(47, 84, 235, 0.18);
+  border-top-color: #2f54eb;
+  border-radius: 50%;
+  animation: selection-explain-spin 0.8s linear infinite;
+}
+
+@keyframes selection-explain-spin {
+  to { transform: rotate(360deg); }
+}
