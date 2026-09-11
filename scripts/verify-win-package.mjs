@@ -124,13 +124,13 @@ function verifyNativeExecutableIcon() {
   // Windows PowerShell -Command parses trailing paths as code, not script arguments.
   // Keep paths in the child environment and encode the script to preserve quoting.
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       ZENMIND_VERIFY_EXE_PATH: executablePath,
       ZENMIND_VERIFY_ICO_PATH: icoPath
-    },
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"]
+    }
   });
   if (result.status !== 0) {
     throw new Error(`Windows EXE icon does not match generated ICO:\n${result.stderr || result.stdout || `exit ${result.status}`}`);

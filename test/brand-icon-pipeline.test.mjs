@@ -36,6 +36,21 @@ function snapshotFiles(rootDir) {
   return new Map([...result.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
 
+function assertRceditCompatibleIco(icoPath) {
+  const ico = fs.readFileSync(icoPath);
+  const entryCount = ico.readUInt16LE(4);
+  assert.ok(entryCount > 0, "ICO must contain at least one image");
+  for (let index = 0; index < entryCount; index += 1) {
+    const entryOffset = 6 + index * 16;
+    const imageOffset = ico.readUInt32LE(entryOffset + 12);
+    assert.equal(
+      ico.readUInt32LE(imageOffset),
+      40,
+      `ICO entry ${index} must start with a 40-byte DIB header for rcedit compatibility`
+    );
+  }
+}
+
 test("icon generation is complete, isolated, recoverable, and byte-idempotent for both brands", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-brand-icons-"));
   fs.cpSync(path.join(projectRoot, "brands"), path.join(root, "brands"), { recursive: true });
@@ -45,6 +60,7 @@ test("icon generation is complete, isolated, recoverable, and byte-idempotent fo
   for (const brandId of ["zenmind", "cutej"]) {
     await generateAppIcons({ rootDir: root, brandId, platform: process.platform });
     await verifyGeneratedAppIcons({ rootDir: root, brandId, platform: process.platform });
+    assertRceditCompatibleIco(path.join(brandIconDir(root, brandId), "icon.ico"));
 
     const brandBuildRoot = path.dirname(brandIconDir(root, brandId));
     const before = snapshotFiles(brandBuildRoot);
