@@ -4,6 +4,7 @@ import {
 import {
   isDesktopSsoCredentialRuntimeReady
 } from "../modules/identity";
+import { getProviderRegisterMode, clearAccessTokenProviderKeys, invalidateProviderRegistration } from "../modules/agent-platform";
 import { loadInstalledPlugins } from "../modules/plugins";
 import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
 import type {
@@ -188,6 +189,26 @@ export function createMainProcessRuntime_startSsoCredentialDependentRuntimes_13(
 export function createMainProcessRuntime_applyDesktopSsoRestoreResult_14(factoryContext: CreateMainProcessRuntimeContext, result: DesktopSsoRestoreResult) {
     const previousRestoreState = factoryContext.desktopSsoRestoreState;
     factoryContext.desktopSsoRestoreState = result.state;
+    // Provider registration policy is independent of SSO configuration and never falls back to Grant.
+    const shellStarted = isStartupPhaseAtLeast(factoryContext.appState.startupPhase, "core-services-starting");
+    if (shellStarted && getProviderRegisterMode(app, factoryContext.startupPlatform) === "access-token") {
+        if (result.state !== "authenticated" && previousRestoreState === "authenticated") {
+            invalidateProviderRegistration(app, factoryContext.startupPlatform);
+            factoryContext.startupRestoreController.setAuthenticationRequired(true);
+            void factoryContext.servicesRuntime.runServiceMutation(async () => {
+                for (const serviceId of ["agent-webclient", "agent-platform"] as const) {
+                    const stopped = await factoryContext.servicesFacade.stopService(app, serviceId);
+                    if (!stopped.ok) throw new Error(stopped.message);
+                }
+                clearAccessTokenProviderKeys(app, factoryContext.startupPlatform);
+                factoryContext.notifyCoreServicesChanged();
+            }).catch(error => safeConsoleError("failed to stop account-bound provider consumers", { error: String(error) }));
+        } else if (result.state === "authenticated" && isDesktopSsoCredentialRuntimeReady() &&
+            factoryContext.startupRestoreController.getState().authenticationRequired) {
+            factoryContext.startupRestoreController.setAuthenticationRequired(false);
+            void factoryContext.startupPipeline.run();
+        }
+    }
     if (result.state === "signed_out") {
         factoryContext.ssoCredentialDependentRuntimesStarted = false;
         return;

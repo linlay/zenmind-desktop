@@ -37,6 +37,7 @@ export interface StartupRestoreState {
   updatedAt: string;
   services: StartupRestoreServiceState[];
   envImportRequest?: StartupEnvImportRequest;
+  authenticationRequired?: boolean;
 }
 
 export type StartupRestoreStateListener = (state: StartupRestoreState) => void;

@@ -454,6 +454,9 @@ export async function executeAction(
         createContainerHubClient: options.createContainerHubClient
       }));
     case "desktop.help.openTopic": {
+      if (!options.getHelpUrl?.()) {
+        return fail(action, "help_not_configured", t("help.error.notConfigured"));
+      }
       const route = resolveHelpOpenRoute(args);
       if (!route) {
         return fail(action, "invalid_args", "route, topic, or id must resolve to an allowed Help route.");

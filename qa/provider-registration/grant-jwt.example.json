@@ -1,0 +1,6 @@
+{
+  "mode": "grant-jwt",
+  "endpoint": "https://transit-hub.example.com/api/apply-apikey",
+  "grant": { "type": "jwt", "token": "<replace-with-grant-jwt>" },
+  "providers": ["th-deepseek", "th-minimax"]
+}

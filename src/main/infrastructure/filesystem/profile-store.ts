@@ -39,9 +39,6 @@ export type DesktopProfile = {
     };
   };
   navigation: {
-    mainOrder: string[];
-    webOrder: string[];
-    pinnedWebEntryKeys: string[];
     chatSortMode: AssistantChatSortMode;
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
@@ -97,15 +94,6 @@ function normalizeTheme(value: unknown): DesktopThemePreference {
   return value === "light" || value === "dark" || value === "system" ? value : "system";
 }
 
-function normalizeTextArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((item) => readText(item))
-    .filter(Boolean);
-}
-
 function normalizeChatSortMode(value: unknown): AssistantChatSortMode {
   return value === "manual" ? "manual" : "recent";
 }
@@ -154,10 +142,6 @@ function normalizeDesktopProfile(
       }
     },
     navigation: {
-      mainOrder: normalizeTextArray(navigation.mainOrder),
-      webOrder: normalizeTextArray(navigation.webOrder),
-      pinnedWebEntryKeys: [...new Set(normalizeTextArray(navigation.pinnedWebEntryKeys)
-        .filter((key) => /^(website|webapp):\S+$/.test(key)))],
       chatSortMode: normalizeChatSortMode(navigation.chatSortMode),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages

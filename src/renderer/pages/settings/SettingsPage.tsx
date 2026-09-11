@@ -3282,6 +3282,7 @@ export function SettingsPage({
   }
 
   async function handleToggleEnterpriseIm() {
+    if (!enterpriseImSettings.baseUrl) return;
     const previousSettings = enterpriseImSettings;
     const nextSettings = {
       ...enterpriseImSettings,
@@ -4447,7 +4448,7 @@ export function SettingsPage({
                 onChange={() => void handleToggleDesktopActionConfirmation()}
               />
             </div>
-            <div className="settings-appearance-row">
+            {enterpriseImSettings.baseUrl ? <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.enterpriseChat")}</strong>
                 <span>{t("settings.general.enterpriseChatDescription")}</span>
@@ -4458,7 +4459,7 @@ export function SettingsPage({
                 disabled={generalSettingsSaving}
                 onChange={() => void handleToggleEnterpriseIm()}
               />
-            </div>
+            </div> : null}
           </div>
         );
       }
@@ -4842,7 +4843,10 @@ export function SettingsPage({
       }
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
-        const navigationSettingsOrder = sidebarNavOrder;
+        // New Chat and pinned web entries use their existing dedicated Agent settings.
+        const navigationSettingsOrder = sidebarNavOrder.filter((key) =>
+          key !== "new-chat" && !key.startsWith("website:") && !key.startsWith("webapp:"),
+        );
         const visibleFixedNavigationTools = fixedNavigationTools.filter((tool) => tool.id !== "market" || marketEnabled);
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
           const copilotPageKey = tool.copilotPageKey;

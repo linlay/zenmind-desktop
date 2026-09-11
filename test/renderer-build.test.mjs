@@ -3485,7 +3485,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /const availableKeys = new Set\(availableItems\.map\(\(item\) => item\.key\)\)/);
   assert.match(orderHelper, /availableKeys\.has\(key as SidebarNavOrderItemKey\)/);
   assert.match(orderHelper, /orderedKeys\.push\(item\.key\)/);
-  assert.match(orderHelper, /return \["kanban", \.\.\.orderedKeys\.filter\(\(key\) => key !== "kanban"\)\]/);
+  assert.doesNotMatch(orderHelper, /return \["kanban", \.\.\.orderedKeys\.filter\(\(key\) => key !== "kanban"\)\]/);
   assert.doesNotMatch(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
@@ -3530,7 +3530,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
   assert.match(sidebarSource, /marketEnabled\?:\s*boolean/);
   assert.match(sidebarSource, /\.filter\(\(item\) => item\.orderKey !== "market" \|\| marketEnabled\)/);
-  assert.match(sidebarSource, /\.filter\(\(item\) => sidebarNavOrder\.includes\(item\.orderKey\)\)/);
+  assert.match(sidebarSource, /\.filter\(\(item\) =>\s*sidebarNavOrder\.includes\(item\.orderKey\),?\s*\)/);
   assert.match(sidebarSource, /webItems:\s*WebEntry\[\]/);
   assert.doesNotMatch(sidebarSource, /websiteItems/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);

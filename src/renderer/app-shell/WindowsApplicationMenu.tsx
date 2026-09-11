@@ -1,9 +1,10 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useI18n } from "../i18n/useI18n";
 
-const menuIds = ["file", "edit", "view", "help"] as const;
+const allMenuIds = ["file", "edit", "view", "help"] as const;
 
-export function WindowsApplicationMenu({ disabled }: { disabled: boolean }) {
+export function WindowsApplicationMenu({ disabled, helpEnabled }: { disabled: boolean; helpEnabled: boolean }) {
+  const menuIds = allMenuIds.filter((menu) => menu !== "help" || helpEnabled);
   const { t } = useI18n();
   const [active, setActive] = useState<string | null>(null);
 
@@ -24,8 +25,8 @@ export function WindowsApplicationMenu({ disabled }: { disabled: boolean }) {
       void openMenu(menuIds[index], event.currentTarget).catch(() => undefined);
     } else if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
       event.preventDefault();
-      const next = event.key === "Home" ? 0 : event.key === "End" ? 3
-        : (index + (event.key === "ArrowRight" ? 1 : 3)) % 4;
+      const next = event.key === "Home" ? 0 : event.key === "End" ? menuIds.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : menuIds.length - 1)) % menuIds.length;
       event.currentTarget.parentElement?.querySelectorAll("button")[next]?.focus();
     }
   }

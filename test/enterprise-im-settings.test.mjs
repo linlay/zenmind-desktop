@@ -76,7 +76,7 @@ test("enterprise IM settings ignore retired files and preserve the base URL when
   assert.deepEqual(readEnterpriseImSettings(app, "darwin"), {
     schemaVersion: 1,
     enabled: false,
-    baseUrl: "http://127.0.0.1:11956"
+    baseUrl: ""
   });
 
   writeEnterpriseImSettings(app, {
@@ -90,3 +90,25 @@ test("enterprise IM settings ignore retired files and preserve the base URL when
     baseUrl: "https://im.example.test"
   });
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: absent or invalid IM configuration cannot be enabled or synthesize a server`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "im-unconfigured-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createApp(root);
+    const file = path.join(getDesktopConfigRoot(app, platform), "enterprise-im.json");
+    const disabled = { schemaVersion: 1, enabled: false, baseUrl: "" };
+    assert.deepEqual(readEnterpriseImSettings(app, platform), disabled);
+    assert.deepEqual(setEnterpriseImEnabled(app, true, platform), disabled);
+    assert.equal(fs.existsSync(file), false);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{"enabled":true,"baseUrl":""}');
+    assert.deepEqual(setEnterpriseImEnabled(app, true, platform), disabled);
+    assert.equal(fs.readFileSync(file, "utf8"), '{"enabled":true,"baseUrl":""}');
+    writeEnterpriseImSettings(app, { schemaVersion: 1, enabled: false, baseUrl: "https://im.internal.example" }, platform);
+    assert.equal(setEnterpriseImEnabled(app, true, platform).enabled, true);
+    assert.deepEqual(setEnterpriseImEnabled(app, false, platform), {
+      schemaVersion: 1, enabled: false, baseUrl: "https://im.internal.example"
+    });
+  });
+}

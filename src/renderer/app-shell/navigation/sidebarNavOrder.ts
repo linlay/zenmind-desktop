@@ -1,4 +1,5 @@
 export type SidebarNavOrderItemKey =
+  | "new-chat"
   | "kanban"
   | "group:assistants"
   | "group:webs"
@@ -29,6 +30,7 @@ type SidebarNavOrderInput = {
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "kanban", label: "nav.kanban" },
   { key: "schedules", label: "nav.schedules" },
+  { key: "new-chat", label: "sidebar.chats.newChat" },
   { key: "chats", label: "nav.chats" },
   { key: "group:assistants", label: "nav.assistants" },
   { key: "group:webs", label: "nav.websites" },
@@ -55,6 +57,7 @@ export function createDefaultSidebarNavOrderItems({
   return [
     ...(kanbanEnabled ? [staticItems.get("kanban")!] : []),
     staticItems.get("schedules")!,
+    staticItems.get("new-chat")!,
     staticItems.get("chats")!,
     staticItems.get("group:assistants")!,
     staticItems.get("group:webs")!
@@ -67,9 +70,9 @@ export function normalizeSidebarNavOrder(
 ): SidebarNavOrderItemKey[] {
   const availableKeys = new Set(availableItems.map((item) => item.key));
   const normalizedCandidate = Array.isArray(candidate)
-    ? candidate.filter((key): key is SidebarNavOrderItemKey =>
+    ? [...new Set(candidate.filter((key): key is SidebarNavOrderItemKey =>
         typeof key === "string" && availableKeys.has(key as SidebarNavOrderItemKey)
-      )
+      ))]
     : [];
   const candidateIncludesChats = normalizedCandidate.includes("chats");
   const orderedKeys = normalizedCandidate.length > 0 ? normalizedCandidate : [];
@@ -85,10 +88,18 @@ export function normalizeSidebarNavOrder(
       orderedKeys.push(item.key);
     }
   }
-  if (availableKeys.has("kanban")) {
-    return ["kanban", ...orderedKeys.filter((key) => key !== "kanban")];
+  // Migrate the formerly attached New Chat button without moving existing entries.
+  if (availableKeys.has("new-chat") && !(Array.isArray(candidate) && candidate.includes("new-chat"))) {
+    orderedKeys.splice(orderedKeys.indexOf("new-chat"), 1);
+    const index = orderedKeys.indexOf("schedules");
+    orderedKeys.splice(index >= 0 ? index + 1 : 0, 0, "new-chat");
   }
-  return orderedKeys;
+  // Legacy pins appeared before the fixed navigation entries.
+  const newPins = availableItems.filter(({ key }) =>
+    (key.startsWith("website:") || key.startsWith("webapp:")) &&
+    !(Array.isArray(candidate) && candidate.includes(key))
+  ).map(({ key }) => key);
+  return [...newPins, ...orderedKeys.filter((key) => !newPins.includes(key))];
 }
 
 export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey }>(
@@ -118,4 +129,16 @@ export function partitionSidebarWebItems<T extends { orderKey: SidebarNavOrderIt
     }),
     unpinned: items.filter((item) => !pinnedSet.has(item.orderKey))
   };
+}
+
+export function moveSidebarNavItem(
+  order: SidebarNavOrderItemKey[],
+  active: SidebarNavOrderItemKey,
+  target: SidebarNavOrderItemKey,
+  after: boolean,
+): SidebarNavOrderItemKey[] {
+  if (active === target || !order.includes(active) || !order.includes(target)) return order;
+  const next = order.filter((key) => key !== active);
+  next.splice(next.indexOf(target) + (after ? 1 : 0), 0, active);
+  return next;
 }

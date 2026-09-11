@@ -3610,3 +3610,20 @@ test("page control confirmation request exposes grant once cancel decisions", ()
   assert.match(payload.details, /\[已隐藏\]/u);
   assert.doesNotMatch(payload.details, /hidden-password/u);
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: Help action requires configured help and does not navigate when disabled`, async (t) => {
+    const { calls, options } = createDesktopActionOptions(t);
+    options.platform = platform;
+    options.getHelpUrl = () => "";
+    const request = { action: "desktop.help.openTopic", args: {}, permissionMode: "full_access" };
+    const disabled = await handleDesktopActionRequest(options, request);
+    assert.equal(disabled.ok, false);
+    assert.equal(disabled.error.code, "help_not_configured");
+    assert.deepEqual(calls.navigation, []);
+    options.getHelpUrl = () => "https://help.internal.example/";
+    const enabled = await handleDesktopActionRequest(options, request);
+    assert.equal(enabled.ok, true);
+    assert.deepEqual(calls.navigation, ["/help"]);
+  });
+}

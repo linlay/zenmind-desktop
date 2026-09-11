@@ -30,6 +30,7 @@ export interface DesktopActionContextDependencies {
   webs: WebsFacade;
   desktopAppInfo: DesktopAppInfo;
   navigate: (...args: any[]) => unknown;
+  getHelpUrl?: () => string;
   openLogViewer: (...args: any[]) => unknown;
   showFileDialog?: (...args: any[]) => unknown;
   showSaveDialog?: (...args: any[]) => unknown;
@@ -68,6 +69,7 @@ export function createDesktopActionOptions(
     webs: dependencies.webs,
     getCurrentPageSnapshot: context.getCurrentPageSnapshot,
     navigate: dependencies.navigate,
+    getHelpUrl: dependencies.getHelpUrl,
     openLogViewer: dependencies.openLogViewer,
     showFileDialog: dependencies.showFileDialog,
     showSaveDialog: dependencies.showSaveDialog,
