@@ -2643,10 +2643,26 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-chat-share-dialog {
-  width: min(720px, 100%);
-  max-height: min(760px, calc(100vh - 48px));
-  overflow: hidden;
-  background: var(--desktop-overlay-panel-bg);
+  display: flex;
+  width: min(780px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 84%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--desktop-overlay-panel-bg) 90%, transparent);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+
+.sidebar-chat-share-dialog-layer {
+  padding: 16px;
+  backdrop-filter: blur(4px);
 }
 
 .sidebar-chat-info-dialog {
@@ -3026,46 +3042,137 @@ div.sidebar-chats-group-popover {
   }
 }
 
+.sidebar-chat-share-dialog-head {
+  align-items: flex-start;
+}
+
+.sidebar-chat-share-heading {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.sidebar-chat-share-dialog .sidebar-chat-share-dialog-head strong {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+.sidebar-chat-share-dialog-head strong svg {
+  flex: none;
+  color: var(--ink-soft);
+  font-size: 20px;
+}
+
 .sidebar-chat-share-name {
   overflow: hidden;
   margin: 0;
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 650;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-chat-share-create-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 12px;
+.sidebar-chat-share-dialog > .sidebar-agent-dialog-message {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
-.sidebar-chat-share-create-row .sidebar-agent-primary-button {
-  width: 152px;
-  height: 40px;
-  padding: 0 18px;
-  border-radius: var(--control-radius);
-  cursor: pointer;
-  font: inherit;
+.sidebar-chat-share-section {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 86%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 42%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+}
+
+.sidebar-chat-share-section h3 {
+  margin: 0;
+  color: var(--ink);
   font-size: 13px;
   font-weight: 650;
+  line-height: 1.35;
+}
+
+.sidebar-chat-share-create-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.sidebar-chat-share-create-row .sidebar-agent-dialog-field {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.sidebar-chat-share-create-row .sidebar-agent-dialog-field > span {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .sidebar-chat-share-create-row .sidebar-agent-dialog-field select {
-  height: 40px;
+  width: 164px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--control-select-bg) 88%, transparent);
+  font-size: 12px;
+}
+
+.sidebar-chat-share-create-row .sidebar-chat-share-create-button {
+  display: inline-flex;
+  width: auto;
+  min-width: 166px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-primary) 74%, white 18%);
+  border-radius: 9px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--desktop-ui-primary) 88%, white 12%),
+    var(--desktop-ui-primary)
+  );
+  box-shadow:
+    0 5px 14px rgba(var(--desktop-ui-primary-rgb), 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sidebar-chat-share-create-button svg {
+  font-size: 15px;
 }
 
 .sidebar-chat-share-once-warning {
   margin: 0;
   padding: 8px 10px;
-  border-radius: var(--control-radius);
+  border-radius: 8px;
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   color: var(--danger);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .sidebar-chat-share-history-head {
@@ -3073,24 +3180,22 @@ div.sidebar-chats-group-popover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 4px;
-  color: var(--ink);
-  font-size: 13px;
 }
 
 .sidebar-chat-share-history {
   display: grid;
-  min-height: 60px;
-  max-height: 360px;
-  gap: 10px;
+  min-height: 44px;
+  max-height: 316px;
+  gap: 14px;
   overflow-y: auto;
-  padding-right: 4px;
+  margin: -2px -2px 0;
+  padding: 2px 2px 0;
 }
 
 .sidebar-chat-share-empty {
   margin: 0;
-  padding: 18px 12px;
-  border: 1px dashed var(--line);
+  padding: 16px 12px;
+  border: 1px dashed color-mix(in srgb, var(--desktop-ui-border) 80%, transparent);
   border-radius: 9px;
   color: var(--muted);
   font-size: 12px;
@@ -3099,28 +3204,33 @@ div.sidebar-chats-group-popover {
 
 .sidebar-chat-share-record {
   display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--control-radius-lg);
-  background: var(--desktop-ui-card);
+  gap: 14px;
+  min-width: 0;
+}
+
+.sidebar-chat-share-record + .sidebar-chat-share-record {
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--desktop-ui-border) 70%, transparent);
 }
 
 .sidebar-chat-share-record-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 200px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
 }
 
 .sidebar-chat-share-link-control {
   display: grid;
   min-width: 0;
-  height: 40px;
-  grid-template-columns: minmax(0, 1fr) 84px;
+  height: 42px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
   overflow: hidden;
-  border: 1px solid var(--desktop-ui-border);
-  border-radius: var(--control-radius);
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 90%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--control-select-bg) 74%, transparent);
 }
 
 .sidebar-chat-share-link-control:focus-within {
@@ -3128,95 +3238,147 @@ div.sidebar-chats-group-popover {
   box-shadow: 0 0 0 2px rgba(var(--desktop-ui-primary-rgb), 0.14);
 }
 
+.sidebar-chat-share-link-icon {
+  justify-self: end;
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+
 .sidebar-chat-share-link-control input {
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 12px 0 9px;
   overflow: hidden;
   border: 0;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-chat-share-copy-button {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 8px;
-  border: 0;
-  border-left: 1px solid var(--desktop-ui-border);
-  background: color-mix(in srgb, var(--surface) 84%, var(--ink-muted) 4%);
-  color: var(--ink);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+.sidebar-chat-share-record-actions {
+  display: flex;
+  width: auto;
+  min-width: 116px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.sidebar-chat-share-copy-button:hover,
-.sidebar-chat-share-copy-button:focus-visible {
-  background: color-mix(in srgb, var(--desktop-ui-primary) 10%, var(--surface));
+.sidebar-chat-share-record-action {
+  display: grid;
+  min-width: 56px;
+  justify-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.sidebar-chat-share-record-action > span:last-child {
+  white-space: nowrap;
+}
+
+.sidebar-chat-share-record-action-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-primary) 30%, var(--desktop-ui-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--desktop-ui-primary) 7%, transparent);
+  color: color-mix(in srgb, var(--desktop-ui-primary) 72%, var(--ink));
+  font-size: 18px;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.sidebar-chat-share-record-action:hover:not(:disabled) .sidebar-chat-share-record-action-icon,
+.sidebar-chat-share-record-action:focus-visible .sidebar-chat-share-record-action-icon {
+  border-color: color-mix(in srgb, var(--desktop-ui-primary) 56%, var(--desktop-ui-border));
+  background: color-mix(in srgb, var(--desktop-ui-primary) 14%, transparent);
   color: var(--desktop-ui-primary);
+  transform: translateY(-1px);
+}
+
+.sidebar-chat-share-record-action:focus-visible {
+  border-radius: 10px;
   outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--desktop-ui-primary-rgb), 0.14);
 }
 
 .sidebar-chat-share-copy-button[data-copied="true"] {
   color: var(--desktop-ui-primary);
 }
 
-.sidebar-chat-share-record-actions {
+.sidebar-chat-share-revoke-button {
+  color: color-mix(in srgb, var(--danger) 78%, var(--ink-muted));
+}
+
+.sidebar-chat-share-revoke-button .sidebar-chat-share-record-action-icon {
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--desktop-ui-border));
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
+  color: color-mix(in srgb, var(--danger) 74%, var(--ink-muted));
+}
+
+.sidebar-chat-share-revoke-button:hover:not(:disabled) .sidebar-chat-share-record-action-icon,
+.sidebar-chat-share-revoke-button:focus-visible .sidebar-chat-share-record-action-icon {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--desktop-ui-border));
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.sidebar-chat-share-revoke-confirmation {
   display: grid;
-  width: 200px;
+  width: 190px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.sidebar-chat-share-record-actions button {
+.sidebar-chat-share-revoke-confirmation button {
   min-width: 0;
-  height: 40px;
+  height: 42px;
   padding: 0 10px;
-  border-radius: var(--control-radius);
+  border-radius: 9px;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
-}
-
-.sidebar-chat-share-revoke-button {
-  grid-column: 1 / -1;
-  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--desktop-ui-border));
-  background: transparent;
-  color: var(--danger);
-}
-
-.sidebar-chat-share-revoke-button:hover:not(:disabled),
-.sidebar-chat-share-revoke-button:focus-visible {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-  outline: none;
 }
 
 .sidebar-chat-share-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
   margin: 0;
 }
 
 .sidebar-chat-share-meta div {
   min-width: 0;
+  padding: 0 14px;
+}
+
+.sidebar-chat-share-meta div:first-child {
+  padding-left: 0;
+}
+
+.sidebar-chat-share-meta div + div {
+  border-left: 1px solid color-mix(in srgb, var(--desktop-ui-border) 72%, transparent);
 }
 
 .sidebar-chat-share-meta dt,
 .sidebar-chat-share-meta dd {
   margin: 0;
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .sidebar-chat-share-meta dt {
@@ -3237,7 +3399,7 @@ div.sidebar-chats-group-popover {
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .sidebar-chat-share-text-button:disabled {
@@ -3246,35 +3408,92 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-chat-share-notice {
+  margin-top: -4px;
   padding: 8px 10px;
-  border-radius: var(--control-radius);
+  border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--ink);
   font-size: 12px;
 }
 
-.sidebar-chat-share-dialog-actions {
-  justify-content: flex-end;
+.sidebar-chat-share-current > .sidebar-chat-share-hint {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--desktop-ui-border) 64%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
-.sidebar-chat-share-hint,
-.sidebar-chat-share-expiry {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
+.sidebar-chat-share-dialog .sidebar-chat-share-dialog-actions {
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+
+.sidebar-chat-share-dialog > .sidebar-agent-dialog-error,
+.sidebar-chat-share-history > .sidebar-agent-dialog-error {
+  margin-top: 0;
+}
+
+.sidebar-chat-share-dialog-actions .sidebar-chat-share-done-button {
+  min-width: 74px;
+  border-color: color-mix(in srgb, var(--desktop-ui-border) 88%, transparent);
+  background: color-mix(in srgb, var(--control-select-bg) 76%, transparent);
+  color: var(--ink);
+}
+
+.sidebar-chat-share-dialog-actions .sidebar-chat-share-done-button:hover,
+.sidebar-chat-share-dialog-actions .sidebar-chat-share-done-button:focus-visible {
+  border-color: color-mix(in srgb, var(--desktop-ui-primary) 34%, var(--desktop-ui-border));
+  background: color-mix(in srgb, var(--desktop-ui-primary) 8%, var(--control-select-bg));
+  outline: none;
 }
 
 @media (max-width: 640px) {
+  .sidebar-chat-share-dialog {
+    gap: 14px;
+    padding: 16px;
+  }
+
   .sidebar-chat-share-create-row,
-  .sidebar-chat-share-record-main,
-  .sidebar-chat-share-meta {
+  .sidebar-chat-share-record-main {
+    align-items: stretch;
     grid-template-columns: 1fr;
   }
 
-  .sidebar-chat-share-create-row .sidebar-agent-primary-button,
-  .sidebar-chat-share-record-actions {
+  .sidebar-chat-share-create-row {
+    flex-direction: column;
+  }
+
+  .sidebar-chat-share-create-row .sidebar-agent-dialog-field,
+  .sidebar-chat-share-create-row .sidebar-agent-dialog-field select,
+  .sidebar-chat-share-create-row .sidebar-chat-share-create-button,
+  .sidebar-chat-share-record-actions,
+  .sidebar-chat-share-revoke-confirmation {
     width: 100%;
+  }
+
+  .sidebar-chat-share-create-row .sidebar-agent-dialog-field {
+    justify-content: space-between;
+  }
+
+  .sidebar-chat-share-record-actions {
+    justify-content: flex-start;
+  }
+
+  .sidebar-chat-share-meta {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .sidebar-chat-share-meta div {
+    padding: 0;
+  }
+
+  .sidebar-chat-share-meta div + div {
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--desktop-ui-border) 64%, transparent);
+    border-left: 0;
   }
 }
 

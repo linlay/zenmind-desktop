@@ -1,5 +1,11 @@
 import { createPortal } from "react-dom";
-import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
+import {
+  CheckOutlined,
+  CopyOutlined,
+  DisconnectOutlined,
+  LinkOutlined,
+  MessageOutlined,
+} from "@ant-design/icons";
 import {
   ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS,
   type AssistantConversationShareExpiration,
@@ -51,9 +57,13 @@ export function ConversationShareDialog({
   if (!state || typeof document === "undefined") {
     return null;
   }
+  const showListError =
+    state.listStatus === "error" &&
+    Boolean(state.listError) &&
+    state.listError !== state.actionError;
   return createPortal(
     <div
-      className="sidebar-agent-dialog-layer"
+      className="sidebar-agent-dialog-layer sidebar-chat-share-dialog-layer"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -64,10 +74,16 @@ export function ConversationShareDialog({
         aria-labelledby="sidebar-chat-share-dialog-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="sidebar-agent-dialog-head">
-          <strong id="sidebar-chat-share-dialog-title">
-            {t("sidebar.chat.shareTitle")}
-          </strong>
+        <div className="sidebar-agent-dialog-head sidebar-chat-share-dialog-head">
+          <div className="sidebar-chat-share-heading">
+            <strong id="sidebar-chat-share-dialog-title">
+              <MessageOutlined aria-hidden="true" />
+              <span>{t("sidebar.chat.shareTitle")}</span>
+            </strong>
+            <p className="sidebar-chat-share-name">
+              {t("sidebar.chat.shareConversation", { name: state.chatName })}
+            </p>
+          </div>
           <button
             type="button"
             className="sidebar-agent-dialog-close"
@@ -78,47 +94,57 @@ export function ConversationShareDialog({
           </button>
         </div>
 
-        <p className="sidebar-chat-share-name">{state.chatName}</p>
         <p className="sidebar-agent-dialog-message">
           {t("sidebar.chat.shareConfirm")}
         </p>
 
-        <div className="sidebar-chat-share-create-row">
-          <label className="sidebar-agent-dialog-field">
-            <span>{t("sidebar.chat.shareExpiration")}</span>
-            <select
-              value={state.expiration}
+        <section
+          className="sidebar-chat-share-section sidebar-chat-share-settings"
+          aria-labelledby="sidebar-chat-share-settings-title"
+        >
+          <h3 id="sidebar-chat-share-settings-title">
+            {t("sidebar.chat.shareSettings")}
+          </h3>
+          <div className="sidebar-chat-share-create-row">
+            <label className="sidebar-agent-dialog-field">
+              <span>{t("sidebar.chat.shareExpiration")}</span>
+              <select
+                value={state.expiration}
+                disabled={state.creating}
+                onChange={(event) =>
+                  onExpirationChange(
+                    event.target.value as AssistantConversationShareExpiration,
+                  )
+                }
+              >
+                {ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.map((expiration) => (
+                  <option key={expiration} value={expiration}>
+                    {t(EXPIRATION_LABEL_KEYS[expiration])}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="sidebar-agent-primary-button sidebar-chat-share-create-button"
               disabled={state.creating}
-              onChange={(event) =>
-                onExpirationChange(
-                  event.target.value as AssistantConversationShareExpiration,
-                )
-              }
+              onClick={onCreate}
             >
-              {ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.map((expiration) => (
-                <option key={expiration} value={expiration}>
-                  {t(EXPIRATION_LABEL_KEYS[expiration])}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="sidebar-agent-primary-button"
-            disabled={state.creating}
-            onClick={onCreate}
-          >
-            {state.creating
-              ? t("sidebar.common.processing")
-              : t("sidebar.chat.shareCreate")}
-          </button>
-        </div>
+              <LinkOutlined aria-hidden="true" />
+              <span>
+                {state.creating
+                  ? t("sidebar.common.processing")
+                  : t("sidebar.chat.shareCreate")}
+              </span>
+            </button>
+          </div>
 
-        {state.expiration === "once" ? (
-          <p className="sidebar-chat-share-once-warning" role="note">
-            {t("sidebar.chat.shareExpiration.onceWarning")}
-          </p>
-        ) : null}
+          {state.expiration === "once" ? (
+            <p className="sidebar-chat-share-once-warning" role="note">
+              {t("sidebar.chat.shareExpiration.onceWarning")}
+            </p>
+          ) : null}
+        </section>
 
         {state.notice ? (
           <div className="sidebar-chat-share-notice" role="status">
@@ -131,67 +157,75 @@ export function ConversationShareDialog({
           </div>
         ) : null}
 
-        <div className="sidebar-chat-share-history-head">
-          <strong>{t("sidebar.chat.shareHistory")}</strong>
-          {state.listStatus === "error" ? (
-            <button
-              type="button"
-              className="sidebar-chat-share-text-button"
-              onClick={onRetryList}
-            >
-              {t("common.retry")}
-            </button>
-          ) : null}
-        </div>
-
-        <div
-          className="sidebar-chat-share-history"
-          aria-busy={state.listStatus === "loading"}
+        <section
+          className="sidebar-chat-share-section sidebar-chat-share-current"
+          aria-labelledby="sidebar-chat-share-history-title"
         >
-          {state.listStatus === "loading" && state.records.length === 0 ? (
-            <p className="sidebar-chat-share-empty">
-              {t("sidebar.chat.shareHistoryLoading")}
-            </p>
-          ) : null}
-          {state.listStatus === "error" ? (
-            <div className="sidebar-agent-dialog-error" role="alert">
-              {state.listError}
-            </div>
-          ) : null}
-          {state.listStatus === "ready" && state.records.length === 0 ? (
-            <p className="sidebar-chat-share-empty">
-              {t("sidebar.chat.shareHistoryEmpty")}
-            </p>
-          ) : null}
-          {state.records.map((record) => (
-            <ConversationShareRecordItem
-              key={record.shareId}
-              record={record}
-              copied={state.copiedShareId === record.shareId}
-              confirmingRevoke={
-                state.confirmingRevokeShareId === record.shareId
-              }
-              revoking={state.revokingShareId === record.shareId}
-              anotherRevokePending={Boolean(
-                state.revokingShareId &&
-                state.revokingShareId !== record.shareId,
-              )}
-              t={t}
-              onCopy={() => onCopy(record.shareId)}
-              onRequestRevoke={() => onRequestRevoke(record.shareId)}
-              onCancelRevoke={onCancelRevoke}
-              onConfirmRevoke={onConfirmRevoke}
-            />
-          ))}
-        </div>
+          <div className="sidebar-chat-share-history-head">
+            <h3 id="sidebar-chat-share-history-title">
+              {t("sidebar.chat.shareHistory")}
+            </h3>
+            {state.listStatus === "error" ? (
+              <button
+                type="button"
+                className="sidebar-chat-share-text-button"
+                onClick={onRetryList}
+              >
+                {t("common.retry")}
+              </button>
+            ) : null}
+          </div>
 
-        <p className="sidebar-chat-share-hint">
-          {t("sidebar.chat.sharePublicHint")}
-        </p>
+          <div
+            className="sidebar-chat-share-history"
+            aria-busy={state.listStatus === "loading"}
+          >
+            {state.listStatus === "loading" && state.records.length === 0 ? (
+              <p className="sidebar-chat-share-empty">
+                {t("sidebar.chat.shareHistoryLoading")}
+              </p>
+            ) : null}
+            {showListError ? (
+              <div className="sidebar-agent-dialog-error" role="alert">
+                {state.listError}
+              </div>
+            ) : null}
+            {state.listStatus === "ready" && state.records.length === 0 ? (
+              <p className="sidebar-chat-share-empty">
+                {t("sidebar.chat.shareHistoryEmpty")}
+              </p>
+            ) : null}
+            {state.records.map((record) => (
+              <ConversationShareRecordItem
+                key={record.shareId}
+                record={record}
+                copied={state.copiedShareId === record.shareId}
+                confirmingRevoke={
+                  state.confirmingRevokeShareId === record.shareId
+                }
+                revoking={state.revokingShareId === record.shareId}
+                anotherRevokePending={Boolean(
+                  state.revokingShareId &&
+                  state.revokingShareId !== record.shareId,
+                )}
+                t={t}
+                onCopy={() => onCopy(record.shareId)}
+                onRequestRevoke={() => onRequestRevoke(record.shareId)}
+                onCancelRevoke={onCancelRevoke}
+                onConfirmRevoke={onConfirmRevoke}
+              />
+            ))}
+          </div>
+
+          <p className="sidebar-chat-share-hint">
+            {t("sidebar.chat.sharePublicHint")}
+          </p>
+        </section>
+
         <div className="sidebar-agent-dialog-actions sidebar-chat-share-dialog-actions">
           <button
             type="button"
-            className="sidebar-agent-primary-button"
+            className="sidebar-agent-secondary-button sidebar-chat-share-done-button"
             onClick={onClose}
           >
             {t("common.done")}
@@ -232,6 +266,10 @@ function ConversationShareRecordItem({
     <article className="sidebar-chat-share-record">
       <div className="sidebar-chat-share-record-main">
         <div className="sidebar-chat-share-link-control">
+          <LinkOutlined
+            className="sidebar-chat-share-link-icon"
+            aria-hidden="true"
+          />
           <input
             aria-label={t("sidebar.chat.shareLink")}
             title={record.url}
@@ -239,22 +277,6 @@ function ConversationShareRecordItem({
             readOnly
             onFocus={(event) => event.currentTarget.select()}
           />
-          <button
-            type="button"
-            className="sidebar-chat-share-copy-button"
-            data-copied={copied || undefined}
-            aria-live="polite"
-            onClick={onCopy}
-          >
-            {copied ? (
-              <CheckOutlined aria-hidden="true" />
-            ) : (
-              <CopyOutlined aria-hidden="true" />
-            )}
-            <span>
-              {copied ? t("sidebar.chat.shareCopied") : t("common.copy")}
-            </span>
-          </button>
         </div>
         <div
           className="sidebar-chat-share-record-actions"
@@ -264,7 +286,7 @@ function ConversationShareRecordItem({
           }
         >
           {confirmingRevoke ? (
-            <>
+            <div className="sidebar-chat-share-revoke-confirmation">
               <button
                 type="button"
                 className="sidebar-agent-secondary-button"
@@ -279,18 +301,43 @@ function ConversationShareRecordItem({
               >
                 {t("sidebar.chat.shareRevoke")}
               </button>
-            </>
+            </div>
           ) : (
-            <button
-              type="button"
-              className="sidebar-chat-share-revoke-button"
-              disabled={revoking || anotherRevokePending}
-              onClick={onRequestRevoke}
-            >
-              {revoking
-                ? t("sidebar.common.processing")
-                : t("sidebar.chat.shareRevoke")}
-            </button>
+            <>
+              <button
+                type="button"
+                className="sidebar-chat-share-record-action sidebar-chat-share-copy-button"
+                data-copied={copied || undefined}
+                aria-live="polite"
+                onClick={onCopy}
+              >
+                <span className="sidebar-chat-share-record-action-icon">
+                  {copied ? (
+                    <CheckOutlined aria-hidden="true" />
+                  ) : (
+                    <CopyOutlined aria-hidden="true" />
+                  )}
+                </span>
+                <span>
+                  {copied ? t("sidebar.chat.shareCopied") : t("common.copy")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="sidebar-chat-share-record-action sidebar-chat-share-revoke-button"
+                disabled={revoking || anotherRevokePending}
+                onClick={onRequestRevoke}
+              >
+                <span className="sidebar-chat-share-record-action-icon">
+                  <DisconnectOutlined aria-hidden="true" />
+                </span>
+                <span>
+                  {revoking
+                    ? t("sidebar.common.processing")
+                    : t("sidebar.chat.shareRevokeAction")}
+                </span>
+              </button>
+            </>
           )}
         </div>
       </div>
