@@ -1,3 +1,4 @@
+import { createSurfacePerformanceTrace, retainHostPerformanceMonitor } from "../services/performanceDiagnostics";
 import {
   createElement,
   useCallback,
@@ -836,6 +837,8 @@ export function ServiceWebviewSurface({
     active: boolean;
     webContentsId: number | undefined;
   } | null>(null);
+  const [tracePerformance] = useState(createSurfacePerformanceTrace);
+  useEffect(retainHostPerformanceMonitor, []);
   const diagnosticBucketsRef = useRef(new Map<string, {
     count: number;
     timerId: number;
@@ -1774,6 +1777,15 @@ export function ServiceWebviewSurface({
     stage: string,
     details: Record<string, unknown> = {},
   ) {
+    if (window.electronAPI.diagnostics?.performanceEnabled) {
+      tracePerformance(stage, {
+        hostRoute: desiredDesktopRoute,
+        surfaceId, active: active !== false,
+        webContentsId: readWebviewContentsId(webviewRef.current),
+        documentGeneration: webviewDocumentGenerationRef.current,
+        ...details,
+      });
+    }
     const level = resolveServiceWebviewDiagnosticLevel(stage, details);
     if (level === "debug" && !import.meta.env.DEV) {
       return;
@@ -1782,7 +1794,9 @@ export function ServiceWebviewSurface({
     let currentUrl = "";
     let webContentsId: number | undefined;
     try {
-      currentUrl = targetWebview?.getURL() ?? "";
+      // Diagnostics must not synchronously round-trip to Main just to decorate a log.
+      // Business identity checks below continue to read the live guest when required.
+      currentUrl = webviewCurrentUrl;
       webContentsId = readWebviewContentsId(targetWebview);
     } catch {
       // The guest can disappear during route changes or app shutdown.

@@ -8,6 +8,7 @@ import { DesktopBackground } from "../appearance/DesktopBackground";
 import { isThemePreference, type ThemePreference } from "../appearance/model";
 import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
+import { beginChatPerformanceNavigation } from "../services/performanceDiagnostics";
 import {
   isCapabilityNavigationRoute,
   resolveSidebarMode,
@@ -3161,6 +3162,8 @@ export function AppShell() {
       return false;
     }
 
+    beginChatPerformanceNavigation(targetPath);
+
     setSidebarNavigationHistory((current) => ({
       back: [...current.back, currentRoute],
       forward: []
@@ -4415,6 +4418,7 @@ export function AppShell() {
         className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
+        location.pathname === EMPTY_WEB_SURFACE_ROUTE ? "has-empty-web-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
         usesWebappSurface ? "has-webapp-surface" : "",

@@ -159,18 +159,18 @@ test('document navigation revokes negotiation while in-place business navigation
 });
 
 
-test('wallpaper eligibility includes five management pages without expanding Chat or child surfaces', () => {
+test('wallpaper eligibility includes six management pages without expanding Chat or child surfaces', () => {
   const service = createServiceSurfaceIdentity('agent-webclient');
   const eligible = (surface, route, serviceId = 'agent-webclient') =>
     isWebclientHostBackgroundSurface(serviceId, surface, route);
   assert.equal(eligible(createSurfaceIdentity('main-chat'), '/agent/demo'), true);
-  for (const path of ['/agents', '/skills', '/connectors', '/registries', '/archives']) {
+  for (const path of ['/agents', '/skills', '/connectors', '/registries', '/archives', '/automations']) {
     for (const suffix of ['', '?tab=models', '/demo', '/demo?tab=source#editor']) {
       assert.equal(eligible(service, path + suffix), true, path + suffix);
     }
     assert.equal(eligible(service, path + '-other'), false);
   }
-  for (const route of [undefined, '', '/', '/agent/demo', '/automations', '/memory', '/project/demo']) {
+  for (const route of [undefined, '', '/', '/agent/demo', '/memory', '/project/demo']) {
     assert.equal(eligible(service, route), false, String(route));
   }
   for (const role of ['copilot-dock', 'kanban-chat', 'project', 'skill', 'agent', 'workpanel-web']) {

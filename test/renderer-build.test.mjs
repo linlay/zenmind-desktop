@@ -7079,13 +7079,26 @@ test("assistant share dialog keeps link and record actions stable", () => {
 
   assert.match(shareDialog, /sidebar-chat-share-link-control/u);
   assert.match(shareDialog, /sidebar-chat-share-record-actions/u);
-  assert.match(shareDialog, /CheckOutlined[\s\S]*?CopyOutlined/u);
-  assert.doesNotMatch(shareDialog, /sidebar-chat-share-revoke-confirm/u);
+  assert.match(shareDialog, /MessageOutlined[\s\S]*?LinkOutlined/u);
+  assert.match(shareDialog, /CheckOutlined[\s\S]*?CopyOutlined[\s\S]*?DisconnectOutlined/u);
+  assert.match(shareDialog, /sidebar-chat-share-section sidebar-chat-share-settings/u);
+  assert.match(shareDialog, /sidebar-chat-share-section sidebar-chat-share-current/u);
+  assert.match(shareDialog, /sidebar-chat-share-revoke-confirmation/u);
   assert.match(shareDialogHook, /COPY_FEEDBACK_DURATION_MS = 1_600/u);
   assert.match(shareDialogHook, /window\.clearTimeout\(copyFeedbackTimerRef\.current\)/u);
-  assert.match(navigationCSS, /sidebar-chat-share-create-row \.sidebar-agent-primary-button[\s\S]*?height: 40px/u);
-  assert.match(navigationCSS, /sidebar-chat-share-link-control[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 84px/u);
-  assert.match(navigationCSS, /sidebar-chat-share-record-main[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 200px/u);
+  assert.match(navigationCSS, /sidebar-chat-share-create-row \.sidebar-chat-share-create-button[\s\S]*?height: 38px/u);
+  assert.match(navigationCSS, /sidebar-chat-share-link-control[\s\S]*?grid-template-columns: 34px minmax\(0, 1fr\)/u);
+  assert.match(navigationCSS, /sidebar-chat-share-record-main[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto/u);
+  assert.match(navigationCSS, /sidebar-chat-share-record-action-icon[\s\S]*?width: 42px;[\s\S]*?height: 42px/u);
+  assert.match(navigationCSS, /sidebar-chat-share-history[\s\S]*?overflow-y: auto;[\s\S]*?margin: -2px -2px 0;[\s\S]*?padding: 2px 2px 0;/u);
+  assert.match(navigationCSS, /sidebar-chat-share-meta div \+ div[\s\S]*?border-left/u);
+});
+
+test("assistant share dialog renders identical action and list errors once", () => {
+  const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
+
+  assert.match(shareDialog, /const showListError =[\s\S]*?state\.listStatus === "error"[\s\S]*?state\.listError !== state\.actionError/u);
+  assert.match(shareDialog, /\{showListError \? \([\s\S]*?\{state\.listError\}/u);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {

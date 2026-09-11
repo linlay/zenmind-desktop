@@ -303,6 +303,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleOpen_3(facto
             });
         }
         const { baseUrl, token } = await factoryContext.availability();
+        if (session.closed || session.sender.isDestroyed()) return;
         await factoryContext.options.realtimeBroker.ensureConnected(baseUrl, token, connectionLane);
     }
     catch (error) {

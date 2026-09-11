@@ -89,7 +89,7 @@ export type StartupPreparationOptions = {
   ) => void;
 };
 
-export type ServiceStateReadMode = "strict" | "responsive";
+export type ServiceStateReadMode = "strict" | "responsive" | "bridge";
 
 export type ServiceStateReadOptions = {
   integrationPorts?: ServicesIntegrationPorts;

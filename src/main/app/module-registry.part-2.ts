@@ -96,7 +96,7 @@ import { registerChatWorkPanelTabContextMenuIpcHandlers } from "../modules/work-
 import {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   registerChatWorkPanelLocalFileIpcHandlers,
-  resolveWorkPanelLocalFileFromWorkspace,
+  resolveWorkPanelDocumentFromWorkspace,
 } from "../modules/work-panel";
 import {
   registerChatWorkPanelDocumentHtmlIpcHandlers,
@@ -315,7 +315,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     isTrustedAgentWebclientSession: options.isTrustedAgentWebclientSession,
     normalizeWorkPanelOpenLocalResourceRequest: normalizeChatWorkPanelOpenLocalResourceRequest,
     realtimeBroker: assistantBridgeRuntime.realtimeBroker,
-    getServiceState,
+    getServiceState: (targetApp, serviceId) => services.getServiceState(targetApp, serviceId, { mode: "bridge" }),
     issueAccessToken: options.issueAgentAccessToken,
     syncCanonicalChat: (ownerWebContentsId, input) =>
       canonicalChatSync.request(ownerWebContentsId, input),
@@ -395,7 +395,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
             : null;
           const workspaceDir = agent?.workspaceDir?.trim() || "";
           const resolved = workspaceDir && workspaceDir !== "@chat" && agent?.workspaceDirExists !== false
-            ? resolveWorkPanelLocalFileFromWorkspace(workspaceDir, source.path, options.platform)
+            ? resolveWorkPanelDocumentFromWorkspace(workspaceDir, source.path, options.platform)
             : null;
           if (!resolved?.ok) {
             return { ok: false, error: { code: "target_unavailable", message: resolved?.message || "Agent workspace is unavailable" } };

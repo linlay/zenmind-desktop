@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { readBridgeManagedPid } from "./bridge-pid-reader";
 import path from "node:path";
 import type { App } from "electron";
 import type {
@@ -271,6 +272,7 @@ export async function getServiceState(
   const installDir = getInstallDir(app, service);
   const layout = getServiceLayout(app, service);
   const responsiveRead = shouldUseResponsiveServiceState(options);
+  const bridgeRead = options.mode === "bridge";
   const installed = fs.existsSync(installDir);
   const pidFilePath = resolveRuntimePath(layout, service.runtime.pidRelativePath);
   const pidFilePaths = getManagedPidFilePaths(service, layout);
@@ -293,7 +295,9 @@ export async function getServiceState(
   const port = hostManaged ? getDesktopManagedCommandPort(service) : parsePort(service, env);
   const webUrl = installed && !hostManaged ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
   const pidFromFile = installed
-    ? readManagedPidFile(pidFilePaths, installDir, {
+    ? bridgeRead
+      ? await readBridgeManagedPid(pidFilePaths, installDir)
+      : readManagedPidFile(pidFilePaths, installDir, {
         isProcessRunningImpl: isProcessRunning,
         verifyInstallDir: !responsiveRead
       })
@@ -304,7 +308,7 @@ export async function getServiceState(
   const initializationSucceeded =
     initializationState?.status === "succeeded" && initializationState.version === service.version;
   const prerequisites =
-    installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !responsiveRead
+    installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !responsiveRead && !bridgeRead
       ? await collectPrerequisites(app, service, layout, {
         cacheContainerEngineProbe: options.cacheContainerEngineProbe
       })
@@ -321,11 +325,11 @@ export async function getServiceState(
     : installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
   let conflictingPortPid: number | null = null;
 
-  if (!hostManaged && running && pidFromFile) {
+  if (!hostManaged && running && pidFromFile && !bridgeRead) {
     writeManagedPidFiles(pidFilePaths, pidFromFile);
   }
 
-  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0 && !responsiveRead) {
+  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0 && !responsiveRead && !bridgeRead) {
     if (hostManaged) {
       conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== process.pid) ?? null;
     } else {
@@ -370,7 +374,7 @@ export async function getServiceState(
     }
   }
 
-  if (!installed && service.kind === "builtin") {
+  if (!installed && service.kind === "builtin" && !bridgeRead) {
     try {
       ensureBundleAssetHealthy(app, service);
     } catch (error) {

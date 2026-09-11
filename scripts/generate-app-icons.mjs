@@ -280,7 +280,7 @@ export async function renderAppIconToPng(svg, size) {
   return canvas.toBuffer("image/png");
 }
 
-export async function renderWindowsAppIconToPng(svg, size) {
+async function renderWindowsAppIcon(svg, size) {
   const canvas = createCanvas(size, size);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, size, size);
@@ -304,7 +304,11 @@ export async function renderWindowsAppIconToPng(svg, size) {
   const foregroundSize = WINDOWS_APP_ICON_FOREGROUND_SIZE * outputScale;
   const foregroundOffset = (size - foregroundSize) / 2;
   context.drawImage(foregroundImage, foregroundOffset, foregroundOffset, foregroundSize, foregroundSize);
+  return canvas;
+}
 
+export async function renderWindowsAppIconToPng(svg, size) {
+  const canvas = await renderWindowsAppIcon(svg, size);
   return canvas.toBuffer("image/png");
 }
 
@@ -357,17 +361,45 @@ function writeFileIfChanged(filePath, content) {
   return true;
 }
 
-function createIco(pngEntries) {
+function createIcoDib(size, rgba) {
+  const xorByteLength = size * size * 4;
+  const andMaskRowByteLength = Math.ceil(size / 32) * 4;
+  const dib = Buffer.alloc(40 + xorByteLength + andMaskRowByteLength * size);
+
+  dib.writeUInt32LE(40, 0);
+  dib.writeInt32LE(size, 4);
+  dib.writeInt32LE(size * 2, 8);
+  dib.writeUInt16LE(1, 12);
+  dib.writeUInt16LE(32, 14);
+  dib.writeUInt32LE(0, 16);
+  dib.writeUInt32LE(xorByteLength, 20);
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const sourceOffset = (y * size + x) * 4;
+      const targetOffset = 40 + ((size - y - 1) * size + x) * 4;
+      dib[targetOffset] = rgba[sourceOffset + 2];
+      dib[targetOffset + 1] = rgba[sourceOffset + 1];
+      dib[targetOffset + 2] = rgba[sourceOffset];
+      dib[targetOffset + 3] = rgba[sourceOffset + 3];
+    }
+  }
+
+  return dib;
+}
+
+function createIco(bitmapEntries) {
+  const dibEntries = bitmapEntries.map(({ size, rgba }) => ({ size, dib: createIcoDib(size, rgba) }));
   const headerSize = 6;
-  const directorySize = 16 * pngEntries.length;
+  const directorySize = 16 * dibEntries.length;
   let imageOffset = headerSize + directorySize;
   const header = Buffer.alloc(headerSize + directorySize);
 
   header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
-  header.writeUInt16LE(pngEntries.length, 4);
+  header.writeUInt16LE(dibEntries.length, 4);
 
-  pngEntries.forEach(({ size, png }, index) => {
+  dibEntries.forEach(({ size, dib }, index) => {
     const directoryOffset = headerSize + index * 16;
     header.writeUInt8(size >= 256 ? 0 : size, directoryOffset);
     header.writeUInt8(size >= 256 ? 0 : size, directoryOffset + 1);
@@ -375,12 +407,12 @@ function createIco(pngEntries) {
     header.writeUInt8(0, directoryOffset + 3);
     header.writeUInt16LE(1, directoryOffset + 4);
     header.writeUInt16LE(32, directoryOffset + 6);
-    header.writeUInt32LE(png.length, directoryOffset + 8);
+    header.writeUInt32LE(dib.length, directoryOffset + 8);
     header.writeUInt32LE(imageOffset, directoryOffset + 12);
-    imageOffset += png.length;
+    imageOffset += dib.length;
   });
 
-  return Buffer.concat([header, ...pngEntries.map(({ png }) => png)]);
+  return Buffer.concat([header, ...dibEntries.map(({ dib }) => dib)]);
 }
 
 function readIcoEntries(ico, label) {
@@ -400,7 +432,7 @@ function readIcoEntries(ico, label) {
     if (byteLength === 0 || imageOffset + byteLength > ico.length) {
       throw new Error(`${label} has an invalid ${width}x${height} image entry`);
     }
-    return { width, height, png: ico.subarray(imageOffset, imageOffset + byteLength) };
+    return { width, height, dib: ico.subarray(imageOffset, imageOffset + byteLength) };
   });
 }
 
@@ -453,6 +485,29 @@ async function assertEmbeddedPng(png, expectedSize, label) {
   await assertNonTransparentPng(label, png);
 }
 
+function assertEmbeddedIcoDib(dib, expectedSize, label) {
+  const xorByteLength = expectedSize * expectedSize * 4;
+  const andMaskRowByteLength = Math.ceil(expectedSize / 32) * 4;
+  const expectedByteLength = 40 + xorByteLength + andMaskRowByteLength * expectedSize;
+  if (
+    dib.length !== expectedByteLength
+    || dib.readUInt32LE(0) !== 40
+    || dib.readInt32LE(4) !== expectedSize
+    || dib.readInt32LE(8) !== expectedSize * 2
+    || dib.readUInt16LE(12) !== 1
+    || dib.readUInt16LE(14) !== 32
+    || dib.readUInt32LE(16) !== 0
+  ) {
+    throw new Error(`${label} is not a ${expectedSize}px 32-bit DIB icon frame`);
+  }
+  for (let offset = 40 + 3; offset < 40 + xorByteLength; offset += 4) {
+    if (dib[offset] !== 0) {
+      return;
+    }
+  }
+  throw new Error(`${label} must contain non-transparent pixels`);
+}
+
 export async function verifyGeneratedAppIcons({
   rootDir = projectRoot,
   brandId = resolveBrandId(),
@@ -499,7 +554,7 @@ export async function verifyGeneratedAppIcons({
     throw new Error(`${activeBrand.id} icon.ico sizes must be ${icoSizes.join(", ")}; got ${actualIcoSizes.join(", ")}`);
   }
   for (const entry of icoEntries) {
-    await assertEmbeddedPng(entry.png, entry.width, `${activeBrand.id} ICO ${entry.width}px entry`);
+    assertEmbeddedIcoDib(entry.dib, entry.width, `${activeBrand.id} ICO ${entry.width}px entry`);
   }
 
   if (platform === "darwin") {
@@ -625,12 +680,13 @@ export async function generateAppIcons({
     warnSkippedMacIcns(platform);
   }
 
-  const icoPngEntries = [];
+  const icoBitmapEntries = [];
   for (const size of icoSizes) {
-    const png = await renderWindowsAppIconToPng(appIconSvg, size);
-    icoPngEntries.push({ size, png });
+    const canvas = await renderWindowsAppIcon(appIconSvg, size);
+    const rgba = canvas.getContext("2d").getImageData(0, 0, size, size).data;
+    icoBitmapEntries.push({ size, rgba });
   }
-  writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoPngEntries));
+  writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoBitmapEntries));
 
   const trayPng = await renderSvgToPng(trayIconSvg, 256);
   writeFileIfChanged(path.join(brandRuntimeAssetsDir, "tray-icon.png"), trayPng);

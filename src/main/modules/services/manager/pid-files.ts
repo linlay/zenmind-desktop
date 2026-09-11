@@ -48,6 +48,10 @@ function ensureDir(targetPath: string) {
 }
 
 export function writePidFile(pidFilePath: string, pid: number) {
+  // Status polling must not rewrite an unchanged identity or invalidate bridge observations.
+  try {
+    if (fs.readFileSync(pidFilePath, "utf8").trim() === String(pid)) return;
+  } catch { /* Missing/unreadable files still go through the normal writer. */ }
   ensureDir(path.dirname(pidFilePath));
   fs.writeFileSync(pidFilePath, `${pid}\n`, "utf8");
 }

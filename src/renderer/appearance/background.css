@@ -31,6 +31,26 @@
   pointer-events: none;
 }
 
+/* The empty websites route has no guest reading surface. Keep one moderate
+   veil over the wallpaper on both platforms, without fading the copy. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-empty-web-surface > .app-content,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-empty-web-surface > .app-content {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-empty-web-surface > .app-content > .app-main,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-empty-web-surface > .app-content > .app-main {
+  background: color-mix(in srgb, var(--bg-base) 55%, transparent);
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-empty-web-surface > .app-content > .app-main > .placeholder-page,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-empty-web-surface > .app-content > .app-main > .placeholder-page {
+  background: transparent;
+  box-shadow: none;
+}
+
 /* Default skins leave the existing platform composition intact. On macOS,
    an image skin paints its own base above native vibrancy. Windows paints the
    same image above its opaque window base, below its renderer title bar. */
