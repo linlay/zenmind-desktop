@@ -2416,7 +2416,7 @@ div.sidebar-chats-group-popover {
 
   .assistant-worker-chat-row:hover .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text,
   .assistant-worker-chat-item:focus-visible .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text {
-    animation: sidebar-chat-title-scroll var(--chat-title-duration) linear infinite alternate;
+    animation: sidebar-chat-title-scroll var(--chat-title-duration) linear 1 forwards;
   }
 }
 
