@@ -43,6 +43,8 @@ Main Chat 卡片、Markdown 链接、Project 文件、Artifact 和 Reference 只
 
 WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
 
+Workspace Markdown 链接可向文档入口提交绝对路径。Main 按该 Agent 的权威 workspace 和当前平台路径规则转换为相对路径，再验证文件 realpath 未越界；原生 registry 只接收相对身份。此规则不扩展 Desktop Action 的本地文件入口，后者仍只接受 workspace 相对路径。
+
 文档 Surface 不显示 Desktop 通用浏览器地址栏：文件名只出现在 Tab，完整路径进入 Tab tooltip/右键菜单；Markdown、文本和代码内容区最多保留一行自身工具栏。Markdown 打开或切换文档时始终优先预览，不提供分屏；用户只在需要修改内容时主动切换到源码。保存前必须选择方式：Workspace File 默认且只能原位覆盖，Artifact 默认创建新产物且可明确选择覆盖，Reference 只能创建新产物。重新加载权威 revision 收纳在文档工具栏的更多菜单中，有未保存修改时必须先确认。普通 Web、WebApp 与 loopback 实时网站继续使用浏览器刷新/地址栏。
 
 ## Desktop 原生安全边界
