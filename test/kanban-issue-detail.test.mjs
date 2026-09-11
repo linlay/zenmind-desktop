@@ -9,7 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(projectRoot, ...parts), "ut
 
 test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite cache", () => {
   const contracts = read("src", "shared", "contracts", "kanban.ts");
-  const store = read("src", "main", "modules", "kanban", "local-store.ts");
+  const store = [1, 2, 3, 4, 5].map((part) => read("src", "main", "modules", "kanban", `local-store.part-${part}.ts`)).join("\n");
   const issueContract = contracts.slice(
     contracts.indexOf("export interface KanbanIssue {"),
     contracts.indexOf("export interface KanbanIssueInput")
@@ -28,7 +28,7 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
   assert.match(store, /storeCloudDetailData\(db, currentUser, snapshot, revision\)/);
   assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 1/);
   assert.match(store, /COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '\[\]'/);
-  assert.match(store, /migrateDesktopKanbanIssueDetailJson\(db\)/);
+  assert.doesNotMatch(store, /migrateDesktopKanbanIssueDetailJson|ALTER TABLE/);
   assert.doesNotMatch(store, /(?:rawIssue|input|issue|row)\.(?:reviewerId|reviewRequired|reviewer_id|review_required)/);
 });
 
@@ -37,7 +37,7 @@ test("Kanban detail opens independently from create and preserves the cloud read
   const detail = read("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
   const styles = read("src", "renderer", "styles", "kanban.css");
   const rendererIndex = read("index.html");
-  const brandConfig = read("scripts", "lib", "brand-config.mjs");
+  const brandConfig = read("scripts", "lib", "brand-artifacts.mjs");
   const packageManifest = JSON.parse(read("package.json"));
   assert.match(page, /setModal\(\{ mode: "create" \}\)/);
   assert.match(page, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,180}setDetailIssueId\(issue\.id\)/);

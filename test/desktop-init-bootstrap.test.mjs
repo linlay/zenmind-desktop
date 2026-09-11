@@ -157,7 +157,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     },
     kanban: {
       enabled: false,
-      serverUrl: "https://kanban.example.test"
+      cloud: { serverUrl: "https://kanban.example.test" }
     },
     pet: {
       enabled: false,
@@ -279,8 +279,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(kanban.enabled, false);
   assert.deepEqual(kanban.cloud, {
     serverUrl: "https://kanban.example.test",
-    remoteControlEnabled: false,
-    deviceAlias: ""
+    remoteControlEnabled: false
   });
   assert.equal("bootstrapAssistant" in profile, false);
   assert.equal(pet.enabled, false);
@@ -1177,7 +1176,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
     },
     kanban: {
       enabled: false,
-      serverUrl: "https://kanban.example.test"
+      cloud: { serverUrl: "https://kanban.example.test" }
     },
     pet: {
       enabled: false,
@@ -1639,4 +1638,27 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
   assert.equal(calls.some(([name]) => name === "platform-import"), false);
   assert.equal(calls.some(([name]) => name === "import"), false);
   assert.equal(resumedStartupCount, 1);
+});
+
+
+test("Kanban bootstrap ignores retired top-level config, token and device alias without changing the profile", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-init-current-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    kanban: {
+      enabled: false,
+      serverUrl: "https://retired.example.test",
+      cloud: { token: "retired-token", deviceAlias: "Retired Kanban alias" }
+    }
+  });
+  assert.equal(applyDesktopInitBootstrap(app, "darwin").applied, true);
+  const configRoot = path.join(desktopRoot(homePath), "config", "desktop");
+  const kanban = readJson(path.join(configRoot, "kanban.json"));
+  assert.deepEqual(kanban.cloud, { serverUrl: "", remoteControlEnabled: false });
+  const profilePath = path.join(configRoot, "profile.json");
+  if (fs.existsSync(profilePath)) {
+    assert.notEqual(readJson(profilePath).general?.deviceName, "Retired Kanban alias");
+  }
 });

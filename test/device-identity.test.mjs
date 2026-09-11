@@ -251,7 +251,7 @@ test("device identity info exposes the storage path and normalized identity fiel
   }
 });
 
-test("desktop device info uses global name, system fallback, and legacy Kanban alias fallback", () => {
+test("desktop device info uses global name and system fallback without importing Kanban aliases", () => {
   assert.equal(buildDesktopDeviceName({ configuredDeviceName: "Office Mini", hostname: "host", username: "lin" }), "Office Mini");
   assert.equal(buildDesktopDeviceName({ configuredDeviceName: "Office Mini.local", hostname: "host.local", username: "lin" }), "Office Mini.local");
   assert.equal(buildDesktopDeviceName({ hostname: "host", username: "lin", deviceId: INSTALL_ID }), "host · lin");
@@ -318,7 +318,7 @@ test("desktop device info uses global name, system fallback, and legacy Kanban a
         deviceAlias: "旧看板别名"
       }
     });
-    assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(legacy.app)).general.deviceName, "旧看板别名");
+    assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(legacy.app)).general.deviceName, "");
   } finally {
     legacy.cleanup();
   }

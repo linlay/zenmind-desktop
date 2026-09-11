@@ -3731,8 +3731,7 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(contracts, /export type KanbanWirePriority = "urgent" \| "high" \| "medium" \| "low"/);
-  assert.match(contracts, /urgent: "P0"[\s\S]{0,100}high: "P1"[\s\S]{0,100}medium: "P2"[\s\S]{0,100}low: "P3"/);
+  assert.doesNotMatch(contracts, /KanbanWirePriority|LEGACY_KANBAN_PRIORITY_ALIASES/);
   assert.match(contracts, /projectVersion\?: string \| null[\s\S]*dueDate\?: string \| null[\s\S]*dueRisk\?: string \| null/);
   assert.match(contracts, /componentKeys: string\[\][\s\S]*originalEstimate: number[\s\S]*remainingEstimate: number[\s\S]*timeSpent: number/);
   assert.match(contracts, /priority: KanbanPriority \| null[\s\S]*severity: KanbanSeverity \| null/);
@@ -3863,7 +3862,7 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(kanbanPage, /type KanbanAssigneeFilter = "others" \| "self" \| "unassigned"/);
   assert.match(kanbanPage, /const DEFAULT_KANBAN_ASSIGNEE_FILTERS = \["self"\]/);
   assert.match(kanbanPage, /KANBAN_FILTER_PREFERENCES_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.filter-preferences\.v1`/);
-  assert.match(kanbanPage, /LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.assignee-filters`/);
+  assert.doesNotMatch(kanbanPage, /LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY|readLegacyKanbanAssigneeFilters/);
   assert.match(kanbanPage, /function readKanbanFilterPreferences\(\): KanbanFilterPreferences/);
   assert.match(kanbanPage, /window\.localStorage\.getItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY\)/);
   assert.match(kanbanPage, /const \[initialFilterPreferences\] = useState\(readKanbanFilterPreferences\)/);

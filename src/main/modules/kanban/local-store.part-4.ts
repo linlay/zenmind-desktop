@@ -12,7 +12,7 @@ import type {
   KanbanStatus
 } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
-import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanCloudMutationOutboxItem, KanbanCloudSnapshot, KanbanManualRunReceipt, KanbanManualRunReceiptState, KanbanRunEventOutboxItem, PROJECT_ID, WORKFLOW_ID, createCloudCacheIssueId, getDesktopKanbanDatabasePath, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseCloudIssue, parseJsonRecord, readLegacyDueDate, selectCloudDetailData, storeCloudDetailData, trimText } from "./local-store.part-1";
+import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanCloudMutationOutboxItem, KanbanCloudSnapshot, KanbanManualRunReceipt, KanbanManualRunReceiptState, KanbanRunEventOutboxItem, PROJECT_ID, WORKFLOW_ID, createCloudCacheIssueId, getDesktopKanbanDatabasePath, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseCloudIssue, parseJsonRecord, selectCloudDetailData, storeCloudDetailData, trimText } from "./local-store.part-1";
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
 import { buildLocalIssue, insertOrReplaceIssue, insertOrReplaceProject, insertOrReplaceProjectBinding, parseCloudProject, parseCloudProjectBinding, readDesktopKanbanRevision, selectIssues, selectProjectBindings, selectProjects, writeDesktopKanbanRevision, writeDesktopKanbanSyncCursorInDb } from "./local-store.part-3";
 
@@ -28,8 +28,8 @@ export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInp
     nextIssue.title = title;
   }
   if (input.projectId !== undefined) nextIssue.projectId = nullableTrimmedText(input.projectId) ?? PROJECT_ID;
-  if (input.projectVersion !== undefined || input.version !== undefined) {
-    nextIssue.projectVersion = nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version);
+  if (input.projectVersion !== undefined) {
+    nextIssue.projectVersion = nullableTrimmedText(input.projectVersion);
   }
   if (input.dueDate !== undefined) nextIssue.dueDate = normalizeDueDate(input.dueDate) ?? null;
   if (input.resolution !== undefined) nextIssue.resolution = nullableTrimmedText(input.resolution);
@@ -322,10 +322,8 @@ export function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, curren
     projectId: trimText(rawIssue.projectId) || PROJECT_ID,
     projectPath: trimText(rawIssue.projectPath) || undefined,
     projectName: trimText(rawIssue.projectName) || undefined,
-    projectVersion: nullableTrimmedText(rawIssue.projectVersion !== undefined ? rawIssue.projectVersion : rawIssue.version),
-    dueDate: rawIssue.dueDate !== undefined
-      ? canonicalDueDate ?? null
-      : readLegacyDueDate(rawIssue.dueTime, rawIssue.dueAt) ?? null,
+    projectVersion: nullableTrimmedText(rawIssue.projectVersion),
+    dueDate: canonicalDueDate ?? null,
     dueRisk: nullableTrimmedText(rawIssue.dueRisk),
     resolution: nullableTrimmedText(rawIssue.resolution),
     securityLevelKey: nullableTrimmedText(rawIssue.securityLevelKey),

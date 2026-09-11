@@ -505,8 +505,7 @@ const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
 
 const defaultKanbanCloudConfig: KanbanCloudConfig = {
   serverUrl: "",
-  remoteControlEnabled: false,
-  deviceAlias: ""
+  remoteControlEnabled: false
 };
 
 const defaultGeneralSettings: DesktopGeneralSettings = {

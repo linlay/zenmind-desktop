@@ -334,7 +334,7 @@ export function applyDesktopInitVersionUpgrade(
       applySsoDefaults(app, defaultsValue.sso, platform);
     }
     if (prepared.present("kanban")) {
-      applyKanbanDefaults(app, defaultsValue.kanban, platform, false);
+      applyKanbanDefaults(app, defaultsValue.kanban, platform);
     }
     if (prepared.present("market")) {
       applyMarketDefaults(app, defaultsValue.market, platform);

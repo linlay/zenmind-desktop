@@ -335,25 +335,8 @@ export function normalizeDueDate(value: unknown): string | null | undefined {
     : undefined;
 }
 
-export function readLegacyDueDate(dueTime: unknown, dueAt: unknown): string | null | undefined {
-  if (dueTime === null || dueAt === null) return null;
-  if (typeof dueTime === "string") {
-    const datePrefix = /^(\d{4}-\d{2}-\d{2})T/u.exec(dueTime.trim())?.[1];
-    if (datePrefix) return normalizeDueDate(datePrefix);
-  }
-  if (typeof dueAt === "number" && Number.isSafeInteger(dueAt) && dueAt >= 0) {
-    const date = new Date(dueAt);
-    if (!Number.isNaN(date.getTime())) {
-      const pad = (part: number) => String(part).padStart(2, "0");
-      return `${String(date.getFullYear()).padStart(4, "0")}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-    }
-  }
-  return undefined;
-}
-
 export function readStoredDueDate(detail: Record<string, unknown>): KanbanIssue["dueDate"] {
-  const canonical = normalizeDueDate(detail.dueDate);
-  return canonical !== undefined ? canonical : readLegacyDueDate(detail.dueTime, detail.dueAt);
+  return normalizeDueDate(detail.dueDate);
 }
 
 export function buildIssueDetailJson(issue: KanbanIssue) {

@@ -251,7 +251,6 @@ const DEFAULT_KANBAN_AUTOMATION_PLAN: KanbanAutomationPlan = "daily";
 const DEFAULT_KANBAN_AUTOMATION_TIME = "09:00";
 const DEFAULT_KANBAN_AUTOMATION_CRON = "0 9 * * *";
 const KANBAN_FILTER_PREFERENCES_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.filter-preferences.v1`;
-const LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.assignee-filters`;
 const DEFAULT_KANBAN_ASSIGNEE_FILTERS = ["self"] satisfies KanbanAssigneeFilter[];
 
 const KANBAN_AUTOMATION_PLANS = [
@@ -372,14 +371,6 @@ function normalizeStoredFilterValues<T extends string>(value: unknown, allowedVa
   return normalizeStoredStringArray(value).filter((item): item is T => allowed.has(item as T));
 }
 
-function readLegacyKanbanAssigneeFilters(): KanbanAssigneeFilter[] | null {
-  const parsed = parseStoredJson(window.localStorage.getItem(LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY));
-  if (!Array.isArray(parsed)) {
-    return null;
-  }
-  return normalizeStoredFilterValues(parsed, KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => option.value));
-}
-
 function readKanbanFilterPreferences(): KanbanFilterPreferences {
   const defaults = createDefaultKanbanFilterPreferences();
   if (typeof window === "undefined") {
@@ -390,12 +381,8 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
     const stored = storedValue && typeof storedValue === "object" && !Array.isArray(storedValue)
       ? storedValue as Record<string, unknown>
       : null;
-    const legacyAssigneeFilters = readLegacyKanbanAssigneeFilters();
     if (!stored) {
-      return {
-        ...defaults,
-        assigneeFilters: legacyAssigneeFilters ?? defaults.assigneeFilters
-      };
+      return defaults;
     }
     const automationFilter = KANBAN_AUTOMATION_FILTER_OPTIONS.some((option) => option.value === stored.automationFilter)
       ? stored.automationFilter as KanbanAutomationFilter
@@ -411,7 +398,7 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
       automationFilter,
       assigneeFilters: Array.isArray(stored.assigneeFilters)
         ? normalizeStoredFilterValues(stored.assigneeFilters, KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => option.value))
-        : legacyAssigneeFilters ?? defaults.assigneeFilters
+        : defaults.assigneeFilters
     };
   } catch {
     return defaults;

@@ -210,25 +210,15 @@ export function normalizeKanbanDefaults(value: unknown) {
   if (!isRecord(value)) {
     return null;
   }
-  const cloudDefaults = isRecord(value.cloud) ? value.cloud : value;
+  const cloudDefaults = isRecord(value.cloud) ? value.cloud : {};
   const enabled = typeof value.enabled === "boolean" ? value.enabled : undefined;
   const cloud: {
     serverUrl?: string;
-    token?: string;
     remoteControlEnabled?: boolean;
-    deviceAlias?: string;
   } = {};
   const serverUrl = readText(cloudDefaults.serverUrl);
-  const token = readText(cloudDefaults.token);
-  const deviceAlias = readText(cloudDefaults.deviceAlias);
   if (serverUrl && (enabled === true || isValidHttpUrl(serverUrl))) {
     cloud.serverUrl = serverUrl;
-  }
-  if (token) {
-    cloud.token = token;
-  }
-  if (deviceAlias) {
-    cloud.deviceAlias = deviceAlias;
   }
   if (typeof cloudDefaults.remoteControlEnabled === "boolean") {
     cloud.remoteControlEnabled = cloudDefaults.remoteControlEnabled;
@@ -358,8 +348,7 @@ export function applyProfileDefaults(
 export function applyKanbanDefaults(
   app: App,
   kanbanDefaults: unknown,
-  platform: NodeJS.Platform = process.platform,
-  updateProfileDeviceAlias = true
+  platform: NodeJS.Platform = process.platform
 ): Exclude<BootstrapSectionResult, "failed"> {
   const settings = normalizeKanbanDefaults(kanbanDefaults);
   if (!settings) {
@@ -370,18 +359,6 @@ export function applyKanbanDefaults(
     throw new Error("Kanban server URL is invalid.");
   }
   saveKanbanSettings(app, settings, platform);
-  const deviceAlias = readText(settings.cloud?.deviceAlias);
-  if (deviceAlias && updateProfileDeviceAlias) {
-    const profileRoot = getDesktopConfigRoot(app, platform);
-    const current = readDesktopProfileFromRoot(profileRoot);
-    if (!current.general.deviceName) {
-      updateDesktopProfileInRoot(profileRoot, {
-        general: {
-          deviceName: deviceAlias
-        }
-      });
-    }
-  }
   return "applied";
 }
 

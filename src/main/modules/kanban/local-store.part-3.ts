@@ -629,7 +629,7 @@ export function buildLocalIssue(
     remoteIssueId: null,
     boardId: BOARD_ID,
     projectId: nullableTrimmedText(input.projectId) ?? PROJECT_ID,
-    projectVersion: nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version),
+    projectVersion: nullableTrimmedText(input.projectVersion),
     dueDate: normalizeDueDate(input.dueDate) ?? null,
     dueRisk: null,
     resolution: nullableTrimmedText(input.resolution),

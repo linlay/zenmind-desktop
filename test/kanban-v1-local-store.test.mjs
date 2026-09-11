@@ -79,67 +79,6 @@ test("local issue IDs use the short local-prefixed Server base36 format", (t) =>
   assert.match(first.issue.id, /^local-[0-9A-Z]+$/);
 });
 
-test("legacy private sync mode rows migrate to the local-cloud SQLite contract", (t) => {
-  const app = createTempApp(t);
-  const created = createLocalDesktopKanbanIssue(app, currentUser, { title: "Legacy local issue" });
-  assert.equal(created.ok, true);
-
-  const databasePath = getDesktopKanbanDatabasePath(app);
-  const legacyDb = new DatabaseSync(databasePath);
-  const projectSchema = legacyDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project'").get().sql;
-  const issueSyncSchema = legacyDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'desktop_issue_sync'").get().sql;
-  const legacyProjectSchema = projectSchema
-    .replace(/^CREATE TABLE project/u, "CREATE TABLE project_private_legacy")
-    .replace("DEFAULT 'local' CHECK (SYNC_MODE_ IN ('local','cloud'))", "DEFAULT 'private' CHECK (SYNC_MODE_ IN ('private','cloud'))");
-  const legacyIssueSyncSchema = issueSyncSchema
-    .replace(/^CREATE TABLE desktop_issue_sync/u, "CREATE TABLE desktop_issue_sync_private_legacy")
-    .replace("SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('local','cloud'))", "SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('private','cloud'))");
-  legacyDb.exec("PRAGMA foreign_keys = OFF");
-  legacyDb.exec("PRAGMA ignore_check_constraints = ON");
-  legacyDb.exec("BEGIN IMMEDIATE");
-  try {
-    legacyDb.exec("UPDATE project SET SYNC_MODE_ = 'private' WHERE SYNC_MODE_ = 'local'");
-    legacyDb.exec("UPDATE desktop_issue_sync SET SYNC_MODE_ = 'private' WHERE SYNC_MODE_ = 'local'");
-    legacyDb.exec(legacyProjectSchema);
-    legacyDb.exec("INSERT INTO project_private_legacy SELECT * FROM project");
-    legacyDb.exec(legacyIssueSyncSchema);
-    legacyDb.exec("INSERT INTO desktop_issue_sync_private_legacy SELECT * FROM desktop_issue_sync");
-    legacyDb.exec("DROP TABLE desktop_issue_sync");
-    legacyDb.exec("ALTER TABLE desktop_issue_sync_private_legacy RENAME TO desktop_issue_sync");
-    legacyDb.exec("DROP TABLE project");
-    legacyDb.exec("ALTER TABLE project_private_legacy RENAME TO project");
-    legacyDb.exec("COMMIT");
-  } catch (error) {
-    legacyDb.exec("ROLLBACK");
-    throw error;
-  } finally {
-    legacyDb.exec("PRAGMA ignore_check_constraints = OFF");
-    legacyDb.exec("PRAGMA foreign_keys = ON");
-    legacyDb.close();
-  }
-
-  const migrated = listDesktopKanbanIssues(app, currentUser);
-  assert.equal(migrated.issues.find((issue) => issue.id === created.issue.id)?.syncMode, "local");
-
-  const migratedDb = new DatabaseSync(databasePath);
-  const migratedProjectSchema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project'").get().sql;
-  const migratedIssueSyncSchema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'desktop_issue_sync'").get().sql;
-  assert.equal(
-    migratedDb.prepare("SELECT VALUE_ AS value FROM board_meta WHERE BOARD_ID_ = 'default' AND KEY_ = 'schema_version'").get().value,
-    "2"
-  );
-  assert.match(migratedProjectSchema, /SYNC_MODE_ IN \('local','cloud'\)/u);
-  assert.match(migratedIssueSyncSchema, /SYNC_MODE_ IN \('local','cloud'\)/u);
-  assert.doesNotMatch(migratedProjectSchema, /SYNC_MODE_ IN \('private','cloud'\)/u);
-  assert.doesNotMatch(migratedIssueSyncSchema, /SYNC_MODE_ IN \('private','cloud'\)/u);
-  assert.deepEqual(migratedDb.prepare("PRAGMA foreign_key_check").all(), []);
-  assert.throws(
-    () => migratedDb.prepare("UPDATE desktop_issue_sync SET SYNC_MODE_ = 'private' WHERE LOCAL_ISSUE_ID_ = ?").run(created.issue.id),
-    /constraint failed/iu
-  );
-  migratedDb.close();
-});
-
 test("moving a completed local issue back to todo keeps its chat ready for a new run", (t) => {
   const app = createTempApp(t);
   const created = createLocalDesktopKanbanIssue(app, currentUser, {
@@ -237,7 +176,7 @@ test("Desktop cloud mutation, run event, and manual run receipts persist idempot
   });
 });
 
-test("priority uses P0-P3 and only normalizes legacy values at the cache boundary", (t) => {
+test("priority uses P0-P3 and ignores retired priority aliases", (t) => {
   const app = createTempApp(t);
   applyDesktopKanbanCloudSnapshot(app, currentUser, {
     scope: "project_set",
@@ -256,17 +195,17 @@ test("priority uses P0-P3 and only normalizes legacy values at the cache boundar
     revision: 41
   }), 41);
   assert.equal(legacy.ok, true);
-  assert.equal(legacy.issue.priority, "P1");
+  assert.equal(legacy.issue.priority, null);
   assert.equal(
     listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.priority,
-    "P1"
+    null
   );
 
   const urgent = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
     priority: "urgent",
     revision: 42
   }), 42);
-  assert.equal(urgent.issue.priority, "P0");
+  assert.equal(urgent.issue.priority, null);
 
   const local = createLocalDesktopKanbanIssue(app, currentUser, { title: "Optional priority" });
   assert.equal(local.ok, true);
@@ -416,9 +355,9 @@ test("project catalogs and new issue fields survive snapshots, incremental upser
   const local = createLocalDesktopKanbanIssue(app, currentUser, {
     title: "Local versioned task",
     projectId: "cloud-project-1",
-    version: "1.0.0",
+    projectVersion: "1.0.0",
     dueDate: "2026-08-01",
-    priority: "urgent",
+    priority: "P0",
     severity: "critical",
     resolution: "planned",
     securityLevelKey: "private",
@@ -478,83 +417,6 @@ test("project catalogs and new issue fields survive snapshots, incremental upser
 
   const invalidDate = createLocalDesktopKanbanIssue(app, currentUser, { title: "Invalid date", dueDate: "2026-02-30" });
   assert.equal(invalidDate.ok, false);
-});
-
-test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
-  const app = createTempApp(t);
-  const databasePath = getDesktopKanbanDatabasePath(app);
-  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-  const legacyDb = new DatabaseSync(databasePath);
-  legacyDb.exec(`
-    CREATE TABLE issue (
-      ID_ TEXT PRIMARY KEY,
-      REMOTE_ISSUE_ID_ TEXT,
-      BOARD_ID_ TEXT NOT NULL DEFAULT 'default',
-      PROJECT_ID_ TEXT NOT NULL DEFAULT 'default',
-      WORKFLOW_ID_ TEXT NOT NULL DEFAULT 'workflow-standard-requirement',
-      TYPE_ID_ TEXT,
-      STAGE_ID_ TEXT,
-      STAGE_NAME_ TEXT,
-      STATUS_ID_ TEXT,
-      STATUS_NAME_ TEXT,
-      TITLE_ TEXT NOT NULL,
-      DESCRIPTION_ TEXT NOT NULL DEFAULT '',
-      STATUS_ TEXT NOT NULL,
-      PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('high','medium','low')),
-      SEVERITY_ TEXT NOT NULL DEFAULT 'medium',
-      POSITION_ REAL NOT NULL,
-      ASSIGNEE_AGENT_KEY_ TEXT,
-      ASSIGNEE_ID_ TEXT,
-      WORKER_TYPE_ TEXT,
-      WORKER_ID_ TEXT,
-      WORKER_AGENT_ TEXT,
-      REVIEWER_ID_ TEXT,
-      REVIEW_REQUIRED_ INTEGER NOT NULL DEFAULT 0,
-      ACTIVE_REVIEW_ID_ TEXT,
-      ACTIVE_RUN_ID_ TEXT,
-      CHAT_ID_ TEXT,
-      RUN_ID_ TEXT,
-      RUN_STATE_ TEXT,
-      DISPATCH_STATE_ TEXT,
-      DISPATCH_DEVICE_ID_ TEXT,
-      DISPATCH_COMMAND_ID_ TEXT,
-      DISPATCH_UPDATED_AT_ TEXT,
-      AUTOMATION_ID_ TEXT,
-      AUTOMATION_ENABLED_ INTEGER NOT NULL DEFAULT 0,
-      AUTOMATION_CRON_ TEXT,
-      AUTOMATION_MESSAGE_ TEXT,
-      AUTOMATION_TIMEZONE_ TEXT,
-      ATTACHMENT_CHAT_ID_ TEXT,
-      ATTACHMENTS_JSON_ TEXT NOT NULL DEFAULT '[]',
-      DETAIL_JSON_ TEXT NOT NULL DEFAULT '{}',
-      REVISION_ INTEGER NOT NULL DEFAULT 0,
-      CREATED_AT_ TEXT NOT NULL,
-      UPDATED_AT_ TEXT NOT NULL,
-      DELETED_AT_ TEXT
-    );
-    INSERT INTO issue (
-      ID_, TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, CREATED_AT_, UPDATED_AT_
-    ) VALUES (
-      'legacy-issue', 'Legacy priority', '', 'backlog', 'high', 'medium', 1,
-      '2026-07-11T00:00:00.000Z', '2026-07-11T00:00:00.000Z'
-    );
-    UPDATE issue SET DETAIL_JSON_ = '{"version":"1.4.0","dueTime":"2026-07-18T18:00:00+08:00"}' WHERE ID_ = 'legacy-issue';
-  `);
-  legacyDb.close();
-
-  listDesktopKanbanIssues(app, currentUser);
-
-  const migratedDb = new DatabaseSync(databasePath);
-  assert.equal(migratedDb.prepare("SELECT PRIORITY_ AS priority FROM issue WHERE ID_ = 'legacy-issue'").get().priority, "P1");
-  const schema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'issue'").get().sql;
-  assert.match(schema, /PRIORITY_ IN \('P0','P1','P2','P3'\)/);
-  assert.doesNotMatch(schema, /PRIORITY_ IN \('high','medium','low'\)/);
-  const migratedDetail = JSON.parse(migratedDb.prepare("SELECT DETAIL_JSON_ AS detail FROM issue WHERE ID_ = 'legacy-issue'").get().detail);
-  assert.equal(migratedDetail.projectVersion, "1.4.0");
-  assert.equal(migratedDetail.dueDate, "2026-07-18");
-  assert.equal("version" in migratedDetail, false);
-  assert.equal("dueTime" in migratedDetail, false);
-  migratedDb.close();
 });
 
 test("project-set replacement removes cloud cache and preserves local issues", (t) => {
@@ -765,7 +627,7 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
   assert.equal(replaced.cloudDetails.recentEvents.length, 0);
 });
 
-test("dueDate remains a timezone-free calendar date and legacy dueTime is read compatibly", (t) => {
+test("dueDate remains a timezone-free calendar date and ignores retired dueTime", (t) => {
   const app = createTempApp(t);
   const issueWithDueDate = cloudIssue({
     dueDate: "2026-07-12"
@@ -790,10 +652,10 @@ test("dueDate remains a timezone-free calendar date and legacy dueTime is read c
   }), 51);
 
   assert.equal(valid.ok, true);
-  assert.equal(valid.issue.dueDate, "2026-07-13");
+  assert.equal(valid.issue.dueDate, null);
   assert.equal(
     listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueDate,
-    "2026-07-13"
+    null
   );
 
   const cleared = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
@@ -825,4 +687,44 @@ test("dueDate remains a timezone-free calendar date and legacy dueTime is read c
     listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueDate,
     null
   );
+});
+
+
+test("fresh schema is complete, enforces current values and never rewrites retired detail fields", (t) => {
+  const app = createTempApp(t);
+  const created = createLocalDesktopKanbanIssue(app, currentUser, { title: "Current schema" });
+  assert.equal(created.ok, true);
+  const databasePath = getDesktopKanbanDatabasePath(app);
+  const db = new DatabaseSync(databasePath);
+  const detail = JSON.stringify({ version: "retired", dueTime: "2026-07-18T18:00:00+08:00", dueAt: 1784376000000 });
+  try {
+    for (const [table, columns] of Object.entries({
+      issue: ["STAGE_NAME_", "STATUS_NAME_", "DETAIL_JSON_", "DISPATCH_STATE_", "DISPATCH_DEVICE_ID_", "DISPATCH_COMMAND_ID_", "DISPATCH_UPDATED_AT_"],
+      project: ["REVISION_", "VERSIONS_JSON_", "COMPONENTS_JSON_", "SYNC_MODE_"],
+      kanban_command_receipt: ["TERMINAL_REPORTED_AT_", "ISSUE_RUN_ID_", "COMMAND_TYPE_"],
+      kanban_run_event_outbox: ["ISSUE_RUN_ID_", "EXTERNAL_RUN_ID_"],
+      kanban_manual_run_receipt: ["ISSUE_RUN_ID_"]
+    })) {
+      const actual = db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name);
+      for (const column of columns) assert.ok(actual.includes(column), `${table}.${column}`);
+    }
+    assert.throws(() => db.prepare("UPDATE issue SET PRIORITY_ = 'high' WHERE ID_ = ?").run(created.issue.id), /CHECK constraint/);
+    assert.throws(() => db.prepare("UPDATE project SET SYNC_MODE_ = 'private'").run(), /CHECK constraint/);
+    assert.throws(() => db.prepare("UPDATE desktop_issue_sync SET SYNC_MODE_ = 'private'").run(), /CHECK constraint/);
+    db.prepare("UPDATE issue SET DETAIL_JSON_ = ? WHERE ID_ = ?").run(detail, created.issue.id);
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    db.close();
+  }
+  const issue = listDesktopKanbanIssues(app, currentUser).issues.find((item) => item.id === created.issue.id);
+  assert.equal(issue.projectVersion, null);
+  assert.equal(issue.dueDate, undefined);
+  const reopened = new DatabaseSync(databasePath);
+  try {
+    assert.equal(reopened.prepare("SELECT DETAIL_JSON_ AS detail FROM issue WHERE ID_ = ?").get(created.issue.id).detail, detail);
+  } finally {
+    reopened.close();
+  }
+  const updated = updateDesktopKanbanIssue(app, currentUser, created.issue.id, { version: "ignored" });
+  assert.equal(updated.issue.projectVersion, null);
 });

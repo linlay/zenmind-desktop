@@ -146,13 +146,10 @@ export type KanbanRuntimeOptions = {
 
 export type KanbanDesktopConfigFile = {
   schemaVersion?: unknown;
-  kanban?: unknown;
   enabled?: unknown;
   cloud?: unknown;
   serverUrl?: unknown;
-  token?: unknown;
   remoteControlEnabled?: unknown;
-  deviceAlias?: unknown;
 };
 
 export const KANBAN_CONFIG_FILE = "kanban.json";
@@ -239,15 +236,6 @@ export function getKanbanConfigPath(app: App, platform: NodeJS.Platform = proces
   return path.join(getDesktopConfigRoot(app, platform), KANBAN_CONFIG_FILE);
 }
 
-export function readKanbanOwnerConfig(input: unknown): KanbanDesktopConfigFile {
-  if (!isRecord(input)) {
-    return {};
-  }
-  return isRecord(input.kanban)
-    ? input.kanban as KanbanDesktopConfigFile
-    : input as KanbanDesktopConfigFile;
-}
-
 export function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
   const agentsRoot = path.join(resolveRuntimeRoot(app), "agents");
   let entries: fs.Dirent[];
@@ -290,64 +278,15 @@ export function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
 export function normalizeKanbanCloudConfig(input: KanbanDesktopConfigFile): KanbanCloudConfig {
   return {
     serverUrl: readText(input.serverUrl),
-    remoteControlEnabled: readBoolean(input.remoteControlEnabled),
-    deviceAlias: readText(input.deviceAlias)
+    remoteControlEnabled: readBoolean(input.remoteControlEnabled)
   };
 }
 
-export function hasKanbanCloudFields(input: KanbanDesktopConfigFile) {
-  return "serverUrl" in input ||
-    "token" in input ||
-    "remoteControlEnabled" in input ||
-    "deviceAlias" in input;
-}
-
-export function hasLegacyKanbanSelectedProjectId(input: unknown) {
-  const owner = readKanbanOwnerConfig(input);
-  const cloudInput = isRecord(owner.cloud)
-    ? owner.cloud
-    : isRecord(owner.kanban)
-      ? owner.kanban
-      : owner;
-  return isRecord(cloudInput) && "selectedProjectId" in cloudInput;
-}
-
-export function hasLegacyKanbanToken(input: unknown) {
-  const owner = readKanbanOwnerConfig(input);
-  const cloudInput = isRecord(owner.cloud)
-    ? owner.cloud
-    : isRecord(owner.kanban)
-      ? owner.kanban
-      : owner;
-  return isRecord(cloudInput) && "token" in cloudInput;
-}
-
-export function normalizeKanbanSettings(
-  input: KanbanDesktopConfigFile,
-  defaults: Partial<KanbanSettings> = {}
-): KanbanSettings {
-  const cloudInput = isRecord(input.cloud)
-    ? input.cloud as KanbanDesktopConfigFile
-    : isRecord(input.kanban)
-      ? input.kanban as KanbanDesktopConfigFile
-      : input;
-  const hasCloudInput = hasKanbanCloudFields(cloudInput);
-  const cloud = hasCloudInput
-    ? normalizeKanbanCloudConfig(cloudInput)
-    : defaults.cloud ?? normalizeKanbanCloudConfig({});
-  const enabled = typeof input.enabled === "boolean"
-    ? input.enabled
-    : typeof defaults.enabled === "boolean"
-      ? defaults.enabled
-      : isKanbanCloudConfigComplete(cloud);
+export function normalizeKanbanSettings(input: KanbanDesktopConfigFile): KanbanSettings {
   return {
-    enabled,
-    cloud
+    enabled: input.enabled === true,
+    cloud: normalizeKanbanCloudConfig(isRecord(input.cloud) ? input.cloud : {})
   };
-}
-
-export function isKanbanCloudConfigComplete(config: KanbanCloudConfig) {
-  return Boolean(config.serverUrl.trim());
 }
 
 export function readJsonConfigFile(filePath: string) {
@@ -362,12 +301,7 @@ export function readKanbanSettings(app: App, platform: NodeJS.Platform = process
   const configPath = getKanbanConfigPath(app, platform);
   if (fs.existsSync(configPath)) {
     const raw = readJsonConfigFile(configPath);
-    const parsed = readKanbanOwnerConfig(raw);
-    const settings = normalizeKanbanSettings(parsed);
-    if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled || hasLegacyKanbanSelectedProjectId(raw) || hasLegacyKanbanToken(raw)) {
-      writeKanbanSettings(app, settings, platform);
-    }
-    return settings;
+    return normalizeKanbanSettings(isRecord(raw) ? raw : {});
   }
 
   const settings = normalizeKanbanSettings({});
@@ -460,8 +394,7 @@ export function writeKanbanCloudConfig(app: App, input: KanbanDesktopConfigFile)
 
 export function getKanbanDeviceInfo(app: App) {
   const deviceInfo = getDesktopDeviceInfo(app);
-  const config = readKanbanCloudConfig(app);
-  const deviceName = readText(deviceInfo.configuredDeviceName) || readText(config.deviceAlias) || deviceInfo.deviceName;
+  const deviceName = deviceInfo.deviceName;
   return {
     deviceName,
     deviceAlias: deviceName,
@@ -545,7 +478,7 @@ export function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue 
     projectId: readText(record.projectId) || "default",
     projectPath: optionalText(record.projectPath),
     projectName: optionalText(record.projectName),
-    projectVersion: nullableText(record.projectVersion !== undefined ? record.projectVersion : record.version),
+    projectVersion: nullableText(record.projectVersion),
     dueDate: readDueDate(record.dueDate),
     dueRisk: nullableText(record.dueRisk),
     resolution: nullableText(record.resolution),
