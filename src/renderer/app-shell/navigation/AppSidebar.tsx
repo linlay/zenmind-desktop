@@ -78,6 +78,7 @@ import {
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 import { getAssistantWorkspaceName } from "./workspaceName";
+import { ChatTitle } from "./ChatTitle";
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
@@ -5036,7 +5037,7 @@ export function AppSidebar({
             aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
             aria-hidden={chat.isRead ? "true" : undefined}
           />
-          <span className="worker-chat-name">{previewText}</span>
+          <ChatTitle text={previewText} />
           {chat.pinned ? (
             <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
               {getChatHoverAgent(chat).displayName}

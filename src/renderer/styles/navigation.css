@@ -2399,6 +2399,28 @@ div.sidebar-chats-group-popover {
   line-height: 1.35;
 }
 
+.sidebar-chat-title-text {
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .assistant-worker-chat-row:hover .sidebar-chat-title[data-overflow="true"],
+  .assistant-worker-chat-item:focus-visible .sidebar-chat-title[data-overflow="true"] {
+    text-overflow: clip;
+  }
+
+  .assistant-worker-chat-row:hover .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text,
+  .assistant-worker-chat-item:focus-visible .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text {
+    animation: sidebar-chat-title-scroll var(--chat-title-duration) linear infinite alternate;
+  }
+}
+
+@keyframes sidebar-chat-title-scroll {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(var(--chat-title-offset)); }
+}
+
 .chat-awaiting-status {
   flex: none;
   font-size: 10px;
