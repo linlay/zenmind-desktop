@@ -19,22 +19,18 @@ import { t } from "../../../support/i18n/main-i18n";
 export const MAX_WEBSITE_ITEMS = 14;
 const WEBSITE_ADD_EXPECTED_INPUT = "object with url as a non-empty string, plus optional label and copilotAgentKey strings";
 
-function readLegacyAgentKey(value: unknown) {
-  return isRecord(value) ? value.agentKey : undefined;
-}
-
 function readInputCopilotAgentKey(value: unknown) {
   if (!isRecord(value)) {
     return undefined;
   }
-  return readString(value.copilotAgentKey) || readString(value.agentKey);
+  return readString(value.copilotAgentKey);
 }
 
 type StoredWebsiteItems = {
   items: WebsiteEntry[];
 };
 
-function normalizeItem(item: Partial<WebsiteEntry> & { agentKey?: unknown }): WebsiteEntry | null {
+function normalizeItem(item: Partial<WebsiteEntry>): WebsiteEntry | null {
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.url !== "string") {
     return null;
   }
@@ -78,10 +74,10 @@ function sanitizeItems(rawItems: Partial<WebsiteEntry>[]) {
 
 function parseItemsPayload(raw: unknown) {
   if (Array.isArray(raw)) {
-    return raw as Array<Partial<WebsiteEntry> & { agentKey?: unknown }>;
+    return raw as Array<Partial<WebsiteEntry>>;
   }
   if (isRecord(raw) && Array.isArray((raw as Partial<StoredWebsiteItems>).items)) {
-    return (raw as Partial<StoredWebsiteItems>).items as Array<Partial<WebsiteEntry> & { agentKey?: unknown }>;
+    return (raw as Partial<StoredWebsiteItems>).items as Array<Partial<WebsiteEntry>>;
   }
   return [];
 }
@@ -137,9 +133,6 @@ function validateWebsiteAddInput(input: unknown) {
   }
   if ("copilotAgentKey" in input && input.copilotAgentKey !== undefined && typeof input.copilotAgentKey !== "string") {
     issues.push(websiteInputIssue("copilotAgentKey", t("website.agentKeyInvalid"), "string", input.copilotAgentKey));
-  }
-  if ("agentKey" in input && input.agentKey !== undefined && typeof input.agentKey !== "string") {
-    issues.push(websiteInputIssue("agentKey", t("website.agentKeyInvalid"), "string", input.agentKey));
   }
   return issues;
 }
@@ -256,7 +249,7 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
       updated.label = normalizeWebsiteLabel(input.label ?? target.label, updated.url);
     }
 
-    if (typeof input.copilotAgentKey === "string" || typeof readLegacyAgentKey(input) === "string") {
+    if (typeof input.copilotAgentKey === "string") {
       const copilotAgentKey = normalizeAgentKey(readInputCopilotAgentKey(input));
       if (copilotAgentKey) {
         updated.copilotAgentKey = copilotAgentKey;

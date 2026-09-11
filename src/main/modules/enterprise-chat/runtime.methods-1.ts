@@ -76,9 +76,6 @@ export function EnterpriseChatRuntime_desktopActionState_4(self: EnterpriseChatR
         return undefined;
     }
     const ledger = self.getDesktopActionLedger();
-    if (ledger?.hasLegacyMessage(message.id)) {
-        return "handled" as const;
-    }
     const scope = self.currentDesktopActionScope();
     const entry = scope ? ledger?.find(scope, request.requestId) : undefined;
     if (entry?.phase === "executing") {

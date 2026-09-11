@@ -683,22 +683,15 @@ export function writeMarketSettingsIfAbsent(app: App, input: MarketSettingsInput
 }
 
 export function readInstalledRecords(app: App) {
-  const parsed = readJsonFile<{ records?: InstalledRecord[] } | InstalledRecord[]>(installedRecordsPath(app), []);
-  const records = Array.isArray(parsed) ? parsed : Array.isArray(parsed.records) ? parsed.records : [];
+  const parsed = readJsonFile<{ records?: InstalledRecord[] }>(installedRecordsPath(app), { records: [] });
+  const records = Array.isArray(parsed?.records) ? parsed.records : [];
   return records
-    .map((record) => {
+    .map((record): InstalledRecord | null => {
       const type = normalizeMarketItemType(record?.type);
       if (!record || typeof record.id !== "string" || !type) {
         return null;
       }
-      const normalized: InstalledRecord = { ...record, type };
-      delete (normalized as InstalledRecord & { agentKeys?: unknown }).agentKeys;
-      const legacyIncludedItemIds = (record as InstalledRecord & { includedItemIds?: unknown }).includedItemIds;
-      delete (normalized as InstalledRecord & { includedItemIds?: unknown }).includedItemIds;
-      normalized.skillPackage = record.skillPackage === true || (
-        Array.isArray(legacyIncludedItemIds) && legacyIncludedItemIds.length > 0
-      ) || undefined;
-      return normalized;
+      return { ...record, type, skillPackage: record.skillPackage === true || undefined };
     })
     .filter((record): record is InstalledRecord => Boolean(record));
 }

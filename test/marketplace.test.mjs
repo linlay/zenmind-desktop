@@ -832,40 +832,22 @@ test("MCP runtime status keeps installation state separate from Platform synchro
   assert.equal(legacyByItemId.mcpRuntimeMessage, "invalid yaml");
 });
 
-test("installed MCP records drop legacy Agent binding fields", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-mcp-records-"));
-  const app = createApp(root);
-  const stateRoot = getMarketplaceStateRoot(app);
-  fs.mkdirSync(stateRoot, { recursive: true });
-  fs.writeFileSync(path.join(stateRoot, "marketplace-installed.json"), JSON.stringify({
-    records: [
-      {
-        id: "bad-bindings",
-        type: "mcp",
-        version: "1.0.0",
-        source: "cloud",
-        agentKeys: { unexpected: true },
-        installedAt: "2026-08-23T00:00:00.000Z"
-      },
-      {
-        id: "mixed-bindings",
-        type: "mcp",
-        version: "1.0.0",
-        source: "cloud",
-        agentKeys: [" cutej ", "CUTEJ", "bad/key", 7],
-        installedAt: "2026-08-23T00:00:00.000Z"
-      }
-    ]
-  }), "utf8");
+test("installed records round-trip the current envelope and skill package marker", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-records-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  const records = __testInternals.readInstalledRecords(app);
-  const badBindings = records.find((record) => record.id === "bad-bindings");
-  const mixedBindings = records.find((record) => record.id === "mixed-bindings");
-  assert.ok(badBindings);
-  assert.ok(mixedBindings);
-  assert.equal(badBindings.agentKeys, undefined);
-  assert.equal(mixedBindings.agentKeys, undefined);
+  const app = createApp(root);
+  const { writeInstalledRecords } = require("../dist-electron/main/modules/marketplace/common.js");
+  assert.deepEqual(readInstalledRecords(app), []);
+  const records = [
+    { id: "connector", type: "mcp", version: "1.0.0", source: "cloud", resourceKey: "connector", installedAt: "2026-08-23T00:00:00.000Z" },
+    { id: "office", type: "skill", version: "1.0.0", source: "cloud", skillPackage: true, installedAt: "2026-08-23T00:00:00.000Z" }
+  ];
+  writeInstalledRecords(app, records);
+  const filePath = path.join(getMarketplaceStateRoot(app), "marketplace-installed.json");
+  assert.deepEqual(JSON.parse(fs.readFileSync(filePath, "utf8")), { records });
+  assert.deepEqual(JSON.parse(JSON.stringify(readInstalledRecords(app))), records);
+  fs.writeFileSync(filePath, JSON.stringify({ records: [null, { id: 7 }, ...records] }));
+  assert.equal(readInstalledRecords(app).length, 2);
 });
 
 test("MCP registry writes reject a directory that escapes the runtime root", (t) => {
