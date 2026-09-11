@@ -1,3 +1,4 @@
+import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
   useEffect,
@@ -78,6 +79,7 @@ import {
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 import { getAssistantWorkspaceName } from "./workspaceName";
+import { ChatTitle } from "./ChatTitle";
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
@@ -1006,7 +1008,9 @@ type AppSidebarProps = {
   assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
   marketEnabled?: boolean;
+  helpEnabled?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
+  onSidebarNavOrderChange?: (order: SidebarNavOrderItemKey[]) => void;
   websiteNavOrder?: SidebarNavOrderItemKey[];
   pinnedWebEntryKeys?: string[];
   webPinningAvailable?: boolean;
@@ -1089,7 +1093,9 @@ export function AppSidebar({
   assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
   marketEnabled = true,
+  helpEnabled = false,
   sidebarNavOrder,
+  onSidebarNavOrderChange,
   websiteNavOrder = [],
   pinnedWebEntryKeys = [],
   webPinningAvailable = false,
@@ -1354,7 +1360,7 @@ export function AppSidebar({
   const showBootstrapChatGuide =
     bootstrapActive && !bootstrapGuideDismissedBubbles.chat;
   const showBootstrapHelpGuide =
-    bootstrapActive && !bootstrapGuideDismissedBubbles.help;
+    helpEnabled && bootstrapActive && !bootstrapGuideDismissedBubbles.help;
   const showBootstrapGuideCard =
     bootstrapActive &&
     !bootstrapGuideCardDismissed &&
@@ -1582,7 +1588,7 @@ export function AppSidebar({
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
   const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
-    (item) => item.id !== "market" || marketEnabled,
+    (item) => (item.id !== "market" || marketEnabled) && (item.id !== "help" || helpEnabled),
   ).map((item) => ({ ...item, label: t(item.labelKey) }));
   const settingsToolItem = fixedToolItems.find(
     (item) => item.to === "/settings",
@@ -1648,10 +1654,15 @@ export function AppSidebar({
       return createSidebarGroupFocusId("webs");
     }
 
-    if (pinnedWebNavItems[0]?.webItem) {
-      return createSidebarWebFocusId(pinnedWebNavItems[0].webItem.entryKey);
-    }
-    const firstItem = navItems[0];
+    const firstKey = sidebarNavOrder.find((key) =>
+      key === "new-chat"
+        ? Boolean(resolvedChatDefaultAgentKey) && !chatDefaultAgentUnavailable
+        : navItems.some((item) => item.orderKey === key) || pinnedWebNavItems.some((item) => item.orderKey === key),
+    );
+    if (firstKey === "new-chat") return "action:new-chat";
+    const firstPinned = pinnedWebNavItems.find((item) => item.orderKey === firstKey);
+    if (firstPinned?.webItem) return createSidebarWebFocusId(firstPinned.webItem.entryKey);
+    const firstItem = navItems.find((item) => item.orderKey === firstKey);
     if (!firstItem) {
       return "";
     }
@@ -1666,6 +1677,9 @@ export function AppSidebar({
     }
     return createSidebarLinkFocusId(firstItem.orderKey);
   }, [
+    sidebarNavOrder,
+    resolvedChatDefaultAgentKey,
+    chatDefaultAgentUnavailable,
     activeSidebarAgentKey,
     navigationOwner,
     currentPathname,
@@ -2064,6 +2078,7 @@ export function AppSidebar({
   }
 
   function handleBootstrapGuideOpenHelp() {
+    if (!helpEnabled) return;
     dismissBootstrapGuideBubble("help");
     requestNavigate("/help");
     closeToolMenu();
@@ -5033,7 +5048,7 @@ export function AppSidebar({
             aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
             aria-hidden={chat.isRead ? "true" : undefined}
           />
-          <span className="worker-chat-name">{previewText}</span>
+          <ChatTitle text={previewText} />
           {chat.pinned ? (
             <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
               {getChatHoverAgent(chat).displayName}
@@ -5635,14 +5650,6 @@ export function AppSidebar({
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
-    if (item.orderKey === "schedules") {
-      return (
-        <Fragment key={item.orderKey}>
-          {renderSidebarLink(item)}
-          {renderNewChatNavButton()}
-        </Fragment>
-      );
-    }
     if (item.entryType === "chats") {
       return (
         <Fragment key={item.orderKey}>
@@ -5784,18 +5791,18 @@ export function AppSidebar({
             <span aria-hidden="true">2</span>
             {t("sidebar.bootstrapGuide.stepProfile")}
           </li>
-          <li>
+          {helpEnabled ? <li>
             <span aria-hidden="true">3</span>
             {t("sidebar.bootstrapGuide.stepHelp")}
-          </li>
+          </li> : null}
         </ol>
         <div className="sidebar-bootstrap-guide-actions">
           <button type="button" onClick={handleBootstrapGuideOpenChat}>
             {t("sidebar.bootstrapGuide.actionChat")}
           </button>
-          <button type="button" onClick={handleBootstrapGuideOpenHelp}>
+          {helpEnabled ? <button type="button" onClick={handleBootstrapGuideOpenHelp}>
             {t("sidebar.bootstrapGuide.actionHelp")}
-          </button>
+          </button> : null}
         </div>
       </section>
     );
@@ -5815,6 +5822,7 @@ export function AppSidebar({
     }
 
     if (
+      helpEnabled &&
       !bootstrapGuideDismissedBubbles.help &&
       isPrimaryMode &&
       toolMenuOpen
@@ -6095,10 +6103,10 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {renderToolLink(helpToolItem, {
+        {helpEnabled ? renderToolLink(helpToolItem, {
           anchorRef: bootstrapGuideToolHelpAnchorRef,
           bootstrapGuide: showBootstrapHelpGuide,
-        })}
+        }) : null}
         {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>
     );
@@ -6917,10 +6925,19 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : <>
-                  {pinnedWebNavItems.map((item) => renderSidebarChildLink(item, { topLevel: true }))}
-                  {navItems.map((item) => renderPrimaryNavEntry(item))}
-                </>}
+              : <SortableNavEntries
+                  order={sidebarNavOrder}
+                  sortableKeys={["kanban", "schedules", "new-chat", ...pinnedWebNavItems.map((item) => item.orderKey)]}
+                  onChange={onSidebarNavOrderChange}
+                  hint={t("sidebar.navigation.reorderHint", { modifier: "Alt" })}
+                  renderItem={(key) => {
+                    if (key === "new-chat") return renderNewChatNavButton();
+                    const pinned = pinnedWebNavItems.find((item) => item.orderKey === key);
+                    if (pinned) return renderSidebarChildLink(pinned, { topLevel: true });
+                    const item = navItems.find((entry) => entry.orderKey === key);
+                    return item ? renderPrimaryNavEntry(item) : null;
+                  }}
+                />}
         </nav>
         {renderBootstrapGuideCard()}
 

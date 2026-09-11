@@ -288,6 +288,7 @@ test("enterprise chat refreshes the Desktop JWT once after session exchange retu
   const runtime = new EnterpriseChatRuntime({
     app: { getVersion: () => "test" },
     initialEnabled: true,
+    serverUrl: "http://127.0.0.1:11956",
     getIdentityToken: () => identityToken,
     refreshIdentityToken: async () => {
       refreshCalls += 1;
@@ -991,6 +992,7 @@ test("enterprise chat remains signed out without an SSO access token", async (t)
   const runtime = new EnterpriseChatRuntime({
     app: {},
     initialEnabled: true,
+    serverUrl: "http://127.0.0.1:11956",
     getIdentityToken: () => null,
     fetchImpl: async () => {
       assert.fail("fetch should not run while signed out");
@@ -1423,3 +1425,28 @@ test("enterprise chat ledger migrates legacy handled IDs and does not retry inte
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: IM without an address stays disabled even with a token and explicit enable requests`, async (t) => {
+    let serverUrl = "";
+    const runtime = new EnterpriseChatRuntime({
+      app: {}, platform, initialEnabled: true,
+      getServerUrl: () => serverUrl,
+      getIdentityToken: () => "synthetic-sso-token",
+      fetchImpl: async () => assert.fail("unconfigured IM must not send HTTP requests"),
+      createWebSocket: () => assert.fail("unconfigured IM must not open a WebSocket")
+    });
+    t.after(() => runtime.stop());
+    for (const snapshot of [runtime.getState(), await runtime.refresh(), await runtime.setEnabled(true)]) {
+      assert.equal(snapshot.enabled, false);
+      assert.equal(snapshot.connectionState, "disabled");
+      assert.equal(snapshot.serverUrl, "");
+    }
+    serverUrl = "https://im.internal.example";
+    assert.equal((await runtime.reloadConfiguration(false)).serverUrl, serverUrl);
+    serverUrl = "";
+    const removed = await runtime.reloadConfiguration(true);
+    assert.equal(removed.enabled, false);
+    assert.equal(removed.serverUrl, "");
+  });
+}

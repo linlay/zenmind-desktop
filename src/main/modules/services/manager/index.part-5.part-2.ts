@@ -141,6 +141,9 @@ export async function startServiceInternal(
       integrationPorts: options.integrationPorts
     });
   }
+  if (service.id === "agent-platform") {
+    await ensurePreStartRequirements(app, service, options.integrationPorts);
+  }
   let nextState = await getServiceState(app, serviceId, {
     ...options.stateReadOptions,
     integrationPorts: options.integrationPorts
@@ -164,7 +167,7 @@ export async function startServiceInternal(
       service: nextState
     };
   } else {
-    if (!options.skipPreStartRequirements) {
+    if (!options.skipPreStartRequirements && service.id !== "agent-platform") {
       await ensurePreStartRequirements(app, service, options.integrationPorts);
     }
     const preStartState = await getServiceState(app, serviceId, {

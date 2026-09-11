@@ -15,7 +15,9 @@ export function StartupLoadingScreen({
   startupRestoreState,
   timedOut,
   onRefresh,
-  onOpenControlCenter
+  onOpenControlCenter,
+  onLogin,
+  loginBusy
 }: {
   version: string;
   servicesLoading: boolean;
@@ -25,6 +27,8 @@ export function StartupLoadingScreen({
   timedOut: boolean;
   onRefresh: () => void;
   onOpenControlCenter: () => void;
+  onLogin: () => void;
+  loginBusy: boolean;
 }) {
   const { t } = useI18n();
   const completedButNotReady =
@@ -53,7 +57,7 @@ export function StartupLoadingScreen({
       t
     )
     : "";
-  const title = hasFailure
+  const title = startupRestoreState.authenticationRequired ? t("providerRegister.loginRequired") : hasFailure
     ? t("startup.title.failed")
     : timedOut
       ? t("startup.title.slow")
@@ -143,8 +147,11 @@ export function StartupLoadingScreen({
         ) : null}
         {servicesError ? <div className="startup-loading-error" role="alert">{servicesError}</div> : null}
 
-        {timedOut || hasFailure ? (
+        {startupRestoreState.authenticationRequired || timedOut || hasFailure ? (
           <div className="startup-loading-actions">
+            {startupRestoreState.authenticationRequired ? <button type="button" className="action-button" disabled={loginBusy} onClick={onLogin}>
+              {t("providerRegister.loginAction")}
+            </button> : null}
             <button type="button" className="action-button" onClick={onRefresh}>
               {t("startup.action.refresh")}
             </button>

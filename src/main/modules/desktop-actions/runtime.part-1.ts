@@ -89,6 +89,7 @@ export type DesktopActionBridgeOptions = {
   getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
   getWebContentsById?: (webContentsId: number) => WebContents | null;
   navigate: (targetPath: string) => void;
+  getHelpUrl?: () => string;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   showFileDialog?: (
     options: OpenDialogOptions,

@@ -155,7 +155,7 @@ export async function runStartupPreparation(
       };
     }
 
-    await integrationPorts(options.integrationPorts).ensureProviderRegisterApiKey(app);
+    await integrationPorts(options.integrationPorts).ensureProviderRegisterApiKey(app, true);
 
     const initialMode = desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none"
       ? "bootstrap"

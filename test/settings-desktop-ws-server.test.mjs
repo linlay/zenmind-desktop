@@ -413,6 +413,16 @@ test("navigation IPC persists web pins independently of main and Sites ordering"
   const restored = await registerSettingsHandlers(app).invoke("settings.getNavigationPreferences");
   assert.deepEqual(restored.pinnedWebEntryKeys, ["webapp:editor", "website:docs"]);
   assert.deepEqual(restored.webOrder, ["website:docs", "webapp:editor"]);
+  assert.deepEqual(restored.mainOrder, ["kanban", "schedules"]);
+  const configRoot = getDesktopConfigRoot(app, "darwin");
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(configRoot, "navigation-order.json"), "utf8")), {
+    schemaVersion: 1, entryKeys: ["kanban", "schedules"]
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(configRoot, "..", "webs", "pinned.json"), "utf8")), {
+    schemaVersion: 1, entryKeys: ["webapp:editor", "website:docs"]
+  });
+  assert.equal("mainOrder" in readDesktopProfileFromRoot(configRoot).navigation, false);
+  assert.equal("pinnedWebEntryKeys" in readDesktopProfileFromRoot(configRoot).navigation, false);
   const unpinned = await ipc.invoke("settings.saveNavigationPreferences", { pinnedWebEntryKeys: [] });
   assert.deepEqual(unpinned.pinnedWebEntryKeys, []);
   assert.deepEqual(unpinned.webOrder, restored.webOrder);

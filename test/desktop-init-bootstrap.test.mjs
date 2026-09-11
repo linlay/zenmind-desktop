@@ -784,7 +784,7 @@ test("desktop-init bootstrap ignores retired profile, Kanban, and Website shapes
   const profile = readJson(path.join(desktop, "config", "desktop", "profile.json"));
 
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
-  assert.deepEqual(profile.navigation.webOrder, []);
+  assert.equal("webOrder" in profile.navigation, false);
   assert.equal(result.appliedResult.kanban, "absent");
   assert.equal(result.appliedResult.webs, "absent");
   assert.equal(fs.existsSync(path.join(desktop, "config", "desktop", "kanban.json")), false);
@@ -1204,8 +1204,10 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.equal(profile.appearance.theme, "system");
   assert.equal(profile.appearance.locale, "zh-CN");
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
-  assert.deepEqual(profile.navigation.mainOrder, []);
-  assert.deepEqual(profile.navigation.webOrder, []);
+  assert.equal("mainOrder" in profile.navigation, false);
+  assert.equal(fs.existsSync(path.join(desktopConfigRoot, "navigation-order.json")), false);
+  assert.equal(fs.existsSync(path.join(desktopConfigRoot, "..", "webs", "order.json")), false);
+  assert.equal("webOrder" in profile.navigation, false);
   assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
   assert.equal(assistantConfig.defaultChatAgentKey, "cutej");
   assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");

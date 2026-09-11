@@ -666,6 +666,24 @@ export function AppShell() {
   );
   const [kanbanEnabled, setKanbanEnabled] = useState(true);
   const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
+  const [helpEnabled, setHelpEnabled] = useState(false);
+  const [helpSettingsLoaded, setHelpSettingsLoaded] = useState(false);
+  useEffect(() => {
+    let requestId = 0;
+    const refresh = () => {
+      const currentRequest = ++requestId;
+      void window.electronAPI.help.getSettings().then((settings) => {
+        if (currentRequest === requestId) setHelpEnabled(Boolean(settings.url));
+      }).catch(() => {
+        if (currentRequest === requestId) setHelpEnabled(false);
+      }).finally(() => {
+        if (currentRequest === requestId) setHelpSettingsLoaded(true);
+      });
+    };
+    refresh();
+    const unsubscribe = window.electronAPI.onServicesChanged(refresh);
+    return () => { requestId += 1; unsubscribe(); };
+  }, []);
   const [marketEnabled, setMarketEnabled] = useState(false);
   const [marketSettingsLoaded, setMarketSettingsLoaded] = useState(false);
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
@@ -1145,19 +1163,23 @@ export function AppShell() {
   const copilotDockNativeDialogVisible =
     nativeDialogVisible || Boolean(desktopActionConfirmation) || Boolean(chatHistoryDialog);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
-    return createDefaultSidebarNavOrderItems({
+    return [...pinnedWebEntryKeys.map((key) => ({
+      key: key as SidebarNavOrderItemKey,
+      label: webItems.find((item) => item.entryKey === key)?.label ?? key,
+    })), ...createDefaultSidebarNavOrderItems({
       kanbanEnabled,
       serviceItems: [],
       experimentalItems: [],
       webItems: []
-    }).map((item) => {
+    })].map((item) => {
+      if (item.key === "new-chat") return { ...item, label: t("sidebar.chats.newChat") };
       if (item.key === "kanban") return { ...item, label: t("nav.kanban") };
       if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
       if (item.key === "group:webs") return { ...item, label: t("nav.websites") };
       return item;
     });
-  }, [kanbanEnabled, t]);
+  }, [kanbanEnabled, pinnedWebEntryKeys, webItems, t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -1995,6 +2017,9 @@ export function AppShell() {
         pinnedWebEntryKeys: nextKeys
       });
       setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys);
+      setSidebarNavOrder((current) => pinned
+        ? [item.entryKey as SidebarNavOrderItemKey, ...current.filter((key) => key !== item.entryKey)]
+        : current.filter((key) => key !== item.entryKey));
     } finally {
       webPinMutationPendingRef.current = false;
       setWebPinMutationPending(false);
@@ -4508,7 +4533,7 @@ export function AppShell() {
                 ) : null}
               </nav>
             ) : null}
-            <WindowsApplicationMenu disabled={windowControlsMasked} />
+            <WindowsApplicationMenu disabled={windowControlsMasked} helpEnabled={helpEnabled} />
           </div>
           <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
             <button
@@ -4564,7 +4589,9 @@ export function AppShell() {
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
           marketEnabled={marketEnabled}
+          helpEnabled={helpEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
+          onSidebarNavOrderChange={navigationPreferencesLoaded ? setSidebarNavOrder : undefined}
           websiteNavOrder={normalizedWebGroupOrder}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
           webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
@@ -4787,7 +4814,11 @@ export function AppShell() {
                     : <Navigate to="/control-center" replace />
               }
             />
-            <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
+            <Route path="/help" element={
+              !helpSettingsLoaded ? null : helpEnabled
+                ? <RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>
+                : <Navigate to="/control-center" replace />
+            } />
           </Routes>
         </main>
         {activeChatWorkPanelVisible ? (
@@ -4967,13 +4998,15 @@ export function AppShell() {
           </section>
         </div>
       ) : null}
-      {showStartupCard ? (
+      {showStartupCard && !desktopSsoLoginDialog ? (
         <StartupLoadingScreen
           version={desktopAppVersion}
           servicesLoading={servicesLoading}
           servicesError={servicesError}
           startupServices={startupServices}
           startupRestoreState={resolvedStartupRestoreState}
+          onLogin={() => { void handleDesktopSsoLogin(); }}
+          loginBusy={desktopSsoBusy}
           timedOut={startupTimedOut}
           onRefresh={() => {
             setStartupCardDismissed(false);

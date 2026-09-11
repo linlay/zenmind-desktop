@@ -358,7 +358,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       t: options.t,
       openSettings: () => navigateMainWindow("/settings"),
-      openHelp: () => navigateMainWindow("/help"),
+      helpEnabled: Boolean(options.getHelpUrl()),
+      openHelp: () => {
+        if (options.getHelpUrl()) navigateMainWindow("/help");
+      },
       requestCloseWindow: () => {
         const targetWindow = BrowserWindow.getFocusedWindow();
         if (!targetWindow || targetWindow.isDestroyed()) {

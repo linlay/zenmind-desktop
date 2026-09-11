@@ -8,7 +8,7 @@ export type { EnterpriseImSettings } from "../../../shared/contracts";
 
 export const ENTERPRISE_IM_SETTINGS_FILE = "enterprise-im.json";
 export const DEFAULT_ENTERPRISE_IM_ENABLED = false;
-export const DEFAULT_ENTERPRISE_IM_BASE_URL = "http://127.0.0.1:11956";
+export const DEFAULT_ENTERPRISE_IM_BASE_URL = "";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -102,8 +102,13 @@ export function setEnterpriseImEnabled(
   enabled: boolean,
   platform: NodeJS.Platform = process.platform
 ) {
+  const current = readEnterpriseImSettings(app, platform);
+  // An environment without IM configuration must not gain an implicit server.
+  if (!current.baseUrl) {
+    return current;
+  }
   const settings = {
-    ...readEnterpriseImSettings(app, platform),
+    ...current,
     enabled: enabled === true
   };
   writeEnterpriseImSettings(app, settings, platform);

@@ -120,7 +120,7 @@ export function EnterpriseChatRuntime_projectMessage_5(self: EnterpriseChatRunti
 }
 
 export async function EnterpriseChatRuntime_setEnabled_6(self: EnterpriseChatRuntimeMethodContext, enabled: boolean) {
-    if (!enabled) {
+    if (!enabled || !self.serverUrl) {
         self.disconnect();
         self.clearSession();
         self.updateSnapshot({
