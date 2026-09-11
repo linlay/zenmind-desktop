@@ -23,7 +23,7 @@ export type DesktopSsoSessionMetadata = {
 };
 export const desktopSsoRuntimeState = {
   currentStatus: createSignedOutStatus(t("sso.notSignedIn")),
-  callbackServer: null as http.Server | null,
+  callbackServers: [] as http.Server[],
   callbackServerReady: null as Promise<void> | null,
   callbackServerInfo: null as CallbackServerInfo | null,
   callbackHooks: {} as CallbackHooks,

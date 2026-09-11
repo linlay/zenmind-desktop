@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import { listenCallbackServers } from "./callback-listener";
 import {
   createVerify
 } from "node:crypto";
@@ -415,15 +415,12 @@ export async function handleCallbackRequest(app: App, request: http.IncomingMess
 }
 
 export function closeCallbackServer() {
-  const server = desktopSsoRuntimeState.callbackServer;
-  desktopSsoRuntimeState.callbackServer = null;
+  const servers = desktopSsoRuntimeState.callbackServers;
+  desktopSsoRuntimeState.callbackServers = [];
   desktopSsoRuntimeState.callbackServerReady = null;
   desktopSsoRuntimeState.callbackServerInfo = null;
   desktopSsoRuntimeState.desktopSsoProxyState = null;
-  if (!server) {
-    return;
-  }
-  server.close(() => {});
+  for (const server of servers) server.close(() => {});
 }
 
 export function buildCallbackServerInfo(host: string, port: number, closeAfterCallback: boolean): CallbackServerInfo {
@@ -492,7 +489,7 @@ export async function ensureCallbackServer(
   }
 ) {
   desktopSsoRuntimeState.callbackHooks = hooks;
-  if (desktopSsoRuntimeState.callbackServer && desktopSsoRuntimeState.callbackServerReady) {
+  if (desktopSsoRuntimeState.callbackServers.length && desktopSsoRuntimeState.callbackServerReady) {
     if (
       desktopSsoRuntimeState.callbackServerInfo?.host === options.host &&
       desktopSsoRuntimeState.callbackServerInfo.port === options.port &&
@@ -504,37 +501,27 @@ export async function ensureCallbackServer(
     closeCallbackServer();
   }
 
-  desktopSsoRuntimeState.callbackServer = http.createServer((request, response) => {
+  const servers = [http.createServer((request, response) => {
     void handleCallbackRequest(app, request, response);
-  });
-  desktopSsoRuntimeState.callbackServerReady = new Promise<void>((resolve, reject) => {
-    const server = desktopSsoRuntimeState.callbackServer;
-    if (!server) {
-      reject(new Error("callback server unavailable"));
-      return;
-    }
-    const handleError = (error: NodeJS.ErrnoException) => {
-      desktopSsoRuntimeState.callbackServer = null;
-      desktopSsoRuntimeState.callbackServerReady = null;
-      desktopSsoRuntimeState.callbackServerInfo = null;
-      if (error.code === "EADDRINUSE") {
-        reject(new Error(t("sso.callbackPortInUse", { port: options.port })));
-        return;
+  })];
+  desktopSsoRuntimeState.callbackServers = servers;
+  desktopSsoRuntimeState.callbackServerReady = listenCallbackServers(servers, options.port, options.host)
+    .then((port) => {
+      if (desktopSsoRuntimeState.callbackServers !== servers) {
+        for (const server of servers) server.close();
+        throw new Error("callback server startup cancelled");
       }
-      reject(error);
-    };
-    server.once("error", handleError);
-    server.listen(options.port, options.host, () => {
-      server.off("error", handleError);
-      const address = server.address() as AddressInfo | null;
       desktopSsoRuntimeState.callbackServerInfo = buildCallbackServerInfo(
-        options.host,
-        address?.port || options.port,
-        options.closeAfterCallback
+        options.host, port, options.closeAfterCallback
       );
-      resolve();
+    })
+    .catch((error: NodeJS.ErrnoException) => {
+      if (desktopSsoRuntimeState.callbackServers === servers) closeCallbackServer();
+      if (error.code === "EADDRINUSE") {
+        throw new Error(t("sso.callbackPortInUse", { port: options.port }));
+      }
+      throw error;
     });
-  });
   await desktopSsoRuntimeState.callbackServerReady;
   if (!desktopSsoRuntimeState.callbackServerInfo) {
     throw new Error("callback server did not report a listening address");

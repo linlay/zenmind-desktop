@@ -105,6 +105,7 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## 安全与失败原则
 
+- `localhost` 登录回调在 Windows 与 macOS 上同时监听 IPv4、IPv6 本机回环地址，保持回调 URL 与同一个登录状态一致，不依赖浏览器和 Node 的 DNS 地址族选择一致，也不监听通配网络接口。仅在操作系统明确不支持 IPv6 时允许 IPv4 单栈；端口冲突必须失败并释放已绑定的监听器。取消、退出和回调完成时统一关闭全部监听器。
 - 凭据写入 secrets/state 层，不进入普通 config、命令行、页面 URL 或遥测。
 - canonical 文件发布必须原子化；撤销失败应显式返回，不能假装退出完成。
 - canonical access token 只有一个持久事实源；启动恢复会清理已退役的重复 site-token 文件，任何消费者都不得重新创建或读取它。
