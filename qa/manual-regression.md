@@ -405,3 +405,5 @@
 
 - 主导航拖拽时目标前后显示与 Chat 相同的蓝色插入线（同一主题色、粗细与圆角），首行、末行及收起侧栏均可辨识；松手位置与提示一致。
 - macOS / Windows 分别验证 `config/desktop/navigation-order.json` 只保存主导航顺序，`config/webs/pinned.json` 只保存站点置顶，`config/webs/order.json` 保存 Sites 原顺序；拖动不改置顶成员。缺少独立文件时使用默认空列表，不回退到旧 profile 字段。模拟排序保存失败，原文件保持完整；修改主题或助手不得读写排序与置顶文件。
+
+- 自动化背景协作：macOS / Windows 使用图片皮肤打开自动化页面，确认列表、执行历史与留白按 WebClient 管理页阅读底色透出背景；切换到记忆等未接入页面或移除背景时恢复实色，原 guest 和编辑草稿保持。

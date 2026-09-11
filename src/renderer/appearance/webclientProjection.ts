@@ -16,7 +16,7 @@ import {
 import type { DesktopAppearanceSnapshot } from "./model";
 
 const MANAGEMENT_BACKGROUND_ROUTES = AGENT_WEBCLIENT_ROUTE_DEFINITIONS
-  .filter(({ key }) => ["agents", "skills", "mcp-servers", "registries", "archives"].includes(key))
+  .filter(({ key }) => ["agents", "skills", "mcp-servers", "registries", "archives", "schedules"].includes(key))
   .map(({ embedPath }) => embedPath);
 const MANAGEMENT_SURFACE_ID = createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID).surfaceId;
 
