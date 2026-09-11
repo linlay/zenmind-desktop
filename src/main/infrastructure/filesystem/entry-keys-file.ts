@@ -26,10 +26,18 @@ export function readEntryKeysFile(filePath: string): string[] | null {
 
 export function writeEntryKeysFile(filePath: string, keys: unknown): string[] {
   const entryKeys = normalizeEntryKeys(keys);
+  const serialized = `${JSON.stringify({ schemaVersion: 1, entryKeys }, null, 2)}\n`;
+  // Compare the actual file, not a cache: external edits/deletion must still be repaired.
+  // Identical bytes need no replacement on either Windows or macOS.
+  try {
+    if (fs.readFileSync(filePath, "utf8") === serialized) return entryKeys;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.${randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(temporary, `${JSON.stringify({ schemaVersion: 1, entryKeys }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    fs.writeFileSync(temporary, serialized, { encoding: "utf8", flag: "wx" });
     // Same-directory rename atomically replaces the file on both macOS and Windows.
     // A failed replacement must leave the confirmed file intact.
     fs.renameSync(temporary, filePath);

@@ -112,7 +112,7 @@ export function pidMatchesInstallDir(pid: number, installDir: string) {
   return matchProcessInstallDir(pid, installDir) === "matched";
 }
 
-function readProcessCommandAsync(pid: number) {
+function readProcessCommandAsync(pid: number, executablePathOnly = false) {
   if (!Number.isFinite(pid) || pid <= 0) {
     return Promise.resolve("");
   }
@@ -124,7 +124,9 @@ function readProcessCommandAsync(pid: number) {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `$process = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"; ` +
+        executablePathOnly
+          ? `(Get-Process -Id ${pid} -ErrorAction Stop).Path`
+          : `$process = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"; ` +
           "if ($null -ne $process) { @($process.ExecutablePath, $process.CommandLine) -join [Environment]::NewLine }"
       ]
     : ["-p", String(pid), "-o", "command="];
@@ -132,7 +134,7 @@ function readProcessCommandAsync(pid: number) {
     execFile(command, args, {
       encoding: "utf8",
       env: buildServiceEnv(),
-      timeout: IS_WINDOWS ? 3000 : 1500,
+      timeout: IS_WINDOWS ? (executablePathOnly ? 1500 : 3000) : 1500,
       windowsHide: true,
       maxBuffer: 1024 * 1024
     }, (error, stdout) => {
@@ -145,6 +147,15 @@ export async function matchProcessInstallDirAsync(
   pid: number,
   installDir: string
 ): Promise<ProcessInstallDirMatch> {
+  if (IS_WINDOWS) {
+    // Match the synchronous probe's fast executable-path check, without blocking Main.
+    // Script runtimes still need the command line fallback to prove their install root.
+    const processPath = await readProcessCommandAsync(pid, true);
+    if (processPath && processIdentityMatchesInstallDir(processPath, installDir)) return "matched";
+    const command = await readProcessCommandAsync(pid);
+    if (command && processIdentityMatchesInstallDir(command, installDir)) return "matched";
+    return processPath || command ? "mismatched" : "unknown";
+  }
   const identity = await readProcessCommandAsync(pid);
   if (!identity) {
     return "unknown";

@@ -865,7 +865,7 @@ export type RendererDiagnosticLevel = "debug" | "warn" | "error";
 
 export interface RendererDiagnosticReport {
   level: RendererDiagnosticLevel;
-  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell" | "deprecated-compatibility";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell" | "deprecated-compatibility" | "performance";
   message: string;
   details?: Record<string, unknown>;
   stack?: string;
@@ -1208,6 +1208,8 @@ export interface DesktopApi {
     };
   };
   diagnostics: {
+    /** Read-only, enabled at process launch with ZENMIND_PERF=1. */
+    performanceEnabled?: boolean;
     reportRendererError: (report: RendererDiagnosticReport) => void;
     openDesktopLogViewer: (target: DesktopLogTarget) => Promise<{ ok: boolean }>;
     revealDesktopLogFolder: () => Promise<ServiceRevealPathResult>;

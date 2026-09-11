@@ -212,7 +212,7 @@ function createRuntime(targets, overrides = {}) {
     },
     isTrustedAgentWebclientSession: () => true,
     realtimeBroker: broker,
-    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
+    getServiceState: overrides.getServiceState || (async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } })),
     issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
     syncCanonicalChat: overrides.syncCanonicalChat
       || (async () => ({ requestId: "sync-1", ok: true })),
@@ -371,6 +371,28 @@ test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2
   assert.equal(runtime.broker.getActiveRootObserver().kind, "main_chat");
   assert.equal(sentFrames(sender)[0].id, "local-query-1");
   assert.equal(sentFrames(sender)[0].event.type, "run.start");
+});
+
+test("Main Chat query rechecks route ownership after asynchronous availability", async () => {
+  const target = mainTarget();
+  let waitForState = false, complete;
+  const state = { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+    getServiceState: () => waitForState ? new Promise((resolve) => { complete = resolve; }) : Promise.resolve(state),
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "async-state");
+  waitForState = true;
+  send(runtime, sender, "async-state", { frame: "request", id: "old-query", type: "/api/query",
+    payload: { requestId: "request-old", runId: "run-old", agentKey: "agent-1", message: "hello" } });
+  await flush();
+  assert.equal(typeof complete, "function");
+  // Mutate the existing target too: authorization must retain primitive identity values.
+  target.ownerChatId = "chat-2";
+  target.pageRouteIdentity = "/agent/agent-1?chatId=chat-2";
+  complete(state); await flush();
+  assert.equal(runtime.calls.queries.length, 0);
+  assert.ok(sentFrames(sender).some((frame) => frame.id === "old-query" && frame.type === "surface_unavailable"));
 });
 
 test("canonical Main Chat query waits for stale owner registration to converge", async () => {

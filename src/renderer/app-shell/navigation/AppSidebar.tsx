@@ -4596,7 +4596,7 @@ export function AppSidebar({
               return Boolean(title && title.scrollWidth > title.clientWidth);
             }}
             className="sidebar-chat-hover-card-surface"
-            content={renderChatHoverCard(agent, chat)}
+            content={() => renderChatHoverCard(agent, chat)}
           >
             {item}
           </Popover>
@@ -5258,7 +5258,7 @@ export function AppSidebar({
                     placement="right-start"
                     closeOnOutsideClick={false}
                     className="sidebar-project-chat-hover-card-surface"
-                    content={renderProjectChatHoverCard(agent, chat)}
+                    content={() => renderProjectChatHoverCard(agent, chat)}
                   >
                     {item}
                   </Popover>

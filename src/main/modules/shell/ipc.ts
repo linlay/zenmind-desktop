@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { sanitizePerformanceEvent } from "../../../shared/performance-diagnostics";
+import { isPerformanceDiagnosticsEnabled, writePerformanceEvent } from "../../support/logging/performance";
 import { popupWindowsApplicationMenu } from "./app-menu";
 import {
   shell as electronShell,
@@ -687,6 +689,18 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
 
   ipcMain.on("diagnostics.rendererError", (event: IpcMainEvent, report: unknown) => {
     const rendererReport = report && typeof report === "object" ? report as Record<string, unknown> : {};
+    if (rendererReport.source === "performance") {
+      // Only the trusted main window may submit allowlisted measurements.
+      const owner = options.getMainWindow?.() ?? options.mainWindow ?? null;
+      if (!isPerformanceDiagnosticsEnabled() || !owner || event.sender !== owner.webContents ||
+          event.senderFrame !== event.sender.mainFrame) return;
+      const details = rendererReport.details;
+      if (details && typeof details === "object" && !Array.isArray(details)) {
+        writePerformanceEvent({ ...sanitizePerformanceEvent(details as Record<string, unknown>),
+          hostWebContentsId: event.sender.id });
+      }
+      return;
+    }
     const diagnosticLevel =
       rendererReport.level === "debug" ||
       rendererReport.level === "warn" ||
