@@ -21,7 +21,7 @@ Desktop 支持标准 OIDC 与基于浏览器 Cookie 的站点 SSO。两种模式
 Cookie SSO 的主流程为：
 
 ```text
-专用 Electron session 完成登录
+Electron 默认 session 完成登录
   -> 验证上游浏览器会话
   -> 取得稳定用户身份
   -> 交换 canonical access token
@@ -35,7 +35,11 @@ Cookie SSO 的主流程为：
 
 ## 启动恢复
 
-磁盘状态只是恢复候选，不是登录事实。主窗口创建前，恢复控制器只执行一次严格恢复：验证上游会话、确认稳定用户身份、重新换取 access token、刷新 Electron session，全部成功后才发布已登录状态。
+磁盘状态只是恢复候选，不是登录事实。主窗口创建前，恢复控制器按当前 SSO 配置执行严格恢复，完成上游校验、token 换取、稳定身份确认与 Electron session 写入后才发布已登录状态。恢复策略由配置决定，不按品牌或域名硬编码，也不能因一种策略失败而自动尝试另一种凭据。
+
+浏览器 SSO 默认使用 Cookie 恢复：验证上游浏览器会话，交换 access token，再从会话响应或用户信息接口确认稳定身份。用户信息接口若依赖派生 token Cookie，必须在换票后请求。
+
+显式启用 Bearer 恢复的配置允许主进程把磁盘 access token 作为恢复候选，携带到已配置的同源换票接口，再用返回的 token 调用同源用户信息接口。只有取得稳定用户身份后才写入派生 Cookie 并发布 canonical 凭据；过程中不要求旧 Cookie 仍然存在，不从 token claims 推断登录成功，不跟随携带 Bearer 的请求重定向。未配置该策略的站点不会自动发送磁盘 token。此选择仅影响启动恢复，标准 OIDC 和服务端票据换 Cookie 的登录与恢复流程保持各自语义。
 
 恢复结果分为三类：
 
@@ -73,6 +77,8 @@ Workspace Terminal、容器、代理、ACP、MCP、LSP 与 sidecar 默认不继�
 
 ### 业务服务授权
 
+首次 Provider API Key 申请由 Desktop 主进程使用运行环境中的登记 grant 完成。请求沿用 Electron 的系统代理解析，只携带本次登记所需的凭据，不继承浏览器 Cookie 或 SSO 身份；macOS 与 Windows 都不要求用户额外设置启动代理参数。此网络策略只作用于 Desktop 的登记请求，不改变 Agent Platform 自身的模型调用网络。网络失败保留登记材料供用户重试，错误详情须脱敏，不能把连接失败解释为 grant 过期或额度不足。
+
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 
 Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用同一枚 canonical token。Cookie SSO 通过官网会话换回的结果直接发布为 canonical token；Desktop 不再启动额外 site-token bridge，也不持久化 `sso-site-token.json`。各消费者可以在 401 后请求 Main 刷新 canonical token 一次，但不能自行登录、换取或保存另一枚 Desktop access token。
@@ -83,10 +89,12 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## Session 与页面隔离
 
-- 登录页面、Website 与普通 WorkPanel Web 使用专用、持久化的 Desktop 应用浏览器 partition，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
+- 登录页面、Website 与普通 WorkPanel Web 使用 Electron 持久化默认 session，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
+- 浏览器 profile 在 Electron ready 前固定；登录、恢复、换票与退出必须等待 Cookie store 完成写入或删除，不能以 DOM Storage 刷盘替代 Cookie 持久化。Cookie 的上游有效期保持不变，不把会话 Cookie 擅自延长为持久 Cookie。
+- 品牌隔离由外层数据根承担。Chromium 状态归 Desktop state 层管理，SSO 不创建命名 partition，Cookie 直接保存在默认 session 的数据根。升级时仅在新 Chromium 根尚不存在的情况下，于任何 Session 打开前将旧 SSO 存储整体提升为默认 session，并保留其他命名 partition；已存在的新存储不被旧数据覆盖或合并。
 - 普通 WebApp、Help、内置 Browser 与内置服务不因 URL 相似而继承该应用 Cookie session 或 SSO 能力。
 - 登录成功后的页面刷新由显式 capability 控制，不根据路由或域名猜测。
-- 退出只清理配置中已知的身份来源与派生 Cookie，不影响无关网站数据。
+- 退出只清理配置中已知的身份来源与派生 Cookie，不得清空默认 session 的全部 Cookie，也不影响无关网站数据。
 - 认证头像只允许来自配置的可信官网来源；主进程下载并转换为品牌隔离的本地协议 URL。
 
 ## 安全与失败原则
@@ -103,9 +111,9 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## 事实来源
 
-- 身份与 bridge 实现：`src/main/identity-center-auth.ts`、`src/main/agent-auth.ts`、`src/main/oidc-sso.ts`
+- 身份与 bridge 实现：`src/main/modules/identity/identity-center-auth.ts`、`src/main/modules/identity/agent-auth.ts`、`src/main/modules/identity/oidc-sso.ts`
 - shared contract：`src/shared/auth-bridge.ts`
 - webview 边界：`src/preload/service-webview-main-world.ts`
-- Realtime/WorkPanel bridge：`src/main/ipc/agent-webclient-bridge-handlers.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
-- Tunnel Hub 身份桥：`src/main/tunnel-hub-registration.ts`、`src/main/tunnel-hub-runtime.ts`、`src/main/tunnel-client-endpoint.ts`
+- Realtime/WorkPanel bridge：`src/main/modules/agent-platform/ipc.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
+- Tunnel Hub 身份桥：`src/main/modules/tunnel/registration.ts`、`src/main/modules/tunnel/runtime.ts`、`src/main/modules/tunnel/client-endpoint.ts`
 - 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/service-webview-main-world.test.mjs`

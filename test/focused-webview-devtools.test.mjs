@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const { openCurrentWebviewDevTools } = await import(
-  "../dist-electron/main/focused-webview-devtools.js"
+  "../dist-electron/main/modules/web-surfaces/focused-devtools.js"
 );
 
 class FakeWebContents {

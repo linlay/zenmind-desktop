@@ -1,0 +1,14 @@
+export { createBrowserSurfaceRegistry } from "./browser-surface-registry";
+export type { BrowserSurfaceRegistry, BrowserSurfaceRegistryOptions, RegisteredWebviewSurfaceTarget } from "./browser-surface-registry";
+export { inspectCurrentPageCdpElement, readCurrentPageCdpLocation } from "./cdp/current-page-inspector";
+export type { CurrentPageCdpElementSnapshot } from "./cdp/current-page-inspector";
+export { DESKTOP_CDP_TARGET_TIMEOUT_CODE, isDesktopCdpTimeoutError, readDesktopCdpErrorDetails } from "./cdp/debugger";
+export type { EmbeddedCdpCommandRequest } from "./cdp/gateway";
+export { createCdpIntegration } from "./cdp/integration";
+export { captureCopilotSiteCdpScope } from "./cdp/site-scope";
+export type { SiteCdpScope } from "./cdp/site-scope";
+export { registerEmbeddedCdpIpcHandlers } from "./cdp/ipc";
+export { createWebviewContextMenuController } from "./context-menu-controller";
+export { openCurrentWebviewDevTools } from "./focused-devtools";
+export { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview, resolveRegisteredWebviewPopupTarget } from "./open-tab";
+export { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-ipc";

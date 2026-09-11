@@ -18,6 +18,7 @@ const {
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
@@ -243,6 +244,31 @@ test("service webview main-world script dispatches desktop webs list requests", 
   assert.deepEqual(captured, [payload]);
 });
 
+test("service webview main-world script accepts workspace arrows only from its top document", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const payload = {
+    type: AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
+    requestId: "workspace-arrow-1",
+    direction: "left"
+  };
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  window.dispatchEvent({
+    type: "message",
+    data: payload,
+    origin: "https://untrusted.example",
+    source: {}
+  });
+  assert.deepEqual(captured, []);
+
+  window.postMessage(payload, "*");
+  assert.deepEqual(captured, [payload]);
+});
+
 test("service webview main-world script ignores removed legacy bridge requests", () => {
   const { window } = createFakeWindow();
   const captured = [];
@@ -384,7 +410,14 @@ test("service webview main-world script exposes a fixed typed Platform Frame Por
   const platformFramePort = window.__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__;
   const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
   assert.deepEqual(Object.keys(platformFramePort).sort(), ["createSession", "transportVersion"]);
-  assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "getCapabilities", "openItem"]);
+  assert.deepEqual(Object.keys(workpanel).sort(), [
+    "activateItem",
+    "closeItem",
+    "getCapabilities",
+    "openDocument",
+    "openItem",
+    "openResource",
+  ]);
   assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__").writable, false);
   assert.equal(platformFramePort.transportVersion, 2);
 
@@ -451,6 +484,7 @@ test("service webview main-world script emits route changes on current channel",
   const currentChannelPayloads = [];
   const payload = {
     type: "desktopRouteChanged",
+    routeRevision: 1,
     pathname: "/registries",
     search: "?hostTheme=light"
   };

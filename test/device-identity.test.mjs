@@ -11,16 +11,16 @@ const {
   getDesktopDeviceIdentity,
   getDesktopDeviceIdentityInfo,
   getDesktopDeviceIdentityPath
-} = require("../dist-electron/main/device-identity.js");
+} = require("../dist-electron/main/modules/identity/device-identity.js");
 const {
   buildDesktopDeviceName,
   getDesktopDeviceInfo
-} = require("../dist-electron/main/desktop-device-info.js");
+} = require("../dist-electron/main/modules/identity/device-info.js");
 const {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
-} = require("../dist-electron/main/desktop-profile-store.js");
-const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 const INSTALL_ID = "11111111-2222-4333-8444-555555555555";
 const INSTALL_ID_2 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";

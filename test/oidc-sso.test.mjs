@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import dns from "node:dns";
 import os from "node:os";
 import path from "node:path";
 import { createSign, generateKeyPairSync } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+dns.setDefaultResultOrder("ipv4first");
 
 const {
   cancelDesktopSsoLogin,
@@ -20,7 +22,7 @@ const {
   prepareDesktopSsoSessionRestore,
   startDesktopSsoLogin,
   __testInternals
-} = require("../dist-electron/main/oidc-sso.js");
+} = require("../dist-electron/main/modules/identity/oidc-sso.js");
 const {
   DESKTOP_SSO_AVATAR_PROTOCOL
 } = require("../dist-electron/shared/sso-avatar.js");
@@ -87,6 +89,40 @@ function createUnsignedJwt(payload) {
     "signature"
   ].join(".");
 }
+
+test("desktop sso Bearer restoration requires explicit same-origin configuration", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-sso-restore-config-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const app = createApp(path.join(root, "home"));
+  const origin = "https://sso.example.test";
+  const config = {
+    enabled: true, browserMode: "embedded", browserOrigin: origin, loginUrl: `${origin}/login`,
+    browserSession: { url: `${origin}/oauth2/auth`, successStatuses: [202] },
+    cookieAccessTokenExchange: { url: `${origin}/authorization` },
+    userInfo: { url: `${origin}/userinfo`, authMode: "cookie", subPath: "data.id" }
+  };
+  writeSsoSession(app, { authenticated: true, authMode: "browser-cookie", issuer: origin });
+  writeSsoConfig(app, config);
+  assert.equal(prepareDesktopSsoSessionRestore(app).authMode, "cookie");
+  writeSsoConfig(app, { ...config, sessionRestore: { authMode: "bearer" } });
+  const prepared = prepareDesktopSsoSessionRestore(app);
+  assert.equal(prepared.requiresRemoteValidation, true);
+  assert.equal(prepared.authMode, "bearer");
+  assert.equal(getDesktopSsoAccessToken(), null);
+  for (const override of [
+    { sessionRestore: { authMode: "auto" } },
+    { sessionRestore: null },
+    { userInfo: undefined },
+    { cookieAccessTokenExchange: { url: "https://foreign.example.test/token" } },
+    { userInfo: { ...config.userInfo, url: "https://foreign.example.test/userinfo" } }
+  ]) {
+    writeSsoConfig(app, { ...config, sessionRestore: { authMode: "bearer" }, ...override });
+    assert.ok(__testInternals.loadDesktopSsoConfig(app, "darwin").error);
+  }
+});
 
 test("desktop sso access-token Cookie uses JWT exp and falls back to a session Cookie", () => {
   const expirationDate = Math.floor(Date.now() / 1000) + 3_600;

@@ -1,6 +1,7 @@
 export const SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL = "desktop:service-webview:message";
 export const SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL = "desktop:service-webview:deliver";
 export const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "desktop:service-webview:route";
+export const SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL = "desktop:service-webview:route-status";
 export const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action";
 export const SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL = "desktop:service-webview:surface-lifecycle";
 export const SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state";
@@ -30,13 +31,53 @@ export const AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE =
   "desktop:agent-webclient:current-resource:action";
 export const AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE =
   "desktop:agent-webclient:current-resource:action:response";
+export const AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE =
+  "desktop:agent-webclient:document-state";
+export const AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE =
+  "desktop:agent-webclient:document-handoff";
+export const AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE =
+  "desktop:agent-webclient:workspace-arrow-key";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
 export const PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE = "desktop:plugin-settings:write:response";
 export const DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE = "desktopContextChanged";
 export const DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE = "desktopRouteChanged";
+export const DESKTOP_ROUTE_READY_MESSAGE_TYPE = "desktopRouteReady";
+export const DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE = "desktopRouteApplied";
 export const DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE = "desktopSurfaceActiveChanged";
+
+export type ServiceWebviewRouteStatus =
+  | {
+      type: typeof DESKTOP_ROUTE_READY_MESSAGE_TYPE;
+      routerLocation: string;
+    }
+  | {
+      type: typeof DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE;
+      routeRevision: number;
+      routerLocation: string;
+    };
+
+function isServiceWebviewRouterLocation(value: unknown): value is string {
+  return typeof value === "string" &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    value.length <= 8_192 &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+export function isServiceWebviewRouteStatus(
+  value: unknown,
+): value is ServiceWebviewRouteStatus {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (!isServiceWebviewRouterLocation(record.routerLocation)) return false;
+  if (record.type === DESKTOP_ROUTE_READY_MESSAGE_TYPE) return true;
+  return record.type === DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE &&
+    Number.isSafeInteger(record.routeRevision) &&
+    Number(record.routeRevision) > 0;
+}
 
 export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
@@ -47,6 +88,9 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
+  AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -107,6 +151,23 @@ export type AgentWebclientCurrentResourceActionResult = {
   available?: boolean;
 };
 
+export type AgentWebclientWorkspaceArrowKeyDirection = "left" | "right";
+
+export function isAgentWebclientWorkspaceArrowKeyMessage(
+  value: unknown,
+): value is ServiceWebviewBridgeMessage & {
+  type: typeof AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE;
+  direction: AgentWebclientWorkspaceArrowKeyDirection;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE &&
+    typeof record.requestId === "string" &&
+    record.requestId.length > 0 &&
+    record.requestId.length <= 128 &&
+    (record.direction === "left" || record.direction === "right");
+}
+
 export function normalizeAgentWebclientCurrentResourceIdentity(
   value: unknown,
 ): AgentWebclientCurrentResourceIdentity | null {
@@ -134,9 +195,9 @@ export function normalizeAgentWebclientCurrentResourceIdentity(
   }
   const parts = relativePath.split("/");
   const expectedRoot = profile === "artifact" ? "artifacts" : "references";
+  const rootReference = profile === "reference" && parts.length === 1;
   if (
-    parts.length < 2 ||
-    parts[0] !== expectedRoot ||
+    (!rootReference && (parts.length < 2 || parts[0] !== expectedRoot)) ||
     parts.some((part) => {
       if (!part || part === "." || part === "..") return true;
       let probe = part;
@@ -193,6 +254,10 @@ export type ServiceWebviewBridgeMessage = {
   changedKeys?: string[];
   token?: string | null;
   desktopAuthContext?: string;
+  dirty?: boolean;
+  busy?: boolean;
+  annotationCount?: number;
+  targetKey?: string;
   desktop?: unknown;
   active?: boolean;
   available?: boolean;
@@ -210,4 +275,6 @@ export type ServiceWebviewBridgeMessage = {
   pathname?: string;
   search?: string;
   hash?: string;
+  routeRevision?: number;
+  direction?: AgentWebclientWorkspaceArrowKeyDirection;
 };

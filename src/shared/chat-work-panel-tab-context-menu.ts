@@ -10,9 +10,11 @@ export type ChatWorkPanelTabContextMenuActionId =
   | "reload"
   | "copy-url"
   | "copy-title"
+  | "copy-path"
   | "download-resource"
   | "reveal-resource"
   | "open-resource-default-app"
+  | "open-resource-browser"
   | "close-tab"
   | "close-other-tabs"
   | "toggle-fullscreen";
@@ -36,6 +38,8 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       profile: ChatWorkPanelTabContextMenuProfile;
       isFullscreen: boolean;
       reviewMode?: "unavailable" | "inactive" | "active";
+      documentPathAvailable?: boolean;
+      nativeHtml?: { localOriginal: boolean };
       canClose: boolean;
       canCloseOthers: boolean;
     };
@@ -135,7 +139,8 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
     }
     const parts = rawPath.split("/").filter((part) => part && part !== ".");
     const expectedRoot = input.profile === "artifact" ? "artifacts" : "references";
-    if (parts.length < 2 || parts[0] !== expectedRoot || parts.some((part) => part === "..")) {
+    const rootReference = input.profile === "reference" && parts.length === 1;
+    if ((!rootReference && (parts.length < 2 || parts[0] !== expectedRoot)) || parts.some((part) => part === "..")) {
       return "";
     }
     return parts.join("/");

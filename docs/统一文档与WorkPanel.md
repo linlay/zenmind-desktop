@@ -1,0 +1,78 @@
+# 统一文档与 WorkPanel
+
+## 文档定位
+
+本文定义 WorkPanel 打开、展示、编辑、批注与保存文档的长期边界。精确字段、分类枚举和 bridge 结构以 shared contract 与测试为准。
+
+这一模型不包含用户从系统文件选择器临时打开的项目外文件；它们继续由 host-only 本地文件能力承载。
+
+## 两个正交维度
+
+文档来源决定身份、权限和保存语义，内容类型决定 renderer 和可用能力；二者不得互相推断。
+
+| 来源 | 权威身份 | 默认保存 |
+| --- | --- | --- |
+| Workspace File | Agent 与规范 workspace 相对路径 | 带预期 revision 原位覆盖 |
+| Artifact | Chat、Artifact 与相对路径 | 创建新 Artifact；用户可明确选择带 revision 覆盖 |
+| Reference | Chat、Reference 与相对路径 | 只能创建新 Artifact |
+| Live Project Web | loopback URL 与 owner Chat 对应的 Coder workspace | 不写 DOM；批注交给 Coder 修改源码 |
+| 普通 Web | HTTP(S) URL | 不保存页面，仅交接 DOM 批注 |
+
+revision 在所有客户端中都是不透明值；Platform 通过 `X-Document-Revision` 为原始文档响应传递该源版本。Platform 在提交时重新验证来源身份、路径、权限和 revision；冲突不得静默覆盖。
+
+## 内容类型与宿主所有权
+
+Desktop 只原生承载 HTML 和图片。Markdown、文本、代码、PDF、Office、音视频、压缩包和未知二进制都由 Agent WebClient Document Surface 承载，因而 Desktop 内嵌与 Standalone 共用一份实现。
+
+| 内容类型 | Desktop | Standalone | 可变更能力 |
+| --- | --- | --- | --- |
+| HTML | 原生隔离预览与 DOM 批注 | WebClient 源码与 sandbox 预览 | Desktop WorkPanel 不编辑源码，只交接 DOM 批注；Standalone 由 WebClient 管理 |
+| 图片 | 原生图片 Surface | WebClient 可解码预览与基础 Canvas | PNG/JPEG/WebP 可编辑保存；动画、SVG 及其他格式只读 |
+| Markdown/文本/代码 | WebClient | WebClient | Markdown 默认预览且仅保留预览/源码，预览可选区批注，源码可直接编辑；带 revision 保存 |
+| PDF | WebClient | WebClient | PDF.js 只读预览、页码、缩放与搜索 |
+| Office/音视频 | WebClient | WebClient | 只读预览或元信息；Desktop 可使用系统打开与定位 |
+| 压缩包/未知二进制 | WebClient | WebClient | 元信息与显式下载，不伪装为文本 |
+
+Platform 的 MIME、签名和文本探测是加载后最终事实。WebClient 可以用扩展名做加载前临时分类；Desktop 在创建 HTML/图片原生 Surface 前必须从权威来源重新检查，不信任 guest 自报类型。
+
+Platform 分类使用来源中的语义文件名，而不是缓存名或内部存储名。`application/octet-stream` 只表示 MIME 未知，不能压过 `.md/.markdown/.mdx/.txt` 等专用扩展名与安全 UTF-8 探测；安全文本响应必须归一为声明 UTF-8 的文本 MIME。已知文本扩展名若包含 NUL 或不是 UTF-8，仍保持只读，但 UI 应明确显示“文本编码不受支持”，不把它描述成普通未知二进制。
+
+## 统一打开流程
+
+Main Chat 卡片、Markdown 链接、Project 文件、Artifact 和 Reference 只提交语义来源，不自行选择 Viewer。打开流程先规范化来源并获得内容类型；Desktop 的 HTML/图片调用 canonical `openDocument` 进入原生 registry，其他内容产生 WebClient descriptor。Standalone 始终进入 WebClient Document Surface。
+
+WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
+
+文档 Surface 不显示 Desktop 通用浏览器地址栏：文件名只出现在 Tab，完整路径进入 Tab tooltip/右键菜单；Markdown、文本和代码内容区最多保留一行自身工具栏。Markdown 打开或切换文档时始终优先预览，不提供分屏；用户只在需要修改内容时主动切换到源码。保存前必须选择方式：Workspace File 默认且只能原位覆盖，Artifact 默认创建新产物且可明确选择覆盖，Reference 只能创建新产物。重新加载权威 revision 收纳在文档工具栏的更多菜单中，有未保存修改时必须先确认。普通 Web、WebApp 与 loopback 实时网站继续使用浏览器刷新/地址栏。
+
+## Desktop 原生安全边界
+
+Document Registry 只接收语义来源，并用绑定 sender、owner Chat 与 renderer generation 的一次性 claim 下发 opaque handle。Renderer 不获得绝对路径、Platform Token 或内部 descriptor。
+
+HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。Desktop WorkPanel 的 HTML Surface 固定使用占满内容区的直接预览，只在预览与 DOM 批注之间切换，不提供源码、分屏或源码保存入口。顶部工具条在预览态显示不含本地绝对路径的语义 URL 与批注按钮，批注态显示返回预览、选择提示和批注数量。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
+
+原生 HTML 的内容由独立 sandbox WebView 承载，而非 Desktop renderer 的 `srcDoc`。每个 opaque handle 绑定独立临时 session，使用专用协议读取原始 HTML 与相对资源，不注入 Desktop CSP 或页面级批注脚本，也不改写产物自身的 CSP。内联脚本、CDN 脚本、外部样式/图片/字体和接口请求遵循 Chromium 的正常 CORS、证书及混合内容规则；不能通过关闭 webSecurity 或使用 Main 网络代理绕过这些限制。该 session 不共享 SSO、Desktop Cookie、Token Bridge 或公开 CDP 授权。手动选择本地文件的既有离线 session 不随此变化。
+
+协议请求逐次验证资源身份、方法、规范路径、realpath 与大小上限。Workspace 资源限于权威 workspace，Artifact/Reference 限于当前资源目录，远端相对资源沿用同一语义边界并由 Main 读取。Main 校验 owner renderer、session 和预加载脚本后才允许 guest attach；外部顶层导航、popup、自动下载、嵌套 webview 与设备权限均被拒绝。批注只通过隔离 preload 的窄消息通道传递，不接受页面 postMessage。隐藏、切换标签和全屏保留 guest；关闭 item、workspace 或 renderer 时撤销 handle、关闭 guest 并清理 session 与临时缓存。
+
+Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展示实现决定。原生 HTML 提供刷新、语义路径和文件名复制、另存、定位、默认应用打开与外部浏览器打开。后两者必须区分：默认应用遵循 HTML 文件关联，浏览器使用系统 HTTPS 默认处理程序；macOS 与 Windows 分别执行对应启动方式，不在浏览器解析失败时静默改用文件关联。操作只传 opaque handle，Main 重新验证 sender、owner Chat、generation 和文件。远端缓存不能冒充本地原件进行定位；外部打开先由用户另存，取消不得打开。刷新保留并重新定位批注，刷新前提示用户，无法重定位的批注明确失效。
+
+图片 Surface 对 PNG/JPEG/WebP 保留像素编辑、撤销/重做、AI 工具和区域批注。非编辑格式只读，不得通过错误扩展名或隐式栅格化覆盖原件；JPEG 不接受含透明像素的覆盖结果。系统打开、定位和解码链路必须分别回归 macOS 与 Windows。
+
+## 实时 loopback 项目
+
+`localhost`、`*.localhost`、`127.0.0.0/8` 和 `[::1]` 是 loopback。当 owner Chat 是绑定有效 workspace 的 Coder 时，WorkPanel 为该 Web item 赋予 `live-project-web` 交接语义，但不赋予页面任何新权限。preload 只可交付脱敏 DOM 摘要、selector/XPath、坐标、URL 和可选截图；Coder 修改 workspace 后再通过 HMR 或刷新验证。顶层导航离开 loopback 后立即退化为普通 Web。
+
+## 状态、标题与兼容
+
+WebClient 文档和 Desktop 原生 Surface 都向 WorkPanel 提交当前 item 绑定的 dirty、busy 和 annotation count。关闭当前、关闭其他、切换原生编辑器和 WorkPanel 全屏生命周期共用同一未保存保护规则。
+
+File descriptor 的 tab 标题固定为“显式 title > 路径 basename > `file`”，同时支持 POSIX、Windows 与 UNC 分隔符。WebClient 主动生成，Desktop 对旧 bundle 再做相同兜底；该修复不改 stable key、`surfaceId` 或 descriptor schema。
+
+canonical Desktop/WebClient bridge v6 增加 `openDocument`，同时保留旧方法供历史 bundle 运行。`DESKTOP_APP=true` 时的版本不兼容必须显式失败，不得偷偷转为 Standalone。
+
+## 上传附件预览
+
+Platform 上传的 Reference 可以是 Chat 根目录的单个文件名，也可以位于 `references/` 下。WebClient 打开、当前资源操作及 Desktop 本地解析使用相同的来源规则；Artifact 仍限于 `artifacts/`。owner Chat、规范路径和 realpath 校验继续生效。根目录 HTML Reference 只允许读取自身，不因此获得相邻 Chat 文件的读取权限。
+
+DOCX 正文由共用 WebClient Document Surface 承载，只读显示文字、表格、内嵌图片、分页和缩放，不依赖系统安装的 Office 或转换服务。随包分发的渲染库在独立 opaque-origin sandbox iframe 中运行；只有固定 nonce 脚本可执行，文档自带脚本、HTML altChunk、远端资源和表单均被禁止。父页面按 frame source 和随机 token 验证窄消息通道，只交付文档字节与阅读控制，不交付凭据或 Desktop 能力。下载仍返回原件；Reference 不可覆盖。其他 Office 格式保留现有元信息及显式文件操作。

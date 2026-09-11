@@ -5,6 +5,7 @@ export const LEGACY_BUILTIN_BROWSER_SURFACE_ID = "chrome";
 export const BUILTIN_BROWSER_SURFACE_LABEL = "Chrome";
 export const BUILTIN_BROWSER_DEFAULT_URL = "https://www.google.com/";
 export const BUILTIN_BROWSER_ROUTE = "/chrome";
+export const DESKTOP_BROWSER_WEBVIEW_PARTITION = "persist:desktop-browser";
 
 export const BUILTIN_BROWSER_SEARCH_ENGINES = [
   {

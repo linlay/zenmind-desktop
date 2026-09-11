@@ -13,8 +13,8 @@ const { createFirstInstallBootstrapNavigation } = require(path.join(
   "..",
   "dist-electron",
   "main",
+  "modules",
   "assistant",
-  "core",
   "first-install-bootstrap-navigation.js",
 ));
 const { registerAssistantIpcHandlers } = require(path.join(
@@ -22,21 +22,26 @@ const { registerAssistantIpcHandlers } = require(path.join(
   "..",
   "dist-electron",
   "main",
-  "ipc",
-  "assistant-handlers.js",
+  "modules",
+  "assistant",
+  "ipc.js",
 ));
 const { readEnterpriseImSettings } = require(path.join(
   __dirname,
   "..",
   "dist-electron",
   "main",
-  "enterprise-im-settings.js",
+  "modules",
+  "enterprise-chat",
+  "settings.js",
 ));
 const { desktopDataRootExists } = require(path.join(
   __dirname,
   "..",
   "dist-electron",
   "main",
+  "infrastructure",
+  "filesystem",
   "user-paths.js",
 ));
 
@@ -59,11 +64,14 @@ function registerFirstInstallNavigationHandler(navigation) {
     },
   }, {
     assistantBridge: {},
+    conversationShare: {
+      exportChatHtml() {}, create() {}, list() {}, revoke() {},
+    },
     assistantNavigationStatusClient: {},
     desktopActionRendererRequests: new Map(),
     desktopActionConfirmationRequests: new Map(),
     desktopActionOptions: {},
-    app: {},
+    app: { once() {} },
     mainWindow: null,
     shell: null,
     showFileDialog: null,
@@ -129,10 +137,22 @@ test("main runtime freezes first-install navigation before any startup initializ
     "runtime.ts",
   ), "utf8");
 
-  assert.match(
-    runtimeSource,
-    /export function createMainProcessRuntime\(\) \{\s*const startupPlatform = process\.platform;\s*const isFirstDesktopInstall = !desktopDataRootExists\(app, startupPlatform\);\s*const runtimeRootAtProcessStart = resolveRuntimeRoot\(app, startupPlatform\);\s*const runtimeRootExistedAtStartup = runtimeRootExists\(app, startupPlatform\);\s*const runtimeEnvExistedAtStartup = runtimeEnvExists\(app, startupPlatform\);\s*const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\);/,
-  );
+  const startupSnapshot = [
+    "const startupPlatform = process.platform;",
+    "const isFirstDesktopInstall = !desktopDataRootExists(app, startupPlatform);",
+    "const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);",
+    "const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);",
+    "const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);",
+    "const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);",
+  ];
+  let previousIndex = runtimeSource.indexOf("export function createMainProcessRuntime()");
+  assert.notEqual(previousIndex, -1);
+  for (const statement of startupSnapshot) {
+    const statementIndex = runtimeSource.indexOf(statement, previousIndex);
+    assert.notEqual(statementIndex, -1, `missing startup snapshot statement: ${statement}`);
+    assert.ok(statementIndex > previousIndex);
+    previousIndex = statementIndex;
+  }
 });
 
 test("main runtime freezes the runtime-root snapshot before startup runtimes can create Desktop directories", () => {

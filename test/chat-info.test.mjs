@@ -94,7 +94,7 @@ test("chat information dialog keeps WebClient behavior behind Desktop UI", () =>
     "utf8",
   );
   const ipcSource = fs.readFileSync(
-    path.join(projectRoot, "src/main/ipc/assistant-handlers.ts"),
+    path.join(projectRoot, "src/main/modules/assistant/ipc.ts"),
     "utf8",
   );
   const preloadSource = fs.readFileSync(

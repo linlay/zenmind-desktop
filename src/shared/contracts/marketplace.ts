@@ -87,11 +87,15 @@ export interface MarketSkillPackageItem {
 
 export interface MarketSkillProfile {
   kind: "single" | "package";
+  category?: string;
+  scenario?: string;
+  featured?: boolean;
   packageMode?: string;
   includedSkills?: MarketSkillPackageItem[];
 }
 
 export interface MarketCatalogItem {
+  skillFeatured?: boolean;
   id: string;
   type: MarketItemType;
   name: string;
@@ -121,6 +125,7 @@ export interface MarketCatalogItem {
 }
 
 export interface MarketItem {
+  skillFeatured?: boolean;
   id: string;
   type: MarketItemType;
   name: string;
@@ -204,6 +209,7 @@ export interface MarketListResult {
 
 export interface MarketListOptions {
   sections?: MarketSection[];
+  includeFavorites?: boolean;
 }
 
 export interface MarketFavoriteInput {

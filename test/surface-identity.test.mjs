@@ -9,6 +9,7 @@ const {
   createServiceSurfaceIdentity,
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity,
+  resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId,
   stableSurfaceHash,
   surfaceIdentityMatchesPolicy
@@ -16,7 +17,10 @@ const {
 const {
   createBrowserSurfaceRegistry,
   registeredSurfaceIdentitiesConflict
-} = await import("../dist-electron/main/browser-surface-registry.js");
+} = await import("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
+const {
+  __testInternals: deprecatedCompatibilityInternals
+} = await import("../dist-electron/main/support/logging/deprecated-compatibility.js");
 const {
   resolveAgentWebclientWebviewSurfaceType
 } = await import("../dist-electron/shared/webview-context-menu.js");
@@ -24,6 +28,8 @@ const {
 test("surface identity uses readable singleton roots and stable domain-prefixed dynamic ids", () => {
   assert.equal(SURFACE_ROLES.includes("copilot-chat"), false);
   assert.equal(resolveLegacyFixedSurfaceId("agent-webclient-copilot"), "agent-webclient-copilot");
+  assert.equal(resolveFixedSurfaceRole(resolveLegacyFixedSurfaceId("agent-webclient-chat")), "main-chat");
+  assert.equal(resolveFixedSurfaceRole("svc:agent-webclient"), null);
   assert.equal(createSurfaceIdentity("main-chat").surfaceId, "main-chat");
   assert.equal(createSurfaceIdentity("kanban-chat").surfaceId, "kanban-chat");
   assert.deepEqual(createSurfaceIdentity("selection-explain", "", { ownerChatId: "chat-1" }), {
@@ -146,6 +152,8 @@ test("surface registry rejects Copilot Dock on Kanban and emits trusted root lif
 });
 
 test("surface registry rejects a forged identity and cascades child removal", () => {
+  deprecatedCompatibilityInternals.resetDesktopVersion();
+  deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
   const guests = new Map([
     [71, { id: 71, getType: () => "webview", isDestroyed: () => false }],
     [72, { id: 72, getType: () => "webview", isDestroyed: () => false }],
@@ -194,7 +202,23 @@ test("surface registry rejects a forged identity and cascades child removal", ()
 
   const main = createSurfaceIdentity("main-chat", "", { ownerChatId: "chat-1" });
   assert.equal(registry.registerSurface(registration(main, 71, "agent-chat"), 7), true);
-  assert.equal(registry.findRegisteredSurfaceWebContents("agent-webclient-chat"), guests.get(71));
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  try {
+    assert.equal(registry.findRegisteredSurfaceWebContents("agent-webclient-chat"), guests.get(71));
+    assert.equal(registry.findRegisteredSurfaceWebContents("agent-webclient-chat"), guests.get(71));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(warnings, [[
+    "[deprecated-compatibility]",
+    {
+      id: "surface.legacy-alias",
+      category: "fixed",
+      canonicalRole: "main-chat"
+    }
+  ]]);
   assert.equal(registry.registerSurface(registration({ ...main, interaction: "none" }, 72, "agent-chat"), 7), false);
   assert.equal(registry.registerSurface(registration({ ...main, surfaceRole: "copilot-chat" }, 72, "agent-chat"), 7), false);
 
@@ -270,6 +294,8 @@ test("surface registry rejects a forged identity and cascades child removal", ()
 });
 
 test("surface registry reports sanitized and deduplicated registration rejection reasons", async () => {
+  deprecatedCompatibilityInternals.resetDesktopVersion();
+  deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
   const diagnostics = [];
   const guests = new Map([301, 302, 303, 304].map((id) => [
     id,
@@ -345,6 +371,23 @@ test("surface registry reports sanitized and deduplicated registration rejection
   const appA = webappRegistration("webapp:a", 301, "app-a");
   assert.equal(registry.registerSurface(appA, 7), true);
   assert.equal(diagnostics.length, 0);
+  const compatibilityWarnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => compatibilityWarnings.push(args);
+  try {
+    assert.equal(registry.findRegisteredSurfaceWebContents("webapp:a"), guests.get(301));
+    assert.equal(registry.findRegisteredSurfaceWebContents("webapp:a"), guests.get(301));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(compatibilityWarnings, [[
+    "[deprecated-compatibility]",
+    {
+      id: "surface.legacy-alias",
+      category: "derived",
+      canonicalRole: "webapp"
+    }
+  ]]);
 
   const invalidRetry = {
     ...webappRegistration("webapp:recovery", 302, "invalid-retry"),

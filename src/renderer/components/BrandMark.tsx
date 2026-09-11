@@ -26,13 +26,13 @@ export type SidebarIllustrationKind =
   | "website";
 
 /**
- * The primary sidebar has two purpose-built icon families. The compact family
- * is used beside the expanded labels; the rail family is only for the 28px
- * collapsed navigation targets.
+ * Compact geometry is tuned for 16px labels; rail geometry uses a consistent
+ * 24px outline grid for collapsed navigation, matching the action icons.
  */
 export type SidebarIllustrationVariant = "compact" | "rail";
 
 export type SidebarActionIconKind =
+  | "pin"
   | "sidebar_left"
   | "sidebar_right"
   | "back"
@@ -94,13 +94,13 @@ function createSidebarIconProps(
   return {
     className: getSidebarIconClassName(kind, variant, className),
     viewBox: usesRailGeometry
-      ? "0 0 28 28"
+      ? "0 0 24 24"
       : usesCompactPrimaryGeometry
         ? "0 0 16 16"
         : "0 0 24 24",
-    fill: usesRailGeometry ? "currentColor" : "none",
-    stroke: usesRailGeometry ? "none" : "currentColor",
-    strokeWidth: usesCompactPrimaryGeometry ? 1.4 : 2,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: usesRailGeometry ? 1.8 : usesCompactPrimaryGeometry ? 1.4 : 2,
     strokeLinecap: "round",
     strokeLinejoin: "round",
     "aria-hidden": true,
@@ -202,17 +202,17 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
     case "expand_all":
       return (
         <svg {...iconProps}>
-          <path d="m8 9 4-4 4 4" />
-          <path d="m8 15 4 4 4-4" />
-          <path d="M5 12h14" />
+          <path d="m6 9 6-6 6 6" />
+          <path d="m6 15 6 6 6-6" />
+          <path d="M3 12h18" />
         </svg>
       );
     case "collapse_all":
       return (
         <svg {...iconProps}>
-          <path d="m8 5 4 4 4-4" />
-          <path d="m8 19 4-4 4 4" />
-          <path d="M5 12h14" />
+          <path d="m6 3 6 6 6-6" />
+          <path d="m6 21 6-6 6 6" />
+          <path d="M3 12h18" />
         </svg>
       );
     case "refresh":
@@ -231,17 +231,16 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
       );
     case "new_chat":
       return (
-        <svg {...iconProps} viewBox="0 0 16 16" stroke="none">
-          <path
-            d="M6.33325 1.88379C6.58178 1.88379 6.78345 2.08546 6.78345 2.33398C6.78328 2.58237 6.58168 2.78418 6.33325 2.78418H4.66626C3.62638 2.78435 2.78362 3.62711 2.78345 4.66699V11.334C2.78361 12.3739 3.62637 13.2176 4.66626 13.2178H11.3333C12.3733 13.2178 13.2169 12.374 13.217 11.334V9.66699C13.2172 9.41872 13.418 9.21795 13.6663 9.21777C13.9147 9.21777 14.1163 9.41861 14.1165 9.66699V11.334C14.1163 12.871 12.8703 14.1172 11.3333 14.1172H4.66626C3.12932 14.117 1.88322 12.8709 1.88306 11.334V4.66699C1.88323 3.13006 3.12933 1.88396 4.66626 1.88379H6.33325Z"
-            fill="currentColor"
-          />
-          <path
-            fillRule="evenodd"
-            clipRule="evenodd"
-            d="M10.8948 2.375C11.6494 1.63227 12.8628 1.63698 13.6116 2.38574C14.362 3.13643 14.3637 4.35266 13.6165 5.10644L9.36353 9.39355C9.01402 9.74579 8.56977 9.98985 8.08521 10.0967L6.17603 10.5166C5.74813 10.6107 5.36686 10.2296 5.46118 9.80176L5.88208 7.89746C5.98978 7.4105 6.23578 6.96428 6.59106 6.61426L10.8948 2.375ZM12.9749 3.02148C12.5756 2.62258 11.9289 2.62086 11.5266 3.0166L7.2229 7.25586C6.99148 7.4839 6.83116 7.77457 6.76099 8.0918L6.44165 9.53711L7.89185 9.21777C8.20744 9.14811 8.49721 8.98919 8.72485 8.75976L12.9778 4.47266C13.3759 4.07066 13.375 3.42164 12.9749 3.02148Z"
-            fill="currentColor"
-          />
+        <svg {...iconProps}>
+          <path d="M10 4H6a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3v-4" />
+          <path d="m15 5 3 3M9 15l1-5 7-7a2.12 2.12 0 0 1 3 3l-7 7-4 2Z" />
+        </svg>
+      );
+    case "pin":
+      return (
+        <svg {...iconProps}>
+          <path d="m14 3 7 7-4 1-3 5-6-6 5-3 1-4Z" />
+          <path d="m11 13-7 7" />
         </svg>
       );
     case "more_actions":
@@ -300,66 +299,37 @@ function RailSidebarIllustration({
     case "futures":
       return (
         <svg {...iconProps}>
-          <rect
-            className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-blue"
-            x="4"
-            y="5"
-            width="5"
-            height="18"
-            rx="2.5"
-          />
-          <rect
-            className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-green"
-            x="11.5"
-            y="7"
-            width="5"
-            height="14"
-            rx="2.5"
-          />
-          <rect
-            className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-amber"
-            x="19"
-            y="9"
-            width="5"
-            height="10"
-            rx="2.5"
-          />
+          <rect x="3" y="3" width="18" height="18" rx="4" />
+          <path d="M8 8v8M12 8v5M16 8v3" />
         </svg>
       );
     case "schedule":
       return (
         <svg {...iconProps}>
-          <path
-            fillRule="evenodd"
-            d="M14 3a11 11 0 1 1 0 22 11 11 0 0 1 0-22Zm-1.15 4.5v6.84l4.6 2.65 1.15-1.98L15 12.96V7.5h-2.15Z"
-          />
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3.5 2" />
         </svg>
       );
     case "chat":
       return (
         <svg {...iconProps}>
-          <path
-            fillRule="evenodd"
-            d="M4 6.25A4.25 4.25 0 0 1 8.25 2h11.5A4.25 4.25 0 0 1 24 6.25v8.5A4.25 4.25 0 0 1 19.75 19H12l-5.5 4v-4.47A4.25 4.25 0 0 1 4 14.75v-8.5ZM9.5 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm4.5 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm4.5 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Z"
-          />
+          <path d="M7 4h10a4 4 0 0 1 4 4v7a4 4 0 0 1-4 4H9l-5 3v-5a4 4 0 0 1-1-2V8a4 4 0 0 1 4-4Z" />
+          <path d="M8 9h8M8 13h5" />
         </svg>
       );
     case "project":
       return (
         <svg {...iconProps}>
-          <path
-            fillRule="evenodd"
-            d="M4 6.5A3.5 3.5 0 0 1 7.5 3h4.6l2.75 2.75h7.65A3.5 3.5 0 0 1 26 9.25v11.25A3.5 3.5 0 0 1 22.5 24h-15A3.5 3.5 0 0 1 4 20.5v-14Zm2.25 7.25v2.25h17.5v-2.25H6.25Z"
-          />
+          <path d="M3 7a3 3 0 0 1 3-3h4l2 3h6a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7Z" />
+          <path d="M3 10h18" />
         </svg>
       );
     case "website":
       return (
         <svg {...iconProps}>
-          <path
-            fillRule="evenodd"
-            d="M14 2.5a11.5 11.5 0 1 1 0 23 11.5 11.5 0 0 1 0-23ZM4.3 13h19.4v2H4.3v-2Zm6.1-9.05c-1.1 2.8-1.75 6.25-1.75 10.05s.65 7.25 1.75 10.05h1.75c-.85-2.8-1.35-6.25-1.35-10.05s.5-7.25 1.35-10.05H10.4Zm5.2 0c.85 2.8 1.35 6.25 1.35 10.05s-.5 7.25-1.35 10.05h1.75c1.1-2.8 1.75-6.25 1.75-10.05s-.65-7.25-1.75-10.05H15.6Z"
-          />
+          <circle cx="12" cy="12" r="9" />
+          <ellipse cx="12" cy="12" rx="4" ry="9" />
+          <path d="M3 12h18" />
         </svg>
       );
     default:

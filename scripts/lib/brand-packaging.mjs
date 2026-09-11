@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import webappToolingResource from "./webapp-tooling-resource.js";
 import { desktopBuiltinServicesRelativePath } from "./desktop-resources.mjs";
 import {
   BRAND_RUNTIME_ASSET_DIR_NAME,
@@ -14,8 +13,6 @@ import {
   currentBrandBuildTarget,
   electronBuilderConfigPath
 } from "./brand-paths.mjs";
-
-const { WEBAPP_TOOLING_RESOURCE_RELATIVE_PATH } = webappToolingResource;
 
 function parseBooleanEnv(value, name) {
   if (typeof value !== "string" || !value.trim()) {
@@ -94,16 +91,6 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
         to: "env"
       },
       {
-        from: brandBuildRelativePath(
-          brand,
-          "app",
-          brandBuildTargetKey(target),
-          "scripts",
-          "webapp-tooling.mjs"
-        ),
-        to: WEBAPP_TOOLING_RESOURCE_RELATIVE_PATH
-      },
-      {
         from: brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-icon.png"),
         to: "brand-icon.png"
       },
@@ -131,6 +118,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
       target: ["dmg"],
       category: "public.app-category.developer-tools",
       hardenedRuntime: true,
+      sign: "./scripts/sign-mac-app.js",
       notarize: false,
       timestamp: shouldSkipMacTimestamp() ? "none" : undefined
     },

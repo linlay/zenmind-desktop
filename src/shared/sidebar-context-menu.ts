@@ -14,6 +14,8 @@ export type SidebarContextMenuActionId =
   | "chat.export"
   | "chat.exportHtml"
   | "chat.share"
+  | "chat.pin"
+  | "chat.unpin"
   | "chat.rename"
   | "chat.workPanel.open"
   | "chat.workPanel.close"
@@ -21,6 +23,8 @@ export type SidebarContextMenuActionId =
   | "chat.delete"
   | "chat.info"
   | "web.close"
+  | "web.pin"
+  | "web.unpin"
   | "web.open-in-workspace"
   | "web.open-in-window"
   | "web.copy-share-url"
@@ -30,6 +34,8 @@ export type SidebarContextMenuActionId =
 
 type SidebarWebContextMenuTargetBase = {
   kind: "web";
+  pinned?: boolean;
+  canPin?: boolean;
   openMode: "dialog" | "window";
   canClose: boolean;
   canOpenAlternative: boolean;
@@ -55,6 +61,8 @@ export type SidebarContextMenuTarget =
     }
   | {
       kind: "chat";
+      pinned?: boolean;
+      canPin?: boolean;
       workPanelOpen: boolean;
     }
   | (SidebarWebContextMenuTargetBase & {

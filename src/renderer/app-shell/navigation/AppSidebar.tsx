@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -73,6 +74,7 @@ import {
 import {
   createWebNavOrderKey,
   sortSidebarNavItems,
+  partitionSidebarWebItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 import { getAssistantWorkspaceName } from "./workspaceName";
@@ -87,18 +89,23 @@ import {
 } from "../../components/PageFeedbackStack";
 import { useI18n } from "../../i18n/useI18n";
 import {
+  getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
-  getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
   getAssistantNavAgentSortedChats,
+  getAssistantNavAgentUnpinnedChats,
   hasAssistantNavChat,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
 } from "../../assistantNavigation";
 import { getActiveServiceSurfaceWebviewRef } from "../../services/serviceSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
+import {
+  isAssistantNavigationAttentionProjectAgent,
+  summarizeAssistantNavigationAttention,
+} from "../../../shared/assistant-navigation-attention";
 import {
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS,
   createAgentWebclientAgentPath,
@@ -153,7 +160,7 @@ type SidebarStandardPrimaryEntry = SidebarNavItem & {
 
 type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
 
-type SidebarGroupId = "assistants" | "chats" | "webs";
+type SidebarGroupId = "assistants" | "chats" | "webs" | "pinned";
 
 type SidebarContextMenuSubject =
   | {
@@ -265,10 +272,6 @@ type AssistantChatRowOptions = {
   dragActivator?: AssistantChatDragActivator;
 };
 
-type AgentSelectionOptions = {
-  preferNewChat?: boolean;
-};
-
 type NavigateOptions = {
   retriggerAgentRoute?: boolean;
   focusAgentChat?: boolean;
@@ -309,6 +312,7 @@ type BootstrapGuideDismissedBubbles = {
 };
 
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
+const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 800;
 const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
 const BOOTSTRAP_GUIDE_BUBBLE_GAP = 12;
 const BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000;
@@ -322,6 +326,7 @@ function createInitialBootstrapGuideDismissedBubbles(): BootstrapGuideDismissedB
 }
 
 const defaultSidebarGroupState: SidebarGroupState = {
+  pinned: true,
   assistants: true,
   chats: true,
   webs: true,
@@ -340,10 +345,6 @@ const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
   },
 ];
 
-const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
-  "desktopAssistant",
-  "webOperator",
-]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const CHATS_VISIBLE_LIMIT = 8;
 const CHATS_VISIBLE_INCREMENT = 8;
@@ -430,7 +431,7 @@ const fixedToolRowsBase: Array<
     },
     {
       orderKey: "mcp-servers",
-      to: "/mcp-servers",
+      to: "/connectors",
       labelKey: "nav.mcpConnectors",
       icon: "connector",
     },
@@ -531,6 +532,7 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
     Record<SidebarGroupId | "websites", unknown>
   >;
   return {
+    pinned: typeof record.pinned === "boolean" ? record.pinned : true,
     assistants:
       typeof record.assistants === "boolean"
         ? record.assistants
@@ -713,55 +715,8 @@ function createAgentNewChatRoute(agentKey: string) {
   return `${createAgentRoute(agentKey)}?newChat=${Date.now()}`;
 }
 
-function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
-  const firstChatId =
-    getAssistantNavAgentSortedChats(agent)[0]?.chatId ||
-    agent.latestChatId ||
-    "";
-  return firstChatId
-    ? createAgentChatRoute(agent.agentKey, firstChatId)
-    : createAgentRoute(agent.agentKey);
-}
-
-function createAgentSelectionRoute(
-  agent: AssistantNavAgentItem,
-  options: AgentSelectionOptions = {},
-) {
-  const attentionChat = getAssistantNavAgentAttentionChat(agent);
-  const attentionChatId = attentionChat?.chatId.trim() ?? "";
-  if (attentionChatId) {
-    return createAgentChatRoute(agent.agentKey, attentionChatId);
-  }
-
-  if (!options.preferNewChat) {
-    return createAgentDefaultRoute(agent);
-  }
-
-  return createAgentNewChatRoute(agent.agentKey);
-}
-
-function summarizeAgentStatus(
-  items: AssistantNavAgentItem[],
-): SidebarStatusSummary {
-  return {
-    unreadCount: items.reduce(
-      (total, item) =>
-        total + getAssistantNavAgentNonNegativeInteger(item.unreadCount),
-      0,
-    ),
-    pendingCount: items.filter((item) => item.hasPendingAwaiting).length,
-  };
-}
-
-function shouldShowAssistantInChats(agent: AssistantNavAgentItem) {
-  return isAssistantNavChatAgent(agent);
-}
-
 function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
-  return (
-    !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim()) &&
-    isAssistantNavProjectAgent(agent)
-  );
+  return isAssistantNavigationAttentionProjectAgent(agent);
 }
 
 function formatUnreadCount(value: number) {
@@ -1053,8 +1008,13 @@ type AppSidebarProps = {
   marketEnabled?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   websiteNavOrder?: SidebarNavOrderItemKey[];
+  pinnedWebEntryKeys?: string[];
+  webPinningAvailable?: boolean;
+  onSetWebItemPinned?: (item: WebEntry, pinned: boolean) => Promise<void>;
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  assistantPinnedChatItems?: AssistantNavChatItem[];
+  assistantChatPinningSupported?: boolean;
   assistantNavChatItems?: AssistantNavChatItem[];
   assistantNavChatItemsHasMore?: boolean;
   assistantChatSortMode?: AssistantChatSortMode;
@@ -1088,6 +1048,7 @@ type AppSidebarProps = {
   ) => Promise<AssistantChatOrderMutationResult>;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
+  onToggleChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onOpenChatHistory?: (agentKey?: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
@@ -1130,8 +1091,13 @@ export function AppSidebar({
   marketEnabled = true,
   sidebarNavOrder,
   websiteNavOrder = [],
+  pinnedWebEntryKeys = [],
+  webPinningAvailable = false,
+  onSetWebItemPinned,
   webItems,
   assistantNavAgents = [],
+  assistantPinnedChatItems = [],
+  assistantChatPinningSupported = false,
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
   assistantChatSortMode = "recent",
@@ -1159,6 +1125,7 @@ export function AppSidebar({
   onUpdateAssistantChatOrder,
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
+  onToggleChatWorkPanel,
   onOpenChatHistory,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
@@ -1293,6 +1260,30 @@ export function AppSidebar({
   assistantNavAgentsRef.current = assistantNavAgents;
   webItemsRef.current = webItems;
 
+  useEffect(() => {
+    const sidebarNav = sidebarNavRef.current;
+    if (!sidebarNav) {
+      return;
+    }
+
+    let hideScrollbarTimer: number | undefined;
+    // Update only the scroll container so scrolling does not rerender the chat list.
+    const handleScroll = () => {
+      sidebarNav.dataset.scrolling = "true";
+      window.clearTimeout(hideScrollbarTimer);
+      hideScrollbarTimer = window.setTimeout(() => {
+        delete sidebarNav.dataset.scrolling;
+      }, SIDEBAR_SCROLLBAR_HIDE_DELAY_MS);
+    };
+
+    sidebarNav.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      sidebarNav.removeEventListener("scroll", handleScroll);
+      window.clearTimeout(hideScrollbarTimer);
+      delete sidebarNav.dataset.scrolling;
+    };
+  }, []);
+
   useEffect(() => () => {
     if (webappShareFeedbackTimerRef.current !== null) {
       window.clearTimeout(webappShareFeedbackTimerRef.current);
@@ -1395,11 +1386,11 @@ export function AppSidebar({
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
   const sidebarChatItems = useMemo(
-    () => assistantNavChatItems.slice(0, chatsVisibleLimit),
+    () => assistantNavChatItems.filter((chat) => !chat.pinned).slice(0, chatsVisibleLimit),
     [assistantNavChatItems, chatsVisibleLimit],
   );
   const activeChatDragItem = activeChatDragId
-    ? sidebarChatItems.find((chat) => chat.chatId === activeChatDragId) ?? null
+    ? [...assistantPinnedChatItems, ...sidebarChatItems].find((chat) => chat.chatId === activeChatDragId) ?? null
     : null;
   const chatNavigationAgentsByKey = useMemo(
     () =>
@@ -1421,14 +1412,15 @@ export function AppSidebar({
       defaultChatAgentKey: resolvedChatDefaultAgentKey,
     },
   );
-  const chatStatusSummary = useMemo(
-    () => ({
-      unreadCount: sidebarChatItems.filter((chat) => !chat.isRead).length,
-      pendingCount: sidebarChatItems.filter((chat) => chat.hasPendingAwaiting)
-        .length,
+  const navigationAttentionSummary = useMemo(
+    () => summarizeAssistantNavigationAttention({
+      items: assistantNavAgents,
+      chatItems: assistantNavChatItems,
+      pinnedChatItems: assistantPinnedChatItems,
     }),
-    [sidebarChatItems],
+    [assistantNavAgents, assistantNavChatItems, assistantPinnedChatItems],
   );
+  const chatStatusSummary = navigationAttentionSummary.chats;
   const bootstrapSeedChatAvailable =
     bootstrapActive &&
     hasAssistantNavChat(assistantNavChatItems, {
@@ -1453,6 +1445,9 @@ export function AppSidebar({
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
+    pinnedWebEntryKeys,
+    webPinningAvailable,
+    onSetWebItemPinned,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
@@ -1473,6 +1468,9 @@ export function AppSidebar({
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
+    pinnedWebEntryKeys,
+    webPinningAvailable,
+    onSetWebItemPinned,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
@@ -1497,10 +1495,7 @@ export function AppSidebar({
   )
     ? activeSidebarChatId
     : "";
-  const assistantStatusSummary = useMemo(
-    () => summarizeAgentStatus(primaryAssistantNavAgents),
-    [primaryAssistantNavAgents],
-  );
+  const assistantStatusSummary = navigationAttentionSummary.projects;
   const normalizedSettingsSearchQuery = settingsSearchQuery
     .trim()
     .toLocaleLowerCase();
@@ -1543,6 +1538,11 @@ export function AppSidebar({
         return leftIndex - rightIndex;
       });
   }, [webItems, websiteNavOrder]);
+
+  const { pinned: pinnedWebNavItems, unpinned: unpinnedWebNavItems } = useMemo(
+    () => partitionSidebarWebItems(webNavItems, pinnedWebEntryKeys),
+    [webNavItems, pinnedWebEntryKeys],
+  );
 
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
@@ -1612,6 +1612,11 @@ export function AppSidebar({
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
     }
 
+    if (assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId)) {
+      return !isCollapsed && sidebarGroupState.pinned
+        ? createSidebarChatsChatFocusId(activeSidebarChatId)
+        : createSidebarGroupFocusId("pinned");
+    }
     if (navigationOwner === "chats") {
       if (!isCollapsed && sidebarGroupState.chats) {
         return activeChatsOverviewChatId
@@ -1634,12 +1639,18 @@ export function AppSidebar({
 
     if (isWebsiteGroupActive()) {
       const activeWebItem = webNavItems.find((item) => isRouteActive(item.to));
-      if (!isCollapsed && sidebarGroupState.webs && activeWebItem?.webItem) {
+      if (activeWebItem?.webItem && (
+        pinnedWebEntryKeys.includes(activeWebItem.webItem.entryKey) ||
+        (!isCollapsed && sidebarGroupState.webs)
+      )) {
         return createSidebarWebFocusId(activeWebItem.webItem.entryKey);
       }
       return createSidebarGroupFocusId("webs");
     }
 
+    if (pinnedWebNavItems[0]?.webItem) {
+      return createSidebarWebFocusId(pinnedWebNavItems[0].webItem.entryKey);
+    }
     const firstItem = navItems[0];
     if (!firstItem) {
       return "";
@@ -1667,6 +1678,11 @@ export function AppSidebar({
     sidebarGroupState.chats,
     sidebarGroupState.webs,
     activeChatsOverviewChatId,
+    assistantPinnedChatItems,
+    activeSidebarChatId,
+    sidebarGroupState.pinned,
+    pinnedWebEntryKeys,
+    pinnedWebNavItems,
     webNavItems,
   ]);
   const resolvedSidebarNavFocusId =
@@ -2103,6 +2119,9 @@ export function AppSidebar({
     }
 
     if (targetPath === currentRoute) {
+      if (options.focusAgentChat) {
+        onRequestAgentChatNavigate?.(targetPath);
+      }
       return;
     }
     const requestNavigation = options.focusAgentChat
@@ -2193,7 +2212,7 @@ export function AppSidebar({
   function readSidebarGroupId(
     value: string | undefined,
   ): SidebarGroupId | null {
-    return value === "assistants" || value === "chats" || value === "webs"
+    return value === "assistants" || value === "chats" || value === "webs" || value === "pinned"
       ? value
       : null;
   }
@@ -2207,6 +2226,8 @@ export function AppSidebar({
   }
 
   function findAssistantNavChat(chatId: string) {
+    const direct = [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === chatId);
+    if (direct) return direct;
     for (const agent of assistantNavAgentsRef.current) {
       const chat = getAssistantNavAgentRecentChats(agent).find(
         (item) => item.chatId === chatId,
@@ -2229,6 +2250,7 @@ export function AppSidebar({
   ): SidebarContextMenuTarget | null {
     const runtime = sidebarContextMenuRuntimeRef.current;
     if (subject.kind === "group") {
+      if (subject.groupId === "pinned") return null;
       return {
         kind: "group",
         groupId: subject.groupId,
@@ -2257,9 +2279,11 @@ export function AppSidebar({
         : null;
     }
     if (subject.kind === "chat") {
-      return findAssistantNavChat(subject.chatId)
-        ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId) }
-        : null;
+      const chat = findAssistantNavChat(subject.chatId);
+      return chat ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId),
+        pinned: chat.pinned === true,
+        canPin: assistantChatPinningSupported && !chatOrderMutationPending,
+      } : null;
     }
 
     const item = findWebItem(subject.entryKey);
@@ -2273,6 +2297,8 @@ export function AppSidebar({
         : "window";
     const commonTarget = {
       openMode,
+      pinned: runtime.pinnedWebEntryKeys.includes(item.entryKey),
+      canPin: runtime.webPinningAvailable && Boolean(runtime.onSetWebItemPinned),
       canClose:
         runtime.webOpenEntryKeys.includes(item.entryKey) &&
         !runtime.webClosePendingEntryKey,
@@ -2340,6 +2366,7 @@ export function AppSidebar({
       );
     }
     if (target.kind === "chat") {
+      if (actionId === "chat.pin" || actionId === "chat.unpin") return target.canPin === true;
       return [
         "chat.export",
         "chat.exportHtml",
@@ -2351,6 +2378,9 @@ export function AppSidebar({
         "chat.delete",
         "chat.info",
       ].includes(actionId);
+    }
+    if (actionId === "web.pin" || actionId === "web.unpin") {
+      return target.canPin === true && target.pinned !== (actionId === "web.pin");
     }
     if (actionId === "web.close") return target.canClose;
     if (actionId === "web.open-in-workspace") {
@@ -2454,6 +2484,8 @@ export function AppSidebar({
         await handleAssistantArchiveChat(chat);
       } else if (actionId === "chat.delete") {
         await handleAssistantDeleteChat(chat);
+      } else if (actionId === "chat.pin" || actionId === "chat.unpin") {
+        await setChatPinned(chat, actionId === "chat.pin");
       } else if (actionId === "chat.info") {
         chatInfoDialog.open(chat);
       }
@@ -2463,7 +2495,22 @@ export function AppSidebar({
     const item = findWebItem(subject.entryKey);
     if (!item) return;
     const runtime = sidebarContextMenuRuntimeRef.current;
-    if (
+    if (actionId === "web.pin" || actionId === "web.unpin") {
+      try {
+        await runtime.onSetWebItemPinned?.(item, actionId === "web.pin");
+        if (actionId === "web.unpin") {
+          setSidebarGroupState((current) => ({ ...current, webs: true }));
+        }
+        window.requestAnimationFrame(() => {
+          const focusId = actionId === "web.unpin" && sidebarContextMenuRuntimeRef.current.isCollapsed
+            ? createSidebarGroupFocusId("webs")
+            : createSidebarWebFocusId(item.entryKey);
+          focusSidebarRovingItemById(focusId);
+        });
+      } catch {
+        window.alert(t("sidebar.web.pinFailed"));
+      }
+    } else if (
       actionId === "web.close" &&
       runtime.webOpenEntryKeys.includes(item.entryKey) &&
       !runtime.webClosePendingEntryKey
@@ -2630,6 +2677,10 @@ export function AppSidebar({
   function handleSidebarRovingArrowLeft(element: HTMLElement) {
     const kind = element.dataset.sidebarNavKind;
     if (kind === "group") {
+      if (isCollapsed && onToggleCollapsed) {
+        onToggleCollapsed();
+        return true;
+      }
       const groupId = readSidebarGroupId(element.dataset.sidebarGroupId);
       if (groupId && !isCollapsed && sidebarGroupState[groupId]) {
         setSidebarGroupState((current) => ({ ...current, [groupId]: false }));
@@ -2638,6 +2689,10 @@ export function AppSidebar({
       return false;
     }
     if (kind === "agent") {
+      if (isCollapsed && onToggleCollapsed) {
+        onToggleCollapsed();
+        return true;
+      }
       const agentKey = element.dataset.sidebarAgentKey || "";
       if (agentKey && expandedAssistantAgentKeys.has(agentKey)) {
         setAssistantAgentExpanded(agentKey, false);
@@ -2646,7 +2701,7 @@ export function AppSidebar({
       return false;
     }
     if (kind === "chats-chat") {
-      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
+      return focusSidebarRovingItemById(createSidebarGroupFocusId(element.dataset.sidebarGroupId === "pinned" ? "pinned" : "chats"));
     }
     if (kind === "chats-more") {
       return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
@@ -2665,9 +2720,39 @@ export function AppSidebar({
         : false;
     }
     if (kind === "web") {
+      if (pinnedWebEntryKeys.includes(element.dataset.sidebarWebEntryKey || "")) return false;
       return focusSidebarRovingItemById(createSidebarGroupFocusId("webs"));
     }
     return false;
+  }
+
+  function toggleSidebarFromChatRow(element: HTMLElement) {
+    if (!onToggleCollapsed) {
+      return false;
+    }
+    const kind = element.dataset.sidebarNavKind;
+    const parentFocusId = kind === "chats-chat"
+      ? createSidebarGroupFocusId(element.dataset.sidebarGroupId === "pinned" ? "pinned" : "chats")
+      : createSidebarAgentFocusId(element.dataset.sidebarAgentKey || "");
+    if (!focusSidebarRovingItemById(parentFocusId)) {
+      return false;
+    }
+    onToggleCollapsed();
+    return true;
+  }
+
+  function toggleChatWorkPanelFromChatRow(element: HTMLElement) {
+    if (!onToggleChatWorkPanel) {
+      return false;
+    }
+    const chatId = element.dataset.sidebarChatId || "";
+    const chat = findAssistantNavChat(chatId);
+    const agentKey = chat?.agentKey.trim() || element.dataset.sidebarAgentKey?.trim() || "";
+    if (!chatId || !agentKey) {
+      return false;
+    }
+    onToggleChatWorkPanel(chatId, agentKey);
+    return true;
   }
 
   function getSidebarRovingEventElement(target: EventTarget | null) {
@@ -2683,6 +2768,52 @@ export function AppSidebar({
     return element;
   }
 
+  function getSidebarChatNavigationItems(element: HTMLElement) {
+    const kind = element.dataset.sidebarNavKind;
+    if (kind === "chats-chat") {
+      return element.dataset.sidebarGroupId === "pinned" ? assistantPinnedChatItems : sidebarChatItems;
+    }
+    if (kind !== "chat") {
+      return null;
+    }
+
+    const agentKey = element.dataset.sidebarAgentKey || "";
+    const agent = findAssistantNavAgent(agentKey);
+    if (!agent) {
+      return null;
+    }
+    const visibleLimit =
+      assistantAgentChatVisibleLimits.get(agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    return getAssistantNavAgentPreviewChats(agent, visibleLimit);
+  }
+
+  function moveSidebarChatSelection(
+    currentElement: HTMLElement,
+    direction: "next" | "previous",
+  ) {
+    const chats = getSidebarChatNavigationItems(currentElement);
+    const currentChatId = currentElement.dataset.sidebarChatId || "";
+    if (!chats || !currentChatId) {
+      return;
+    }
+    const nextChat = getAdjacentAssistantNavChat(
+      chats,
+      currentChatId,
+      direction,
+    );
+    if (!nextChat) {
+      return;
+    }
+
+    const focusId =
+      currentElement.dataset.sidebarNavKind === "chats-chat"
+        ? createSidebarChatsChatFocusId(nextChat.chatId)
+        : createSidebarChatFocusId(nextChat.chatId);
+    focusSidebarRovingItemById(focusId);
+    void handleAssistantOpenChat(nextChat);
+  }
+
   function handleSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
     if (!isPrimaryMode) {
       return;
@@ -2692,8 +2823,51 @@ export function AppSidebar({
       return;
     }
 
+    if (activeChatDragId || activeProjectDragKey) {
+      return;
+    }
+
     if (event.key === "Escape") {
       closeToolMenu();
+      return;
+    }
+
+    const currentNavigationKind = currentElement.dataset.sidebarNavKind;
+    const currentIsChat =
+      currentNavigationKind === "chat" ||
+      currentNavigationKind === "chats-chat";
+    const isPlainArrow =
+      !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    if (
+      currentIsChat &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp")
+    ) {
+      if (!isPlainArrow) {
+        return;
+      }
+      event.preventDefault();
+      if (!event.repeat) {
+        moveSidebarChatSelection(
+          currentElement,
+          event.key === "ArrowDown" ? "next" : "previous",
+        );
+      }
+      return;
+    }
+
+    if (
+      currentIsChat &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
+      if (!isPlainArrow || event.repeat) {
+        return;
+      }
+      const handled = event.key === "ArrowLeft"
+        ? toggleSidebarFromChatRow(currentElement)
+        : toggleChatWorkPanelFromChatRow(currentElement);
+      if (handled) {
+        event.preventDefault();
+      }
       return;
     }
 
@@ -2858,12 +3032,6 @@ export function AppSidebar({
     resetWebsiteDialogState();
     setWebsiteDialogOpen(true);
     void onRefreshCopilotAgentOptions?.();
-  }
-
-  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    showWebsiteDialog();
   }
 
   async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
@@ -3116,7 +3284,7 @@ export function AppSidebar({
       return;
     }
     const firstRevealedChat =
-      getAssistantNavAgentSortedChats(agent)[currentVisibleLimit];
+      getAssistantNavAgentUnpinnedChats(agent)[currentVisibleLimit];
     if (!firstRevealedChat) {
       return;
     }
@@ -3330,16 +3498,10 @@ export function AppSidebar({
     );
   }
 
-  async function handleAssistantMarkAllRead(
-    event: MouseEvent<HTMLElement>,
-    agent: AssistantNavAgentItem,
+  async function handleAssistantOpenChat(
+    chat: AssistantNavChatItem,
+    options: { focusAgentChat?: boolean } = {},
   ) {
-    event.preventDefault();
-    event.stopPropagation();
-    await window.electronAPI.assistant.markAgentChatsRead(agent.agentKey);
-  }
-
-  async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
     if (!chat.agentKey) {
       return;
     }
@@ -3350,26 +3512,9 @@ export function AppSidebar({
     ) {
       dismissBootstrapGuideBubble("chat");
     }
-    if (!chat.isRead && !chat.hasActiveRun) {
-      const assistantApi = window.electronAPI
-        .assistant as typeof window.electronAPI.assistant & {
-        markChatRead?: (
-          chatId: string,
-          runId?: string,
-        ) => ReturnType<typeof window.electronAPI.assistant.markAgentChatsRead>;
-      };
-      const markChatRead = assistantApi.markChatRead;
-      const markReadRequest =
-        typeof markChatRead === "function"
-          ? markChatRead(chat.chatId, chat.lastRunId || undefined)
-          : window.electronAPI.assistant.markAgentChatsRead(chat.agentKey);
-      void markReadRequest.catch((error: unknown) => {
-        console.warn("[assistant] failed to mark chat read", error);
-      });
-    }
     requestNavigate(createAgentChatRoute(chat.agentKey, chat.chatId), {
       retriggerAgentRoute: true,
-      focusAgentChat: true,
+      focusAgentChat: options.focusAgentChat === true,
     });
   }
 
@@ -3686,11 +3831,11 @@ export function AppSidebar({
   }
 
   function isAssistantGroupActive() {
-    return navigationOwner === "assistants";
+    return navigationOwner === "assistants" && !assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId);
   }
 
   function isChatsGroupActive() {
-    return navigationOwner === "chats";
+    return navigationOwner === "chats" && !assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId);
   }
 
   function isWebsiteGroupActive() {
@@ -3698,6 +3843,34 @@ export function AppSidebar({
       currentPathname.startsWith("/webs/") ||
       Boolean(pendingPath?.startsWith("/webs/"))
     );
+  }
+
+  async function setChatPinned(chat: AssistantNavChatItem, pinned: boolean) {
+    if (
+      chatOrderMutationPending ||
+      !assistantChatPinningSupported ||
+      !onUpdateAssistantChatOrder
+    ) {
+      return;
+    }
+    setChatOrderMutationPending(true);
+    setChatOrderError("");
+    try {
+      const result = await onUpdateAssistantChatOrder({
+        operation: "set_pinned",
+        chatId: chat.chatId,
+        pinned,
+      });
+      if (!result.ok) {
+        setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
+      }
+    } catch (error) {
+      setChatOrderError(
+        error instanceof Error ? error.message : t("assistant.chatOrderSaveFailed"),
+      );
+    } finally {
+      setChatOrderMutationPending(false);
+    }
   }
 
   async function updateChatsSortMode(sortMode: AssistantChatSortMode) {
@@ -3746,10 +3919,11 @@ export function AppSidebar({
     if (!activeId || !overId || activeId === overId) {
       return null;
     }
-    const activeIndex = sidebarChatItems.findIndex(
+    const dragItems = assistantPinnedChatItems.some((chat) => chat.chatId === activeId) ? assistantPinnedChatItems : sidebarChatItems;
+    const activeIndex = dragItems.findIndex(
       (chat) => chat.chatId === activeId,
     );
-    const overIndex = sidebarChatItems.findIndex(
+    const overIndex = dragItems.findIndex(
       (chat) => chat.chatId === overId,
     );
     if (activeIndex < 0 || overIndex < 0) {
@@ -4035,7 +4209,6 @@ export function AppSidebar({
             .filter(Boolean)
             .join(" ")}
           aria-label={t("sidebar.chats.newChat")}
-          title={label}
           tabIndex={options.inPopover ? undefined : -1}
           disabled={disabled}
           onClick={handleChatsNewChat}
@@ -4043,6 +4216,29 @@ export function AppSidebar({
           <SidebarActionIcon kind="new_chat" />
         </button>
       </Tooltip>
+    );
+  }
+
+  function renderNewChatNavButton() {
+    const disabled =
+      !resolvedChatDefaultAgentKey || chatDefaultAgentUnavailable;
+    const label = t("sidebar.chats.newChat");
+    return (
+      <button
+        type="button"
+        className="sidebar-link sidebar-primary-link sidebar-new-chat-button"
+        aria-label={label}
+        title={disabled ? t("sidebar.chats.defaultAgentUnavailable") : label}
+        {...getSidebarRovingItemProps("action:new-chat")}
+        data-sidebar-nav-kind="action"
+        disabled={disabled}
+        onClick={handleChatsNewChat}
+      >
+        <span className="sidebar-link-icon" aria-hidden="true">
+          <SidebarActionIcon kind="new_chat" />
+        </span>
+        <span className="sidebar-link-label">{label}</span>
+      </button>
     );
   }
 
@@ -4059,7 +4255,6 @@ export function AppSidebar({
             type="button"
             className="assistant-worker-icon-button sidebar-chats-sort-button"
             aria-label={t("sidebar.chats.sortMenu")}
-            title={sortLabel}
             tabIndex={options.inPopover ? undefined : -1}
             disabled={!assistantChatOrderingSupported || chatOrderMutationPending}
             onClick={(event) => {
@@ -4410,10 +4605,10 @@ export function AppSidebar({
     );
   }
 
-  function renderSortableChatsRows(roving: boolean) {
+  function renderSortableChatsRows(roving: boolean, chats = sidebarChatItems) {
     const sortable = roving && assistantChatOrderingSupported;
     if (!sortable) {
-      return sidebarChatItems.map((chat) => renderChatsRow(chat, roving, false));
+      return chats.map((chat) => renderChatsRow(chat, roving, false));
     }
     return (
       <DndContext
@@ -4428,10 +4623,10 @@ export function AppSidebar({
         onDragEnd={(event) => void handleChatDragEnd(event)}
       >
         <SortableContext
-          items={sidebarChatItems.map((chat) => chat.chatId)}
+          items={chats.map((chat) => chat.chatId)}
           strategy={verticalListSortingStrategy}
         >
-          {sidebarChatItems.map((chat) => renderChatsRow(chat, roving, true))}
+          {chats.map((chat) => renderChatsRow(chat, roving, true))}
         </SortableContext>
         {typeof document !== "undefined"
           ? createPortal(
@@ -4522,6 +4717,31 @@ export function AppSidebar({
     );
   }
 
+  function renderPinnedEntry() {
+    if (assistantPinnedChatItems.length === 0) {
+      return null;
+    }
+    return renderSidebarGroup({
+      groupId: "pinned",
+      label: t("sidebar.pinned.title"),
+      iconNode: <SidebarActionIcon kind="pin" />,
+      status: {
+        unreadCount: assistantPinnedChatItems.filter((chat) => !chat.isRead).length,
+        pendingCount: assistantPinnedChatItems.filter((chat) => chat.hasPendingAwaiting).length,
+      },
+      active: assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId),
+      children: [],
+      renderChildren: ({ roving }) => (
+        <div className="sidebar-chats-list sidebar-pinned-list" role="list">
+          {renderSortableChatsRows(roving, assistantPinnedChatItems)}
+          {chatOrderError ? (
+            <div className="sidebar-chats-agent-error" role="alert">{chatOrderError}</div>
+          ) : null}
+        </div>
+      ),
+    });
+  }
+
   function renderChatsEntry(item: SidebarChatsEntry) {
     return renderSidebarGroup({
       groupId: "chats",
@@ -4536,8 +4756,12 @@ export function AppSidebar({
           {item.label}
         </span>
       ),
-      headerSupplement: renderChatsDefaultAgentPicker(),
-      headerActions: renderChatsHeaderActions(),
+      headerSupplement: sidebarGroupState.chats
+        ? renderChatsDefaultAgentPicker()
+        : undefined,
+      headerActions: sidebarGroupState.chats
+        ? renderChatsHeaderActions()
+        : renderChatsNewChatButton(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>
@@ -4551,7 +4775,7 @@ export function AppSidebar({
 
   function renderSidebarChildLink(
     item: SidebarNavItem & { status?: SidebarStatusSummary },
-    options: { roving?: boolean } = {},
+    options: { roving?: boolean; topLevel?: boolean } = {},
   ) {
     const roving = options.roving ?? true;
     const showIcon = !item.orderKey.startsWith("custom:");
@@ -4579,6 +4803,7 @@ export function AppSidebar({
           key={item.to}
           className={[
             "sidebar-website-child-row",
+            options.topLevel ? "sidebar-pinned-web-row" : "",
             isActive ? "is-active" : "",
             isOpen ? "is-open" : "",
             closing ? "is-closing" : "",
@@ -4628,11 +4853,16 @@ export function AppSidebar({
               </span>
             ) : null}
             <span className="sidebar-link-label">{item.label}</span>
+            {options.topLevel ? (
+              <span className="sidebar-link-label-collapsed" aria-hidden="true">
+                {getCollapsedSidebarLabel(item.label)}
+              </span>
+            ) : null}
             {item.status
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {isOpen && isWebsite ? (
+          {isOpen && isWebsite && !(options.topLevel && isCollapsed) ? (
             <Tooltip content={closeWebsiteLabel}>
               <button
                 type="button"
@@ -4663,7 +4893,7 @@ export function AppSidebar({
               </button>
             </Tooltip>
           ) : null}
-          {showWebappAction ? (
+          {showWebappAction && !(options.topLevel && isCollapsed) ? (
             <span className="sidebar-website-child-actions">
               {isWebappRunning ? (
                 <span
@@ -4772,7 +5002,9 @@ export function AppSidebar({
           .filter(Boolean)
           .join(" ")}
         aria-current={isActive ? "page" : undefined}
-        onClick={() => void handleAssistantOpenChat(chat)}
+        onClick={(event) => void handleAssistantOpenChat(chat, {
+          focusAgentChat: event.detail === 0,
+        })}
         onDoubleClick={(event) => handleAssistantChatDoubleClick(event, chat)}
         {...getSidebarRovingItemProps(focusId, roving)}
         {...dragActivator?.listeners}
@@ -4787,6 +5019,7 @@ export function AppSidebar({
           roving ? chat.agentKey || currentAgentKey : undefined
         }
         data-sidebar-chat-id={roving ? chat.chatId : undefined}
+        data-sidebar-group-id={chat.pinned ? "pinned" : undefined}
       >
         <span className="worker-chat-item-head">
           <span
@@ -4801,6 +5034,11 @@ export function AppSidebar({
             aria-hidden={chat.isRead ? "true" : undefined}
           />
           <span className="worker-chat-name">{previewText}</span>
+          {chat.pinned ? (
+            <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
+              {getChatHoverAgent(chat).displayName}
+            </span>
+          ) : null}
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
               {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
@@ -4857,7 +5095,7 @@ export function AppSidebar({
   ) {
     const roving = options.roving ?? true;
     const dragActivator = options.dragActivator;
-    const allRecentChats = getAssistantNavAgentSortedChats(agent);
+    const allRecentChats = getAssistantNavAgentUnpinnedChats(agent);
     const projectChatVisibleLimit =
       assistantAgentChatVisibleLimits.get(agent.agentKey) ??
       PROJECT_CHATS_VISIBLE_LIMIT;
@@ -5134,6 +5372,7 @@ export function AppSidebar({
     label: string;
     collapsedLabel?: string;
     icon?: SidebarIllustrationKind;
+    iconNode?: ReactNode;
     active: boolean;
     status?: SidebarStatusSummary;
     children: Array<SidebarNavItem & { status?: SidebarStatusSummary }>;
@@ -5212,9 +5451,9 @@ export function AppSidebar({
           data-sidebar-group-id={args.groupId}
         >
           <span className="sidebar-group-heading-main">
-            {args.icon ? (
+            {args.icon || args.iconNode ? (
               <span className="sidebar-link-icon">
-                <SidebarIllustration kind={args.icon} variant="rail" />
+                {args.iconNode ?? (args.icon ? <SidebarIllustration kind={args.icon} variant="rail" /> : null)}
               </span>
             ) : null}
             {isCollapsed || !args.headerLabel ? (
@@ -5263,67 +5502,61 @@ export function AppSidebar({
         headerActions={
           <>
             {args.headerActions}
-            {args.groupId === "assistants" ? (
-              <Tooltip
-                content={
-                  allProjectsExpanded
-                    ? t("sidebar.assistants.collapseAll")
-                    : t("sidebar.assistants.expandAll")
-                }
-              >
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button sidebar-assistant-expand-button"
-                  aria-label={
+            {args.groupId === "assistants" && expanded ? (
+              <>
+                <Tooltip
+                  content={
                     allProjectsExpanded
                       ? t("sidebar.assistants.collapseAll")
                       : t("sidebar.assistants.expandAll")
                   }
-                  title={
-                    allProjectsExpanded
-                      ? t("sidebar.assistants.collapseAll")
-                      : t("sidebar.assistants.expandAll")
-                  }
-                  tabIndex={-1}
-                  disabled={
-                    primaryAssistantNavAgents.length === 0 ||
-                    Boolean(activeProjectDragKey)
-                  }
-                  onClick={handleToggleAllProjects}
                 >
-                  <SidebarActionIcon
-                    kind={allProjectsExpanded ? "collapse_all" : "expand_all"}
-                  />
-                </button>
-              </Tooltip>
-            ) : null}
-            {args.groupId === "assistants" ? (
-              <Tooltip
-                content={
-                  refreshingAssistantNavAgents
-                    ? t("sidebar.assistants.refreshing")
-                    : t("sidebar.assistants.refresh")
-                }
-              >
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button sidebar-assistant-refresh-button"
-                  aria-label={t("sidebar.assistants.refresh")}
-                  title={t("sidebar.assistants.refresh")}
-                  tabIndex={-1}
-                  disabled={refreshingAssistantNavAgents}
-                  onClick={handleRefreshAssistantNavAgents}
-                >
-                  {refreshingAssistantNavAgents ? (
-                    <span
-                      className="assistant-material-icon is-loading"
-                      aria-hidden="true"
+                  <button
+                    type="button"
+                    className="assistant-worker-icon-button sidebar-assistant-expand-button"
+                    aria-label={
+                      allProjectsExpanded
+                        ? t("sidebar.assistants.collapseAll")
+                        : t("sidebar.assistants.expandAll")
+                    }
+                    tabIndex={-1}
+                    disabled={
+                      primaryAssistantNavAgents.length === 0 ||
+                      Boolean(activeProjectDragKey)
+                    }
+                    onClick={handleToggleAllProjects}
+                  >
+                    <SidebarActionIcon
+                      kind={allProjectsExpanded ? "collapse_all" : "expand_all"}
                     />
-                  ) : (
-                    <SidebarActionIcon kind="refresh" />
-                  )}
-                </button>
-              </Tooltip>
+                  </button>
+                </Tooltip>
+                <Tooltip
+                  content={
+                    refreshingAssistantNavAgents
+                      ? t("sidebar.assistants.refreshing")
+                      : t("sidebar.assistants.refresh")
+                  }
+                >
+                  <button
+                    type="button"
+                    className="assistant-worker-icon-button sidebar-assistant-refresh-button"
+                    aria-label={t("sidebar.assistants.refresh")}
+                    tabIndex={-1}
+                    disabled={refreshingAssistantNavAgents}
+                    onClick={handleRefreshAssistantNavAgents}
+                  >
+                    {refreshingAssistantNavAgents ? (
+                      <span
+                        className="assistant-material-icon is-loading"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <SidebarActionIcon kind="refresh" />
+                    )}
+                  </button>
+                </Tooltip>
+              </>
             ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip content={t("sidebar.project.new")}>
@@ -5331,7 +5564,6 @@ export function AppSidebar({
                   type="button"
                   className="assistant-worker-icon-button sidebar-assistant-project-button"
                   aria-label={t("sidebar.project.new")}
-                  title={t("sidebar.project.new")}
                   tabIndex={-1}
                   disabled={creatingProject || Boolean(createProjectDialog)}
                   onClick={handleCreateProject}
@@ -5403,8 +5635,21 @@ export function AppSidebar({
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
+    if (item.orderKey === "schedules") {
+      return (
+        <Fragment key={item.orderKey}>
+          {renderSidebarLink(item)}
+          {renderNewChatNavButton()}
+        </Fragment>
+      );
+    }
     if (item.entryType === "chats") {
-      return renderChatsEntry(item);
+      return (
+        <Fragment key={item.orderKey}>
+          {renderPinnedEntry()}
+          {renderChatsEntry(item)}
+        </Fragment>
+      );
     }
     if (item.entryType === "assistants") {
       return renderSidebarGroup({
@@ -5423,8 +5668,8 @@ export function AppSidebar({
         label: item.label,
         collapsedLabel: item.collapsedLabel,
         icon: item.icon,
-        active: isWebsiteGroupActive(),
-        children: webNavItems,
+        active: isWebsiteGroupActive() && !pinnedWebNavItems.some((entry) => isRouteActive(entry.to)),
+        children: unpinnedWebNavItems,
       });
     }
     return renderSidebarLink(item);
@@ -5823,7 +6068,7 @@ export function AppSidebar({
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||
-        item.to === "/mcp-servers" ||
+        item.to === "/connectors" ||
         item.to === "/skills",
     );
 
@@ -6483,6 +6728,9 @@ export function AppSidebar({
       pendingPath ?? "",
     );
     const selectedCapabilityItem = pendingCapabilityItem ?? activeCapabilityItem;
+    const firstSecondaryCapabilityItemId = capabilityNavigationItems.find(
+      (item) => item.id === "market" || item.id === "help",
+    )?.id;
 
     return (
       <div className="sidebar-settings-nav sidebar-capabilities-nav">
@@ -6504,24 +6752,33 @@ export function AppSidebar({
             {capabilityNavigationItems.map((item) => {
               const isActive = selectedCapabilityItem?.id === item.id;
               return (
-                <NavLink
-                  key={item.id}
-                  to={item.to}
-                  aria-current={isActive ? "page" : undefined}
-                  className={[
-                    "sidebar-link",
-                    isActive ? "sidebar-link-active" : "",
-                    pendingCapabilityItem?.id === item.id ? "is-pending" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={(event) => handleToolItemClick(event, item.to)}
-                >
-                  <span className="sidebar-link-icon" aria-hidden="true">
-                    <SidebarIllustration kind={item.icon} />
-                  </span>
-                  <span className="sidebar-link-label">{item.label}</span>
-                </NavLink>
+                <Fragment key={item.id}>
+                  {item.id === firstSecondaryCapabilityItemId ? (
+                    <div
+                      className="sidebar-capability-divider"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <NavLink
+                    to={item.to}
+                    aria-current={isActive ? "page" : undefined}
+                    className={[
+                      "sidebar-link",
+                      isActive ? "sidebar-link-active" : "",
+                      pendingCapabilityItem?.id === item.id
+                        ? "is-pending"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={(event) => handleToolItemClick(event, item.to)}
+                  >
+                    <span className="sidebar-link-icon" aria-hidden="true">
+                      <SidebarIllustration kind={item.icon} />
+                    </span>
+                    <span className="sidebar-link-label">{item.label}</span>
+                  </NavLink>
+                </Fragment>
               );
             })}
           </div>
@@ -6660,7 +6917,10 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : navItems.map((item) => renderPrimaryNavEntry(item))}
+              : <>
+                  {pinnedWebNavItems.map((item) => renderSidebarChildLink(item, { topLevel: true }))}
+                  {navItems.map((item) => renderPrimaryNavEntry(item))}
+                </>}
         </nav>
         {renderBootstrapGuideCard()}
 

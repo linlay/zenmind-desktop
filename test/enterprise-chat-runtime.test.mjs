@@ -7,11 +7,11 @@ import test from "node:test";
 const {
   EnterpriseChatRuntime,
   __testInternals
-} = await import("../dist-electron/main/enterprise-chat-runtime.js");
+} = await import("../dist-electron/main/modules/enterprise-chat/runtime.js");
 const {
   EnterpriseChatActionLedger,
   enterpriseChatActionScope
-} = await import("../dist-electron/main/enterprise-chat-action-ledger.js");
+} = await import("../dist-electron/main/modules/enterprise-chat/action-ledger.js");
 
 function jsonResponse(status, payload) {
   return {

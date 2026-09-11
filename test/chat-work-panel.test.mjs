@@ -3,7 +3,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const read = (relativePath) => fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
+const read = (relativePath) => {
+  const sourcePath = path.join(process.cwd(), relativePath);
+  const source = fs.readFileSync(sourcePath, "utf8");
+  if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
+    return source;
+  }
+  const sourceDirectory = path.dirname(sourcePath);
+  const sourceStem = path.basename(sourcePath, ".ts");
+  const splitSources = fs.readdirSync(sourceDirectory)
+    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
+  return [source, ...splitSources].join("\n");
+};
 
 test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => {
   const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
@@ -32,6 +45,10 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /pendingChatWorkPanelOpenRef/u);
   assert.match(appShell, /committedMainChatSnapshot/u);
   assert.match(appShell, /requestChatWorkPanelOpenWhenRegistered/u);
+  assert.match(appShell, /onToggleChatWorkPanel=\{toggleChatWorkPanelFromSidebar\}/u);
+  assert.match(appShell, /const toggleChatWorkPanelFromSidebar = useCallback/u);
+  assert.match(appShell, /activeChatWorkPanelChatId === chatId && activeChatWorkPanelVisible[\s\S]{0,120}type: "hideWorkspace"/u);
+  assert.match(appShell, /workspaceExists \? "show" : "ensure"/u);
   assert.match(appShell, /handleMainChatSurfaceRegistrationChange/u);
   assert.match(appShell, /resolvePendingMainChatWorkPanelOpen\(pending, snapshot, currentRoute\)/u);
   assert.match(appShell, /main-chat-work-panel-open-timeout/u);
@@ -80,7 +97,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(css, /\.app-window-controls-layer\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*1001;[^}]*pointer-events:\s*none;/su);
   assert.match(css, /\.app-window-controls-layer \.main-chat-work-panel-toggle\s*\{[^}]*pointer-events:\s*auto;/su);
   assert.match(css, /\.main-chat-work-panel-toggle:focus-visible/u);
-  assert.match(css, /\.main-chat-work-panel-toggle\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px/su);
+  assert.match(css, /\.main-chat-work-panel-toggle\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*var\(--control-radius-sm\)/su);
   assert.match(css, /\.main-chat-work-panel-toggle-icon\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*transform:\s*scaleX\(-1\)/su);
   assert.match(css, /\.chat-work-panel\.has-panel-toggle \.chat-work-panel-tabs\s*\{[^}]*padding-right:\s*46px/su);
   assert.match(css, /\.app-shell webview\s*\{[^}]*-webkit-user-select:\s*none;[^}]*user-select:\s*none;/su);
@@ -89,7 +106,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
 test("WorkPanel actions derive ownership from trusted source and expose the canonical namespace", () => {
   const actions = read("src/shared/desktop-actions.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
-  const bridge = read("src/main/desktop-action-bridge.ts");
+  const bridge = read("src/main/modules/desktop-actions/runtime.ts");
 
   for (const name of ["getState", "openTab", "openWeb", "openLocalFile", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
     assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
@@ -108,7 +125,7 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
   assert.match(read("src/renderer/app-shell/navigation/AppSidebar.tsx"), /onCloseChatWorkPanel\?\.\(chat\.chatId, true\)/u);
 });
 
-test("WorkPanel Web guests share application cookies and keep explicit platform focus branches", () => {
+test("WorkPanel Web guests share application cookies and only blur hidden or inactive platform surfaces", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const externalWebview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
   const reducer = read("src/shared/work-panel.ts");
@@ -121,18 +138,15 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   assert.match(host, /navigationKind === "blob"/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
   assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web" \|\| \([\s\S]*?item\.descriptor\.reviewKind === "html"/u);
+  assert.match(host, /function workPanelDocumentPath[\s\S]*?module === "file"[\s\S]*?context\.path\.trim\(\)[\s\S]*?context\.relativePath/u);
+  assert.match(host, /title=\{documentPath \|\| item\.title\}/u);
+  assert.match(host, /documentPathAvailable: true/u);
+  assert.match(host, /result\.actionId === "copy-path"[\s\S]*?clipboard\.writeText\(documentPath\)/u);
   assert.match(host, /workPanelToolbarKind=\{item\.descriptor\.kind === "local-file" \? "document" : "web"\}/u);
-  assert.match(host, /className="chat-work-panel-preview-toolbar"/u);
-  assert.match(host, /showResourcePreviewToolbar[\s\S]*?item\.descriptor\.module === "artifact"/u);
+	assert.doesNotMatch(host, /className="chat-work-panel-preview-toolbar"/u);
+	assert.doesNotMatch(host, /showResourcePreviewToolbar/u);
   const workPanelStyles = read("src/renderer/styles/app-shell.css");
-  assert.match(
-    workPanelStyles,
-    /\.chat-work-panel-item\.has-preview-toolbar > \.embedded-surface-page\s*\{[^}]*top:\s*48px;[^}]*height:\s*auto;/su,
-  );
-  assert.doesNotMatch(
-    workPanelStyles,
-    /\.chat-work-panel-item\.has-preview-toolbar > \.service-webview-surface/u,
-  );
+	assert.doesNotMatch(workPanelStyles, /chat-work-panel-preview-toolbar|has-preview-toolbar/u);
   assert.match(host, /target !== "work-panel"/u);
   assert.match(host, /type: "openItem"[\s\S]*?descriptor: \{ kind: "web", url: normalizedUrl \}/u);
   assert.match(host, /showLoadingProgress/u);
@@ -152,7 +166,6 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   );
   assert.match(host, /pageReviewActive=\{reviewActive && reviewSession\?\.kind === "html"\}/u);
   assert.match(host, /reviewSession\?\.kind === "html" \? " is-html-review" : ""/u);
-  assert.match(host, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
   assert.match(host, /const webReviewPreloadEnabled = item\.descriptor\.kind === "web" &&[\s\S]*?normalizeWorkPanelWebUrl\(item\.descriptor\.url\)/u);
   assert.match(host, /onTogglePageReview=\{webReviewPreloadEnabled[\s\S]*?toggleReviewForItem/u);
   assert.match(host, /webReviewPreloadEnabled[\s\S]{0,80}?reviewPreloadUrl/u);
@@ -168,7 +181,12 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);
   assert.match(host, /else if \(isWindows\)/u);
-  assert.match(host, /dataset\.workPanelDomReady === "true"/u);
+  assert.match(host, /const activeItemId = activeChatId/u);
+  assert.match(host, /const isActiveItemHost/u);
+  assert.match(host, /focusedItem && !isActiveItemHost\(focusedItem\)/u);
+  assert.match(host, /if \(!isActiveItemHost\(itemHost\)\)/u);
+  assert.doesNotMatch(host, /webview\.focus\(\)/u);
+  assert.doesNotMatch(host, /workPanelDomReady/u);
   assert.match(reducer, /unsupported_native_surface/u);
   assert.match(reducer, /item\.pinned \|\| !item\.closable/u);
   assert.match(
@@ -198,7 +216,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
   const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
   const runtime = read("src/main/app/runtime.ts");
-  const localFiles = read("src/main/chat-work-panel-local-files.ts");
+  const localFiles = read("src/main/modules/work-panel/local-files.ts");
   const css = read("src/renderer/styles/app-shell.css");
   const sidebarCss = read("src/renderer/styles/sidebar-copilot.css");
 
@@ -211,7 +229,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   assert.match(host, /case "desktop\.workpanel\.openResourceImage"/u);
   assert.match(host, /className="chat-work-panel-add-menu sidebar-operation-menu-popover"/u);
   assert.match(host, /const width = 248/u);
-  assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/su);
+  assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;/su);
   assert.match(css, /\.chat-work-panel-add-menu\s*\{[^}]*padding:\s*6px;[^}]*background:\s*var\(--sidebar-operation-menu-bg\);[^}]*box-shadow:\s*var\(--sidebar-operation-menu-shadow\);/su);
   assert.match(css, /\.chat-work-panel-add-menu-item\s*\{[^}]*min-height:\s*32px;[^}]*font-size:\s*14px;/su);
 
@@ -241,7 +259,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   assert.doesNotMatch(host, /filePath:\s*file\./u);
 });
 
-test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-aware close controls", () => {
+test("WorkPanel renders Chrome-style outer tabs with mapped icons and layered close controls", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
   const css = read("src/renderer/styles/app-shell.css");
@@ -292,9 +310,9 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /normalizeWorkPanelWebUrl\(findItemWebview\(ownerChatId, item\.itemId\)\?\.getURL\(\)\)/u);
   assert.match(host, /work-panel-host\$\{fullscreenOwnerChatId === activeChatId \? " is-fullscreen" : ""\}/u);
   assert.match(host, /const closable = item\.closable && !item\.pinned/u);
-  assert.match(host, /onWorkPanelCloseShortcut/u);
+  assert.match(host, /registerDesktopCloseShortcutHandler/u);
   assert.match(host, /guestId === null/u);
-  assert.match(host, /setWorkPanelKeyboardFocusActive/u);
+  assert.match(host, /if \(activeChatId\)[\s\S]{0,80}closeWorkPanelStep\(activeChatId\)/u);
   assert.match(host, /const closableItems = workspace\.items\.filter/u);
   assert.match(host, /type: "closeWorkspace"[\s\S]*?force: true/u);
   assert.match(host, /data-work-panel-active/u);
@@ -323,7 +341,7 @@ test("WorkPanel fullscreen owns native window state and exclusively covers the D
   const css = read("src/renderer/styles/app-shell.css");
   const contracts = read("src/shared/contracts/desktop-api.ts");
   const preload = read("src/preload/index.ts");
-  const shellHandlers = read("src/main/ipc/shell-handlers.ts");
+  const shellHandlers = read("src/main/modules/shell/ipc.ts");
   const zhCN = read("src/shared/i18n/dictionaries/zhCN.ts");
   const enUS = read("src/shared/i18n/dictionaries/enUS.ts");
 
@@ -371,32 +389,42 @@ test("WorkPanel fullscreen owns native window state and exclusively covers the D
   assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.revealInExplorer": "Show in File Explorer"/u);
 });
 
-test("WorkPanel close shortcut focus ownership is wired across renderer preload and main", () => {
+test("WorkPanel close shortcut uses visible composite ownership across renderer preload and main", () => {
   const contracts = read("src/shared/contracts/desktop-api.ts");
   const preload = read("src/preload/index.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
-  const shellHandlers = read("src/main/ipc/shell-handlers.ts");
-  const mainContext = read("src/main/main-process-context.ts");
-  const windowManager = read("src/main/window-manager.ts");
-  const runtime = read("src/main/app-shell/runtime.ts");
+  const shellHandlers = read("src/main/modules/shell/ipc.ts");
+  const moduleRegistry = read("src/main/app/module-registry.ts");
+  const windowManager = read("src/main/modules/shell/window-manager.ts");
+  const runtime = read("src/main/modules/shell/runtime.ts");
+  const appRuntime = read("src/main/app/runtime.ts");
+  const appState = read("src/main/app/state.ts");
 
-  assert.match(contracts, /DesktopWorkPanelCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;[\s\S]*?workPanelFocused\?: boolean;/u);
-  assert.match(contracts, /setWorkPanelKeyboardFocusActive: \(active: boolean\) => void/u);
+  assert.match(contracts, /DesktopCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;/u);
+  assert.doesNotMatch(contracts, /workPanelFocused|setWorkPanelKeyboardFocusActive/u);
   assert.match(contracts, /requestWindowClose: \(\) => void/u);
-  assert.match(preload, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
+  assert.doesNotMatch(preload, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
   assert.match(preload, /desktopShell\.requestWindowClose/u);
-  assert.match(host, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/u);
-  assert.match(host, /root\.addEventListener\("focusin", handleFocusIn, true\)/u);
-  assert.match(host, /publishFocusState\(false\)/u);
-  assert.match(shellHandlers, /getMainWindow\?\.\(\) \?\? options\.mainWindow/u);
+  assert.doesNotMatch(host, /setWorkPanelKeyboardFocusActive|workPanelFocused/u);
+  assert.match(host, /if \(activeChatId\)[\s\S]{0,80}closeWorkPanelStep\(activeChatId\)/u);
+  assert.doesNotMatch(shellHandlers, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
   assert.match(shellHandlers, /ownerWindow !== mainWindow/u);
   assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.requestWindowClose"/u);
-  assert.match(mainContext, /getMainWindow: \(\) => context\.state\.mainWindow/u);
-  assert.match(windowManager, /isWorkPanelKeyboardFocusActive\?\.\(\) === true/u);
-  assert.match(windowManager, /app\.workPanelCloseShortcut"[\s\S]*?guestId: null,[\s\S]*?workPanelFocused: true/u);
-  assert.match(runtime, /isWorkPanelKeyboardFocusActive: \(\) => options\.state\.workPanelKeyboardFocusActive/u);
+  assert.match(moduleRegistry, /getMainWindow: options\.getMainWindow/u);
+  assert.doesNotMatch(moduleRegistry, /setWorkPanelKeyboardFocusActive/u);
+  assert.doesNotMatch(appState, /workPanelKeyboardFocusActive/u);
+  assert.match(windowManager, /isCurrentWorkPanelGuest \|\| isCurrentMainChatGuest/u);
+  assert.match(windowManager, /guestId: null, fallbackToWindowClose: true/u);
+  assert.match(runtime, /isMainChatWebview: options\.isMainChatWebview/u);
   assert.match(runtime, /fallbackToWindowClose: true/u);
-  assert.match(runtime, /workPanelFocused: options\.state\.workPanelKeyboardFocusActive/u);
-  assert.match(host, /workPanelFocused && activeChatId/u);
-  assert.match(host, /else if \(fallbackToWindowClose\)/u);
+  assert.match(appRuntime, /target\.surfaceId === MAIN_CHAT_SURFACE_ID[\s\S]{0,180}target\.surfaceType === "agent-chat"/u);
+  assert.match(appRuntime, /target\?\.active &&[\s\S]{0,80}target\.presentationScope === "workpanel"/u);
+  for (const role of ["btw", "source", "reference", "file", "workpanel-web"]) {
+    assert.match(appRuntime, new RegExp(`"${role}"`, "u"));
+  }
+  const closeRegistry = read("src/renderer/services/desktopCloseShortcutRegistry.ts");
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  assert.match(appShell, /onCloseShortcut\(dispatchDesktopCloseShortcut\)/u);
+  assert.match(closeRegistry, /request\.guestId === null && !request\.website && request\.fallbackToWindowClose/u);
+  assert.match(host, /if \(website\) return false/u);
 });

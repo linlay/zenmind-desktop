@@ -18,7 +18,7 @@ const {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
   revealChatWorkPanelResourceInFileManager,
-} = await import("../dist-electron/main/chat-work-panel-resource-open.js");
+} = await import("../dist-electron/main/modules/work-panel/resource-open.js");
 
 test("current resource actions use the allowlisted Service WebView bridge without absolute paths", () => {
   assert.equal(
@@ -38,6 +38,46 @@ test("current resource actions use the allowlisted Service WebView bridge withou
     true,
   );
 });
+
+test("root uploads retain Reference identity across the bridge and Viewer route", () => {
+  const identity = { chatId: "chat-72", profile: "reference", relativePath: "申请表.docx" };
+  assert.deepEqual(normalizeAgentWebclientCurrentResourceIdentity(identity), identity);
+  assert.deepEqual(normalizeChatWorkPanelOpenLocalResourceRequest({
+    ownerChatId: identity.chatId, profile: identity.profile, relativePath: identity.relativePath,
+  }), { ownerChatId: "chat-72", profile: "reference", relativePath: "申请表.docx" });
+  assert.equal(resolveChatWorkPanelLocalResourcePath({
+    ownerChatId: "chat-72", profile: "reference",
+    route: `/resource-viewer/agent?chatId=chat-72&file=${encodeURIComponent(encodeURIComponent("申请表.docx"))}`,
+  }), "申请表.docx");
+  for (const relativePath of ["../secret", "%252e%252e", "uploads/file.txt", "artifacts/run/file.txt"]) {
+    assert.equal(normalizeAgentWebclientCurrentResourceIdentity({ ...identity, relativePath }), null);
+    assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ownerChatId: "chat-72", profile: "reference", relativePath }), null);
+  }
+});
+
+for (const platform of ["darwin", "win32"]) {
+  test(`root Reference opens and rejects symlink escapes on ${platform}`, async () => {
+    const windows = platform === "win32";
+    const runtimeRoot = windows ? "D:\\Runtime" : "/runtime";
+    const root = windows ? "D:\\Runtime\\chats\\chat-72" : "/runtime/chats/chat-72";
+    const file = `${root}${windows ? "\\" : "/"}申请表.docx`;
+    const opened = [];
+    const dependencies = {
+      app: {}, platform, resolveRuntimeRoot: () => runtimeRoot,
+      existsSync: (value) => value === root || value === file,
+      realpathSync: (value) => value, statSync: () => ({ isFile: () => true }),
+      openPath: async (value) => { opened.push(value); return ""; },
+    };
+    const request = { ownerChatId: "chat-72", profile: "reference", relativePath: "申请表.docx" };
+    assert.equal((await openChatWorkPanelResourceInDefaultApp(request, dependencies)).ok, true);
+    assert.deepEqual(opened, [file]);
+    const escaped = await openChatWorkPanelResourceInDefaultApp(request, { ...dependencies,
+      realpathSync: (value) => value === file ? (windows ? "D:\\secret.docx" : "/secret.docx") : value,
+    });
+    assert.equal(escaped.code, "path_outside_chat");
+    assert.equal(opened.length, 1);
+  });
+}
 
 test("current resource bridge accepts only chat-scoped Artifact/Reference identities", () => {
   assert.deepEqual(normalizeAgentWebclientCurrentResourceIdentity({

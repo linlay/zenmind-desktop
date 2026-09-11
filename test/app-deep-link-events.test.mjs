@@ -35,7 +35,6 @@ function createOptions(platform, initialCommandLine = ["desktop"]) {
       clearDesktopPetIdleResetTimer() {},
       stopAssistantBridgeRuntime() {},
       stopTunnelHubRuntime() {},
-      stopAgentPlatformPetStatusClient() {},
       unregisterPluginGlobalShortcuts() {},
       stopResourceDirectoryWatcher() {},
       stopPluginBridgeRuntime() {},

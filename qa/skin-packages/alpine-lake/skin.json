@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "alpine-lake",
+  "name": "山湖",
+  "version": "1.0.0",
+  "author": "Desktop 示例",
+  "preview": "assets/background.png",
+  "variants": {
+    "light": {
+      "background": { "path": "assets/background.png", "position": "center" },
+      "tokens": {
+        "--bg-base": "#EDF3ED",
+        "--ink": "#233C33",
+        "--ink-soft": "#486055",
+        "--ink-muted": "#657A6E",
+        "--surface-strong": "rgba(249,252,247,0.94)",
+        "--accent": "#287653",
+        "--accent-strong": "#205F43",
+        "--accent-soft": "#DEEEE1",
+        "--accent-on": "#FFFFFF",
+        "--control-primary-active": "#194D35",
+        "--control-input-bg": "rgba(249,253,247,0.9)",
+        "--control-button-bg": "rgba(246,252,244,0.85)",
+        "--control-popover-bg": "#F3F8F0",
+        "--desktop-overlay-panel-bg": "#F3F8F0",
+        "--nav-selected-bg": "rgba(57,108,77,0.14)",
+        "--shell-sidebar-bg": "rgba(237,243,237,0.72)",
+        "--shell-content-bg": "rgba(237,243,237,0.58)",
+        "--shell-titlebar-bg": "rgba(237,243,237,0.9)",
+        "--shell-background-tint": "rgba(246,250,242,0.06)",
+        "--control-radius": "10px",
+        "--control-radius-sm": "8px",
+        "--control-radius-lg": "14px"
+      }
+    },
+    "dark": {
+      "background": { "path": "assets/background.png", "position": "center" },
+      "tokens": {
+        "--bg-base": "#142A22",
+        "--ink": "#E3EEE4",
+        "--ink-soft": "#BBCEBE",
+        "--ink-muted": "#94AD99",
+        "--surface-strong": "rgba(28,49,39,0.96)",
+        "--accent": "#83C79A",
+        "--accent-strong": "#A1D7B0",
+        "--accent-soft": "rgba(131,199,154,0.16)",
+        "--accent-on": "#132F20",
+        "--control-primary-active": "#6EAF83",
+        "--control-input-bg": "#203A2B",
+        "--control-button-bg": "rgba(76,110,84,0.2)",
+        "--control-popover-bg": "#1C3326",
+        "--desktop-overlay-panel-bg": "#1C3326",
+        "--nav-selected-bg": "rgba(147,188,154,0.18)",
+        "--shell-sidebar-bg": "rgba(20,42,34,0.72)",
+        "--shell-content-bg": "rgba(20,42,34,0.58)",
+        "--shell-titlebar-bg": "rgba(20,42,34,0.9)",
+        "--shell-background-tint": "rgba(9,26,20,0.12)",
+        "--control-radius": "10px",
+        "--control-radius-sm": "8px",
+        "--control-radius-lg": "14px"
+      }
+    }
+  }
+}

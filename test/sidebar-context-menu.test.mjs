@@ -8,11 +8,11 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const {
   buildSidebarContextMenuPolicy,
   normalizeSidebarContextMenuRequest
-} = await import("../dist-electron/main/sidebar-context-menu-policy.js");
+} = await import("../dist-electron/main/modules/web-surfaces/sidebar-context-menu-policy.js");
 const {
   registerSidebarContextMenuIpcHandlers,
   resolveSidebarContextMenuLabelKey
-} = await import("../dist-electron/main/ipc/sidebar-context-menu-handlers.js");
+} = await import("../dist-electron/main/modules/web-surfaces/sidebar-context-menu-ipc.js");
 
 function ids(target) {
   return buildSidebarContextMenuPolicy(target).map((item) => item.id);
@@ -403,4 +403,41 @@ test("sidebar native menu is owned by the main window and returns only the click
     target: { kind: "chat", workPanelOpen: false }
   });
   assert.deepEqual(rejected, { actionId: null });
+});
+
+test("chat pin menu uses explicit state and validates the bridge payload", () => {
+  for (const pinned of [true, false]) {
+    const target = { kind: "chat", workPanelOpen: false, canPin: true, pinned };
+    const request = normalizeSidebarContextMenuRequest({ x: 10, y: 20, target });
+    assert.deepEqual(request.target, target);
+    const actions = buildSidebarContextMenuPolicy(target).map((item) => item.id);
+    assert.equal(actions[0], pinned ? "chat.unpin" : "chat.pin");
+    assert.equal(actions.includes(pinned ? "chat.pin" : "chat.unpin"), false);
+  }
+  assert.equal(normalizeSidebarContextMenuRequest({ x: 10, y: 20, target: { kind: "chat", workPanelOpen: false, pinned: "true" } }), null);
+});
+
+
+test("website and webapp menus expose state-aware pinning on both desktop platforms", () => {
+  for (const webKind of ["website", "webapp"]) {
+    for (const pinned of [false, true]) {
+      const target = {
+        kind: "web", webKind, pinned, canPin: true, openMode: "window",
+        canClose: false, canOpenAlternative: false, canExport: false,
+        canRemove: false, showRemove: false,
+        ...(webKind === "webapp" ? { hasPublicShareUrl: false } : {})
+      };
+      assert.deepEqual(normalizeSidebarContextMenuRequest({ x: 1, y: 2, target }).target, target);
+      const action = pinned ? "web.unpin" : "web.pin";
+      assert.equal(ids(target)[0], action);
+      assert.equal(ids(target).includes(pinned ? "web.pin" : "web.unpin"), false);
+      assert.equal(buildSidebarContextMenuPolicy({ ...target, canPin: false })[0].enabled, false);
+      for (const platform of ["darwin", "win32"]) {
+        assert.equal(resolveSidebarContextMenuLabelKey(action, platform), pinned ? "sidebar.web.unpin" : "sidebar.web.pin");
+      }
+      for (const field of ["pinned", "canPin"]) {
+        assert.equal(normalizeSidebarContextMenuRequest({ x: 1, y: 2, target: { ...target, [field]: "true" } }), null);
+      }
+    }
+  }
 });

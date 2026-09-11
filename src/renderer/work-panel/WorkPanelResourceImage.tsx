@@ -200,6 +200,10 @@ function imageFormat(mimeType: string) {
   return "PNG";
 }
 
+function editableImageMime(mimeType: string): Snapshot["mimeType"] {
+  return mimeType === "image/jpeg" || mimeType === "image/webp" ? mimeType : "image/png";
+}
+
 export function WorkPanelResourceImage({
   active,
   editing,
@@ -341,7 +345,7 @@ export function WorkPanelResourceImage({
       const image = await loadImage(url);
       for (const previousUrl of snapshotUrlsRef.current) URL.revokeObjectURL(previousUrl);
       snapshotUrlsRef.current = new Set([url]);
-      setHistory([{ url, width: image.naturalWidth, height: image.naturalHeight, mimeType: resource.mimeType }]);
+      setHistory([{ url, width: image.naturalWidth, height: image.naturalHeight, mimeType: editableImageMime(resource.mimeType) }]);
       setHistoryIndex(0);
       setAnnotations([]);
       setActiveAnnotationId("");
@@ -1141,13 +1145,13 @@ export function WorkPanelResourceImage({
           copyHeight,
         );
         URL.revokeObjectURL(url);
-        await snapshotFromCanvas(canvas, operation === "removeBackground" ? "image/png" : result.image.mimeType);
+        await snapshotFromCanvas(canvas, operation === "removeBackground" ? "image/png" : editableImageMime(result.image.mimeType));
       } else {
         replaceHistory({
           url,
           width: targetWidth,
           height: targetHeight,
-          mimeType: result.image.mimeType,
+          mimeType: editableImageMime(result.image.mimeType),
         });
       }
       clearSelection();
@@ -1238,7 +1242,7 @@ export function WorkPanelResourceImage({
         return;
       }
       const mimeType = mode === "overwrite"
-        ? resource.mimeType
+        ? editableImageMime(resource.mimeType)
         : hasTransparency && current.mimeType === "image/jpeg"
           ? "image/png"
           : current.mimeType;
@@ -1848,10 +1852,12 @@ export function WorkPanelResourceImage({
             <p>{t("chatWorkPanel.image.saveChoiceDescription")}</p>
             <div className="work-panel-image-save-actions">
               <button type="button" disabled={saveBusy} onClick={() => setSaveOpen(false)}>{t("chatWorkPanel.image.cancel")}</button>
-              {resource.profile === "artifact" && !sourceConflict ? (
+              {resource.profile !== "reference" && !sourceConflict ? (
                 <button type="button" disabled={saveBusy} onClick={() => void save("overwrite")}>{t("chatWorkPanel.image.overwrite")}</button>
               ) : null}
-              <button type="button" className="is-primary" disabled={saveBusy} onClick={() => void save("new-artifact")}>{t("chatWorkPanel.image.saveNew")}</button>
+              {resource.profile !== "workspace-file" ? (
+                <button type="button" className="is-primary" disabled={saveBusy} onClick={() => void save("new-artifact")}>{t("chatWorkPanel.image.saveNew")}</button>
+              ) : null}
             </div>
           </div>
         </div>

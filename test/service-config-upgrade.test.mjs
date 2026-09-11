@@ -11,11 +11,11 @@ const {
   completeDesktopServiceConfigUpgrade,
   prepareDesktopServiceConfigUpgrade,
   recordDesktopServiceConfigCoreHealthFailure
-} = require("../dist-electron/main/services/manager/desktop-config-upgrade.js");
+} = require("../dist-electron/main/modules/services/manager/desktop-config-upgrade.js");
 const {
   __testInternals: serviceManagerInternals
-} = require("../dist-electron/main/services/manager/index.js");
-const { getDataRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/modules/services/manager/index.js");
+const { getDataRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 const CURRENT_PORTS = {
   "agent-container-hub": 7079,

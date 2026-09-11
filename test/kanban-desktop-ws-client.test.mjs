@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { KanbanDesktopWsClient } = await import("../dist-electron/main/kanban-desktop-ws-client.js");
+const { KanbanDesktopWsClient } = await import("../dist-electron/main/modules/kanban/ws-client.js");
 
 function waitFor(check, message = "condition") {
   return new Promise((resolve, reject) => {

@@ -254,3 +254,55 @@ final result: passed
 
 passed
 
+---
+
+# Desktop Pet Conversation Overview — Design QA
+
+**Comparison Target**
+
+- Source visual truth: `/Users/linlay/.codex/generated_images/01a05871-dd8e-75c2-bcf2-f134f48f18ad/exec-a6c939e1-13e9-4ecb-9033-71224e14c559.png`
+- Browser-rendered implementation: `/private/tmp/pet-design-qa/implementation.png`
+- Full-view comparison: `/private/tmp/pet-design-qa/full-comparison.png`
+- Focused panel comparison: `/private/tmp/pet-design-qa/comparison.png`
+- Viewport: 376 × 334 CSS px, matching the Desktop Pet panel BrowserWindow.
+- Pixels and density: source 1355 × 1160 px; implementation 376 × 334 px at device scale factor 1. The source is a high-resolution contextual mock rather than a 1:1 product viewport, so the panel regions were cropped independently and normalized to 720 px width for the focused comparison. No finding is based only on the scale difference.
+- State: “对话概览” expanded; first unread item has its inline reply composer open, second unread item is collapsed, third item is awaiting and has no reply action. A fourth unread item is present below the fold to verify wheel scrolling.
+
+**Findings**
+
+- No actionable P0/P1/P2 differences remain.
+- Fonts and typography: chat names and previews render at 13px; names use 700 weight and previews use 400 weight. The hierarchy and single-line truncation match the requested compact treatment. The mock uses enlarged conceptual typography, while the implementation intentionally follows the user's explicit 13px requirement.
+- Spacing and layout rhythm: the implementation preserves three complete visible rows in both collapsed and reply-open states. Adjacent items use quiet 1px separators, and the fourth item stays below the scroll viewport. The implementation is denser than the contextual mock by request.
+- Colors and visual tokens: unread uses the navigation blue `#1677ff`; awaiting uses the existing amber semantic color. Resting secondary buttons are transparent and borderless; hover/focus introduces the subtle border/fill.
+- Image quality and asset fidelity: the panel contains no raster imagery. Icons use the product's existing Ant Design icon set; no placeholder, emoji, handcrafted SVG, or CSS-drawn replacement was introduced. The source desktop/pet scene is contextual and is intentionally absent from the isolated transparent panel BrowserWindow capture.
+- Copy and content: header copy is “对话概览”; the three visible item states and their content match the approved reference. Awaiting has no in-panel answer or reply entry.
+
+**Open Questions**
+
+- None. The source mock shows the close control because it depicts hover; the implementation screenshot captures the resting state, where the close control must be hidden by requirement.
+
+**Implementation Checklist**
+
+- [x] Show only seven-day unread/awaiting messages and cap the retained list at 50.
+- [x] Keep exactly three complete items visible and preserve wheel scrolling.
+- [x] Render inline unread/awaiting markers without a dedicated status column.
+- [x] Keep close controls absolutely overlaid and hidden outside hover/focus.
+- [x] Support inline reply only for ordinary unread items.
+- [x] Mark unread as read on open, successful reply, or close.
+- [x] Verify the production renderer build and focused desktop-pet tests.
+
+**Follow-up Polish**
+
+- No P3 polish is required for this handoff.
+
+**Comparison History**
+
+1. Initial browser render: `/private/tmp/pet-design-qa/iteration-1.png`.
+   - Earlier finding: [P2] the collapsed 236px list viewport exposed most of a fourth row, so the panel did not read as a strict three-item window.
+   - Fix: set the resting list viewport to 186px (three 62px rows) while keeping the reply-open viewport at 236px (108px composer row plus two 62px rows).
+2. Post-fix evidence: `/private/tmp/pet-design-qa/implementation.png`, `/private/tmp/pet-design-qa/full-comparison.png`, and `/private/tmp/pet-design-qa/comparison.png`.
+   - Browser measurements: collapsed client height 186px / scroll height 248px; reply-open client height 236px / scroll height 294px; visible row heights 108px, 62px, and 62px.
+   - Interaction evidence: close control computed style changes from `opacity: 0; visibility: hidden; pointer-events: none` at rest to `opacity: 1; visibility: visible; pointer-events: auto` on row hover; awaiting reply-action count is zero.
+   - Browser errors: captured console/window/unhandled-rejection errors `[]`; Vite error overlay count `0`.
+
+final result: passed

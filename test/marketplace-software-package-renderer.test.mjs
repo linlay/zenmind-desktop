@@ -32,6 +32,7 @@ test("software package market is wired through the renderer tab, status and acti
 
 test("installed Market WebApps open only after an explicit user action", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
 
   assert.match(storefront, /async function launchWebsiteApp\(itemId: string\)/u);
   assert.match(storefront, /window\.electronAPI\.webs\.webapps\.list\(\)/u);
@@ -39,7 +40,7 @@ test("installed Market WebApps open only after an explicit user action", () => {
   assert.match(storefront, /launchWebsiteApp\(item\.webappId \|\| item\.id\)/u);
   assert.match(storefront, /webs\.webapps\.start\(itemId\)[\s\S]*?navigate\(`\/webs\/\$\{webapp\.entryKey\}`\)/u);
   assert.doesNotMatch(storefront, /item\.type === "website-app" && actionName !== "uninstall"[\s\S]*?launchWebsiteApp\(result\.itemId\)/u);
-  assert.match(storefront, /item\.type === "website-app" && isInstalledMarketItem\(item\)[\s\S]*?market\.websiteApp\.open/u);
+  assert.match(storefront, /item\.type === "website-app" && isInstalledMarketItem\(item\)[\s\S]*?if \(compact\) \{\s*return null;\s*\}[\s\S]*?market\.websiteApp\.open/u);
   assert.match(storefront, /installedWebsiteApp[\s\S]*?runMarketAction\(selectedDetailItem, "uninstall"\)/u);
   assert.doesNotMatch(
     storefront,
@@ -49,14 +50,41 @@ test("installed Market WebApps open only after an explicit user action", () => {
   assert.match(storefront, /event\.phase === "disposing"/u);
   assert.match(storefront, /command\(\{ sections: \["websiteApps"\] \}\)/u);
   assert.match(storefront, /next\.items\.filter\(\(item\) => item\.type === "website-app"\)/u);
+  assert.match(storefront, /const usesStackedStatusLayout = item\.type === "skill"/u);
+  assert.match(storefront, /if \(item\.type === "website-app"\)[\s\S]*?className="skill-discovery-card"/u);
+  assert.match(storefront, /usesStackedStatusLayout[\s\S]*?market-store-title-line[\s\S]*?market-store-submeta[\s\S]*?statePill[\s\S]*?market-store-description is-standalone/u);
+  assert.match(styles, /\.market-store-card-head\.is-stacked-status\s*\{[\s\S]*?grid-template-columns:\s*36px minmax\(0, 1fr\) auto;[\s\S]*?min-height:\s*46px;/u);
+  assert.match(styles, /\.market-store-card-secondary-meta\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*flex-end;/u);
+  assert.match(styles, /\.market-store-description\.is-standalone\s*\{[\s\S]*?min-height:\s*30px;/u);
 });
 
-test("Market top navigation exposes only Skills and Website Apps", () => {
+test("Market top navigation exposes Skills, Connectors and Website Apps", () => {
   const model = readSource("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
 
   assert.match(model, /DEFAULT_MARKET_TAB:\s*MarketTab\s*=\s*"skills"/u);
-  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"websiteApps"\]/u);
+  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"mcps",\s*"websiteApps"\]/u);
   assert.match(model, /return VISIBLE_MARKET_TABS\.map/u);
+  assert.doesNotMatch(storefront, /ReloadOutlined|market\.toolbar\.refreshMarket|market-store-toolbar-button is-icon-only/u);
+});
+
+test("skill market reuses the Skills Center lightning icon with stable pastel tones", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const frame = readSource("src", "renderer", "pages", "functional-market", "MarketPageFrame.tsx");
+  const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+
+  assert.match(frame, /case\s+"skills"[\s\S]*?<SidebarIllustration kind="skill"\s*\/>/u);
+  assert.match(storefront, /MARKET_SKILL_TONES/u);
+  assert.match(storefront, /function marketSkillToneClass/u);
+  assert.match(storefront, /case\s+"skill"[\s\S]*?<SidebarIllustration kind="skill"\s*\/>/u);
+  assert.match(storefront, /market-store-item-icon is-\$\{item\.type\}[\s\S]*?\{marketTypeIcon\(item\.type\)\}/u);
+  assert.match(styles, /\.market-store-card\.is-skill\.tone-rose/u);
+  assert.match(styles, /\.market-store-card\.is-skill\.tone-violet/u);
+  assert.match(styles, /\.market-store-state-pill\.is-running\s*\{[\s\S]*?color:\s*var\(--market-store-muted\)/u);
+  assert.doesNotMatch(frame, /SafetyCertificateOutlined/u);
+  assert.doesNotMatch(storefront, /SafetyCertificateOutlined/u);
+  assert.doesNotMatch(storefront, /marketSkillAvatarLabel|market-store-avatar-letter/u);
+  assert.doesNotMatch(styles, /\.market-store-avatar-letter/u);
 });
 
 test("Market polls pending MCP runtime status without refreshing unrelated sections", () => {
@@ -101,31 +129,84 @@ test("catalog items keep the cloud source label and target version when a local 
 test("market storefront uses one WorkBuddy-inspired list with per-card source labels", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
   const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+  const renderCardStart = storefront.indexOf("function renderCard");
+  const renderCardEnd = storefront.indexOf("const toolbarImportLabel", renderCardStart);
+  const renderCard = storefront.slice(renderCardStart, renderCardEnd);
 
   assert.match(storefront, /market\.storefront\.allTitle/u);
   assert.doesNotMatch(storefront, /market\.storefront\.featuredTitle/u);
   assert.doesNotMatch(storefront, /market\.storefront\.cloudTitle/u);
   assert.doesNotMatch(storefront, /market\.storefront\.localTitle/u);
   assert.match(storefront, /market-store-card-quick-action/u);
+  assert.match(storefront, /variant="borderless"/u);
+  assert.match(styles, /\.market-store-card\.ant-card\s*\{[\s\S]*?border:\s*0;/u);
   assert.match(storefront, /market-store-origin-pill\s+\$\{isCloudSource\s*\?\s*"is-cloud"\s*:\s*"is-local"\}/u);
+  assert.match(styles, /\.market-store-origin-pill\s*\{[\s\S]*?border:\s*0;/u);
   assert.match(styles, /\.market-store-origin-pill\.is-cloud/u);
   assert.match(styles, /\.market-store-origin-pill\.is-local/u);
   assert.match(styles, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/u);
-  assert.match(styles, /\.market-store-action\.is-compact-icon\.ant-btn/u);
-  assert.match(storefront, /activeTab\s*===\s*"skills"[\s\S]*?market\.toolbar\.myInstalled/u);
+  assert.match(styles, /\.market-store-action\.is-compact-icon\.ant-btn\s*\{[\s\S]*?border:\s*0;/u);
+  assert.match(storefront, /market-store-toolbar-button is-installed[\s\S]*?icon=\{<CheckSquareOutlined \/>\}[\s\S]*?market\.toolbar\.myInstalled/u);
+  // Skills now have a dedicated discovery/installed view; other resources keep this card renderer.
+  assert.match(storefront, /return <SkillMarketplace/u);
+  assert.match(styles, /\.market-store-installed-source-tabs\s*\{[\s\S]*?display:\s*flex;[\s\S]*?width:\s*max-content;/u);
+  assert.doesNotMatch(styles, /\.market-store-installed-source-tabs\s*\{[^}]*grid-template-columns/u);
+  assert.doesNotMatch(storefront, /market\.toolbar\.myFavorites/u);
+  assert.match(storefront, /rangeMode\s*===\s*"favorites"[\s\S]*?item\.favorited/u);
+  assert.match(storefront, /command\(\{\s*includeFavorites\s*\}\)/u);
+  assert.match(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting/u);
+  assert.doesNotMatch(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting\s*\|\|\s*Boolean\(favoritingItemKey\)\}/u);
+  assert.match(storefront, /aria-busy=\{isFavoriting\}/u);
+  assert.match(storefront, /function mergeFavoriteUpdate\(currentItem: MarketItem, updatedItem: MarketItem\)[\s\S]*?\.\.\.currentItem,[\s\S]*?favorited:\s*Boolean\(updatedItem\.favorited\),[\s\S]*?favoriteCount:\s*updatedItem\.favoriteCount\s*\?\?\s*currentItem\.favoriteCount/u);
+  assert.match(storefront, /current\.items\.map\(\(entry\)\s*=>\s*mergeFavoriteUpdate\(entry, result\.item\)\)/u);
+  assert.match(storefront, /setSelectedDetailItem\(\(current\)\s*=>\s*\([\s\S]*?mergeFavoriteUpdate\(current, result\.item\)/u);
+  assert.match(storefront, /function canFavoriteMarketItem\(item: MarketItem\)[\s\S]*?item\.type === "website-app"[\s\S]*?item\.type !== "skill" \|\| isCloudMarketItem\(item\)/u);
+  assert.match(renderCard, /canFavoriteMarketItem\(item\)[\s\S]*?toggleFavorite\(item\)/u);
+  assert.match(storefront, /canFavoriteMarketItem\(selectedDetailItem\)[\s\S]*?toggleFavorite\(selectedDetailItem\)/u);
+  assert.match(storefront, /activeTab === "websiteApps" \? \[\] : \[\{ label: t\("market\.scope\.favorites"\)/u);
+  assert.doesNotMatch(storefront, /SortAscendingOutlined|sortMarketItems|sortMode|market\.sort\./u);
+  assert.match(storefront, /formatMarketDateTime\(item\.publishedAt,\s*locale\)/u);
+  assert.match(storefront, /formatMarketDateTime\(item\.updatedAt,\s*locale\)/u);
   assert.match(styles, /\.market-store-header-tools/u);
+});
+
+test("skill package cards reveal included skill names on hover and focus", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+  const zhCN = readSource("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSource("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(storefront, /\bPopover\b/u);
+  assert.match(storefront, /function marketSkillPackageItems\(item: MarketItem\)[\s\S]*?item\.skill\?\.kind === "package"/u);
+  assert.match(storefront, /const packageSkills = marketSkillPackageItems\(item\)/u);
+  assert.match(storefront, /<Popover[\s\S]*?packageSkills\.map[\s\S]*?trigger=\{\["hover", "focus"\]\}/u);
+  assert.match(styles, /\.market-store-package-skill-list\s*\{[\s\S]*?grid-template-columns:[\s\S]*?max-height:\s*280px;/u);
+  assert.match(zhCN, /"market\.storefront\.packageSkillsTitle":\s*"包含技能（\{count\}）"/u);
+  assert.match(enUS, /"market\.storefront\.packageSkillsTitle":\s*"Included skills \(\{count\}\)"/u);
 });
 
 test("skill market separates uninstalled cloud skills from installed local and cloud skills", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const installedSourceOptionsStart = storefront.indexOf("const installedSkillSourceOptions");
+  const installedSourceOptionsEnd = storefront.indexOf("];", installedSourceOptionsStart);
+  const installedSourceOptions = storefront.slice(installedSourceOptionsStart, installedSourceOptionsEnd);
 
   assert.match(storefront, /function isCloudMarketItem\(item: MarketItem\)[\s\S]*?item\.marketplaceAvailable\s*\|\|\s*item\.source\s*===\s*"cloud"/u);
-  assert.match(storefront, /function isCloudSkillStorefrontItem\(item: MarketItem\)[\s\S]*?item\.state\s*===\s*"update-available"/u);
+  assert.match(storefront, /function isCloudSkillStorefrontItem\(item: MarketItem\)[\s\S]*?isInstalledMarketItem\(item\)[\s\S]*?item\.state\s*===\s*"update-available"/u);
   assert.match(storefront, /activeTab\s*===\s*"skills"[\s\S]*?rangeMode\s*===\s*"installed"[\s\S]*?isInstalledMarketItem\(item\)[\s\S]*?isCloudSkillStorefrontItem\(item\)/u);
   assert.match(storefront, /market\.storefront\.cloudSkillsTitle/u);
   assert.match(storefront, /market\.storefront\.installedSkillsTitle/u);
+  assert.match(storefront, /market\.storefront\.localSkillsTitle/u);
+  assert.match(installedSourceOptions, /value:\s*"cloud"[\s\S]*?value:\s*"local"/u);
+  assert.doesNotMatch(installedSourceOptions, /value:\s*"all"/u);
+  assert.match(storefront, /installedSkillSource === "cloud" \? isCloudMarketItem\(item\) : !isCloudMarketItem\(item\)/u);
+  assert.doesNotMatch(storefront, /installedSkillSourceOptions:[\s\S]*?value:\s*"favorites"/u);
   assert.match(storefront, /activeTab\s*!==\s*"skills"[\s\S]*?market-store-search-filter-button/u);
-  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?runMarketAction\(item, "uninstall"\)/u);
+  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?rangeMode !== "installed"[\s\S]*?icon=\{<CheckOutlined \/>\}[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?setPendingSkillUninstall\(item\)/u);
+  assert.match(storefront, /market\.skill\.uninstallConfirmTitle[\s\S]*?market\.skill\.uninstallConfirmDescription/u);
+  assert.match(storefront, /confirmLoading=\{busyItemId === pendingSkillUninstall\?\.id\}[\s\S]*?onOk=\{\(\) => void confirmSkillUninstall\(\)\}/u);
+  assert.match(storefront, /confirmSkillUninstall\(\)[\s\S]*?runMarketAction\(pendingSkillUninstall, "uninstall"\)/u);
+  assert.doesNotMatch(storefront, /skill\?\.kind\s*!==\s*"package"|uninstallChoiceTitle|uninstallPackageChoiceDescription/u);
 });
 
 test("skill toolbar provides local import and the create-skill assistant action", () => {
@@ -152,11 +233,13 @@ test("skill toolbar provides local import and the create-skill assistant action"
   assert.doesNotMatch(storefront, /renderSkillAssistantDialog/u);
 });
 
-test("skill detail category returns to the current skill list without resetting its filter", () => {
+test("closing skill details preserves the current skill list and its filters", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
-
-  assert.match(storefront, /selectedDetailItem\.type === "skill"[\s\S]*?market-store-detail-category-return[\s\S]*?setSelectedDetailItem\(null\)/u);
-  assert.match(storefront, /className="market-store-detail-category-return"[\s\S]*?onClick=\{\(\) => setSelectedDetailItem\(null\)\}/u);
+  const detail = readSource("src", "renderer", "pages", "functional-market", "SkillDetailDialog.tsx");
+  assert.match(storefront, /selectedDetailItem\.type === "skill"[\s\S]*?return <SkillDetailDialog/u);
+  assert.match(storefront, /onClose=\{\(\) => setSelectedDetailItem\(null\)\} onInstall=\{runMarketAction\}/u);
+  assert.match(detail, /<Modal\b[^>]*onCancel=\{onClose\}/u);
+  assert.doesNotMatch(detail, /navigate\(|setSearchParams\(|setCategory\(|setQuery\(/u);
 });
 
 test("clicking the active Skills tab returns from installed items to the skill market", () => {
@@ -175,6 +258,19 @@ test("market header uses WorkBuddy-style compact tabs without a full-width segme
   assert.match(frame, /className=\{`market-tab-option[\s\S]*?is-selected/u);
   assert.match(styles, /\.market-tab-option\.is-selected\s*\{[\s\S]*?background:\s*#303236;[\s\S]*?color:\s*#ffffff/u);
   assert.match(styles, /\.market-tabs\s*\{[\s\S]*?width:\s*max-content;[\s\S]*?overflow-x:\s*auto/u);
+  assert.match(styles, /\.market-tab-icon > \.sidebar-illustration-skill\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/u);
   assert.doesNotMatch(styles, /\.market-status\s*\{[^}]*box-shadow:\s*inset/u);
   assert.doesNotMatch(styles, /\.market-status\.is-warning\s*\{[^}]*box-shadow:\s*inset/u);
+});
+
+test("market feedback floats above the catalog without taking up list space", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const styles = readSource("src", "renderer", "pages", "functional-market", "MarketPageFrame.css");
+
+  assert.match(storefront, /MARKET_STATUS_AUTO_DISMISS_MS\s*=\s*4_000/u);
+  assert.match(storefront, /window\.setTimeout\(\(\) => \{[\s\S]*?clearMarketMessageForTab\(current,\s*activeTab\)[\s\S]*?MARKET_STATUS_AUTO_DISMISS_MS/u);
+  assert.match(storefront, /return \(\) => window\.clearTimeout\(timer\)/u);
+  assert.match(styles, /\.market-content\s*\{[^}]*position:\s*relative;/u);
+  assert.match(styles, /\.market-status-wrap\s*\{[^}]*position:\s*absolute;[^}]*left:\s*50%;[^}]*z-index:\s*30;[^}]*transform:\s*translateX\(-50%\);/u);
+  assert.match(styles, /\.market-status\s*\{[^}]*box-shadow:\s*0 12px 30px/u);
 });

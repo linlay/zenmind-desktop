@@ -83,7 +83,24 @@ export type ReviewSourceRevision = {
   relativePath?: string;
   resourceId?: string;
   url?: string;
+  liveProjectWeb?: true;
 };
+
+export function isLoopbackWorkPanelReviewUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost") || host === "::1" || host === "[::1]") return true;
+    const octets = host.split(".");
+    return octets.length === 4 && octets[0] === "127" && octets.every((octet) => {
+      const number = Number(octet);
+      return /^\d{1,3}$/u.test(octet) && number >= 0 && number <= 255;
+    });
+  } catch {
+    return false;
+  }
+}
 
 const SENSITIVE_WEB_REVIEW_PARAMETER = /(?:^|[_-])(?:access[_-]?token|token|api[_-]?key|key|secret|password|passwd|authorization|auth|credential|session|jwt|code|signature|sig)(?:$|[_-])/iu;
 
@@ -340,6 +357,8 @@ export function buildWorkPanelReviewComposerDraft(
   lines.push("只修改标注要求涉及的元素，其他内容保持不变。");
   if (session.source.sourceKind === "workspace-file") {
     lines.push("原位修改 workspace 文件，完成后刷新当前 WorkPanel 标签页。");
+  } else if (session.source.sourceKind === "web" && session.source.liveProjectWeb) {
+    lines.push("这是当前 Coder workspace 的实时 loopback 预览；请按元素定位修改 workspace 源码，不要直接改浏览器临时 DOM，完成后通过 HMR 或刷新验证。");
   } else if (session.source.sourceKind === "web") {
     lines.push("这是当前网页的可视化元素批注；请结合页面 URL 与元素定位修改对应实现，无法定位源码时先说明限制，不要猜测修改。");
   } else {

@@ -19,27 +19,25 @@ const {
   getMarketSettings,
   importSkillFromCommand,
   importSandboxImageFromPath,
-  installMarketItem,
+  installMarketItem: installMarketItemRaw,
   listMarketItems,
   mergeMcpRuntimeStatuses,
   refreshMarketCatalog,
   saveMarketSettings,
   toggleMarketFavorite,
-  uninstallMarketItem,
-  updateMarketItem,
+  uninstallMarketItem: uninstallMarketItemRaw,
+  updateMarketItem: updateMarketItemRaw,
   __testInternals
-} = require("../dist-electron/main/marketplace.js");
-const { webappManager } = require("../dist-electron/main/webs/webapps/manager.js");
-const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
-  webappManager.installArchive(app, archivePath, options);
-const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
-const { getSkillInstallDir, getSkillsCenterDir, installSkillFromPath, listInstalledSkills, uninstallSkill } = require("../dist-electron/main/skill-installer.js");
-const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");
-const { readWebappItems } = require("../dist-electron/main/webs/webapps/store.js");
-const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/marketplace/agent-market.js");
-const { configureSkillMarketPlatformCaller } = require("../dist-electron/main/marketplace/skill-market.js");
-const { getSoftwarePackageInstallDir } = require("../dist-electron/main/marketplace/software-package-market.js");
-const { resolveRuntimeRoot } = require("../dist-electron/main/env-bootstrap.js");
+} = require("../dist-electron/main/modules/marketplace/runtime.js");
+const { createWebsFacade } = require("../dist-electron/main/modules/webs/index.js");
+const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/modules/plugins/loader.js");
+const { getSkillInstallDir, getSkillsCenterDir, installSkillFromPath, listInstalledSkills, uninstallSkill } = require("../dist-electron/main/modules/marketplace/skill-installer.js");
+const { readDesktopPetStoredState } = require("../dist-electron/main/modules/pet/desktop-pet.js");
+const { readWebappItems: readWebappItemsRaw } = require("../dist-electron/main/modules/webs/webapps/store.js");
+const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/modules/marketplace/agent-market.js");
+const { configureSkillMarketPlatformCaller } = require("../dist-electron/main/modules/marketplace/skill-market.js");
+const { getSoftwarePackageInstallDir } = require("../dist-electron/main/modules/marketplace/software-package-market.js");
+const { resolveRuntimeRoot } = require("../dist-electron/main/infrastructure/filesystem/runtime-environment.js");
 const {
   getDesktopWebappDataRoot,
   getDesktopConfigRoot,
@@ -47,12 +45,57 @@ const {
   getDesktopWebappsDataRoot,
   getMarketplaceCacheRoot,
   getMarketplaceStateRoot
-} = require("../dist-electron/main/user-paths.js");
-const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
+} = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
+const { __testInternals: registryInternals } = require("../dist-electron/main/modules/services/service-registry.js");
 const {
   readResponseBytesWithLimit,
   requestMarket
-} = require("../dist-electron/main/marketplace/common.js");
+} = require("../dist-electron/main/modules/marketplace/common.js");
+const {
+  installWebsiteAppArchiveFromPath: installWebsiteAppArchiveThroughMarket,
+} = require("../dist-electron/main/modules/marketplace/website-app-market.js");
+const {
+  readInstalledRecords,
+  removeInstalledRecordByResourceKey,
+} = require("../dist-electron/main/modules/marketplace/common.js");
+const {
+  deriveTunnelHubRegistrationApiOrigin,
+  getTunnelHubRuntimeStatus,
+  readTunnelHubRegistrationBearerToken,
+  readTunnelHubSettings,
+  saveTunnelHubSettings,
+  startTunnelHubRuntime,
+} = require("../dist-electron/main/modules/tunnel/index.js");
+const { ContainerHubClient } = require("../dist-electron/main/modules/assistant/container-hub.js");
+const { getConfiguredDesktopActionBridgePort } = require("../dist-electron/main/modules/desktop-actions/settings.js");
+
+const createContainerHubClient = (config) => new ContainerHubClient(config);
+const websIntegrationPorts = {
+  getDesktopDeviceId: () => "marketplace-test-device",
+  getConfiguredDesktopActionBridgePort,
+  installWebsiteAppArchiveFromPath: (app, archivePath, options) =>
+    installWebsiteAppArchiveThroughMarket(app, archivePath, { ...options, webs: websFacade }),
+  readInstalledRecords,
+  removeInstalledRecordByResourceKey,
+  deriveTunnelHubRegistrationApiOrigin,
+  getTunnelHubRuntimeStatus,
+  readTunnelHubRegistrationBearerToken,
+  readTunnelHubSettings,
+  saveTunnelHubSettings,
+  startTunnelHubRuntime,
+};
+const websFacade = createWebsFacade(websIntegrationPorts);
+const { webappManager } = websFacade;
+const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
+  webappManager.installArchive(app, archivePath, options);
+const installMarketItem = (app, itemId, options = {}) =>
+  installMarketItemRaw(app, itemId, { ...options, webs: websFacade });
+const uninstallMarketItem = (app, itemId, options = {}) =>
+  uninstallMarketItemRaw(app, itemId, { ...options, webs: websFacade });
+const updateMarketItem = (app, itemId, options = {}) =>
+  updateMarketItemRaw(app, itemId, { ...options, webs: websFacade });
+const readWebappItems = (app, platform) =>
+  readWebappItemsRaw(app, platform, websIntegrationPorts);
 
 test("platform candidates keep fallbacks within the current CPU architecture", () => {
   const candidates = __testInternals.platformCandidates;
@@ -716,7 +759,7 @@ test("gateway MCP catalog items require an explicit gateway server code", async 
 });
 
 test("market MCP packages reject ambiguous identity, commands, credentials, and mismatched manifests", () => {
-  const { downloadedMcpConfig } = require("../dist-electron/main/marketplace/mcp-market.js").__mcpMarketInternals;
+  const { downloadedMcpConfig } = require("../dist-electron/main/modules/marketplace/mcp-market.js").__mcpMarketInternals;
   const manifest = (server) => ({
     market: { id: "flowcenter", version: "1.0.0" },
     mcpServers: { flowCenter: server }
@@ -837,7 +880,7 @@ test("MCP registry writes reject a directory that escapes the runtime root", (t)
   fs.mkdirSync(path.join(outside, "mcp-servers"), { recursive: true });
   fs.symlinkSync(outside, path.join(runtimeRoot, "registries"), "dir");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const { assertMcpRegistryTarget } = require("../dist-electron/main/marketplace/mcp-market.js").__mcpMarketInternals;
+  const { assertMcpRegistryTarget } = require("../dist-electron/main/modules/marketplace/mcp-market.js").__mcpMarketInternals;
   assert.throws(
     () => assertMcpRegistryTarget(runtimeRoot, path.join(runtimeRoot, "registries", "mcp-servers", "demo.yml")),
     /escapes the runtime root/u
@@ -993,6 +1036,35 @@ test("installed Skill discovery ignores hidden Platform control directories", (t
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   assert.equal(listInstalledSkills(app).some((item) => item.id === ".package"), false);
+});
+
+test("package child states use the actual installed version after an independent update", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "market-child-version-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => configureSkillMarketPlatformCaller(null));
+  configureSkillMarketPlatformCaller(async () => [{ id: "suite", version: "1.0.0", skills: [
+    { id: "updated-child", version: "1.0.0" }, { id: "old-child", version: "1.0.0" }
+  ] }]);
+  for (const [id, version] of [["updated-child", "1.1.0"], ["old-child", "1.0.0"]]) {
+    const dir = getSkillInstallDir(app, id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${id}\n`);
+    fs.writeFileSync(path.join(dir, "skill.json"), JSON.stringify({ id, name: id, version, description: "test", tags: [] }));
+  }
+  const options = { marketEnabled: true, catalog: { schemaVersion: 1, items: ["updated-child", "old-child", "new-child"].map((id) => ({
+    id, type: "skill", name: id, version: "1.1.0", description: "test", tags: [],
+    assets: { universal: { url: "https://example.test/skill.zip", archiveType: "zip", platform: "universal" } }
+  })) } };
+  for (let refresh = 0; refresh < 2; refresh++) {
+    const result = await listMarketItems(app, options);
+    const byId = new Map(result.items.map((item) => [item.id, item]));
+    assert.equal(byId.get("updated-child").state, "installed");
+    assert.equal(byId.get("updated-child").installedVersion, "1.1.0");
+    assert.equal(byId.get("updated-child").skillPackageId, "suite");
+    assert.equal(byId.get("old-child").state, "update-available");
+    assert.equal(byId.get("new-child").state, "not-installed");
+  }
 });
 
 test("skill package installs and uninstalls all included skills as one transaction", async (t) => {
@@ -1509,6 +1581,7 @@ test("listMarketItems maps Container Hub environments into sandbox image market 
     const result = await listMarketItems(app, {
       catalog: { schemaVersion: 1, items: [] },
       containerHubBaseUrl: baseUrl,
+      createContainerHubClient,
       sections: ["sandboxImages"]
     });
     const image = result.items.find((item) => item.type === "sandbox-image" && item.id === "daily-office");
@@ -1567,6 +1640,7 @@ exit 1
       const result = await listMarketItems(app, {
         catalog: { schemaVersion: 1, items: [] },
         containerHubBaseUrl: baseUrl,
+        createContainerHubClient,
         sections: ["sandboxImages"]
       });
 
@@ -1681,7 +1755,10 @@ test("buildSandboxImage starts a Container Hub environment build job", async (t)
       });
     }]
   ]), async (baseUrl) => {
-    const result = await buildSandboxImage(app, "daily-office", { containerHubBaseUrl: baseUrl });
+    const result = await buildSandboxImage(app, "daily-office", {
+      containerHubBaseUrl: baseUrl,
+      createContainerHubClient
+    });
 
     assert.equal(capturedBody, "{}");
     assert.equal(result.ok, true);
@@ -3037,6 +3114,103 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
     assert.equal(typeof requests[0].deviceId, "string");
     assert.equal(typeof requests[1].deviceId, "string");
     assert.deepEqual(issueCalls, ["missing", "missing"]);
+  });
+});
+
+test("listMarketItems overlays authenticated favorites without authorizing the public catalog request", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-list-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  let catalogAuthorization = "";
+  let favoritesAuthorization = "";
+  const item = {
+    id: "automation",
+    type: "skill",
+    name: "Automation",
+    version: "1.0.0",
+    description: "Automation skill",
+    tags: ["automation"],
+    dependencies: [],
+    assets: {},
+    downloadCount: 8,
+    favoriteCount: 3,
+    favorited: false
+  };
+
+  await withFixtureServer(new Map([
+    ["/api/v1/desktop/catalog", (req, res) => {
+      catalogAuthorization = req.headers.authorization || "";
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ schemaVersion: 1, items: [item] }));
+    }],
+    ["/api/v1/me/favorites", (req, res) => {
+      favoritesAuthorization = req.headers.authorization || "";
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        items: [{ ...item, favorited: true }]
+      }));
+    }]
+  ]), async (baseUrl) => {
+    const listed = await listMarketItems(app, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      catalogUrl: `${baseUrl}/api/v1/desktop/catalog`,
+      sections: ["skills"],
+      includeFavorites: true,
+      issueMarketAccessToken: () => "market-token"
+    });
+
+    assert.equal(listed.items.length, 1);
+    assert.equal(listed.items[0].favorited, true);
+    assert.equal(listed.items[0].favoriteCount, 3);
+    assert.equal(catalogAuthorization, "");
+    assert.equal(favoritesAuthorization, "Bearer market-token");
+  });
+});
+
+test("listMarketItems keeps the public catalog when authenticated favorites are unavailable", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-list-fallback-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/desktop/catalog", (_req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        items: [{
+          id: "automation",
+          type: "skill",
+          name: "Automation",
+          version: "1.0.0",
+          description: "Automation skill",
+          tags: [],
+          dependencies: [],
+          assets: {},
+          favoriteCount: 3,
+          favorited: false
+        }]
+      }));
+    }],
+    ["/api/v1/me/favorites", (_req, res) => {
+      res.statusCode = 401;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ message: "login required" }));
+    }]
+  ]), async (baseUrl) => {
+    const listed = await listMarketItems(app, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      catalogUrl: `${baseUrl}/api/v1/desktop/catalog`,
+      sections: ["skills"],
+      includeFavorites: true,
+      issueMarketAccessToken: () => "stale-token"
+    });
+
+    assert.equal(listed.offline, false);
+    assert.equal(listed.items.length, 1);
+    assert.equal(listed.items[0].favorited, false);
+    assert.equal(listed.items[0].favoriteCount, 3);
   });
 });
 

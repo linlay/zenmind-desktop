@@ -6,10 +6,10 @@ import path from "node:path";
 
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const { resolveAssistantChatStoragePaths } = await import(
-  "../dist-electron/main/assistant/core/chat-storage-path.js"
+  "../dist-electron/main/modules/assistant/chat-storage-path.js"
 );
 const { revealAssistantChatInFileManager } = await import(
-  "../dist-electron/main/ipc/assistant-handlers.js"
+  "../dist-electron/main/modules/assistant/ipc.js"
 );
 
 function makeApp(homePath) {

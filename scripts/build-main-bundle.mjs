@@ -37,10 +37,12 @@ export async function buildMainBundle(rootDir = projectRoot) {
     absWorkingDir: rootDir,
     entryPoints: {
       "main/index": path.join(rootSrc, "main", "index.ts"),
-      "main/attachment-worker": path.join(rootSrc, "main", "assistant", "attachments", "attachment-worker.ts"),
-      "main/conversation-html-worker": path.join(rootSrc, "main", "assistant", "core", "conversation-html-worker.ts"),
+      "main/attachment-worker": path.join(rootSrc, "main", "modules", "assistant", "attachments", "attachment-worker.ts"),
+      "main/conversation-html-worker": path.join(rootSrc, "main", "modules", "conversation-share", "html-worker.ts"),
+      "main/webapp-tooling-worker": path.join(rootSrc, "main", "modules", "webs", "webapps", "tooling", "worker.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
       "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts"),
+      "preload/document-html-review": path.join(rootSrc, "preload", "document-html-review.ts"),
       "preload/work-panel-preview": path.join(rootSrc, "preload", "work-panel-preview.ts")
     },
     outdir,
@@ -60,9 +62,22 @@ export async function buildMainBundle(rootDir = projectRoot) {
     }
   });
 
+  // Development launches package.json's dist-electron Main, while packaged
+  // apps use the brand bundle. Sandboxed preloads cannot require adjacent
+  // TypeScript output, so both runtimes must consume the self-contained bundle.
+  const developmentPreloadDir = path.join(rootDir, "dist-electron", "preload");
+  fs.mkdirSync(developmentPreloadDir, { recursive: true });
+  for (const name of ["document-html-review.js", "work-panel-preview.js"]) {
+    fs.copyFileSync(path.join(outdir, "preload", name), path.join(developmentPreloadDir, name));
+  }
+
   const conversationWorker = path.join(outdir, "main", "conversation-html-worker.js");
   if (!fs.statSync(conversationWorker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error("conversation HTML Worker bundle is missing");
+  }
+  const webappToolingWorker = path.join(outdir, "main", "webapp-tooling-worker.js");
+  if (!fs.statSync(webappToolingWorker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error("WebApp Tooling Worker bundle is missing");
   }
 
   return outdir;

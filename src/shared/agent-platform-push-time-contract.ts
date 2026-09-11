@@ -11,6 +11,7 @@ const REQUIRED_PUSH_TIME_FIELDS: Readonly<Record<string, string>> = {
   "run.finished": "finishedAt",
   "run.complete": "finishedAt",
   "chat.created": "createdAt",
+  "chats.order.changed": "updatedAt",
   "chat.updated": "updatedAt",
   "chat.unread": "createdAt",
   "chat.read": "readAt",

@@ -13,15 +13,15 @@ const {
   loadMainWindowRenderer,
   prepareWebviewAttachPreferences,
   createMainWindowLifecycleController
-} = await import("../dist-electron/main/window-manager.js");
+} = await import("../dist-electron/main/modules/shell/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
 const { DESKTOP_SSO_WEBVIEW_PARTITION } = await import("../dist-electron/shared/sso.js");
 const {
-  isWorkPanelCloseShortcut,
+  isDesktopCloseShortcut,
   resolveGlobalSearchCommandShortcut,
-} = await import("../dist-electron/main/platform-adapter.js");
-const { resolveWebviewOpenDisposition } = await import("../dist-electron/main/webview-open-tab.js");
+} = await import("../dist-electron/main/infrastructure/electron/platform-adapter.js");
+const { resolveWebviewOpenDisposition } = await import("../dist-electron/main/modules/web-surfaces/open-tab.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -757,63 +757,46 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.deepEqual(target.webContents.openedDevToolsOptions, []);
 });
 
-test("main window forwards close shortcuts only while WorkPanel owns keyboard focus", () => {
-  const target = new FakeWindow();
-  let workPanelFocused = true;
-  let prevented = false;
-
-  configureMainWindowLifecycleEvents(target, {
-    platform: "darwin",
-    lifecycle: {
-      applyAppearance: () => {},
-      hideForClose: () => {},
-      cancelPendingClose: () => {},
+test("main window forwards close shortcuts for renderer-owned composite workspaces", () => {
+  const cases = [
+    {
+      platform: "darwin",
+      input: { type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false },
     },
-    isDevToolsShortcut: () => false,
-    isWorkPanelCloseShortcut,
-    isWorkPanelKeyboardFocusActive: () => workPanelFocused,
-    isHandlingQuit: () => false,
-    clearWindow: () => {},
-  });
-
-  target.webContents.emit("before-input-event", {
-    preventDefault: () => {
-      prevented = true;
+    {
+      platform: "win32",
+      input: { type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false },
     },
-  }, {
-    type: "keyDown",
-    key: "w",
-    meta: true,
-    control: false,
-    alt: false,
-    shift: false,
-    isAutoRepeat: false,
-  });
+  ];
 
-  assert.equal(prevented, true);
-  assert.deepEqual(target.webContents.sentMessages, [{
-    channel: "app.workPanelCloseShortcut",
-    payload: { guestId: null, workPanelFocused: true },
-  }]);
+  for (const testCase of cases) {
+    const target = new FakeWindow();
+    let prevented = false;
+    configureMainWindowLifecycleEvents(target, {
+      platform: testCase.platform,
+      lifecycle: {
+        applyAppearance: () => {},
+        hideForClose: () => {},
+        cancelPendingClose: () => {},
+      },
+      isDevToolsShortcut: () => false,
+      isDesktopCloseShortcut,
+      isHandlingQuit: () => false,
+      clearWindow: () => {},
+    });
 
-  workPanelFocused = false;
-  prevented = false;
-  target.webContents.emit("before-input-event", {
-    preventDefault: () => {
-      prevented = true;
-    },
-  }, {
-    type: "keyDown",
-    key: "w",
-    meta: true,
-    control: false,
-    alt: false,
-    shift: false,
-    isAutoRepeat: false,
-  });
+    target.webContents.emit("before-input-event", {
+      preventDefault: () => {
+        prevented = true;
+      },
+    }, testCase.input);
 
-  assert.equal(prevented, false);
-  assert.equal(target.webContents.sentMessages.length, 1);
+    assert.equal(prevented, true, testCase.platform);
+    assert.deepEqual(target.webContents.sentMessages, [{
+      channel: "app.closeShortcut",
+      payload: { guestId: null, fallbackToWindowClose: true },
+    }]);
+  }
 });
 
 test("main window forwards global search commands only while the overlay is visible", () => {
@@ -1203,17 +1186,33 @@ test("attached webviews prioritize visible global search commands over edit shor
   }]);
 });
 
-test("attached webviews forward close only for active registered WorkPanel guests", () => {
+test("attached webviews forward close only for trusted Main Chat, current WorkPanel and Website guests", () => {
   const target = new FakeWindow();
   const macGuest = new FakeWebContents(91);
   const windowsGuest = new FakeWebContents(92);
   const ordinaryGuest = new FakeWebContents(93);
-  const prevented = { mac: false, windows: false, repeated: false, ordinary: false };
+  const mainChatMacGuest = new FakeWebContents(96);
+  const mainChatWindowsGuest = new FakeWebContents(97);
+  const websiteMacGuest = new FakeWebContents(98);
+  const websiteWindowsGuest = new FakeWebContents(99);
+  const prevented = {
+    mac: false,
+    windows: false,
+    mainChatMac: false,
+    mainChatWindows: false,
+    websiteMac: false,
+    websiteWindows: false,
+    repeated: false,
+    ordinary: false,
+  };
   const baseOptions = {
     getMainWindow: () => target,
     isDevToolsShortcut: () => false,
-    isWorkPanelCloseShortcut,
-    isWorkPanelWebview: (contents) => contents.id !== ordinaryGuest.id,
+    isDesktopCloseShortcut,
+    isWorkPanelWebview: (contents) => contents.id === macGuest.id || contents.id === windowsGuest.id,
+    isMainChatWebview: (contents) => contents.id === mainChatMacGuest.id || contents.id === mainChatWindowsGuest.id,
+    resolveWebsiteCloseTarget: (contents) => [98, 99].includes(contents.id)
+      ? { surfaceId: 'website-a', registrationId: 'website-instance-a' } : null,
     shouldDownloadUrl: () => false,
     resolveOpenDisposition: () => "external",
     collectLoadDiagnostics: async () => ({}),
@@ -1224,12 +1223,22 @@ test("attached webviews forward close only for active registered WorkPanel guest
 
   configureAttachedWebview(macGuest, { ...baseOptions, platform: "darwin" });
   configureAttachedWebview(windowsGuest, { ...baseOptions, platform: "win32" });
+  configureAttachedWebview(mainChatMacGuest, { ...baseOptions, platform: "darwin" });
+  configureAttachedWebview(mainChatWindowsGuest, { ...baseOptions, platform: "win32" });
   configureAttachedWebview(ordinaryGuest, { ...baseOptions, platform: "win32" });
+  configureAttachedWebview(websiteMacGuest, { ...baseOptions, platform: "darwin" });
+  configureAttachedWebview(websiteWindowsGuest, { ...baseOptions, platform: "win32" });
 
   macGuest.emit("before-input-event", { preventDefault: () => { prevented.mac = true; } }, {
     type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false,
   });
   windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.windows = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
+  });
+  mainChatMacGuest.emit("before-input-event", { preventDefault: () => { prevented.mainChatMac = true; } }, {
+    type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false,
+  });
+  mainChatWindowsGuest.emit("before-input-event", { preventDefault: () => { prevented.mainChatWindows = true; } }, {
     type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
   });
   windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.repeated = true; } }, {
@@ -1238,11 +1247,30 @@ test("attached webviews forward close only for active registered WorkPanel guest
   ordinaryGuest.emit("before-input-event", { preventDefault: () => { prevented.ordinary = true; } }, {
     type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
   });
+  websiteMacGuest.emit("before-input-event", { preventDefault: () => { prevented.websiteMac = true; } }, {
+    type: "keyDown", key: "w", meta: true,
+  });
+  websiteWindowsGuest.emit("before-input-event", { preventDefault: () => { prevented.websiteWindows = true; } }, {
+    type: "keyDown", key: "w", control: true,
+  });
 
-  assert.deepEqual(prevented, { mac: true, windows: true, repeated: false, ordinary: false });
+  assert.deepEqual(prevented, {
+    mac: true,
+    windows: true,
+    mainChatMac: true,
+    mainChatWindows: true,
+    websiteMac: true,
+    websiteWindows: true,
+    repeated: false,
+    ordinary: false,
+  });
   assert.deepEqual(target.webContents.sentMessages, [
-    { channel: "app.workPanelCloseShortcut", payload: { guestId: 91 } },
-    { channel: "app.workPanelCloseShortcut", payload: { guestId: 92 } },
+    { channel: "app.closeShortcut", payload: { guestId: 91 } },
+    { channel: "app.closeShortcut", payload: { guestId: 92 } },
+    { channel: "app.closeShortcut", payload: { guestId: null, fallbackToWindowClose: true } },
+    { channel: "app.closeShortcut", payload: { guestId: null, fallbackToWindowClose: true } },
+    { channel: "app.closeShortcut", payload: { guestId: 98, website: { surfaceId: 'website-a', registrationId: 'website-instance-a' } } },
+    { channel: "app.closeShortcut", payload: { guestId: 99, website: { surfaceId: 'website-a', registrationId: 'website-instance-a' } } },
   ]);
 });
 
@@ -1637,6 +1665,69 @@ test("window manager routes attached webview DevTools shortcuts to the main rend
     }
   ]);
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`Agent WebClient authorization popups open in the system browser on ${platform}`, async () => {
+    const mainWindow = new FakeWindow();
+    const guest = new FakeWebContents(45, "persist:service", "http://127.0.0.1:18080/connectors/wecom");
+    const externalUrls = [];
+    const reports = [];
+    let inWorkPanel = false;
+    configureMainWindowWebContents(mainWindow, {
+      platform,
+      getMainWindow: () => mainWindow,
+      servicePreloadPath: platform === "win32" ? "C:/app/preload/service-webview.js" : "/app/preload/service-webview.js",
+      servicePreloadUrl: "file:///app/preload/service-webview.js",
+      isSafeServiceUrl: () => true,
+      isDevToolsShortcut: () => false,
+      shouldDownloadUrl: () => false,
+      resolveOpenDisposition: resolveWebviewOpenDisposition,
+      shouldOpenPopupExternally: (contents) => contents === guest,
+      shouldOpenPopupInWorkPanelTab: () => inWorkPanel,
+      collectLoadDiagnostics: async () => ({}),
+      report: (source, details) => reports.push({ source, details }),
+      openExternal: async (url) => {
+        externalUrls.push(url);
+        if (url.includes("fail=true")) throw new Error(`OS could not open ${url}`);
+      },
+      schedule: (callback) => callback()
+    });
+    mainWindow.webContents.emit("did-attach-webview", {}, guest);
+
+    const authorizationUrl = "https://official.example/authorize?state=private-login-state&redirect_uri=http%3A%2F%2F127.0.0.1%3A9000%2Fcallback";
+    const localUrl = "http://127.0.0.1:9000/authorize";
+    for (const url of [authorizationUrl, localUrl]) {
+      assert.deepEqual(guest.windowOpenHandler({ url }), { action: "deny" });
+    }
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+    assert.deepEqual(guest.loadedUrls, []);
+
+    for (const url of [
+      "about:blank", "javascript:alert(1)", "file:///tmp/auth.html",
+      "custom-auth://authorize", "https://user:secret@official.example/authorize",
+      "blob:http://127.0.0.1:18080/auth-page", "invalid-url",
+    ]) {
+      assert.deepEqual(guest.windowOpenHandler({ url }), { action: "deny" });
+    }
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+
+    guest.windowOpenHandler({ url: "https://official.example/connector.zip" });
+    assert.deepEqual(guest.downloadedUrls, ["https://official.example/connector.zip"]);
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl]);
+
+    inWorkPanel = true;
+    const workPanelAuthUrl = `${authorizationUrl}&source=workpanel`;
+    guest.windowOpenHandler({ url: workPanelAuthUrl });
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl, workPanelAuthUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+
+    guest.windowOpenHandler({ url: `${authorizationUrl}&fail=true` });
+    await Promise.resolve();
+    assert.deepEqual(reports, [{ source: "failed to open service popup externally", details: { guestId: guest.id } }]);
+  });
+}
 
 test("Website Blob popups stay bound to the source surface and never open externally", () => {
   const contents = new FakeWebContents(44, "persist:desktop-sso", "https://example.test/attachments");

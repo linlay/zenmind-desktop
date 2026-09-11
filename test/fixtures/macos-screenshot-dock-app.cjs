@@ -2,6 +2,7 @@ const path = require("node:path");
 const {
   app,
   BrowserWindow,
+  screen,
   systemPreferences
 } = require("electron");
 
@@ -9,6 +10,7 @@ const { captureScreenshotForBridge } = require(path.join(
   process.cwd(),
   "dist-electron",
   "main",
+  "modules",
   "assistant",
   "copilot",
   "screenshot.js"
@@ -33,7 +35,7 @@ app.whenReady().then(async () => {
     delay: async () => undefined
   }, "region");
 
-  const readyTimer = setInterval(() => {
+  const readyTimer = setInterval(async () => {
     const overlayWindow = BrowserWindow.getAllWindows().find((candidate) =>
       candidate.getTitle().includes("Screenshot Selection")
     );
@@ -45,7 +47,15 @@ app.whenReady().then(async () => {
       return;
     }
     clearInterval(readyTimer);
-    console.log(`SCREENSHOT_OVERLAY_READY ${process.pid}`);
+    const viewport = await overlayWindow.webContents.executeJavaScript(
+      "({ width: innerWidth, height: innerHeight })"
+    );
+    console.log(`SCREENSHOT_OVERLAY_READY ${JSON.stringify({
+      pid: process.pid,
+      bounds: overlayWindow.getBounds(),
+      displayBounds: screen.getDisplayMatching(mainWindow.getBounds()).bounds,
+      viewport
+    })}`);
   }, OVERLAY_POLL_INTERVAL_MS);
 });
 

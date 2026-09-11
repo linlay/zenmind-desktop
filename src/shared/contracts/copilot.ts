@@ -104,6 +104,8 @@ export interface DesktopPageContextSnapshot {
 }
 
 export interface DesktopActionRendererRequest {
+  /** Main-only routing for an already authorized CDP tab operation; not a public Action input. */
+  siteCdpTarget?: { surfaceId: string; registrationId: string; tabId: string; webContentsId: number };
   requestId: string;
   action: string;
   args: Record<string, unknown>;
@@ -236,6 +238,8 @@ export type AssistantNavAgentIcon = string | {
 };
 
 export interface AssistantNavChatItem {
+  pinned?: boolean;
+  mode?: string;
   chatId: string;
   chatName: string;
   agentKey: string;
@@ -244,6 +248,8 @@ export interface AssistantNavChatItem {
   lastRunId: string;
   lastRunContent: string;
   isRead: boolean;
+  readAt?: EpochMilliseconds;
+  readRunId: string;
   hasActiveRun: boolean;
   hasPendingAwaiting: boolean;
   awaitingCount?: number;
@@ -258,6 +264,7 @@ export interface AssistantChatOrderState {
 }
 
 export type AssistantChatOrderMutationRequest =
+  | { operation: "set_pinned"; chatId: string; pinned: boolean }
   | {
       operation: "set_mode";
       sortMode: AssistantChatSortMode;
@@ -333,6 +340,8 @@ export interface AssistantNavAgentItem {
 }
 
 export interface AssistantNavAgentItemsResult {
+  pinnedChatItems?: AssistantNavChatItem[];
+  chatPinningSupported?: boolean;
   ok: boolean;
   items: AssistantNavAgentItem[];
   activityItems?: AssistantNavAgentItem[];
@@ -342,6 +351,17 @@ export interface AssistantNavAgentItemsResult {
   chatOrderingSupported?: boolean;
   message: string;
   updatedAt: EpochMilliseconds;
+}
+
+export interface AssistantNavigationAttentionCounts {
+  unreadCount: number;
+  pendingCount: number;
+}
+
+export interface AssistantNavigationAttentionSummary {
+  chats: AssistantNavigationAttentionCounts;
+  projects: AssistantNavigationAttentionCounts;
+  total: AssistantNavigationAttentionCounts;
 }
 
 export interface AssistantReorderProjectsRequest {
@@ -462,7 +482,6 @@ export interface AssistantSettingsPublic {
   model: string;
   configured: boolean;
   apiKeyConfigured: boolean;
-  voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
   chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
@@ -473,83 +492,9 @@ export interface AssistantSettingsPublic {
 }
 
 export interface AssistantSettingsInput {
-  voiceCorrectionEnabled?: boolean;
   desktopHelperAgentKey?: string;
   chatDefaultAgentKey?: string;
   desktopCopilotPages?: DesktopCopilotPagePreferencesInput;
-}
-
-export type AssistantMemoryKind = "fact" | "observation";
-export type AssistantMemoryStatus = "active" | "open" | "archived";
-
-export interface AssistantMemoryItem {
-  id: string;
-  kind: AssistantMemoryKind;
-  title: string;
-  summary: string;
-  category: string;
-  scopeType?: "user" | "chat";
-  facet?: string;
-  subjectKey?: string;
-  tags: string[];
-  importance: number;
-  confidence: number;
-  status: AssistantMemoryStatus;
-  sourceChatId?: string;
-  sourceRunId?: string;
-  referenceCount: number;
-  reason?: string;
-  createdAt: EpochMilliseconds;
-  updatedAt: EpochMilliseconds;
-  lastReferencedAt?: EpochMilliseconds | null;
-}
-
-export interface AssistantMemorySettings {
-  enabled: boolean;
-  autoLearn: boolean;
-  maxItems: number;
-  maxChars: number;
-}
-
-export interface AssistantMemorySettingsInput {
-  enabled?: boolean;
-  autoLearn?: boolean;
-  maxItems?: number;
-  maxChars?: number;
-}
-
-export interface AssistantMemoryStats {
-  total: number;
-  factCount: number;
-  observationCount: number;
-  lastLearnedAt: EpochMilliseconds | null;
-  lastReferencedAt: EpochMilliseconds | null;
-}
-
-export interface AssistantMemoryStorage {
-  recordsPath: string;
-  staticPath: string;
-  auditPath: string;
-  directoryPath: string;
-}
-
-export interface AssistantMemoryAuditSummary {
-  operation: string;
-  status: string;
-  reason?: string;
-  stored?: number;
-  skipped?: number;
-  updated?: number;
-  archived?: number;
-  timestamp: EpochMilliseconds;
-}
-
-export interface AssistantMemorySummary {
-  settings: AssistantMemorySettings;
-  stats: AssistantMemoryStats;
-  storage: AssistantMemoryStorage;
-  directoryPath: string;
-  recentAudit: AssistantMemoryAuditSummary | null;
 }
 
 export interface AssistantPastedImageInput {
@@ -596,44 +541,6 @@ export interface AssistantTextCompletionResult {
 export interface AssistantStopRunResult {
   ok: boolean;
   message: string;
-}
-
-export type AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
-export type AssistantVoiceChangeLevel = "none" | "minor" | "major";
-
-export interface AssistantVoiceCorrectionRequest {
-  text: string;
-  locale: AssistantVoiceCorrectionLocale;
-}
-
-export interface AssistantVoiceCorrectionResult {
-  ok: boolean;
-  text: string;
-  message: string;
-  rawText?: string;
-  correctedText?: string;
-  changeLevel?: AssistantVoiceChangeLevel;
-  confidence?: number;
-  glossaryHits?: string[];
-  uncertainTerms?: string[];
-}
-
-export interface AssistantVoiceTranscriptionRequest {
-  mimeType: string;
-  data: ArrayBuffer;
-  locale: AssistantVoiceCorrectionLocale;
-}
-
-export interface AssistantVoiceTranscriptionResult {
-  ok: boolean;
-  text: string;
-  message: string;
-  rawText?: string;
-  correctedText?: string;
-  changeLevel?: AssistantVoiceChangeLevel;
-  confidence?: number;
-  glossaryHits?: string[];
-  uncertainTerms?: string[];
 }
 
 export type AssistantAwaitingMode = "approval" | "question" | "form" | "planning";
@@ -837,13 +744,6 @@ export const ASSISTANT_RUN_EVENT_TYPES = [
   "run.expired",
   "done"
 ] as const satisfies readonly AssistantRunEventType[];
-
-export const ASSISTANT_LEGACY_STREAM_EVENT_TYPES = [
-  "delta",
-  "done",
-  "error",
-  "stopped"
-] as const;
 
 export const ASSISTANT_TERMINAL_EVENT_TYPES = [
   "done",

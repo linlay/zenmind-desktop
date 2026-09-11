@@ -48,6 +48,11 @@ import {
 } from "../../../shared/desktop-pet-visual";
 import { BRAND_ID, PRODUCT_NAME } from "../../../shared/brand";
 import { useI18n } from "../../i18n/useI18n";
+import {
+  loadDesktopPetAlphaMask,
+  pointIntersectsDesktopPetImage,
+  type DesktopPetAlphaMask
+} from "./desktopPetHitTest";
 
 type DesktopPetTranslate = ReturnType<typeof useI18n>["t"];
 
@@ -60,6 +65,11 @@ function createFallbackDesktopPetState(): DesktopPetState {
     hint: "",
     messagePreview: "",
     unreadCount: 0,
+    navigationAttention: {
+      chats: { unreadCount: 0, pendingCount: 0 },
+      projects: { unreadCount: 0, pendingCount: 0 },
+      total: { unreadCount: 0, pendingCount: 0 }
+    },
     chatId: null,
     appearanceId: DEFAULT_DESKTOP_PET_APPEARANCE_ID,
     appearanceOptions: [...DESKTOP_PET_APPEARANCE_OPTIONS],
@@ -193,6 +203,8 @@ function formatTaskStatus(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n
 
 const DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30;
 const DESKTOP_PET_TASK_VISIBLE_LIMIT = 2;
+const DESKTOP_PET_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const DESKTOP_PET_MESSAGE_LIMIT = 50;
 
 function formatInlinePetPreview(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -242,15 +254,19 @@ function mergeDesktopPetMessageLists(
 
 function getVisibleDesktopPetMessages(input: {
   messages: readonly DesktopPetMessageItem[];
-  cachedMessages: readonly DesktopPetMessageItem[];
   previewHistoryMessage: DesktopPetMessageItem | null;
   dismissedKeys: ReadonlySet<string>;
 }) {
-  const mergedMessages = mergeDesktopPetMessageLists(input.messages, input.cachedMessages);
   const withPreview = input.previewHistoryMessage
-    ? mergeDesktopPetMessageLists(mergedMessages, [input.previewHistoryMessage])
-    : mergedMessages;
-  return withPreview.filter((message) => !input.dismissedKeys.has(getDesktopPetMessageVersionKey(message)));
+    ? mergeDesktopPetMessageLists(input.messages, [input.previewHistoryMessage])
+    : input.messages;
+  const oldestVisibleAt = Date.now() - DESKTOP_PET_MESSAGE_RETENTION_MS;
+  return withPreview
+    .filter((message) => message.unread || message.status === "awaiting")
+    .filter((message) => message.updatedAt >= oldestVisibleAt)
+    .filter((message) => !input.dismissedKeys.has(getDesktopPetMessageVersionKey(message)))
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, DESKTOP_PET_MESSAGE_LIMIT);
 }
 
 function formatMessageCardPreview(
@@ -408,7 +424,6 @@ const DESKTOP_PET_DONE_VISUAL_HOLD_MS = 2500;
 const DESKTOP_PET_ERROR_VISUAL_HOLD_MS = 3000;
 const DESKTOP_PET_IDLE_RANDOM_DELAY_MS = 25000;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
-const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
 const DESKTOP_PET_STANDARD_IDLE_ACTION_ID: DesktopPetStandardIdleAction = "jumping";
 const DESKTOP_PET_REVIEW_TEXT_PATTERN = /review|检查|校验|验证|整理|复核|审阅/iu;
 
@@ -419,22 +434,17 @@ function rectContainsPoint(rect: DOMRect, x: number, y: number, margin = 0) {
     y <= rect.bottom + margin;
 }
 
-function pointIntersectsElement(selector: string, x: number, y: number, margin = 0) {
-  const element = document.querySelector<HTMLElement>(selector);
-  if (!element) {
-    return false;
-  }
-  const rect = element.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) {
-    return false;
-  }
-  return rectContainsPoint(rect, x, y, margin);
+function pointIntersectsElement(selector: string, x: number, y: number) {
+  return Array.from(document.querySelectorAll<HTMLElement>(selector)).some((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rectContainsPoint(rect, x, y);
+  });
 }
 
-function pointIntersectsVisiblePetArea(x: number, y: number) {
-  return pointIntersectsElement(".desktop-pet-image", x, y, DESKTOP_PET_IMAGE_HIT_MARGIN) ||
-    pointIntersectsElement(".desktop-pet-unread-badges", x, y, 4) ||
-    pointIntersectsElement(".desktop-pet-speech", x, y) ||
+function pointIntersectsVisiblePetArea(x: number, y: number, mask: DesktopPetAlphaMask | null) {
+  const image = document.querySelector<HTMLElement>(".desktop-pet-image");
+  return Boolean(image && pointIntersectsDesktopPetImage(image, mask, x, y)) ||
+    pointIntersectsElement(".desktop-pet-unread-badge", x, y) ||
     pointIntersectsElement(".desktop-pet-task-panel", x, y) ||
     pointIntersectsElement(".desktop-pet-preview", x, y);
 }
@@ -535,7 +545,6 @@ export function DesktopPet() {
   const [isWidgetExpanded, setIsWidgetExpanded] = useState(false);
   const [replyingChatId, setReplyingChatId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
-  const [messageCache, setMessageCache] = useState<readonly DesktopPetMessageItem[]>([]);
   const [dismissedMessageKeys, setDismissedMessageKeys] = useState<readonly string[]>([]);
   // 回复发送后到后端状态回填前的乐观「思考中」占位（按 chatId），超时自动清除
   const [pendingReplyIds, setPendingReplyIds] = useState<readonly string[]>([]);
@@ -549,6 +558,8 @@ export function DesktopPet() {
   const appearanceIdRef = useRef(DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   const draggingRef = useRef(false);
   const mouseInteractiveRef = useRef(true);
+  const imageAlphaMaskRef = useRef<DesktopPetAlphaMask | null>(null);
+  const mousePointRef = useRef<{ x: number; y: number } | null>(null);
   const activeSignatureRef = useRef<ActiveDesktopPetSignature | null>(activeSignature);
   const activeStandardActionRef = useRef<ActiveDesktopPetStandardAction | null>(activeStandardAction);
   const petStateRef = useRef<DesktopPetState>(petState);
@@ -636,7 +647,8 @@ export function DesktopPet() {
   }
 
   function updateMouseInteractivityFromPoint(point: { x: number; y: number }) {
-    const interactive = draggingRef.current || pointIntersectsVisiblePetArea(point.x, point.y);
+    mousePointRef.current = point;
+    const interactive = draggingRef.current || pointIntersectsVisiblePetArea(point.x, point.y, imageAlphaMaskRef.current);
     setMouseInteractive(interactive);
   }
 
@@ -727,14 +739,6 @@ export function DesktopPet() {
       Math.max(0, Math.round(Number(nextState.unreadCount) || 0)) > 0;
   }
 
-  function rememberMessagesFromState(nextState: DesktopPetState) {
-    const nextMessages = Array.isArray(nextState.messages) ? nextState.messages : [];
-    if (nextMessages.length === 0) {
-      return;
-    }
-    setMessageCache((current) => mergeDesktopPetMessageLists(nextMessages, current));
-  }
-
   async function beginDrag() {
     try {
       const result = await window.electronAPI.desktopPet.beginDrag({});
@@ -767,7 +771,6 @@ export function DesktopPet() {
     }
     void window.electronAPI.desktopPet.getState().then((nextState) => {
       setPetState(nextState);
-      rememberMessagesFromState(nextState);
       if (!nextState.enabled || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
@@ -777,7 +780,6 @@ export function DesktopPet() {
     }).catch(() => undefined);
     const dispose = window.electronAPI.desktopPet.onStateChanged((nextState) => {
       setPetState(nextState);
-      rememberMessagesFromState(nextState);
       if (!nextState.enabled || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
@@ -798,6 +800,7 @@ export function DesktopPet() {
     };
     const handleWindowMouseLeave = () => {
       if (!draggingRef.current) {
+        mousePointRef.current = null;
         setMouseInteractive(false);
       }
     };
@@ -808,6 +811,7 @@ export function DesktopPet() {
     };
     const handleMouseVisibilityChange = () => {
       if (document.hidden && !draggingRef.current) {
+        mousePointRef.current = null;
         setMouseInteractive(false);
       }
     };
@@ -817,7 +821,16 @@ export function DesktopPet() {
       window.addEventListener("blur", handleWindowInactive);
       document.addEventListener("visibilitychange", handleMouseVisibilityChange);
     }
+    // The sprite can move away from a stationary cursor between mouse events.
+    const hitTestTimer = !isPanelWindow ? window.setInterval(() => {
+      if (mousePointRef.current && !draggingRef.current) {
+        updateMouseInteractivityFromPoint(mousePointRef.current);
+      }
+    }, 50) : null;
     return () => {
+      if (hitTestTimer !== null) {
+        window.clearInterval(hitTestTimer);
+      }
       if (!isPanelWindow) {
         window.removeEventListener("mousemove", handleWindowMouseMove);
         window.removeEventListener("mouseleave", handleWindowMouseLeave);
@@ -898,23 +911,8 @@ export function DesktopPet() {
           updatedAt: previewPanel.updatedAt
         }
       : null;
-  const previewHistoryMessageCacheKey = previewHistoryMessage
-    ? [
-        getDesktopPetMessageVersionKey(previewHistoryMessage),
-        previewHistoryMessage.title,
-        previewHistoryMessage.preview,
-        previewHistoryMessage.status
-      ].join("\u0001")
-    : "";
-  useEffect(() => {
-    if (!previewHistoryMessage) {
-      return;
-    }
-    setMessageCache((current) => mergeDesktopPetMessageLists([previewHistoryMessage], current));
-  }, [previewHistoryMessageCacheKey]);
   const visibleMessages = getVisibleDesktopPetMessages({
     messages: petMessages,
-    cachedMessages: messageCache,
     previewHistoryMessage,
     dismissedKeys: dismissedMessageKeySet
   });
@@ -961,24 +959,48 @@ export function DesktopPet() {
   const shouldShowStateSpriteAnimation = !shouldShowSignatureSpriteAnimation && isDesktopPetAnimatedAsset(visualAsset.asset);
   const stateAnimationFrameCount = Math.max(1, Math.round(Number(visualAsset.asset?.frameCount) || 1));
   const stateAnimationDurationMs = Math.max(100, Math.round(Number(visualAsset.asset?.durationMs) || 0));
-  const rootStyle = shouldShowStateSpriteAnimation ||
-    (shouldShowSignatureSpriteAnimation && activeSignature)
-    ? ({
-        ...(shouldShowSignatureSpriteAnimation && activeSignature
-          ? {
-              "--desktop-pet-signature-duration": `${activeSignature.variant.durationMs}ms`,
-              "--desktop-pet-signature-frames": String(activeSignature.variant.frameCount)
-            }
-          : {}),
-        ...(shouldShowStateSpriteAnimation
-          ? {
-              "--desktop-pet-state-duration": `${stateAnimationDurationMs}ms`,
-              "--desktop-pet-state-frames": String(stateAnimationFrameCount),
-              "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
-            }
-          : {})
-      } as CSSProperties)
-    : undefined;
+  const hitTestAssetPath = shouldShowSignatureSpriteAnimation && activeSignature
+    ? activeSignature.assetPath
+    : visualAsset.assetPath;
+  const hitTestFrameCount = shouldShowSignatureSpriteAnimation && activeSignature
+    ? activeSignature.variant.frameCount
+    : shouldShowStateSpriteAnimation ? stateAnimationFrameCount : 1;
+  const hitTestIsSprite = shouldShowSignatureSpriteAnimation || shouldShowStateSpriteAnimation;
+  useEffect(() => {
+    if (isPanelWindow) {
+      return;
+    }
+    let cancelled = false;
+    imageAlphaMaskRef.current = null;
+    void loadDesktopPetAlphaMask(hitTestAssetPath, hitTestFrameCount, hitTestIsSprite).then((mask) => {
+      if (!cancelled) {
+        imageAlphaMaskRef.current = mask;
+        if (mousePointRef.current) {
+          updateMouseInteractivityFromPoint(mousePointRef.current);
+        }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isPanelWindow, hitTestAssetPath, hitTestFrameCount, hitTestIsSprite]);
+  const rootStyle = {
+    ...(!isPanelWindow && petState.bodyOffset ? {
+      "--desktop-pet-button-left": `${petState.bodyOffset.x - 18}px`,
+      "--desktop-pet-button-top": `${petState.bodyOffset.y - 16}px`
+    } : {}),
+    ...(shouldShowSignatureSpriteAnimation && activeSignature
+      ? {
+          "--desktop-pet-signature-duration": `${activeSignature.variant.durationMs}ms`,
+          "--desktop-pet-signature-frames": String(activeSignature.variant.frameCount)
+        }
+      : {}),
+    ...(shouldShowStateSpriteAnimation
+      ? {
+          "--desktop-pet-state-duration": `${stateAnimationDurationMs}ms`,
+          "--desktop-pet-state-frames": String(stateAnimationFrameCount),
+          "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
+        }
+      : {})
+  } as CSSProperties;
   const signatureSpriteStyle = shouldShowSignatureSpriteAnimation && activeSignature
     ? {
         backgroundImage: `url("${activeSignature.assetPath}")`
@@ -1053,29 +1075,23 @@ export function DesktopPet() {
   const shouldShowStatusPanel = canShowStatusPanel && isWidgetExpanded;
   const showStatusPanel = isPanelWindow && shouldShowStatusPanel;
   const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts({
-    displayStatus,
-    unreadCount,
-    visibleMessages,
-    messages: petMessages,
-    activeTasks
+    navigationAttention: petState.navigationAttention
   });
   const unreadBadgeItems = [
-    ...(unreadBadgeCounts.awaitingCount > 0
+    ...(unreadBadgeCounts.pendingCount > 0
       ? [{
           key: "awaiting" as const,
           tone: "awaiting" as const,
-          count: unreadBadgeCounts.awaitingCount,
-          ariaLabel: t("desktopPet.panel.expandAwaiting", { count: unreadBadgeCounts.awaitingCount })
+          count: unreadBadgeCounts.pendingCount,
+          ariaLabel: t("desktopPet.panel.expandAwaiting", { count: unreadBadgeCounts.pendingCount })
         }]
       : []),
-    ...(unreadBadgeCounts.completedCount > 0
+    ...(unreadBadgeCounts.unreadCount > 0
       ? [{
-          key: "completed" as const,
-          tone: "message" as const,
-          count: unreadBadgeCounts.completedCount,
-          ariaLabel: hasHistoryMessages
-            ? t("desktopPet.panel.expandCompleted", { count: unreadBadgeCounts.completedCount })
-            : t("desktopPet.unread", { count: unreadBadgeCounts.completedCount })
+          key: "unread" as const,
+          tone: "unread" as const,
+          count: unreadBadgeCounts.unreadCount,
+          ariaLabel: t("desktopPet.unread", { count: unreadBadgeCounts.unreadCount })
         }]
       : [])
   ];
@@ -1213,6 +1229,11 @@ export function DesktopPet() {
     }
     void window.electronAPI.desktopPet
       .replyMessage({ chatId: message.chatId, agentKey: message.agentKey, message: text })
+      .then((result) => {
+        if (result.ok) {
+          hideMessageLocally(message);
+        }
+      })
       .catch(() => undefined);
     markReplyPending(message.chatId);
     setReplyingChatId(null);
@@ -1234,12 +1255,13 @@ export function DesktopPet() {
     handleReplySubmit(message);
   }
 
-  function handleDismissMessage(message: DesktopPetMessageItem) {
+  function hideMessageLocally(message: DesktopPetMessageItem) {
     const dismissedKey = getDesktopPetMessageVersionKey(message);
     setDismissedMessageKeys((current) => current.includes(dismissedKey) ? current : [...current, dismissedKey]);
-    setMessageCache((current) => current.filter((cachedMessage) =>
-      getDesktopPetMessageVersionKey(cachedMessage) !== dismissedKey
-    ));
+  }
+
+  function handleDismissMessage(message: DesktopPetMessageItem) {
+    hideMessageLocally(message);
     void window.electronAPI.desktopPet
       .dismissMessage({ chatId: message.chatId, runId: message.runId, updatedAt: message.updatedAt })
       .catch(() => undefined);
@@ -1258,10 +1280,17 @@ export function DesktopPet() {
 
   function handleOpenMessageClick(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem) {
     stopPanelClick(event);
-    void window.electronAPI.desktopPet.openTaskChat({
-      agentKey: message.agentKey,
-      chatId: message.chatId
-    });
+    void window.electronAPI.desktopPet
+      .openTaskChat({
+        agentKey: message.agentKey,
+        chatId: message.chatId
+      })
+      .then((result) => {
+        if (result.ok && message.status !== "awaiting") {
+          hideMessageLocally(message);
+        }
+      })
+      .catch(() => undefined);
   }
 
   function handleOpenAssistantFromPanel(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -1617,13 +1646,14 @@ export function DesktopPet() {
                       const isThinking =
                         message.status === "running" || pendingReplyIds.includes(message.chatId);
                       const cardStatus = isThinking ? "running" : message.status;
-                      const isReplying = replyingChatId === message.chatId;
+                      const canReply = message.status !== "awaiting";
+                      const isReplying = canReply && replyingChatId === message.chatId;
                       const replyDraftPreview = isReplying ? replyText : "";
                       const previewText = formatMessageCardPreview(message, isThinking, replyDraftPreview, t);
                       return (
                       <div
                         key={message.id}
-                        className={`desktop-pet-message-card is-${cardStatus}${message.unread ? " is-unread" : ""}${isReplying ? " is-replying" : ""}`}
+                        className={`desktop-pet-message-card is-${cardStatus}${message.unread ? " is-unread" : ""}${canReply ? " can-reply" : ""}${isReplying ? " is-replying" : ""}`}
                         onPointerDown={handleTaskPointerDown}
                       >
                         <div className="desktop-pet-message-meta">
@@ -1641,15 +1671,24 @@ export function DesktopPet() {
                           className="desktop-pet-message-main"
                           onClick={(event) => handleOpenMessageClick(event, message)}
                         >
-                          <span className="desktop-pet-task-copy">
-                            <strong>{message.title}</strong>
-                            <span>{previewText}</span>
-                          </span>
-                          <span
-                            className={`desktop-pet-task-status-badge is-${cardStatus}`}
-                            aria-label={message.title}
-                          >
-                            {renderDesktopPetStatusIcon(cardStatus)}
+                          <span className="desktop-pet-message-copy">
+                            <span className="desktop-pet-message-title-line">
+                              <strong>{message.title}</strong>
+                              {message.status === "awaiting" ? (
+                                <span
+                                  className="desktop-pet-message-status is-awaiting"
+                                  aria-label={t("desktopPet.status.awaiting")}
+                                >
+                                  <ClockCircleOutlined aria-hidden="true" />
+                                </span>
+                              ) : message.unread ? (
+                                <span
+                                  className="desktop-pet-message-status is-unread"
+                                  aria-label={t("desktopPet.unread", { count: 1 })}
+                                />
+                              ) : null}
+                            </span>
+                            <span className="desktop-pet-message-preview">{previewText}</span>
                           </span>
                         </button>
                         {isReplying ? (
@@ -1661,11 +1700,7 @@ export function DesktopPet() {
                             <input
                               className="desktop-pet-message-reply-input"
                               value={replyText}
-                              placeholder={
-                                message.status === "awaiting"
-                                  ? t("desktopPet.reply.awaitingPlaceholder")
-                                  : t("desktopPet.reply.placeholder")
-                              }
+                              placeholder={t("desktopPet.reply.placeholder")}
                               autoFocus
                               onFocus={() => setMouseInteractive(true)}
                               onChange={(event) => setReplyText(event.target.value)}
@@ -1698,7 +1733,7 @@ export function DesktopPet() {
                               {t("desktopPet.reply.send")}
                             </button>
                           </div>
-                        ) : (
+                        ) : canReply ? (
                           <button
                             type="button"
                             className="desktop-pet-message-reply"
@@ -1706,7 +1741,7 @@ export function DesktopPet() {
                           >
                             {t("desktopPet.reply.action")}
                           </button>
-                        )}
+                        ) : null}
                       </div>
                       );
                     })
@@ -1784,7 +1819,9 @@ export function DesktopPet() {
                 onPointerDown={handleUnreadBadgePointerDown}
                 onClick={handleUnreadBadgeClick}
               >
-                {badge.count > 99 ? "99+" : String(badge.count)}
+                {badge.key === "unread" && badge.count > 99
+                  ? "99+"
+                  : String(badge.count)}
               </button>
             ))}
           </div>

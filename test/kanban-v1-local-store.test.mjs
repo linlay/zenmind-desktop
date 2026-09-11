@@ -22,7 +22,7 @@ const {
   recordDesktopKanbanRunEvent,
   updateDesktopKanbanIssue,
   upsertDispatchedDesktopKanbanIssue
-} = await import("../dist-electron/main/kanban-local-store.js");
+} = await import("../dist-electron/main/modules/kanban/local-store.js");
 
 const currentUser = { id: "user-1", name: "User One", email: "user@example.test", source: "test" };
 

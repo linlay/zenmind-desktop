@@ -7,6 +7,8 @@ export * from "./contracts/pet-copilot";
 export * from "./contracts/copilot";
 export * from "./contracts/attachments";
 export * from "./contracts/marketplace";
+export * from "./contracts/market-skill-detail";
+export * from "./contracts/market-skill-pins";
 export * from "./contracts/kanban";
 export * from "./contracts/enterprise-chat";
 export * from "./contracts/desktop-api";

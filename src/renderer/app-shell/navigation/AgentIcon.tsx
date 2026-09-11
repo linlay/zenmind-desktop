@@ -1,6 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 import type { AssistantNavAgentIcon } from "../../../shared/contracts";
-
 import atlasIcon from "../../assets/agent-icons/atlas.svg";
 import canvasIcon from "../../assets/agent-icons/canvas.svg";
 import chatIcon from "../../assets/agent-icons/chat.svg";

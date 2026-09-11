@@ -12,13 +12,10 @@ import type {
   AssistantNavigationPushEventListener,
   AssistantReorderProjectsRequest,
   AssistantAttachmentProgressListener,
-  AssistantMemorySettingsInput,
   AssistantPastedImageInput,
   AssistantSettingsInput,
   AssistantSubmitAwaitingRequest,
   AssistantStartRunRequest,
-  AssistantVoiceCorrectionRequest,
-  AssistantVoiceTranscriptionRequest,
   DesktopActionCallListener,
   DesktopActionRendererResponse,
   DesktopPetSignatureRequestedListener,
@@ -32,7 +29,7 @@ import type {
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
   DesktopGlobalSearchShortcutListener,
-  DesktopWorkPanelCloseShortcutListener,
+  DesktopCloseShortcutListener,
   ShutdownProgressListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -131,12 +128,11 @@ const api: DesktopApi = {
     setGlobalSearchOverlayVisible: (visible: boolean) => ipcRenderer.send("desktopShell.setGlobalSearchOverlayVisible", visible),
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) =>
       ipcRenderer.send("desktopShell.setWebviewModalOverlayVisible", sourceId, visible),
-    setWorkPanelKeyboardFocusActive: (active: boolean) =>
-      ipcRenderer.send("desktopShell.setWorkPanelKeyboardFocusActive", active),
     setWorkPanelFullscreenActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
     minimizeWindow: () => ipcRenderer.invoke("desktopShell.minimizeWindow"),
+    popupApplicationMenu: (request) => ipcRenderer.invoke("desktopShell.popupApplicationMenu", request),
     toggleWindowMaximize: () => ipcRenderer.invoke("desktopShell.toggleWindowMaximize"),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
     setWindowFullScreen: (enabled: boolean) =>
@@ -223,10 +219,6 @@ const api: DesktopApi = {
     consumeFirstInstallBootstrapNavigation: () =>
       ipcRenderer.invoke("assistant.consumeFirstInstallBootstrapNavigation"),
     saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
-    getMemorySettings: () => ipcRenderer.invoke("assistant.getMemorySettings"),
-    saveMemorySettings: (input: AssistantMemorySettingsInput) =>
-      ipcRenderer.invoke("assistant.saveMemorySettings", input),
-    getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: (options?: AssistantNavigationListOptions) =>
       ipcRenderer.invoke("assistant.listNavigationAgents", options),
@@ -240,10 +232,6 @@ const api: DesktopApi = {
       ipcRenderer.invoke("assistant.createProject", input),
     createCoderProject: (input: AssistantCreateCoderProjectRequest) =>
       ipcRenderer.invoke("assistant.createCoderProject", input),
-    openMemoryDirectory: () => ipcRenderer.invoke("assistant.openMemoryDirectory"),
-    listMemoryItems: () => ipcRenderer.invoke("assistant.listMemoryItems"),
-    deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),
-    clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
@@ -257,17 +245,11 @@ const api: DesktopApi = {
     captureScreenshot: (chatId?: string | null) => ipcRenderer.invoke("assistant.captureScreenshot", chatId),
     startRun: (request: AssistantStartRunRequest) => ipcRenderer.invoke("assistant.startRun", request),
     stopRun: (runId: string) => ipcRenderer.invoke("assistant.stopRun", runId),
-    correctVoiceText: (request: AssistantVoiceCorrectionRequest) =>
-      ipcRenderer.invoke("assistant.correctVoiceText", request),
-    transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) =>
-      ipcRenderer.invoke("assistant.transcribeVoiceAudio", request),
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => ipcRenderer.invoke("assistant.submitAwaiting", request),
     openAttachment: (chatId: string, attachmentId: string) =>
       ipcRenderer.invoke("assistant.openAttachment", chatId, attachmentId),
     deleteChat: (chatId: string) => ipcRenderer.invoke("assistant.deleteChat", chatId),
     markAgentChatsRead: (agentKey: string) => ipcRenderer.invoke("assistant.markAgentChatsRead", agentKey),
-    markChatRead: (chatId: string, runId?: string) =>
-      ipcRenderer.invoke("assistant.markChatRead", chatId, runId),
     renameChat: (chatId: string, chatName: string) => ipcRenderer.invoke("assistant.renameChat", chatId, chatName),
     archiveChat: (chatId: string) => ipcRenderer.invoke("assistant.archiveChat", chatId),
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
@@ -426,6 +408,9 @@ const api: DesktopApi = {
     },
   },
   market: {
+    readSkillContent: (id: string) => ipcRenderer.invoke("market.readSkillContent", id),
+    getSkillPins: () => ipcRenderer.invoke("market.getSkillPins"),
+    saveSkillPins: (pins) => ipcRenderer.invoke("market.saveSkillPins", pins),
     getSettings: () => ipcRenderer.invoke("market.getSettings"),
     saveSettings: (input) => ipcRenderer.invoke("market.saveSettings", input),
     list: (options) => ipcRenderer.invoke("market.list", options),
@@ -553,6 +538,12 @@ const api: DesktopApi = {
     saveTunnelHubSettings: (input) => ipcRenderer.invoke("settings.saveTunnelHubSettings", input),
     resetRuntimeEnv: () => ipcRenderer.invoke("settings.resetRuntimeEnv"),
     getThemePreference: () => ipcRenderer.invoke("settings.getThemePreference"),
+    getDesktopSkin: () => ipcRenderer.invoke("settings.getDesktopSkin"),
+    setDesktopSkin: (skinId, options) => ipcRenderer.invoke("settings.setDesktopSkin", options === undefined ? skinId : { id: skinId, options }),
+    importDesktopSkinPackage: () => ipcRenderer.invoke("settings.importDesktopSkinPackage"),
+    removeDesktopSkinPackage: (skinId) => ipcRenderer.invoke("settings.removeDesktopSkinPackage", skinId),
+    importDesktopBackground: () => ipcRenderer.invoke("settings.importDesktopBackground"),
+    resetDesktopBackground: () => ipcRenderer.invoke("settings.resetDesktopBackground"),
     getNavigationPreferences: () => ipcRenderer.invoke("settings.getNavigationPreferences"),
     saveNavigationPreferences: (input) => ipcRenderer.invoke("settings.saveNavigationPreferences", input),
     setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode),
@@ -640,6 +631,14 @@ const api: DesktopApi = {
       release: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.release", input),
       open: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.open", input),
       reveal: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.reveal", input)
+    },
+    documentHtml: {
+      claim: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.claim", input),
+      read: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.read", input),
+      preview: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.preview", input),
+      fileAction: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.fileAction", input),
+      release: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.release", input),
+      commit: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.commit", input)
     },
     resourceImages: {
       claim: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.claim", input),
@@ -844,17 +843,17 @@ const api: DesktopApi = {
       ipcRenderer.off("app.globalSearchShortcut", handleGlobalSearchShortcut);
     };
   },
-  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => {
-    const handleWorkPanelCloseShortcut = (
+  onCloseShortcut: (listener: DesktopCloseShortcutListener) => {
+    const handleCloseShortcut = (
       _event: Electron.IpcRendererEvent,
-      request: Parameters<DesktopWorkPanelCloseShortcutListener>[0]
+      request: Parameters<DesktopCloseShortcutListener>[0]
     ) => {
       listener(request);
     };
 
-    ipcRenderer.on("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+    ipcRenderer.on("app.closeShortcut", handleCloseShortcut);
     return () => {
-      ipcRenderer.off("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+      ipcRenderer.off("app.closeShortcut", handleCloseShortcut);
     };
   },
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => {

@@ -18,7 +18,6 @@ import {
   normalizeDesktopVersion,
   readDesktopVersion
 } from "./lib/build-metadata.mjs";
-import { generateWebappToolingBundle } from "./generate-webapp-tooling-bundle.mjs";
 
 const projectRoot = process.cwd();
 
@@ -309,10 +308,6 @@ export async function stageApp(rootDir = projectRoot, target = parseArgs(process
 
   copyDir(rendererRoot, path.join(stageRoot, "dist-renderer"));
   copyDir(bundleRoot, path.join(stageRoot, "dist-electron"));
-  await generateWebappToolingBundle({
-    rootDir,
-    outputPath: path.join(stageRoot, "scripts", "webapp-tooling.mjs")
-  });
   writeStagePackageJson(rootDir, normalizedTarget, stageRoot, activeBrand);
   await installRuntimeDependencies(normalizedTarget, stageRoot);
   syncBrandArtifacts({ rootDir, brandId: activeBrand.id, target: normalizedTarget });

@@ -9,15 +9,15 @@ const require = createRequire(import.meta.url);
 const {
   EmbeddedCdpGateway,
   __testInternals: gatewayInternals
-} = require("../dist-electron/main/embedded-cdp-gateway.js");
+} = require("../dist-electron/main/modules/web-surfaces/cdp/gateway.js");
 const {
   DESKTOP_CDP_TARGET_TIMEOUT_CODE,
   sendDesktopCdpCommand,
   isDesktopCdpTimeoutError
-} = require("../dist-electron/main/desktop-cdp-debugger.js");
+} = require("../dist-electron/main/modules/web-surfaces/cdp/debugger.js");
 const {
   createBrowserSurfaceRegistry
-} = require("../dist-electron/main/browser-surface-registry.js");
+} = require("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
 const {
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity
@@ -1147,7 +1147,7 @@ test("browser surface registry keeps Copilot Dock live-active while excluding it
 });
 
 test("current page cdp inspector uses the shared command helper", () => {
-  const source = fs.readFileSync(path.join(process.cwd(), "src", "main", "current-page-cdp-inspector.ts"), "utf8");
+  const source = fs.readFileSync(path.join(process.cwd(), "src", "main", "modules", "web-surfaces", "cdp", "current-page-inspector.ts"), "utf8");
 
   assert.match(source, /sendDesktopCdpCommand/u);
 });

@@ -97,6 +97,19 @@ function readAssistantNavChatIsRead(record: Record<string, unknown>) {
   return true;
 }
 
+function readAssistantNavChatReadAt(record: Record<string, unknown>) {
+  const nestedRead = isObjectRecord(record.read) ? record.read : {};
+  return parseOptionalNullableAgentPlatformEpochMillis(
+    nestedRead.readAt ?? record.readAt,
+    "assistantNavigation.chat.readAt",
+  ) ?? undefined;
+}
+
+function readAssistantNavChatReadRunId(record: Record<string, unknown>) {
+  const nestedRead = isObjectRecord(record.read) ? record.read : {};
+  return toText(nestedRead.readRunId ?? record.readRunId);
+}
+
 function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): AssistantNavChatItem | null {
   const record = asRecord(value);
   const chatId = toText(record.chatId);
@@ -109,12 +122,16 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
   return {
     chatId,
     chatName: toText(record.chatName),
+    ...(record.pinned === true ? { pinned: true } : {}),
+    ...(toText(record.mode) ? { mode: toText(record.mode) } : {}),
     agentKey: toText(record.agentKey) || fallbackAgentKey,
     createdAt,
     updatedAt,
     lastRunId: toText(record.lastRunId),
     lastRunContent: toText(record.lastRunContent),
     isRead: readAssistantNavChatIsRead(record),
+    readAt: readAssistantNavChatReadAt(record),
+    readRunId: readAssistantNavChatReadRunId(record),
     hasActiveRun: record.hasActiveRun === true,
     hasPendingAwaiting: record.hasPendingAwaiting === true,
     awaitingCount: toNonNegativeInteger(record.awaitingCount),
@@ -349,7 +366,9 @@ export function normalizeAssistantNavAgentItemsResult(
   return {
     ...result,
     items: normalizeAssistantNavAgents(result.items),
-    chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }),
+    chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }).filter((chat) => !chat.pinned),
+    pinnedChatItems: normalizeAssistantNavChats(result.pinnedChatItems, { requireAgentKey: true }).filter((chat) => chat.pinned),
+    chatPinningSupported: result.chatPinningSupported === true,
     chatItemsHasMore: result.chatItemsHasMore === true,
     chatSortMode: result.chatSortMode === "manual" ? "manual" : "recent",
     chatOrderingSupported: result.chatOrderingSupported === true,
@@ -369,6 +388,12 @@ export function getAssistantNavAgentSortedChats(
     .sort(compareAssistantNavChatFreshness);
 }
 
+export function getAssistantNavAgentUnpinnedChats(
+  agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
+) {
+  return getAssistantNavAgentSortedChats(agent).filter((chat) => !chat.pinned);
+}
+
 export function getAssistantNavAgentPreviewChats(
   agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
   limit = 5,
@@ -378,56 +403,26 @@ export function getAssistantNavAgentPreviewChats(
     return [];
   }
 
-  return getAssistantNavAgentSortedChats(agent).slice(0, normalizedLimit);
+  return getAssistantNavAgentUnpinnedChats(agent).slice(0, normalizedLimit);
 }
 
-export type AssistantNavChatsOverviewItem = {
-  agent: Pick<
-    AssistantNavAgentItem,
-    "agentKey" | "displayName" | "mode" | "workspaceDir" | "workspaceDirExists" | "gitBranch"
-  >;
-  chat: AssistantNavChatItem;
-};
-
-export function getAssistantNavRecentChatsOverview(
-  agents: AssistantNavAgentItem[],
-  limit = 10,
-) {
-  const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
-  if (normalizedLimit <= 0) {
-    return [];
+export function getAdjacentAssistantNavChat(
+  chats: ReadonlyArray<AssistantNavChatItem>,
+  currentChatId: string,
+  direction: "next" | "previous",
+): AssistantNavChatItem | null {
+  const normalizedChatId = currentChatId.trim();
+  const currentIndex = chats.findIndex(
+    (chat) => chat.chatId === normalizedChatId,
+  );
+  if (currentIndex < 0) {
+    return null;
   }
 
-  const chatsById = new Map<string, AssistantNavChatsOverviewItem>();
-  for (const agent of agents) {
-    for (const chat of getAssistantNavAgentSortedChats(agent)) {
-      const normalizedChat = {
-        ...chat,
-        agentKey: chat.agentKey || agent.agentKey,
-      };
-      const existing = chatsById.get(normalizedChat.chatId);
-      if (
-        !existing ||
-        compareAssistantNavChatFreshness(normalizedChat, existing.chat) < 0
-      ) {
-        chatsById.set(normalizedChat.chatId, {
-          agent: {
-            agentKey: agent.agentKey,
-            displayName: agent.displayName,
-            mode: agent.mode,
-            workspaceDir: agent.workspaceDir,
-            workspaceDirExists: agent.workspaceDirExists,
-            gitBranch: agent.gitBranch,
-          },
-          chat: normalizedChat,
-        });
-      }
-    }
-  }
-
-  return Array.from(chatsById.values())
-    .sort((left, right) => compareAssistantNavChatFreshness(left.chat, right.chat))
-    .slice(0, normalizedLimit);
+  const nextIndex = currentIndex + (direction === "next" ? 1 : -1);
+  return nextIndex >= 0 && nextIndex < chats.length
+    ? chats[nextIndex]
+    : null;
 }
 
 export function getAssistantNavAgentAttentionChat(

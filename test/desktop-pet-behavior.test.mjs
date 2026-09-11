@@ -15,18 +15,16 @@ const {
   getDesktopPetContextMenuItems,
   listUserDesktopPetAppearanceOptions,
   __testInternals
-} = require("../dist-electron/main/assistant/pet/desktop-pet.js");
+} = require("../dist-electron/main/modules/pet/desktop-pet.js");
 const {
-  createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetActiveTasksFromNavigationSnapshot,
-  createDesktopPetClientLifecycleController,
   createDesktopPetDragController,
   createDesktopPetWindowController,
   computeDesktopPetPositionPersistence,
   resolveDesktopPetWindowMode
-} = require("../dist-electron/main/desktop-pet-controller.js");
-const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/modules/pet/controller.js");
+const { getDesktopPetsDataRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const {
   DEFAULT_DESKTOP_PET_BUILTIN_ID,
@@ -77,92 +75,9 @@ function createAgentStatus(overrides = {}) {
   };
 }
 
-test("desktop pet lifecycle projects Push callbacks without a Run stream client", () => {
-  let statusOptions = null;
-  let startCount = 0;
-  let stopCount = 0;
-  const activeRunEvents = [];
-  const clearedPreviews = [];
-  const projectedEvents = [];
-
-  class FakeStatusClient {
-    constructor(options) {
-      statusOptions = options;
-    }
-
-    start() {
-      startCount += 1;
-    }
-
-    stop() {
-      stopCount += 1;
-    }
-
-    scheduleRefresh() {}
-  }
-
-  const controller = createDesktopPetClientLifecycleController({
-    platform: "darwin",
-    app: {},
-    AgentStatusClientClass: FakeStatusClient,
-    getServiceState: async () => ({ status: "running" }),
-    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
-    realtimeBroker: {
-      subscribeRun: () => {
-        throw new Error("desktop pet must not subscribe to RunChannel");
-      },
-    },
-    getSettings: () => ({ enabled: true }),
-    setAgentStatus: () => undefined,
-    setAgentOptions: () => undefined,
-    clearActiveRuns: () => undefined,
-    updateActiveRuns: (event) => activeRunEvents.push(event),
-    clearDismissedPreview: (chatId, runId) => clearedPreviews.push({ chatId, runId }),
-    getPreviewPanel: () => null,
-    ingestAgentEvent: (event, context) => projectedEvents.push({ event, context }),
-    refreshCompletedPreviewFromStatus: () => false,
-    refreshState: () => undefined,
-  });
-
-  controller.startStatusClient();
-  assert.equal(startCount, 1);
-  assert.equal(Object.hasOwn(controller, "getStreamClient"), false);
-  assert.equal(Object.hasOwn(controller, "ensureStreamClient"), false);
-
-  statusOptions.onRunStarted({
-    runId: "run-push-only",
-    chatId: "chat-1",
-    timestamp: EPOCH_MS,
-  });
-  assert.deepEqual(activeRunEvents, [{ type: "run.started", runId: "run-push-only" }]);
-  assert.deepEqual(clearedPreviews, [{ chatId: "chat-1", runId: "run-push-only" }]);
-
-  statusOptions.onRunFinished({
-    runId: "run-push-only",
-    chatId: "chat-1",
-    message: "完成摘要",
-    timestamp: EPOCH_MS + 1,
-  });
-  assert.deepEqual(activeRunEvents.at(-1), { type: "run.finished", runId: "run-push-only" });
-  assert.deepEqual(projectedEvents.at(-1), {
-    event: {
-      runId: "run-push-only",
-      chatId: "chat-1",
-      type: "run.complete",
-      createdAt: EPOCH_MS + 1,
-      message: "完成摘要",
-    },
-    context: { source: "agent-platform-status", transportMode: "ws" },
-  });
-
-  controller.stopStatusClient();
-  assert.equal(stopCount, 1);
-});
-
 test("closing desktop pet destroys its window until the user explicitly enables it again", () => {
   let settings = createSettings({ enabled: false });
   let createdWindow = null;
-  let stopStatusClientCount = 0;
 
   class FakeDesktopPetWindow extends EventEmitter {
     constructor() {
@@ -220,10 +135,6 @@ test("closing desktop pet destroys its window until the user explicitly enables 
     isHandlingQuit: () => false,
     loadRendererRoute: async () => {},
     buildContextMenu: () => null,
-    startStatusClient: () => {},
-    stopStatusClient: () => {
-      stopStatusClientCount += 1;
-    },
     endDrag: () => {},
     clearIdleResetTimer: () => {},
     clearPreviewRefreshTimer: () => {},
@@ -249,13 +160,11 @@ test("closing desktop pet destroys its window until the user explicitly enables 
   assert.equal(createdWindow.hideCount, 0);
   assert.equal(controller.getWindow(), null);
   assert.equal(controller.isVisible(), false);
-  assert.equal(stopStatusClientCount, 1);
 });
 
 test("desktop pet show rolls persisted enabled back when the window cannot become visible", () => {
   let settings = createSettings({ enabled: true, unreadCount: 4 });
   let createdWindow = null;
-  let stopStatusClientCount = 0;
 
   class HiddenDesktopPetWindow extends EventEmitter {
     constructor() {
@@ -297,10 +206,6 @@ test("desktop pet show rolls persisted enabled back when the window cannot becom
     isHandlingQuit: () => false,
     loadRendererRoute: async () => {},
     buildContextMenu: () => null,
-    startStatusClient: () => {},
-    stopStatusClient: () => {
-      stopStatusClientCount += 1;
-    },
     endDrag: () => {},
     clearIdleResetTimer: () => {},
     clearPreviewRefreshTimer: () => {},
@@ -315,8 +220,6 @@ test("desktop pet show rolls persisted enabled back when the window cannot becom
   assert.equal(settings.unreadCount, 0);
   assert.equal(createdWindow.isDestroyed(), true);
   assert.equal(controller.getWindow(), null);
-  assert.equal(stopStatusClientCount, 1);
-
   assert.doesNotThrow(() => controller.hideWindow());
   assert.equal(controller.isVisible(), false);
 });
@@ -592,7 +495,8 @@ test("desktop pet display area keeps full horizontal screen bounds when work are
     x: 0,
     y: 25,
     width: 1280,
-    height: 640
+    height: 640,
+    windowLeftInset: 79
   });
 });
 
@@ -698,28 +602,62 @@ test("desktop pet state exposes panel placement for detached panel rendering", (
   assert.equal(state.panelPlacement, "below");
 });
 
-test("desktop pet builds a message history item from bound agent status when navigation messages are empty", () => {
-  const messages = createDesktopPetMessagesFromAgentStatus(createAgentStatus({
-    presence: "available",
-    unreadCount: 1,
-    latestPreview: "这是上一条历史回复",
-    chatId: "chat-history",
-    updatedAt: 1781654400000
-  }));
+test("desktop pet message list keeps only recent unread or awaiting chats", () => {
+  const now = Date.now();
+  const snapshot = {
+    ok: true,
+    items: [{
+      agentKey: "cutej",
+      displayName: "小君",
+      updatedAt: now,
+      recentChats: [
+        {
+          chatId: "chat-unread",
+          chatName: "未读对话",
+          agentKey: "cutej",
+          updatedAt: now - 1_000,
+          lastRunContent: "有一条新回复",
+          isRead: false,
+          hasActiveRun: false,
+          hasPendingAwaiting: false
+        },
+        {
+          chatId: "chat-awaiting",
+          chatName: "待确认对话",
+          agentKey: "cutej",
+          updatedAt: now - 2_000,
+          lastRunContent: "需要你确认",
+          isRead: true,
+          hasActiveRun: false,
+          hasPendingAwaiting: true
+        },
+        {
+          chatId: "chat-read",
+          chatName: "已读对话",
+          agentKey: "cutej",
+          updatedAt: now - 3_000,
+          lastRunContent: "普通已读回复",
+          isRead: true,
+          hasActiveRun: false,
+          hasPendingAwaiting: false
+        },
+        {
+          chatId: "chat-old",
+          chatName: "过期未读对话",
+          agentKey: "cutej",
+          updatedAt: now - 8 * 24 * 60 * 60 * 1_000,
+          lastRunContent: "八天前的回复",
+          isRead: false,
+          hasActiveRun: false,
+          hasPendingAwaiting: false
+        }
+      ]
+    }]
+  };
 
-  assert.equal(messages.length, 1);
-  assert.deepEqual(messages[0], {
-    id: "zenmi:chat-history",
-    chatId: "chat-history",
-    runId: null,
-    agentKey: "zenmi",
-    agentDisplayName: "小宅",
-    title: "小宅",
-    preview: "这是上一条历史回复",
-    status: "done",
-    unread: true,
-    updatedAt: 1781654400000
-  });
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+
+  assert.deepEqual(messages.map((message) => message.chatId), ["chat-unread", "chat-awaiting"]);
 });
 
 test("desktop pet window modes keep the visible pet footprint anchored", () => {
@@ -873,7 +811,7 @@ test("desktop pet left edge keeps the BrowserWindow onscreen while the visible p
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(legacyBounds, "base", displayArea, {
     x: displayArea.x,
     y: position.y
-  }), position);
+  }), { x: displayArea.x, y: position.y });
 });
 
 test("desktop pet full-width left host persists as a left-edge logical position", () => {
@@ -1153,13 +1091,13 @@ test("desktop pet drag clamps the pet body instead of the expanded panel window"
   assert.deepEqual(bounds, getAnchoredDesktopPetBounds({ x: initialPosition.x - 8, y: initialPosition.y }, displayArea, "bubble"));
 });
 
-test("desktop pet drag snaps to the full left screen edge when macOS keeps the cursor at the work-area inset", () => {
+test("desktop pet drag preserves the pointer offset near the macOS side Dock", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
     getAnchoredDesktopPetBounds,
-    getDesktopPetVisibleFootprintForMode
+    resolveDesktopPetWindowLayout
   } = __testInternals;
-  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900, windowLeftInset: 79 };
   const initialPosition = { x: 220, y: 300 };
   let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
   let cursorPoint = {
@@ -1207,20 +1145,22 @@ test("desktop pet drag snaps to the full left screen edge when macOS keeps the c
 
   assert.equal(setBoundsCalls.length, 1);
   assert.equal(bounds.x, displayArea.x);
+  const layout = resolveDesktopPetWindowLayout({ x: 29, y: initialPosition.y }, displayArea);
   assert.equal(
-    visibleFootprintRect(bounds, getDesktopPetVisibleFootprintForMode("base", "left")).x,
-    displayArea.x
+    bounds.x + layout.bodyOffset.x,
+    cursorPoint.x - 10
   );
+  assert.equal(layout.edgeDock, null);
   assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
 });
 
-test("desktop pet drag release keeps the requested left-edge snap when getBounds reports the work-area inset", () => {
+test("desktop pet drag release preserves its requested position when native bounds report a work-area inset", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
     getAnchoredDesktopPetBounds,
-    getDesktopPetVisibleFootprintForMode
+    resolveDesktopPetWindowLayout
   } = __testInternals;
-  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900, windowLeftInset: 79 };
   const initialPosition = { x: 220, y: 300 };
   let requestedBounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
   let reportedBounds = { ...requestedBounds };
@@ -1282,21 +1222,103 @@ test("desktop pet drag release keeps the requested left-edge snap when getBounds
 
   assert.equal(requestedBounds.x, displayArea.x);
   assert.equal(reportedBounds.x, 79);
+  const requestedPosition = { x: 29, y: initialPosition.y };
+  const layout = resolveDesktopPetWindowLayout(requestedPosition, displayArea);
   assert.equal(
-    visibleFootprintRect(requestedBounds, getDesktopPetVisibleFootprintForMode("base", "left")).x,
-    displayArea.x
+    requestedBounds.x + layout.bodyOffset.x,
+    cursorPoint.x - 10
   );
   assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
 
   assert.equal(setBoundsCalls.at(-1).x, displayArea.x);
   assert.deepEqual(savedSettings, [{
-    position: {
-      x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
-      y: initialPosition.y
-    }
+    position: requestedPosition
   }]);
   assert.deepEqual(guardedBounds.at(-1), requestedBounds);
   assert.deepEqual(persistedModes, []);
+});
+
+test("desktop pet body moves continuously to all four edges while its native host stays onscreen", () => {
+  const { resolveDesktopPetWindowLayout, getDesktopPetLogicalPositionFromBounds } = __testInternals;
+  for (const display of [
+    { x: 0, y: 25, width: 1440, height: 900 },
+    { x: -1920, y: -320, width: 1920, height: 1080, windowLeftInset: 79 }
+  ]) {
+    for (const side of ["left", "right", "top", "bottom"]) {
+      let previous = null;
+      for (let gap = 130; gap >= 0; gap -= 1) {
+        const expected = {
+          x: side === "left" ? display.x + gap : side === "right"
+            ? display.x + display.width - 96 - gap : display.x + 300,
+          y: side === "top" ? display.y + gap : side === "bottom"
+            ? display.y + display.height - 108 - gap : display.y + 300
+        };
+        const position = { x: expected.x - 40, y: expected.y - 52 };
+        const layout = resolveDesktopPetWindowLayout(position, display);
+        const visible = {
+          x: layout.bounds.x + layout.bodyOffset.x,
+          y: layout.bounds.y + layout.bodyOffset.y
+        };
+        assert.deepEqual(visible, expected, `${side} keeps the requested ${gap} px gap`);
+        assert.ok(layout.bounds.x >= display.x && layout.bounds.y >= display.y);
+        assert.ok(layout.bounds.x + layout.bounds.width <= display.x + display.width);
+        assert.ok(layout.bounds.y + layout.bounds.height <= display.y + display.height);
+        assert.equal(layout.edgeDock, gap <= 1 ? side : null);
+        assert.deepEqual(getDesktopPetLogicalPositionFromBounds(layout.bounds, "base", display, position), position);
+        if (previous) {
+          assert.equal(Math.hypot(visible.x - previous.x, visible.y - previous.y), 1);
+        }
+        previous = visible;
+      }
+    }
+  }
+});
+
+test("desktop pet drag projects geometry on both platforms and samples the final release position", () => {
+  const { resolveDesktopPetWindowLayout } = __testInternals;
+  for (const platform of ["darwin", "win32"]) {
+    const display = { x: -1440, y: 25, width: 1440, height: 900, windowLeftInset: 79 };
+    const initialPosition = { x: -1120, y: 250 };
+    let bounds = resolveDesktopPetWindowLayout(initialPosition, display).bounds;
+    let cursorPoint = { x: initialPosition.x + 88, y: initialPosition.y + 106 };
+    let intervalCallback;
+    let refreshCount = 0;
+    const layouts = [];
+    const saved = [];
+    const controller = createDesktopPetDragController({
+      platform,
+      getWindow: () => ({
+        isDestroyed: () => false,
+        getBounds: () => ({ ...bounds }),
+        setBounds: (value) => { bounds = { ...value }; },
+        moveTop: () => {}
+      }),
+      getSettings: () => ({ position: initialPosition }),
+      saveSettings: (value) => { saved.push(value); },
+      getMode: () => "base",
+      getCursorScreenPoint: () => cursorPoint,
+      getDisplayBounds: () => display,
+      getPointDisplayBounds: () => display,
+      persistPosition: () => assert.fail("release must preserve the requested anchor"),
+      onLayoutChanged: (layout) => { layouts.push(layout); },
+      refreshState: () => { refreshCount += 1; },
+      setInterval: (callback) => { intervalCallback = callback; return 1; },
+      clearInterval: () => {}
+    });
+    controller.beginDrag({});
+    for (const gap of [97, 96, 95, 25, 24, 23, 8]) {
+      cursorPoint = { x: display.x + gap + 48, y: cursorPoint.y };
+      intervalCallback();
+      const layout = layouts.at(-1);
+      assert.equal(bounds.x + layout.bodyOffset.x, display.x + gap);
+    }
+    assert.equal(refreshCount, 2, "each drag sample uses the layout callback, not a full state refresh");
+    cursorPoint = { ...cursorPoint, x: display.x + 5 + 48 };
+    assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
+    assert.deepEqual(saved, [{ position: { x: display.x + 5 - 40, y: initialPosition.y } }]);
+    assert.equal(bounds.x + layouts.at(-1).bodyOffset.x, display.x + 5);
+    assert.equal(refreshCount, 3);
+  }
 });
 
 test("desktop pet idle and unread states keep base window bounds for stable dragging", () => {
@@ -1601,116 +1623,55 @@ test("desktop pet visual arbitration does not emit thinking or message states", 
   }), "idle");
 });
 
-test("desktop pet unread badge tone separates awaiting from completed unread messages", () => {
+test("desktop pet unread badge tone follows navigation pending and unread totals", () => {
   const {
     resolveDesktopPetUnreadBadgeTone
   } = require("../dist-electron/shared/desktop-pet-visual.js");
 
   assert.equal(resolveDesktopPetUnreadBadgeTone({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    visibleMessages: [
-      { status: "done", unread: true },
-      { status: "done", unread: true }
-    ]
-  }), "message");
+    navigationAttention: {
+      chats: { unreadCount: 2, pendingCount: 0 },
+      projects: { unreadCount: 4, pendingCount: 0 },
+      total: { unreadCount: 6, pendingCount: 0 }
+    }
+  }), "unread");
 
   assert.equal(resolveDesktopPetUnreadBadgeTone({
-    displayStatus: "idle",
-    unreadCount: 1,
-    visibleMessages: [
-      { status: "awaiting", unread: true }
-    ]
+    navigationAttention: {
+      chats: { unreadCount: 0, pendingCount: 1 },
+      projects: { unreadCount: 0, pendingCount: 2 },
+      total: { unreadCount: 0, pendingCount: 3 }
+    }
   }), "awaiting");
 
   assert.equal(resolveDesktopPetUnreadBadgeTone({
-    displayStatus: "awaiting",
-    unreadCount: 1,
-    visibleMessages: []
-  }), "awaiting");
+    navigationAttention: {
+      chats: { unreadCount: 1, pendingCount: 1 },
+      projects: { unreadCount: 0, pendingCount: 0 },
+      total: { unreadCount: 1, pendingCount: 1 }
+    }
+  }), "unread");
 });
 
-test("desktop pet unread badge counts render awaiting and completed badges separately", () => {
+test("desktop pet badges use the exact navigation aggregate instead of message caches", () => {
   const {
     resolveDesktopPetUnreadBadgeCounts
   } = require("../dist-electron/shared/desktop-pet-visual.js");
 
   assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    visibleMessages: [
-      { status: "awaiting", unread: true, awaitingCount: 2 }
-    ]
+    navigationAttention: {
+      chats: { unreadCount: 2, pendingCount: 1 },
+      projects: { unreadCount: 4, pendingCount: 2 },
+      total: { unreadCount: 6, pendingCount: 3 }
+    }
   }), {
-    awaitingCount: 2,
-    completedCount: 0
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    activeTasks: [
-      { status: "awaiting", awaitingCount: 2 }
-    ],
-    visibleMessages: []
-  }), {
-    awaitingCount: 2,
-    completedCount: 0
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 3,
-    activeTasks: [
-      { status: "awaiting" }
-    ],
-    visibleMessages: [
-      { status: "done", unread: true },
-      { status: "done", unread: true }
-    ]
-  }), {
-    awaitingCount: 1,
-    completedCount: 2
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "idle",
-    unreadCount: 2,
-    visibleMessages: [
-      { status: "done", unread: false },
-      { status: "done", unread: true },
-      { status: "done", unread: false },
-      { status: "done", unread: false },
-      { status: "done", unread: true },
-      { status: "done", unread: false },
-      { status: "done", unread: false },
-      { status: "done", unread: false }
-    ]
-  }), {
-    awaitingCount: 0,
-    completedCount: 2
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    visibleMessages: []
-  }), {
-    awaitingCount: 2,
-    completedCount: 0
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "idle",
-    unreadCount: 4,
-    visibleMessages: []
-  }), {
-    awaitingCount: 0,
-    completedCount: 4
+    pendingCount: 3,
+    unreadCount: 6
   });
 });
 
 test("desktop pet preserves per-chat awaiting counts from navigation snapshots", () => {
+  const updatedAt = Date.now() - 1_000;
   const snapshot = {
     ok: true,
     items: [{
@@ -1723,12 +1684,12 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
       hasPendingAwaiting: true,
       latestChatId: "chat-awaiting",
       latestPreview: "等待确认",
-      updatedAt: 1781697600000,
+      updatedAt,
       recentChats: [{
         chatId: "chat-awaiting",
         chatName: "审批发布",
         agentKey: "cutej",
-        updatedAt: 1781697600000,
+        updatedAt,
         lastRunId: "run-awaiting",
         lastRunContent: "需要你确认两项操作",
         isRead: true,
@@ -1744,6 +1705,7 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
 });
 
 test("desktop pet reads copilot activity items when navigation items omit the agent", () => {
+  const updatedAt = Date.now() - 1_000;
   const snapshot = {
     ok: true,
     items: [],
@@ -1757,12 +1719,12 @@ test("desktop pet reads copilot activity items when navigation items omit the ag
       hasPendingAwaiting: false,
       latestChatId: "helper-chat-1",
       latestPreview: "已完成网络诊断",
-      updatedAt: 1782302400000,
+      updatedAt,
       recentChats: [{
         chatId: "helper-chat-1",
         chatName: "网络诊断",
         agentKey: "net-yu",
-        updatedAt: 1782302400000,
+        updatedAt,
         lastRunId: "run-1",
         lastRunContent: "已完成网络诊断",
         isRead: false,

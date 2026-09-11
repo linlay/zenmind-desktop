@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined, EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
-import { createElement, useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
   MouseEvent as ReactMouseEvent,
@@ -11,6 +11,7 @@ import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
 import type { DesktopWebActionStateResult } from "../../../shared/desktop-actions";
 import type { EmbeddedCdpSurfaceKind } from "../../../shared/embedded-cdp";
+import { retainForegroundFocusForBackgroundSites, controlBackgroundSiteFocus } from "../../services/backgroundSiteFocus";
 import {
   createChatChildSurfaceIdentity,
   createSurfaceIdentity,
@@ -18,10 +19,11 @@ import {
   resolveLegacyFixedSurfaceId,
   type SurfaceIdentity
 } from "../../../shared/surface-identity";
-import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shared/browser-surfaces";
+import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID, DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../shared/browser-surfaces";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import { normalizeWebviewBlobPopupUrl } from "../../../shared/webview-popup";
 import { closeWebTabFromOrder } from "../../../shared/web-tab-lifecycle";
+import { registerDesktopCloseShortcutHandler } from "../../services/desktopCloseShortcutRegistry";
 import {
   buildInteractElementScript,
   type EmbeddedWebInteractAction
@@ -95,6 +97,7 @@ type ExternalWebviewPageProps = {
   enableDesktopWebActions?: boolean;
   registerPublicWebSurface?: boolean;
   onLoadingChange?: (isLoading: boolean) => void;
+  onCurrentUrlChange?: (url: string) => void;
   pageReviewActive?: boolean;
   onTogglePageReview?: (page: { url: string; title: string }) => void;
   preloadUrl?: string;
@@ -177,6 +180,7 @@ function getEmbeddedCdpSurfaceApi() {
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
   active: boolean;
+  surfaceActive: boolean;
   surfaceId?: string;
   surfaceIdentity?: SurfaceIdentity;
   surfaceLabel?: string;
@@ -227,16 +231,6 @@ function normalizeEditableUrl(rawValue: string) {
 function readEventString(event: Event, key: string) {
   const candidate = (event as unknown as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : "";
-}
-
-function getUrlDisplayLabel(url: string) {
-  try {
-    const parsedUrl = new URL(url);
-    const pathname = parsedUrl.pathname === "/" ? "" : parsedUrl.pathname;
-    return `${parsedUrl.hostname}${pathname}` || url;
-  } catch {
-    return url;
-  }
 }
 
 function pickFirstSafeFaviconUrl(favicons: unknown, baseUrl?: string | null) {
@@ -308,6 +302,7 @@ function getEditableAddressInputValue(value: string) {
 function ExternalWebviewPane({
   tab,
   active,
+  surfaceActive,
   surfaceId,
   surfaceIdentity,
   surfaceLabel,
@@ -454,6 +449,7 @@ function ExternalWebviewPane({
         },
         src: initialSrcRef.current,
         title: tab.title,
+        tabIndex: active && surfaceActive ? 0 : -1,
         className: "embedded-surface-frame external-webview-frame",
         // Main receives popup requests and routes them to the owning surface.
         allowpopups: "true",
@@ -478,7 +474,7 @@ export function ExternalWebviewPage({
   surfaceKind,
   surfaceLabel,
   chrome = "browser",
-  partition,
+  partition = DESKTOP_BROWSER_WEBVIEW_PARTITION,
   refreshOnDesktopSso = false,
   assistantDockOpen = false,
   onOpenAssistantDock,
@@ -497,6 +493,7 @@ export function ExternalWebviewPage({
   enableDesktopWebActions = true,
   registerPublicWebSurface = true,
   onLoadingChange,
+  onCurrentUrlChange,
   pageReviewActive = false,
   onTogglePageReview,
   preloadUrl,
@@ -516,6 +513,11 @@ export function ExternalWebviewPage({
   const activeRef = useRef(active !== false);
   const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
   const registeredSurfaceKind = surfaceKind ?? (surfaceIdProp === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
+  useEffect(() => {
+    if (registeredSurfaceKind === "website" || registeredSurfaceKind === "webapp") {
+      return retainForegroundFocusForBackgroundSites(document);
+    }
+  }, [registeredSurfaceKind]);
   const workPanelBrowser = registeredSurfaceKind === "chat-work-panel";
   const documentToolbar = workPanelBrowser && workPanelToolbarKind === "document";
   const surfaceIdentity = surfaceIdentityProp ?? (
@@ -539,6 +541,7 @@ export function ExternalWebviewPage({
   const initialFaviconTabIdRef = useRef("");
   const surfaceClassName = [
     "embedded-surface-page external-webview-page",
+    registeredSurfaceKind === "website" || registeredSurfaceKind === "webapp" ? "is-site-surface" : "",
     appChrome ? "" : "has-browser-chrome",
     workPanelBrowser ? "is-work-panel-browser" : "",
     showToolbar ? "has-browser-toolbar" : "",
@@ -895,10 +898,13 @@ export function ExternalWebviewPage({
       tabs: remainingTabs,
       activeTabId: nextActiveTabId
     }));
-    await syncEmbeddedCdpSurface(nextState);
     const closedSurface = remainingTabs.length === 0;
-    if (closedSurface) {
-      onCloseSurface?.();
+    try {
+      await syncEmbeddedCdpSurface(nextState);
+    } finally {
+      if (closedSurface) {
+        onCloseSurface?.();
+      }
     }
     return {
       surfaceId: surfaceId ?? "",
@@ -909,7 +915,24 @@ export function ExternalWebviewPage({
     };
   };
 
+  useLayoutEffect(() => {
+    if (registeredSurfaceKind !== "website" || active === false) return;
+    return registerDesktopCloseShortcutHandler((request) => {
+      if (request.website) {
+        if (request.website.surfaceId !== surfaceId ||
+            request.website.registrationId !== surfaceRegistrationId) return false;
+      } else if (request.guestId !== null) {
+        return false;
+      }
+      // Read the committed state on every press, including presses queued by the old guest.
+      const tabId = browserStateRef.current.activeTabId;
+      if (tabId) void closeTab(tabId).catch(() => undefined);
+      return true;
+    });
+  });
+
   const finishRefreshWaiter = (tabId: string) => {
+    controlBackgroundSiteFocus("restore", document);
     refreshWaitersRef.current.get(tabId)?.finish({ tabId, ok: true });
   };
 
@@ -988,6 +1011,9 @@ export function ExternalWebviewPage({
   };
 
   const handleTabStateChange = (tabId: string, patch: ExternalWebviewTabPatch) => {
+    if (typeof patch.currentUrl === "string" && patch.currentUrl.trim()) {
+      onCurrentUrlChange?.(patch.currentUrl);
+    }
     commitBrowserState((currentState) => {
       let changed = false;
       const nextTabs = currentState.tabs.map((tab) => {
@@ -1059,22 +1085,9 @@ export function ExternalWebviewPage({
         return;
       }
 
-      if (!sourceTab) {
-        if (!activeRef.current) {
-          return;
-        }
-
-        const activeTab = currentState.tabs.find((tab) => tab.id === currentState.activeTabId);
-        const allowFallback = currentState.tabs.length === 1 || activeTab?.guestId == null;
-        if (!allowFallback) {
-          return;
-        }
-        openTab(nextUrl, "", {
-          partition: activeTab?.partition,
-          userAgent: activeTab?.userAgent
-        });
-        return;
-      }
+      // A guest popup belongs only to its real opener, including background Websites.
+      // Never let an unrelated foreground surface consume it as a fallback.
+      if (!sourceTab) return;
 
       openTab(nextUrl, "", {
         afterTabId: sourceTab.id,
@@ -1579,6 +1592,30 @@ export function ExternalWebviewPage({
     });
   }, [active, activeTab?.id, enableDesktopWebActions, onCloseSurface, surfaceId, surfaceLabel, t, title, url]);
 
+  useEffect(() => {
+    if (registeredSurfaceKind !== "website" && registeredSurfaceKind !== "webapp") return;
+    return registerDesktopActionProviderForScope("site-cdp", async (request) => {
+      const target = request.siteCdpTarget;
+      if (!target || target.surfaceId !== surfaceId || target.registrationId !== surfaceRegistrationId) return null;
+      const tab = browserStateRef.current.tabs.find((candidate) => candidate.id === target.tabId && candidate.guestId === target.webContentsId);
+      if (!tab) return embeddedError("target_not_found", "The application tab is closed or unavailable.");
+      if (request.action === "desktop.web.pageControlFocus" && request.args?.phase === "input") {
+        controlBackgroundSiteFocus("input", document);
+        webviewRefs.current.get(tab.id)?.focus();
+        webviewRefs.current.get(tab.id)?.shadowRoot?.querySelector("iframe")?.focus({ preventScroll: true });
+        return { ok: true, result: { webContentsId: tab.guestId } };
+      } else if (request.action === "desktop.web.switchTab") {
+        setActiveTab(tab.id);
+        await syncEmbeddedCdpSurface(browserStateRef.current);
+      } else if (request.action === "desktop.web.closeTab") {
+        if (!await closeTab(tab.id)) return embeddedError("target_not_found", "The application tab is closed or unavailable.");
+      } else {
+        return embeddedError("method_not_allowed", "Unsupported internal application tab operation.");
+      }
+      return { ok: true, result: {} };
+    });
+  });
+
   const readControllerState = async (waitForTabId?: string) => {
     if (!surfaceId || !registeredSurfaceKind) {
       throw new Error("Embedded CDP surface is unavailable.");
@@ -2054,6 +2091,7 @@ export function ExternalWebviewPage({
             key={tab.id}
             tab={tab}
             active={tab.id === browserState.activeTabId}
+            surfaceActive={active !== false}
             surfaceId={surfaceId}
             surfaceIdentity={surfaceIdentity ?? undefined}
             surfaceLabel={surfaceLabel ?? title}

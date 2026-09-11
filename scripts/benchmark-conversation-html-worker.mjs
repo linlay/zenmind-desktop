@@ -21,10 +21,10 @@ if (!isMainThread) {
   const {
     assembleConversationHtml,
     parseConversationHtmlTemplate
-  } = require("../dist-electron/main/assistant/core/conversation-html-worker.js");
+  } = require("../dist-electron/main/modules/conversation-share/html-worker.js");
   const {
     MAX_CONVERSATION_HTML_BYTES
-  } = require("../dist-electron/main/assistant/core/conversation-export-contract.js");
+  } = require("../dist-electron/main/modules/conversation-share/export-contract.js");
   const parsed = parseConversationHtmlTemplate(Buffer.from(workerData.template));
   const snapshotSize = MAX_CONVERSATION_HTML_BYTES - parsed.staticBytes -
     parsed.assetOriginMarkers * Buffer.byteLength(ASSET_ORIGIN);

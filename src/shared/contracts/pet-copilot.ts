@@ -1,4 +1,8 @@
-import type { AssistantAwaitingMode, AssistantNavAgentIcon } from "./copilot";
+import type {
+  AssistantAwaitingMode,
+  AssistantNavAgentIcon,
+  AssistantNavigationAttentionSummary,
+} from "./copilot";
 
 export type DesktopPetStatus = "idle" | "running" | "awaiting" | "done" | "error";
 export type DesktopPetAgentPresence = "available" | "busy" | "away" | "offline";
@@ -182,6 +186,7 @@ export interface DesktopPetState {
   hint: string;
   messagePreview: string;
   unreadCount: number;
+  navigationAttention: AssistantNavigationAttentionSummary;
   chatId: string | null;
   appearanceId: string;
   appearanceOptions: DesktopPetAppearanceOption[];
@@ -196,6 +201,8 @@ export interface DesktopPetState {
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
+  /** Visible pet footprint origin in CSS pixels within the pet window. */
+  bodyOffset?: { x: number; y: number };
   panelPlacement: DesktopPetPanelPlacement;
   dragDirection?: DesktopPetDragDirection;
   dragMoved?: boolean;

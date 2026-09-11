@@ -121,6 +121,11 @@
   -webkit-app-region: no-drag;
 }
 
+/* Keep guest widgets renderable for CDP while hidden host controls remain unfocusable. */
+.external-webview-page.is-site-surface .external-webview-frame {
+  visibility: visible;
+}
+
 :root[data-theme="dark"] .external-webview-page {
   --browser-bg: #1f2329;
   --browser-top: #2b3138;
@@ -712,6 +717,14 @@
 
 .external-webview-panel[hidden] {
   display: none;
+}
+
+/* Retain a real viewport for Run-authorized background tabs without exposing them to input. */
+.external-webview-page.is-site-surface .external-webview-panel[hidden] {
+  display: block;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .webview-debug-url-overlay {

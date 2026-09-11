@@ -11,6 +11,66 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const childProcess = require("node:child_process");
+const { createServicesFacade } = require("../dist-electron/main/modules/services/index.js");
+const { createWebsFacade } = require("../dist-electron/main/modules/webs/index.js");
+const { installWebsiteAppArchiveFromPath } = require("../dist-electron/main/modules/marketplace/website-app-market.js");
+const identityPorts = require("../dist-electron/main/modules/identity/index.js");
+const { ensureProviderRegisterApiKey } = require("../dist-electron/main/modules/agent-platform/provider-register.js");
+const { resolveConversationAssetOrigin } = require("../dist-electron/main/modules/conversation-share/target.js");
+const pluginBridgePorts = require("../dist-electron/main/modules/plugins/bridge.js");
+const pluginResourcePorts = require("../dist-electron/main/modules/plugins/resources.js");
+const pluginSettingsPorts = require("../dist-electron/main/modules/plugins/settings.js");
+const assistantPorts = require("../dist-electron/main/modules/assistant/index.js");
+const { toDesktopPetAgentOptions } = require("../dist-electron/main/modules/pet/agent-options.js");
+
+const testWebsFacade = createWebsFacade({
+  getDesktopDeviceId: identityPorts.getDesktopDeviceId,
+  getConfiguredDesktopActionBridgePort: () => 0,
+  readInstalledRecords: () => [],
+  removeInstalledRecordByResourceKey: () => false,
+  installWebsiteAppArchiveFromPath: (app, archivePath, options) =>
+    installWebsiteAppArchiveFromPath(app, archivePath, {
+      ...options,
+      webs: testWebsFacade
+    }),
+  deriveTunnelHubRegistrationApiOrigin: () => "",
+  getTunnelHubRuntimeStatus: () => ({ running: false }),
+  startTunnelHubRuntime: async () => ({ running: false }),
+  readTunnelHubRegistrationBearerToken: () => "",
+  readTunnelHubSettings: () => ({}),
+  saveTunnelHubSettings: (_app, settings) => settings
+});
+
+const servicesIntegrationPorts = {
+  issueAgentAccessToken: (app, reason) => identityPorts.issueAgentAccessToken(
+    app,
+    reason,
+    servicesFacade.resolveDesktopCapability
+  ),
+  getDesktopDeviceId: identityPorts.getDesktopDeviceId,
+  getDesktopDeviceInfo: identityPorts.getDesktopDeviceInfo,
+  ensureProviderRegisterApiKey: (app) => ensureProviderRegisterApiKey(app, {
+    getDesktopDeviceId: identityPorts.getDesktopDeviceId,
+    fetchImpl: (input, init) => globalThis.fetch(input, init)
+  }),
+  resolveConversationAssetOrigin,
+  emitPluginBridgeHook: pluginBridgePorts.emitPluginBridgeHook,
+  getPluginBridgeEnv: pluginBridgePorts.getPluginBridgeEnv,
+  getPluginSettingsEnv: pluginSettingsPorts.getPluginSettingsEnv,
+  initializePluginResourceState: pluginResourcePorts.initializePluginResourceState,
+  readPluginResourceDesiredStatus: pluginResourcePorts.readPluginResourceDesiredStatus,
+  stopPluginResources: (app, service) =>
+    pluginResourcePorts.stopPluginResources(app, service, testWebsFacade.webappManager),
+  syncPluginResources: (app, service, installDir) =>
+    pluginResourcePorts.syncPluginResources(
+      app,
+      service,
+      installDir,
+      testWebsFacade.webappManager
+    ),
+};
+const servicesFacade = createServicesFacade(servicesIntegrationPorts);
+const rawServiceManager = require("../dist-electron/main/modules/services/manager/index.js");
   const {
     __testInternals,
     forceCleanupManagedProcesses,
@@ -27,31 +87,34 @@ const childProcess = require("node:child_process");
     stopService,
     stopRunningServicesForShutdown,
     writeServiceConfig
-} = require("../dist-electron/main/services/manager/index.js");
-const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
+  } = { ...rawServiceManager, ...servicesFacade };
+const {
+  MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION,
+  isSupportedAgentWebclientBundle,
+  loadBuiltinServices
+} = require("../dist-electron/main/modules/services/builtin-loader.js");
 const {
   __testInternals: registryInternals,
   getBuiltinService,
   getService,
   registerPlugin
-} = require("../dist-electron/main/services/service-registry.js");
-const {
-  resolveDesktopCapability,
-  __testInternals: capabilityInternals
-} = require("../dist-electron/main/services/manager/capabilities.js");
+} = require("../dist-electron/main/modules/services/service-registry.js");
+const { __testInternals: capabilityInternals } = require("../dist-electron/main/modules/services/manager/capabilities.js");
+const { resolveDesktopCapability } = servicesFacade;
 const {
   configurePluginResources,
   __testInternals: pluginResourceInternals
-} = require("../dist-electron/main/plugin-resources.js");
-const { updateDesktopProfileInRoot } = require("../dist-electron/main/desktop-profile-store.js");
+} = require("../dist-electron/main/modules/plugins/resources.js");
+const { updateDesktopProfileInRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 const {
   getDesktopConfigRoot,
   getDesktopSsoAccessTokenFilePath
-} = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_IDENTITY_CENTER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
+const CALENDAR_WEBAPP_ID = "webapp-ca1e000000000000";
 const LEGACY_LAYOUT_ENV_KEYS = ["CONFIG", "DATA", "STATE", "LOG"].map((name) => `SERVICE_${name}_DIR`);
 const HOST_INHERITED_ENV_KEYS = ["__CFBundleIdentifier", "PWD"];
 const DEFAULT_CONTAINER_HUB_FIXTURE_BIND_ADDR = "127.0.0.1:11960";
@@ -748,7 +811,7 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "$pidDir = if ($stateDirArg) { $stateDirArg } else { $runDir }",
                 "New-Item -ItemType Directory -Path $pidDir -Force | Out-Null",
                 "if ($env:NODE_BIN) { $env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt') }",
-                "$fixtureScript = Join-Path $runDir '${service.id}-fixture.cjs'",
+                `$fixtureScript = Join-Path $runDir '${service.id}-fixture.cjs'`,
                 "$fixtureScriptContent = @'",
                 "const port = Number(process.argv[2] || 0);",
                 `if (${service.id === "agent-platform" ? "true" : "false"} && port > 0) {`,
@@ -1234,7 +1297,11 @@ function getTestHomeRoot(userDataRoot) {
 }
 
 function getTestProgramsRoot(userDataRoot) {
-  return path.join(getTestRuntimeRoot(userDataRoot), "programs");
+  return path.join(
+    userDataRoot,
+    "app-data",
+    APP_BRAND.paths.programDataDirName
+  );
 }
 
 function getTestServiceProgramDir(userDataRoot, serviceId, version) {
@@ -1787,24 +1854,28 @@ function writeResourcePluginInstallRoot(installDir, options = {}) {
   const pluginName = options.name ?? "Calendar";
   const version = options.version ?? "v1.0.0";
   const resources = options.resources ?? {
-    webapps: [{ id: "calendar", source: "webapp/calendar" }]
+    webapps: [{ id: CALENDAR_WEBAPP_ID, source: "webapp/calendar" }]
   };
   const requiredPaths = options.requiredPaths ?? ["manifest.json"];
 
   fs.mkdirSync(installDir, { recursive: true });
-  if (resources.webapps?.some((webapp) => webapp.id === "calendar")) {
+  if (resources.webapps?.some((webapp) => webapp.source === "webapp/calendar")) {
     const sourceDir = path.join(installDir, "webapp", "calendar");
     fs.mkdirSync(path.join(sourceDir, "frontend"), { recursive: true });
     fs.writeFileSync(path.join(sourceDir, "webapp.json"), `${JSON.stringify({
-      schemaVersion: 1,
-      id: "calendar",
+      schemaVersion: 2,
+      id: CALENDAR_WEBAPP_ID,
+      key: "calendar",
       label: "日历",
       version: "1.0.0",
-      target: "universal",
-      openMode: "workspace",
+      target: "any",
       appConfig: {},
-      frontend: { root: "frontend", index: "index.html", spa: true, apiPrefix: "/api" },
-      desktopBridge: { version: 1, capabilities: {} }
+      frontend: {
+        root: "frontend",
+        index: "index.html",
+        routeConfig: { backendPrefixes: [], navigationFallback: "index.html" }
+      },
+      desktopBridge: { version: 1 }
     }, null, 2)}\n`, "utf8");
     fs.writeFileSync(path.join(sourceDir, "frontend", "index.html"), "<!doctype html>\n", "utf8");
     for (const relativePath of [
@@ -3043,11 +3114,8 @@ test("service command env injects Desktop-owned runtime capabilities only into t
     );
 
     assert.equal(platformEnv.DESKTOP_DEVICE_ID, undefined);
-    assert.equal(platformEnv.DESKTOP_ROOT, appPath);
-    assert.equal(
-      platformEnv.DESKTOP_WEBAPP_TOOLING_PATH,
-      path.join(appPath, "scripts", "webapp-tooling.mjs")
-    );
+    assert.equal(platformEnv.DESKTOP_ROOT, undefined);
+    assert.equal(platformEnv.DESKTOP_WEBAPP_TOOLING_PATH, undefined);
     assert.equal(typeof identityEnv.DESKTOP_DEVICE_ID, "string");
     assert.match(identityEnv.DESKTOP_DEVICE_ID, /^[0-9a-f-]{36}$/i);
     assert.notEqual(identityEnv.DESKTOP_DEVICE_ID, "external-device");
@@ -3070,12 +3138,8 @@ test("service command env injects Desktop-owned runtime capabilities only into t
       platformLayout,
       undefined
     );
-    const packagedResourcesPath = path.dirname(packagedAppPath);
-    assert.equal(packagedPlatformEnv.DESKTOP_ROOT, packagedResourcesPath);
-    assert.equal(
-      packagedPlatformEnv.DESKTOP_WEBAPP_TOOLING_PATH,
-      path.join(packagedResourcesPath, "scripts", "webapp-tooling.mjs")
-    );
+    assert.equal(packagedPlatformEnv.DESKTOP_ROOT, undefined);
+    assert.equal(packagedPlatformEnv.DESKTOP_WEBAPP_TOOLING_PATH, undefined);
     assert.equal(fs.readFileSync(platformEnvPath, "utf8"), "SERVER_PORT=7078\n");
     assert.equal(fs.readFileSync(identityEnvPath, "utf8"), "SERVER_PORT=7076\n");
     assert.equal(fs.readFileSync(pluginEnvPath, "utf8"), "PORT=9090\n");
@@ -3127,11 +3191,17 @@ test("desktop capability templates render global device name for macOS and Windo
         deviceName: "Studio Desktop"
       }
     });
-    const values = capabilityInternals.buildTemplateValues(app, service, layout, provider);
+    const values = capabilityInternals.buildTemplateValues(
+      app,
+      service,
+      layout,
+      provider,
+      servicesIntegrationPorts
+    );
 
     assert.equal(values["desktop.deviceName"], "Studio Desktop");
     assert.match(values["desktop.deviceId"], /^[0-9a-f-]{36}$/i);
-    assert.equal(values["output.path"], `${layout.dataDir}/tokens/Studio Desktop.txt`);
+    assert.equal(values["output.path"], path.join(layout.dataDir, "tokens", "Studio Desktop.txt"));
     assert.deepEqual(
       renderArgs(["--db", "{{auth.dbPath}}", "--device-name", "{{desktop.deviceName}}"], values),
       ["--db", path.join(tempRoot, "auth.db"), "--device-name", "Studio Desktop"]
@@ -3958,6 +4028,14 @@ test("loadBuiltinServices reuses newer installed builtin manifests without openi
   }
 });
 
+test("agent-webclient Program bundles enforce the bridge v6 version floor", () => {
+  assert.equal(MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION, "v0.3.60");
+  assert.equal(isSupportedAgentWebclientBundle({ id: "agent-webclient", version: "v0.3.59" }), false);
+  assert.equal(isSupportedAgentWebclientBundle({ id: "agent-webclient", version: "v0.3.60" }), true);
+  assert.equal(isSupportedAgentWebclientBundle({ id: "agent-webclient", version: "v0.4.0" }), true);
+  assert.equal(isSupportedAgentWebclientBundle({ id: "identity-center", version: "v0.1.0" }), true);
+});
+
 test("installBuiltinService installs extracted builtin root without an extra directory copy", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-install-without-copy-"));
   const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
@@ -4713,8 +4791,8 @@ test("resource plugin initializes stopped and start-stop manages webapp resource
   const userDataRoot = path.join(tempRoot, "user-data");
   const installDir = getTestApplicationSupportPluginDir(userDataRoot, "calendar");
   const app = createApp(userDataRoot);
-  const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", "calendar");
-  const webappStateDir = path.join(getTestDesktopRoot(userDataRoot), "state", "webs", "webapps", "calendar");
+  const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", CALENDAR_WEBAPP_ID);
+  const webappStateDir = path.join(getTestDesktopRoot(userDataRoot), "state", "webs", "webapps", CALENDAR_WEBAPP_ID);
   const eventsPath = path.join(webappStateDir, "events.json");
 
   registryInternals.clearServices();
@@ -6873,7 +6951,7 @@ test("restoreRunningServices restores desired running resource plugins even with
   const userDataRoot = path.join(tempRoot, "user-data");
   const installDir = getTestApplicationSupportPluginDir(userDataRoot, "calendar");
   const app = createApp(userDataRoot);
-  const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", "calendar");
+  const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", CALENDAR_WEBAPP_ID);
 
   registryInternals.clearServices();
   configurePluginResources({ callAgentPlatform: null });
@@ -6885,7 +6963,7 @@ test("restoreRunningServices restores desired running resource plugins even with
     markInitializationState(getTestInitializationStatePath(userDataRoot, "calendar", "plugins"));
     pluginResourceInternals.writeOwnership(app, "calendar", {
       desiredStatus: "running",
-      webapps: { calendar: { updatedAt: "2026-06-13T00:00:00.000Z" } }
+      webapps: { [CALENDAR_WEBAPP_ID]: { updatedAt: "2026-06-13T00:00:00.000Z" } }
     });
 
     assert.deepEqual(__testInternals.readLastRunningServices(app), []);
@@ -7578,11 +7656,22 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+  const fixturePids = [];
 
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
   try {
     const result = await runStartupPreparation(app);
+    if (process.platform === "win32") {
+      // Keep fixture-owned PID receipts before later state reads reconcile them.
+      for (const serviceId of ["identity-center", "agent-platform"]) {
+        const pidPath = getTestPidPath(userDataRoot, serviceId, `${serviceId}.pid`);
+        if (fs.existsSync(pidPath)) {
+          const pid = Number(fs.readFileSync(pidPath, "utf8").trim());
+          if (Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid) fixturePids.push(pid);
+        }
+      }
+    }
     const platformState = await getServiceState(app, "agent-platform");
     const webclientState = await getServiceState(app, "agent-webclient");
     const platformRootProbe = await __testInternals.probeHttpUrl(platformState.healthMeta.webUrl);
@@ -7607,8 +7696,17 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
       process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
     }
     await stopStartupCoreProcesses(app);
+    for (const pid of fixturePids) {
+      if (isPidRunning(pid)) process.kill(pid);
+      assert.equal(await waitForPidExit(pid), true);
+    }
     restore();
-    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    // Windows releases the fixture process cwd asynchronously after termination.
+    if (process.platform === "win32") {
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } else {
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    }
   }
 });
 

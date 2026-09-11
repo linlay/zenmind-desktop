@@ -1,5 +1,7 @@
 export const WORK_PANEL_MIN_WIDTH = 420;
 export const WORK_PANEL_MAIN_MIN_WIDTH = 420;
+export const WORK_PANEL_COLLAPSED_MAIN_GAP = 6;
+export const WORK_PANEL_COLLAPSE_DRAG_BUFFER = 96;
 export const WORK_PANEL_DEFAULT_MIN_WIDTH = 420;
 export const WORK_PANEL_DEFAULT_MAX_WIDTH = 680;
 export const WORK_PANEL_DEFAULT_VIEWPORT_RATIO = 0.42;
@@ -16,14 +18,26 @@ export function resolveWorkPanelMaxWidth(availableWidth?: number) {
   }
   return Math.max(
     WORK_PANEL_MIN_WIDTH,
-    Math.floor(finiteAvailableWidth - WORK_PANEL_MAIN_MIN_WIDTH),
+    Math.floor(finiteAvailableWidth - WORK_PANEL_COLLAPSED_MAIN_GAP),
   );
 }
 
 export function clampWorkPanelWidth(width: number, availableWidth?: number) {
   const maxWidth = resolveWorkPanelMaxWidth(availableWidth);
   const finiteWidth = readFiniteNumber(width) ?? WORK_PANEL_MIN_WIDTH;
-  return Math.min(maxWidth, Math.max(WORK_PANEL_MIN_WIDTH, Math.round(finiteWidth)));
+  const clampedWidth = Math.min(maxWidth, Math.max(WORK_PANEL_MIN_WIDTH, Math.round(finiteWidth)));
+  const finiteAvailableWidth = readFiniteNumber(availableWidth);
+  if (finiteAvailableWidth !== null && finiteAvailableWidth > 0 &&
+      clampedWidth > finiteAvailableWidth - WORK_PANEL_MAIN_MIN_WIDTH) {
+    const expandedMaxWidth = Math.floor(finiteAvailableWidth - WORK_PANEL_MAIN_MIN_WIDTH);
+    // Hold the chat at its minimum until the pointer travels past the buffer.
+    if (expandedMaxWidth >= WORK_PANEL_MIN_WIDTH &&
+        clampedWidth < expandedMaxWidth + WORK_PANEL_COLLAPSE_DRAG_BUFFER) {
+      return expandedMaxWidth;
+    }
+    return maxWidth;
+  }
+  return clampedWidth;
 }
 
 export function resolveDefaultWorkPanelWidth(viewportWidth: number) {
@@ -46,8 +60,12 @@ export function resolveWorkPanelWidthFromDrag(input: {
   currentClientX: number;
   availableWidth?: number;
 }) {
-  return clampWorkPanelWidth(
-    input.initialWidth + input.startClientX - input.currentClientX,
-    input.availableWidth,
-  );
+  const delta = input.startClientX - input.currentClientX;
+  const availableWidth = readFiniteNumber(input.availableWidth);
+  // A rightward drag from the collapsed position restores the chat immediately.
+  const initialWidth = availableWidth !== null && availableWidth > 0 && delta < 0 &&
+    input.initialWidth >= resolveWorkPanelMaxWidth(availableWidth)
+    ? Math.max(WORK_PANEL_MIN_WIDTH, availableWidth - WORK_PANEL_MAIN_MIN_WIDTH)
+    : input.initialWidth;
+  return clampWorkPanelWidth(initialWidth + delta, input.availableWidth);
 }

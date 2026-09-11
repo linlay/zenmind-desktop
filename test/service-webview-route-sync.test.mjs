@@ -26,7 +26,7 @@ test("generic service webview modules reject legacy plugin surface names", () =>
     ["src", "renderer", "services", "serviceSurfaceWebviewRefs.ts"],
     ["src", "shared", "auth-bridge.ts"],
     ["src", "preload", "index.ts"],
-    ["src", "main", "ipc", "services-handlers.ts"],
+    ["src", "main", "modules", "services", "ipc.ts"],
   ];
   const source = genericModulePaths
     .map((segments) => fs.readFileSync(path.join(projectRoot, ...segments), "utf8"))
@@ -86,7 +86,10 @@ test("service webview surface does not sync API resource navigations back into t
   assert.match(routeSyncBlock, /pathname === "\/runtime-config\.js"/);
   assert.match(navigationHandlerBlock, /readEventBoolean\(event, "isMainFrame"\) !== false/);
   assert.match(navigationHandlerBlock, /isServiceWebviewRouteSyncTarget\(nextUrl, context\.webviewSrcUrl\)/);
-  assert.match(navigationHandlerBlock, /context\.sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/);
+  assert.match(
+    navigationHandlerBlock,
+    /!mainChatNavigation[\s\S]*?context\.sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/u,
+  );
 });
 
 test("agent chat receives changed business routes and host params without replaying semantic no-ops", () => {
@@ -107,8 +110,12 @@ test("agent chat receives changed business routes and host params without replay
   assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface/);
   assert.match(serviceWebviewSurface, /resolveAgentWebclientDesktopChatRouteFromUrl/);
   assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
-  assert.match(routeDeliveryBlock, /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)\s*&&/);
-  assert.match(routeDeliveryBlock, /areAgentWebclientHostRouteParamsEqual\(currentUrl, targetUrl\)/);
+  assert.match(routeDeliveryBlock, /Main Chat route commands are owned by the READY\/APPLIED coordinator/u);
+  assert.match(routeDeliveryBlock, /function sendPendingMainChatRoute/u);
+  assert.match(routeDeliveryBlock, /serviceRouteCommandRevisionRef\.current \+ 1/u);
+  assert.match(routeDeliveryBlock, /serviceRouteCommandRevisionRef\.current \+= 1/u);
+  assert.match(routeDeliveryBlock, /routeRevision:\s*pending\.revision/u);
+  assert.doesNotMatch(routeDeliveryBlock, /routeRevision:\s*null/u);
   assert.match(contextBridgeBlock, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/);
   assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
 });
@@ -122,7 +129,11 @@ test("agent chat suppresses host route echoes and semantic no-op navigations", (
 
   assert.match(
     navigationHandlerBlock,
-    /areAgentWebclientChatNavigationUrlsEquivalent\([\s\S]*?lastHostAppliedChatRouteRef\.current[\s\S]*?resolvedUrl/u,
+    /isMainChatGuestAtRoute\(lastHostAppliedChatRouteRef\.current, resolvedUrl\)/u,
+  );
+  assert.match(
+    navigationHandlerBlock,
+    /pendingRouteEcho \|\| isHostRouteEcho[\s\S]*?resolveAgentWebclientDesktopAgentSwitchTarget/u,
   );
   assert.match(
     navigationHandlerBlock,
@@ -163,15 +174,19 @@ test("active Main Chat turns a bare different-Agent navigation into an ownerless
   );
 });
 
-test("new Chat route ownership comes from chat.start canonical synchronization", () => {
+test("new Chat canonical synchronization promotes Desktop while protecting the live guest", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
     serviceWebviewSurface.indexOf("const handleDidFailLoad = (event: Event) =>"),
   );
-  const registrationBlock = serviceWebviewSurface.slice(
-    serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration"),
-    serviceWebviewSurface.indexOf("useEffect(() => {", serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration")),
+  const canonicalSyncBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("canonicalChatSync.onRequest"),
+    serviceWebviewSurface.indexOf("const requestId = Number.isSafeInteger", serviceWebviewSurface.indexOf("canonicalChatSync.onRequest")),
+  );
+  const routeDeliveryBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("function sendServiceRouteToWebview"),
+    serviceWebviewSurface.indexOf("function handleWebviewBridgeMessage"),
   );
 
   assert.match(serviceWebviewSurface, /canonicalChatSync\.onRequest/);
@@ -184,12 +199,17 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   );
   assert.match(navigationHandlerBlock, /newChatBootstrapOwnsPromotion/);
   assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
+  assert.match(canonicalSyncBlock, /canonicalChatPromotionGuardRef\.current = \{\s*request, targetRoute, documentGeneration: webviewDocumentGenerationRef\.current/u);
+  assert.match(canonicalSyncBlock, /navigate\(targetRoute, \{ replace: true \}\)/u);
+  assert.match(canonicalSyncBlock, /respond\(\{ requestId: request\.requestId, ok: true \}\)/u);
+  assert.match(routeDeliveryBlock, /shouldProtectCanonicalChatGuest\(embeddedUrl\)/u);
+  assert.match(routeDeliveryBlock, /reason: "canonical-promotion-guard"/u);
   assert.match(
-    registrationBlock,
-    /pageRouteIdentity:[\s\S]*?desiredDesktopRoute/u,
+    serviceWebviewSurface,
+    /canonicalPromotionProtected[\s\S]*?shouldProtectCanonicalChatGuest\(desiredDesktopRoute\)[\s\S]*?const routeAligned = !mainChatSurface \|\|[\s\S]*?canonicalPromotionProtected/u,
   );
-  assert.match(registrationBlock, /ownerChatId\?\.trim\(\) === pending\.request\.chatId/);
-  assert.match(registrationBlock, /canonicalChatSync\.respond\(\{[\s\S]*?ok: true/u);
+  assert.match(serviceWebviewSurface, /guest-canonical-navigation/u);
+  assert.match(serviceWebviewSurface, /reason: "guest-replaced"/u);
 });
 
 test("resend prepares an ownerless new Chat surface before acknowledging the guest", () => {
@@ -288,7 +308,7 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
   );
 });
 
-test("global search and sidebar Chat navigation restore focus to the active main chat webview once", () => {
+test("explicit Chat activation restores webview focus while sidebar Chat browsing keeps row focus", () => {
   const appShell = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
     "utf8",
@@ -368,6 +388,10 @@ test("global search and sidebar Chat navigation restore focus to the active main
     appSidebar.indexOf("async function handleAssistantOpenChat"),
     appSidebar.indexOf("function handleAssistantOpenChatMenu"),
   );
+  const chatRowBlock = appSidebar.slice(
+    appSidebar.indexOf("function renderAssistantChatRow"),
+    appSidebar.indexOf("function renderAssistantAgent"),
+  );
   const chatsNewChatBlock = appSidebar.slice(
     appSidebar.indexOf("function startChatsNewChat"),
     appSidebar.indexOf("function focusChatsDefaultAgentMenuItem"),
@@ -378,7 +402,14 @@ test("global search and sidebar Chat navigation restore focus to the active main
   );
   assert.match(projectNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
   assert.match(chatsNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
-  assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
+  assert.match(openChatBlock, /options:\s*\{ focusAgentChat\?: boolean \} = \{\}/);
+  assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*options\.focusAgentChat === true/);
+  assert.match(chatRowBlock, /onClick=\{\(event\) => void handleAssistantOpenChat\(chat, \{/);
+  assert.match(chatRowBlock, /focusAgentChat:\s*event\.detail === 0/);
+  assert.match(
+    sidebarNavigationBlock,
+    /targetPath === currentRoute[\s\S]*?options\.focusAgentChat[\s\S]*?onRequestAgentChatNavigate\?\.\(targetPath\)/,
+  );
 });
 
 test("service webview diagnostics suppress normal production lifecycle and aggregate dev breadcrumbs", () => {
@@ -394,7 +425,7 @@ test("service webview diagnostics suppress normal production lifecycle and aggre
   assert.match(serviceWebviewSurface, /SERVICE_WEBVIEW_DIAGNOSTIC_AGGREGATION_MS/u);
   assert.match(serviceWebviewSurface, /repeatCount:\s*currentBucket\.count/u);
   assert.match(serviceWebviewSurface, /reportDiagnostic\("listeners-attached"\)/);
-  assert.match(serviceWebviewSurface, /reportDiagnostic\("dom-ready"\)/);
+  assert.match(serviceWebviewSurface, /reportDiagnostic\("dom-ready", \{ documentGeneration \}\)/);
   assert.match(serviceWebviewSurface, /reportDiagnostic\("navigation"/);
   assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("direct-route-load-url"/);
   assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("direct-route-load-failed"/);
@@ -432,17 +463,37 @@ test("service webview surface falls back to loadURL when client-side route navig
   assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
 });
 
-test("main chat direct route loading uses business-route URL comparison", () => {
+test("main chat uses one READY/APPLIED watchdog before a bounded loadURL fallback", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
+  const mainChatRouteBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("function requestMainChatRouteBridgeNavigation"),
+    serviceWebviewSurface.indexOf("function requestDirectWebviewRouteLoad"),
+  );
   const directRouteLoadBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("function requestDirectWebviewRouteLoad"),
-    serviceWebviewSurface.indexOf("async function injectAgentWebclientAccessToken"),
+    serviceWebviewSurface.indexOf("function handleWebviewBridgeMessage"),
   );
 
-  assert.match(serviceWebviewSurface, /areAgentWebclientChatNavigationUrlsEquivalent/);
+  assert.match(serviceWebviewSurface, /const MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS = 1_000/);
+  assert.match(
+    mainChatRouteBlock,
+    /pending\.watchdogId = window\.setTimeout/u,
+  );
+  assert.doesNotMatch(mainChatRouteBlock, /retryIssued|main-chat-router-ack-retry/u);
+  assert.doesNotMatch(mainChatRouteBlock, /MAIN_CHAT_ROUTE_ACK_RETRY_MS/u);
+  assert.match(mainChatRouteBlock, /liveWebview\.loadURL\(pending\.targetUrl\)/);
+  assert.match(mainChatRouteBlock, /main-chat-router-timeout/u);
+  assert.match(mainChatRouteBlock, /pending\.fallbackIssued = true/u);
+  assert.match(mainChatRouteBlock, /pending\.fallbackIssued[\s\S]*?return;/u);
+  assert.doesNotMatch(
+    mainChatRouteBlock,
+    /if \(isMainChatGuestAtRoute\(guestUrl, pending\.targetUrl\)\) \{[\s\S]*?return;/u,
+  );
+  assert.match(mainChatRouteBlock, /canonicalChatPromotionGuardRef\.current/u);
+  assert.doesNotMatch(mainChatRouteBlock, /executeJavaScript|history\.pushState/u);
   assert.match(
     directRouteLoadBlock,
-    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/,
+    /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]*?requestMainChatRouteBridgeNavigation\(\);[\s\S]*?return;/u,
   );
 });
 
@@ -460,15 +511,15 @@ test("service webview listeners stay bound across route and active-state changes
   );
 });
 
-test("main Chat queues the latest route until dom-ready and never retries deterministic rejection", () => {
+test("main Chat queues the latest route until Router READY and binds it to the document generation", () => {
   const source = readServiceWebviewSurfaceSource();
   const registrationBlock = source.slice(
     source.indexOf("const observedMainChatIdentity"),
     source.indexOf("const readPendingNewChatRegistration"),
   );
   const directRouteBlock = source.slice(
+    source.indexOf("function requestMainChatRouteBridgeNavigation"),
     source.indexOf("function requestDirectWebviewRouteLoad"),
-    source.indexOf("function handleWebviewBridgeMessage"),
   );
 
   assert.match(registrationBlock, /const registrationActive = ownsActiveSurface && routeAligned/u);
@@ -485,11 +536,16 @@ test("main Chat queues the latest route until dom-ready and never retries determ
   assert.match(source, /main-chat-identity-convergence-timeout/u);
   assert.match(source, /attempt <= 2[\s\S]*?attempt === 1 \? 100 : 300/u);
   assert.match(directRouteBlock, /routeTransitionSequenceRef\.current \+ 1/u);
-  assert.match(directRouteBlock, /!domReady\.ready/u);
-  assert.match(directRouteBlock, /pendingDirectRouteTransitionRef\.current/u);
-  assert.match(source, /webviewDomReadyRef\.current = \{ ready: true, webContentsId \}/u);
+  assert.match(directRouteBlock, /phase:\s*"waiting-ready"/u);
+  assert.match(directRouteBlock, /pendingMainChatRouteTransitionRef\.current/u);
+  assert.match(directRouteBlock, /liveWebContentsId !== pending\.webContentsId/u);
+  assert.match(source, /webviewDocumentGenerationRef\.current \+= 1/u);
+  assert.match(source, /mainChatRouterReadyRef\.current = \{[\s\S]*?ready: false/u);
+  assert.match(source, /pending\.documentGeneration = documentGeneration/u);
+  assert.match(source, /pending\.phase = "waiting-ready"/u);
   assert.match(source, /mainChatNavigation && isMainFrame[\s\S]*?refreshCurrentPageSnapshotTarget\(\)/u);
-  assert.match(source, /refreshCurrentPageSnapshotTarget\(\);[\s\S]*?direct-route-client-navigation-applied/u);
+  assert.doesNotMatch(source, /observeMainChatRoutePhysicalUrl/u);
+  assert.doesNotMatch(source, /settleMainChatRouteFallback/u);
 });
 
 test("main chat routes every changed business or host target through the WebClient bridge", () => {
@@ -501,14 +557,55 @@ test("main chat routes every changed business or host target through the WebClie
 
   assert.match(
     routeDispatchBlock,
-    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)\s*&&/,
+    /acknowledged\.revision === mainChatRouteRevision/u,
   );
   assert.match(
     routeDispatchBlock,
-    /areAgentWebclientHostRouteParamsEqual\(currentUrl, targetUrl\)/,
+    /!routerReady\.ready/u,
+  );
+  assert.match(routeDispatchBlock, /routerReady\.documentGeneration !== pending\.documentGeneration/u);
+  assert.doesNotMatch(
+    routeDispatchBlock,
+    /lastMainChatRouterAcknowledgementRef\.current = \{/u,
   );
   assert.match(
     serviceWebviewSurface,
-    /sendServiceRouteToWebview\(embeddedUrl, "route-sync"\);/,
+    /requestMainChatRouteBridgeNavigation\(\);/,
   );
+  assert.doesNotMatch(
+    routeDispatchBlock,
+    /if \(guestAlreadyAtTarget\) \{[\s\S]*?chat-route-bridge-skipped/u,
+  );
+  assert.match(routeDispatchBlock, /routeRevision:\s*pending\.revision/u);
+  assert.match(routeDispatchBlock, /chat-route-bridge-queued/u);
+});
+
+test("main Chat settles route delivery only from an exact Router APPLIED status", () => {
+  const source = readServiceWebviewSurfaceSource();
+  const ackBlock = source.slice(
+    source.indexOf("function settleMainChatRouterApplied"),
+    source.indexOf("function readObservedMainChatIdentity"),
+  );
+  const ipcBlock = source.slice(
+    source.indexOf("function handleWebviewBridgeMessage"),
+    source.indexOf("function webviewLoadedChromeErrorPage"),
+  );
+
+  assert.match(ackBlock, /pending\.webContentsId !== webContentsId/u);
+  assert.match(ackBlock, /pending\.documentGeneration !== routerReady\.documentGeneration/u);
+  assert.match(ackBlock, /pending\.documentGeneration !== webviewDocumentGenerationRef\.current/u);
+  assert.match(ackBlock, /completionScope: "router-only"/u);
+  assert.match(ackBlock, /pending\.revision !== status\.routeRevision/u);
+  assert.match(ackBlock, /pending\.targetRouterLocation !== status\.routerLocation/u);
+  assert.match(ackBlock, /pendingMainChatRouteTransitionRef\.current = null/u);
+  assert.match(ackBlock, /lastMainChatRouterAcknowledgementRef\.current = \{/u);
+  assert.match(ackBlock, /main-chat-router-applied-accepted/u);
+  assert.match(ackBlock, /desiredToReadyMs/u);
+  assert.match(ackBlock, /sentToAppliedMs/u);
+  assert.match(ackBlock, /totalElapsedMs/u);
+  assert.match(ipcBlock, /SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL/u);
+  assert.match(ipcBlock, /isServiceWebviewRouteStatus\(payload\)/u);
+  assert.match(ipcBlock, /if \(!mainChatSurface\) return;/u);
+  assert.match(ipcBlock, /handleMainChatRouterReady\(payload\)/u);
+  assert.match(ipcBlock, /settleMainChatRouterApplied\(payload\)/u);
 });

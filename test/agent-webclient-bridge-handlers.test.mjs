@@ -7,13 +7,17 @@ const require = createRequire(import.meta.url);
 const {
   redactSelectionReferencesForTrace,
   registerAgentWebclientBridgeIpcHandlers,
-} = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
+} = require("../dist-electron/main/modules/agent-platform/ipc.js");
 const {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
+  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
+const {
+  __testInternals: deprecatedCompatibilityInternals,
+} = require("../dist-electron/main/support/logging/deprecated-compatibility.js");
 
 const EPOCH_MS = 1_788_000_000_000;
 
@@ -128,6 +132,7 @@ function createRuntime(targets, overrides = {}) {
     cloneUnsubscribes: 0,
     debugTraces: [],
     pushSubscriptions: [],
+    grants: [],
   };
   let activeRoot = null;
   let mainChatRoot = null;
@@ -210,7 +215,7 @@ function createRuntime(targets, overrides = {}) {
       input.onFrame({ frame: "response", id: input.localId, type: input.type, code: 0, data: { ok: true } });
       return `upstream-${input.localId}`;
     },
-    registerRunActionGrant: () => undefined,
+    registerRunActionGrant: (input) => calls.grants.push(input),
     cleanupConsumer: () => undefined,
     appendDebugTrace: (entry) => calls.debugTraces.push(entry),
     ...overrides.realtimeBroker,
@@ -237,9 +242,17 @@ function createRuntime(targets, overrides = {}) {
     realtimeBroker: broker,
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
     issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
-    syncCanonicalChat: async () => ({ requestId: "sync-1", ok: true }),
-    dispatchWorkPanel: async () => ({ ok: true, workspaceId: "workspace-1" }),
-    openResource: async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" }),
+    syncCanonicalChat: overrides.syncCanonicalChat
+      || (async () => ({ requestId: "sync-1", ok: true })),
+    dispatchWorkPanel: overrides.dispatchWorkPanel
+      || (async () => ({ ok: true, workspaceId: "workspace-1" })),
+    openResource: overrides.openResource
+      || (async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" })),
+    openDocument: overrides.openDocument
+      || (async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-2", renderer: "native-document" })),
+    normalizeWorkPanelOpenLocalResourceRequest: (value) => ({
+      relativePath: String(value?.relativePath || "").replace(/\\/gu, "/"),
+    }),
   });
   const emitLifecycle = (event) => lifecycleListeners.forEach((listener) => listener(event));
   for (const target of targets.values()) {
@@ -251,6 +264,7 @@ function createRuntime(targets, overrides = {}) {
         surfaceId: target.surfaceId,
         surfaceRole: target.surfaceRole,
         surfaceIdentityKey: target.surfaceIdentityKey || "",
+        pageRouteIdentity: target.pageRouteIdentity || "",
         active: target.active,
         ownerChatId: target.ownerChatId || "",
         ownerWebContentsId: target.ownerWebContentsId,
@@ -267,6 +281,73 @@ function createRuntime(targets, overrides = {}) {
     emitLifecycle,
   };
 }
+
+test("WorkPanel bridge keeps the v4/v5 compatibility matrix and deduplicates diagnostics by version and method", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  const invoke = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  const warnings = [];
+  const originalWarn = console.warn;
+  deprecatedCompatibilityInternals.resetDesktopVersion();
+  deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
+  console.warn = (...args) => warnings.push(args);
+  try {
+    const v4Item = {
+      method: "openItem",
+      input: { version: 4, descriptor: { kind: "web", id: "legacy-item" } },
+    };
+    assert.equal((await invoke({ sender }, v4Item)).ok, true);
+    assert.equal((await invoke({ sender }, v4Item)).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "activateItem",
+      input: { version: 4, itemId: "legacy-item" },
+    })).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "openResource",
+      input: { version: 4 },
+    })).error.code, "version_mismatch");
+
+    const v5Resource = {
+      method: "openResource",
+      input: {
+        version: 5,
+        profile: "artifact",
+        agentKey: "agent-1",
+        chatId: "chat-1",
+        resourceId: "resource-1",
+        relativePath: "artifacts/images/example.png",
+      },
+    };
+    assert.equal((await invoke({ sender }, v5Resource)).ok, true);
+    assert.equal((await invoke({ sender }, v5Resource)).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "openDocument",
+      input: { version: 5, source: { kind: "workspace-file", agentKey: "agent-1", path: "README.md" } },
+    })).error.code, "version_mismatch");
+    assert.equal((await invoke({ sender }, {
+      method: "openDocument",
+      input: { version: 6, source: { kind: "workspace-file", agentKey: "agent-1", path: "README.md" } },
+    })).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "openItem",
+      input: { version: 7, descriptor: { kind: "web", id: "future-item" } },
+    })).error.code, "version_mismatch");
+
+    const compatibilityWarnings = warnings.filter((args) => args[0] === "[deprecated-compatibility]");
+    assert.deepEqual(
+      compatibilityWarnings.map((args) => args[1]),
+      [
+        { id: "agent-webclient.bridge-v4", version: 4, method: "openItem" },
+        { id: "agent-webclient.bridge-v4", version: 4, method: "activateItem" },
+        { id: "agent-webclient.bridge-v5", version: 5, method: "openResource" },
+      ],
+    );
+  } finally {
+    console.warn = originalWarn;
+    deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
+  }
+});
 
 async function openSession(runtime, sender, sessionId) {
   runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId });
@@ -287,6 +368,7 @@ function emitRegisteredTarget(runtime, target) {
       surfaceId: target.surfaceId,
       surfaceRole: target.surfaceRole,
       surfaceIdentityKey: target.surfaceIdentityKey || "",
+      pageRouteIdentity: target.pageRouteIdentity || "",
       active: target.active,
       ownerChatId: target.ownerChatId || "",
       ownerWebContentsId: target.ownerWebContentsId,
@@ -455,6 +537,75 @@ test("registered ownerless new Chat query enters the Broker without convergence 
   assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
 });
 
+test("chat.start promotes the Desktop owner before the guest promotion guard ACK", async () => {
+  const newChatUrl = "http://127.0.0.1:7079/agent/agent-1?newChat=new-source-promote";
+  const ready = mainTarget(101, {
+    ownerChatId: undefined,
+    pageRoute: "/agent/agent-1?newChat=new-source-promote",
+    pageRouteIdentity: "/agent/agent-1?newChat=new-source-promote",
+    currentUrl: newChatUrl,
+  });
+  let resolveCanonicalSync;
+  const canonicalSync = new Promise((resolve) => {
+    resolveCanonicalSync = resolve;
+  });
+  const runtime = createRuntime(new Map([[101, ready]]), {
+    syncCanonicalChat: () => canonicalSync,
+    realtimeBroker: {
+      query: (input) => {
+        runtime.calls.queries.push(input);
+        const owner = { kind: "agent", agentKey: "agent-1" };
+        queueMicrotask(() => {
+          void input.onEvent({
+            type: "chat.start",
+            timestamp: EPOCH_MS,
+            seq: 1,
+            chatId: "chat-promoted",
+            agentKey: "agent-1",
+          }, "test.promote-new-chat.chat-start");
+        });
+        return {
+          accepted: Promise.resolve({
+            runId: "run-promoted",
+            chatId: "chat-promoted",
+            owner,
+          }),
+          completed: new Promise(() => undefined),
+        };
+      },
+    },
+  });
+  const sender = createSender(101, newChatUrl);
+  await openSession(runtime, sender, "main-new-chat-promote");
+  send(runtime, sender, "main-new-chat-promote", {
+    frame: "request",
+    id: "query-new-chat-promote",
+    type: "/api/query",
+    payload: {
+      requestId: "request-new-chat-promote",
+      agentKey: "agent-1",
+      message: "new",
+    },
+  });
+  await flush();
+
+  assert.equal(
+    runtime.broker.getMainChatRootObserver()?.contextId,
+    "chat-promoted",
+  );
+  assert.equal(
+    sentFrames(sender).some((frame) => frame.event?.type === "chat.start"),
+    false,
+  );
+
+  resolveCanonicalSync({ requestId: "sync-promote", ok: true });
+  await flush();
+  assert.equal(
+    sentFrames(sender).some((frame) => frame.event?.type === "chat.start"),
+    true,
+  );
+});
+
 test("new Chat query waits for a stale canonical owner to become the new-chat source", async () => {
   const stale = mainTarget(101, { active: false });
   const newChatUrl = "http://127.0.0.1:7079/agent/agent-1?newChat=new-source-2";
@@ -574,6 +725,114 @@ test("trusted Main Chat registration creates the Broker bundle before FramePort 
   assert.equal(root.kind, "main_chat");
   assert.equal(root.generation, main.registrationId);
   assert.equal(root.contextId, main.ownerChatId);
+});
+
+test("ownerless Copilot attach restores a lasting Primary subscription from the current guest Chat", async () => {
+  const target = childTarget(201, "copilot-dock", "agent-copilot", {
+    surfaceId: "copilot-dock",
+    surfaceLevel: "root",
+    parentSurfaceId: undefined,
+    ownerChatId: undefined,
+    surfaceIdentityKey: "copilot:website-1",
+    // Registry can still contain the original URL after guest SPA navigation.
+    currentUrl: "http://127.0.0.1:7079/copilot/agent-1",
+  });
+  const runtime = createRuntime(new Map([[201, target]]));
+  const sender = createSender(201, `${target.currentUrl}?chatId=chat-2`);
+  await openSession(runtime, sender, "copilot-recovery");
+  send(runtime, sender, "copilot-recovery", {
+    frame: "request", id: "copilot-attach", type: "/api/attach",
+    // The WebClient attach wire contract carries run/owner/seq, but no chatId.
+    payload: { runId: "run-2", agentKey: "agent-1", lastSeq: 4 },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.attaches.length, 1);
+  assert.equal(runtime.calls.forwarded.length, 0);
+  assert.equal(runtime.calls.queries.length, 0);
+  const subscription = runtime.calls.attaches[0];
+  assert.equal(subscription.chatId, "chat-2");
+  assert.equal(subscription.runId, "run-2");
+  assert.deepEqual(subscription.owner, { kind: "agent", agentKey: "agent-1" });
+  assert.equal(subscription.lastSeq, 4);
+  assert.equal(subscription.lane, "primary");
+  assert.equal(runtime.broker.getActiveRootObserver().contextId, "copilot:website-1:chat-2");
+
+  for (const seq of [5, 6, 7]) {
+    subscription.onEvent({ type: "message.delta", timestamp: EPOCH_MS, seq, runId: "run-2", chatId: "chat-2", delta: `chunk-${seq}` });
+    await flush();
+  }
+  assert.deepEqual(sentFrames(sender).map((frame) => [frame.id, frame.event?.seq]), [
+    ["copilot-attach", 5], ["copilot-attach", 6], ["copilot-attach", 7],
+  ]);
+  subscription.onComplete({ reason: "completed", lastSeq: 7 });
+  assert.equal(sentFrames(sender).at(-1).reason, "completed");
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  assert.equal(runtime.registration.getDiagnostics().pendingRequestCount, 0);
+});
+
+test("Main Chat attach without chatId uses its registered owner on the Primary lane", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[101, target]]));
+  const sender = createSender(101, target.currentUrl);
+  await openSession(runtime, sender, "main-attach");
+  send(runtime, sender, "main-attach", {
+    frame: "request", id: "main-attach", type: "/api/attach",
+    payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 3 },
+  });
+  await flush();
+  assert.equal(runtime.calls.attaches.length, 1);
+  assert.equal(runtime.calls.attaches[0].chatId, "chat-1");
+  assert.equal(runtime.calls.attaches[0].lane, "primary");
+  assert.equal(runtime.calls.forwarded.length, 0);
+});
+
+test("Copilot rejects ambiguous or conflicting attach identities before replacing its observer", async () => {
+  const target = childTarget(201, "copilot-dock", "agent-copilot", {
+    surfaceId: "copilot-dock", surfaceLevel: "root", ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/copilot/agent-1?chatId=chat-1",
+  });
+  const cases = [
+    { path: "/copilot/agent-1" },
+    { path: "/copilot/agent-1?chatId=chat-1&chatId=chat-2" },
+    { path: "/copilot/agent-1?chatId=chat-1&newChat=new-1" },
+    { path: "/agent/agent-1?chatId=chat-1" },
+    { path: "/copilot/agent-2?chatId=chat-1" },
+    { payload: { chatId: "chat-2" } },
+    { payload: { runId: "" } },
+    { payload: { agentKey: "" } },
+    { payload: { teamId: "team-1" } },
+  ];
+  for (const scenario of cases) {
+    const runtime = createRuntime(new Map([[201, target]]));
+    const sender = createSender(201, scenario.path ? `http://127.0.0.1:7079${scenario.path}` : target.currentUrl);
+    await openSession(runtime, sender, "invalid-attach");
+    send(runtime, sender, "invalid-attach", {
+      frame: "request", id: "invalid-attach", type: "/api/attach",
+      payload: { runId: "run-1", agentKey: "agent-1", ...scenario.payload },
+    });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "protocol_error", JSON.stringify(scenario));
+    assert.equal(runtime.calls.attaches.length, 0);
+    assert.equal(runtime.calls.forwarded.length, 0);
+    assert.equal(runtime.broker.getActiveRootObserver(), null);
+    assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  }
+});
+
+test("incomplete Main Chat attach cannot fall back to a one-shot request", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[101, target]]));
+  const sender = createSender(101, target.currentUrl);
+  await openSession(runtime, sender, "incomplete-attach");
+  send(runtime, sender, "incomplete-attach", {
+    frame: "request", id: "incomplete-attach", type: "/api/attach",
+    payload: { agentKey: "agent-1" },
+  });
+  await flush();
+  assert.equal(sentFrames(sender).at(-1).type, "protocol_error");
+  assert.equal(runtime.calls.attaches.length, 0);
+  assert.equal(runtime.calls.forwarded.length, 0);
 });
 
 test("Overview may attach before the Main Chat live request without parent observer failure", async () => {
@@ -884,3 +1143,37 @@ test("ordinary non-live requests still use the Broker request multiplexer", asyn
   assert.equal(runtime.calls.forwarded[0].stream, false);
   assert.equal(sentFrames(sender).at(-1).id, "file-1");
 });
+
+for (const validParent of [true, false]) {
+  test(`Copilot query ${validParent ? 'captures' : 'rejects mismatched'} trusted application context`, async () => {
+    const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
+    const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b'); h.foreground(a);
+    const dock = childTarget(201, 'copilot-dock', 'agent-copilot', {
+      surfaceId: 'copilot-dock', ownerWebContentsId: 7, parentSurfaceId: a.surfaceId,
+      surfaceIdentityKey: validParent ? a.surfaceIdentityKey : b.surfaceIdentityKey,
+      currentUrl: 'http://127.0.0.1:7079/copilot/agent-1?chatId=chat-1',
+    });
+    const runtime = createRuntime(new Map([[201, dock]]), { browserSurfaces: {
+      listRegisteredSurfaces: h.registry.listRegisteredSurfaces,
+      getRegisteredSurfaceSnapshot: h.registry.getRegisteredSurfaceSnapshot,
+      findWebContentsById: h.registry.findWebContentsById,
+    } });
+    const sender = createSender(201, dock.currentUrl);
+    await openSession(runtime, sender, 'dock');
+    send(runtime, sender, 'dock', { frame: 'request', id: 'query-site', type: '/api/query',
+      payload: { requestId: 'query-site', agentKey: 'agent-1', chatId: 'chat-1', message: 'continue in background' } });
+    await flush();
+    if (validParent) {
+      assert.equal(runtime.calls.queries.length, 1);
+      const scope = runtime.calls.queries[0].siteCdpScope;
+      h.foreground(b);
+      scope.activate();
+      assert.equal(scope.readSurface().surfaceId, a.surfaceId);
+      scope.release();
+      assert.equal(runtime.calls.grants.length, 0);
+    } else {
+      assert.equal(runtime.calls.queries.length, 0);
+      assert.equal(sentFrames(sender).at(-1).type, 'capability_denied');
+    }
+  });
+}

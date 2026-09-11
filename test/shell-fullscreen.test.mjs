@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 const {
   registerShellIpcHandlers,
   transitionWindowFullScreen
-} = await import("../dist-electron/main/ipc/shell-handlers.js");
+} = await import("../dist-electron/main/modules/shell/ipc.js");
 
 class FakeFullscreenWindow extends EventEmitter {
   constructor({ destroyed = false, fullscreen = false, mode = "sync" } = {}) {
@@ -28,6 +28,10 @@ class FakeFullscreenWindow extends EventEmitter {
 
   isMaximized() {
     return this.maximized;
+  }
+
+  getBounds() {
+    return { x: 80, y: 90, width: 1440, height: 920 };
   }
 
   minimize() {
@@ -204,6 +208,51 @@ test("desktopShell renderer window controls operate only on the current main win
   assert.equal(otherWindow.maximized, false);
 });
 
+test("deprecated renderer compatibility diagnostics omit routes and keep their stable source", () => {
+  const listeners = new Map();
+  const reports = [];
+  const sender = {
+    getURL() {
+      throw new Error("deprecated compatibility diagnostics must not read the renderer URL");
+    }
+  };
+  registerShellIpcHandlers({
+    handle: () => undefined,
+    on: (channel, handler) => listeners.set(channel, handler)
+  }, {
+    BrowserWindow: {
+      fromWebContents: () => ({ id: 71 })
+    },
+    reportRendererDiagnostic: (source, details) => reports.push({ source, details })
+  });
+
+  listeners.get("diagnostics.rendererError")({ sender }, {
+    source: "deprecated-compatibility",
+    level: "warn",
+    message: "surface.legacy-alias",
+    details: {
+      category: "fixed",
+      canonicalRole: "main-chat",
+      chatId: "must-not-be-logged",
+      path: "/must/not/be/logged"
+    },
+    stack: "must-not-be-logged",
+    filename: "/must/not/be/logged.ts"
+  });
+
+  assert.deepEqual(reports, [{
+    source: "deprecated-compatibility",
+    details: {
+      diagnosticLevel: "warn",
+      windowId: 71,
+      source: "deprecated-compatibility",
+      message: "surface.legacy-alias",
+      details: { category: "fixed", canonicalRole: "main-chat" }
+    }
+  }]);
+  assert.equal(Object.hasOwn(reports[0].details, "route"), false);
+});
+
 test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DPI displays", async () => {
   const handlers = new Map();
   const sender = {};
@@ -215,6 +264,7 @@ test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DP
     handle: (channel, handler) => handlers.set(channel, handler),
     on: () => undefined
   }, {
+    platform: "darwin",
     mainWindow,
     BrowserWindow: {
       fromWebContents: (contents) => contents === sender ? mainWindow : null
@@ -239,3 +289,82 @@ test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DP
 
   assert.deepEqual(mainWindow.moves, [[95, 102]]);
 });
+
+test("Windows drag preserves initial size and ignores native bounds drift on every tick", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const mainWindow = new FakeFullscreenWindow();
+  let cursor = { x: 1920, y: 100 };
+  let tick;
+  let bounds = mainWindow.getBounds();
+  const updates = [];
+  mainWindow.getBounds = () => ({ ...bounds });
+  mainWindow.setPosition = () => assert.fail("Windows drag must not use setPosition");
+  mainWindow.setBounds = (next, animate) => {
+    assert.equal(animate, false);
+    updates.push(next);
+    // Simulate native frame/DPI rounding after each requested move.
+    bounds = { x: next.x + 1, y: next.y + 1, width: next.width + 2, height: next.height + 2 };
+  };
+  mainWindow.moveTop = () => {};
+  registerShellIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler), on: () => {}
+  }, {
+    platform: "win32", mainWindow,
+    BrowserWindow: { fromWebContents: () => mainWindow },
+    screen: { getCursorScreenPoint: () => ({ ...cursor }) },
+    setInterval: (callback) => { tick = callback; return 1; }, clearInterval: () => {}
+  });
+  assert.deepEqual(await handlers.get("desktopShell.beginWindowDrag")({ sender }), { ok: true });
+  for (let step = 1; step <= 100; step++) {
+    cursor = { x: 1920 + step * 2, y: 100 + step };
+    tick();
+    assert.deepEqual(updates.at(-1), { x: 80 + step * 2, y: 90 + step, width: 1440, height: 920 });
+  }
+  tick();
+  assert.equal(updates.length, 100);
+  await handlers.get("desktopShell.endWindowDrag")();
+  cursor.x += 10;
+  tick();
+  assert.equal(updates.length, 100);
+});
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: maximize/restore ends the drag before resizing and preserves native fullscreen`, async () => {
+    const handlers = new Map();
+    const sender = {};
+    const mainWindow = new FakeFullscreenWindow();
+    let tick;
+    const timer = {};
+    let activeTimer = null;
+    registerShellIpcHandlers({
+      handle: (channel, handler) => handlers.set(channel, handler),
+      on: () => undefined,
+    }, {
+      platform,
+      mainWindow,
+      BrowserWindow: { fromWebContents: (contents) => contents === sender ? mainWindow : null },
+      screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }) },
+      setInterval: (callback) => { tick = callback; activeTimer = timer; return timer; },
+      clearInterval: (handle) => { assert.equal(handle, timer); activeTimer = null; },
+    });
+    for (const eventName of ["maximize", "unmaximize"]) {
+      mainWindow.on(eventName, () => assert.equal(activeTimer, null));
+    }
+    const beginDrag = handlers.get("desktopShell.beginWindowDrag");
+    const toggleMaximize = handlers.get("desktopShell.toggleWindowMaximize");
+    for (const expected of [true, false]) {
+      await beginDrag({ sender });
+      assert.equal(activeTimer, timer);
+      assert.deepEqual(await toggleMaximize({ sender }), { ok: true, isMaximized: expected });
+      tick(); // A tick already queued before cancellation must not move the resized window.
+    }
+    await beginDrag({ sender });
+    mainWindow.fullscreen = true; // Native state can change before renderer receives its event.
+    assert.deepEqual(await toggleMaximize({ sender }), { ok: true, isMaximized: false });
+    assert.equal(activeTimer, null);
+    assert.equal(mainWindow.fullscreen, true);
+    assert.deepEqual(mainWindow.requests, []);
+    assert.equal((await toggleMaximize({ sender: {} })).ok, false);
+  });
+}

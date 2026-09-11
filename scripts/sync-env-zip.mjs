@@ -175,7 +175,8 @@ function writeManifest(envRoot, manifest) {
 export async function prepareBundledEnvZip({
   rootDir = projectRoot,
   env = process.env,
-  logger = console
+  logger = console,
+  required = false
 } = {}) {
   const envRoot = bundledEnvRoot(rootDir, env);
   const expectedVersion = readDesktopVersion(rootDir);
@@ -198,6 +199,9 @@ export async function prepareBundledEnvZip({
   fs.mkdirSync(envRoot, { recursive: true });
 
   if (!sourceZipPath) {
+    if (required) {
+      throw new Error(`${ENV_ZIP_ENV_VAR} is required for formal Desktop distribution builds.`);
+    }
     const manifest = {
       bundled: false,
       fileName: null,
@@ -231,7 +235,7 @@ export async function prepareBundledEnvZip({
 }
 
 async function main() {
-  await prepareBundledEnvZip();
+  await prepareBundledEnvZip({ required: process.argv.slice(2).includes("--required") });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

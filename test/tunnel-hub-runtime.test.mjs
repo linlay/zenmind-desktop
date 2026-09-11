@@ -13,17 +13,17 @@ const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 const {
   configureTunnelHubRegistrationController
-} = require("../dist-electron/main/tunnel-hub-registration.js");
+} = require("../dist-electron/main/modules/tunnel/registration.js");
 const {
   TunnelHubRuntime
-} = require("../dist-electron/main/tunnel-hub-runtime.js");
+} = require("../dist-electron/main/modules/tunnel/runtime.js");
 const {
   TunnelClientEndpoint
-} = require("../dist-electron/main/tunnel-client-endpoint.js");
+} = require("../dist-electron/main/modules/tunnel/client-endpoint.js");
 const {
   readTunnelHubSettings,
   saveTunnelHubSettings
-} = require("../dist-electron/main/tunnel-hub-settings.js");
+} = require("../dist-electron/main/modules/tunnel/settings.js");
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const FRAME_OPEN = 1;

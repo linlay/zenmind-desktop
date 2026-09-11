@@ -9,10 +9,10 @@ const {
   createConversationShare,
   listConversationShares,
   revokeConversationShare
-} = await import("../dist-electron/main/assistant/core/conversation-share-controller.js");
+} = await import("../dist-electron/main/modules/conversation-share/controller.js");
 const {
   TunnelConversationShareError
-} = await import("../dist-electron/main/assistant/core/tunnel-conversation-share-client.js");
+} = await import("../dist-electron/main/modules/conversation-share/tunnel-client.js");
 
 function createFixture(t, tunnelOverrides = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-share-"));
@@ -55,14 +55,14 @@ function shareRecord(overrides = {}) {
   };
 }
 
-test("createConversationShare renders once, then forwards the same Buffer to Tunnel", async (t) => {
+test("createConversationShare reads once, then forwards the same Snapshot Buffer to Tunnel", async (t) => {
   const app = createFixture(t);
-  const html = Buffer.from("<!doctype html><title>share</title>");
+  const snapshot = Buffer.from('{"version":1,"title":"share"}');
   const calls = [];
-  const renderer = {
-    async renderChatHtml(chatId, assetOrigin) {
-      calls.push({ method: "render", chatId, assetOrigin });
-      return { ok: true, bytes: html, filename: "chat.html" };
+  const reader = {
+    async readChatSnapshot(chatId) {
+      calls.push({ method: "read", chatId });
+      return { ok: true, bytes: snapshot };
     }
   };
   const client = {
@@ -72,33 +72,32 @@ test("createConversationShare renders once, then forwards the same Buffer to Tun
     }
   };
 
-  const result = await createConversationShare(app, renderer, client, {
+  const result = await createConversationShare(app, reader, client, {
     chatId: " chat-1 ",
     expiration: "30d"
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(calls.map((call) => call.method), ["render", "create"]);
+  assert.deepEqual(calls.map((call) => call.method), ["read", "create"]);
   assert.equal(calls[0].chatId, "chat-1");
-  assert.equal(calls[0].assetOrigin, "https://tunnel.example.test");
-  assert.equal(calls[1].input.html, html);
+  assert.equal(calls[1].input.snapshot, snapshot);
   assert.equal(calls[1].input.conversationId, "chat-1");
   assert.equal(calls[1].input.expiration, "30d");
   assert.equal(calls[1].input.target.origin, "https://tunnel.example.test");
   assert.match(calls[1].input.target.accessToken, /^header\./u);
 });
 
-test("createConversationShare resolves login and Tunnel before rendering HTML", async (t) => {
+test("createConversationShare resolves login and Tunnel before reading Snapshot", async (t) => {
   const app = createFixture(t);
   const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
   fs.rmSync(path.join(desktopRoot, "state", "desktop", "sso-access-token.txt"));
-  let rendered = false;
+  let read = false;
   let created = false;
 
   const result = await createConversationShare(app, {
-    async renderChatHtml() {
-      rendered = true;
-      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
+    async readChatSnapshot() {
+      read = true;
+      return { ok: true, bytes: Buffer.from('{"version":1}') };
     }
   }, {
     async create() {
@@ -108,16 +107,16 @@ test("createConversationShare resolves login and Tunnel before rendering HTML", 
   }, { chatId: "chat-1", expiration: "30d" });
 
   assert.equal(result.ok, false);
-  assert.equal(rendered, false);
+  assert.equal(read, false);
   assert.equal(created, false);
 });
 
-test("createConversationShare does not call Tunnel when HTML generation fails", async (t) => {
+test("createConversationShare does not call Tunnel when Snapshot reading fails", async (t) => {
   const app = createFixture(t);
   let created = false;
   const result = await createConversationShare(app, {
-    async renderChatHtml() {
-      return { ok: false, message: "render failed" };
+    async readChatSnapshot() {
+      return { ok: false, message: "snapshot failed" };
     }
   }, {
     async create() {
@@ -126,7 +125,7 @@ test("createConversationShare does not call Tunnel when HTML generation fails", 
     }
   }, { chatId: "chat-1", expiration: "30d" });
 
-  assert.deepEqual(result, { ok: false, message: "render failed" });
+  assert.deepEqual(result, { ok: false, message: "snapshot failed" });
   assert.equal(created, false);
 });
 
@@ -135,9 +134,9 @@ test("createConversationShare rejects removed and invalid expirations before res
   for (const expiration of ["5m", "30m", "1h", "5d", "15d", "90d"]) {
     let called = false;
     const result = await createConversationShare(app, {
-      async renderChatHtml() {
+      async readChatSnapshot() {
         called = true;
-        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
+        return { ok: true, bytes: Buffer.from('{"version":1}') };
       }
     }, {
       async create() {
@@ -151,13 +150,13 @@ test("createConversationShare rejects removed and invalid expirations before res
   }
 });
 
-test("createConversationShare rejects an invalid conversation id before rendering", async (t) => {
+test("createConversationShare rejects an invalid conversation id before reading", async (t) => {
   const app = createFixture(t);
   let called = false;
   const result = await createConversationShare(app, {
-    async renderChatHtml() {
+    async readChatSnapshot() {
       called = true;
-      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
+      return { ok: true, bytes: Buffer.from('{"version":1}') };
     }
   }, {
     async create() {
@@ -171,41 +170,38 @@ test("createConversationShare rejects an invalid conversation id before renderin
 });
 
 test("development allows canonical loopback Tunnel origins while packaged Desktop rejects plaintext", async (t) => {
-  for (const [relayUrl, expectedOrigin] of [
-    ["ws://localhost:18181/tunnel", "http://localhost:18181"],
-    ["ws://127.0.0.1:18181/tunnel", "http://127.0.0.1:18181"],
-    ["ws://[::1]:18181/tunnel", "http://[::1]:18181"]
+  for (const relayUrl of [
+    "ws://localhost:18181/tunnel",
+    "ws://127.0.0.1:18181/tunnel",
+    "ws://[::1]:18181/tunnel"
   ]) {
     const developmentApp = createFixture(t, { relayUrl });
     developmentApp.isPackaged = false;
-    let developmentOrigin = "";
-    const renderer = {
-      async renderChatHtml(_chatId, assetOrigin) {
-        developmentOrigin = assetOrigin;
-        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
+    const reader = {
+      async readChatSnapshot() {
+        return { ok: true, bytes: Buffer.from('{"version":1}') };
       }
     };
     const client = { async create() { return shareRecord(); } };
     const developmentResult = await createConversationShare(
       developmentApp,
-      renderer,
+      reader,
       client,
       { chatId: "chat-1", expiration: "30d" }
     );
     assert.equal(developmentResult.ok, true, relayUrl);
-    assert.equal(developmentOrigin, expectedOrigin, relayUrl);
 
     const packagedApp = createFixture(t, { relayUrl });
     packagedApp.isPackaged = true;
-    let packagedRendered = false;
+    let packagedRead = false;
     const packagedResult = await createConversationShare(packagedApp, {
-      async renderChatHtml() {
-        packagedRendered = true;
-        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
+      async readChatSnapshot() {
+        packagedRead = true;
+        return { ok: true, bytes: Buffer.from('{"version":1}') };
       }
     }, client, { chatId: "chat-1", expiration: "30d" });
     assert.equal(packagedResult.ok, false, relayUrl);
-    assert.equal(packagedRendered, false, relayUrl);
+    assert.equal(packagedRead, false, relayUrl);
   }
 });
 
@@ -262,17 +258,18 @@ test("controller maps typed Tunnel failures without exposing secrets", async (t)
   assert.match(revoked.message, /不存在|revoked|no longer exists/iu);
 });
 
-test("Desktop sharing source keeps HTML rendering separate from Tunnel persistence", () => {
+test("Desktop sharing source uploads Snapshot without rendering HTML", () => {
   const controllerSource = fs.readFileSync(
-    new URL("../src/main/assistant/core/conversation-share-controller.ts", import.meta.url),
+    new URL("../src/main/modules/conversation-share/controller.ts", import.meta.url),
     "utf8"
   );
   const bridgeSource = fs.readFileSync(
-    new URL("../src/main/assistant/core/agent-platform-bridge.ts", import.meta.url),
+    new URL("../src/main/modules/agent-platform/bridge.ts", import.meta.url),
     "utf8"
   );
 
-  assert.match(controllerSource, /renderChatHtml/u);
+  assert.match(controllerSource, /readChatSnapshot/u);
+  assert.doesNotMatch(controllerSource, /renderChatHtml/u);
   assert.match(controllerSource, /shareCreator\.create/u);
   assert.doesNotMatch(bridgeSource, /createChatShare|listChatShares|revokeChatShare/u);
   assert.doesNotMatch(bridgeSource, /X-Conversation-Share-Authorization/u);

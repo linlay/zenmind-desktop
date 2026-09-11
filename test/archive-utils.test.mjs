@@ -10,8 +10,8 @@ const JSZip = require("jszip");
 const {
   extractArchiveToDir,
   listArchiveEntries
-} = require("../dist-electron/main/archive-utils.js");
-const { readManifestFromArchive } = require("../dist-electron/main/manifest-utils.js");
+} = require("../dist-electron/main/support/archive/archive-utils.js");
+const { readManifestFromArchive } = require("../dist-electron/main/support/manifest/manifest-utils.js");
 
 async function writeZipArchive(archivePath, entries) {
   const zip = new JSZip();
@@ -20,6 +20,27 @@ async function writeZipArchive(archivePath, entries) {
   }
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
 }
+
+test("zip entry listings larger than 1 MiB remain complete", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-archive-large-list-"));
+  const archivePath = path.join(tempRoot, "large.zip");
+  const zip = new JSZip();
+  const expected = Array.from({ length: 11000 }, (_, index) =>
+    `bundle/libexec/git-bash/windows-amd64/usr/share/resources/${"x".repeat(60)}/${index}.txt`
+  );
+  for (const name of expected) {
+    zip.file(name, "", { createFolders: false });
+  }
+  assert.ok(Buffer.byteLength(expected.join("\n")) > 1024 * 1024);
+  try {
+    fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
+    const actual = listArchiveEntries(archivePath);
+    assert.equal(actual.size, expected.length);
+    for (const name of expected) assert.ok(actual.has(name), name);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
 
 test("zip archives expose entries, manifest, and required paths", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-archive-zip-"));

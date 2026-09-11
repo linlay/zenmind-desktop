@@ -9,11 +9,22 @@ function read(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
+function readTypeScriptFamily(...segments) {
+  const target = path.join(projectRoot, ...segments);
+  const directory = path.dirname(target);
+  const stem = path.basename(target, ".ts");
+  return fs.readdirSync(directory)
+    .filter((name) => name === `${stem}.ts` || new RegExp(`^${stem}\\.part-\\d+\\.ts$`, "u").test(name))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(directory, name), "utf8"))
+    .join("\n");
+}
+
 test("Agent Realtime Inspector opens as one independent resizable window", () => {
-  const controller = read("src", "main", "app-shell", "agent-realtime-inspector-window.ts");
+  const controller = read("src", "main", "modules", "shell", "agent-realtime-inspector-window.ts");
   const runtime = read("src", "main", "app", "runtime.ts");
-  const register = read("src", "main", "ipc", "register.ts");
-  const bridge = read("src", "main", "ipc", "agent-webclient-bridge-handlers.ts");
+  const register = readTypeScriptFamily("src", "main", "app", "module-registry.ts");
+  const bridge = read("src", "main", "modules", "agent-platform", "ipc.ts");
   const page = read("src", "renderer", "pages", "AgentRealtimeInspectorPage.tsx");
   const preload = read("src", "preload", "index.ts");
 
@@ -62,8 +73,8 @@ test("Desktop Runtime Observer combines targets, memory, topology, and realtime 
 });
 
 test("runtime diagnostics stay main-owned and sanitize target URLs", () => {
-  const register = read("src", "main", "ipc", "register.ts");
-  const registry = read("src", "main", "browser-surface-registry.ts");
+  const register = readTypeScriptFamily("src", "main", "app", "module-registry.ts");
+  const registry = read("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
   const preload = read("src", "preload", "index.ts");
   const contracts = read("src", "shared", "contracts", "desktop-api.ts");
 

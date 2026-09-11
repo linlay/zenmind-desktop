@@ -5,6 +5,7 @@ import { AppShell } from "./app-shell/AppShell";
 import { ServicesProvider } from "./services/ServicesContext";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { I18nProvider } from "./i18n/I18nProvider";
+import { AppearanceProvider } from "./appearance/AppearanceProvider";
 
 export { EXTERNAL_EXPERIMENTAL_ITEMS } from "./app-shell/AppShell";
 
@@ -82,7 +83,9 @@ export function App() {
     content = (
       <AppErrorBoundary resetKey={resetKey}>
         <ServicesProvider>
-          <AppShell />
+          <AppearanceProvider>
+            <AppShell />
+          </AppearanceProvider>
         </ServicesProvider>
       </AppErrorBoundary>
     );

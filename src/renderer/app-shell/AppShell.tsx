@@ -1,7 +1,12 @@
-import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
+import { useAppearance } from "../appearance/AppearanceProvider";
+import { DesktopBackground } from "../appearance/DesktopBackground";
+import { isThemePreference, type ThemePreference } from "../appearance/model";
+import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import {
   isCapabilityNavigationRoute,
@@ -47,7 +52,8 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import { dispatchDesktopCloseShortcut } from "../services/desktopCloseShortcutRegistry";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -67,6 +73,7 @@ import {
   createServiceSurfaceIdentity,
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity,
+  resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
@@ -80,6 +87,7 @@ import {
   type SidebarLayoutState
 } from "../../shared/sidebar-layout";
 import {
+  WORK_PANEL_COLLAPSED_MAIN_GAP,
   WORK_PANEL_MIN_WIDTH,
   WORK_PANEL_RESIZE_STEP,
   clampWorkPanelWidth,
@@ -162,8 +170,6 @@ import {
   shouldCancelPendingMainChatWorkPanelOpenForRoute,
 } from "../../shared/main-chat-work-panel";
 
-type ThemePreference = "light" | "dark" | "system";
-type ResolvedThemeMode = "light" | "dark";
 type AgentChatFocusRequest = {
   id: number;
   sourceRoute: string;
@@ -240,41 +246,9 @@ function getChatNavigationAgentOptions(items: AssistantNavAgentItem[]) {
   return items.filter(isAssistantNavChatAgent);
 }
 
-function isThemePreference(value: unknown): value is ThemePreference {
-  return value === "light" || value === "dark" || value === "system";
-}
-
-function readStoredThemePreference(): ThemePreference {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-  try {
-    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (savedTheme === "dark") {
-      return "dark";
-    }
-    if (savedTheme === "system") {
-      return "system";
-    }
-    return "light";
-  } catch {
-    return "light";
-  }
-}
-
 function normalizeDesktopAppVersion(version: string) {
   const normalized = version.trim().replace(/^v/iu, "");
   return normalized ? `v${normalized}` : "";
-}
-
-function resolveThemePreference(preference: ThemePreference): ResolvedThemeMode {
-  if (preference === "system") {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      return "dark";
-    }
-    return "light";
-  }
-  return preference;
 }
 
 const HelpPage = lazy(() =>
@@ -293,7 +267,6 @@ const KanbanPage = lazy(() =>
   import("../pages/kanban/KanbanPage").then((module) => ({ default: module.KanbanPage }))
 );
 
-const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
@@ -307,7 +280,23 @@ const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclie
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
-const REPORTED_LEGACY_PUBLIC_SURFACE_IDS = new Set<string>();
+const REPORTED_DEPRECATED_COMPATIBILITY_USES = new Set<string>();
+
+function reportDeprecatedRendererCompatibilityUse(
+  id: "route.service-agent-webclient" | "surface.legacy-alias",
+  details: Record<string, string> = {}
+) {
+  const key = `${id}:${JSON.stringify(details)}`;
+  if (REPORTED_DEPRECATED_COMPATIBILITY_USES.has(key)) return;
+  REPORTED_DEPRECATED_COMPATIBILITY_USES.add(key);
+  window.electronAPI.diagnostics?.reportRendererError({
+    source: "deprecated-compatibility",
+    level: "warn",
+    message: id,
+    details
+  });
+}
+
 function RouteSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
 }
@@ -315,6 +304,9 @@ function RouteSuspense({ children }: { children: ReactNode }) {
 function LegacyAgentWebclientServiceRouteRedirect() {
   const location = useLocation();
   const embedPath = readAgentWebclientRouteEmbedPath(location.search);
+  useEffect(() => {
+    reportDeprecatedRendererCompatibilityUse("route.service-agent-webclient");
+  }, []);
   return embedPath ? null : <Navigate to={ASSISTANT_TARGET_PATH} replace />;
 }
 
@@ -372,10 +364,6 @@ function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[]
 
 function isKanbanNavigationPath(targetPath: string) {
   return /^\/kanban(?:[/?#]|$)/.test(targetPath);
-}
-
-function getKanbanAwareFallbackPath(kanbanEnabled: boolean) {
-  return kanbanEnabled ? "/kanban" : "/control-center";
 }
 
 function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boolean) {
@@ -600,6 +588,7 @@ export function AppShell() {
   const appShellRef = useRef<HTMLDivElement | null>(null);
   const appContentRef = useRef<HTMLDivElement | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
+  const windowDragClickTrackerRef = useRef(createWindowDragClickTracker<Element>());
   const pendingAssistantDockOpenRequestRef = useRef<{ contextKey: string; embedPath: string } | null>(null);
   const assistantDockSessionsRef = useRef<Record<string, CopilotDockContextSession>>({});
   const pendingCopilotRestoreRef = useRef<CopilotDockSessionSnapshot | null>(null);
@@ -648,9 +637,15 @@ export function AppShell() {
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [desktopDisplay, setDesktopDisplay] = useState<DesktopDisplayOverlayRequest | null>(null);
   const desktopDisplayTokenRef = useRef(0);
-  const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
-  const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
+  const {
+    themeMode,
+    resolvedTheme,
+    background,
+    skin,
+    setThemeMode,
+    getAppearanceSnapshot,
+    refreshAppearanceFromCanonical
+  } = useAppearance();
   const [sidebarState, setSidebarState] = useState<SidebarLayoutState>(() => {
     if (typeof window === "undefined") {
       return normalizeSidebarLayoutState(null);
@@ -675,6 +670,9 @@ export function AppShell() {
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
+  const [pinnedWebEntryKeys, setPinnedWebEntryKeys] = useState<string[]>([]);
+  const [webPinMutationPending, setWebPinMutationPending] = useState(false);
+  const webPinMutationPendingRef = useRef(false);
   const [assistantDockSessions, setAssistantDockSessions] = useState<Record<string, CopilotDockContextSession>>({});
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [, setAssistantRunningRunId] = useState<string | null>(null);
@@ -682,6 +680,8 @@ export function AppShell() {
   const [firstInstallBootstrapNavigationRequested, setFirstInstallBootstrapNavigationRequested] =
     useState<boolean | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [assistantPinnedChatItems, setAssistantPinnedChatItems] = useState<AssistantNavChatItem[]>([]);
+  const [assistantChatPinningSupported, setAssistantChatPinningSupported] = useState(false);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
   const [assistantChatSortMode, setAssistantChatSortMode] =
@@ -815,6 +815,8 @@ export function AppShell() {
     preferredWorkPanelWidth,
     appContentWidth || undefined,
   );
+  const isMainChatCollapsedByWorkPanel = activeChatWorkPanelVisible && appContentWidth > 0 &&
+    renderedWorkPanelWidth >= workPanelMaxWidth;
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
@@ -1089,6 +1091,11 @@ export function AppShell() {
   );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const usesWebappSurface = activeWebEntry?.kind === "webapp";
+  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && workPanelState.workspaces.some(
+    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId && workspace.items.some(
+      (item) => item.itemId === workspace.activeItemId && item.descriptor.kind === "webapp-ref",
+    ),
+  );
   const resolvedCopilotAgentKey = activeWebEntry
     ? activeWebEntry.copilotAgentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
     : currentCopilotPreference?.agentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
@@ -1663,6 +1670,8 @@ export function AppShell() {
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
+        setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
+        setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
         setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
         setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
         setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
@@ -1714,19 +1723,24 @@ export function AppShell() {
     input: AssistantChatOrderMutationRequest,
   ): Promise<AssistantChatOrderMutationResult> {
     const previousItems = assistantNavChatItems;
+    const previousPinnedItems = assistantPinnedChatItems;
+    const pinnedMove = input.operation === "move" && previousPinnedItems.some(
+      (chat) => chat.chatId === input.chatId,
+    );
     const previousMode = assistantChatSortMode;
     if (input.operation === "set_mode") {
       setAssistantChatSortMode(input.sortMode);
-    } else {
+    } else if (input.operation === "move") {
+      const sourceItems = pinnedMove ? previousPinnedItems : previousItems;
       const anchorId = input.beforeChatId || input.afterChatId || "";
-      const activeIndex = previousItems.findIndex(
+      const activeIndex = sourceItems.findIndex(
         (chat) => chat.chatId === input.chatId,
       );
-      const anchorIndex = previousItems.findIndex(
+      const anchorIndex = sourceItems.findIndex(
         (chat) => chat.chatId === anchorId,
       );
       if (activeIndex >= 0 && anchorIndex >= 0 && activeIndex !== anchorIndex) {
-        const reordered = previousItems.slice();
+        const reordered = sourceItems.slice();
         const [moved] = reordered.splice(activeIndex, 1);
         const nextAnchorIndex = reordered.findIndex(
           (chat) => chat.chatId === anchorId,
@@ -1736,15 +1750,23 @@ export function AppShell() {
           0,
           moved,
         );
-        setAssistantNavChatItems(reordered);
+        if (pinnedMove) {
+          setAssistantPinnedChatItems(reordered);
+        } else {
+          setAssistantNavChatItems(reordered);
+        }
       }
-      setAssistantChatSortMode("manual");
+      if (!pinnedMove) {
+        setAssistantChatSortMode("manual");
+      }
     }
     try {
       const result = await window.electronAPI.assistant.updateChatOrder(input);
       if (!result.ok) {
         setAssistantNavChatItems(previousItems);
+        setAssistantPinnedChatItems(previousPinnedItems);
         setAssistantChatSortMode(previousMode);
+        await refreshAssistantNavAgents({ force: true });
         return result;
       }
       setAssistantChatSortMode(result.sortMode);
@@ -1752,7 +1774,9 @@ export function AppShell() {
       return result;
     } catch (error) {
       setAssistantNavChatItems(previousItems);
+      setAssistantPinnedChatItems(previousPinnedItems);
       setAssistantChatSortMode(previousMode);
+      await refreshAssistantNavAgents({ force: true });
       return {
         ok: false,
         sortMode: previousMode,
@@ -1796,6 +1820,8 @@ export function AppShell() {
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
+      setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
+      setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
       setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
       setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
       setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
@@ -1956,16 +1982,21 @@ export function AppShell() {
     setAssistantSettings(settings);
   }
 
-  async function refreshThemePreferenceFromCanonical() {
+  async function handleSetWebItemPinned(item: WebEntry, pinned: boolean) {
+    if (!navigationPreferencesLoaded || webPinMutationPendingRef.current) return;
+    webPinMutationPendingRef.current = true;
+    setWebPinMutationPending(true);
     try {
-      const profileTheme = await window.electronAPI.settings.getThemePreference();
-      if (isThemePreference(profileTheme)) {
-        setThemeMode(profileTheme);
-      }
-    } catch {
-      // Keep the current theme if settings are temporarily unavailable.
+      const nextKeys = pinned
+        ? [item.entryKey, ...pinnedWebEntryKeys.filter((key) => key !== item.entryKey)]
+        : pinnedWebEntryKeys.filter((key) => key !== item.entryKey);
+      const preferences = await window.electronAPI.settings.saveNavigationPreferences({
+        pinnedWebEntryKeys: nextKeys
+      });
+      setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys);
     } finally {
-      setThemePreferenceLoaded(true);
+      webPinMutationPendingRef.current = false;
+      setWebPinMutationPending(false);
     }
   }
 
@@ -1978,6 +2009,7 @@ export function AppShell() {
       if (Array.isArray(preferences?.webOrder)) {
         setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
       }
+      setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys ?? []);
     } catch {
       // Keep the current navigation order if settings are temporarily unavailable.
     } finally {
@@ -1997,7 +2029,7 @@ export function AppShell() {
   }
 
   function refreshDesktopShellConfigFromCanonical() {
-    void refreshThemePreferenceFromCanonical();
+    void refreshAppearanceFromCanonical();
     void refreshNavigationPreferencesFromCanonical();
     void refreshKanbanSettingsFromCanonical();
     void refreshMarketSettingsVisibility();
@@ -2176,6 +2208,8 @@ export function AppShell() {
   useEffect(() => {
     startDesktopActionRendererBridge();
   }, []);
+
+  useEffect(() => window.electronAPI.onCloseShortcut(dispatchDesktopCloseShortcut), []);
 
   useEffect(() => {
     let active = true;
@@ -2528,54 +2562,6 @@ export function AppShell() {
   }, [shouldPollStartup]);
 
   useEffect(() => {
-    let cancelled = false;
-    window.electronAPI.settings.getThemePreference()
-      .then((profileTheme) => {
-        if (!cancelled && isThemePreference(profileTheme)) {
-          setThemeMode(profileTheme);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) {
-          setThemePreferenceLoaded(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const resolved = resolveThemePreference(themeMode);
-    setResolvedTheme(resolved);
-    document.documentElement.dataset.theme = resolved;
-    if (themePreferenceLoaded) {
-      window.electronAPI.settings.setNativeThemeSource(themeMode).catch(() => undefined);
-    }
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-    } catch {
-      // Ignore persistence failures and keep the in-memory theme switch usable.
-    }
-
-    if (themeMode !== "system") {
-      return;
-    }
-
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleSystemThemeChange = () => {
-      const nextResolved = media.matches ? "dark" : "light";
-      setResolvedTheme(nextResolved);
-      document.documentElement.dataset.theme = nextResolved;
-    };
-    media.addEventListener("change", handleSystemThemeChange);
-    return () => {
-      media.removeEventListener("change", handleSystemThemeChange);
-    };
-  }, [themeMode, themePreferenceLoaded]);
-
-  useEffect(() => {
     const shouldApply = isMac;
     document.body.classList.toggle("mac-translucent-sidebar-body", shouldApply);
 
@@ -2597,6 +2583,7 @@ export function AppShell() {
         if (Array.isArray(preferences?.webOrder)) {
           setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
         }
+        setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys ?? []);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -2935,13 +2922,13 @@ export function AppShell() {
     );
   }, [webItems, webItemsLoaded]);
 
-  function handleThemeModeChange(nextThemeMode: ThemePreference) {
-    setThemeMode(nextThemeMode);
+  async function handleThemeModeChange(nextThemeMode: ThemePreference) {
+    await setThemeMode(nextThemeMode);
   }
 
-  function toggleSidebarCollapsed() {
+  const toggleSidebarCollapsed = useCallback(() => {
     setSidebarState((current) => toggleSidebarLayoutState(current));
-  }
+  }, []);
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (
@@ -3024,10 +3011,16 @@ export function AppShell() {
     let nextWidth: number | null = null;
     switch (event.key) {
       case "ArrowLeft":
-        nextWidth = renderedWorkPanelWidth + WORK_PANEL_RESIZE_STEP;
+        // Keep keyboard progress through the same buffer used by pointer resizing.
+        nextWidth = Math.min(workPanelMaxWidth, Math.max(renderedWorkPanelWidth, preferredWorkPanelWidth)) + WORK_PANEL_RESIZE_STEP;
         break;
       case "ArrowRight":
-        nextWidth = renderedWorkPanelWidth - WORK_PANEL_RESIZE_STEP;
+        nextWidth = resolveWorkPanelWidthFromDrag({
+          initialWidth: renderedWorkPanelWidth,
+          startClientX: 0,
+          currentClientX: WORK_PANEL_RESIZE_STEP,
+          availableWidth: appContentWidth || undefined,
+        });
         break;
       case "Home":
         nextWidth = WORK_PANEL_MIN_WIDTH;
@@ -3040,7 +3033,7 @@ export function AppShell() {
     }
     event.preventDefault();
     event.stopPropagation();
-    setPreferredWorkPanelWidth(clampWorkPanelWidth(nextWidth, appContentWidth || undefined));
+    setPreferredWorkPanelWidth(clampWorkPanelWidth(Math.min(nextWidth, workPanelMaxWidth)));
   }
 
   function handleCopilotDockResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -3405,27 +3398,36 @@ export function AppShell() {
     function resolvePublicSurfaceIdAlias(surfaceId: string) {
       const fixed = resolveLegacyFixedSurfaceId(surfaceId);
       if (fixed !== surfaceId) {
-        reportLegacyPublicSurfaceId(surfaceId, fixed);
+        reportLegacyPublicSurfaceId(
+          surfaceId,
+          fixed,
+          "fixed",
+          resolveFixedSurfaceRole(fixed) ?? "unknown"
+        );
         return fixed;
       }
       const webItem = webItemMap.get(surfaceId as WebEntryKey);
       if (webItem) {
         const canonical = createWebEntrySurfaceIdentity(webItem.kind, surfaceId).surfaceId;
-        reportLegacyPublicSurfaceId(surfaceId, canonical);
+        reportLegacyPublicSurfaceId(surfaceId, canonical, "derived", webItem.kind);
         return canonical;
       }
       if (services.some((service) => service.id === surfaceId)) {
         const canonical = createServiceSurfaceIdentity(surfaceId).surfaceId;
-        reportLegacyPublicSurfaceId(surfaceId, canonical);
+        reportLegacyPublicSurfaceId(surfaceId, canonical, "derived", "service");
         return canonical;
       }
       return surfaceId;
     }
 
-    function reportLegacyPublicSurfaceId(legacy: string, canonical: string) {
-      if (!legacy || legacy === canonical || REPORTED_LEGACY_PUBLIC_SURFACE_IDS.has(legacy)) return;
-      REPORTED_LEGACY_PUBLIC_SURFACE_IDS.add(legacy);
-      console.warn(`[surface-identity] deprecated surfaceId "${legacy}" accepted; use "${canonical}"`);
+    function reportLegacyPublicSurfaceId(
+      legacy: string,
+      canonical: string,
+      category: "fixed" | "derived",
+      canonicalRole: string
+    ) {
+      if (!legacy || legacy === canonical) return;
+      reportDeprecatedRendererCompatibilityUse("surface.legacy-alias", { category, canonicalRole });
     }
 
     function surfaceMatchesTarget(
@@ -3532,6 +3534,7 @@ export function AppShell() {
     const args = request.args ?? {};
 
     if (request.action === "desktop.theme.get") {
+      const { themeMode, resolvedTheme } = getAppearanceSnapshot();
       return {
         ok: true,
         result: { themeMode, resolvedTheme }
@@ -3550,16 +3553,15 @@ export function AppShell() {
       };
     }
     const nextThemeMode = args.themeMode;
-    await window.electronAPI.settings.setNativeThemeSource(nextThemeMode);
-    setThemeMode(nextThemeMode);
+    const nextAppearance = await setThemeMode(nextThemeMode);
     return {
       ok: true,
       result: {
         themeMode: nextThemeMode,
-        resolvedTheme: resolveThemePreference(nextThemeMode)
+        resolvedTheme: nextAppearance.resolvedTheme
       }
     };
-  }), [resolvedTheme, themeMode]);
+  }), [getAppearanceSnapshot, setThemeMode]);
 
   useEffect(() => registerDesktopActionProviderForScope("global", async (request) => {
     const args = request.args ?? {};
@@ -3728,18 +3730,22 @@ export function AppShell() {
   }), []);
 
   const handleWindowDragPointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const clickTracker = windowDragClickTrackerRef.current;
     if (event.button !== 0 || event.defaultPrevented) {
+      clickTracker.reset();
       return;
     }
 
     const target = event.target instanceof Element ? event.target : null;
     const dragTarget = resolveWindowDragTarget(target);
     if (!dragTarget) {
+      clickTracker.reset();
       return;
     }
 
     const desktopShell = window.electronAPI.desktopShell;
     if (!desktopShell.beginWindowDrag || !desktopShell.endWindowDrag) {
+      clickTracker.reset();
       return;
     }
 
@@ -3747,21 +3753,38 @@ export function AppShell() {
     event.stopPropagation();
 
     windowDragEndRef.current?.();
+    if (event.pointerType === "mouse") {
+      clickTracker.begin(dragTarget, event);
+    } else {
+      clickTracker.reset();
+    }
 
     const pointerId = event.pointerId;
     let ended = false;
     let pointerCaptureRestoreFrame: number | null = null;
-    const finishDrag = () => {
+    const trackPointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) clickTracker.move(pointerEvent);
+    };
+    const finishDrag = (releaseEvent?: globalThis.MouseEvent) => {
+      if (releaseEvent && "pointerId" in releaseEvent && releaseEvent.pointerId !== pointerId) {
+        return;
+      }
       if (ended) {
         return;
       }
       ended = true;
+      if (releaseEvent?.type === "pointerup" || releaseEvent?.type === "mouseup") {
+        clickTracker.release(releaseEvent);
+      } else {
+        clickTracker.reset();
+      }
       if (pointerCaptureRestoreFrame !== null) {
         window.cancelAnimationFrame(pointerCaptureRestoreFrame);
         pointerCaptureRestoreFrame = null;
       }
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
+      window.removeEventListener("pointermove", trackPointerMove, true);
       window.removeEventListener("mouseup", finishDragOnMouseUp, true);
       window.removeEventListener("blur", finishDragOnWindowBlur);
       dragTarget.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
@@ -3777,7 +3800,7 @@ export function AppShell() {
     };
     const finishDragOnMouseUp = (mouseEvent: globalThis.MouseEvent) => {
       if (mouseEvent.button === 0) {
-        finishDrag();
+        finishDrag(mouseEvent);
       }
     };
     const finishDragOnWindowBlur = (blurEvent: globalThis.FocusEvent) => {
@@ -3814,6 +3837,7 @@ export function AppShell() {
     windowDragEndRef.current = finishDrag;
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
+    window.addEventListener("pointermove", trackPointerMove, true);
     window.addEventListener("mouseup", finishDragOnMouseUp, true);
     window.addEventListener("blur", finishDragOnWindowBlur);
     dragTarget.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
@@ -3827,8 +3851,33 @@ export function AppShell() {
       if (!result?.ok) {
         finishDrag();
       }
-    }).catch(finishDrag);
+    }).catch(() => finishDrag());
   }, []);
+
+  const handleWindowDragClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const clickTracker = windowDragClickTrackerRef.current;
+    const target = event.target instanceof Element ? event.target : null;
+    const dragTarget = resolveWindowDragTarget(target);
+    // Windows header is a move-only surface; resizing stays on explicit controls.
+    if (isWindows && target?.closest(".app-system-bar")) {
+      clickTracker.reset();
+      return;
+    }
+    if (
+      event.button !== 0 || event.defaultPrevented || !dragTarget ||
+      windowFullScreen || windowControlsMasked ||
+      workPanelFullscreenOwnerChatIdRef.current || workPanelFullscreenTransitionPendingRef.current
+    ) {
+      clickTracker.reset();
+      return;
+    }
+    if (!clickTracker.click(dragTarget, event.detail)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    windowDragEndRef.current?.();
+    toggleMainWindowMaximize();
+  }, [isWindows, toggleMainWindowMaximize, windowControlsMasked, windowFullScreen]);
 
   useEffect(() => () => {
     windowDragEndRef.current?.();
@@ -3836,6 +3885,7 @@ export function AppShell() {
 
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`,
+    "--work-panel-collapsed-main-gap": `${WORK_PANEL_COLLAPSED_MAIN_GAP}px`,
     "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
     "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
@@ -3857,7 +3907,7 @@ export function AppShell() {
   const workPanelProjectEnabled = workPanelLauncherAgentMode === "KBASE" ||
     (workPanelLauncherAgentMode === "CODER" && !workPanelProjectDisabledReason);
   const workPanelLastRunId = activeChatWorkPanelChatId
-    ? assistantNavChatItems.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
+    ? [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
       workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ?? ""
     : "";
   const workPanelWebapps = webItems
@@ -4204,6 +4254,14 @@ export function AppShell() {
     requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
   }, [activeChatRouteInfo.agentKey, activeChatWorkPanelVisible, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
 
+  const handleMainChatWorkspaceArrowKey = useCallback((direction: "left" | "right") => {
+    if (direction === "left") {
+      toggleSidebarCollapsed();
+      return;
+    }
+    toggleMainChatWorkPanel();
+  }, [toggleMainChatWorkPanel, toggleSidebarCollapsed]);
+
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
     const targetRoute = createAgentChatRoute(agentKey, chatId);
     requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "ensure", targetRoute);
@@ -4211,6 +4269,40 @@ export function AppShell() {
       requestSidebarNavigation(targetRoute);
     }
   }, [desiredChatRouteChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
+
+  const toggleChatWorkPanelFromSidebar = useCallback((chatIdValue: string, agentKeyValue: string) => {
+    const chatId = chatIdValue.trim();
+    const agentKey = agentKeyValue.trim();
+    if (!chatId || !agentKey) return;
+    const targetRoute = createAgentChatRoute(agentKey, chatId);
+    if (activeChatWorkPanelChatId === chatId && activeChatWorkPanelVisible) {
+      dispatchWorkPanelCommand({ type: "hideWorkspace", ownerChatId: chatId });
+      return;
+    }
+    const workspaceExists = workPanelStateRef.current.workspaces.some(
+      (workspace) => workspace.ownerChatId === chatId,
+    );
+    requestChatWorkPanelOpenWhenRegistered(
+      chatId,
+      agentKey,
+      workspaceExists ? "show" : "ensure",
+      targetRoute,
+    );
+    if (
+      desiredChatRouteChatId !== chatId ||
+      activeChatRouteInfo.agentKey.trim() !== agentKey
+    ) {
+      requestSidebarNavigation(targetRoute);
+    }
+  }, [
+    activeChatRouteInfo.agentKey,
+    activeChatWorkPanelChatId,
+    activeChatWorkPanelVisible,
+    desiredChatRouteChatId,
+    dispatchWorkPanelCommand,
+    requestChatWorkPanelOpenWhenRegistered,
+    requestSidebarNavigation,
+  ]);
 
   const openAgentProjectEditorFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
     const agentKey = agent.agentKey.trim();
@@ -4224,7 +4316,7 @@ export function AppShell() {
       agent.latestChatId?.trim() ||
       agent.recentChats[0]?.chatId.trim() ||
       "";
-    const preferredChat = [...agent.recentChats, ...assistantNavChatItems].find(
+    const preferredChat = [...assistantPinnedChatItems, ...agent.recentChats, ...assistantNavChatItems].find(
       (chat) =>
         (chat.agentKey.trim() || agentKey) === agentKey &&
         chat.chatId.trim() === preferredChatId,
@@ -4294,12 +4386,14 @@ export function AppShell() {
         ref={appShellRef}
         style={appShellStyle}
         onPointerDownCapture={handleWindowDragPointerDownCapture}
+        onClickCapture={handleWindowDragClickCapture}
         className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
         usesWebappSurface ? "has-webapp-surface" : "",
+        usesWorkPanelWebappSurface ? "has-work-panel-webapp-surface" : "",
         usesServiceWebviewSurface ? "has-service-webview-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
@@ -4309,6 +4403,7 @@ export function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
+        isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-work-panel-toggle" : "",
         isMac ? "is-mac-platform" : "",
@@ -4325,6 +4420,7 @@ export function AppShell() {
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
+      <DesktopBackground background={background} fallback={skin.backgrounds?.[resolvedTheme]} />
       <PageFeedbackStack
         placement="top-center"
         items={workPanelOpenError
@@ -4409,6 +4505,7 @@ export function AppShell() {
                 ) : null}
               </nav>
             ) : null}
+            <WindowsApplicationMenu disabled={windowControlsMasked} />
           </div>
           <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
             <button
@@ -4466,12 +4563,17 @@ export function AppShell() {
           marketEnabled={marketEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
           websiteNavOrder={normalizedWebGroupOrder}
+          pinnedWebEntryKeys={pinnedWebEntryKeys}
+          webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
+          onSetWebItemPinned={handleSetWebItemPinned}
           webItems={webItems}
           webOpenEntryKeys={webOpenEntryKeys}
           webRunningEntryKeys={webRunningEntryKeys}
           webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
+          assistantPinnedChatItems={assistantPinnedChatItems}
+          assistantChatPinningSupported={assistantChatPinningSupported}
           assistantNavChatItems={assistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
           assistantChatSortMode={assistantChatSortMode}
@@ -4499,6 +4601,7 @@ export function AppShell() {
           onUpdateAssistantChatOrder={updateAssistantChatOrder}
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
+          onToggleChatWorkPanel={toggleChatWorkPanelFromSidebar}
           onOpenChatHistory={openChatHistoryDialog}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}
@@ -4557,6 +4660,7 @@ export function AppShell() {
             mountedServiceIds={mountedServiceIds}
             onAgentChatFocusRequestHandled={handleAgentChatFocusRequestHandled}
             onMainChatSurfaceRegistrationChange={handleMainChatSurfaceRegistrationChange}
+            onMainChatWorkspaceArrowKey={handleMainChatWorkspaceArrowKey}
           />
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}

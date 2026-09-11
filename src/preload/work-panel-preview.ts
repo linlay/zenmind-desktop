@@ -6,13 +6,12 @@ import {
   WORK_PANEL_REVIEW_MAX_IMAGE_SIDE,
   WORK_PANEL_REVIEW_MAX_PNG_BYTES,
   WORK_PANEL_REVIEW_VERSION,
-  type HtmlElementAnnotation,
   type ImageRegionAnnotation,
   type WorkPanelPixelRect,
   type WorkPanelPreviewReviewAction,
   type WorkPanelPreviewReviewEvent,
   type WorkPanelReviewAnnotation,
-  type WorkPanelReviewKind,
+  type WorkPanelReviewKind
 } from "../shared/work-panel-review";
 import { CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } from "../shared/chat-work-panel";
 

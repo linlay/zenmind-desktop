@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import webappToolingResource from "./lib/webapp-tooling-resource.js";
 import {
   brandIconDir,
   brandRuntimeAssetDir,
@@ -11,8 +10,6 @@ import {
   resolveRequiredBrandId
 } from "./lib/brand-config.mjs";
 import { verifyGeneratedAppIcons } from "./generate-app-icons.mjs";
-
-const { verifyPackagedWebappTooling } = webappToolingResource;
 
 const projectRoot = process.cwd();
 const brandId = resolveRequiredBrandId(process.argv.slice(2), process.env, "verify-win-package");
@@ -105,27 +102,33 @@ function verifyNativeExecutableIcon() {
   const icoPath = path.join(brandIconDir(projectRoot, brand), "icon.ico");
   assertExists(executablePath, "Windows application executable");
   const script = [
+    "$ErrorActionPreference = 'Stop'",
     "Add-Type -AssemblyName System.Drawing",
-    "$actualIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($args[0])",
+    "$actualIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:ZENMIND_VERIFY_EXE_PATH)",
     "if ($null -eq $actualIcon) { throw 'Unable to extract executable icon' }",
-    "$expectedIcon = New-Object System.Drawing.Icon($args[1], 32, 32)",
-    "function Convert-IconBitmap([System.Drawing.Icon]$icon) {",
-    "  $bitmap = New-Object System.Drawing.Bitmap(32, 32)",
-    "  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)",
-    "  try { $graphics.DrawIcon($icon, 0, 0) } finally { $graphics.Dispose() }",
-    "  return $bitmap",
-    "}",
-    "$actual = Convert-IconBitmap $actualIcon",
-    "$expected = Convert-IconBitmap $expectedIcon",
+    // Use the Windows extractor for both inputs: .NET Framework's Icon constructor
+    // can decode PNG-backed ICO transparency differently from the executable icon.
+    "$expectedIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:ZENMIND_VERIFY_ICO_PATH)",
+    "if ($null -eq $expectedIcon) { throw 'Unable to extract expected ICO icon' }",
+    "$actual = $actualIcon.ToBitmap()",
+    "$expected = $expectedIcon.ToBitmap()",
     "try {",
+    "  if ($actual.Width -ne 32 -or $actual.Height -ne 32 -or $expected.Width -ne 32 -or $expected.Height -ne 32) { throw 'Expected 32x32 icon bitmaps' }",
     "  for ($y = 0; $y -lt 32; $y++) {",
     "    for ($x = 0; $x -lt 32; $x++) {",
     "      if ($actual.GetPixel($x, $y).ToArgb() -ne $expected.GetPixel($x, $y).ToArgb()) { throw \"EXE icon pixel mismatch at $x,$y\" }",
     "    }",
     "  }",
     "} finally { $actual.Dispose(); $expected.Dispose(); $actualIcon.Dispose(); $expectedIcon.Dispose() }"
-  ].join("; ");
-  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, executablePath, icoPath], {
+  ].join("\n");
+  // Windows PowerShell -Command parses trailing paths as code, not script arguments.
+  // Keep paths in the child environment and encode the script to preserve quoting.
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], {
+    env: {
+      ...process.env,
+      ZENMIND_VERIFY_EXE_PATH: executablePath,
+      ZENMIND_VERIFY_ICO_PATH: icoPath
+    },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -139,7 +142,6 @@ async function main() {
   await verifyGeneratedAppIcons({ rootDir: projectRoot, brandId: brand.id, platform: "win32" });
   verifyBuilderIconConfig();
   verifyPackagedBrandResources();
-  verifyPackagedWebappTooling(resourcesRoot, { errorPrefix: "[verify-win-package]" });
   verifyNativeExecutableIcon();
   const paths = walkFileTree(resourcesRoot)
     .map((filePath) => path.relative(projectRoot, filePath).replace(/\\/g, "/"));

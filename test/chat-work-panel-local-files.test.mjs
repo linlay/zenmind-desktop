@@ -11,7 +11,7 @@ const {
   normalizeWorkPanelLocalFileRelativePath,
   resolveWorkPanelLocalFileFromWorkspace,
   resolveLocalFileProtocolPath,
-} = await import("../dist-electron/main/chat-work-panel-local-files.js");
+} = await import("../dist-electron/main/modules/work-panel/local-files.js");
 
 test("WorkPanel local files classify only supported inline preview formats", () => {
   assert.equal(classifyWorkPanelLocalFile("index.HTML"), "html");

@@ -4,11 +4,6 @@
   line-height: 1.45;
 }
 
-:root[data-theme="dark"] .settings-page {
-  --surface-soft: #232323;
-  --control-select-bg: #232323;
-}
-
 .settings-page-single {
   width: 100%;
   min-height: 0;
@@ -154,8 +149,7 @@
 .settings-page .settings-item-list,
 .settings-page .desktop-pet-appearance-list,
 .settings-page .navigation-order-list,
-.settings-page .website-list,
-.settings-page .assistant-memory-list {
+.settings-page .website-list {
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -166,9 +160,7 @@
 .settings-page .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row,
 .settings-page .navigation-order-row,
-.settings-page .website-row,
-.settings-page .assistant-memory-row,
-.settings-page .assistant-memory-switch-row {
+.settings-page .website-row {
   border: none;
   border-radius: 0;
   background: transparent;
@@ -179,15 +171,12 @@
 .settings-page .settings-pet-appearance-row + .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row + .desktop-pet-appearance-row,
 .settings-page .navigation-order-list > * + *,
-.settings-page .website-list > * + *,
-.settings-page .assistant-memory-list > * + * {
+.settings-page .website-list > * + * {
   border-top: 1px solid var(--line);
 }
 
 .settings-page .navigation-order-row,
-.settings-page .website-row,
-.settings-page .assistant-memory-row,
-.settings-page .assistant-memory-switch-row {
+.settings-page .website-row {
   padding: 14px 16px;
 }
 
@@ -264,8 +253,8 @@
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   outline: none;
   font-size: 12px;
@@ -308,8 +297,8 @@
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   outline: none;
   font-size: 12px;
@@ -355,8 +344,8 @@
   gap: 8px;
   padding: 4px 6px 4px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
   font-size: 12px;
@@ -386,8 +375,8 @@
   gap: 12px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.35;
@@ -416,8 +405,8 @@
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease;
@@ -525,7 +514,7 @@
   min-width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   color: var(--ink-soft);
 }
 
@@ -594,7 +583,7 @@
   min-height: 32px;
   height: 32px;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
@@ -708,17 +697,17 @@
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:hover,
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:focus-visible {
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active {
-  background: rgba(255, 255, 255, 0.075);
+  background: var(--control-active-bg);
   box-shadow: none;
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:hover,
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:focus-visible {
-  background: rgba(255, 255, 255, 0.095);
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.is-active .service-nav-version-status {
@@ -937,6 +926,212 @@
 
 .settings-page .webapp-catalog-import > button {
   min-height: 34px;
+}
+
+.settings-page .web-settings-page .web-settings-shell {
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.settings-page .web-settings-page .web-settings-catalog {
+  min-height: 420px;
+  border-radius: 12px;
+}
+
+.settings-page .web-settings-page .web-nav-card .service-nav-card-head {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.settings-page .webapp-catalog-icon,
+.settings-page .website-catalog-icon,
+.settings-page .website-detail-icon,
+.settings-page .webapp-detail-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--accent-strong);
+  background: var(--accent-fill-subtle);
+  border: 1px solid var(--accent-border-subtle);
+  border-radius: 10px;
+}
+
+.settings-page .website-catalog-icon,
+.settings-page .webapp-catalog-icon {
+  grid-row: span 2;
+  width: 36px;
+  height: 36px;
+  font-size: 19px;
+}
+
+.settings-page .web-settings-page .webapp-nav-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.settings-page .web-settings-page .web-nav-card.ant-btn {
+  padding: 14px 12px;
+  border-radius: 9px;
+}
+
+.settings-page .web-settings-page .web-nav-card.ant-btn.is-active {
+  background: var(--accent-fill-subtle);
+  box-shadow: none;
+}
+
+.settings-page .web-settings-page .web-nav-card.is-active .service-nav-version-status {
+  color: var(--muted);
+}
+
+.settings-page .web-settings-page .web-settings-detail {
+  background: transparent;
+}
+
+.settings-page .web-settings-page .web-detail-card {
+  border-radius: 12px;
+}
+
+.settings-page .web-settings-page .control-center-service-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+  padding: 24px;
+}
+
+.settings-page .website-detail-icon,
+.settings-page .webapp-detail-icon {
+  width: 52px;
+  height: 52px;
+  font-size: 26px;
+  border-radius: 14px;
+}
+
+.settings-page .web-settings-page .service-hero-title-line h2 {
+  font-size: 20px;
+  line-height: 1.5;
+}
+
+.settings-page .webapp-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-page .webapp-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-page .web-settings-page .service-primary-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-page .web-settings-page .webapp-publish-action {
+  order: 1;
+  margin-left: auto;
+}
+
+.settings-page .web-settings-page .webapp-user-config-heading {
+  padding: 22px 24px 8px;
+}
+
+.settings-page .web-settings-page .web-detail-form-item {
+  grid-template-columns: 112px minmax(0, 480px);
+  border: 0;
+  padding: 16px 24px;
+}
+
+.settings-page .web-settings-page .webapp-user-config-empty {
+  margin: 4px 24px 24px;
+  padding: 16px;
+  border: 1px dashed var(--control-center-border);
+  border-radius: 8px;
+  background: var(--control-center-card-muted);
+}
+
+.settings-page .web-settings-page .web-detail-actions {
+  padding: 16px 24px;
+}
+
+.settings-page .is-websites .service-nav-version-status {
+  grid-column: 2;
+  min-width: 0;
+  justify-content: flex-start;
+  color: var(--muted);
+}
+
+.settings-page .is-websites .web-settings-catalog .service-group {
+  display: flex;
+  flex-direction: column;
+  min-height: 418px;
+}
+
+.settings-page .is-websites .web-catalog-actions {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .is-websites .web-catalog-actions .ant-btn {
+  flex: 1;
+  color: var(--ink-soft);
+}
+
+.settings-page .is-websites .web-detail-form {
+  padding-top: 8px;
+}
+
+.settings-page .is-websites .website-copilot-field {
+  margin-top: 8px;
+  padding-top: 24px;
+  padding-bottom: 24px;
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .is-websites .web-detail-actions .is-danger {
+  margin-left: auto;
+}
+
+.settings-page .is-websites .service-hero-copy p {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+@media (max-width: 1000px) {
+  .settings-page .web-settings-page .web-settings-shell {
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-page .web-settings-page .web-settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-page .web-settings-page .web-settings-catalog {
+    min-height: 0;
+    max-height: 300px;
+  }
+  .settings-page .web-settings-page .web-detail-form-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-page .is-websites .web-settings-catalog .service-group {
+    min-height: 0;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1379,9 +1574,9 @@
   min-height: 34px;
   padding: 0 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -1396,11 +1591,11 @@
 :root[data-theme="dark"] .settings-page .settings-control-field select,
 :root[data-theme="dark"] .settings-page .settings-control-row-control.ant-input,
 :root[data-theme="dark"] .settings-page .settings-control-row-readonly {
-  background: var(--control-select-bg);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--control-input-bg);
+  border-color: var(--control-border);
 }
 
-/* Settings owns its Ant controls locally so app-wide Ant defaults stay untouched. */
+/* Keep settings-specific states aligned with the main-window appearance roles. */
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-label > label,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-extra,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-explain,
@@ -1418,8 +1613,8 @@
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select:not(.ant-select-customize-input) .ant-select-selector,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: var(--control-select-bg) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-input-bg) !important;
   color: var(--ink) !important;
 }
 
@@ -1475,7 +1670,7 @@
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea:disabled,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select:disabled {
   border-color: var(--line) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
+  background: var(--control-disabled-bg) !important;
   color: var(--ink-muted) !important;
   opacity: 1;
   cursor: not-allowed;
@@ -1519,8 +1714,8 @@
 }
 
 :root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text) {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.065) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-button-bg) !important;
   color: var(--ink-soft) !important;
   text-shadow: none !important;
   box-shadow: none;
@@ -1528,9 +1723,13 @@
 
 :root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):hover:not(:disabled),
 :root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):focus-visible:not(:disabled) {
-  border-color: var(--line-strong) !important;
-  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-hover-bg) !important;
   color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):not(.ant-btn-dangerous):active:not(:disabled) {
+  background: var(--control-active-bg) !important;
 }
 
 :root[data-theme="dark"] .settings-page .ant-btn-default.ant-btn-dangerous:not(.ant-btn-link):not(.ant-btn-text) {
@@ -1550,26 +1749,26 @@
 :root[data-theme="dark"] .settings-page .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text),
 :root[data-theme="dark"] .settings-debug-modal .ant-btn:disabled:not(.ant-btn-link):not(.ant-btn-text),
 :root[data-theme="dark"] .settings-debug-modal .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text) {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-disabled-bg) !important;
   color: var(--ink-muted) !important;
   text-shadow: none !important;
   opacity: 1;
 }
 
 :root[data-theme="dark"] .settings-page .navigation-assistant-default-select .ant-select-selector {
-  border-color: rgba(255, 255, 255, 0.095) !important;
-  background: rgba(255, 255, 255, 0.035) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-input-bg) !important;
 }
 
 :root[data-theme="dark"] .settings-page .navigation-assistant-default-select .ant-select:not(.ant-select-disabled):hover .ant-select-selector {
-  border-color: rgba(255, 255, 255, 0.15) !important;
-  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-hover-bg) !important;
 }
 
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented {
   border: 1px solid var(--line);
-  background: var(--control-select-bg);
+  background: var(--control-input-bg);
   color: var(--ink-soft);
 }
 
@@ -1606,7 +1805,7 @@
 
 :root[data-theme="dark"] .settings-debug-modal .ant-modal-content,
 :root[data-theme="dark"] .settings-debug-modal .ant-modal-header {
-  background: var(--surface-strong);
+  background: var(--desktop-overlay-panel-bg);
   color: var(--ink);
 }
 
@@ -1640,7 +1839,7 @@
 
 :root[data-theme="dark"] .settings-select-popup {
   border: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: var(--control-popover-bg);
   box-shadow: var(--panel-shadow);
 }
 
@@ -1810,35 +2009,6 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
-}
-
-.settings-page .assistant-memory-switches {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.settings-page .assistant-memory-switch-row {
-  display: flex;
-  min-height: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.settings-page .assistant-memory-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 14px;
-  min-height: 0;
-}
-
-.settings-page .assistant-memory-storage-card {
-  padding: 14px 16px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
 }
 
 .settings-page .settings-pet-appearance-row,
@@ -2278,8 +2448,8 @@
   resize: vertical;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
   font-size: 12px;
@@ -2325,7 +2495,7 @@
   min-height: 34px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
@@ -2340,7 +2510,7 @@
 .settings-page .settings-debug-nav-item.ant-btn:not(:disabled):not(.ant-btn-disabled):hover,
 .settings-page .settings-debug-nav-item.ant-btn:not(:disabled):not(.ant-btn-disabled):focus-visible {
   border-color: var(--line);
-  background: var(--control-select-bg);
+  background: var(--control-input-bg);
   color: var(--ink);
 }
 
@@ -2570,8 +2740,7 @@
   width: 100%;
 }
 
-.settings-page .desktop-pet-agent-form,
-.settings-page .assistant-memory-stats {
+.settings-page .desktop-pet-agent-form {
   width: 100%;
   max-width: none;
 }
@@ -3015,7 +3184,7 @@
 
 .settings-appearance-panel {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface-soft);
   overflow: hidden;
 }
@@ -3157,7 +3326,7 @@
 .settings-page .settings-theme-option {
   gap: 10px;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   box-shadow: none;
 }
 
@@ -3184,7 +3353,7 @@
 .settings-page .settings-theme-preview {
   gap: 8px;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 }
 
 .settings-page .settings-theme-preview span {

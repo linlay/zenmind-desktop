@@ -2,7 +2,8 @@
 param(
     [string]$SyncOS = "windows",
     [string]$SyncArch = "amd64",
-    [string]$WorkspaceRoot,
+    [string]$WorkspaceRoot = $env:DESKTOP_WORKSPACE_ROOT,
+    [switch]$Clean,
     [switch]$DryRun
 )
 
@@ -19,13 +20,8 @@ $ServiceRepos = @(
 )
 $ClearedReleaseEnvironment = @(
     "VERSION",
-    "TARGET_OS",
-    "TARGET_ARCH",
     "PROGRAM_TARGETS",
-    "PROGRAM_TARGET_MATRIX",
-    "RELEASE_DRY_RUN",
-    "GOOS",
-    "GOARCH"
+    "PROGRAM_TARGET_MATRIX"
 )
 
 switch ($SyncOS.ToLowerInvariant()) {
@@ -55,9 +51,20 @@ function Invoke-ServiceRelease {
     if (-not (Test-Path -LiteralPath (Join-Path $projectDir "Makefile") -PathType Leaf)) {
         throw "Missing Makefile: $projectDir"
     }
+    $releaseDir = [IO.Path]::GetFullPath((Join-Path $projectDir "dist/release"))
+    $expectedReleaseDir = [IO.Path]::GetFullPath((Join-Path (Join-Path $WorkspaceRoot $RepoName) "dist/release"))
+    if ($releaseDir -ne $expectedReleaseDir) {
+        throw "Refusing to clean unexpected release path: $releaseDir"
+    }
+    if ($Clean) {
+        Write-Host "[build-builtin-services] clean $releaseDir"
+        if (-not $DryRun) {
+            Remove-Item -LiteralPath $releaseDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
     Write-Host "[build-builtin-services] release $RepoName (ARCH=$SyncArch)"
     if ($DryRun) {
-        Write-Host ('  (cd {0}; clear VERSION TARGET_OS TARGET_ARCH PROGRAM_TARGETS PROGRAM_TARGET_MATRIX RELEASE_DRY_RUN GOOS GOARCH; cmd.exe /d /s /c "make release ARCH={1}")' -f $projectDir, $SyncArch)
+        Write-Host ('  (cd {0}; clear VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX; cmd.exe /d /s /c "make release ARCH={1}")' -f $projectDir, $SyncArch)
         return
     }
 
@@ -82,33 +89,6 @@ function Invoke-ServiceRelease {
             } else {
                 [Environment]::SetEnvironmentVariable($name, $snapshot[$name])
             }
-        }
-    }
-}
-
-function Assert-AgentPlatformBuiltins {
-    $projectDir = Join-Path $WorkspaceRoot "agent-platform"
-    $cacheDir = Join-Path $projectDir "build/builtins/$SyncOS-$SyncArch"
-    $manifestPath = Join-Path $cacheDir "builtins.manifest.json"
-    Write-Host "[build-builtin-services] check agent-platform builtin cache ($SyncOS/$SyncArch)"
-    if ($DryRun) {
-        Write-Host "  (require $manifestPath and the cached Windows builtin payloads)"
-        return
-    }
-    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-        throw "Missing agent-platform builtin cache: $cacheDir. Build it manually before running build-builtin-services.ps1."
-    }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $expectedComponents = @("rg", "dbx", "httpx", "kbase-lance-engine", "poppler-pdftotext")
-    $cachedComponents = @($manifest.components | ForEach-Object { $_.name })
-    $missingComponents = @($expectedComponents | Where-Object { $_ -notin $cachedComponents })
-    if ($missingComponents.Count -gt 0) {
-        throw "agent-platform builtin cache is incomplete (missing: $($missingComponents -join ', ')). Build it manually before running build-builtin-services.ps1."
-    }
-    foreach ($relative in @("bin/rg.exe", "bin/dbx.exe", "bin/httpx.exe", "bin/kbase-lance-engine.exe", "bin/pdftotext.exe", "libexec/poppler-pdftotext/windows-amd64")) {
-        $path = Join-Path $cacheDir $relative
-        if (-not (Test-Path -LiteralPath $path)) {
-            throw "agent-platform builtin cache is missing: $path. Build it manually before running build-builtin-services.ps1."
         }
     }
 }
@@ -142,7 +122,7 @@ if (-not (Test-Path -LiteralPath $WorkspaceRoot -PathType Container)) {
 }
 
 Write-Host "[build-builtin-services] workspace=$WorkspaceRoot desktop=$DesktopRoot target=$SyncOS/$SyncArch"
-Assert-AgentPlatformBuiltins
+# Match the shell orchestrator: each service owns its release inputs and builtin validation.
 foreach ($repoName in $ServiceRepos) { Invoke-ServiceRelease -RepoName $repoName }
 Sync-DesktopAssets
 Write-Host "[build-builtin-services] synced 4 builtin service assets"

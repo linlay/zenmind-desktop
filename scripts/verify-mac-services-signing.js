@@ -2,7 +2,7 @@ const { spawnSync } = require("child_process");
 const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { verifyPackagedWebappTooling } = require("./lib/webapp-tooling-resource.js");
+const { verifyPlatformBuiltinsInServices } = require("./lib/platform-builtins.js");
 
 const MACHO_MAGICS = new Set([
   0xfeedface,
@@ -60,7 +60,6 @@ function getServicesRoot(appPath) {
 
 function verifyMacPackageBranding(appPath, { projectRoot = "", brandId = "" } = {}) {
   const resourcesRoot = getResourcesRoot(appPath);
-  verifyPackagedWebappTooling(resourcesRoot, { errorPrefix: "[verify-mac-services-signing]" });
   const plistPath = path.join(appPath, "Contents", "Info.plist");
   const plist = fs.readFileSync(plistPath, "utf8");
   const iconMatch = plist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/u);
@@ -179,6 +178,10 @@ function verifyAppServices(appPath, options = {}) {
         forbiddenArchives.map((filePath) => `- ${filePath}`).join("\n")
     );
   }
+
+  // Builtin integrity is independent of certificate/timestamp verification and
+  // must still be checked for development packages using signature overrides.
+  verifyPlatformBuiltinsInServices(servicesRoot);
 
   if (process.env.DESKTOP_SKIP_MAC_SERVICE_SIGNATURE_VERIFY === "1") {
     console.warn("[verify-mac-services-signing] Skipping service Mach-O signature verification by environment override.");

@@ -9,7 +9,7 @@ const {
   readEnterpriseChatSelfProfile,
   saveEnterpriseChatAvatar,
   saveEnterpriseChatMotto
-} = await import("../dist-electron/main/enterprise-chat-local-profile.js");
+} = await import("../dist-electron/main/modules/enterprise-chat/local-profile.js");
 
 function fixtureApp(homePath) {
   return {

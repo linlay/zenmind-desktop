@@ -7,7 +7,7 @@ const {
   __testInternals,
   createProjectAgentOrderPlan,
   validateProjectAgentOrderRequestKeys,
-} = require("../dist-electron/main/assistant/core/project-agent-order.js");
+} = require("../dist-electron/main/modules/assistant/project-agent-order.js");
 
 test("project order replaces only current Project slots in the valid Agent catalog", () => {
   const plan = createProjectAgentOrderPlan({

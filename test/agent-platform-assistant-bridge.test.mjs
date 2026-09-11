@@ -9,8 +9,10 @@ const require = createRequire(import.meta.url);
 const {
   AgentPlatformAssistantBridge,
   buildZenmiImageGenerateMessage
-} = require("../dist-electron/main/assistant/core/agent-platform-bridge.js");
+} = require("../dist-electron/main/modules/agent-platform/bridge.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
+const { toDesktopPetAgentOptions } = require("../dist-electron/main/modules/pet/agent-options.js");
+const { resolveAssistantChatStoragePaths } = require("../dist-electron/main/modules/assistant/chat-storage-path.js");
 
 const EPOCH_MS = 1_783_000_000_000;
 
@@ -84,6 +86,14 @@ function makeBridge(overrides = {}) {
     onEvent: (event) => events.push(event),
     getServiceState: async () => runningService(),
     issueAccessToken: async () => ({ ok: true, token: "desktop-token", message: "" }),
+    getDesktopDeviceId: () => "desktop-test",
+    ports: {
+      toDesktopPetAgentOptions,
+      resolveAssistantAttachmentPath: () => "/missing-assistant-attachment",
+      resolveAssistantChatFile: (app, chatId) => resolveAssistantChatStoragePaths(app, chatId)?.chatFilePath ?? "",
+      readNavigationAgents: async () => [],
+      readCopilotAgents: async () => [],
+    },
     ...overrides
   });
   return { bridge, events };
@@ -1254,7 +1264,7 @@ test("agent platform assistant bridge rejects ISO, string, seconds, fractional, 
   }
 });
 
-test("agent platform assistant bridge atomically rejects malformed chat, search, and memory response times", async () => {
+test("agent platform assistant bridge atomically rejects malformed chat and search response times", async () => {
   const originalFetch = globalThis.fetch;
   try {
     for (const value of [
@@ -1283,20 +1293,6 @@ test("agent platform assistant bridge atomically rejects malformed chat, search,
             ],
           }), { status: 200, headers: { "content-type": "application/json" } });
         }
-        if (target.includes("/api/memory/record/list")) {
-          return new Response(JSON.stringify({
-            results: [{
-              id: "memory-1",
-              createdAt: EPOCH_MS,
-              ...invalid,
-            }],
-          }), { status: 200, headers: { "content-type": "application/json" } });
-        }
-        if (target.includes("/api/memory/history")) {
-          return new Response(JSON.stringify({
-            events: [{ operation: "learn", ts: value }],
-          }), { status: 200, headers: { "content-type": "application/json" } });
-        }
         if (target.includes("/api/chat?")) {
           return new Response(JSON.stringify({
             chatId: "chat-1",
@@ -1323,40 +1319,6 @@ test("agent platform assistant bridge atomically rejects malformed chat, search,
         await assert.rejects(bridge.getChatInfo("chat-1"), /time_contract_violation: chatInfo\.updatedAt/u);
       }
       await assert.rejects(bridge.searchChats({ query: "time" }), /time_contract_violation: chatSearch\.results\[1\]\.timestamp/u);
-      await assert.rejects(bridge.listMemoryItems(), /time_contract_violation: memory\.records\[0\]\.updatedAt/u);
-    }
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("agent platform assistant bridge rejects malformed memory audit timestamps", async () => {
-  const originalFetch = globalThis.fetch;
-  try {
-    for (const value of [
-      "2026-07-13T00:00:00.000Z",
-      String(EPOCH_MS),
-      EPOCH_MS / 1_000,
-      EPOCH_MS + 0.5,
-      -1,
-      undefined,
-    ]) {
-      const { bridge } = makeBridge();
-      globalThis.fetch = async (url) => {
-        const target = String(url);
-        if (target.includes("/api/memory/record/list")) {
-          return new Response(JSON.stringify({
-            results: [{ id: "memory-1", createdAt: EPOCH_MS, updatedAt: EPOCH_MS }],
-          }), { status: 200, headers: { "content-type": "application/json" } });
-        }
-        if (target.includes("/api/memory/history")) {
-          return new Response(JSON.stringify({
-            events: [{ operation: "learn", ...(value === undefined ? {} : { ts: value }) }],
-          }), { status: 200, headers: { "content-type": "application/json" } });
-        }
-        throw new Error(`unexpected request ${target}`);
-      };
-      await assert.rejects(bridge.getMemorySummary(), /time_contract_violation: memory\.history\[0\]\.ts/u);
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -1428,7 +1390,7 @@ test("agent platform assistant bridge rejects malformed nested awaiting timestam
   }
 });
 
-test("agent platform assistant bridge preserves nullable optional times and epoch zero", async () => {
+test("agent platform assistant bridge preserves nullable optional chat times", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
   globalThis.fetch = async (url) => {
@@ -1455,24 +1417,12 @@ test("agent platform assistant bridge preserves nullable optional times and epoc
         runs: [],
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
-    if (target.includes("/api/memory/record/list")) {
-      return new Response(JSON.stringify({
-        results: [
-          { id: "memory-zero", createdAt: 0, updatedAt: 0, lastAccessedAt: 0 },
-          { id: "memory-null", createdAt: EPOCH_MS, updatedAt: EPOCH_MS, lastAccessedAt: null },
-        ],
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    }
     throw new Error(`unexpected request ${target}`);
   };
 
   try {
     const detail = await bridge.getChat("chat-1");
-    const memory = await bridge.listMemoryItems();
     assert.equal(detail?.events[0].awaiting?.createdAt, null);
-    assert.equal(memory.items[0].lastReferencedAt, 0);
-    assert.equal(memory.items[1].lastReferencedAt, null);
-    assert.equal(memory.stats.lastReferencedAt, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1815,27 +1765,25 @@ test("agent platform assistant bridge deletes chats through the platform chat de
   }
 });
 
-test("agent platform assistant bridge marks a single chat read through /api/read", async () => {
+test("agent platform assistant bridge keeps explicit agent-wide mark read", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   const { bridge } = makeBridge();
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init, body: JSON.parse(String(init.body)) });
-    assert.equal(init.headers.Authorization, "Bearer desktop-token");
     return new Response(JSON.stringify({ code: 0, msg: "success", data: {} }), {
       status: 200,
-      headers: { "content-type": "application/json" }
+      headers: { "content-type": "application/json" },
     });
   };
 
   try {
-    const result = await bridge.markChatRead(" chat_1 ", " run_1 ");
-
+    const result = await bridge.markAgentChatsRead(" agent-alpha ");
     assert.equal(result.ok, true);
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/read");
     assert.equal(requests[0].init.method, "POST");
-    assert.deepEqual(requests[0].body, { chatId: "chat_1", runId: "run_1" });
+    assert.deepEqual(requests[0].body, { agentKey: "agent-alpha" });
   } finally {
     globalThis.fetch = originalFetch;
   }

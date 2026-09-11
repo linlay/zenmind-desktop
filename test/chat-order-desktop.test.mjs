@@ -7,13 +7,13 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { registerAssistantIpcHandlers } = require(
-  "../dist-electron/main/ipc/assistant-handlers.js",
+  "../dist-electron/main/modules/assistant/ipc.js",
 );
 const { readDesktopProfileFromRoot } = require(
-  "../dist-electron/main/desktop-profile-store.js",
+  "../dist-electron/main/infrastructure/filesystem/profile-store.js",
 );
 const { getDesktopConfigRoot } = require(
-  "../dist-electron/main/user-paths.js",
+  "../dist-electron/main/infrastructure/filesystem/user-paths.js",
 );
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -38,6 +38,9 @@ function registerChatOrderHandler(t, callAgentPlatform) {
     },
   }, {
     assistantBridge: {},
+    conversationShare: {
+      exportChatHtml() {}, create() {}, list() {}, revoke() {},
+    },
     assistantNavigationStatusClient: {
       async refreshNow() {
         refreshCount += 1;
@@ -168,4 +171,20 @@ test("expanded Chats drag with a portaled name preview and insertion line", () =
   assert.match(sidebar, /setChatOrderMutationPending\(true\)[\s\S]*?onUpdateAssistantChatOrder\(request\)[\s\S]*?setChatOrderMutationPending\(false\)/u);
   assert.match(appShell, /setAssistantNavChatItems\(reordered\)[\s\S]*?setAssistantChatSortMode\("manual"\)/u);
   assert.match(appShell, /if \(!result\.ok\)[\s\S]*?setAssistantNavChatItems\(previousItems\)[\s\S]*?setAssistantChatSortMode\(previousMode\)/u);
+});
+
+test("Desktop forwards explicit pin state without changing the recent sort mode", async (t) => {
+  const fixture = registerChatOrderHandler(t, async () => ({ sortMode: "recent", pinnedOrder: ["chat-old"], updatedAt: 1_787_414_400_000 }));
+  const result = await fixture.handler({}, { operation: "set_pinned", chatId: "chat-old", pinned: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.sortMode, "recent");
+  assert.deepEqual(fixture.calls[0].options.body, { operation: "set_pinned", chatId: "chat-old", pinned: true });
+  assert.equal(fixture.getRefreshCount(), 1);
+  t.mock.method(console, "warn", () => {});
+  for (const input of [
+    { operation: "set_pinned", chatId: "chat-old" },
+    { operation: "set_pinned", chatId: "chat-old", pinned: "true" },
+    { operation: "set_pinned", chatId: "", pinned: false },
+  ]) assert.equal((await fixture.handler({}, input)).ok, false);
+  assert.equal(fixture.calls.length, 1);
 });

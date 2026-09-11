@@ -7,11 +7,11 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { normalizeManifest } = require("../dist-electron/main/manifest-utils.js");
+const { normalizeManifest } = require("../dist-electron/main/support/manifest/manifest-utils.js");
 const {
   startAgentWebclientHost,
   stopAgentWebclientHost,
-} = require("../dist-electron/main/services/agent-webclient-host.js");
+} = require("../dist-electron/main/modules/services/agent-webclient-host.js");
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -43,9 +43,6 @@ test("Frame Port host injects and refreshes /api auth while blocking HTTP Run by
     res.end(JSON.stringify({ ok: true }));
   });
   const upstreamPort = await listen(upstream);
-  const probe = http.createServer();
-  const hostPort = await listen(probe);
-  await new Promise((resolve) => probe.close(resolve));
   const tokenReasons = [];
   const service = normalizeManifest({
     id: "agent-webclient",
@@ -67,19 +64,32 @@ test("Frame Port host injects and refreshes /api auth while blocking HTTP Run by
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await startAgentWebclientHost({
-    service,
-    layout: { programDir: root, envPath: path.join(root, ".env") },
-    env: new Map([["BASE_URL", `http://127.0.0.1:${upstreamPort}`]]),
-    port: hostPort,
-    logger: { log() {}, warn() {}, error() {} },
-    issueAccessToken: async (reason) => {
-      tokenReasons.push(reason);
-      return { ok: true, token: reason === "unauthorized" ? "fresh-token" : "stale-token", message: "" };
-    },
-  });
+  let hostState = null;
+  for (let attempt = 0; attempt < 5 && !hostState; attempt += 1) {
+    const probe = http.createServer();
+    const hostPort = await listen(probe);
+    await new Promise((resolve) => probe.close(resolve));
+    try {
+      hostState = await startAgentWebclientHost({
+        service,
+        layout: { programDir: root, envPath: path.join(root, ".env") },
+        env: new Map([["BASE_URL", `http://127.0.0.1:${upstreamPort}`]]),
+        port: hostPort,
+        logger: { log() {}, warn() {}, error() {} },
+        issueAccessToken: async (reason) => {
+          tokenReasons.push(reason);
+          return { ok: true, token: reason === "unauthorized" ? "fresh-token" : "stale-token", message: "" };
+        },
+      });
+    } catch (error) {
+      if (error?.code !== "EADDRINUSE" || attempt === 4) {
+        throw error;
+      }
+    }
+  }
 
-  const baseUrl = `http://127.0.0.1:${hostPort}`;
+  assert.ok(hostState?.webUrl);
+  const baseUrl = hostState.webUrl.replace(/\/$/u, "");
   const response = await fetch(`${baseUrl}/api/agent?agentKey=demo`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true });

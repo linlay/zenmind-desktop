@@ -1,1 +1,3 @@
-import "./main-process-runtime";
+import { createMainProcessRuntime } from "./app/runtime";
+
+createMainProcessRuntime().start();

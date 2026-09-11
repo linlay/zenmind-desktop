@@ -19,9 +19,11 @@ test("Agent WebClient contract mirror is deterministic and versioned", () => {
   assert.match(canonical, /AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_TRANSPORT_VERSION = 2 as const/u);
   assert.match(canonical, /"version_mismatch"/u);
   assert.match(canonical, /openResource\(input: WorkPanelOpenResourceInput\)/u);
+  assert.match(canonical, /openDocument\(input: WorkPanelOpenDocumentInput\)/u);
   assert.match(canonical, /renderer: "native-image"/u);
   assert.match(canonical, /AGENT_WEBCLIENT_SELECTION_ACTION/u);
   assert.match(canonical, /"agent-selection-explain"/u);
+  assert.match(canonical, /renderer: "native-html" \| "native-image"/u);
   assert.equal(spawnSync(process.execPath, ["scripts/generate-agent-webclient-contract.mjs", "--check"], {
     cwd: root,
   }).status, 0);

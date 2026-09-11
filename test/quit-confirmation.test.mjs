@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 const {
   createQuitConfirmationController
-} = await import("../dist-electron/main/app-shell/quit-confirmation.js");
+} = await import("../dist-electron/main/modules/shell/quit-confirmation.js");
 
 const messages = {
   "common.cancel": "Cancel",

@@ -6,10 +6,10 @@ import path from "node:path";
 
 const {
   WorkPanelResourceImageRegistry,
-} = await import("../dist-electron/main/chat-work-panel-resource-images.js");
+} = await import("../dist-electron/main/modules/work-panel/resource-images.js");
 const {
   resolveRuntimeRootPath,
-} = await import("../dist-electron/main/runtime-root.js");
+} = await import("../dist-electron/main/infrastructure/filesystem/runtime-root.js");
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -85,7 +85,7 @@ test("native resource image claims are chat-bound, one-time, signature checked, 
       rendererGeneration: "renderer-1",
     }, webContents)).ok, false);
 
-    const read = registry.read({
+    const read = await registry.read({
       ownerChatId: "chat-1",
       rendererGeneration: "renderer-1",
       handleId: claimed.resource.handleId,
@@ -103,7 +103,7 @@ test("native resource image claims are chat-bound, one-time, signature checked, 
       relativePath: "artifacts/run-1/not-image.png",
     });
     assert.equal(signatureMismatch.ok, false);
-    assert.equal(signatureMismatch.code, "invalid_request");
+    assert.equal(signatureMismatch.code, "unsupported_native_type");
 
     const unsupported = await registry.prepareClaim({
       ownerChatId: "chat-1",
@@ -122,11 +122,11 @@ test("native resource image claims are chat-bound, one-time, signature checked, 
       rendererGeneration: "renderer-1",
       handleIds: [claimed.resource.handleId],
     }, webContents), { ok: true });
-    assert.equal(registry.read({
+    assert.equal((await registry.read({
       ownerChatId: "chat-1",
       rendererGeneration: "renderer-1",
       handleId: claimed.resource.handleId,
-    }, webContents).ok, false);
+    }, webContents)).ok, false);
   } finally {
     registry.dispose();
     fs.rmSync(homePath, { recursive: true, force: true });
@@ -173,7 +173,7 @@ test("remote native image handles retain the Platform revision instead of the ca
     assert.equal(claimed.ok, true);
     assert.equal(claimed.resource.localOriginal, false);
     assert.equal(claimed.resource.revision, "68:1777777777000");
-    const read = registry.read({
+    const read = await registry.read({
       ownerChatId: "chat-remote",
       rendererGeneration: "renderer-remote",
       handleId: claimed.resource.handleId,
@@ -335,6 +335,28 @@ test("native image regional AI forwards the canonical source, mask, and instruct
     assert.equal(thrownFailure.requestId, "request-enhance");
     assert.equal(thrownFailure.message, "image bridge unavailable");
     assert.equal(calls.length, 2);
+  } finally {
+    registry.dispose();
+    fs.rmSync(homePath, { recursive: true, force: true });
+  }
+});
+
+test("root uploaded images open natively and a root DOCX falls back by content type", async () => {
+  const homePath = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-root-reference-"));
+  const runtimeRoot = resolveRuntimeRootPath({ homePath, platform: process.platform });
+  const chatRoot = path.join(runtimeRoot, "chats", "chat-root-upload");
+  fs.mkdirSync(chatRoot, { recursive: true });
+  fs.writeFileSync(path.join(chatRoot, "上传图片.png"), PNG_1X1);
+  fs.writeFileSync(path.join(chatRoot, "申请表.docx"), Buffer.from("PK\x03\x04office"));
+  const registry = new WorkPanelResourceImageRegistry();
+  configureRegistry(registry, homePath);
+  try {
+    const input = { ownerChatId: "chat-root-upload", rendererWebContentsId: 42, profile: "reference", agentKey: "agent", chatId: "chat-root-upload", resourceId: "upload-1" };
+    const image = await registry.prepareClaim({ ...input, relativePath: "上传图片.png" });
+    assert.equal(image.ok, true);
+    const document = await registry.prepareClaim({ ...input, relativePath: "申请表.docx" });
+    assert.equal(document.ok, false);
+    assert.equal(document.code, "unsupported_native_type");
   } finally {
     registry.dispose();
     fs.rmSync(homePath, { recursive: true, force: true });

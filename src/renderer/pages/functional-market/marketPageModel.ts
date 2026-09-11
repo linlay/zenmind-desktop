@@ -24,7 +24,7 @@ export interface MarketViewProps {
 
 export const DEFAULT_MARKET_TAB: MarketTab = "skills";
 
-const VISIBLE_MARKET_TABS: readonly MarketTab[] = ["skills", "websiteApps"];
+const VISIBLE_MARKET_TABS: readonly MarketTab[] = ["skills", "mcps", "websiteApps"];
 
 const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
   plugins: {

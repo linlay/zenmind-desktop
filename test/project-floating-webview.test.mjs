@@ -12,8 +12,8 @@ function read(relativePath) {
 
 test("project agents expose the native project-editor action with mode-aware eligibility", () => {
   const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
-  const policy = read("src/main/sidebar-context-menu-policy.ts");
-  const handler = read("src/main/ipc/sidebar-context-menu-handlers.ts");
+  const policy = read("src/main/modules/web-surfaces/sidebar-context-menu-policy.ts");
+  const handler = read("src/main/modules/web-surfaces/sidebar-context-menu-ipc.ts");
   const enUS = read("src/shared/i18n/dictionaries/enUS.ts");
   const zhCN = read("src/shared/i18n/dictionaries/zhCN.ts");
 

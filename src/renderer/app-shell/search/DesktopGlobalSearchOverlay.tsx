@@ -362,7 +362,7 @@ function activateAction(actionId: DesktopGlobalSearchActionId, options: GlobalSe
 
 function resolveRowTargetPath(row: DesktopGlobalSearchRow, newChatAgentKey: string) {
   if (row.kind === "agent") {
-    return createAgentWebclientAgentPath(row.agentKey);
+    return resolveActionTargetPath("newChat", row.agentKey);
   }
   if (row.kind === "chat") {
     return createAgentWebclientRoute({
@@ -389,7 +389,7 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatA
     return "/skills";
   }
   if (actionId === "mcpConnectors") {
-    return "/mcp-servers";
+    return "/connectors";
   }
   if (actionId === "settings") {
     return "/settings";

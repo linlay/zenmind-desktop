@@ -17,10 +17,14 @@ const sidebarCopilotCss = fs.readFileSync(
   path.join(projectRoot, "src", "renderer", "styles", "sidebar-copilot.css"),
   "utf8",
 );
-const windowManagerSource = fs.readFileSync(
-  path.join(projectRoot, "src", "main", "window-manager.ts"),
+const windowManagerSource = [
+  "window-manager.ts",
+  "window-manager.part-1.ts",
+  "window-manager.part-2.ts",
+].map((fileName) => fs.readFileSync(
+  path.join(projectRoot, "src", "main", "modules", "shell", fileName),
   "utf8",
-);
+)).join("\n");
 const appShellSource = fs.readFileSync(
   path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
   "utf8",
@@ -83,7 +87,7 @@ test("Windows 系统栏与页面使用同一主题背景色", () => {
   );
   assert.match(
     windowManagerSource,
-    /const WINDOWS_BACKGROUND_DARK = "#181818";/u,
+    /(?:export )?const WINDOWS_BACKGROUND_DARK = "#181818";/u,
   );
   assert.doesNotMatch(windowManagerSource, /titleBarOverlay/u);
 });
@@ -118,6 +122,6 @@ test("Windows 主导航动作紧跟品牌并从侧栏顶部移除", () => {
   );
   assert.match(
     appShellCss,
-    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px;/su,
+    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*var\(--control-radius-sm\);/su,
   );
 });

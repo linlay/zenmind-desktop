@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const {
   isDesktopDevelopmentRuntime,
   resolveEffectiveAppId
-} = require(path.join(__dirname, "..", "dist-electron", "main", "development-runtime.js"));
+} = require(path.join(__dirname, "..", "dist-electron", "main", "infrastructure", "electron", "development-runtime.js"));
 const { APP_ID, BRAND_ID } = require(path.join(__dirname, "..", "dist-electron", "shared", "brand.js"));
 
 test("effective app IDs stay brand-specific and add a stable development suffix", () => {

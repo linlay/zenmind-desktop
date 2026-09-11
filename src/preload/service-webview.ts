@@ -6,6 +6,8 @@ import {
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
+  isServiceWebviewRouteStatus,
   isServiceWebviewBridgeRequestType,
   isServiceWebviewBridgeResponseType,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
@@ -14,6 +16,7 @@ import {
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL,
   type ServiceWebviewBridgeMessage,
   type ServiceWebviewModalOverlayState
 } from "../shared/service-webview-bridge";
@@ -31,6 +34,7 @@ import {
 } from "../shared/webview-selection-toolbar";
 import {
   PAGE_TO_PRELOAD_EVENT,
+  PAGE_TO_PRELOAD_ROUTE_STATUS_EVENT,
   PRELOAD_TO_PAGE_EVENT,
   PRELOAD_TO_PAGE_ACTION_EVENT,
   buildServiceWebviewMainWorldScript
@@ -60,6 +64,9 @@ import {
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } from "../shared/contracts/agent-webclient-bridge";
 import { WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL } from "../shared/work-panel-review";
+import { installServiceWebviewAppearance } from "./service-webview-appearance";
+
+installServiceWebviewAppearance();
 
 function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -421,6 +428,21 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
   forwardDesktopBridgeRequest(payload, window.location.origin, "bridge-request");
 });
 
+window.addEventListener(PAGE_TO_PRELOAD_ROUTE_STATUS_EVENT, (event) => {
+  const payload = (event as CustomEvent<unknown>).detail;
+  if (!isServiceWebviewRouteStatus(payload)) {
+    sendBridgeDebug("route-status-rejected", "invalid-payload");
+    return;
+  }
+  ipcRenderer.sendToHost(SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL, payload);
+  sendBridgeDebug(
+    "route-status-forwarded",
+    payload.type === "desktopRouteApplied"
+      ? `${payload.routeRevision}:${payload.routerLocation}`
+      : payload.routerLocation,
+  );
+});
+
 window.addEventListener(AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT, (event) => {
   const payload = (event as CustomEvent<Record<string, unknown>>).detail;
   const allowedEvents = new Set([
@@ -533,6 +555,12 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (!isBridgeMessage(event.data) || !isDesktopBridgeRequest(event.data)) {
+    return;
+  }
+  if (
+    event.data.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE &&
+    (event.source !== window || event.origin !== window.location.origin)
+  ) {
     return;
   }
 

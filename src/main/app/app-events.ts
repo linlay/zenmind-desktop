@@ -1,6 +1,6 @@
 import type { App, GlobalShortcut } from "electron";
-import type { MainAppState } from "../app-state";
-import { hasInstallerShutdownArg } from "../lifecycle/single-instance";
+import type { MainAppState } from "./state";
+import { hasInstallerShutdownArg } from "./lifecycle/single-instance";
 import type { ShutdownReport } from "../../shared/shutdown";
 import { findDesktopOpenDeepLink, isDesktopOpenDeepLink } from "./deep-link";
 
@@ -28,7 +28,6 @@ export type MainAppEventsOptions = {
   clearDesktopPetIdleResetTimer: () => void;
   stopAssistantBridgeRuntime: () => void;
   stopTunnelHubRuntime: () => unknown;
-  stopAgentPlatformPetStatusClient: () => void;
   disposeRealtimeBroker: () => void;
   unregisterPluginGlobalShortcuts: () => void;
   stopResourceDirectoryWatcher: () => void;
@@ -130,7 +129,6 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.clearDesktopPetIdleResetTimer();
     options.stopAssistantBridgeRuntime();
     void options.stopTunnelHubRuntime();
-    options.stopAgentPlatformPetStatusClient();
     options.disposeRealtimeBroker();
     options.unregisterPluginGlobalShortcuts();
     options.globalShortcut.unregister(options.focusedWebviewDevToolsShortcut);

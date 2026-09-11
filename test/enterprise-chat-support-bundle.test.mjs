@@ -8,8 +8,8 @@ import JSZip from "jszip";
 const {
   createEnterpriseChatSupportBundle,
   redactEnterpriseChatSupportText
-} = await import("../dist-electron/main/enterprise-chat-support-bundle.js");
-const { getDataRoot } = await import("../dist-electron/main/user-paths.js");
+} = await import("../dist-electron/main/modules/enterprise-chat/support-bundle.js");
+const { getDataRoot } = await import("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 function fixtureApp(homePath) {
   return {

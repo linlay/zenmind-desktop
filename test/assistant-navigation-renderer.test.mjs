@@ -66,10 +66,10 @@ function loadAssistantNavigationModule() {
 }
 
 const {
+  getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
-  getAssistantNavRecentChatsOverview,
   hasAssistantNavChat,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
@@ -79,6 +79,26 @@ const {
   resolveAssistantNavChatRuntimeAgent,
   resolveFirstInstallBootstrapNavigationTarget,
 } = loadAssistantNavigationModule();
+
+test("assistant nav resolves adjacent chats without wrapping", () => {
+  const chats = [
+    chat({ chatId: "chat-a" }),
+    chat({ chatId: "chat-b", hasPendingAwaiting: true }),
+    chat({ chatId: "chat-c" }),
+  ];
+
+  assert.equal(
+    getAdjacentAssistantNavChat(chats, "chat-b", "previous")?.chatId,
+    "chat-a",
+  );
+  assert.equal(
+    getAdjacentAssistantNavChat(chats, "chat-b", "next")?.chatId,
+    "chat-c",
+  );
+  assert.equal(getAdjacentAssistantNavChat(chats, "chat-a", "previous"), null);
+  assert.equal(getAdjacentAssistantNavChat(chats, "chat-c", "next"), null);
+  assert.equal(getAdjacentAssistantNavChat(chats, "missing", "next"), null);
+});
 
 test("assistant nav reorders only Project slots and appends omitted projects", () => {
   const items = [
@@ -202,67 +222,6 @@ test("assistant nav preview caps visible awaiting rows at five", () => {
   assert.deepEqual(
     getAssistantNavAgentPreviewChats(agent).map((item) => item.chatId),
     ["await-1", "await-2", "await-3", "await-4", "await-5"],
-  );
-});
-
-test("assistant nav Chats overview merges agents, preserves ownership, and caps recent rows", () => {
-  const overview = getAssistantNavRecentChatsOverview([
-    {
-      agentKey: "alpha",
-      displayName: "Alpha",
-      recentChats: [
-        chat({ chatId: "alpha-older", agentKey: "", updatedAt: epoch(100) }),
-        chat({ chatId: "shared", agentKey: "", updatedAt: epoch(300), lastRunContent: "latest" }),
-      ],
-    },
-    {
-      agentKey: "beta",
-      displayName: "Beta",
-      recentChats: [
-        chat({ chatId: "beta-newest", agentKey: "beta", updatedAt: epoch(400) }),
-        chat({ chatId: "shared", agentKey: "beta", updatedAt: epoch(200) }),
-      ],
-    },
-  ], 2);
-
-  assert.deepEqual(
-    overview.map((item) => [item.chat.chatId, item.agent.displayName, item.chat.agentKey]),
-    [
-      ["beta-newest", "Beta", "beta"],
-      ["shared", "Alpha", "alpha"],
-    ],
-  );
-});
-
-test("assistant nav Chats overview shows ten most recent chats by default", () => {
-  const overview = getAssistantNavRecentChatsOverview([
-    {
-      agentKey: "alpha",
-      displayName: "Alpha",
-      recentChats: Array.from({ length: 12 }, (_item, index) =>
-        chat({
-          chatId: `alpha-${index + 1}`,
-          updatedAt: epoch(index + 1),
-        }),
-      ),
-    },
-  ]);
-
-  assert.equal(overview.length, 10);
-  assert.deepEqual(
-    overview.map((item) => item.chat.chatId),
-    [
-      "alpha-12",
-      "alpha-11",
-      "alpha-10",
-      "alpha-9",
-      "alpha-8",
-      "alpha-7",
-      "alpha-6",
-      "alpha-5",
-      "alpha-4",
-      "alpha-3",
-    ],
   );
 });
 
@@ -643,27 +602,19 @@ test("assistant nav normalization falls back to row read states when stats are a
   assert.equal(agent.unreadChatCount, 1);
 });
 
-test("assistant nav keeps chat hover metadata when building the Chats overview", () => {
-  const [agent] = normalizeAssistantNavAgents([
-    {
-      agentKey: "coder",
-      displayName: "Coder",
-      mode: "CODER",
-      workspaceDir: "/Users/demo/Project/zenmind-desktop",
-      workspaceDirExists: true,
-      gitBranch: "feature/chat-card",
-      recentChats: [{
-        chatId: "chat-card",
-        chatName: "Design the chat card",
-        createdAt: epoch(1000),
-        updatedAt: epoch(2000),
-      }],
-    },
-  ]);
-  const [overview] = getAssistantNavRecentChatsOverview([agent]);
 
-  assert.equal(overview.chat.createdAt, epoch(1000));
-  assert.equal(overview.agent.workspaceDir, "/Users/demo/Project/zenmind-desktop");
-  assert.equal(overview.agent.workspaceDirExists, true);
-  assert.equal(overview.agent.gitBranch, "feature/chat-card");
+test("project previews exclude pins before applying each display limit", () => {
+  const recentChats = Array.from({ length: 30 }, (_, index) => chat({
+    chatId: `chat-${index}`,
+    updatedAt: epoch(100 - index),
+    pinned: index < 7,
+  }));
+  const agent = { recentChats };
+  assert.deepEqual(
+    getAssistantNavAgentPreviewChats(agent).map((item) => item.chatId),
+    ["chat-7", "chat-8", "chat-9", "chat-10", "chat-11"],
+  );
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 20).length, 20);
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 20).at(-1).chatId, "chat-26");
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 20).some((item) => item.pinned), false);
 });

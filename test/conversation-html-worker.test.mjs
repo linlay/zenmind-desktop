@@ -8,10 +8,10 @@ const {
   assembleConversationHtml,
   fetchLimitedResponse,
   parseConversationHtmlTemplate
-} = require("../dist-electron/main/assistant/core/conversation-html-worker.js");
+} = require("../dist-electron/main/modules/conversation-share/html-worker.js");
 const {
   ConversationHtmlRenderService
-} = require("../dist-electron/main/assistant/core/conversation-html-render-service.js");
+} = require("../dist-electron/main/modules/conversation-share/html-render-service.js");
 
 const SNAPSHOT_MARKER = "__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__";
 const ASSET_ORIGIN_MARKER = "__CONVERSATION_EXPORT_ASSET_ORIGIN__";
@@ -103,14 +103,13 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   let snapshotMode = "normal";
   let activeSnapshotRequests = 0;
   let maximumActiveSnapshotRequests = 0;
-  let serviceVersion = "1.0.0";
   let origin = "";
   let snapshotUrlOverride = "";
   const snapshotFilename = "中文 对话 #100%.snapshot.json";
   const snapshotContentDisposition = `attachment; filename*=UTF-8''${encodeURIComponent(snapshotFilename)}`;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
-    if (url.pathname === "/export/conversation.template.html") {
+    if (url.pathname === "/assets/conversation-export/conversation.template.html") {
       templateRequests += 1;
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
@@ -188,7 +187,6 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   assert.ok(address && typeof address === "object");
   origin = `http://127.0.0.1:${address.port}`;
   const renderer = new ConversationHtmlRenderService({
-    app: {},
     snapshotProvider: {
       async createChatSnapshotRequest(chatId) {
         return {
@@ -198,18 +196,13 @@ test("conversation HTML render service keeps template fetch and assembly inside 
           bearerToken: "desktop-token"
         };
       }
-    },
-    getServiceState: async () => ({
-      status: "running",
-      version: serviceVersion,
-      healthMeta: { webUrl: origin }
-    })
+    }
   });
   renderer.start();
   t.after(() => renderer.dispose());
 
-  const first = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
-  const second = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
+  const first = await renderer.renderChatHtml("chat_1", origin);
+  const second = await renderer.renderChatHtml("chat_1", origin);
 
   assert.equal(first.ok, true);
   assert.equal(second.ok, true);
@@ -221,40 +214,40 @@ test("conversation HTML render service keeps template fetch and assembly inside 
 
   snapshotMode = "fifo";
   const concurrent = await Promise.all([
-    renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961"),
-    renderer.renderChatHtml("chat_2", "http://127.0.0.1:11961")
+    renderer.renderChatHtml("chat_1", origin),
+    renderer.renderChatHtml("chat_2", origin)
   ]);
   assert.deepEqual(concurrent.map((result) => result.ok), [true, true]);
   assert.equal(maximumActiveSnapshotRequests, 1);
 
   snapshotMode = "normal";
-  serviceVersion = "2.0.0";
-  const versionChanged = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
-  assert.equal(versionChanged.ok, true);
-  assert.equal(templateRequests, 2);
+  const snapshotOnly = await renderer.readChatSnapshot("chat_1");
+  assert.equal(snapshotOnly.ok, true);
+  assert.equal(Buffer.compare(snapshotOnly.bytes, snapshot), 0);
+  assert.equal(templateRequests, 1);
 
   snapshotMode = "redirect";
-  const redirected = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
+  const redirected = await renderer.renderChatHtml("chat_1", origin);
   assert.equal(redirected.ok, false);
   assert.equal(redirectedRequests, 0);
 
   snapshotMode = "content-type";
-  const wrongContentType = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
+  const wrongContentType = await renderer.renderChatHtml("chat_1", origin);
   assert.equal(wrongContentType.ok, false);
 
   snapshotMode = "missing-length";
-  const missingLength = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
+  const missingLength = await renderer.renderChatHtml("chat_1", origin);
   assert.equal(missingLength.ok, false);
 
   snapshotMode = "normal";
   snapshotUrlOverride = "https://example.com/api/chat/export?chatId=chat_1&format=snapshot";
-  const untrustedSnapshot = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
+  const untrustedSnapshot = await renderer.renderChatHtml("chat_1", origin);
   assert.equal(untrustedSnapshot.ok, false);
   snapshotUrlOverride = "";
 
   assert.ok(renderer.worker);
   await renderer.worker.terminate();
-  const recovered = await renderer.renderChatHtml("chat_1", "http://127.0.0.1:11961");
+  const recovered = await renderer.renderChatHtml("chat_1", origin);
   assert.equal(recovered.ok, true);
-  assert.equal(templateRequests, 3);
+  assert.equal(templateRequests, 2);
 });

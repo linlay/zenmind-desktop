@@ -10,7 +10,18 @@ const require = createRequire(import.meta.url);
 const typescript = require("typescript");
 
 function readSourceFile(...segments) {
-  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
+  const target = path.join(projectRoot, ...segments);
+  const source = fs.readFileSync(target, "utf8");
+  if (!target.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(target) !== ".ts") {
+    return source;
+  }
+  const directory = path.dirname(target);
+  const stem = path.basename(target, ".ts");
+  const implementationParts = fs.readdirSync(directory)
+    .filter((name) => name.startsWith(`${stem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(directory, name), "utf8"));
+  return [source, ...implementationParts].join("\n");
 }
 
 function readJsonFile(...segments) {
@@ -101,16 +112,16 @@ function readSharedContractsSource() {
 
 function readMainProcessRuntimeSource() {
   return [
-    readSourceFile("src", "main", "main-process-runtime.ts"),
+    readSourceFile("src", "main", "index.ts"),
     readSourceFile("src", "main", "app", "runtime.ts"),
     readSourceFile("src", "main", "app", "app-events.ts"),
-    readSourceFile("src", "main", "app", "startup-environment.ts"),
+    readSourceFile("src", "main", "app", "bootstrap", "startup-environment.ts"),
     readSourceFile("src", "main", "app", "system-identity.ts"),
-    readSourceFile("src", "main", "app-shell", "runtime.ts"),
-    readSourceFile("src", "main", "services", "runtime.ts"),
-    readSourceFile("src", "main", "settings", "runtime.ts"),
-    readSourceFile("src", "main", "webs", "surface-runtime.ts"),
-    readSourceFile("src", "main", "logs", "runtime.ts")
+    readSourceFile("src", "main", "modules", "shell", "runtime.ts"),
+    readSourceFile("src", "main", "modules", "services", "runtime.ts"),
+    readSourceFile("src", "main", "modules", "settings", "runtime.ts"),
+    readSourceFile("src", "main", "modules", "webs", "surface-runtime.ts"),
+    readSourceFile("src", "main", "support", "logging", "runtime.ts")
   ].join("\n");
 }
 
@@ -179,9 +190,9 @@ test("public source keeps ZenMind literals out of shared paths except brand-spec
   const files = collectTextFiles(path.join(projectRoot, "src"))
     .filter((filePath) => !path.relative(projectRoot, filePath).startsWith(path.join("src", "shared", "generated")));
   const allowedCompatibilityFiles = new Set([
-    path.join("src", "main", "env-bootstrap.ts"),
-    path.join("src", "main", "services", "manager", "program-layout.ts"),
-    path.join("src", "main", "skill-installer.ts")
+    path.join("src", "main", "infrastructure", "filesystem", "runtime-environment.ts"),
+    path.join("src", "main", "modules", "services", "manager", "program-layout.ts"),
+    path.join("src", "main", "modules", "marketplace", "skill-installer.ts")
   ]);
   const allowedDomainPattern = /(?:^|[./])zenmind\.cc\b/u;
   const violations = [];
@@ -213,7 +224,7 @@ test("renderer entry uses HashRouter for Electron routing", () => {
   );
 
   assert.match(rendererEntry, /HashRouter/);
-  assert.match(rendererEntry, /import \{ PRODUCT_NAME, STORAGE_NAMESPACE \}/);
+  assert.match(rendererEntry, /import \{ PRODUCT_NAME \}/);
   assert.match(rendererEntry, /document\.title = PRODUCT_NAME;/);
   assert.doesNotMatch(rendererEntry, /BrowserRouter/);
 });
@@ -309,14 +320,14 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/connectors"[\s\S]*?embedPath:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.doesNotMatch(routeDefinitions, /routePath:\s*"\/copilot"/u);
   assert.doesNotMatch(routeDefinitions, /"\/copilot\/:agentKey"/u);
-  assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
-  assert.match(sidebar, /item\.to === "\/mcp-servers"/);
+  assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
+  assert.match(sidebar, /item\.to === "\/connectors"/);
   assert.match(brandMark, /\|\s*"connector"[\s\S]*?case "connector":[\s\S]*?<circle cx="6" cy="12" r="3" \/>/);
-  assert.match(enDictionary, /"nav\.mcpConnectors":\s*"MCP Connectors"/);
-  assert.match(zhDictionary, /"nav\.mcpConnectors":\s*"MCP 连接器"/);
+  assert.match(enDictionary, /"nav\.mcpConnectors":\s*"Connectors Center"/);
+  assert.match(zhDictionary, /"nav\.mcpConnectors":\s*"连接器中心"/);
   assert.match(enDictionary, /"nav\.skills":\s*"Skills Center"/);
   assert.match(zhDictionary, /"nav\.skills":\s*"技能中心"/);
   assert.match(routeDefinitions, /"\/agents\/:agentKey"/);
@@ -325,7 +336,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/overview\/"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/overview\/"[\s\S]*?"\/connectors"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
   assert.match(manifestContracts, /"\/resource-viewer\/"/u);
   assert.doesNotMatch(manifestContracts, /"\/(?:source|planning|resource|file)-view\/"|"\/web-view"/u);
   assert.doesNotMatch(manifestContracts, /"\/(?:artifact|reference)-view\/"/u);
@@ -914,14 +925,14 @@ test("collapsed mac sidebar toggle uses the same muted icon color as primary nav
   )?.groups?.body;
 
   assert.ok(collapsedMacTopActionButtonRule, "missing mac collapsed top action button rule");
-  assert.match(collapsedMacTopActionButtonRule, /color:\s*#94a3b8;/);
+  assert.match(collapsedMacTopActionButtonRule, /color:\s*var\(--control-icon-color\);/);
   assert.match(
     globalStyles,
-    /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button:hover,[\s\S]*?color:\s*#64748b;/
+    /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button:hover,[\s\S]*?color:\s*var\(--control-icon-hover-color\);/
   );
   assert.match(
     globalStyles,
-    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed[\s\S]*?color:\s*#cbd5e1;/
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed[\s\S]*?color:\s*var\(--control-icon-color\);/
   );
 });
 
@@ -1037,8 +1048,24 @@ test("sidebar primary navigation uses roving tabindex", () => {
   assert.match(sidebarSource, /const resolvedSidebarNavFocusId =\s*sidebarNavFocusId \|\| defaultSidebarNavFocusId;/);
   assert.match(sidebarSource, /function getSidebarRovingItemProps\(id: string, enabled = true\)/);
   assert.match(sidebarSource, /tabIndex:\s*resolvedSidebarNavFocusId === id \? 0 : -1/);
-  assert.match(sidebarSource, /data-sidebar-roving-container=\{!isSettingsMode \? "true" : undefined\}/);
+  assert.match(sidebarSource, /data-sidebar-roving-container=\{isPrimaryMode \? "true" : undefined\}/);
   assert.match(sidebarSource, /onKeyDown=\{handleSidebarNavKeyDown\}/);
+  assert.match(sidebarSource, /function getSidebarChatNavigationItems\(element: HTMLElement\)/);
+  assert.match(sidebarSource, /kind === "chats-chat"[\s\S]*?element\.dataset\.sidebarGroupId === "pinned" \? assistantPinnedChatItems : sidebarChatItems/);
+  assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(agent, visibleLimit\)/);
+  assert.match(sidebarSource, /function moveSidebarChatSelection\([\s\S]*?getAdjacentAssistantNavChat/);
+  assert.match(sidebarSource, /focusSidebarRovingItemById\(focusId\);[\s\S]{0,100}handleAssistantOpenChat\(nextChat\)/);
+  assert.match(sidebarSource, /currentIsChat[\s\S]*?event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(sidebarSource, /const isPlainArrow =[\s\S]{0,100}!event\.shiftKey/);
+  assert.match(sidebarSource, /if \(!event\.repeat\) \{[\s\S]*?moveSidebarChatSelection/);
+  assert.match(sidebarSource, /event\.key === "ArrowDown" \? "next" : "previous"/);
+  assert.match(sidebarSource, /if \(activeChatDragId \|\| activeProjectDragKey\) \{\s*return;/);
+  assert.match(sidebarSource, /currentIsChat &&[\s\S]{0,100}event\.key === "ArrowLeft" \|\| event\.key === "ArrowRight"/);
+  assert.match(sidebarSource, /if \(!isPlainArrow \|\| event\.repeat\) \{\s*return;/);
+  assert.match(sidebarSource, /function toggleSidebarFromChatRow[\s\S]*?focusSidebarRovingItemById\(parentFocusId\)[\s\S]*?onToggleCollapsed\(\)/);
+  assert.match(sidebarSource, /function toggleChatWorkPanelFromChatRow[\s\S]*?onToggleChatWorkPanel\(chatId, agentKey\)/);
+  assert.match(sidebarSource, /kind === "group"[\s\S]{0,120}isCollapsed && onToggleCollapsed/);
+  assert.match(sidebarSource, /kind === "agent"[\s\S]{0,120}isCollapsed && onToggleCollapsed/);
   assert.match(sidebarSource, /event\.key === "ArrowDown"[\s\S]*?moveSidebarRovingFocus\(currentElement, "next"\)/);
   assert.match(sidebarSource, /event\.key === "ArrowUp"[\s\S]*?moveSidebarRovingFocus\(currentElement, "previous"\)/);
   assert.match(sidebarSource, /event\.key === "Home"[\s\S]*?moveSidebarRovingFocus\(currentElement, "first"\)/);
@@ -1118,7 +1145,14 @@ test("chat headers expose sorting and new chat while the chat menu keeps sharing
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sidebarSource, /headerActions: renderChatsHeaderActions\(\)/u);
+  assert.match(
+    sidebarSource,
+    /headerSupplement: sidebarGroupState\.chats\s*\? renderChatsDefaultAgentPicker\(\)\s*:\s*undefined/u,
+  );
+  assert.match(
+    sidebarSource,
+    /headerActions: sidebarGroupState\.chats\s*\? renderChatsHeaderActions\(\)\s*:\s*renderChatsNewChatButton\(\)/u,
+  );
   assert.match(
     sidebarSource,
     /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)[\s\S]{0,160}renderChatsHeaderActions\(\{ inPopover: true \}\)/u
@@ -1126,6 +1160,27 @@ test("chat headers expose sorting and new chat while the chat menu keeps sharing
   assert.match(
     sidebarSource,
     /function renderChatsHeaderActions[\s\S]{0,1800}SidebarActionIcon kind="sort"[\s\S]{0,500}renderChatsNewChatButton\(options\)/u
+  );
+  const newChatButton =
+    sidebarSource.match(
+      /function renderChatsNewChatButton[\s\S]*?function renderChatsHeaderActions/u,
+    )?.[0] ?? "";
+  const sortButton =
+    sidebarSource.match(
+      /function renderChatsHeaderActions[\s\S]*?function renderChatsDefaultAgentPicker/u,
+    )?.[0] ?? "";
+  assert.match(newChatButton, /aria-label=\{t\("sidebar\.chats\.newChat"\)\}/u);
+  assert.doesNotMatch(newChatButton, /\btitle=/u);
+  assert.match(sortButton, /aria-label=\{t\("sidebar\.chats\.sortMenu"\)\}/u);
+  assert.doesNotMatch(sortButton, /\btitle=/u);
+  const newChatHandler =
+    sidebarSource.match(
+      /function handleChatsNewChat[\s\S]*?function focusChatsDefaultAgentMenuItem/u,
+    )?.[0] ?? "";
+  assert.match(newChatHandler, /startChatsNewChat\(\)/u);
+  assert.doesNotMatch(
+    newChatHandler,
+    /setSidebarGroupState|toggleSidebarGroup/u,
   );
   assert.match(
     sidebarSource,
@@ -1246,8 +1301,8 @@ test("primary sidebar navigation uses separate compact and rail SVG families", (
   assert.match(sidebarSource, /"sidebar-group-trigger",\s*"sidebar-primary-link",\s*args\.active \? "sidebar-link-active"/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-nav \.sidebar-link-icon\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*#1677ff;/);
-  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--accent-strong\);/);
+  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--control-primary-bg\);/);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--control-primary-bg\);/);
   assert.match(navigationStyles, /\.sidebar-link-active \.sidebar-illustration-rail\.sidebar-illustration-kanban[\s\S]*?\.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?fill:\s*#3b82f6;/);
 });
 
@@ -1426,7 +1481,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /groupId === "assistants"[\s\S]{0,180}pendingCount:\s*0/);
   assert.match(sidebarSource, /return renderStatusBadges\(status, "sidebar-group-status"\);/);
   assert.match(sidebarSource, /renderSidebarGroupStatusBadges\(args\.status\)/);
-  assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /summarizeAssistantNavigationAttention\(\{/);
+  assert.match(sidebarSource, /const chatStatusSummary = navigationAttentionSummary\.chats;/);
+  assert.match(sidebarSource, /const assistantStatusSummary = navigationAttentionSummary\.projects;/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
   const newChatHandlerStart = sidebarSource.indexOf("function handleAssistantNewChat");
   const markAllReadHandlerStart = sidebarSource.indexOf("async function handleAssistantMarkAllRead");
@@ -1509,7 +1566,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(archiveChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
+  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(fixedToolRowsBaseSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/control-center"/);
@@ -1553,9 +1610,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger:not\(\.sidebar-link-active\),[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
-  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?border-radius:\s*6px;[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?border-radius:\s*6px;[\s\S]*?background:\s*var\(--nav-selected-bg\);[\s\S]*?color:\s*var\(--nav-selected-text\);[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /\.sidebar-primary-link\.sidebar-link-active \.sidebar-link-label,[\s\S]*?\.sidebar-tool-menu-trigger\.sidebar-link-active \.sidebar-link-label-collapsed\s*\{[\s\S]*?font-weight:\s*500;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*var\(--nav-selected-bg\);[\s\S]*?color:\s*var\(--nav-selected-text\);/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;[\s\S]*?color:\s*#94a3b8;/);
   assert.match(globalStyles, /\.sidebar-action-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
@@ -1620,7 +1677,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"archives"[\s\S]*?routePath:\s*"\/archives"[\s\S]*?embedPath:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/connectors"[\s\S]*?embedPath:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.doesNotMatch(appShell, /routePath:\s*"\/copilot"|"\/copilot\/:agentKey"|kind:\s*"copilot"/u);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
   assert.match(appShell, /"\/skills\/:skillKey"/);
@@ -1684,7 +1741,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(serviceWebviewSurface, /get\("embedPath"\)/);
   assert.match(serviceWebviewSurface, /embedPath: effectiveEmbedPath/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
-  assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteAgentKey/);
@@ -1796,9 +1853,13 @@ test("Projects sidebar toggles without navigation and summarizes numeric awaitin
     assistantAgentRenderer,
     /<Tooltip content=\{t\("sidebar\.agent\.markAllRead"\)\}>/,
   );
+  assert.doesNotMatch(
+    assistantOpenChatHandler,
+    /markChatRead|markAgentChatsRead|\/api\/read/,
+  );
   assert.match(
     assistantOpenChatHandler,
-    /if \(!chat\.isRead && !chat\.hasActiveRun\)[\s\S]*?markChatRead\(chat\.chatId, chat\.lastRunId \|\| undefined\)[\s\S]*?markAgentChatsRead\(chat\.agentKey\)/,
+    /requestNavigate\(createAgentChatRoute\(chat\.agentKey, chat\.chatId\), \{/,
   );
 });
 
@@ -2186,9 +2247,8 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   );
   const appShell = readAppShellSource();
 
-  assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
-  assert.match(sidebarSource, /function shouldShowAssistantInChats\(agent: AssistantNavAgentItem\)[\s\S]*?isAssistantNavChatAgent\(agent\)/);
-  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)[\s\S]*?isAssistantNavProjectAgent\(agent\)/);
+  assert.doesNotMatch(sidebarSource, /function shouldShowAssistantInChats\(/);
+  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?isAssistantNavigationAttentionProjectAgent\(agent\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /assistantNavChatItems\?: AssistantNavChatItem\[\]/);
   assert.match(sidebarSource, /const CHATS_VISIBLE_LIMIT = 8;/);
@@ -2196,7 +2256,7 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   assert.match(sidebarSource, /const CHATS_MAX_VISIBLE_LIMIT = 24;/);
   assert.match(sidebarSource, /const \[chatsVisibleLimit, setChatsVisibleLimit\] = useState\(\s*CHATS_VISIBLE_LIMIT,\s*\);/);
   assert.doesNotMatch(sidebarSource, /getAssistantNavRecentChatsOverview/);
-  assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /summarizeAssistantNavigationAttention\(\{/);
   assert.doesNotMatch(sidebarSource, /sortAssistantNavAgentsForMode|assistantNavSortMode/u);
   assert.match(sidebarSource, /renderSortableAssistantProjects\(\)/u);
   assert.doesNotMatch(sidebarSource, /const CHATS_RECENT_LIMIT = 8;/);
@@ -2312,8 +2372,8 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
 
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
-  assert.match(sidebarSource, /assistantNavChatItems\.slice\(0, chatsVisibleLimit\)/);
-  assert.match(chatsRowsSource, /sidebarChatItems\.map\(\(chat\) =>/);
+  assert.match(sidebarSource, /assistantNavChatItems\.filter\(\(chat\) => !chat\.pinned\)\.slice\(0, chatsVisibleLimit\)/);
+  assert.match(chatsRowsSource, /chats\.map\(\(chat\) =>/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
   assert.doesNotMatch(`${chatsRowsSource}${chatsListSource}`, /recentChats/);
   assert.match(sidebarSource, /const chatsShowMoreAvailable =\s*chatsVisibleLimit < CHATS_MAX_VISIBLE_LIMIT &&\s*assistantNavChatItems\.length > chatsVisibleLimit/);
@@ -2757,7 +2817,7 @@ test("desktop state debug tab is wired through the fixed read-only IPC contract"
   const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const settingsHandlers = readSourceFile("src", "main", "ipc", "settings-handlers.ts");
+  const settingsHandlers = readSourceFile("src", "main", "modules", "settings", "ipc.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
@@ -2830,7 +2890,7 @@ test("settings dark mode themes Ant Design controls inside settings cards", () =
   );
   assert.match(
     settingsStyles,
-    /:root\[data-theme="dark"\] :is\(\.settings-page, \.settings-debug-modal\) \.ant-select-disabled \.ant-select-selector,[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.04\)\s*!important;/
+    /:root\[data-theme="dark"\] :is\(\.settings-page, \.settings-debug-modal\) \.ant-select-disabled \.ant-select-selector,[\s\S]*?background:\s*var\(--control-disabled-bg\)\s*!important;/
   );
   assert.match(
     settingsStyles,
@@ -2842,13 +2902,13 @@ test("settings dark mode themes Ant Design controls inside settings cards", () =
   );
   assert.match(
     settingsStyles,
-    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.065\)\s*!important;[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
+    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*var\(--control-button-bg\)\s*!important;[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
   );
   assert.match(
     settingsStyles,
     /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default\.ant-btn-dangerous:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--danger\) 12%, transparent\)\s*!important;[\s\S]*?color:\s*var\(--danger\)\s*!important;/
   );
-  assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup\s*\{[\s\S]*?background:\s*var\(--surface-strong\);/);
+  assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup\s*\{[\s\S]*?background:\s*var\(--control-popover-bg\);/);
   assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup \.ant-select-item-option-selected:not\(\.ant-select-item-option-disabled\)\s*\{[\s\S]*?background:\s*var\(--accent-soft\);/);
 });
 
@@ -2923,10 +2983,7 @@ test("settings page configures desktop helper default agent separately from desk
     path.join(projectRoot, "src", "shared", "assistant-settings.ts"),
     "utf8"
   );
-  const settingsStore = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "core", "settings-store.ts"),
-    "utf8"
-  );
+  const settingsStore = readSourceFile("src", "main", "modules", "assistant", "settings-store.ts");
   const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
@@ -3122,7 +3179,7 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   const settingsRoutes = readSourceFile("src", "shared", "settings-routes.ts");
   const sharedSettingsSections = readSourceFile("src", "shared", "settings-sections.ts");
   const kanbanContracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
@@ -3206,8 +3263,8 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
 test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const servicesContract = readSourceFile("src", "shared", "contracts", "services.ts");
-  const tunnelSettings = readSourceFile("src", "main", "tunnel-hub-settings.ts");
-  const tunnelRuntime = readSourceFile("src", "main", "tunnel-hub-runtime.ts");
+  const tunnelSettings = readSourceFile("src", "main", "modules", "tunnel", "settings.ts");
+  const tunnelRuntime = readSourceFile("src", "main", "modules", "tunnel", "runtime.ts");
   const removedTunnelHubServiceId = ["tunnel", "hub", "agent"].join("-");
   const removedDefaultRelayConstant = ["DEFAULT", "TUNNEL", "HUB", "AGENT"].join("_");
   const removedRelayHost = ["tunnel-hub", "zenmind", "cc"].join("\\.");
@@ -3249,16 +3306,17 @@ test("sidebar translucency is fixed and not user configurable", () => {
   );
   const globalStyles = readRendererStyles();
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const appMetadata = fs.readFileSync(path.join(projectRoot, "src", "main", "app-metadata.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const appMetadata = readSourceFile("src", "main", "app", "metadata.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const settingsHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "settings-handlers.ts"), "utf8");
+  const settingsHandlers = readSourceFile("src", "main", "modules", "settings", "ipc.ts");
   const contracts = readSharedContractsSource();
 
   assert.match(appShell, /"has-translucent-sidebar"/);
   assert.match(appShell, /isMac \? "is-mac-translucent-sidebar" : ""/);
-  assert.match(appShell, /window\.electronAPI\.settings\.setNativeThemeSource\(themeMode\)/);
+  const appearanceBrowser = readSourceFile("src", "renderer", "appearance", "browser.ts");
+  assert.match(appearanceBrowser, /window\.electronAPI\.settings\.setNativeThemeSource\(themeMode\)/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /setSidebarTranslucency/);
@@ -3334,8 +3392,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /setEnterpriseImEnabled: \(enabled: boolean\) => Promise<EnterpriseImSettings>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
-  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
-  assert.match(contracts, /saveNavigationPreferences: \(input: \{ mainOrder\?: string\[\]; webOrder\?: string\[\] \}\)/);
+  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; pinnedWebEntryKeys: string\[\]; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
+  assert.match(contracts, /saveNavigationPreferences: \(input: \{ mainOrder\?: string\[\]; webOrder\?: string\[\]; pinnedWebEntryKeys\?: string\[\] \}\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
@@ -3478,7 +3536,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
-test("Chats sidebar exposes a hover-only default-agent picker and per-agent history", () => {
+test("Chats sidebar exposes a stable compact default-agent picker and per-agent history", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -3512,18 +3570,21 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(sidebarSource, /function handleChatsDefaultAgentChange[\s\S]*?onChatsDefaultAgentChange\?\.\(normalizedAgentKey\)/);
   assert.match(sidebarSource, /catch \{\s*setChatDefaultAgentError\(t\("sidebar\.chats\.defaultAgentSaveFailed"\)\);/);
   assert.match(sidebarSource, /chatDefaultAgentPending/);
-  assert.match(sidebarSource, /headerSupplement: renderChatsDefaultAgentPicker\(\)/);
+  assert.match(
+    sidebarSource,
+    /headerSupplement: sidebarGroupState\.chats\s*\? renderChatsDefaultAgentPicker\(\)\s*:\s*undefined/,
+  );
   assert.match(sidebarSource, /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)/);
   assert.match(sidebarSource, /args\.groupId === "chats" \? "sidebar-chats-group-popover" : undefined/);
   assert.match(collapse, /headerSupplement\?: React\.ReactNode/);
   assert.match(collapse, /<div className="Collapse-headerSupplement">\{headerSupplement\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-label|chatAgentInlineLabel/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-select/);
-  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement[\s\S]*?opacity:\s*0;/);
-  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement,[\s\S]*?:focus-within \.Collapse-headerSupplement/);
+  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement\s*\{[^}]*flex:\s*0 0 64px;/);
+  assert.doesNotMatch(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement/);
   assert.match(
     styles,
-    /\.sidebar-chats-agent-picker\s*\{[\s\S]*?flex:\s*0 0 100px;[\s\S]*?width:\s*100px;/,
+    /\.sidebar-chats-agent-picker\s*\{[\s\S]*?flex:\s*0 1 64px;[\s\S]*?width:\s*64px;/,
   );
   assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-menu-label\s*\{/);
@@ -3835,9 +3896,9 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
 test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const kanbanHandlers = readSourceFile("src", "main", "ipc", "kanban-handlers.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
-  const wsClient = readSourceFile("src", "main", "kanban-desktop-ws-client.ts");
+  const kanbanHandlers = readSourceFile("src", "main", "modules", "kanban", "ipc.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const wsClient = readSourceFile("src", "main", "modules", "kanban", "ws-client.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
@@ -3964,20 +4025,16 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
 test("Kanban route exposes native desktop api and page styles", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const kanbanHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "kanban-handlers.ts"), "utf8");
-  const kanbanSync = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-sync.ts"), "utf8");
-  const kanbanRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-runtime.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const kanbanHandlers = readSourceFile("src", "main", "modules", "kanban", "ipc.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const kanbanLocalStore = readSourceFile("src", "main", "modules", "kanban", "local-store.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
-  const kanbanStore = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-store.ts"), "utf8");
-  const assistantNavigationStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
-    "utf8"
-  );
+  const assistantNavigationStatusClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
   const kanbanPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "kanban", "KanbanPage.tsx"),
     "utf8"
@@ -3997,31 +4054,30 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.claimIssue"/);
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.runIssue"/);
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.syncIssueAutomation"/);
-  assert.match(kanbanSync, /syncKanbanIssueAutomation/);
-  assert.match(kanbanSync, /\/api\/automation\/create/);
-  assert.match(kanbanSync, /\/api\/automation\/update/);
-  assert.match(kanbanSync, /\/api\/automation\/delete/);
-  assert.doesNotMatch(kanbanSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
+  assert.match(kanbanRuntime, /async syncIssueAutomation\(/);
+  assert.match(kanbanRuntime, /\/api\/automation\/create/);
+  assert.match(kanbanRuntime, /\/api\/automation\/update/);
+  assert.match(kanbanRuntime, /\/api\/automation\/delete/);
+  assert.doesNotMatch(kanbanRuntime, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(assistantRuntime, /createKanbanRuntime/);
   assert.doesNotMatch(assistantRuntime, /onEvent:\s*\(event\) => \{\s*state\.kanbanRuntime/);
-  assert.match(kanbanSync, /event\.frame !== "push" \|\| event\.type !== "run\.finished"/);
-  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
-  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
-  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
-  assert.doesNotMatch(kanbanSync, /updateKanbanIssueByChatId/);
+  assert.match(kanbanRuntime, /event\.frame !== "push" \|\| event\.type !== "run\.finished"/);
+  assert.match(kanbanRuntime, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanRuntime, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanRuntime, /status === "interrupted" && finishReason === "cancel"/);
   assert.match(kanbanRuntime, /private async applyIssueEvent\(event: KanbanDesktopIssueEvent\)/);
   assert.match(kanbanRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
   assert.match(kanbanRuntime, /seq <= cursor\.lastAppliedRevision/);
-  assert.match(kanbanRuntime, /tombstoneDesktopKanbanCloudIssue\(this\.options\.app, currentUser, issueEventIssueId\(event\), seq\)/);
+  assert.match(kanbanRuntime, /tombstoneDesktopKanbanCloudIssue\((?:this|self)\.options\.app, currentUser, issueEventIssueId\(event\), seq\)/);
   assert.match(kanbanRuntime, /"run\.event\.append"/);
-  assert.match(kanbanRuntime, /clientEventId: stableClientEventId\(deviceId, \[issueId, readText\(input\.runId\), input\.eventType\]\)/);
+  assert.match(kanbanRuntime, /clientEventId: stableClientEventId\(deviceId, \[issueRunId \|\| issueId, readText\(input\.runId\), input\.eventType\]\)/);
   assert.match(kanbanRuntime, /recordDesktopKanbanRunEvent/);
   assert.match(kanbanRuntime, /recordDesktopKanbanCloudMutation/);
   assert.match(kanbanRuntime, /t\("kanban\.runtime\.cloudReadOnly"\)/);
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
-  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}state\.kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
-  assert.match(kanbanStore, /export function updateKanbanIssueByChatId/);
+  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
+  assert.doesNotMatch(kanbanLocalStore, /export function updateDesktopKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
   assert.match(assistantNavigationStatusClient, /frame: "push"/);
@@ -4265,12 +4321,26 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-chat-modal-layer\s*\{|\.kanban-chat-modal\s*\{/);
 });
 
+test("Kanban runtime keeps only the canonical local-store implementation", () => {
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  for (const legacyFileName of [
+    "kanban-sync.ts",
+    "kanban-store.ts",
+    "kanban-db.ts",
+    "kanban-cloud-sync.ts",
+  ]) {
+    assert.equal(fs.existsSync(path.join(projectRoot, "src", "main", legacyFileName)), false, legacyFileName);
+  }
+  assert.match(kanbanRuntime, /from "\.\/local-store"/);
+  assert.doesNotMatch(kanbanRuntime, /from "\.\/kanban-(?:sync|store|db|cloud-sync)"/);
+  assert.doesNotMatch(kanbanRuntime, /DesktopCloudSyncEngine/);
+});
+
 test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () => {
   const contracts = readSharedContractsSource();
-  const assistantRuntime = readSourceFile("src", "main", "bridge", "assistant-runtime.ts");
-  const navigationClient = readSourceFile("src", "main", "assistant", "core", "assistant-navigation-status-client.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
-  const kanbanSync = readSourceFile("src", "main", "kanban-sync.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const navigationClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
 
   assert.match(contracts, /interface AssistantNavigationPushEvent[\s\S]{0,100}frame: "push"/);
@@ -4282,9 +4352,9 @@ test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () =
   assert.match(assistantRuntime, /sendNavigationPushEvent\(event\)/);
   assert.match(navigationClient, /runId: toText\(event\.runId\) \|\| null/);
   assert.doesNotMatch(navigationClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
-  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
-  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
-  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
+  assert.match(kanbanRuntime, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanRuntime, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanRuntime, /status === "interrupted" && finishReason === "cancel"/);
   assert.match(kanbanRuntime, /issue\.runId === runId \|\| issue\.activeRunId === runId/);
   assert.doesNotMatch(kanbanRuntime, /sendAssistantEvent/);
   assert.doesNotMatch(kanbanPage, /assistant\.onAssistantEvent/);
@@ -4314,14 +4384,14 @@ test("Kanban view settings use a dismissible gear menu for the Backlog column", 
 
 test("Kanban status order places completed after in progress", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
-  const kanbanDb = readSourceFile("src", "main", "kanban-db.ts");
+  const kanbanLocalStore = readSourceFile("src", "main", "modules", "kanban", "local-store.ts");
 
   assert.match(
     contracts,
     /KANBAN_STATUSES\s*=\s*\[[\s\S]*?"backlog",[\s\S]*?"todo",[\s\S]*?"in_progress",[\s\S]*?"in_review",[\s\S]*?"completed"[\s\S]*?\]/,
   );
   assert.match(
-    kanbanDb,
+    kanbanLocalStore,
     /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'in_review' THEN 3[\s\S]*?WHEN 'completed' THEN 4/,
   );
 });
@@ -4377,17 +4447,17 @@ test("WebApp user-facing dictionary terminology is normalized", () => {
 
 test("website Copilot association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
-  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "websites", "actions.ts"), "utf8");
+  const store = readSourceFile("src", "main", "modules", "webs", "websites", "actions.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const webHandlers = readSourceFile("src", "main", "modules", "webs", "ipc.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
   const faviconSource = readSourceFile("src", "renderer", "components", "Favicon.tsx");
-  const faviconCache = readSourceFile("src", "main", "webs", "websites", "favicon-cache.ts");
-  const faviconProtocol = readSourceFile("src", "main", "webs", "websites", "favicon-protocol.ts");
+  const faviconCache = readSourceFile("src", "main", "modules", "webs", "websites", "favicon-cache.ts");
+  const faviconProtocol = readSourceFile("src", "main", "modules", "webs", "websites", "favicon-protocol.ts");
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const closeWebEntryStart = appShell.indexOf("async function handleCloseWebEntry(item: WebEntry)");
@@ -4515,15 +4585,15 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const webContracts = readSourceFile("src", "shared", "contracts", "webs.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
-  const startupPipeline = readSourceFile("src", "main", "lifecycle", "startup.ts");
-  const startupPhases = readSourceFile("src", "main", "lifecycle", "startup-phases.ts");
-  const appState = readSourceFile("src", "main", "app-state.ts");
-  const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
+  const startupPipeline = readSourceFile("src", "main", "app", "lifecycle", "startup.ts");
+  const startupPhases = readSourceFile("src", "main", "app", "lifecycle", "startup-phases.ts");
+  const appState = readSourceFile("src", "main", "app", "state.ts");
+  const shutdownRunner = readSourceFile("src", "main", "app", "lifecycle", "shutdown.ts");
   const globalStyles = readRendererStyles();
-  const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
-  const webappWindowManager = readSourceFile("src", "main", "webs", "webapps", "window-manager.ts");
+  const webHandlers = readSourceFile("src", "main", "modules", "webs", "ipc.ts");
+  const webappWindowManager = readSourceFile("src", "main", "modules", "webs", "webapps", "window-manager.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
-  const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const desktopActionBridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
@@ -4752,7 +4822,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.doesNotMatch(initializeUserDataBlock, /importBundledEnvZipToRuntime/);
   assert.doesNotMatch(initializeUserDataBlock, /applyDesktopInitSsoDefaults/);
   assert.doesNotMatch(
-    readSourceFile("src", "main", "app", "startup-environment.ts"),
+    readSourceFile("src", "main", "app", "bootstrap", "startup-environment.ts"),
     /notifyServicesChanged/
   );
   assert.match(mainProcess, /function getDefaultEnvImportRequiredMessage\(\) \{\s*return options\.t\("startup\.envImport\.requiredTitle"\);/);
@@ -4784,17 +4854,14 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
-  const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const desktopActionBridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "core", "agent-platform-bridge.ts"), "utf8");
-  const assistantNavigationStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
-    "utf8"
-  );
+  const bridge = readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts");
+  const assistantNavigationStatusClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const assistantNavigation = fs.readFileSync(path.join(projectRoot, "src", "renderer", "assistantNavigation.ts"), "utf8");
@@ -4891,8 +4958,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
   assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
   assert.match(bridge, /async listCopilotAgents\(\): Promise<AssistantNavAgentItemsResult>/);
-  assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
-  assert.match(bridge, /readAssistantCopilotAgentsFromPlatform/);
+  assert.match(bridge, /ports\.readNavigationAgents/);
+  assert.match(bridge, /ports\.readCopilotAgents/);
   assert.match(bridge, /chatHasPendingAwaiting/);
   assert.match(bridge, /validatePresentPlatformTimes/);
   assert.doesNotMatch(bridge, /timestampToIso|Date\.parse/);
@@ -4983,12 +5050,12 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
 test("desktop global search contract is wired across main preload renderer and help", () => {
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const bridge = readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts");
-  const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const bridge = readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts");
+  const platformAdapter = readSourceFile("src", "main", "infrastructure", "electron", "platform-adapter.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
@@ -5042,6 +5109,17 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(overlay, /if \(actionId === "history"\) \{[\s\S]*?options\.onClose\(\);[\s\S]*?options\.onOpenHistory\(\);/);
   assert.match(overlay, /params\.set\("newChat", String\(Date\.now\(\)\)\)/);
   assert.match(overlay, /return createAgentWebclientAgentPath\(newChatAgentKey, params\);/);
+  assert.match(
+    overlay,
+    /if \(row\.kind === "agent"\) \{\s*return resolveActionTargetPath\("newChat", row\.agentKey\);\s*\}/,
+  );
+  assert.doesNotMatch(
+    overlay,
+    /if \(row\.kind === "agent"\) \{\s*return createAgentWebclientAgentPath\(row\.agentKey\);\s*\}/,
+  );
+  assert.match(overlay, /event\.key === "Enter" && activeRow[\s\S]*?activateRow\(activeRow,/);
+  assert.match(overlay, /onClick=\{\(\) => activateRow\(row,/);
+  assert.match(overlay, /if \(target\) \{\s*activateRow\(target, options\);\s*\}/);
   assert.doesNotMatch(overlay, /newChatRequest/);
   assert.match(overlay, /import \{ SidebarActionIcon, SidebarIllustration \} from "\.\.\/\.\.\/components\/BrandMark";/);
   assert.match(overlay, /import \{ AgentIcon \} from "\.\.\/navigation\/AgentIcon";/);
@@ -5078,7 +5156,7 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--desktop-overlay-panel-bg\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.desktop-global-search-row-icon \.sidebar-illustration,[\s\S]*?\.desktop-global-search-row-icon \.sidebar-action-icon,[\s\S]*?\.desktop-global-search-row-icon \.settings-sidebar-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.08\);/);
+  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*var\(--control-active-bg\);/);
   assert.match(appShellCss, /\.desktop-global-search-row\.is-chat \.desktop-global-search-row-title\s*\{[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(appShellCss, /\.desktop-global-search-row-shortcut\s*\{/);
   assert.match(appShellCss, /\.desktop-global-search-shortcut-icon\s*\{/);
@@ -5106,13 +5184,13 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(i18nEn, /"desktop\.globalSearch\.group\.unread": "Unread chats"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.history": "Open chat history"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.skills": "Open Skills Center"/);
-  assert.match(i18nEn, /"desktop\.globalSearch\.action\.mcpConnectors": "Open MCP connections"/);
+  assert.match(i18nEn, /"desktop\.globalSearch\.action\.mcpConnectors": "Open Connectors Center"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.awaiting": "等待中"/);
   assert.doesNotMatch(i18nZh, /desktop\.globalSearch\.status\.awaiting/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.history": "打开对话历史"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.skills": "打开技能中心"/);
-  assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开 MCP 连接"/);
+  assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开连接器中心"/);
 });
 
 test("Chinese chat copy consistently uses 对话 while technical sessions keep 会话", () => {
@@ -5139,7 +5217,6 @@ test("Chinese chat copy consistently uses 对话 while technical sessions keep �
     "enterpriseChat.directConversation",
     "enterpriseChat.noConversations",
     "enterpriseChat.supportBundleConfirm",
-    "kanban.runtime.chatMissing",
     "kanban.runtime.chatUpdated",
     "desktopPet.replyMissingContent",
     "assistant.chatIdRequired",
@@ -5221,12 +5298,10 @@ test("assistant navigation agents stay empty before platform data is ready", () 
 });
 
 test("main process automation callers use current platform automation routes", () => {
-  const sourceFiles = [
-    path.join(projectRoot, "src", "main", "plugin-resources.ts"),
-    path.join(projectRoot, "src", "main", "kanban-sync.ts"),
-    path.join(projectRoot, "src", "main", "kanban-runtime.ts")
-  ];
-  const combined = sourceFiles.map((filePath) => fs.readFileSync(filePath, "utf8")).join("\n");
+  const combined = [
+    readSourceFile("src", "main", "modules", "plugins", "resources.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "runtime.ts")
+  ].join("\n");
 
   assert.doesNotMatch(combined, /\/api\/admin\/automations\//);
   assert.match(combined, /\/api\/automation\/create/);
@@ -5328,15 +5403,12 @@ test("first-install bootstrap navigation stays optional and keeps the configured
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
   const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
-  const bridgeSettings = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "desktop-action-bridge-settings.ts"),
-    "utf8"
-  );
+  const bridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
+  const bridgeSettings = readSourceFile("src", "main", "modules", "desktop-actions", "settings.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
-  const ipcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const ipcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const registry = fs.readFileSync(
@@ -5357,7 +5429,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx"),
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
-  const petActionBlock = bridge.match(/async function executePetAction[\s\S]*?\n}\n\nasync function executeAction/)?.[0] ?? "";
+  const petActionBlock = bridge.match(/export async function executePetAction[\s\S]*?\n}\n\nexport type DesktopExportWebContents/)?.[0] ?? "";
   const petStateContract = contracts.match(/export interface DesktopPetState \{[\s\S]*?\n\}/)?.[0] ?? "";
   const trustedWorkPanelHandler = bridge.match(
     /export async function handleAgentWebclientWorkPanelActionRequest[\s\S]*?\n}\n\nexport async function handleWebappPageActionRequest/,
@@ -5520,7 +5592,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 });
 
 test("desktop action confirmation detail keeps debug context and redaction keys", () => {
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const bridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
   const zhCN = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "zhCN.ts"), "utf8");
   const enUS = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"), "utf8");
 
@@ -5612,9 +5684,9 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(dialog, /data-decision=\{button\.decision\}/);
   assert.match(layerRule, /position:\s*fixed;/);
   assert.match(layerRule, /padding:\s*16px;/);
-  assert.match(dialogRule, /border-radius:\s*12px;/);
+  assert.match(dialogRule, /border-radius:\s*var\(--overlay-radius\);/);
   assert.match(dialogRule, /width:\s*min\(440px, 100%\);/);
-  assert.match(dialogRule, /background:\s*rgba\(255, 255, 255, 0\.94\);/);
+  assert.match(dialogRule, /background:\s*var\(--desktop-overlay-panel-bg\);/);
   assert.match(dialogRule, /box-shadow:\s*0 18px 54px rgba\(15, 23, 42, 0\.2\);/);
   assert.match(titleRule, /font-size:\s*12px;/);
   assert.match(titleRule, /font-weight:\s*400;/);
@@ -5624,7 +5696,7 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(buttonFocusRule, /outline-offset:\s*2px;/);
   assert.match(
     styles,
-    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*#2D2D2D;[\s\S]*?box-shadow:\s*none;/
+    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*var\(--desktop-overlay-panel-bg\);[\s\S]*?box-shadow:\s*none;/
   );
 });
 
@@ -5684,6 +5756,47 @@ test("native image byte and decode failures stay silent and inert", () => {
   assert.match(styles, /\.work-panel-resource-image\s*\{[\s\S]*?font-size:\s*12px;/u);
   assert.match(styles, /\.work-panel-image-toolbar button\.is-primary\s*\{[\s\S]*?font-size:\s*13px;/u);
   assert.match(styles, /\.work-panel-image-zoom-control input\s*\{[\s\S]*?font-size:\s*12px;/u);
+});
+
+test("native image controls keep semantic colors across interaction states and themes", () => {
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const imageStylesStart = styles.indexOf(".work-panel-resource-image {");
+  const imageStylesEnd = styles.indexOf(".chat-work-panel-review-toolbar {", imageStylesStart);
+
+  assert.notEqual(imageStylesStart, -1);
+  assert.notEqual(imageStylesEnd, -1);
+  const imageStyles = styles.slice(imageStylesStart, imageStylesEnd);
+
+  assert.doesNotMatch(
+    imageStyles,
+    /var\(--(?:text-primary|text-secondary|line-soft|hover-bg|accent-color)(?:[,)]|\s)/u
+  );
+  assert.match(imageStyles, /--work-panel-image-primary:\s*#2563eb;/u);
+  assert.match(imageStyles, /--work-panel-image-primary-hover:\s*#1d4ed8;/u);
+  assert.match(
+    styles,
+    /:root\[data-theme="dark"\] \.work-panel-resource-image\s*\{[^}]*--work-panel-image-primary:\s*#2f69d9;[^}]*--work-panel-image-primary-hover:\s*#316fe8;/u
+  );
+  assert.match(
+    imageStyles,
+    /\.work-panel-image-parameter-panel button\.is-primary:hover:not\(:disabled\),[\s\S]*?\.work-panel-image-parameter-panel button\.is-primary:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-primary-hover\);/u
+  );
+  assert.match(
+    imageStyles,
+    /\.work-panel-image-editor-sidebar button\.is-confirm:hover:not\(:disabled\),[\s\S]*?\.work-panel-image-editor-sidebar button\.is-confirm:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-primary-hover\);/u
+  );
+  assert.match(
+    imageStyles,
+    /button\.is-active:hover:not\(:disabled\),[\s\S]*?button\.is-active:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-control-active-hover\);/u
+  );
+  assert.match(
+    imageStyles,
+    /button\.is-ai-tool:not\(\.is-active\):hover:not\(:disabled\),[\s\S]*?button\.is-ai-tool:not\(\.is-active\):focus-visible:not\(:disabled\)[\s\S]*?linear-gradient/u
+  );
+  assert.match(
+    imageStyles,
+    /button:focus-visible:not\(:disabled\)[\s\S]*?outline:\s*2px solid var\(--control-focus-outline\);/u
+  );
 });
 
 test("native image modes keep viewing actions on top and photo tools in a sidebar", () => {
@@ -5831,7 +5944,7 @@ test("main marketplace user-facing text is routed through i18n", () => {
   ];
 
   for (const filename of marketplaceFiles) {
-    const source = readSourceFile("src", "main", "marketplace", filename);
+    const source = readSourceFile("src", "main", "modules", "marketplace", filename);
     assert.doesNotMatch(source, /[\p{Script=Han}]/u, `${filename} contains hardcoded Chinese text`);
   }
 });
@@ -5859,11 +5972,11 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(storefront, /market-store-detail-modal/);
   assert.match(storefront, /storefrontDetailRows/);
   assert.match(storefront, /setSelectedDetailItem\(item\)/);
-  assert.match(storefront, /ReloadOutlined/);
+  assert.doesNotMatch(storefront, /ReloadOutlined/);
   assert.match(storefront, /handleToolbarImport/);
   assert.match(storefront, /getPluginMethod\("install"\)/);
-  assert.match(storefront, /market-store-toolbar-actions/);
-  assert.match(storefront, /market\.toolbar\.refreshMarket/);
+  assert.match(storefront, /market-store-header-tools/);
+  assert.doesNotMatch(storefront, /market\.toolbar\.refreshMarket/);
   assert.match(storefront, /market\.sandbox\.import/);
   assert.doesNotMatch(storefront, /market-store-category-pill/);
   assert.doesNotMatch(storefront, /market-store-readiness/);
@@ -5872,21 +5985,23 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.doesNotMatch(storefront, /market-store-metric/);
   assert.doesNotMatch(storefront, /market-store-compatibility/);
   assert.match(storefrontStyles, /\.market-store-scroll\s*\{[\s\S]*?container-type:\s*inline-size;/);
-  assert.match(storefrontStyles, /--market-card-min:\s*320px;/);
-  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(100%,\s*var\(--market-card-min\)\),\s*1fr\)\);/);
+  assert.match(storefrontStyles, /--market-card-min:\s*238px;/);
+  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
   assert.doesNotMatch(storefrontStyles, /620px/);
-  assert.match(storefrontStyles, /\.market-store-card\.ant-card\s*\{[\s\S]*?border-radius:\s*8px;/);
-  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*30px minmax\(0,\s*1fr\);/);
-  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px;[\s\S]*?background:\s*var\(--glyph-bg/);
+  assert.match(storefrontStyles, /\.market-store-card\.ant-card\s*\{[\s\S]*?border:\s*1px solid var\(--market-store-line\);[\s\S]*?border-radius:\s*14px;/);
+  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*32px minmax\(0,\s*1fr\) auto;/);
+  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?background:\s*var\(--glyph-bg/);
   assert.match(storefrontStyles, /\.market-store-item-icon svg\s*\{[\s\S]*?width:\s*15px;[\s\S]*?height:\s*15px;/);
+  assert.match(storefront, /case\s+"skill"[\s\S]*?<SidebarIllustration kind="skill"\s*\/>/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-avatar-letter/);
   assert.doesNotMatch(storefrontStyles, /--glyph-grad/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-item-icon::after/);
   assert.doesNotMatch(storefrontStyles, /market-store-platform-chip/);
-  assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/);
   assert.match(storefrontStyles, /\.market-store-description\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
-  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid var\(--market-store-line\);/);
+  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*0;/);
   assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(280px,\s*520px\)\s*auto;/);
-  assert.match(storefrontStyles, /\.market-store-toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/);
+  assert.match(storefrontStyles, /\.market-store-header-tools\s*\{[\s\S]*?justify-content:\s*flex-end;/);
   assert.match(storefrontStyles, /\.market-store-toolbar-button\.ant-btn\s*\{[\s\S]*?border-radius:\s*8px;/);
   assert.match(storefrontStyles, /\.market-store-action\.is-primary\.ant-btn\s*\{[\s\S]*?background:\s*var\(--market-store-accent\);/);
   assert.match(storefront, /width=\{680\}/);
@@ -5931,7 +6046,8 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.doesNotMatch(marketModel, /market\.tab\.[^.]+\.meta/);
   assert.match(marketFrame, /function marketTabIcon\(tab: MarketTab\)/);
   assert.match(marketFrame, /AppstoreOutlined/);
-  assert.match(marketFrame, /SafetyCertificateOutlined/);
+  assert.match(marketFrame, /SidebarIllustration/);
+  assert.doesNotMatch(marketFrame, /SafetyCertificateOutlined/);
   assert.match(marketFrame, /RobotOutlined/);
   assert.match(marketFrame, /ApiOutlined/);
   assert.match(marketFrame, /SmileOutlined/);
@@ -5944,12 +6060,12 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.match(storefront, /case "sandbox-image":\s*return <ApiOutlined \/>/);
   assert.match(storefront, /activeTab === "sandboxImages"[\s\S]*?t\("market\.sandbox\.import"\)/);
   assert.match(storefront, /getMarketMethod\("importSandboxImage"\)/);
-  assert.match(storefront, /className=\{`market-store-card is-\$\{item\.type\}`\}/);
+  assert.match(storefront, /className=\{`market-store-card is-\$\{item\.type\} is-catalog \$\{skillToneClass\}`\.trim\(\)\}/);
   assert.match(storefront, /className=\{`market-store-item-icon is-\$\{item\.type\}`\}/);
-  assert.match(storefront, /market-store-toolbar-button is-primary/);
+  assert.match(storefront, /market-store-toolbar-button is-add/);
   assert.doesNotMatch(storefront, /getMarketMethod\("buildSandboxImage"\)/);
   assert.doesNotMatch(storefront, /onBuildSandboxImage/);
-  assert.match(marketDisplay, /market-sandbox-image-symbol/);
+  assert.doesNotMatch(marketDisplay, /MarketCardGlyph|market-sandbox-image-symbol/);
   assert.match(storefrontStyles, /\.market-store-card\.is-sandbox-image/);
   assert.match(storefrontStyles, /\.market-store-item-icon\.is-sandbox-image/);
   assert.match(storefrontStyles, /:root\[data-theme="dark"\]\s+\.market-store-item-icon\.is-sandbox-image/);
@@ -5963,15 +6079,19 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   );
   assert.match(
     marketStyles,
-    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?width:\s*100%/
+    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?width:\s*max-content/
   );
   assert.match(
     marketStyles,
-    /\.market-tabs \.market-tab-label\s*\{[\s\S]*?min-height:\s*30px/
+    /\.market-tab-option\s*\{[\s\S]*?height:\s*32px/
   );
   assert.match(
     marketStyles,
     /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*13px;/
+  );
+  assert.match(
+    marketStyles,
+    /\.market-tab-icon > \.sidebar-illustration-skill\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/
   );
   assert.match(
     marketStyles,
@@ -5980,7 +6100,7 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.doesNotMatch(marketStyles, /\.market-tab-meta/);
   assert.match(
     marketStyles,
-    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*#121821;[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.035\)/
+    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/
   );
 });
 
@@ -5988,7 +6108,7 @@ test("sandbox image import progress is exposed across desktop api layers", () =>
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const marketContracts = readSourceFile("src", "shared", "contracts", "marketplace.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const marketplaceHandlers = readSourceFile("src", "main", "ipc", "marketplace-handlers.ts");
+  const marketplaceHandlers = readSourceFile("src", "main", "modules", "marketplace", "ipc.ts");
 
   assert.match(marketContracts, /export interface SandboxImageImportProgressEvent/);
   assert.match(desktopApi, /SandboxImageImportProgressListener/);
@@ -6166,7 +6286,7 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
-  const shellHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"), "utf8");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
   const contracts = readSharedContractsSource();
   const appShellRule = globalStyles.match(/(?:^|\n)\.app-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
   const sidebarShellRule = globalStyles.match(/(?:^|\n)\.app-sidebar-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
@@ -6268,10 +6388,10 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
 
 test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const appState = readSourceFile("src", "main", "app-state.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appState = readSourceFile("src", "main", "app", "state.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
   const appShell = readAppShellSource();
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
@@ -6280,8 +6400,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
     /^\.app-shell\.is-mac-platform\.is-window-fullscreen\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
 
-  assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
-  assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => options\.state\.mainWindowSidebarTranslucencyEnabled/);
+  assert.doesNotMatch(appState, /mainWindowSidebarTranslucencyEnabled/);
+  assert.match(appShellRuntime, /mainWindowSidebarTranslucencyEnabled:\s*true/);
+  assert.match(appShellRuntime, /isSidebarTranslucencyEnabled:\s*\(\) => state\.mainWindowSidebarTranslucencyEnabled/);
   assert.match(windowManager, /vibrancy:\s*"under-window"\s+as const/);
   assert.match(windowManager, /visualEffectState:\s*"active"\s+as const/);
   assert.match(windowManager, /applyAppearance\(targetWindow: TWindow \| null\)/);
@@ -6295,8 +6416,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?options\.restoreFloatingWindowsForFullscreen\?\.\(\);[\s\S]*?\}\);/);
   assert.match(appShellRuntime, /restoreDesktopPetWindowLayering: \(\) => void;/);
   assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
-  assert.match(appRuntime, /restoreDesktopPetWindowLayering\s*\n\s*\}\);/);
-  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,120}petRuntime\.restoreWindowLayering\(\)/);
+  assert.match(appRuntime, /restoreDesktopPetWindowLayering:\s*factoryContext\.restoreDesktopPetWindowLayering/);
+  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,180}createMainProcessRuntime_restoreDesktopPetWindowLayering/);
+  assert.match(appRuntime, /return factoryContext\.petRuntime\.restoreWindowLayering\(\)/);
   assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
   assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/);
   assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/);
@@ -6324,7 +6446,7 @@ test("mac fullscreen forces the main window to an opaque background", () => {
 });
 
 test("Windows main renderer owns the thin system bar and bottom-docked DevTools", () => {
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const appShell = readAppShellSource();
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
@@ -6348,7 +6470,7 @@ test("Windows main renderer owns the thin system bar and bottom-docked DevTools"
 
 test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
+  const platformAdapter = readSourceFile("src", "main", "infrastructure", "electron", "platform-adapter.ts");
 
   assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
@@ -6374,9 +6496,9 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /options\.app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)/);
   assert.match(mainProcess, /then\(\(\) => \{[\s\S]*?applyDarwinDockIcon\(dock\);[\s\S]*?\}\)/);
-  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => systemIdentityRuntime\.ensureDockIdentity\(\)/);
+  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => factoryContext\.systemIdentityRuntime\.ensureDockIdentity\(\)/);
   assert.match(mainProcess, /showMainWindow\(\);/);
-  assert.match(readSourceFile("src", "main", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
+  assert.match(readSourceFile("src", "main", "modules", "shell", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
 });
 
 test("mac dev app uses a content-addressed icon filename to avoid stale Dock cache", () => {
@@ -6506,10 +6628,7 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
 test("web copilot dock yields to native dialogs", () => {
   const appShell = readAppShellSource();
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const nativeDialogs = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "app-shell", "native-dialogs.ts"),
-    "utf8"
-  );
+  const nativeDialogs = readSourceFile("src", "main", "modules", "shell", "native-dialogs.ts");
   const globalStyles = readRendererStyles();
 
   assert.match(nativeDialogs, /app\.nativeDialogVisibility/);
@@ -6536,9 +6655,9 @@ test("service webview surface provides webview-backed assistant context instead 
   const serviceWebviewBridgeHost = readSourceFile("src", "renderer", "services", "serviceWebviewBridgeHost.ts");
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const servicesHandlers = readSourceFile("src", "main", "modules", "services", "ipc.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
   const sendBridgeMessageBlock = serviceWebviewSurface.slice(
@@ -6604,11 +6723,14 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /ownerChatId\?: string/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(serviceWebviewSurface, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
-  assert.match(serviceWebviewSurface, /normalizedCurrentUrl === embeddedUrl/);
+  assert.match(directRouteLoadBlock, /normalizedCurrentUrl === targetUrl/);
   assert.match(serviceWebviewSurface, /resolveAgentWebclientDesktopChatRouteFromUrl/);
   assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
   assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface\(/);
-  assert.match(serviceWebviewSurface, /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/);
+  assert.match(
+    serviceWebviewSurface,
+    /areAgentWebclientChatBusinessRoutesEquivalent\(\s*context\.currentRoute,\s*nextChatRoute/u
+  );
   assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
   assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
   assert.doesNotMatch(serviceWebviewSurface, /handleAgentWebclientChatRouteMessage/);
@@ -6618,7 +6740,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(directRouteLoadBlock, /targetWebview\.executeJavaScript\(/);
   assert.match(serviceWebviewSurface, /window\.history\.pushState/);
   assert.match(serviceWebviewSurface, /PopStateEvent\("popstate"/);
-  assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
   assert.match(serviceWebviewSurface, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
   assert.match(serviceWebviewSurface, /suppressInitialLoadingCopy\s*\?\s*\(/);
   assert.match(serviceWebviewSurface, /aria-label=\{t\("serviceWebview\.loading", \{ name: serviceDisplayName \}\)\}/);
@@ -6626,7 +6748,10 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(serviceWebviewSurface, /!webviewRef\.current && \(webviewRef\.current = node\)/);
   assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
-  assert.match(sendServiceRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
+  assert.match(
+    sendServiceRouteBlock,
+    /targetWebview\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/,
+  );
   assert.doesNotMatch(sendServiceRouteBlock, /executeJavaScript/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientTokenReloadTimerRef/);
@@ -6660,6 +6785,15 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action"/);
+  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL = "desktop:service-webview:route-status"/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_ROUTE_READY_MESSAGE_TYPE = "desktopRouteReady"/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE = "desktopRouteApplied"/);
+  assert.match(serviceWebviewBridgeContracts, /type ServiceWebviewRouteStatus/);
+  assert.match(serviceWebviewBridgeContracts, /isServiceWebviewRouteStatus/);
+  assert.match(serviceWebviewBridgeContracts, /value\.startsWith\("\/"\)/);
+  assert.match(serviceWebviewBridgeContracts, /!value\.startsWith\("\/\/"\)/);
+  assert.match(serviceWebviewBridgeContracts, /!value\.includes\("\\\\"\)/);
+  assert.match(serviceWebviewBridgeContracts, /value\.length <= 8_192/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_WEBS_LIST_REQUEST_TYPE/);
@@ -6679,6 +6813,15 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /payload\.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
+  assert.match(serviceWebviewPreload, /PAGE_TO_PRELOAD_ROUTE_STATUS_EVENT/);
+  assert.match(serviceWebviewPreload, /isServiceWebviewRouteStatus\(payload\)/);
+  assert.match(
+    serviceWebviewPreload,
+    /ipcRenderer\.sendToHost\(SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL, payload\)/,
+  );
+  assert.match(serviceWebviewSurface, /channel === SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL/);
+  assert.match(serviceWebviewSurface, /handleMainChatRouterReady\(payload\)/);
+  assert.match(serviceWebviewSurface, /settleMainChatRouterApplied\(payload\)/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewPreload, /PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewPreload, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/);
@@ -6745,8 +6888,8 @@ test("Windows service webview modal overlays mask renderer-owned window controls
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const desktopPreload = readSourceFile("src", "preload", "index.ts");
   const desktopContracts = readSharedContractsSource();
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
 
   assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state"/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_MODAL_MASK_SELECTOR = "\.ant-modal-mask"/);
@@ -6766,7 +6909,7 @@ test("Windows service webview modal overlays mask renderer-owned window controls
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
-  const cdpIntegration = readSourceFile("src", "main", "cdp-integration.ts");
+  const cdpIntegration = readSourceFile("src", "main", "modules", "web-surfaces", "cdp", "integration.ts");
 
   assert.match(cdpIntegration, /createEmbeddedCdpServiceSurface/);
   assert.match(cdpIntegration, /kind:\s*"webview"/);
@@ -6780,7 +6923,7 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
 test("webview surfaces publish complete tab registrations for embedded cdp", () => {
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
-  const browserRegistry = readSourceFile("src", "main", "browser-surface-registry.ts");
+  const browserRegistry = readSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
 
   assert.match(surfaceHosts, /surfaceKind=\{item\.kind\}/u);
@@ -6803,7 +6946,7 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const desktopActions = readSourceFile("src", "shared", "desktop-actions.ts");
   const desktopWs = readSourceFile("src", "shared", "desktop-ws.ts");
-  const desktopWsServer = readSourceFile("src", "main", "desktop-ws-server.ts");
+  const desktopWsServer = readSourceFile("src", "main", "modules", "desktop-protocol", "ws-server.ts");
 
   assert.match(externalWebview, /webview\.addEventListener\("close", handleClose\)/u);
   assert.match(externalWebview, /case "desktop\.web\.closeTab"[\s\S]{0,520}await closeTab\(tabId\)/u);
@@ -6865,8 +7008,8 @@ test("desktop web surface state reads one exact surface without an active-surfac
 });
 
 test("assistant chat export writes directly to the download location", () => {
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const downloadPaths = readSourceFile("src", "main", "download-paths.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const downloadPaths = readSourceFile("src", "main", "infrastructure", "filesystem", "download-paths.ts");
   const exportPathBlock =
     downloadPaths.match(/export function getAssistantExportDefaultPath[\s\S]*?export function getDesktopDownloadDefaultPath/u)?.[0] ?? "";
   const saveExportBlock =
@@ -6876,16 +7019,16 @@ test("assistant chat export writes directly to the download location", () => {
   assert.match(downloadPaths, /export async function getAvailableFilePath/u);
   assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\), \{/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
-  assert.match(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat\/export\?chatId=/u);
-  assert.doesNotMatch(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat-export/u);
+  assert.match(readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"), /\/api\/chat\/export\?chatId=/u);
+  assert.doesNotMatch(readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"), /\/api\/chat-export/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
 test("assistant static HTML export saves the complete document returned by the persistent Worker", () => {
-  const htmlExport = readSourceFile("src", "main", "assistant", "core", "conversation-html-export.ts");
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const htmlRenderService = readSourceFile("src", "main", "assistant", "core", "conversation-html-render-service.ts");
-  const htmlWorker = readSourceFile("src", "main", "assistant", "core", "conversation-html-worker.ts");
+  const htmlExport = readSourceFile("src", "main", "modules", "conversation-share", "html-export.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const htmlRenderService = readSourceFile("src", "main", "modules", "conversation-share", "html-render-service.ts");
+  const htmlWorker = readSourceFile("src", "main", "modules", "conversation-share", "html-worker.ts");
   const mainBuild = readSourceFile("scripts", "build-main-bundle.mjs");
   const preload = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
@@ -6947,16 +7090,16 @@ test("assistant share dialog keeps link and record actions stable", () => {
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
+  const petRuntime = readSourceFile("src", "main", "modules", "pet", "runtime.ts");
   const agentWebclientRoutes = readSourceFile("src", "shared", "agent-webclient-routes.ts");
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
-  assert.match(mainProcess, /await servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,120}servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
+  assert.match(mainProcess, /await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,160}factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
   assert.match(
     mainProcess,
-    /async function showAssistantTargetWindow[\s\S]*?showMainWindow\(targetPath\);[\s\S]*?await servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
+    /async function showAssistantTargetWindow[\s\S]*?factoryContext\.showMainWindow\(targetPath\);[\s\S]*?await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
   );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
@@ -6965,8 +7108,6 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.doesNotMatch(agentWebclientRoutes, /return "\/service\/agent-webclient";/);
   assert.match(agentWebclientRoutes, /function createAgentWebclientAgentPath/);
   assert.match(agentWebclientRoutes, /encodeRoutePathSegment\(agentKey\)/);
-  assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
-  assert.match(mainProcess, /async function openAssistantFromDesktopPet\(\) \{[\s\S]{0,120}petRuntime\.openAssistant\(\)/);
   assert.match(petRuntime, /async function openAssistant\(\)[\s\S]{0,120}options\.showMainWindow\(\);/);
   assert.doesNotMatch(mainProcess, /showAssistantTargetWindow\(\s*"desktop-pet"/);
   assert.match(mainProcess, /targetWindow\.webContents\.send\("app\.openAssistantWorker"/);
@@ -6977,11 +7118,12 @@ test("assistant entrypoints restore core services before opening embedded webcli
 });
 
 test("tray activation restores the app without replacing the current route", () => {
-  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const trayController = readSourceFile("src", "main", "modules", "shell", "tray.ts");
+  const runtime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
 
   assert.match(trayController, /showMainWindow:\s*\(\) => void;/);
-  assert.match(trayController, /tray\.on\("click", \(\) => \{\s*this\.options\.showMainWindow\(\);\s*\}\);/);
+  assert.match(trayController, /platform === "darwin"[\s\S]*?tray\.on\("click", \(\) => this\.tray\?\.popUpContextMenu\(this\.buildMenu\(\)\)\)/);
+  assert.match(trayController, /platform === "win32"[\s\S]*?tray\.on\("click", \(\) => this\.options\.showMainWindow\(\)\)/);
   assert.match(trayController, /label: t\("tray\.openApp"[\s\S]{0,120}click: \(\) => this\.options\.showMainWindow\(\)/);
   assert.doesNotMatch(trayController, /openAssistantTarget/);
   assert.match(runtime, /showMainWindow:\s*\(\) => showMainWindow\(\)/);
@@ -6990,15 +7132,15 @@ test("tray activation restores the app without replacing the current route", () 
 
 test("quit menu entries skip confirmation except keyboard accelerator", () => {
   const appEvents = readSourceFile("src", "main", "app", "app-events.ts");
-  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
-  const appMenu = readSourceFile("src", "main", "app-shell", "app-menu.ts");
-  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const quitConfirmation = readSourceFile("src", "main", "app-shell", "quit-confirmation.ts");
+  const runtime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
+  const appMenu = readSourceFile("src", "main", "modules", "shell", "app-menu.ts");
+  const trayController = readSourceFile("src", "main", "modules", "shell", "tray.ts");
+  const quitConfirmation = readSourceFile("src", "main", "modules", "shell", "quit-confirmation.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const beforeQuitHandler = appEvents.match(/options\.app\.on\("before-quit", \(event\) => \{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const trayOptions = trayController.match(/export type AppTrayControllerOptions = \{[\s\S]*?\n\};/u)?.[0] ?? "";
-  const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit"\),[\s\S]*?\n      \}/u)?.[0] ?? "";
+  const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit", \{ appName: this\.options\.appName \}\),[\s\S]*?\n      \}/u)?.[0] ?? "";
   const trayRuntimeOptions = runtime.match(/new AppTrayController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const appMenuRuntimeOptions = runtime.match(/installApplicationMenu\(\{[\s\S]*?\n    \}\);/u)?.[0] ?? "";
   const quitConfirmationRuntimeOptions = runtime.match(/createQuitConfirmationController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
@@ -7060,7 +7202,7 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const trayController = readSourceFile("src", "main", "modules", "shell", "tray.ts");
   const helper = trayController.match(
     /export function getAppTrayIconCandidatePaths[\s\S]*?\r?\n\}\r?\n\r?\nexport class/u
   )?.[0] ?? "";
@@ -7076,7 +7218,7 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
-  assert.match(mainProcess, /effectiveAppId:\s*systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /effectiveAppId:\s*factoryContext\.systemIdentityRuntime\.effectiveAppId/u);
   assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
   assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
@@ -7166,14 +7308,15 @@ test("control center renderer text is routed through i18n", () => {
 
 test("desktop action workbench opens in a separate movable native window", () => {
   const mainRuntime = readSourceFile("src", "main", "app", "runtime.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
   const windowController = readSourceFile(
     "src",
     "main",
-    "app-shell",
+    "modules",
+    "shell",
     "desktop-action-workbench-window.ts"
   );
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const rendererApp = readSourceFile("src", "renderer", "App.tsx");
@@ -7223,12 +7366,9 @@ test("desktop action workbench opens in a separate movable native window", () =>
 
 test("service logs open in a separate floating log viewer window", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const logsRuntime = readSourceFile("src", "main", "logs", "runtime.ts");
-  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
-  const logViewerWindow = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "logs", "viewer-window.ts"),
-    "utf8"
-  );
+  const logsRuntime = readSourceFile("src", "main", "support", "logging", "runtime.ts");
+  const servicesHandlers = readSourceFile("src", "main", "modules", "services", "ipc.ts");
+  const logViewerWindow = readSourceFile("src", "main", "support", "logging", "viewer-window.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const appShell = readAppShellSource();
@@ -7267,9 +7407,9 @@ test("service logs open in a separate floating log viewer window", () => {
 
 test("Kanban websocket logs use the Desktop log viewer as an independent target", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
-  const desktopLogs = readSourceFile("src", "main", "logs", "desktop.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const desktopLogs = readSourceFile("src", "main", "support", "logging", "desktop.ts");
   const logViewerPage = readSourceFile("src", "renderer", "pages", "LogViewerPage.tsx");
   const contracts = readSharedContractsSource();
 
@@ -7471,7 +7611,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const mainProcess = readMainProcessRuntimeSource();
 
   assert.match(serviceWebviewSurface, /devToolsTarget\?: "copilot"/);
@@ -7483,8 +7623,8 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}COPILOT_DOCK_SURFACE_ID/);
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
-  assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(appState\.focusedWebviewDevToolsTargetId\)/);
-  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);
+  assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(focusedWebviewDevToolsTargetId\)/);
+  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*factoryContext\.webSurfaceRuntime\.getCopilotDevToolsTarget\(\)/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
 });
@@ -7526,14 +7666,11 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
 });
 
-test("desktop pet legacy agent aliases avoid inline display-name literals", () => {
-  const petStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "pet", "pet-status-client.ts"),
-    "utf8"
-  );
+test("desktop pet Agent option mapping avoids inline display-name literals", () => {
+  const petAgentOptions = readSourceFile("src", "main", "modules", "pet", "agent-options.ts");
 
-  assert.match(petStatusClient, /LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS/);
-  assert.doesNotMatch(petStatusClient, /requestedKey === "小宅"/);
+  assert.match(petAgentOptions, /toDesktopPetAgentOptions/);
+  assert.doesNotMatch(petAgentOptions, /"小宅"/);
 });
 
 test("desktop pet drag ignores transient capture loss while the pointer is still down", () => {
@@ -7541,7 +7678,7 @@ test("desktop pet drag ignores transient capture loss while the pointer is still
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPetController = readSourceFile("src", "main", "modules", "pet", "controller.ts");
 
   assert.match(desktopPet, /const handleLostPointerCapture = \(pointerEvent: globalThis\.PointerEvent\) => \{[\s\S]{0,120}pointerEvent\.buttons !== 0[\s\S]{0,80}return;/);
   assert.match(desktopPet, /window\.addEventListener\("pointerup"/);
@@ -7588,12 +7725,12 @@ test("desktop pet click opens the branded app without assistant sidebar copy", (
 
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPetController = readSourceFile("src", "main", "modules", "pet", "controller.ts");
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "pet", "desktop-pet.ts"), "utf8");
+  const petGeometry = readSourceFile("src", "main", "modules", "pet", "desktop-pet.ts");
   const globalStyles = readRendererStyles();
 
   assert.match(desktopPetController, /return shouldShowBubble \? "bubble" : "base";/);
@@ -7655,8 +7792,10 @@ test("desktop pet overview icons share one compact outlined visual language", ()
   assert.match(globalStyles, /\.desktop-pet-task-head-action \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
   assert.match(globalStyles, /\.desktop-pet-message-dismiss\s*\{[\s\S]{0,220}width:\s*24px;[\s\S]{0,80}height:\s*24px;[\s\S]{0,140}border-radius:\s*7px;[\s\S]{0,100}color:\s*#52606d;/);
   assert.match(globalStyles, /\.desktop-pet-message-dismiss \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\s*\{[\s\S]{0,120}top:\s*43px;[\s\S]{0,80}right:\s*8px;[\s\S]{0,80}width:\s*24px;[\s\S]{0,80}height:\s*24px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-dismiss\s*\{[\s\S]{0,260}border:\s*1px solid transparent;[\s\S]{0,200}opacity:\s*0;[\s\S]{0,80}visibility:\s*hidden;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-dismiss,[\s\S]{0,120}opacity:\s*1;[\s\S]{0,80}visibility:\s*visible;/);
+  assert.match(globalStyles, /\.desktop-pet-message-status\.is-unread\s*\{[\s\S]{0,120}width:\s*8px;[\s\S]{0,120}background:\s*#1677ff;/);
+  assert.match(globalStyles, /\.desktop-pet-message-status\.is-awaiting\s*\{[\s\S]{0,120}color:\s*#f59e0b;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-task-head-action span\s*\{/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-message-dismiss span::before/);
 });
@@ -7673,12 +7812,12 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(desktopPet, /const canShowStatusPanel =[\s\S]{0,220}\(hasHistoryMessages \|\| displayStatus !== "idle"\);/);
   assert.match(desktopPet, /const shouldShowStatusPanel = canShowStatusPanel && isWidgetExpanded;/);
   assert.match(desktopPet, /const showStatusPanel = isPanelWindow && shouldShowStatusPanel;/);
-  assert.match(desktopPet, /const desiredWindowMode: DesktopPetWindowMode = isDragging[\s\S]{0,360}shouldShowStatusPanel[\s\S]{0,80}"bubble"[\s\S]{0,80}"base";/);
+  assert.match(desktopPet, /const desiredWindowMode: DesktopPetWindowMode =[\s\S]{0,620}shouldShowStatusPanel[\s\S]{0,80}"bubble"[\s\S]{0,80}"base";/);
   assert.match(desktopPet, /desktopPet\.setWindowMode\(desiredWindowMode\)/);
   assert.match(desktopPet, /hasBubbleAnchor \? "has-bubble" : ""/);
-  assert.match(desktopPet, /const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts\(\{[\s\S]{0,180}visibleMessages,[\s\S]{0,80}activeTasks[\s\S]{0,40}\}\);/);
-  assert.match(desktopPet, /unreadBadgeCounts\.awaitingCount > 0/);
-  assert.match(desktopPet, /unreadBadgeCounts\.completedCount > 0/);
+  assert.match(desktopPet, /const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts\(\{[\s\S]{0,120}navigationAttention: petState\.navigationAttention[\s\S]{0,40}\}\);/);
+  assert.match(desktopPet, /unreadBadgeCounts\.pendingCount > 0/);
+  assert.match(desktopPet, /unreadBadgeCounts\.unreadCount > 0/);
   assert.match(desktopPet, /const showUnreadBadges = unreadBadgeItems\.length > 0 && !shouldShowTaskPanel && !shouldShowPreviewPanel && !shouldShowStatusPanel;/);
   assert.doesNotMatch(desktopPet, /latestVisibleMessageSummary/);
   assert.doesNotMatch(desktopPet, /statusPanelSummary/);
@@ -7688,15 +7827,13 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.doesNotMatch(desktopPet, /hasAwaitingHumanLoop/);
   assert.match(desktopPetVisual, /export function resolveDesktopPetUnreadBadgeTone/);
   assert.match(desktopPetVisual, /export function resolveDesktopPetUnreadBadgeCounts/);
-  assert.match(desktopPetVisual, /const awaitingCountsByKey = new Map<string, number>\(\);/);
-  assert.match(desktopPetVisual, /setAwaitingBadgeCount\(/);
-  assert.match(desktopPetVisual, /\[\.\.\.awaitingCountsByKey\.values\(\)\]\.reduce/);
-  assert.match(desktopPetVisual, /completedCount:\s*completedMessageCount/);
+  assert.match(desktopPetVisual, /pendingCount: normalizeUnreadBadgeCount\(input\.navigationAttention\.total\.pendingCount\)/);
+  assert.match(desktopPetVisual, /unreadCount: normalizeUnreadBadgeCount\(input\.navigationAttention\.total\.unreadCount\)/);
   assert.match(desktopPet, /function handleUnreadBadgeClick[\s\S]{0,220}setIsWidgetExpanded\(true\);/);
   assert.match(desktopPet, /className=\{`desktop-pet-unread-badge is-\$\{badge\.tone\} is-\$\{badge\.key\}`\}/);
   assert.match(desktopPet, /onPointerDown=\{handleUnreadBadgePointerDown\}/);
   assert.match(desktopPet, /onClick=\{handleUnreadBadgeClick\}/);
-  assert.match(desktopPet, /const \[messageCache, setMessageCache\] = useState<readonly DesktopPetMessageItem\[\]>\(\[\]\);/);
+  assert.doesNotMatch(desktopPet, /messageCache|setMessageCache/);
   assert.match(desktopPet, /const visibleMessages = getVisibleDesktopPetMessages\(\{/);
   assert.doesNotMatch(desktopPet, /DESKTOP_PET_MESSAGE_VISIBLE_LIMIT/);
   assert.doesNotMatch(desktopPet, /desktop-pet-message-latest/);
@@ -7707,7 +7844,7 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.doesNotMatch(desktopPet, /desktop-pet-status-fab/);
   assert.match(globalStyles, /\.desktop-pet-unread-badges\s*\{[\s\S]{0,220}display:\s*inline-flex;[\s\S]{0,120}gap:\s*4px;/);
   assert.match(globalStyles, /\.desktop-pet-unread-badges\.has-multiple\s*\{[\s\S]{0,160}left:\s*calc\(var\(--desktop-pet-button-left\) \+ 78px\);/);
-  assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-message\s*\{[\s\S]{0,220}#09a84f[\s\S]{0,220}rgba\(9,\s*168,\s*79,\s*0\.34\)/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-unread\s*\{[\s\S]{0,120}#1677ff[\s\S]{0,220}rgba\(22,\s*119,\s*255,\s*0\.34\)/);
   assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-awaiting\s*\{[\s\S]{0,220}#f59e0b[\s\S]{0,220}rgba\(245,\s*158,\s*11,\s*0\.34\)/);
   assert.match(globalStyles, /\.desktop-pet-unread-badge\s*\{[\s\S]*?pointer-events:\s*auto;/);
   assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
@@ -7717,36 +7854,39 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-task-head-action \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*236px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble\s*\{[\s\S]{0,120}--desktop-pet-task-panel-top:\s*auto;[\s\S]{0,80}--desktop-pet-task-panel-bottom:\s*10px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.is-edge-dock-top\.has-bubble\s*\{[\s\S]{0,120}--desktop-pet-task-panel-top:\s*10px;[\s\S]{0,80}--desktop-pet-task-panel-bottom:\s*auto;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.is-edge-dock-bottom\.has-bubble\s*\{[\s\S]{0,120}--desktop-pet-task-panel-top:\s*auto;[\s\S]{0,80}--desktop-pet-task-panel-bottom:\s*10px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-edge-dock-top\.has-bubble,[\s\S]{0,160}--desktop-pet-task-panel-top:\s*168px;[\s\S]{0,120}--desktop-pet-task-panel-bottom:\s*auto;/);
   assert.doesNotMatch(globalStyles, /0 18px 40px rgba\(30,\s*32,\s*38,\s*0\.12\)/);
   assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?box-shadow:\s*none;/);
-  assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/);
-  assert.match(globalStyles, /\.desktop-pet-message-card \.desktop-pet-task-copy span\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]{0,260}border:\s*0;[\s\S]{0,120}background:\s*transparent;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card \+ \.desktop-pet-message-card\s*\{[\s\S]{0,120}border-top:\s*1px solid rgba\(71,\s*85,\s*105,\s*0\.22\);/);
+  assert.match(globalStyles, /\.desktop-pet-message-title-line strong\s*\{[\s\S]{0,220}font-size:\s*13px;[\s\S]{0,80}font-weight:\s*700;/);
+  assert.match(globalStyles, /\.desktop-pet-message-preview\s*\{[\s\S]{0,220}font-size:\s*13px;[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(desktopPet, /case "awaiting":[\s\S]{0,80}<ClockCircleOutlined aria-hidden="true" \/>/);
   assert.match(desktopPet, /case "running":[\s\S]{0,80}<LoadingOutlined spin aria-hidden="true" \/>/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
-  assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,100}right:\s*8px;[\s\S]{0,80}bottom:\s*7px;/);
-  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,120}top:\s*calc\(50%/);
-  assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-main \.desktop-pet-task-status-badge[\s\S]*?opacity:\s*0;/);
+  assert.match(globalStyles, /\.desktop-pet-message-status\.is-unread\s*\{[\s\S]{0,120}width:\s*8px;[\s\S]{0,120}background:\s*#1677ff;/);
+  assert.match(globalStyles, /\.desktop-pet-message-status\.is-awaiting\s*\{[\s\S]{0,120}color:\s*#f59e0b;[\s\S]{0,80}font-size:\s*14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,100}right:\s*8px;[\s\S]{0,80}top:\s*50%;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,260}border:\s*1px solid transparent;[\s\S]{0,120}background:\s*transparent;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,160}min-height:\s*auto;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,220}max-height:\s*calc\(100% - 20px\);/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,260}box-shadow:[\s\S]{0,120}0 8px 20px rgba\(47,\s*88,\s*96,\s*0\.06\)/);
-  assert.match(globalStyles, /\.desktop-pet-status-panel\s*\{[\s\S]{0,120}gap:\s*6px;[\s\S]{0,80}padding-top:\s*7px;[\s\S]{0,80}padding-bottom:\s*9px;/);
+  assert.match(globalStyles, /\.desktop-pet-status-panel\s*\{[\s\S]{0,120}gap:\s*4px;[\s\S]{0,80}padding-top:\s*9px;[\s\S]{0,80}padding-bottom:\s*10px;/);
   assert.match(globalStyles, /\.desktop-pet-status-panel \.desktop-pet-task-head\s*\{[\s\S]{0,120}grid-template-columns:\s*minmax\(0,\s*1fr\) 32px;[\s\S]{0,80}min-height:\s*24px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-pet-window\.is-edge-dock-right\.is-edge-dock-bottom \.desktop-pet-unread-badges\s*\{[\s\S]{0,160}left:\s*calc\(var\(--desktop-pet-button-left\) \+ 76px\);/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-pet-window\.is-edge-dock-right\.is-edge-dock-bottom \.desktop-pet-unread-badges\s*\{[\s\S]{0,220}top:\s*calc\(var\(--desktop-pet-button-top\) - 8px\);/);
   assert.match(desktopPet, /className=\{`desktop-pet-message-stack\$\{replyingChatId \? " is-replying" : ""\}`\}/);
-  assert.match(desktopPet, /const isReplying = replyingChatId === message\.chatId;/);
-  assert.match(desktopPet, /className=\{`desktop-pet-message-card is-\$\{cardStatus\}\$\{message\.unread \? " is-unread" : ""\}\$\{isReplying \? " is-replying" : ""\}`\}/);
-  assert.match(globalStyles, /\.desktop-pet-message-stack\.is-replying\s*\{[\s\S]{0,180}max-height:\s*176px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-card\.is-replying\s*\{[\s\S]{0,180}min-height:\s*92px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-card\.is-replying\s*\{[\s\S]{0,180}padding:\s*10px 12px 8px 14px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-reply-box\s*\{[\s\S]{0,180}margin-top:\s*4px;/);
+  assert.match(desktopPet, /const canReply = message\.status !== "awaiting";/);
+  assert.match(desktopPet, /const isReplying = canReply && replyingChatId === message\.chatId;/);
+  assert.match(desktopPet, /className=\{`desktop-pet-message-card is-\$\{cardStatus\}\$\{message\.unread \? " is-unread" : ""\}\$\{canReply \? " can-reply" : ""\}\$\{isReplying \? " is-replying" : ""\}`\}/);
+  assert.match(globalStyles, /\.desktop-pet-message-stack\s*\{[\s\S]{0,180}max-height:\s*186px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-stack\.is-replying\s*\{[\s\S]{0,180}max-height:\s*var\(--desktop-pet-task-list-max,\s*236px\);/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\.is-replying\s*\{[\s\S]{0,180}min-height:\s*108px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\.is-replying\s*\{[\s\S]{0,180}padding:\s*10px 8px 9px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply-box\s*\{[\s\S]{0,180}margin-top:\s*8px;/);
   assert.match(globalStyles, /\.desktop-pet-message-reply-input\s*\{[\s\S]{0,100}grid-column:\s*1;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply-box\s*\{[\s\S]{0,180}margin-right:\s*-/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-message-latest/);
@@ -7798,10 +7938,10 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPetController = readSourceFile("src", "main", "modules", "pet", "controller.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
-  const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
+  const petRuntime = readSourceFile("src", "main", "modules", "pet", "runtime.ts");
+  const desktopPetHandlers = readSourceFile("src", "main", "modules", "pet", "ipc.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
@@ -7813,9 +7953,10 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
   assert.match(desktopPetController, /chat\.hasPendingAwaiting \? "awaiting" : "running"/);
   assert.match(desktopPetController, /t\("desktopPet\.task\.untitled"\)/);
   assert.match(desktopPetController, /left\.status === "awaiting" \? -1 : 1/);
-  assert.match(petRuntime, /state\.assistantNavigationStatusClient\?\.getSnapshot\(\)/);
+  assert.match(petRuntime, /options\.getNavigationSnapshot\(\)/);
+  assert.doesNotMatch(petRuntime, /markAgentPlatformChatRead|\/api\/read/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?refreshDesktopPetState\(\);/);
-  assert.match(mainProcess, /openDesktopPetTaskChat/);
+  assert.match(petRuntime, /async function openTaskChat/);
   assert.match(desktopPetHandlers, /desktopPet\.openTaskChat/);
   assert.match(preload, /openTaskChat: \(input\) => ipcRenderer\.invoke\("desktopPet\.openTaskChat", input\)/);
   assert.match(desktopPet, /DESKTOP_PET_TASK_VISIBLE_LIMIT = 2/);
@@ -7892,12 +8033,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const cutejPetManifest = readSourceFile("brands", "cutej", "desktop-pet", "pet.json");
   const globalStyles = readRendererStyles();
   const mainProcess = readMainProcessRuntimeSource();
-  const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
-  const desktopPetWindow = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "pet", "window.ts"),
-    "utf8"
-  );
-  const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
+  const petRuntime = readSourceFile("src", "main", "modules", "pet", "runtime.ts");
+  const desktopPetWindow = readSourceFile("src", "main", "modules", "pet", "window.ts");
+  const desktopPetHandlers = readSourceFile("src", "main", "modules", "pet", "ipc.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const viteConfig = readSourceFile("vite.config.ts");
@@ -7969,9 +8107,12 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /const previewPanel = petState\.previewPanel\?\.visible \? petState\.previewPanel : null/);
   assert.match(desktopPet, /const previewHistoryMessage: DesktopPetMessageItem \| null =/);
   assert.match(desktopPet, /function getVisibleDesktopPetMessages\(input: \{/);
-  assert.match(desktopPet, /messages: petMessages,[\s\S]{0,80}cachedMessages: messageCache,[\s\S]{0,80}previewHistoryMessage/);
+  assert.match(desktopPet, /\.filter\(\(message\) => message\.unread \|\| message\.status === "awaiting"\)/);
+  assert.match(desktopPet, /DESKTOP_PET_MESSAGE_RETENTION_MS = 7 \* 24 \* 60 \* 60 \* 1000/);
+  assert.match(desktopPet, /\.slice\(0, DESKTOP_PET_MESSAGE_LIMIT\)/);
+  assert.match(desktopPet, /messages: petMessages,[\s\S]{0,80}previewHistoryMessage/);
   assert.match(desktopPet, /const hasHistoryMessages = visibleMessages\.length > 0;/);
-  assert.match(desktopPet, /setMessageCache\(\(current\) => mergeDesktopPetMessageLists\(\[previewHistoryMessage\], current\)\)/);
+  assert.doesNotMatch(desktopPet, /setMessageCache|cachedMessages/);
   assert.match(desktopPet, /const hasCollapsedPreviewPanel = Boolean\(previewPanel && !previewPanel\.expanded && !isDonePreviewPanel && !hasHistoryMessages\);/);
   assert.match(desktopPet, /const shouldShowPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !shouldShowTaskPanel && Boolean\(previewPanel && previewPanel\.expanded && !isDonePreviewPanel\);/);
   assert.match(desktopPet, /const showMessageBadgeOnly = hasMessageReaction && !hasHistoryMessages && !shouldShowTaskPanel && !shouldShowPreviewPanel && !isDonePreviewPanel;/);
@@ -7982,6 +8123,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /function handleReplySubmitClick\(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem\)/);
   assert.match(desktopPet, /function handleOpenMessageClick\(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem\)/);
   assert.match(desktopPet, /formatMessageCardPreview\(message, isThinking, replyDraftPreview, t\)/);
+  assert.match(desktopPet, /const canReply = message\.status !== "awaiting";/);
+  assert.match(desktopPet, /message\.status === "awaiting" \? \([\s\S]{0,520}ClockCircleOutlined/);
+  assert.match(desktopPet, /message\.unread \? \([\s\S]{0,220}desktop-pet-message-status is-unread/);
+  assert.match(desktopPet, /\) : canReply \? \([\s\S]{0,220}desktop-pet-message-reply/);
   assert.match(desktopPet, /visibleMessages\.map\(\(message\) =>/);
   assert.match(desktopPet, /className="desktop-pet-message-meta"/);
   assert.doesNotMatch(desktopPet, /className="desktop-pet-message-latest">最新<\/span>/);
@@ -8067,7 +8212,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-message-nudge/);
   assert.match(petRuntime, /getDesktopPetContextMenuItems\(\s*state\.desktopPetState\.appearanceId,\s*state\.desktopPetState\.signature \?\? \[\]\s*\)/);
   assert.match(petRuntime, /desktopPet\.signatureRequested", signatureId/);
-  assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
+  assert.match(petRuntime, /function setMouseInteractive\(interactive: boolean\)/);
   assert.match(petRuntime, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(petRuntime, /options\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
   assert.match(desktopPetWindow, /const isMac = options\.platform === "darwin";/);
@@ -8133,15 +8278,12 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   );
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
-  const ssoController = readSourceFile("src", "main", "sso-controller.ts");
+  const oidcSso = readSourceFile("src", "main", "modules", "identity", "oidc-sso.ts");
+  const ssoController = readSourceFile("src", "main", "modules", "identity", "sso-controller.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const globalStyles = readRendererStyles();
   const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
-  const ssoWebviewCompletionHandler = mainProcess.slice(
-    indexOfRequired(mainProcess, "async function handleDesktopSsoWebviewNavigation"),
-    indexOfRequired(mainProcess, "function clearDesktopPetIdleResetTimer")
-  );
+  const ssoWebviewCompletionHandler = mainProcess;
 
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
@@ -8223,7 +8365,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/mcp-servers" \|\|[\s\S]*?item\.to === "\/skills"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/connectors" \|\|[\s\S]*?item\.to === "\/skills"/);
   assert.doesNotMatch(sidebarSource, /const middleToolItems = fixedToolItems\.filter/);
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
   assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\([\s\S]{0,120}\(item\) => item\.to === "\/settings"[\s\S]{0,40}\);/);
@@ -8273,7 +8415,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-link:hover:not\(\.sidebar-link-active\)\s*\{[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/);
-  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
+  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*var\(--nav-selected-bg\);[\s\S]*?color:\s*var\(--nav-selected-text\);/);
   assert.match(
     globalStyles,
     /\.sidebar-account-menu \.sidebar-tool-menu-item:hover,[\s\S]*?\.sidebar-account-menu \.sidebar-tool-menu-item\.sidebar-link-active,[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/
@@ -8357,17 +8499,17 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   );
   const sharedSso = readSourceFile("src", "shared", "sso.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
-  const ssoHandlers = readSourceFile("src", "main", "ipc", "sso-handlers.ts");
-  const ssoController = readSourceFile("src", "main", "sso-controller.ts");
-  const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
+  const ssoHandlers = readSourceFile("src", "main", "modules", "identity", "ipc.ts");
+  const ssoController = readSourceFile("src", "main", "modules", "identity", "sso-controller.ts");
+  const oidcSso = readSourceFile("src", "main", "modules", "identity", "oidc-sso.ts");
   const ssoStartLoginHandler = ssoHandlers.slice(
     indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.startLogin"'),
     indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.cancelLogin"')
   );
 
-  assert.match(sharedSso, /export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:\$\{STORAGE_NAMESPACE\}-sso`;/);
-  assert.match(ssoController, /from "\.\.\/shared\/sso"/);
+  assert.match(sharedSso, /export const DESKTOP_SSO_WEBVIEW_PARTITION = "";/);
+  assert.match(ssoController, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
   assert.match(embeddedSurfaceHosts, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
   assert.match(embeddedSurfaceHosts, /function resolveWebsiteSsoPartition\(item: EmbeddedSidebarItem\)[\s\S]{0,140}item\.kind === "website" \? DESKTOP_SSO_WEBVIEW_PARTITION : undefined/);
   assert.match(embeddedSurfaceHosts, /partition=\{resolveWebsiteSsoPartition\(item\)\}/);
@@ -8418,7 +8560,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /webview\.reload\(\)/u);
   assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
   assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);
-  assert.match(externalWebviewPage, /partition: activeTab\?\.partition,[\s\S]{0,80}userAgent: activeTab\?\.userAgent/);
+  assert.match(externalWebviewPage, /partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
   assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 
@@ -8561,8 +8703,8 @@ test("help page uses the configured anonymous Help webview", () => {
   );
   const preload = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
-  const helpHandlers = readSourceFile("src", "main", "ipc", "help-handlers.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
+  const helpHandlers = readSourceFile("src", "main", "modules", "settings", "help-ipc.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
 
   assert.match(helpPage, /window\.electronAPI\.help\.getSettings\(\)/);
@@ -8674,4 +8816,138 @@ test("persistent external webview surfaces hide without detaching the webview la
     externalWebviewStyles,
     /\.external-webview-page\.is-inactive-surface \.external-webview-browser-chrome\s*\{[\s\S]*?app-region:\s*no-drag;[\s\S]*?-webkit-app-region:\s*no-drag;/u
   );
+});
+
+test("R0 deprecated Desktop APIs and dead storage chains are absent while compatibility exits stay observable", () => {
+  for (const segments of [
+    ["src", "main", "assistant", "pet", "agent-platform-api.ts"],
+    ["src", "shared", "startup-status.ts"],
+    ["src", "main", "kanban-cloud-sync.ts"],
+    ["src", "main", "kanban-db.ts"],
+    ["src", "main", "kanban-store.ts"],
+    ["src", "main", "kanban-sync.ts"],
+    ["src", "main", "retired-plugins.ts"],
+  ]) {
+    assert.equal(fs.existsSync(path.join(projectRoot, ...segments)), false, segments.join("/"));
+  }
+
+  const desktopAssistantBoundary = [
+    readSourceFile("src", "shared", "contracts", "copilot.ts"),
+    readSourceFile("src", "shared", "contracts", "desktop-api.ts"),
+    readSourceFile("src", "preload", "index.ts"),
+    readSourceFile("src", "main", "modules", "assistant", "ipc.ts"),
+    readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"),
+  ].join("\n");
+  for (const removedName of [
+    "getMemorySettings",
+    "saveMemorySettings",
+    "getMemorySummary",
+    "openMemoryDirectory",
+    "listMemoryItems",
+    "deleteMemoryItem",
+    "clearMemoryItems",
+    "correctVoiceText",
+    "transcribeVoiceAudio",
+    "AssistantMemorySettings",
+    "AssistantMemorySummary",
+    "AssistantVoiceCorrectionRequest",
+    "AssistantVoiceTranscriptionRequest",
+    "ASSISTANT_LEGACY_STREAM_EVENT_TYPES",
+  ]) {
+    assert.doesNotMatch(desktopAssistantBoundary, new RegExp(`\\b${removedName}\\b`, "u"), removedName);
+  }
+  assert.doesNotMatch(
+    [
+      readSourceFile("src", "shared", "contracts", "copilot.ts"),
+      readSourceFile("src", "main", "modules", "assistant", "settings-store.ts"),
+      readSourceFile("src", "main", "infrastructure", "filesystem", "profile-store.ts"),
+      readSourceFile("src", "main", "app", "bootstrap", "desktop-init.ts"),
+    ].join("\n"),
+    /\bvoiceCorrectionEnabled\b/u,
+  );
+
+  const identityAuth = readSourceFile("src", "main", "modules", "identity", "identity-center-auth.ts");
+  assert.match(identityAuth, /resolveDesktopCapability\(app, "auth\.publicKey"\)/u);
+  assert.match(identityAuth, /capability\.filePath \|\| getIdentityCenterPublicKeyExportPath\(app\)/u);
+  assert.doesNotMatch(identityAuth, /readEnvFile|runExecFile|issueIdentityCenterAccessToken|__testInternals|validateJwt|accessToken/u);
+
+  const attachmentStore = readSourceFile("src", "main", "modules", "assistant", "attachments", "attachment-store.ts");
+  const agentPlatformConfig = readSourceFile("src", "main", "modules", "agent-platform", "config.ts");
+  for (const removedName of [
+    "hydrateAssistantAttachmentsForChat",
+    "refreshAssistantAttachmentsForRun",
+    "createAssistantArtifactAttachmentsFromFiles",
+    "AssistantArtifactPublishInput",
+    "AssistantArtifactPublishResult",
+    "PublishedAssistantArtifact",
+  ]) {
+    assert.doesNotMatch(attachmentStore, new RegExp(`\\b${removedName}\\b`, "u"), removedName);
+  }
+  assert.doesNotMatch(agentPlatformConfig, /\btryLoadAgentPlatformMinimaxSettings\b|\btryLoadAgentPlatformVoiceAsrSettings\b/u);
+
+  const kanbanBoundary = [
+    readSourceFile("src", "shared", "contracts", "kanban.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "local-projects.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "local-store.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "runtime.ts"),
+  ].join("\n");
+  for (const removedName of [
+    "KanbanIssueSyncResult",
+    "listPendingUpstreamIssues",
+    "applyDesktopIssueSyncResults",
+    "updateDesktopKanbanIssueByRunId",
+    "updateDesktopKanbanIssueByChatId",
+    "markDesktopKanbanIssueSyncing",
+    "writeKanbanSettingsIfAbsent",
+    "updateKanbanIssueByRunId",
+  ]) {
+    assert.doesNotMatch(kanbanBoundary, new RegExp(`\\b${removedName}\\b`, "u"), removedName);
+  }
+  assert.match(kanbanBoundary, /\bbuildKanbanAutomationPayload\b/u);
+  assert.match(kanbanBoundary, /\bresolveKanbanRunFinishedPush\b/u);
+
+  const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
+  for (const removedName of [
+    "createDesktopPetWindow",
+    "dismissDesktopPetPreview",
+    "openAssistantFromDesktopPet",
+    "openDesktopPetTaskChat",
+    "requestDesktopPetSignature",
+    "setDesktopPetRendererWindowMode",
+    "moveDesktopPetWindowBy",
+    "beginDesktopPetWindowDrag",
+    "endDesktopPetWindowDrag",
+    "setDesktopPetWindowMouseInteractive",
+  ]) {
+    assert.doesNotMatch(appRuntime, new RegExp(`function ${removedName}\\b`, "u"), removedName);
+  }
+
+  const pluginLoader = readSourceFile("src", "main", "modules", "plugins", "loader.ts");
+  const pluginMarket = readSourceFile("src", "main", "modules", "marketplace", "plugin-market.ts");
+  assert.doesNotMatch(`${appRuntime}\n${pluginLoader}\n${pluginMarket}`, /retired-plugins|isRetiredPlugin|cleanupRetiredPluginUserData/u);
+
+  const compatibility = readSourceFile("src", "main", "support", "logging", "deprecated-compatibility.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const webclientBridge = readSourceFile("src", "main", "modules", "agent-platform", "ipc.ts");
+  const browserRegistry = readSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const builtinLoader = readSourceFile("src", "main", "modules", "services", "builtin-loader.ts");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  assert.match(assistantHandlers, /reportDeprecatedCompatibilityUse\("assistant\.createCoderProject"\)/u);
+  assert.match(webclientBridge, /"agent-webclient\.bridge-v4"[\s\S]{0,100}"agent-webclient\.bridge-v5"/u);
+  assert.match(browserRegistry, /category: LEGACY_FIXED_SURFACE_ID_ALIASES\[normalized\] \? "fixed" : "derived"/u);
+  assert.match(appShell, /const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "\/service\/agent-webclient"/u);
+  assert.match(appShell, /path=\{LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\}[\s\S]{0,120}LegacyAgentWebclientServiceRouteRedirect/u);
+  assert.match(appShell, /reportDeprecatedRendererCompatibilityUse\("route\.service-agent-webclient"/u);
+  assert.match(compatibility, /"\[deprecated-compatibility\]"/u);
+  assert.match(compatibility, /desktopVersion: currentDesktopVersion/u);
+  assert.match(appRuntime, /source === "deprecated-compatibility" \? \{ desktopVersion: app\.getVersion\(\) \}/u);
+  assert.match(builtinLoader, /MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION = "v0\.3\.60"/u);
+  assert.doesNotMatch(
+    shellHandlers,
+    /source === "deprecated-compatibility"[\s\S]{0,260}route: event\.sender\.getURL\(\)/u,
+  );
+
+  const webclientHost = readSourceFile("src", "main", "modules", "services", "agent-webclient-host.ts");
+  assert.match(webclientHost, /requestPath\.startsWith\("\/api\/voice"\)/u);
 });

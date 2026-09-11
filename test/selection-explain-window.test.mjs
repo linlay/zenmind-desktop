@@ -7,7 +7,7 @@ const root = process.cwd();
 const read = (...segments) => fs.readFileSync(path.join(root, ...segments), "utf8");
 
 test("selection explanation window is singleton, temporary and never always-on-top", () => {
-  const controller = read("src", "main", "app-shell", "selection-explain-window.ts");
+  const controller = read("src", "main", "modules", "shell", "selection-explain-window.ts");
   assert.match(controller, /private window: BrowserWindow \| null = null/u);
   assert.match(controller, /if \(input\.status !== "pending" && this\.state\?\.requestId !== requestId\) return/u);
   assert.match(controller, /frame: false/u);
@@ -33,8 +33,12 @@ test("selection explanation renderer hands only Chat and Run ids to the WebClien
 
 test("selection explanation surface uses an isolated BTW root role", () => {
   const identities = read("src", "shared", "surface-identity.ts");
-  const handler = read("src", "main", "ipc", "agent-webclient-bridge-handlers.ts");
-  const broker = read("src", "main", "realtime", "realtime-broker.ts");
+  const handler = ["ipc.shared.ts", "ipc.operations-3.ts"].map((filename) =>
+    read("src", "main", "modules", "agent-platform", filename)
+  ).join("\n");
+  const broker = ["realtime-broker.ts", "realtime-broker.methods-1.ts"].map((filename) =>
+    read("src", "main", "modules", "agent-platform", "realtime", filename)
+  ).join("\n");
   assert.match(identities, /"selection-explain"/u);
   assert.match(handler, /return "selection_explain" as const/u);
   assert.match(handler, /context\.kind === "agent-selection-explain"/u);

@@ -4,9 +4,9 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
-  isWorkPanelCloseShortcut,
+  isDesktopCloseShortcut,
   resolveGlobalSearchCommandShortcut,
-} = require("../dist-electron/main/platform-adapter.js");
+} = require("../dist-electron/main/infrastructure/electron/platform-adapter.js");
 
 function keyDown(key, overrides = {}) {
   return {
@@ -102,15 +102,15 @@ test("global search command shortcuts reject unsupported or inexact combinations
   assert.equal(resolveGlobalSearchCommandShortcut("win32", { ...keyDown("a", { control: true }), type: "keyUp" }), null);
 });
 
-test("WorkPanel close shortcut uses exact platform modifiers and keyDown only", () => {
-  assert.equal(isWorkPanelCloseShortcut("darwin", keyDown("w", { meta: true })), true);
-  assert.equal(isWorkPanelCloseShortcut("win32", keyDown("W", { control: true })), true);
-  assert.equal(isWorkPanelCloseShortcut("linux", keyDown("w", { control: true })), false);
-  assert.equal(isWorkPanelCloseShortcut("darwin", keyDown("w", { meta: true, shift: true })), false);
-  assert.equal(isWorkPanelCloseShortcut("win32", keyDown("w", { control: true, alt: true })), false);
-  assert.equal(isWorkPanelCloseShortcut("darwin", keyDown("w", { meta: true, isAutoRepeat: true })), false);
+test("Desktop close shortcut uses exact platform modifiers and keyDown only", () => {
+  assert.equal(isDesktopCloseShortcut("darwin", keyDown("w", { meta: true })), true);
+  assert.equal(isDesktopCloseShortcut("win32", keyDown("W", { control: true })), true);
+  assert.equal(isDesktopCloseShortcut("linux", keyDown("w", { control: true })), false);
+  assert.equal(isDesktopCloseShortcut("darwin", keyDown("w", { meta: true, shift: true })), false);
+  assert.equal(isDesktopCloseShortcut("win32", keyDown("w", { control: true, alt: true })), false);
+  assert.equal(isDesktopCloseShortcut("darwin", keyDown("w", { meta: true, isAutoRepeat: true })), false);
   assert.equal(
-    isWorkPanelCloseShortcut("win32", { ...keyDown("w", { control: true }), type: "keyUp" }),
+    isDesktopCloseShortcut("win32", { ...keyDown("w", { control: true }), type: "keyUp" }),
     false,
   );
 });

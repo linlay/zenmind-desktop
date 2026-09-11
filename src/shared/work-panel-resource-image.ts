@@ -1,9 +1,18 @@
-export type WorkPanelResourceImageProfile = "artifact" | "reference";
+export type WorkPanelResourceImageProfile = "workspace-file" | "artifact" | "reference";
 
 export type WorkPanelResourceImageMimeType =
   | "image/png"
   | "image/jpeg"
-  | "image/webp";
+  | "image/webp"
+  | "image/apng"
+  | "image/avif"
+  | "image/bmp"
+  | "image/gif"
+  | "image/x-icon"
+  | "image/heic"
+  | "image/heif"
+  | "image/tiff"
+  | "image/svg+xml";
 
 export type WorkPanelResourceImageSelection = {
   handleId: string;
@@ -17,6 +26,7 @@ export type WorkPanelResourceImageSelection = {
   sizeBytes: number;
   revision: string;
   localOriginal: boolean;
+  editable: boolean;
 };
 
 export type WorkPanelResourceImageClaimRequest = {
@@ -47,6 +57,7 @@ export type WorkPanelResourceImageClaimResult = {
 export type WorkPanelResourceImageReadResult = {
   ok: boolean;
   data?: Uint8Array;
+  displayMimeType?: WorkPanelResourceImageMimeType;
   revision?: string;
   message?: string;
 };

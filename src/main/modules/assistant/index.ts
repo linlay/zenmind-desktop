@@ -1,0 +1,16 @@
+export { cancelAssistantAttachmentTask, createAssistantAttachmentFromPastedImage, createAssistantAttachmentsFromFiles, resolveAssistantAttachmentPath } from "./attachments/attachment-store";
+export { resolveAssistantChatStoragePaths } from "./chat-storage-path";
+export { ContainerHubClient } from "./container-hub";
+export type { ContainerHubConfig, ContainerHubEnvironment } from "./container-hub";
+export { captureAssistantScreenshot, captureScreenshotForBridge } from "./copilot/screenshot";
+export { createFirstInstallBootstrapNavigation } from "./first-install-bootstrap-navigation";
+export { createAssistantIntegrationPorts } from "./integration-ports";
+export type { AssistantIntegrationPorts } from "./integration-ports";
+export { registerAssistantIpcHandlers } from "./ipc";
+export { readAssistantCopilotAgentsFromPlatform, readAssistantNavigationAgentsFromPlatform } from "./navigation-status-client";
+export { createAssistantBridgeRuntime } from "./runtime";
+export type { AssistantBridgeRuntime } from "./runtime";
+export { getAssistantSettings, readAssistantSettings, saveAssistantSettings, toPublicAssistantSettings } from "./settings-store";
+export type { AssistantSettingsPrivate } from "./settings-store";
+export { createAssistantRunWakeLock } from "./wake-lock";
+export type { AssistantRunWakeLock } from "./wake-lock";

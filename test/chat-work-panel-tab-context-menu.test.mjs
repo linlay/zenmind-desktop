@@ -1,10 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { normalizeChatWorkPanelTabContextMenuRequest, registerChatWorkPanelTabContextMenuIpcHandlers } from "../dist-electron/main/modules/work-panel/tab-context-menu-ipc.js";
 
-const {
-  normalizeChatWorkPanelTabContextMenuRequest,
-  registerChatWorkPanelTabContextMenuIpcHandlers
-} = await import("../dist-electron/main/ipc/chat-work-panel-tab-context-menu-handlers.js");
+test("native HTML menus keep source actions independently of the renderer kind", async () => {
+  for (const platform of ["darwin", "win32"]) for (const profile of ["default", "artifact", "reference"]) for (const localOriginal of [true, false]) {
+    const handlers = new Map();
+    let template;
+    const sender = {};
+    const owner = { isDestroyed: () => false, getContentBounds: () => ({ x: 0, y: 0, width: 100, height: 100 }) };
+    registerChatWorkPanelTabContextMenuIpcHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, {
+      platform, getMainWindow: () => owner, BrowserWindow: { fromWebContents: () => owner },
+      Menu: { buildFromTemplate: (items) => { template = items; return { popup: (options) => { items.find((item) => item.id === "open-resource-browser").click(); options.callback(); } }; } },
+    });
+    const request = { mode: "work-panel", x: 0, y: 0, profile, nativeHtml: { localOriginal },
+      documentPathAvailable: true, reviewMode: "inactive", isFullscreen: false, canClose: true, canCloseOthers: false };
+    assert.equal((await handlers.get("chatWorkPanel.tabContextMenu.popup")({ sender }, request)).actionId, "open-resource-browser");
+    for (const action of ["reload", "copy-title", "copy-path", "download-resource", "open-resource-default-app", "open-resource-browser", "toggle-fullscreen"]) {
+      assert.ok(template.some((item) => item.id === action), action);
+    }
+    assert.equal(template.find((item) => item.id === "reveal-resource").enabled, localOriginal);
+    assert.equal(normalizeChatWorkPanelTabContextMenuRequest({ ...request, nativeHtml: { localOriginal, path: "/forged" } }), null);
+  }
+});
+
 
 test("Work Panel tab context menu accepts only bounded profile capabilities", () => {
   assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({
@@ -13,6 +31,7 @@ test("Work Panel tab context menu accepts only bounded profile capabilities", ()
     y: 20.6,
     profile: "artifact",
     isFullscreen: false,
+    documentPathAvailable: true,
     canClose: true,
     canCloseOthers: false
   }), {
@@ -21,6 +40,7 @@ test("Work Panel tab context menu accepts only bounded profile capabilities", ()
     y: 21,
     profile: "artifact",
     isFullscreen: false,
+    documentPathAvailable: true,
     canClose: true,
     canCloseOthers: false
   });
@@ -119,6 +139,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     y: -10,
     profile: "artifact",
     isFullscreen: true,
+    documentPathAvailable: true,
     canClose: false,
     canCloseOthers: true
   });
@@ -126,6 +147,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
     "toggle-fullscreen",
     "reload",
+    "copy-path",
     "separator",
     "download-resource",
     "open-resource-default-app",
@@ -137,6 +159,10 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   ]);
   assert.equal(builtTemplate.find((item) => item.id === "close-tab").enabled, false);
   assert.equal(builtTemplate.find((item) => item.id === "close-other-tabs").enabled, true);
+  assert.match(
+    builtTemplate.find((item) => item.id === "copy-path").label,
+    /Copy File Path|复制文件路径/u
+  );
   assert.match(
     builtTemplate.find((item) => item.id === "toggle-fullscreen").label,
     /Exit Full Screen|退出全屏/u

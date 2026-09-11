@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   createDesktopRuntimeDiagnostics,
   summarizeDesktopSsoAccessToken
-} = require("../dist-electron/main/desktop-runtime-info.js");
+} = require("../dist-electron/main/modules/desktop-actions/runtime-info.js");
 
 function jwt(payload, signature = "signature-abcd") {
   return [

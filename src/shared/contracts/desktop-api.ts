@@ -1,6 +1,9 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
+import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
+import type { MarketSkillContentResult } from "./market-skill-detail";
+import type { MarketSkillPins, MarketSkillPinUpdate } from "./market-skill-pins";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
@@ -27,12 +30,6 @@ import type {
   AssistantEventListener,
   AssistantFirstInstallBootstrapNavigationResult,
   AssistantHistoryChatsResult,
-  AssistantMemoryItem,
-  AssistantMemorySettings,
-  AssistantMemorySettingsInput,
-  AssistantMemoryStats,
-  AssistantMemoryStorage,
-  AssistantMemorySummary,
   AssistantNavActionResult,
   AssistantNavAgentItemsResult,
   AssistantNavigationAgentsChangedListener,
@@ -49,10 +46,6 @@ import type {
   AssistantStopRunResult,
   AssistantSubmitAwaitingRequest,
   AssistantSubmitAwaitingResult,
-  AssistantVoiceCorrectionRequest,
-  AssistantVoiceCorrectionResult,
-  AssistantVoiceTranscriptionRequest,
-  AssistantVoiceTranscriptionResult,
   AssistantWorkerOpenListener,
   CopilotDevToolsTargetInput,
   DesktopActionCallListener,
@@ -119,6 +112,19 @@ import type {
   WorkPanelResourceImageReadResult,
   WorkPanelResourceImageReleaseRequest,
 } from "../work-panel-resource-image";
+import type {
+  WorkPanelDocumentHtmlFileActionRequest,
+  WorkPanelDocumentHtmlActionResult,
+  WorkPanelDocumentHtmlClaimRequest,
+  WorkPanelDocumentHtmlClaimResult,
+  WorkPanelDocumentHtmlCommitRequest,
+  WorkPanelDocumentHtmlCommitResult,
+  WorkPanelDocumentHtmlHandleRequest,
+  WorkPanelDocumentHtmlPreviewRequest,
+  WorkPanelDocumentHtmlPreviewResult,
+  WorkPanelDocumentHtmlReadResult,
+  WorkPanelDocumentHtmlReleaseRequest,
+} from "../work-panel-document-html";
 import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
@@ -849,13 +855,13 @@ export type DesktopGlobalSearchShortcut =
   | { kind: "attention"; slot: DesktopGlobalSearchShortcutSlot }
   | { kind: "agent"; slot: DesktopGlobalSearchShortcutSlot };
 export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearchShortcut) => void;
-export type DesktopWorkPanelCloseShortcutRequest = {
+export type DesktopCloseShortcutRequest = {
   guestId: number | null;
+  website?: { surfaceId: string; registrationId: string };
   fallbackToWindowClose?: boolean;
-  workPanelFocused?: boolean;
 };
-export type DesktopWorkPanelCloseShortcutListener = (
-  request: DesktopWorkPanelCloseShortcutRequest
+export type DesktopCloseShortcutListener = (
+  request: DesktopCloseShortcutRequest
 ) => void;
 export type DesktopConfigChangedEvent = {
   reason: string;
@@ -867,7 +873,7 @@ export type RendererDiagnosticLevel = "debug" | "warn" | "error";
 
 export interface RendererDiagnosticReport {
   level: RendererDiagnosticLevel;
-  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell" | "deprecated-compatibility";
   message: string;
   details?: Record<string, unknown>;
   stack?: string;
@@ -908,10 +914,10 @@ export interface DesktopApi {
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
-    setWorkPanelKeyboardFocusActive: (active: boolean) => void;
     setWorkPanelFullscreenActive: (active: boolean) => void;
     requestWindowClose: () => void;
     minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;
+    popupApplicationMenu: (request: { menu: "file" | "edit" | "view" | "help"; x: number; y: number }) => Promise<{ ok: boolean }>;
     toggleWindowMaximize: () => Promise<{ ok: boolean; isMaximized: boolean; message?: string }>;
     getWindowState: () => Promise<{
       ok: boolean;
@@ -974,9 +980,6 @@ export interface DesktopApi {
     getSettings: () => Promise<AssistantSettingsPublic>;
     consumeFirstInstallBootstrapNavigation: () => Promise<AssistantFirstInstallBootstrapNavigationResult>;
     saveSettings: (input: AssistantSettingsInput) => Promise<AssistantSettingsPublic>;
-    getMemorySettings: () => Promise<AssistantMemorySettings>;
-    saveMemorySettings: (input: AssistantMemorySettingsInput) => Promise<AssistantMemorySettings>;
-    getMemorySummary: () => Promise<AssistantMemorySummary>;
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: (options?: AssistantNavigationListOptions) => Promise<AssistantNavAgentItemsResult>;
     updateChatOrder: (input: AssistantChatOrderMutationRequest) => Promise<AssistantChatOrderMutationResult>;
@@ -985,15 +988,6 @@ export interface DesktopApi {
     listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
     createProject: (input: AssistantCreateProjectRequest) => Promise<AssistantCreateProjectResult>;
     createCoderProject: (input: AssistantCreateCoderProjectRequest) => Promise<AssistantCreateCoderProjectResult>;
-    openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
-    listMemoryItems: () => Promise<{
-      items: AssistantMemoryItem[];
-      settings: AssistantMemorySettings;
-      stats: AssistantMemoryStats;
-      storage: AssistantMemoryStorage;
-    }>;
-    deleteMemoryItem: (memoryId: string) => Promise<{ ok: boolean; message: string }>;
-    clearMemoryItems: () => Promise<{ ok: boolean; message: string; deletedCount: number }>;
     listChats: () => Promise<AssistantChatSummary[]>;
     listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
@@ -1009,13 +1003,10 @@ export interface DesktopApi {
     ) => Promise<AssistantAttachmentPickResult>;
     startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
     stopRun: (runId: string) => Promise<AssistantStopRunResult>;
-    correctVoiceText: (request: AssistantVoiceCorrectionRequest) => Promise<AssistantVoiceCorrectionResult>;
-    transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) => Promise<AssistantVoiceTranscriptionResult>;
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => Promise<AssistantSubmitAwaitingResult>;
     openAttachment: (chatId: string, attachmentId: string) => Promise<{ ok: boolean; message: string; path?: string }>;
     deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;
     markAgentChatsRead: (agentKey: string) => Promise<AssistantNavActionResult>;
-    markChatRead: (chatId: string, runId?: string) => Promise<AssistantNavActionResult>;
     renameChat: (chatId: string, chatName: string) => Promise<AssistantNavActionResult>;
     archiveChat: (chatId: string) => Promise<AssistantNavActionResult>;
     exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
@@ -1090,6 +1081,9 @@ export interface DesktopApi {
     onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
+    readSkillContent: (id: string) => Promise<MarketSkillContentResult>;
+    getSkillPins: () => Promise<MarketSkillPins>;
+    saveSkillPins: (update: MarketSkillPinUpdate) => Promise<MarketSkillPins>;
     getSettings: () => Promise<MarketSettings>;
     saveSettings: (input: MarketSettingsInput) => Promise<MarketSettings>;
     list: (options?: MarketListOptions) => Promise<MarketListResult>;
@@ -1166,8 +1160,14 @@ export interface DesktopApi {
     saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getDesktopSkin: () => Promise<DesktopSkinResult>;
+    setDesktopSkin: (skinId: DesktopSkinId, options?: DesktopSkinSelectionOptions) => Promise<DesktopSkinResult>;
+    importDesktopSkinPackage: () => Promise<DesktopSkinResult>;
+    removeDesktopSkinPackage: (skinId: DesktopSkinId) => Promise<DesktopSkinResult>;
+    importDesktopBackground: () => Promise<DesktopSkinResult>;
+    resetDesktopBackground: () => Promise<DesktopSkinResult>;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[]; pinnedWebEntryKeys?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
@@ -1204,6 +1204,14 @@ export interface DesktopApi {
       release: (input: WorkPanelLocalFileReleaseRequest) => Promise<WorkPanelLocalFileActionResult>;
       open: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
       reveal: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+    };
+    documentHtml: {
+      claim: (input: WorkPanelDocumentHtmlClaimRequest) => Promise<WorkPanelDocumentHtmlClaimResult>;
+      read: (input: WorkPanelDocumentHtmlHandleRequest) => Promise<WorkPanelDocumentHtmlReadResult>;
+      preview: (input: WorkPanelDocumentHtmlPreviewRequest) => Promise<WorkPanelDocumentHtmlPreviewResult>;
+      fileAction: (input: WorkPanelDocumentHtmlFileActionRequest) => Promise<WorkPanelDocumentHtmlActionResult>;
+      release: (input: WorkPanelDocumentHtmlReleaseRequest) => Promise<WorkPanelDocumentHtmlActionResult>;
+      commit: (input: WorkPanelDocumentHtmlCommitRequest) => Promise<WorkPanelDocumentHtmlCommitResult>;
     };
     resourceImages: {
       claim: (input: WorkPanelResourceImageClaimRequest) => Promise<WorkPanelResourceImageClaimResult>;
@@ -1307,7 +1315,7 @@ export interface DesktopApi {
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenGlobalSearch: (listener: () => void) => () => void;
   onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
-  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => () => void;
+  onCloseShortcut: (listener: DesktopCloseShortcutListener) => () => void;
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;

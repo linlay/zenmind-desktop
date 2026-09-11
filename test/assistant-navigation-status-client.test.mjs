@@ -19,9 +19,9 @@ const {
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform,
   resolveAssistantWorkspaceGitBranch,
-} = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
-const { readDesktopProfileFromRoot } = require("../dist-electron/main/desktop-profile-store.js");
-const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/modules/assistant/navigation-status-client.js");
+const { readDesktopProfileFromRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 const EPOCH_MS = 1_783_000_000_000;
 
@@ -56,6 +56,7 @@ function createNavigationChat(overrides = {}) {
     lastRunId: "",
     lastRunContent: "",
     isRead: true,
+    readRunId: "",
     hasActiveRun: false,
     hasPendingAwaiting: false,
     ...overrides,
@@ -275,7 +276,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 25 });
+  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 25, pinned: false });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
     [
@@ -573,9 +574,9 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     agentKey: "coder-project",
     createdAt: EPOCH_MS,
     updatedAt: EPOCH_MS + 1,
-    lastRunId: "previous-run",
+    lastRunId: "run-1",
     lastRunContent: "Original assistant preview",
-    read: { isRead: true },
+    read: { isRead: true, readAt: EPOCH_MS + 1, readRunId: "run-1" },
   };
 
   class FakeWebSocket {
@@ -675,7 +676,7 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     data: {
       agentKey: "runtime-owner-does-not-match-project",
       chatId,
-      runId: "current-run",
+      runId: "run-2",
       startedAt: EPOCH_MS + 2,
     },
   });
@@ -689,6 +690,18 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
       mode: "planning",
     },
   });
+  sockets[0].emit({
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      agentKey: "coder-project",
+      chatId,
+      lastRunId: "run-2",
+      readRunId: "run-1",
+      createdAt: EPOCH_MS + 4,
+      agentUnreadCount: 1,
+    },
+  });
   sockets[0].respondWithStaleChats();
 
   const result = await refresh;
@@ -699,17 +712,24 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     assert.equal(chat?.hasActiveRun, true);
     assert.equal(chat?.hasPendingAwaiting, true);
     assert.equal(chat?.awaitingMode, "planning");
-    assert.equal(chat?.lastRunId, "current-run");
+    assert.equal(chat?.lastRunId, "run-2");
+    assert.equal(chat?.isRead, false);
+    assert.equal(chat?.readRunId, "run-1");
     assert.equal(chat?.chatName, staleChat.chatName);
     assert.equal(chat?.lastRunContent, staleChat.lastRunContent);
-    assert.equal(chat?.updatedAt, staleChat.updatedAt);
+    assert.equal(chat?.updatedAt, EPOCH_MS + 4);
   }
   assert.equal(result.items[0]?.hasPendingAwaiting, true);
   assert.equal(result.activityItems[0]?.hasPendingAwaiting, true);
 });
 
 test("assistant navigation chat reducer updates displayed chats without checking agent mode", () => {
-  const current = [createNavigationChat({ agentKey: "coder-agent", mode: "CODER" })];
+  const current = [createNavigationChat({
+    agentKey: "coder-agent",
+    mode: "CODER",
+    lastRunId: "run-1",
+    readRunId: "run-1",
+  })];
   const unread = applyAssistantNavigationChatPush(current, {
     frame: "push",
     type: "chat.unread",
@@ -717,11 +737,15 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       createdAt: EPOCH_MS + 1,
+      lastRunId: "run-2",
+      readRunId: "run-1",
+      agentUnreadCount: 1,
     },
   });
   assert.equal(unread.changed, true);
   assert.equal(unread.items[0].isRead, false);
   assert.equal(unread.items[0].updatedAt, EPOCH_MS + 1);
+  assert.equal(unread.items[0].readRunId, "run-1");
 
   const read = applyAssistantNavigationChatPush(unread.items, {
     frame: "push",
@@ -730,11 +754,37 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       readAt: EPOCH_MS + 2,
+      lastRunId: "run-2",
+      readRunId: "run-2",
+      agentUnreadCount: 0,
     },
   });
   assert.equal(read.changed, true);
   assert.equal(read.items[0].isRead, true);
-  assert.equal(read.items[0].updatedAt, EPOCH_MS + 2);
+  assert.equal(read.items[0].updatedAt, EPOCH_MS + 1);
+  assert.equal(read.items[0].readAt, EPOCH_MS + 2);
+  assert.equal(read.items[0].readRunId, "run-2");
+
+  const readFromOlderSnapshot = applyAssistantNavigationChatPush([
+    createNavigationChat({
+      agentKey: "coder-agent",
+      lastRunId: "run-1",
+      isRead: false,
+      readRunId: "run-1",
+    }),
+  ], {
+    frame: "push",
+    type: "chat.read",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      readAt: EPOCH_MS + 2,
+      lastRunId: "run-2",
+      readRunId: "run-2",
+      agentUnreadCount: 0,
+    },
+  });
+  assert.equal(readFromOlderSnapshot.items[0].lastRunId, "run-2");
 
   const started = applyAssistantNavigationChatPush(read.items, {
     frame: "push",
@@ -803,6 +853,118 @@ test("assistant navigation chat reducer updates displayed chats without checking
   assert.equal(absent.changed, false);
   assert.equal(absent.shouldRefresh, true);
   assert.deepEqual(absent.items.map((chat) => chat.chatId), ["chat-1"]);
+});
+
+test("assistant navigation ignores stale read state pushes and accepts a newer run unread", () => {
+  const current = [createNavigationChat({
+    lastRunId: "run-2",
+    isRead: true,
+    readAt: EPOCH_MS + 20,
+    readRunId: "run-2",
+  })];
+
+  const staleUnread = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-1",
+      readRunId: "",
+      createdAt: EPOCH_MS + 10,
+      agentUnreadCount: 0,
+    },
+  });
+  assert.equal(staleUnread.changed, false);
+  assert.equal(staleUnread.shouldRefresh, false);
+  assert.equal(staleUnread.items[0].isRead, true);
+
+  const newerUnread = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-3",
+      readRunId: "run-2",
+      createdAt: EPOCH_MS + 30,
+      agentUnreadCount: 1,
+    },
+  });
+  assert.equal(newerUnread.changed, true);
+  assert.equal(newerUnread.items[0].isRead, false);
+  assert.equal(newerUnread.items[0].lastRunId, "run-3");
+  assert.equal(newerUnread.items[0].updatedAt, EPOCH_MS + 30);
+});
+
+test("assistant navigation applies read push without scheduling a full refresh", () => {
+  const unreadChat = createNavigationChat({
+    lastRunId: "run-2",
+    isRead: false,
+    readRunId: "run-1",
+  });
+  const agent = createAgent({
+    unreadCount: 1,
+    unreadChatCount: 1,
+    recentChats: [unreadChat],
+  });
+  const snapshots = [];
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => os.tmpdir() },
+    getServiceState: async () => ({ status: "stopped", healthMeta: { webUrl: "" } }),
+    issueAccessToken: async () => ({ ok: false, token: "", message: "" }),
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+  });
+  client.latestResult = {
+    ok: true,
+    items: [agent],
+    activityItems: [agent],
+    chatItems: [unreadChat],
+    chatItemsHasMore: false,
+    chatSortMode: "recent",
+    chatOrderingSupported: true,
+    message: "ready",
+    updatedAt: EPOCH_MS,
+  };
+  let refreshCount = 0;
+  client.scheduleRefresh = () => { refreshCount += 1; };
+
+  client.handleRealtimeFrame({
+    frame: "push",
+    type: "chat.read",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-2",
+      readRunId: "run-2",
+      readAt: EPOCH_MS + 10,
+      agentUnreadCount: 0,
+    },
+  });
+
+  assert.equal(refreshCount, 0);
+  assert.equal(snapshots.length, 1);
+  assert.equal(findChat(snapshots[0].items, "chat-1")?.isRead, true);
+  assert.equal(snapshots[0].chatItems[0]?.isRead, true);
+});
+
+test("assistant navigation calibrates from a snapshot when a read projection push is incomplete", () => {
+  const current = [createNavigationChat({ isRead: false })];
+  const invalid = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.read",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-1",
+      readRunId: "run-1",
+      readAt: EPOCH_MS + 1,
+    },
+  });
+
+  assert.equal(invalid.changed, false);
+  assert.equal(invalid.shouldRefresh, true);
+  assert.equal(invalid.items[0].isRead, false);
 });
 
 test("assistant navigation live status reports WebSocket setup failures without credentials", async (t) => {
@@ -935,6 +1097,25 @@ test("assistant navigation chat mapper preserves server order while still filter
   ]);
 
   assert.deepEqual(chats.map((chat) => chat.chatId), ["second", "first"]);
+});
+
+test("assistant navigation chat mapper preserves authoritative read metadata", () => {
+  const [chat] = buildAssistantNavigationChatsFromPlatform([{
+    chatId: "read-metadata",
+    agentKey: "zenmi",
+    createdAt: EPOCH_MS,
+    updatedAt: EPOCH_MS + 1,
+    lastRunId: "run-2",
+    read: {
+      isRead: true,
+      readAt: EPOCH_MS + 2,
+      readRunId: "run-2",
+    },
+  }]);
+
+  assert.equal(chat.isRead, true);
+  assert.equal(chat.readAt, EPOCH_MS + 2);
+  assert.equal(chat.readRunId, "run-2");
 });
 
 test("assistant navigation maps the unified activeRun summary contract for Projects and Chats", () => {
@@ -2081,4 +2262,74 @@ test("assistant navigation enriches both Coder and Knowledge Base project branch
   assert.equal(items.find((item) => item.agentKey === "coder")?.gitBranch, "main");
   assert.equal(items.find((item) => item.agentKey === "kbase")?.gitBranch, "docs");
   assert.equal(items.find((item) => item.agentKey === "chat")?.gitBranch, undefined);
+});
+
+test("navigation fetches global pins independently of the regular and project cutoffs and keeps their pushes live", async (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-pinned-navigation-"));
+  const fetchBefore = globalThis.fetch;
+  const requests = [];
+  const urls = [];
+  let push;
+  const platformChat = (id, mode, pinned, index = 0) => ({
+    chatId: id, agentKey: mode === "REACT" ? "zenmi" : "project", mode,
+    chatName: id, pinned, createdAt: EPOCH_MS, updatedAt: EPOCH_MS + index,
+    lastRunId: "loyw3v28", read: { isRead: false, readRunId: "" },
+  });
+  const pins = Array.from({ length: 30 }, (_, i) => platformChat(`pin-${i}`, i % 2 ? "CODER" : "REACT", true, i));
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: [
+      { key: "zenmi", name: "Zenmi", mode: "REACT", chats: [] },
+      { key: "project", name: "Project", mode: "CODER", stats: { totalCount: 65, unreadCount: 15 },
+        chats: Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i)) },
+    ] }) };
+  };
+  const broker = {
+    async ensureConnected() {},
+    subscribePush(options) { push = options.onPush; return () => {}; },
+    getConnectionPhase: () => "connected",
+    getConnectionState: () => ({ phase: "connected" }),
+    cleanupConsumer() {},
+    async forwardRequest(request) {
+      requests.push({ type: request.type, payload: request.payload });
+      const data = request.type === "/api/chats/order"
+        ? { sortMode: "recent", pinnedOrder: pins.map((chat) => chat.chatId) }
+        : request.payload.pinned
+          ? pins
+          : Array.from({ length: 25 }, (_, i) => platformChat(`regular-${i}`, "REACT", false, i));
+      request.onFrame({ frame: "response", type: request.type, code: 0, data });
+    },
+  };
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temp }, realtimeBroker: broker,
+    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
+    issueAccessToken: async () => ({ ok: true, token: "test-token" }), onSnapshot() {},
+  });
+  t.after(() => { client.stop(); globalThis.fetch = fetchBefore; fs.rmSync(temp, { recursive: true, force: true }); });
+  const result = await client.refreshNow();
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.chatPinningSupported, true);
+  assert.equal(result.pinnedChatItems.length, 30);
+  assert.deepEqual(result.pinnedChatItems.map((chat) => chat.chatId), pins.map((chat) => chat.chatId));
+  assert.equal(result.chatItems.length, 24);
+  assert.equal(result.chatItemsHasMore, true);
+  assert.equal(result.items.find((agent) => agent.agentKey === "project").recentChats.length, 50);
+  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && request.payload.pinned).payload, { pinned: true });
+  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { mode: "REACT", limit: 25, pinned: false });
+  assert.equal(new URL(urls[0]).searchParams.get("chatsPinned"), "false");
+  push({ frame: "push", type: "chat.read", data: {
+    chatId: "pin-1", agentKey: "project", readRunId: "loyw3v28", lastRunId: "loyw3v28", readAt: EPOCH_MS + 100, agentUnreadCount: 14,
+  } });
+  const current = client.getSnapshot();
+  assert.equal(current.pinnedChatItems[1].isRead, true);
+  assert.equal(current.pinnedChatItems[1].pinned, true);
+  assert.equal(current.pinnedChatItems[1].mode, "CODER");
+  assert.equal(current.chatItems.some((chat) => chat.chatId === "pin-1"), false);
+  const projectActivity = current.activityItems.find((agent) => agent.agentKey === "project");
+  assert.equal(projectActivity.recentChats.filter((chat) => !chat.pinned).length, 50);
+  assert.equal(projectActivity.recentChats.filter((chat) => chat.pinned).length, 15);
+  let refreshScheduled = false;
+  client.scheduleRefresh = () => { refreshScheduled = true; };
+  push({ frame: "push", type: "chats.order.changed", data: { updatedAt: EPOCH_MS + 200 } });
+  assert.equal(refreshScheduled, true);
 });
