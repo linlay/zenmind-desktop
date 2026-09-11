@@ -5,6 +5,6 @@ export { getAgentPlatformMinimaxSettingsPublic, listAgentPlatformUsageProviderCa
 export type { AgentPlatformSettingsPorts } from "./config";
 export type { AgentPlatformUsageProviderCandidate } from "./config";
 export { registerAgentWebclientBridgeIpcHandlers } from "./ipc";
-export { ensureProviderRegisterApiKey } from "./provider-register";
+export { ensureProviderRegisterApiKey, getProviderRegisterMode, clearAccessTokenProviderKeys, invalidateProviderRegistration } from "./provider-register";
 export type { AgentPlatformRealtimeFrame } from "./realtime/agent-platform-realtime-client";
 export { AGENT_PLATFORM_KNOWN_PUSH_TYPES, RealtimeBroker } from "./realtime/realtime-broker";

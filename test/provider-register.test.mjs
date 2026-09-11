@@ -10,6 +10,8 @@ const Module = require("node:module");
 const electronNet = {};
 const originalLoad = Module._load;
 let ensureProviderRegisterApiKey;
+let invalidateProviderRegistration;
+let clearAccessTokenProviderKeys;
 try {
   Module._load = function (request, parent, isMain) {
     if (request === "electron") return { net: electronNet };
@@ -19,7 +21,7 @@ try {
     }
     return originalLoad.call(this, request, parent, isMain);
   };
-  ({ ensureProviderRegisterApiKey } = require("../dist-electron/main/modules/agent-platform/provider-register.js"));
+  ({ ensureProviderRegisterApiKey, invalidateProviderRegistration, clearAccessTokenProviderKeys } = require("../dist-electron/main/modules/agent-platform/provider-register.js"));
 } finally {
   Module._load = originalLoad;
 }
@@ -48,7 +50,7 @@ function fixture(t, platform = "darwin") {
     assert.equal(fs.readFileSync(providerPath, "utf8"), providerContent);
     assert.equal(fs.readFileSync(registerPath, "utf8"), registerContent);
   };
-  return { token, endpoint, registerPath, providerPath, run, assertPreserved };
+  return { app, token, endpoint, registerPath, providerPath, run, assertPreserved };
 }
 
 for (const platform of ["darwin", "win32"]) {
@@ -152,4 +154,124 @@ test("cyclic error causes cannot prevent a registration failure from returning",
   electronNet.fetch = async () => { throw failure; };
   await assert.rejects(f.run(), /apikey request failed: ECONNRESET: connection closed$/);
   f.assertPreserved();
+});
+
+for (const platform of ["darwin", "win32"]) {
+  function accessFixture(t) {
+    const f = fixture(t, platform);
+    const config = { mode: "access-token", endpoint: "https://registration.invalid/api/bind-apikey", providers: ["th-main"] };
+    fs.writeFileSync(f.registerPath, JSON.stringify(config));
+    fs.writeFileSync(f.providerPath, "key: th-main\nbaseUrl: https://registration.invalid\napiKey: dk_PreviousAccountKey\n");
+    return { ...f, config };
+  }
+
+  test(`${platform}: access-token waits for login even when a provider already has a key`, async t => {
+    const f = accessFixture(t);
+    let requested = false;
+    electronNet.fetch = () => assert.fail("signed-out registration must not send a request");
+    await assert.rejects(f.run({ getAccessToken: () => null, onLoginRequired: () => { requested = true; } }), /Sign in/);
+    assert.equal(requested, true);
+    assert.equal(fs.existsSync(f.registerPath), true);
+    assert.deepEqual(await f.run({ preparation: true }), { status: "skipped", reason: "unchanged" });
+  });
+
+  test(`${platform}: access-token binds device and replaces an old account key while retaining policy`, async t => {
+    const f = accessFixture(t);
+    let calls = 0;
+    electronNet.fetch = async (endpoint, init) => {
+      calls++;
+      assert.equal(endpoint, f.config.endpoint);
+      assert.equal(init.headers.Authorization, "Bearer access-current");
+      assert.deepEqual(JSON.parse(init.body), { name: "test-desktop-device", device_id: "test-desktop-device" });
+      assert.equal(init.credentials, "omit");
+      assert.equal(init.redirect, "error");
+      assert.ok(init.signal instanceof AbortSignal);
+      return new Response(JSON.stringify({ key: "dk_CurrentAccountKey" }));
+    };
+    await f.run({ getAccessToken: () => "access-current" });
+    await f.run({ getAccessToken: () => "access-current" });
+    assert.equal(calls, 2, "existing key does not bypass identity validation");
+    assert.match(fs.readFileSync(f.providerPath, "utf8"), /apiKey: dk_CurrentAccountKey/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(f.registerPath, "utf8")), f.config);
+  });
+
+  test(`${platform}: a late response cannot publish another account's key`, async t => {
+    const f = accessFixture(t);
+    let token = "account-a";
+    let release;
+    electronNet.fetch = () => new Promise(resolve => { release = resolve; });
+    const pending = f.run({ getAccessToken: () => token });
+    token = "account-b";
+    release(new Response(JSON.stringify({ key: "dk_AccountAKey" })));
+    await assert.rejects(pending, /identity or provider registration changed/);
+    assert.doesNotMatch(fs.readFileSync(f.providerPath, "utf8"), /dk_AccountAKey/);
+  });
+
+  test(`${platform}: refreshes access token once on 401 and never falls back to a grant`, async t => {
+    const f = accessFixture(t);
+    let token = "expired-access";
+    let refreshes = 0;
+    let calls = 0;
+    electronNet.fetch = async (_, init) => {
+      calls++;
+      if (calls === 1) return new Response("rejected", { status: 401 });
+      assert.equal(init.headers.Authorization, "Bearer renewed-access");
+      return new Response(JSON.stringify({ key: "dk_RenewedAccountKey" }));
+    };
+    await f.run({ getAccessToken: () => token, refreshAccessToken: async () => { refreshes++; token = "renewed-access"; return token; } });
+    assert.equal(refreshes, 1);
+    assert.equal(calls, 2);
+  });
+
+  test(`${platform}: refuses insecure or credential-bearing access token endpoints`, async t => {
+    const f = accessFixture(t);
+    electronNet.fetch = () => assert.fail("unsafe endpoint must not receive a token");
+    for (const endpoint of ["http://registration.invalid/api/bind-apikey", "https://user:password@registration.invalid/api/bind-apikey", "https://registration.invalid/api/bind-apikey?secret=value"]) {
+      fs.writeFileSync(f.registerPath, JSON.stringify({ ...f.config, endpoint }));
+      await assert.rejects(f.run({ getAccessToken: () => "access" }), /HTTPS endpoint/);
+    }
+  });
+
+  test(`${platform}: explicit grant mode works without enabled and deletes its one-time file`, async t => {
+    const f = fixture(t, platform);
+    const config = JSON.parse(fs.readFileSync(f.registerPath, "utf8"));
+    delete config.enabled;
+    config.mode = "grant-jwt";
+    fs.writeFileSync(f.registerPath, JSON.stringify(config));
+    electronNet.fetch = async () => new Response(JSON.stringify({ key: "dk_ExplicitGrantKey" }));
+    await f.run();
+    assert.equal(fs.existsSync(f.registerPath), false);
+  });
+
+  test(`${platform}: invalid mode fails closed`, async t => {
+    const f = accessFixture(t);
+    fs.writeFileSync(f.registerPath, JSON.stringify({ ...f.config, mode: "automatic" }));
+    electronNet.fetch = () => assert.fail("invalid mode must not use either credential");
+    await assert.rejects(f.run(), /mode must be/);
+  });
+}
+
+
+test("logout invalidates an in-flight response even if the same token is restored", async t => {
+  const f = fixture(t);
+  fs.writeFileSync(f.registerPath, JSON.stringify({ mode: "access-token", endpoint: "https://registration.invalid/api/bind-apikey", providers: ["th-main"] }));
+  let release;
+  electronNet.fetch = () => new Promise(resolve => { release = resolve; });
+  const pending = f.run({ getAccessToken: () => "same-token" });
+  invalidateProviderRegistration(f.app, "darwin");
+  release(new Response(JSON.stringify({ key: "dk_StaleGenerationKey" })));
+  await assert.rejects(pending, /identity or provider registration changed/);
+  assert.doesNotMatch(fs.readFileSync(f.providerPath, "utf8"), /StaleGeneration/);
+});
+
+test("clearing access-token providers preserves policy and unrelated providers", t => {
+  const f = fixture(t);
+  fs.writeFileSync(f.registerPath, JSON.stringify({ mode: "access-token", providers: ["th-main"] }));
+  const other = path.join(path.dirname(f.providerPath), "other.yml");
+  fs.writeFileSync(other, "key: other\napiKey: private-user-key\n");
+  fs.writeFileSync(f.providerPath, "key: th-main\napiKey: old-account-key\n");
+  clearAccessTokenProviderKeys(f.app, "darwin");
+  assert.match(fs.readFileSync(f.providerPath, "utf8"), /apiKey: ""/);
+  assert.match(fs.readFileSync(other, "utf8"), /private-user-key/);
+  assert.equal(fs.existsSync(f.registerPath), true);
 });

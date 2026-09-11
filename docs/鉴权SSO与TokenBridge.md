@@ -77,7 +77,13 @@ Workspace Terminal、容器、代理、ACP、MCP、LSP 与 sidecar 默认不继�
 
 ### 业务服务授权
 
-首次 Provider API Key 申请由 Desktop 主进程使用运行环境中的登记 grant 完成。请求沿用 Electron 的系统代理解析，只携带本次登记所需的凭据，不继承浏览器 Cookie 或 SSO 身份；macOS 与 Windows 都不要求用户额外设置启动代理参数。此网络策略只作用于 Desktop 的登记请求，不改变 Agent Platform 自身的模型调用网络。网络失败保留登记材料供用户重试，错误详情须脱敏，不能把连接失败解释为 grant 过期或额度不足。
+Provider 登记由运行环境 `provider-register.json` 选择 Grant 或登录凭据模式，文件缺失时不获取 Key。Grant 模式保持一次性消费与成功清理；登录模式使用 main 持有的 canonical access token 和已确认的 Desktop 设备号直接向 Transit Hub 绑定并领取 Key，不创建中间 Grant，也不把 access token 或返回的 Key 写回登记文件。
+
+Transit Hub 使用受信任公钥验证身份，以签发方、稳定用户 ID 和设备号作为绑定。重复领取返回同一 Key，不重置额度和有效期；服务端只在该受保护接口解密返回绑定 Key。Desktop 不从未经验证的 JWT claims 自行建立用户身份，也不接受页面传入用户 ID 或模型凭据。
+
+两种模式都沿用 Electron 的 macOS/Windows 系统代理解析，省略 Cookie、拒绝重定向并设置请求超时。登录模式只允许无 URL 凭据、查询参数和片段的 HTTPS 配置地址；401 仅允许 main 刷新一次 canonical token，不能回退到 Grant。返回前重新验证当前 token、设备、登记配置和身份 generation，迟到响应不得覆盖其他账号的配置。网络和业务失败均不放行依赖服务，错误不包含原始凭据。
+
+登录模式选中的 Provider 属于此登记策略管理，其 Key 可在登录后替换并在身份失效且消费者停止后清除；其他 Provider 与服务内部配置不受此流程修改。生命周期门禁见[启动初始化与恢复](启动初始化与恢复.md)。
 
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 

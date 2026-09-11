@@ -281,7 +281,7 @@ export async function startPreparedStartupService(
     const service = getService(serviceId);
     options.onStarting?.(serviceId);
 
-    if (current.status === "running" && service.serviceMode !== "resource") {
+    if (current.status === "running" && service.serviceMode !== "resource" && service.id !== "agent-platform") {
       const message = t("service.alreadyRunning", { name: current.name });
       console.info(`[service-manager] reused running startup service ${serviceId}`);
       options.onProgress?.(serviceId, "succeeded", message);

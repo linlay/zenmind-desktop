@@ -7,6 +7,7 @@ import {
   webContents
 } from "electron";
 import {
+  getDesktopSsoAccessToken, isDesktopSsoCredentialRuntimeReady,
   ensureIdentityCenterJwk
 } from "../modules/identity";
 import {
@@ -72,7 +73,7 @@ import { createWebviewContextMenuController } from "../modules/web-surfaces";
 import { parseSafeLoopbackWebUrl } from "../infrastructure/network/loopback-url";
 import { cleanupProgramDataForVersion } from "./lifecycle/program-data-cleanup";
 import {
-  ensureProviderRegisterApiKey
+  ensureProviderRegisterApiKey, getProviderRegisterMode, clearAccessTokenProviderKeys
 } from "../modules/agent-platform";
 import {
   type StartupPhase
@@ -168,11 +169,38 @@ return createAssistantIntegrationPorts({
 export function createMainProcessRuntime_block18_4(
   factoryContext: CreateMainProcessRuntimeContext
 ): ServicesIntegrationPorts {
+let appliedProviderToken: string | null = null;
 return {
     issueAgentAccessToken: factoryContext.issueAgentAccessToken,
     getDesktopDeviceId,
     getDesktopDeviceInfo,
-    ensureProviderRegisterApiKey: (targetApp) => ensureProviderRegisterApiKey(targetApp, { getDesktopDeviceId }),
+    ensureProviderRegisterApiKey: async (targetApp, preparation) => {
+      const accessMode = getProviderRegisterMode(targetApp) === "access-token";
+      const token = isDesktopSsoCredentialRuntimeReady() ? getDesktopSsoAccessToken() : null;
+      if (accessMode && (preparation || !token || appliedProviderToken !== token)) {
+        // Never reuse a surviving process with a previous account's loaded provider credentials.
+        appliedProviderToken = null;
+        for (const id of ["agent-webclient", "agent-platform"] as const) {
+          const state = await factoryContext.servicesFacade.getResponsiveServiceState(targetApp, id);
+          if (state.installed) {
+            const stopped = await factoryContext.servicesFacade.stopService(targetApp, id);
+            if (!stopped.ok) throw new Error(stopped.message);
+          }
+        }
+        if (!preparation) clearAccessTokenProviderKeys(targetApp);
+      }
+      const result = await ensureProviderRegisterApiKey(targetApp, {
+        getDesktopDeviceId, preparation,
+        getAccessToken: () => isDesktopSsoCredentialRuntimeReady() ? getDesktopSsoAccessToken() : null,
+        refreshAccessToken: () => factoryContext.refreshDesktopSsoIdentityToken(true),
+        onLoginRequired: () => factoryContext.startupRestoreController.setAuthenticationRequired(true)
+      });
+      if (accessMode && !preparation) {
+        appliedProviderToken = getDesktopSsoAccessToken();
+        factoryContext.startupRestoreController.setAuthenticationRequired(false);
+      }
+      return result;
+    },
     resolveConversationAssetOrigin,
     emitPluginBridgeHook,
     getPluginBridgeEnv,

@@ -2560,6 +2560,11 @@ export const zhCNMessages = {
   "containerHub.httpError": "Container Hub {path} 返回 HTTP {status}",
   "containerHub.httpErrorWithMessage": "Container Hub {path} 返回 HTTP {status}: {message}",
 
+  "providerRegister.modeInvalid": "provider-register.json 的模式必须是 `access-token` 或 `grant-jwt`。",
+  "providerRegister.secureEndpointRequired": "登录凭据登记地址必须使用 HTTPS，且不能含 URL 凭据、查询参数或片段。",
+  "providerRegister.loginRequired": "请先登录，再启动模型服务。",
+  "providerRegister.identityChanged": "登录身份或供应商登记配置已变化，请使用当前账号重试。",
+  "providerRegister.loginAction": "登录",
   "providerRegister.invalidFormat": "{file} 格式不正确：{message}",
   "providerRegister.endpointInvalid": "{file} endpoint 不是有效 URL。",
   "providerRegister.endpointProtocol": "{file} endpoint 只支持 http/https。",

@@ -17,6 +17,7 @@ export type StartupRestoreControllerOptions = {
 
 export type StartupRestoreController = {
   getState(): StartupRestoreState;
+  setAuthenticationRequired(required: boolean): StartupRestoreState;
   beginSession(mode: StartupRestoreMode): StartupRestoreState;
   updateService(serviceId: ServiceId, phase: StartupRestoreServiceState["phase"], message?: string): StartupRestoreState;
   finishSession(mode: StartupRestoreMode, failures: string[]): StartupRestoreState;
@@ -68,6 +69,10 @@ export function createStartupRestoreController(
   }
 
   return {
+    setAuthenticationRequired(required) {
+      return commitState({ ...currentState, authenticationRequired: required,
+        ...(required ? { phase: "failed" as const, message: t("providerRegister.loginRequired") } : {}) });
+    },
     getState() {
       return cloneStartupRestoreState(currentState);
     },

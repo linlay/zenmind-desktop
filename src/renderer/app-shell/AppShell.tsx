@@ -4995,13 +4995,15 @@ export function AppShell() {
           </section>
         </div>
       ) : null}
-      {showStartupCard ? (
+      {showStartupCard && !desktopSsoLoginDialog ? (
         <StartupLoadingScreen
           version={desktopAppVersion}
           servicesLoading={servicesLoading}
           servicesError={servicesError}
           startupServices={startupServices}
           startupRestoreState={resolvedStartupRestoreState}
+          onLogin={() => { void handleDesktopSsoLogin(); }}
+          loginBusy={desktopSsoBusy}
           timedOut={startupTimedOut}
           onRefresh={() => {
             setStartupCardDismissed(false);
