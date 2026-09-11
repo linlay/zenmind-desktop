@@ -4,7 +4,7 @@
   "storageNamespace": "zenmind-desktop",
   "productName": "ZenMind",
   "appId": "cc.zenmind.desktop",
-  "description": "ZenMind 应用壳",
+  "description": "ZenMind桌面程序",
   "protocols": {
     "open": {
       "scheme": "zenmind"
