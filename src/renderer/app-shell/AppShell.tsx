@@ -8,6 +8,7 @@ import { DesktopBackground } from "../appearance/DesktopBackground";
 import { isThemePreference, type ThemePreference } from "../appearance/model";
 import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
+import { beginChatPerformanceNavigation } from "../services/performanceDiagnostics";
 import {
   isCapabilityNavigationRoute,
   resolveSidebarMode,
@@ -3135,6 +3136,8 @@ export function AppShell() {
     if (targetPath === currentRoute) {
       return false;
     }
+
+    beginChatPerformanceNavigation(targetPath);
 
     setSidebarNavigationHistory((current) => ({
       back: [...current.back, currentRoute],

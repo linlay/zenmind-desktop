@@ -1,3 +1,4 @@
+import { createSurfacePerformanceTrace, retainHostPerformanceMonitor } from "../services/performanceDiagnostics";
 import {
   createElement,
   useCallback,
@@ -828,6 +829,8 @@ export function ServiceWebviewSurface({
     active: boolean;
     webContentsId: number | undefined;
   } | null>(null);
+  const [tracePerformance] = useState(createSurfacePerformanceTrace);
+  useEffect(retainHostPerformanceMonitor, []);
   const diagnosticBucketsRef = useRef(new Map<string, {
     count: number;
     timerId: number;
@@ -1766,6 +1769,15 @@ export function ServiceWebviewSurface({
     stage: string,
     details: Record<string, unknown> = {},
   ) {
+    if (window.electronAPI.diagnostics?.performanceEnabled) {
+      tracePerformance(stage, {
+        hostRoute: desiredDesktopRoute,
+        surfaceId, active: active !== false,
+        webContentsId: readWebviewContentsId(webviewRef.current),
+        documentGeneration: webviewDocumentGenerationRef.current,
+        ...details,
+      });
+    }
     const level = resolveServiceWebviewDiagnosticLevel(stage, details);
     if (level === "debug" && !import.meta.env.DEV) {
       return;

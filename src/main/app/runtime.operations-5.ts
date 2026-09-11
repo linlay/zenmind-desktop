@@ -1,3 +1,4 @@
+import { startPerformanceDiagnostics } from "./performance-diagnostics";
 import {
   app,
   globalShortcut,
@@ -68,6 +69,7 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     registerDesktopSsoAvatarProtocol(app, protocol, net, session, factoryContext.startupPlatform);
     factoryContext.setStartupPhase("desktop-state-ready");
     factoryContext.logsRuntime.installConsoleTee();
+    startPerformanceDiagnostics(factoryContext.webSurfaceRuntime.browserSurfaceRegistry);
     // Persist the pre-logger cleanup result without moving logging ahead of root initialization.
     if (programDataCleanup.failedPaths.length > 0) {
         console.warn("[program-data-cleanup] result", programDataCleanup);

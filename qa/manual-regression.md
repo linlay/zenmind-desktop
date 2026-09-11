@@ -1,5 +1,10 @@
 # Desktop 手工回归清单
 
+## Windows / macOS 性能采集
+
+- 按 [性能对照流程](windows-performance.md) 验证启用/关闭采集、长 Chat 冷开、往返与快速切换、面板隐藏与关闭；确认路由正常、日志不含 URL/正文，关闭采集后不再追加性能日志。
+- 两平台分别核对进程内存趋势、guest 数和实际销毁事件。路由 APPLIED 不作为业务内容已上屏的判定。
+
 ## 程序数据启动清理
 
 - Windows 升级或缺少程序根 VERSION 时，Electron 持有 lockfile 不应使清理失败；main.log 的 `[program-data-cleanup] result` 应记录版本与清理结果。同版本再次启动应为 skipped，服务包未变化时不重复解包；配置、用户数据与插件保持。
