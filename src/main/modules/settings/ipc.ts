@@ -1,3 +1,4 @@
+import { readNavigationOrder, writeNavigationOrder } from "./navigation-order-store";
 import fs from "node:fs";
 import path from "node:path";
 import type {
@@ -30,7 +31,7 @@ import { getDesktopConfigRoot, getDesktopStateRoot } from "../../infrastructure/
 import { getDesktopDeviceInfo } from "../identity";
 import { getDesktopDeviceIdentityInfo } from "../identity";
 import { getDesktopUsageProfile } from "./usage-profile";
-import { readWebOrderKeys, writeWebOrderKeys } from "../webs";
+import { readWebOrderKeys, writeWebOrderKeys, readWebPinnedKeys, writeWebPinnedKeys } from "../webs";
 import { t } from "../../support/i18n/main-i18n";
 import { requireEpochMillis } from "../../../shared/time-contract";
 
@@ -389,33 +390,26 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform)).appearance.theme
   );
   ipcMain.handle("settings.getNavigationPreferences", async () => {
-    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
     return {
       ...profile.navigation,
-      webOrder: readWebOrderKeys(app)
+      mainOrder: readNavigationOrder(app, platform),
+      webOrder: readWebOrderKeys(app, [], platform),
+      pinnedWebEntryKeys: readWebPinnedKeys(app, platform)
     };
   });
   ipcMain.handle("settings.saveNavigationPreferences", async (_event: any, input: any) => {
-    const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
+    const mainOrder = Array.isArray(input?.mainOrder)
+      ? writeNavigationOrder(app, normalizeStringArray(input.mainOrder), platform)
+      : readNavigationOrder(app, platform);
     const webOrder = Array.isArray(input?.webOrder)
-      ? writeWebOrderKeys(app, normalizeStringArray(input.webOrder))
-      : readWebOrderKeys(app);
-    const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
-      navigation: {
-        mainOrder: Array.isArray(input?.mainOrder)
-          ? normalizeStringArray(input.mainOrder)
-          : current.navigation.mainOrder,
-        webOrder,
-        pinnedWebEntryKeys: Array.isArray(input?.pinnedWebEntryKeys)
-          ? normalizeStringArray(input.pinnedWebEntryKeys)
-          : current.navigation.pinnedWebEntryKeys,
-        desktopCopilotPages: current.navigation.desktopCopilotPages
-      }
-    });
-    return {
-      ...profile.navigation,
-      webOrder
-    };
+      ? writeWebOrderKeys(app, normalizeStringArray(input.webOrder), platform)
+      : readWebOrderKeys(app, [], platform);
+    const pinnedWebEntryKeys = Array.isArray(input?.pinnedWebEntryKeys)
+      ? writeWebPinnedKeys(app, normalizeStringArray(input.pinnedWebEntryKeys), platform)
+      : readWebPinnedKeys(app, platform);
+    return { ...profile.navigation, mainOrder, webOrder, pinnedWebEntryKeys };
   });
   ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) => {
     const normalizedThemeMode = normalizeThemePreference(themeMode);

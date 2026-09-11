@@ -36,6 +36,7 @@ const {
   createDefaultSidebarNavOrderItems,
   normalizeSidebarNavOrder,
   partitionSidebarWebItems,
+  moveSidebarNavItem,
 } = mod.exports;
 
 test("Chats defaults after Automations and is inserted for saved legacy orders", () => {
@@ -48,14 +49,14 @@ test("Chats defaults after Automations and is inserted for saved legacy orders",
 
   assert.deepEqual(
     availableItems.map((item) => item.key),
-    ["kanban", "schedules", "chats", "group:assistants", "group:webs"],
+    ["kanban", "schedules", "new-chat", "chats", "group:assistants", "group:webs"],
   );
   assert.deepEqual(
     normalizeSidebarNavOrder(
       ["kanban", "schedules", "group:assistants", "group:webs"],
       availableItems,
     ),
-    ["kanban", "schedules", "chats", "group:assistants", "group:webs"],
+    ["kanban", "schedules", "new-chat", "chats", "group:assistants", "group:webs"],
   );
 });
 
@@ -72,7 +73,7 @@ test("Chats keeps an explicit saved navigation position", () => {
       ["kanban", "schedules", "group:assistants", "chats", "group:webs"],
       availableItems,
     ),
-    ["kanban", "schedules", "group:assistants", "chats", "group:webs"],
+    ["kanban", "schedules", "new-chat", "group:assistants", "chats", "group:webs"],
   );
 });
 
@@ -91,4 +92,21 @@ test("website and webapp pins preserve pin order and restore the original Sites 
   });
   assert.deepEqual(partitionSidebarWebItems(items, []), { pinned: [], unpinned: items });
   assert.deepEqual(items, [site, other, app]);
+});
+
+test("mixed navigation order preserves moved Kanban, independent New Chat and web pins", () => {
+  const items = [
+    { key: "webapp:editor", label: "Editor" },
+    { key: "website:docs", label: "Docs" },
+    ...createDefaultSidebarNavOrderItems({ serviceItems: [], experimentalItems: [], webItems: [] }),
+  ];
+  const legacy = normalizeSidebarNavOrder(["kanban", "schedules", "chats", "group:assistants", "group:webs"], items);
+  assert.deepEqual(legacy.slice(0, 5), ["webapp:editor", "website:docs", "kanban", "schedules", "new-chat"]);
+  const moved = moveSidebarNavItem(legacy, "new-chat", "webapp:editor", false);
+  const mixed = moveSidebarNavItem(moved, "kanban", "schedules", true);
+  assert.deepEqual(mixed.slice(0, 5), ["new-chat", "webapp:editor", "website:docs", "schedules", "kanban"]);
+  assert.deepEqual(normalizeSidebarNavOrder([...mixed, "kanban", "website:deleted"], items), mixed);
+  assert.deepEqual(normalizeSidebarNavOrder(mixed, items.filter((item) => item.key !== "webapp:editor")), mixed.filter((key) => key !== "webapp:editor"));
+  assert.deepEqual(moveSidebarNavItem(mixed, "website:missing", "kanban", false), mixed);
+  assert.deepEqual(moveSidebarNavItem(mixed, "kanban", "kanban", true), mixed);
 });

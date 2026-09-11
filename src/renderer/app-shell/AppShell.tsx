@@ -1162,19 +1162,23 @@ export function AppShell() {
   const copilotDockNativeDialogVisible =
     nativeDialogVisible || Boolean(desktopActionConfirmation) || Boolean(chatHistoryDialog);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
-    return createDefaultSidebarNavOrderItems({
+    return [...pinnedWebEntryKeys.map((key) => ({
+      key: key as SidebarNavOrderItemKey,
+      label: webItems.find((item) => item.entryKey === key)?.label ?? key,
+    })), ...createDefaultSidebarNavOrderItems({
       kanbanEnabled,
       serviceItems: [],
       experimentalItems: [],
       webItems: []
-    }).map((item) => {
+    })].map((item) => {
+      if (item.key === "new-chat") return { ...item, label: t("sidebar.chats.newChat") };
       if (item.key === "kanban") return { ...item, label: t("nav.kanban") };
       if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
       if (item.key === "group:webs") return { ...item, label: t("nav.websites") };
       return item;
     });
-  }, [kanbanEnabled, t]);
+  }, [kanbanEnabled, pinnedWebEntryKeys, webItems, t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -2012,6 +2016,9 @@ export function AppShell() {
         pinnedWebEntryKeys: nextKeys
       });
       setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys);
+      setSidebarNavOrder((current) => pinned
+        ? [item.entryKey as SidebarNavOrderItemKey, ...current.filter((key) => key !== item.entryKey)]
+        : current.filter((key) => key !== item.entryKey));
     } finally {
       webPinMutationPendingRef.current = false;
       setWebPinMutationPending(false);
@@ -4581,6 +4588,7 @@ export function AppShell() {
           marketEnabled={marketEnabled}
           helpEnabled={helpEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
+          onSidebarNavOrderChange={navigationPreferencesLoaded ? setSidebarNavOrder : undefined}
           websiteNavOrder={normalizedWebGroupOrder}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
           webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}

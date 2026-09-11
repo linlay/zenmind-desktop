@@ -649,6 +649,7 @@ export const enUSMessages = {
   "sidebar.website.updateFailed": "Failed to save embedded website.",
   "sidebar.website.deleteFailed": "Failed to delete embedded website.",
   "sidebar.website.deleteConfirm": "Delete \"{name}\"? This cannot be undone.",
+  "sidebar.navigation.reorderHint": "Drag to reorder; {modifier} + Up/Down to move",
   "sidebar.navigation.back": "Back",
   "sidebar.navigation.forward": "Forward",
   "sidebar.copilot.unavailableForPage": "{appName} assistant is unavailable on this page",

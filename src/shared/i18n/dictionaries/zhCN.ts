@@ -649,6 +649,7 @@ export const zhCNMessages = {
   "sidebar.website.updateFailed": "保存内嵌网站失败。",
   "sidebar.website.deleteFailed": "删除内嵌网站失败。",
   "sidebar.website.deleteConfirm": "确定要删除“{name}”吗？此操作无法撤销。",
+  "sidebar.navigation.reorderHint": "拖拽调整顺序；{modifier} + 上/下方向键移动",
   "sidebar.navigation.back": "后退",
   "sidebar.navigation.forward": "前进",
   "sidebar.copilot.unavailableForPage": "当前页面不可开启 {appName} 助手",

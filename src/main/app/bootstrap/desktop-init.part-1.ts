@@ -347,12 +347,6 @@ export function applyProfileDefaults(
       }
     },
     navigation: {
-      mainOrder: Array.isArray(navigation.mainOrder)
-        ? navigation.mainOrder.map(readText).filter(Boolean)
-        : current.navigation.mainOrder,
-      webOrder: Array.isArray(navigation.webOrder)
-        ? navigation.webOrder.map(readText).filter(Boolean)
-        : current.navigation.webOrder,
       desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
         ? normalizeDesktopCopilotPageDefaults(navigation.desktopCopilotPages, current.navigation.desktopCopilotPages, defaultAgentKey)
         : current.navigation.desktopCopilotPages

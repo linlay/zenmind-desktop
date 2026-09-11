@@ -1,3 +1,4 @@
+export { readWebPinnedKeys, writeWebPinnedKeys } from "./pinned-store";
 export { normalizeWebId } from "./common";
 export { createWebappImportDiagnostic, listWebEntries, registerWebIpcHandlers } from "./ipc";
 export { readWebOrderKeys, writeWebOrderKeys } from "./order-store";

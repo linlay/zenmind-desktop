@@ -1,3 +1,4 @@
+import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
   useEffect,
@@ -1009,6 +1010,7 @@ type AppSidebarProps = {
   marketEnabled?: boolean;
   helpEnabled?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
+  onSidebarNavOrderChange?: (order: SidebarNavOrderItemKey[]) => void;
   websiteNavOrder?: SidebarNavOrderItemKey[];
   pinnedWebEntryKeys?: string[];
   webPinningAvailable?: boolean;
@@ -1093,6 +1095,7 @@ export function AppSidebar({
   marketEnabled = true,
   helpEnabled = false,
   sidebarNavOrder,
+  onSidebarNavOrderChange,
   websiteNavOrder = [],
   pinnedWebEntryKeys = [],
   webPinningAvailable = false,
@@ -1651,10 +1654,15 @@ export function AppSidebar({
       return createSidebarGroupFocusId("webs");
     }
 
-    if (pinnedWebNavItems[0]?.webItem) {
-      return createSidebarWebFocusId(pinnedWebNavItems[0].webItem.entryKey);
-    }
-    const firstItem = navItems[0];
+    const firstKey = sidebarNavOrder.find((key) =>
+      key === "new-chat"
+        ? Boolean(resolvedChatDefaultAgentKey) && !chatDefaultAgentUnavailable
+        : navItems.some((item) => item.orderKey === key) || pinnedWebNavItems.some((item) => item.orderKey === key),
+    );
+    if (firstKey === "new-chat") return "action:new-chat";
+    const firstPinned = pinnedWebNavItems.find((item) => item.orderKey === firstKey);
+    if (firstPinned?.webItem) return createSidebarWebFocusId(firstPinned.webItem.entryKey);
+    const firstItem = navItems.find((item) => item.orderKey === firstKey);
     if (!firstItem) {
       return "";
     }
@@ -1669,6 +1677,9 @@ export function AppSidebar({
     }
     return createSidebarLinkFocusId(firstItem.orderKey);
   }, [
+    sidebarNavOrder,
+    resolvedChatDefaultAgentKey,
+    chatDefaultAgentUnavailable,
     activeSidebarAgentKey,
     navigationOwner,
     currentPathname,
@@ -5639,14 +5650,6 @@ export function AppSidebar({
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
-    if (item.orderKey === "schedules") {
-      return (
-        <Fragment key={item.orderKey}>
-          {renderSidebarLink(item)}
-          {renderNewChatNavButton()}
-        </Fragment>
-      );
-    }
     if (item.entryType === "chats") {
       return (
         <Fragment key={item.orderKey}>
@@ -6922,10 +6925,19 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : <>
-                  {pinnedWebNavItems.map((item) => renderSidebarChildLink(item, { topLevel: true }))}
-                  {navItems.map((item) => renderPrimaryNavEntry(item))}
-                </>}
+              : <SortableNavEntries
+                  order={sidebarNavOrder}
+                  sortableKeys={["kanban", "schedules", "new-chat", ...pinnedWebNavItems.map((item) => item.orderKey)]}
+                  onChange={onSidebarNavOrderChange}
+                  hint={t("sidebar.navigation.reorderHint", { modifier: "Alt" })}
+                  renderItem={(key) => {
+                    if (key === "new-chat") return renderNewChatNavButton();
+                    const pinned = pinnedWebNavItems.find((item) => item.orderKey === key);
+                    if (pinned) return renderSidebarChildLink(pinned, { topLevel: true });
+                    const item = navItems.find((entry) => entry.orderKey === key);
+                    return item ? renderPrimaryNavEntry(item) : null;
+                  }}
+                />}
         </nav>
         {renderBootstrapGuideCard()}
 

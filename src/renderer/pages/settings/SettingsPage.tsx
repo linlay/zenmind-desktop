@@ -4843,7 +4843,10 @@ export function SettingsPage({
       }
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
-        const navigationSettingsOrder = sidebarNavOrder;
+        // New Chat and pinned web entries use their existing dedicated Agent settings.
+        const navigationSettingsOrder = sidebarNavOrder.filter((key) =>
+          key !== "new-chat" && !key.startsWith("website:") && !key.startsWith("webapp:"),
+        );
         const visibleFixedNavigationTools = fixedNavigationTools.filter((tool) => tool.id !== "market" || marketEnabled);
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
           const copilotPageKey = tool.copilotPageKey;
