@@ -4418,6 +4418,7 @@ export function AppShell() {
         className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
+        location.pathname === EMPTY_WEB_SURFACE_ROUTE ? "has-empty-web-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
         usesWebappSurface ? "has-webapp-surface" : "",
