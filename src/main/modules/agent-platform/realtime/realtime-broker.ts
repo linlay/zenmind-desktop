@@ -83,7 +83,12 @@ export class RealtimeBroker {
       reconnectCount: 0,
       key: null,
     });
-    this.connectionStates = { primary: idleState(), btw: idleState() };
+    this.connectionStates = { primary: idleState(), btw: idleState(), "selection-explain": idleState() };
+    const laneSources = {
+      primary: "desktop-main",
+      btw: "desktop-btw",
+      "selection-explain": "desktop-selection-explain",
+    } as const;
     const createClient = (lane: RealtimeLane) => new AgentPlatformRealtimeClient({
         app: options.app,
         issueAccessToken: options.issueAccessToken,
@@ -91,8 +96,8 @@ export class RealtimeBroker {
         createWebSocket: options.createWebSocket,
         connectTimeoutMs: options.connectTimeoutMs,
         heartbeatTimeoutMs: options.heartbeatTimeoutMs,
-        source: lane === "primary" ? "desktop-main" : "desktop-btw",
-        surfaceId: lane === "btw" ? "desktop-btw" : undefined,
+        source: laneSources[lane],
+        surfaceId: lane === "primary" ? undefined : laneSources[lane],
         onFrame: (frame, generation) => this.handleFrame(lane, frame, generation),
         onStaleFrame: () => {
           this.diagnostics.staleFrameCount += 1;
@@ -105,7 +110,13 @@ export class RealtimeBroker {
           data: { lane, ...frame },
         }),
       });
-    this.clients = { primary: createClient("primary"), btw: createClient("btw") };
+    // Constructing a client does not open a socket. All Desktop platforms open
+    // the explanation connection only when its first consumer requests it.
+    this.clients = {
+      primary: createClient("primary"),
+      btw: createClient("btw"),
+      "selection-explain": createClient("selection-explain"),
+    };
   }
 
   getConnectionPhase(): AgentWebclientConnectionPhase { return RealtimeBroker_getConnectionPhase_1(this as any); }

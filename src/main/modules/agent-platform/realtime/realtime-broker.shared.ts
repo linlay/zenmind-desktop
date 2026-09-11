@@ -40,7 +40,9 @@ export const DESKTOP_SCREENSHOT_CHUNK_CHARS = 256 * 1024;
 
 export const DESKTOP_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 
-export type RealtimeLane = "primary" | "btw";
+export type RealtimeLane = "primary" | "btw" | "selection-explain";
+
+export type RealtimeConnectionStates = Record<RealtimeLane, AgentPlatformRealtimeConnectionState>;
 
 export type RunChannelKey = { lane: RealtimeLane; runId: string };
 
@@ -113,6 +115,7 @@ export type BrokerRun = {
   restoreCount: number;
   lastRestoreResult: string;
   upstreamRequestId: string | null;
+  upstreamSource: "query_stream" | "attach_stream";
   query: QueryTransaction | null;
   replay: ReplayEvent[];
   replayBytes: number;
@@ -126,6 +129,8 @@ export type BrokerRun = {
 
 export type QueryTransaction = {
   siteCdpScope?: SiteCdpScope;
+  /** The auxiliary explanation observer has taken over this query's stream. */
+  sourceDetached?: boolean;
   lane: RealtimeLane;
   requestType: "/api/query" | "/api/btw";
   operationId: string;
@@ -389,7 +394,7 @@ export interface RealtimeBrokerMethodContext {
   options: { app: App; issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>; getDesktopDeviceId: (app: App) => string; createWebSocket?: AgentPlatformRealtimeSocketFactory; connectTimeoutMs?: number; heartbeatTimeoutMs?: number; acceptanceTimeoutMs?: number; onDiagnostic?(message: string): void; onConnectionState?(state: AgentPlatformRealtimeConnectionState): void; };
   getConnectionPhase(): AgentWebclientConnectionPhase;
   getConnectionState(lane?: RealtimeLane): { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; };
-  getConnectionStates(): { primary: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; btw: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; };
+  getConnectionStates(): RealtimeConnectionStates;
   setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null): void;
   getRunChannel(runIdValue: string, lane?: RealtimeLane): BrokerRun | undefined;
   setRunChannel(run: BrokerRun): void;
@@ -484,7 +489,7 @@ export interface RealtimeBrokerMethodContext {
   revokeRunActionGrant(runIdValue: string): boolean;
   clearRunActionGrants(): void;
   cleanupConsumer(consumerId: string): void;
-  getDiagnostics(): { unknownFrameCount: number; unknownRequestIdCount: number; seqGapCount: number; staleFrameCount: number; seqRegressionCount: number; duplicateTerminalCount: number; observerReleaseCount: number; replayEvictionCount: number; seqExpiredCount: number; upstreamAttachCount: number; upstreamDetachCount: number; cloneCreatedCount: number; cloneRevokedCount: number; laneRotationCount: number; connection: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; connections: { primary: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; btw: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; }; pendingRequestCount: number; pendingQueryCount: number; activeStreamCount: number; runCount: number; localRunSubscriberCount: number; pushSubscriberCount: number; connectionSubscriberCount: number; rootObserver: { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null; auxiliaryRootObservers: ReturnType<RealtimeBrokerMethodContext["snapshotRootObserver"]>[]; overviewLease: { state: "pending_chat_identity" | "ready"; parentGeneration: string; contextEpoch: string; chatId: string | undefined; runCount: number; runIds: string[]; pendingSubscriberCount: number; uiSubscriberCount: number; subscribers: { runId: string; chatId: string; lastSeq: number; }[]; } | null; pendingClones: { observerToken: string; parentGeneration: string; runId: string; chatId: string; waitReason: "awaiting_run_start"; }[]; lastCloneCancellationReason: string | undefined; replay: { lane: RealtimeLane; runId: string; chatId: string; eventCount: number; bytes: number; lastSeq: number; lastEventType: string | undefined; lastEventSeq: number | undefined; lastPlanTaskEventType: string | undefined; lastPlanTaskEventSeq: number | undefined; state: string; terminalReason: string | undefined; terminalSource: "query_stream" | "attach_stream" | "push" | undefined; rootObserverCount: number; cloneCount: number; upstreamState: string; restoreCount: number; lastRestoreResult: string; }[]; };
+  getDiagnostics(): { unknownFrameCount: number; unknownRequestIdCount: number; seqGapCount: number; staleFrameCount: number; seqRegressionCount: number; duplicateTerminalCount: number; observerReleaseCount: number; replayEvictionCount: number; seqExpiredCount: number; upstreamAttachCount: number; upstreamDetachCount: number; cloneCreatedCount: number; cloneRevokedCount: number; laneRotationCount: number; connection: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; connections: RealtimeConnectionStates; pendingRequestCount: number; pendingQueryCount: number; activeStreamCount: number; runCount: number; localRunSubscriberCount: number; pushSubscriberCount: number; connectionSubscriberCount: number; rootObserver: { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null; auxiliaryRootObservers: ReturnType<RealtimeBrokerMethodContext["snapshotRootObserver"]>[]; overviewLease: { state: "pending_chat_identity" | "ready"; parentGeneration: string; contextEpoch: string; chatId: string | undefined; runCount: number; runIds: string[]; pendingSubscriberCount: number; uiSubscriberCount: number; subscribers: { runId: string; chatId: string; lastSeq: number; }[]; } | null; pendingClones: { observerToken: string; parentGeneration: string; runId: string; chatId: string; waitReason: "awaiting_run_start"; }[]; lastCloneCancellationReason: string | undefined; replay: { lane: RealtimeLane; runId: string; chatId: string; eventCount: number; bytes: number; lastSeq: number; lastEventType: string | undefined; lastEventSeq: number | undefined; lastPlanTaskEventType: string | undefined; lastPlanTaskEventSeq: number | undefined; state: string; terminalReason: string | undefined; terminalSource: "query_stream" | "attach_stream" | "push" | undefined; rootObserverCount: number; cloneCount: number; upstreamState: string; restoreCount: number; lastRestoreResult: string; }[]; };
   appendDebugTrace(input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]): AgentRealtimeDebugTraceEntry;
   getDebugTraceEntries(): { sequence: number; recordedAt: EpochMilliseconds; layer: AgentRealtimeDebugTraceLayer; direction: AgentRealtimeDebugTraceDirection; data: unknown; surfaceId?: string; webContentsId?: number; surfaceKind?: string; surfaceRole?: SurfaceRole; surfaceLevel?: SurfaceLevel; parentSurfaceId?: string; interaction?: SurfaceInteraction; route?: string; }[];
   clearDebugTrace(): void;

@@ -132,13 +132,15 @@ function createRuntime(targets, overrides = {}) {
     cloneUnsubscribes: 0,
     debugTraces: [],
     pushSubscriptions: [],
+    connectionSubscriptions: [],
+    connections: [],
     grants: [],
   };
   let activeRoot = null;
   let mainChatRoot = null;
   const auxiliaryRoots = new Map();
   const broker = {
-    ensureConnected: async () => undefined,
+    ensureConnected: async (baseUrl, token, lane) => { calls.connections.push({ baseUrl, lane }); },
     getConnectionState: () => ({
       phase: "connected",
       generation: 1,
@@ -147,7 +149,8 @@ function createRuntime(targets, overrides = {}) {
       key: { endpoint: "http://127.0.0.1:7078", identitySessionId: "identity-1" },
       physicalSessionId: "platform-1",
     }),
-    subscribeConnection: ({ onState }) => {
+    subscribeConnection: ({ onState, ...input }) => {
+      calls.connectionSubscriptions.push(input);
       onState(broker.getConnectionState());
       return () => undefined;
     },
@@ -1028,12 +1031,14 @@ test("Main Chat, Copilot Dock, Kanban Chat and isolated explanations use bounded
   const pushSubscriptionCount = runtime.calls.pushSubscriptions.length;
   await openSession(runtime, explanationSender, "selection-explain");
   assert.equal(runtime.calls.pushSubscriptions.length, pushSubscriptionCount);
+  assert.equal(runtime.calls.connectionSubscriptions.at(-1).lane, "selection-explain");
+  assert.equal(runtime.calls.connections.at(-1).lane, "selection-explain");
   send(runtime, explanationSender, "selection-explain", {
     frame: "request", id: "ea", type: "/api/attach",
     payload: { runId: "run-explain", chatId: "chat-1", agentKey: "agent-1", lastSeq: 0 },
   });
   await flush();
-  assert.equal(runtime.calls.attaches.at(-1).lane, "btw");
+  assert.equal(runtime.calls.attaches.at(-1).lane, "selection-explain");
   assert.match(runtime.calls.attaches.at(-1).observerToken, /^selection-explain:/u);
   assert.equal(runtime.broker.getActiveRootObserver().kind, "kanban_chat");
 
@@ -1046,6 +1051,93 @@ test("Main Chat, Copilot Dock, Kanban Chat and isolated explanations use bounded
   await flush();
   assert.equal(sentFrames(projectSender).at(-1).type, "surface_unavailable");
   assert.equal(runtime.calls.queries.length, 1);
+});
+
+test("Main Chat explanation starts once on its own lane and strips local transport metadata", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[101, target]]));
+  const sender = createSender(101, target.currentUrl);
+  await openSession(runtime, sender, "main");
+  const identity = { chatId: "chat-1", runId: "explain-run", agentKey: "agent-1" };
+  send(runtime, sender, "main", {
+    frame: "request", id: "explain-start", type: "/api/btw",
+    payload: { ...identity, message: "Explain selection", _desktopTransportPurpose: "selection-explain" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 1);
+  assert.equal(runtime.calls.queries[0].lane, "selection-explain");
+  assert.equal(runtime.calls.queries[0].requestType, "/api/btw");
+  assert.equal("_desktopTransportPurpose" in runtime.calls.queries[0].payload, false);
+  send(runtime, sender, "main", {
+    frame: "request", id: "explain-stop", type: "/api/interrupt",
+    payload: { ...identity, _desktopTransportPurpose: "selection-explain" },
+  });
+  await flush();
+  assert.equal(runtime.calls.forwarded.at(-1).lane, "selection-explain");
+  assert.deepEqual(runtime.calls.forwarded.at(-1).payload, identity);
+  send(runtime, sender, "main", {
+    frame: "request", id: "ordinary-side-chat", type: "/api/btw",
+    payload: { ...identity, runId: "side-run", message: "Side question" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 2);
+  assert.equal(runtime.calls.queries.at(-1).lane, "btw");
+});
+
+test("Explanation surface routes follow-ups and Run control independently but keeps data on Primary", async () => {
+  const target = mainTarget(107, {
+    registrationId: "selection-explain-g1", surfaceId: "selection-explain",
+    surfaceType: "agent-selection-explain", surfaceRole: "selection-explain",
+    pageRoute: "/selection-explain/chat-1?runId=explain-run",
+    pageRouteIdentity: "/selection-explain/chat-1?runId=explain-run",
+    currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=explain-run",
+  });
+  const runtime = createRuntime(new Map([[107, target]]));
+  const sender = createSender(107, target.currentUrl);
+  await openSession(runtime, sender, "explain");
+  const identity = { chatId: "chat-1", runId: "explain-run", agentKey: "agent-1" };
+  send(runtime, sender, "explain", {
+    frame: "request", id: "follow-up", type: "/api/btw",
+    payload: { ...identity, message: "Continue", btwId: "explain-branch" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.at(-1).lane, "selection-explain");
+  for (const type of ["/api/interrupt", "/api/submit", "/api/steer"]) {
+    send(runtime, sender, "explain", { frame: "request", id: type, type, payload: identity });
+    await flush();
+    assert.equal(runtime.calls.forwarded.at(-1).lane, "selection-explain");
+  }
+  send(runtime, sender, "explain", { frame: "request", id: "data", type: "/api/chat", payload: { chatId: "chat-1" } });
+  await flush();
+  assert.equal(runtime.calls.forwarded.at(-1).lane, undefined);
+  send(runtime, sender, "explain", { frame: "request", id: "detach", type: "/api/detach", payload: identity });
+  await flush();
+  assert.equal(runtime.calls.releasedRuns.at(-1).runId, "explain-run");
+  assert.equal(runtime.calls.queries.length, 1);
+});
+
+test("Explanation routing rejects invalid purpose, non-Run requests, foreign Chat and child spoofing", async () => {
+  for (const sample of [
+    { purpose: "primary", type: "/api/btw", chatId: "chat-1" },
+    { purpose: "selection-explain", type: "/api/query", chatId: "chat-1" },
+    { purpose: "selection-explain", type: "/api/agents", chatId: "chat-1" },
+    { purpose: "selection-explain", type: "/api/btw", chatId: "foreign-chat" },
+    { purpose: "selection-explain", type: "/api/btw", chatId: "chat-1", child: true },
+  ]) {
+    const target = sample.child ? childTarget(101, "btw", "agent-btw") : mainTarget();
+    const runtime = createRuntime(new Map([[101, target]]));
+    const sender = createSender(101, target.currentUrl);
+    await openSession(runtime, sender, "test");
+    send(runtime, sender, "test", {
+      frame: "request", id: "invalid", type: sample.type,
+      payload: { chatId: sample.chatId, agentKey: "agent-1", message: "no", _desktopTransportPurpose: sample.purpose },
+    });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "protocol_error", JSON.stringify(sample));
+    assert.equal(runtime.calls.queries.length, 0);
+    assert.equal(runtime.calls.forwarded.length, 0);
+    assert.equal(runtime.calls.attaches.length, 0);
+  }
 });
 
 test("Registry inactivity releases the Root Observer without closing the FramePort session", async () => {

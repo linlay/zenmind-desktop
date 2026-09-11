@@ -203,7 +203,8 @@
 
 - 在 Main Chat、Copilot Dock 与 Kanban Chat 的用户/助手消息、Markdown 和代码块中分别拖选单一语义目标，确认 Desktop 工具条出现；跨消息/代码块、输入框、管理页、Website/WebApp 和普通浏览器 WebClient 不出现。抓取 guest/Main/renderer IPC，确认显示与执行 payload 均不包含选中文字。
 - 点击“添加到对话”，确认主 Composer 保留原草稿/文件/技能并增加 `N 条注释`，发送前没有 query；点击“在顺便问中提问”，确认右侧 BTW 打开并增加 `N 个已选文本片段`，同样不自动发送。发送受理后片段清空，受理前失败时仍保留。
-- 点击“详细解释”，确认单例小窗立即显示准备态，并定位到 CuteJ 主窗口 bounds 内的右下角（macOS 20px、Windows 16px 边距），而不是整个显示器的右下角。只产生一次 `/api/btw`，随后按 `chatId/runId` attach 并支持继续追问、复制与 Stop。重复点击复用窗口并重新对齐主窗口右下角；关闭窗口只 detach，不 interrupt。Realtime Inspector 中辅助 observer 不替换 Main Chat、Copilot Dock 或 Kanban Chat observer，物理连接仍不超过 Primary + BTW 两条。
+- 点击“详细解释”，确认单例小窗立即显示准备态，并定位到 CuteJ 主窗口 bounds 内的右下角（macOS 20px、Windows 16px 边距），而不是整个显示器的右下角。只产生一次 `/api/btw`，随后按 `chatId/runId` attach 并支持继续追问、复制与 Stop。重复点击复用窗口并重新对齐主窗口右下角；关闭窗口只 detach，不 interrupt。Realtime Inspector 中辅助 observer 不替换 Main Chat、Copilot Dock 或 Kanban Chat observer，详细解释的首次提问、续问、Stop 与恢复均使用独立 Selection Explain lane，物理连接不超过 Primary + BTW + Selection Explain 三条。
+- 在 macOS 与 Windows Desktop 同时启动主聊天、WorkPanel BTW 和详细解释，确认三个 runId 分别在三条 lane 交错输出；停止解释不影响其他两者，关闭解释窗只 detach。分别断开解释与 Primary 连接，检查已接受 Run 仅 attach 恢复、不新增 query、连接不互相顶替；切换账号后旧身份的三条连接均失效。普通网页划词只有添加到对话与旁聊，直接访问解释 URL 也不能启动或订阅解释 Run。
 - 详细解释窗口使用自身启动明暗和默认实色外观，不出现 `AppearanceProvider` 或主窗口外观 IPC 权限错误。辅助窗口错误页只允许重新加载或关闭，不在本窗进入控制中心或 AppShell；打开、关闭及重新加载解释窗后，主窗口仍可新建对话并正常发送。主窗口 guest 重挂载期间，辅助窗口也不能登记 `main-chat` 身份。
 
 - 在 Main Chat、Website/Browser 的 Copilot Dock 与 Kanban Chat 之间切换并分别发起对话，确认同一时刻只有当前 surface 持有 live observer；Dock 继续加载内部 `/copilot/:agentKey`，Desktop 不再挂载全页 `copilot-chat`。
@@ -219,7 +220,7 @@
 - 进入带新 nonce 的 Main Chat 后立即发送第一条消息；确认 Registry 已登记同一 `agentKey + newChat` 的 active ownerless surface，query 不进入 1500ms convergence wait，而是只通过现有 Primary WS 到达 Platform 一次。随后 `chat.start/run.start` 正常把同一 generation 提升为 canonical owner；不得出现 loading 在约 1500ms 后静默结束或 `Main Chat identity did not converge before query authorization`。
 - macOS 与 Windows 分别连续执行三轮“New Chat → 发送成功 → New Chat → 再发送”，并覆盖先上传附件预建 Chat 的发送路径。guest 与 Primary WS 保持复用，每次新上下文的 observer token/context epoch 都改变，lease 从 pending 原位提升为 ready；同来源重复登记和 canonical promotion 不更换 token。旧 Chat 的 Overview/Debug 订阅以 detached 结束，旧 Run 继续后台运行且不重复发送 query。快速切换不同 nonce、不同 Agent，并延迟旧 chat.start/run.start 或 canonical 同步 ACK，确认旧帧、旧错误不改变新 Chat；不得出现 `active Main Chat Broker bundle is unavailable`。
 - 在 Main Chat guest 尚未 `dom-ready` 时快速触发 A→B→C 三次路由变化，确认只应用 C；过渡期 Registry 可返回 `route_not_aligned`，但不得高频重试、回滚到 A/B 或更换仍存活 guest 的 `webContentsId`。
-- 未使用 Side Chat 时在 Realtime Inspector 确认 Primary WS 为 1、BTW WS 为 0；首次 BTW 后变为 1+1。随后并发多个普通 Run、多个 BTW Run，并跨 Chat、WorkPanel 和 BTW tab 切换，确认物理 WS 总数始终不超过 2，RunChannel 数可以独立增加。
+- 未使用 Side Chat 和详细解释时在 Realtime Inspector 确认 Primary WS 为 1、BTW 与 Selection Explain WS 均为 0；首次 BTW 后变为 1+1+0，首次详细解释后变为 1+1+1。随后并发普通、旁聊和解释 Run，并跨 Chat、WorkPanel 和 BTW tab 切换，确认物理 WS 总数始终不超过 3，RunChannel 数可以独立增加。
 - 分别开启和关闭桌宠发送 Main Chat Query，并覆盖 `run.started` Push 早于、晚于 Query `run.start` 两种顺序；两种情况下都只允许一次 `/api/query`。确认桌宠不注册独立 Broker consumer、不单独请求 `/api/agents` 或 `/api/chats`、不消费 Assistant Run 逐事件流，只在 Navigation 应用 `desktop-main` Primary Push 并发布新快照后更新，不得创建 RunChannel、发送 `/api/attach` 或导致 `duplicate_id`。
 - 构造 Chats unread=2、pending=1，Projects unread=4、pending=2，确认 Nav Bar 分组数字分别保持该值，桌宠同时显示蓝色 unread=6 与橙色 pending=3；将对应 Chat read、awaiting answered 后，两处必须在同一 Navigation Push 投影后一起减少。折叠/展开 Chats、从 8 条增加到 24 条不改变统计口径；重启及 Primary 断线重连后不得恢复消息缓存或本地持久化中的旧数字。
 - 展开桌宠“对话概览”，确认仅显示七天内的 unread 与 awaiting 会话，视窗完整容纳三条并可用滚轮继续浏览；chat name 与正文均为 13px，item 间有清晰的 1px 分割线，unread 为蓝点、awaiting 为橙色时钟且不显示回复入口。关闭按钮默认不占位且仅在 item hover/focus 时叠加出现；关闭只在当前桌宠投影中 dismiss，回复成功只提交新 Run，两者都不得调用 `/api/read`。打开对话只导航到 Main Chat，必须等内容显示后由 WebClient 发 read，并在 Platform `chat.read` Push 到达后让桌宠与 Sidebar 同步转为 read；单纯 hover、滚动和展开列表不得标记已读。
@@ -227,13 +228,13 @@
 - 连续至少 30 次交错 Main Chat surface 登记、Frame Port open、Main attach/query 与 Overview attach，并穿插 A→B→C 快速切换；确认无需重试即可从本地 replay 连续收到事件，不产生 Overview upstream attach，关闭 clone 不产生 detach。正常首开、切换和恢复中不得出现 `Main Chat clone parent was released`、`sender is not a trusted Agent WebClient surface`、`parent_observer_closed: active Main Chat observer is unavailable`，也不得出现 `primary_stream_not_ready` 或其他基于等待时长的错误。
 - Main Chat 离开、owner Chat/context 变化、surface generation 替换和 guest 销毁时，确认 Overview/Debug subscriber 同步失效，正常切换的旧 Overview 以本地 `detached` 完成；每个变为无 observer 的非终态 RunChannel 只发送一次 upstream detach，Platform Run 继续执行。返回原 Chat 后从 Inspector 显示的 lastSeq attach，query 不得重发。隐藏、显示或关闭 WorkPanel 只改变 pending/UI subscriber 数，Overview lease 始终由当前 active Main Chat 持有；隐藏的所有 guest 必须保持 mounted 且 inactive。
 - 制造 detach/reattach 紧邻交接：detach 尚未写出时新 observer 应取消旧 detach；detach 已写出时新 attach 必须等待响应后从 lastSeq 开始。确认旧 generation 的迟到完成不会覆盖新 observer，且不重新出现 listeners attach/detach 高频抖动。
-- 分别断开 Primary 和 BTW，确认另一 lane 的 Inspector phase 与活动 Run 不被标记为断线；账号、endpoint 或 device identity 变化时两条 lane 一起轮换。Primary 收到 BTW runId 的 `run.finished` 后能收敛对应 BTW RunChannel。
+- 分别断开 Primary、BTW 和 Selection Explain，确认其他 lane 的 Inspector phase 与活动 Run 不被标记为断线；账号、endpoint 或 device identity 变化时三条 lane 一起轮换。Primary 收到旁聊或解释 runId 的 `run.finished` 后能收敛对应 RunChannel。
 - 进入 Kanban 前先在其他页面打开 Copilot Dock；进入 `/kanban` 后确认 Dock guest 立即 inactive 并卸载，Launcher、System Bar、程序化 open/toggle 和旧 Kanban session 都不能恢复 Dock。Kanban Chat、claim、run prepare、native run 与事件同步继续正常；离开 Kanban 后其他页面原有 Dock session 可以恢复。
 - 打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合；Inspector 和日志不得包含 token、Cookie、用户正文或完整业务帧。
 - 从设置的调试分类打开“桌面运行时观察器”，确认独立窗口可持续列出所有 Registry Surface、每个已打开 WebView 及未登记 WebView；Surface、WebContents ID、PID、owner、URL（不含查询参数/凭据）和 active/loading/crashed 状态与实际运行一致。
 - 在观察器中按 RSS、5 分钟增量和 CPU 排序，确认多个 WebView 共享 renderer PID 时显示同一进程 RSS 并明确标记 shared，不把进程内存伪装成单 WebView 独占内存；macOS 与 Windows 都能持续刷新且冻结后数值停止变化。
 - 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
-- 切换 Targets、Events、Topology、System，确认原有 Primary/BTW、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
+- 切换 Targets、Events、Topology、System，确认Primary/BTW/Selection Explain、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
 
 ## 首装引导 Chat
 
