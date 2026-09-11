@@ -14,6 +14,7 @@
 
 ## 主窗口外观基础
 
+- Windows / macOS 分别在浅色、深色及图片皮肤下往返切换 Chat、Website 和 Kanban：侧栏整体底色保持一致，进入 Kanban 不新增白色衬底或遮罩；macOS 原生透明效果保持。
 - 使用支持外观桥的新 WebClient，打开 Main Chat 后切换皮肤、图片和系统明暗：主聊天透出同一张壁纸，Composer、消息、菜单与弹窗保持可读；URL、guest ID、草稿、附件、焦点、滚动和流式输出保持。没有图片时回到实色。
 - Copilot、WorkPanel、Kanban 与管理页跟随语义颜色，保留实色阅读面；普通 Website/Service 不接收外观快照。Standalone 的偏好不能被 Desktop 宿主覆盖。
 - 隐藏恢复、手动刷新 guest、旧 WebClient 未消费新桥、快照超时和失效后恢复均有可读回退；旧文档和迟到快照不能覆盖当前外观。独立自动入口为 `npm run test:webclient-appearance`，再在两种系统的实际 WebClient Bundle 上联调。

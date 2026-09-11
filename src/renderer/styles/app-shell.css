@@ -47,6 +47,10 @@
 }
 
 .app-shell.is-windows-platform {
+  /* Windows has an opaque native window; keep the sidebar base independent of the route. */
+  background: var(--embedded-surface-shell-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   --windows-titlebar-content-inset: var(--windows-titlebar-overlay-height);
   --app-window-drag-height: 0px;
   --app-window-drag-left: 0px;
