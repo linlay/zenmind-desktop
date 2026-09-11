@@ -299,6 +299,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleOpen_3(facto
             onPush: (frame) => factoryContext.sendFrame(session, frame),
         });
         const { baseUrl, token } = await factoryContext.availability();
+        if (session.closed || session.sender.isDestroyed()) return;
         await factoryContext.options.realtimeBroker.ensureConnected(baseUrl, token);
     }
     catch (error) {

@@ -1786,7 +1786,9 @@ export function ServiceWebviewSurface({
     let currentUrl = "";
     let webContentsId: number | undefined;
     try {
-      currentUrl = targetWebview?.getURL() ?? "";
+      // Diagnostics must not synchronously round-trip to Main just to decorate a log.
+      // Business identity checks below continue to read the live guest when required.
+      currentUrl = webviewCurrentUrl;
       webContentsId = readWebviewContentsId(targetWebview);
     } catch {
       // The guest can disappear during route changes or app shutdown.

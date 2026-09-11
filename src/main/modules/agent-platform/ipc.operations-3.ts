@@ -240,6 +240,12 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         factoryContext.sendFrame(session, frameError(frame.id, "capability_denied", error instanceof Error ? error.message : String(error)));
         return;
     }
+    const authorizedSurface = {
+        registrationId: context.target.registrationId,
+        surfaceId: context.target.surfaceId,
+        ownerChatId: context.target.ownerChatId,
+        route: context.target.pageRouteIdentity || context.target.pageRoute,
+    };
     let connection: {
         baseUrl: string;
         token: string;
@@ -254,6 +260,24 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         return;
     }
     const { baseUrl, token } = connection;
+    // Availability may perform an asynchronous cold identity probe. Recheck the
+    // real sender and live surface after that wait, before forwarding any frame.
+    const refreshedContext = session.closed || event.sender.isDestroyed()
+        ? null
+        : authorizeSurface(event.sender, factoryContext.options.browserSurfaces, factoryContext.options.isTrustedAgentWebclientSession);
+    if (!refreshedContext || "ok" in refreshedContext || (isLive && (
+        refreshedContext.target.registrationId !== authorizedSurface.registrationId ||
+        refreshedContext.target.surfaceId !== authorizedSurface.surfaceId ||
+        refreshedContext.target.ownerChatId !== authorizedSurface.ownerChatId ||
+        (refreshedContext.target.pageRouteIdentity || refreshedContext.target.pageRoute) !==
+            authorizedSurface.route ||
+        !refreshedContext.target.active
+    ))) {
+        siteCdpScope?.release("Surface changed while checking Platform availability.");
+        finishExplicitDetachWrite(false);
+        factoryContext.sendFrame(session, frameError(frame.id, "surface_unavailable", "Surface changed while checking Platform availability"));
+        return;
+    }
     session.requestIds.add(frame.id);
     const binding: StreamBinding | null = isLive
         ? {

@@ -51,7 +51,8 @@ type PopoverChildElement = React.ReactElement<PopoverCloneProps> & {
 
 interface PopoverProps {
   children: PopoverChildElement;
-  content: React.ReactNode;
+  /** A factory defers expensive content construction until the popover opens. */
+  content: React.ReactNode | (() => React.ReactNode);
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -492,7 +493,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
                 role="dialog"
                 style={{ ...position, ...style }}
               >
-                {content}
+                {typeof content === "function" ? content() : content}
               </div>
             </>,
             document.body,

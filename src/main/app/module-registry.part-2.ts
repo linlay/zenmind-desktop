@@ -309,7 +309,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     isTrustedAgentWebclientSession: options.isTrustedAgentWebclientSession,
     normalizeWorkPanelOpenLocalResourceRequest: normalizeChatWorkPanelOpenLocalResourceRequest,
     realtimeBroker: assistantBridgeRuntime.realtimeBroker,
-    getServiceState,
+    getServiceState: (targetApp, serviceId) => services.getServiceState(targetApp, serviceId, { mode: "bridge" }),
     issueAccessToken: options.issueAgentAccessToken,
     syncCanonicalChat: (ownerWebContentsId, input) =>
       canonicalChatSync.request(ownerWebContentsId, input),
