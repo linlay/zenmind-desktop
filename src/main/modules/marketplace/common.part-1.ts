@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { WebsFacade } from "../webs";
+import type { PluginLifecycle } from "../plugins";
 import type {
   MarketAsset,
   MarketCatalogItem,
@@ -56,6 +57,7 @@ export type InstalledRecord = {
 };
 
 export type MarketplaceOptions = MarketListOptions & {
+  plugins?: PluginLifecycle;
   catalogSnapshot?: unknown;
   catalogUrl?: string;
   catalog?: Catalog;

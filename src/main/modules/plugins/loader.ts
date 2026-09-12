@@ -3,7 +3,9 @@ import path from "node:path";
 import type { App } from "electron";
 import { normalizeManifest, readManifestFile } from "../../support/manifest/manifest-utils";
 import { clearServices, getService, registerService, unregisterService } from "../services";
-import { fixShellScriptPermissions, initializeService } from "../services";
+import { fixShellScriptPermissions } from "../services";
+import type { ServicesFacade } from "../services";
+import type { WebappManager } from "../webs";
 import { extractArchiveToDir } from "../../support/archive/archive-utils";
 import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "../../infrastructure/filesystem/user-paths";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
@@ -184,7 +186,11 @@ function assertPluginBundleImportable(pluginDir: string, topLevelDir: string, de
   }
 }
 
-export async function installPluginFromArchive(app: App, archivePath: string) {
+export async function installPluginFromArchive(
+  app: App,
+  archivePath: string,
+  initializeService: ServicesFacade["initializeService"]
+) {
   ensurePluginArchivePath(archivePath);
 
   const root = getPluginsRoot(app);
@@ -208,6 +214,9 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     }
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
     assertPluginBundleImportable(extractedDir, entries[0], definition);
+    if (definition.serviceMode === "resource" && typeof initializeService !== "function") {
+      throw new Error("Plugin initialization must be supplied by the application composition root.");
+    }
 
     const targetDir = getPluginInstallDir(app, manifest.id, definition.version);
     const configDir = getServiceConfigRoot(app, manifest.id, "plugin");
@@ -240,18 +249,23 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
   }
 }
 
-export async function uninstallPlugin(app: App, serviceId: string) {
+export async function uninstallPlugin(
+  app: App,
+  serviceId: string,
+  services: Pick<ServicesFacade, "getServiceState" | "stopService">,
+  webapps: WebappManager
+) {
   // Verify it's a plugin, not builtin
   const def = getService(serviceId);
   if (def.kind !== "plugin") {
     return { ok: false, message: t("service.builtinNotUninstallable") };
   }
-  const { getServiceState, stopService } = await import("../services");
-  const currentState = await getServiceState(app, serviceId);
+  const currentState = await services.getServiceState(app, serviceId);
   if (currentState.status === "running") {
-    await stopService(app, serviceId);
+    const stopped = await services.stopService(app, serviceId);
+    if (!stopped.ok) return { ok: false, message: stopped.message };
   }
-  await removePluginResources(app, def);
+  await removePluginResources(app, def, webapps);
   const dir = getPluginInstallDir(app, serviceId, def.version);
   fs.rmSync(dir, { recursive: true, force: true });
   unregisterService(serviceId);

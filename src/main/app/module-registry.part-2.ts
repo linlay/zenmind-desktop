@@ -19,7 +19,7 @@ import {
 import {
   emitPluginBridgeHook,
   getPluginGlobalShortcutStatuses,
-  installPluginFromArchive,
+  createPluginLifecycle,
   invokePluginDesktopAction,
   loadInstalledPlugins
 } from "../modules/plugins";
@@ -119,12 +119,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     petRuntime
   } = options;
   const services = options.servicesFacade;
+  const plugins = createPluginLifecycle(services, options.websFacade.webappManager);
   const { assistantBridge, desktopActionOptions } = assistantBridgeRuntime;
   const withMarketplacePorts = (marketOptions: Record<string, unknown> = {}) => ({
     ...marketOptions,
     createContainerHubClient: (config: ConstructorParameters<typeof ContainerHubClient>[0]) =>
       new ContainerHubClient(config),
-    webs: options.websFacade
+    webs: options.websFacade,
+    plugins
   });
   async function mergeMarketMcpStatuses(result: MarketListResult): Promise<MarketListResult> {
     if (!result.items.some((item) => item.type === "mcp" && item.installPath)) {
@@ -714,8 +716,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     showFileDialog: options.showFileDialog,
     showSaveDialog: options.showSaveDialog,
     clearSessionCache: () => options.session.defaultSession.clearCache(),
-    installPluginFromArchive,
-    handlePluginUninstall,
+    installPluginFromArchive: plugins.installFromArchive,
+    handlePluginUninstall: (targetApp, serviceId, ownerWindow, dialogOptions) =>
+      handlePluginUninstall(targetApp, serviceId, ownerWindow, { ...dialogOptions, uninstall: plugins.uninstall }),
     getMarketSettings,
     saveMarketSettings,
     listMarketItems: async (marketApp, listOptions) => {

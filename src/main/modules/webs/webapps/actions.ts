@@ -18,7 +18,7 @@ import {
   writeWebappPreferenceFields
 } from "./store";
 import { webappRuntime } from "./runtime";
-import { unpublishWebapp } from "./publisher";
+import { readWebappPublishState, unpublishWebapp } from "./publisher";
 import { webappWindowManager } from "./window-manager";
 
 function findWebapp(items: WebappEntry[], id: string) {
@@ -130,7 +130,14 @@ export async function disposeWebappInstallation(
 ) {
   const releaseDisposal = dependencies.windowManager.beginDisposal(target.id, { closeImmediately: false });
   try {
-    const unpublished = await unpublishWebapp(app, target.id, ports);
+    // Stopping a resource plugin removes its program but retains user data and
+    // the successful unpublish state. Uninstall must still clean that data.
+    const publication = readWebappPublishState(app, target.id);
+    const alreadyUnpublished = !fs.existsSync(target.installPath || getWebappDir(app, target.id)) &&
+      publication?.status === "unpublished" && publication.active === false;
+    const unpublished = alreadyUnpublished
+      ? { ok: true, message: "" }
+      : await unpublishWebapp(app, target.id, ports);
     if (!unpublished.ok) {
       return {
         ok: false,
