@@ -1185,7 +1185,10 @@ function createStartupCoreAssetsFixture(options = {}) {
           ]
         },
         web: service.web,
-        desktop: createCoreDesktopManifest(service.id, archiveFileName)
+        desktop: {
+          ...createCoreDesktopManifest(service.id, archiveFileName),
+          ...(options.runtimeResources && service.id === "agent-platform" ? { runtimeResources: "v1" } : {})
+        }
       }, null, 2)}\n`,
       "utf8"
     );
@@ -8196,5 +8199,60 @@ test("stopService keeps the normal command timeout outside the shutdown path", a
     }
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("0.4.1 to 0.4.2 startup restores consumed provider registration and commits only after key acquisition", async () => {
+  const fixture = createStartupCoreAssetsFixture({ runtimeResources: true });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: false });
+  const upgrade = require("../dist-electron/main/modules/services/manager/desktop-config-upgrade.js");
+  const JSZip = require("jszip");
+  const runtimeRoot = getTestRuntimeRoot(userDataRoot);
+  const provider = path.join(runtimeRoot, "registries", "providers", "th-main.yml");
+  const registerPath = path.join(runtimeRoot, "provider-register.json");
+  const originalFetch = globalThis.fetch;
+  let offline = true;
+  let requests = 0;
+  try {
+    upgrade.completeDesktopServiceConfigUpgrade(app, "0.4.1");
+    fs.mkdirSync(path.dirname(provider), { recursive: true });
+    fs.writeFileSync(provider, "key: th-main\napiKey:\n");
+    assert.equal(fs.existsSync(registerPath), false);
+    const zip = new JSZip();
+    zip.file("env/VERSION", "0.4.2");
+    zip.file("env/desktop-init.json", "{}");
+    zip.file("env/provider-register.json", JSON.stringify({ mode: "grant-jwt",
+      endpoint: "https://registration.example.test/register", providers: ["th-main"],
+      grant: { type: "jwt", token: "synthetic-upgrade-grant" } }));
+    const zipPath = path.join(fixture.tempRoot, "env.zip");
+    fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));
+    globalThis.fetch = async (_url, init) => {
+      requests += 1;
+      assert.equal(init.headers.Authorization, "Bearer synthetic-upgrade-grant");
+      assert.equal(fs.existsSync(getTestEnvPath(userDataRoot, "agent-platform")), true,
+        "service reset deploy must finish before registration");
+      if (offline) throw new Error("offline");
+      return new Response(JSON.stringify({ key: "dk_UpgradeLifecycleKey" }));
+    };
+    const options = { desktopVersion: "0.4.2", desktopVersionUpgradeEnvZipPath: zipPath,
+      applyDesktopConfiguration: () => {} };
+    await assert.rejects(runStartupPreparation(app, options), /offline/);
+    assert.equal(upgrade.__testInternals.readVersionState(app, process.platform).desktopVersion, "v0.4.1");
+    assert.equal(fs.existsSync(registerPath), true);
+    assert.ok(upgrade.__testInternals.readUpgradeJournal(app, process.platform));
+    offline = false;
+    const result = await runStartupPreparation(app, options);
+    assert.deepEqual(result.failures, []);
+    assert.ok(result.started.includes("agent-platform"));
+    assert.match(fs.readFileSync(provider, "utf8"), /apiKey: dk_UpgradeLifecycleKey/);
+    assert.equal(fs.existsSync(registerPath), false);
+    assert.equal(upgrade.__testInternals.readVersionState(app, process.platform).desktopVersion, "v0.4.2");
+    assert.equal(requests, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });

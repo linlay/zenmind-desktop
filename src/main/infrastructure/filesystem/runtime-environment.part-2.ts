@@ -3,6 +3,7 @@ import path from "node:path";
 import JSZip from "jszip";
 import { AppPackageReader, AppPathReader, AppVersionReader, BUNDLED_ENV_RESOURCES_DIR_NAME, BundledEnvManifest, BundledEnvPackage, BundledEnvZipImportResult, ENV_IMPORT_MARKER_RELATIVE_PATH, ENV_INITIAL_PACKAGE_RELATIVE_PATH, ENV_ZIP_FILE_NAME, ENV_ZIP_MANIFEST_FILE_NAME, ENV_ZIP_ROOT_DIR_NAME, EnvZipImportResult, InitialEnvPackageRecord, InitialEnvPackageSource, RuntimeEnvResetFailure, RuntimeEnvResetResult, ValidatedBundledEnvUpgradeInput, bundledResourcesRootCandidates, entrySegments, fileExists, isRecord, normalizeEnvZipEntryRelativePath, normalizeVersion, normalizeZipEntries, pathApiForResolvedRoot, persistInitialEnvPackage, resolveDesktopVersion, resolveRuntimeRoot, resolveSafeTargetPath, restoreImportedShellScriptPermissions, sha256Hex, supportsBundledEnvResources, validateEnvZipVersion } from "./runtime-environment.part-1";
 import { t } from "./runtime-environment-translator";
+import { readProviderRegisterUpgradeInput } from "./runtime-environment-provider-register";
 
 export function readBundledEnvManifest(manifestPath: string): BundledEnvManifest | null {
   if (!fileExists(manifestPath)) {
@@ -205,7 +206,8 @@ export async function validateBundledEnvForDesktopVersionUpgrade(
     desktopVersion,
     sha256: sha256Hex(zipBuffer),
     size: zipBuffer.byteLength,
-    desktopInit
+    desktopInit,
+    providerRegister: await readProviderRegisterUpgradeInput(zip)
   };
 }
 
@@ -271,7 +273,8 @@ export async function validateSelectedEnvZipForDesktopVersionUpgrade(
     desktopVersion,
     sha256: sha256Hex(zipBuffer),
     size: zipBuffer.byteLength,
-    desktopInit
+    desktopInit,
+    providerRegister: await readProviderRegisterUpgradeInput(zip)
   };
 }
 
