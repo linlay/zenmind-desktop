@@ -444,3 +444,10 @@
 - Windows：验证 Explorer 桌面附着、Win+D、多显示器负坐标、不同 DPI、键盘输入与拖动缩放；Explorer 重启应明确报告窗口失效，恢复后可重新打开。
 - 编辑自动保存，关闭仅收起；插件再次启动按自己的数据恢复。插件停止、崩溃和卸载不遗留系统窗口。
 - 创建窗口失败必须可见，不以普通窗口或全局置顶冒充桌面附着。验证目标平台安装包中包含匹配架构的 Koffi 原生依赖。
+
+
+### 管理页资源对话入口
+
+- 在五个管理页面点击创建/修改：进入设置中默认 Chat 智能体的 Main Chat；自动化选中 platform-automation，其他四类选中 platform-admin；草稿可编辑、未发送前不产生 Run。
+- 修改草稿包含正确稳定标识；Registry 包含分类。刷新不重复预填；返回管理页加载最新结果。市场创建技能仍选中 skill-creator。
+- macOS / Windows 均检查管理 guest 向 Main Chat 的 URL 交接；非当前 surface、跨域、含 chatId 或重复 Composer 参数的跳转不能借用该入口。

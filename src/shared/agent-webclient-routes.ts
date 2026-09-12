@@ -454,6 +454,26 @@ export function isAgentWebclientMainChatRouteAligned(
   );
 }
 
+/** One-shot management -> Main Chat handoff, before the guest consumes prefill. */
+export function resolveAgentWebclientDesktopComposerRouteFromUrl(value: string, webviewSrcUrl: string): string {
+  try {
+    const parsed = new URL(value);
+    const source = new URL(webviewSrcUrl);
+    if (!/^https?:$/u.test(parsed.protocol) || parsed.origin !== source.origin || parsed.username || parsed.password || parsed.hash) return "";
+    const match = /^\/agent\/([^/]+)$/u.exec(parsed.pathname);
+    const agentKey = match ? decodeRoutePathSegment(match[1]) : null;
+    const fields = ["newChat", "composerSkill", "composerDraft"];
+    if (!agentKey || parsed.searchParams.has("chatId") || fields.some(key => parsed.searchParams.getAll(key).length !== 1)) return "";
+    const newChat = parsed.searchParams.get("newChat")!;
+    const composerSkill = parsed.searchParams.get("composerSkill")!;
+    const composerDraft = parsed.searchParams.get("composerDraft")!;
+    if (!/^[1-9]\d{12}$/u.test(newChat) || !["platform-automation", "platform-admin", "skill-creator"].includes(composerSkill) || !composerDraft.trim() || composerDraft.length > 2048) return "";
+    return createAgentWebclientAgentPath(agentKey, new URLSearchParams({ newChat, composerSkill, composerDraft }));
+  } catch {
+    return "";
+  }
+}
+
 export function resolveAgentWebclientDesktopChatRouteFromUrl(
   value: string,
   webviewSrcUrl: string

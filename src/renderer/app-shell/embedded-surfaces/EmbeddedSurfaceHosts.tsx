@@ -75,6 +75,7 @@ function resolveWebsiteSsoPartition(item: EmbeddedSidebarItem) {
 }
 
 export function ServiceWebviewSurfaceHost({
+  chatDefaultAgentKey,
   activeServiceId,
   activeAgentWebclientRoute,
   agentChatFocusRequestId,
@@ -85,6 +86,7 @@ export function ServiceWebviewSurfaceHost({
   onMainChatSurfaceRegistrationChange,
   onMainChatWorkspaceArrowKey,
 }: {
+  chatDefaultAgentKey?: string;
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
   agentChatFocusRequestId?: number | null;
@@ -180,6 +182,7 @@ export function ServiceWebviewSurfaceHost({
       ) : null}
       {shouldRenderAgentManagementSurface ? (
         <ServiceWebviewSurface
+          chatDefaultAgentKey={chatDefaultAgentKey}
           key={AGENT_WEBCLIENT_SERVICE_ID}
           active
           desktopRoute={activeAgentWebclientRoute?.routePath}

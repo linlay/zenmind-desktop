@@ -23,6 +23,7 @@ import {
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
+  resolveAgentWebclientDesktopComposerRouteFromUrl,
   resolveAgentWebclientWsSource,
 } from "../../shared/agent-webclient-routes";
 import { useI18n } from "../i18n/useI18n";
@@ -128,6 +129,7 @@ export type MainChatCommitSnapshot = {
 };
 
 type ServiceWebviewSurfaceProps = {
+  chatDefaultAgentKey?: string;
   hostTheme: "light" | "dark";
   serviceId?: string;
   surfaceId?: string;
@@ -647,6 +649,7 @@ async function tryReadServiceWebviewPageContext(
 }
 
 export function ServiceWebviewSurface({
+  chatDefaultAgentKey,
   hostTheme,
   serviceId: serviceIdProp,
   surfaceId: surfaceIdProp,
@@ -1168,7 +1171,7 @@ export function ServiceWebviewSurface({
   // bootstrap-only. Color changes must not generate route commands or reloads.
   const routeHostTheme = service?.id === "agent-webclient" ? appearanceRouteTheme ?? hostTheme : hostTheme;
   const embeddedUrl = useMemo(() => {
-    return buildServiceWebviewUrl(service?.id, webUrl, {
+    const url = buildServiceWebviewUrl(service?.id, webUrl, {
       hostTheme: routeHostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       accessToken:
@@ -1181,7 +1184,16 @@ export function ServiceWebviewSurface({
         ? `http://127.0.0.1:${service.healthMeta.port}`
         : undefined,
     });
+    if (url && chatDefaultAgentKey && isAgentWebclientManagementSurface(service?.id ?? serviceId, surfaceId)) {
+      const parsed = new URL(url);
+      parsed.searchParams.set("chatDefaultAgentKey", chatDefaultAgentKey);
+      return parsed.toString();
+    }
+    return url;
   }, [
+    chatDefaultAgentKey,
+    serviceId,
+    surfaceId,
     agentPlatformMonitorAccessToken,
     effectiveEmbedPath,
     routeHostTheme,
@@ -3002,6 +3014,15 @@ export function ServiceWebviewSurface({
     }
 
     const handleDidStartNavigation = (event: Event) => {
+      const context = webviewEventContextRef.current;
+      if (context?.ownsActiveSurface && readEventBoolean(event, "isMainFrame") === true &&
+        isAgentWebclientManagementSurface(context.serviceId, context.surfaceId)) {
+        const route = resolveAgentWebclientDesktopComposerRouteFromUrl(readEventString(event, "url"), context.webviewSrcUrl);
+        if (route) {
+          context.navigate(route);
+          return;
+        }
+      }
       if (readEventBoolean(event, "isMainFrame") !== true || readEventBoolean(event, "isInPlace") === true) return;
       // Invalidate the old document before dom-ready: queued READY/APPLIED must
       // not settle routing while the replacement document is still loading.
