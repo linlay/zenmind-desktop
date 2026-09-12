@@ -144,7 +144,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
   options.realtimeBroker.setDesktopBridgeProvider({
     action: (request) => integration.handleAgentPlatformDesktopActionRequest(desktopActionOptions, request as any),
     cdp: (request, scope) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope),
-    awcp: (requestId, request, scope, signal) => awcpGuestBridge.invoke(requestId, request, scope, signal),
+    awcpSnapshot: (requestId, scope, signal) => awcpGuestBridge.snapshot(requestId, scope, signal),
+    awcpInvoke: (requestId, request, scope, signal) => awcpGuestBridge.invoke(requestId, request, scope, signal),
   });
 
   const desktopWsServerOptions = {

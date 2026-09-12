@@ -826,6 +826,7 @@ test("replay window reports seq_expired instead of fabricating a prefix", async 
 });
 
 test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
+  assert.equal(getDesktopActionDefinition("desktop.awcp.snapshot"), null);
   assert.equal(getDesktopActionDefinition("desktop.awcp.invoke"), null);
   const { broker, socket, token } = createHarness(t);
   const calls = [];
@@ -980,20 +981,36 @@ test("AWCP business failures stay in response frames while host failures stay AG
   broker.setDesktopBridgeProvider({
     action: async (request) => ({ ok: false, action: request.action, error: { code: "ordinary_failure", message: "failed" } }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcp: async (requestId, payload, granted, signal) => {
+    awcpSnapshot: async (_requestId, granted, signal) => {
+      calls.push({ snapshot: true, granted, signal });
+      return { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] };
+    },
+    awcpInvoke: async (requestId, payload, granted, signal) => {
       calls.push({ requestId, payload, granted, signal });
       return { ok: false, requestId, action: payload.action, error: { code: "stale_snapshot", message: "stale" } };
     },
   });
   await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
   const source = { runId: "run-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot", source, payload: {} });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot"));
+  const snapshot = socket("primary").sent.find((frame) => frame.id === "awcp-snapshot");
+  assert.equal(snapshot.frame, "response");
+  assert.deepEqual(snapshot.data, { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] });
+  assert.equal(calls[0].granted, scope);
+
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot-extra", source, payload: { targetId: "forged" } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot-extra"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-snapshot-extra").frame, "error");
+  assert.equal(calls.length, 1);
+
   socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-1", source,
     payload: { revision: "revision-a", action: "orders.read", args: {} } });
   await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-1"));
   const awcp = socket("primary").sent.find((frame) => frame.id === "awcp-1");
   assert.equal(awcp.frame, "response");
   assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_snapshot", message: "stale" } });
-  assert.equal(calls[0].granted, scope);
+  assert.equal(calls[1].granted, scope);
 
   socket("primary").emit({ frame: "request", type: "desktop.pet.show", id: "ordinary-1", source, payload: {} });
   await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "ordinary-1"));
@@ -1002,7 +1019,8 @@ test("AWCP business failures stay in response frames while host failures stay AG
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcp: async () => { throw Object.assign(new Error("invalid page response"), {
+    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpInvoke: async () => { throw Object.assign(new Error("invalid page response"), {
       code: "awcp_invalid_response",
       statusCode: 502,
       details: { reason: "output_schema_mismatch", violations: [{ instancePath: "/items", keyword: "type" }] },
@@ -1031,7 +1049,8 @@ test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a te
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcp: async (requestId, payload, _granted, signal) => {
+    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpInvoke: async (requestId, payload, _granted, signal) => {
       invocationSignal = signal;
       return new Promise((resolve) => signal.addEventListener("abort", () => resolve({
         ok: false,

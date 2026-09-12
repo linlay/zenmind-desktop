@@ -163,7 +163,6 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
 ]);
 
 export const AGENT_PLATFORM_ONLY_ACTIONS = new Set([
-  "desktop.awcp.invoke",
   "desktop.workpanel.openLocalFile",
   "desktop.webapp.package.init",
   "desktop.webapp.package.validate",

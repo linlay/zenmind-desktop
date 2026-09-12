@@ -5,7 +5,7 @@ import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
 import {
   type AgentPlatformRealtimeFrame
 } from "./agent-platform-realtime-client";
-import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, DESKTOP_AWCP_INVOKE_TYPE, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, RealtimeLane, brokerError, framePayload, isRecord, pushIdentity, readText } from "./realtime-broker.shared";
+import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, DESKTOP_AWCP_INVOKE_TYPE, DESKTOP_AWCP_SNAPSHOT_TYPE, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, RealtimeLane, brokerError, framePayload, isRecord, pushIdentity, readText } from "./realtime-broker.shared";
 
 export function RealtimeBroker_handlePush_1(self: RealtimeBrokerMethodContext, frame: AgentPlatformRealtimeFrame) {
     const type = readText(frame.type);
@@ -60,7 +60,7 @@ export function RealtimeBroker_handleInboundRequest_2(self: RealtimeBrokerMethod
         return;
     const type = readText(frame.type);
     if (lane === "primary" &&
-        (getDesktopActionDefinition(type) || type === DESKTOP_AWCP_INVOKE_TYPE || type === DESKTOP_CDP_REQUEST_TYPE)) {
+        (getDesktopActionDefinition(type) || type === DESKTOP_AWCP_SNAPSHOT_TYPE || type === DESKTOP_AWCP_INVOKE_TYPE || type === DESKTOP_CDP_REQUEST_TYPE)) {
         void self.handleDesktopBridgeRequest(id, type, frame);
         return;
     }
@@ -109,8 +109,13 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     self.inboundDesktopRequests.set(id, controller);
     try {
         const isCdp = type === DESKTOP_CDP_REQUEST_TYPE;
-        const isAwcp = type === DESKTOP_AWCP_INVOKE_TYPE;
+        const isAwcpSnapshot = type === DESKTOP_AWCP_SNAPSHOT_TYPE;
+        const isAwcpInvoke = type === DESKTOP_AWCP_INVOKE_TYPE;
+        const isAwcp = isAwcpSnapshot || isAwcpInvoke;
         const isDesktopAction = !isCdp && !isAwcp;
+        if (isAwcpSnapshot && Object.keys(frame.payload).length > 0) {
+            throw brokerError("protocol_error", "AWCP snapshot payload must be empty");
+        }
         let actionRequest: Record<string, unknown> | null = null;
         let actionSource: Record<string, unknown> = {};
         if (!isCdp) {
@@ -141,12 +146,14 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
             throw brokerError("protocol_error", "CDP source must include Run, Chat and exactly one owner");
         }
         let result: unknown;
-        if (isAwcp) {
+        if (isAwcpSnapshot || isAwcpInvoke) {
             const scope = self.siteControlGrants.resolve(actionSource);
             if (!scope) {
                 throw brokerError("site_control_unavailable", "The source Run has no active page control capability");
             }
-            result = await provider.awcp(id, frame.payload, scope, controller.signal);
+            result = isAwcpSnapshot
+                ? await provider.awcpSnapshot(id, scope, controller.signal)
+                : await provider.awcpInvoke(id, frame.payload, scope, controller.signal);
         }
         else if (isDesktopAction) {
             result = await provider.action(actionRequest as Record<string, unknown>);
@@ -170,7 +177,7 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     catch (error) {
         if (!controller.signal.aborted) {
             const errorCode = error instanceof Error ? readText((error as Error & { code?: string }).code) || error.name : "";
-            if (type === DESKTOP_AWCP_INVOKE_TYPE && errorCode) {
+            if ((type === DESKTOP_AWCP_SNAPSHOT_TYPE || type === DESKTOP_AWCP_INVOKE_TYPE) && errorCode) {
                 const statusCode = error instanceof Error && typeof (error as Error & { statusCode?: unknown }).statusCode === "number"
                     ? (error as Error & { statusCode: number }).statusCode
                     : errorCode === "site_control_unavailable" ? 409 : 502;

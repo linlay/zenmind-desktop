@@ -30,6 +30,8 @@ export const REQUEST_TIMEOUT_MS = 30_000;
 
 export const DESKTOP_CDP_REQUEST_TYPE = "desktop.cdp.call";
 
+export const DESKTOP_AWCP_SNAPSHOT_TYPE = "desktop.awcp.snapshot";
+
 export const DESKTOP_AWCP_INVOKE_TYPE = "desktop.awcp.invoke";
 
 export const DESKTOP_RESPONSE_DELTA_EVENT_TYPE = "desktop.bridge.response.delta";
@@ -245,7 +247,8 @@ export type RunActionGrant = {
 export type DesktopBridgeRequestProvider = {
   action(request: Record<string, unknown>): Promise<unknown>;
   cdp(request: Record<string, unknown>, scope?: SiteControlScope): Promise<unknown>;
-  awcp(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
+  awcpSnapshot(requestId: string, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
+  awcpInvoke(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
 };
 
 export type RealtimeQueryAccepted = {
