@@ -329,6 +329,10 @@ function validateWebappPackageDirectory(rootPath, manifest, options = {}) {
 
   const frontendRoot = resolveRequiredPath(root, manifest.frontend.root, "directory");
   resolveRequiredPath(frontendRoot, manifest.frontend.index, "file", `${manifest.frontend.root}/${manifest.frontend.index}`);
+  if (manifest.desktopBridge?.documentWindows) {
+    const entry = manifest.desktopBridge.documentWindows.entry;
+    resolveRequiredPath(frontendRoot, entry, "file", `${manifest.frontend.root}/${entry}`);
+  }
   if (manifest.frontend.routeConfig.navigationFallback) {
     resolveRequiredPath(
       frontendRoot,

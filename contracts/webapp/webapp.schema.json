@@ -614,6 +614,20 @@
         "version": {
           "type": "number",
           "const": 1
+        },
+        "documentWindows": {
+          "type": "object",
+          "properties": {
+            "entry": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "entry"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

@@ -33,10 +33,13 @@ import {
 } from "./action-tokens";
 import { getWebappDir, readWebappItems } from "./store";
 import type { WebsIntegrationPorts } from "../integration-ports";
+import type { DocumentWindowManager } from "./document-window-manager";
 import { syncPublishedWebappRoute } from "./publisher";
 import { HEALTH_MONITOR_FAILURE_THRESHOLD, HEALTH_MONITOR_INTERVAL_MS, HOST, RuntimeRecord, createBaseState, createLauncherContext, createStoppedState, findWebapp, getLogPath, launcherForItem, listStoredRuntimeStates, nowIso, pipeChildLogs, prerequisiteMessage, probeBackendHealthOnce, readStoredState, readStoredStateById, reservePort, revokeRecordActionTokens, shouldIssueBackendActionToken, stopRecordHealthMonitor, terminateRuntimeChild, terminateRuntimeProcessTree, waitForBackendHealth, writeLogLine, writeState } from "./runtime.part-1";
 
 export class WebappRuntime {
+  private documentWindows?: DocumentWindowManager;
+  setDocumentWindowManager(manager: DocumentWindowManager) { this.documentWindows = manager; }
   private readonly records = new Map<string, RuntimeRecord>();
   private publicationChangeListener: ((reason: DesktopWebappChangedReason, webappId: string) => void) | null = null;
 
@@ -270,7 +273,8 @@ export class WebappRuntime {
           item,
           webappDir: record.webappDir,
           backendUrl: "",
-          pageActionToken: record.pageActionToken
+          pageActionToken: record.pageActionToken,
+          documentWindows: this.documentWindows ? input => this.documentWindows!.handle(app, item, record.state.webUrl, input) : undefined
         });
         record.gateway = gateway;
         record.state = {
@@ -363,7 +367,8 @@ export class WebappRuntime {
         item,
         webappDir: record.webappDir,
         backendUrl: launched.backendUrl,
-        pageActionToken: record.pageActionToken
+        pageActionToken: record.pageActionToken,
+        documentWindows: this.documentWindows ? input => this.documentWindows!.handle(app, item, record.state.webUrl, input) : undefined
       });
       record.gateway = gateway;
       record.state = {
@@ -442,6 +447,7 @@ export class WebappRuntime {
     message = t("webapp.stopped")
   ): Promise<WebappCommandResult> {
     const id = webappId.trim();
+    this.documentWindows?.closeAll(id);
     const item = findWebapp(app, id, this.integrationPorts);
     const record = this.records.get(id);
     if (record) {

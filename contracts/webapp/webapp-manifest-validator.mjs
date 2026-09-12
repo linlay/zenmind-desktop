@@ -5246,7 +5246,8 @@ const webappManifestV2Schema = strictObject({
     ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
   }).optional(),
   desktopBridge: strictObject({
-    version: literal(1)
+    version: literal(1),
+    documentWindows: strictObject({ entry: safeRelativePathSchema }).optional()
   }).default({ version: 1 })
 }).superRefine((value, context) => {
   if (jsonBytes(value) > WEBAPP_MANIFEST_MAX_BYTES) {

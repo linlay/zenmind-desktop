@@ -558,6 +558,7 @@ export async function startWebappGateway(options: {
   webappDir: string;
   backendUrl: string;
   pageActionToken: string;
+  documentWindows?: (input: unknown) => Promise<unknown>;
 }): Promise<WebappGateway> {
   const installedManifest = readWebappManifestFromDir(options.webappDir);
   const sockets = new Set<net.Socket>();
@@ -585,6 +586,21 @@ export async function startWebappGateway(options: {
     }
     if (requestPath === DESKTOP_ACTION_PATH) {
       void handleDesktopBridgeRequest(options, req, res);
+      return;
+    }
+    if (requestPath === "/__desktop/document-windows") {
+      if (req.method !== "POST" || !hasAuthorizedLocalOrigin(req) || !installedManifest.desktopBridge.documentWindows || !options.documentWindows) {
+        writeText(res, 403, "Document windows are unavailable for this request.");
+        return;
+      }
+      void (async () => {
+        try {
+          const input: unknown = JSON.parse(await readRequestBody(req, DESKTOP_ACTION_BODY_LIMIT));
+          writeBridgeResult(res, 200, { result: await options.documentWindows!(input) });
+        } catch (error) {
+          writeBridgeError(res, 400, "documentWindows", "document_window_failed", error instanceof Error ? error.message : String(error));
+        }
+      })();
       return;
     }
     if (requestPath === DESKTOP_ASSISTANT_IMAGE_UPLOAD_PATH) {
