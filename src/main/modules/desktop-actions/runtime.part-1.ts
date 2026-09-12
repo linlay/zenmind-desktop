@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "../web-surfaces";
+import type { SiteControlScope } from "../web-surfaces";
 import http from "node:http";
 import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions, WebContents } from "electron";
 import type {
@@ -117,7 +117,7 @@ export type DesktopActionBridgeOptions = {
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
-  executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteCdpScope) => Promise<{
+  executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) => Promise<{
     targetId?: string;
     surfaceId?: string;
     result: unknown;
@@ -163,6 +163,7 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
 ]);
 
 export const AGENT_PLATFORM_ONLY_ACTIONS = new Set([
+  "desktop.awcp.invoke",
   "desktop.workpanel.openLocalFile",
   "desktop.webapp.package.init",
   "desktop.webapp.package.validate",

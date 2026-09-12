@@ -1,12 +1,14 @@
 export { createBrowserSurfaceRegistry } from "./browser-surface-registry";
 export type { BrowserSurfaceRegistry, BrowserSurfaceRegistryOptions, RegisteredWebviewSurfaceTarget } from "./browser-surface-registry";
+export { AwcpGuestBridge } from "./awcp/guest-bridge";
+export type { AwcpActionResponse, AwcpInvokePayload } from "./awcp/guest-bridge";
 export { inspectCurrentPageCdpElement, readCurrentPageCdpLocation } from "./cdp/current-page-inspector";
 export type { CurrentPageCdpElementSnapshot } from "./cdp/current-page-inspector";
 export { DESKTOP_CDP_TARGET_TIMEOUT_CODE, isDesktopCdpTimeoutError, readDesktopCdpErrorDetails } from "./cdp/debugger";
 export type { EmbeddedCdpCommandRequest } from "./cdp/gateway";
 export { createCdpIntegration } from "./cdp/integration";
-export { captureCopilotSiteCdpScope } from "./cdp/site-scope";
-export type { SiteCdpScope } from "./cdp/site-scope";
+export { captureCopilotSiteControlScope } from "./cdp/site-scope";
+export type { SiteControlScope } from "./cdp/site-scope";
 export { registerEmbeddedCdpIpcHandlers } from "./cdp/ipc";
 export { createWebviewContextMenuController } from "./context-menu-controller";
 export { openCurrentWebviewDevTools } from "./focused-devtools";

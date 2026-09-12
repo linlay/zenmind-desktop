@@ -1136,7 +1136,7 @@ for (const validParent of [true, false]) {
     await flush();
     if (validParent) {
       assert.equal(runtime.calls.queries.length, 1);
-      const scope = runtime.calls.queries[0].siteCdpScope;
+      const scope = runtime.calls.queries[0].siteControlScope;
       h.foreground(b);
       scope.activate();
       assert.equal(scope.readSurface().surfaceId, a.surfaceId);

@@ -5,7 +5,7 @@ import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
 import {
   type AgentPlatformRealtimeFrame
 } from "./agent-platform-realtime-client";
-import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, RealtimeLane, brokerError, framePayload, isRecord, pushIdentity, readText } from "./realtime-broker.shared";
+import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, DESKTOP_AWCP_INVOKE_TYPE, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, RealtimeLane, brokerError, framePayload, isRecord, pushIdentity, readText } from "./realtime-broker.shared";
 
 export function RealtimeBroker_handlePush_1(self: RealtimeBrokerMethodContext, frame: AgentPlatformRealtimeFrame) {
     const type = readText(frame.type);
@@ -30,7 +30,7 @@ export function RealtimeBroker_handlePush_1(self: RealtimeBrokerMethodContext, f
     if (type === "run.finished" || type === "run.complete") {
         const runId = pushIdentity(frame, "runId");
         self.revokeRunActionGrant(runId);
-        self.siteCdpGrants.revoke(runId);
+        self.siteControlGrants.revoke(runId);
         const run = self.getRunChannel(runId);
         if (run && !run.terminal) {
             const payload = framePayload(frame);
@@ -59,7 +59,8 @@ export function RealtimeBroker_handleInboundRequest_2(self: RealtimeBrokerMethod
     if (!id)
         return;
     const type = readText(frame.type);
-    if (lane === "primary" && (getDesktopActionDefinition(type) || type === DESKTOP_CDP_REQUEST_TYPE)) {
+    if (lane === "primary" &&
+        (getDesktopActionDefinition(type) || type === DESKTOP_AWCP_INVOKE_TYPE || type === DESKTOP_CDP_REQUEST_TYPE)) {
         void self.handleDesktopBridgeRequest(id, type, frame);
         return;
     }
@@ -107,9 +108,12 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     const controller = new AbortController();
     self.inboundDesktopRequests.set(id, controller);
     try {
-        const isDesktopAction = type !== DESKTOP_CDP_REQUEST_TYPE;
+        const isCdp = type === DESKTOP_CDP_REQUEST_TYPE;
+        const isAwcp = type === DESKTOP_AWCP_INVOKE_TYPE;
+        const isDesktopAction = !isCdp && !isAwcp;
         let actionRequest: Record<string, unknown> | null = null;
-        if (isDesktopAction) {
+        let actionSource: Record<string, unknown> = {};
+        if (!isCdp) {
             const source = isRecord(frame.source) ? frame.source : {};
             const runId = readText(source.runId);
             const chatId = readText(source.chatId);
@@ -121,28 +125,42 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
             await self.awaitRunActionReadiness(type, source, controller.signal);
             if (controller.signal.aborted)
                 return;
-            actionRequest = {
-                requestId: id,
-                action: type,
-                args: frame.payload,
-                source,
-            };
+            actionSource = source;
+            if (isDesktopAction) {
+                actionRequest = {
+                    requestId: id,
+                    action: type,
+                    args: frame.payload,
+                    source,
+                };
+            }
         }
-        const cdpSource = !isDesktopAction && isRecord(frame.payload.source) ? frame.payload.source : {};
-        if (!isDesktopAction && (!readText(cdpSource.runId) || !readText(cdpSource.chatId) ||
+        const cdpSource = isCdp && isRecord(frame.payload.source) ? frame.payload.source : {};
+        if (isCdp && (!readText(cdpSource.runId) || !readText(cdpSource.chatId) ||
             Boolean(readText(cdpSource.agentKey)) === Boolean(readText(cdpSource.teamId)))) {
             throw brokerError("protocol_error", "CDP source must include Run, Chat and exactly one owner");
         }
-        const result = isDesktopAction
-            ? await provider.action(actionRequest as Record<string, unknown>)
-            : await provider.cdp(frame.payload, self.siteCdpGrants.resolve(cdpSource));
+        let result: unknown;
+        if (isAwcp) {
+            const scope = self.siteControlGrants.resolve(actionSource);
+            if (!scope) {
+                throw brokerError("site_control_unavailable", "The source Run has no active page control capability");
+            }
+            result = await provider.awcp(id, frame.payload, scope, controller.signal);
+        }
+        else if (isDesktopAction) {
+            result = await provider.action(actionRequest as Record<string, unknown>);
+        }
+        else {
+            result = await provider.cdp(frame.payload, self.siteControlGrants.resolve(cdpSource));
+        }
         if (controller.signal.aborted)
             return;
         if (!isRecord(result)) {
             self.sendDesktopBridgeError(id, "invalid_desktop_response", 502, "Desktop bridge response must be an object");
             return;
         }
-        if (result.ok !== true) {
+        if (!isAwcp && result.ok !== true) {
             const error = isRecord(result.error) ? result.error : {};
             self.sendDesktopBridgeError(id, readText(error.code) || "desktop_request_failed", 400, readText(error.message) || "Desktop rejected the request", result);
             return;
@@ -152,6 +170,16 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     catch (error) {
         if (!controller.signal.aborted) {
             const errorCode = error instanceof Error ? readText((error as Error & { code?: string }).code) || error.name : "";
+            if (type === DESKTOP_AWCP_INVOKE_TYPE && errorCode) {
+                const statusCode = error instanceof Error && typeof (error as Error & { statusCode?: unknown }).statusCode === "number"
+                    ? (error as Error & { statusCode: number }).statusCode
+                    : errorCode === "site_control_unavailable" ? 409 : 502;
+                const details = error instanceof Error && isRecord((error as Error & { details?: unknown }).details)
+                    ? (error as Error & { details: Record<string, unknown> }).details
+                    : undefined;
+                self.sendDesktopBridgeError(id, errorCode, statusCode, error instanceof Error ? error.message : String(error), details);
+                return;
+            }
             if (errorCode === "source_chat_not_ready" || errorCode === "protocol_error" || errorCode === "site_control_unavailable") {
                 const brokerFailure = error as Error & {
                     retryable?: boolean;

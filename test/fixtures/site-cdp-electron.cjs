@@ -7,7 +7,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { createBrowserSurfaceRegistry } = require('../../dist-electron/main/modules/web-surfaces/browser-surface-registry.js');
-const { captureCopilotSiteCdpScope } = require('../../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+const { captureCopilotSiteControlScope } = require('../../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
 const { createCdpIntegration } = require('../../dist-electron/main/modules/web-surfaces/cdp/integration.js');
 const { EmbeddedCdpGateway } = require('../../dist-electron/main/modules/web-surfaces/cdp/gateway.js');
 const { configureAttachedWebview } = require('../../dist-electron/main/modules/shell/window-manager.part-2.js');
@@ -124,7 +124,7 @@ async function main() {
   const select = async (key) => { selected = key; await win.webContents.executeJavaScript(`window.smoke.select(${JSON.stringify(key)})`); await waitFor(() => surface(key)?.active, 'select ' + key); };
   const capture = (key) => {
     const value = surface(key);
-    const scope = captureCopilotSiteCdpScope(registry, { surfaceRole: 'copilot-dock', active: true, parentSurfaceId: value.surfaceId, surfaceIdentityKey: key, ownerWebContentsId: win.webContents.id });
+    const scope = captureCopilotSiteControlScope(registry, { surfaceRole: 'copilot-dock', active: true, parentSurfaceId: value.surfaceId, surfaceIdentityKey: key, ownerWebContentsId: win.webContents.id });
     scope.activate(); scopes.push(scope); return scope;
   };
   const aScope = capture('website:a');

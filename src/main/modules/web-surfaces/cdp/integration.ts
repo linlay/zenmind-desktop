@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "./site-scope";
+import type { SiteControlScope } from "./site-scope";
 import type { WebContents } from "electron";
 import type { DesktopPageContextSnapshot, ServiceState } from "../../../../shared/contracts";
 import {
@@ -151,13 +151,13 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     return options.browserSurfaces.findWebContentsById(tab.webContentsId);
   }
 
-  async function controlSiteFocus(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteCdpScope, phase: "capture" | "restore" | "input") {
+  async function controlSiteFocus(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") {
     if (phase !== "restore") scope.validateTab(tab);
     return options.controlSiteFocus?.(surface.id, tab.tabId,
       { registrationId: scope.registrationId, webContentsId: tab.webContentsId }, phase);
   }
 
-  async function activateTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteCdpScope) {
+  async function activateTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) {
     if (scope) {
       scope.validateTab(tab);
       surface = scope.readSurface();
@@ -169,7 +169,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
       scope ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
   }
 
-  async function closeTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteCdpScope) {
+  async function closeTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) {
     scope?.validateTab(tab);
     return options.closeTab(surface.id, tab.tabId, scope ? undefined : surface.ownerChatId,
       scope ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
