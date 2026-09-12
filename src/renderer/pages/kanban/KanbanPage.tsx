@@ -406,10 +406,12 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
 }
 
 function shouldShowIssueForAssigneeFilters(
-  issue: Pick<KanbanIssue, "assigneeId">,
+  issue: Pick<KanbanIssue, "assigneeId" | "syncMode">,
   currentUserId: string,
   filters: KanbanAssigneeFilter[]
 ) {
+  // Local issues belong to this Desktop user, independently of cloud identity.
+  if (issue.syncMode !== "cloud") return filters.includes("self");
   const assigneeId = issue.assigneeId?.trim() ?? "";
   const normalizedCurrentUserId = currentUserId.trim();
   const category: KanbanAssigneeFilter = !assigneeId
@@ -753,6 +755,10 @@ function getIssueCardWorkerPresentation(
   users: KanbanCloudUser[],
   t: TranslateFunction
 ): IssueCardPersonPresentation | null {
+  if (issue.syncMode !== "cloud" && issue.workerType === "human") {
+    const label = t("kanban.searchFilter.assigneeSelf");
+    return { icon: <UserOutlined />, label, rawLabel: label, kind: "worker" };
+  }
   if (issue.workerType === "agent" && issue.workerAgent?.trim()) {
     const rawLabel = issue.workerAgent.trim();
     return {
@@ -783,7 +789,7 @@ function getIssueCardPeoplePresentation(
   t: TranslateFunction
 ) {
   const worker = getIssueCardWorkerPresentation(issue, agents, users, t);
-  if (issue.syncMode === "local") {
+  if (issue.syncMode !== "cloud") {
     return {
       people: worker ? [worker] : [],
       title: worker?.rawLabel ?? ""

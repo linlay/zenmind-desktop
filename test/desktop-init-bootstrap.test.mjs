@@ -1662,3 +1662,28 @@ test("Kanban bootstrap ignores retired top-level config, token and device alias 
     assert.notEqual(readJson(profilePath).general?.deviceName, "Retired Kanban alias");
   }
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`local-only Kanban bootstrap and upgrade accept an empty cloud URL on ${platform}`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-local-init-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    const defaults = { kanban: { enabled: true, cloud: { serverUrl: "", remoteControlEnabled: false } } };
+    const configPath = path.join(desktopRoot(homePath, platform), "config", "desktop", "kanban.json");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ enabled: false, cloud: { serverUrl: "https://old.example.test", remoteControlEnabled: true } }));
+    writeDesktopInit(app, platform, defaults);
+    assert.equal(applyDesktopInitBootstrap(app, platform).appliedResult.kanban, "applied");
+    assert.deepEqual(readJson(configPath), { schemaVersion: 1, ...defaults.kanban });
+    applyDesktopInitVersionUpgrade(app, defaults, path.join(root, "backup"), platform);
+    assert.deepEqual(readJson(configPath), { schemaVersion: 1, ...defaults.kanban });
+    for (const cloud of [
+      { serverUrl: "", remoteControlEnabled: true },
+      { serverUrl: "https://", remoteControlEnabled: false }
+    ]) {
+      assert.throws(() => applyDesktopInitVersionUpgrade(app, { kanban: { enabled: true, cloud } }, path.join(root, "invalid-backup"), platform), /Kanban server URL is invalid/u);
+      assert.deepEqual(readJson(configPath), { schemaVersion: 1, ...defaults.kanban });
+    }
+  });
+}

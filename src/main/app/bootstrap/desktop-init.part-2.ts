@@ -191,7 +191,8 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
   if (present("kanban") && Object.keys(defaults.kanban as Record<string, unknown>).length > 0 && !kanban) {
     throw new Error("desktop-init kanban is invalid.");
   }
-  if (kanban?.enabled === true && !isValidHttpUrl(readText(kanban.cloud?.serverUrl))) {
+  const kanbanServerUrl = readText(kanban?.cloud?.serverUrl);
+  if (kanban?.enabled === true && (kanbanServerUrl || kanban.cloud?.remoteControlEnabled === true) && !isValidHttpUrl(kanbanServerUrl)) {
     throw new Error("Kanban server URL is invalid.");
   }
   if (isRecord(defaults.market) && defaults.market.enabled === true) {

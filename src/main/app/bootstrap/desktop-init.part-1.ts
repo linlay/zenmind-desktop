@@ -218,7 +218,7 @@ export function normalizeKanbanDefaults(value: unknown) {
     remoteControlEnabled?: boolean;
   } = {};
   const serverUrl = readText(cloudDefaults.serverUrl);
-  if (serverUrl && (enabled === true || isValidHttpUrl(serverUrl))) {
+  if (typeof cloudDefaults.serverUrl === "string" && (!serverUrl || enabled === true || isValidHttpUrl(serverUrl))) {
     cloud.serverUrl = serverUrl;
   }
   if (typeof cloudDefaults.remoteControlEnabled === "boolean") {
@@ -356,7 +356,7 @@ export function applyKanbanDefaults(
     return "absent";
   }
   const serverUrl = readText(settings.cloud?.serverUrl);
-  if (settings.enabled === true && (!serverUrl || !isValidHttpUrl(serverUrl))) {
+  if (settings.enabled === true && (serverUrl || settings.cloud?.remoteControlEnabled === true) && !isValidHttpUrl(serverUrl)) {
     throw new Error("Kanban server URL is invalid.");
   }
   saveKanbanSettings(app, settings, platform);
