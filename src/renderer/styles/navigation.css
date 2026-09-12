@@ -2486,6 +2486,17 @@ div.sidebar-chats-group-popover {
 
 .assistant-worker-chat-action[data-action="unread"] .assistant-worker-unread-dot {
   display: inline-block;
+  /* Center the 8px dot on the right-aligned 12px running icon. */
+  right: 2px;
+  margin: 0;
+}
+
+.assistant-worker-chat-action[data-action="unread"] {
+  width: 24px;
+}
+
+.assistant-worker-chat-action[data-action="unread"] .worker-panel-time-label {
+  display: none;
 }
 
 .assistant-worker-chat-action[data-action="awaiting"],

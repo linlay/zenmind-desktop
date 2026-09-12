@@ -4992,7 +4992,9 @@ export function AppSidebar({
       ? "awaiting"
       : chat.hasActiveRun
         ? "loading"
-        : "time";
+        : !chat.isRead
+          ? "unread"
+          : "time";
     const previewText =
       options.previewText ?? getAssistantChatDisplayText(chat, t);
     const focusId = options.focusId ?? createSidebarChatFocusId(chat.chatId);
@@ -5040,17 +5042,6 @@ export function AppSidebar({
         data-sidebar-group-id={chat.pinned ? "pinned" : undefined}
       >
         <span className="worker-chat-item-head">
-          <span
-            className={[
-              "assistant-worker-unread-dot",
-              "chat-unread-dot",
-              !chat.isRead ? "is-unread" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
-            aria-hidden={chat.isRead ? "true" : undefined}
-          />
           <ChatTitle text={previewText} />
           {chat.pinned ? (
             <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
@@ -5063,6 +5054,12 @@ export function AppSidebar({
             </span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
+            {action === "unread" ? (
+              <span
+                className="assistant-worker-unread-dot chat-unread-dot is-unread"
+                aria-label={t("sidebar.chat.unread")}
+              />
+            ) : null}
             <span className="worker-panel-time-label">
               {formatAssistantChatTime(chat.updatedAt)}
             </span>
