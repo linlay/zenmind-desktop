@@ -1,5 +1,7 @@
 import {
   BrowserWindow,
+  Menu,
+  dialog,
   WebContentsView,
   shell,
   type App,
@@ -15,6 +17,7 @@ import { webappRuntime, type WebappRuntime } from "./runtime";
 import { readWebappItems } from "./store";
 import type { WebsIntegrationPorts } from "../integration-ports";
 import { DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../../shared/browser-surfaces";
+import { attachWebappWindowCloseGuard, createWebappWindowTools } from "./window-tools";
 
 type WebappWindowRecord = {
   window: BrowserWindow;
@@ -276,7 +279,27 @@ export class WebappWindowManager {
     };
     this.windows.set(normalizedId, record);
 
+    attachWebappWindowCloseGuard(
+      targetWindow,
+      webappView.webContents,
+      () => record.suppressRuntimeStop,
+      () => dialog.showMessageBoxSync(targetWindow, {
+        type: "warning",
+        message: t("webapp.window.unsavedChanges"),
+        buttons: [t("webapp.window.keepEditing"), t("webapp.window.discardChanges")],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      }) === 1
+    );
+
     targetWindow.setMenuBarVisibility(false);
+    const windowTools = createWebappWindowTools(targetWindow);
+    webappView.webContents.on("context-menu", (_event, params) => {
+      if (!targetWindow.isDestroyed()) {
+        Menu.buildFromTemplate(windowTools(params.isEditable)).popup({ window: targetWindow });
+      }
+    });
     targetWindow.contentView.addChildView(webappView);
     const layoutWebappView = () => {
       if (targetWindow.isDestroyed() || webappView.webContents.isDestroyed()) {
