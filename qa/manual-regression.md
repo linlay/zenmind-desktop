@@ -1,5 +1,15 @@
 # Desktop 手工回归清单
 
+## 连接器内嵌授权
+
+- 自动冒烟：完成 `npm run build:main:prepared` 后运行 `node_modules/.bin/electron qa/connector-auth-browser-smoke.cjs`，使用本地 Platform 夹具和模拟 HTTPS 页面验证真实 WebView、无 Node/宿主桥权限及关闭回传；输出截图路径。它不替代真实企业微信扫码回归。
+
+- macOS / Windows 分别从连接器中心和聊天连接器选择器发起 WeCom 登录：只出现 Desktop 模态 WebView，不启动系统浏览器；Standalone 对应入口出现模态 iframe。
+- 授权等待轮询不重复弹窗，后台状态观察不自动打开弹窗；成功由 Platform 状态确认后关闭并刷新连接状态。多步 URL 更新保留同一临时浏览器 session。
+- 关闭弹窗取消当前会话；过期后重试生成新会话，迟到的旧关闭请求不能取消新会话。切换页面或卸载观察器关闭展示但不删除凭据。
+- 断网、授权页拒绝 iframe、宿主 bridge 缺失和授权失败均提供可读错误或重试说明，不自动转系统浏览器。实际扫码与授权页嵌入策略需使用真实 WeCom 账号验证。
+- 无 `auth_browser` 或显式 `system` 的其他连接器保持原有外部链接方式；Desktop SSO 登录流程保持独立。
+
 - 网站空态背景：macOS / Windows 的浅色与深色皮肤中，关闭全部网站进入“暂无打开的网站或网站应用”，有图片时主区保留 55% 不透明底色，背景可见且文字清晰；默认无图片外观保持原样。打开网站或 WebApp 后恢复对应页面的背景策略。
 
 ## Windows / macOS 性能采集

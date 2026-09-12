@@ -547,3 +547,21 @@ export function isAgentWebclientSurfaceKind(value: unknown): value is AgentWebcl
     "agent-management",
   ].includes(String(value));
 }
+// Connector authorization is independent of WorkPanel and Platform Frame Port versions.
+export const CONNECTOR_AUTH_BROWSER_GLOBAL = "__AGENT_WEBCLIENT_CONNECTOR_AUTH_BROWSER__";
+export const CONNECTOR_AUTH_BROWSER_CHANNEL = "connectorAuth.browser";
+export const CONNECTOR_AUTH_BROWSER_EVENT = "connectorAuth.browser.event";
+export const CONNECTOR_AUTH_BROWSER_HOST_EVENT = "connectorAuth.browser.host";
+export const CONNECTOR_AUTH_BROWSER_HOST_CLOSE = "connectorAuth.browser.hostClose";
+export interface ConnectorAuthBrowserIdentity { connectorId: string; sessionId: string; }
+export interface ConnectorAuthBrowserBridge {
+  readonly version: 1;
+  open(input: ConnectorAuthBrowserIdentity): Promise<void>;
+  close(input: ConnectorAuthBrowserIdentity): Promise<void>;
+  subscribe(listener: (event: ConnectorAuthBrowserIdentity) => void): () => void;
+}
+export interface ConnectorAuthBrowserDialog extends ConnectorAuthBrowserIdentity {
+  dialogId: string;
+  url: string;
+  partition: string;
+}

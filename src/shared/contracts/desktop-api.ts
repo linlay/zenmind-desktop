@@ -876,6 +876,10 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  connectorAuthBrowser: {
+    onDialog(listener: (input: import("./agent-webclient-bridge").ConnectorAuthBrowserDialog | { dialogId: string; closed: true }) => void): () => void;
+    close(dialogId: string): Promise<void>;
+  };
   shell: {
     openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
   };

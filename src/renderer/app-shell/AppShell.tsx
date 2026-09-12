@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { ConnectorAuthBrowser } from "../connectors/ConnectorAuthBrowser";
 import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
 import { useAppearance } from "../appearance/AppearanceProvider";
 import { DesktopBackground } from "../appearance/DesktopBackground";
@@ -4931,6 +4932,7 @@ export function AppShell() {
         onBringToFront={bringProjectFloatingWebviewToFront}
         onClose={closeProjectFloatingWebview}
       />
+      <ConnectorAuthBrowser />
       {desktopSsoLoginDialog ? (
         <div className="desktop-sso-login-modal-layer" role="presentation">
           <section

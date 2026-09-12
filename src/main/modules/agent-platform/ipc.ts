@@ -1,4 +1,6 @@
 import type { App, WebContents } from "electron";
+import { registerConnectorAuthBrowser } from "./connector-auth-browser";
+import { authorizeSurface } from "./ipc.shared";
 import { randomUUID } from "node:crypto";
 import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
@@ -241,6 +243,15 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const handleWorkPanelInvoke = async (event: any, call: unknown) => { return registerAgentWebclientBridgeIpcHandlers_handleWorkPanelInvoke_2(factoryContext, event, call); };
 
   ipcMain.handle(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL, handleWorkPanelInvoke);
+  registerConnectorAuthBrowser(ipcMain, {
+    availability,
+    subscribeLifecycle: listener => options.browserSurfaces.subscribeLifecycle(listener),
+    authorize(sender) {
+      const result = authorizeSurface(sender, options.browserSurfaces, options.isTrustedAgentWebclientSession);
+      if (!("target" in result)) throw new Error("Untrusted authorization surface");
+      return result;
+    },
+  });
 
   return {
     cleanupSender,

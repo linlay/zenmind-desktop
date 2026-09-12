@@ -7,6 +7,8 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const enUSMessages = {
+  "connectorAuth.title": "Connector authorization",
+  "connectorAuth.failed": "The authorization page could not load. Close it and try again.",
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
   "app.productName": brandMessages["app.productName"] ?? PRODUCT_NAME,
 

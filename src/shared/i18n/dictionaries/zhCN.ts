@@ -7,6 +7,8 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const zhCNMessages = {
+  "connectorAuth.title": "连接器授权",
+  "connectorAuth.failed": "授权页面加载失败，请关闭后重试。",
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
   "app.productName": brandMessages["app.productName"] ?? PRODUCT_NAME,
 

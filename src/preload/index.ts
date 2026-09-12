@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
   AssistantEvent,
   AssistantChatOrderMutationRequest,
@@ -86,6 +87,14 @@ const fallbackInitialLocaleSettings: LocaleSettings = {
 const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
 
 const api: DesktopApi = {
+  connectorAuthBrowser: {
+    onDialog(listener) {
+      const handler = (_event: unknown, input: Parameters<typeof listener>[0]) => listener(input);
+      ipcRenderer.on(CONNECTOR_AUTH_BROWSER_HOST_EVENT, handler);
+      return () => { ipcRenderer.off(CONNECTOR_AUTH_BROWSER_HOST_EVENT, handler); };
+    },
+    close: dialogId => ipcRenderer.invoke(CONNECTOR_AUTH_BROWSER_HOST_CLOSE, dialogId),
+  },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke("shell.openExternal", url)
   },
