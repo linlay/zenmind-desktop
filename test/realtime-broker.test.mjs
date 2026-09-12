@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { RealtimeBroker } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.js");
+const { getDesktopActionDefinition } = require("../dist-electron/shared/desktop-actions.js");
 const {
   createAgentPlatformIdentitySessionId,
   normalizeAgentPlatformRealtimeEndpoint,
@@ -825,6 +826,7 @@ test("replay window reports seq_expired instead of fabricating a prefix", async 
 });
 
 test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
+  assert.equal(getDesktopActionDefinition("desktop.awcp.invoke"), null);
   const { broker, socket, token } = createHarness(t);
   const calls = [];
   broker.setDesktopBridgeProvider({
@@ -967,6 +969,93 @@ test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) =
   }
 });
 
+test("AWCP business failures stay in response frames while host failures stay AGW errors", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  broker.siteControlGrants.bind(
+    { runId: "run-awcp", chatId: "chat-awcp", owner: { kind: "agent", agentKey: "agent-1" } },
+    scope,
+  );
+  const calls = [];
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: false, action: request.action, error: { code: "ordinary_failure", message: "failed" } }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+    awcp: async (requestId, payload, granted, signal) => {
+      calls.push({ requestId, payload, granted, signal });
+      return { ok: false, requestId, action: payload.action, error: { code: "stale_snapshot", message: "stale" } };
+    },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  const source = { runId: "run-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-1", source,
+    payload: { revision: "revision-a", action: "orders.read", args: {} } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-1"));
+  const awcp = socket("primary").sent.find((frame) => frame.id === "awcp-1");
+  assert.equal(awcp.frame, "response");
+  assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_snapshot", message: "stale" } });
+  assert.equal(calls[0].granted, scope);
+
+  socket("primary").emit({ frame: "request", type: "desktop.pet.show", id: "ordinary-1", source, payload: {} });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "ordinary-1"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "ordinary-1").frame, "error");
+
+  broker.setDesktopBridgeProvider({
+    action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+    awcp: async () => { throw Object.assign(new Error("invalid page response"), {
+      code: "awcp_invalid_response",
+      statusCode: 502,
+      details: { reason: "output_schema_mismatch", violations: [{ instancePath: "/items", keyword: "type" }] },
+    }); },
+  });
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-2", source,
+    payload: { revision: "revision-a", action: "orders.read", args: {} } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-2"));
+  const hostFailure = socket("primary").sent.find((frame) => frame.id === "awcp-2");
+  assert.equal(hostFailure.frame, "error");
+  assert.equal(hostFailure.type, "awcp_invalid_response");
+  assert.deepEqual(hostFailure.data, {
+    reason: "output_schema_mismatch",
+    violations: [{ instancePath: "/items", keyword: "type" }],
+  });
+});
+
+test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a terminal frame", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  broker.siteControlGrants.bind(
+    { runId: "run-awcp-cancel", chatId: "chat-awcp-cancel", owner: { kind: "agent", agentKey: "agent-1" } },
+    scope,
+  );
+  let invocationSignal;
+  broker.setDesktopBridgeProvider({
+    action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+    awcp: async (requestId, payload, _granted, signal) => {
+      invocationSignal = signal;
+      return new Promise((resolve) => signal.addEventListener("abort", () => resolve({
+        ok: false,
+        requestId,
+        action: payload.action,
+        error: { code: "cancelled", message: "cancelled" },
+      }), { once: true }));
+    },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({
+    frame: "request",
+    type: "desktop.awcp.invoke",
+    id: "awcp-cancel",
+    source: { runId: "run-awcp-cancel", chatId: "chat-awcp-cancel", agentKey: "agent-1" },
+    payload: { revision: "revision-a", action: "orders.read", args: {} },
+  });
+  await waitUntil(() => invocationSignal);
+  socket("primary").emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "awcp-cancel" } });
+  await waitUntil(() => invocationSignal.aborted);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(socket("primary").sent.some((frame) => frame.id === "awcp-cancel"), false);
+});
+
 for (const switchBeforeAcceptance of [false, true]) {
   test(`Copilot site authority survives Dock detach ${switchBeforeAcceptance ? 'before' : 'after'} canonical acceptance`, async (t) => {
     const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
@@ -976,7 +1065,7 @@ for (const switchBeforeAcceptance of [false, true]) {
     const observer = rootObserver({ token: 'copilot:g1', kind: 'copilot_dock', surfaceId: 'copilot-dock', contextId: 'website:a' });
     broker.activateRootObserver(observer);
     const request = broker.query({ baseUrl: 'http://127.0.0.1:8080', token, id: 'site-query', payload: { agentKey: 'agent-1' },
-      owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteCdpScope: scope, onEvent() {} });
+      owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteControlScope: scope, onEvent() {} });
     void request.completed.catch(() => undefined);
     await waitUntil(() => requestOfType(socket('primary') ?? { sent: [] }, '/api/query').length === 1);
     const outbound = requestOfType(socket('primary'), '/api/query')[0];
@@ -1015,7 +1104,7 @@ test('same-identity reconnect preserves site authority while account rotation re
   const observer = rootObserver({ token: 'copilot:g1', kind: 'copilot_dock', surfaceId: 'copilot-dock' });
   broker.activateRootObserver(observer);
   const request = broker.query({ baseUrl: 'http://127.0.0.1:8080', token, id: 'site-query', payload: {},
-    owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteCdpScope: scope, onEvent() {} });
+    owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteControlScope: scope, onEvent() {} });
   void request.completed.catch(() => undefined);
   await waitUntil(() => requestOfType(socket('primary') ?? { sent: [] }, '/api/query').length === 1);
   const outbound = requestOfType(socket('primary'), '/api/query')[0];

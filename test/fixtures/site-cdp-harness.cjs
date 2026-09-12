@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createBrowserSurfaceRegistry } = require('../../dist-electron/main/modules/web-surfaces/browser-surface-registry.js');
 const { createWebEntrySurfaceIdentity } = require('../../dist-electron/shared/surface-identity.js');
-const { captureCopilotSiteCdpScope } = require('../../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+const { captureCopilotSiteControlScope } = require('../../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
 
 function createSiteHarness() {
   const contents = new Map();
@@ -64,7 +64,7 @@ function createSiteHarness() {
   }
   function capture(value) {
     foreground(value);
-    return captureCopilotSiteCdpScope(registry, {
+    return captureCopilotSiteControlScope(registry, {
       surfaceRole: 'copilot-dock', active: true, parentSurfaceId: value.surfaceId,
       surfaceIdentityKey: value.surfaceIdentityKey, ownerWebContentsId: 7,
     });

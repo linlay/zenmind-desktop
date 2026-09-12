@@ -1,4 +1,4 @@
-import { requireSiteCdpScope, type SiteCdpScope } from "./site-scope";
+import { requireSiteControlScope, type SiteControlScope } from "./site-scope";
 import { withSiteCdpFocus } from "./site-focus";
 import crypto from "node:crypto";
 import http from "node:http";
@@ -54,9 +54,9 @@ type EmbeddedCdpGatewayOptions = {
   port?: number;
   getSurfaces: () => EmbeddedCdpSurface[] | Promise<EmbeddedCdpSurface[]>;
   resolveWebContents: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => WebContents | null | Promise<WebContents | null>;
-  activateTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteCdpScope) => Promise<void>;
-  closeTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteCdpScope) => Promise<unknown>;
-  controlSiteFocus?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteCdpScope, phase: "capture" | "restore" | "input") => Promise<unknown>;
+  activateTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<void>;
+  closeTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<unknown>;
+  controlSiteFocus?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") => Promise<unknown>;
   version?: string;
   commandTimeoutMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
@@ -450,8 +450,8 @@ export class EmbeddedCdpGateway {
     );
   }
 
-  async executeCommand(request: EmbeddedCdpCommandRequest, scope?: SiteCdpScope) {
-    if (scope) requireSiteCdpScope(scope);
+  async executeCommand(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) {
+    if (scope) requireSiteControlScope(scope);
     const method = typeof request.method === "string" ? request.method.trim() : "";
     if (!method) {
       throw new Error("method is required");
@@ -697,7 +697,7 @@ export class EmbeddedCdpGateway {
     targetId: string,
     method: string,
     params: Record<string, unknown>,
-    scope?: SiteCdpScope
+    scope?: SiteControlScope
   ) {
     const contents = await this.ensureWebContents(surface, tab);
     if (!contents || contents.isDestroyed()) {
@@ -902,7 +902,7 @@ export class EmbeddedCdpGateway {
     return this.targetsForSurface(currentSurface).find((target) => target.targetId === targetId) ?? null;
   }
 
-  private async resolveCommandTarget(request: EmbeddedCdpCommandRequest, scope?: SiteCdpScope) {
+  private async resolveCommandTarget(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) {
     const targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
     if (!targetId) {
       throw new EmbeddedCdpTargetError("target_required", "targetId is required for this CDP method.");

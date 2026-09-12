@@ -354,7 +354,7 @@ export function RealtimeBroker_revokeRunActionGrant_7(self: RealtimeBrokerMethod
 }
 
 export function RealtimeBroker_clearRunActionGrants_8(self: RealtimeBrokerMethodContext) {
-    self.siteCdpGrants.revokeAll();
+    self.siteControlGrants.revokeAll();
     for (const grant of self.runActionGrants.values())
         grant.supersede();
     self.runActionGrants.clear();

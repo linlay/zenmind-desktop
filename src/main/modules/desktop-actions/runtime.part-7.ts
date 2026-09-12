@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "../web-surfaces";
+import type { SiteControlScope } from "../web-surfaces";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -21,7 +21,7 @@ import { handleActionCall, normalizeActionResponseTimePayload } from "./runtime.
 export async function handleDesktopCdpRequest(
   options: DesktopActionBridgeOptions,
   request: DesktopCdpCallRequest,
-  scope?: SiteCdpScope
+  scope?: SiteControlScope
 ): Promise<DesktopCdpCallResponse> {
   const method = typeof request.method === "string" ? request.method.trim() : "";
   if (!method) {

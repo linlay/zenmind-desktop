@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "../../web-surfaces";
+import type { SiteControlScope } from "../../web-surfaces";
 import type { RealtimeBrokerMethodContext } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
 import type {
@@ -95,7 +95,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
     observerToken?: string;
-    siteCdpScope?: SiteCdpScope;
+    siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle {
     const accepted = createDeferred<RealtimeQueryAccepted>();
     const completed = createDeferred<RealtimeQueryCompleted>();
@@ -106,7 +106,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     const requestType = options.requestType ?? (lane === "btw" ? "/api/btw" : "/api/query");
     if (!self.acceptingDelivery) {
         const error = brokerError("connection_unavailable", "Realtime Broker is shutting down");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -114,7 +114,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     self.prepareConnectionIdentity(options.baseUrl, options.token);
     if (!operationId) {
         const error = brokerError("invalid_request", "query id is required");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -123,7 +123,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     const observer = observerToken ? self.findRootObserver(observerToken) : null;
     if (observerToken && !observer) {
         const error = brokerError("surface_generation_superseded", "Root Observer is no longer active");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -132,14 +132,14 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         observer.overviewLease?.state === "ready" &&
         expectedChatId && observer.overviewLease.chatId !== expectedChatId) {
         const error = brokerError("protocol_error", "query Chat does not match the active Main Chat context");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
     }
     const upstreamRequestId = `desktop-query-${randomUUID()}`;
     const transaction: QueryTransaction = {
-        siteCdpScope: options.siteCdpScope,
+        siteControlScope: options.siteControlScope,
         lane,
         requestType,
         operationId,

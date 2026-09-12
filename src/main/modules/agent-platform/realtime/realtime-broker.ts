@@ -1,5 +1,5 @@
-import { RunSiteCdpGrants } from "./run-site-cdp-grants";
-import type { SiteCdpScope } from "../../web-surfaces";
+import { RunSiteControlGrants } from "./run-site-control-grants";
+import type { SiteControlScope } from "../../web-surfaces";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -34,7 +34,7 @@ export class RealtimeBroker {
   private readonly terminalRequestIds = new Set<string>();
   private readonly inboundDesktopRequests = new Map<string, AbortController>();
   private readonly seenInboundDesktopRequestIds = new Set<string>();
-  private readonly siteCdpGrants = new RunSiteCdpGrants();
+  private readonly siteControlGrants = new RunSiteControlGrants();
   private readonly runActionGrants = new Map<string, RunActionGrant>();
   private activeRootObserver: RootObserverState | null = null;
   private mainChatRootObserver: RootObserverState | null = null;
@@ -141,7 +141,7 @@ export class RealtimeBroker {
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
     observerToken?: string;
-    siteCdpScope?: SiteCdpScope;
+    siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle { return RealtimeBroker_query_11(this as any, options); }
 
   async forwardRequest(options: {
