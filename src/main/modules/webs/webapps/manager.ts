@@ -197,8 +197,6 @@ export const webappManager = new WebappManager();
 export function createWebappManager(ports: WebsIntegrationPorts) {
   const runtime = createWebappRuntime(ports);
   const windowManager = createWebappWindowManager(ports, runtime);
-  runtime.setDocumentWindowManager(windowManager.documents);
-  windowManager.documents.setLibraryOpener((app, id) => windowManager.open(app, id));
   return new WebappManager(ports, runtime, windowManager);
 }
 export { WebappInstallError, WebappInstallPolicyError, WebappRuntimeRequiredError };

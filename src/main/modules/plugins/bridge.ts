@@ -65,6 +65,7 @@ const latestServiceStates = new Map<string, ServiceState>();
 const pendingPluginEvents = new Map<string, PendingPluginEvent[]>();
 const MAX_PENDING_PLUGIN_EVENTS = 20;
 
+let systemRequestCallback: ((pluginId: string, method: string, params: unknown) => Promise<unknown>) | null = null;
 let desktopReady = false;
 let getServiceStateCallback: ((serviceId: string) => Promise<ServiceState>) | null = null;
 let notifyAgentPlatformConfigChangedCallback: (() => void) | null = null;
@@ -440,6 +441,10 @@ async function handleBridgeRequest(
   context: PluginBridgeRequestContext
 ): Promise<PluginBridgeRequestResult> {
   try {
+    if (context.method.startsWith("system.")) {
+      if (!systemRequestCallback) throw new Error("system bridge is unavailable");
+      return { ok: true, result: await systemRequestCallback(context.sourcePluginId, context.method, context.params) };
+    }
     if (context.method === "service.getStatus") {
       const serviceId = asString(asObject(context.params).serviceId);
       if (!serviceId) {
@@ -608,6 +613,7 @@ function handleBridgeLine(app: App, record: BridgeRecord, client: BridgeClient, 
 
 function handleBridgeData(app: App, record: BridgeRecord, client: BridgeClient, chunk: Buffer) {
   client.buffer += chunk.toString("utf8");
+  if (Buffer.byteLength(client.buffer) > 3 * 1024 * 1024) { client.socket.destroy(); return; }
   for (;;) {
     const lineEnd = client.buffer.indexOf("\n");
     if (lineEnd < 0) {
@@ -633,7 +639,10 @@ function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord 
     const client: BridgeClient = { socket, authenticated: false, buffer: "" };
     clients.add(client);
     socket.on("data", (chunk) => handleBridgeData(app, record, client, chunk));
-    socket.on("close", () => clients.delete(client));
+    socket.on("close", () => {
+      clients.delete(client);
+      if (client.authenticated && ![...clients].some(c => c.authenticated)) cleanupPluginBridgePluginCallback?.(service.id);
+    });
     socket.on("error", () => clients.delete(client));
   });
   const record: BridgeRecord = {
@@ -651,6 +660,7 @@ function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord 
 }
 
 export function configurePluginBridge(options: {
+  systemRequest?: (pluginId: string, method: string, params: unknown) => Promise<unknown>;
   getServiceState?: (serviceId: string) => Promise<ServiceState>;
   notifyAgentPlatformConfigChanged?: () => void;
   runDesktopPetBanner?: (params: unknown) => unknown;
@@ -671,6 +681,7 @@ export function configurePluginBridge(options: {
   cleanupPluginBridgePlugin?: (pluginId: string) => void;
   queryAgentPlatform?: (params: AgentPlatformQueryInput) => unknown;
 }) {
+  systemRequestCallback = options.systemRequest ?? null;
   getServiceStateCallback = options.getServiceState ?? null;
   notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;
   runDesktopPetBannerCallback = options.runDesktopPetBanner ?? null;
@@ -742,6 +753,7 @@ export function emitPluginBridgeHook(name: string, data: unknown = {}) {
 
 export function publishPluginBridgeServiceState(state: ServiceState) {
   latestServiceStates.set(state.id, state);
+  if (["stopped", "error"].includes(state.status)) cleanupPluginBridgePluginCallback?.(state.id);
   emitPluginBridgeHook(serviceStatusHookName(state.id), { service: state });
   if (state.id !== AGENT_PLATFORM_SERVICE_ID) {
     return;
@@ -795,3 +807,9 @@ export const __testInternals = {
   extractAgentPlatformQueryText,
   normalizeAgentPlatformQueryResult
 };
+
+export function emitPluginSystemEvent(pluginId: string, name: string, data: unknown) {
+  const record = bridgeRecords.get(pluginId);
+  if (!record || !isHookSubscribed(record.service, name)) return;
+  for (const client of record.clients) if (client.authenticated) sendEvent(client, name, data);
+}

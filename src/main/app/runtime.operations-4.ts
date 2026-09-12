@@ -253,9 +253,6 @@ export function createMainProcessRuntime_startNonCoreDesktopRuntime_15(factoryCo
     app.once("before-quit", () => clearInterval(desktopSsoRefreshTimer));
     factoryContext.runNonCoreStartupTask("webapp install recovery", () => {
         recoverWebappInstallTransactions(app);
-        void factoryContext.websFacade.webappWindowManager.restoreDocuments(app).catch((error: unknown) => {
-            safeConsoleError("failed to restore document windows", { error: error instanceof Error ? error.message : String(error) });
-        });
     });
     factoryContext.runNonCoreStartupTask("desktop pet", () => {
         const desktopPetSettings = factoryContext.petRuntime.getSettings();

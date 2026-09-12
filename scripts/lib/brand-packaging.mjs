@@ -78,7 +78,8 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
       "!node_modules/**/*.map"
     ],
     asarUnpack: [
-      "node_modules/@napi-rs/canvas-*/**/*"
+      "node_modules/@napi-rs/canvas-*/**/*",
+      "node_modules/@koromix/koffi-*/**/*"
     ],
     npmRebuild: false,
     extraResources: [

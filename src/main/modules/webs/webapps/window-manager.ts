@@ -1,7 +1,5 @@
 import {
   BrowserWindow,
-  Menu,
-  dialog,
   WebContentsView,
   shell,
   type App,
@@ -17,9 +15,6 @@ import { webappRuntime, type WebappRuntime } from "./runtime";
 import { readWebappItems } from "./store";
 import type { WebsIntegrationPorts } from "../integration-ports";
 import { DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../../shared/browser-surfaces";
-import { attachWebappWindowCloseGuard, createWebappWindowTools } from "./window-tools";
-import { DocumentWindowManager } from "./document-window-manager";
-import { readDocumentWindows } from "./document-window-state";
 
 type WebappWindowRecord = {
   window: BrowserWindow;
@@ -150,7 +145,6 @@ function buildWindowOptions(app: App, item: WebappEntry) {
 }
 
 export class WebappWindowManager {
-  readonly documents = new DocumentWindowManager();
   private readonly windows = new Map<string, WebappWindowRecord>();
   private readonly disposingIds = new Map<string, number>();
   private disposalListener: ((id: string) => void) | null = null;
@@ -162,20 +156,6 @@ export class WebappWindowManager {
 
   setDisposalListener(listener: ((id: string) => void) | null) {
     this.disposalListener = listener;
-  }
-
-  async restoreDocuments(app: App) {
-    for (const item of readWebappItems(app, process.platform, this.integrationPorts)) {
-      if (!item.desktopBridge?.documentWindows || this.disposingIds.has(item.id)) continue;
-      const ids = Object.entries(readDocumentWindows(app, item.id)).filter(([, state]) => state.open).map(([id]) => id);
-      if (!ids.length) continue;
-      try {
-        const started = await this.runtime.start(app, item.id);
-        if (started.ok && started.state?.webUrl) {
-          await this.documents.handle(app, item, started.state.webUrl, { operation: "restore", ids });
-        }
-      } catch (error) { console.warn(`Failed to restore document windows for ${item.id}`, error); }
-    }
   }
 
   has(id: string) {
@@ -296,27 +276,7 @@ export class WebappWindowManager {
     };
     this.windows.set(normalizedId, record);
 
-    attachWebappWindowCloseGuard(
-      targetWindow,
-      webappView.webContents,
-      () => record.suppressRuntimeStop,
-      () => dialog.showMessageBoxSync(targetWindow, {
-        type: "warning",
-        message: t("webapp.window.unsavedChanges"),
-        buttons: [t("webapp.window.keepEditing"), t("webapp.window.discardChanges")],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true
-      }) === 1
-    );
-
     targetWindow.setMenuBarVisibility(false);
-    const windowTools = createWebappWindowTools(targetWindow);
-    webappView.webContents.on("context-menu", (_event, params) => {
-      if (!targetWindow.isDestroyed()) {
-        Menu.buildFromTemplate(windowTools(params.isEditable)).popup({ window: targetWindow });
-      }
-    });
     targetWindow.contentView.addChildView(webappView);
     const layoutWebappView = () => {
       if (targetWindow.isDestroyed() || webappView.webContents.isDestroyed()) {
@@ -374,7 +334,6 @@ export class WebappWindowManager {
       if (current.suppressRuntimeStop) {
         return;
       }
-      if (item.desktopBridge?.documentWindows) return;
       void this.runtime.stop(app, normalizedId).finally(() => {
         if (current.ownerWindow && !current.ownerWindow.isDestroyed()) {
           current.ownerWindow.webContents.send("webs.changed", {
@@ -410,7 +369,6 @@ export class WebappWindowManager {
   }
 
   close(id: string) {
-    this.documents.closeAll(id.trim());
     const normalizedId = id.trim();
     const record = this.windows.get(normalizedId);
     if (!record) {
@@ -424,7 +382,6 @@ export class WebappWindowManager {
   }
 
   closeAll() {
-    this.documents.closeAll();
     const openIds = this.openIds();
     for (const id of openIds) {
       this.close(id);

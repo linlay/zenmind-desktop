@@ -122,7 +122,8 @@ function writeStagePackageJson(rootDir, target, stageRoot, activeBrand) {
     productName: activeBrand.productName,
     author: desktopPackage.author,
     dependencies: {
-      "@napi-rs/canvas": desktopPackage.dependencies?.["@napi-rs/canvas"]
+      "@napi-rs/canvas": desktopPackage.dependencies?.["@napi-rs/canvas"],
+      "koffi": desktopPackage.dependencies.koffi
     },
     desktopBuildTarget: {
       os: target.os,
@@ -232,6 +233,8 @@ function copyRuntimePackage(packageName, stageRoot) {
 
 function copyRuntimeDependencies(target, stageRoot) {
   copyRuntimePackage("@napi-rs/canvas", stageRoot);
+  copyRuntimePackage("koffi", stageRoot);
+  copyRuntimePackage(`@koromix/koffi-${target.os}-${target.arch}`, stageRoot);
   const expectedPackage = expectedCanvasRuntimePackage(target);
   if (expectedPackage) {
     copyRuntimePackage(expectedPackage, stageRoot);
@@ -240,6 +243,9 @@ function copyRuntimeDependencies(target, stageRoot) {
 }
 
 function verifyCanvasRuntime(target, stageRoot) {
+  if (!fs.existsSync(path.join(stageRoot, "node_modules", "@koromix", `koffi-${target.os}-${target.arch}`, `${target.os}_${target.arch}`, "koffi.node"))) {
+    throw new Error(`missing staged Koffi native runtime for ${target.os}/${target.arch}`);
+  }
   const napiRoot = path.join(stageRoot, "node_modules", "@napi-rs");
   const expectedPackage = expectedCanvasRuntimePackage(target);
   const installed = fs.existsSync(napiRoot)
@@ -261,7 +267,7 @@ function verifyCanvasRuntime(target, stageRoot) {
 }
 
 function hasInstalledRuntimeDependencies(target) {
-  const requiredPackages = ["@napi-rs/canvas"];
+  const requiredPackages = ["@napi-rs/canvas", "koffi", `@koromix/koffi-${target.os}-${target.arch}`];
   const expectedPackage = expectedCanvasRuntimePackage(target);
   if (expectedPackage) {
     requiredPackages.push(expectedPackage);
