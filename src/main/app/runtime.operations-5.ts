@@ -1,3 +1,4 @@
+import { registerDesktopUpdates } from "../modules/updates";
 import { startPerformanceDiagnostics } from "./performance-diagnostics";
 import {
   app,
@@ -94,6 +95,7 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     app.once("will-quit", () => {
         void conversationShareFacade.dispose();
     });
+    let updatesRuntime: ReturnType<typeof registerDesktopUpdates> | undefined;
     registerMainIpcHandlers({
         app,
         issueAgentAccessToken: factoryContext.issueAgentAccessToken,
@@ -152,7 +154,11 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
             factoryContext.startNonCoreDesktopRuntime();
         },
         onStartupPreparationBlocked: () => factoryContext.setStartupPhase("degraded"),
-        refreshDesktopRuntimeConfigFromCanonicalFiles: factoryContext.settingsRuntime.refreshDesktopRuntimeConfigFromCanonicalFiles,
+        refreshDesktopRuntimeConfigFromCanonicalFiles: (reason) => {
+            factoryContext.settingsRuntime.refreshDesktopRuntimeConfigFromCanonicalFiles(reason);
+            updatesRuntime?.getState();
+            void updatesRuntime?.check();
+        },
         buildApplicationMenu: factoryContext.buildApplicationMenu,
         refreshTrayContextMenu: () => factoryContext.appShellRuntime.refreshTrayContextMenu(),
         refreshMainWindowAppearance: () => factoryContext.appShellRuntime.refreshMainWindowAppearance(),
@@ -167,6 +173,33 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     factoryContext.configureAppMediaPermissions();
     factoryContext.registerFocusedWebviewDevToolsShortcut();
     factoryContext.createWindow();
+    updatesRuntime = registerDesktopUpdates({
+        app,
+        currentVersion: factoryContext.desktopAppInfo.version,
+        getMainWindow: factoryContext.getMainWindow,
+        prepareInstall: async () => {
+            if (factoryContext.appState.isHandlingQuit || !["core-ready", "degraded"].includes(factoryContext.appState.startupPhase)) throw new Error("updateBusy");
+            const diagnostics = factoryContext.realtimeBroker.getDiagnostics();
+            if (diagnostics.pendingQueryCount || diagnostics.replay.some((run) => run.state !== "terminal")) {
+                throw new Error("activeRuns");
+            }
+            factoryContext.appState.isHandlingQuit = true;
+            factoryContext.realtimeBroker.beginShutdown();
+            factoryContext.appState.shutdownMode = "installer";
+            const report = await factoryContext.runShutdownCleanup();
+            if (!report.ok) {
+                factoryContext.appState.isHandlingQuit = false;
+                factoryContext.appState.shutdownCleanupPromise = null;
+                factoryContext.appState.shutdownCleanupComplete = false;
+                factoryContext.appState.shutdownReport = null;
+                throw new Error("cleanupFailed");
+            }
+            factoryContext.pluginBridgeRuntime.emitBeforeQuit();
+            await factoryContext.logsRuntime.flush(500);
+            return true;
+        },
+        quit: factoryContext.beginAppQuitWithoutConfirmation
+    });
     factoryContext.setStartupPhase("shell-ready");
     factoryContext.startResourceDirectoryWatcher();
     void factoryContext.startupPipeline.run();

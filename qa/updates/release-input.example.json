@@ -1,0 +1,15 @@
+{
+  "productId": "cutej",
+  "channel": "stable",
+  "version": "0.5.0",
+  "releaseNotes": {
+    "zh-CN": ["新增应用更新功能"],
+    "en-US": ["Added app updates"]
+  },
+  "artifacts": {
+    "darwin-arm64": {
+      "file": "dist/cutej/CuteJ-0.5.0-arm64.zip",
+      "url": "https://downloads.example.com/desktop/cutej/0.5.0/CuteJ-0.5.0-arm64.zip"
+    }
+  }
+}

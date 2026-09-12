@@ -1,3 +1,5 @@
+import path from "node:path";
+import fs from "node:fs";
 import process from "node:process";
 import { syncBrandArtifacts, resolveRequiredBrandId, electronBuilderConfigPath } from "./lib/brand-config.mjs";
 import { notarizeAndStapleDmg, resolveMacDmgArtifactPath } from "./lib/mac-notarize.mjs";
@@ -112,10 +114,24 @@ await runAndWait(npmCmd, [
   "--arm64"
 ], brandProcessOptions({ cwd: projectRoot }));
 
+let updateAppNotarized = false;
 if (!shouldSkipNotarize()) {
   const dmgPath = resolveMacDmgArtifactPath(projectRoot, brand);
-  await notarizeAndStapleDmg(dmgPath, {
+  updateAppNotarized = await notarizeAndStapleDmg(dmgPath, {
     rootDir: projectRoot,
     env: brandProcessOptions().env
   });
 }
+
+// Build the automatic-update archive from the same verified, signed application.
+// Keep the DMG metadata unchanged for existing manual-install/release validation.
+const updateAppPath = path.join(projectRoot, "dist", brand.id, "mac-arm64", `${brand.productName}.app`);
+await runAndWait("/usr/bin/codesign", ["--verify", "--deep", "--strict", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
+if (updateAppNotarized) {
+  await runAndWait("xcrun", ["stapler", "staple", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
+  await runAndWait("xcrun", ["stapler", "validate", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
+}
+const updateVersion = fs.readFileSync(path.join(projectRoot, "VERSION"), "utf8").trim();
+const updateZipPath = path.join(projectRoot, "dist", brand.id, `${brand.productName}-${updateVersion}-arm64.zip`);
+fs.rmSync(updateZipPath, { force: true });
+await runAndWait("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", updateAppPath, updateZipPath], brandProcessOptions({ cwd: projectRoot }));

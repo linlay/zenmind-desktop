@@ -1,0 +1,41 @@
+// Isolated component rendering: no Desktop profile, services, network or installation.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
+import { build } from "esbuild";
+const repo = process.cwd();
+const require = createRequire(path.join(repo, "package.json"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-updates-ui-"));
+await build({ stdin: { contents: `
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {DesktopUpdateCard} from ${JSON.stringify(path.join(repo, "src/renderer/updates/DesktopUpdateCard.tsx"))};
+import ${JSON.stringify(path.join(repo, "src/renderer/styles.css"))};
+let state={phase:'ready',currentVersion:'0.4.1',version:'0.5.0',progress:100,autoDownload:true,canInstall:true,releaseNotes:{'zh-CN':['新增应用更新功能','改善启动体验']}};
+const listeners=new Set();
+window.calls=[];
+window.setUpdate=(patch)=>{state={...state,...patch};listeners.forEach(fn=>fn(state));};
+window.electronAPI={updates:{getState:async()=>state,onChanged:(fn)=>{listeners.add(fn);return()=>listeners.delete(fn)},install:async()=>{window.calls.push('install');return state;},check:async()=>{window.calls.push('check');return state;},download:async()=>{window.calls.push('download');return state;},setAutoDownload:async(v)=>{window.setUpdate({autoDownload:v});return state;}}};
+createRoot(document.getElementById('root')).render(<main><div className="menu"><DesktopUpdateCard compact /></div><div className="about"><DesktopUpdateCard /></div></main>);
+`, resolveDir: repo, loader: "tsx" }, outfile: path.join(root, "fixture.js"), bundle: true, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', __DESKTOP_APP_BRAND__: JSON.stringify(require(path.join(repo, "dist-electron/shared/brand.js")).APP_BRAND) } });
+fs.writeFileSync(path.join(root, "index.html"), `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"><style>body{margin:0;background:#eff7f6;color:#163d42;font:14px system-ui}main{padding:30px;display:flex;gap:30px}.menu{width:290px;background:#fff;border-radius:14px;align-self:flex-start}.about{width:400px;background:#fff;border-radius:14px}</style><div id="root"></div><script src="fixture.js"></script></html>`);
+fs.writeFileSync(path.join(root, "main.cjs"), `
+const {app,BrowserWindow}=require('electron');const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+app.setPath('userData',path.join(__dirname,'profile'));app.setPath('sessionData',path.join(__dirname,'session'));
+(async()=>{await app.whenReady();const win=new BrowserWindow({show:false,width:800,height:560,webPreferences:{contextIsolation:true,nodeIntegration:false}});await win.loadFile(path.join(__dirname,'index.html'));const js=(s)=>win.webContents.executeJavaScript(s);const until=async(s)=>{for(let n=0;n<100;n++){if(await js(s))return;await new Promise(r=>setTimeout(r,20));}throw new Error('UI timeout: '+s)};
+await until('document.querySelectorAll(".desktop-update-card").length===2');
+await until('document.querySelector("button")?.textContent.includes("重启并升级")');
+fs.writeFileSync(path.join(__dirname,'ready.png'),(await win.webContents.capturePage()).toPNG());
+await js('document.querySelector("button").click()');await until('window.calls.includes("install")');
+await js('setUpdate({phase:"downloading",progress:43})');await until('document.body.textContent.includes("43%")');assert.equal(await js('[...document.querySelectorAll("button")].filter(b=>b.textContent.includes("检查更新")).every(b=>b.disabled)'),true);
+await js('setUpdate({phase:"error",error:"activeRuns"})');await until('document.body.textContent.includes("等待任务结束")');
+await js('setUpdate({phase:"disabled",error:undefined,version:undefined,releaseNotes:undefined})');await until('document.querySelectorAll(".desktop-update-card").length===1');
+await js('setUpdate({phase:"ready",version:"0.5.0",canInstall:false})');await until('document.querySelector("button")?.disabled');
+console.log('Update UI smoke passed: '+__dirname);win.destroy();app.quit();})().catch(e=>{console.error(e);app.exit(1)});
+`);
+const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(require("electron"), [path.join(root, "main.cjs")], { env, stdio: "inherit" });
+const code = await new Promise((resolve) => child.once("exit", resolve));
+process.exitCode = code ?? 1;

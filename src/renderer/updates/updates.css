@@ -1,0 +1,14 @@
+.desktop-update-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-width: 0; }
+.desktop-update-card.is-compact { padding: 10px 12px; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); margin-bottom: 6px; max-width: 310px; }
+.desktop-update-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.desktop-update-version { font-size: 12px; opacity: .72; }
+.desktop-update-card p { margin: 0; font-size: 12px; opacity: .8; }
+.desktop-update-card details { font-size: 12px; }
+.desktop-update-card summary { cursor: pointer; }
+.desktop-update-card ul { margin: 8px 0 0; padding-left: 18px; max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
+.desktop-update-actions, .desktop-update-preference { display: flex; align-items: center; gap: 10px; }
+.desktop-update-preference { font-size: 13px; margin-top: 4px; }
+.sidebar-update-label { margin-left: auto; font-size: 11px; white-space: nowrap; color: var(--ant-color-primary, #16828b); }
+.sidebar-tool-menu-trigger.has-update { position: relative; }
+.sidebar-tool-menu-trigger.has-update::after { content: ""; position: absolute; right: 8px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--ant-color-primary, #16828b); }
+.app-sidebar.is-collapsed .sidebar-update-label { display: none; }

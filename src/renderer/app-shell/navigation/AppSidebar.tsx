@@ -1,3 +1,5 @@
+import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
+import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
 import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
@@ -1199,6 +1201,7 @@ export function AppSidebar({
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const desktopUpdate = useDesktopUpdates();
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
     useState<BootstrapGuideFloatingBubble[]>([]);
   const [bootstrapGuideDismissedBubbles, setBootstrapGuideDismissedBubbles] =
@@ -6095,6 +6098,7 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
+        <DesktopUpdateCard compact />
         {shouldRenderDesktopSsoAccount ? (
           <>
             {renderAccountMenuUserItem()}
@@ -6959,12 +6963,13 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
+                      desktopUpdate?.phase === "ready" ? "has-update" : "",
                       activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    aria-label={t("nav.sidebar.openSettings")}
+                    aria-label={desktopUpdate?.phase === "ready" ? `${t("nav.sidebar.openSettings")} · ${t("updates.phase.ready")}` : t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}
                     title={t("nav.settings")}
@@ -6983,6 +6988,7 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
+                    {desktopUpdate?.phase === "ready" ? <span className="sidebar-update-label">{t("updates.phase.ready")}</span> : null}
                     {shouldRenderActiveToolMenuLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}

@@ -1,3 +1,4 @@
+import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
 import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
@@ -1105,6 +1106,7 @@ export interface DesktopApi {
     onStatusChanged: (listener: DesktopSsoStatusListener) => () => void;
     onEmbeddedLoginOpen: (listener: DesktopSsoEmbeddedLoginListener) => () => void;
   };
+  updates: DesktopUpdatesApi;
   help: {
     getSettings: () => Promise<DesktopHelpSettings>;
   };

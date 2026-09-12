@@ -460,6 +460,18 @@ const api: DesktopApi = {
       };
     }
   },
+  updates: {
+    getState: () => ipcRenderer.invoke("updates.getState"),
+    check: () => ipcRenderer.invoke("updates.check"),
+    download: () => ipcRenderer.invoke("updates.download"),
+    install: () => ipcRenderer.invoke("updates.install"),
+    setAutoDownload: (enabled) => ipcRenderer.invoke("updates.setAutoDownload", enabled),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import("../shared/desktop-updates").DesktopUpdateState) => listener(state);
+      ipcRenderer.on("updates.changed", handler);
+      return () => ipcRenderer.off("updates.changed", handler);
+    }
+  },
   help: {
     getSettings: () => ipcRenderer.invoke("help.getSettings")
   },

@@ -60,6 +60,7 @@ export type BootstrapApplyResult = {
   kanban: BootstrapSectionResult;
   pet: BootstrapSectionResult;
   market: BootstrapSectionResult;
+  updates: BootstrapSectionResult;
   sso: BootstrapSectionResult;
   tunnelHub: BootstrapSectionResult;
   webs: BootstrapSectionResult;

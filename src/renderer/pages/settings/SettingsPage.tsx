@@ -1,3 +1,4 @@
+import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
@@ -2314,6 +2315,7 @@ function AboutAppCard({
 
   return (
     <div className="settings-about-stack" aria-label={t("settings.about.label")}>
+      <DesktopUpdateCard />
       <div className="settings-item-card settings-about-card">
         <div className="settings-item-row settings-about-row">
           <div className="settings-about-copy">

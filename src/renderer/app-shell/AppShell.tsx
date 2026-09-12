@@ -2250,6 +2250,11 @@ export function AppShell() {
     };
   }, []);
 
+  // Failed updates leave the app open for diagnostics/retry rather than trapping it under the quit overlay.
+  useEffect(() => window.electronAPI.updates?.onChanged((state) => {
+    if (state.phase === "error") setShutdownProgress(null);
+  }), []);
+
   useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
     if (progress.phase === "preparing") {
       workPanelStateRef.current = EMPTY_WORK_PANEL_STATE;
