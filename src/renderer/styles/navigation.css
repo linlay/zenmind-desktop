@@ -4433,7 +4433,7 @@ div.sidebar-chats-group-popover {
 
 .app-sidebar .sidebar-primary-link.sidebar-link-active,
 .app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
-  border-radius: var(--control-radius-sm);
+  border-radius: var(--control-radius);
   background: var(--nav-selected-bg);
   border-color: transparent;
   color: var(--nav-selected-text);
