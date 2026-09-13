@@ -40,6 +40,7 @@ import {
 } from "./ws-client";
 import { appendKanbanWsLog } from "../../support/logging/desktop";
 import { AgentPlatformCaller, KanbanConnectionFallbackState, KanbanRuntimeOptions, getKanbanDeviceInfo } from "./runtime.shared";
+import { saveLocalWorkflowDefinitions } from "./local-workflow-settings";
 import { KanbanRuntime_start_1, KanbanRuntime_stop_2, KanbanRuntime_refreshDeviceInfo_3, KanbanRuntime_listIssues_4, KanbanRuntime_getCloudConfig_5, KanbanRuntime_getSettings_6, KanbanRuntime_resyncCloudBoard_7, KanbanRuntime_listLocalProjects_8, KanbanRuntime_listSyncLocalProjects_9, KanbanRuntime_saveCloudConfig_10, KanbanRuntime_saveSettings_11, KanbanRuntime_createIssue_12, KanbanRuntime_updateIssue_13, KanbanRuntime_moveIssue_14, KanbanRuntime_deleteIssueWithAutomation_15, KanbanRuntime_syncIssueAutomation_16, KanbanRuntime_claimIssue_17, KanbanRuntime_runIssue_18, KanbanRuntime_bindHumanReferenceChat_19, KanbanRuntime_unbindHumanReferenceChat_20 } from "./runtime.methods-1";
 import { KanbanRuntime_sendCloudMutation_1, KanbanRuntime_flushCloudOutboxes_2, KanbanRuntime_flushCloudMutationOutbox_3, KanbanRuntime_flushRunEventOutbox_4, KanbanRuntime_sendRunEventOutboxItem_5, KanbanRuntime_handleRejectedRunEvent_6, KanbanRuntime_recoverPendingManualRuns_7, KanbanRuntime_sendNavigationPushEvent_8, KanbanRuntime_currentUser_9, KanbanRuntime_refreshConnection_10, KanbanRuntime_applySnapshot_11, KanbanRuntime_applyDispatch_12, KanbanRuntime_cloudIssueReadOnlyResult_13, KanbanRuntime_cloudIssueReadOnlyDeleteResult_14, KanbanRuntime_applyIssueEvent_15 } from "./runtime.methods-2";
 import { KanbanRuntime_applyDelivery_1, KanbanRuntime_processPendingCommandReceipts_2, KanbanRuntime_inspectReceiptRun_3, KanbanRuntime_localChatExists_4, KanbanRuntime_readStructuredReviewResult_5, KanbanRuntime_reportFailedCommandReceipt_6, KanbanRuntime_scheduleCommandReceiptRecovery_7, KanbanRuntime_appendRunEvent_8, KanbanRuntime_createLocalProject_9, KanbanRuntime_bindLocalProject_10, KanbanRuntime_unbindLocalProject_11, KanbanRuntime_listAgents_12, KanbanRuntime_startRemoteRun_13 } from "./runtime.methods-3";
@@ -133,6 +134,12 @@ export class KanbanRuntime {
   saveCloudConfig(input: KanbanCloudConfig): KanbanCloudConfigResult { return KanbanRuntime_saveCloudConfig_10(this as any, input); }
 
   saveSettings(input: KanbanSettingsInput): KanbanSettingsResult { return KanbanRuntime_saveSettings_11(this as any, input); }
+
+  saveLocalWorkflows(input: import("../../../shared/contracts").KanbanLocalWorkflow[]): KanbanListResult {
+    saveLocalWorkflowDefinitions(this.options.app, this.currentUser(), input);
+    this.notifyChanged();
+    return this.listIssues();
+  }
 
   async createIssue(input: KanbanIssueInput): Promise<KanbanIssueResult> { return KanbanRuntime_createIssue_12(this as any, input); }
 

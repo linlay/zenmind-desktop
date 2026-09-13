@@ -1,4 +1,4 @@
-import type { KanbanIssue, KanbanRecentEvent, KanbanRunState, KanbanWorkflowStatus } from "../../../shared/contracts";
+import type { KanbanIssue, KanbanCloudDetailData, KanbanRecentEvent, KanbanRunState, KanbanWorkflowStatus } from "../../../shared/contracts";
 
 type EventIssueSnapshot = Partial<KanbanIssue> & {
   runAgentKey?: string | null;
@@ -214,4 +214,22 @@ function nullableText(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Resolve the executing chat from the current run identity, never from chat recency. */
+export function resolveCurrentKanbanRunChat(issue: KanbanIssue, details: KanbanCloudDetailData, deviceId: string) {
+  if (issue.syncMode !== "cloud") {
+    const runId = issue.runId || issue.activeRunId;
+    if (issue.runState !== "running" || !runId || !issue.chatId) return null;
+    return { runRecordId: runKey(runId), chatId: issue.chatId, issueChatId: null };
+  }
+  if (!deviceId || !issue.activeIssueRunId) return null;
+  const issueId = issue.remoteIssueId || issue.id;
+  const run = details.issueRuns.find((candidate) => candidate.id === issue.activeIssueRunId);
+  if (!run || run.issueId !== issueId || run.stageId !== issue.stageId || run.workerRole !== "run"
+    || run.state !== "running" || run.deviceId !== deviceId) return null;
+  const chat = details.issueChats.find((candidate) => candidate.id === run.issueChatId);
+  if (!chat || chat.issueId !== issueId || chat.stageId !== run.stageId || chat.deviceId !== deviceId
+    || chat.purpose !== "run" || chat.state !== "active" || !chat.chatId || !chat.agentKey) return null;
+  return { runRecordId: run.id, chatId: chat.chatId, issueChatId: chat.id };
 }

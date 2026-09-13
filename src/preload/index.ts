@@ -181,6 +181,7 @@ const api: DesktopApi = {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },
   kanban: {
+    saveLocalWorkflows: (input) => ipcRenderer.invoke("kanban.saveLocalWorkflows", input),
     listIssues: () => ipcRenderer.invoke("kanban.listIssues"),
     resyncCloudBoard: () => ipcRenderer.invoke("kanban.resyncCloudBoard"),
     getSettings: () => ipcRenderer.invoke("kanban.getSettings"),

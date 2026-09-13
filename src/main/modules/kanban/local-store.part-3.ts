@@ -34,6 +34,8 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     remainingEstimate: normalizeEffortSeconds(detail.remainingEstimate),
     timeSpent: normalizeEffortSeconds(detail.timeSpent),
     parentIssueId: nullableTrimmedText(detail.parentIssueId),
+    localWorkflow: detail.localWorkflow as KanbanIssue["localWorkflow"],
+    localWorkflowRollbacks: detail.localWorkflowRollbacks as KanbanIssue["localWorkflowRollbacks"],
     workflowId: row.workflow_id,
     typeId: row.type_id ?? undefined,
     issueTypeKey: trimText(detail.issueTypeKey) || row.type_id || undefined,

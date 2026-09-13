@@ -1,3 +1,4 @@
+import { KanbanExecutorPicker } from "./KanbanExecutorPicker";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -45,6 +46,7 @@ import type {
   KanbanCloudUser,
   KanbanIssue,
   KanbanIssueInput,
+  KanbanLocalWorkflow,
   KanbanIssueUpdateInput,
   KanbanPriority,
   KanbanProject,
@@ -77,6 +79,8 @@ import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIs
 import { resolveLocalKanbanRunChatId } from "./kanbanAssistantRun";
 import { resolveWorkflowStageColor } from "./stageColor";
 
+import { LocalWorkflowSettings } from "./LocalWorkflowSettings";
+
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "issueType" | "priority" | "severity" | "automation" | "assignee" | null;
 type ModalMode = "create" | "edit";
@@ -91,6 +95,7 @@ type ModalState = {
 };
 
 type IssueFormState = {
+  localWorkflowId: string;
   title: string;
   projectId: string;
   projectVersion: string;
@@ -107,14 +112,13 @@ type IssueFormState = {
   status: KanbanStatus;
   priority: KanbanPriority | null;
   severity: KanbanSeverity | null;
-  assigneeAgentKey: string;
+  executorAgentKey: string;
   automationEnabled: boolean;
   automationPreset: KanbanAutomationPlan;
   automationTime: string;
   automationCron: string;
   automationMessage: string;
   automationTimezone: string;
-  syncToCloud: boolean;
 };
 
 type KanbanIssueOriginPresentation = {
@@ -186,6 +190,7 @@ type KanbanContextMenu = {
   y: number;
 };
 
+const KANBAN_CREATE_STATUSES: readonly KanbanStatus[] = ["backlog", "todo"];
 const KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000;
 const KANBAN_TODO_ASSIGNEE_START_DELAY_MS = 1000;
 const KANBAN_COUNTDOWN_REFRESH_MS = 60_000;
@@ -302,7 +307,14 @@ const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
   recentEvents: []
 };
 
+const KANBAN_EXECUTOR_DEFAULT_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.default-executor.v1`;
+
+function readDefaultExecutor(): string | null {
+  try { return window.localStorage.getItem(KANBAN_EXECUTOR_DEFAULT_STORAGE_KEY); } catch { return null; }
+}
+
 const emptyForm: IssueFormState = {
+  localWorkflowId: "",
   title: "",
   projectId: "",
   projectVersion: "",
@@ -319,14 +331,13 @@ const emptyForm: IssueFormState = {
   status: "backlog",
   priority: null,
   severity: null,
-  assigneeAgentKey: "",
+  executorAgentKey: "",
   automationEnabled: false,
   automationPreset: DEFAULT_KANBAN_AUTOMATION_PLAN,
   automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
   automationCron: DEFAULT_KANBAN_AUTOMATION_CRON,
   automationMessage: "",
   automationTimezone: "Asia/Shanghai",
-  syncToCloud: false
 };
 
 function createDefaultKanbanFilterPreferences(): KanbanFilterPreferences {
@@ -567,6 +578,11 @@ function buildAssistantPrompt(issue: KanbanIssue, t: TranslateFunction) {
     t("kanban.prompt.title", { value: issue.title }),
     t("kanban.prompt.status", { value: t(STATUS_META[issue.status].labelKey) })
   ];
+  if (issue.syncMode !== "cloud" && issue.localWorkflow) {
+    parts.push(t("kanban.localWorkflow.runStage", { value: issue.stageName ?? "" }));
+    const rollback = issue.localWorkflowRollbacks?.at(-1);
+    if (rollback && rollback.toStageId === issue.stageId) parts.push(t("kanban.localWorkflow.rollbackContext", { value: rollback.reason }));
+  }
   if (issue.priority) {
     parts.push(t("kanban.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) }));
   }
@@ -849,6 +865,11 @@ function getIssueCardProgressPresentation(
   issue: KanbanIssue,
   details: KanbanCloudDetailData
 ): IssueCardProgressPresentation {
+  if (issue.syncMode !== "cloud" && issue.localWorkflow) {
+    const index = Math.max(0, issue.localWorkflow.stages.findIndex((stage) => stage.id === issue.stageId));
+    const fraction = issue.status === "completed" ? 1 : issue.status === "in_review" ? 0.8 : issue.status === "in_progress" ? 0.5 : 0.1;
+    return { stageLabel: issue.stageName ?? "", percent: Math.round((index + fraction) / issue.localWorkflow.stages.length * 100), color: resolveWorkflowStageColor({ key: issue.stageKey ?? "", name: issue.stageName ?? "" }, index) };
+  }
   const { stage, orderedStages } = findIssueWorkflowStage(issue, details);
   const fallbackStageLabel = issue.stageName?.trim() || issue.stageKey?.trim() || "";
   const stageLabel = stage?.name?.trim() || fallbackStageLabel;
@@ -1458,6 +1479,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
   const [initialFilterPreferences] = useState(readKanbanFilterPreferences);
+  const [localWorkflows, setLocalWorkflows] = useState<KanbanLocalWorkflow[]>([]);
+  const [workflowSettingsOpen, setWorkflowSettingsOpen] = useState(false);
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
   const [cloudDetails, setCloudDetails] = useState<KanbanCloudDetailData>(EMPTY_KANBAN_CLOUD_DETAILS);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
@@ -1489,6 +1512,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
   const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
+  const [defaultExecutor, setDefaultExecutor] = useState(readDefaultExecutor);
   const [formCompact, setFormCompact] = useState(true);
   const [projectFormMenuOpen, setProjectFormMenuOpen] = useState(false);
   const [projectFormQuery, setProjectFormQuery] = useState("");
@@ -1547,6 +1571,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         setCloudProjects(issueResult.projects ?? []);
         setProjectCatalogLoaded(true);
         setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
+        setLocalWorkflows(issueResult.localWorkflows ?? []);
         setConnectionState(issueResult.connectionState ?? "disabled");
         setCloudCapabilities(issueResult.cloudCapabilities ?? []);
         setCurrentUserId(issueResult.currentUser?.id ?? "");
@@ -1578,6 +1603,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setCloudProjects(issueResult.projects ?? []);
     setProjectCatalogLoaded(true);
     setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
+    setLocalWorkflows(issueResult.localWorkflows ?? []);
     setConnectionState(issueResult.connectionState ?? "disabled");
     setCloudCapabilities(issueResult.cloudCapabilities ?? []);
     setCurrentUserId(issueResult.currentUser?.id ?? "");
@@ -1600,6 +1626,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setCloudProjects(result.projects ?? []);
       setProjectCatalogLoaded(true);
       setCloudDetails(result.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
+      setLocalWorkflows(result.localWorkflows ?? []);
       setConnectionState(result.connectionState ?? "disabled");
       setCloudCapabilities(result.cloudCapabilities ?? []);
       setCurrentUserId(result.currentUser?.id ?? "");
@@ -1862,18 +1889,19 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
 
   const openCreateModal = useCallback((status: KanbanStatus = "backlog") => {
+    if (!KANBAN_CREATE_STATUSES.includes(status)) return;
     if (!readKanbanApi()) {
       setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
-    setForm({ ...emptyForm, status, attachmentChatId: createKanbanDraftAttachmentChatId() });
+    setForm({ ...emptyForm, status, executorAgentKey: agents.some((agent) => agent.agentKey === defaultExecutor) ? defaultExecutor ?? "" : "", attachmentChatId: createKanbanDraftAttachmentChatId() });
     setFormCompact(true);
     setProjectFormMenuOpen(false);
     setProjectFormQuery("");
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "create" });
-  }, [missingKanbanApiMessage]);
+  }, [missingKanbanApiMessage, agents, defaultExecutor]);
 
   const createIssueHandlersByStatus = useMemo(
     () => Object.fromEntries(
@@ -2007,12 +2035,12 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const resolvedAutomationCron = buildAutomationCron(form.automationPreset, form.automationTime, form.automationCron);
     const resolvedAutomationMessage = form.automationMessage.trim() || form.description.trim() || title;
     const shouldRunAfterSave = form.status === "in_progress" && !form.automationEnabled && !modal?.issue?.runId;
-    const shouldRunTodoAssigneeAfterDelay = form.status === "todo" && !form.automationEnabled && Boolean(form.assigneeAgentKey) && !modal?.issue?.runId;
-    if (shouldRunAfterSave && !form.assigneeAgentKey) {
+    const shouldRunTodoAssigneeAfterDelay = form.status === "todo" && !form.automationEnabled && Boolean(form.executorAgentKey) && !modal?.issue?.runId;
+    if (shouldRunAfterSave && !form.executorAgentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
       return;
     }
-    if (form.automationEnabled && !form.assigneeAgentKey) {
+    if (form.automationEnabled && !form.executorAgentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForAutomation") });
       return;
     }
@@ -2047,7 +2075,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       status: savedStatus,
       priority: form.priority,
       severity: form.severity,
-      assigneeAgentKey: form.assigneeAgentKey || null,
+      // Local run scheduling still consumes assigneeAgentKey; worker fields describe the executor.
+      assigneeAgentKey: form.executorAgentKey || null,
+      workerType: form.executorAgentKey ? "agent" : null,
+      workerAgent: form.executorAgentKey || null,
+      workerId: null,
       automationId: modal?.issue?.automationId ?? null,
       automationEnabled: form.automationEnabled,
       automationCron: form.automationEnabled ? resolvedAutomationCron : null,
@@ -2055,7 +2087,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       automationTimezone: form.automationEnabled ? form.automationTimezone : null,
       attachmentChatId: form.attachments.length > 0 ? form.attachmentChatId : null,
       attachments: form.attachments,
-      syncToCloud: form.syncToCloud
+      ...(!modal?.issue && form.localWorkflowId ? { localWorkflowId: form.localWorkflowId } : {}),
+      syncToCloud: Boolean(form.projectId.trim() && form.projectId !== "default")
     };
 
     try {
@@ -2086,9 +2119,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       if (result.ok && nextTone === "success") {
         setModal(null);
         if (shouldRunAfterSave && savedIssue) {
-          void assignIssueToAssistant(savedIssue, form.assigneeAgentKey);
+          void assignIssueToAssistant(savedIssue, form.executorAgentKey);
         } else if (shouldRunTodoAssigneeAfterDelay && savedIssue) {
-          const savedAgentKey = form.assigneeAgentKey;
+          const savedAgentKey = form.executorAgentKey;
           window.setTimeout(() => {
             void assignIssueToAssistant(savedIssue, savedAgentKey);
           }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
@@ -2099,6 +2132,18 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         tone: "error",
         message: error instanceof Error ? error.message : t("kanban.feedback.saveFailed")
       });
+    }
+  }
+
+  async function applyWorkflowAction(issue: KanbanIssue, action: NonNullable<KanbanIssueUpdateInput["localWorkflowAction"]>) {
+    try {
+      const result = await window.electronAPI.kanban.updateIssue(issue.id, { localWorkflowAction: action });
+      setIssues(sortIssues(result.issues));
+      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
+      return result.ok;
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : t("kanban.feedback.saveFailed") });
+      return false;
     }
   }
 
@@ -2161,7 +2206,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       automationTimezone: draft.automationEnabled ? draft.automationTimezone.trim() || null : null,
       attachmentChatId: draft.attachments.length > 0 ? draft.attachmentChatId : null,
       attachments: draft.attachments,
-      syncToCloud: draft.syncToCloud
+      syncToCloud: Boolean(issue.projectId?.trim() && issue.projectId !== "default")
     };
 
     try {
@@ -2482,7 +2527,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   const modalReadOnly = modal?.mode === "edit" && !canEditKanbanIssueBody(modal.issue);
   const modalStatusLocked = modalReadOnly || (modal?.mode === "edit" && Boolean(modal.issue?.runId));
-  const modalSyncLocked = modalReadOnly || (modal?.mode === "edit" && modal.issue?.syncMode === "cloud");
   const canClaimCloudIssues = connectionState === "open" && cloudCapabilities.includes("issue.claim");
   const canRunCloudIssues = connectionState === "open" && cloudCapabilities.includes("run.event.append");
   const modalProjectId = form.projectId.trim();
@@ -2502,6 +2546,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   return (
     <section className="kanban-page" aria-label={t("kanban.title")}>
+      {workflowSettingsOpen && <LocalWorkflowSettings workflows={localWorkflows} onClose={() => setWorkflowSettingsOpen(false)} onSaved={setLocalWorkflows} />}
       <div className="kanban-toolbar">
         <div className="kanban-toolbar-start">
           <KanbanProjectFilter
@@ -2609,6 +2654,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         <div ref={menuPanelRef} className={`kanban-menu-panel is-${menu}`}>
           {menu === "display" ? (
             <>
+              <button type="button" className="kanban-tool" onClick={() => { setMenu(null); setWorkflowSettingsOpen(true); }}>
+                <SettingOutlined /> {t("kanban.localWorkflow.title")}
+              </button>
               <strong>{t("kanban.display.columns")}</strong>
               <label className="kanban-check-row">
                 <input
@@ -2685,7 +2733,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 locale={locale}
                 now={new Date(kanbanCountdownNow)}
                 t={t}
-                canAdd={kanbanReady}
+                canAdd={kanbanReady && KANBAN_CREATE_STATUSES.includes(status)}
                 currentUserId={currentUserId}
                 canClaimCloudIssues={canClaimCloudIssues}
                 canRunCloudIssues={canRunCloudIssues}
@@ -2770,6 +2818,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             setDetailInitialEditStatus(null);
           }}
           onSave={(draft) => saveIssueDetail(detailIssue, draft)}
+          localWorkflows={localWorkflows}
+          onWorkflowAction={(action) => applyWorkflowAction(detailIssue, action)}
           onDelete={() => deleteIssue(detailIssue)}
           onOpenChat={(chatId, agentKey) => openAssistantIssueChat(detailIssue, chatId, agentKey)}
           cloudAction={getCloudIssueAction(detailIssue, cloudDetails, localDeviceId, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
@@ -2902,6 +2952,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 </select>
               </label>
             </div>
+            {!modal?.issue && <label className="kanban-field">
+              <span>{t("kanban.localWorkflow.title")}</span>
+              <select value={form.localWorkflowId} onChange={(event) => setForm((current) => ({ ...current, localWorkflowId: event.target.value, status: "todo" }))}>
+                <option value="">{t("kanban.localWorkflow.none")}</option>
+                {localWorkflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+              </select>
+              {form.localWorkflowId && <small>{localWorkflows.find((item) => item.id === form.localWorkflowId)?.stages.map((stage) => stage.name).join(" → ")}</small>}
+            </label>}
             {!formCompact ? (
               <label className="kanban-field">
                 <span>{t("kanban.form.title")}</span>
@@ -2982,13 +3040,13 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   <span>{t("kanban.form.status")}</span>
                   <select
                     value={form.status}
-                    disabled={modalStatusLocked}
+                    disabled={modalStatusLocked || Boolean(form.localWorkflowId)}
                     onChange={(event) => setForm((current) => ({
                       ...current,
                       status: event.target.value as KanbanStatus
                     }))}
                   >
-                    {KANBAN_STATUSES.map((status) => (
+                    {(modal?.mode === "create" ? KANBAN_CREATE_STATUSES : KANBAN_STATUSES).map((status) => (
                       <option key={status} value={status}>{t(STATUS_META[status].labelKey)}</option>
                     ))}
                   </select>
@@ -3050,39 +3108,22 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 </div>
               </>
             ) : null}
-            <label className="kanban-field">
-              <span>{t("kanban.form.assignee")}</span>
-              <select
-                value={form.assigneeAgentKey}
-                disabled={modalReadOnly}
-                onChange={(event) => {
-                  const assigneeAgentKey = event.target.value;
-                  setForm((current) => ({
-                    ...current,
-                    assigneeAgentKey
-                  }));
-                }}
-              >
-                <option value="">{t("kanban.form.unassigned")}</option>
-                {agents.map((agent) => (
-                  <option key={agent.agentKey} value={agent.agentKey}>
-                    {agent.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="kanban-check-row kanban-sync-toggle">
-              <input
-                type="checkbox"
-                checked={form.syncToCloud}
-                disabled={modalSyncLocked}
-                onChange={(event) => setForm((current) => ({
-                  ...current,
-                  syncToCloud: event.target.checked
-                }))}
-              />
-              <span>{t("kanban.form.syncToCloud")}</span>
-            </label>
+            <KanbanExecutorPicker
+              agents={agents}
+              value={form.executorAgentKey}
+              defaultValue={defaultExecutor}
+              onSetDefault={() => {
+                try {
+                  window.localStorage.setItem(KANBAN_EXECUTOR_DEFAULT_STORAGE_KEY, form.executorAgentKey);
+                  setDefaultExecutor(form.executorAgentKey);
+                } catch {
+                  setFeedback({ tone: "error", message: t("kanban.form.executorDefaultFailed") });
+                }
+              }}
+              disabled={modalReadOnly}
+              onChange={(executorAgentKey) => setForm((current) => ({ ...current, executorAgentKey }))}
+              t={t}
+            />
             {!formCompact ? (
               <section className="kanban-automation-panel" aria-label={t("kanban.form.automationPanel")}>
                 <label className="kanban-check-row kanban-automation-toggle">
@@ -3279,7 +3320,7 @@ const KanbanColumn = memo(function KanbanColumn({
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
-        <div className="kanban-column-actions">
+        {KANBAN_CREATE_STATUSES.includes(status) ? <div className="kanban-column-actions">
           <button
             type="button"
             aria-label={t("kanban.column.addTo", { status: label })}
@@ -3291,7 +3332,7 @@ const KanbanColumn = memo(function KanbanColumn({
           >
             <PlusOutlined />
           </button>
-        </div>
+        </div> : null}
       </header>
       <div
         className="kanban-column-body"
@@ -3565,6 +3606,7 @@ const IssueCardContent = memo(function IssueCardContent({
       >
         <span style={{ width: `${progress.percent}%`, backgroundColor: progress.color }} />
       </div>
+      {issue.localWorkflow && issue.syncMode !== "cloud" && <small className="kanban-local-stage">{issue.stageName}{issue.status === "in_review" ? ` · ${t("kanban.localWorkflow.review")}` : ""}</small>}
       {issueType ? <span className="issue-card-type-corner" style={{ color: resolveIssueTypeColor(issueType.color) }} title={t("kanban.card.issueType", { value: issueType.label })}><IssueTypeIcon className="issue-card-type-corner-icon" issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} label={issueType.label} /></span> : null}
       {canOpenIssueDetails ? (
         <div

@@ -380,6 +380,35 @@ export interface KanbanCloudDetailData {
   recentEvents: KanbanRecentEvent[];
 }
 
+export interface KanbanLocalWorkflow {
+  id: string;
+  name: string;
+  stages: Array<{ id: string; name: string; reviewRequired: boolean; rollbackToStageId?: string }>;
+}
+
+export type KanbanLocalWorkflowAction = {
+  type: "rollback";
+  fromStageId: string;
+  fromStatus: KanbanStatus;
+  toStageId: string;
+  reason: string;
+} | {
+  type: "refresh_rollback_rules";
+};
+
+export interface KanbanLocalWorkflowRollback {
+  id: string;
+  fromStageId: string;
+  fromStageName: string;
+  fromStatus: KanbanStatus;
+  toStageId: string;
+  toStageName: string;
+  reason: string;
+  actorId: string;
+  actorName: string;
+  createdAt: string;
+}
+
 export interface KanbanIssue {
   id: string;
   localIssueId?: string;
@@ -399,6 +428,8 @@ export interface KanbanIssue {
   remainingEstimate: number;
   timeSpent: number;
   parentIssueId?: string | null;
+  localWorkflow?: KanbanLocalWorkflow;
+  localWorkflowRollbacks?: KanbanLocalWorkflowRollback[];
   workflowId?: string;
   typeId?: string;
   issueTypeKey?: string;
@@ -529,6 +560,7 @@ export interface KanbanCreateLocalProjectResult {
 }
 
 export interface KanbanIssueInput {
+  localWorkflowId?: string;
   title: string;
   projectId?: string | null;
   projectVersion?: string | null;
@@ -561,6 +593,7 @@ export interface KanbanIssueInput {
 }
 
 export interface KanbanIssueUpdateInput {
+  localWorkflowAction?: KanbanLocalWorkflowAction;
   title?: string;
   projectId?: string | null;
   projectVersion?: string | null;
@@ -615,6 +648,7 @@ export interface KanbanRunIssueResult extends KanbanIssueResult {
 }
 
 export interface KanbanListResult {
+  localWorkflows?: KanbanLocalWorkflow[];
   ok: boolean;
   message: string;
   issues: KanbanIssue[];

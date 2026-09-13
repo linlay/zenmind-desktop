@@ -85,14 +85,14 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.match(detail, /className="kanban-detail-window-actions"[\s\S]{0,700}kanban\.chat\.view[\s\S]{0,900}kanban\.detail\.editIssue[\s\S]{0,500}kanban-detail-close/);
-  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-layout[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
+  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-surface[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
   assert.match(detail, /chatEmbedPath \? t\("kanban\.chat\.viewIssue"\) : t\("kanban\.chat\.view"\)/);
   assert.match(detail, /disabled=\{!chatEmbedPath && !latestOpenableIssueChat\}/);
   assert.match(detail, /return \[\.\.\.chatsByChatId\.values\(\)\]\.sort\(compareIssueChatTime\)/);
   assert.match(detail, /const latestOpenableIssueChat = openableIssueChats\.at\(-1\)/);
-  assert.match(detail, /className="kanban-detail-chat-list"[\s\S]{0,1800}issueChatItems\.map[\s\S]{0,1200}onClick=\{\(\) => openChat\(chat\)\}/);
   assert.match(detail, /chat\.local && chat\.state === "active" && Boolean\(chat\.agentKey\)/);
-  assert.match(styles, /\.kanban-detail-chat-layout\s*\{[\s\S]{0,260}grid-template-columns:\s*220px minmax\(0, 1fr\)/);
+  assert.doesNotMatch(detail, /kanban-detail-chat-list|kanban-detail-chat-layout/);
+  assert.match(detail, /<\/main>\}\s*<aside className="kanban-detail-rail"/);
   assert.match(styles, /\.kanban-detail-window-actions \.kanban-detail-secondary-button:disabled\s*\{\s*cursor:\s*not-allowed/);
   assert.match(page, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
   assert.match(page, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
@@ -159,7 +159,7 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(history, /export function resolveKanbanStatusTimeline[\s\S]*eventStatusTransition\(event\)[\s\S]*fromLabel[\s\S]*toLabel[\s\S]*issue\.statusId \|\| issue\.status/);
   assert.match(history, /event\.payload\?\.summary/);
   assert.match(detail, /function DetailProperty[\s\S]{0,1600}kanban-detail-property-editor[\s\S]{0,300}kanban-detail-property-value/);
-  assert.match(content, /kanban-detail-issue-heading[\s\S]*kanban\.detail\.descriptionTitle[\s\S]*kanban\.detail\.attachmentsTitle[\s\S]*kanban\.detail\.commentsTitle/);
+  assert.match(content, /kanban-detail-issue-heading[\s\S]*kanban\.detail\.runResultTitle[\s\S]*kanban\.detail\.descriptionTitle[\s\S]*kanban\.detail\.attachmentsTitle[\s\S]*kanban\.detail\.commentsTitle/);
   assert.match(header, /kanban-detail-breadcrumb[\s\S]*kanban\.detail\.cloudOrigin/);
   assert.doesNotMatch(header, /kanban-detail-kicker|DETAIL_STATUS_LABELS|DETAIL_PRIORITY_LABELS|kanban\.detail\.localOrigin/);
   assert.match(detail, /```mermaid/);

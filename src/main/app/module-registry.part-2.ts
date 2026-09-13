@@ -798,6 +798,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       issues: [],
       connectionState: "disabled"
     },
+    saveLocalWorkflows: (_app: any, input: any) => assistantBridgeRuntime.getKanbanRuntime()?.saveLocalWorkflows(input) ?? { ok: false, message: t("kanban.runtime.uninitialized"), issues: [] },
     getKanbanSettings: () => assistantBridgeRuntime.getKanbanRuntime()?.getSettings() ?? {
       ok: false,
       message: t("kanban.runtime.uninitialized"),

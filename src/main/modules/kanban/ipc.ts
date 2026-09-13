@@ -5,6 +5,7 @@ export interface KanbanIpcHandlerOptions {
   listKanbanIssues: (app: any) => any;
   resyncKanbanCloud: (app: any) => any;
   getKanbanSettings: (app: any) => any;
+  saveLocalWorkflows: (app: any, input: any) => any;
   saveKanbanSettings: (app: any, input: any) => any;
   getKanbanCloudConfig: (app: any) => any;
   saveKanbanCloudConfig: (app: any, input: any) => any;
@@ -28,6 +29,7 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
     resyncKanbanCloud,
     getKanbanSettings,
     saveKanbanSettings,
+    saveLocalWorkflows,
     getKanbanCloudConfig,
     saveKanbanCloudConfig,
     createKanbanIssue,
@@ -52,6 +54,8 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
   ipcMain.handle("kanban.resyncCloudBoard", async () =>
     resyncKanbanCloud(app)
   );
+
+  ipcMain.handle("kanban.saveLocalWorkflows", async (_event: any, input: any) => saveLocalWorkflows(app, input));
 
   ipcMain.handle("kanban.getSettings", async () =>
     getKanbanSettings(app)

@@ -1,3 +1,5 @@
+import { applyLocalWorkflowAction } from "./local-workflow-actions";
+import { readLocalWorkflows, initializeLocalWorkflow, moveLocalWorkflow } from "./local-workflows";
 import { DatabaseSync } from "node:sqlite";
 import type {
   KanbanCurrentUser,
@@ -41,7 +43,7 @@ export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInp
   if (input.timeSpent !== undefined) nextIssue.timeSpent = normalizeEffortSeconds(input.timeSpent);
   if (input.description !== undefined) nextIssue.description = typeof input.description === "string" ? input.description.trim() : "";
   if (input.status !== undefined) {
-    nextIssue.status = normalizeKanbanStatus(input.status);
+    Object.assign(nextIssue, moveLocalWorkflow(nextIssue, normalizeKanbanStatus(input.status)));
   }
   if (input.priority !== undefined) nextIssue.priority = normalizeKanbanPriority(input.priority);
   if (input.severity !== undefined) nextIssue.severity = normalizeKanbanSeverity(input.severity);
@@ -71,6 +73,12 @@ export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInp
   if (input.automationTimezone !== undefined) nextIssue.automationTimezone = nullableTrimmedText(input.automationTimezone);
   if (input.attachmentChatId !== undefined) nextIssue.attachmentChatId = nullableTrimmedText(input.attachmentChatId);
   if (input.attachments !== undefined) nextIssue.attachments = normalizeAttachments(input.attachments);
+  if (nextIssue.stageId !== issue.stageId) {
+    nextIssue.chatId = null;
+    nextIssue.runId = null;
+    nextIssue.activeRunId = null;
+    nextIssue.runState = null;
+  }
   return nextIssue;
 }
 
@@ -83,6 +91,7 @@ export function listDesktopKanbanIssues(
     ok: true,
     message: connectionState === "open" ? t("kanban.runtime.synced") : t("kanban.runtime.loadedFromCache"),
     issues: selectIssues(db, currentUser),
+    localWorkflows: readLocalWorkflows(db, BOARD_ID),
     projects: selectProjects(db),
     projectBindings: selectProjectBindings(db),
     cloudDetails: selectCloudDetailData(db, currentUser),
@@ -107,6 +116,11 @@ export function createLocalDesktopKanbanIssue(
     const issue = buildLocalIssue(db, input, currentUser);
     if (!issue) {
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
+    }
+    if (input.localWorkflowId) {
+      const workflow = readLocalWorkflows(db, BOARD_ID).find((item) => item.id === input.localWorkflowId);
+      if (!workflow) return { ok: false, message: t("kanban.localWorkflow.missing"), issues: selectIssues(db, currentUser) };
+      initializeLocalWorkflow(issue, workflow);
     }
     issue.localIssueId = issue.id;
     insertOrReplaceIssue(db, issue, {
@@ -141,7 +155,18 @@ export function updateDesktopKanbanIssue(
     if (input.dueDate !== undefined && normalizeDueDate(input.dueDate) === undefined) {
       return { ok: false, message: t("kanban.runtime.invalidDueDate"), issues: selectIssues(db, currentUser) };
     }
-    const nextIssue = applyIssueUpdate(issue, input);
+    let nextIssue: KanbanIssue | null;
+    try {
+      if (input.localWorkflowAction !== undefined && Object.keys(input).some((key) => key !== "localWorkflowAction")) {
+        throw new Error(t("kanban.localWorkflow.invalidAction"));
+      }
+      nextIssue = input.localWorkflowAction !== undefined
+        ? applyLocalWorkflowAction(issue, input.localWorkflowAction, currentUser,
+          input.localWorkflowAction?.type === "refresh_rollback_rules" ? readLocalWorkflows(db, BOARD_ID) : [])
+        : applyIssueUpdate(issue, input);
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : t("kanban.localWorkflow.invalidAction"), issues: selectIssues(db, currentUser) };
+    }
     if (!nextIssue) {
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
@@ -171,7 +196,10 @@ export function updateDesktopKanbanIssueByPredicate(
     if (!issue) {
       return { ok: false, message: missingMessage, issues };
     }
-    const nextIssue = applyIssueUpdate(issue, input);
+    const runtimeInput = issue.localWorkflow && input.status === "completed"
+      && issue.localWorkflow.stages.find((stage) => stage.id === issue.stageId)?.reviewRequired
+      ? { ...input, status: "in_review" as const } : input;
+    const nextIssue = applyIssueUpdate(issue, runtimeInput);
     if (!nextIssue) {
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues };
     }
@@ -227,8 +255,7 @@ export function setDesktopKanbanIssuePosition(
       return { ok: false, message: t("kanban.runtime.cloudReadOnly"), issues: selectIssues(db, currentUser) };
     }
     const nextIssue = {
-      ...issue,
-      status,
+      ...moveLocalWorkflow(issue, status),
       position,
       runState: status === issue.status ? issue.runState : null,
       updatedAt: nowIso()
@@ -532,6 +559,7 @@ export function applyDesktopKanbanCloudSnapshot(
       ok: true,
       message: t("kanban.runtime.snapshotSynced"),
       issues: selectIssues(db, currentUser),
+      localWorkflows: readLocalWorkflows(db, BOARD_ID),
       projects: selectProjects(db),
       projectBindings: selectProjectBindings(db),
       cloudDetails: selectCloudDetailData(db, currentUser),

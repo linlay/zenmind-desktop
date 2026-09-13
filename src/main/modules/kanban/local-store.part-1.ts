@@ -358,6 +358,8 @@ export function buildIssueDetailJson(issue: KanbanIssue) {
     stageKey: issue.stageKey ?? "",
     statusKey: issue.statusKey ?? "",
     columnKey: issue.columnKey ?? "",
+    localWorkflow: issue.localWorkflow,
+    localWorkflowRollbacks: issue.localWorkflowRollbacks,
     customFields: issue.customFields ?? {},
     activeIssueRunId: issue.activeIssueRunId ?? null,
     runAgentKey: issue.runAgentKey ?? null,

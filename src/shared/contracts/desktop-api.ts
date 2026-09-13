@@ -958,6 +958,7 @@ export interface DesktopApi {
   kanban: {
     listIssues: () => Promise<KanbanListResult>;
     resyncCloudBoard: () => Promise<KanbanListResult>;
+    saveLocalWorkflows: (input: import("./kanban").KanbanLocalWorkflow[]) => Promise<KanbanListResult>;
     getSettings: () => Promise<KanbanSettingsResult>;
     saveSettings: (input: KanbanSettingsInput) => Promise<KanbanSettingsResult>;
     getCloudConfig: () => Promise<KanbanCloudConfigResult>;
