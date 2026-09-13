@@ -499,6 +499,7 @@ export interface KanbanIssue {
 
 export interface KanbanProject {
   id: string;
+  syncMode?: KanbanSyncMode;
   parentId: string | null;
   slug: string;
   key?: string;

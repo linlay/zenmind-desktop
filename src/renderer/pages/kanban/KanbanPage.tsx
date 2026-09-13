@@ -73,6 +73,8 @@ import {
   flattenKanbanProjectTree,
   getKanbanPartiallySelectedProjectIds,
   matchesKanbanProjectSelection,
+  listKanbanLocalProjectOptions,
+  type KanbanProjectSource,
   toggleKanbanProjectTreeSelection
 } from "./kanbanProjectTree";
 import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
@@ -97,6 +99,7 @@ type ModalState = {
 
 type IssueFormState = {
   localWorkflowId: string;
+  cloudWorkflowId: string;
   title: string;
   projectId: string;
   projectVersion: string;
@@ -135,6 +138,8 @@ type KanbanFilterPreferences = {
   showBacklog: boolean;
   selectedProjectIds: string[];
   includeLocalIssues: boolean;
+  selectedLocalProjectIds: string[];
+  projectSource: KanbanProjectSource;
   issueTypeFilters: string[];
   priorityFilters: KanbanPriorityFilter[];
   severityFilters: KanbanSeverityFilter[];
@@ -315,6 +320,7 @@ function readDefaultExecutor(): string | null {
 
 const emptyForm: IssueFormState = {
   localWorkflowId: "",
+  cloudWorkflowId: "",
   title: "",
   projectId: "",
   projectVersion: "",
@@ -346,6 +352,8 @@ function createDefaultKanbanFilterPreferences(): KanbanFilterPreferences {
     showBacklog: true,
     selectedProjectIds: [],
     includeLocalIssues: false,
+    selectedLocalProjectIds: [],
+    projectSource: "all",
     issueTypeFilters: [],
     priorityFilters: [],
     severityFilters: [],
@@ -402,6 +410,8 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
       query: typeof stored.query === "string" ? stored.query : defaults.query,
       showBacklog: typeof stored.showBacklog === "boolean" ? stored.showBacklog : defaults.showBacklog,
       selectedProjectIds: normalizeStoredStringArray(stored.selectedProjectIds),
+      selectedLocalProjectIds: normalizeStoredStringArray(stored.selectedLocalProjectIds),
+      projectSource: stored.projectSource === "local" || stored.projectSource === "cloud" ? stored.projectSource : "all",
       includeLocalIssues: typeof stored.includeLocalIssues === "boolean" ? stored.includeLocalIssues : defaults.includeLocalIssues,
       issueTypeFilters: normalizeStoredStringArray(stored.issueTypeFilters),
       priorityFilters: normalizeStoredFilterValues(stored.priorityFilters, [...KANBAN_PRIORITIES, "unset"]),
@@ -1474,6 +1484,16 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [projectCatalogLoaded, setProjectCatalogLoaded] = useState(false);
   const [selectedProjectIds, setSelectedProjectIds] = useState(initialFilterPreferences.selectedProjectIds);
   const [includeLocalIssues, setIncludeLocalIssues] = useState(initialFilterPreferences.includeLocalIssues);
+  const [selectedLocalProjectIds, setSelectedLocalProjectIds] = useState(initialFilterPreferences.selectedLocalProjectIds);
+  const [projectSource, setProjectSource] = useState<KanbanProjectSource>(initialFilterPreferences.projectSource);
+  const localProjectOptions = useMemo(() => {
+    const counts = listKanbanLocalProjectOptions(issues, t("kanban.projectFilter.defaultLocal"));
+    return cloudProjects.filter((project) => project.syncMode === "local").map((project) => ({
+      id: project.id,
+      name: project.id === "default" ? t("kanban.projectFilter.defaultLocal") : project.name,
+      count: counts.find((item) => item.id === project.id)?.count || 0
+    }));
+  }, [cloudProjects, issues, t]);
   const [projectFilterOpen, setProjectFilterOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<KanbanConnectionState>("disabled");
   const [cloudCapabilities, setCloudCapabilities] = useState<string[]>([]);
@@ -1508,12 +1528,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const kanbanReady = readKanbanApi() !== null;
   const missingKanbanApiMessage = t("kanban.missingApi", { appName: t("app.name") });
-  const cloudProjectOptions = useMemo(() => sortKanbanProjectOptions(cloudProjects), [cloudProjects]);
-  const projectFormOptions = useMemo(() => flattenKanbanProjectTree(cloudProjects), [cloudProjects]);
+  const cloudProjectOptions = useMemo(() => sortKanbanProjectOptions(cloudProjects.filter((project) => project.syncMode === "cloud")), [cloudProjects]);
+  const projectFormOptions = useMemo(() => flattenKanbanProjectTree(cloudProjects.filter((project) => project.syncMode === "cloud")), [cloudProjects]);
   const filteredProjectFormOptions = useMemo(
     () => projectFormOptions.filter(({ project }) => matchesKanbanProjectSearch(project, projectFormQuery)),
     [projectFormOptions, projectFormQuery]
   );
+  const filteredLocalProjectFormOptions = localProjectOptions.filter((project) => `${project.name} ${project.id}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()));
+  const formProjectIsCloud = cloudProjects.some((project) => project.id === form.projectId && project.syncMode === "cloud");
   const kanbanProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
   const projectFilterIds = useMemo(
     () => getKanbanProjectFilterIds(cloudProjects, selectedProjectIds),
@@ -1643,6 +1665,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         showBacklog,
         selectedProjectIds,
         includeLocalIssues,
+        selectedLocalProjectIds,
+        projectSource,
         issueTypeFilters,
         priorityFilters,
         severityFilters,
@@ -1653,7 +1677,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     } catch {
       // Ignore localStorage failures in restricted renderer contexts.
     }
-  }, [assigneeFilters, automationFilter, includeLocalIssues, issueTypeFilters, priorityFilters, query, selectedProjectIds, severityFilters, showBacklog]);
+  }, [assigneeFilters, automationFilter, includeLocalIssues, selectedLocalProjectIds, projectSource, issueTypeFilters, priorityFilters, query, selectedProjectIds, severityFilters, showBacklog]);
 
   useEffect(() => {
     const kanbanApi = readKanbanApi();
@@ -1813,7 +1837,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       if (issueTypeFilters.length > 0 && !issueTypeFilters.includes(issueTypeKey)) {
         return false;
       }
-      if (!matchesKanbanProjectSelection(issue, projectFilterIds, includeLocalIssues)) {
+      if (!matchesKanbanProjectSelection(issue, projectFilterIds, includeLocalIssues, selectedLocalProjectIds, projectSource)) {
         return false;
       }
       if (!shouldShowIssueForAutomationFilter(issue, automationFilter)) {
@@ -1846,7 +1870,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [agents, assigneeFilters, automationFilter, currentUserId, includeLocalIssues, issueTypeFilters, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
+  }, [agents, assigneeFilters, automationFilter, currentUserId, includeLocalIssues, selectedLocalProjectIds, projectSource, issueTypeFilters, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
 
   const issuesByStatus = useMemo(() => {
     const grouped = {
@@ -2066,8 +2090,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       automationTimezone: form.automationEnabled ? form.automationTimezone : null,
       attachmentChatId: form.attachments.length > 0 ? form.attachmentChatId : null,
       attachments: form.attachments,
-      ...(!modal?.issue && form.localWorkflowId ? { localWorkflowId: form.localWorkflowId } : {}),
-      syncToCloud: Boolean(form.projectId.trim() && form.projectId !== "default")
+      ...(!modal?.issue && !formProjectIsCloud && form.localWorkflowId ? { localWorkflowId: form.localWorkflowId } : {}),
+      syncToCloud: formProjectIsCloud
     };
 
     try {
@@ -2176,7 +2200,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       automationTimezone: draft.automationEnabled ? draft.automationTimezone.trim() || null : null,
       attachmentChatId: draft.attachments.length > 0 ? draft.attachmentChatId : null,
       attachments: draft.attachments,
-      syncToCloud: Boolean(issue.projectId?.trim() && issue.projectId !== "default")
+      syncToCloud: issue.syncMode === "cloud"
     };
 
     try {
@@ -2447,7 +2471,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const modalProjectId = form.projectId.trim();
   const modalProject = modalProjectId ? kanbanProjectsById.get(modalProjectId) : undefined;
   const modalProjectLabel = modalProject
-    ? getKanbanProjectOptionLabel(modalProject)
+    ? modalProject.syncMode === "local" ? (modalProject.id === "default" ? t("kanban.projectFilter.defaultLocal") : modalProject.name) : getKanbanProjectOptionLabel(modalProject)
     : t("kanban.projectFilter.local");
   const modalProjectVersions = Array.from(new Set([
     ...(form.projectVersion ? [form.projectVersion] : []),
@@ -2466,6 +2490,17 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         <div className="kanban-toolbar-start">
           <KanbanProjectFilter
             projects={cloudProjectOptions}
+            localProjects={localProjectOptions}
+            selectedLocalProjectIds={selectedLocalProjectIds}
+            projectSource={projectSource}
+            onSourceChange={setProjectSource}
+            onToggleLocalProject={(id) => {
+              setSelectedLocalProjectIds((current) => {
+                const selected = includeLocalIssues ? localProjectOptions.map((project) => project.id) : current;
+                return selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id];
+              });
+              setIncludeLocalIssues(false);
+            }}
             selectedProjectIds={selectedProjectIds}
             includeLocalIssues={includeLocalIssues}
             projectIssueCounts={projectIssueCounts}
@@ -2482,9 +2517,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               }
             }}
             onToggleProject={toggleProjectFilter}
-            onToggleLocal={() => setIncludeLocalIssues((current) => !current)}
+            onToggleLocal={() => { setIncludeLocalIssues((current) => !current); setSelectedLocalProjectIds([]); }}
             onClear={() => {
               setSelectedProjectIds([]);
+              setSelectedLocalProjectIds([]);
+              setProjectSource("all");
               setIncludeLocalIssues(false);
             }}
           />
@@ -2782,7 +2819,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 <button type="button" className="kanban-modal-close-button" onClick={() => setModal(null)} aria-label={t("kanban.modal.close")}>×</button>
               </div>
             </div>
-            <div className="kanban-field-grid">
+            <div className="kanban-field-grid kanban-project-fields">
               <div className="kanban-field">
                 <span>{t("kanban.detail.project")}</span>
                 <div className="kanban-project-form-select">
@@ -2811,23 +2848,19 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                         onChange={setProjectFormQuery}
                         onEscape={() => setProjectFormMenuOpen(false)}
                       />
-                      {`${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()) ? (
-                        <button
-                          type="button"
-                          role="option"
-                          data-kanban-project-option
-                          aria-selected={!form.projectId}
-                          className={!form.projectId ? "is-selected" : ""}
-                          onKeyDown={handleKanbanProjectOptionKeyDown}
-                          onClick={() => {
-                            setForm((current) => ({ ...current, projectId: "", projectVersion: "", componentKeys: [] }));
-                            setProjectFormMenuOpen(false);
-                            setProjectFormQuery("");
-                          }}
-                        >
-                          {t("kanban.projectFilter.local")}
-                        </button>
-                      ) : null}
+                      {filteredLocalProjectFormOptions.length > 0 ? <div className="kanban-project-source-heading">{t("kanban.projectFilter.local")}</div> : null}
+                      {filteredLocalProjectFormOptions.map((project) => <button
+                        key={`local:${project.id}`} type="button" role="option" data-kanban-project-option
+                        aria-selected={(form.projectId || "default") === project.id}
+                        className={(form.projectId || "default") === project.id ? "is-selected" : ""}
+                        onKeyDown={handleKanbanProjectOptionKeyDown}
+                        onClick={() => {
+                          setForm((current) => ({ ...current, projectId: project.id, projectVersion: "", localWorkflowId: "", cloudWorkflowId: "", componentKeys: [] }));
+                          setProjectFormMenuOpen(false);
+                          setProjectFormQuery("");
+                        }}
+                      >{project.name}</button>)}
+                      {filteredProjectFormOptions.length > 0 ? <div className="kanban-project-source-heading">{t("kanban.projectFilter.cloud")}</div> : null}
                       {filteredProjectFormOptions.map(({ project, level }) => (
                         <button
                           key={project.id}
@@ -2839,7 +2872,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                           style={{ paddingLeft: `${10 + (level * 16)}px` }}
                           onKeyDown={handleKanbanProjectOptionKeyDown}
                           onClick={() => {
-                            setForm((current) => ({ ...current, projectId: project.id, projectVersion: "", componentKeys: [] }));
+                            setForm((current) => ({ ...current, projectId: project.id, projectVersion: "", localWorkflowId: "", cloudWorkflowId: cloudDetails.workflows.find((workflow) => workflow.id === project.defaultWorkflowId)?.id ?? cloudDetails.workflows.find((workflow) => workflow.isDefault)?.id ?? cloudDetails.workflows[0]?.id ?? "", componentKeys: [] }));
                             setProjectFormMenuOpen(false);
                             setProjectFormQuery("");
                           }}
@@ -2847,7 +2880,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                           {getKanbanProjectOptionLabel(project)}
                         </button>
                       ))}
-                      {filteredProjectFormOptions.length === 0 && !`${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()) ? (
+                      {filteredProjectFormOptions.length === 0 && filteredLocalProjectFormOptions.length === 0 ? (
                         <span className="kanban-project-filter-empty">{t("kanban.projectFilter.noResults")}</span>
                       ) : null}
                     </div>
@@ -2867,15 +2900,24 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   ))}
                 </select>
               </label>
+              {!modal?.issue && <label className="kanban-field">
+                <span>{t("kanban.form.workflow")}</span>
+                <select value={formProjectIsCloud ? form.cloudWorkflowId : form.localWorkflowId}
+                  disabled={modalReadOnly || Boolean(formProjectIsCloud && !cloudDetails.workflows.length)}
+                  onChange={(event) => setForm((current) => formProjectIsCloud
+                    ? { ...current, cloudWorkflowId: event.target.value }
+                    : { ...current, localWorkflowId: event.target.value, status: event.target.value ? "todo" : current.status })}>
+                  {!formProjectIsCloud ? <>
+                    <option value="">{t("kanban.localWorkflow.none")}</option>
+                    {localWorkflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+                  </> : <>
+                    {!form.cloudWorkflowId && <option value="">{t("kanban.form.workflowUnavailable")}</option>}
+                    {cloudDetails.workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+                  </>}
+                </select>
+                {!formProjectIsCloud && form.localWorkflowId && <small>{localWorkflows.find((item) => item.id === form.localWorkflowId)?.stages.map((stage) => stage.name).join(" → ")}</small>}
+              </label>}
             </div>
-            {!modal?.issue && <label className="kanban-field">
-              <span>{t("kanban.localWorkflow.title")}</span>
-              <select value={form.localWorkflowId} onChange={(event) => setForm((current) => ({ ...current, localWorkflowId: event.target.value, status: "todo" }))}>
-                <option value="">{t("kanban.localWorkflow.none")}</option>
-                {localWorkflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
-              </select>
-              {form.localWorkflowId && <small>{localWorkflows.find((item) => item.id === form.localWorkflowId)?.stages.map((stage) => stage.name).join(" → ")}</small>}
-            </label>}
             {!formCompact ? (
               <label className="kanban-field">
                 <span>{t("kanban.form.title")}</span>
@@ -3590,6 +3632,11 @@ function IssueCardSignalIcon({ kind }: { kind: IssueCardSignalIconName }) {
 
 function KanbanProjectFilter({
   projects,
+  localProjects,
+  selectedLocalProjectIds,
+  projectSource,
+  onSourceChange,
+  onToggleLocalProject,
   selectedProjectIds,
   includeLocalIssues,
   projectIssueCounts,
@@ -3604,6 +3651,11 @@ function KanbanProjectFilter({
   onClear
 }: {
   projects: KanbanProject[];
+  localProjects: Array<{ id: string; name: string; count: number }>;
+  selectedLocalProjectIds: string[];
+  projectSource: KanbanProjectSource;
+  onSourceChange: (source: KanbanProjectSource) => void;
+  onToggleLocalProject: (id: string) => void;
   selectedProjectIds: string[];
   includeLocalIssues: boolean;
   projectIssueCounts: Map<string, number>;
@@ -3621,23 +3673,31 @@ function KanbanProjectFilter({
   const [searchQuery, setSearchQuery] = useState("");
   const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
   const filteredTreeItems = useMemo(
-    () => treeItems.filter(({ project }) => matchesKanbanProjectSearch(project, searchQuery)),
-    [searchQuery, treeItems]
+    () => projectSource === "local" ? [] : treeItems.filter(({ project }) => matchesKanbanProjectSearch(project, searchQuery)),
+    [searchQuery, treeItems, projectSource]
   );
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
-  const localMatchesSearch = `${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`
+  const filteredLocalProjects = projectSource === "cloud" ? [] : localProjects.filter((project) => `${project.name} ${project.id}`.toLocaleLowerCase().includes(normalizedSearchQuery));
+  const localMatchesSearch = projectSource !== "cloud" && `${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`
     .toLocaleLowerCase()
     .includes(normalizedSearchQuery);
   const partiallySelectedProjectIds = useMemo(
     () => getKanbanPartiallySelectedProjectIds(projects, selectedProjectIds),
     [projects, selectedProjectIds]
   );
-  const label = getKanbanProjectFilterLabel(selectedProjectIds, includeLocalIssues, projects, t);
+  const selectedProjectTooltipItems = [
+    ...(projectSource === "local" ? [] : selectedProjectIds.map((id) => ({
+      id: `cloud:${id}`,
+      label: `${t("kanban.projectFilter.cloud")} · ${projects.find((project) => project.id === id)?.name || id}`
+    }))),
+    ...(projectSource === "cloud" ? [] : includeLocalIssues
+      ? [{ id: "local:all", label: t("kanban.projectFilter.local") }]
+      : selectedLocalProjectIds.map((id) => ({ id: `local:${id}`, label: `${t("kanban.projectFilter.local")} · ${localProjects.find((project) => project.id === id)?.name || id}` })))
+  ];
+  const label = selectedProjectTooltipItems.length === 1 ? selectedProjectTooltipItems[0].label
+    : selectedProjectTooltipItems.length > 1 ? t("kanban.projectFilter.selectedCount", { count: selectedProjectTooltipItems.length })
+    : t(projectSource === "local" ? "kanban.projectFilter.local" : projectSource === "cloud" ? "kanban.projectFilter.cloud" : "kanban.projectFilter.all");
   const countLabel = t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount });
-  const selectedProjectTooltipItems = useMemo(
-    () => getKanbanSelectedProjectTooltipItems(selectedProjectIds, includeLocalIssues, projects, t),
-    [includeLocalIssues, projects, selectedProjectIds, t]
-  );
 
   useEffect(() => {
     if (!open || typeof document === "undefined") {
@@ -3701,6 +3761,9 @@ function KanbanProjectFilter({
       </Tooltip>
       {open ? (
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
+          <div className="kanban-project-source-filter" role="group" aria-label={t("kanban.projectFilter.source")}>
+            {(["all", "local", "cloud"] as const).map((source) => <button key={source} type="button" aria-pressed={projectSource === source} className={projectSource === source ? "is-active" : ""} onClick={() => onSourceChange(source)}>{t(source === "all" ? "kanban.projectFilter.allSources" : source === "local" ? "kanban.projectFilter.local" : "kanban.projectFilter.cloud")}</button>)}
+          </div>
           <KanbanProjectSearchInput
             value={searchQuery}
             autoFocus
@@ -3714,7 +3777,7 @@ function KanbanProjectFilter({
           {!normalizedSearchQuery ? <button
             type="button"
             data-kanban-project-option
-            className={`kanban-project-filter-all ${selectedProjectIds.length === 0 && !includeLocalIssues ? "is-active" : ""}`}
+            className={`kanban-project-filter-all ${selectedProjectIds.length === 0 && !includeLocalIssues && selectedLocalProjectIds.length === 0 && projectSource === "all" ? "is-active" : ""}`}
             onKeyDown={handleKanbanProjectOptionKeyDown}
             onClick={onClear}
             aria-label={`${t("kanban.projectFilter.all")}: ${t("kanban.column.summary.count", { count: totalCount })}`}
@@ -3741,6 +3804,14 @@ function KanbanProjectFilter({
             </span>
             <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: localIssueCount })}>{localIssueCount}</span>
           </label> : null}
+          {filteredLocalProjects.length > 0 ? <div className="kanban-project-filter-local-list" role="group" aria-label={t("kanban.projectFilter.local")}>
+            {filteredLocalProjects.map((project) => <label key={project.id} className="kanban-project-filter-row">
+              <input type="checkbox" data-kanban-project-option checked={includeLocalIssues || selectedLocalProjectIds.includes(project.id)} onChange={() => onToggleLocalProject(project.id)} onKeyDown={handleKanbanProjectOptionKeyDown} />
+              <span className="kanban-project-filter-project"><span className="kanban-project-filter-name">{project.name}</span></span>
+              <span className="kanban-project-filter-item-count">{project.count}</span>
+            </label>)}
+          </div> : null}
+          {filteredTreeItems.length > 0 ? <div className="kanban-project-source-heading">{t("kanban.projectFilter.cloud")}</div> : null}
           {filteredTreeItems.length > 0 ? (
             <div className="kanban-project-filter-tree">
               {filteredTreeItems.map(({ project, level }) => {
@@ -3771,7 +3842,7 @@ function KanbanProjectFilter({
               })}
             </div>
           ) : null}
-          {filteredTreeItems.length === 0 && !localMatchesSearch ? (
+          {filteredTreeItems.length === 0 && filteredLocalProjects.length === 0 && !localMatchesSearch ? (
             <span className="kanban-project-filter-empty">
               {normalizedSearchQuery ? t("kanban.projectFilter.noResults") : t("kanban.projectFilter.empty")}
             </span>

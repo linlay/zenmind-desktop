@@ -102,6 +102,7 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
 
 export function projectFromRow(row: KanbanProjectRow): KanbanProject {
   return {
+    syncMode: row.sync_mode,
     id: row.id,
     parentId: row.parent_id,
     slug: row.slug,
@@ -353,6 +354,7 @@ export function selectProjects(db: DatabaseSync): KanbanProject[] {
   const rows = db.prepare(`
     SELECT
       ID_ AS id,
+      SYNC_MODE_ AS sync_mode,
       PARENT_ID_ AS parent_id,
       SLUG_ AS slug,
       KEY_ AS key,

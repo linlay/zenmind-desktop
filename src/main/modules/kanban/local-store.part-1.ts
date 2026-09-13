@@ -81,6 +81,7 @@ export type KanbanIssueRow = {
 
 export type KanbanProjectRow = {
   id: string;
+  sync_mode: KanbanSyncMode;
   parent_id: string | null;
   slug: string;
   key: string;

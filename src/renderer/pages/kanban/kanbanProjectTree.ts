@@ -11,17 +11,37 @@ export function isKanbanAggregateProject(project: Pick<KanbanProject, "id">): bo
   return project.id.trim() === KANBAN_AGGREGATE_PROJECT_ID;
 }
 
+export type KanbanProjectSource = "all" | "local" | "cloud";
+
+export function listKanbanLocalProjectOptions(issues: KanbanIssue[], defaultName: string) {
+  const projects = new Map<string, { id: string; name: string; count: number }>();
+  projects.set("default", { id: "default", name: defaultName, count: 0 });
+  for (const issue of issues) {
+    if (issue.syncMode === "cloud") continue;
+    const id = issue.projectId?.trim() || "default";
+    const current = projects.get(id) || { id, name: issue.projectName?.trim() || id, count: 0 };
+    if (id !== "default" && issue.projectName?.trim()) current.name = issue.projectName.trim();
+    current.count += 1;
+    projects.set(id, current);
+  }
+  return [...projects.values()].sort((a, b) => a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
+}
+
 export function matchesKanbanProjectSelection(
   issue: Pick<KanbanIssue, "projectId" | "syncMode">,
   projectFilterIds: ReadonlySet<string> | null,
-  includeLocalIssues: boolean
+  includeLocalIssues: boolean,
+  selectedLocalProjectIds: readonly string[] = [],
+  source: KanbanProjectSource = "all"
 ): boolean {
-  if (!projectFilterIds && !includeLocalIssues) {
-    return true;
-  }
-  if (issue.syncMode !== "cloud") {
-    return includeLocalIssues;
-  }
+  const local = issue.syncMode !== "cloud";
+  if ((source === "local" && !local) || (source === "cloud" && local)) return false;
+  const hasSelection = source === "local"
+    ? includeLocalIssues || selectedLocalProjectIds.length > 0
+    : source === "cloud" ? Boolean(projectFilterIds)
+    : Boolean(projectFilterIds) || includeLocalIssues || selectedLocalProjectIds.length > 0;
+  if (!hasSelection) return true;
+  if (local) return includeLocalIssues || selectedLocalProjectIds.includes(issue.projectId?.trim() || "default");
   return projectFilterIds?.has(issue.projectId ?? "") ?? false;
 }
 

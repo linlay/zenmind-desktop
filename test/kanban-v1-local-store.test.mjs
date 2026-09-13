@@ -728,3 +728,17 @@ test("fresh schema is complete, enforces current values and never rewrites retir
   const updated = updateDesktopKanbanIssue(app, currentUser, created.issue.id, { version: "ignored" });
   assert.equal(updated.issue.projectVersion, null);
 });
+
+test("empty local projects are listed with source and accept local issues", async (t) => {
+  const app = createTempApp(t);
+  listDesktopKanbanIssues(app, currentUser);
+  const { createLocalDesktopProject } = await import("../dist-electron/main/modules/kanban/local-projects.js");
+  const created = createLocalDesktopProject(app, currentUser, { name: "Local example" });
+  assert.equal(created.ok, true);
+  const project = listDesktopKanbanIssues(app, currentUser).projects.find((item) => item.id === created.project.id);
+  assert.equal(project.syncMode, "local");
+  const result = createLocalDesktopKanbanIssue(app, currentUser, { title: "Project issue", projectId: project.id, syncToCloud: false });
+  assert.equal(result.ok, true);
+  assert.equal(result.issue.projectId, project.id);
+  assert.equal(result.issue.syncMode, "local");
+});

@@ -152,3 +152,34 @@ test("project tree selection cascades down and recalculates ancestors", () => {
   const clearedCommerce = toggleKanbanProjectTreeSelection(projects, reselectedOrders, "commerce");
   assert.deepEqual(clearedCommerce, []);
 });
+
+test("project sources isolate local flat selections from cloud IDs", () => {
+  const { matchesKanbanProjectSelection: matches } = loadKanbanProjectTreeModule();
+  const local = { syncMode: "local", projectId: "same" };
+  const cloud = { syncMode: "cloud", projectId: "same" };
+  assert.equal(matches(local, null, false, ["same"]), true);
+  assert.equal(matches(cloud, null, false, ["same"]), false);
+  assert.equal(matches(local, new Set(["same"]), false), false);
+  assert.equal(matches(cloud, new Set(["same"]), false), true);
+  assert.equal(matches(local, new Set(["same"]), false, [], "local"), true);
+  assert.equal(matches(cloud, null, true, [], "local"), false);
+  assert.equal(matches(local, null, false, [], "cloud"), false);
+  assert.equal(matches(cloud, null, false, ["same"], "cloud"), true);
+  assert.equal(matches({ syncMode: "local", projectId: "child" }, null, false, ["parent"]), false);
+});
+
+test("local project list groups local issues without directory expansion", () => {
+  const { listKanbanLocalProjectOptions: list } = loadKanbanProjectTreeModule();
+  const items = list([
+    { syncMode: "local", projectId: "a", projectName: "A" },
+    { syncMode: "local", projectId: "a", projectName: "A" },
+    { syncMode: "local", projectId: "b", projectName: "B" },
+    { syncMode: "local", projectId: null },
+    { syncMode: "cloud", projectId: "a", projectName: "Cloud A" }
+  ], "Default");
+  assert.equal(items.length, 3);
+  assert.equal(items.find((item) => item.id === "a").count, 2);
+  assert.equal(items.find((item) => item.id === "a").name, "A");
+  assert.equal(items[0].id, "default");
+  assert.equal(items[0].count, 1);
+});

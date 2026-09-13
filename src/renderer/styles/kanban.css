@@ -3766,6 +3766,11 @@
 .kanban-workflow-rollback-history small { display: block; margin-top: 4px; }
 .kanban-workflow-rollback-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+.kanban-project-source-filter { display: flex; gap: 4px; padding: 6px 8px; }
+.kanban-project-source-filter button { font-size: 12px; line-height: 18px; font-weight: 400; flex: 1; border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: inherit; cursor: pointer; }
+.kanban-project-source-filter button.is-active { background: var(--bg-hover, #8882); font-weight: 500; }
+.kanban-project-source-heading { padding: 8px 12px 4px; font-size: 11px; opacity: 0.7; }
+
 .issue-card-unread {
   display: inline-block;
   flex: 0 0 8px;
