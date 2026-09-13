@@ -1,3 +1,4 @@
+export const kittyUnreadOutline = [[12, 52], [2, 40], [0, 22], [8, 12], [20, 15], [26, 35], [27, 8], [36, 0], [45, 4], [49, 30], [53, 4], [63, 0], [73, 8], [74, 35], [80, 15], [92, 12], [100, 22], [98, 40], [88, 52], [75, 45], [65, 50], [89, 73], [91, 89], [80, 100], [50, 89], [20, 100], [9, 89], [11, 73], [35, 50], [25, 45]];
 // Original compact cat silhouettes. Geometry is designed on a 24 px grid, not decorated stock icons.
 export const kittyPaths = {
  search: '<path d="M3 9V2l5 3q3-1 6 0l5-3v7c2 7-4 10-8 10S1 16 3 9Z"/><path d="m17 17 5 5"/>',

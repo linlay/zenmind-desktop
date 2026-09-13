@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { kittyPaths, drawKittyHeading } from './kitty-artwork.mjs';
+import { kittyPaths, drawKittyHeading, kittyUnreadOutline } from './kitty-artwork.mjs';
 import path from 'node:path';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 
@@ -82,7 +82,8 @@ export async function createCollectionArtwork(manifest, key) {
       }
     }
     next.variants[mode].visuals = { images, styles: {
-      unread: accent, unreadText: tokens['--accent-on'], unreadShape: key === 'pink-kitty' ? 'paw' : 'circle',
+      unread: accent, unreadText: tokens['--accent-on'], unreadShape: 'circle',
+      ...(key === 'pink-kitty' ? { unreadOutline: kittyUnreadOutline } : {}),
       badgeShape: design.rounded ? 'round' : 'pill', headingStyle: design.rounded ? 'rounded' : 'default'
     } };
   }

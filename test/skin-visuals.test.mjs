@@ -20,9 +20,15 @@ test('1.1 package accepts semantic PNG slots and rejects old versions, scripts a
     { styles: { css: 'display:none' } }, { styles: { unreadShape: 'star' } }
   ]) assert.throws(() => parseSkinPackageManifest({ ...manifest, variants: { light: { visuals }, dark: {} } }));
   assert.equal(parseSkinVisuals({ images: {} }, value => value)?.styles.headingStyle, undefined);
-  const paw = parseSkinVisuals({ styles: { unreadShape: 'paw' } }, value => value);
-  assert.equal(paw.styles.unreadShape, 'paw');
-  assert.match(api.skinVisualStyleVariables(paw.styles)['--skin-unread-clip'], /^polygon\(/);
+  const outline = [[0, 0], [100, 0], [50, 100]];
+  const parsed = parseSkinVisuals({ styles: { unreadOutline: outline } }, value => value);
+  assert.equal(api.skinVisualStyleVariables(parsed.styles)['--skin-unread-clip'], 'polygon(0% 0%, 100% 0%, 50% 100%)');
+  outline[0][0] = 45;
+  assert.equal(parsed.styles.unreadOutline[0][0], 0);
+  for (const invalid of [[], [[0,0]], [[0,0],[100,0],[50,101]], [[0,0],[100,0],[NaN,0]], [[0,0],[100,0],['0',0]], Array(65).fill([0,0]), 'url(evil)']) {
+    assert.equal(parseSkinVisuals({ styles: { unreadOutline: invalid } }, value => value), null);
+  }
+  assert.equal(parseSkinVisuals({ styles: { unreadShape: 'paw' } }, value => value), null);
 });
 
 test('preload deduplicates metadata reads and rejects stale, wrong-set and invalid PNG asset replies', async () => {
