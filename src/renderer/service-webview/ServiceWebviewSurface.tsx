@@ -827,6 +827,7 @@ export function ServiceWebviewSurface({
   const lastMainChatRouterAcknowledgementRef =
     useRef<MainChatRouterAcknowledgement | null>(null);
   const lastReportedCurrentUrlRef = useRef("");
+  const lastReportedCurrentUrlSourceRef = useRef<ServiceWebviewUrlChangeSource | null>(null);
   const lastAgentSwitchNewChatTimestampRef = useRef(0);
   const lastLiveSurfaceLifecycleRef = useRef<{
     active: boolean;
@@ -2147,10 +2148,15 @@ export function ServiceWebviewSurface({
     if (source === "guest" && canonicalChatPromotionGuardRef.current) {
       settleCanonicalChatPromotionGuard(nextUrl, "guest-identity-changed");
     }
-    if (!nextUrl || lastReportedCurrentUrlRef.current === nextUrl) {
+    // A guest observation confirms navigation; a host target alone cannot do so.
+    if (!nextUrl || (
+      lastReportedCurrentUrlRef.current === nextUrl &&
+      lastReportedCurrentUrlSourceRef.current === source
+    )) {
       return;
     }
     lastReportedCurrentUrlRef.current = nextUrl;
+    lastReportedCurrentUrlSourceRef.current = source;
     onCurrentUrlChangeRef.current?.(nextUrl, source);
   }
 
