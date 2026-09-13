@@ -465,7 +465,7 @@ test("pending Overview also completes locally when its Main Chat is replaced", a
 });
 
 test("thirty Main Chat and Overview attach interleavings bind without retry", async (t) => {
-  const { broker, token } = createHarness(t);
+  const { broker, token, socket } = createHarness(t);
   for (let index = 0; index < 30; index += 1) {
     const chatId = `chat-interleave-${index}`;
     const runId = `run-interleave-${index}`;
@@ -501,9 +501,15 @@ test("thirty Main Chat and Overview attach interleavings bind without retry", as
     const overview = await overviewPromise;
     await main.ready;
     overview.unsubscribe();
+    broker.releaseRootObserver(observer.token);
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === index + 1);
+    const detach = requestOfType(socket("primary"), "/api/detach").at(-1);
+    const attach = requestOfType(socket("primary"), "/api/attach").at(-1);
+    socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: attach.id, lastSeq: 0 } });
+    await nextTurn();
   }
   assert.equal(broker.getDiagnostics().pendingClones.length, 0);
-  assert.equal(broker.getDiagnostics().overviewLease.uiSubscriberCount, 0);
+  assert.equal(broker.getDiagnostics().overviewLease, null);
 });
 
 test("unknown clone Run fails deterministically without a readiness timeout", async (t) => {
@@ -1118,4 +1124,62 @@ test('same-identity reconnect preserves site authority while account rotation re
   broker.rotateIdentity();
   assert.throws(() => scope.readSurface(), { code: 'site_control_unavailable' });
   assert.equal(h.contents.get(a.tabs[0].webContentsId).throttle, true);
+});
+
+for (const [from, to] of [["main_chat", "kanban_chat"], ["copilot_dock", "kanban_chat"], ["kanban_chat", "main_chat"], ["main_chat", "copilot_dock"]]) {
+  test(`${from} to ${to} retires the old root and waits for detach before a different Chat attaches`, async (t) => {
+    const { broker, socket, sockets, token } = createHarness(t);
+    const first = rootObserver({ token: "first", kind: from });
+    broker.activateRootObserver(first);
+    const options = { baseUrl: "http://127.0.0.1:8080", token, owner: { kind: "agent", agentKey: "agent-1" }, kind: "surface", onEvent: () => {} };
+    const old = broker.subscribeRun({ ...options, observerToken: first.token, consumerId: "old", runId: "old-run", chatId: "chat-1" });
+    await old.ready;
+    const upstream = requestOfType(socket("primary"), "/api/attach")[0];
+    const second = rootObserver({ token: "second", kind: to, contextId: "chat-2" });
+    broker.activateRootObserver(second);
+    const next = broker.subscribeRun({ ...options, observerToken: second.token, consumerId: "new", runId: "new-run", chatId: "chat-2", lastSeq: 7 });
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 1);
+    assert.equal(requestOfType(socket("primary"), "/api/attach").length, 1);
+    assert.equal(broker.getActiveRootObserver().token, second.token);
+    assert.equal(broker.getMainChatRootObserver()?.token ?? null, to === "main_chat" ? second.token : null);
+    assert.throws(() => broker.subscribeRun({ ...options, observerToken: first.token, consumerId: "stale", runId: "old-run", chatId: "chat-1" }), /no longer active/);
+    const detach = requestOfType(socket("primary"), "/api/detach")[0];
+    socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: upstream.id, lastSeq: 3 } });
+    await next.ready;
+    assert.equal(requestOfType(socket("primary"), "/api/attach").length, 2);
+    assert.equal(requestOfType(socket("primary"), "/api/attach")[1].payload.lastSeq, 7);
+    assert.equal(requestOfType(socket("primary"), "/api/interrupt").length, 0);
+    assert.equal(sockets.length, 1);
+    assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "old-run").state, "dormant");
+    broker.releaseRootObserver(second.token);
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 2);
+    assert.equal(broker.getActiveRootObserver(), null);
+  });
+}
+
+test("a query for the replacement root waits for detach and stale waiting queries never send", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  broker.activateRootObserver(rootObserver());
+  const options = { baseUrl: "http://127.0.0.1:8080", token, owner: { kind: "agent", agentKey: "agent-1" }, onEvent: () => {} };
+  const old = broker.subscribeRun({ ...options, kind: "surface", observerToken: rootObserver().token, consumerId: "old", runId: "old-run", chatId: "chat-1" });
+  await old.ready;
+  const upstream = requestOfType(socket("primary"), "/api/attach")[0];
+  const nextRoot = rootObserver({ token: "new-root", contextId: "chat-2" });
+  broker.activateRootObserver(nextRoot);
+  const query = broker.query({ ...options, id: "waiting-query", chatId: "chat-2", observerToken: nextRoot.token, payload: { chatId: "chat-2", agentKey: "agent-1", message: "hello" } });
+  const rejected = Promise.all([assert.rejects(query.accepted, /changed before query delivery/), assert.rejects(query.completed, /changed before query delivery/)]);
+  await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 1);
+  assert.equal(requestOfType(socket("primary"), "/api/query").length, 0);
+  broker.activateRootObserver(rootObserver({ token: "newer-root", contextId: "chat-3" }));
+  const current = broker.query({ ...options, id: "current-query", chatId: "chat-3", observerToken: "newer-root", payload: { chatId: "chat-3", agentKey: "agent-1", message: "hello" } });
+  const detach = requestOfType(socket("primary"), "/api/detach")[0];
+  socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: upstream.id, lastSeq: 3 } });
+  await rejected;
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const request = requestOfType(socket("primary"), "/api/query")[0];
+  assert.equal(request.payload.chatId, "chat-3");
+  socket("primary").emit({ frame: "stream", id: request.id, event: runEvent("run.start", "new-run", "chat-3", 1) });
+  await current.accepted;
+  socket("primary").emit({ frame: "stream", id: request.id, reason: "complete", lastSeq: 1 });
+  await current.completed;
 });

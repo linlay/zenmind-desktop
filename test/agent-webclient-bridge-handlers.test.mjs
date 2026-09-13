@@ -1148,3 +1148,41 @@ for (const validParent of [true, false]) {
     }
   });
 }
+
+test("Kanban preview authorizes only its registered Chat read and attach/detach", async () => {
+  const target = mainTarget(105, { registrationId: "preview-g1", surfaceId: "kanban-chat", surfaceRole: "kanban-chat", pageRoute: "/chat-preview/chat-1", currentUrl: "http://127.0.0.1:7079/chat-preview/chat-1" });
+  const runtime = createRuntime(new Map([[105, target]]));
+  const sender = createSender(105, target.currentUrl);
+  await openSession(runtime, sender, "preview");
+  for (const type of ["/api/query", "/api/btw", "/api/submit", "/api/steer", "/api/interrupt", "/api/access-level", "/api/terminal/write", "/api/terminal/close"]) {
+    send(runtime, sender, "preview", { frame: "request", id: type, type, payload: { chatId: "chat-1", runId: "run-1", agentKey: "agent-1" } });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "capability_denied");
+  }
+  send(runtime, sender, "preview", { frame: "request", id: "wrong-chat", type: "/api/chat", payload: { chatId: "chat-2" } });
+  await flush();
+  assert.equal(sentFrames(sender).at(-1).type, "capability_denied");
+  send(runtime, sender, "preview", { frame: "request", id: "wrong-attach", type: "/api/attach", payload: { chatId: "chat-2", runId: "run-2", agentKey: "agent-1" } });
+  await flush();
+  assert.equal(sentFrames(sender).at(-1).type, "capability_denied");
+  assert.equal(runtime.calls.attaches.length, 0);
+  send(runtime, sender, "preview", { frame: "request", id: "read", type: "/api/chat", payload: { chatId: "chat-1" } });
+  await flush();
+  assert.equal(runtime.calls.forwarded.length, 1);
+  send(runtime, sender, "preview", { frame: "request", id: "attach", type: "/api/attach", payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 4 } });
+  await flush();
+  assert.equal(runtime.calls.attaches.length, 1);
+  assert.equal(runtime.calls.attaches[0].chatId, "chat-1");
+  assert.equal(runtime.calls.attaches[0].runId, "run-1");
+  assert.equal(runtime.calls.attaches[0].lastSeq, 4);
+  assert.deepEqual(runtime.calls.attaches[0].owner, { kind: "agent", agentKey: "agent-1" });
+  assert.equal(runtime.broker.getActiveRootObserver().kind, "kanban_chat");
+  send(runtime, sender, "preview", { frame: "request", id: "detach", type: "/api/detach", payload: { runId: "run-1" } });
+  await flush();
+  assert.equal(runtime.calls.releasedRuns.at(-1).runId, "run-1");
+  sender.setURL("http://127.0.0.1:7079/agent/agent-1?chatId=chat-1");
+  send(runtime, sender, "preview", { frame: "request", id: "escape", type: "/api/query", payload: { chatId: "chat-1" } });
+  await flush();
+  assert.equal(sentFrames(sender).at(-1).type, "capability_denied");
+  assert.equal(runtime.calls.queries.length, 0);
+});

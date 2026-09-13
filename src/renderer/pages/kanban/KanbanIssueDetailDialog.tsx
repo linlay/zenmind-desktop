@@ -954,11 +954,12 @@ export function KanbanIssueDetailDialog({
               <ServiceWebviewSurface
                 key={`kanban-chat:${issue.id}:${selectedIssueChatId || chatEmbedPath}`}
                 active
-                surfaceOwnershipActive={false}
+                ownerChatId={issueChatItems.find((chat) => chat.id === selectedIssueChatId)?.chatId}
                 hostTheme={hostTheme}
                 serviceId="agent-webclient"
                 surfaceIdentity={createSurfaceIdentity("kanban-chat")}
                 surfaceLabel={t("kanban.chat.surfaceLabel")}
+                desktopRoute={chatEmbedPath}
                 embedPath={chatEmbedPath}
                 skipContextRegistration
                 loadInitialEmbeddedUrlDirectly

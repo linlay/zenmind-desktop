@@ -14,6 +14,7 @@ const {
   areAgentWebclientChatNavigationUrlsEquivalent,
   createAgentWebclientAgentPath,
   createAgentWebclientBtwPath,
+  createAgentWebclientChatPreviewPath,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
   createAgentWebclientOverviewPath,
@@ -458,4 +459,10 @@ test("copilot path generation uses the semantic catalog key", () => {
 
   assert.equal(catalogKeys.includes(semanticAgentKey), true);
   assert.equal(createAgentWebclientCopilotPath(semanticAgentKey), requestedPath);
+});
+
+test("Kanban preview uses a Chat-only route on the existing desktop Chat transport", () => {
+  assert.equal(createAgentWebclientChatPreviewPath({ chatId: "chat / 1" }), "/chat-preview/chat%20%2F%201");
+  assert.equal(createAgentWebclientChatPreviewPath({ chatId: " " }), "");
+  assert.equal(resolveAgentWebclientWsSource("kanban-chat", "/chat-preview/chat-1"), "desktop-chat");
 });

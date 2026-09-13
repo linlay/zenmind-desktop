@@ -492,3 +492,10 @@
 - 在两平台分别检查窄窗口、深浅色、关闭重开详情及 WebClient 加载失败重试；右侧仍可访问，打开详情不能新建或重复启动 Run。
 
 - 问题详情左侧按“运行结果、问题说明、附件、评论”排列；运行结果读取最近一次运行所绑定 Chat 的 lastRunContent 并渲染 Markdown。检查无结果、加载失败、其他设备运行和 Chat 被其他 Run 复用时不显示错属内容；切换到聊天后返回详情可重新读取结果。
+
+### Kanban Chat Preview 与唯一 live observer
+
+- macOS 与 Windows：打开本机进行中的 issue card，确认左侧为 `/chat-preview/:chatId`，完整历史与增量正常，无输入框；右侧运行记录可切换关联 Chat。
+- Main Chat → Kanban 预览 → Copilot → Main Chat，Inspector 始终只有一个活动 Root Observer，均复用 desktop-main Primary WS；旧 detach 完成后才发新 attach/query，不产生 interrupt。
+- 快速切换运行记录、返回 Issue 正文、关闭详情及离开 Kanban：旧 guest 注销，旧流不再交付；重新打开从历史游标 attach，后台 Run 继续。
+- 预览拒绝 query、BTW、submit、steer、interrupt、access-level、终端写入/关闭与其他 Chat 请求；其他设备 Chat 不可打开。

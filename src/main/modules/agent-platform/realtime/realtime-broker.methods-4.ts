@@ -343,6 +343,10 @@ export async function RealtimeBroker_startAttach_10(self: RealtimeBrokerMethodCo
     if (run.upstreamRequestId || run.terminal)
         return;
     await self.ensureConnected(baseUrl, token, run.lane);
+    if (run.lane === "primary" && run.rootObserverTokens.size > 0) {
+        await Promise.all([...self.runChannels.values()].filter((other) => other !== run && other.lane === "primary").map((other) => other.detachInFlight));
+    }
+    if (run.rootObserverTokens.size === 0 && !self.hasSystemRunLease(run)) return;
     if (run.upstreamRequestId || run.terminal)
         return;
     const id = `desktop-attach-${randomUUID()}`;

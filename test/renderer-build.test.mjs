@@ -6691,7 +6691,8 @@ test("service webview surface provides webview-backed assistant context instead 
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanDetailDialog = readSourceFile("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
   assert.match(kanbanDetailDialog, /surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
-  assert.match(kanbanDetailDialog, /surfaceOwnershipActive=\{false\}/);
+  assert.match(kanbanDetailDialog, /ownerChatId=\{issueChatItems\.find/);
+  assert.match(kanbanDetailDialog, /desktopRoute=\{chatEmbedPath\}/);
   assert.match(kanbanDetailDialog, /loadInitialEmbeddedUrlDirectly/);
   assert.match(kanbanDetailDialog, /suppressInitialLoadingCopy/);
   assert.match(serviceWebviewSurface, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);

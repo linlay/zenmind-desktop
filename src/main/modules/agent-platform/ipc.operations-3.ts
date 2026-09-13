@@ -29,6 +29,27 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         factoryContext.sendFrame(session, frameError(frame.id, "surface_unavailable", context.error.message));
         return;
     }
+    const isKanbanPreview = context.target.surfaceRole === "kanban-chat" &&
+        Boolean(context.target.pageRoute?.startsWith("/chat-preview/"));
+    if (isKanbanPreview) {
+        const ownerChatId = context.target.ownerChatId?.trim() || "";
+        const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+        const routeMatches = ownerChatId && new URL(event.sender.getURL()).pathname ===
+            `/chat-preview/${encodeURIComponent(ownerChatId)}`;
+        // WebClient attach identifies the Run only; resolveAttachChatId below
+        // supplies the trusted registered Chat before the Broker subscribes.
+        const requestedChatId = readText(payload.chatId);
+        const allowed = frame.type === "/api/chat"
+            ? requestedChatId === ownerChatId
+            : frame.type === "/api/attach"
+                ? !requestedChatId || requestedChatId === ownerChatId
+                : frame.type === "/api/detach" && Boolean(session.rootObserverToken) &&
+                    [...session.streams.values()].some((binding) => binding.runId === readText(payload.runId));
+        if (!routeMatches || !allowed) {
+            factoryContext.sendFrame(session, frameError(frame.id, "capability_denied", "Kanban preview only observes its registered Chat"));
+            return;
+        }
+    }
     if (frame.type === "/api/chat") {
         const chatId = readText(isPlainBridgeRecord(frame.payload) ? frame.payload.chatId : "");
         session.chatLoadRequests.set(frame.id, { chatId, startedAt: Date.now() });
@@ -265,7 +286,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     const refreshedContext = session.closed || event.sender.isDestroyed()
         ? null
         : authorizeSurface(event.sender, factoryContext.options.browserSurfaces, factoryContext.options.isTrustedAgentWebclientSession);
-    if (!refreshedContext || "ok" in refreshedContext || (isLive && (
+    if (!refreshedContext || "ok" in refreshedContext || ((isLive || isKanbanPreview) && (
         refreshedContext.target.registrationId !== authorizedSurface.registrationId ||
         refreshedContext.target.surfaceId !== authorizedSurface.surfaceId ||
         refreshedContext.target.ownerChatId !== authorizedSurface.ownerChatId ||

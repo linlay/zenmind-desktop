@@ -1,3 +1,4 @@
+import { createAgentWebclientChatPreviewPath } from "../../../shared/agent-webclient-routes";
 import { KanbanExecutorPicker } from "./KanbanExecutorPicker";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -2395,7 +2396,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
       return null;
     }
-    return createAgentWebclientRoute({ agentKey, chatId });
+    return createAgentWebclientChatPreviewPath({ chatId });
   }, [agents, t]);
 
   function handleDragStart(event: DragStartEvent) {

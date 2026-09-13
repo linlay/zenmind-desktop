@@ -254,6 +254,11 @@ export function createAgentWebclientOverviewPath(request: {
   return encodedChatId ? `/overview/${encodedChatId}` : "";
 }
 
+export function createAgentWebclientChatPreviewPath(request: { chatId: string }) {
+  const encodedChatId = encodeRoutePathSegment(request.chatId.trim());
+  return encodedChatId ? `/chat-preview/${encodedChatId}` : "";
+}
+
 export function createAgentWebclientBtwPath(request: { chatId: string }) {
   const chatId = request.chatId.trim();
   const encodedChatId = encodeRoutePathSegment(chatId);

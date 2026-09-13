@@ -4689,6 +4689,7 @@ export function AppShell() {
       <div ref={appContentRef} className="app-content">
         <main className="app-main">
           <ServiceWebviewSurfaceHost
+            mainChatObserverActive={!assistantCopilotOpen}
             chatDefaultAgentKey={chatRuntimeAgent.agentKey}
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}

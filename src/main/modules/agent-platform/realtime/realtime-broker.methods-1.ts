@@ -166,9 +166,6 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         accessToken: options.token,
     };
     self.queriesByRequestId.set(upstreamRequestId, transaction);
-    transaction.acceptanceTimer = setTimeout(() => {
-        self.failQuery(transaction, brokerError("connection_unavailable", "query acceptance timed out"));
-    }, self.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
     if (options.signal) {
         transaction.abortListener = () => {
             self.failQuery(transaction, brokerError("connection_unavailable", "query aborted"));
@@ -176,10 +173,20 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         options.signal.addEventListener("abort", transaction.abortListener, { once: true });
     }
     void self.ensureConnected(options.baseUrl, options.token, lane)
-        .then(() => {
+        .then(async () => {
+        if (observerToken && lane === "primary") {
+            await Promise.all([...self.runChannels.values()].filter((run) => run.lane === "primary").map((run) => run.detachInFlight));
+            if (!self.findRootObserver(observerToken)) {
+                throw brokerError("surface_generation_superseded", "Root Observer changed before query delivery");
+            }
+        }
         if (options.signal?.aborted) {
             throw brokerError("connection_unavailable", "query aborted");
         }
+        if (self.queriesByRequestId.get(upstreamRequestId) !== transaction) return;
+        transaction.acceptanceTimer = setTimeout(() => {
+            self.failQuery(transaction, brokerError("connection_unavailable", "query acceptance timed out"));
+        }, self.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
         self.clients[lane].send({
             frame: "request",
             type: requestType,
@@ -304,21 +311,12 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
             }
             : null,
     };
-    if (input.kind === "main_chat") {
-        self.mainChatRootObserver = next;
-        if (!self.activeRootObserver || self.activeRootObserver.kind === "main_chat") {
-            self.activeRootObserver = next;
-        }
-    }
-    else {
-        const previousActive = self.activeRootObserver;
-        self.activeRootObserver = next;
-        if (previousActive && previousActive.kind !== "main_chat" && previousActive !== current) {
-            self.retireRootObserver(previousActive, "surface_generation_superseded");
-        }
-    }
-    if (current)
-        self.retireRootObserver(current, "surface_generation_superseded");
+    // All three Chat roots share one live observer. Replacing it retires the
+    // previous observation without interrupting its background Run.
+    const previous = self.activeRootObserver;
+    self.activeRootObserver = next;
+    self.mainChatRootObserver = input.kind === "main_chat" ? next : null;
+    if (previous) self.retireRootObserver(previous, "surface_generation_superseded");
     return input.kind === "main_chat"
         ? self.getMainChatRootObserver()
         : self.getActiveRootObserver();

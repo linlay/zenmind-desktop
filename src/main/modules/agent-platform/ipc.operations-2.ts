@@ -1,5 +1,6 @@
 import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
+  isPlainBridgeRecord,
   type AgentWebclientPlatformFramePortEvent,
   type AgentWebclientPlatformFramePortOpenInput
 } from "../../../shared/contracts";
@@ -296,7 +297,15 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleOpen_3(facto
             types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
             kind: "surface",
             consumerId: session.consumerId,
-            onPush: (frame) => factoryContext.sendFrame(session, frame),
+            onPush: (frame) => {
+                const current = authorizeSurface(session.sender, factoryContext.options.browserSurfaces, factoryContext.options.isTrustedAgentWebclientSession);
+                if ("ok" in current) return;
+                if (current.target.surfaceRole === "kanban-chat") {
+                    const chatId = current.target.ownerChatId?.trim();
+                    if (!current.target.active || !chatId || (!isPlainBridgeRecord(frame.data) || frame.data.chatId !== chatId)) return;
+                }
+                factoryContext.sendFrame(session, frame);
+            },
         });
         const { baseUrl, token } = await factoryContext.availability();
         if (session.closed || session.sender.isDestroyed()) return;

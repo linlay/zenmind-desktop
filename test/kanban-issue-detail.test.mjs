@@ -85,7 +85,7 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.match(detail, /className="kanban-detail-window-actions"[\s\S]{0,700}kanban\.chat\.view[\s\S]{0,900}kanban\.detail\.editIssue[\s\S]{0,500}kanban-detail-close/);
-  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-surface[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
+  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-surface[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}ownerChatId=\{issueChatItems\.find[\s\S]{0,500}surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
   assert.match(detail, /chatEmbedPath \? t\("kanban\.chat\.viewIssue"\) : t\("kanban\.chat\.view"\)/);
   assert.match(detail, /disabled=\{!chatEmbedPath && !latestOpenableIssueChat\}/);
   assert.match(detail, /return \[\.\.\.chatsByChatId\.values\(\)\]\.sort\(compareIssueChatTime\)/);
@@ -95,7 +95,7 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /<\/main>\}\s*<aside className="kanban-detail-rail"/);
   assert.match(styles, /\.kanban-detail-window-actions \.kanban-detail-secondary-button:disabled\s*\{\s*cursor:\s*not-allowed/);
   assert.match(page, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
-  assert.match(page, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
+  assert.match(page, /return createAgentWebclientChatPreviewPath\(\{ chatId \}\)/);
   assert.doesNotMatch(page, /setDetailIssueId\(null\);[\s\S]{0,100}navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
 });
