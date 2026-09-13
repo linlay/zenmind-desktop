@@ -21,7 +21,7 @@ export const enUSMessages = {
   "kanban.localWorkflow.noRollback": "No cross-stage rollback",
   "kanban.localWorkflow.invalidDefinitionHelp": "Fill in all names and fix invalid rollback targets before saving.",
   "kanban.localWorkflow.actionFailed": "The action did not complete. Check the issue feedback and retry.",
-  "kanban.localWorkflow.rollbackEffect": "Return to {value} · To do. Subsequent stages and reviews must run again. No agent starts automatically.",
+  "kanban.localWorkflow.rollbackEffect": "Return to {value} · To do. Subsequent stages and reviews must run again. The agent starts automatically when eligible.",
   "kanban.localWorkflow.rollbackReason": "Rollback reason (required)",
   "kanban.localWorkflow.confirmRollback": "Confirm rollback",
   "kanban.localWorkflow.refreshHelp": "The template rollback rules have changed. Apply them explicitly to this issue without changing its current stage, stage order or review requirements.",

@@ -3977,12 +3977,11 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   assert.doesNotMatch(enUS, /"kanban\.runtime\.privateCreated"|"Private issue created\."/);
 });
 
-test("Kanban scheduled tasks wait for automation time before assistant run", () => {
+test("Kanban execution is owned by Main and scheduled tasks are excluded", () => {
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
-
-  assert.match(kanbanPage, /const shouldRunAfterSave = form\.status === "in_progress" && !form\.automationEnabled && !modal\?\.issue\?\.runId;/);
-  assert.match(kanbanPage, /const shouldRunTodoAssigneeAfterDelay = form\.status === "todo" && !form\.automationEnabled && Boolean\(form\.assigneeAgentKey\) && !modal\?\.issue\?\.runId;/);
-  assert.doesNotMatch(kanbanPage, /form\.status === "todo" && Boolean\(form\.assigneeAgentKey\) && !modal\?\.issue\?\.runId/);
+  const scheduler = readSourceFile("src", "main", "modules", "kanban", "local-scheduler.ts");
+  assert.doesNotMatch(kanbanPage, /assistant\.startRun|KANBAN_TODO_ASSIGNEE_START_DELAY_MS|shouldRunTodoAssigneeAfterDelay/);
+  assert.match(scheduler, /!issue\.automationEnabled/);
 });
 
 test("Kanban todo cards keep their queue order while the shared timer refreshes run context", () => {
@@ -4105,9 +4104,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,300}width:\s*max-content;[\s\S]{0,100}max-width:\s*min\(360px, calc\(100% - 32px\)\);/);
   assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,700}transform:\s*translateX\(-50%\);/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-feedback\s*\{[^}]*top:\s*66px;/);
-  assert.match(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
-  assert.match(kanbanPage, /const chatId = resolveLocalKanbanRunChatId\(issue\)/);
-  assert.match(kanbanPage, /\.\.\.\(chatId \? \{ chatId \} : \{\}\),[\s\S]{0,80}agentKey/);
+  assert.doesNotMatch(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
   assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);
   assert.doesNotMatch(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
@@ -4138,21 +4135,18 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, /setAgentPickerIssue/);
   assert.doesNotMatch(kanbanPage, /requestAssignIssueToAssistant/);
   assert.match(kanbanPage, /<DragOverlay[\s\S]*?dropAnimation=\{null\}/);
-  assert.match(kanbanPage, /kanbanApi\.updateIssue\(issue\.id,[\s\S]*?status:\s*"in_progress"/);
+  assert.match(kanbanPage, /kanban\.updateIssue\(issue\.id,[\s\S]{0,120}status:\s*"todo"/);
   assert.match(kanbanPage, /function openInProgressAssignmentModal\(issue: KanbanIssue\)/);
   assert.match(kanbanPage, /function openInProgressAssignmentModal\(issue: KanbanIssue\) \{[\s\S]{0,160}setDetailInitialEditStatus\("in_progress"\)[\s\S]{0,120}setDetailIssueId\(issue\.id\)/);
   assert.match(kanbanPage, /targetStatus === "in_progress" && activeIssue\.status !== "in_progress"/);
   assert.match(kanbanPage, /activeIssue\.assigneeAgentKey\?\.trim\(\)[\s\S]{0,180}assignIssueToAssistant\(activeIssue, activeIssue\.assigneeAgentKey\)/);
   assert.match(kanbanPage, /openInProgressAssignmentModal\(activeIssue\)/);
-  assert.match(kanbanPage, /targetStatus === "todo" && activeIssue\.status !== "todo"[\s\S]{0,220}activeIssue\.assigneeAgentKey\?\.trim\(\)/);
-  assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,180}assignIssueToAssistant\(savedIssue, todoAssigneeAgentKey\)/);
   assert.match(kanbanPage, /form\.status === "in_progress" && !form\.automationEnabled && !modal\?\.issue\?\.runId/);
-  assert.match(kanbanPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
+  assert.match(kanbanPage, /shouldRunAfterSave && !form\.executorAgentKey/);
   assert.match(kanbanPage, /t\("kanban\.feedback\.assigneeRequiredForProgress"\)/);
   assert.match(kanbanPage, /function mergeKanbanIssueAttachmentDraft/);
   assert.match(kanbanPage, /mergeKanbanIssueAttachmentDraft\(\s*result\.issue[\s\S]{0,160}form\.attachmentChatId[\s\S]{0,160}form\.attachments/);
   assert.match(kanbanPage, /mergeKanbanIssuesAttachmentDraft\(\s*result\.issues[\s\S]{0,160}savedIssue/);
-  assert.match(kanbanPage, /assignIssueToAssistant\(savedIssue, form\.assigneeAgentKey\)/);
   assert.match(kanbanPage, /const \[formCompact,\s*setFormCompact\] = useState\(true\)/);
   assert.match(kanbanPage, /setFormCompact\(true\)/);
   assert.match(kanbanPage, /function buildCompactIssueTitle/);

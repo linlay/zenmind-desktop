@@ -77,7 +77,6 @@ import {
 import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
 import { ImportanceIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
-import { resolveLocalKanbanRunChatId } from "./kanbanAssistantRun";
 import { resolveWorkflowStageColor } from "./stageColor";
 
 import { LocalWorkflowSettings } from "./LocalWorkflowSettings";
@@ -193,7 +192,6 @@ type KanbanContextMenu = {
 
 const KANBAN_CREATE_STATUSES: readonly KanbanStatus[] = ["backlog", "todo"];
 const KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000;
-const KANBAN_TODO_ASSIGNEE_START_DELAY_MS = 1000;
 const KANBAN_COUNTDOWN_REFRESH_MS = 60_000;
 const VISIBLE_KANBAN_STATUSES = [
   "backlog",
@@ -571,26 +569,6 @@ function buildCompactIssueTitle(description: string) {
     .map((line) => line.trim())
     .find(Boolean) ?? "";
   return Array.from(firstLine).slice(0, 24).join("");
-}
-
-function buildAssistantPrompt(issue: KanbanIssue, t: TranslateFunction) {
-  const parts = [
-    t("kanban.prompt.id", { value: issue.remoteIssueId ?? issue.id }),
-    t("kanban.prompt.title", { value: issue.title }),
-    t("kanban.prompt.status", { value: t(STATUS_META[issue.status].labelKey) })
-  ];
-  if (issue.syncMode !== "cloud" && issue.localWorkflow) {
-    parts.push(t("kanban.localWorkflow.runStage", { value: issue.stageName ?? "" }));
-    const rollback = issue.localWorkflowRollbacks?.at(-1);
-    if (rollback && rollback.toStageId === issue.stageId) parts.push(t("kanban.localWorkflow.rollbackContext", { value: rollback.reason }));
-  }
-  if (issue.priority) {
-    parts.push(t("kanban.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) }));
-  }
-  if (issue.description.trim()) {
-    parts.push(t("kanban.prompt.description", { value: issue.description.trim() }));
-  }
-  return parts.join("\n");
 }
 
 function computeDropPosition(targetIssues: KanbanIssue[], insertIndex: number) {
@@ -2036,7 +2014,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const resolvedAutomationCron = buildAutomationCron(form.automationPreset, form.automationTime, form.automationCron);
     const resolvedAutomationMessage = form.automationMessage.trim() || form.description.trim() || title;
     const shouldRunAfterSave = form.status === "in_progress" && !form.automationEnabled && !modal?.issue?.runId;
-    const shouldRunTodoAssigneeAfterDelay = form.status === "todo" && !form.automationEnabled && Boolean(form.executorAgentKey) && !modal?.issue?.runId;
     if (shouldRunAfterSave && !form.executorAgentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
       return;
@@ -2060,7 +2037,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setFeedback({ tone: "error", message: t("kanban.feedback.invalidEffort") });
       return;
     }
-    const savedStatus = shouldRunAfterSave ? modal?.issue?.status ?? "todo" : form.status;
+    const savedStatus = shouldRunAfterSave ? "todo" : form.status;
     const payload: KanbanIssueInput | KanbanIssueUpdateInput = {
       title,
       projectId: form.projectId || "default",
@@ -2119,14 +2096,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setFeedback({ tone: nextTone, message: nextMessage });
       if (result.ok && nextTone === "success") {
         setModal(null);
-        if (shouldRunAfterSave && savedIssue) {
-          void assignIssueToAssistant(savedIssue, form.executorAgentKey);
-        } else if (shouldRunTodoAssigneeAfterDelay && savedIssue) {
-          const savedAgentKey = form.executorAgentKey;
-          window.setTimeout(() => {
-            void assignIssueToAssistant(savedIssue, savedAgentKey);
-          }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
-        }
       }
     } catch (error) {
       setFeedback({
@@ -2161,7 +2130,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
     const resolvedAutomationMessage = draft.automationMessage.trim() || draft.description.trim() || title;
     const shouldRunAfterSave = draft.status === "in_progress" && !draft.automationEnabled && !issue.runId;
-    const shouldRunTodoAssigneeAfterDelay = draft.status === "todo" && !draft.automationEnabled && Boolean(draft.assigneeAgentKey) && !issue.runId;
     if (shouldRunAfterSave && !draft.assigneeAgentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
       return false;
@@ -2196,7 +2164,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       remainingEstimate,
       timeSpent,
       description: draft.description,
-      status: shouldRunAfterSave ? issue.status : draft.status,
+      status: shouldRunAfterSave ? "todo" : draft.status,
       priority: draft.priority,
       severity: draft.severity,
       assigneeAgentKey: draft.assigneeAgentKey || null,
@@ -2226,14 +2194,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setIssues(sortIssues(nextIssues));
       setFeedback({ tone: nextTone, message: nextMessage });
       if (!result.ok || nextTone !== "success" || !savedIssue) return false;
-      if (shouldRunAfterSave) {
-        void assignIssueToAssistant(savedIssue, draft.assigneeAgentKey);
-      } else if (shouldRunTodoAssigneeAfterDelay) {
-        const savedAgentKey = draft.assigneeAgentKey;
-        window.setTimeout(() => {
-          void assignIssueToAssistant(savedIssue, savedAgentKey);
-        }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
-      }
       return true;
     } catch (error) {
       setFeedback({
@@ -2337,50 +2297,12 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  async function assignIssueToAssistant(issue: KanbanIssue, selectedAgentKey?: string) {
-    const kanbanApi = readKanbanApi();
-    if (!kanbanApi) {
-      setFeedback({ tone: "error", message: missingKanbanApiMessage });
-      return;
-    }
-    const availableAgents = await getAvailableAgents();
-    const agentKey = selectedAgentKey ?? issue.assigneeAgentKey ?? availableAgents[0]?.agentKey ?? "";
-    if (!agentKey) {
-      setFeedback({ tone: "error", message: t("kanban.feedback.noAgents") });
-      return;
-    }
-
-    setBusyIssueId(issue.id);
-    try {
-      const chatId = resolveLocalKanbanRunChatId(issue);
-      const runResult = await window.electronAPI.assistant.startRun({
-        ...(chatId ? { chatId } : {}),
-        agentKey,
-        message: buildAssistantPrompt(issue, t),
-        source: "copilot",
-        attachments: issue.attachments
-      });
-      if (!runResult.ok) {
-        setFeedback({ tone: "error", message: runResult.message || t("kanban.feedback.assistantStartFailed") });
-        return;
-      }
-      const updateResult = await kanbanApi.updateIssue(issue.id, {
-        status: "in_progress",
-        assigneeAgentKey: agentKey,
-        chatId: runResult.chatId,
-        runId: runResult.runId,
-        runState: "running"
-      });
-      setIssues(sortIssues(updateResult.issues));
-      setFeedback({ tone: "success", message: t("kanban.feedback.assignedToAssistant") });
-    } catch (error) {
-      setFeedback({
-        tone: "error",
-        message: error instanceof Error ? error.message : t("kanban.feedback.assistantStartFailed")
-      });
-    } finally {
-      setBusyIssueId(null);
-    }
+  async function assignIssueToAssistant(issue: KanbanIssue, agentKey: string) {
+    const result = await window.electronAPI.kanban.updateIssue(issue.id, {
+      status: "todo", assigneeAgentKey: agentKey, runState: null
+    });
+    setIssues(sortIssues(result.issues));
+    setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
   }
 
   const openAssistantIssueChat = useCallback((issue: KanbanIssue, requestedChatId?: string, requestedAgentKey?: string | null) => {
@@ -2457,9 +2379,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       return;
     }
 
-    const todoAssigneeAgentKey = targetStatus === "todo" && activeIssue.status !== "todo"
-      ? activeIssue.assigneeAgentKey?.trim() ?? ""
-      : "";
     const previousIssues = issues;
     const optimisticIssue = {
       ...activeIssue,
@@ -2476,12 +2395,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     if (result.ok) {
       setIssues(sortIssues(result.issues));
       setFeedback({ tone: "success", message: result.message });
-      if (todoAssigneeAgentKey && result.issue) {
-        const savedIssue = result.issue;
-        window.setTimeout(() => {
-          void assignIssueToAssistant(savedIssue, todoAssigneeAgentKey);
-        }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
-      }
     } else {
       setIssues(previousIssues);
       setFeedback({ tone: "error", message: result.message });

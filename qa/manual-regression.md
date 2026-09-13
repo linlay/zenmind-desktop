@@ -499,3 +499,11 @@
 - Main Chat → Kanban 预览 → Copilot → Main Chat，Inspector 始终只有一个活动 Root Observer，均复用 desktop-main Primary WS；旧 detach 完成后才发新 attach/query，不产生 interrupt。
 - 快速切换运行记录、返回 Issue 正文、关闭详情及离开 Kanban：旧 guest 注销，旧流不再交付；重新打开从历史游标 attach，后台 Run 继续。
 - 预览拒绝 query、BTW、submit、steer、interrupt、access-level、终端写入/关闭与其他 Chat 请求；其他设备 Chat 不可打开。
+
+## 本地 Kanban 公共调度
+
+- macOS / Windows 分别关闭看板页面，通过普通 Chat 创建 5 个分配了 Agent 的 todo，确认自动进入执行中且每个任务只提交一次 Run；创建后补执行者、修改 workerAgent、Backlog 移入 todo、请求进入执行中也走同一调度。
+- 没有执行者、人工执行、定时自动化、Backlog 和审核任务保持原状态；已有 Run 不重复启动。关闭再启动 Desktop，已有可执行 todo 自动调度。
+- 模拟 Platform 启动容量拒绝：任务保持 todo、保留错误、延迟重试；普通 Chat Run 结束后及时补位。同一 Agent 有多个可用名额时允许多个运行，不同 Agent 不互相阻塞。
+- 快速完成的 Run 在准入响应前结束，不得被迟到响应改回执行中；阶段完成后下一阶段自动执行，需要审核的阶段等待人工批准。显式回退确认文案说明满足条件后自动启动。
+- 执行失败和取消后不无限重跑；显式重置为 todo 后重新调度。准入连接中断且无法确认是否接受时保留 Run 身份，不重复 query；关闭 runtime 后停止新增调度。

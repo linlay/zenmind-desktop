@@ -21,7 +21,7 @@ export const zhCNMessages = {
   "kanban.localWorkflow.noRollback": "不允许跨阶段回退",
   "kanban.localWorkflow.invalidDefinitionHelp": "请填写所有名称，并修正无效的回退目标后保存。",
   "kanban.localWorkflow.actionFailed": "操作未完成，请查看任务反馈后重试。",
-  "kanban.localWorkflow.rollbackEffect": "回退后进入「{value} · 待办」，需要重新执行后续阶段及审核；不会自动启动智能体。",
+  "kanban.localWorkflow.rollbackEffect": "回退后进入「{value} · 待办」，需要重新执行后续阶段及审核；满足执行条件后智能体将自动启动。",
   "kanban.localWorkflow.rollbackReason": "回退原因（必填）",
   "kanban.localWorkflow.confirmRollback": "确认回退",
   "kanban.localWorkflow.refreshHelp": "模板的回退规则已更新。可手动应用到本任务，不改变当前阶段、阶段顺序或审核要求。",

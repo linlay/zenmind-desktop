@@ -1,3 +1,4 @@
+import { LocalKanbanScheduler } from "./local-scheduler";
 import type { App } from "electron";
 import type {
   AssistantNavigationPushEvent,
@@ -47,6 +48,7 @@ import { KanbanRuntime_applyDelivery_1, KanbanRuntime_processPendingCommandRecei
 import { KanbanRuntime_handleRemoteStartFailure_1, KanbanRuntime_notifyChanged_2, KanbanRuntime_syncAutomationForIssue_3, KanbanRuntime_syncRemoteAutomationPayload_4 } from "./runtime.methods-4";
 
 export class KanbanRuntime {
+  private readonly localScheduler: LocalKanbanScheduler;
   private readonly wsClient: KanbanDesktopWsClient;
   private connectionState: KanbanDesktopConnectionState = "disabled";
   private connectionFallbackState: KanbanConnectionFallbackState = "disabled";
@@ -58,6 +60,7 @@ export class KanbanRuntime {
   private negotiatedCapabilities: string[] = [];
 
   constructor(private readonly options: KanbanRuntimeOptions) {
+    this.localScheduler = new LocalKanbanScheduler(options, () => this.currentUser(), () => this.notifyChanged());
     this.wsClient = new KanbanDesktopWsClient({
       capabilities: [
         "command.dispatchIssue",
@@ -113,9 +116,9 @@ export class KanbanRuntime {
     });
   }
 
-  start() { return KanbanRuntime_start_1(this as any); }
+  start() { KanbanRuntime_start_1(this as any); this.localScheduler.start(); }
 
-  stop() { return KanbanRuntime_stop_2(this as any); }
+  stop() { this.localScheduler.stop(); return KanbanRuntime_stop_2(this as any); }
 
   refreshDeviceInfo() { return KanbanRuntime_refreshDeviceInfo_3(this as any); }
 
@@ -133,7 +136,7 @@ export class KanbanRuntime {
 
   saveCloudConfig(input: KanbanCloudConfig): KanbanCloudConfigResult { return KanbanRuntime_saveCloudConfig_10(this as any, input); }
 
-  saveSettings(input: KanbanSettingsInput): KanbanSettingsResult { return KanbanRuntime_saveSettings_11(this as any, input); }
+  saveSettings(input: KanbanSettingsInput): KanbanSettingsResult { const result = KanbanRuntime_saveSettings_11(this as any, input); this.localScheduler.wake(); return result; }
 
   saveLocalWorkflows(input: import("../../../shared/contracts").KanbanLocalWorkflow[]): KanbanListResult {
     saveLocalWorkflowDefinitions(this.options.app, this.currentUser(), input);
@@ -141,11 +144,11 @@ export class KanbanRuntime {
     return this.listIssues();
   }
 
-  async createIssue(input: KanbanIssueInput): Promise<KanbanIssueResult> { return KanbanRuntime_createIssue_12(this as any, input); }
+  async createIssue(input: KanbanIssueInput): Promise<KanbanIssueResult> { const result = await KanbanRuntime_createIssue_12(this as any, input); if (result.ok) this.notifyChanged(); return result; }
 
-  async updateIssue(issueId: string, input: KanbanIssueUpdateInput): Promise<KanbanIssueResult> { return KanbanRuntime_updateIssue_13(this as any, issueId, input); }
+  async updateIssue(issueId: string, input: KanbanIssueUpdateInput): Promise<KanbanIssueResult> { const result = await KanbanRuntime_updateIssue_13(this as any, issueId, input); if (result.ok) this.notifyChanged(); return result; }
 
-  async moveIssue(input: KanbanIssueMoveInput): Promise<KanbanIssueResult> { return KanbanRuntime_moveIssue_14(this as any, input); }
+  async moveIssue(input: KanbanIssueMoveInput): Promise<KanbanIssueResult> { const result = await KanbanRuntime_moveIssue_14(this as any, input); if (result.ok) this.notifyChanged(); return result; }
 
   async deleteIssueWithAutomation(
     issueId: string,
@@ -179,7 +182,10 @@ export class KanbanRuntime {
 
   private async recoverPendingManualRuns() { return KanbanRuntime_recoverPendingManualRuns_7(this as any); }
 
-  sendNavigationPushEvent(event: AssistantNavigationPushEvent) { return KanbanRuntime_sendNavigationPushEvent_8(this as any, event); }
+  sendNavigationPushEvent(event: AssistantNavigationPushEvent) {
+    KanbanRuntime_sendNavigationPushEvent_8(this as any, event);
+    this.localScheduler.wake(event.type === "run.finished");
+  }
 
   private currentUser(): KanbanCurrentUser { return KanbanRuntime_currentUser_9(this as any); }
 
@@ -240,7 +246,7 @@ export class KanbanRuntime {
 
   private async handleRemoteStartFailure(runId: string, chatId: string, message: string) { return KanbanRuntime_handleRemoteStartFailure_1(this as any, runId, chatId, message); }
 
-  private notifyChanged() { return KanbanRuntime_notifyChanged_2(this as any); }
+  private notifyChanged() { this.localScheduler.wake(); return KanbanRuntime_notifyChanged_2(this as any); }
 
   private async syncAutomationForIssue(
     issue: KanbanIssue,

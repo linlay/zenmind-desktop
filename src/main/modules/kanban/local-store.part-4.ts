@@ -18,7 +18,7 @@ import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanCloudMutationOutboxItem
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
 import { buildLocalIssue, insertOrReplaceIssue, insertOrReplaceProject, insertOrReplaceProjectBinding, parseCloudProject, parseCloudProjectBinding, readDesktopKanbanRevision, selectIssues, selectProjectBindings, selectProjects, writeDesktopKanbanRevision, writeDesktopKanbanSyncCursorInDb } from "./local-store.part-3";
 
-type LocalRunDetails = Partial<Pick<KanbanIssue, "runResultMessage" | "runStartedAt" | "runFinishedAt">>;
+type LocalRunDetails = Partial<Pick<KanbanIssue, "runResultMessage" | "runErrorMessage" | "runStartedAt" | "runFinishedAt" | "lastRunId" | "lastRunChatId">>;
 
 export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): KanbanIssue | null {
   const nextIssue: KanbanIssue = {
