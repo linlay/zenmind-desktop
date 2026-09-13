@@ -956,6 +956,7 @@ export interface DesktopApi {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
   };
   kanban: {
+    markResultRead: (input: { issueId: string; key: string; scope: string }) => Promise<{ ok: boolean; message?: string }>;
     listIssues: () => Promise<KanbanListResult>;
     resyncCloudBoard: () => Promise<KanbanListResult>;
     saveLocalWorkflows: (input: import("./kanban").KanbanLocalWorkflow[]) => Promise<KanbanListResult>;

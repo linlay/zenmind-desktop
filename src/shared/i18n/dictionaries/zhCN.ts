@@ -2225,6 +2225,7 @@ export const zhCNMessages = {
   "kanban.detail.copyFailed": "复制失败",
   "kanban.detail.editIssue": "编辑任务",
   "kanban.detail.saving": "保存中",
+  "kanban.detail.readFailed": "已读状态同步失败，未读标记已保留；重新打开运行结果可重试。",
   "kanban.detail.runResultTitle": "运行结果",
   "kanban.detail.noRunResult": "暂无运行结果",
   "kanban.detail.runResultLoadFailed": "运行结果加载失败，请重新打开问题详情重试。",

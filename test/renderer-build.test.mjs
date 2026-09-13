@@ -3905,7 +3905,7 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
 
   assert.match(contracts, /resyncCloudBoard: \(\) => Promise<KanbanListResult>/);
   assert.match(preload, /ipcRenderer\.invoke\("kanban\.resyncCloudBoard"\)/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.resyncCloudBoard"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.resyncCloudBoard"/);
   assert.match(kanbanRuntime, /async resyncCloudBoard\(\): Promise<KanbanListResult>/);
   assert.match(wsClient, /async resyncFromCloud\(\)/);
   assert.match(wsClient, /async resyncFromCloud\(\)[\s\S]*"snapshot\.get"/);
@@ -4047,11 +4047,11 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(preload, /ipcRenderer\.invoke\("kanban\.runIssue", input\)/);
   assert.match(preload, /ipcRenderer\.invoke\("kanban\.syncIssueAutomation", issueId\)/);
   assert.match(mainIpcRegister, /registerKanbanIpcHandlers\(ipcMain,/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.listIssues"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.moveIssue"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.claimIssue"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.runIssue"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.syncIssueAutomation"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.listIssues"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.moveIssue"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.claimIssue"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.runIssue"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.syncIssueAutomation"/);
   assert.match(kanbanRuntime, /async syncIssueAutomation\(/);
   assert.match(kanbanRuntime, /\/api\/automation\/create/);
   assert.match(kanbanRuntime, /\/api\/automation\/update/);

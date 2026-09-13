@@ -1,3 +1,4 @@
+import { resolveKanbanResultIdentity } from "../../../shared/kanban-result-read";
 import { createAgentWebclientChatPreviewPath } from "../../../shared/agent-webclient-routes";
 import { KanbanExecutorPicker } from "./KanbanExecutorPicker";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
@@ -2713,7 +2714,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
       {detailIssue ? (
         <KanbanIssueDetailDialog
-          key={detailIssue.id}
+          onResultRead={() => void reloadKanban()}
+          key={`${currentUserId}:${detailIssue.id}`}
           issue={detailIssue}
           issues={issues}
           projects={cloudProjects}
@@ -3433,6 +3435,8 @@ const IssueCardContent = memo(function IssueCardContent({
   const descriptionPreview = getIssueDescriptionPreview(issue.description);
   const duePresentation = getIssueCardDuePresentation(issue, locale, now, t);
   const peopleLine = getIssueCardPeoplePresentation(issue, agents, cloudDetails.users, t);
+  const resultIdentity = resolveKanbanResultIdentity(issue, cloudDetails);
+  const resultUnread = resultIdentity && !(issue.resultRead?.key === resultIdentity.key && issue.resultRead.isRead);
   const progress = getIssueCardProgressPresentation(issue, cloudDetails);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const issueType = getIssueCardTypePresentation(issue, cloudDetails);
@@ -3482,6 +3486,7 @@ const IssueCardContent = memo(function IssueCardContent({
           </span>
           {issue.projectVersion ? <span className="issue-card-version" title={t("kanban.card.version", { value: issue.projectVersion })}>{issue.projectVersion}</span> : null}
           <span className="issue-card-context-meta">
+            {resultUnread ? <span className="issue-card-unread" role="status" aria-label={t("sidebar.chat.unread")} title={t("sidebar.chat.unread")} /> : null}
             {queueRank ? <span className="issue-card-queue-rank" title={t("kanban.card.queueRank", { value: queueRank })}>{queueRank}</span> : null}
             <span
               className={`issue-card-status is-${cardStatus.tone}`}

@@ -410,6 +410,8 @@ export interface KanbanLocalWorkflowRollback {
 }
 
 export interface KanbanIssue {
+  /** Desktop-owned reading projection; never sent as cloud issue content. */
+  resultRead?: { key: string; scope: string; isRead: boolean };
   id: string;
   localIssueId?: string;
   remoteIssueId?: string | null;

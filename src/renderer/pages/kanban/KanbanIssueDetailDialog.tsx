@@ -1,3 +1,5 @@
+import { resolveKanbanResultIdentity } from "../../../shared/kanban-result-read";
+import { useKanbanResultRead } from "./useKanbanResultRead";
 import { Children, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
@@ -86,6 +88,7 @@ type KanbanIssueDetailDialogProps = {
   onRun?: () => void;
   onBindHumanReferenceChat?: (chatId: string) => Promise<{ ok: boolean; message?: string }>;
   onUnbindHumanReferenceChat?: (issueChatId: string) => Promise<{ ok: boolean; message?: string }>;
+  onResultRead?: () => void;
   onFeedback: (tone: "success" | "error", message: string) => void;
   initialEditStatus?: KanbanStatus | null;
 };
@@ -515,6 +518,7 @@ export function KanbanIssueDetailDialog({
   onBindHumanReferenceChat,
   onUnbindHumanReferenceChat,
   onFeedback,
+  onResultRead,
   initialEditStatus = null
 }: KanbanIssueDetailDialogProps) {
   const debugMode = useDebugMode();
@@ -582,7 +586,8 @@ export function KanbanIssueDetailDialog({
   const comments = cloudDetails.issueComments.filter((comment) => comment.issueId === remoteId);
   const events = cloudDetails.recentEvents.filter((event) => event.issueId === remoteId).sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   const runs = issueRuns.length > 0 ? issueRuns.map((run) => {
-    const chat = run.issueChatId ? issueChatsById.get(run.issueChatId) : undefined;
+    const candidateChat = run.issueChatId ? issueChatsById.get(run.issueChatId) : undefined;
+    const chat = candidateChat?.deviceId === run.deviceId ? candidateChat : undefined;
     return {
       id: run.id,
       issueId: run.issueId,
@@ -608,9 +613,9 @@ export function KanbanIssueDetailDialog({
   })[0];
   const resultChatId = latestResultRun?.chatId || "";
   const resultRunId = latestResultRun?.runId || "";
-  const resultAvailableLocally = isCloud && Boolean(resultChatId)
+  const resultAvailableLocally = isCloud && Boolean(resultChatId) && Boolean(resultRunId)
     && Boolean(localDeviceId) && Boolean(latestResultRun && "deviceId" in latestResultRun && latestResultRun.deviceId === localDeviceId);
-  const resultKey = `${issue.id}:${latestResultRun?.id || ""}:${resultChatId}`;
+  const resultKey = JSON.stringify([issue.id, latestResultRun?.id || "", resultChatId, resultRunId, latestResultRun?.updatedAt || issue.updatedAt]);
   const resultUpdatedAt = latestResultRun?.updatedAt;
   useEffect(() => {
     if (!resultAvailableLocally || chatEmbedPath || initialChatPending) return;
@@ -626,6 +631,19 @@ export function KanbanIssueDetailDialog({
     });
     return () => { active = false; };
   }, [resultAvailableLocally, resultKey, resultChatId, resultRunId, resultUpdatedAt, chatEmbedPath, initialChatPending]);
+  const resultIdentity = resolveKanbanResultIdentity(issue, cloudDetails);
+  const resultContent = !isCloud ? issue.runResultMessage || "" : resultChatId
+    ? resultAvailableLocally && lastRunResult.key === resultKey && !lastRunResult.loading && !lastRunResult.failed ? lastRunResult.content : ""
+    : issue.runResultMessage || "";
+  const resultReadRef = useKanbanResultRead({
+    issueId: issue.id,
+    key: resultIdentity?.key || "",
+    scope: issue.resultRead?.scope || "",
+    ready: Boolean(resultIdentity && resultContent.trim() && !chatEmbedPath && !initialChatPending),
+    isRead: issue.resultRead?.key === resultIdentity?.key && issue.resultRead?.isRead === true,
+    onRead: onResultRead,
+    onError: () => onFeedback("error", t("kanban.detail.readFailed"))
+  });
   const statusTimeline = resolveKanbanStatusTimeline(issue, events, cloudDetails.workflowStatuses, {
     backlog: t("kanban.status.backlog"),
     todo: t("kanban.status.todo"),
@@ -981,13 +999,13 @@ export function KanbanIssueDetailDialog({
             </div>
 
             <DetailSection title={t("kanban.detail.runResultTitle")} icon={<RobotOutlined />}>
-              {!isCloud
-                ? <MarkdownPreview value={issue.runResultMessage || ""} emptyText={t("kanban.detail.noRunResult")} variant="description" t={t} />
-                : resultAvailableLocally && (lastRunResult.key !== resultKey || lastRunResult.loading)
-                ? <p role="status">{t("common.loading")}</p>
-                : lastRunResult.key === resultKey && lastRunResult.failed
-                  ? <p role="status">{t("kanban.detail.runResultLoadFailed")}</p>
-                  : <MarkdownPreview value={resultAvailableLocally && lastRunResult.key === resultKey ? lastRunResult.content : ""} emptyText={t("kanban.detail.noRunResult")} variant="description" t={t} />}
+              <div ref={resultReadRef}>
+                {resultAvailableLocally && (lastRunResult.key !== resultKey || lastRunResult.loading)
+                  ? <p role="status">{t("common.loading")}</p>
+                  : resultAvailableLocally && lastRunResult.key === resultKey && lastRunResult.failed
+                    ? <p role="status">{t("kanban.detail.runResultLoadFailed")}</p>
+                    : <MarkdownPreview value={resultContent} emptyText={t("kanban.detail.noRunResult")} variant="description" t={t} />}
+              </div>
             </DetailSection>
 
             <DetailSection title={t("kanban.detail.descriptionTitle")} icon={<FileTextOutlined />}>

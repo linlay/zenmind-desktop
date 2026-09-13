@@ -3765,3 +3765,13 @@
 .kanban-workflow-rollback-history article { padding: 10px 0; border-bottom: 1px solid var(--border-color, #8884); }
 .kanban-workflow-rollback-history small { display: block; margin-top: 4px; }
 .kanban-workflow-rollback-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.issue-card-unread {
+  display: inline-block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  margin-inline-start: 6px;
+  border-radius: 50%;
+  background: var(--color-primary, #1677ff);
+}

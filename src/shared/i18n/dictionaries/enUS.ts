@@ -2225,6 +2225,7 @@ export const enUSMessages = {
   "kanban.detail.copyFailed": "Could not copy",
   "kanban.detail.editIssue": "Edit issue",
   "kanban.detail.saving": "Saving",
+  "kanban.detail.readFailed": "Could not sync read status. The result remains unread; reopen it to retry.",
   "kanban.detail.runResultTitle": "Run result",
   "kanban.detail.noRunResult": "No run result yet",
   "kanban.detail.runResultLoadFailed": "Failed to load the run result. Reopen issue details to retry.",
