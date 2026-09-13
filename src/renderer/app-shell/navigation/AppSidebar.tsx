@@ -1,3 +1,4 @@
+import { SkinHeading } from "../../appearance/SkinVisual";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
 import { SortableNavEntries } from "./SortableNavEntries";
@@ -4842,7 +4843,7 @@ export function AppSidebar({
       children: [],
       headerLabel: (
         <span className="sidebar-link-label" tabIndex={-1}>
-          {item.label}
+          <SkinHeading group="chats">{item.label}</SkinHeading>
         </span>
       ),
       headerSupplement: sidebarGroupState.chats
@@ -5575,7 +5576,7 @@ export function AppSidebar({
         header={
           <span className="sidebar-group-heading-main">
             {args.headerLabel ?? (
-              <span className="sidebar-link-label">{args.label}</span>
+              <span className="sidebar-link-label"><SkinHeading group={args.groupId}>{args.label}</SkinHeading></span>
             )}
             <ArrowIcon
               className="sidebar-group-heading-arrow"

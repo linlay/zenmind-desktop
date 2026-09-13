@@ -69,6 +69,15 @@ const pixel = async () => {
   await guest('startAppearance()');
   await until(() => guest('window.appearance?.background.mode === "host"'));
   const oldEnvelope = await js('window.deliveries.filter(item => item.message?.snapshot).at(-1)');
+  assert.equal(await guest('window.__AGENT_WEBCLIENT_VISUALS__.version'), '1.1');
+  await guest('window.stopVisuals = window.__AGENT_WEBCLIENT_VISUALS__.subscribe(value => window.visualSnapshot = value); window.__AGENT_WEBCLIENT_VISUALS__.getSnapshot().then(value => window.visualSnapshot = value)');
+  await until(() => guest('!!window.visualSnapshot'));
+  assert.equal(await guest('JSON.stringify(window.visualSnapshot).includes("base64")'), false);
+  if (await guest('!!window.visualSnapshot.visuals.images["chat.send"]')) {
+    assert.match(await guest('window.__AGENT_WEBCLIENT_VISUALS__.getAsset(window.visualSnapshot.resourceSet,"chat.send")'), /^data:image\/png;base64,/);
+    assert.equal(await guest('window.__AGENT_WEBCLIENT_VISUALS__.getAsset("stale-resource-set","chat.send")'), null);
+  }
+
   for (const platform of ['mac', 'windows']) {
     for (const mode of ['light', 'dark']) {
       nativeTheme.themeSource = mode;
@@ -106,6 +115,11 @@ const pixel = async () => {
     await js('document.querySelector(".desktop-background-image").src = "/lake.png"');
     await js('window.useRealSkin = true; configure("mac", "light", true); navigateDemo(' + JSON.stringify(demo.href) + ')');
     await until(() => guest('!!window.__appearanceQA?.state && document.documentElement.dataset.pageBackground === "host"'));
+    if (await js('Boolean(window.deliveries.find(item => item.message?.snapshot?.visuals?.images?.["chat.send"]))')) {
+      await until(() => guest('!!document.querySelector("[data-testid=visual-send] img")?.naturalWidth'));
+      assert.match(await guest('document.querySelector("[data-testid=visual-send] img").src'), /^data:image\/png;base64,/);
+      console.log('PASS: actual WebClient VisualAppearance fetched and displayed the Desktop PNG through the isolated resource bridge');
+    }
     const demoIdentity = await guest('window.__appearanceQA.state.identity');
     const demoId = await js('document.querySelector("webview").getWebContentsId()');
     await guest(`Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(document.querySelector('textarea'), 'Desktop 联调草稿必须保留');

@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { readBoundedFile } from "./appearance-files";
 import { BackgroundImageError } from "./appearance-images";
-import { SKIN_PACKAGE_LIMITS as limits, SkinPackageError, validateSkinResourcePath, parseSkinPackageManifest } from "../../../shared/desktop-skin-package";
+import { SKIN_PACKAGE_LIMITS as limits, SkinPackageError, validateSkinResourcePath, parseSkinPackageManifest, skinPackageResources } from "../../../shared/desktop-skin-package";
 
 const invalid = () => new SkinPackageError("invalidPackage");
 // Check the central-directory count before JSZip creates its name map, so
@@ -98,7 +98,7 @@ export async function readSkinPackageArchive(filePath: string) {
     if (manifests.length !== 1) throw invalid();
     const root = manifests[0].slice(0, -"skin.json".length);
     const manifest = parseSkinPackageManifest(JSON.parse((await readEntry(files.get(manifests[0])!, limits.manifestBytes)).toString("utf8")));
-    const resources = new Set([manifest.preview, manifest.variants.light.background?.path, manifest.variants.dark.background?.path].filter((value): value is string => Boolean(value)));
+    const resources = new Set(skinPackageResources(manifest));
     const allowed = new Set([manifests[0], ...[...resources].map((name) => root + name)]);
     if ([...files.keys()].some((name) => !allowed.has(name))) throw invalid();
     const images = new Map<string, Buffer>();

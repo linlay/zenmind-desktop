@@ -65,7 +65,7 @@ export function readWebclientAppearanceProjection(
     if (parseAgentWebclientAppearanceTokens({ [key]: value })) values[key] = value;
   }
   return {
-    schemaVersion: 1, resolvedTheme: appearance.resolvedTheme,
+    schemaVersion: "1.1", resolvedTheme: appearance.resolvedTheme,
     skinId: appearance.skin.id, tokens: parseAgentWebclientAppearanceTokens(values) ?? {},
     background: { mode: hostBackground ? "host" : "opaque" }
   };

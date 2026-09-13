@@ -1,3 +1,4 @@
+import { SkinVisual } from "../../appearance/SkinVisual";
 import type { SVGProps } from "react";
 import type { SettingsSectionId } from "../../../shared/settings-sections";
 
@@ -24,7 +25,7 @@ function createIconProps(kind: SettingsSidebarIconKind, className?: string): SVG
   };
 }
 
-export function SettingsSidebarIcon({ kind, className }: SettingsSidebarIconProps) {
+function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProps) {
   const iconProps = createIconProps(kind, className);
 
   switch (kind) {
@@ -165,4 +166,8 @@ export function SettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
         </svg>
       );
   }
+}
+
+export function SettingsSidebarIcon(props: SettingsSidebarIconProps) {
+  return <SkinVisual slot={`navigation.${props.kind}`} className={createIconProps(props.kind, props.className).className}><DefaultSettingsSidebarIcon {...props} /></SkinVisual>;
 }

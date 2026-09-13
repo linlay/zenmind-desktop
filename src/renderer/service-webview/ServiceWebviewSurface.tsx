@@ -3309,6 +3309,10 @@ export function ServiceWebviewSurface({
     if (!target || service?.id !== "agent-webclient" || service.status !== "running" ||
       !bridgeReady || !serviceWebviewPreloadUrl) return;
     const host = createWebclientAppearanceHost({
+      readVisuals: () => {
+        const appearance = appearanceInputRef.current.appearance;
+        return appearance.skin.visuals?.[appearance.resolvedTheme];
+      },
       webview: target,
       isCurrentGuest: () => webviewRef.current === target,
       trustedUrl: () => webUrl,

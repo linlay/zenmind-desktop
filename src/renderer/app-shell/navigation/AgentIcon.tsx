@@ -1,3 +1,4 @@
+import { SkinVisual } from "../../appearance/SkinVisual";
 import { useEffect, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 import type { AssistantNavAgentIcon } from "../../../shared/contracts";
 import atlasIcon from "../../assets/agent-icons/atlas.svg";
@@ -148,7 +149,7 @@ function renderImageIcon(
   );
 }
 
-export function AgentIcon({
+function DefaultAgentIcon({
   icon,
   className,
   size = 32,
@@ -190,4 +191,11 @@ export function AgentIcon({
       />
     </svg>
   );
+}
+
+export function AgentIcon(props: AgentIconProps) {
+  // User-provided image URLs and team identities remain authoritative.
+  if ((typeof props.icon === "string" && isImageIcon(props.icon)) || props.type === "team") return <DefaultAgentIcon {...props} />;
+  const name = readIconName(props.icon) || "default";
+  return <SkinVisual slot={`agent.${name}`} className={props.className} style={{ width: props.size ?? 32, height: props.size ?? 32 }}><DefaultAgentIcon {...props} /></SkinVisual>;
 }

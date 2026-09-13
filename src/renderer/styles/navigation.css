@@ -2024,9 +2024,10 @@ div.sidebar-chats-group-popover {
   transform: scale(0.8);
   min-width: 18px;
   height: 18px;
-  border-radius: 10px;
-  background: #1677ff;
-  color: #fff;
+  border-radius: var(--skin-badge-radius, 10px);
+  padding-inline: var(--skin-badge-padding, 0px);
+  background: var(--skin-unread, #1677ff);
+  color: var(--skin-unread-text, #fff);
   font-size: 12px;
   line-height: 18px;
   text-align: center;
@@ -2465,9 +2466,9 @@ div.sidebar-chats-group-popover {
 .chat-awaiting-status {
   flex: none;
   font-size: 10px;
-  color: #b45309;
+  color: var(--skin-pending-text, #b45309);
   white-space: nowrap;
-  background: rgba(245, 158, 11, 0.12);
+  background: var(--skin-pending, rgba(245, 158, 11, 0.12));
   border-radius: 20px;
   padding: 2px 6px;
   line-height: 1.4;
@@ -2512,7 +2513,7 @@ div.sidebar-chats-group-popover {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #1677ff;
+  background: var(--skin-unread, #1677ff);
   opacity: 0;
   margin: 0 4px 0 0;
 }
@@ -3681,13 +3682,13 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-status-badge.is-pending {
-  color: #8a3d00;
-  background: rgba(245, 158, 11, 0.2);
+  color: var(--skin-pending-text, #8a3d00);
+  background: var(--skin-pending, rgba(245, 158, 11, 0.2));
 }
 
 .sidebar-status-badge.is-unread {
-  color: #ffffff;
-  background: #1677ff;
+  color: var(--skin-unread-text, #ffffff);
+  background: var(--skin-unread, #1677ff);
 }
 
 .sidebar-footer {
@@ -4170,13 +4171,13 @@ div.sidebar-chats-group-popover {
 }
 
 :root[data-theme="dark"] .sidebar-status-badge.is-pending {
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.24);
+  color: var(--skin-pending-text, #fde68a);
+  background: var(--skin-pending, rgba(245, 158, 11, 0.24));
 }
 
 :root[data-theme="dark"] .chat-awaiting-status {
-  color: #facc15;
-  background: rgba(180, 83, 9, 0.24);
+  color: var(--skin-pending-text, #facc15);
+  background: var(--skin-pending, rgba(180, 83, 9, 0.24));
 }
 
 :root[data-theme="dark"] .chat-awaiting-status+.sidebar-assistant-preview-loading,
@@ -5938,3 +5939,5 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-sortable-nav-entry.is-dragging { opacity: 0.45; }
+
+.sidebar-status-badge { border-radius: var(--skin-badge-radius, 999px); padding-inline: var(--skin-badge-padding, 0px); }

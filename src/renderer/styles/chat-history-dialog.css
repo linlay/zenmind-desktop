@@ -412,7 +412,8 @@
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--skin-unread, var(--accent));
+  clip-path: var(--skin-unread-clip, none);
 }
 
 .chat-history-dialog-row-actions {

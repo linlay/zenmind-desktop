@@ -1,3 +1,4 @@
+import { skinVisualStyleVariables } from "../../shared/contracts/agent-webclient-bridge";
 import { createContext, useContext, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createBrowserAppearanceController, skinPackageApiAvailable } from "./browser";
 import { ConfigProvider, type ThemeConfig } from "antd";
@@ -15,6 +16,13 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     setComponentTheme(readDocumentAntAppearanceTheme(snapshot.resolvedTheme));
   }, [snapshot.resolvedTheme, snapshot.skin]);
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const values = skinVisualStyleVariables(snapshot.skin.visuals?.[snapshot.resolvedTheme]?.styles ?? {});
+    const previous = Object.fromEntries(Object.keys(values).map(key => [key, root.style.getPropertyValue(key)]));
+    for (const [key, value] of Object.entries(values)) root.style.setProperty(key, value);
+    return () => { for (const [key, value] of Object.entries(previous)) { if (value) root.style.setProperty(key, value); else root.style.removeProperty(key); } };
+  }, [snapshot.skin, snapshot.resolvedTheme]);
   return (
     <AppearanceContext.Provider value={controller}>
       <ConfigProvider theme={componentTheme}>{children}</ConfigProvider>
@@ -38,4 +46,11 @@ export function useAppearance() {
     resetBackground: controller.resetBackground,
     refreshAppearanceFromCanonical: controller.refreshFromCanonical
   };
+}
+
+const emptySubscribe = () => () => {};
+const emptySnapshot = () => null;
+export function useOptionalAppearance() {
+  const controller = useContext(AppearanceContext);
+  return useSyncExternalStore(controller?.subscribe ?? emptySubscribe, controller?.getSnapshot ?? emptySnapshot);
 }

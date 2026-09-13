@@ -1,3 +1,5 @@
+import { createVisualsHost } from "./visualsHost";
+import type { SkinVisuals } from "../../shared/contracts/agent-webclient-bridge";
 import {
   AGENT_WEBCLIENT_APPEARANCE_REQUEST_CHANNEL,
   AGENT_WEBCLIENT_APPEARANCE_SNAPSHOT_CHANNEL,
@@ -10,6 +12,7 @@ type Options = {
   webview: AppearanceWebview;
   isCurrentGuest(): boolean;
   trustedUrl(): string;
+  readVisuals?(): SkinVisuals | undefined;
   read(): Omit<AgentWebclientAppearanceSnapshot, "revision">;
   onNegotiated(theme: "light" | "dark" | null): void;
   onBackground(host: boolean): void;
@@ -30,6 +33,7 @@ export function createWebclientAppearanceHost(options: Options) {
         expected.origin === actual.origin && (origin === undefined || origin === actual.origin);
     } catch { return false; }
   }
+  const visuals = options.readVisuals ? createVisualsHost(options.webview, trusted, options.readVisuals, () => ++sequence.revision) : undefined;
   function send(snapshot: AgentWebclientAppearanceSnapshot | null) {
     if (!documentId || !trusted()) return;
     try {
@@ -37,6 +41,7 @@ export function createWebclientAppearanceHost(options: Options) {
     } catch { /* Early requests are delivered again at dom-ready. */ }
   }
   function refresh() {
+    visuals?.refresh();
     if (!trusted()) return;
     if (!documentId) {
       try { options.webview.send(AGENT_WEBCLIENT_APPEARANCE_REQUEST_CHANNEL); } catch { /* Retry at dom-ready. */ }
@@ -55,6 +60,7 @@ export function createWebclientAppearanceHost(options: Options) {
     send(snapshot);
   }
   function reset() {
+    visuals?.reset();
     documentId = "";
     negotiated = false;
     options.onNegotiated(null);
@@ -66,7 +72,7 @@ export function createWebclientAppearanceHost(options: Options) {
     const value = message.args?.[0];
     if (!value || typeof value !== "object") return;
     const envelope = value as Record<string, unknown>;
-    if (envelope.version !== 1 || typeof envelope.origin !== "string" || typeof envelope.documentId !== "string" ||
+    if (envelope.version !== "1.1" || typeof envelope.origin !== "string" || typeof envelope.documentId !== "string" ||
       !/^[a-f\d-]{36}$/i.test(envelope.documentId) || !trusted(envelope.origin)) return;
     if (envelope.documentId !== documentId) {
       documentId = envelope.documentId;
@@ -86,6 +92,7 @@ export function createWebclientAppearanceHost(options: Options) {
   return {
     refresh,
     dispose() {
+      visuals?.dispose();
       send(null);
       disposed = true;
       options.webview.removeEventListener("ipc-message", request);
