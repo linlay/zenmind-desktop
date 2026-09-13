@@ -38,6 +38,13 @@ export type AwcpActionResponse =
       error: { code: string; message: string; details?: unknown };
     };
 
+export type AwcpSnapshotResponse = {
+  ok: true;
+  method: "AWCP.getSnapshot";
+  revision: string;
+  actions: AwcpActionDescriptor[];
+};
+
 type AwcpActionDescriptor = {
   action: string;
   description: string;
@@ -86,6 +93,23 @@ export class AwcpGuestBridge {
 
   constructor(private readonly browserSurfaces: Pick<BrowserSurfaceRegistry, "findWebContentsById">) {}
 
+  async snapshot(
+    requestId: string,
+    scope: SiteControlScope,
+    signal?: AbortSignal,
+  ): Promise<AwcpSnapshotResponse> {
+    assertToken("requestId", requestId, AWCP_LIMITS.maxRequestIdLength);
+    return this.withGuest(requestId, scope, signal, false, async (guest, lifecycleFailure) => {
+      const snapshot = await this.readValidatedSnapshot(guest, lifecycleFailure);
+      return {
+        ok: true,
+        method: "AWCP.getSnapshot",
+        revision: snapshot.revision,
+        actions: snapshot.actions,
+      };
+    });
+  }
+
   async invoke(
     requestId: string,
     input: unknown,
@@ -93,69 +117,8 @@ export class AwcpGuestBridge {
     signal?: AbortSignal,
   ): Promise<AwcpActionResponse> {
     const payload = validateInvokePayload(requestId, input);
-    if (this.active.has(requestId)) {
-      throw awcpHostError("awcp_duplicate_request", "AWCP request id is already active.");
-    }
-
-    const surface = scope.readSurface();
-    const tab = surface.tabs?.find((candidate) => candidate.tabId === surface.activeTabId);
-    if (!tab) throw awcpHostError("awcp_target_unavailable", "The authorized page has no active tab.");
-    scope.validateTab(tab);
-    const guest = this.browserSurfaces.findWebContentsById(tab.webContentsId);
-    if (!guest || guest.isDestroyed()) {
-      throw awcpHostError("awcp_target_unavailable", "The authorized page guest is unavailable.");
-    }
-
-    let rejectLifecycle!: (error: Error) => void;
-    let lifecycleFailed = false;
-    const lifecycleFailure = new Promise<never>((_resolve, reject) => { rejectLifecycle = reject; });
-    void lifecycleFailure.catch(() => undefined);
-    const failLifecycle = (error: Error) => {
-      if (lifecycleFailed) return;
-      lifecycleFailed = true;
-      void cancelGuest(guest, requestId);
-      rejectLifecycle(error);
-    };
-    const active: ActiveInvocation = { guest, cancel: failLifecycle };
-    this.active.set(requestId, active);
-
-    const onDestroyed = () => failLifecycle(awcpHostError(
-      "awcp_target_unavailable",
-      "The authorized page guest closed during the AWCP invocation.",
-    ));
-    const onNavigation = (...eventArgs: unknown[]) => {
-      if (eventArgs[3] === true) {
-        failLifecycle(awcpHostError(
-          "awcp_navigation_interrupted",
-          "The authorized page navigated during the AWCP invocation.",
-        ));
-      }
-    };
-    const onAbort = () => failLifecycle(awcpHostError("awcp_cancelled", "The AWCP invocation was cancelled."));
-    const unsubscribeScope = scope.onRelease(() => failLifecycle(awcpHostError(
-      "site_control_unavailable",
-      "The page control capability ended during the AWCP invocation.",
-    )));
-    guest.once("destroyed", onDestroyed);
-    guest.once("render-process-gone", onDestroyed);
-    guest.on("did-start-navigation", onNavigation);
-    signal?.addEventListener("abort", onAbort, { once: true });
-
-    try {
-      if (signal?.aborted) onAbort();
-      const protocolVersion = await Promise.race([
-        guest.executeJavaScript("globalThis.awcp?.protocolVersion ?? null", true),
-        lifecycleFailure,
-      ]);
-      if (protocolVersion !== AWCP_PROTOCOL_VERSION) {
-        throw awcpHostError("awcp_protocol_unavailable", "The authorized page does not expose AWCP protocol version 1.");
-      }
-
-      const snapshotValue = await Promise.race([
-        guest.executeJavaScript("globalThis.awcp.snapshot()", true),
-        lifecycleFailure,
-      ]);
-      const snapshot = validateActionSnapshot(snapshotValue);
+    return this.withGuest(requestId, scope, signal, true, async (guest, lifecycleFailure) => {
+      const snapshot = await this.readValidatedSnapshot(guest, lifecycleFailure);
       if (snapshot.revision !== payload.revision) {
         return awcpBusinessFailure(requestId, payload.action, "stale_snapshot", "The AWCP snapshot is stale.");
       }
@@ -195,9 +158,102 @@ export class AwcpGuestBridge {
         }
       }
       return response;
+    });
+  }
+
+  private async readValidatedSnapshot(
+    guest: WebContents,
+    lifecycleFailure: Promise<never>,
+  ): Promise<AwcpActionSnapshot> {
+    const protocolVersion = await Promise.race([
+      guest.executeJavaScript("globalThis.awcp?.protocolVersion ?? null", true),
+      lifecycleFailure,
+    ]);
+    if (protocolVersion !== AWCP_PROTOCOL_VERSION) {
+      throw awcpHostError("awcp_protocol_unavailable", "The authorized page does not expose AWCP protocol version 1.");
+    }
+    const snapshotValue = await Promise.race([
+      guest.executeJavaScript("globalThis.awcp.snapshot()", true),
+      lifecycleFailure,
+    ]);
+    const snapshot = validateActionSnapshot(snapshotValue);
+    return JSON.parse(JSON.stringify(snapshot)) as AwcpActionSnapshot;
+  }
+
+  private async withGuest<T>(
+    requestId: string,
+    scope: SiteControlScope,
+    signal: AbortSignal | undefined,
+    cancelPageInvocation: boolean,
+    execute: (guest: WebContents, lifecycleFailure: Promise<never>) => Promise<T>,
+  ): Promise<T> {
+    if (this.active.has(requestId)) {
+      throw awcpHostError("awcp_duplicate_request", "AWCP request id is already active.");
+    }
+    const surface = scope.readSurface();
+    const tab = surface.tabs?.find((candidate) => candidate.tabId === surface.activeTabId);
+    if (!tab) throw awcpHostError("awcp_target_unavailable", "The authorized page has no active tab.");
+    scope.validateTab(tab);
+    const guest = this.browserSurfaces.findWebContentsById(tab.webContentsId);
+    if (!guest || guest.isDestroyed()) {
+      throw awcpHostError("awcp_target_unavailable", "The authorized page guest is unavailable.");
+    }
+
+    let rejectLifecycle!: (error: Error) => void;
+    let lifecycleFailed = false;
+    const lifecycleFailure = new Promise<never>((_resolve, reject) => { rejectLifecycle = reject; });
+    void lifecycleFailure.catch(() => undefined);
+    const failLifecycle = (error: Error) => {
+      if (lifecycleFailed) return;
+      lifecycleFailed = true;
+      if (cancelPageInvocation) void cancelGuest(guest, requestId);
+      rejectLifecycle(error);
+    };
+    const active: ActiveInvocation = { guest, cancel: failLifecycle };
+    this.active.set(requestId, active);
+
+    const onDestroyed = () => failLifecycle(awcpHostError(
+      "awcp_target_unavailable",
+      cancelPageInvocation
+        ? "The authorized page guest closed during the AWCP invocation."
+        : "The authorized page guest closed during the AWCP snapshot request.",
+    ));
+    const onNavigation = (...eventArgs: unknown[]) => {
+      if (eventArgs[3] === true) {
+        failLifecycle(awcpHostError(
+          "awcp_navigation_interrupted",
+          cancelPageInvocation
+            ? "The authorized page navigated during the AWCP invocation."
+            : "The authorized page navigated during the AWCP snapshot request.",
+        ));
+      }
+    };
+    const onAbort = () => failLifecycle(awcpHostError(
+      "awcp_cancelled",
+      cancelPageInvocation ? "The AWCP invocation was cancelled." : "The AWCP snapshot request was cancelled.",
+    ));
+    const unsubscribeScope = scope.onRelease(() => failLifecycle(awcpHostError(
+      "site_control_unavailable",
+      cancelPageInvocation
+        ? "The page control capability ended during the AWCP invocation."
+        : "The page control capability ended during the AWCP snapshot request.",
+    )));
+    guest.once("destroyed", onDestroyed);
+    guest.once("render-process-gone", onDestroyed);
+    guest.on("did-start-navigation", onNavigation);
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      if (signal?.aborted) onAbort();
+      return await execute(guest, lifecycleFailure);
     } catch (error) {
       if (isAwcpHostError(error)) throw error;
-      throw awcpHostError("awcp_transport_failed", "The authorized page AWCP invocation failed.");
+      throw awcpHostError(
+        "awcp_transport_failed",
+        cancelPageInvocation
+          ? "The authorized page AWCP invocation failed."
+          : "The authorized page AWCP snapshot request failed.",
+      );
     } finally {
       if (this.active.get(requestId) === active) this.active.delete(requestId);
       signal?.removeEventListener("abort", onAbort);
