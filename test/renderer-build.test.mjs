@@ -7610,7 +7610,7 @@ test("assistant dock supports a persistent accessible width resizer and narrow o
   assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?width:\s*min\(var\(--assistant-dock-embedded-width\),\s*calc\(100% - 16px\)\);[\s\S]*?max-width:\s*640px;/u);
   assert.match(globalStyles, /@media \(max-width:\s*1080px\)[\s\S]*?\.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?max-width:\s*640px;/u);
   assert.match(globalStyles, /\.copilot-dock-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/u);
-  assert.match(globalStyles, /\.copilot-dock-close-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*8px;[\s\S]*?right:\s*8px;/u);
+  assert.match(globalStyles, /\.copilot-dock-close-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*11px;[\s\S]*?right:\s*11px;/u);
   assert.match(globalStyles, /\.copilot-dock-resize-overlay/u);
 });
 
