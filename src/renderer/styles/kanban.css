@@ -1,5 +1,5 @@
 .kanban-page {
-  --kanban-bg: color-mix(in srgb, var(--bg-base, #ffffff) 82%, #eef3fa);
+  --kanban-bg: var(--bg-base, #ffffff);
   --issue-card: var(--surface-strong, #ffffff);
   --issue-card-border: var(--line, rgba(15, 23, 42, 0.1));
   --issue-card-tag-bg: color-mix(in srgb, var(--kanban-muted) 8%, var(--issue-card));
@@ -13,7 +13,7 @@
   --kanban-border: var(--line, rgba(15, 23, 42, 0.08));
   --kanban-accent: var(--accent, #2663eb);
   --kanban-accent-soft: var(--accent-soft, #e8f0ff);
-  --kanban-column-tint: #F3F4F6;
+  --kanban-column-tint: color-mix(in srgb, var(--bg-base) 96%, var(--ink) 4%);
   --kanban-column-border: var(--line, rgba(148, 163, 184, 0.22));
   --kanban-status-backlog: #86909c;
   --kanban-status-todo: #facc15;
@@ -50,10 +50,7 @@
 }
 
 :root[data-theme="dark"] .kanban-page {
-  --kanban-bg: #111418;
-  background:
-    linear-gradient(180deg, #121316 0%, #0d0e10 44%, var(--kanban-bg) 100%);
-  --issue-card: #181818;
+  --issue-card: var(--surface-strong);
   --issue-card-border: rgba(255, 255, 255, 0.08);
   --issue-card-tag-bg: rgba(255, 255, 255, 0.04);
   --issue-card-tag-border: rgba(255, 255, 255, 0.08);
@@ -65,9 +62,9 @@
   --issue-card-stage-border: rgba(79, 136, 255, 0.18);
   --issue-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 1px 3px rgba(0, 0, 0, 0.2);
   --issue-card-shadow-hover: 0 10px 24px -8px rgba(0, 0, 0, 0.45), 0 4px 8px -4px rgba(0, 0, 0, 0.3);
-  --kanban-ink: #f2f3f5;
-  --kanban-muted: #86909c;
-  --kanban-border: rgba(255, 255, 255, 0.08);
+  --kanban-ink: var(--ink);
+  --kanban-muted: var(--ink-muted);
+  --kanban-border: var(--line);
   --kanban-status-backlog: #86909c;
   --kanban-status-todo: #fde047;
   --kanban-status-progress: #4f88ff;
@@ -99,14 +96,14 @@
   padding: 10px 8px;
   overflow: visible;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--surface-strong);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72) inset;
   backdrop-filter: blur(18px) saturate(150%);
   -webkit-backdrop-filter: blur(18px) saturate(150%);
 }
 
 :root[data-theme="dark"] .kanban-toolbar {
-  background: #181818;
+  background: var(--surface-strong);
   border-bottom-color: rgba(148, 163, 184, 0.14);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
@@ -1060,7 +1057,7 @@
 }
 
 :root[data-theme="dark"] .kanban-column {
-  background: #212121;
+  background: var(--kanban-column-tint);
   box-shadow: none;
 }
 
@@ -1375,11 +1372,11 @@
   z-index: 120;
   pointer-events: none;
   will-change: transform;
-  --issue-card: #ffffff;
+  --issue-card: var(--surface-strong);
   --issue-card-border: rgba(15, 23, 42, 0.1);
-  --kanban-ink: #1e2022;
-  --kanban-muted: #94a3b8;
-  --kanban-border: rgba(15, 23, 42, 0.08);
+  --kanban-ink: var(--ink);
+  --kanban-muted: var(--ink-muted);
+  --kanban-border: var(--line);
   --kanban-accent: var(--accent, #2663eb);
   --kanban-accent-soft: #eef5ff;
   --issue-card-tag-bg: color-mix(in srgb, var(--kanban-muted) 8%, var(--issue-card));
@@ -1391,11 +1388,11 @@
 }
 
 :root[data-theme="dark"] .kanban-drag-overlay {
-  --issue-card: #181818;
+  --issue-card: var(--surface-strong);
   --issue-card-border: rgba(255, 255, 255, 0.08);
-  --kanban-ink: #f2f3f5;
-  --kanban-muted: #86909c;
-  --kanban-border: rgba(255, 255, 255, 0.08);
+  --kanban-ink: var(--ink);
+  --kanban-muted: var(--ink-muted);
+  --kanban-border: var(--line);
   --kanban-accent: var(--accent, #4f88ff);
   --kanban-accent-soft: rgba(79, 136, 255, 0.12);
   --issue-card-tag-bg: rgba(255, 255, 255, 0.04);
@@ -3026,8 +3023,8 @@
 
 /* Issue Detail v2 is rendered through a portal, so all tokens stay scoped here. */
 .kanban-detail-layer {
-  --detail-bg: #fafbfc;
-  --detail-surface: #ffffff;
+  --detail-bg: var(--desktop-overlay-panel-bg);
+  --detail-surface: var(--desktop-overlay-panel-bg);
   --detail-surface-soft: #f7f9fc;
   --detail-surface-muted: #f1f4f8;
   --detail-ink: #1f2329;
@@ -3053,8 +3050,8 @@
 }
 
 :root[data-theme="dark"] .kanban-detail-layer {
-  --detail-bg: #2D2D2D;
-  --detail-surface: #2D2D2D;
+  --detail-bg: var(--desktop-overlay-panel-bg);
+  --detail-surface: var(--desktop-overlay-panel-bg);
   --detail-surface-soft: #1d2127;
   --detail-surface-muted: #232830;
   --detail-ink: #f2f3f5;
