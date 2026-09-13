@@ -18,6 +18,8 @@ import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanCloudMutationOutboxItem
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
 import { buildLocalIssue, insertOrReplaceIssue, insertOrReplaceProject, insertOrReplaceProjectBinding, parseCloudProject, parseCloudProjectBinding, readDesktopKanbanRevision, selectIssues, selectProjectBindings, selectProjects, writeDesktopKanbanRevision, writeDesktopKanbanSyncCursorInDb } from "./local-store.part-3";
 
+type LocalRunDetails = Partial<Pick<KanbanIssue, "runResultMessage" | "runStartedAt" | "runFinishedAt">>;
+
 export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): KanbanIssue | null {
   const nextIssue: KanbanIssue = {
     ...issue,
@@ -60,6 +62,16 @@ export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInp
   if (input.runId !== undefined) {
     nextIssue.runId = nullableTrimmedText(input.runId);
     nextIssue.activeRunId = nextIssue.runId;
+    if (nextIssue.syncMode !== "cloud" && nextIssue.runId) {
+      if (nextIssue.lastRunId !== nextIssue.runId) {
+        nextIssue.runResultMessage = null;
+        nextIssue.runErrorMessage = null;
+        nextIssue.runStartedAt = null;
+        nextIssue.runFinishedAt = null;
+      }
+      nextIssue.lastRunId = nextIssue.runId;
+      nextIssue.lastRunChatId = nextIssue.chatId;
+    }
   }
   if (input.runState !== undefined) {
     nextIssue.runState = normalizeKanbanRunState(input.runState);
@@ -188,7 +200,8 @@ export function updateDesktopKanbanIssueByPredicate(
   currentUser: KanbanCurrentUser,
   predicate: (issue: KanbanIssue) => boolean,
   input: KanbanIssueUpdateInput,
-  missingMessage: string
+  missingMessage: string,
+  runDetails: LocalRunDetails = {}
 ): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issues = selectIssues(db, currentUser);
@@ -203,6 +216,7 @@ export function updateDesktopKanbanIssueByPredicate(
     if (!nextIssue) {
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues };
     }
+    if (nextIssue.syncMode !== "cloud") Object.assign(nextIssue, runDetails);
     insertOrReplaceIssue(db, nextIssue, {
       syncMode: nextIssue.syncMode ?? "local",
       syncState: nextIssue.syncMode === "cloud" ? "synced" : "local",
@@ -220,14 +234,16 @@ export function updateDesktopKanbanIssueRuntimeState(
   app: AppPathProvider,
   currentUser: KanbanCurrentUser,
   issueId: string,
-  input: Pick<KanbanIssueUpdateInput, "status" | "chatId" | "runId" | "runState">
+  input: Pick<KanbanIssueUpdateInput, "status" | "chatId" | "runId" | "runState">,
+  runDetails: LocalRunDetails = {}
 ): KanbanIssueResult {
   return updateDesktopKanbanIssueByPredicate(
     app,
     currentUser,
     (issue) => issue.id === issueId,
     input,
-    t("kanban.runtime.missing")
+    t("kanban.runtime.missing"),
+    runDetails
   );
 }
 

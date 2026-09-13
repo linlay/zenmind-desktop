@@ -555,6 +555,11 @@ export class AssistantNavigationStatusClient {
       runId: toText(event.runId) || null,
       status: toText(event.status) || null,
       finishReason: toText(event.finishReason) || null,
+      ...(protocolType === "chat.updated" ? {
+        lastRunId: toText(event.lastRunId),
+        ...(typeof event.lastRunContent === "string" ? { lastRunContent: event.lastRunContent } : {}),
+        ...(semanticTime !== undefined ? { updatedAt: semanticTime } : {})
+      } : {}),
       ...(protocolType === "run.started" && semanticTime !== undefined
         ? { startedAt: semanticTime }
         : {}),

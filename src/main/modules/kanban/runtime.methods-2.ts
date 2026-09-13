@@ -252,6 +252,20 @@ export async function KanbanRuntime_recoverPendingManualRuns_7(self: KanbanRunti
 
 export function KanbanRuntime_sendNavigationPushEvent_8(self: KanbanRuntimeMethodContext, event: AssistantNavigationPushEvent) {
     self.refreshConnection();
+    if (event.frame === "push" && event.type === "chat.updated") {
+        const lastRunId = event.lastRunId?.trim();
+        const chatId = event.chatId?.trim();
+        if (!lastRunId || !chatId || typeof event.lastRunContent !== "string"
+            || !isAgentPlatformEpochMilliseconds(event.updatedAt)) return;
+        const currentUser = self.currentUser();
+        const issue = listDesktopKanbanIssues(self.options.app, currentUser, self.connectionState).issues.find((candidate) =>
+            issueSyncMode(candidate) !== "cloud" && candidate.lastRunId === lastRunId && candidate.lastRunChatId === chatId);
+        const content = event.lastRunContent.trim() || null;
+        if (!issue || issue.runResultMessage === content) return;
+        const result = updateDesktopKanbanIssueRuntimeState(self.options.app, currentUser, issue.id, {}, { runResultMessage: content });
+        if (result.ok) self.notifyChanged();
+        return;
+    }
     const runId = event.runId?.trim() ?? "";
     const semanticTime = event.type === "run.started" ? event.startedAt : event.finishedAt;
     if (event.frame !== "push" ||
@@ -273,7 +287,7 @@ export function KanbanRuntime_sendNavigationPushEvent_8(self: KanbanRuntimeMetho
             chatId: event.chatId || matchingLocalIssue.chatId,
             runId,
             runState: "running",
-        });
+        }, { runStartedAt: new Date(event.startedAt!).toISOString() });
         if (result.ok) {
             self.notifyChanged();
         }
@@ -291,7 +305,7 @@ export function KanbanRuntime_sendNavigationPushEvent_8(self: KanbanRuntimeMetho
             chatId: event.chatId || matchingLocalIssue.chatId,
             runId: null,
             runState: terminal.runState,
-        });
+        }, { runFinishedAt: new Date(event.finishedAt!).toISOString() });
         if (result.ok) {
             self.notifyChanged();
         }

@@ -63,15 +63,16 @@ export function resolveKanbanIssueRuns(issue: KanbanIssue, events: KanbanRecentE
     });
   }
 
-  const issueRunId = textValue(issue.runId) || textValue(issue.activeRunId);
+  const issueRunId = textValue(issue.runId) || textValue(issue.activeRunId) || textValue(issue.lastRunId);
+  const issueChatId = issue.runId || issue.activeRunId ? issue.chatId : issue.lastRunChatId || issue.chatId;
   const issueStatus = normalizeRunState(issue.runState);
   if (issueRunId || issue.chatId || issueStatus) {
-    const key = runKey(issueRunId, issue.chatId, `issue-${issue.id}`);
+    const key = runKey(issueRunId, issueChatId, `issue-${issue.id}`);
     const previous = runs.get(key);
     runs.set(key, {
       id: previous?.id || key,
       runId: issueRunId || previous?.runId || null,
-      chatId: issue.chatId || previous?.chatId || null,
+      chatId: issueChatId || previous?.chatId || null,
       status: issueStatus || previous?.status || null,
       workerAgent: issue.runAgentKey || issue.workerAgent || previous?.workerAgent || null,
       startedAt: issue.runStartedAt || previous?.startedAt || null,

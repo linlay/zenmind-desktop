@@ -608,8 +608,8 @@ export function KanbanIssueDetailDialog({
   })[0];
   const resultChatId = latestResultRun?.chatId || "";
   const resultRunId = latestResultRun?.runId || "";
-  const resultAvailableLocally = Boolean(resultChatId) && (!isCloud
-    || (Boolean(localDeviceId) && latestResultRun && "deviceId" in latestResultRun && latestResultRun.deviceId === localDeviceId));
+  const resultAvailableLocally = isCloud && Boolean(resultChatId)
+    && Boolean(localDeviceId) && Boolean(latestResultRun && "deviceId" in latestResultRun && latestResultRun.deviceId === localDeviceId);
   const resultKey = `${issue.id}:${latestResultRun?.id || ""}:${resultChatId}`;
   const resultUpdatedAt = latestResultRun?.updatedAt;
   useEffect(() => {
@@ -981,7 +981,9 @@ export function KanbanIssueDetailDialog({
             </div>
 
             <DetailSection title={t("kanban.detail.runResultTitle")} icon={<RobotOutlined />}>
-              {resultAvailableLocally && (lastRunResult.key !== resultKey || lastRunResult.loading)
+              {!isCloud
+                ? <MarkdownPreview value={issue.runResultMessage || ""} emptyText={t("kanban.detail.noRunResult")} variant="description" t={t} />
+                : resultAvailableLocally && (lastRunResult.key !== resultKey || lastRunResult.loading)
                 ? <p role="status">{t("common.loading")}</p>
                 : lastRunResult.key === resultKey && lastRunResult.failed
                   ? <p role="status">{t("kanban.detail.runResultLoadFailed")}</p>

@@ -5,10 +5,22 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const source = fs.readFileSync("src/renderer/pages/kanban/issueDetailHistory.ts", "utf8");
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 vm.runInNewContext(compiled, { module, exports: module.exports });
 const { resolveCurrentKanbanRunChat: resolve } = module.exports;
+
+test("completed local history uses its saved run and chat without reopening a live observer", () => {
+  const local = { id: "local", syncMode: "local", runId: null, activeRunId: null, chatId: null,
+    lastRunId: "finished-run", lastRunChatId: "finished-chat", runState: "completed",
+    runResultMessage: "Saved result", updatedAt: "2026-09-13T05:12:47.329Z" };
+  const runs = module.exports.resolveKanbanIssueRuns(local, []);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].runId, "finished-run");
+  assert.equal(runs[0].chatId, "finished-chat");
+  assert.equal(runs[0].resultMessage, "Saved result");
+  assert.equal(resolve(local, {}, ""), null);
+});
 const issue = { id: "local-cache", remoteIssueId: "issue", syncMode: "cloud", stageId: "stage", activeIssueRunId: "run" };
 const run = { id: "run", issueId: "issue", stageId: "stage", workerRole: "run", state: "running", deviceId: "device", issueChatId: "binding" };
 const chat = { id: "binding", issueId: "issue", stageId: "stage", purpose: "run", state: "active", deviceId: "device", chatId: "chat", agentKey: "agent" };

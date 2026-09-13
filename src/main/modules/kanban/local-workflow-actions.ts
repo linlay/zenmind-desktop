@@ -41,6 +41,7 @@ export function applyLocalWorkflowAction(
   return {
     ...issue, updatedAt, stageId: target.id, stageKey: target.id, stageName: target.name, status: "todo",
     chatId: null, runId: null, activeRunId: null, runState: null,
+    lastRunId: null, lastRunChatId: null,
     runAgentKey: null, runCommandId: null, runStartedAt: null, runFinishedAt: null, runResultMessage: null, runErrorMessage: null,
     localWorkflowRollbacks: [...(issue.localWorkflowRollbacks ?? []), {
       id: randomUUID(), fromStageId: stage.id, fromStageName: stage.name, fromStatus: issue.status,

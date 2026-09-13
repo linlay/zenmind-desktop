@@ -160,6 +160,8 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(history, /event\.payload\?\.summary/);
   assert.match(detail, /function DetailProperty[\s\S]{0,1600}kanban-detail-property-editor[\s\S]{0,300}kanban-detail-property-value/);
   assert.match(content, /kanban-detail-issue-heading[\s\S]*kanban\.detail\.runResultTitle[\s\S]*kanban\.detail\.descriptionTitle[\s\S]*kanban\.detail\.attachmentsTitle[\s\S]*kanban\.detail\.commentsTitle/);
+  assert.match(content, /!isCloud\s*\? <MarkdownPreview value=\{issue\.runResultMessage \|\| ""\}/);
+  assert.match(detail, /const resultAvailableLocally = isCloud && Boolean\(resultChatId\)/);
   assert.match(header, /kanban-detail-breadcrumb[\s\S]*kanban\.detail\.cloudOrigin/);
   assert.doesNotMatch(header, /kanban-detail-kicker|DETAIL_STATUS_LABELS|DETAIL_PRIORITY_LABELS|kanban\.detail\.localOrigin/);
   assert.match(detail, /```mermaid/);

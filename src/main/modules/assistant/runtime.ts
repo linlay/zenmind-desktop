@@ -182,7 +182,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       realtimeBroker: options.realtimeBroker,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
       onPushEvent: (event) => {
-        if (event.type === "run.started" || event.type === "run.finished") {
+        if (event.type === "run.started" || event.type === "run.finished" || event.type === "chat.updated") {
           kanbanRuntime?.sendNavigationPushEvent(event);
         }
         options.emitAssistantNavigationPushEvent(event);

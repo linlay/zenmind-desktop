@@ -367,6 +367,8 @@ export function buildIssueDetailJson(issue: KanbanIssue) {
     runStartedAt: issue.runStartedAt ?? null,
     runFinishedAt: issue.runFinishedAt ?? null,
     runResultMessage: issue.runResultMessage ?? null,
+    lastRunId: issue.lastRunId ?? null,
+    lastRunChatId: issue.lastRunChatId ?? null,
     runErrorMessage: issue.runErrorMessage ?? null,
     createdBy: issue.createdBy ?? null,
     updatedBy: issue.updatedBy ?? null,

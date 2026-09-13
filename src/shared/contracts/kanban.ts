@@ -458,6 +458,9 @@ export interface KanbanIssue {
   chatId: string | null;
   runId: string | null;
   runState: KanbanRunState | null;
+  /** Latest local run identity, retained after the active run ends. */
+  lastRunId?: string | null;
+  lastRunChatId?: string | null;
   runAgentKey?: string | null;
   runCommandId?: string | null;
   runStartedAt?: string | null;

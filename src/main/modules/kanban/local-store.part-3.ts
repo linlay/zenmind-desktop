@@ -68,6 +68,8 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     runStartedAt: nullableTrimmedText(detail.runStartedAt),
     runFinishedAt: nullableTrimmedText(detail.runFinishedAt),
     runResultMessage: nullableTrimmedText(detail.runResultMessage),
+    lastRunId: nullableTrimmedText(detail.lastRunId),
+    lastRunChatId: nullableTrimmedText(detail.lastRunChatId),
     runErrorMessage: nullableTrimmedText(detail.runErrorMessage),
     dispatchState: row.dispatch_state,
     dispatchDeviceId: row.dispatch_device_id,
