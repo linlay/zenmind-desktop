@@ -110,7 +110,7 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 0 0 8px 4px;
+  padding: 0 4px 8px 4px;
   background: transparent;
   border: none;
   border-right: none;
@@ -348,13 +348,13 @@
   --sidebar-scrollbar-thumb: transparent;
   display: flex;
   flex-direction: column;
-  padding: 0 3px 0 0;
+  padding: 0;
   margin: 0;
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   scrollbar-color: var(--sidebar-scrollbar-thumb) transparent;
   position: relative;
   z-index: 1;
@@ -364,6 +364,35 @@
 
 .sidebar-nav[data-scrolling="true"] {
   --sidebar-scrollbar-thumb: rgba(148, 163, 184, 0.32);
+}
+
+/* Both platforms use an overlay thumb: native tracks must never reserve width. */
+.app-shell.is-mac-platform .sidebar-nav,
+.app-shell.is-windows-platform .sidebar-nav {
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+}
+
+.sidebar-scroll-thumb {
+  position: absolute;
+  right: 0;
+  z-index: 2;
+  width: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-nav[data-scrolling="true"] + .sidebar-scroll-thumb {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-sidebar.is-collapsed .sidebar-scroll-thumb {
+  display: none;
 }
 
 .sidebar-link {
@@ -861,7 +890,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 0px 3px;
+  padding: 0 6px;
 }
 
 .worker-popover-content .sidebar-chats-list {
@@ -1506,7 +1535,11 @@ div.sidebar-chats-group-popover {
   scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
 }
 
-.sidebar-nav::-webkit-scrollbar,
+.sidebar-nav::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
 .worker-popover-content.sidebar-website-children::-webkit-scrollbar {
   width: 6px;
 }
@@ -1664,14 +1697,14 @@ div.sidebar-chats-group-popover {
   height: 24px;
   border-radius: var(--control-radius-sm);
   opacity: 0;
-  transform: translateX(-20px);
+  pointer-events: none;
+  transform: none;
   transition: opacity 0.16s ease-in-out;
 }
 
-.sidebar-website-child-row:hover .sidebar-website-child-action,
-.sidebar-website-child-row:focus-within .sidebar-website-child-action,
-.sidebar-website-child-row.is-closing .sidebar-website-child-action {
+.sidebar-website-child-row:hover .sidebar-website-child-action {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-webapp-status-dot {
@@ -1694,6 +1727,12 @@ div.sidebar-chats-group-popover {
   margin-right: 0;
   padding: 0;
   border-radius: 6px;
+}
+
+.app-sidebar:not(.is-collapsed) .sidebar-website-status-action,
+.app-sidebar:not(.is-collapsed) .sidebar-website-child-actions {
+  /* Row border (1px) + inset (3px) + icon center (16px) matches Chats. */
+  margin-right: 3px;
 }
 
 .sidebar-website-status-dot {
@@ -1721,26 +1760,19 @@ div.sidebar-chats-group-popover {
   transition: opacity 0.16s ease-in-out, transform 0.16s ease-in-out;
 }
 
-.sidebar-website-child-row:hover .sidebar-website-status-dot,
-.sidebar-website-child-row:focus-within .sidebar-website-status-dot {
+.sidebar-website-child-row:hover .sidebar-website-status-dot {
   opacity: 0;
   transform: scale(0.72);
 }
 
-.sidebar-website-child-row:hover .sidebar-webapp-status-dot,
-.sidebar-website-child-row:focus-within .sidebar-webapp-status-dot {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.sidebar-website-child-row:hover .sidebar-website-status-close,
-.sidebar-website-child-row:focus-within .sidebar-website-status-close {
+.sidebar-website-child-row:hover .sidebar-website-status-close {
   opacity: 1;
   transform: scale(1);
 }
 
 .sidebar-website-status-action .assistant-material-icon.is-loading {
   position: absolute;
+  right: 10px;
 }
 
 /* ── Website favicon ── */
@@ -1895,6 +1927,11 @@ div.sidebar-chats-group-popover {
 .assistant-worker-header.is-active {
   color: var(--ink);
   background: transparent;
+}
+
+.assistant-worker-collapse-item:not(.is-expanded) .assistant-worker-header {
+  /* Align the badge center with the chat unread dot, including the actions gutter. */
+  padding-right: 3px;
 }
 
 .assistant-worker-header-text {
@@ -2555,7 +2592,8 @@ div.sidebar-chats-group-popover {
 .assistant-worker-chat-menu-button {
   position: absolute;
   top: 50%;
-  right: 8px;
+  /* Match the status center: 8px row padding + half the 12px running icon. */
+  right: 2px;
   transform: translateY(-50%);
   display: none;
   align-items: center;
@@ -5885,4 +5923,18 @@ div.sidebar-chats-group-popover {
   flex: 0 0 auto;
   min-width: 0;
 }
+
+.app-sidebar:not(.is-collapsed) .sidebar-sortable-nav-entry {
+  margin-bottom: 2px;
+}
+
+.app-sidebar:not(.is-collapsed) .sidebar-sortable-nav-entry > .sidebar-link,
+.app-sidebar:not(.is-collapsed) .sidebar-pinned-web-row {
+  min-height: 30px;
+}
+
+.app-sidebar:not(.is-collapsed) .sidebar-pinned-web-row .sidebar-child-link {
+  min-height: 28px;
+}
+
 .sidebar-sortable-nav-entry.is-dragging { opacity: 0.45; }
