@@ -66,7 +66,7 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     "/bin/bash",
     "-lc",
     [
-      "npm ci --ignore-scripts",
+      "npm install --no-package-lock --ignore-scripts",
       `node ./scripts/sync-brand.mjs --brand=${brand.id}`,
       "node ./scripts/stage-app.mjs --os=win32 --arch=x64",
       `npx electron-builder --config ${path.posix.relative("/project", electronBuilderConfigPath("/project", brand.id))} --win --x64`,

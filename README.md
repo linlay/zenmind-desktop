@@ -39,15 +39,13 @@
 常用命令：
 
 ```bash
-npm ci
+npm install
 npm run dev
 npm run build
 npm test
 ```
 
 开发模式会同步品牌与内置资源、编译 Electron 主进程、启动 Vite 和 Electron。测试入口 `npm test` 会先执行 i18n 检查和完整构建，再运行 `test/*.test.mjs`。
-
-`package-lock.json` 纳入版本管理；开发环境与打包环境使用 `npm ci` 安装锁定依赖。升级依赖时使用 `npm install`，并同时提交 `package.json` 与锁文件。
 
 需要重新构建并同步四个内置服务时，macOS/Linux 使用 `scripts/build-builtin-services.sh`，Windows 使用 `scripts/build-builtin-services.ps1`；普通开发与发布只校验已经同步的资源。
 
