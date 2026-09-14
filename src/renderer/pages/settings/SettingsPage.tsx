@@ -159,6 +159,7 @@ type SettingsDebugTextAreaFieldProps = {
 };
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
+const SETTINGS_NOTICE_AUTO_CLOSE_MS = 5000;
 const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
   popup: {
@@ -2412,6 +2413,21 @@ export function SettingsPage({
   const currentRoute = `${location.pathname}${location.search}`;
   const noticeIdRef = useRef(0);
   const [notice, setNotice] = useState<SettingsNotice | null>(null);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNotice((current) => (current?.id === notice.id ? null : current));
+    }, SETTINGS_NOTICE_AUTO_CLOSE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [notice]);
+
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
   const [usageProfile, setUsageProfile] = useState<DesktopUsageProfileResult | null>(null);
   const [usageSsoStatus, setUsageSsoStatus] = useState<DesktopSsoStatus | null>(null);
