@@ -2222,7 +2222,7 @@
 }
 
 .kanban-modal.is-compact {
-  width: min(460px, 100%);
+  width: min(680px, 100%);
   gap: 12px;
 }
 
@@ -2235,6 +2235,29 @@
 .kanban-modal.is-advanced > .kanban-field-grid,
 .kanban-modal.is-advanced .kanban-automation-panel .kanban-field-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+}
+
+.kanban-modal .kanban-project-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.kanban-modal .kanban-title-fields {
+  grid-template-columns: minmax(0, 3fr) repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.kanban-automation-config { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+.kanban-automation-message { grid-column: 1 / -1; }
+.kanban-cron-fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.kanban-cron-fields input { text-align: center; font-family: monospace; }
+.kanban-cron-fields small { display: block; text-align: center; margin-top: 4px; }
+.kanban-field .kanban-cron-presets { width: auto; max-width: 180px; padding: 3px 7px; }
+
+@media (max-width: 600px) {
+  .kanban-modal .kanban-project-fields,
+  .kanban-modal .kanban-title-fields,
+  .kanban-automation-config { grid-template-columns: minmax(0, 1fr); }
 }
 
 .kanban-agent-picker {

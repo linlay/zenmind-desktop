@@ -91,7 +91,6 @@ type ThemeMode = "light" | "dark";
 type KanbanAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
 type KanbanAutomationFilter = "all" | "scheduled" | "manual";
 type KanbanAssigneeFilter = "others" | "self" | "unassigned";
-type AutomationMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
   issue?: KanbanIssue;
@@ -283,7 +282,6 @@ const KANBAN_ASSIGNEE_FILTER_OPTIONS = [
   { labelKey: "kanban.searchFilter.assigneeUnassigned", value: "unassigned" }
 ] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: KanbanAssigneeFilter }>;
 
-const KANBAN_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
 
 const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
   users: [],
@@ -518,16 +516,6 @@ function formatKanbanSortNumber(sortIndex: number | undefined, position: number)
   return Number.isFinite(position) ? `#${Math.max(1, Math.round(position))}` : "";
 }
 
-function buildAutomationTimeOptions() {
-  const options: string[] = [];
-  for (let hour = 0; hour < 24; hour += 1) {
-    for (let minute = 0; minute < 60; minute += 15) {
-      options.push(`${padAutomationNumber(hour)}:${padAutomationNumber(minute)}`);
-    }
-  }
-  return options;
-}
-
 function normalizeAutomationTime(value: string) {
   const match = value.trim().match(/^(\d{1,2}):(\d{1,2})/u);
   if (!match) {
@@ -566,11 +554,6 @@ function buildAutomationCron(plan: KanbanAutomationPlan, time: string, customCro
 
 function isNumericCronPart(value: string) {
   return /^\d+$/u.test(value);
-}
-
-function getAutomationPlanLabel(plan: KanbanAutomationPlan, t: TranslateFunction) {
-  const labelKey = KANBAN_AUTOMATION_PLANS.find((candidate) => candidate.value === plan)?.labelKey ?? "kanban.automation.custom";
-  return t(labelKey);
 }
 
 function buildCompactIssueTitle(description: string) {
@@ -1517,11 +1500,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [projectFormMenuOpen, setProjectFormMenuOpen] = useState(false);
   const [projectFormQuery, setProjectFormQuery] = useState("");
   const [attachmentBusy, setAttachmentBusy] = useState(false);
-  const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<KanbanContextMenu | null>(null);
   const activeDragIssueIdRef = useRef<string | null>(null);
-  const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const cloudMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const displayMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const menuPanelRef = useRef<HTMLDivElement | null>(null);
@@ -1786,12 +1767,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     };
   }, [feedback, feedbackPaused]);
 
-  useEffect(() => {
-    if (automationMenuOpen === "time") {
-      selectedAutomationTimeRef.current?.scrollIntoView({ block: "center" });
-    }
-  }, [form.automationTime, automationMenuOpen]);
-
   const visibleIssues = useMemo(
     () => issues.filter((issue) => VISIBLE_KANBAN_STATUS_SET.has(issue.status)),
     [issues]
@@ -1903,7 +1878,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setProjectFormMenuOpen(false);
     setProjectFormQuery("");
     setAttachmentBusy(false);
-    setAutomationMenuOpen(null);
     setModal({ mode: "create" });
   }, [missingKanbanApiMessage, agents, defaultExecutor]);
 
@@ -1938,12 +1912,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         };
       });
     }
-    setAutomationMenuOpen(null);
     setFormCompact((current) => !current);
-  }
-
-  function toggleAutomationMenu(menuName: AutomationMenuKind) {
-    setAutomationMenuOpen((current) => current === menuName ? null : menuName);
   }
 
   function updateAutomationPlan(plan: KanbanAutomationPlan) {
@@ -1952,17 +1921,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       automationPreset: plan,
       automationCron: buildAutomationCron(plan, current.automationTime, current.automationCron)
     }));
-    setAutomationMenuOpen(null);
-  }
-
-  function updateAutomationTime(time: string) {
-    const nextTime = normalizeAutomationTime(time);
-    setForm((current) => ({
-      ...current,
-      automationTime: nextTime,
-      automationCron: buildAutomationCron(current.automationPreset, nextTime, current.automationCron)
-    }));
-    setAutomationMenuOpen(null);
   }
 
   async function addKanbanAttachments() {
@@ -2055,6 +2013,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setFeedback({ tone: "error", message: t("kanban.feedback.automationMessageRequired") });
       return;
     }
+    if (form.automationEnabled) {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: form.automationTimezone.trim() }).format();
+      } catch {
+        setFeedback({ tone: "error", message: t("kanban.feedback.invalidTimezone") });
+        return;
+      }
+    }
     const originalEstimate = hoursInputToSeconds(form.originalEstimateHours);
     const remainingEstimate = hoursInputToSeconds(form.remainingEstimateHours);
     const timeSpent = hoursInputToSeconds(form.timeSpentHours);
@@ -2087,7 +2053,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       automationEnabled: form.automationEnabled,
       automationCron: form.automationEnabled ? resolvedAutomationCron : null,
       automationMessage: form.automationEnabled ? resolvedAutomationMessage : null,
-      automationTimezone: form.automationEnabled ? form.automationTimezone : null,
+      automationTimezone: form.automationEnabled ? form.automationTimezone.trim() : null,
       attachmentChatId: form.attachments.length > 0 ? form.attachmentChatId : null,
       attachments: form.attachments,
       ...(!modal?.issue && !formProjectIsCloud && form.localWorkflowId ? { localWorkflowId: form.localWorkflowId } : {}),
@@ -2919,6 +2885,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               </label>}
             </div>
             {!formCompact ? (
+              <div className="kanban-field-grid kanban-title-fields">
               <label className="kanban-field">
                 <span>{t("kanban.form.title")}</span>
                 <input
@@ -2929,6 +2896,30 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   required
                 />
               </label>
+                <label className="kanban-field">
+                  <span>{t("kanban.form.priority")}</span>
+                  <select
+                    value={form.priority ?? ""}
+                    disabled={modalReadOnly}
+                    onChange={(event) => setForm((current) => ({
+                      ...current,
+                      priority: event.target.value ? event.target.value as KanbanPriority : null
+                    }))}
+                  >
+                    <option value="">{t("kanban.detail.notSet")}</option>
+                    {KANBAN_PRIORITIES.map((priority) => (
+                      <option key={priority} value={priority}>{t(PRIORITY_META[priority].labelKey)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="kanban-field">
+                  <span>{t("kanban.detail.severity")}</span>
+                  <select value={form.severity ?? ""} disabled={modalReadOnly} onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value ? event.target.value as KanbanSeverity : null }))}>
+                    <option value="">{t("kanban.detail.notSet")}</option>
+                    {KANBAN_SEVERITIES.map((severity) => <option key={severity} value={severity}>{t(SEVERITY_META[severity].labelKey)}</option>)}
+                  </select>
+                </label>
+              </div>
             ) : null}
             <div className="kanban-field">
               <div className="kanban-field-head">
@@ -3010,29 +3001,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   </select>
                 </label>
                 <label className="kanban-field">
-                  <span>{t("kanban.form.priority")}</span>
-                  <select
-                    value={form.priority ?? ""}
-                    disabled={modalReadOnly}
-                    onChange={(event) => setForm((current) => ({
-                      ...current,
-                      priority: event.target.value ? event.target.value as KanbanPriority : null
-                    }))}
-                  >
-                    <option value="">{t("kanban.detail.notSet")}</option>
-                    {KANBAN_PRIORITIES.map((priority) => (
-                      <option key={priority} value={priority}>{t(PRIORITY_META[priority].labelKey)}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="kanban-field">
-                  <span>{t("kanban.detail.severity")}</span>
-                  <select value={form.severity ?? ""} disabled={modalReadOnly} onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value ? event.target.value as KanbanSeverity : null }))}>
-                    <option value="">{t("kanban.detail.notSet")}</option>
-                    {KANBAN_SEVERITIES.map((severity) => <option key={severity} value={severity}>{t(SEVERITY_META[severity].labelKey)}</option>)}
-                  </select>
-                </label>
-                <label className="kanban-field">
                   <span>{t("kanban.form.dueDate")}</span>
                   <input type="date" value={form.dueDate} disabled={modalReadOnly} onChange={(event) => setForm((current) => ({ ...current, dueDate: event.target.value }))} />
                 </label>
@@ -3106,92 +3074,43 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   <span>{t("kanban.form.automationEnabled")}</span>
                 </label>
                 {form.automationEnabled ? (
-                  <div className="kanban-automation-popover">
-                    <span className="kanban-automation-panel-title">{t("kanban.form.automationPlan")}</span>
-                    <div className="kanban-field kanban-automation-select-field">
-                      <span>{t("kanban.form.automationFrequency")}</span>
-                      <div className={`kanban-automation-menu ${automationMenuOpen === "plan" ? "is-open" : ""}`}>
-                        <button
-                          type="button"
-                          className="kanban-automation-menu-trigger"
-                          aria-haspopup="listbox"
-                          aria-expanded={automationMenuOpen === "plan"}
-                          disabled={modalReadOnly}
-                          onClick={() => toggleAutomationMenu("plan")}
-                        >
-                          <span>{getAutomationPlanLabel(form.automationPreset, t)}</span>
-                          <span className="kanban-automation-menu-arrow" aria-hidden="true">⌄</span>
-                        </button>
-                        {automationMenuOpen === "plan" ? (
-                          <div className="kanban-automation-menu-list" role="listbox" aria-label={t("kanban.form.automationFrequencyList")}>
-                            {KANBAN_AUTOMATION_PLANS.map((plan) => (
-                              <button
-                                key={plan.value}
-                                type="button"
-                                className={plan.value === form.automationPreset ? "is-selected" : ""}
-                                role="option"
-                                aria-selected={plan.value === form.automationPreset}
-                                disabled={modalReadOnly}
-                                onClick={() => updateAutomationPlan(plan.value)}
-                              >
-                                {t(plan.labelKey)}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
+                  <div className="kanban-automation-config">
+                    <div className="kanban-field">
+                      <div className="kanban-field-head">
+                        <span>{t("kanban.form.cron")}</span>
+                        <select aria-label={t("kanban.form.automationFrequency")} className="kanban-cron-presets"
+                          value={form.automationPreset} disabled={modalReadOnly}
+                          onChange={(event) => updateAutomationPlan(event.target.value as KanbanAutomationPlan)}>
+                          {KANBAN_AUTOMATION_PLANS.map((plan) => <option key={plan.value} value={plan.value}>{t(plan.labelKey)}</option>)}
+                        </select>
+                      </div>
+                      <div className="kanban-cron-fields">
+                        {(["minute", "hour", "day", "month", "weekday"] as const).map((part, index) => <label key={part}>
+                          <input aria-label={t(`kanban.form.cron.${part}`)}
+                            value={(form.automationPreset === "custom" ? form.automationCron : buildAutomationCron(form.automationPreset, form.automationTime, form.automationCron)).split(" ")[index] ?? ""}
+                            disabled={modalReadOnly} spellCheck={false}
+                            onChange={(event) => setForm((current) => {
+                              const parts = (current.automationPreset === "custom" ? current.automationCron : buildAutomationCron(current.automationPreset, current.automationTime, current.automationCron)).split(" ");
+                              parts[index] = event.target.value.replace(/\s+/g, "");
+                              return { ...current, automationPreset: "custom", automationCron: parts.join(" ") };
+                            })} />
+                          <small>{t(`kanban.form.cron.${part}`)}</small>
+                        </label>)}
                       </div>
                     </div>
-                    {form.automationPreset === "custom" ? (
-                      <label className="kanban-field">
-                        <span>{t("kanban.form.cron")}</span>
-                        <input
-                          value={form.automationCron}
-                          disabled={modalReadOnly}
-                          onChange={(event) => setForm((current) => ({
-                            ...current,
-                            automationCron: event.target.value
-                          }))}
-                          placeholder="0 9 * * *"
-                        />
-                      </label>
-                    ) : (
-                      <div className="kanban-automation-time-control">
-                        <div className="kanban-field kanban-automation-select-field">
-                          <span>{t("kanban.form.automationTime")}</span>
-                          <div className={`kanban-automation-menu ${automationMenuOpen === "time" ? "is-open" : ""}`}>
-                            <button
-                              type="button"
-                              className="kanban-automation-menu-trigger"
-                              aria-haspopup="listbox"
-                              aria-expanded={automationMenuOpen === "time"}
-                              disabled={modalReadOnly}
-                              onClick={() => toggleAutomationMenu("time")}
-                            >
-                              <span>{form.automationTime}</span>
-                              <span className="kanban-automation-menu-arrow" aria-hidden="true">⌄</span>
-                            </button>
-                            {automationMenuOpen === "time" ? (
-                              <div className="kanban-automation-menu-list is-time-list" role="listbox" aria-label={t("kanban.form.automationTimeList")}>
-                                {KANBAN_AUTOMATION_TIME_OPTIONS.map((time) => (
-                                  <button
-                                    key={time}
-                                    ref={time === form.automationTime ? selectedAutomationTimeRef : null}
-                                    type="button"
-                                    className={time === form.automationTime ? "is-selected" : ""}
-                                    role="option"
-                                    aria-selected={time === form.automationTime}
-                                    disabled={modalReadOnly}
-                                    onClick={() => updateAutomationTime(time)}
-                                  >
-                                    {time}
-                                  </button>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <label className="kanban-field">
+                      <span>{t("kanban.form.automationTimezone")}</span>
+                      <input value={form.automationTimezone} list="kanban-automation-timezones" disabled={modalReadOnly}
+                        onChange={(event) => setForm((current) => ({ ...current, automationTimezone: event.target.value }))} />
+                      <datalist id="kanban-automation-timezones">
+                        {["Asia/Shanghai", "UTC", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Los_Angeles"].map((zone) => <option key={zone} value={zone} />)}
+                      </datalist>
+                    </label>
+                    <label className="kanban-field kanban-automation-message">
+                      <span>{t("kanban.form.automationMessage")}</span>
+                      <textarea rows={2} value={form.automationMessage} disabled={modalReadOnly}
+                        onChange={(event) => setForm((current) => ({ ...current, automationMessage: event.target.value }))} />
+                    </label>
                   </div>
                 ) : null}
               </section>
@@ -3206,9 +3125,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   {t("kanban.form.delete")}
                 </button>
               ) : null}
-              <button type="button" className="kanban-secondary-button" onClick={() => setModal(null)}>
+              {modal.mode !== "create" && <button type="button" className="kanban-secondary-button" onClick={() => setModal(null)}>
                 {modalReadOnly ? t("kanban.modal.close") : t("kanban.form.cancel")}
-              </button>
+              </button>}
               {!modalReadOnly ? (
                 <button type="submit" className="kanban-primary-button" disabled={!kanbanReady}>
                   {t("kanban.form.save")}
@@ -3544,6 +3463,7 @@ const IssueCardContent = memo(function IssueCardContent({
         <span className="issue-card-title" title={issue.title}>
           {priorityImportance}
           <span className="issue-card-title-text">{issue.title}</span>
+
         </span>
         {showDescription ? (
           <span className="issue-card-description" title={descriptionPreview}>
