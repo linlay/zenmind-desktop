@@ -13,6 +13,13 @@ export function isKanbanAggregateProject(project: Pick<KanbanProject, "id">): bo
 
 export type KanbanProjectSource = "all" | "local" | "cloud";
 
+export function getKanbanIssueProjectName(issue: Pick<KanbanIssue, "syncMode" | "projectId" | "projectName">, project: KanbanProject | undefined, defaultLocalName: string) {
+  const projectId = issue.projectId?.trim() || "";
+  // The built-in local project has a fixed, localized identity, like the project picker.
+  if (issue.syncMode !== "cloud" && (!projectId || projectId === "default")) return defaultLocalName;
+  return project?.name.trim() || issue.projectName?.trim() || projectId || "—";
+}
+
 export function listKanbanLocalProjectOptions(issues: KanbanIssue[], defaultName: string) {
   const projects = new Map<string, { id: string; name: string; count: number }>();
   projects.set("default", { id: "default", name: defaultName, count: 0 });

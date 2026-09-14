@@ -1,5 +1,6 @@
 import { resolveKanbanResultIdentity } from "../../../shared/kanban-result-read";
 import { useKanbanResultRead } from "./useKanbanResultRead";
+import { getKanbanIssueProjectName } from "./kanbanProjectTree";
 import { Children, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
@@ -738,7 +739,7 @@ export function KanbanIssueDetailDialog({
   const statusLabel = workflowStatus?.name || issue.statusName || t(DETAIL_STATUS_LABELS[issue.status]);
   const priorityLabel = issue.priority ? t(DETAIL_PRIORITY_LABELS[issue.priority]) : "—";
   const severityLabel = issue.severity ? t(`kanban.importance.${issue.severity}` as "kanban.importance.medium") : "—";
-  const projectLabel = project?.name || issue.projectName || issue.projectId || "—";
+  const projectLabel = getKanbanIssueProjectName(issue, project, t("kanban.projectFilter.defaultLocal"));
   const issueTypeLabel = issueType?.name || issue.issueTypeKey || issue.typeId || "—";
   const workflowLabel = workflow?.name || issue.workflowId || "—";
   const stageLabel = stage?.name || issue.stageName || issue.stageKey || "—";
@@ -940,7 +941,7 @@ export function KanbanIssueDetailDialog({
         {copyNotice ? <div className={`kanban-detail-copy-notice is-${copyNotice.tone}`} role="status">{copyNotice.message}</div> : null}
         <header className="kanban-detail-header">
           <div className="kanban-detail-header-context">
-            <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{project?.path || project?.name || issue.projectName || issue.projectId || "—"}</span></div>
+            <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{issue.syncMode !== "cloud" && (!issue.projectId?.trim() || issue.projectId.trim() === "default") ? projectLabel : project?.path || projectLabel}</span></div>
             {isCloud ? <span className="kanban-detail-pill is-origin is-cloud"><CloudOutlined />{t("kanban.detail.cloudOrigin")}</span> : null}
           </div>
           <div className="kanban-detail-window-actions">

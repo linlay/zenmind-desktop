@@ -71,6 +71,7 @@ import { useI18n } from "../../i18n/useI18n";
 import { Tooltip } from "../../components/Tooltip";
 import {
   flattenKanbanProjectTree,
+  getKanbanIssueProjectName,
   getKanbanPartiallySelectedProjectIds,
   matchesKanbanProjectSelection,
   listKanbanLocalProjectOptions,
@@ -1408,7 +1409,7 @@ function getKanbanIssueOriginPresentation(
 ): KanbanIssueOriginPresentation {
   const projectId = issue.projectId?.trim() || "";
   const project = projectId ? projectsById.get(projectId) : undefined;
-  const projectName = project?.name.trim() || issue.projectName?.trim() || projectId || "—";
+  const projectName = getKanbanIssueProjectName(issue, project, t("kanban.projectFilter.defaultLocal"));
   const projectPath = project?.path.trim() || "";
   const issueId = issue.remoteIssueId?.trim()
     ? `${issue.remoteIssueId.trim()} / ${issue.id}`
