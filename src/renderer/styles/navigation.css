@@ -2442,8 +2442,9 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-chat-title-text {
-  display: inline-block;
-  vertical-align: bottom;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -2454,6 +2455,7 @@ div.sidebar-chats-group-popover {
 
   .assistant-worker-chat-row:hover .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text,
   .assistant-worker-chat-item:focus-visible .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text {
+    width: max-content;
     animation: sidebar-chat-title-scroll var(--chat-title-duration) linear 1 forwards;
   }
 }
@@ -2712,7 +2714,6 @@ div.sidebar-chats-group-popover {
 
 .sidebar-chat-share-dialog-layer {
   padding: 16px;
-  backdrop-filter: blur(4px);
 }
 
 .sidebar-chat-info-dialog {
@@ -2725,14 +2726,11 @@ div.sidebar-chats-group-popover {
   border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 86%, transparent);
   border-radius: var(--control-radius-lg);
   background: var(--desktop-overlay-panel-bg);
+  backdrop-filter: blur(3px);
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.28),
     0 2px 12px rgba(0, 0, 0, 0.16);
   outline: none;
-}
-
-.sidebar-chat-info-dialog-layer {
-  backdrop-filter: blur(3px);
 }
 
 .sidebar-chat-info-dialog .sidebar-agent-dialog-head {
