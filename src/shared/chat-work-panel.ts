@@ -1,3 +1,5 @@
+import { BRAND_ID } from "./brand";
+
 export const CHAT_WORK_PANEL_BLANK_URL = "about:blank";
 
 export type ChatWorkPanelWorkspace = {
@@ -13,7 +15,7 @@ export type ChatWorkPanelClearSessionRequest = {
   partition: string;
 };
 
-export const CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL = "zenmind-local-file";
+export const CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL = `${BRAND_ID}-local-file`;
 
 export type WorkPanelLocalFilePreviewKind =
   | "html"

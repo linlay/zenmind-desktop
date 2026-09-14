@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } from "../dist-electron/shared/chat-work-panel.js";
 
 const {
   applyWindowsDevelopmentAppDetails,
@@ -1458,7 +1459,7 @@ test("window manager confines service and review preloads to their trusted webvi
   const localFile = prepareWebviewAttachPreferences({
     webPreferences: localFilePreferences,
     params: {
-      src: "zenmind-local-file://opaque-handle/index.html",
+      src: `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://opaque-handle/index.html`,
       partition: "work-panel-local-file-test",
     },
     servicePreloadPath: "C:/app/preload/service-webview.js",
@@ -1481,7 +1482,7 @@ test("window manager confines service and review preloads to their trusted webvi
     webPreferences: reviewPreferences,
     params: {
       preload: "file:///app/preload/work-panel-preview.js",
-      src: "zenmind-local-file://opaque-handle/image.png",
+      src: `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://opaque-handle/image.png`,
       partition: "work-panel-local-file-test",
     },
     servicePreloadPath: "C:/app/preload/service-webview.js",
@@ -1499,7 +1500,7 @@ test("window manager confines service and review preloads to their trusted webvi
     webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
     params: {
       preload: "file:///app/preload/work-panel-preview.js",
-      src: "zenmind-local-file://user-selected/image.png",
+      src: `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://user-selected/image.png`,
     },
     servicePreloadPath: "C:/app/preload/service-webview.js",
     servicePreloadUrl: "file:///app/preload/service-webview.js",
@@ -1509,7 +1510,7 @@ test("window manager confines service and review preloads to their trusted webvi
   assert.deepEqual(untrustedReview, {
     ok: false,
     reason: "unsafe-review-url",
-    src: "zenmind-local-file://user-selected/image.png",
+    src: `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://user-selected/image.png`,
   });
 
   const webReviewPreferences = {

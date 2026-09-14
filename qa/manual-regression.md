@@ -303,7 +303,7 @@
 ## 本地文件安全宿主
 
 - 多选 HTML、PDF、图片、文本、音频、视频、Office、压缩包和未知格式；支持格式内嵌预览，其他格式只显示系统定位和默认应用打开。
-- macOS 与 Windows 分别通过“文件”打开含中文的 UTF-8 Markdown、TXT、JSON 和源码文件（含无 BOM 与带 BOM），确认中文、标点和换行正确，文本中的 HTML 标签按原文显示；带 BOM 的 UTF-16 文本也应正常。HTML 同目录 CSS/JS 仍使用原有资源 MIME。
+- CuteJ 与 ZenMind 两个品牌分别在 macOS 与 Windows 通过“文件”打开含中文的 UTF-8 Markdown、TXT、JSON 和源码文件（含无 BOM 与带 BOM），确认中文、标点和换行正确，文本中的 HTML 标签按原文显示；带 BOM 的 UTF-16 文本也应正常。HTML 同目录 CSS/JS 仍使用原有资源 MIME。
 - 在 Main Chat RightSidebar 与 WorkPanel Artifact/Reference 中分别打开 DOCX、XLSX、PPTX、ZIP 和未知格式，确认双按钮由 WebClient 渲染在 `.content-viewer-panel` 中央，Desktop 外层没有重复操作层；操作成功保持静默，失败显示本地化错误且 guest 消息、renderer/IPC 响应均不包含绝对路径。
 - 从带 canonical Chat grant 的内部 Platform Run 调用 `desktop.workpanel.openLocalFile`，确认 workspace 相对路径可打开；绝对路径、`file://`、`..`、缺失 workspace 及所有 HTTP/WS/WebApp/调试入口均失败且不弹确认。
 - 重复选择同一文件激活已有 tab；关闭 tab、关闭 workspace、移除 Chat 和退出 renderer 后句柄释放。
