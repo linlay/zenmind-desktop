@@ -654,7 +654,7 @@ const api: DesktopApi = {
     publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)
   },
   diagnostics: {
-    performanceEnabled: process.env?.ZENMIND_PERF === "1",
+    performanceEnabled: process.env?.PERF === "1",
     reportRendererError: (report: RendererDiagnosticReport) => {
       ipcRenderer.send("diagnostics.rendererError", report);
     },
