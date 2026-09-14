@@ -1,3 +1,4 @@
+import { closeCallbackServer, getCallbackOrigin } from "./callback-lifecycle";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -22,7 +23,7 @@ import {
 } from "../../infrastructure/filesystem/user-paths";
 import { t } from "../../support/i18n/main-i18n";
 import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
-import { CALLBACK_ORIGIN, DEFAULT_GOOGLE_SCOPE, DEFAULT_OIDC_CONFIG, DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS, DesktopSsoAvatarCacheConfig, DesktopSsoSessionMetadata, FetchResponseLike, OidcConfig, RETURN_TO_APP_PATH, cloneStatus, createAuthenticatedStatus, createCompletedSteps, createFailedStatus, createSignedOutStatus, desktopSsoRuntimeState, getCompletedDesktopSsoMessage, getDesktopSsoUserInfoFilePath, getSessionPath, removeLegacyDesktopSsoSiteTokenFile, setCurrentStatus } from "./oidc-sso.part-1";
+import { DEFAULT_GOOGLE_SCOPE, DEFAULT_OIDC_CONFIG, DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS, DesktopSsoAvatarCacheConfig, DesktopSsoSessionMetadata, FetchResponseLike, OidcConfig, RETURN_TO_APP_PATH, cloneStatus, createAuthenticatedStatus, createCompletedSteps, createFailedStatus, createSignedOutStatus, desktopSsoRuntimeState, getCompletedDesktopSsoMessage, getDesktopSsoUserInfoFilePath, getSessionPath, removeLegacyDesktopSsoSiteTokenFile, setCurrentStatus } from "./oidc-sso.part-1";
 import { DesktopSsoUserInfoSource, loadDesktopSsoConfig } from "./oidc-sso.part-2";
 
 
@@ -377,6 +378,7 @@ export function failDesktopSsoStep(message: string): DesktopSsoStatus {
 export function finalizeDesktopSsoLoginAttempt(
   errors: string | string[] = []
 ): DesktopSsoStatus {
+  closeCallbackServer();
   const messages = (Array.isArray(errors) ? errors : [errors])
     .map((message) => message.trim())
     .filter(Boolean);
@@ -394,6 +396,7 @@ export function finalizeDesktopSsoLoginAttempt(
 }
 
 export function clearSession(app: App) {
+  closeCallbackServer();
   desktopSsoRuntimeState.pendingLogin = null;
   desktopSsoRuntimeState.currentAccessToken = "";
   desktopSsoRuntimeState.currentIdToken = "";
@@ -643,6 +646,7 @@ export function getDesktopSsoAvatarCacheConfig(app: Pick<App, "getPath">) {
 }
 
 export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
+  closeCallbackServer();
   desktopSsoRuntimeState.pendingLogin = null;
   if (
     desktopSsoRuntimeState.currentStatus.authenticated &&
@@ -676,22 +680,23 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   return cloneStatus(status);
 }
 
-export function buildDesktopSsoProxyUrl(value: string) {
+export function buildDesktopSsoProxyUrl(value: string, origin = getCallbackOrigin()) {
   const targetUrl = new URL(value);
-  return `${CALLBACK_ORIGIN}${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+  return `${origin}${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
 }
 
 export function rewriteDesktopSsoProxyLocation(
   location: string,
   upstreamRequestUrl: URL,
-  config: OidcConfig = DEFAULT_OIDC_CONFIG
+  config: OidcConfig = DEFAULT_OIDC_CONFIG,
+  origin = getCallbackOrigin()
 ) {
   const resolvedLocation = new URL(location, upstreamRequestUrl);
-  if (resolvedLocation.origin === CALLBACK_ORIGIN) {
+  if (resolvedLocation.origin === origin) {
     return resolvedLocation.toString();
   }
   if (resolvedLocation.origin === getDesktopSsoProxyTargetOrigin(config)) {
-    return buildDesktopSsoProxyUrl(resolvedLocation.toString());
+    return buildDesktopSsoProxyUrl(resolvedLocation.toString(), origin);
   }
   return resolvedLocation.toString();
 }

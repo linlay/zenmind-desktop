@@ -3096,6 +3096,7 @@ export const enUSMessages = {
   "sso.loginStateCleared": "Desktop login state cleared.",
   "sso.accessTokenRevokeFailed": "Failed to revoke the local access token: {error}",
   "sso.noPendingLogin": "There is no single sign-on in progress.",
+  "sso.callbackTimeout": "Login callback timed out. Please sign in again.",
   "sso.callbackHttpOnly": "Desktop SSO callback URL only supports http.",
   "sso.callbackPortInUse": "OIDC callback port {port} is already in use.",
   "sso.config.stringOrArray": "{key} must be a string or string array.",

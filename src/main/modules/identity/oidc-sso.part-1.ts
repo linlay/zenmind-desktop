@@ -282,11 +282,10 @@ export type DesktopSsoAccessTokenCookieDetails = {
   sameSite: AccessTokenCookieSameSite;
 };
 
-export const CALLBACK_PORT = 8080;
+// Zero requests an available port from the OS; never publish this placeholder as a callback.
+export const CALLBACK_PORT = 0;
 
 export const CALLBACK_HOST = "localhost";
-
-export const CALLBACK_ORIGIN = `http://${CALLBACK_HOST}:${CALLBACK_PORT}`;
 
 export const GOOGLE_LOOPBACK_HOST = "127.0.0.1";
 

@@ -3096,6 +3096,7 @@ export const zhCNMessages = {
   "sso.loginStateCleared": "已清除 Desktop 登录状态。",
   "sso.accessTokenRevokeFailed": "撤销本地访问令牌失败：{error}",
   "sso.noPendingLogin": "没有正在进行的单点登录。",
+  "sso.callbackTimeout": "登录回调等待超时，请重新登录。",
   "sso.callbackHttpOnly": "Desktop SSO 回调地址只支持 http。",
   "sso.callbackPortInUse": "OIDC 回调端口 {port} 已被占用。",
   "sso.config.stringOrArray": "{key} 必须是字符串或字符串数组。",

@@ -18,6 +18,8 @@ import { activateDesktopSsoProxy, buildCookieAccessTokenExchangeRequest, buildDe
 import { buildLogoutUrl, cancelDesktopSsoLogin, closeCallbackServer, completeValidatedOidcLogin, createDesktopSsoCookieUserInfoClaims, ensureCallbackServer, exchangeCodeForClaims, exchangeCodeForTokenClaims, resolveLoginCallbackServerOptions, resolveLogoutCallbackServerOptions, validateIdToken } from "./oidc-sso.part-5";
 
 export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoStartResult> {
+  closeCallbackServer(undefined, true);
+  desktopSsoRuntimeState.pendingLogin = null;
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured) {
     const status = createUnconfiguredStatus(configResult.message);
@@ -63,7 +65,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
     const state = randomUUID();
     const useServerBroker = isServerBrokerAuthMode(oidcConfig);
     const codeVerifier = !useServerBroker && shouldUsePkce(oidcConfig) ? createPkceCodeVerifier() : undefined;
-    const redirectUri = useSystemBrowser ? callbackInfo.redirectUri : oidcConfig.redirectUri;
+    const redirectUri = callbackInfo.redirectUri;
     const loginConfig = {
       ...oidcConfig,
       redirectUri
