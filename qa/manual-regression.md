@@ -549,3 +549,11 @@
 - 同一 Chat 新 Run 完成后重新未读；旧 Run 的迟到请求不能清除新结果。重复展示同一已读结果不重复发送。
 - 结果加载失败、Run 不匹配、结果不在可见区域或窗口隐藏时不发送；已读请求失败保留未读，重新打开结果可重试。没有 Chat 的结果只记录本地回执；其他设备 Chat 不调用本机接口。
 - 切换账号和云服务后阅读状态隔离，云端 Issue 正文与工作流不发生写操作。
+
+## CDP 字段级错误与恢复
+
+- macOS / Windows 均通过 Platform `desktop_cdp` 发送 `Input.dispatchMouseEvent`：`x: "646"`、`y: "344"`、`clickCount: "1"`；确认一次返回三个字段问题、期望/实际类型、`executed: false` 和修正建议，页面未接收此次事件。
+- 将参数修正为数字，再使用小数坐标完成 `mousePressed` / `mouseReleased`；确认 `button: "left"` 和小数坐标正常接受。
+- 发送字符串布尔值 `returnByValue: "true"` 或 `ignoreCache: "true"`；确认不再静默转换，报错明确要求 JSON boolean。
+- 执行含语法错误及运行期异常的 `Runtime.evaluate`；确认工具报告 `desktop_cdp_evaluation_failed`，保留原始 `exceptionDetails` 和零基行列，不声称脚本无副作用。
+- 对已失效 target 调用，确认错误建议在当前 Run 内重新发现授权目标；不要为修复参数错误刷新或关闭未保存表单。表单操作成功须回读并比对期望值。

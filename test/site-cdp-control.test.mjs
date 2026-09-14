@@ -117,7 +117,7 @@ test('WebApp keeps one guest across WorkPanel presentation and revokes when gues
   const target = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
   h.foreground(b); app.presentationScope = 'workpanel'; app.ownerChatId = 'workpanel-chat'; h.register(app);
   assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)).targetId, target.targetId);
-  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: target.targetId }, scope);
+  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: target.targetId, params: { expression: 'document.title' } }, scope);
   delete app.presentationScope; delete app.ownerChatId; h.register(app);
   assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)).targetId, target.targetId);
   app.tabs = [h.tab(h.guest(app.url))]; app.activeTabId = app.tabs[0].tabId; h.register(app);
@@ -488,4 +488,20 @@ test('AWCP never emits non-JSON success results', async (t) => {
       { code: 'awcp_invalid_response' },
     );
   }
+});
+
+test('invalid mouse parameters never acquire page focus or send input', async (t) => {
+  const h = createSiteHarness();
+  const site = h.site('validation');
+  const scope = h.capture(site); scope.activate(); t.after(() => scope.release());
+  const phases = [];
+  const gateway = gatewayFor(h, { controlSiteFocus: async (_surface, _tab, _scope, phase) => phases.push(phase) });
+  const { targetId } = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const commandsBefore = h.commands.length;
+  await assert.rejects(gateway.executeCommand({
+    method: 'Input.dispatchMouseEvent', targetId,
+    params: { type: 'mousePressed', x: '646', y: '344', button: 'left', clickCount: '1' }
+  }, scope), (error) => error.code === 'invalid_args' && error.details.issues.length === 3);
+  assert.deepEqual(phases, []);
+  assert.equal(h.commands.length, commandsBefore);
 });

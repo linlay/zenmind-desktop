@@ -10,7 +10,9 @@ import { DESKTOP_CDP_PUBLIC_METHODS } from "../../../shared/embedded-cdp";
 import {
   DESKTOP_CDP_TARGET_TIMEOUT_CODE,
   isDesktopCdpTimeoutError,
-  readDesktopCdpErrorDetails
+  readDesktopCdpErrorDetails,
+  validateDesktopCdpParams,
+  DesktopCdpParamsError
 } from "../web-surfaces";
 import { getConfiguredDesktopActionBridgePort } from "./settings";
 import { authorizeWebappActionToken } from "../webs";
@@ -29,6 +31,15 @@ export async function handleDesktopCdpRequest(
   }
   if (!DESKTOP_CDP_PUBLIC_METHODS.some((candidate) => candidate === method)) {
     return cdpFail(method, "method_not_allowed", "This CDP method is not exposed by Desktop.");
+  }
+  try {
+    validateDesktopCdpParams(method, request.params);
+  } catch (error) {
+    if (error instanceof DesktopCdpParamsError) return cdpFail(method, error.code, error.message, {
+      ...error.details,
+      ...(typeof request.targetId === "string" && request.targetId.trim() ? { targetId: request.targetId.trim() } : {})
+    });
+    throw error;
   }
   const params = { ...asRecord(request.params) };
   let targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
@@ -68,7 +79,12 @@ export async function handleDesktopCdpRequest(
     const errorCode = error && typeof error === "object" && "code" in error && typeof error.code === "string"
       ? error.code
       : "cdp_failed";
-    return cdpFail(method, errorCode, error instanceof Error ? error.message : String(error));
+    const details = error instanceof DesktopCdpParamsError ? error.details
+      : errorCode === "target_not_in_current_surface" || errorCode === "target_not_found" || errorCode === "target_required"
+        ? { method, targetId, executed: false, retryable: false,
+            recovery: "Call Target.getTargets for this Run and use a currently authorized targetId. Do not reuse an old target or switch to another application. If no authorized target remains, stop and report the unavailable page." }
+        : { method, ...(targetId ? { targetId } : {}) };
+    return cdpFail(method, errorCode, error instanceof Error ? error.message : String(error), details);
   }
 }
 

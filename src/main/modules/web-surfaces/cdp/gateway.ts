@@ -1,3 +1,4 @@
+import { validateDesktopCdpParams, DesktopCdpParamsError } from "./params";
 import { requireSiteControlScope, type SiteControlScope } from "./site-scope";
 import { withSiteCdpFocus } from "./site-focus";
 import crypto from "node:crypto";
@@ -458,6 +459,7 @@ export class EmbeddedCdpGateway {
     }
     const params = request.params ?? {};
     if (method === "Target.getTargets" || method === "Target.getCurrentTarget") {
+      validateDesktopCdpParams(method, request.params);
       if (Object.keys(params).length > 0) {
         throw new EmbeddedCdpInvalidArgsError(`${method} does not accept params.`);
       }
@@ -496,6 +498,7 @@ export class EmbeddedCdpGateway {
       };
     }
     const { surface, tab, targetId } = await this.resolveCommandTarget(request, scope);
+    validateDesktopCdpParams(method, request.params);
     return withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
       ? (phase) => this.options.controlSiteFocus!(surface, tab, scope, phase) : undefined, async () => {
       if (method === "Target.closeTarget") {
@@ -617,6 +620,7 @@ export class EmbeddedCdpGateway {
       return;
     }
     try {
+      validateDesktopCdpParams(method, command.params);
       if (method === "Target.closeTarget") {
         const paramsTargetId = typeof command.params?.targetId === "string"
           ? command.params.targetId.trim()
@@ -649,6 +653,10 @@ export class EmbeddedCdpGateway {
           this.releaseConnection(connection);
         }
         connection.sendJSON(cdpError(id, -32000, error.message, { code: error.code }));
+        return;
+      }
+      if (error instanceof DesktopCdpParamsError) {
+        connection.sendJSON(cdpError(id, -32602, error.message, { code: error.code, details: error.details }));
         return;
       }
       if (error instanceof EmbeddedCdpInvalidArgsError) {

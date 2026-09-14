@@ -228,7 +228,7 @@ test("embedded cdp Page.reload uses guest reload APIs without attaching the debu
       params: { ignoreCache: "false" },
       targetId
     }),
-    (error) => error?.code === "invalid_args" && /must be a boolean/u.test(error.message)
+    (error) => error?.code === "invalid_args" && /params.ignoreCache expected boolean, received string/u.test(error.message)
   );
   await assert.rejects(
     gateway.executeCommand({

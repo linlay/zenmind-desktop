@@ -1183,3 +1183,32 @@ test("a query for the replacement root waits for detach and stale waiting querie
   socket("primary").emit({ frame: "stream", id: request.id, reason: "complete", lastSeq: 1 });
   await current.completed;
 });
+
+test("reverse CDP validation retains field diagnostics in the error frame", async (t) => {
+  const { handleDesktopCdpRequest } = require("../dist-electron/main/modules/desktop-actions/runtime.js");
+  const { broker, socket, token } = createHarness(t);
+  let executed = false;
+  broker.setDesktopBridgeProvider({
+    action: async () => ({ ok: true }),
+    cdp: (request) => handleDesktopCdpRequest({ executeCdpCommand: async () => { executed = true; return { result: {} }; } }, request)
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({
+    frame: "request", type: "desktop.cdp.call", id: "invalid-mouse",
+    payload: {
+      method: "Input.dispatchMouseEvent", targetId: "desktop-test",
+      params: { type: "mousePressed", x: "646", y: "344", button: "left", clickCount: "1" },
+      source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }
+    }
+  });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "invalid-mouse"));
+  const frame = socket("primary").sent.find((frame) => frame.id === "invalid-mouse");
+  assert.equal(frame.frame, "error");
+  assert.equal(frame.type, "invalid_args");
+  assert.equal(frame.code, 400);
+  assert.equal(frame.data.method, "Input.dispatchMouseEvent");
+  assert.equal(frame.data.error.details.issues.length, 3);
+  assert.equal(frame.data.error.details.executed, false);
+  assert.equal(frame.data.error.details.targetId, "desktop-test");
+  assert.equal(executed, false);
+});

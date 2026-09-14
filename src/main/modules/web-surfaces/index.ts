@@ -14,3 +14,5 @@ export { createWebviewContextMenuController } from "./context-menu-controller";
 export { openCurrentWebviewDevTools } from "./focused-devtools";
 export { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview, resolveRegisteredWebviewPopupTarget } from "./open-tab";
 export { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-ipc";
+
+export { validateDesktopCdpParams, DesktopCdpParamsError } from "./cdp/params";
