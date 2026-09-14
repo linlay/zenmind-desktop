@@ -460,7 +460,14 @@ export interface AssistantChatDetail {
   events: AssistantRunEvent[];
 }
 
+export interface AssistantChatInfoRun {
+  runId: string;
+  startedAt?: EpochMilliseconds;
+  completedAt?: EpochMilliseconds;
+}
+
 export interface AssistantChatInfo {
+  runs: AssistantChatInfoRun[];
   chatId: string;
   chatName: string;
   agentKey: string;

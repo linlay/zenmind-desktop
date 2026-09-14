@@ -580,3 +580,7 @@
 - 发送字符串布尔值 `returnByValue: "true"` 或 `ignoreCache: "true"`；确认不再静默转换，报错明确要求 JSON boolean。
 - 执行含语法错误及运行期异常的 `Runtime.evaluate`；确认工具报告 `desktop_cdp_evaluation_failed`，保留原始 `exceptionDetails` 和零基行列，不声称脚本无副作用。
 - 对已失效 target 调用，确认错误建议在当前 Run 内重新发现授权目标；不要为修复参数错误刷新或关闭未保存表单。表单操作成功须回读并比对期望值。
+
+## 对话信息与运行记录
+
+- 对话信息运行记录：多个 Run 各自展示 ID、秒级起止时间和整数秒耗时，未结束/缺失时间显示占位符；移除最近运行 ID。逐个复制 Run ID 和运行 JSON，确认 JSON 数组包含原始 JSONL 中该 Run 的全部记录且不混入其他 Run；失败不复制部分内容。Chat ID 旁复制图标复制 ID，“复制图标 + 路径”复制 JSONL 路径，复制全部包含运行列表。macOS / Windows、窄窗口与中英文下检查空间充足时单行、不足时自动换行且 ID 不截断，以及复制反馈；来源、创建时间和更新时间仅显示，不提供单独复制按钮。

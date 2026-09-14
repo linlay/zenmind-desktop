@@ -991,6 +991,8 @@ export interface DesktopApi {
     listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
+    copyChatRunJson: (chatId: string, runId: string) => Promise<{ ok: boolean }>;
+    copyChatStoragePath: (chatId: string, target: "file" | "directory") => Promise<{ ok: boolean }>;
     revealChatInFolder: (chatId: string) => Promise<AssistantChatRevealResult>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;

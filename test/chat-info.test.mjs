@@ -20,7 +20,6 @@ const labels = {
   "sidebar.chat.infoField.createdAt": "Created at",
   "sidebar.chat.infoField.updatedAt": "Updated at",
   "sidebar.chat.infoField.lastRunId": "Latest run ID",
-  "sidebar.chat.infoField.lastRunContent": "Latest response",
 };
 const t = (key) => labels[key] ?? key;
 
@@ -73,9 +72,8 @@ test("chat information rows map full detail and preserve epoch values for copyin
     "source",
     "createdAt",
     "updatedAt",
-    "lastRunId",
-    "lastRunContent",
   ]);
+  assert.equal(buildChatInfoCopyAllText(rows).includes("Done"), false);
   assert.deepEqual(rows.find((row) => row.key === "createdAt"), {
     key: "createdAt",
     label: "Created at",
@@ -112,7 +110,7 @@ test("chat information dialog keeps WebClient behavior behind Desktop UI", () =>
   assert.doesNotMatch(dialogSource, /sidebar\.chat\.infoBasic/u);
   assert.doesNotMatch(dialogSource, /revealFeedback === "revealed"/u);
   assert.match(dialogSource, /disabled=\{!state\.detail\?\.rawJson\}/u);
-  assert.match(dialogSource, /buildChatInfoCopyAllText\(rows\)/u);
+  assert.match(dialogSource, /buildChatInfoCopyAllText\(rows,/u);
   assert.match(dialogSource, /event\.key !== "Escape"/u);
   assert.match(hookSource, /assistant\.getChatInfo\(summary\.chatId\)/u);
   assert.match(hookSource, /requestIdRef\.current !== requestId/u);
@@ -133,4 +131,16 @@ test("chat information dialog keeps WebClient behavior behind Desktop UI", () =>
   );
   assert.match(enUSSource, /"sidebar\.chat\.infoTitle": "Chat information"/u);
   assert.doesNotMatch(enUSSource, /"sidebar\.chat\.infoTitle": "Copy chat information"/u);
+});
+
+test("copy all includes run IDs, exact timing and duration without a latest-run row", () => {
+  const rows = buildChatInfoRows({ summary: { chatId: "c", chatName: "Chat", agentKey: "a" }, detail: null, t });
+  const runs = [{ runId: "r1", startedAt: 0, completedAt: 1250 }, { runId: "r2", startedAt: 2000 }];
+  const text = buildChatInfoCopyAllText(rows, runs, t);
+  assert.match(text, /Run ID: r1/u);
+  assert.match(text, /1970-01-01T00:00:00Z/u);
+  assert.match(text, /1 s/u);
+  assert.match(text, /Run ID: r2/u);
+  assert.match(text, /→ —/u);
+  assert.equal(rows.some((row) => row.key === "lastRunId"), false);
 });
