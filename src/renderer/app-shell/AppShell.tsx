@@ -1811,7 +1811,7 @@ export function AppShell() {
     }
   }
 
-  async function refreshCopilotAgentOptions() {
+  const refreshCopilotAgentOptions = useCallback(async () => {
     try {
       const result = await window.electronAPI.assistant.listCopilotAgents();
       if (!result.ok) {
@@ -1821,7 +1821,7 @@ export function AppShell() {
     } catch {
       // Keep the current picker list while agent-platform is still warming up.
     }
-  }
+  }, []);
 
   function refreshAssistantNavAgentsAfterStartupReady(nextState: StartupRestoreState) {
     if (nextState.phase === "succeeded") {
@@ -4762,6 +4762,8 @@ export function AppShell() {
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     webItems={webItems}
+                    copilotAgentOptions={copilotAgentOptions}
+                    onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
                     webappPublishStateById={webappPublishStateById}
                     onWebItemsRefresh={refreshWebItems}
                     onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}

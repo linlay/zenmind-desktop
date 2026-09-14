@@ -111,6 +111,8 @@ type SettingsPageProps = {
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   webItems: WebEntry[];
+  copilotAgentOptions: AssistantNavAgentItem[];
+  onRefreshCopilotAgentOptions: () => Promise<void>;
   webappPublishStateById: Record<string, WebappPublishState | null>;
   onWebItemsRefresh: () => void | Promise<unknown>;
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
@@ -2398,6 +2400,8 @@ export function SettingsPage({
   marketEnabled,
   onMarketEnabledChange,
   webItems,
+  copilotAgentOptions,
+  onRefreshCopilotAgentOptions,
   webappPublishStateById,
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
@@ -2982,6 +2986,12 @@ export function SettingsPage({
     };
   }, [shouldReadTunnelHubData]);
 
+
+  useEffect(() => {
+    if (activeSection === "websites") {
+      void onRefreshCopilotAgentOptions();
+    }
+  }, [activeSection, onRefreshCopilotAgentOptions]);
 
   useEffect(() => {
     if (!shouldReadAssistantSettings || assistantSettingsLoadedRef.current) {
@@ -4191,15 +4201,18 @@ export function SettingsPage({
     }
   }
 
-  function renderAgentSelectOptions(currentAgentKey: string) {
-    const agentKnown = !currentAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === currentAgentKey);
+  function renderAgentSelectOptions(
+    currentAgentKey: string,
+    agentOptions: DesktopPetAgentOption[] = assistantAgentOptions
+  ) {
+    const agentKnown = !currentAgentKey || agentOptions.some((agent) => agent.agentKey === currentAgentKey);
     return [
       { value: "", label: t("settings.websites.defaultCopilot") },
       ...(currentAgentKey && !agentKnown ? [{
         value: currentAgentKey,
         label: t("settings.navigation.unavailableAgent", { agentKey: currentAgentKey })
       }] : []),
-      ...assistantAgentOptions.map((agent) => ({
+      ...agentOptions.map((agent) => ({
         value: agent.agentKey,
         label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
       }))
@@ -5167,9 +5180,8 @@ export function SettingsPage({
                           style={{ width: "100%" }}
                           value={websiteAgentKey}
                           onChange={setWebsiteAgentKey}
-                          disabled={assistantAgentOptions.length === 0}
                           aria-label={t("settings.websites.agentEnhancement")}
-                          options={renderAgentSelectOptions(websiteAgentKey)}
+                          options={renderAgentSelectOptions(websiteAgentKey, copilotAgentOptions)}
                         />
                       </span>
                     </label>
