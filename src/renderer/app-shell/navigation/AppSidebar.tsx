@@ -1212,6 +1212,7 @@ export function AppSidebar({
   const [bootstrapGuideCardDismissed, setBootstrapGuideCardDismissed] =
     useState(false);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
+  const settingsSearchInputRef = useRef<HTMLInputElement>(null);
   const [forcedActiveManagementRoute, setForcedActiveManagementRoute] =
     useState("");
   const [chatsVisibleLimit, setChatsVisibleLimit] = useState(
@@ -6729,22 +6730,32 @@ export function AppSidebar({
           </span>
           <span className="sidebar-link-label">{t("settings.backToApp")}</span>
         </button>
-        <label
-          className="sidebar-settings-search"
-          aria-label={t("settings.searchAriaLabel")}
-        >
-          <span className="sidebar-settings-search-icon" aria-hidden="true">
-            <SettingsSidebarIcon kind="search" />
-          </span>
+        <div className="sidebar-settings-search">
           <input
+            ref={settingsSearchInputRef}
             type="search"
+            aria-label={t("settings.searchAriaLabel")}
             value={settingsSearchQuery}
             placeholder={t("settings.searchPlaceholder")}
             onChange={(event) =>
               setSettingsSearchQuery(event.currentTarget.value)
             }
           />
-        </label>
+          {settingsSearchQuery && (
+            <button
+              type="button"
+              className="sidebar-settings-search-clear"
+              aria-label={t("common.clear")}
+              title={t("common.clear")}
+              onClick={() => {
+                setSettingsSearchQuery("");
+                settingsSearchInputRef.current?.focus();
+              }}
+            >
+              <SidebarActionIcon kind="close" />
+            </button>
+          )}
+        </div>
         <nav
           className="sidebar-settings-directory"
           aria-label={t("settings.directory")}

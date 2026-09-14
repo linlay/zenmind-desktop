@@ -5750,8 +5750,7 @@ div.sidebar-chats-group-popover {
   min-height: 34px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
   background: var(--control-select-bg);
@@ -5766,22 +5765,6 @@ div.sidebar-chats-group-popover {
 .sidebar-settings-search:focus-within {
   border-color: var(--line-strong);
   box-shadow: none;
-}
-
-.sidebar-settings-search-icon {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-muted);
-}
-
-.sidebar-settings-search-icon svg {
-  display: block;
-  width: 100%;
-  height: 100%;
 }
 
 .sidebar-settings-search input {
@@ -5800,6 +5783,46 @@ div.sidebar-chats-group-popover {
 
 .sidebar-settings-search input::placeholder {
   color: var(--ink-muted);
+}
+
+.sidebar-settings-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+.sidebar-settings-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius-sm);
+  background: transparent;
+  color: var(--control-icon-color);
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.sidebar-settings-search-clear svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar-settings-search-clear:hover {
+  background: var(--control-hover-bg);
+  color: var(--control-icon-hover-color);
+}
+
+.sidebar-settings-search-clear:focus-visible {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 1px;
+  background: var(--control-hover-bg);
 }
 
 .app-shell.is-secondary-sidebar-mode .app-sidebar {
