@@ -7,7 +7,7 @@ import { KanbanRuntime, getKanbanConfigPath } from "../dist-electron/main/module
 import { isLocalIssueRunnable } from "../dist-electron/main/modules/kanban/local-scheduler.js";
 
 async function until(check) {
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 500; i++) {
     if (check()) return;
     await new Promise(resolve => setTimeout(resolve, 10));
   }
@@ -45,6 +45,40 @@ test("eligibility excludes cloud, no executor, automation and active/terminal fa
     { runState: "running" }, { runState: "failed" }, { runState: "cancelled" }]) {
     assert.equal(isLocalIssueRunnable({ ...ready, ...patch }), false, JSON.stringify(patch));
   }
+});
+
+test("new todo waits two seconds despite repeated wakes and only starts once", async t => {
+  const started = [];
+  const { runtime, calls } = setup(t, request => {
+    started.push(Date.now());
+    return { ok: true, ...request };
+  });
+  runtime.start();
+  const before = Date.now();
+  const { issue } = await runtime.createIssue({ status: "todo", title: "delayed", assigneeAgentKey: "a" });
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    finish(runtime, { runId: "other", chatId: "other" });
+    const current = runtime.listIssues().issues.find(item => item.id === issue.id);
+    assert.equal(current.status, "todo");
+    assert.equal(current.runId, null);
+    assert.equal(calls.length, 0);
+  }
+  await until(() => calls.length === 1 && runtime.listIssues().issues[0].status === "in_progress");
+  assert.ok(started[0] - before >= 2_000);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(calls.length, 1);
+});
+
+test("clearing the executor during the delay cancels admission", async t => {
+  const { runtime, calls } = setup(t);
+  runtime.start();
+  const { issue } = await runtime.createIssue({ status: "todo", title: "clear", assigneeAgentKey: "a" });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await runtime.updateIssue(issue.id, { assigneeAgentKey: null, workerAgent: null, workerType: null });
+  await new Promise(resolve => setTimeout(resolve, 1_700));
+  assert.equal(calls.length, 0);
+  assert.equal(runtime.listIssues().issues[0].status, "todo");
 });
 
 test("startup scans existing todo and update assignment starts without a renderer", async t => {

@@ -2755,7 +2755,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       {modal ? (
         <div className="kanban-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
           <form
-            className={`kanban-modal ${formCompact ? "is-compact" : "is-advanced"} ${modalReadOnly ? "is-readonly" : ""}`}
+            className={`kanban-modal ${modal.mode === "create" ? "is-create" : ""} ${formCompact ? "is-compact" : "is-advanced"} ${modalReadOnly ? "is-readonly" : ""}`}
             onSubmit={(event) => {
               if (modalReadOnly) {
                 event.preventDefault();
@@ -2882,7 +2882,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                     {cloudDetails.workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
                   </>}
                 </select>
-                {!formProjectIsCloud && form.localWorkflowId && <small>{localWorkflows.find((item) => item.id === form.localWorkflowId)?.stages.map((stage) => stage.name).join(" → ")}</small>}
               </label>}
             </div>
             {!formCompact ? (

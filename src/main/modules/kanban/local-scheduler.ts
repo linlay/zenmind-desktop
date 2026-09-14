@@ -8,6 +8,8 @@ import {
 } from "./runtime.shared";
 import { t } from "../../support/i18n/main-i18n";
 
+const LOCAL_TODO_START_DELAY_MS = 2_000;
+
 export function localIssueExecutor(issue: KanbanIssue): string {
   return issue.workerType === "human" ? "" : (issue.workerAgent || issue.assigneeAgentKey || "").trim();
 }
@@ -23,6 +25,8 @@ export class LocalKanbanScheduler {
   private running = false;
   private timer: ReturnType<typeof setInterval> | undefined;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  private admissionTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly eligibleAfter = new Map<string, number>();
   private readonly admitting = new Set<string>();
   private readonly retryAfter = new Map<string, number>();
 
@@ -42,6 +46,8 @@ export class LocalKanbanScheduler {
     this.running = false;
     clearInterval(this.timer);
     clearTimeout(this.wakeTimer);
+    clearTimeout(this.admissionTimer);
+    this.eligibleAfter.clear();
     this.wakeTimer = undefined;
   }
 
@@ -56,11 +62,24 @@ export class LocalKanbanScheduler {
   }
 
   private reconcile() {
+    clearTimeout(this.admissionTimer);
     if (!this.running || !readKanbanSettings(this.options.app).enabled) return;
     const user = this.user();
     const issues = listDesktopKanbanIssues(this.options.app, user).issues
       .filter(isLocalIssueRunnable).sort((a, b) => a.position - b.position || a.createdAt.localeCompare(b.createdAt));
+    const eligibilityKey = (issue: KanbanIssue) => JSON.stringify([user.id, issue.id, issue.stageId, localIssueExecutor(issue)]);
+    const currentKeys = new Set(issues.map(eligibilityKey));
+    for (const key of this.eligibleAfter.keys()) if (!currentKeys.has(key)) this.eligibleAfter.delete(key);
+    let nextAdmissionAt = Infinity;
     for (const issue of issues) {
+      const issueKey = eligibilityKey(issue);
+      const readyAt = this.eligibleAfter.get(issueKey) ?? Date.now() + LOCAL_TODO_START_DELAY_MS;
+      this.eligibleAfter.set(issueKey, readyAt);
+      // Keep Todo visible before requesting a Run, even when other events wake the scheduler.
+      if (readyAt > Date.now()) {
+        nextAdmissionAt = Math.min(nextAdmissionAt, readyAt);
+        continue;
+      }
       const agentKey = localIssueExecutor(issue);
       const key = JSON.stringify([user.id, agentKey]);
       if (this.admitting.has(key) || (this.retryAfter.get(key) ?? 0) > Date.now()) continue;
@@ -70,6 +89,10 @@ export class LocalKanbanScheduler {
         this.retryAfter.set(key, Date.now() + 15_000);
         this.debug(error);
       }).finally(() => { this.admitting.delete(key); this.wake(); });
+    }
+    if (Number.isFinite(nextAdmissionAt)) {
+      this.admissionTimer = setTimeout(() => this.wake(), Math.max(0, nextAdmissionAt - Date.now()));
+      this.admissionTimer.unref?.();
     }
   }
 

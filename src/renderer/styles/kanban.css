@@ -2332,6 +2332,76 @@
   opacity: 0.58;
 }
 
+.kanban-modal.is-create {
+  padding: 12px;
+  gap: 10px;
+}
+
+.kanban-modal.is-create .kanban-field {
+  gap: 4px;
+}
+
+.kanban-modal.is-create .kanban-field-grid,
+.kanban-modal.is-create .kanban-automation-config {
+  gap: 8px;
+}
+
+.kanban-modal.is-create .kanban-field input,
+.kanban-modal.is-create .kanban-field textarea,
+.kanban-modal.is-create .kanban-field select,
+.kanban-modal.is-create .kanban-project-form-trigger {
+  padding: 6px 8px;
+}
+
+.kanban-modal.is-create .kanban-executor-cards {
+  gap: 6px;
+  grid-auto-rows: 40px;
+}
+
+.kanban-modal.is-create .kanban-executor-card {
+  min-height: 40px;
+  padding: 6px 8px;
+}
+
+.kanban-modal.is-create .kanban-automation-panel {
+  padding: 10px;
+  gap: 8px;
+}
+
+.kanban-modal.is-create,
+.kanban-modal.is-create .kanban-field,
+.kanban-modal.is-create .kanban-check-row {
+  font-size: 14px;
+}
+
+.kanban-modal.is-create .kanban-field input,
+.kanban-modal.is-create .kanban-field textarea {
+  font-size: 14px;
+}
+
+.kanban-modal.is-create .kanban-field > span,
+.kanban-modal.is-create .kanban-field-head > span,
+.kanban-modal.is-create .kanban-executor-heading > span,
+.kanban-modal.is-create .kanban-check-row > span,
+.kanban-modal.is-create .kanban-field small {
+  font-size: 12px;
+}
+
+.kanban-modal.is-create .kanban-field select,
+.kanban-modal.is-create .kanban-field option,
+.kanban-modal.is-create .kanban-project-form-trigger,
+.kanban-modal.is-create .kanban-project-form-menu button,
+.kanban-modal.is-create .kanban-executor-card {
+  font-size: 14px;
+}
+
+.kanban-modal.is-create .kanban-modal-mode-button,
+.kanban-modal.is-create .kanban-attachment-add-button,
+.kanban-modal.is-create .kanban-executor-more,
+.kanban-modal.is-create .kanban-modal-actions button {
+  font-size: 12px;
+}
+
 .kanban-modal-head {
   display: flex;
   align-items: center;
