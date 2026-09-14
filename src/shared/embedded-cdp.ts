@@ -20,6 +20,7 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
   "DOM.querySelectorAll",
   "DOM.getOuterHTML",
   "DOM.getBoxModel",
+  "Input.click", // Desktop-composed click, not a Chromium method.
   "Input.dispatchMouseEvent",
   "Input.dispatchKeyEvent",
   "Input.insertText",

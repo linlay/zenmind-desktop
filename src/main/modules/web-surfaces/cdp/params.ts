@@ -1,3 +1,4 @@
+import { validateClickParams } from "./click-params";
 type ParamType = "number" | "integer" | "boolean" | "string" | "object" | "array";
 type Rule = { type: ParamType; required?: boolean; values?: readonly string[] };
 type Rules = Record<string, Rule>;
@@ -62,6 +63,12 @@ function valueType(value: unknown): string {
 }
 
 export function validateDesktopCdpParams(method: string, value: unknown): asserts value is Record<string, unknown> | undefined {
+  if (method === "Input.click") {
+    try { validateClickParams(value); } catch (error) {
+      throw new DesktopCdpParamsError(method, [{ path: "params", expected: error instanceof Error ? error.message : "valid click parameters", actualType: valueType(value) }]);
+    }
+    return;
+  }
   if (value === undefined) value = {};
   if (valueType(value) !== "object") {
     throw new DesktopCdpParamsError(method, [{ path: "params", expected: "object", actualType: valueType(value) }]);

@@ -582,6 +582,13 @@
 - 执行含语法错误及运行期异常的 `Runtime.evaluate`；确认工具报告 `desktop_cdp_evaluation_failed`，保留原始 `exceptionDetails` 和零基行列，不声称脚本无副作用。
 - 对已失效 target 调用，确认错误建议在当前 Run 内重新发现授权目标；不要为修复参数错误刷新或关闭未保存表单。表单操作成功须回读并比对期望值。
 
+## 整合 CDP 点击
+
+- 自动验证：`npm run build:main:types` 后执行 `node --test test/desktop-click.test.mjs test/desktop-cdp-params.test.mjs test/site-cdp-control.test.mjs`；真实 Chromium 验证运行 `node_modules/.bin/electron test/fixtures/desktop-click-electron.cjs`，使用隔离临时 profile。
+- macOS 与 Windows 分别验证：selector、CSS x/y 两种定位；有/无 waitFor；小数坐标、页面缩放、滚动后点击、遮挡、disabled、多个匹配及视口外坐标。按钮事件必须是 trusted，正常点击仅触发一次。
+- 验证等待超时不重放、取消后不新增按下、原 guest 关闭/替换与主 frame 导航后停止 DOM 观察、URL 条件跨导航只读原 guest；其他 Run/原始 CDP 输入不得插入按下和释放之间。
+- 配套 Platform 统一通过 desktop_cdp 的 Input.click 执行，请求保持 {method,targetId,params} 结构：一次工具调用、一条反向请求、零参数文件；结果中 action.outcome 与 conditionMatched 分开呈现。旧 Desktop 拒绝方法时不自动重试点击。
+
 ## 对话信息与运行记录
 
 - 对话信息运行记录：多个 Run 各自展示 ID、秒级起止时间和整数秒耗时，未结束/缺失时间显示占位符；移除最近运行 ID。逐个复制 Run ID 和运行 JSON，确认 JSON 数组包含原始 JSONL 中该 Run 的全部记录且不混入其他 Run；失败不复制部分内容。Chat ID 旁复制图标复制 ID，“复制图标 + 路径”复制 JSONL 路径，复制全部包含运行列表。macOS / Windows、窄窗口与中英文下检查空间充足时单行、不足时自动换行且 ID 不截断，以及复制反馈；来源、创建时间和更新时间仅显示，不提供单独复制按钮。

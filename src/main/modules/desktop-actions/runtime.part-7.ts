@@ -23,7 +23,8 @@ import { handleActionCall, normalizeActionResponseTimePayload } from "./runtime.
 export async function handleDesktopCdpRequest(
   options: DesktopActionBridgeOptions,
   request: DesktopCdpCallRequest,
-  scope?: SiteControlScope
+  scope?: SiteControlScope,
+  signal?: AbortSignal
 ): Promise<DesktopCdpCallResponse> {
   const method = typeof request.method === "string" ? request.method.trim() : "";
   if (!method) {
@@ -64,7 +65,7 @@ export async function handleDesktopCdpRequest(
       params,
       targetId,
       ...(request.source?.chatId ? { source: { chatId: request.source.chatId } } : {})
-    }, scope);
+    }, scope, signal);
     return {
       ok: true,
       method,

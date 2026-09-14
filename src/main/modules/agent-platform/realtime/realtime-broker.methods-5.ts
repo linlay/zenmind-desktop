@@ -159,7 +159,7 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
             result = await provider.action(actionRequest as Record<string, unknown>);
         }
         else {
-            result = await provider.cdp(frame.payload, self.siteControlGrants.resolve(cdpSource));
+            result = await provider.cdp(frame.payload, self.siteControlGrants.resolve(cdpSource), controller.signal);
         }
         if (controller.signal.aborted)
             return;

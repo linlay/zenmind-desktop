@@ -526,3 +526,27 @@ test('invalid mouse parameters never acquire page focus or send input', async (t
   assert.deepEqual(phases, []);
   assert.equal(h.commands.length, commandsBefore);
 });
+
+test('Input.click runs one authorized focus transaction and never forwards the virtual method to Chromium', async (t) => {
+  const h = createSiteHarness(); const a = h.site('click');
+  const scope = h.capture(a); scope.activate(); t.after(() => scope.release());
+  const phases = [];
+  const gateway = gatewayFor(h, { controlSiteFocus: async (_surface, _tab, _scope, phase) => { phases.push(phase); } });
+  const { targetId } = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const guest = h.contents.get(a.tabs[0].webContentsId);
+  const original = guest.debugger.sendCommand;
+  guest.debugger.sendCommand = async (method, params) => {
+    await original(method, params);
+    return method === 'Runtime.evaluate' ? { result: { value: { x: 10.5, y: 20.25, matched: true } } } : {};
+  };
+  const { result } = await gateway.executeCommand({ method: 'Input.click', targetId, params: { x: 10.5, y: 20.25 } }, scope);
+  assert.equal(result.status, 'clicked');
+  assert.deepEqual(phases, ['capture', 'input', 'restore']);
+  assert.equal(h.commands.some(c => c.method === 'Input.click'), false);
+  assert.deepEqual(h.commands.filter(c => c.method === 'Input.dispatchMouseEvent').map(c => c.params.type), ['mousePressed', 'mouseReleased']);
+  assert.equal(guest.debugger.isAttached(), false);
+  const controller = new AbortController(); controller.abort();
+  const before = h.commands.length;
+  await assert.rejects(gateway.executeCommand({ method: 'Input.click', targetId, params: { selector: '#b' } }, scope, controller.signal), /canceled/);
+  assert.equal(h.commands.length, before);
+});

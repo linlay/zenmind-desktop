@@ -117,7 +117,7 @@ export type DesktopActionBridgeOptions = {
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
-  executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) => Promise<{
+  executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteControlScope, signal?: AbortSignal) => Promise<{
     targetId?: string;
     surfaceId?: string;
     result: unknown;

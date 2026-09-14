@@ -137,13 +137,13 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getMainWindow: options.getMainWindow,
       pendingRequests: desktopActionConfirmationRequests
     }),
-    executeCdpCommand: async (request: unknown, scope?: SiteControlScope) => options.cdpIntegration.start().executeCommand(request, scope),
+    executeCdpCommand: async (request: unknown, scope?: SiteControlScope, signal?: AbortSignal) => options.cdpIntegration.start().executeCommand(request, scope, signal),
     emitWebappChanged,
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
     action: (request) => integration.handleAgentPlatformDesktopActionRequest(desktopActionOptions, request as any),
-    cdp: (request, scope) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope),
+    cdp: (request, scope, signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, signal),
     awcpSnapshot: (requestId, scope, signal) => awcpGuestBridge.snapshot(requestId, scope, signal),
     awcpInvoke: (requestId, request, scope, signal) => awcpGuestBridge.invoke(requestId, request, scope, signal),
   });

@@ -246,7 +246,7 @@ export type RunActionGrant = {
 
 export type DesktopBridgeRequestProvider = {
   action(request: Record<string, unknown>): Promise<unknown>;
-  cdp(request: Record<string, unknown>, scope?: SiteControlScope): Promise<unknown>;
+  cdp(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal): Promise<unknown>;
   awcpSnapshot(requestId: string, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
   awcpInvoke(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
 };

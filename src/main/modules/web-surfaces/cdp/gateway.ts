@@ -1,3 +1,6 @@
+import { executeClick } from "./click";
+import { withCdpCommandQueue } from "./command-queue";
+import type { DesktopClickParams } from "../../../../shared/desktop-click";
 import { validateDesktopCdpParams, DesktopCdpParamsError } from "./params";
 import { requireSiteControlScope, type SiteControlScope } from "./site-scope";
 import { withSiteCdpFocus } from "./site-focus";
@@ -451,7 +454,7 @@ export class EmbeddedCdpGateway {
     );
   }
 
-  async executeCommand(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) {
+  async executeCommand(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope, signal?: AbortSignal) {
     if (scope) requireSiteControlScope(scope);
     const method = typeof request.method === "string" ? request.method.trim() : "";
     if (!method) {
@@ -499,7 +502,7 @@ export class EmbeddedCdpGateway {
     }
     const { surface, tab, targetId } = await this.resolveCommandTarget(request, scope);
     validateDesktopCdpParams(method, request.params);
-    return withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
+    return withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
       ? (phase) => this.options.controlSiteFocus!(surface, tab, scope, phase) : undefined, async () => {
       if (method === "Target.closeTarget") {
         if (Object.keys(params).length > 0) {
@@ -515,13 +518,14 @@ export class EmbeddedCdpGateway {
           result: { success: true }
         };
       }
-      const result = await this.handleWebContentsCommandOnce(surface, tab, targetId, method, params, scope);
+      if (signal?.aborted) throw new Error("canceled");
+      const result = await this.handleWebContentsCommandOnce(surface, tab, targetId, method, params, scope, signal);
       return {
         targetId,
         surfaceId: surface.id,
         result
       };
-    });
+    }));
   }
 
   private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -634,7 +638,9 @@ export class EmbeddedCdpGateway {
         }
       }
       const target = await this.resolveCommandTarget({ method, targetId });
-      const result = await this.handleWebContentsCommand(connection, target, method, command.params ?? {});
+      const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click"
+        ? this.handleWebContentsCommandOnce(target.surface, target.tab, targetId, method, command.params ?? {})
+        : this.handleWebContentsCommand(connection, target, method, command.params ?? {}));
       connection.sendJSON({ id, result });
       if (method === "Target.closeTarget") {
         this.releaseConnection(connection);
@@ -705,7 +711,8 @@ export class EmbeddedCdpGateway {
     targetId: string,
     method: string,
     params: Record<string, unknown>,
-    scope?: SiteControlScope
+    scope?: SiteControlScope,
+    signal?: AbortSignal
   ) {
     const contents = await this.ensureWebContents(surface, tab);
     if (!contents || contents.isDestroyed()) {
@@ -735,6 +742,15 @@ export class EmbeddedCdpGateway {
         // Chromium ignores input in an unfocused guest. Emulation does not focus the host window.
         await sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled: true }, debugContext);
         scope?.validateTab(tab);
+      }
+      if (method === "Input.click") {
+        return await executeClick(params as DesktopClickParams, contents,
+          (name, args, timeoutMs) => sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs }),
+          async () => {
+            scope?.validateTab(tab);
+            const current = await this.resolveCommandTarget({ method, targetId, source: { chatId: surface.ownerChatId } }, scope);
+            if (current.tab.webContentsId !== contents.id) throw new Error("target_replaced");
+          }, signal);
       }
       return await sendDesktopCdpCommand(debuggerRef, method, params, debugContext);
     } finally {
