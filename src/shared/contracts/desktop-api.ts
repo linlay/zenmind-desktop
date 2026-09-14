@@ -1216,7 +1216,7 @@ export interface DesktopApi {
     };
   };
   diagnostics: {
-    /** Read-only, enabled at process launch with ZENMIND_PERF=1. */
+    /** Read-only, enabled at process launch with PERF=1. */
     performanceEnabled?: boolean;
     reportRendererError: (report: RendererDiagnosticReport) => void;
     openDesktopLogViewer: (target: DesktopLogTarget) => Promise<{ ok: boolean }>;
