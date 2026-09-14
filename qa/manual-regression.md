@@ -1,5 +1,11 @@
 # Desktop 手工回归清单
 
+## 网站 Copilot 选择
+
+- 在 macOS 与 Windows 分别打开侧栏“新增内嵌网站”和设置中的“内嵌网站”，确认“站点 Copilot”的可选 Agent 与顺序一致，均使用 Platform Copilot 列表，不混入仅存在于普通聊天或项目列表中的 Agent。
+- 变更 Platform 的 Copilot 列表后重新打开新增弹窗或进入网站设置，确认两处都更新为同一份列表；列表为空时仍可选择“默认 Copilot”。
+- 打开已绑定到列表外 Agent 的网站设置，确认保留原 agentKey 并显示不可用提示，未主动修改时保存不改变绑定；切换到有效 Copilot 或默认值后保存，重新进入确认回填正确。
+
 ## 连接器内嵌授权
 
 - 自动冒烟：完成 `npm run build:main:prepared` 后运行 `node_modules/.bin/electron qa/connector-auth-browser-smoke.cjs`，使用本地 Platform 夹具和模拟 HTTPS 页面验证真实 WebView、无 Node/宿主桥权限及关闭回传；输出截图路径。它不替代真实企业微信扫码回归。
@@ -267,6 +273,16 @@
 - macOS 点击 `Reveal in Finder`，Windows 点击 `Show in File Explorer`；有 Chat 目录时定位该目录，只有持久化 JSONL 时定位该文件。成功后不显示冗余状态行，失败时才显示错误；renderer 返回值和错误信息均不包含绝对路径。
 - 使用包含 `/`、`\\` 或 `..` 的伪造 Chat ID 调用 reveal IPC，确认请求被拒绝且不会打开任意目录。
 
+## 设置页操作提示
+
+- 在 macOS 与 Windows 的“网站应用”设置中点击导入并取消文件选择，确认右上角提示出现后约 5 秒自动消失，关闭按钮仍可立即关闭。
+- 在上一条提示消失前再次取消导入，确认相同文案从本次出现重新计时 5 秒，旧计时器不能提前关闭新提示；手动关闭后再次触发也应完整展示 5 秒。
+- 提示出现后离开设置页并返回，确认无残留提示；页面读取失败的内联错误仍保持可见。
+
+## 开发依赖缓存隔离
+
+- 两个工作目录共享 `node_modules` 时，确认 Vite 分别使用各自的 `.cache/vite`，依次启动开发服务并打开宠物；宠物页面和图标依赖应正常加载，不出现 `504 Outdated Optimize Dep`。
+
 ## WebApp 单一展示所有权
 
 
@@ -304,7 +320,7 @@
 ## 本地文件安全宿主
 
 - 多选 HTML、PDF、图片、文本、音频、视频、Office、压缩包和未知格式；支持格式内嵌预览，其他格式只显示系统定位和默认应用打开。
-- macOS 与 Windows 分别通过“文件”打开含中文的 UTF-8 Markdown、TXT、JSON 和源码文件（含无 BOM 与带 BOM），确认中文、标点和换行正确，文本中的 HTML 标签按原文显示；带 BOM 的 UTF-16 文本也应正常。HTML 同目录 CSS/JS 仍使用原有资源 MIME。
+- CuteJ 与 ZenMind 两个品牌分别在 macOS 与 Windows 通过“文件”打开含中文的 UTF-8 Markdown、TXT、JSON 和源码文件（含无 BOM 与带 BOM），确认中文、标点和换行正确，文本中的 HTML 标签按原文显示；带 BOM 的 UTF-16 文本也应正常。HTML 同目录 CSS/JS 仍使用原有资源 MIME。
 - 在 Main Chat RightSidebar 与 WorkPanel Artifact/Reference 中分别打开 DOCX、XLSX、PPTX、ZIP 和未知格式，确认双按钮由 WebClient 渲染在 `.content-viewer-panel` 中央，Desktop 外层没有重复操作层；操作成功保持静默，失败显示本地化错误且 guest 消息、renderer/IPC 响应均不包含绝对路径。
 - 从带 canonical Chat grant 的内部 Platform Run 调用 `desktop.workpanel.openLocalFile`，确认 workspace 相对路径可打开；绝对路径、`file://`、`..`、缺失 workspace 及所有 HTTP/WS/WebApp/调试入口均失败且不弹确认。
 - 重复选择同一文件激活已有 tab；关闭 tab、关闭 workspace、移除 Chat 和退出 renderer 后句柄释放。

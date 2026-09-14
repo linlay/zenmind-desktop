@@ -4,6 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { loadBrandConfig } from "../scripts/lib/brand-config.mjs";
+import { CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } from "../dist-electron/shared/chat-work-panel.js";
 
 const {
   WorkPanelLocalFileRegistry,
@@ -13,6 +16,32 @@ const {
   resolveWorkPanelLocalFileFromWorkspace,
   resolveLocalFileProtocolPath,
 } = await import("../dist-electron/main/modules/work-panel/local-files.js");
+
+test("WorkPanel local file protocol follows each brand through registration, URLs and path validation", () => {
+  const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+  for (const brandId of ["cutej", "zenmind"]) {
+    const brand = loadBrandConfig(projectRoot, brandId);
+    const result = spawnSync(process.execPath, ["-e", `
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const path = require('node:path');
+      globalThis.__DESKTOP_APP_BRAND__ = JSON.parse(fs.readFileSync(0, 'utf8'));
+      const { CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL, createWorkPanelLocalFileUrl } = require('./dist-electron/shared/chat-work-panel.js');
+      const { registerChatWorkPanelLocalFileProtocolScheme, resolveLocalFileProtocolPath } = require('./dist-electron/main/modules/work-panel/local-files.js');
+      const expected = globalThis.__DESKTOP_APP_BRAND__.id + '-local-file';
+      assert.equal(CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL, expected);
+      registerChatWorkPanelLocalFileProtocolScheme({ registerSchemesAsPrivileged(schemes) {
+        assert.equal(schemes[0].scheme, expected);
+      }});
+      const url = createWorkPanelLocalFileUrl('opaque-handle', 'README.md');
+      assert.equal(new URL(url).protocol, expected + ':');
+      const handle = { handleId: 'opaque-handle', rootRealPath: fs.realpathSync.native(process.cwd()) };
+      assert.equal(resolveLocalFileProtocolPath(handle, url), fs.realpathSync.native(path.join(process.cwd(), 'README.md')));
+      assert.equal(resolveLocalFileProtocolPath(handle, url.replace(expected + ':', 'other-brand-local-file:')), '');
+    `], { cwd: projectRoot, input: JSON.stringify(brand), encoding: "utf8" });
+    assert.equal(result.status, 0, `${brandId}: ${result.stderr || result.error || result.stdout}`);
+  }
+});
 
 test("WorkPanel local files classify only supported inline preview formats", () => {
   assert.equal(classifyWorkPanelLocalFile("index.HTML"), "html");
@@ -40,7 +69,7 @@ test("WorkPanel local file path checks are explicit for macOS/POSIX and Windows"
 });
 
 test("WorkPanel resolves only regular files whose realpath stays inside the Agent workspace", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-workspace-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workpanel-workspace-"));
   const workspace = path.join(tempRoot, "workspace");
   const outside = path.join(tempRoot, "outside.html");
   fs.mkdirSync(path.join(workspace, "artifacts"), { recursive: true });
@@ -66,7 +95,7 @@ test("WorkPanel resolves only regular files whose realpath stays inside the Agen
 });
 
 test("WorkPanel local HTML resources stay inside the selected directory after realpath", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-local-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workpanel-local-"));
   const selectedRoot = path.join(tempRoot, "selected");
   const outsideRoot = path.join(tempRoot, "outside");
   fs.mkdirSync(selectedRoot);
@@ -83,22 +112,22 @@ test("WorkPanel local HTML resources stay inside the selected directory after re
   };
   try {
     assert.equal(
-      resolveLocalFileProtocolPath(handle, "zenmind-local-file://opaque-handle/index.html"),
+      resolveLocalFileProtocolPath(handle, `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://opaque-handle/index.html`),
       fs.realpathSync.native(htmlPath),
     );
     assert.equal(
-      resolveLocalFileProtocolPath(handle, "zenmind-local-file://opaque-handle/styles.css"),
+      resolveLocalFileProtocolPath(handle, `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://opaque-handle/styles.css`),
       fs.realpathSync.native(cssPath),
     );
     if (process.platform !== "win32") {
       fs.symlinkSync(secretPath, path.join(selectedRoot, "linked-secret.txt"));
       assert.equal(
-        resolveLocalFileProtocolPath(handle, "zenmind-local-file://opaque-handle/linked-secret.txt"),
+        resolveLocalFileProtocolPath(handle, `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://opaque-handle/linked-secret.txt`),
         "",
       );
     }
     assert.equal(
-      resolveLocalFileProtocolPath(handle, "zenmind-local-file://wrong-handle/index.html"),
+      resolveLocalFileProtocolPath(handle, `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://wrong-handle/index.html`),
       "",
     );
   } finally {
@@ -151,7 +180,7 @@ function createFakeSession() {
 }
 
 test("WorkPanel text previews declare UTF-8 without changing bytes or other resource MIME types", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-encoding-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workpanel-encoding-"));
   const source = "中文文件，Jira 工时。\n<script>throw new Error('plain text')</script>\n";
   const fixtures = [
     ["中文说明.md", "text/markdown", Buffer.from(source)],
@@ -190,7 +219,7 @@ test("WorkPanel text previews declare UTF-8 without changing bytes or other reso
       const owner = { ownerChatId: "chat-owner", rendererGeneration: "renderer-1" };
       const result = await registry.select(owner, sender, async () => ({ canceled: false, filePaths: [filePath] }), null);
       assert.equal(result.ok, true);
-      const baseUrl = `zenmind-local-file://${result.files[0].handleId}/`;
+      const baseUrl = `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://${result.files[0].handleId}/`;
       const response = await fake.state.protocolHandler({ url: baseUrl + encodeURIComponent(fileName) });
       const isText = result.files[0].previewKind === "text";
       assert.equal(response.headers.get("Content-Type"), isText ? "text/plain; charset=utf-8" : mimeType, fileName);
@@ -208,7 +237,7 @@ test("WorkPanel text previews declare UTF-8 without changing bytes or other reso
 });
 
 test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and network-isolated", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-claim-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workpanel-claim-"));
   const filePath = path.join(tempRoot, "report.html");
   const siblingPath = path.join(tempRoot, "sibling.html");
   fs.writeFileSync(filePath, "<!doctype html>");
@@ -255,7 +284,7 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
       reused: false,
     });
     assert.equal(registry.isReviewableUrl(
-      `zenmind-local-file://${claimed.file.handleId}/report.html`,
+      `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://${claimed.file.handleId}/report.html`,
     ), false);
     assert.equal(scheduled[0].cleared, true);
     assert.equal((await registry.claim({
@@ -281,10 +310,10 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
     assert.equal(reused.file.reviewKind, "html");
     assert.equal(reused.file.workspaceRelativePath, "report.html");
     assert.equal(registry.isReviewableUrl(
-      `zenmind-local-file://${claimed.file.handleId}/report.html`,
+      `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://${claimed.file.handleId}/report.html`,
     ), true);
     assert.equal(registry.isReviewableUrl(
-      `zenmind-local-file://${claimed.file.handleId}/sibling.html`,
+      `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://${claimed.file.handleId}/sibling.html`,
     ), false);
 
     let permissionAllowed = true;
@@ -308,9 +337,9 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
       handleIds: [claimed.file.handleId],
     }, sender), { ok: true });
     assert.equal(registry.isReviewableUrl(
-      `zenmind-local-file://${claimed.file.handleId}/report.html`,
+      `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://${claimed.file.handleId}/report.html`,
     ), false);
-    assert.deepEqual(fake.state.unhandled, ["zenmind-local-file"]);
+    assert.deepEqual(fake.state.unhandled, [CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL]);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(fake.state.storageClears, 1);
     assert.equal(fake.state.cacheClears, 1);
@@ -320,7 +349,7 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
 });
 
 test("WorkPanel discards an unclaimed local file claim at its deadline", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-expired-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workpanel-expired-"));
   const filePath = path.join(tempRoot, "notes.txt");
   fs.writeFileSync(filePath, "notes");
   let scheduled = null;
