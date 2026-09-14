@@ -1411,6 +1411,7 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-message-status.is-unread {
+  order: -1;
   width: 8px;
   height: 8px;
   border-radius: 999px;
