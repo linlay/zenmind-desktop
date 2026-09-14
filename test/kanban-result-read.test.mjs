@@ -51,8 +51,16 @@ test("failed requests and stale reading keys do not record success", async (t) =
   assert.equal((await f.read("stale")).ok, false);
   assert.equal(f.calls.length, 0);
   f.fail();
-  assert.equal((await f.read()).ok, false);
+  assert.deepEqual(await f.read(), { ok: false, message: "platform_read_request_failed" });
   assert.equal((await f.handlers.get("kanban.listIssues")()).issues[0].resultRead.isRead, false);
+});
+
+test("read diagnostics do not expose upstream error content and allow retry", async (t) => {
+  const f = fixture(t);
+  f.caller(async () => { throw new Error("Bearer private-token; private issue content"); });
+  assert.deepEqual(await f.read(), { ok: false, message: "platform_read_request_failed" });
+  f.caller(async () => ({ chatId: "chat-a", read: { readRunId: "run-1" } }));
+  assert.equal((await f.read()).ok, true);
 });
 
 test("results without Chats record local reading without Platform requests", async (t) => {
@@ -116,7 +124,7 @@ test("cloud terminal metadata and device ownership control the exact read target
 test("a mismatched Platform read response does not acknowledge the result", async (t) => {
   const f = fixture(t);
   f.caller(async () => ({ chatId: "chat-a", read: { readRunId: "run-other" } }));
-  assert.equal((await f.read()).ok, false);
+  assert.deepEqual(await f.read(), { ok: false, message: "platform_read_response_mismatch" });
   assert.equal((await f.handlers.get("kanban.listIssues")()).issues[0].resultRead.isRead, false);
 });
 

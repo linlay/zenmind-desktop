@@ -874,7 +874,10 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         message: t("kanban.runtime.uninitialized"),
         issues: []
       },
-    callAgentPlatform
+    callAgentPlatform: (targetApp, targetPath, requestOptions) => callAgentPlatform(targetApp, targetPath, {
+      ...requestOptions,
+      issueAgentAccessToken: options.issueAgentAccessToken
+    })
   });
   registerWebIpcHandlers(ipcMain, {
     app,

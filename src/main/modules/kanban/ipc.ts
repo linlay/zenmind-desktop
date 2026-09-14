@@ -66,32 +66,39 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
 
   const reading = new Map<string, Promise<{ ok: boolean; message?: string }>>();
   handle("kanban.markResultRead", async (_event: any, input: { issueId: string; key: string; scope: string }) => {
-    if (!input || typeof input.issueId !== "string" || typeof input.key !== "string") return { ok: false };
+    if (!input || typeof input.issueId !== "string" || typeof input.key !== "string") return { ok: false, message: "invalid_read_input" };
     const result = await listKanbanIssues(app);
     const scope = kanbanReadScope(app, result);
-    if (input.scope !== kanbanReadScopeToken(scope)) return { ok: false };
+    if (input.scope !== kanbanReadScopeToken(scope)) return { ok: false, message: "read_scope_changed" };
     const requestKey = JSON.stringify([scope, input.issueId, input.key]);
     if (reading.has(requestKey)) return reading.get(requestKey);
+    let failureStage = "read_identity_failed";
     const task = (async () => {
       const issue = result.issues.find((item: any) => item.id === input.issueId);
       const identity = issue && resolveKanbanResultIdentity(issue, result.cloudDetails);
-      if (!identity || identity.key !== input.key) return { ok: false };
+      if (!identity || identity.key !== input.key) return { ok: false, message: "read_identity_changed" };
+      failureStage = "read_receipt_load_failed";
       const store = createKanbanResultReadStore(app, scope);
       if (store.has(issue.id, identity.key)) return { ok: true };
       if (identity.chatId) {
         // Never mark a different device's Chat or a whole Agent as read.
-        if (!identity.runId || (identity.cloud && identity.deviceId !== getDesktopDeviceId(app))) return { ok: false };
+        if (!identity.runId) return { ok: false, message: "read_run_missing" };
+        if (identity.cloud && identity.deviceId !== getDesktopDeviceId(app)) return { ok: false, message: "read_device_mismatch" };
+        failureStage = "platform_read_request_failed";
         const response = await callAgentPlatform(app, "/api/read", {
           method: "POST", body: { chatId: identity.chatId, runId: identity.runId }
         });
-        if (response?.chatId !== identity.chatId || !response?.read || response.read.readRunId !== identity.runId) return { ok: false };
+        if (response?.chatId !== identity.chatId || !response?.read || response.read.readRunId !== identity.runId) return { ok: false, message: "platform_read_response_mismatch" };
       }
+      failureStage = "read_snapshot_refresh_failed";
       const latest = await listKanbanIssues(app);
       const current = latest.issues.find((item: any) => item.id === input.issueId);
-      if (kanbanReadScope(app, latest) !== scope || !current || resolveKanbanResultIdentity(current, latest.cloudDetails)?.key !== identity.key) return { ok: false };
+      if (kanbanReadScope(app, latest) !== scope || !current || resolveKanbanResultIdentity(current, latest.cloudDetails)?.key !== identity.key) return { ok: false, message: "read_target_changed" };
+      failureStage = "read_receipt_write_failed";
       store.mark(issue.id, identity.key);
       return { ok: true };
-    })().catch(() => ({ ok: false }));
+    // Return only fixed diagnostics: upstream errors may contain credentials or Issue content.
+    })().catch(() => ({ ok: false, message: failureStage }));
     reading.set(requestKey, task);
     try { return await task; } finally { reading.delete(requestKey); }
   });
