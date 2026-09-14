@@ -1,5 +1,11 @@
 # Desktop 手工回归清单
 
+## 网站 Copilot 选择
+
+- 在 macOS 与 Windows 分别打开侧栏“新增内嵌网站”和设置中的“内嵌网站”，确认“站点 Copilot”的可选 Agent 与顺序一致，均使用 Platform Copilot 列表，不混入仅存在于普通聊天或项目列表中的 Agent。
+- 变更 Platform 的 Copilot 列表后重新打开新增弹窗或进入网站设置，确认两处都更新为同一份列表；列表为空时仍可选择“默认 Copilot”。
+- 打开已绑定到列表外 Agent 的网站设置，确认保留原 agentKey 并显示不可用提示，未主动修改时保存不改变绑定；切换到有效 Copilot 或默认值后保存，重新进入确认回填正确。
+
 ## 连接器内嵌授权
 
 - 自动冒烟：完成 `npm run build:main:prepared` 后运行 `node_modules/.bin/electron qa/connector-auth-browser-smoke.cjs`，使用本地 Platform 夹具和模拟 HTTPS 页面验证真实 WebView、无 Node/宿主桥权限及关闭回传；输出截图路径。它不替代真实企业微信扫码回归。
