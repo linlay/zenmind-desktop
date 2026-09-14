@@ -1161,8 +1161,10 @@ export function AppShell() {
     preferredCopilotDockWidth,
     copilotDockAvailableWidth,
   );
+  // History is a renderer modal: its mask covers the Dock without hiding
+  // the guest or detaching its live session while browsing history.
   const copilotDockNativeDialogVisible =
-    nativeDialogVisible || Boolean(desktopActionConfirmation) || Boolean(chatHistoryDialog);
+    nativeDialogVisible || Boolean(desktopActionConfirmation);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return [...pinnedWebEntryKeys.map((key) => ({
       key: key as SidebarNavOrderItemKey,

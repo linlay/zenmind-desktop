@@ -562,6 +562,10 @@
 - [ ] Windows 真机 DPI 与 macOS Retina 验证图标/艺术字清晰；macOS 原生红黄绿与 Windows 原生窗口动作保持。
 - [ ] 换肤前后的草稿、附件、光标、审批、滚动、运行和 guest 身份保持；单元与平台 CSS 模拟不能替代此项真机验收。
 
+## 历史弹窗与 Copilot 显示
+
+- 在已打开右侧 Copilot 的 Website/WebApp 页面，macOS 依次按 Cmd+K、Cmd+H，Windows 依次按 Ctrl+K、Ctrl+H：搜索切换到历史弹窗，右侧 Copilot 保持显示并被遮罩覆盖，不出现整块空白，也不抢占历史搜索输入焦点。Esc 或点击遮罩关闭后，原页面、Copilot 会话与未发送草稿保留。通过侧栏“查看历史”重复验证。
+
 ## Website Copilot 默认选择与会话恢复
 
 - macOS 与 Windows 分别冷打开未设置专属 Copilot 的 Website，确认自动选中全局默认 Copilot；给另一个 Website 设置专属智能体后，确认该站优先使用专属设置。
