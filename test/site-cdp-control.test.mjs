@@ -156,6 +156,27 @@ test('scope expires when closed before Run acceptance and revoked grants never f
   assert.throws(() => grants.resolve(source), { code: 'site_control_unavailable' });
 });
 
+test('AWCP snapshot reads and validates the current Registry without invoking an Action', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-snapshot'); const scope = h.capture(a); scope.activate();
+  const guest = h.contents.get(a.tabs[0].webContentsId);
+  const scripts = [];
+  guest.executeJavaScript = async (script) => {
+    scripts.push(script);
+    if (script.includes('protocolVersion')) return 1;
+    if (script.includes('.snapshot()')) return awcpSnapshot();
+    return assert.fail('snapshot request invoked an Action');
+  };
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  const result = await bridge.snapshot('snapshot-a', scope);
+  assert.deepEqual(result, {
+    ok: true,
+    method: 'AWCP.getSnapshot',
+    revision: 'revision-a',
+    actions: awcpSnapshot().actions,
+  });
+  assert.equal(scripts.some((script) => script.includes('globalThis.awcp.invoke')), false);
+});
+
 test('AWCP captures one active guest and cancel never drifts to a newly active tab', async (t) => {
   const h = createSiteHarness(); const a = h.site('a'); const scope = h.capture(a); scope.activate();
   const firstGuest = h.contents.get(a.tabs[0].webContentsId);
