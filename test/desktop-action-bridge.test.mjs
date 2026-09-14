@@ -3191,8 +3191,8 @@ test("desktop kanban item actions return exact minimal results", async (t) => {
   const issue = { id: "issue-1", title: "Original", status: "todo" };
   const createdIssue = { id: "issue-2", title: "Created", status: "todo" };
   const updatedIssue = { ...issue, title: "Updated" };
-  const movedIssue = { ...updatedIssue, status: "doing", position: 2 };
-  const snapshot = [{ ...issue }, { id: "issue-secret", title: "Must not leak", status: "done" }];
+  const movedIssue = { ...updatedIssue, status: "in_progress", position: 2 };
+  const snapshot = [{ ...issue }, { id: "issue-secret", title: "Must not leak", status: "completed" }];
   options.getKanbanRuntime = () => ({
     listIssues: () => ({ ok: true, message: "snapshot", issues: snapshot, revision: 9 }),
     createIssue: async () => ({ ok: true, message: "created", issue: createdIssue, issues: [...snapshot, createdIssue] }),
@@ -3252,7 +3252,7 @@ test("desktop kanban item actions return exact minimal results", async (t) => {
     await handleDesktopActionRequest(options, {
       action: "desktop.kanban.moveIssue",
       permissionMode: "full_access",
-      args: { id: issue.id, status: "doing", position: 2 }
+      args: { id: issue.id, status: "in_progress", position: 2 }
     }),
     {
       ok: true,
@@ -3264,7 +3264,7 @@ test("desktop kanban item actions return exact minimal results", async (t) => {
 
 test("desktop kanban business failures do not expose issue snapshots", async (t) => {
   const { options } = createDesktopActionOptions(t);
-  const leakedIssues = [{ id: "issue-secret", title: "Must not leak", status: "done" }];
+  const leakedIssues = [{ id: "issue-secret", title: "Must not leak", status: "completed" }];
   options.getKanbanRuntime = () => ({
     listIssues: () => ({ ok: true, message: "snapshot", issues: leakedIssues }),
     createIssue: async () => ({ ok: false, message: "create rejected", issues: leakedIssues }),
@@ -3293,7 +3293,7 @@ test("desktop kanban business failures do not expose issue snapshots", async (t)
     ["desktop.kanban.createIssue", { input: { title: "Rejected" } }, "kanban_create_failed", "create rejected", undefined],
     ["desktop.kanban.updateIssue", { id: "issue-1", input: { title: "Rejected" } }, "kanban_update_failed", "update rejected", { issueId: "issue-1" }],
     ["desktop.kanban.deleteIssue", { id: "issue-1" }, "kanban_delete_failed", "delete rejected", { issueId: "issue-1" }],
-    ["desktop.kanban.moveIssue", { id: "issue-1", status: "doing", position: 1 }, "kanban_move_failed", "move rejected", { issueId: "issue-1" }]
+    ["desktop.kanban.moveIssue", { id: "issue-1", status: "in_progress", position: 1 }, "kanban_move_failed", "move rejected", { issueId: "issue-1" }]
   ]) {
     const expectedError = { code, message, ...(details ? { details } : {}) };
     assert.deepEqual(
@@ -3321,7 +3321,7 @@ test("desktop kanban rejects incomplete successful domain results", async (t) =>
     ["desktop.kanban.createIssue", { input: { title: "Incomplete" } }],
     ["desktop.kanban.updateIssue", { id: "issue-1", input: { title: "Incomplete" } }],
     ["desktop.kanban.deleteIssue", { id: "issue-1" }],
-    ["desktop.kanban.moveIssue", { id: "issue-1", status: "doing", position: 1 }]
+    ["desktop.kanban.moveIssue", { id: "issue-1", status: "in_progress", position: 1 }]
   ]) {
     const response = await handleDesktopActionRequest(options, {
       action,

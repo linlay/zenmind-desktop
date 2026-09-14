@@ -1,3 +1,4 @@
+import { validateKanbanActionArgs } from "./kanban-validation";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -37,6 +38,8 @@ export async function executeKanbanAction(options: DesktopActionBridgeOptions, a
   if (!runtime) {
     return fail(action, "kanban_unavailable", "Kanban runtime is not initialized.");
   }
+  const invalid = validateKanbanActionArgs(action, args);
+  if (invalid) return fail(action, "invalid_args", invalid.message, invalid.details);
   if (action === "desktop.kanban.listIssues") {
     return ok(action, runtime.listIssues());
   }

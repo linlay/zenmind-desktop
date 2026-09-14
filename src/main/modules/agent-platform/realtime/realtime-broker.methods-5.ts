@@ -169,7 +169,11 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
         }
         if (!isAwcp && result.ok !== true) {
             const error = isRecord(result.error) ? result.error : {};
-            self.sendDesktopBridgeError(id, readText(error.code) || "desktop_request_failed", 400, readText(error.message) || "Desktop rejected the request", result);
+            // Action results are internal DTOs; normalize their diagnostics at the WS boundary.
+            const data = isDesktopAction
+                ? { action: type, ...(isRecord(error.details) ? { details: error.details } : {}) }
+                : result;
+            self.sendDesktopBridgeError(id, readText(error.code) || "desktop_request_failed", 400, readText(error.message) || "Desktop rejected the request", data);
             return;
         }
         await self.sendDesktopBridgeSuccess(id, type, result, controller.signal);
