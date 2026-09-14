@@ -457,9 +457,19 @@ export class WorkPanelLocalFileRegistry {
     };
     await targetSession.protocol.handle(CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL, async (protocolRequest) => {
       const resolvedPath = resolveLocalFileProtocolPath(handle, protocolRequest.url);
-      return resolvedPath
-        ? this.fetchFile(pathToFileURL(resolvedPath).toString())
-        : new Response("Not found", { status: 404 });
+      if (!resolvedPath) return new Response("Not found", { status: 404 });
+      const response = await this.fetchFile(pathToFileURL(resolvedPath).toString());
+      if (resolvedPath !== handle.filePath || handle.previewKind !== "text" || !response.ok) return response;
+      // Chromium otherwise defaults BOM-less local text to windows-1252 on both
+      // macOS and Windows. Keep the byte stream (including any BOM) intact, and
+      // only set the selected text document's MIME; HTML subresources retain theirs.
+      const headers = new Headers(response.headers);
+      headers.set("Content-Type", "text/plain; charset=utf-8");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
     });
     this.handles.set(handleId, handle);
     return {

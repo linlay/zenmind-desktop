@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const {
   WorkPanelLocalFileRegistry,
@@ -148,6 +149,63 @@ function createFakeSession() {
     },
   };
 }
+
+test("WorkPanel text previews declare UTF-8 without changing bytes or other resource MIME types", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-encoding-"));
+  const source = "中文文件，Jira 工时。\n<script>throw new Error('plain text')</script>\n";
+  const fixtures = [
+    ["中文说明.md", "text/markdown", Buffer.from(source)],
+    ["notes.txt", "text/plain", Buffer.from(source)],
+    ["bom.txt", "text/plain", Buffer.from(`\ufeff${source}`)],
+    ["utf16.txt", "text/plain", Buffer.from(`\ufeff${source}`, "utf16le")],
+    ["data.json", "application/json", Buffer.from('{"描述":"中文"}')],
+    ["source.ts", "video/mp2t", Buffer.from(source)],
+    ["index.html", "text/html", Buffer.from('<meta charset="utf-8"><p>中文</p>')],
+    ["image.png", "image/png", Buffer.from([137, 80, 78, 71])],
+  ];
+  try {
+    for (const [fileName, mimeType, bytes] of fixtures) {
+      const filePath = path.join(tempRoot, fileName);
+      const siblingPath = path.join(tempRoot, "styles.css");
+      fs.writeFileSync(filePath, bytes);
+      fs.writeFileSync(siblingPath, 'body::after { content: "中文"; }');
+      const fake = createFakeSession();
+      let sequence = 0;
+      let lastResponse;
+      const registry = new WorkPanelLocalFileRegistry({
+        randomUUID: () => `encoding-${++sequence}`,
+        createSession: () => fake.session,
+        fetchFile: async (url) => {
+          const requestedPath = fileURLToPath(url);
+          lastResponse = new Response(fs.readFileSync(requestedPath), {
+            headers: {
+              "Content-Type": requestedPath === fs.realpathSync.native(siblingPath) ? "text/css" : mimeType,
+              "Last-Modified": "Mon, 14 Sep 2026 00:00:00 GMT",
+            },
+          });
+          return lastResponse;
+        },
+      });
+      const sender = { id: 42, once() {} };
+      const owner = { ownerChatId: "chat-owner", rendererGeneration: "renderer-1" };
+      const result = await registry.select(owner, sender, async () => ({ canceled: false, filePaths: [filePath] }), null);
+      assert.equal(result.ok, true);
+      const baseUrl = `zenmind-local-file://${result.files[0].handleId}/`;
+      const response = await fake.state.protocolHandler({ url: baseUrl + encodeURIComponent(fileName) });
+      const isText = result.files[0].previewKind === "text";
+      assert.equal(response.headers.get("Content-Type"), isText ? "text/plain; charset=utf-8" : mimeType, fileName);
+      assert.equal(response.headers.get("Last-Modified"), "Mon, 14 Sep 2026 00:00:00 GMT");
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes, fileName);
+      const sibling = await fake.state.protocolHandler({ url: baseUrl + "styles.css" });
+      assert.equal(sibling, lastResponse);
+      assert.equal(sibling.headers.get("Content-Type"), "text/css");
+      assert.equal((await fake.state.protocolHandler({ url: baseUrl + "missing.txt" })).status, 404);
+      registry.release({ ...owner, handleIds: [result.files[0].handleId] }, sender);
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
 
 test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and network-isolated", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-claim-"));
