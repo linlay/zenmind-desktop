@@ -3624,18 +3624,22 @@ div.sidebar-chats-group-popover {
 
 .sidebar-agent-dialog-actions {
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 18px;
 }
 
 .sidebar-agent-dialog-actions button {
   min-height: 32px;
-  padding: 0 14px;
+  padding: 0 12px;
   border-radius: var(--control-radius);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
 }
 
 .sidebar-agent-secondary-button {
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   background: transparent;
   color: var(--ink);
 }
