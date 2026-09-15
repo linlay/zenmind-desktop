@@ -600,3 +600,11 @@
 ## 对话信息与运行记录
 
 - 对话信息运行记录：多个 Run 各自展示 ID、秒级起止时间和整数秒耗时，未结束/缺失时间显示占位符；移除最近运行 ID。逐个复制 Run ID 和运行 JSON，确认 JSON 数组包含原始 JSONL 中该 Run 的全部记录且不混入其他 Run；失败不复制部分内容。Chat ID 旁复制图标复制 ID，“复制图标 + 路径”复制 JSONL 路径，复制全部包含运行列表。macOS / Windows、窄窗口与中英文下检查空间充足时单行、不足时自动换行且 ID 不截断，以及复制反馈；来源、创建时间和更新时间仅显示，不提供单独复制按钮。
+
+## 连接器使用 Desktop 内置 Node
+
+- macOS 将 nvm Node 16 或 x64 Node 放在用户 PATH 最前；Desktop 启动 Platform 后，经其环境运行 node/npm/企微 CLI，确认 Node 版本与架构跟随当前 Electron，用户终端的默认 Node 保持原样。
+- 从 Finder、终端分别启动；连接器的安装、版本检查、登录和业务执行均使用同一 runtime。退出或升级 Desktop 后重新生成当前程序路径对应的入口。
+- Windows 使用含空格和中文的应用/数据目录，验证直接 execFile/exec.Command 调用 node.exe，以及 npm.cmd、npx.cmd、子进程参数、退出码与 stdin/stdout/stderr，不弹额外控制台窗口。
+- 干净用户环境中不安装全局 npm，确认随包 npm 可以安装固定版本连接器到私有目录；不要把全局安装前缀或账号凭据写进 Desktop 运行时资源。
+- 两个平台均检查 Platform 环境没有 ELECTRON_RUN_AS_NODE；该变量只在 node 子进程内出现。缺失/损坏的随包资源在构建/准备阶段明确失败，不悄悄回退到用户旧 Node。
