@@ -948,26 +948,28 @@ export function KanbanIssueDetailDialog({
             <button
               type="button"
               className="kanban-detail-secondary-button"
-              disabled={!chatEmbedPath && !latestOpenableIssueChat}
-              title={!chatEmbedPath && !latestOpenableIssueChat ? t("kanban.chat.noneAvailable") : undefined}
-              onClick={chatEmbedPath ? () => { setChatEmbedPath(null); setSelectedIssueChatId(null); setSelectedRunId(null); } : () => openChat()}
+              disabled={!chatEmbedPath && !initialChatPending && !latestOpenableIssueChat}
+              title={!chatEmbedPath && !initialChatPending && !latestOpenableIssueChat ? t("kanban.chat.noneAvailable") : undefined}
+              onClick={() => {
+                if (chatEmbedPath || initialChatPending) {
+                  setInitialChatPending(false);
+                  setChatEmbedPath(null);
+                  setSelectedIssueChatId(null);
+                  setSelectedRunId(null);
+                } else {
+                  openChat();
+                }
+              }}
             >
-              {chatEmbedPath ? <FileTextOutlined /> : <MessageOutlined />}
-              {chatEmbedPath ? t("kanban.chat.viewIssue") : t("kanban.chat.view")}
+              {chatEmbedPath || initialChatPending ? <FileTextOutlined /> : <HistoryOutlined />}
+              {chatEmbedPath || initialChatPending ? t("kanban.chat.viewIssue") : t("kanban.chat.history")}
             </button>
-            {!chatEmbedPath ? editing ? (
-              <>
-                <button type="button" className="kanban-detail-secondary-button" onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
-                <button type="button" className="kanban-detail-primary-button" disabled={saving} onClick={() => void saveDraft()}><SaveOutlined />{saving ? t("kanban.detail.saving") : t("kanban.form.save")}</button>
-              </>
-            ) : !isCloud ? (
-              <button type="button" className="kanban-detail-secondary-button" onClick={() => { setInitialChatPending(false); setEditing(true); }}><EditOutlined />{t("kanban.detail.editIssue")}</button>
-            ) : null : null}
             <button className="kanban-detail-close" type="button" onClick={onClose} aria-label={t("kanban.modal.close")}><CloseOutlined /></button>
           </div>
         </header>
 
         <div className="kanban-detail-body">
+          <div className="kanban-detail-primary-pane">
           {initialChatPending ? <div className="kanban-detail-chat-pending" role="status">{t("common.loading")}</div> : chatEmbedPath ? (
             <div className="kanban-detail-chat-surface">
               <ServiceWebviewSurface
@@ -1034,8 +1036,10 @@ export function KanbanIssueDetailDialog({
               })}</div> : <EmptyBlock>{t("kanban.detail.noComments")}</EmptyBlock>}
             </DetailSection>
           </main>}
+          </div>
 
           <aside className="kanban-detail-rail" aria-label={t("kanban.detail.properties")}>
+            <div className="kanban-detail-rail-content">
             <nav className="kanban-detail-anchor-nav" aria-label={t("kanban.detail.properties")}>
               {([
                 ["kanban-detail-basic", t("kanban.detail.basicTitle")],
@@ -1169,8 +1173,6 @@ export function KanbanIssueDetailDialog({
                   <span className="kanban-detail-run-icon"><RobotOutlined /></span>
                   <div className="kanban-detail-run-body">
                     <strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong>
-                    {run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}
-                    {run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}
                     <div className="kanban-detail-run-footer">
                       <dl className="kanban-detail-run-metrics">
                         <div><dt>{t("kanban.detail.runSpent")}</dt><dd>{formatRunDuration(run.startedAt, run.finishedAt, t)}</dd></div>
@@ -1191,7 +1193,16 @@ export function KanbanIssueDetailDialog({
             </DetailSection>
 
             {isCloud ? <div className="kanban-detail-readonly-note"><LockOutlined /><span>{t("kanban.detail.cloudReadonlyCompact")}</span></div> : null}
-            {!isCloud ? <button type="button" className="kanban-detail-danger-button" onClick={() => void onDelete()}><DeleteOutlined />{t("kanban.form.delete")}</button> : null}
+            </div>
+            {!isCloud ? <footer className="kanban-detail-rail-footer">
+              <button type="button" className="kanban-detail-danger-button" disabled={saving} onClick={() => void onDelete()}><DeleteOutlined />{t("kanban.form.delete")}</button>
+              <div className="kanban-detail-rail-footer-actions">
+                {editing ? <>
+                  <button type="button" className="kanban-detail-secondary-button" disabled={saving} onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
+                  <button type="button" className="kanban-detail-primary-button" disabled={saving} onClick={() => void saveDraft()}><SaveOutlined />{saving ? t("kanban.detail.saving") : t("kanban.form.save")}</button>
+                </> : <button type="button" className="kanban-detail-secondary-button" onClick={() => { setInitialChatPending(false); setChatEmbedPath(null); setSelectedIssueChatId(null); setSelectedRunId(null); setEditing(true); }}><EditOutlined />{t("kanban.detail.editIssue")}</button>}
+              </div>
+            </footer> : null}
           </aside>
         </div>
 

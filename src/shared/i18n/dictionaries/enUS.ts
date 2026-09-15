@@ -2404,6 +2404,7 @@ export const enUSMessages = {
   "kanban.sync.error": "Failed",
   "kanban.chat.viewOrConfirm": "View/confirm",
   "kanban.chat.view": "View chat",
+  "kanban.chat.history": "History",
   "kanban.chat.viewIssue": "Issue details",
   "kanban.chat.noneAvailable": "This issue has no linked chat available to view",
   "kanban.chat.listTitle": "Chats",
