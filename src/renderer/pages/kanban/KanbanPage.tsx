@@ -42,6 +42,7 @@ import {
 import type {
   AssistantAttachment,
   AssistantNavAgentItem,
+  AssistantNavChatItem,
   DesktopApi,
   DesktopPetAgentOption,
   KanbanCloudDetailData,
@@ -64,6 +65,7 @@ import {
 } from "../../../shared/agent-webclient-routes";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import {
+  getAssistantAwaitingStatusKey,
   getAssistantNavAgentRecentChats,
   normalizeAssistantNavAgents
 } from "../../assistantNavigation";
@@ -1070,7 +1072,8 @@ function getIssueCardSignalPresentation(
 function getIssueCardOperationalStatePresentation(
   issue: KanbanIssue,
   awaitingConfirmation: boolean,
-  t: TranslateFunction
+  t: TranslateFunction,
+  awaitingMode?: AssistantNavChatItem["awaitingMode"]
 ): IssueCardSignalPresentation | null {
   if (issue.runState === "cancelled") {
     const label = t("kanban.run.cancelled");
@@ -1081,21 +1084,10 @@ function getIssueCardOperationalStatePresentation(
     return { label, title: label, tone: "failed", icon: "failed" };
   }
   if (awaitingConfirmation && (issue.status === "in_progress" || issue.status === "in_review")) {
-    const label = t("kanban.run.awaitingApproval");
+    const label = t(getAssistantAwaitingStatusKey(awaitingMode));
     return { label, title: label, tone: "awaiting", icon: "waiting" };
   }
   return null;
-}
-
-function getKanbanEmptyHint(status: KanbanStatus, t: TranslateFunction) {
-  const hintKey: Record<KanbanStatus, TranslationKey> = {
-    backlog: "kanban.column.emptyBacklog",
-    todo: "kanban.column.emptyTodo",
-    in_progress: "kanban.column.emptyInProgress",
-    in_review: "kanban.column.emptyInReview",
-    completed: "kanban.column.emptyCompleted"
-  };
-  return t(hintKey[status]);
 }
 
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
@@ -1384,16 +1376,17 @@ function normalizeIssueSeverity(severity: KanbanIssue["severity"]): KanbanSeveri
     : null;
 }
 
-function issueHasPendingAwaiting(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
+function getIssuePendingAwaitingChat(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
   const chatId = issue.chatId?.trim();
   if (issue.status !== "in_progress" || !chatId) {
-    return false;
+    return undefined;
   }
 
-  return agents.some((agent) => {
+  for (const agent of agents) {
     const matchingChat = getAssistantNavAgentRecentChats(agent).find((chat) => chat.chatId === chatId);
-    return matchingChat?.hasPendingAwaiting === true;
-  });
+    if (matchingChat?.hasPendingAwaiting) return matchingChat;
+  }
+  return undefined;
 }
 
 function truncateKanbanProjectLabel(value: string, maxLength = 16) {
@@ -1493,6 +1486,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
   const [showBacklog, setShowBacklog] = useState(initialFilterPreferences.showBacklog);
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [formSaving, setFormSaving] = useState(false);
+  const formSavingRef = useRef(false);
+  const isMac = /Mac/i.test(navigator.userAgent);
+  const isWindows = /Windows/i.test(navigator.userAgent);
+  const saveShortcut = isMac ? "⌘Enter" : isWindows ? "Ctrl+Enter" : "";
   const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
   const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
@@ -1983,6 +1981,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (formSavingRef.current) return;
     const kanbanApi = readKanbanApi();
     if (!kanbanApi) {
       setFeedback({ tone: "error", message: missingKanbanApiMessage });
@@ -2061,6 +2060,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       syncToCloud: formProjectIsCloud
     };
 
+    formSavingRef.current = true;
+    setFormSaving(true);
     try {
       const result = modal?.mode === "edit" && modal.issue
         ? await kanbanApi.updateIssue(modal.issue.id, payload)
@@ -2094,6 +2095,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         tone: "error",
         message: error instanceof Error ? error.message : t("kanban.feedback.saveFailed")
       });
+    } finally {
+      formSavingRef.current = false;
+      setFormSaving(false);
     }
   }
 
@@ -2309,6 +2313,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     if (!agentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
       return null;
+    }
+    if (issue.status === "in_progress") {
+      return createAgentWebclientRoute({ agentKey, chatId });
     }
     return createAgentWebclientChatPreviewPath({ chatId });
   }, [agents, t]);
@@ -2742,6 +2749,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           onWorkflowAction={(action) => applyWorkflowAction(detailIssue, action)}
           onDelete={() => deleteIssue(detailIssue)}
           onOpenChat={(chatId, agentKey) => openAssistantIssueChat(detailIssue, chatId, agentKey)}
+          onJumpToChat={(chatId, agentKey) => {
+            setDetailIssueId(null);
+            setDetailInitialEditStatus(null);
+            navigate(createAgentWebclientRoute({ agentKey, chatId }));
+          }}
           cloudAction={getCloudIssueAction(detailIssue, cloudDetails, localDeviceId, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
           cloudActionBusy={busyIssueId === detailIssue.id}
           onClaim={() => void claimCloudIssue(detailIssue)}
@@ -2764,6 +2776,21 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               void submitForm(event);
             }}
             onMouseDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (modal.mode !== "create" || event.key !== "Enter" || event.shiftKey || event.altKey
+                || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+              let saveRequested = false;
+              if (isMac) {
+                saveRequested = event.metaKey && !event.ctrlKey;
+              } else if (isWindows) {
+                saveRequested = event.ctrlKey && !event.metaKey;
+              }
+              if (!saveRequested) return;
+              event.preventDefault();
+              event.stopPropagation();
+              if (event.repeat || modalReadOnly || !kanbanReady || formSavingRef.current) return;
+              event.currentTarget.requestSubmit();
+            }}
             aria-readonly={modalReadOnly || undefined}
             noValidate
           >
@@ -3129,8 +3156,10 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 {modalReadOnly ? t("kanban.modal.close") : t("kanban.form.cancel")}
               </button>}
               {!modalReadOnly ? (
-                <button type="submit" className="kanban-primary-button" disabled={!kanbanReady}>
+                <button type="submit" className="kanban-primary-button" disabled={!kanbanReady || formSaving}
+                  aria-keyshortcuts={modal.mode === "create" && saveShortcut ? isMac ? "Meta+Enter" : "Control+Enter" : undefined}>
                   {t("kanban.form.save")}
+                  {modal.mode === "create" && saveShortcut ? <span className="kanban-save-shortcut">{saveShortcut}</span> : null}
                 </button>
               ) : null}
             </div>
@@ -3225,7 +3254,7 @@ const KanbanColumn = memo(function KanbanColumn({
               key={issue.id}
               issue={issue}
               sortIndex={index + 1}
-              awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
+              awaitingConfirmation={Boolean(getIssuePendingAwaitingChat(issue, agents))}
               agents={agents}
               cloudDetails={cloudDetails}
               localDeviceId={localDeviceId}
@@ -3247,7 +3276,6 @@ const KanbanColumn = memo(function KanbanColumn({
         {issues.length === 0 ? (
           <div className={`kanban-empty-column ${status === "todo" && canAdd ? "is-create-enabled" : ""}`}>
             <strong>{t("kanban.column.empty")}</strong>
-            <span className="kanban-empty-column-hint">{getKanbanEmptyHint(status, t)}</span>
             {status === "todo" && canAdd ? (
               <span className="kanban-empty-column-create-hint">{t("kanban.column.emptyTodoCreateHint")}</span>
             ) : null}
@@ -3392,7 +3420,11 @@ const IssueCardContent = memo(function IssueCardContent({
     locale,
     now,
   }, t);
-  const operationalState = getIssueCardOperationalStatePresentation(issue, awaitingConfirmation, t);
+  const operationalState = getIssueCardOperationalStatePresentation(
+    issue, awaitingConfirmation, t, getIssuePendingAwaitingChat(issue, agents)?.awaitingMode
+  );
+  const awaitingStatus = operationalState?.tone === "awaiting" ? operationalState : null;
+  const displayedStatus = awaitingStatus || cardStatus;
   const descriptionPreview = getIssueDescriptionPreview(issue.description);
   const duePresentation = getIssueCardDuePresentation(issue, locale, now, t);
   const peopleLine = getIssueCardPeoplePresentation(issue, agents, cloudDetails.users, t);
@@ -3432,7 +3464,7 @@ const IssueCardContent = memo(function IssueCardContent({
       <span>{cardSignal.label}</span>
     </span>
   ) : null;
-  const stateSignal = operationalState ? (
+  const stateSignal = operationalState && !awaitingStatus ? (
     <span className={`issue-card-signal issue-card-operational-state is-${operationalState.tone}`} title={operationalState.label}>
       <span className="issue-card-state-dot" aria-hidden="true" />
       <span>{operationalState.label}</span>
@@ -3450,12 +3482,17 @@ const IssueCardContent = memo(function IssueCardContent({
             {resultUnread ? <span className="issue-card-unread" role="status" aria-label={t("sidebar.chat.unread")} title={t("sidebar.chat.unread")} /> : null}
             {queueRank ? <span className="issue-card-queue-rank" title={t("kanban.card.queueRank", { value: queueRank })}>{queueRank}</span> : null}
             <span
-              className={`issue-card-status is-${cardStatus.tone}`}
-              style={{ color: progress.color }}
-              title={t("kanban.card.status", { value: cardStatus.label })}
+              className={`issue-card-status is-${displayedStatus.tone}`}
+              style={awaitingStatus ? undefined : { color: progress.color }}
+              title={t("kanban.card.status", { value: displayedStatus.label })}
             >
-              <span>{cardStatus.label}</span>
+              <span>{displayedStatus.label}</span>
             </span>
+            {awaitingStatus ? (
+              <span className="issue-card-awaiting-spinner assistant-material-icon is-loading" aria-hidden="true" />
+            ) : issue.status === "in_progress" && !operationalState ? (
+              <span className="issue-card-running-spinner assistant-material-icon is-loading" aria-hidden="true" />
+            ) : null}
           </span>
         </div>
       </section>

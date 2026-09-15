@@ -49,6 +49,11 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /P0: "kanban\.priority\.p0"[\s\S]{0,180}P3: "kanban\.priority\.p3"/);
   assert.match(detail, /kanban\.importance\.\$\{issue\.severity\}/);
   assert.match(detail, /id="kanban-detail-title"[\s\S]{0,160}disabled=\{!editing\}/);
+  assert.match(detail, /editing \? <div className="kanban-detail-heading-copy"/);
+  assert.match(detail, /!editing \? <DetailSection title=\{t\("kanban\.detail\.runResultTitle"\)\}/);
+  assert.match(detail, /!editing \? <DetailSection title=\{t\("kanban\.detail\.commentsTitle"\)\}/);
+  assert.match(detail, /resultContent\.trim\(\) && !editing && !chatEmbedPath/);
+  assert.match(detail, /id="kanban-detail-header-label"/);
   assert.equal(packageManifest.dependencies["react-markdown"], "^10.1.0");
   assert.equal(packageManifest.dependencies["remark-gfm"], "^4.0.1");
   assert.equal(packageManifest.dependencies.mermaid, "^11.16.1");
@@ -101,7 +106,10 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(styles, /\.kanban-detail-window-actions \.kanban-detail-secondary-button:disabled\s*\{\s*cursor:\s*not-allowed/);
   assert.match(page, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
   assert.match(page, /return createAgentWebclientChatPreviewPath\(\{ chatId \}\)/);
-  assert.doesNotMatch(page, /setDetailIssueId\(null\);[\s\S]{0,100}navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
+  assert.match(page, /if \(issue\.status === "in_progress"\) \{\s*return createAgentWebclientRoute\(\{ agentKey, chatId \}\);\s*\}\s*return createAgentWebclientChatPreviewPath/);
+  assert.match(page, /onJumpToChat=\{\(chatId, agentKey\) => \{[\s\S]{0,200}setDetailIssueId\(null\)[\s\S]{0,200}navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
+  assert.match(detail, /kanban-detail-run-actions[\s\S]{0,250}openIssueChat\(agentKey, chatId, run.id\)[\s\S]{0,250}onJumpToChat\(chatId, agentKey\)/);
+  assert.doesNotMatch(detail, /createAgentWebclientRoute/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
 });
 
@@ -111,13 +119,19 @@ test("Kanban cards use the Website hierarchy without hover actions", () => {
   const card = page.slice(page.indexOf("const IssueCardContent"), page.indexOf("function IssueCardSignalIcon"));
   const operational = page.slice(
     page.indexOf("function getIssueCardOperationalStatePresentation"),
-    page.indexOf("function getKanbanEmptyHint")
+    page.indexOf("function createNavigationAgentFromOption")
   );
   assert.match(page, /color: resolveWorkflowStageColor\(resolvedStage, stageIndex\)/);
   assert.match(styles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,180}height: 3px/);
   assert.match(card, /issue-card-type-corner/);
   assert.match(card, /issue-card-version/);
   assert.match(card, /issue-card-queue-rank/);
+  assert.match(card, /const displayedStatus = awaitingStatus \|\| cardStatus/);
+  assert.match(card, /const stateSignal = operationalState && !awaitingStatus/);
+  assert.match(card, /awaitingStatus \? \(\s*<span className="issue-card-awaiting-spinner assistant-material-icon is-loading"/);
+  assert.match(card, /issue-card-status is-\$\{displayedStatus\.tone\}[\s\S]{0,120}style=\{awaitingStatus \? undefined : \{ color: progress\.color \}\}/);
+  assert.match(styles, /\.issue-card-status\.is-awaiting \{\s*color: var\(--skin-pending-text, #b45309\)/);
+  assert.match(styles, /:root\[data-theme="dark"\] \.issue-card-status\.is-awaiting \{\s*color: var\(--skin-pending-text, #facc15\)/);
   assert.match(card, /IssueCardPriorityImportance[\s\S]*issue-card-title-text/);
   assert.match(styles, /\.issue-card-priority-importance/);
   assert.match(card, /issue-card-footer-row is-summary[\s\S]*issue-card-footer-row is-operational/);
@@ -220,7 +234,7 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(styles, /\.kanban-detail-description-editor \{[^\n]*min-height: 120px;[^\n]*overflow-y: hidden; resize: none/);
   assert.match(styles, /\.kanban-detail-description-editor\.is-editing \{ min-height: 200px; \}/);
   assert.doesNotMatch(styles, /\.kanban-detail-description-editor(?:\.is-editing)? \{[^\n]*(?<!-)height:/);
-  assert.match(styles, /\.kanban-detail-title-input \{[\s\S]{0,260}font-size: clamp\(17px, 1\.35vw, 20px\)/);
+  assert.match(styles, /\.kanban-detail-title-input \{[\s\S]{0,260}font-size: 14px/);
   assert.match(styles, /\.kanban-detail-anchor-nav \{[\s\S]{0,100}position: sticky;[\s\S]{0,80}top: 0/);
   assert.match(styles, /\.kanban-detail-section \{[\s\S]{0,260}border: 0;[\s\S]{0,120}border-bottom: 1px solid var\(--detail-line-subtle\)/);
   assert.match(styles, /\.kanban-detail-rail \{[^\n]*border-left: 1px solid var\(--detail-line-subtle\)/);

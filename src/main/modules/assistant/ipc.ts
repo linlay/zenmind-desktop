@@ -771,6 +771,21 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     });
   });
 
+  ipcMain.handle("assistant.addDroppedAttachments", async (event: any, chatId: string | null | undefined, filePaths: unknown) => {
+    if (!mainWindow?.webContents || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw new Error("Attachment drop requires the main window frame");
+    }
+    const nativePath = platform === "win32" ? path.win32 : path.posix;
+    if ((chatId != null && typeof chatId !== "string") || !Array.isArray(filePaths) || filePaths.length === 0
+      || filePaths.some((filePath) => typeof filePath !== "string" || !nativePath.isAbsolute(filePath))) {
+      throw new Error("Invalid dropped attachment files");
+    }
+    // Native paths are resolved by Electron preload on both Windows and macOS.
+    return createAssistantAttachmentsFromFiles?.(app, chatId, [...new Set(filePaths)], {
+      onProgress: emitAssistantAttachmentProgress
+    });
+  });
+
   ipcMain.handle("assistant.cancelAttachmentTask", async (_event: any, taskId: string) =>
     cancelAssistantAttachmentTask?.(taskId)
   );

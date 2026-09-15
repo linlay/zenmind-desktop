@@ -996,6 +996,7 @@ export interface DesktopApi {
     revealChatInFolder: (chatId: string) => Promise<AssistantChatRevealResult>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
+    addDroppedAttachments: (chatId: string | null | undefined, files: File[]) => Promise<AssistantAttachmentPickResult>;
     captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
     cancelAttachmentTask: (taskId: string) => Promise<AssistantAttachmentCancelResult>;
     addPastedImage: (

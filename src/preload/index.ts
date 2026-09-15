@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
   AssistantEvent,
@@ -237,6 +237,10 @@ const api: DesktopApi = {
     revealChatInFolder: (chatId: string) => ipcRenderer.invoke("assistant.revealChatInFolder", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
+    addDroppedAttachments: (chatId: string | null | undefined, files: File[]) => {
+      const filePaths = files.map((file) => webUtils.getPathForFile(file));
+      return ipcRenderer.invoke("assistant.addDroppedAttachments", chatId, filePaths);
+    },
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
     addPastedImage: (chatId: string | null | undefined, input: AssistantPastedImageInput) =>
       ipcRenderer.invoke("assistant.addPastedImage", chatId, input),
