@@ -10,7 +10,7 @@ const resourceSet = '12345678-1234-1234-1234-123456789012';
 const state = (revision = 1, extra = {}) => ({ schemaVersion: '1.1', revision, resourceSet, visuals: { images: { 'chat.send': 'chat.send' }, styles: { unread: '#c33170' } }, ...extra });
 
 test('1.1 package accepts semantic PNG slots and rejects old versions, scripts and unknown styles', () => {
-  const manifest = { schemaVersion: '1.1', id: 'bow', name: 'Bow', version: '1.1.0', variants: { light: { visuals: { images: { 'chat.send': 'assets/send.png' }, styles: { unread: '#c33170', unreadShape: 'heart' } } }, dark: {} } };
+  const manifest = { schemaVersion: '1.1', id: 'bow', name: 'Bow', version: '1.1.0', variants: { light: { visuals: { images: { 'chat.send': 'assets/send.png', 'heading.pinned.zh-CN': 'assets/pinned-zh.png', 'heading.pinned.en-US': 'assets/pinned-en.png' }, styles: { unread: '#c33170', unreadShape: 'heart' } } }, dark: {} } };
   assert.equal(parseSkinPackageManifest(manifest).variants.light.visuals.images['chat.send'], 'assets/send.png');
   for (const schemaVersion of [1, 2, '1.0', '2.0']) assert.throws(() => parseSkinPackageManifest({ ...manifest, schemaVersion }));
   for (const visuals of [

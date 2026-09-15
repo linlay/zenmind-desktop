@@ -65,7 +65,7 @@ export async function createCollectionArtwork(manifest, key) {
       files.set(`visuals/${mode}-${name}.png`, canvas.toBuffer('image/png'));
     }
     for (const [slot, name] of Object.entries(mapping)) images[slot] = `visuals/${mode}-${name}.png`;
-    for (const [group, zh, en] of [['chats', '对话', 'Chats'], ['projects', '项目', 'Projects'], ['websites', '站点', 'Sites']]) {
+    for (const [group, zh, en] of [['pinned', '置顶', 'Pinned'], ['chats', '对话', 'Chats'], ['projects', '项目', 'Projects'], ['websites', '站点', 'Sites']]) {
       for (const [locale, label] of [['zh-CN', zh], ['en-US', en]]) {
         const font = `bold 62px "${design.rounded ? 'CollectionSans' : 'CollectionSerif'}"`;
         const probe = createCanvas(1, 1).getContext('2d');probe.font = font;

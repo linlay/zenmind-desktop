@@ -16,7 +16,7 @@ export function SkinVisual({ slot, children, className, style, label }: {
 
 export function SkinHeading({ group, children }: { group: string; children: ReactNode }) {
   const { locale } = useI18n();
-  const name = ({ chats: "chats", assistants: "projects", webs: "websites" } as Record<string, string>)[group];
+  const name = ({ pinned: "pinned", chats: "chats", assistants: "projects", webs: "websites" } as Record<string, string>)[group];
   if (!name) return <>{children}</>;
   return <span className="skin-heading"><SkinVisual slot={`heading.${name}.${locale}`} className="skin-heading-art"
     label={typeof children === "string" ? children : undefined}>{children}</SkinVisual></span>;
