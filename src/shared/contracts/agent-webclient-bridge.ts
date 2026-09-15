@@ -624,6 +624,7 @@ export const SKIN_VISUAL_SLOTS = [
   "navigation.refresh", "navigation.more_actions", "entry.kanban", "entry.automation", "entry.new_chat", "entry.new_project",
   "entry.chat", "entry.project", "entry.website", "chat.send", "chat.stop", "chat.attach", "chat.expand", "chat.collapse", "chat.voice", "chat.screenshot",
   "agent.default", "agent.terminal", "agent.database", "agent.library", "agent.folder", "agent.coder", "agent.kbase",
+  "heading.pinned.zh-CN", "heading.pinned.en-US",
   "heading.chats.zh-CN", "heading.projects.zh-CN", "heading.websites.zh-CN",
   "heading.chats.en-US", "heading.projects.en-US", "heading.websites.en-US"
 ] as const;
