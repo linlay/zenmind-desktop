@@ -35,6 +35,7 @@ export type DesktopCapabilityResult = {
 };
 
 export type ResolveDesktopCapabilityOptions = {
+  authSubject?: string;
   ensureProviderInstall?: (service: ServiceDefinition) => Promise<void>;
   stack?: string[];
   ports: ServiceCapabilityPorts;
@@ -334,6 +335,11 @@ async function resolveDesktopCapabilityInternal(
   }
 
   const values = buildTemplateValues(app, service, layout, provider, options.ports);
+  if (capabilityId === "auth.accessToken" && options.authSubject) {
+    if (!/^desktop-user:[0-9a-f]{64}$/.test(options.authSubject)) throw new Error("Invalid Desktop identity subject");
+    // The identity service already owns/signs the --username claim. No service config is rewritten.
+    values["auth.username"] = options.authSubject;
+  }
   const renderedCommand = renderCommand(command, values);
   const renderedEnv = renderStringRecord(provider.env, values);
   const auth = readAuthSettings(service, layout);
@@ -395,7 +401,7 @@ async function resolveDesktopCapabilityWithPending(
   if (options.stack?.includes(capabilityId)) {
     throw new Error(`Desktop capability dependency cycle: ${[...options.stack, capabilityId].join(" -> ")}`);
   }
-  const cacheKey = getCapabilityCacheKey(app, capabilityId);
+  const cacheKey = `${getCapabilityCacheKey(app, capabilityId)}\0${capabilityId === "auth.accessToken" ? options.authSubject || "" : ""}`;
   const pending = pendingCapabilityResolutions.get(cacheKey);
   if (pending) {
     return pending;

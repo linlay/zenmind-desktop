@@ -57,16 +57,23 @@ function readReusableCachedToken(cacheKey: string) {
   return cached.token;
 }
 
-export type IdentityCapabilityResolver = (app: App, capabilityId: string) => Promise<any>;
+export type IdentityCapabilityResolver = (app: App, capabilityId: string, options?: { authSubject?: string }) => Promise<any>;
 
 async function issueFreshAgentAccessToken(
   app: App,
   cacheKey: string,
-  resolveDesktopCapability: IdentityCapabilityResolver
+  resolveDesktopCapability: IdentityCapabilityResolver,
+  subject: string
 ): Promise<AgentAuthIssueResult> {
   try {
-    const capability = await resolveDesktopCapability(app, "auth.accessToken");
+    const capability = await resolveDesktopCapability(app, "auth.accessToken", subject ? { authSubject: subject } : undefined);
     const token = capability.token || capability.text || "";
+    if (subject) {
+      let issuedSubject: unknown;
+      try { issuedSubject = JSON.parse(Buffer.from(String(token).split(".")[1], "base64url").toString("utf8")).sub; }
+      catch { throw new Error("Identity service did not return a scoped access token"); }
+      if (issuedSubject !== subject) throw new Error("Identity service returned a different user subject");
+    }
     cachedTokens.set(cacheKey, {
       token,
       expiresAtMs: readTokenExpiresAtMs(token)
@@ -84,9 +91,11 @@ async function issueFreshAgentAccessToken(
 export async function issueAgentAccessToken(
   app: App,
   reason: AgentAuthRefreshReason,
-  resolveDesktopCapability: IdentityCapabilityResolver
+  resolveDesktopCapability: IdentityCapabilityResolver,
+  subject = ""
 ): Promise<AgentAuthIssueResult> {
-  const cacheKey = getAppCacheKey(app);
+  if (subject && !/^desktop-user:[0-9a-f]{64}$/.test(subject)) throw new Error("Invalid Desktop identity subject");
+  const cacheKey = `${getAppCacheKey(app)}\0${subject}`;
   if (reason === "unauthorized") {
     cachedTokens.delete(cacheKey);
   } else {
@@ -101,7 +110,7 @@ export async function issueAgentAccessToken(
     return pending;
   }
 
-  const nextIssue = issueFreshAgentAccessToken(app, cacheKey, resolveDesktopCapability).finally(() => {
+  const nextIssue = issueFreshAgentAccessToken(app, cacheKey, resolveDesktopCapability, subject).finally(() => {
     pendingTokenIssues.delete(cacheKey);
   });
   pendingTokenIssues.set(cacheKey, nextIssue);

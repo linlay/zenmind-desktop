@@ -1,5 +1,5 @@
 import { app, clipboard, globalShortcut, protocol } from "electron";
-import { getDesktopDeviceId, issueAgentAccessToken } from "../modules/identity";
+import { desktopPlatformSubject, getDesktopDeviceId, getDesktopSsoStatus, issueAgentAccessToken } from "../modules/identity";
 import { getDesktopSsoAccessToken } from "../modules/identity";
 import { createWebsFacade, type WebsFacade } from "../modules/webs";
 import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
@@ -174,10 +174,14 @@ export function createMainProcessRuntime() {
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
   const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   const appState = createMainAppState();
-  const identityTokenProvider = (targetApp: typeof app, reason: Parameters<typeof issueAgentAccessToken>[1]) =>
-    issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId) =>
-      servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId)
-    );
+  const identityTokenProvider = async (targetApp: typeof app, reason: Parameters<typeof issueAgentAccessToken>[1]) => {
+    const currentSubject = () => desktopPlatformSubject(getDesktopSsoStatus(targetApp).authenticated, getDesktopSsoAccessToken());
+    const subject = currentSubject();
+    const result = await issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId, context) =>
+      servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId, context), subject);
+    if (subject !== currentSubject()) return { ok: false, token: "", message: "Desktop identity changed; retry the request." };
+    return result;
+  };
   const servicesIntegrationPorts = createMainProcessRuntime_block18_4(factoryContext);
   servicesFacade = createServicesFacade(servicesIntegrationPorts);
   configureAgentMarketPlatformCaller((targetPath, options) =>
