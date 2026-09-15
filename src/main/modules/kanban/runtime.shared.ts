@@ -212,10 +212,10 @@ export function readStringList(value: unknown) {
     : [];
 }
 
-export function readEffortSeconds(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+export function readEffortSeconds(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
   const seconds = Math.trunc(value);
-  return Number.isSafeInteger(seconds) ? seconds : 0;
+  return Number.isSafeInteger(seconds) ? seconds : null;
 }
 
 export function readDueDate(value: unknown) {
@@ -489,7 +489,7 @@ export function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue 
     remainingEstimate: readEffortSeconds(record.remainingEstimate),
     timeSpent: readEffortSeconds(record.timeSpent),
     parentIssueId: nullableText(record.parentIssueId),
-    workflowId: readText(record.workflowId) || "workflow-standard-requirement",
+    workflowId: optionalText(record.workflowId),
     typeId: optionalText(record.issueTypeKey) ?? optionalText(record.typeId),
     issueTypeKey: optionalText(record.issueTypeKey) ?? optionalText(record.typeId),
     stageId: optionalText(record.stageId),

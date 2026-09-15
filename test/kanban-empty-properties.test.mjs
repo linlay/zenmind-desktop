@@ -63,3 +63,24 @@ test("zero effort is displayed as zero hours rather than an unset placeholder", 
   assert.equal(formatEffort(3600, t), "kanban.detail.hours:1");
   assert.equal(formatEffort(null, t), "kanban.detail.notSet");
 });
+
+test("effort forms distinguish blank, explicit zero and invalid input", () => {
+  const page = fs.readFileSync("src/renderer/pages/kanban/KanbanPage.tsx", "utf8");
+  const source = page.slice(page.indexOf("function hoursInputToSeconds("));
+  const functionSource = source.slice(0, source.indexOf("\n}") + 2);
+  const js = ts.transpileModule(functionSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const parse = vm.runInNewContext(`${js}; hoursInputToSeconds;`);
+  assert.equal(parse(""), null);
+  assert.equal(parse("  "), null);
+  assert.equal(parse("0"), 0);
+  assert.equal(parse("0.25"), 900);
+  assert.equal(parse("bad"), undefined);
+  assert.equal(parse("-1"), undefined);
+  const detail = fs.readFileSync("src/renderer/pages/kanban/KanbanIssueDetailDialog.tsx", "utf8");
+  const inputSource = detail.slice(detail.indexOf("function secondsToHoursInput("), detail.indexOf("function formatEffort("));
+  const inputJs = ts.transpileModule(inputSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const formatInput = vm.runInNewContext(`${inputJs}; secondsToHoursInput;`);
+  assert.equal(formatInput(null), "");
+  assert.equal(formatInput(0), "0");
+  assert.equal(formatInput(900), "0.25");
+});

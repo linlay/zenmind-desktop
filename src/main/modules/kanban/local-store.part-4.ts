@@ -14,7 +14,7 @@ import type {
   KanbanStatus
 } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
-import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanCloudMutationOutboxItem, KanbanCloudSnapshot, KanbanManualRunReceipt, KanbanManualRunReceiptState, KanbanRunEventOutboxItem, PROJECT_ID, WORKFLOW_ID, createCloudCacheIssueId, getDesktopKanbanDatabasePath, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseCloudIssue, parseJsonRecord, selectCloudDetailData, storeCloudDetailData, trimText } from "./local-store.part-1";
+import { AppPathProvider, BOARD_ID, KanbanCloudMutationOutboxItem, KanbanCloudSnapshot, KanbanManualRunReceipt, KanbanManualRunReceiptState, KanbanRunEventOutboxItem, PROJECT_ID, createCloudCacheIssueId, getDesktopKanbanDatabasePath, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseCloudIssue, parseJsonRecord, selectCloudDetailData, storeCloudDetailData, trimText } from "./local-store.part-1";
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
 import { buildLocalIssue, insertOrReplaceIssue, insertOrReplaceProject, insertOrReplaceProjectBinding, parseCloudProject, parseCloudProjectBinding, readDesktopKanbanRevision, selectIssues, selectProjectBindings, selectProjects, writeDesktopKanbanRevision, writeDesktopKanbanSyncCursorInDb } from "./local-store.part-3";
 
@@ -376,9 +376,9 @@ export function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, curren
     remainingEstimate: normalizeEffortSeconds(rawIssue.remainingEstimate),
     timeSpent: normalizeEffortSeconds(rawIssue.timeSpent),
     parentIssueId: nullableTrimmedText(rawIssue.parentIssueId),
-    workflowId: trimText(rawIssue.workflowId) || WORKFLOW_ID,
-    typeId: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || ISSUE_TYPE_ID,
-    issueTypeKey: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || ISSUE_TYPE_ID,
+    workflowId: trimText(rawIssue.workflowId) || undefined,
+    typeId: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || undefined,
+    issueTypeKey: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || undefined,
     stageId: trimText(rawIssue.stageId) || undefined,
     stageKey: trimText(rawIssue.stageKey) || undefined,
     stageName: trimText(rawIssue.stageName) || undefined,
@@ -544,7 +544,7 @@ export function applyDesktopKanbanCloudSnapshot(
               VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
             ) VALUES (?, NULL, 'private-orphans', 'PRIVATE', 'Local Issues', '', 'private-orphans', 0, 999999, 0, 'local', 'private', ?, ?, ?, NULL)
             ON CONFLICT(ID_) DO UPDATE SET NAME_ = excluded.NAME_, SYNC_MODE_ = excluded.SYNC_MODE_, DELETED_AT_ = NULL, UPDATED_AT_ = excluded.UPDATED_AT_
-          `).run(localContainerId, WORKFLOW_ID, timestamp, timestamp);
+          `).run(localContainerId, "", timestamp, timestamp);
           const updateLocalIssues = db.prepare(`
             UPDATE issue SET PROJECT_ID_ = ?, UPDATED_AT_ = ?
             WHERE PROJECT_ID_ = ? AND ID_ IN (SELECT LOCAL_ISSUE_ID_ FROM desktop_issue_sync WHERE SYNC_MODE_ = 'local')

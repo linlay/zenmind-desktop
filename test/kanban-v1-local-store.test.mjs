@@ -742,3 +742,38 @@ test("empty local projects are listed with source and accept local issues", asyn
   assert.equal(result.issue.projectId, project.id);
   assert.equal(result.issue.syncMode, "local");
 });
+
+test("local free issues have no fabricated workflow or type and preserve unset effort", (t) => {
+  const app = createTempApp(t);
+  let result = createLocalDesktopKanbanIssue(app, currentUser, { title: "Free issue" });
+  assert.equal(result.ok, true);
+  const id = result.issue.id;
+  const readIssue = () => listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.id === id);
+  const effort = (issue) => [issue.originalEstimate, issue.remainingEstimate, issue.timeSpent];
+  assert.deepEqual(effort(readIssue()), [null, null, null]);
+  assert.equal(readIssue().workflowId, undefined);
+  assert.equal(readIssue().typeId, undefined);
+  assert.equal(readIssue().issueTypeKey, undefined);
+  result = updateDesktopKanbanIssue(app, currentUser, id, { originalEstimate: 0, remainingEstimate: 3600, timeSpent: 0 });
+  assert.equal(result.ok, true);
+  assert.deepEqual(effort(readIssue()), [0, 3600, 0]);
+  updateDesktopKanbanIssue(app, currentUser, id, { title: "Keep effort" });
+  assert.deepEqual(effort(readIssue()), [0, 3600, 0]);
+  updateDesktopKanbanIssue(app, currentUser, id, { originalEstimate: null, remainingEstimate: null, timeSpent: null });
+  assert.deepEqual(effort(readIssue()), [null, null, null]);
+  const db = new DatabaseSync(getDesktopKanbanDatabasePath(app));
+  try {
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM workflow").get().count, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM workflow_status").get().count, 0);
+    const stored = db.prepare("SELECT WORKFLOW_ID_ AS workflow, TYPE_ID_ AS type FROM issue WHERE ID_ = ?").get(id);
+    assert.equal(stored.workflow, "");
+    assert.equal(stored.type, null);
+    // Even stale row identifiers do not define a local task's workflow ownership.
+    db.prepare("UPDATE issue SET WORKFLOW_ID_ = ?, TYPE_ID_ = ? WHERE ID_ = ?").run("stale-flow", "stale-type", id);
+  } finally { db.close(); }
+  assert.equal(readIssue().workflowId, undefined);
+  assert.equal(readIssue().typeId, undefined);
+  const flowIssue = createLocalDesktopKanbanIssue(app, currentUser, { title: "Local flow", localWorkflowId: "local-development" }).issue;
+  assert.equal(flowIssue.workflowId, flowIssue.localWorkflow.id);
+  assert.equal(flowIssue.typeId, undefined);
+});

@@ -426,9 +426,9 @@ export interface KanbanIssue {
   securityLevelKey?: string | null;
   reporterId?: string | null;
   componentKeys: string[];
-  originalEstimate: number;
-  remainingEstimate: number;
-  timeSpent: number;
+  originalEstimate: number | null;
+  remainingEstimate: number | null;
+  timeSpent: number | null;
   parentIssueId?: string | null;
   localWorkflow?: KanbanLocalWorkflow;
   localWorkflowRollbacks?: KanbanLocalWorkflowRollback[];
@@ -575,9 +575,9 @@ export interface KanbanIssueInput {
   securityLevelKey?: string | null;
   reporterId?: string | null;
   componentKeys?: string[];
-  originalEstimate?: number;
-  remainingEstimate?: number;
-  timeSpent?: number;
+  originalEstimate?: number | null;
+  remainingEstimate?: number | null;
+  timeSpent?: number | null;
   description?: string | null;
   status?: KanbanStatus;
   priority?: KanbanPriority | null;
@@ -608,9 +608,9 @@ export interface KanbanIssueUpdateInput {
   securityLevelKey?: string | null;
   reporterId?: string | null;
   componentKeys?: string[];
-  originalEstimate?: number;
-  remainingEstimate?: number;
-  timeSpent?: number;
+  originalEstimate?: number | null;
+  remainingEstimate?: number | null;
+  timeSpent?: number | null;
   description?: string | null;
   status?: KanbanStatus;
   priority?: KanbanPriority | null;

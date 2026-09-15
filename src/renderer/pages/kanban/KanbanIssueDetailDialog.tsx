@@ -9,7 +9,6 @@ import remarkGfm from "remark-gfm";
 import {
   ApartmentOutlined,
   ArrowRightOutlined,
-  CalendarOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
   CloseOutlined,
@@ -148,7 +147,7 @@ function createDetailDraft(issue: KanbanIssue): KanbanIssueDetailDraft {
 }
 
 function secondsToHoursInput(value: number | null | undefined) {
-  if (!value) return "";
+  if (value === null || value === undefined) return "";
   return String(Math.round((value / 3600) * 100) / 100);
 }
 
@@ -748,8 +747,8 @@ export function KanbanIssueDetailDialog({
   const priorityLabel = issue.priority ? t(DETAIL_PRIORITY_LABELS[issue.priority]) : "—";
   const severityLabel = issue.severity ? t(`kanban.importance.${issue.severity}` as "kanban.importance.medium") : "—";
   const projectLabel = getKanbanIssueProjectName(issue, project, t("kanban.projectFilter.defaultLocal"));
-  const issueTypeLabel = issueType?.name || issue.issueTypeKey || issue.typeId || "—";
-  const workflowLabel = workflow?.name || issue.workflowId || "—";
+  const issueTypeLabel = isCloud ? issueType?.name || issue.issueTypeKey || issue.typeId || "—" : "—";
+  const workflowLabel = isCloud ? workflow?.name || issue.workflowId || "—" : issue.localWorkflow?.name || "—";
   const stageLabel = stage?.name || issue.stageName || issue.stageKey || "—";
   const createdAtLabel = formatDateTime(issue.createdAt, locale);
   const updatedAtLabel = formatDateTime(issue.updatedAt, locale);
@@ -1095,8 +1094,8 @@ export function KanbanIssueDetailDialog({
                 <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.remainingEstimate)} label={t("kanban.form.remainingEstimate")} value={formatEffort(issue.remainingEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.remainingEstimateHours} onChange={(event) => updateDraft({ remainingEstimateHours: event.target.value })} />} />
                 <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.timeSpent)} label={t("kanban.form.timeSpent")} value={formatEffort(issue.timeSpent, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.timeSpentHours} onChange={(event) => updateDraft({ timeSpentHours: event.target.value })} />} />
                 <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.securityLevelKey)} label={t("kanban.detail.securityLevel")} value={issue.securityLevelKey || t("kanban.detail.notSet")} />
-                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issueType?.name || issue.issueTypeKey || issue.typeId)} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
-                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(workflow?.name || issue.workflowId)} label={t("kanban.detail.workflow")} value={workflowLabel} />
+                <DetailProperty {...copyBehavior} empty={!isCloud || isEmptyIssuePropertyValue(issueType?.name || issue.issueTypeKey || issue.typeId)} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(isCloud ? workflow?.name || issue.workflowId : issue.localWorkflow?.name)} label={t("kanban.detail.workflow")} value={workflowLabel} />
                 <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(stage?.name || issue.stageName || issue.stageKey)} label={t("kanban.detail.stage")} value={stageLabel} />
                 <DetailProperty
                   {...copyBehavior}
@@ -1118,8 +1117,8 @@ export function KanbanIssueDetailDialog({
                   const value = issue.customFields?.[field.def.key] ?? field.context.defaultValue;
                   return <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(value)} copyValue={formatDynamicCopyValue(field, value, usersById, issuesByRemoteId, t)} key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, value, usersById, issuesByRemoteId, t)} />;
                 })}
-                <DetailProperty {...copyBehavior} copyValue={createdAtLabel} empty={isEmptyIssuePropertyValue(issue.createdAt)} label={t("kanban.detail.createdAt")} value={<><CalendarOutlined /> {createdAtLabel}</>} />
-                <DetailProperty {...copyBehavior} copyValue={updatedAtLabel} empty={isEmptyIssuePropertyValue(issue.updatedAt)} label={t("kanban.detail.updatedAt")} value={<><CalendarOutlined /> {updatedAtLabel}</>} />
+                <DetailProperty {...copyBehavior} copyValue={createdAtLabel} empty={isEmptyIssuePropertyValue(issue.createdAt)} label={t("kanban.detail.createdAt")} value={createdAtLabel} />
+                <DetailProperty {...copyBehavior} copyValue={updatedAtLabel} empty={isEmptyIssuePropertyValue(issue.updatedAt)} label={t("kanban.detail.updatedAt")} value={updatedAtLabel} />
                 <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.createdByAgent || issue.createdBy)} label={t("kanban.detail.createdBy")} value={createdByLabel} />
                 <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.updatedByAgent || issue.updatedBy)} label={t("kanban.detail.updatedBy")} value={updatedByLabel} />
                 {debugMode ? <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.revision ?? issue.lastRemoteRevision)} label={t("kanban.detail.revision")} value={issue.revision ?? issue.lastRemoteRevision ?? "—"} /> : null}

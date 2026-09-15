@@ -603,12 +603,12 @@ function computeSortableDropPosition(
   return computeDropPosition(targetIssuesWithoutActive, insertIndex);
 }
 
-function hoursInputToSeconds(value: string) {
-  if (!value.trim()) return 0;
+function hoursInputToSeconds(value: string): number | null | undefined {
+  if (!value.trim()) return null;
   const hours = Number(value);
-  if (!Number.isFinite(hours) || hours < 0) return null;
+  if (!Number.isFinite(hours) || hours < 0) return undefined;
   const seconds = Math.round(hours * 3600);
-  return Number.isSafeInteger(seconds) ? seconds : null;
+  return Number.isSafeInteger(seconds) ? seconds : undefined;
 }
 
 function createKanbanAttachmentChatId(seed: string) {
@@ -2025,7 +2025,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const originalEstimate = hoursInputToSeconds(form.originalEstimateHours);
     const remainingEstimate = hoursInputToSeconds(form.remainingEstimateHours);
     const timeSpent = hoursInputToSeconds(form.timeSpentHours);
-    if (originalEstimate === null || remainingEstimate === null || timeSpent === null) {
+    if (originalEstimate === undefined || remainingEstimate === undefined || timeSpent === undefined) {
       setFeedback({ tone: "error", message: t("kanban.feedback.invalidEffort") });
       return;
     }
@@ -2141,7 +2141,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const originalEstimate = hoursInputToSeconds(draft.originalEstimateHours);
     const remainingEstimate = hoursInputToSeconds(draft.remainingEstimateHours);
     const timeSpent = hoursInputToSeconds(draft.timeSpentHours);
-    if (originalEstimate === null || remainingEstimate === null || timeSpent === null) {
+    if (originalEstimate === undefined || remainingEstimate === undefined || timeSpent === undefined) {
       setFeedback({ tone: "error", message: t("kanban.feedback.invalidEffort") });
       return false;
     }
