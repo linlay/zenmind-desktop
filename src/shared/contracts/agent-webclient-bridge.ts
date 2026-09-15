@@ -27,7 +27,7 @@ export const AGENT_WEBCLIENT_APPEARANCE_COLOR_TOKENS = [
   "--control-tab-strip-bg", "--control-tab-active-bg", "--control-tab-hover-bg",
   "--nav-hover-bg", "--nav-selected-bg", "--nav-selected-text", "--nav-accent-selected-bg",
   "--desktop-overlay-panel-bg", "--sidebar-operation-menu-bg", "--sidebar-operation-menu-border",
-  "--modal-mask-bg", "--shell-sidebar-bg", "--shell-content-bg", "--shell-titlebar-bg", "--shell-background-tint"
+  "--modal-mask-bg", "--shell-sidebar-bg", "--shell-content-bg", "--shell-titlebar-bg"
 ] as const;
 export const AGENT_WEBCLIENT_APPEARANCE_RADIUS_TOKENS = [
   "--control-radius", "--control-radius-sm", "--control-radius-lg", "--overlay-radius"

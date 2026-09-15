@@ -76,7 +76,6 @@
   --shell-sidebar-bg: color-mix(in srgb, var(--surface-sidebar) 88%, transparent);
   --shell-content-bg: color-mix(in srgb, var(--surface-strong) 72%, transparent);
   --shell-titlebar-bg: color-mix(in srgb, var(--bg-base) 94%, transparent);
-  --shell-background-tint: transparent;
   --success: #00B42A;
   --warning: #FF7D00;
   --danger: #F53F3F;

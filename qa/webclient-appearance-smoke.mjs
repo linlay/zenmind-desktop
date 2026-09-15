@@ -55,7 +55,6 @@ await build({
         const tokens = DESKTOP_SKINS.find(skin => skin.id === 'mist').tokens[mode];
         Object.entries(tokens).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
         skinKeys = Object.keys(tokens);
-        document.documentElement.style.setProperty('--qa-background-tint', tokens['--shell-background-tint']);
       }
       document.getElementById('shell').className = 'app-shell has-embedded-surface has-service-webview-surface ' +
         (platform === 'mac' ? 'is-mac-platform is-mac-translucent-sidebar' : 'is-windows-platform');
@@ -86,7 +85,7 @@ const preload = pathToFileURL(preloadCopy).href;
 fs.writeFileSync(path.join(output, 'host.html'), `<!doctype html><html data-theme="light" data-desktop-background="image"><meta charset="utf-8">
 <link rel="stylesheet" href="/shell.css"><style>
 html,body,#root{width:100%;height:100%;margin:0;overflow:hidden}
-.app-shell{height:100%;width:100%;--shell-background-tint:var(--qa-background-tint,transparent)}
+.app-shell{height:100%;width:100%}
 .app-sidebar-shell{width:160px;flex:0 0 160px}.app-sidebar{width:160px}
 .app-content{flex:1}.app-main{height:100%}.embedded-surface-page{height:100%;margin:0}
 .embedded-surface-frame-shell{height:100%}.embedded-surface-frame{width:100%;height:100%;min-height:0}

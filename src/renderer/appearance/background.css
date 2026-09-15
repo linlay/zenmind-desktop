@@ -23,13 +23,6 @@
   visibility: visible;
 }
 
-.desktop-background::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--shell-background-tint);
-  pointer-events: none;
-}
 
 /* The empty websites route has no guest reading surface. Keep one moderate
    veil over the wallpaper on both platforms, without fading the copy. */

@@ -15,7 +15,7 @@ await build({ entryPoints: [path.join(repo, "src/renderer/styles.css")], outfile
 fs.writeFileSync(path.join(output, "host.html"), `<!doctype html><html lang="en" data-theme="light" data-desktop-background="image"><meta charset="utf-8">
 <link rel="stylesheet" href="/shell.css"><style>
 html,body,#root{width:100%;height:100%;margin:0;overflow:hidden}
-.app-shell{height:100%;width:100%;--shell-background-tint:transparent;--chat-work-panel-width:600px}
+.app-shell{height:100%;width:100%;--chat-work-panel-width:600px}
 .app-sidebar-shell{width:160px;flex:0 0 160px}.app-sidebar{width:160px}
 .app-content{flex:1}.canonical-webapp-surface{top:0;left:0;width:100%;height:100%}
 .external-webview-page.is-app-surface{margin:0;position:absolute;inset:0}

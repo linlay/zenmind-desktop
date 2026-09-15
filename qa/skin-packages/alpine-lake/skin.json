@@ -27,7 +27,6 @@
         "--shell-sidebar-bg": "rgba(237,243,237,0.72)",
         "--shell-content-bg": "rgba(237,243,237,0.58)",
         "--shell-titlebar-bg": "rgba(237,243,237,0.9)",
-        "--shell-background-tint": "rgba(246,250,242,0.06)",
         "--control-radius": "10px",
         "--control-radius-sm": "8px",
         "--control-radius-lg": "14px"
@@ -54,7 +53,6 @@
         "--shell-sidebar-bg": "rgba(20,42,34,0.72)",
         "--shell-content-bg": "rgba(20,42,34,0.58)",
         "--shell-titlebar-bg": "rgba(20,42,34,0.9)",
-        "--shell-background-tint": "rgba(9,26,20,0.12)",
         "--control-radius": "10px",
         "--control-radius-sm": "8px",
         "--control-radius-lg": "14px"
