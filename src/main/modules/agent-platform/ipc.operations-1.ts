@@ -1,3 +1,4 @@
+import { beginPlatformLoadDiagnostic } from "./load-diagnostic";
 import type { WebContents } from "electron";
 import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
@@ -32,17 +33,27 @@ export function registerAgentWebclientBridgeIpcHandlers_reportChatLoadDiagnostic
 }
 
 export async function registerAgentWebclientBridgeIpcHandlers_availability_2(factoryContext: RegisterAgentWebclientBridgeIpcHandlersContext): Promise<{ baseUrl: string; token: string; }> {
-    const state = await factoryContext.options.getServiceState(factoryContext.options.app, AGENT_PLATFORM_SERVICE_ID);
-    const baseUrl = state.status === "running"
-        ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
-        : "";
-    if (!baseUrl)
-        throw new Error("Agent Platform is unavailable");
-    const tokenResult = await factoryContext.options.issueAccessToken(factoryContext.options.app, "missing");
-    const token = tokenResult.ok ? tokenResult.token.trim() : "";
-    if (!token)
-        throw new Error(tokenResult.message || "Agent Platform token is unavailable");
-    return { baseUrl, token };
+    const diagnostic = beginPlatformLoadDiagnostic("availability");
+    try {
+        diagnostic.next("service-state");
+        const state = await factoryContext.options.getServiceState(factoryContext.options.app, AGENT_PLATFORM_SERVICE_ID);
+        diagnostic.serviceState(state.status);
+        const baseUrl = state.status === "running"
+            ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
+            : "";
+        if (!baseUrl)
+            throw new Error("Agent Platform is unavailable");
+        diagnostic.next("access-token");
+        const tokenResult = await factoryContext.options.issueAccessToken(factoryContext.options.app, "missing");
+        const token = tokenResult.ok ? tokenResult.token.trim() : "";
+        if (!token)
+            throw new Error(tokenResult.message || "Agent Platform token is unavailable");
+        diagnostic.end("succeeded");
+        return { baseUrl, token };
+    } catch (error) {
+        diagnostic.end("failed");
+        throw error;
+    }
 }
 
 export function registerAgentWebclientBridgeIpcHandlers_sendEvent_3(factoryContext: RegisterAgentWebclientBridgeIpcHandlersContext, session: LogicalSession, event: AgentWebclientPlatformFramePortEvent): void {
@@ -67,6 +78,12 @@ export function registerAgentWebclientBridgeIpcHandlers_sendEvent_3(factoryConte
 
 export function registerAgentWebclientBridgeIpcHandlers_sendFrame_4(factoryContext: RegisterAgentWebclientBridgeIpcHandlersContext, session: LogicalSession, frame: PlatformFrameRecord): void {
     const requestId = readText(frame.id);
+    if (frame.frame === "response" || frame.frame === "error") {
+        const diagnostic = session.loadDiagnostics.get(requestId);
+        diagnostic?.end(frame.frame === "error" || (typeof frame.code === "number" && frame.code !== 0)
+            ? "failed" : "succeeded", typeof frame.code === "number" ? frame.code : undefined);
+        session.loadDiagnostics.delete(requestId);
+    }
     const chatLoad = requestId ? session.chatLoadRequests.get(requestId) : null;
     if (chatLoad) {
         const data = isPlainBridgeRecord(frame.data) ? frame.data : {};
@@ -152,6 +169,9 @@ export function registerAgentWebclientBridgeIpcHandlers_closeSession_7(factoryCo
     if (factoryContext.closedLogicalSessions.length > 200)
         factoryContext.closedLogicalSessions.splice(0, factoryContext.closedLogicalSessions.length - 200);
     session.closed = true;
+    for (const diagnostic of session.loadDiagnostics.values()) diagnostic.end("cancelled");
+    session.loadDiagnostics.clear();
+    session.chatLoadRequests.clear();
     session.unsubscribePush?.();
     session.unsubscribePush = null;
     session.unsubscribeConnection?.();

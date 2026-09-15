@@ -1186,3 +1186,33 @@ test("Kanban preview authorizes only its registered Chat read and attach/detach"
   assert.equal(sentFrames(sender).at(-1).type, "capability_denied");
   assert.equal(runtime.calls.queries.length, 0);
 });
+
+for (const type of ["/api/agents", "/api/chat"]) {
+  test(`${type} production watchdog observes delayed response and cleans up on close`, async (t) => {
+    const logs = [];
+    t.mock.method(console, "warn", (...args) => logs.push(args));
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const main = mainTarget();
+    const pending = [];
+    const runtime = createRuntime(new Map([[101, main]]), {
+      realtimeBroker: { forwardRequest: async (input) => { pending.push(input); return "upstream"; } },
+    });
+    const sender = createSender(101, main.currentUrl);
+    await openSession(runtime, sender, "diagnostic");
+    send(runtime, sender, "diagnostic", { frame: "request", id: "slow", type, payload: { chatId: "chat-1" } });
+    await flush();
+    t.mock.timers.tick(5000);
+    const records = () => logs.filter(([tag]) => tag === "[platform-load]").map(([, data]) => data);
+    assert.equal(records().at(-1).stage, "broker-response");
+    assert.equal(records().at(-1).operation, type);
+    pending[0].onFrame({ frame: "response", id: "slow", type, code: 0, data: { text: "PRIVATE_BODY" } });
+    assert.equal(records().at(-1).status, "succeeded");
+    send(runtime, sender, "diagnostic", { frame: "request", id: "abandoned", type, payload: {} });
+    await flush();
+    sender.destroy();
+    const count = records().length;
+    t.mock.timers.tick(10000);
+    assert.equal(records().length, count);
+    assert.ok(!JSON.stringify(records()).includes("PRIVATE_BODY"));
+  });
+}

@@ -1,3 +1,4 @@
+import { beginPlatformLoadDiagnostic } from "./load-diagnostic";
 import { captureCopilotSiteControlScope } from "../web-surfaces";
 import {
   isPlainBridgeRecord,
@@ -49,6 +50,13 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             factoryContext.sendFrame(session, frameError(frame.id, "capability_denied", "Kanban preview only observes its registered Chat"));
             return;
         }
+    }
+    if (frame.type === "/api/chat" || frame.type === "/api/agents") {
+        session.loadDiagnostics.get(frame.id)?.end("cancelled");
+        const diagnostic = beginPlatformLoadDiagnostic(frame.type,
+            () => factoryContext.options.realtimeBroker.getConnectionState());
+        diagnostic.next("availability");
+        session.loadDiagnostics.set(frame.id, diagnostic);
     }
     if (frame.type === "/api/chat") {
         const chatId = readText(isPlainBridgeRecord(frame.payload) ? frame.payload.chatId : "");
@@ -281,6 +289,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         return;
     }
     const { baseUrl, token } = connection;
+    session.loadDiagnostics.get(frame.id)?.next("broker-response");
     // Availability may perform an asynchronous cold identity probe. Recheck the
     // real sender and live surface after that wait, before forwarding any frame.
     const refreshedContext = session.closed || event.sender.isDestroyed()

@@ -1,5 +1,24 @@
 # Windows / macOS 性能对照采集
 
+## 首装加载诊断（默认开启）
+
+这一组诊断写入 `logs/desktop/main.log`，正式安装包默认开启，不需要设置 `PERF` 或打开开发者工具。与下文可选的性能采集独立。
+
+1. 在隔离的全新 Windows 运行环境安装并启动，记录 Desktop 版本、Windows 版本及故障发生的本地时间。不要清除现有用户数据来制造首装。
+2. 出现“加载智能体失败”或“会话加载超过 15 秒”时，记录操作时间；恢复后再打开一次相同入口，记录恢复时间。
+3. 从设置的“打开日志目录”或控制中心“打开日志位置”保存本次启动到恢复后的完整日志，包括轮转文件及 `agent-platform`、`identity-center` 服务日志。不要仅截取错误最后一行。
+4. 在 macOS 做相同操作；慢/失败日志规则相同，正常快速加载不应持续产生新增日志。
+
+定位顺序：
+
+- `[platform-load]`：`operation` 区分服务可用性检查、`/api/agents` 和 `/api/chat`。每个操作有独立 `id`，超过 5 秒仅输出一次 `waiting`，最终输出 `succeeded/failed/cancelled`；失败即使不足 5 秒也记录。`uptimeMs` 可区分首启阶段；`stages` 为已完成阶段耗时，`stageElapsedMs` 为当前阶段耗时。这里的成功只代表宿主收到响应，不代表 WebClient 已渲染内容。
+- `service-state` 慢或失败：查看 `serviceStatus` 和同期 `[bridge-pid]`。后者区分 PID 文件读取错误（例如 `EBUSY/EPERM/EACCES`）与进程身份探测结果（`unknown/mismatched`）、耗时及探测期间身份是否稳定。同类 PID 诊断最多每 30 秒一条，不记录路径、命令行或原始错误。
+- `access-token` 慢或失败：结合 Identity Center 服务日志检查。凭据和原始错误消息不会写入新增诊断。
+- `/api/agents` 或 `/api/chat` 停留在 `availability`：尚未完成服务检查及取凭据；停留在 `broker-response`：进入 Broker 连接/响应等待，结合 `connectionPhase/generation/reconnectCount`、`[agent-platform-realtime]` 与 Platform 服务日志判断。
+- `[startup-checkpoint]`、`[program-data-cleanup]`：检查此前部署、验证、版本目录清理是否失败。仅有约十分钟后恢复的现象不能证明目录锁是原因，需要同一时间段的上述证据。
+
+新增诊断不采集 token、Cookie、完整 URL、业务帧或聊天正文。需要测量主进程卡顿与资源占用时，再启用下面的可选性能采集。
+
 ## 开启与日志位置
 
 默认关闭。完全退出 Desktop（包括托盘中的进程），带 `PERF=1` 启动新进程；已有单实例不会继承新环境变量。开发运行：
