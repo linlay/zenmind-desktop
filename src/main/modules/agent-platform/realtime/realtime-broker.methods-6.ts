@@ -111,7 +111,7 @@ export function RealtimeBroker_hasSystemRunLease_6(self: RealtimeBrokerMethodCon
 }
 
 export function RealtimeBroker_detachRunIfUnobserved_7(self: RealtimeBrokerMethodContext, run: BrokerRun, reason: string) {
-    if (run.terminal || run.rootObserverTokens.size > 0 || self.hasSystemRunLease(run) ||
+    if (self.getRunChannel(run.runId, run.lane) !== run || run.terminal || run.rootObserverTokens.size > 0 || self.hasSystemRunLease(run) ||
         !run.upstreamRequestId || !run.baseUrl || !run.accessToken)
         return Promise.resolve();
     if (run.detachInFlight)
@@ -120,7 +120,7 @@ export function RealtimeBroker_detachRunIfUnobserved_7(self: RealtimeBrokerMetho
     const operationGeneration = ++run.operationGeneration;
     const detach = new Promise<void>((resolve) => {
         void self.ensureConnected(run.baseUrl, run.accessToken, run.lane).then(() => {
-            if (run.operationGeneration !== operationGeneration ||
+            if (self.getRunChannel(run.runId, run.lane) !== run || run.operationGeneration !== operationGeneration ||
                 run.rootObserverTokens.size > 0 ||
                 self.hasSystemRunLease(run)) {
                 run.suspended = false;
@@ -159,7 +159,8 @@ export function RealtimeBroker_detachRunIfUnobserved_7(self: RealtimeBrokerMetho
     }).finally(() => {
         if (run.detachInFlight === detach)
             run.detachInFlight = null;
-        if ((run.rootObserverTokens.size > 0 || self.hasSystemRunLease(run)) &&
+        if (self.getRunChannel(run.runId, run.lane) === run &&
+            (run.rootObserverTokens.size > 0 || self.hasSystemRunLease(run)) &&
             !run.terminal && !run.upstreamRequestId) {
             void self.startAttach(run, run.baseUrl, run.accessToken);
         }
@@ -178,8 +179,9 @@ export function RealtimeBroker_cleanupPending_8(self: RealtimeBrokerMethodContex
 }
 
 export function RealtimeBroker_prepareConnectionIdentity_9(self: RealtimeBrokerMethodContext, baseUrl: string, token: string) {
-    const reason = self.clients.primary.getRotationReason(baseUrl, token) ??
-        self.clients.btw.getRotationReason(baseUrl, token);
+    const reason = Object.values(self.clients)
+        .map((client) => client.getRotationReason(baseUrl, token))
+        .find((value) => value !== null);
     if (reason) {
         self.rotateIdentity(reason);
     }

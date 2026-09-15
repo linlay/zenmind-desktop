@@ -56,6 +56,7 @@ export function RealtimeBroker_registerProvisionalRun_1(self: RealtimeBrokerMeth
         restoreCount: 0,
         lastRestoreResult: "never",
         upstreamRequestId: transaction.upstreamRequestId,
+        upstreamSource: "query_stream",
         query: transaction,
         replay: [],
         replayBytes: 0,
@@ -105,7 +106,9 @@ export function RealtimeBroker_bindQuerySubscription_2(self: RealtimeBrokerMetho
         ...(observerToken ? { observerToken } : {}),
         onEvent: (event, eventPath) => {
             const path = eventPath || `broker.${run.lane}[${run.runId}].events`;
-            transaction.eventQueue = transaction.eventQueue.then(() => transaction.onEvent(event, path));
+            transaction.eventQueue = transaction.eventQueue.then(() => {
+                if (!transaction.sourceDetached) return transaction.onEvent(event, path);
+            });
             void transaction.eventQueue.catch((error) => self.failQuery(transaction, error));
         },
     };
@@ -139,7 +142,7 @@ export function RealtimeBroker_handleRunStream_3(self: RealtimeBrokerMethodConte
     self.completeRun(run, {
         reason,
         ...(typeof frame.lastSeq === "number" ? { lastSeq: frame.lastSeq } : {}),
-    }, "attach_stream");
+    }, run.upstreamSource);
 }
 
 export function RealtimeBroker_releaseRunObserver_4(self: RealtimeBrokerMethodContext, run: BrokerRun, requestId: string, reason: string, lastSeq: unknown) {
@@ -310,6 +313,7 @@ export function RealtimeBroker_completeRun_8(self: RealtimeBrokerMethodContext, 
 }
 
 export function RealtimeBroker_failQuery_9(self: RealtimeBrokerMethodContext, transaction: QueryTransaction, error: unknown) {
+    if (transaction.sourceDetached) return;
     transaction.siteControlScope?.release("The source query failed.");
     if (transaction.runId) self.siteControlGrants.revoke(transaction.runId);
     self.queriesByRequestId.delete(transaction.upstreamRequestId);
@@ -340,17 +344,18 @@ export function RealtimeBroker_failQuery_9(self: RealtimeBrokerMethodContext, tr
 }
 
 export async function RealtimeBroker_startAttach_10(self: RealtimeBrokerMethodContext, run: BrokerRun, baseUrl: string, token: string) {
-    if (run.upstreamRequestId || run.terminal)
+    if (self.getRunChannel(run.runId, run.lane) !== run || run.upstreamRequestId || run.terminal)
         return;
     await self.ensureConnected(baseUrl, token, run.lane);
     if (run.lane === "primary" && run.rootObserverTokens.size > 0) {
         await Promise.all([...self.runChannels.values()].filter((other) => other !== run && other.lane === "primary").map((other) => other.detachInFlight));
     }
     if (run.rootObserverTokens.size === 0 && !self.hasSystemRunLease(run)) return;
-    if (run.upstreamRequestId || run.terminal)
+    if (self.getRunChannel(run.runId, run.lane) !== run || run.upstreamRequestId || run.terminal)
         return;
     const id = `desktop-attach-${randomUUID()}`;
     run.upstreamRequestId = id;
+    run.upstreamSource = "attach_stream";
     self.diagnostics.upstreamAttachCount += 1;
     self.clients[run.lane].send({
         frame: "request",
@@ -379,6 +384,7 @@ export async function RealtimeBroker_restoreRun_11(self: RealtimeBrokerMethodCon
     const id = `desktop-attach-${randomUUID()}`;
     try {
         run.upstreamRequestId = id;
+        run.upstreamSource = "attach_stream";
         self.diagnostics.upstreamAttachCount += 1;
         self.clients[run.lane].send({
             frame: "request",

@@ -1,11 +1,13 @@
 import type {
   EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRegistrationResult,
   EmbeddedCdpSurfaceRemoval,
   EmbeddedCdpSurfaceTargetStateRequest
 } from "../../../../shared/embedded-cdp";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import { createEmbeddedCdpTargetId } from "./gateway";
 import { session as electronSession } from "electron";
+import { MAIN_CHAT_SURFACE_ID } from "../../../../shared/surface-identity";
 
 type EmbeddedCdpIpcMain = {
   handle(channel: string, listener: (event: any, input: any) => unknown): void;
@@ -13,7 +15,8 @@ type EmbeddedCdpIpcMain = {
 
 export function registerEmbeddedCdpIpcHandlers(
   ipcMain: EmbeddedCdpIpcMain,
-  browserSurfaces: BrowserSurfaceRegistry
+  browserSurfaces: BrowserSurfaceRegistry,
+  options: { isMainWindow(senderWebContentsId: number): boolean }
 ) {
   const ownersWithCleanup = new Set<number>();
 
@@ -50,7 +53,14 @@ export function registerEmbeddedCdpIpcHandlers(
 
   ipcMain.handle(
     "embeddedCdp.registerSurface",
-    (event, input: EmbeddedCdpSurfaceRegistration) => {
+    (event, input: EmbeddedCdpSurfaceRegistration): EmbeddedCdpSurfaceRegistrationResult => {
+      const isMainChat = input?.surfaceRole === "main-chat" ||
+        (typeof input?.surfaceId === "string" && input.surfaceId.trim() === MAIN_CHAT_SURFACE_ID);
+      // An auxiliary renderer must never claim Main Chat while the main guest
+      // is remounting, even when the Registry temporarily has no owner.
+      if (isMainChat && !options.isMainWindow(event.sender.id)) {
+        return { ok: false, reason: "ownership_conflict" };
+      }
       ensureOwnerCleanup(event.sender);
       return browserSurfaces.registerSurfaceResult(input, event.sender.id);
     }

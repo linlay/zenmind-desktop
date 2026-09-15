@@ -9,6 +9,7 @@ import {
   KANBAN_CHAT_SURFACE_ID,
   LEGACY_FIXED_SURFACE_ID_ALIASES,
   MAIN_CHAT_SURFACE_ID,
+  SELECTION_EXPLAIN_SURFACE_ID,
   createLegacySurfaceIdAliases,
   resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId,
@@ -270,7 +271,7 @@ export function createBrowserSurfaceRegistry_indexRegisteredSurface_16(context: 
     }
 }
 
-export function createBrowserSurfaceRegistry_expectedRolesForRegistration_17(context: CreateBrowserSurfaceRegistryContext, input: EmbeddedCdpSurfaceRegistration): ("main-chat" | "kanban-chat" | "browser" | "website" | "webapp" | "copilot-dock" | "overview" | "debug" | "btw" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "agent" | "copilot" | "skill" | "workpanel-web" | "service" | "help" | "plugin-settings")[] {
+export function createBrowserSurfaceRegistry_expectedRolesForRegistration_17(context: CreateBrowserSurfaceRegistryContext, input: EmbeddedCdpSurfaceRegistration): ("main-chat" | "kanban-chat" | "browser" | "website" | "webapp" | "copilot-dock" | "overview" | "debug" | "btw" | "selection-explain" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "agent" | "copilot" | "skill" | "workpanel-web" | "service" | "help" | "plugin-settings")[] {
     if (input.surfaceKind === "website")
         return ["website"];
     if (input.surfaceKind === "webapp")
@@ -287,6 +288,8 @@ export function createBrowserSurfaceRegistry_expectedRolesForRegistration_17(con
         return ["debug"];
     if (input.surfaceType === "agent-btw")
         return ["btw"];
+    if (input.surfaceType === "agent-selection-explain")
+        return ["selection-explain"];
     if (input.surfaceType === "agent-project" || input.surfaceType === "project")
         return ["project"];
     if (input.surfaceType === "agent-chat")
@@ -320,12 +323,13 @@ export function createBrowserSurfaceRegistry_validateRegistrationIdentity_18(con
     if ((input.surfaceRole === "service" || input.surfaceRole === "plugin-settings") &&
         input.serviceId?.trim() !== identityKey)
         return { ok: false, check: "service_identity_mismatch" };
-    if (["main-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
+    if (["main-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "selection-explain", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
         input.serviceId?.trim() !== "agent-webclient")
         return { ok: false, check: "agent_webclient_service_mismatch" };
     if ((input.surfaceRole === "main-chat" && input.surfaceId !== MAIN_CHAT_SURFACE_ID) ||
         (input.surfaceRole === "kanban-chat" && input.surfaceId !== KANBAN_CHAT_SURFACE_ID) ||
-        (input.surfaceRole === "copilot-dock" && input.surfaceId !== COPILOT_DOCK_SURFACE_ID))
+        (input.surfaceRole === "copilot-dock" && input.surfaceId !== COPILOT_DOCK_SURFACE_ID) ||
+        (input.surfaceRole === "selection-explain" && input.surfaceId !== SELECTION_EXPLAIN_SURFACE_ID))
         return { ok: false, check: "fixed_surface_id_mismatch" };
     if (input.surfaceRole === "copilot-dock" &&
         input.surfaceIdentityKey?.trim() === "desktop-route:/kanban")

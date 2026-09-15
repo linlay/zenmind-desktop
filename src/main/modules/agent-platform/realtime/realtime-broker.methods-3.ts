@@ -20,6 +20,9 @@ export function RealtimeBroker_getDiagnostics_1(self: RealtimeBrokerMethodContex
         pushSubscriberCount: self.pushSubscriptions.size,
         connectionSubscriberCount: self.connectionSubscriptions.size,
         rootObserver: self.getActiveRootObserver(),
+        auxiliaryRootObservers: [...self.auxiliaryRootObservers.values()].map(
+            (observer) => self.snapshotRootObserver(observer),
+        ),
         overviewLease: self.mainChatRootObserver?.overviewLease
             ? {
                 state: self.mainChatRootObserver.overviewLease.state,
@@ -111,8 +114,11 @@ export function RealtimeBroker_clearDebugTrace_4(self: RealtimeBrokerMethodConte
 
 export function RealtimeBroker_rotateIdentity_5(self: RealtimeBrokerMethodContext, reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") {
     self.options.onDiagnostic?.(`realtime_identity_rotation:${reason}`);
-    self.diagnostics.laneRotationCount += 2;
+    self.diagnostics.laneRotationCount += Object.keys(self.clients).length;
     const error = brokerError("connection_unavailable", "realtime identity was invalidated");
+    // Revoke channels before notifying their former consumers. Unsubscribing
+    // those consumers must not schedule a detach using the old identity.
+    self.runChannels.clear();
     for (const pending of [...self.pendingRequests.values()]) {
         self.cleanupPending(pending.upstreamId);
         pending.onError(error);
@@ -125,16 +131,15 @@ export function RealtimeBroker_rotateIdentity_5(self: RealtimeBrokerMethodContex
     }
     self.queriesByRequestId.clear();
     self.runSubscriptions.clear();
-    self.runChannels.clear();
     for (const pending of [...self.pendingClones.values()])
         pending.reject(error);
     self.pendingClones.clear();
     self.activeRootObserver = null;
     self.mainChatRootObserver = null;
+    self.auxiliaryRootObservers.clear();
     self.terminalRequestIds.clear();
     self.clearRunActionGrants();
-    self.clients.primary.rotateIdentity();
-    self.clients.btw.rotateIdentity();
+    for (const client of Object.values(self.clients)) client.rotateIdentity();
 }
 
 export function RealtimeBroker_beginShutdown_6(self: RealtimeBrokerMethodContext) {
@@ -165,6 +170,7 @@ export function RealtimeBroker_dispose_7(self: RealtimeBrokerMethodContext) {
     self.pendingClones.clear();
     self.activeRootObserver = null;
     self.mainChatRootObserver = null;
+    self.auxiliaryRootObservers.clear();
     self.terminalRequestIds.clear();
     self.clearRunActionGrants();
     for (const controller of self.inboundDesktopRequests.values())
@@ -172,8 +178,7 @@ export function RealtimeBroker_dispose_7(self: RealtimeBrokerMethodContext) {
     self.inboundDesktopRequests.clear();
     self.seenInboundDesktopRequestIds.clear();
     self.desktopBridgeProvider = null;
-    self.clients.primary.dispose();
-    self.clients.btw.dispose();
+    for (const client of Object.values(self.clients)) client.dispose();
 }
 
 export function RealtimeBroker_handleConnectionState_8(self: RealtimeBrokerMethodContext, lane: RealtimeLane, state: AgentPlatformRealtimeConnectionState) {
@@ -218,6 +223,13 @@ export function RealtimeBroker_handleConnectionState_8(self: RealtimeBrokerMetho
             run.upstreamRequestId = null;
         }
         self.queriesByRequestId.delete(transaction.upstreamRequestId);
+    }
+    // A channel remains Broker-owned after query-to-auxiliary handoff and
+    // subsequent attaches. Those streams no longer have a pending query entry.
+    for (const run of self.runChannels.values()) {
+        if (run.lane !== lane || run.terminal) continue;
+        run.suspended = true;
+        run.upstreamRequestId = null;
     }
 }
 
@@ -269,6 +281,22 @@ export function RealtimeBroker_handleFrame_9(self: RealtimeBrokerMethodContext, 
     const run = [...self.runChannels.values()].find((candidate) => candidate.lane === lane && candidate.upstreamRequestId === id);
     if (run && kind === "stream") {
         self.handleRunStream(run, frame);
+        return;
+    }
+    if (run && kind === "error") {
+        const error = frameError(frame);
+        const subscriptions = [...run.subscribers].flatMap((subscriptionId) => {
+            const subscription = self.runSubscriptions.get(subscriptionId);
+            self.runSubscriptions.delete(subscriptionId);
+            return subscription ? [subscription] : [];
+        });
+        run.subscribers.clear();
+        run.query?.completed.reject(error);
+        self.completeRun(run, { reason: "error", lastSeq: run.lastSeq }, run.upstreamSource);
+        for (const subscription of subscriptions) {
+            if (subscription.onError) subscription.onError(error);
+            else subscription.onComplete?.({ reason: "error", lastSeq: run.lastSeq });
+        }
         return;
     }
     const pending = self.pendingRequests.get(id);

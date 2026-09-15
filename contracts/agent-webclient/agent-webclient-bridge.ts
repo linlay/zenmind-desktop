@@ -1,6 +1,6 @@
 // Generated from src/shared/contracts/agent-webclient-bridge.ts.
 // Do not edit this mirror directly.
-// sha256:c7d23804841402bd64681ac289e98c9bf2ed298ceb346e71d55dd10ce5d0d14b
+// sha256:c502de2716a0192554bd44750657a5e00cbe8a265132c9e20888a618f96c51e7
 
 /**
  * Canonical Desktop <-> Agent WebClient bridge contract.
@@ -111,6 +111,53 @@ export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT =
 export const AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION =
   "workPanel.composer.insertDraft" as const;
 export const AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_SELECTION_ACTION =
+  "selectionToolbar.execute" as const;
+export const AGENT_WEBCLIENT_SELECTION_ACTION_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_SELECTION_ACTION_RESULT_PAGE_EVENT =
+  "__agentWebclientSelectionActionResult" as const;
+
+export type AgentWebclientSelectionActionId =
+  | "add-to-chat"
+  | "more-details"
+  | "ask-in-side-chat";
+
+export type AgentWebclientSelectionTargetKind = "message" | "code";
+
+export type AgentWebclientSelectionPoint = {
+  x: number;
+  y: number;
+};
+
+export type AgentWebclientSelectionAction = {
+  action: typeof AGENT_WEBCLIENT_SELECTION_ACTION;
+  version: typeof AGENT_WEBCLIENT_SELECTION_ACTION_VERSION;
+  requestId: string;
+  selectionId: string;
+  operation: AgentWebclientSelectionActionId;
+  targetId: string;
+  targetKind: AgentWebclientSelectionTargetKind;
+  start: AgentWebclientSelectionPoint;
+  end: AgentWebclientSelectionPoint;
+};
+
+export type AgentWebclientSelectionActionErrorCode =
+  | "stale_selection"
+  | "chat_required"
+  | "selection_too_large"
+  | "surface_not_ready"
+  | "run_start_failed";
+
+export type AgentWebclientSelectionActionResult = {
+  version: typeof AGENT_WEBCLIENT_SELECTION_ACTION_VERSION;
+  requestId: string;
+  ok: boolean;
+  code?: AgentWebclientSelectionActionErrorCode;
+  handoff?: {
+    chatId: string;
+    runId: string;
+  };
+};
 
 export type AgentWebclientWorkPanelResourceDownloadAction = {
   action: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION;
@@ -193,6 +240,7 @@ export type AgentWebclientSurfaceKind =
   | "agent-overview"
   | "agent-debug"
   | "agent-btw"
+  | "agent-selection-explain"
   | "agent-project"
   | "agent-management";
 
@@ -532,7 +580,9 @@ export type AgentWebclientWorkPanelBridge = {
   closeItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
 };
 
-export function isAgentWebclientBridgeVersion(value: unknown): value is 6 {
+export function isAgentWebclientBridgeVersion(
+  value: unknown,
+): value is typeof AGENT_WEBCLIENT_BRIDGE_VERSION {
   return value === AGENT_WEBCLIENT_BRIDGE_VERSION;
 }
 
@@ -547,6 +597,7 @@ export function isAgentWebclientSurfaceKind(value: unknown): value is AgentWebcl
     "agent-overview",
     "agent-debug",
     "agent-btw",
+    "agent-selection-explain",
     "agent-project",
     "agent-management",
   ].includes(String(value));
@@ -577,6 +628,7 @@ export const SKIN_VISUAL_SLOTS = [
   "navigation.refresh", "navigation.more_actions", "entry.kanban", "entry.automation", "entry.new_chat", "entry.new_project",
   "entry.chat", "entry.project", "entry.website", "chat.send", "chat.stop", "chat.attach", "chat.expand", "chat.collapse", "chat.voice", "chat.screenshot",
   "agent.default", "agent.terminal", "agent.database", "agent.library", "agent.folder", "agent.coder", "agent.kbase",
+  "heading.pinned.zh-CN", "heading.pinned.en-US",
   "heading.chats.zh-CN", "heading.projects.zh-CN", "heading.websites.zh-CN",
   "heading.chats.en-US", "heading.projects.en-US", "heading.websites.en-US"
 ] as const;
