@@ -1,3 +1,4 @@
+import { CollapsibleIssueProperties, isEmptyIssuePropertyValue } from "./CollapsibleIssueProperties";
 import { resolveKanbanResultIdentity } from "../../../shared/kanban-result-read";
 import { useKanbanResultRead } from "./useKanbanResultRead";
 import { getKanbanIssueProjectName } from "./kanbanProjectTree";
@@ -152,7 +153,7 @@ function secondsToHoursInput(value: number | null | undefined) {
 }
 
 function formatEffort(value: number | null | undefined, t: TranslateFunction) {
-  if (!value) return t("kanban.detail.notSet");
+  if (value === null || value === undefined) return t("kanban.detail.notSet");
   return t("kanban.detail.hours", { value: Math.round((value / 3600) * 100) / 100 });
 }
 
@@ -331,6 +332,7 @@ function DetailProperty({
   label: ReactNode;
   value: ReactNode;
   editing?: boolean;
+  empty?: boolean;
   editor?: ReactNode;
   copyValue?: string | number | null;
   copyTitle?: string;
@@ -539,6 +541,12 @@ export function KanbanIssueDetailDialog({
   const [copyNotice, setCopyNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [chatEmbedPath, setChatEmbedPath] = useState<string | null>(null);
   const [selectedIssueChatId, setSelectedIssueChatId] = useState<string | null>(null);
+  const showingHistory = Boolean(chatEmbedPath);
+  useLayoutEffect(() => {
+    if (!showingHistory) return;
+    // Follow entry into history once; subsequent chat updates preserve manual scrolling.
+    document.getElementById("kanban-detail-runs")?.scrollIntoView({ block: "start" });
+  }, [showingHistory]);
   const [draft, setDraft] = useState(() => ({
     ...createDetailDraft(issue),
     status: initialEditStatus ?? issue.status
@@ -1069,27 +1077,27 @@ export function KanbanIssueDetailDialog({
             </DetailSection>}
 
             <DetailSection sectionId="kanban-detail-basic" title={t("kanban.detail.basicTitle")} icon={<FileTextOutlined />}>
-              <dl className="kanban-detail-properties">
+              <CollapsibleIssueProperties key={issue.id} editing={editing} t={t}>
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.issueId")} value={remoteId} />
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.project")} value={projectLabel} />
                 <DetailProperty
                   {...copyBehavior}
-                  label={t("kanban.form.version")}
+                  empty={isEmptyIssuePropertyValue(issue.projectVersion)} label={t("kanban.form.version")}
                   value={issue.projectVersion || t("kanban.detail.notSet")}
                   editing={editing}
                   editor={<select value={draft.projectVersion} onChange={(event) => updateDraft({ projectVersion: event.target.value })}><option value="">{t("kanban.detail.notSet")}</option>{projectVersions.map((version) => <option key={version} value={version}>{version}</option>)}</select>}
                 />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.dueDate")} value={issue.dueDate || t("kanban.detail.notSet")} editing={editing} editor={<input type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.dueRisk")} value={issue.dueRisk || t("kanban.detail.notSet")} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.resolution")} value={issue.resolution || t("kanban.detail.notSet")} editing={editing} editor={<input maxLength={200} value={draft.resolution} onChange={(event) => updateDraft({ resolution: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.components")} value={issue.componentKeys.join(", ") || t("kanban.detail.notSet")} editing={editing} editor={<select multiple value={draft.componentKeys} onChange={(event) => updateDraft({ componentKeys: [...event.target.selectedOptions].map((option) => option.value) })}>{projectComponents.map((component) => <option key={component} value={component}>{component}</option>)}</select>} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.originalEstimate")} value={formatEffort(issue.originalEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.originalEstimateHours} onChange={(event) => updateDraft({ originalEstimateHours: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.remainingEstimate")} value={formatEffort(issue.remainingEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.remainingEstimateHours} onChange={(event) => updateDraft({ remainingEstimateHours: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.timeSpent")} value={formatEffort(issue.timeSpent, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.timeSpentHours} onChange={(event) => updateDraft({ timeSpentHours: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.securityLevel")} value={issue.securityLevelKey || t("kanban.detail.notSet")} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.workflow")} value={workflowLabel} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.stage")} value={stageLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.dueDate)} label={t("kanban.form.dueDate")} value={issue.dueDate || t("kanban.detail.notSet")} editing={editing} editor={<input type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.dueRisk)} label={t("kanban.detail.dueRisk")} value={issue.dueRisk || t("kanban.detail.notSet")} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.resolution)} label={t("kanban.form.resolution")} value={issue.resolution || t("kanban.detail.notSet")} editing={editing} editor={<input maxLength={200} value={draft.resolution} onChange={(event) => updateDraft({ resolution: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.componentKeys)} label={t("kanban.form.components")} value={issue.componentKeys.join(", ") || t("kanban.detail.notSet")} editing={editing} editor={<select multiple value={draft.componentKeys} onChange={(event) => updateDraft({ componentKeys: [...event.target.selectedOptions].map((option) => option.value) })}>{projectComponents.map((component) => <option key={component} value={component}>{component}</option>)}</select>} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.originalEstimate)} label={t("kanban.form.originalEstimate")} value={formatEffort(issue.originalEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.originalEstimateHours} onChange={(event) => updateDraft({ originalEstimateHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.remainingEstimate)} label={t("kanban.form.remainingEstimate")} value={formatEffort(issue.remainingEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.remainingEstimateHours} onChange={(event) => updateDraft({ remainingEstimateHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.timeSpent)} label={t("kanban.form.timeSpent")} value={formatEffort(issue.timeSpent, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.timeSpentHours} onChange={(event) => updateDraft({ timeSpentHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.securityLevelKey)} label={t("kanban.detail.securityLevel")} value={issue.securityLevelKey || t("kanban.detail.notSet")} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issueType?.name || issue.issueTypeKey || issue.typeId)} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(workflow?.name || issue.workflowId)} label={t("kanban.detail.workflow")} value={workflowLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(stage?.name || issue.stageName || issue.stageKey)} label={t("kanban.detail.stage")} value={stageLabel} />
                 <DetailProperty
                   {...copyBehavior}
                   label={t("kanban.form.status")}
@@ -1099,23 +1107,23 @@ export function KanbanIssueDetailDialog({
                 />
                 <DetailProperty
                   {...copyBehavior}
-                  label={t("kanban.form.priority")}
+                  empty={isEmptyIssuePropertyValue(issue.priority)} label={t("kanban.form.priority")}
                   value={priorityLabel}
                   editing={editing}
                   editor={<select value={draft.priority ?? ""} onChange={(event) => updateDraft({ priority: event.target.value ? event.target.value as KanbanPriority : null })}><option value="">{t("kanban.detail.notSet")}</option>{KANBAN_PRIORITIES.map((priority) => <option key={priority} value={priority}>{t(DETAIL_PRIORITY_LABELS[priority])}</option>)}</select>}
                 />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.severity")} value={severityLabel} editing={editing} editor={<select value={draft.severity ?? ""} onChange={(event) => updateDraft({ severity: event.target.value ? event.target.value as KanbanSeverity : null })}><option value="">{t("kanban.detail.notSet")}</option>{(["critical", "high", "medium", "low"] as const).map((severity) => <option key={severity} value={severity}>{t(`kanban.importance.${severity}` as "kanban.importance.medium")}</option>)}</select>} />
-                {labels.length > 0 ? <DetailProperty {...copyBehavior} copyValue={labels.map((label) => label.name || label.key).join(", ")} label={t("kanban.detail.labelsTitle")} value={<span className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</span>} /> : null}
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.severity)} label={t("kanban.detail.severity")} value={severityLabel} editing={editing} editor={<select value={draft.severity ?? ""} onChange={(event) => updateDraft({ severity: event.target.value ? event.target.value as KanbanSeverity : null })}><option value="">{t("kanban.detail.notSet")}</option>{(["critical", "high", "medium", "low"] as const).map((severity) => <option key={severity} value={severity}>{t(`kanban.importance.${severity}` as "kanban.importance.medium")}</option>)}</select>} />
+                <DetailProperty empty={isEmptyIssuePropertyValue(labels)} {...copyBehavior} copyValue={labels.map((label) => label.name || label.key).join(", ")} label={t("kanban.detail.labelsTitle")} value={labels.length === 0 ? t("kanban.detail.notSet") : <span className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</span>} />
                 {resolvedFields.map((field) => {
                   const value = issue.customFields?.[field.def.key] ?? field.context.defaultValue;
-                  return <DetailProperty {...copyBehavior} copyValue={formatDynamicCopyValue(field, value, usersById, issuesByRemoteId, t)} key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, value, usersById, issuesByRemoteId, t)} />;
+                  return <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(value)} copyValue={formatDynamicCopyValue(field, value, usersById, issuesByRemoteId, t)} key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, value, usersById, issuesByRemoteId, t)} />;
                 })}
-                <DetailProperty {...copyBehavior} copyValue={createdAtLabel} label={t("kanban.detail.createdAt")} value={<><CalendarOutlined /> {createdAtLabel}</>} />
-                <DetailProperty {...copyBehavior} copyValue={updatedAtLabel} label={t("kanban.detail.updatedAt")} value={<><CalendarOutlined /> {updatedAtLabel}</>} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.createdBy")} value={createdByLabel} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.updatedBy")} value={updatedByLabel} />
-                {debugMode ? <DetailProperty {...copyBehavior} label={t("kanban.detail.revision")} value={issue.revision ?? issue.lastRemoteRevision ?? "—"} /> : null}
-              </dl>
+                <DetailProperty {...copyBehavior} copyValue={createdAtLabel} empty={isEmptyIssuePropertyValue(issue.createdAt)} label={t("kanban.detail.createdAt")} value={<><CalendarOutlined /> {createdAtLabel}</>} />
+                <DetailProperty {...copyBehavior} copyValue={updatedAtLabel} empty={isEmptyIssuePropertyValue(issue.updatedAt)} label={t("kanban.detail.updatedAt")} value={<><CalendarOutlined /> {updatedAtLabel}</>} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.createdByAgent || issue.createdBy)} label={t("kanban.detail.createdBy")} value={createdByLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.updatedByAgent || issue.updatedBy)} label={t("kanban.detail.updatedBy")} value={updatedByLabel} />
+                {debugMode ? <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.revision ?? issue.lastRemoteRevision)} label={t("kanban.detail.revision")} value={issue.revision ?? issue.lastRemoteRevision ?? "—"} /> : null}
+              </CollapsibleIssueProperties>
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-people" title={t("kanban.detail.peopleTitle")} icon={<UserOutlined />}>

@@ -2404,6 +2404,8 @@ export const zhCNMessages = {
   "kanban.sync.error": "失败",
   "kanban.chat.viewOrConfirm": "查看/确认",
   "kanban.chat.view": "查看聊天",
+  "kanban.detail.expandEmptyProperties": "展开空属性（{count}）",
+  "kanban.detail.collapseEmptyProperties": "收起空属性（{count}）",
   "kanban.chat.history": "历史记录",
   "kanban.chat.viewIssue": "问题详情",
   "kanban.chat.noneAvailable": "该问题尚未绑定可查看的聊天",
