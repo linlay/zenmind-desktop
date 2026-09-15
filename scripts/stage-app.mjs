@@ -1,3 +1,5 @@
+import { stageNpmRuntime } from "./stage-npm-runtime.mjs";
+import { buildNodeLauncher } from "./build-node-launcher.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -301,6 +303,8 @@ async function installRuntimeDependencies(target, stageRoot) {
 
 export async function stageApp(rootDir = projectRoot, target = parseArgs(process.argv)) {
   const normalizedTarget = normalizeBrandBuildTarget(target);
+  await stageNpmRuntime(rootDir);
+  await buildNodeLauncher(rootDir, normalizedTarget);
   const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
   const bundleRoot = brandBundleElectronDir(rootDir, activeBrand);
   const rendererRoot = brandRendererDir(rootDir, activeBrand);

@@ -1,3 +1,4 @@
+import { buildNodeLauncher } from "../build-node-launcher.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -33,6 +34,9 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
   syncBrandArtifacts({ brandId: brand.id, target });
   await syncWindowsBuiltinAssets(brand);
   await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
+
+  // Build the Windows helper on the host; the Wine image need not include Go.
+  await buildNodeLauncher(projectRoot, target);
 
   const npmCacheDir = path.join(os.homedir(), ".npm");
   const electronBuilderCacheDir = getElectronBuilderCacheDir();

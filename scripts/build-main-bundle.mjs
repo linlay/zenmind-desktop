@@ -1,3 +1,5 @@
+import { stageNpmRuntime } from "./stage-npm-runtime.mjs";
+import { buildNodeLauncher } from "./build-node-launcher.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { builtinModules } from "node:module";
@@ -28,6 +30,8 @@ function getExternalModules() {
 }
 
 export async function buildMainBundle(rootDir = projectRoot) {
+  await stageNpmRuntime(rootDir);
+  await buildNodeLauncher(rootDir, { os: process.platform, arch: process.arch });
   const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
   const outdir = brandBundleElectronDir(rootDir, activeBrand);
   const rootSrc = path.join(rootDir, "src");

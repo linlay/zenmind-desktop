@@ -18,3 +18,10 @@ export function desktopBuiltinServicesRelativePath() {
 export function desktopBuiltinServicesDir(rootDir) {
   return path.join(desktopBuildResourcesDir(rootDir), DESKTOP_BUILTIN_SERVICES_DIR_NAME);
 }
+
+export function desktopNodeRuntimeRelativePath() {
+  return desktopBuildResourcesRelativePath("node-runtime");
+}
+export function desktopNodeRuntimeDir(rootDir) {
+  return path.join(desktopBuildResourcesDir(rootDir), "node-runtime");
+}

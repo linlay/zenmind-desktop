@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { desktopBuiltinServicesRelativePath } from "./desktop-resources.mjs";
+import { desktopBuiltinServicesRelativePath, desktopNodeRuntimeRelativePath } from "./desktop-resources.mjs";
 import {
   BRAND_RUNTIME_ASSET_DIR_NAME,
   DARWIN_BUNDLE_DEVELOPMENT_REGION,
@@ -53,6 +53,16 @@ function writeJson(filePath, value) {
   writeFileIfChanged(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function nodeRuntimeResourceFilters(target) {
+  const filters = ["npm/**/*"];
+  if (target.os === "win32") {
+    if (target.arch === "x64" || target.arch === "amd64") filters.push("amd64/node.exe");
+    else if (target.arch === "arm64") filters.push("arm64/node.exe");
+    else throw new Error(`Unsupported Windows Node launcher architecture: ${target.arch}`);
+  }
+  return filters;
+}
+
 export function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
   return {
     appId: brand.appId,
@@ -83,6 +93,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
     ],
     npmRebuild: false,
     extraResources: [
+      { from: desktopNodeRuntimeRelativePath(), to: "node-runtime", filter: nodeRuntimeResourceFilters(target) },
       {
         from: desktopBuiltinServicesRelativePath(),
         to: "services"
