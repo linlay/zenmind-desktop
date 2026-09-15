@@ -94,18 +94,18 @@
 .copilot-dock-close-button {
   position: absolute;
   z-index: 6;
-  top: 8px;
-  right: 8px;
+  top: 11px;
+  right: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-elev-2, #eef2f7) 82%, transparent);
-  color: var(--ink-soft);
+  border: 0;
+  border-radius: var(--control-radius-sm);
+  background: transparent;
+  color: var(--control-icon-color);
   cursor: pointer;
   appearance: none;
   app-region: no-drag;
@@ -118,9 +118,8 @@
 
 .copilot-dock-close-button:hover,
 .copilot-dock-close-button:focus-visible {
-  border-color: rgba(148, 163, 184, 0.24);
-  background: color-mix(in srgb, var(--bg-elev-2, #eef2f7) 96%, transparent);
-  color: var(--ink);
+  background: var(--control-hover-bg);
+  color: var(--control-icon-hover-color);
 }
 
 .copilot-dock-close-button:focus-visible {
@@ -148,11 +147,6 @@
 
 :root[data-theme="dark"] .copilot-dock-resizer-line {
   background: rgba(255, 255, 255, 0.16);
-}
-
-:root[data-theme="dark"] .copilot-dock-close-button {
-  background: color-mix(in srgb, var(--bg-elev-2, #253044) 82%, transparent);
-  color: rgba(203, 213, 225, 0.86);
 }
 
 :root[data-theme="dark"] .copilot-dock-resizer:hover .copilot-dock-resizer-line,

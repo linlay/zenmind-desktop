@@ -1,7 +1,10 @@
+import type { createPluginSystemWindows } from "./system-windows";
+import { getService, getInstallDir } from "../services";
 import type { App } from "electron";
 import type { DesktopPetTaskItem } from "../../../shared/contracts";
 import {
   configurePluginBridge,
+  emitPluginSystemEvent,
   emitPluginBridgeHook,
   publishPluginBridgeAssistantActiveTasks,
   publishPluginBridgeServiceState,
@@ -32,10 +35,22 @@ export type PluginBridgeRuntimeOptions = {
 };
 
 export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
+  let systemWindows: ReturnType<typeof createPluginSystemWindows> | undefined;
+  let stopped = false;
   let lastAssistantActiveTasksSignature = "";
 
   function configure() {
     configurePluginBridge({
+      systemRequest: (pluginId, method, params) => {
+        if (stopped) throw new Error("plugin bridge runtime has stopped");
+        const service = getService(pluginId);
+        if (!service || service.kind !== "plugin") throw new Error("plugin is unavailable");
+        if (!systemWindows) {
+          const { createPluginSystemWindows } = require("./system-windows") as typeof import("./system-windows");
+          systemWindows = createPluginSystemWindows(options.app, emitPluginSystemEvent);
+        }
+        return systemWindows.handle(pluginId, getInstallDir(options.app, service), method, params);
+      },
       getServiceState: options.getServiceState,
       notifyAgentPlatformConfigChanged: options.notifyAgentPlatformConfigChanged,
       runDesktopPetBanner: (params) => showDesktopPetBanner(options.app, params as any),
@@ -57,7 +72,10 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
         options.clipboardBridge.showDesktopClipboardPaletteForPlugin(pluginId, params),
       hideDesktopClipboardPalette: (pluginId) =>
         options.clipboardBridge.hideDesktopClipboardPaletteForPlugin(pluginId),
-      cleanupPluginBridgePlugin: options.clipboardBridge.cleanupPlugin,
+      cleanupPluginBridgePlugin: pluginId => {
+        systemWindows?.cleanup(pluginId);
+        options.clipboardBridge.cleanupPlugin(pluginId);
+      },
       queryAgentPlatform: options.queryAgentPlatform
     });
   }
@@ -111,10 +129,12 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
       emitPluginBridgeHook("desktop.beforeQuit", {});
     },
     stop() {
+      stopped = true;
       hideDesktopActivityIsland();
       hideDesktopCalendarOverlay();
       hideDesktopClipboardPalette();
       stopPluginBridgeServers();
+      systemWindows?.dispose();
     }
   };
 }

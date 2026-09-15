@@ -21,17 +21,17 @@ test("performance payload drops URLs, chat contents, arbitrary strings and inval
 });
 
 test("performance collection requires explicit launch opt-in", () => {
-  const old = process.env.ZENMIND_PERF;
+  const old = process.env.PERF;
   try {
-    delete process.env.ZENMIND_PERF;
+    delete process.env.PERF;
     assert.equal(isPerformanceDiagnosticsEnabled(), false);
-    process.env.ZENMIND_PERF = "true";
+    process.env.PERF = "true";
     assert.equal(isPerformanceDiagnosticsEnabled(), false);
-    process.env.ZENMIND_PERF = "1";
+    process.env.PERF = "1";
     assert.equal(isPerformanceDiagnosticsEnabled(), true);
   } finally {
-    if (old === undefined) delete process.env.ZENMIND_PERF;
-    else process.env.ZENMIND_PERF = old;
+    if (old === undefined) delete process.env.PERF;
+    else process.env.PERF = old;
   }
 });
 

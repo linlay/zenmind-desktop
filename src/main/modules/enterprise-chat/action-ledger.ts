@@ -31,7 +31,6 @@ export type EnterpriseChatActionLedgerEntry = {
 
 type LedgerFile = {
   schemaVersion: 2;
-  legacyMessageIds: string[];
   entries: EnterpriseChatActionLedgerEntry[];
 };
 
@@ -99,15 +98,10 @@ export function enterpriseChatActionScope(
 }
 
 export class EnterpriseChatActionLedger {
-  private readonly legacyMessageIds = new Set<string>();
   private readonly entries = new Map<string, EnterpriseChatActionLedgerEntry>();
 
   constructor(private readonly filePath: string) {
     this.read();
-  }
-
-  hasLegacyMessage(messageId: string) {
-    return this.legacyMessageIds.has(messageId);
   }
 
   find(scope: string, requestId: string) {
@@ -233,14 +227,6 @@ export class EnterpriseChatActionLedger {
       if (!isRecord(value)) {
         return;
       }
-      const oldIds = Array.isArray(value.messageIds) ? value.messageIds : [];
-      const legacyIds = Array.isArray(value.legacyMessageIds) ? value.legacyMessageIds : [];
-      for (const id of [...oldIds, ...legacyIds]) {
-        const normalized = readText(id, 128);
-        if (normalized) {
-          this.legacyMessageIds.add(normalized);
-        }
-      }
       if (value.schemaVersion === LEDGER_SCHEMA_VERSION && Array.isArray(value.entries)) {
         for (const candidate of value.entries) {
           const entry = readEntry(candidate);
@@ -269,7 +255,6 @@ export class EnterpriseChatActionLedger {
       }
       const payload: LedgerFile = {
         schemaVersion: LEDGER_SCHEMA_VERSION,
-        legacyMessageIds: [...this.legacyMessageIds].slice(-MAX_DELIVERED_ENTRIES),
         entries: [...this.entries.values()]
       };
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });

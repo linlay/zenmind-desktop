@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { buildServiceEnv } from "./command-env";
+import { buildServiceEnv, resolveNodeBin } from "./command-env";
 import { t } from "../../../support/i18n/main-i18n";
 
 export const IS_WINDOWS = process.platform === "win32";
@@ -284,6 +284,14 @@ function resolveExecCommand(command: string, args: string[], cwd: string) {
 }
 
 export function runExecFile(command: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
+  // JavaScript lifecycle entrypoints use the host Node runtime on both platforms.
+  // This is a launcher capability, independent of any particular plugin.
+  if (/\.(?:mjs|cjs)$/iu.test(command)) {
+    const node = resolveNodeBin();
+    const entry = path.resolve(cwd, command);
+    return runExecFile(node, [entry, ...args], cwd, { ...options, env: { ...options.env,
+      ...(node === process.execPath ? { ELECTRON_RUN_AS_NODE: "1" } : {}) } });
+  }
   const resolved = resolveExecCommand(command, args, cwd);
   const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   if (resolved.powershellScript) {

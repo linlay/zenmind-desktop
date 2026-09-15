@@ -1,6 +1,8 @@
+import { armCallbackCleanup, closeCallbackServer, getCallbackOrigin } from "./callback-lifecycle";
+export { closeCallbackServer } from "./callback-lifecycle";
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import { listenCallbackServers } from "./callback-listener";
 import {
   createVerify
 } from "node:crypto";
@@ -9,11 +11,10 @@ import type {
   DesktopSsoClaims,
   DesktopSsoStatus
 } from "../../../shared/contracts";
-import { PRODUCT_NAME } from "../../../shared/brand";
 import { t } from "../../support/i18n/main-i18n";
-import { CALLBACK_HOST, CALLBACK_ORIGIN, CALLBACK_PATH, CALLBACK_PORT, CallbackHooks, CallbackServerInfo, CallbackServerOptions, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoStatusChangeContext, FetchLike, FetchResponseLike, GOOGLE_LOOPBACK_HOST, LOGOUT_CALLBACK_PATH, OidcConfig, RETURN_TO_APP_PATH, cloneStatus, createAuthenticatedStatus, createFailedStatus, createPendingStatus, createSignedOutStatus, createUnconfiguredStatus, desktopSsoRuntimeState, getSessionPath, isGoogleOidcConfig, isServerBrokerAuthMode, removeLegacyDesktopSsoSiteTokenFile, setCurrentStatus } from "./oidc-sso.part-1";
-import { loadDesktopSsoConfig, shouldUseEphemeralSystemCallback } from "./oidc-sso.part-2";
-import { beginAuthenticatedSession, buildReturnToAppUrl, clearSession, completeAccessTokenStep, completeUserInfoStep, createClaims, decodeJsonPart, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, includesAudience, keyObjectFromJwk, loadSession, normalizeStringClaim, readFetchErrorBody, readFetchErrorStatus, renderCallbackHtml, writeHtmlResponse } from "./oidc-sso.part-3";
+import { CALLBACK_HOST, CALLBACK_PATH, CALLBACK_PORT, CallbackHooks, CallbackServerInfo, CallbackServerOptions, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoStatusChangeContext, FetchLike, FetchResponseLike, GOOGLE_LOOPBACK_HOST, LOGOUT_CALLBACK_PATH, OidcConfig, RETURN_TO_APP_PATH, cloneStatus, createAuthenticatedStatus, createFailedStatus, createPendingStatus, createSignedOutStatus, createUnconfiguredStatus, desktopSsoRuntimeState, getSessionPath, isGoogleOidcConfig, isServerBrokerAuthMode, removeLegacyDesktopSsoSiteTokenFile, setCurrentStatus } from "./oidc-sso.part-1";
+import { loadDesktopSsoConfig } from "./oidc-sso.part-2";
+import { beginAuthenticatedSession, clearSession, completeAccessTokenStep, completeUserInfoStep, createClaims, decodeJsonPart, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, includesAudience, keyObjectFromJwk, loadSession, normalizeStringClaim, readFetchErrorBody, readFetchErrorStatus, renderCallbackHtml, writeHtmlResponse } from "./oidc-sso.part-3";
 import { buildTokenExchangeRequest, createDesktopTicketPlaceholderClaims, describeFetchError, getDefaultOidcFetch, isDesktopSsoClaimsValue, normalizeCallbackRequest, normalizeDesktopTicketCallbackRequest, proxyDesktopSsoRequest, readJsonPathValue } from "./oidc-sso.part-4";
 
 export function buildOidcFetchStage(action: string, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
@@ -257,8 +258,10 @@ export async function completeValidatedOidcLogin(
   app: App,
   tokenClaims: { claims: DesktopSsoClaims; idToken: string; accessToken: string },
   fetchImpl: FetchLike,
-  config: OidcConfig
+  config: OidcConfig,
+  assertCurrent: () => void = () => {}
 ) {
+  assertCurrent();
   beginAuthenticatedSession(app, {
     issuer: tokenClaims.claims.issuer,
     audience: tokenClaims.claims.audience,
@@ -274,6 +277,7 @@ export async function completeValidatedOidcLogin(
     fetchImpl,
     config
   );
+  assertCurrent();
   if (enrichedClaims !== tokenClaims.claims) {
     completeUserInfoStep(app, enrichedClaims, "userinfo");
   }
@@ -284,6 +288,13 @@ export async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?:
   if (!desktopSsoRuntimeState.pendingLogin) {
     throw new Error(t("sso.noPendingLogin"));
   }
+  const servers = desktopSsoRuntimeState.callbackServers;
+  const hooks = desktopSsoRuntimeState.callbackHooks;
+  const assertCurrent = () => {
+    if (desktopSsoRuntimeState.callbackServers !== servers) {
+      throw new Error(t("sso.cancelled"));
+    }
+  };
   if (isServerBrokerAuthMode(desktopSsoRuntimeState.pendingLogin.config)) {
     const { ticket } = normalizeDesktopTicketCallbackRequest(requestUrl, desktopSsoRuntimeState.pendingLogin.state);
     const statusContext: DesktopSsoStatusChangeContext = {
@@ -292,7 +303,8 @@ export async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?:
     };
     const status = createAuthenticatedStatus(createDesktopTicketPlaceholderClaims(desktopSsoRuntimeState.pendingLogin.config));
     desktopSsoRuntimeState.pendingLogin = null;
-    const hookClaims = await desktopSsoRuntimeState.callbackHooks.onBeforeStatusChanged?.(status, statusContext);
+    const hookClaims = await hooks.onBeforeStatusChanged?.(status, statusContext);
+    assertCurrent();
     if (!isDesktopSsoClaimsValue(hookClaims)) {
       throw new Error("Desktop SSO web session exchange did not return user claims.");
     }
@@ -302,7 +314,8 @@ export async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?:
       authMode: "server"
     });
     const exchangedStatus = completeUserInfoStep(app, hookClaims, "sso");
-    await desktopSsoRuntimeState.callbackHooks.onAfterStatusChanged?.(exchangedStatus, statusContext);
+    await hooks.onAfterStatusChanged?.(exchangedStatus, statusContext);
+    assertCurrent();
     return finalizeDesktopSsoLoginAttempt();
   }
   const { code } = normalizeCallbackRequest(requestUrl, desktopSsoRuntimeState.pendingLogin.state);
@@ -311,23 +324,28 @@ export async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?:
     redirectUri: desktopSsoRuntimeState.pendingLogin.redirectUri,
     codeVerifier: desktopSsoRuntimeState.pendingLogin.codeVerifier
   });
+  assertCurrent();
   desktopSsoRuntimeState.pendingLogin = null;
   await completeValidatedOidcLogin(
     app,
     tokenClaims,
     fetchImpl || getDefaultOidcFetch(),
-    loginConfig
+    loginConfig,
+    assertCurrent
   );
+  assertCurrent();
   const statusContext: DesktopSsoStatusChangeContext = {
     provider: loginConfig.provider,
     idToken: tokenClaims.idToken
   };
   let status = cloneStatus(desktopSsoRuntimeState.currentStatus);
-  const hookClaims = await desktopSsoRuntimeState.callbackHooks.onBeforeStatusChanged?.(status, statusContext);
+  const hookClaims = await hooks.onBeforeStatusChanged?.(status, statusContext);
+  assertCurrent();
   if (isDesktopSsoClaimsValue(hookClaims)) {
     status = completeUserInfoStep(app, hookClaims, "sso");
   }
-  await desktopSsoRuntimeState.callbackHooks.onAfterStatusChanged?.(status, statusContext);
+  await hooks.onAfterStatusChanged?.(status, statusContext);
+  assertCurrent();
   return finalizeDesktopSsoLoginAttempt();
 }
 
@@ -345,17 +363,21 @@ export function buildLogoutUrl(
 }
 
 export function closeCallbackServerAfterResponse(response: http.ServerResponse) {
-  response.once("finish", closeCallbackServer);
+  const servers = desktopSsoRuntimeState.callbackServers;
+  response.once("finish", () => closeCallbackServer(servers));
 }
 
 export async function handleCallbackRequest(app: App, request: http.IncomingMessage, response: http.ServerResponse) {
-  const fallbackOrigin = desktopSsoRuntimeState.callbackServerInfo?.origin || CALLBACK_ORIGIN;
+  const fallbackOrigin = getCallbackOrigin();
   const requestUrl = new URL(request.url || "/", fallbackOrigin);
   const closeAfterCallback = desktopSsoRuntimeState.callbackServerInfo?.closeAfterCallback === true;
+  const servers = desktopSsoRuntimeState.callbackServers;
+  const hooks = desktopSsoRuntimeState.callbackHooks;
+  const closeAfterResponse = () => response.once("finish", () => closeCallbackServer(servers));
   if (requestUrl.pathname === RETURN_TO_APP_PATH) {
     await desktopSsoRuntimeState.callbackHooks.onReturnToAppRequested?.();
     if (closeAfterCallback) {
-      closeCallbackServerAfterResponse(response);
+      closeAfterResponse();
     }
     writeHtmlResponse(response, 200, renderCallbackHtml(t("sso.returnedToDesktopTitle"), t("sso.closeBrowserPage")));
     return;
@@ -363,7 +385,7 @@ export async function handleCallbackRequest(app: App, request: http.IncomingMess
   if (requestUrl.pathname === LOGOUT_CALLBACK_PATH) {
     desktopSsoRuntimeState.desktopSsoProxyState?.cookies.clear();
     if (closeAfterCallback) {
-      closeCallbackServerAfterResponse(response);
+      closeAfterResponse();
     }
     writeHtmlResponse(response, 200, renderCallbackHtml(t("sso.logoutReturnedTitle"), t("sso.logoutReturnedMessage")));
     return;
@@ -378,6 +400,7 @@ export async function handleCallbackRequest(app: App, request: http.IncomingMess
       await proxyDesktopSsoRequest(desktopSsoRuntimeState.desktopSsoProxyState, request, response, requestUrl);
     } catch (error) {
       console.warn("failed to proxy desktop sso request", error);
+      closeAfterResponse();
       writeHtmlResponse(
         response,
         200,
@@ -389,45 +412,32 @@ export async function handleCallbackRequest(app: App, request: http.IncomingMess
 
   try {
     const status = await handleLoginCallback(app, requestUrl);
+    await hooks.onReturnToAppRequested?.();
     if (closeAfterCallback) {
-      closeCallbackServerAfterResponse(response);
+      closeAfterResponse();
     }
     writeHtmlResponse(response, 200, renderCallbackHtml(
       t("sso.loginSuccessTitle"),
-      t("sso.loginSuccessMessage", { user: status.user?.sub ?? t("sso.userFallback") }),
-      {
-        actionHref: buildReturnToAppUrl(fallbackOrigin),
-        actionLabel: t("sso.returnToApp", { appName: PRODUCT_NAME })
-      }
+      t("sso.loginSuccessMessage", { user: status.user?.sub ?? t("sso.userFallback") })
     ));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (desktopSsoRuntimeState.currentStatus.authenticated && desktopSsoRuntimeState.currentStatus.completedSteps.session) {
-      failDesktopSsoStep(message);
-    } else {
-      setCurrentStatus(createFailedStatus(message));
+    if (desktopSsoRuntimeState.callbackServers === servers) {
+      if (desktopSsoRuntimeState.currentStatus.authenticated && desktopSsoRuntimeState.currentStatus.completedSteps.session) {
+        failDesktopSsoStep(message);
+      } else {
+        failDesktopSsoFlow(message);
+      }
     }
     if (closeAfterCallback) {
-      closeCallbackServerAfterResponse(response);
+      closeAfterResponse();
     }
     writeHtmlResponse(response, 400, renderCallbackHtml(t("sso.loginFailedTitle"), message));
   }
 }
 
-export function closeCallbackServer() {
-  const server = desktopSsoRuntimeState.callbackServer;
-  desktopSsoRuntimeState.callbackServer = null;
-  desktopSsoRuntimeState.callbackServerReady = null;
-  desktopSsoRuntimeState.callbackServerInfo = null;
-  desktopSsoRuntimeState.desktopSsoProxyState = null;
-  if (!server) {
-    return;
-  }
-  server.close(() => {});
-}
-
 export function buildCallbackServerInfo(host: string, port: number, closeAfterCallback: boolean): CallbackServerInfo {
-  const origin = `http://${host}:${port}`;
+  const origin = `http://${host === "::1" ? "[::1]" : host}:${port}`;
   return {
     host,
     port,
@@ -446,16 +456,19 @@ export function resolveCallbackServerOptionsFromUrl(
   if (url.protocol !== "http:") {
     throw new Error(t("sso.callbackHttpOnly"));
   }
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+    throw new Error("Desktop SSO callback must use a loopback address.");
+  }
   return {
-    host: url.hostname || CALLBACK_HOST,
-    port: Number.parseInt(url.port || "80", 10),
+    host: url.hostname === "[::1]" ? "::1" : url.hostname || CALLBACK_HOST,
+    port: 0,
     closeAfterCallback
   };
 }
 
 export function resolveLoginCallbackServerOptions(config: OidcConfig, useSystemBrowser: boolean): CallbackServerOptions {
   if (useSystemBrowser) {
-    if (shouldUseEphemeralSystemCallback(config)) {
+    if (!config.browserMode) {
       return {
         host: GOOGLE_LOOPBACK_HOST,
         port: 0,
@@ -467,7 +480,7 @@ export function resolveLoginCallbackServerOptions(config: OidcConfig, useSystemB
   return {
     host: CALLBACK_HOST,
     port: CALLBACK_PORT,
-    closeAfterCallback: false
+    closeAfterCallback: true
   };
 }
 
@@ -478,7 +491,7 @@ export function resolveLogoutCallbackServerOptions(config: OidcConfig, useSystem
   return {
     host: CALLBACK_HOST,
     port: CALLBACK_PORT,
-    closeAfterCallback: false
+    closeAfterCallback: true
   };
 }
 
@@ -488,11 +501,11 @@ export async function ensureCallbackServer(
   options: CallbackServerOptions = {
     host: CALLBACK_HOST,
     port: CALLBACK_PORT,
-    closeAfterCallback: false
+    closeAfterCallback: true
   }
 ) {
   desktopSsoRuntimeState.callbackHooks = hooks;
-  if (desktopSsoRuntimeState.callbackServer && desktopSsoRuntimeState.callbackServerReady) {
+  if (desktopSsoRuntimeState.callbackServers.length && desktopSsoRuntimeState.callbackServerReady) {
     if (
       desktopSsoRuntimeState.callbackServerInfo?.host === options.host &&
       desktopSsoRuntimeState.callbackServerInfo.port === options.port &&
@@ -504,37 +517,30 @@ export async function ensureCallbackServer(
     closeCallbackServer();
   }
 
-  desktopSsoRuntimeState.callbackServer = http.createServer((request, response) => {
+  const servers = [http.createServer((request, response) => {
     void handleCallbackRequest(app, request, response);
-  });
-  desktopSsoRuntimeState.callbackServerReady = new Promise<void>((resolve, reject) => {
-    const server = desktopSsoRuntimeState.callbackServer;
-    if (!server) {
-      reject(new Error("callback server unavailable"));
-      return;
-    }
-    const handleError = (error: NodeJS.ErrnoException) => {
-      desktopSsoRuntimeState.callbackServer = null;
-      desktopSsoRuntimeState.callbackServerReady = null;
-      desktopSsoRuntimeState.callbackServerInfo = null;
-      if (error.code === "EADDRINUSE") {
-        reject(new Error(t("sso.callbackPortInUse", { port: options.port })));
-        return;
+  })];
+  desktopSsoRuntimeState.callbackServers = servers;
+  desktopSsoRuntimeState.callbackServerReady = listenCallbackServers(servers, options.port, options.host)
+    .then((port) => {
+      if (desktopSsoRuntimeState.callbackServers !== servers) {
+        for (const server of servers) server.close();
+        throw new Error("callback server startup cancelled");
       }
-      reject(error);
-    };
-    server.once("error", handleError);
-    server.listen(options.port, options.host, () => {
-      server.off("error", handleError);
-      const address = server.address() as AddressInfo | null;
       desktopSsoRuntimeState.callbackServerInfo = buildCallbackServerInfo(
-        options.host,
-        address?.port || options.port,
-        options.closeAfterCallback
+        options.host, port, options.closeAfterCallback
       );
-      resolve();
+      armCallbackCleanup(app, servers, () => {
+        if (desktopSsoRuntimeState.currentStatus.pending) failDesktopSsoFlow(t("sso.callbackTimeout"));
+      });
+    })
+    .catch((error: NodeJS.ErrnoException) => {
+      if (desktopSsoRuntimeState.callbackServers === servers) closeCallbackServer();
+      if (error.code === "EADDRINUSE") {
+        throw new Error(t("sso.callbackPortInUse", { port: options.port }));
+      }
+      throw error;
     });
-  });
   await desktopSsoRuntimeState.callbackServerReady;
   if (!desktopSsoRuntimeState.callbackServerInfo) {
     throw new Error("callback server did not report a listening address");
@@ -667,6 +673,7 @@ export function clearDesktopSsoLocalSession(app: App, message = t("sso.signedOut
 export const failDesktopSsoLogin = failDesktopSsoFlow;
 
 export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): DesktopSsoStatus {
+  closeCallbackServer(undefined, true);
   desktopSsoRuntimeState.pendingLogin = null;
   desktopSsoRuntimeState.currentAccessToken = "";
   if (!desktopSsoRuntimeState.unverifiedCookieSessionCandidate) {

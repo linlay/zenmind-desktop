@@ -237,8 +237,8 @@ test("desktop sso parses provider-free system browser OIDC config", (t) => {
   assert.equal(result.config.provider, undefined);
   assert.equal(result.config.authMode, "oidc");
   assert.equal(result.config.browserMode, "system");
-  assert.equal(result.config.redirectUri, "http://localhost:8080/api/auth/oidc/callback");
-  assert.equal(result.config.logoutCallbackUri, "http://localhost:8080/api/auth/oidc/logout-callback");
+  assert.equal(result.config.redirectUri, "http://localhost:0/api/auth/oidc/callback");
+  assert.equal(result.config.logoutCallbackUri, "http://localhost:0/api/auth/oidc/logout-callback");
   assert.equal(result.config.usePkce, true);
   assert.equal(__testInternals.shouldUseSystemBrowser(result.config), true);
 });
@@ -1315,7 +1315,7 @@ test("desktop sso authorize and logout URLs use standard OIDC defaults", () => {
   const authorizeUrl = new URL(__testInternals.buildAuthorizeUrl("state-1", config, {
     codeChallenge: "challenge-1"
   }));
-  assert.equal(authorizeUrl.searchParams.get("redirect_uri"), "http://localhost:8080/api/auth/oidc/callback");
+  assert.equal(authorizeUrl.searchParams.get("redirect_uri"), "http://localhost:0/api/auth/oidc/callback");
   assert.equal(authorizeUrl.searchParams.get("scope"), "openid email profile");
   assert.equal(authorizeUrl.searchParams.get("code_challenge"), "challenge-1");
   assert.equal(authorizeUrl.searchParams.has("prompt"), false);
@@ -1326,7 +1326,7 @@ test("desktop sso authorize and logout URLs use standard OIDC defaults", () => {
 
   const logoutUrl = new URL(__testInternals.buildLogoutUrl(config, { idTokenHint: "id-token-1" }));
   assert.equal(logoutUrl.searchParams.get("id_token_hint"), "id-token-1");
-  assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), "http://localhost:8080/api/auth/oidc/logout-callback");
+  assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), "http://localhost:0/api/auth/oidc/logout-callback");
   assert.equal(logoutUrl.searchParams.has("callback"), false);
 });
 
@@ -1443,7 +1443,7 @@ test("desktop sso logout proxy failure renders signed-out page", async (t) => {
 
   const result = await logoutDesktopSso(app);
   assert.equal(result.ok, true, result.message);
-  assert.match(result.browserUrl, /^http:\/\/localhost:8080\/auth\/ssoLogout/u);
+  assert.match(result.browserUrl, /^http:\/\/localhost:\d+\/auth\/ssoLogout/u);
 
   const response = await fetch(result.browserUrl);
   const html = await response.text();

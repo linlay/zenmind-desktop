@@ -1445,6 +1445,7 @@ test("agent platform assistant bridge reads copyable chat information without ra
     lastRunId: "run-9",
     lastRunContent: "Done",
     events: [{ type: "run.complete" }],
+    runs: [{ runId: "run-9", startedAt: EPOCH_MS, completedAt: EPOCH_MS + 1 }, { runId: "run-10", startedAt: EPOCH_MS + 2, completedAt: null }],
   };
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init });
@@ -1471,6 +1472,7 @@ test("agent platform assistant bridge reads copyable chat information without ra
       updatedAt: EPOCH_MS + 1,
       lastRunId: "run-9",
       lastRunContent: "Done",
+      runs: [{ runId: "run-9", startedAt: EPOCH_MS, completedAt: EPOCH_MS + 1 }, { runId: "run-10", startedAt: EPOCH_MS + 2 }],
       rawJson: JSON.stringify(payload, null, 2),
     });
   } finally {

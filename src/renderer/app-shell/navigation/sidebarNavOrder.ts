@@ -74,32 +74,13 @@ export function normalizeSidebarNavOrder(
         typeof key === "string" && availableKeys.has(key as SidebarNavOrderItemKey)
       ))]
     : [];
-  const candidateIncludesChats = normalizedCandidate.includes("chats");
-  const orderedKeys = normalizedCandidate.length > 0 ? normalizedCandidate : [];
+  const orderedKeys = normalizedCandidate;
   for (const item of availableItems) {
     if (!orderedKeys.includes(item.key)) {
-      if (item.key === "chats" && !candidateIncludesChats) {
-        const schedulesIndex = orderedKeys.indexOf("schedules");
-        if (schedulesIndex >= 0) {
-          orderedKeys.splice(schedulesIndex + 1, 0, item.key);
-          continue;
-        }
-      }
       orderedKeys.push(item.key);
     }
   }
-  // Migrate the formerly attached New Chat button without moving existing entries.
-  if (availableKeys.has("new-chat") && !(Array.isArray(candidate) && candidate.includes("new-chat"))) {
-    orderedKeys.splice(orderedKeys.indexOf("new-chat"), 1);
-    const index = orderedKeys.indexOf("schedules");
-    orderedKeys.splice(index >= 0 ? index + 1 : 0, 0, "new-chat");
-  }
-  // Legacy pins appeared before the fixed navigation entries.
-  const newPins = availableItems.filter(({ key }) =>
-    (key.startsWith("website:") || key.startsWith("webapp:")) &&
-    !(Array.isArray(candidate) && candidate.includes(key))
-  ).map(({ key }) => key);
-  return [...newPins, ...orderedKeys.filter((key) => !newPins.includes(key))];
+  return orderedKeys;
 }
 
 export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey }>(

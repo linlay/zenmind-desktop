@@ -324,8 +324,7 @@ export function snapshotProjectScopeIds(snapshot: KanbanCloudSnapshot) {
     .map((project) => isRecord(project) ? readText(project.id) : "")
     .filter(Boolean);
   if (projectRecords.length > 0) return [...new Set(projectRecords)];
-  const legacyProjectId = readText(snapshot.projectId);
-  return legacyProjectId ? [legacyProjectId] : [];
+  return [];
 }
 
 export function readNonNegativeInteger(value: unknown) {

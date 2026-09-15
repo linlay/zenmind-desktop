@@ -10,6 +10,7 @@ const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const {
   KanbanRuntime,
   buildKanbanAutomationPayload,
+  getKanbanConfigPath,
   readKanbanSettings,
   readKanbanWsConfig,
   resolveKanbanRunFinishedPush,
@@ -144,13 +145,14 @@ test("Kanban websocket config uses only the canonical desktop SSO access token",
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
-    serverUrl: "http://127.0.0.1:8080"
+    enabled: true,
+    cloud: { serverUrl: "http://127.0.0.1:8080" }
   });
   assert.equal(readKanbanWsConfig(app), null);
 
   writeKanbanConfig(app, {
-    serverUrl: "http://127.0.0.1:8080",
-    remoteControlEnabled: true
+    enabled: true,
+    cloud: { serverUrl: "http://127.0.0.1:8080", remoteControlEnabled: true }
   });
   assert.equal(readKanbanWsConfig(app), null);
 
@@ -191,10 +193,10 @@ test("Kanban server URL preserves explicit disabled setting", (t) => {
   assert.equal(readKanbanWsConfig(app), null);
 
   const configPath = path.join(desktopRoot(app), "config", "desktop", "kanban.json");
-  const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  assert.equal(migrated.enabled, false);
-  assert.equal("selectedProjectId" in migrated.cloud, false);
-  assert.equal("token" in migrated.cloud, false);
+  const stored = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  assert.equal(stored.enabled, false);
+  assert.equal("selectedProjectId" in stored.cloud, true);
+  assert.equal("token" in stored.cloud, true);
 });
 
 test("Kanban settings read and save enabled plus cloud config", (t) => {
@@ -215,8 +217,7 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     assert.equal(initial.settings.enabled, false);
     assert.deepEqual(initial.settings.cloud, {
       serverUrl: "",
-      remoteControlEnabled: false,
-      deviceAlias: ""
+      remoteControlEnabled: false
     });
 
     const serverOnly = runtime.saveSettings({
@@ -407,6 +408,76 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
   assert.ok(debugMessages.some((message) => message.includes("ignored invalid run.finished protocol")));
 });
 
+test("local run results survive terminal event ordering, reopening, and reused chats", async (t) => {
+  const app = createTempApp(t);
+  let changes = 0;
+  const options = {
+    app,
+    assistantBridge: { listAgents: async () => [], startRun: async () => ({ ok: true }) },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => { changes += 1; },
+  };
+  let runtime = new KanbanRuntime(options);
+  t.after(() => runtime.stop());
+  for (const order of ["result-first", "terminal-first"]) {
+    const created = await runtime.createIssue({ title: order, status: "todo" });
+    const id = created.issue.id;
+    const runId = `run-${order}`;
+    const readIssue = () => runtime.listIssues().issues.find((issue) => issue.id === id);
+    await runtime.updateIssue(id, { status: "in_progress", chatId: "shared-chat", runId, runState: "running" });
+    const result = { frame: "push", type: "chat.updated", chatId: "shared-chat", runId: null,
+      lastRunId: runId, lastRunContent: "## Result\n\nSaved answer", updatedAt: 1_783_000_000_100 };
+    const terminal = { frame: "push", type: "run.finished", chatId: "shared-chat", runId,
+      status: "completed", finishReason: "complete", finishedAt: 1_783_000_000_100 };
+    if (order === "result-first") runtime.sendNavigationPushEvent(result);
+    runtime.sendNavigationPushEvent(terminal);
+    assert.equal(readIssue().runId, null);
+    assert.equal(readIssue().activeRunId, null);
+    assert.equal(readIssue().lastRunId, runId);
+    assert.equal(readIssue().lastRunChatId, "shared-chat");
+    // Reconstruct the runtime before the late event: association must be on disk.
+    runtime.stop();
+    runtime = new KanbanRuntime(options);
+    runtime.sendNavigationPushEvent(result);
+    assert.equal(readIssue().runResultMessage, result.lastRunContent);
+    assert.equal(readIssue().status, "completed");
+    const beforeDuplicate = changes;
+    runtime.sendNavigationPushEvent(result);
+    assert.equal(changes, beforeDuplicate);
+    for (const patch of [
+      { lastRunId: "unrelated-run" }, { chatId: "unrelated-chat" }, { frame: "stream" },
+      { updatedAt: undefined }, { updatedAt: "2026-09-13" }, { lastRunContent: undefined },
+    ]) runtime.sendNavigationPushEvent({ ...result, ...patch });
+    assert.equal(readIssue().runResultMessage, result.lastRunContent);
+    await runtime.updateIssue(id, { status: "in_progress", chatId: "shared-chat", runId: `next-${runId}`, runState: "running" });
+    assert.equal(readIssue().runResultMessage, null);
+    assert.equal(readIssue().runFinishedAt, null);
+    runtime.sendNavigationPushEvent(result);
+    assert.equal(readIssue().runResultMessage, null, "late previous result must not overwrite the next run");
+  }
+});
+
+test("local result can arrive after automatic workflow stage advancement", async (t) => {
+  const app = createTempApp(t);
+  const runtime = new KanbanRuntime({ app,
+    assistantBridge: { listAgents: async () => [], startRun: async () => ({ ok: true }) },
+    callAgentPlatform: async () => ({ ok: true }), onChanged: () => {},
+  });
+  t.after(() => runtime.stop());
+  const { issue } = await runtime.createIssue({ title: "Bug", localWorkflowId: "local-bug" });
+  await runtime.updateIssue(issue.id, { status: "in_progress", chatId: "report-chat", runId: "report-run", runState: "running" });
+  runtime.sendNavigationPushEvent({ frame: "push", type: "run.finished", chatId: "report-chat", runId: "report-run",
+    status: "completed", finishReason: "complete", finishedAt: 1_783_000_000_100 });
+  runtime.sendNavigationPushEvent({ frame: "push", type: "chat.updated", chatId: "report-chat", lastRunId: "report-run",
+    lastRunContent: "Report complete", updatedAt: 1_783_000_000_100 });
+  const updated = runtime.listIssues().issues.find((candidate) => candidate.id === issue.id);
+  assert.equal(updated.stageId, "development");
+  assert.equal(updated.chatId, null);
+  assert.equal(updated.runId, null);
+  assert.equal(updated.lastRunChatId, "report-chat");
+  assert.equal(updated.runResultMessage, "Report complete");
+});
+
 test("Kanban navigation push queues Cloud Issue terminals without changing the cached workflow state", async (t) => {
   const app = createTempApp(t);
   writeCanonicalSsoAccessToken(app);
@@ -452,6 +523,10 @@ test("Kanban navigation push queues Cloud Issue terminals without changing the c
       },
     });
     const { runId, chatId } = receiptResult.receipt;
+    const beforeResult = runtime.listIssues().issues;
+    runtime.sendNavigationPushEvent({ frame: "push", type: "chat.updated", chatId, lastRunId: runId,
+      lastRunContent: "Do not write cloud issues", updatedAt: 1_783_000_000_100 });
+    assert.deepEqual(runtime.listIssues().issues, beforeResult);
     runtime.sendNavigationPushEvent({
       frame: "push",
       type: "run.finished",
@@ -711,7 +786,8 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
           revision: 30,
           lastSeq: 30,
           complete: true,
-          scope: "project",
+          scope: "project_set",
+          projectIds: ["project-1"],
           issues: []
         }
       })
@@ -742,7 +818,8 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
           revision: 31,
           lastSeq: 31,
           complete: true,
-          scope: "project",
+          scope: "project_set",
+          projectIds: ["project-1"],
           projects: [{ id: "project-1", name: "Project One", path: "Project One", updatedAt: "2026-06-09T00:00:00.000Z" }],
           issues: [{
             id: "ISS-RESYNC",
@@ -841,7 +918,8 @@ test("Kanban runtime applies paged issue event pulls and tombstones deleted issu
       revision: 10,
       lastSeq: 10,
       complete: true,
-      scope: "project",
+      scope: "project_set",
+      projectIds: ["project-1"],
       issues: []
     });
 
@@ -980,8 +1058,8 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
   const hello = socket.sent[0];
-  assert.equal(hello.payload.deviceName, "测试桌面");
-  assert.equal(hello.payload.deviceAlias, "测试桌面");
+  assert.equal(hello.payload.deviceAlias, hello.payload.deviceName);
+  assert.notEqual(hello.payload.deviceName, "测试桌面");
   assert.equal("ownerUserId" in hello.payload, false);
   assert.ok(hello.payload.hostname || hello.payload.username);
   socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
@@ -998,7 +1076,8 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
         projectId: "project-1",
         revision: 30,
         complete: true,
-        scope: "project",
+        scope: "project_set",
+        projectIds: ["project-1"],
         issues: []
       }
     })
@@ -1135,7 +1214,8 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
         revision: 40,
         lastSeq: 40,
         complete: true,
-        scope: "project",
+        scope: "project_set",
+        projectIds: ["project-1"],
         issues: []
       }
     })
@@ -1389,7 +1469,8 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
         projectId: "project-1",
         revision: 30,
         complete: true,
-        scope: "project",
+        scope: "project_set",
+        projectIds: ["project-1"],
         issues: []
       }
     })
@@ -1449,7 +1530,7 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
   }
 });
 
-test("Kanban runtime reconnects after saving device alias so cloud sees new device name", async (t) => {
+test("Kanban runtime ignores retired aliases and reconnects with the global device name", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -1502,7 +1583,7 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   firstSocket.onopen();
   await waitFor(() => firstSocket.sent.length === 1, "initial sync.hello", 3000);
   const firstHello = firstSocket.sent[0];
-  assert.equal(firstHello.payload.deviceName, "旧设备名");
+  assert.notEqual(firstHello.payload.deviceName, "旧设备名");
   firstSocket.onmessage({
     data: JSON.stringify({ v: 1, frame: "response", id: firstHello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } })
   });
@@ -1521,8 +1602,8 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   secondSocket.onopen();
   await waitFor(() => secondSocket.sent.length === 1, "updated sync.hello", 3000);
   const secondHello = secondSocket.sent[0];
-  assert.equal(secondHello.payload.deviceName, "牛家林");
-  assert.equal(secondHello.payload.deviceAlias, "牛家林");
+  assert.equal(secondHello.payload.deviceName, firstHello.payload.deviceName);
+  assert.equal(secondHello.payload.deviceAlias, firstHello.payload.deviceName);
   assert.equal("ownerUserId" in secondHello.payload, false);
 
   writeDesktopConfig(app, "profile.json", {
@@ -1620,7 +1701,8 @@ test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t
         projectId: "project-1",
         revision: 30,
         complete: true,
-        scope: "project",
+        scope: "project_set",
+        projectIds: ["project-1"],
         issues: []
       }
     })
@@ -1853,3 +1935,24 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
     runtime.stop();
   }
 });
+
+
+for (const platform of ["darwin", "win32"]) {
+  test(`Kanban ${platform} settings ignore historical shapes without rewriting files`, (t) => {
+    const app = createTempApp(t);
+    const configPath = getKanbanConfigPath(app, platform);
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    for (const input of [
+      { serverUrl: "https://retired.example.test", remoteControlEnabled: true },
+      { kanban: { enabled: true, cloud: { serverUrl: "https://retired.example.test" } } },
+      { cloud: { serverUrl: "https://current.example.test" } }
+    ]) {
+      const original = JSON.stringify(input);
+      fs.writeFileSync(configPath, original);
+      const settings = readKanbanSettings(app, platform);
+      assert.equal(settings.enabled, false);
+      assert.equal(settings.cloud.serverUrl, input.cloud?.serverUrl ?? "");
+      assert.equal(fs.readFileSync(configPath, "utf8"), original);
+    }
+  });
+}

@@ -225,7 +225,7 @@ export function RealtimeBroker_consumeRunEvent_5(self: RealtimeBrokerMethodConte
             clearTimeout(transaction.acceptanceTimer);
             transaction.acceptanceTimer = null;
         }
-        if (transaction.siteCdpScope) self.siteCdpGrants.bind(transaction.acceptedValue, transaction.siteCdpScope);
+        if (transaction.siteControlScope) self.siteControlGrants.bind(transaction.acceptedValue, transaction.siteControlScope);
         transaction.accepted.resolve(transaction.acceptedValue);
     }
     self.appendReplay(run, event, seq, path);
@@ -286,7 +286,7 @@ export function RealtimeBroker_completeRun_8(self: RealtimeBrokerMethodContext, 
     run.terminalSource = source;
     run.suspended = false;
     self.revokeRunActionGrant(run.runId);
-    self.siteCdpGrants.revoke(run.runId);
+    self.siteControlGrants.revoke(run.runId);
     if (run.upstreamRequestId) {
         self.terminalRequestIds.add(run.upstreamRequestId);
         if (self.terminalRequestIds.size > 2000) {
@@ -314,8 +314,8 @@ export function RealtimeBroker_completeRun_8(self: RealtimeBrokerMethodContext, 
 
 export function RealtimeBroker_failQuery_9(self: RealtimeBrokerMethodContext, transaction: QueryTransaction, error: unknown) {
     if (transaction.sourceDetached) return;
-    transaction.siteCdpScope?.release("The source query failed.");
-    if (transaction.runId) self.siteCdpGrants.revoke(transaction.runId);
+    transaction.siteControlScope?.release("The source query failed.");
+    if (transaction.runId) self.siteControlGrants.revoke(transaction.runId);
     self.queriesByRequestId.delete(transaction.upstreamRequestId);
     const run = transaction.runId ? self.getRunChannel(transaction.runId, transaction.lane) : null;
     if (run && !transaction.acceptedValue)
@@ -347,6 +347,10 @@ export async function RealtimeBroker_startAttach_10(self: RealtimeBrokerMethodCo
     if (self.getRunChannel(run.runId, run.lane) !== run || run.upstreamRequestId || run.terminal)
         return;
     await self.ensureConnected(baseUrl, token, run.lane);
+    if (run.lane === "primary" && run.rootObserverTokens.size > 0) {
+        await Promise.all([...self.runChannels.values()].filter((other) => other !== run && other.lane === "primary").map((other) => other.detachInFlight));
+    }
+    if (run.rootObserverTokens.size === 0 && !self.hasSystemRunLease(run)) return;
     if (self.getRunChannel(run.runId, run.lane) !== run || run.upstreamRequestId || run.terminal)
         return;
     const id = `desktop-attach-${randomUUID()}`;

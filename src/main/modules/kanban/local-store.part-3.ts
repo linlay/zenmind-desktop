@@ -34,6 +34,8 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     remainingEstimate: normalizeEffortSeconds(detail.remainingEstimate),
     timeSpent: normalizeEffortSeconds(detail.timeSpent),
     parentIssueId: nullableTrimmedText(detail.parentIssueId),
+    localWorkflow: detail.localWorkflow as KanbanIssue["localWorkflow"],
+    localWorkflowRollbacks: detail.localWorkflowRollbacks as KanbanIssue["localWorkflowRollbacks"],
     workflowId: row.workflow_id,
     typeId: row.type_id ?? undefined,
     issueTypeKey: trimText(detail.issueTypeKey) || row.type_id || undefined,
@@ -66,6 +68,8 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     runStartedAt: nullableTrimmedText(detail.runStartedAt),
     runFinishedAt: nullableTrimmedText(detail.runFinishedAt),
     runResultMessage: nullableTrimmedText(detail.runResultMessage),
+    lastRunId: nullableTrimmedText(detail.lastRunId),
+    lastRunChatId: nullableTrimmedText(detail.lastRunChatId),
     runErrorMessage: nullableTrimmedText(detail.runErrorMessage),
     dispatchState: row.dispatch_state,
     dispatchDeviceId: row.dispatch_device_id,
@@ -98,6 +102,7 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
 
 export function projectFromRow(row: KanbanProjectRow): KanbanProject {
   return {
+    syncMode: row.sync_mode,
     id: row.id,
     parentId: row.parent_id,
     slug: row.slug,
@@ -349,6 +354,7 @@ export function selectProjects(db: DatabaseSync): KanbanProject[] {
   const rows = db.prepare(`
     SELECT
       ID_ AS id,
+      SYNC_MODE_ AS sync_mode,
       PARENT_ID_ AS parent_id,
       SLUG_ AS slug,
       KEY_ AS key,
@@ -629,7 +635,7 @@ export function buildLocalIssue(
     remoteIssueId: null,
     boardId: BOARD_ID,
     projectId: nullableTrimmedText(input.projectId) ?? PROJECT_ID,
-    projectVersion: nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version),
+    projectVersion: nullableTrimmedText(input.projectVersion),
     dueDate: normalizeDueDate(input.dueDate) ?? null,
     dueRisk: null,
     resolution: nullableTrimmedText(input.resolution),

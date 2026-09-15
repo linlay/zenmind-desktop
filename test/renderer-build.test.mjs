@@ -3731,8 +3731,7 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(contracts, /export type KanbanWirePriority = "urgent" \| "high" \| "medium" \| "low"/);
-  assert.match(contracts, /urgent: "P0"[\s\S]{0,100}high: "P1"[\s\S]{0,100}medium: "P2"[\s\S]{0,100}low: "P3"/);
+  assert.doesNotMatch(contracts, /KanbanWirePriority|LEGACY_KANBAN_PRIORITY_ALIASES/);
   assert.match(contracts, /projectVersion\?: string \| null[\s\S]*dueDate\?: string \| null[\s\S]*dueRisk\?: string \| null/);
   assert.match(contracts, /componentKeys: string\[\][\s\S]*originalEstimate: number[\s\S]*remainingEstimate: number[\s\S]*timeSpent: number/);
   assert.match(contracts, /priority: KanbanPriority \| null[\s\S]*severity: KanbanSeverity \| null/);
@@ -3863,7 +3862,7 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(kanbanPage, /type KanbanAssigneeFilter = "others" \| "self" \| "unassigned"/);
   assert.match(kanbanPage, /const DEFAULT_KANBAN_ASSIGNEE_FILTERS = \["self"\]/);
   assert.match(kanbanPage, /KANBAN_FILTER_PREFERENCES_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.filter-preferences\.v1`/);
-  assert.match(kanbanPage, /LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.assignee-filters`/);
+  assert.doesNotMatch(kanbanPage, /LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY|readLegacyKanbanAssigneeFilters/);
   assert.match(kanbanPage, /function readKanbanFilterPreferences\(\): KanbanFilterPreferences/);
   assert.match(kanbanPage, /window\.localStorage\.getItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY\)/);
   assert.match(kanbanPage, /const \[initialFilterPreferences\] = useState\(readKanbanFilterPreferences\)/);
@@ -3906,7 +3905,7 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
 
   assert.match(contracts, /resyncCloudBoard: \(\) => Promise<KanbanListResult>/);
   assert.match(preload, /ipcRenderer\.invoke\("kanban\.resyncCloudBoard"\)/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.resyncCloudBoard"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.resyncCloudBoard"/);
   assert.match(kanbanRuntime, /async resyncCloudBoard\(\): Promise<KanbanListResult>/);
   assert.match(wsClient, /async resyncFromCloud\(\)/);
   assert.match(wsClient, /async resyncFromCloud\(\)[\s\S]*"snapshot\.get"/);
@@ -3978,12 +3977,11 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   assert.doesNotMatch(enUS, /"kanban\.runtime\.privateCreated"|"Private issue created\."/);
 });
 
-test("Kanban scheduled tasks wait for automation time before assistant run", () => {
+test("Kanban execution is owned by Main and scheduled tasks are excluded", () => {
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
-
-  assert.match(kanbanPage, /const shouldRunAfterSave = form\.status === "in_progress" && !form\.automationEnabled && !modal\?\.issue\?\.runId;/);
-  assert.match(kanbanPage, /const shouldRunTodoAssigneeAfterDelay = form\.status === "todo" && !form\.automationEnabled && Boolean\(form\.assigneeAgentKey\) && !modal\?\.issue\?\.runId;/);
-  assert.doesNotMatch(kanbanPage, /form\.status === "todo" && Boolean\(form\.assigneeAgentKey\) && !modal\?\.issue\?\.runId/);
+  const scheduler = readSourceFile("src", "main", "modules", "kanban", "local-scheduler.ts");
+  assert.doesNotMatch(kanbanPage, /assistant\.startRun|KANBAN_TODO_ASSIGNEE_START_DELAY_MS|shouldRunTodoAssigneeAfterDelay/);
+  assert.match(scheduler, /!issue\.automationEnabled/);
 });
 
 test("Kanban todo cards keep their queue order while the shared timer refreshes run context", () => {
@@ -4049,11 +4047,11 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(preload, /ipcRenderer\.invoke\("kanban\.runIssue", input\)/);
   assert.match(preload, /ipcRenderer\.invoke\("kanban\.syncIssueAutomation", issueId\)/);
   assert.match(mainIpcRegister, /registerKanbanIpcHandlers\(ipcMain,/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.listIssues"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.moveIssue"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.claimIssue"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.runIssue"/);
-  assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.syncIssueAutomation"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.listIssues"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.moveIssue"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.claimIssue"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.runIssue"/);
+  assert.match(kanbanHandlers, /handle\("kanban\.syncIssueAutomation"/);
   assert.match(kanbanRuntime, /async syncIssueAutomation\(/);
   assert.match(kanbanRuntime, /\/api\/automation\/create/);
   assert.match(kanbanRuntime, /\/api\/automation\/update/);
@@ -4106,9 +4104,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,300}width:\s*max-content;[\s\S]{0,100}max-width:\s*min\(360px, calc\(100% - 32px\)\);/);
   assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,700}transform:\s*translateX\(-50%\);/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-feedback\s*\{[^}]*top:\s*66px;/);
-  assert.match(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
-  assert.match(kanbanPage, /const chatId = resolveLocalKanbanRunChatId\(issue\)/);
-  assert.match(kanbanPage, /\.\.\.\(chatId \? \{ chatId \} : \{\}\),[\s\S]{0,80}agentKey/);
+  assert.doesNotMatch(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
   assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);
   assert.doesNotMatch(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
@@ -4139,21 +4135,18 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, /setAgentPickerIssue/);
   assert.doesNotMatch(kanbanPage, /requestAssignIssueToAssistant/);
   assert.match(kanbanPage, /<DragOverlay[\s\S]*?dropAnimation=\{null\}/);
-  assert.match(kanbanPage, /kanbanApi\.updateIssue\(issue\.id,[\s\S]*?status:\s*"in_progress"/);
+  assert.match(kanbanPage, /kanban\.updateIssue\(issue\.id,[\s\S]{0,120}status:\s*"todo"/);
   assert.match(kanbanPage, /function openInProgressAssignmentModal\(issue: KanbanIssue\)/);
   assert.match(kanbanPage, /function openInProgressAssignmentModal\(issue: KanbanIssue\) \{[\s\S]{0,160}setDetailInitialEditStatus\("in_progress"\)[\s\S]{0,120}setDetailIssueId\(issue\.id\)/);
   assert.match(kanbanPage, /targetStatus === "in_progress" && activeIssue\.status !== "in_progress"/);
   assert.match(kanbanPage, /activeIssue\.assigneeAgentKey\?\.trim\(\)[\s\S]{0,180}assignIssueToAssistant\(activeIssue, activeIssue\.assigneeAgentKey\)/);
   assert.match(kanbanPage, /openInProgressAssignmentModal\(activeIssue\)/);
-  assert.match(kanbanPage, /targetStatus === "todo" && activeIssue\.status !== "todo"[\s\S]{0,220}activeIssue\.assigneeAgentKey\?\.trim\(\)/);
-  assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,180}assignIssueToAssistant\(savedIssue, todoAssigneeAgentKey\)/);
   assert.match(kanbanPage, /form\.status === "in_progress" && !form\.automationEnabled && !modal\?\.issue\?\.runId/);
-  assert.match(kanbanPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
+  assert.match(kanbanPage, /shouldRunAfterSave && !form\.executorAgentKey/);
   assert.match(kanbanPage, /t\("kanban\.feedback\.assigneeRequiredForProgress"\)/);
   assert.match(kanbanPage, /function mergeKanbanIssueAttachmentDraft/);
   assert.match(kanbanPage, /mergeKanbanIssueAttachmentDraft\(\s*result\.issue[\s\S]{0,160}form\.attachmentChatId[\s\S]{0,160}form\.attachments/);
   assert.match(kanbanPage, /mergeKanbanIssuesAttachmentDraft\(\s*result\.issues[\s\S]{0,160}savedIssue/);
-  assert.match(kanbanPage, /assignIssueToAssistant\(savedIssue, form\.assigneeAgentKey\)/);
   assert.match(kanbanPage, /const \[formCompact,\s*setFormCompact\] = useState\(true\)/);
   assert.match(kanbanPage, /setFormCompact\(true\)/);
   assert.match(kanbanPage, /function buildCompactIssueTitle/);
@@ -4163,17 +4156,14 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /!formCompact \? \(/);
   assert.match(kanbanPage, /automationEnabled/);
   assert.match(kanbanPage, /KANBAN_AUTOMATION_PLANS/);
-  assert.match(kanbanPage, /KANBAN_AUTOMATION_TIME_OPTIONS/);
+  assert.match(kanbanPage, /className="kanban-cron-fields"/);
+  assert.match(kanbanPage, /kanban.form.automationTimezone/);
+  assert.match(kanbanPage, /kanban.form.automationMessage/);
   assert.match(kanbanPage, /automationTime/);
   assert.match(kanbanPage, /function hasIssueAutomation\(issue: Pick<KanbanIssue, "automationEnabled" \| "automationCron">\)/);
   assert.match(kanbanPage, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,160}setDetailIssueId\(issue\.id\)/);
   assert.match(kanbanPage, /function buildAutomationCron/);
-  assert.match(kanbanPage, /const \[automationMenuOpen,\s*setAutomationMenuOpen\] = useState<AutomationMenuKind \| null>\(null\)/);
-  assert.match(kanbanPage, /selectedAutomationTimeRef\.current\?\.scrollIntoView/);
-  assert.match(kanbanPage, /className="kanban-automation-menu-trigger"/);
-  assert.match(kanbanPage, /kanban-automation-menu-list is-time-list/);
   assert.doesNotMatch(kanbanPage, /className="kanban-automation-time-select"/);
-  assert.match(kanbanPage, /minute < 60; minute \+= 15/);
   assert.match(kanbanPage, /labelKey: "kanban\.automation\.daily"/);
   assert.match(kanbanPage, /labelKey: "kanban\.automation\.weekdays"/);
   assert.match(kanbanPage, /labelKey: "kanban\.automation\.weekly"/);
@@ -6692,7 +6682,8 @@ test("service webview surface provides webview-backed assistant context instead 
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanDetailDialog = readSourceFile("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
   assert.match(kanbanDetailDialog, /surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
-  assert.match(kanbanDetailDialog, /surfaceOwnershipActive=\{false\}/);
+  assert.match(kanbanDetailDialog, /ownerChatId=\{issueChatItems\.find/);
+  assert.match(kanbanDetailDialog, /desktopRoute=\{chatEmbedPath\}/);
   assert.match(kanbanDetailDialog, /loadInitialEmbeddedUrlDirectly/);
   assert.match(kanbanDetailDialog, /suppressInitialLoadingCopy/);
   assert.match(serviceWebviewSurface, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
@@ -7616,7 +7607,7 @@ test("assistant dock supports a persistent accessible width resizer and narrow o
   assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?width:\s*min\(var\(--assistant-dock-embedded-width\),\s*calc\(100% - 16px\)\);[\s\S]*?max-width:\s*640px;/u);
   assert.match(globalStyles, /@media \(max-width:\s*1080px\)[\s\S]*?\.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?max-width:\s*640px;/u);
   assert.match(globalStyles, /\.copilot-dock-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/u);
-  assert.match(globalStyles, /\.copilot-dock-close-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*8px;[\s\S]*?right:\s*8px;/u);
+  assert.match(globalStyles, /\.copilot-dock-close-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*11px;[\s\S]*?right:\s*11px;/u);
   assert.match(globalStyles, /\.copilot-dock-resize-overlay/u);
 });
 

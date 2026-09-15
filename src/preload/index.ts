@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
   AssistantEvent,
   AssistantChatOrderMutationRequest,
@@ -101,6 +102,14 @@ const fallbackInitialLocaleSettings: LocaleSettings = {
 const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
 
 const api: DesktopApi = {
+  connectorAuthBrowser: {
+    onDialog(listener) {
+      const handler = (_event: unknown, input: Parameters<typeof listener>[0]) => listener(input);
+      ipcRenderer.on(CONNECTOR_AUTH_BROWSER_HOST_EVENT, handler);
+      return () => { ipcRenderer.off(CONNECTOR_AUTH_BROWSER_HOST_EVENT, handler); };
+    },
+    close: dialogId => ipcRenderer.invoke(CONNECTOR_AUTH_BROWSER_HOST_CLOSE, dialogId),
+  },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke("shell.openExternal", url)
   },
@@ -187,6 +196,8 @@ const api: DesktopApi = {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },
   kanban: {
+    markResultRead: (input) => ipcRenderer.invoke("kanban.markResultRead", input),
+    saveLocalWorkflows: (input) => ipcRenderer.invoke("kanban.saveLocalWorkflows", input),
     listIssues: () => ipcRenderer.invoke("kanban.listIssues"),
     resyncCloudBoard: () => ipcRenderer.invoke("kanban.resyncCloudBoard"),
     getSettings: () => ipcRenderer.invoke("kanban.getSettings"),
@@ -236,6 +247,8 @@ const api: DesktopApi = {
     listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
+    copyChatRunJson: (chatId: string, runId: string) => ipcRenderer.invoke("assistant.copyChatRunJson", chatId, runId),
+    copyChatStoragePath: (chatId: string, target: "file" | "directory") => ipcRenderer.invoke("assistant.copyChatStoragePath", chatId, target),
     revealChatInFolder: (chatId: string) => ipcRenderer.invoke("assistant.revealChatInFolder", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
@@ -481,6 +494,18 @@ const api: DesktopApi = {
       };
     }
   },
+  updates: {
+    getState: () => ipcRenderer.invoke("updates.getState"),
+    check: () => ipcRenderer.invoke("updates.check"),
+    download: () => ipcRenderer.invoke("updates.download"),
+    install: () => ipcRenderer.invoke("updates.install"),
+    setAutoDownload: (enabled) => ipcRenderer.invoke("updates.setAutoDownload", enabled),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import("../shared/desktop-updates").DesktopUpdateState) => listener(state);
+      ipcRenderer.on("updates.changed", handler);
+      return () => ipcRenderer.off("updates.changed", handler);
+    }
+  },
   help: {
     getSettings: () => ipcRenderer.invoke("help.getSettings")
   },
@@ -659,7 +684,7 @@ const api: DesktopApi = {
     publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)
   },
   diagnostics: {
-    performanceEnabled: process.env?.ZENMIND_PERF === "1",
+    performanceEnabled: process.env?.PERF === "1",
     reportRendererError: (report: RendererDiagnosticReport) => {
       ipcRenderer.send("diagnostics.rendererError", report);
     },

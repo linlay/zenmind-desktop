@@ -22,6 +22,7 @@ function getExternalModules() {
   return [
     "electron",
     "@napi-rs/canvas",
+    "koffi",
     ...builtins
   ];
 }
@@ -40,6 +41,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
       "main/attachment-worker": path.join(rootSrc, "main", "modules", "assistant", "attachments", "attachment-worker.ts"),
       "main/conversation-html-worker": path.join(rootSrc, "main", "modules", "conversation-share", "html-worker.ts"),
       "main/webapp-tooling-worker": path.join(rootSrc, "main", "modules", "webs", "webapps", "tooling", "worker.ts"),
+      "preload/plugin-window": path.join(rootSrc, "preload", "plugin-window.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
       "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts"),
       "preload/document-html-review": path.join(rootSrc, "preload", "document-html-review.ts"),
@@ -67,7 +69,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
   // TypeScript output, so both runtimes must consume the self-contained bundle.
   const developmentPreloadDir = path.join(rootDir, "dist-electron", "preload");
   fs.mkdirSync(developmentPreloadDir, { recursive: true });
-  for (const name of ["document-html-review.js", "work-panel-preview.js"]) {
+  for (const name of ["document-html-review.js", "work-panel-preview.js", "plugin-window.js"]) {
     fs.copyFileSync(path.join(outdir, "preload", name), path.join(developmentPreloadDir, name));
   }
 

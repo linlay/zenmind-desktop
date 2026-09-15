@@ -1,7 +1,7 @@
 import React, { Component, memo, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { AppearanceProvider, useAppearance, useAppearanceSnapshot } from "../../src/renderer/appearance/AppearanceProvider";
+import { AppearanceProvider, useAppearance, useAppearanceSnapshot, useOptionalAppearance } from "../../src/renderer/appearance/AppearanceProvider";
 import { ServicesProvider } from "../../src/renderer/services/ServicesContext";
 import { ServiceWebviewSurface } from "../../src/renderer/service-webview/ServiceWebviewSurface";
 import { AppErrorBoundary } from "../../src/renderer/AppErrorBoundary";
@@ -24,6 +24,8 @@ window.addEventListener("unhandledrejection", (event) => fixture.errors.push(Str
 // subscription: this consumer only updates when its external store notifies it.
 const ReadProbe = memo(function ReadProbe() {
   const snapshot = useAppearanceSnapshot();
+  const optionalSnapshot = useOptionalAppearance();
+  if (snapshot !== optionalSnapshot) throw new Error("Optional and auxiliary appearance snapshots disagree");
   const [instance] = useState(() => crypto.randomUUID());
   useEffect(() => { fixture.readMounts++; }, []);
   useLayoutEffect(() => { fixture.snapshots.push(snapshot); }, [snapshot]);

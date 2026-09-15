@@ -20,7 +20,7 @@ const {
   isWebclientHostBackgroundSurface, createSurfaceIdentity, createServiceSurfaceIdentity
 } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 const snapshot = (revision = 1, extra = {}) => ({
-  schemaVersion: 1, revision, resolvedTheme: 'light', skinId: 'pack:0123456789abcdef0123456789abcdef',
+  schemaVersion: "1.1", revision, resolvedTheme: 'light', skinId: 'pack:0123456789abcdef0123456789abcdef',
   tokens: { '--accent': '#217854', '--control-radius': '12px' }, background: { mode: 'host' }, ...extra
 });
 
@@ -101,7 +101,7 @@ function hostHarness() {
   });
   const documentId = '12345678-1234-1234-1234-123456789abc';
   const request = (extra = {}) => webview.dispatchEvent(Object.assign(new Event('ipc-message'), {
-    channel: requestChannel, args: [{ version: 1, documentId, origin: 'http://127.0.0.1:1234', ...extra }]
+    channel: requestChannel, args: [{ version: "1.1", documentId, origin: 'http://127.0.0.1:1234', ...extra }]
   }));
   return { webview, host, sent, themes, backgrounds, request, documentId,
     setProjection: next => { projection = next; }, setUrl: next => { url = next; }, invalidate: () => { current = false; } };

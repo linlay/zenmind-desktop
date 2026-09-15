@@ -1,3 +1,6 @@
+import { SkinHeading } from "../../appearance/SkinVisual";
+import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
+import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
 import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
@@ -1199,6 +1202,7 @@ export function AppSidebar({
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const desktopUpdate = useDesktopUpdates();
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
     useState<BootstrapGuideFloatingBubble[]>([]);
   const [bootstrapGuideDismissedBubbles, setBootstrapGuideDismissedBubbles] =
@@ -1208,6 +1212,7 @@ export function AppSidebar({
   const [bootstrapGuideCardDismissed, setBootstrapGuideCardDismissed] =
     useState(false);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
+  const settingsSearchInputRef = useRef<HTMLInputElement>(null);
   const [forcedActiveManagementRoute, setForcedActiveManagementRoute] =
     useState("");
   const [chatsVisibleLimit, setChatsVisibleLimit] = useState(
@@ -1251,6 +1256,7 @@ export function AppSidebar({
     index: number;
   } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
+  const sidebarScrollThumbRef = useRef<HTMLDivElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
@@ -1268,22 +1274,92 @@ export function AppSidebar({
 
   useEffect(() => {
     const sidebarNav = sidebarNavRef.current;
-    if (!sidebarNav) {
+    const thumb = sidebarScrollThumbRef.current;
+    if (!sidebarNav || !thumb) {
       return;
     }
 
     let hideScrollbarTimer: number | undefined;
+    let drag: { pointerId: number; startY: number; scrollTop: number } | undefined;
+    const syncThumb = () => {
+      const height = sidebarNav.clientHeight;
+      const range = sidebarNav.scrollHeight - height;
+      thumb.hidden = range <= 0 || height <= 0;
+      if (thumb.hidden) return;
+      const thumbHeight = Math.min(height, Math.max(24, height * height / sidebarNav.scrollHeight));
+      thumb.style.height = `${thumbHeight}px`;
+      thumb.style.top = `${sidebarNav.offsetTop + (range > 0 ? sidebarNav.scrollTop / range * (height - thumbHeight) : 0)}px`;
+    };
+    const scheduleHide = () => {
+      window.clearTimeout(hideScrollbarTimer);
+      if (!drag) {
+        hideScrollbarTimer = window.setTimeout(() => {
+          delete sidebarNav.dataset.scrolling;
+        }, SIDEBAR_SCROLLBAR_HIDE_DELAY_MS);
+      }
+    };
     // Update only the scroll container so scrolling does not rerender the chat list.
     const handleScroll = () => {
+      syncThumb();
       sidebarNav.dataset.scrolling = "true";
-      window.clearTimeout(hideScrollbarTimer);
-      hideScrollbarTimer = window.setTimeout(() => {
-        delete sidebarNav.dataset.scrolling;
-      }, SIDEBAR_SCROLLBAR_HIDE_DELAY_MS);
+      scheduleHide();
     };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      drag = { pointerId: event.pointerId, startY: event.clientY, scrollTop: sidebarNav.scrollTop };
+      thumb.setPointerCapture(event.pointerId);
+      handleScroll();
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const travel = sidebarNav.clientHeight - thumb.offsetHeight;
+      if (travel > 0) {
+        sidebarNav.scrollTop = drag.scrollTop + (event.clientY - drag.startY) * (sidebarNav.scrollHeight - sidebarNav.clientHeight) / travel;
+      }
+    };
+    const handlePointerEnd = (event: PointerEvent) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      drag = undefined;
+      if (thumb.hasPointerCapture(event.pointerId)) thumb.releasePointerCapture(event.pointerId);
+      scheduleHide();
+    };
+    // The overlay is a sibling of nav, so forward wheel input over its hit area.
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? sidebarNav.clientHeight
+        : event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+      sidebarNav.scrollTop += event.deltaY * unit;
+    };
+    const resizeObserver = new ResizeObserver(syncThumb);
+    const observeContent = () => {
+      resizeObserver.disconnect();
+      resizeObserver.observe(sidebarNav);
+      for (const child of sidebarNav.children) resizeObserver.observe(child);
+      syncThumb();
+    };
+    const mutationObserver = new MutationObserver(observeContent);
+    mutationObserver.observe(sidebarNav, { childList: true, subtree: true });
+    observeContent();
 
     sidebarNav.addEventListener("scroll", handleScroll, { passive: true });
+    thumb.addEventListener("pointerdown", handlePointerDown);
+    thumb.addEventListener("pointermove", handlePointerMove);
+    thumb.addEventListener("pointerup", handlePointerEnd);
+    thumb.addEventListener("pointercancel", handlePointerEnd);
+    thumb.addEventListener("lostpointercapture", handlePointerEnd);
+    thumb.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      thumb.removeEventListener("pointerdown", handlePointerDown);
+      thumb.removeEventListener("pointermove", handlePointerMove);
+      thumb.removeEventListener("pointerup", handlePointerEnd);
+      thumb.removeEventListener("pointercancel", handlePointerEnd);
+      thumb.removeEventListener("lostpointercapture", handlePointerEnd);
+      thumb.removeEventListener("wheel", handleWheel);
       sidebarNav.removeEventListener("scroll", handleScroll);
       window.clearTimeout(hideScrollbarTimer);
       delete sidebarNav.dataset.scrolling;
@@ -4768,7 +4844,7 @@ export function AppSidebar({
       children: [],
       headerLabel: (
         <span className="sidebar-link-label" tabIndex={-1}>
-          {item.label}
+          <SkinHeading group="chats">{item.label}</SkinHeading>
         </span>
       ),
       headerSupplement: sidebarGroupState.chats
@@ -4989,7 +5065,9 @@ export function AppSidebar({
       ? "awaiting"
       : chat.hasActiveRun
         ? "loading"
-        : "time";
+        : !chat.isRead
+          ? "unread"
+          : "time";
     const previewText =
       options.previewText ?? getAssistantChatDisplayText(chat, t);
     const focusId = options.focusId ?? createSidebarChatFocusId(chat.chatId);
@@ -5037,17 +5115,6 @@ export function AppSidebar({
         data-sidebar-group-id={chat.pinned ? "pinned" : undefined}
       >
         <span className="worker-chat-item-head">
-          <span
-            className={[
-              "assistant-worker-unread-dot",
-              "chat-unread-dot",
-              !chat.isRead ? "is-unread" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
-            aria-hidden={chat.isRead ? "true" : undefined}
-          />
           <ChatTitle text={previewText} />
           {chat.pinned ? (
             <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
@@ -5060,6 +5127,12 @@ export function AppSidebar({
             </span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
+            {action === "unread" ? (
+              <span
+                className="assistant-worker-unread-dot chat-unread-dot is-unread"
+                aria-label={t("sidebar.chat.unread")}
+              />
+            ) : null}
             <span className="worker-panel-time-label">
               {formatAssistantChatTime(chat.updatedAt)}
             </span>
@@ -5504,7 +5577,7 @@ export function AppSidebar({
         header={
           <span className="sidebar-group-heading-main">
             {args.headerLabel ?? (
-              <span className="sidebar-link-label">{args.label}</span>
+              <span className="sidebar-link-label"><SkinHeading group={args.groupId}>{args.label}</SkinHeading></span>
             )}
             <ArrowIcon
               className="sidebar-group-heading-arrow"
@@ -6095,6 +6168,7 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
+        <DesktopUpdateCard compact />
         {shouldRenderDesktopSsoAccount ? (
           <>
             {renderAccountMenuUserItem()}
@@ -6656,22 +6730,32 @@ export function AppSidebar({
           </span>
           <span className="sidebar-link-label">{t("settings.backToApp")}</span>
         </button>
-        <label
-          className="sidebar-settings-search"
-          aria-label={t("settings.searchAriaLabel")}
-        >
-          <span className="sidebar-settings-search-icon" aria-hidden="true">
-            <SettingsSidebarIcon kind="search" />
-          </span>
+        <div className="sidebar-settings-search">
           <input
+            ref={settingsSearchInputRef}
             type="search"
+            aria-label={t("settings.searchAriaLabel")}
             value={settingsSearchQuery}
             placeholder={t("settings.searchPlaceholder")}
             onChange={(event) =>
               setSettingsSearchQuery(event.currentTarget.value)
             }
           />
-        </label>
+          {settingsSearchQuery && (
+            <button
+              type="button"
+              className="sidebar-settings-search-clear"
+              aria-label={t("common.clear")}
+              title={t("common.clear")}
+              onClick={() => {
+                setSettingsSearchQuery("");
+                settingsSearchInputRef.current?.focus();
+              }}
+            >
+              <SidebarActionIcon kind="close" />
+            </button>
+          )}
+        </div>
         <nav
           className="sidebar-settings-directory"
           aria-label={t("settings.directory")}
@@ -6939,6 +7023,7 @@ export function AppSidebar({
                   }}
                 />}
         </nav>
+        <div ref={sidebarScrollThumbRef} className="sidebar-scroll-thumb" aria-hidden="true" hidden />
         {renderBootstrapGuideCard()}
 
         {isPrimaryMode ? (
@@ -6959,12 +7044,13 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
+                      desktopUpdate?.phase === "ready" ? "has-update" : "",
                       activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    aria-label={t("nav.sidebar.openSettings")}
+                    aria-label={desktopUpdate?.phase === "ready" ? `${t("nav.sidebar.openSettings")} · ${t("updates.phase.ready")}` : t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}
                     title={t("nav.settings")}
@@ -6983,6 +7069,7 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
+                    {desktopUpdate?.phase === "ready" ? <span className="sidebar-update-label">{t("updates.phase.ready")}</span> : null}
                     {shouldRenderActiveToolMenuLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}

@@ -324,6 +324,7 @@ factoryContext.assistantBridgeRuntime = createAssistantBridgeRuntime({
     getCurrentPageSnapshot: factoryContext.webSurfaceRuntime.getCurrentPageSnapshot,
     assistantRunWakeLock: factoryContext.assistantRunWakeLock,
     cdpIntegration: factoryContext.cdpIntegration,
+    browserSurfaces: factoryContext.webSurfaceRuntime.browserSurfaceRegistry,
     getResponsiveServiceState,
     issueAgentAccessToken: factoryContext.issueAgentAccessToken,
     realtimeBroker: factoryContext.realtimeBroker,

@@ -1,3 +1,4 @@
+import { SkinVisual } from "../appearance/SkinVisual";
 import type { SVGProps } from "react";
 import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
 import { useI18n } from "../i18n/useI18n";
@@ -155,7 +156,7 @@ export function BrandMark({ className, ariaLabel }: BrandMarkProps) {
   );
 }
 
-export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
+function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
   const iconProps = createSidebarActionIconProps(kind, className);
 
   switch (kind) {
@@ -337,7 +338,7 @@ function RailSidebarIllustration({
   }
 }
 
-export function SidebarIllustration({
+function DefaultSidebarIllustration({
   kind,
   variant = "compact",
   className
@@ -501,4 +502,13 @@ export function SidebarIllustration({
         </svg>
       );
   }
+}
+
+export function SidebarActionIcon(props: SidebarActionIconProps) {
+  const slot = props.kind === "new_chat" || props.kind === "new_project" ? `entry.${props.kind}` : `navigation.${props.kind}`;
+  return <SkinVisual slot={slot} className={createSidebarActionIconProps(props.kind, props.className).className}><DefaultSidebarActionIcon {...props} /></SkinVisual>;
+}
+export function SidebarIllustration(props: SidebarIllustrationProps) {
+  const kind = ({ futures: "kanban", schedule: "automation" } as Record<string, string>)[props.kind] ?? props.kind;
+  return <SkinVisual slot={`entry.${kind}`} className={getSidebarIconClassName(props.kind, props.variant ?? "compact", props.className)}><DefaultSidebarIllustration {...props} /></SkinVisual>;
 }

@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "../web-surfaces";
+import { AwcpGuestBridge, type BrowserSurfaceRegistry, type SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type {
   AssistantNavAgentItemsResult,
@@ -27,6 +27,7 @@ export type AssistantBridgeRuntimeOptions = {
   getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
   assistantRunWakeLock: AssistantRunWakeLock;
   cdpIntegration: any;
+  browserSurfaces: BrowserSurfaceRegistry;
   getResponsiveServiceState: (app: App, serviceId: string) => Promise<any>;
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
   realtimeBroker: RealtimeBroker;
@@ -55,6 +56,7 @@ export type AssistantBridgeRuntimeOptions = {
 
 export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOptions) {
   const integration = options.integrationPorts;
+  const awcpGuestBridge = new AwcpGuestBridge(options.browserSurfaces);
   let kanbanRuntime: any = null;
   let assistantNavigationStatusClient: AssistantNavigationStatusClient | null = null;
   const desktopActionRendererRequests = new Map<string, {
@@ -135,13 +137,15 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getMainWindow: options.getMainWindow,
       pendingRequests: desktopActionConfirmationRequests
     }),
-    executeCdpCommand: async (request: unknown, scope?: SiteCdpScope) => options.cdpIntegration.start().executeCommand(request, scope),
+    executeCdpCommand: async (request: unknown, scope?: SiteControlScope, signal?: AbortSignal) => options.cdpIntegration.start().executeCommand(request, scope, signal),
     emitWebappChanged,
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
     action: (request) => integration.handleAgentPlatformDesktopActionRequest(desktopActionOptions, request as any),
-    cdp: (request, scope) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope),
+    cdp: (request, scope, signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, signal),
+    awcpSnapshot: (requestId, scope, signal) => awcpGuestBridge.snapshot(requestId, scope, signal),
+    awcpInvoke: (requestId, request, scope, signal) => awcpGuestBridge.invoke(requestId, request, scope, signal),
   });
 
   const desktopWsServerOptions = {
@@ -179,7 +183,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       realtimeBroker: options.realtimeBroker,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
       onPushEvent: (event) => {
-        if (event.type === "run.started" || event.type === "run.finished") {
+        if (event.type === "run.started" || event.type === "run.finished" || event.type === "chat.updated") {
           kanbanRuntime?.sendNavigationPushEvent(event);
         }
         options.emitAssistantNavigationPushEvent(event);
@@ -268,6 +272,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     refreshDesktopActionBridge,
     stop() {
       options.realtimeBroker.setDesktopBridgeProvider(null);
+      awcpGuestBridge.dispose();
       integration.setWebappPublicationChangeListener(null);
       void options.cdpIntegration.stop();
       integration.stopDesktopActionBridge();

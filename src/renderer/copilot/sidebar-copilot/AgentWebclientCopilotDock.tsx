@@ -146,9 +146,14 @@ export function AgentWebclientCopilotDock({
   const lastHostTargetEmbedPathRef = useRef("");
   const pendingHostTargetEmbedPathRef = useRef("");
   const lastObservedAgentKeyRef = useRef("");
+  const lastObservedEmbedPathRef = useRef("");
   if (lastHostTargetEmbedPathRef.current !== targetEmbedPath) {
     lastHostTargetEmbedPathRef.current = targetEmbedPath;
-    pendingHostTargetEmbedPathRef.current = targetEmbedPath;
+    // Saving a guest route echoes it back through restoredEmbedPath. It has
+    // already been observed and must not start another navigation handshake.
+    pendingHostTargetEmbedPathRef.current = lastObservedEmbedPathRef.current === targetEmbedPath
+      ? ""
+      : targetEmbedPath;
     lastObservedAgentKeyRef.current = targetAgentKey;
   }
 
@@ -178,12 +183,14 @@ export function AgentWebclientCopilotDock({
         return;
       }
       pendingHostTargetEmbedPathRef.current = "";
+      lastObservedEmbedPathRef.current = embedPath;
       lastObservedAgentKeyRef.current = selectedAgentKey;
       const chatId = readCopilotChatId(embedPath);
       onCurrentEmbedPathChange?.(embedPath, selectedAgentKey, chatId || undefined);
       return;
     }
     const previousAgentKey = lastObservedAgentKeyRef.current;
+    lastObservedEmbedPathRef.current = embedPath;
     lastObservedAgentKeyRef.current = selectedAgentKey;
     if (previousAgentKey && previousAgentKey !== selectedAgentKey) {
       onSelectedAgentKeyChange?.(selectedAgentKey);

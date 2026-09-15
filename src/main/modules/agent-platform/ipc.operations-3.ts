@@ -1,4 +1,4 @@
-import { captureCopilotSiteCdpScope } from "../web-surfaces";
+import { captureCopilotSiteControlScope } from "../web-surfaces";
 import {
   isPlainBridgeRecord,
   type AgentWebclientPlatformFramePortSendInput
@@ -30,6 +30,27 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     if ("ok" in context) {
         factoryContext.sendFrame(session, frameError(frame.id, "surface_unavailable", context.error.message));
         return;
+    }
+    const isKanbanPreview = context.target.surfaceRole === "kanban-chat" &&
+        Boolean(context.target.pageRoute?.startsWith("/chat-preview/"));
+    if (isKanbanPreview) {
+        const ownerChatId = context.target.ownerChatId?.trim() || "";
+        const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+        const routeMatches = ownerChatId && new URL(event.sender.getURL()).pathname ===
+            `/chat-preview/${encodeURIComponent(ownerChatId)}`;
+        // WebClient attach identifies the Run only; resolveAttachChatId below
+        // supplies the trusted registered Chat before the Broker subscribes.
+        const requestedChatId = readText(payload.chatId);
+        const allowed = frame.type === "/api/chat"
+            ? requestedChatId === ownerChatId
+            : frame.type === "/api/attach"
+                ? !requestedChatId || requestedChatId === ownerChatId
+                : frame.type === "/api/detach" && Boolean(session.rootObserverToken) &&
+                    [...session.streams.values()].some((binding) => binding.runId === readText(payload.runId));
+        if (!routeMatches || !allowed) {
+            factoryContext.sendFrame(session, frameError(frame.id, "capability_denied", "Kanban preview only observes its registered Chat"));
+            return;
+        }
     }
     if (frame.type === "/api/chat") {
         const chatId = readText(isPlainBridgeRecord(frame.payload) ? frame.payload.chatId : "");
@@ -246,10 +267,10 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         releaseDetachBarrier?.();
         releaseDetachBarrier = null;
     };
-    let siteCdpScope: ReturnType<typeof captureCopilotSiteCdpScope>;
+    let siteControlScope: ReturnType<typeof captureCopilotSiteControlScope>;
     try {
-        siteCdpScope = frame.type === "/api/query"
-            ? captureCopilotSiteCdpScope(factoryContext.options.browserSurfaces, context.target)
+        siteControlScope = frame.type === "/api/query"
+            ? captureCopilotSiteControlScope(factoryContext.options.browserSurfaces, context.target)
             : undefined;
     } catch (error) {
         factoryContext.sendFrame(session, frameError(frame.id, "capability_denied", error instanceof Error ? error.message : String(error)));
@@ -269,7 +290,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         connection = await factoryContext.availability();
     }
     catch (error) {
-        siteCdpScope?.release("Platform is unavailable.");
+        siteControlScope?.release("Platform is unavailable.");
         finishExplicitDetachWrite(false);
         factoryContext.sendFrame(session, frameError(frame.id, "connection_unavailable", error instanceof Error ? error.message : String(error)));
         return;
@@ -280,7 +301,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     const refreshedContext = session.closed || event.sender.isDestroyed()
         ? null
         : authorizeSurface(event.sender, factoryContext.options.browserSurfaces, factoryContext.options.isTrustedAgentWebclientSession);
-    if (!refreshedContext || "ok" in refreshedContext || (isLive && (
+    if (!refreshedContext || "ok" in refreshedContext || ((isLive || isKanbanPreview) && (
         refreshedContext.target.registrationId !== authorizedSurface.registrationId ||
         refreshedContext.target.surfaceId !== authorizedSurface.surfaceId ||
         refreshedContext.target.ownerChatId !== authorizedSurface.ownerChatId ||
@@ -288,7 +309,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             authorizedSurface.route ||
         !refreshedContext.target.active
     ))) {
-        siteCdpScope?.release("Surface changed while checking Platform availability.");
+        siteControlScope?.release("Surface changed while checking Platform availability.");
         finishExplicitDetachWrite(false);
         factoryContext.sendFrame(session, frameError(frame.id, "surface_unavailable", "Surface changed while checking Platform availability"));
         return;
@@ -444,7 +465,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     if (binding && (binding.type === "/api/query" || binding.type === "/api/btw")) {
         try {
             const handle = factoryContext.options.realtimeBroker.query({
-                siteCdpScope,
+                siteControlScope,
                 baseUrl,
                 token,
                 lane: explanationLane ?? (binding.type === "/api/btw" ? "btw" : "primary"),
@@ -458,13 +479,13 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
                 consumerId: session.consumerId,
                 onEvent: async (runEvent) => {
                     // Run page authority is committed by the Broker, independently of Dock delivery.
-                    if (siteCdpScope && (binding.suppressed || binding.detachSent || session.closed)) return;
+                    if (siteControlScope && (binding.suppressed || binding.detachSent || session.closed)) return;
                     const upstreamFrame: PlatformFrameRecord = {
                         frame: "stream",
                         id: binding.localId,
                         event: runEvent,
                     };
-                    if (!siteCdpScope) factoryContext.processQueryBootstrapFrame(binding, upstreamFrame);
+                    if (!siteControlScope) factoryContext.processQueryBootstrapFrame(binding, upstreamFrame);
                     updateBindingFromFrame(binding, upstreamFrame);
                     if (binding.canonicalChatReady)
                         await binding.canonicalChatReady;
@@ -500,7 +521,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             });
         }
         catch (error) {
-            siteCdpScope?.release("The query could not be submitted.");
+            siteControlScope?.release("The query could not be submitted.");
             session.requestIds.delete(binding.localId);
             session.streams.delete(binding.localId);
             factoryContext.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));

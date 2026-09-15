@@ -8,10 +8,6 @@ function getDesktopSsoProxyTargetOrigin(config: OidcConfig = DEFAULT_OIDC_CONFIG
   return new URL(config.authorizeUrl).origin;
 }
 
-export function shouldUseEphemeralSystemCallback(config: OidcConfig) {
-  return !config.browserMode && shouldUseSystemBrowser(config);
-}
-
 export function getDesktopSsoProviderLabel(config: OidcConfig) {
   return config.providerLabel?.trim() ||
     (isGoogleOidcConfig(config) ? "Google" : PRODUCT_NAME);

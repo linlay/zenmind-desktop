@@ -14,6 +14,7 @@ const {
   areAgentWebclientChatNavigationUrlsEquivalent,
   createAgentWebclientAgentPath,
   createAgentWebclientBtwPath,
+  createAgentWebclientChatPreviewPath,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
   createAgentWebclientOverviewPath,
@@ -23,8 +24,29 @@ const {
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
+  resolveAgentWebclientDesktopComposerRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
+
+test("management Composer handoff preserves prefill and rejects untrusted or ambiguous targets", () => {
+  const origin = "http://127.0.0.1:11948";
+  const search = new URLSearchParams({ newChat: "1790000000000", composerSkill: "platform-admin", composerDraft: "修改模型：A & B？" });
+  const target = `${origin}/agent/default?${search}`;
+  assert.equal(resolveAgentWebclientDesktopComposerRouteFromUrl(target, origin), `/agent/default?${search}`);
+  for (const invalid of [
+    target.replace(origin, "https://untrusted.example"),
+    `${target}&chatId=existing`, `${target}&composerSkill=skill-creator`,
+    target.replace("platform-admin", "unknown-skill"),
+    target.replace("1790000000000", "123"),
+    target.replace("/agent/default", "/agents/default"),
+    `${target}#unexpected`,
+  ]) assert.equal(resolveAgentWebclientDesktopComposerRouteFromUrl(invalid, origin), "");
+  for (const composerSkill of ["platform-automation", "skill-creator"]) {
+    const query = new URLSearchParams(search);
+    query.set("composerSkill", composerSkill);
+    assert.equal(resolveAgentWebclientDesktopComposerRouteFromUrl(`${origin}/agent/default?${query}`, origin), `/agent/default?${query}`);
+  }
+});
 
 test("Side Chat routes use the canonical /btw/:chatId path", () => {
   assert.equal(createAgentWebclientBtwPath({ chatId: "chat / 一" }), "/btw/chat%20%2F%20%E4%B8%80");
@@ -437,4 +459,10 @@ test("copilot path generation uses the semantic catalog key", () => {
 
   assert.equal(catalogKeys.includes(semanticAgentKey), true);
   assert.equal(createAgentWebclientCopilotPath(semanticAgentKey), requestedPath);
+});
+
+test("Kanban preview uses a Chat-only route on the existing desktop Chat transport", () => {
+  assert.equal(createAgentWebclientChatPreviewPath({ chatId: "chat / 1" }), "/chat-preview/chat%20%2F%201");
+  assert.equal(createAgentWebclientChatPreviewPath({ chatId: " " }), "");
+  assert.equal(resolveAgentWebclientWsSource("kanban-chat", "/chat-preview/chat-1"), "desktop-chat");
 });

@@ -1,3 +1,4 @@
+import { getUpdateConfigPath, normalizeUpdateConfig, writeUpdateConfig } from "../../modules/updates";
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
@@ -148,6 +149,7 @@ export function desktopInitUpgradeCanonicalPaths(app: App, platform: NodeJS.Plat
     resolveDesktopSsoConfigPath(app, platform),
     path.join(configRoot, "kanban.json"),
     path.join(configRoot, "market.json"),
+    getUpdateConfigPath(app, platform),
     path.join(configRoot, "tunnel-hub.json"),
     getDesktopActionBridgeSettingsConfigPath(app, platform),
     getEnterpriseImSettingsPath(app, platform),
@@ -168,6 +170,7 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     "sso",
     "kanban",
     "market",
+    "updates",
     "tunnelHub",
     "desktopActionBridge",
     "enterpriseIm",
@@ -176,6 +179,7 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     requireObjectWhenPresent(key);
   }
 
+  if (present("updates")) normalizeUpdateConfig(defaults.updates);
   const services = isRecord(defaults.services) ? defaults.services : {};
   const lifecycleArgs = normalizeServiceLifecycleArgsConfig({ services }, platform);
   const portDefaults = normalizeServicePortDefaultsConfig({ services }, platform);
@@ -187,7 +191,8 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
   if (present("kanban") && Object.keys(defaults.kanban as Record<string, unknown>).length > 0 && !kanban) {
     throw new Error("desktop-init kanban is invalid.");
   }
-  if (kanban?.enabled === true && !isValidHttpUrl(readText(kanban.cloud?.serverUrl))) {
+  const kanbanServerUrl = readText(kanban?.cloud?.serverUrl);
+  if (kanban?.enabled === true && (kanbanServerUrl || kanban.cloud?.remoteControlEnabled === true) && !isValidHttpUrl(kanbanServerUrl)) {
     throw new Error("Kanban server URL is invalid.");
   }
   if (isRecord(defaults.market) && defaults.market.enabled === true) {
@@ -334,8 +339,9 @@ export function applyDesktopInitVersionUpgrade(
       applySsoDefaults(app, defaultsValue.sso, platform);
     }
     if (prepared.present("kanban")) {
-      applyKanbanDefaults(app, defaultsValue.kanban, platform, false);
+      applyKanbanDefaults(app, defaultsValue.kanban, platform);
     }
+    if (prepared.present("updates")) writeUpdateConfig(app, defaultsValue.updates, platform);
     if (prepared.present("market")) {
       applyMarketDefaults(app, defaultsValue.market, platform);
     }
@@ -399,7 +405,14 @@ export function applyDesktopInitBootstrap(
       warnings: []
     };
 
+    // Validate the update source before writing any initialization section.
+    if (Object.prototype.hasOwnProperty.call(defaults, "updates")) normalizeUpdateConfig(defaults.updates);
     const applied: BootstrapApplyResult = {
+      updates: runBootstrapSection("updates", errors, () => {
+        if (defaults.updates === undefined) return "absent";
+        writeUpdateConfig(app, defaults.updates, platform);
+        return "applied";
+      }),
       profile: runBootstrapSection("profile", errors, () => applyProfileDefaults(app, defaults.profile, platform)),
       kanban: runBootstrapSection("kanban", errors, () => applyKanbanDefaults(app, kanbanDefaults, platform)),
       pet: runBootstrapSection("pet", errors, () => applyPetDefaults(app, defaults.pet, platform)),

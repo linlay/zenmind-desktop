@@ -29,12 +29,13 @@ function acquireThrottleLease(contents: WebContents) {
 }
 
 /** Main-only capability. JSON input cannot reproduce membership in issuedScopes. */
-class SiteCdpScope {
+class SiteControlScope {
   private enabled = false;
   private revoked = "";
   private unsubscribe: (() => unknown) | null = null;
   private readonly guests = new Map<number, () => void>();
   private readonly failedGuests = new Set<number>();
+  private readonly releaseListeners = new Set<(reason: string) => void>();
 
   constructor(
     private readonly registry: BrowserSurfaceRegistry,
@@ -68,6 +69,19 @@ class SiteCdpScope {
     this.unsubscribe = null;
     for (const dispose of this.guests.values()) dispose();
     this.guests.clear();
+    for (const listener of [...this.releaseListeners]) {
+      try { listener(reason); } catch { /* Capability cleanup must not be interrupted by observers. */ }
+    }
+    this.releaseListeners.clear();
+  }
+
+  onRelease(listener: (reason: string) => void) {
+    if (this.revoked) {
+      listener(this.revoked);
+      return () => undefined;
+    }
+    this.releaseListeners.add(listener);
+    return () => this.releaseListeners.delete(listener);
   }
 
   readSurface() {
@@ -128,14 +142,14 @@ class SiteCdpScope {
   }
 }
 
-export type { SiteCdpScope };
+export type { SiteControlScope };
 
-export function requireSiteCdpScope(scope: SiteCdpScope) {
+export function requireSiteControlScope(scope: SiteControlScope) {
   if (!scope || !issuedScopes.has(scope)) throw scopeError("Invalid internal page control capability.");
   return scope;
 }
 
-export function captureCopilotSiteCdpScope(registry: BrowserSurfaceRegistry, dock: RegisteredWebviewSurfaceTarget): SiteCdpScope | undefined {
+export function captureCopilotSiteControlScope(registry: BrowserSurfaceRegistry, dock: RegisteredWebviewSurfaceTarget): SiteControlScope | undefined {
   if (dock.surfaceRole !== "copilot-dock" || !dock.active || !dock.parentSurfaceId) return;
   const parent = registry.listRegisteredSurfaces().find((surface) => surface.surfaceId === dock.parentSurfaceId);
   if (!parent) throw scopeError("Copilot parent page is no longer registered.");
@@ -145,6 +159,6 @@ export function captureCopilotSiteCdpScope(registry: BrowserSurfaceRegistry, doc
     snapshot.registered.surfaceIdentityKey !== dock.surfaceIdentityKey || !snapshot.tabs.length) {
     throw scopeError("Copilot context does not match the current application page.");
   }
-  return new SiteCdpScope(registry, parent.surfaceId, snapshot.registered.registrationId,
+  return new SiteControlScope(registry, parent.surfaceId, snapshot.registered.registrationId,
     dock.ownerWebContentsId, parent.surfaceKind, snapshot.tabs[0].webContentsId);
 }

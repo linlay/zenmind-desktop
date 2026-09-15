@@ -184,7 +184,9 @@ export async function KanbanRuntime_createIssue_12(self: KanbanRuntimeMethodCont
     self.refreshConnection();
     const currentUser = self.currentUser();
     if (input.syncToCloud !== true) {
-        return createLocalDesktopKanbanIssue(self.options.app, currentUser, input);
+        return createLocalDesktopKanbanIssue(self.options.app, currentUser, {
+            ...input, status: input.status === "in_progress" ? "todo" : input.status
+        });
     }
     return self.cloudIssueReadOnlyResult();
 }
@@ -204,7 +206,11 @@ export async function KanbanRuntime_updateIssue_13(self: KanbanRuntimeMethodCont
         if (input.syncToCloud === true) {
             return self.cloudIssueReadOnlyResult();
         }
-        return updateDesktopKanbanIssue(self.options.app, currentUser, issue.id, input);
+        return updateDesktopKanbanIssue(self.options.app, currentUser, issue.id, {
+            ...input,
+            ...(input.status === "in_progress" && !issue.runId && !input.runId ? { status: "todo" as const } : {}),
+            ...(input.status === "todo" && !issue.runId && input.runState === undefined ? { runState: null } : {})
+        });
     }
     return self.cloudIssueReadOnlyResult();
 }
@@ -221,7 +227,9 @@ export async function KanbanRuntime_moveIssue_14(self: KanbanRuntimeMethodContex
         };
     }
     if (issueSyncMode(issue) === "local") {
-        return moveDesktopKanbanIssue(self.options.app, currentUser, input);
+        return moveDesktopKanbanIssue(self.options.app, currentUser, {
+            ...input, status: input.status === "in_progress" && !issue.runId ? "todo" : input.status
+        });
     }
     return self.cloudIssueReadOnlyResult();
 }

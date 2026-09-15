@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { ConnectorAuthBrowser } from "../connectors/ConnectorAuthBrowser";
 import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
 import { useAppearance } from "../appearance/AppearanceProvider";
 import { DesktopBackground } from "../appearance/DesktopBackground";
@@ -1810,7 +1811,7 @@ export function AppShell() {
     }
   }
 
-  async function refreshCopilotAgentOptions() {
+  const refreshCopilotAgentOptions = useCallback(async () => {
     try {
       const result = await window.electronAPI.assistant.listCopilotAgents();
       if (!result.ok) {
@@ -1820,7 +1821,7 @@ export function AppShell() {
     } catch {
       // Keep the current picker list while agent-platform is still warming up.
     }
-  }
+  }, []);
 
   function refreshAssistantNavAgentsAfterStartupReady(nextState: StartupRestoreState) {
     if (nextState.phase === "succeeded") {
@@ -2248,6 +2249,11 @@ export function AppShell() {
       active = false;
     };
   }, []);
+
+  // Failed updates leave the app open for diagnostics/retry rather than trapping it under the quit overlay.
+  useEffect(() => window.electronAPI.updates?.onChanged((state) => {
+    if (state.phase === "error") setShutdownProgress(null);
+  }), []);
 
   useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
     if (progress.phase === "preparing") {
@@ -4683,6 +4689,8 @@ export function AppShell() {
       <div ref={appContentRef} className="app-content">
         <main className="app-main">
           <ServiceWebviewSurfaceHost
+            mainChatObserverActive={!assistantCopilotOpen}
+            chatDefaultAgentKey={chatRuntimeAgent.agentKey}
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
             activeOwnerChatId={desiredChatRouteChatId}
@@ -4754,6 +4762,8 @@ export function AppShell() {
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     webItems={webItems}
+                    copilotAgentOptions={copilotAgentOptions}
+                    onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
                     webappPublishStateById={webappPublishStateById}
                     onWebItemsRefresh={refreshWebItems}
                     onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
@@ -4931,6 +4941,7 @@ export function AppShell() {
         onBringToFront={bringProjectFloatingWebviewToFront}
         onClose={closeProjectFloatingWebview}
       />
+      <ConnectorAuthBrowser />
       {desktopSsoLoginDialog ? (
         <div className="desktop-sso-login-modal-layer" role="presentation">
           <section

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../../shared/contracts";
 import { readManifestFromArchive } from "../../support/manifest/manifest-utils";
-import { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } from "../plugins";
+import { getPluginInstallDir } from "../plugins";
 import { getAllServices } from "../services";
 import { t } from "../../support/i18n/main-i18n";
 import {
@@ -99,19 +99,24 @@ export async function installPluginMarketItem(
     if (manifest.id !== item.id) {
       throw new Error(t("market.main.pluginIdMismatch", { expected: item.id, actual: manifest.id }));
     }
-    const result = await installPluginFromArchive(app, archivePath);
+    if (!options.plugins) {
+      throw new Error("Plugin lifecycle must be supplied by the application composition root.");
+    }
+    const result = await options.plugins.installFromArchive(app, archivePath);
     const installPath = getPluginInstallDir(app, item.id);
-    upsertInstalledRecord(app, {
-      id: item.id,
-      type: "plugin",
-      version: item.version,
-      platform: resolved.platform,
-      source: "cloud",
-      assetUrl: resolved.asset.url,
-      sha256: resolved.asset.sha256,
-      installPath,
-      installedAt: new Date().toISOString()
-    });
+    if (result.ok) {
+      upsertInstalledRecord(app, {
+        id: item.id,
+        type: "plugin",
+        version: item.version,
+        platform: resolved.platform,
+        source: "cloud",
+        assetUrl: resolved.asset.url,
+        sha256: resolved.asset.sha256,
+        installPath,
+        installedAt: new Date().toISOString()
+      });
+    }
     return {
       ok: result.ok,
       itemId: item.id,
@@ -126,8 +131,15 @@ export async function installPluginMarketItem(
   }
 }
 
-export async function uninstallPluginMarketItem(app: App, itemId: string): Promise<MarketCommandResult> {
-  const result = await uninstallPlugin(app, itemId);
+export async function uninstallPluginMarketItem(
+  app: App,
+  itemId: string,
+  options: MarketplaceOptions = {}
+): Promise<MarketCommandResult> {
+  if (!options.plugins) {
+    throw new Error("Plugin lifecycle must be supplied by the application composition root.");
+  }
+  const result = await options.plugins.uninstall(app, itemId);
   return {
     ok: result.ok,
     itemId,

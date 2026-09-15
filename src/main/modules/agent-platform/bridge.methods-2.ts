@@ -76,6 +76,15 @@ export async function AgentPlatformAssistantBridge_getChatInfo_2(self: any, chat
         ...(updatedAt !== undefined && updatedAt !== null ? { updatedAt } : {}),
         lastRunId: readString(data.lastRunId),
         lastRunContent: readString(data.lastRunContent),
+        runs: (data.runs ?? []).map((run, index) => {
+            const startedAt = readOptionalPlatformTimestamp(run.startedAt, `chatInfo.runs[${index}].startedAt`);
+            const completedAt = readOptionalPlatformTimestamp(run.completedAt, `chatInfo.runs[${index}].completedAt`);
+            return {
+                runId: readString(run.runId),
+                ...(startedAt == null ? {} : { startedAt }),
+                ...(completedAt == null ? {} : { completedAt }),
+            };
+        }),
         rawJson: JSON.stringify(data, null, 2),
     };
 }

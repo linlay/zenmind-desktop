@@ -22,7 +22,7 @@ export const WEBSITE_FILE = "website.json";
 export const WEBSITE_SCHEMA_VERSION = 2;
 
 function readCopilotAgentKey(value: Record<string, unknown>) {
-  return normalizeAgentKey(readString(value.copilotAgentKey) || readString(value.agentKey));
+  return normalizeAgentKey(readString(value.copilotAgentKey));
 }
 
 export function getWebsiteDir(app: App, id: string, platform: NodeJS.Platform = process.platform) {
@@ -155,7 +155,7 @@ export function createWebsiteItem(input: WebsiteInput): WebsiteEntry {
   const url = normalizeWebsiteUrl(input.url);
   const now = Date.now();
   const id = normalizeWebId(input.id || createWebId());
-  const copilotAgentKey = readCopilotAgentKey(input as unknown as Record<string, unknown>);
+  const copilotAgentKey = normalizeAgentKey(input.copilotAgentKey);
   return {
     id,
     entryKey: createWebsiteEntryKey(id),

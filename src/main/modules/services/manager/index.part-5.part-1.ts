@@ -39,6 +39,7 @@ import { rewriteServicePortDefaultsForDesktopConfigUpgrade } from "../port-defau
 import { getDataRoot } from "../../../infrastructure/filesystem/user-paths";
 import {
   bundledEnvZipExists,
+  applyProviderRegisterUpgradeInput,
   stageValidatedDesktopVersionUpgradeInput,
   validateBundledEnvForDesktopVersionUpgrade,
   validateEnvZipForDesktopManualImport,
@@ -584,6 +585,9 @@ export async function runDesktopServiceConfigUpgradePreparation(
           throw error;
         }
       }
+      // Restore on every unfinished transaction attempt: the previous grant may
+      // have been consumed before a later service failure required another deploy.
+      applyProviderRegisterUpgradeInput(app, validated.providerRegister, context.backupDir);
       return {
         sourceZipPath: validated.sourceZipPath,
         ...(validated.previousSourceZipPath
@@ -643,6 +647,7 @@ export async function importEnvZipIntoExistingRuntime(
     throw new Error("Desktop configuration upgrade adapter is unavailable.");
   }
   applyDesktopConfiguration(app, validated.desktopInit, backupDir, platform);
+  applyProviderRegisterUpgradeInput(app, validated.providerRegister, backupDir, platform);
   const currentDesktopDefaultPorts = Object.fromEntries(
     DESKTOP_SERVICE_CONFIG_UPGRADE_IDS.map((serviceId) => [
       serviceId,

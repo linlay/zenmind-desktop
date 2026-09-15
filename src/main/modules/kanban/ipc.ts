@@ -1,3 +1,6 @@
+import { createKanbanResultReadStore, kanbanReadScope, kanbanReadScopeToken, projectKanbanResultReads } from "./result-read-store";
+import { resolveKanbanResultIdentity } from "../../../shared/kanban-result-read";
+import { getDesktopDeviceId } from "../identity";
 export interface KanbanIpcHandlerOptions {
   app: any;
 
@@ -5,6 +8,7 @@ export interface KanbanIpcHandlerOptions {
   listKanbanIssues: (app: any) => any;
   resyncKanbanCloud: (app: any) => any;
   getKanbanSettings: (app: any) => any;
+  saveLocalWorkflows: (app: any, input: any) => any;
   saveKanbanSettings: (app: any, input: any) => any;
   getKanbanCloudConfig: (app: any) => any;
   saveKanbanCloudConfig: (app: any, input: any) => any;
@@ -28,6 +32,7 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
     resyncKanbanCloud,
     getKanbanSettings,
     saveKanbanSettings,
+    saveLocalWorkflows,
     getKanbanCloudConfig,
     saveKanbanCloudConfig,
     createKanbanIssue,
@@ -42,66 +47,117 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
     callAgentPlatform
   } = options;
 
+  function handle(channel: string, listener: (...args: any[]) => any) {
+    ipcMain.handle(channel, async (...args: any[]) => {
+      const result = await listener(...args);
+      if (!Array.isArray(result?.issues)) return result;
+      const snapshot = result.currentUser ? result : await listKanbanIssues(app);
+      const projected = projectKanbanResultReads(app, { ...snapshot, issues: result.issues });
+      return { ...result, issues: projected.issues };
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // kanban.*
   // ---------------------------------------------------------------------------
-  ipcMain.handle("kanban.listIssues", async () =>
+  handle("kanban.listIssues", async () =>
     listKanbanIssues(app)
   );
 
-  ipcMain.handle("kanban.resyncCloudBoard", async () =>
+  const reading = new Map<string, Promise<{ ok: boolean; message?: string }>>();
+  handle("kanban.markResultRead", async (_event: any, input: { issueId: string; key: string; scope: string }) => {
+    if (!input || typeof input.issueId !== "string" || typeof input.key !== "string") return { ok: false, message: "invalid_read_input" };
+    const result = await listKanbanIssues(app);
+    const scope = kanbanReadScope(app, result);
+    if (input.scope !== kanbanReadScopeToken(scope)) return { ok: false, message: "read_scope_changed" };
+    const requestKey = JSON.stringify([scope, input.issueId, input.key]);
+    if (reading.has(requestKey)) return reading.get(requestKey);
+    let failureStage = "read_identity_failed";
+    const task = (async () => {
+      const issue = result.issues.find((item: any) => item.id === input.issueId);
+      const identity = issue && resolveKanbanResultIdentity(issue, result.cloudDetails);
+      if (!identity || identity.key !== input.key) return { ok: false, message: "read_identity_changed" };
+      failureStage = "read_receipt_load_failed";
+      const store = createKanbanResultReadStore(app, scope);
+      if (store.has(issue.id, identity.key)) return { ok: true };
+      if (identity.chatId) {
+        // Never mark a different device's Chat or a whole Agent as read.
+        if (!identity.runId) return { ok: false, message: "read_run_missing" };
+        if (identity.cloud && identity.deviceId !== getDesktopDeviceId(app)) return { ok: false, message: "read_device_mismatch" };
+        failureStage = "platform_read_request_failed";
+        const response = await callAgentPlatform(app, "/api/read", {
+          method: "POST", body: { chatId: identity.chatId, runId: identity.runId }
+        });
+        if (response?.chatId !== identity.chatId || !response?.read || response.read.readRunId !== identity.runId) return { ok: false, message: "platform_read_response_mismatch" };
+      }
+      failureStage = "read_snapshot_refresh_failed";
+      const latest = await listKanbanIssues(app);
+      const current = latest.issues.find((item: any) => item.id === input.issueId);
+      if (kanbanReadScope(app, latest) !== scope || !current || resolveKanbanResultIdentity(current, latest.cloudDetails)?.key !== identity.key) return { ok: false, message: "read_target_changed" };
+      failureStage = "read_receipt_write_failed";
+      store.mark(issue.id, identity.key);
+      return { ok: true };
+    // Return only fixed diagnostics: upstream errors may contain credentials or Issue content.
+    })().catch(() => ({ ok: false, message: failureStage }));
+    reading.set(requestKey, task);
+    try { return await task; } finally { reading.delete(requestKey); }
+  });
+
+  handle("kanban.resyncCloudBoard", async () =>
     resyncKanbanCloud(app)
   );
 
-  ipcMain.handle("kanban.getSettings", async () =>
+  handle("kanban.saveLocalWorkflows", async (_event: any, input: any) => saveLocalWorkflows(app, input));
+
+  handle("kanban.getSettings", async () =>
     getKanbanSettings(app)
   );
 
-  ipcMain.handle("kanban.saveSettings", async (_event: any, input: any) =>
+  handle("kanban.saveSettings", async (_event: any, input: any) =>
     saveKanbanSettings(app, input)
   );
 
-  ipcMain.handle("kanban.getCloudConfig", async () =>
+  handle("kanban.getCloudConfig", async () =>
     getKanbanCloudConfig(app)
   );
 
-  ipcMain.handle("kanban.saveCloudConfig", async (_event: any, input: any) =>
+  handle("kanban.saveCloudConfig", async (_event: any, input: any) =>
     saveKanbanCloudConfig(app, input)
   );
 
-  ipcMain.handle("kanban.createIssue", async (_event: any, input: any) =>
+  handle("kanban.createIssue", async (_event: any, input: any) =>
     createKanbanIssue(app, input)
   );
 
-  ipcMain.handle("kanban.updateIssue", async (_event: any, issueId: string, input: any) =>
+  handle("kanban.updateIssue", async (_event: any, issueId: string, input: any) =>
     updateKanbanIssue(app, issueId, input)
   );
 
-  ipcMain.handle("kanban.deleteIssue", async (_event: any, issueId: string) =>
+  handle("kanban.deleteIssue", async (_event: any, issueId: string) =>
     deleteKanbanIssueWithAutomation(app, issueId, callAgentPlatform)
   );
 
-  ipcMain.handle("kanban.moveIssue", async (_event: any, input: any) =>
+  handle("kanban.moveIssue", async (_event: any, input: any) =>
     moveKanbanIssue(app, input)
   );
 
-  ipcMain.handle("kanban.claimIssue", async (_event: any, issueId: string) =>
+  handle("kanban.claimIssue", async (_event: any, issueId: string) =>
     claimKanbanIssue(app, issueId)
   );
 
-  ipcMain.handle("kanban.runIssue", async (_event: any, input: any) =>
+  handle("kanban.runIssue", async (_event: any, input: any) =>
     runKanbanIssue(app, input)
   );
 
-  ipcMain.handle("kanban.bindHumanReferenceChat", async (_event: any, input: any) =>
+  handle("kanban.bindHumanReferenceChat", async (_event: any, input: any) =>
     bindKanbanHumanReferenceChat(app, input)
   );
 
-  ipcMain.handle("kanban.unbindHumanReferenceChat", async (_event: any, issueChatId: string) =>
+  handle("kanban.unbindHumanReferenceChat", async (_event: any, issueChatId: string) =>
     unbindKanbanHumanReferenceChat(app, issueChatId)
   );
 
-  ipcMain.handle("kanban.syncIssueAutomation", async (_event: any, issueId: string) =>
+  handle("kanban.syncIssueAutomation", async (_event: any, issueId: string) =>
     syncKanbanIssueAutomation(app, issueId, callAgentPlatform)
   );
 

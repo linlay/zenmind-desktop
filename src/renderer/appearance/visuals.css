@@ -1,0 +1,4 @@
+.skin-visual { object-fit: contain; flex-shrink: 0; vertical-align: middle; }
+.skin-heading { font-family: var(--skin-heading-font, inherit); }
+.skin-heading-art { height: 1.25em; width: auto; max-width: 100%; }
+.assistant-worker-unread-dot { clip-path: var(--skin-unread-clip, none); }

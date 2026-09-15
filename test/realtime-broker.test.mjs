@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { RealtimeBroker } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.js");
+const { getDesktopActionDefinition } = require("../dist-electron/shared/desktop-actions.js");
 const {
   createAgentPlatformIdentitySessionId,
   normalizeAgentPlatformRealtimeEndpoint,
@@ -258,10 +259,12 @@ test("explanation controls infer the registered lane and reject explicit cross-l
   const main = rootObserver(); h.broker.activateRootObserver(main);
   assert.throws(() => h.broker.subscribeRun({ baseUrl: request.baseUrl, token: h.token, lane: "primary", runId: "explain", chatId: "chat-1",
     kind: "surface", observerToken: main.token, consumerId: "main-wrong-lane", onEvent() {} }), { name: "invalid_request" });
+  const releasedScopes = [];
   const wrongQuery = h.broker.query({ baseUrl: request.baseUrl, token: h.token, lane: "btw", id: "wrong-lane-query", runId: "explain",
-    payload: {}, onEvent() {} });
+    siteControlScope: { release: (reason) => releasedScopes.push(reason) }, payload: {}, onEvent() {} });
   await assert.rejects(wrongQuery.accepted, { name: "invalid_request" });
   await assert.rejects(wrongQuery.completed, { name: "invalid_request" });
+  assert.deepEqual(releasedScopes, ["The query was not accepted."]);
   assert.equal(h.sockets.length, 1);
   assert.equal(h.broker.getDiagnostics().runCount, 1);
 });
@@ -276,6 +279,22 @@ test("selection explanation lane rejects ordinary queries without connecting", a
     consumerId: "explanation", lane: "selection-explain", type: "/api/query", onFrame() {}, onError() {} }), { name: "invalid_request" });
   assert.equal(h.sockets.length, 0);
 });
+
+for (const lane of ["primary", "selection-explain"]) {
+  test(`explanation query rejects and releases page-control authority on ${lane}`, async (t) => {
+    const h = createHarness(t), observer = explanationObserver();
+    h.broker.activateRootObserver(observer);
+    const releasedScopes = [];
+    const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: "explanation-with-page-control",
+      lane, observerToken: observer.token, chatId: "chat-1", payload: {}, onEvent() {},
+      siteControlScope: { release: (reason) => releasedScopes.push(reason) } });
+    await assert.rejects(query.accepted, { name: "invalid_request" });
+    await assert.rejects(query.completed, { name: "invalid_request" });
+    assert.deepEqual(releasedScopes, ["The query was not accepted."]);
+    assert.equal(h.sockets.length, 0);
+    assert.equal(h.broker.getDiagnostics().runCount, 0);
+  });
+}
 
 test("an explanation disconnect fails only its unaccepted query and pending requests", async (t) => {
   const h = createHarness(t), main = rootObserver(); h.broker.activateRootObserver(main);
@@ -616,7 +635,7 @@ test("ownerless Main Chat promotes its Overview lease in place", (t) => {
   assert.equal(broker.getDiagnostics().overviewLease.chatId, "chat-canonical");
 });
 
-test("selection explanation observer stays isolated from Main Chat and active roots", (t) => {
+test("selection explanation observer stays isolated while regular roots replace one another", (t) => {
   const { broker } = createHarness(t);
   const main = rootObserver();
   const copilot = rootObserver({
@@ -636,16 +655,24 @@ test("selection explanation observer stays isolated from Main Chat and active ro
     webContentsId: 303,
   });
   broker.activateRootObserver(main);
-  broker.activateRootObserver(copilot);
   const activated = broker.activateRootObserver(explanation);
   assert.equal(activated.token, explanation.token);
   assert.equal(broker.getDiagnostics().auxiliaryRootObservers[0].token, explanation.token);
   assert.equal(broker.getMainChatRootObserver().token, main.token);
+  assert.equal(broker.getActiveRootObserver().token, main.token);
+  broker.activateRootObserver(copilot);
+  assert.equal(broker.getMainChatRootObserver(), null);
   assert.equal(broker.getActiveRootObserver().token, copilot.token);
+  assert.equal(broker.getDiagnostics().auxiliaryRootObservers[0].token, explanation.token);
+  const replacement = rootObserver({ token: "main-chat:g4:4:404", generation: "g4", webContentsId: 404 });
+  broker.activateRootObserver(replacement);
+  assert.equal(broker.getMainChatRootObserver().token, replacement.token);
+  assert.equal(broker.getActiveRootObserver().token, replacement.token);
+  assert.equal(broker.getDiagnostics().auxiliaryRootObservers[0].token, explanation.token);
   assert.equal(broker.releaseRootObserver(explanation.token, "surface_inactive"), true);
   assert.deepEqual(broker.getDiagnostics().auxiliaryRootObservers, []);
-  assert.equal(broker.getMainChatRootObserver().token, main.token);
-  assert.equal(broker.getActiveRootObserver().token, copilot.token);
+  assert.equal(broker.getMainChatRootObserver().token, replacement.token);
+  assert.equal(broker.getActiveRootObserver().token, replacement.token);
 });
 
 test("Root Observer token cannot silently change context or registration identity", (t) => {
@@ -736,7 +763,7 @@ test("pending Overview also completes locally when its Main Chat is replaced", a
 });
 
 test("thirty Main Chat and Overview attach interleavings bind without retry", async (t) => {
-  const { broker, token } = createHarness(t);
+  const { broker, token, socket } = createHarness(t);
   for (let index = 0; index < 30; index += 1) {
     const chatId = `chat-interleave-${index}`;
     const runId = `run-interleave-${index}`;
@@ -772,9 +799,15 @@ test("thirty Main Chat and Overview attach interleavings bind without retry", as
     const overview = await overviewPromise;
     await main.ready;
     overview.unsubscribe();
+    broker.releaseRootObserver(observer.token);
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === index + 1);
+    const detach = requestOfType(socket("primary"), "/api/detach").at(-1);
+    const attach = requestOfType(socket("primary"), "/api/attach").at(-1);
+    socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: attach.id, lastSeq: 0 } });
+    await nextTurn();
   }
   assert.equal(broker.getDiagnostics().pendingClones.length, 0);
-  assert.equal(broker.getDiagnostics().overviewLease.uiSubscriberCount, 0);
+  assert.equal(broker.getDiagnostics().overviewLease, null);
 });
 
 test("unknown clone Run fails deterministically without a readiness timeout", async (t) => {
@@ -905,6 +938,27 @@ test("canonical run.start never rewrites the trusted Root Observer context", asy
   await query.accepted;
   assert.equal(broker.getActiveRootObserver().contextId, observer.contextId);
 });
+
+for (const lane of ["primary", "selection-explain"]) {
+  test(`a ${lane} observer closed during connection setup never attaches its Run`, async (t) => {
+    const h = createHarness(t, { autoHandshake: false });
+    const observer = lane === "primary" ? rootObserver() : explanationObserver();
+    h.broker.activateRootObserver(observer);
+    const pending = h.broker.subscribeRun({ baseUrl: "http://127.0.0.1:8080", token: h.token, lane,
+      runId: "cold-run", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" },
+      kind: "surface", observerToken: observer.token, consumerId: "cold-observer", onEvent() {} });
+    await waitUntil(() => h.socket(lane));
+    h.broker.releaseRootObserver(observer.token);
+    h.socket(lane).emit({ frame: "push", type: "connected", data: {
+      protocolVersion: 2, sessionId: "cold-session", serverTime: EPOCH_MS,
+      liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
+    } });
+    await pending.ready;
+    assert.equal(requestOfType(h.socket(lane), "/api/attach").length, 0);
+    assert.equal(requestOfType(h.socket(lane), "/api/interrupt").length, 0);
+    assert.equal(h.broker.getDiagnostics().localRunSubscriberCount, 0);
+  });
+}
 
 test("last Root Observer release detaches once, keeps the Run dormant, then reattaches from lastSeq", async (t) => {
   const { broker, socket, token } = createHarness(t);
@@ -1097,6 +1151,8 @@ test("replay window reports seq_expired instead of fabricating a prefix", async 
 });
 
 test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
+  assert.equal(getDesktopActionDefinition("desktop.awcp.snapshot"), null);
+  assert.equal(getDesktopActionDefinition("desktop.awcp.invoke"), null);
   const { broker, socket, token } = createHarness(t);
   const calls = [];
   broker.setDesktopBridgeProvider({
@@ -1239,6 +1295,111 @@ test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) =
   }
 });
 
+test("AWCP business failures stay in response frames while host failures stay AGW errors", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  broker.siteControlGrants.bind(
+    { runId: "run-awcp", chatId: "chat-awcp", owner: { kind: "agent", agentKey: "agent-1" } },
+    scope,
+  );
+  const calls = [];
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: false, action: request.action, error: { code: "ordinary_failure", message: "failed" } }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+    awcpSnapshot: async (_requestId, granted, signal) => {
+      calls.push({ snapshot: true, granted, signal });
+      return { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] };
+    },
+    awcpInvoke: async (requestId, payload, granted, signal) => {
+      calls.push({ requestId, payload, granted, signal });
+      return { ok: false, requestId, action: payload.action, error: { code: "stale_snapshot", message: "stale" } };
+    },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  const source = { runId: "run-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot", source, payload: {} });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot"));
+  const snapshot = socket("primary").sent.find((frame) => frame.id === "awcp-snapshot");
+  assert.equal(snapshot.frame, "response");
+  assert.deepEqual(snapshot.data, { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] });
+  assert.equal(calls[0].granted, scope);
+
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot-extra", source, payload: { targetId: "forged" } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot-extra"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-snapshot-extra").frame, "error");
+  assert.equal(calls.length, 1);
+
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-1", source,
+    payload: { revision: "revision-a", action: "orders.read", args: {} } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-1"));
+  const awcp = socket("primary").sent.find((frame) => frame.id === "awcp-1");
+  assert.equal(awcp.frame, "response");
+  assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_snapshot", message: "stale" } });
+  assert.equal(calls[1].granted, scope);
+
+  socket("primary").emit({ frame: "request", type: "desktop.pet.show", id: "ordinary-1", source, payload: {} });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "ordinary-1"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "ordinary-1").frame, "error");
+
+  broker.setDesktopBridgeProvider({
+    action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpInvoke: async () => { throw Object.assign(new Error("invalid page response"), {
+      code: "awcp_invalid_response",
+      statusCode: 502,
+      details: { reason: "output_schema_mismatch", violations: [{ instancePath: "/items", keyword: "type" }] },
+    }); },
+  });
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-2", source,
+    payload: { revision: "revision-a", action: "orders.read", args: {} } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-2"));
+  const hostFailure = socket("primary").sent.find((frame) => frame.id === "awcp-2");
+  assert.equal(hostFailure.frame, "error");
+  assert.equal(hostFailure.type, "awcp_invalid_response");
+  assert.deepEqual(hostFailure.data, {
+    reason: "output_schema_mismatch",
+    violations: [{ instancePath: "/items", keyword: "type" }],
+  });
+});
+
+test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a terminal frame", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  broker.siteControlGrants.bind(
+    { runId: "run-awcp-cancel", chatId: "chat-awcp-cancel", owner: { kind: "agent", agentKey: "agent-1" } },
+    scope,
+  );
+  let invocationSignal;
+  broker.setDesktopBridgeProvider({
+    action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpInvoke: async (requestId, payload, _granted, signal) => {
+      invocationSignal = signal;
+      return new Promise((resolve) => signal.addEventListener("abort", () => resolve({
+        ok: false,
+        requestId,
+        action: payload.action,
+        error: { code: "cancelled", message: "cancelled" },
+      }), { once: true }));
+    },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({
+    frame: "request",
+    type: "desktop.awcp.invoke",
+    id: "awcp-cancel",
+    source: { runId: "run-awcp-cancel", chatId: "chat-awcp-cancel", agentKey: "agent-1" },
+    payload: { revision: "revision-a", action: "orders.read", args: {} },
+  });
+  await waitUntil(() => invocationSignal);
+  socket("primary").emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "awcp-cancel" } });
+  await waitUntil(() => invocationSignal.aborted);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(socket("primary").sent.some((frame) => frame.id === "awcp-cancel"), false);
+});
+
 for (const switchBeforeAcceptance of [false, true]) {
   test(`Copilot site authority survives Dock detach ${switchBeforeAcceptance ? 'before' : 'after'} canonical acceptance`, async (t) => {
     const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
@@ -1248,7 +1409,7 @@ for (const switchBeforeAcceptance of [false, true]) {
     const observer = rootObserver({ token: 'copilot:g1', kind: 'copilot_dock', surfaceId: 'copilot-dock', contextId: 'website:a' });
     broker.activateRootObserver(observer);
     const request = broker.query({ baseUrl: 'http://127.0.0.1:8080', token, id: 'site-query', payload: { agentKey: 'agent-1' },
-      owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteCdpScope: scope, onEvent() {} });
+      owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteControlScope: scope, onEvent() {} });
     void request.completed.catch(() => undefined);
     await waitUntil(() => requestOfType(socket('primary') ?? { sent: [] }, '/api/query').length === 1);
     const outbound = requestOfType(socket('primary'), '/api/query')[0];
@@ -1287,7 +1448,7 @@ test('same-identity reconnect preserves site authority while account rotation re
   const observer = rootObserver({ token: 'copilot:g1', kind: 'copilot_dock', surfaceId: 'copilot-dock' });
   broker.activateRootObserver(observer);
   const request = broker.query({ baseUrl: 'http://127.0.0.1:8080', token, id: 'site-query', payload: {},
-    owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteCdpScope: scope, onEvent() {} });
+    owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteControlScope: scope, onEvent() {} });
   void request.completed.catch(() => undefined);
   await waitUntil(() => requestOfType(socket('primary') ?? { sent: [] }, '/api/query').length === 1);
   const outbound = requestOfType(socket('primary'), '/api/query')[0];
@@ -1301,4 +1462,107 @@ test('same-identity reconnect preserves site authority while account rotation re
   broker.rotateIdentity();
   assert.throws(() => scope.readSurface(), { code: 'site_control_unavailable' });
   assert.equal(h.contents.get(a.tabs[0].webContentsId).throttle, true);
+});
+
+for (const [from, to] of [["main_chat", "kanban_chat"], ["copilot_dock", "kanban_chat"], ["kanban_chat", "main_chat"], ["main_chat", "copilot_dock"]]) {
+  test(`${from} to ${to} retires the old root and waits for detach before a different Chat attaches`, async (t) => {
+    const { broker, socket, sockets, token } = createHarness(t);
+    const first = rootObserver({ token: "first", kind: from });
+    broker.activateRootObserver(first);
+    const options = { baseUrl: "http://127.0.0.1:8080", token, owner: { kind: "agent", agentKey: "agent-1" }, kind: "surface", onEvent: () => {} };
+    const old = broker.subscribeRun({ ...options, observerToken: first.token, consumerId: "old", runId: "old-run", chatId: "chat-1" });
+    await old.ready;
+    const upstream = requestOfType(socket("primary"), "/api/attach")[0];
+    const second = rootObserver({ token: "second", kind: to, contextId: "chat-2" });
+    broker.activateRootObserver(second);
+    const next = broker.subscribeRun({ ...options, observerToken: second.token, consumerId: "new", runId: "new-run", chatId: "chat-2", lastSeq: 7 });
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 1);
+    assert.equal(requestOfType(socket("primary"), "/api/attach").length, 1);
+    assert.equal(broker.getActiveRootObserver().token, second.token);
+    assert.equal(broker.getMainChatRootObserver()?.token ?? null, to === "main_chat" ? second.token : null);
+    assert.throws(() => broker.subscribeRun({ ...options, observerToken: first.token, consumerId: "stale", runId: "old-run", chatId: "chat-1" }), /no longer active/);
+    const detach = requestOfType(socket("primary"), "/api/detach")[0];
+    socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: upstream.id, lastSeq: 3 } });
+    await next.ready;
+    assert.equal(requestOfType(socket("primary"), "/api/attach").length, 2);
+    assert.equal(requestOfType(socket("primary"), "/api/attach")[1].payload.lastSeq, 7);
+    assert.equal(requestOfType(socket("primary"), "/api/interrupt").length, 0);
+    assert.equal(sockets.length, 1);
+    assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "old-run").state, "dormant");
+    broker.releaseRootObserver(second.token);
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 2);
+    assert.equal(broker.getActiveRootObserver(), null);
+  });
+}
+
+test("a query for the replacement root waits for detach and stale waiting queries never send", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  broker.activateRootObserver(rootObserver());
+  const options = { baseUrl: "http://127.0.0.1:8080", token, owner: { kind: "agent", agentKey: "agent-1" }, onEvent: () => {} };
+  const old = broker.subscribeRun({ ...options, kind: "surface", observerToken: rootObserver().token, consumerId: "old", runId: "old-run", chatId: "chat-1" });
+  await old.ready;
+  const upstream = requestOfType(socket("primary"), "/api/attach")[0];
+  const nextRoot = rootObserver({ token: "new-root", contextId: "chat-2" });
+  broker.activateRootObserver(nextRoot);
+  const query = broker.query({ ...options, id: "waiting-query", chatId: "chat-2", observerToken: nextRoot.token, payload: { chatId: "chat-2", agentKey: "agent-1", message: "hello" } });
+  const rejected = Promise.all([assert.rejects(query.accepted, /changed before query delivery/), assert.rejects(query.completed, /changed before query delivery/)]);
+  await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 1);
+  assert.equal(requestOfType(socket("primary"), "/api/query").length, 0);
+  broker.activateRootObserver(rootObserver({ token: "newer-root", contextId: "chat-3" }));
+  const current = broker.query({ ...options, id: "current-query", chatId: "chat-3", observerToken: "newer-root", payload: { chatId: "chat-3", agentKey: "agent-1", message: "hello" } });
+  const detach = requestOfType(socket("primary"), "/api/detach")[0];
+  socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: upstream.id, lastSeq: 3 } });
+  await rejected;
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const request = requestOfType(socket("primary"), "/api/query")[0];
+  assert.equal(request.payload.chatId, "chat-3");
+  socket("primary").emit({ frame: "stream", id: request.id, event: runEvent("run.start", "new-run", "chat-3", 1) });
+  await current.accepted;
+  socket("primary").emit({ frame: "stream", id: request.id, reason: "complete", lastSeq: 1 });
+  await current.completed;
+});
+
+test("reverse CDP validation retains field diagnostics in the error frame", async (t) => {
+  const { handleDesktopCdpRequest } = require("../dist-electron/main/modules/desktop-actions/runtime.js");
+  const { broker, socket, token } = createHarness(t);
+  let executed = false;
+  broker.setDesktopBridgeProvider({
+    action: async () => ({ ok: true }),
+    cdp: (request) => handleDesktopCdpRequest({ executeCdpCommand: async () => { executed = true; return { result: {} }; } }, request)
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({
+    frame: "request", type: "desktop.cdp.call", id: "invalid-mouse",
+    payload: {
+      method: "Input.dispatchMouseEvent", targetId: "desktop-test",
+      params: { type: "mousePressed", x: "646", y: "344", button: "left", clickCount: "1" },
+      source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }
+    }
+  });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "invalid-mouse"));
+  const frame = socket("primary").sent.find((frame) => frame.id === "invalid-mouse");
+  assert.equal(frame.frame, "error");
+  assert.equal(frame.type, "invalid_args");
+  assert.equal(frame.code, 400);
+  assert.equal(frame.data.method, "Input.dispatchMouseEvent");
+  assert.equal(frame.data.error.details.issues.length, 3);
+  assert.equal(frame.data.error.details.executed, false);
+  assert.equal(frame.data.error.details.targetId, "desktop-test");
+  assert.equal(executed, false);
+});
+
+test("Desktop action errors use flat transport diagnostics without internal result envelope", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const details = { issues: [{ path: "args.input", code: "required", expected: "object", actual: "missing" }], recovery: "Read desktop-action/references/kanban.md" };
+  broker.setDesktopBridgeProvider({
+    action: async request => ({ ok: false, action: request.action, error: { code: "invalid_args", message: "args.input must be an object.", details } }),
+    cdp: async () => ({ ok: true }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({ frame: "request", type: "desktop.kanban.createIssue", id: "action-invalid", source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }, payload: {} });
+  await waitUntil(() => socket("primary").sent.some(frame => frame.id === "action-invalid"));
+  assert.deepEqual(socket("primary").sent.find(frame => frame.id === "action-invalid"), {
+    frame: "error", type: "invalid_args", id: "action-invalid", code: 400, msg: "args.input must be an object.",
+    data: { action: "desktop.kanban.createIssue", details },
+  });
 });

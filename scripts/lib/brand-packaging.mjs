@@ -78,7 +78,8 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
       "!node_modules/**/*.map"
     ],
     asarUnpack: [
-      "node_modules/@napi-rs/canvas-*/**/*"
+      "node_modules/@napi-rs/canvas-*/**/*",
+      "node_modules/@koromix/koffi-*/**/*"
     ],
     npmRebuild: false,
     extraResources: [
@@ -112,6 +113,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
       extendInfo: {
         CFBundleDevelopmentRegion: DARWIN_BUNDLE_DEVELOPMENT_REGION,
         CFBundleLocalizations: DARWIN_BUNDLE_LOCALIZATIONS,
+        NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
         NSMicrophoneUsageDescription: brand.mac.microphoneUsageDescription,
         NSSpeechRecognitionUsageDescription: brand.mac.speechRecognitionUsageDescription
       },

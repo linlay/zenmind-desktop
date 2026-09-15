@@ -2,26 +2,26 @@
 
 ## 开启与日志位置
 
-默认关闭。完全退出 Desktop（包括托盘中的进程），带 `ZENMIND_PERF=1` 启动新进程；已有单实例不会继承新环境变量。开发运行：
+默认关闭。完全退出 Desktop（包括托盘中的进程），带 `PERF=1` 启动新进程；已有单实例不会继承新环境变量。开发运行：
 
 Windows PowerShell：
 
 ```powershell
-$env:ZENMIND_PERF = "1"
+$env:PERF = "1"
 npm run dev
 ```
 
 macOS Terminal：
 
 ```sh
-ZENMIND_PERF=1 npm run dev
+PERF=1 npm run dev
 ```
 
-安装版在同一终端直接启动实际可执行文件。Windows 使用 `& '实际安装路径\应用.exe'`；macOS 使用 `ZENMIND_PERF=1 '/实际安装路径/应用.app/Contents/MacOS/实际可执行文件名'`，不要经 Finder 启动。
+安装版在同一终端直接启动实际可执行文件。Windows 使用 `& '实际安装路径\应用.exe'`；macOS 使用 `PERF=1 '/实际安装路径/应用.app/Contents/MacOS/实际可执行文件名'`，不要经 Finder 启动。
 
 日志位于当前品牌数据根的 `logs/desktop/performance.jsonl`，与 `main.log` 同目录。采用 1 秒批量异步写入；单文件最多 10 MiB，保留一个 `.1` 轮转文件，待写队列最多 256 KiB，拥塞丢弃量写入 `dropped`。退出刷新为尽力而为，强制结束进程可能丢失最后一批。
 
-关闭采集：完全退出；Windows 执行 `Remove-Item Env:ZENMIND_PERF` 后正常启动；macOS 不带变量启动（若曾 export，先 `unset ZENMIND_PERF`）。默认关闭时不建立采集文件、计时器或事件监听。
+关闭采集：完全退出；Windows 执行 `Remove-Item Env:PERF` 后正常启动；macOS 不带变量启动（若曾 export，先 `unset PERF`）。默认关闭时不建立采集文件、计时器或事件监听。
 
 ## 固定复现流程
 

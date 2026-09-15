@@ -258,7 +258,7 @@ export async function EnterpriseChatRuntime_executeMessageDesktopAction_10(self:
     const existing = request && scope
         ? ledger?.find(scope, request.requestId)
         : undefined;
-    if (existing || (message && ledger?.hasLegacyMessage(message.id))) {
+    if (existing) {
         return self.handledDesktopActionResult(existing);
     }
     if (!message ||

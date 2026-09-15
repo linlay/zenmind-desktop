@@ -32,6 +32,9 @@ export interface AssistantNavigationPushEvent {
   finishReason: string | null;
   startedAt?: EpochMilliseconds;
   finishedAt?: EpochMilliseconds;
+  lastRunId?: string;
+  lastRunContent?: string;
+  updatedAt?: EpochMilliseconds;
 }
 
 export type AssistantNavigationPushEventListener = (event: AssistantNavigationPushEvent) => void;
@@ -457,7 +460,14 @@ export interface AssistantChatDetail {
   events: AssistantRunEvent[];
 }
 
+export interface AssistantChatInfoRun {
+  runId: string;
+  startedAt?: EpochMilliseconds;
+  completedAt?: EpochMilliseconds;
+}
+
 export interface AssistantChatInfo {
+  runs: AssistantChatInfoRun[];
   chatId: string;
   chatName: string;
   agentKey: string;

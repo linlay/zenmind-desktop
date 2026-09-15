@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "../web-surfaces";
+import type { SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type { DesktopAppInfo, DesktopPageContextSnapshot } from "../../../shared/contracts";
 import type { AgentAuthIssueResult } from "../../../shared/contracts";
@@ -36,7 +36,7 @@ export interface DesktopActionContextDependencies {
   showSaveDialog?: (...args: any[]) => unknown;
   callRendererAction: (...args: any[]) => unknown;
   confirmRendererAction?: (...args: any[]) => unknown;
-  executeCdpCommand: (request: unknown, scope?: SiteCdpScope) => Promise<unknown>;
+  executeCdpCommand: (request: unknown, scope?: SiteControlScope) => Promise<unknown>;
   hasTunnelWebappSubscriber?: () => boolean;
   emitWebappChanged?: (...args: any[]) => unknown;
   desktopPet?: {

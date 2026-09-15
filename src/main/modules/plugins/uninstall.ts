@@ -2,7 +2,7 @@ import type { App, BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } fro
 import type { PluginInstallResult, ServiceId } from "../../../shared/contracts";
 import { DEFAULT_LOCALE, translate, type TranslateFunction } from "../../../shared/i18n";
 import { t as mainT } from "../../support/i18n/main-i18n";
-import { uninstallPlugin } from "./loader";
+import type { PluginLifecycle } from "./lifecycle";
 import { getService } from "../services";
 
 type ShowMessageBox = typeof import("electron").dialog.showMessageBox;
@@ -11,7 +11,7 @@ interface HandlePluginUninstallDeps {
   getServiceById?: typeof getService;
   showMessageBox?: ShowMessageBox;
   t?: TranslateFunction;
-  uninstall?: typeof uninstallPlugin;
+  uninstall: PluginLifecycle["uninstall"];
 }
 
 function fallbackT(key: Parameters<TranslateFunction>[0], params?: Parameters<TranslateFunction>[1]) {
@@ -53,12 +53,12 @@ export async function handlePluginUninstall(
   app: App,
   serviceId: ServiceId,
   ownerWindow: BrowserWindow | null,
-  deps: HandlePluginUninstallDeps = {}
+  deps: HandlePluginUninstallDeps
 ): Promise<PluginInstallResult> {
   const getServiceById = deps.getServiceById ?? getService;
   const showMessageBox = deps.showMessageBox ?? getDefaultShowMessageBox();
   const t = deps.t ?? fallbackT;
-  const uninstall = deps.uninstall ?? uninstallPlugin;
+  const uninstall = deps.uninstall;
   const service = getServiceById(serviceId);
 
   if (service.kind !== "plugin") {

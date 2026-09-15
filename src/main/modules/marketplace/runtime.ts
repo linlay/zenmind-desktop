@@ -467,7 +467,7 @@ export async function uninstallMarketItem(
 ): Promise<MarketCommandResult> {
   const type = await resolveInstalledItemType(app, itemId, options);
   const result = type === "plugin"
-    ? await uninstallPluginMarketItem(app, itemId)
+    ? await uninstallPluginMarketItem(app, itemId, options)
     : type === "pet"
       ? await uninstallPetMarketItem(app, itemId)
       : type === "agent"

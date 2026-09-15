@@ -1,5 +1,5 @@
-import type { RunSiteCdpGrants } from "./run-site-cdp-grants";
-import type { SiteCdpScope } from "../../web-surfaces";
+import type { RunSiteControlGrants } from "./run-site-control-grants";
+import type { SiteControlScope } from "../../web-surfaces";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -29,6 +29,10 @@ export const MAX_RETAINED_TERMINAL_RUNS = 2_000;
 export const REQUEST_TIMEOUT_MS = 30_000;
 
 export const DESKTOP_CDP_REQUEST_TYPE = "desktop.cdp.call";
+
+export const DESKTOP_AWCP_SNAPSHOT_TYPE = "desktop.awcp.snapshot";
+
+export const DESKTOP_AWCP_INVOKE_TYPE = "desktop.awcp.invoke";
 
 export const DESKTOP_RESPONSE_DELTA_EVENT_TYPE = "desktop.bridge.response.delta";
 
@@ -128,7 +132,7 @@ export type BrokerRun = {
 };
 
 export type QueryTransaction = {
-  siteCdpScope?: SiteCdpScope;
+  siteControlScope?: SiteControlScope;
   /** The auxiliary explanation observer has taken over this query's stream. */
   sourceDetached?: boolean;
   lane: RealtimeLane;
@@ -247,7 +251,9 @@ export type RunActionGrant = {
 
 export type DesktopBridgeRequestProvider = {
   action(request: Record<string, unknown>): Promise<unknown>;
-  cdp(request: Record<string, unknown>, scope?: SiteCdpScope): Promise<unknown>;
+  cdp(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal): Promise<unknown>;
+  awcpSnapshot(requestId: string, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
+  awcpInvoke(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal): Promise<unknown>;
 };
 
 export type RealtimeQueryAccepted = {
@@ -380,7 +386,7 @@ export interface RealtimeBrokerMethodContext {
   inboundDesktopRequests: Map<string, AbortController>;
   seenInboundDesktopRequestIds: Set<string>;
   runActionGrants: Map<string, RunActionGrant>;
-  siteCdpGrants: RunSiteCdpGrants;
+  siteControlGrants: RunSiteControlGrants;
   activeRootObserver: RootObserverState | null;
   mainChatRootObserver: RootObserverState | null;
   auxiliaryRootObservers: Map<string, RootObserverState>;
@@ -416,7 +422,7 @@ export interface RealtimeBrokerMethodContext {
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
     observerToken?: string;
-    siteCdpScope?: SiteCdpScope;
+    siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle;
   forwardRequest(options: {
     baseUrl: string;

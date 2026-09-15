@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 // Real Service WebView preload and appearance relay, isolated from user services.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,12 +12,25 @@ import { brandBundleElectronDir, loadBrandConfig, resolveBrandId } from '../scri
 const repo = process.cwd();
 const output = fs.mkdtempSync(path.join(os.tmpdir(), 'webclient-appearance-'));
 const require = createRequire(import.meta.url);
+const visualFixture = {};
+const samplePath = path.join(repo, 'build/qa/bow-1.1.skin.zip');
+if (fs.existsSync(samplePath)) {
+  const zip = await JSZip.loadAsync(fs.readFileSync(samplePath));
+  const manifest = JSON.parse(await zip.file('skin.json').async('string'));
+  for (const mode of ['light', 'dark']) {
+    const source = manifest.variants[mode].visuals;
+    visualFixture[mode] = { styles: source.styles, images: {} };
+    for (const [slot, name] of Object.entries(source.images)) visualFixture[mode].images[slot] = 'data:image/png;base64,' + await zip.file(name).async('base64');
+  }
+}
+
 await build({ entryPoints: ['src/renderer/styles.css'], outfile: path.join(output, 'shell.css'), bundle: true });
 await build({
   stdin: { resolveDir: repo, contents: `
     import { createWebclientAppearanceHost } from './src/renderer/service-webview/appearanceHost';
     import { readWebclientAppearanceProjection } from './src/renderer/appearance/webclientProjection';
     import { DESKTOP_SKINS } from './src/renderer/appearance/skins';
+    const visualFixture = ${JSON.stringify(visualFixture)};
     const webview = document.querySelector('webview');
     let config = { mode: 'light', background: true, hostSurface: true };
     let trustedUrl = location.origin;
@@ -50,6 +64,7 @@ await build({
     window.installHost = () => {
       host = createWebclientAppearanceHost({
         webview: relayTarget, isCurrentGuest: () => webview.isConnected, trustedUrl: () => trustedUrl,
+        readVisuals: () => visualFixture[config.mode],
         read: () => readWebclientAppearanceProjection({ resolvedTheme: config.mode, skin: { id: 'mist' } }, config.background && config.hostSurface),
         onNegotiated: theme => { window.routeBootstrapTheme = theme === null ? null : window.routeBootstrapTheme ?? theme; },
         onBackground: value => document.querySelector('.embedded-surface-page').classList.toggle('agent-webclient-host-background', value),

@@ -1,4 +1,5 @@
 import type { App, NativeTheme } from "electron";
+import { configureIsolatedAuthGuest, prepareIsolatedAuthGuest } from "../../infrastructure/electron/isolated-auth-guest";
 import {
   DESKTOP_HELP_WEBVIEW_PARTITION,
   isAllowedHelpNavigationUrl,
@@ -231,7 +232,8 @@ export function configureAttachedWebview<
     }
 
     if (options.shouldOpenPopupExternally?.(contents)) {
-      // WebClient authorization must use the OS browser even in WorkPanel.
+      // Ordinary WebClient popup links use the OS browser even in WorkPanel.
+      // Configured embedded connector authorization uses its dedicated bridge.
       // Only ordinary Web guests own popup tabs within a WorkPanel workspace.
       if (isSafeHelpExternalUrl(url)) {
         if (options.resolveOpenDisposition(url) === "download") {
@@ -684,6 +686,11 @@ export function configureMainWindowWebContents<
   });
 
   targetWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    const authGuest = prepareIsolatedAuthGuest((targetWindow.webContents as { id?: number }).id, webPreferences, params);
+    if (authGuest !== undefined) {
+      if (!authGuest) event.preventDefault();
+      return;
+    }
     const result = prepareWebviewAttachPreferences({
       webPreferences,
       params,
@@ -735,6 +742,7 @@ export function configureMainWindowWebContents<
   });
 
   targetWindow.webContents.on("did-attach-webview", (_event, contents: TGuestContents) => {
+    if (configureIsolatedAuthGuest(contents)) return;
     const publishFocused = () => options.onWebviewFocusChanged?.(contents.id, true);
     const publishBlurred = () => options.onWebviewFocusChanged?.(contents.id, false);
     contents.on("focus", publishFocused);

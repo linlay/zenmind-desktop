@@ -1,0 +1,7 @@
+{
+  "updates": {
+    "enabled": true,
+    "feedUrl": "https://www.zenmind.cc/api/updates/desktop-latest.json",
+    "channel": "stable"
+  }
+}

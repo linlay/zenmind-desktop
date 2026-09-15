@@ -23,6 +23,7 @@ import {
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
+  resolveAgentWebclientDesktopComposerRouteFromUrl,
   resolveAgentWebclientWsSource,
 } from "../../shared/agent-webclient-routes";
 import { useI18n } from "../i18n/useI18n";
@@ -132,6 +133,7 @@ export type MainChatCommitSnapshot = {
 };
 
 type ServiceWebviewSurfaceProps = {
+  chatDefaultAgentKey?: string;
   hostTheme: "light" | "dark";
   serviceId?: string;
   surfaceId?: string;
@@ -651,6 +653,7 @@ async function tryReadServiceWebviewPageContext(
 }
 
 export function ServiceWebviewSurface({
+  chatDefaultAgentKey,
   hostTheme,
   serviceId: serviceIdProp,
   surfaceId: surfaceIdProp,
@@ -832,6 +835,7 @@ export function ServiceWebviewSurface({
   const lastMainChatRouterAcknowledgementRef =
     useRef<MainChatRouterAcknowledgement | null>(null);
   const lastReportedCurrentUrlRef = useRef("");
+  const lastReportedCurrentUrlSourceRef = useRef<ServiceWebviewUrlChangeSource | null>(null);
   const lastAgentSwitchNewChatTimestampRef = useRef(0);
   const lastLiveSurfaceLifecycleRef = useRef<{
     active: boolean;
@@ -1176,7 +1180,7 @@ export function ServiceWebviewSurface({
   // bootstrap-only. Color changes must not generate route commands or reloads.
   const routeHostTheme = service?.id === "agent-webclient" ? appearanceRouteTheme ?? hostTheme : hostTheme;
   const embeddedUrl = useMemo(() => {
-    return buildServiceWebviewUrl(service?.id, webUrl, {
+    const url = buildServiceWebviewUrl(service?.id, webUrl, {
       hostTheme: routeHostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       accessToken:
@@ -1189,7 +1193,16 @@ export function ServiceWebviewSurface({
         ? `http://127.0.0.1:${service.healthMeta.port}`
         : undefined,
     });
+    if (url && chatDefaultAgentKey && isAgentWebclientManagementSurface(service?.id ?? serviceId, surfaceId)) {
+      const parsed = new URL(url);
+      parsed.searchParams.set("chatDefaultAgentKey", chatDefaultAgentKey);
+      return parsed.toString();
+    }
+    return url;
   }, [
+    chatDefaultAgentKey,
+    serviceId,
+    surfaceId,
     agentPlatformMonitorAccessToken,
     effectiveEmbedPath,
     routeHostTheme,
@@ -2143,10 +2156,15 @@ export function ServiceWebviewSurface({
     if (source === "guest" && canonicalChatPromotionGuardRef.current) {
       settleCanonicalChatPromotionGuard(nextUrl, "guest-identity-changed");
     }
-    if (!nextUrl || lastReportedCurrentUrlRef.current === nextUrl) {
+    // A guest observation confirms navigation; a host target alone cannot do so.
+    if (!nextUrl || (
+      lastReportedCurrentUrlRef.current === nextUrl &&
+      lastReportedCurrentUrlSourceRef.current === source
+    )) {
       return;
     }
     lastReportedCurrentUrlRef.current = nextUrl;
+    lastReportedCurrentUrlSourceRef.current = source;
     onCurrentUrlChangeRef.current?.(nextUrl, source);
   }
 
@@ -3010,6 +3028,15 @@ export function ServiceWebviewSurface({
     }
 
     const handleDidStartNavigation = (event: Event) => {
+      const context = webviewEventContextRef.current;
+      if (context?.ownsActiveSurface && readEventBoolean(event, "isMainFrame") === true &&
+        isAgentWebclientManagementSurface(context.serviceId, context.surfaceId)) {
+        const route = resolveAgentWebclientDesktopComposerRouteFromUrl(readEventString(event, "url"), context.webviewSrcUrl);
+        if (route) {
+          context.navigate(route);
+          return;
+        }
+      }
       if (readEventBoolean(event, "isMainFrame") !== true || readEventBoolean(event, "isInPlace") === true) return;
       // Invalidate the old document before dom-ready: queued READY/APPLIED must
       // not settle routing while the replacement document is still loading.
@@ -3290,6 +3317,10 @@ export function ServiceWebviewSurface({
     if (!target || service?.id !== "agent-webclient" || service.status !== "running" ||
       !bridgeReady || !serviceWebviewPreloadUrl) return;
     const host = createWebclientAppearanceHost({
+      readVisuals: () => {
+        const appearance = appearanceInputRef.current.appearance;
+        return appearance.skin.visuals?.[appearance.resolvedTheme];
+      },
       webview: target,
       isCurrentGuest: () => webviewRef.current === target,
       trustedUrl: () => webUrl,

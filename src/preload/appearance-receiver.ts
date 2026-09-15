@@ -39,7 +39,7 @@ export function createAppearanceReceiver(request: () => void, timeoutMs = 2_000)
     }
   }
   const bridge: AgentWebclientAppearanceBridge = Object.freeze({
-    version: 1,
+    version: "1.1",
     getSnapshot() {
       consumed = true;
       return new Promise<AgentWebclientAppearanceSnapshot | null>((resolve) => {

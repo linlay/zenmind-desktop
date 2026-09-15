@@ -368,9 +368,9 @@ export async function retryPendingPluginResourceSync(app: App) {
   }
 }
 
-export async function removePluginResources(app: App, service: ServiceDefinition) {
+export async function removePluginResources(app: App, service: ServiceDefinition, manager: WebappManager) {
   const ownership = readOwnership(app, service.id);
-  await removeWebappResources(app, service, ownership);
+  await removeWebappResources(app, service, ownership, {}, manager);
   if (callAgentPlatformCallback) {
     await removeAgentPlatformResources(app, service, { deleteOwnership: true });
   }

@@ -10,7 +10,7 @@ const { createDesktopSkinStore } = require("../dist-electron/main/modules/settin
 const { parseSkinPackageManifest, SKIN_PACKAGE_LIMITS } = require("../dist-electron/shared/desktop-skin-package.js");
 const { updateDesktopProfileInRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=", "base64");
-const manifest = () => ({ schemaVersion: 1, id: "forest.lake", name: "山湖", version: "1.0.0", author: "测试作者",
+const manifest = () => ({ schemaVersion: "1.1", id: "forest.lake", name: "山湖", version: "1.0.0", author: "测试作者",
   variants: {
     light: { tokens: { "--accent": "#287653", "--control-primary-active": "#194d35", "--control-radius": "12px" }, background: { path: "assets/lake.png", position: "50% 40%" } },
     dark: { tokens: { "--accent": "#83c79a" }, background: { path: "assets/lake.png" } }
@@ -151,4 +151,24 @@ test("missing or altered installed resources never resolve outside the owned pac
   assert.equal(missing.skinId, id); assert.equal(missing.installedSkin, null);
   h.store.setSkin("default");
   assert.equal(h.store.read().skinId, "default");
+});
+
+test("1.1 visual images are normalized, persisted under owned names and missing icons fall back independently", async (t) => {
+  const h = setup(t), value = manifest();
+  value.variants.light.visuals = { images: { 'chat.send': 'assets/send.png', 'heading.chats.zh-CN': 'assets/title.png' }, styles: { unread: '#c33170', unreadShape: 'heart' } };
+  await h.write(value, zip => { zip.file('assets/send.png', png); zip.file('assets/title.png', png); });
+  const { importedSkinId } = await h.store.importPackage(h.source);
+  const selected = h.store.setSkin(importedSkinId);
+  assert.equal(selected.installedSkin.visuals.light.styles.unread, '#c33170');
+  assert.match(selected.installedSkin.visuals.light.images['chat.send'], /^data:image\/png;base64,/);
+  assert.deepEqual(createDesktopSkinStore(h.options).read().installedSkin.visuals, selected.installedSkin.visuals);
+  const files = [];
+  const visit = dir => { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const name = path.join(dir, entry.name); if (entry.isDirectory()) visit(name); else files.push(name); } };
+  visit(h.root);
+  const storedManifest = files.find(name => name.endsWith('skin.json'));
+  const installed = JSON.parse(fs.readFileSync(storedManifest, 'utf8'));
+  fs.unlinkSync(path.join(path.dirname(storedManifest), installed.variants.light.visuals.images['chat.send']));
+  const restored = createDesktopSkinStore(h.options).read().installedSkin;
+  assert.equal(restored.visuals.light.images['chat.send'], undefined);
+  assert.equal(restored.visuals.light.styles.unread, '#c33170');
 });

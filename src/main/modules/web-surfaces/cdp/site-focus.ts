@@ -1,9 +1,9 @@
-import type { SiteCdpScope } from "./site-scope";
+import type { SiteControlScope } from "./site-scope";
 
 const pending = new Map<number, Promise<void>>();
 
 /** Serialize background commands sharing one host's foreground focus. */
-export async function withSiteCdpFocus<T>(scope: SiteCdpScope | undefined,
+export async function withSiteCdpFocus<T>(scope: SiteControlScope | undefined,
   control: ((phase: "capture" | "restore") => Promise<unknown>) | undefined,
   execute: () => Promise<T>): Promise<T> {
   if (!scope || !control) return execute();

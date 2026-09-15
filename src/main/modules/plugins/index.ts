@@ -5,6 +5,8 @@ export { getPluginGlobalShortcutStatuses, refreshPluginGlobalShortcuts, unregist
 export { getPluginInstallDir, installPluginFromArchive, loadInstalledPlugins, uninstallPlugin } from "./loader";
 export { configurePluginResources, initializePluginResourceState, readPluginResourceDesiredStatus, retryPendingPluginResourceSync, stopPluginResources, syncPluginResources } from "./resources";
 export { createPluginBridgeRuntime } from "./runtime";
+export { createPluginLifecycle } from "./lifecycle";
+export type { PluginLifecycle } from "./lifecycle";
 export type { PluginBridgeRuntime } from "./runtime";
 export { getPluginSettingsEnv, openPluginSettingsPage, readPluginSettingsSnapshot, writePluginSettingsValues } from "./settings";
 export { handlePluginUninstall } from "./uninstall";

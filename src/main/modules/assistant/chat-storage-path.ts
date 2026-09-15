@@ -28,3 +28,22 @@ export function resolveAssistantChatStoragePaths(
     chatFilePath: pathApi.join(chatsDirectoryPath, `${normalizedChatId}.jsonl`),
   };
 }
+
+/** Copy only a validated chat storage location; absolute paths stay in main. */
+export function copyAssistantChatStoragePath(
+  app: AssistantPathApp,
+  chatId: string,
+  target: "file" | "directory",
+  writeText: (text: string) => void,
+  platform: NodeJS.Platform = process.platform,
+): { ok: boolean } {
+  if (target !== "file" && target !== "directory") return { ok: false };
+  const paths = resolveAssistantChatStoragePaths(app, chatId, platform);
+  if (!paths) return { ok: false };
+  try {
+    writeText(target === "file" ? paths.chatFilePath : paths.chatDirectoryPath);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}

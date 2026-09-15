@@ -1,3 +1,4 @@
+import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
@@ -110,6 +111,8 @@ type SettingsPageProps = {
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   webItems: WebEntry[];
+  copilotAgentOptions: AssistantNavAgentItem[];
+  onRefreshCopilotAgentOptions: () => Promise<void>;
   webappPublishStateById: Record<string, WebappPublishState | null>;
   onWebItemsRefresh: () => void | Promise<unknown>;
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
@@ -158,6 +161,7 @@ type SettingsDebugTextAreaFieldProps = {
 };
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
+const SETTINGS_NOTICE_AUTO_CLOSE_MS = 5000;
 const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
   popup: {
@@ -505,8 +509,7 @@ const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
 
 const defaultKanbanCloudConfig: KanbanCloudConfig = {
   serverUrl: "",
-  remoteControlEnabled: false,
-  deviceAlias: ""
+  remoteControlEnabled: false
 };
 
 const defaultGeneralSettings: DesktopGeneralSettings = {
@@ -2315,6 +2318,7 @@ function AboutAppCard({
 
   return (
     <div className="settings-about-stack" aria-label={t("settings.about.label")}>
+      <DesktopUpdateCard />
       <div className="settings-item-card settings-about-card">
         <div className="settings-item-row settings-about-row">
           <div className="settings-about-copy">
@@ -2396,6 +2400,8 @@ export function SettingsPage({
   marketEnabled,
   onMarketEnabledChange,
   webItems,
+  copilotAgentOptions,
+  onRefreshCopilotAgentOptions,
   webappPublishStateById,
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
@@ -2411,6 +2417,21 @@ export function SettingsPage({
   const currentRoute = `${location.pathname}${location.search}`;
   const noticeIdRef = useRef(0);
   const [notice, setNotice] = useState<SettingsNotice | null>(null);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNotice((current) => (current?.id === notice.id ? null : current));
+    }, SETTINGS_NOTICE_AUTO_CLOSE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [notice]);
+
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
   const [usageProfile, setUsageProfile] = useState<DesktopUsageProfileResult | null>(null);
   const [usageSsoStatus, setUsageSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -2965,6 +2986,12 @@ export function SettingsPage({
     };
   }, [shouldReadTunnelHubData]);
 
+
+  useEffect(() => {
+    if (activeSection === "websites") {
+      void onRefreshCopilotAgentOptions();
+    }
+  }, [activeSection, onRefreshCopilotAgentOptions]);
 
   useEffect(() => {
     if (!shouldReadAssistantSettings || assistantSettingsLoadedRef.current) {
@@ -4174,15 +4201,18 @@ export function SettingsPage({
     }
   }
 
-  function renderAgentSelectOptions(currentAgentKey: string) {
-    const agentKnown = !currentAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === currentAgentKey);
+  function renderAgentSelectOptions(
+    currentAgentKey: string,
+    agentOptions: DesktopPetAgentOption[] = assistantAgentOptions
+  ) {
+    const agentKnown = !currentAgentKey || agentOptions.some((agent) => agent.agentKey === currentAgentKey);
     return [
       { value: "", label: t("settings.websites.defaultCopilot") },
       ...(currentAgentKey && !agentKnown ? [{
         value: currentAgentKey,
         label: t("settings.navigation.unavailableAgent", { agentKey: currentAgentKey })
       }] : []),
-      ...assistantAgentOptions.map((agent) => ({
+      ...agentOptions.map((agent) => ({
         value: agent.agentKey,
         label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
       }))
@@ -5150,9 +5180,8 @@ export function SettingsPage({
                           style={{ width: "100%" }}
                           value={websiteAgentKey}
                           onChange={setWebsiteAgentKey}
-                          disabled={assistantAgentOptions.length === 0}
                           aria-label={t("settings.websites.agentEnhancement")}
-                          options={renderAgentSelectOptions(websiteAgentKey)}
+                          options={renderAgentSelectOptions(websiteAgentKey, copilotAgentOptions)}
                         />
                       </span>
                     </label>

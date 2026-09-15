@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
-const { resolveAssistantChatStoragePaths } = await import(
+const { resolveAssistantChatStoragePaths, copyAssistantChatStoragePath } = await import(
   "../dist-electron/main/modules/assistant/chat-storage-path.js"
 );
 const { revealAssistantChatInFileManager } = await import(
@@ -140,3 +140,23 @@ test("chat information does not expose an absolute path through shell errors", a
   assert.equal(result.message.includes(homePath), false);
   assert.equal("path" in result, false);
 });
+
+for (const [platform, home] of [["darwin", "/Users/test"], ["win32", "C:\\Users\\test"]]) {
+  test(`chat storage clipboard copies file and directory paths on ${platform}`, () => {
+    const written = [];
+    const pathApi = platform === "win32" ? path.win32 : path.posix;
+    const root = pathApi.join(home, APP_BRAND.paths.runtimeRootDirName, "chats");
+    for (const target of ["file", "directory"]) {
+      assert.deepEqual(copyAssistantChatStoragePath(makeApp(home), " chat_1 ", target,
+        (text) => written.push(text), platform), { ok: true });
+    }
+    assert.deepEqual(written, [pathApi.join(root, "chat_1.jsonl"), pathApi.join(root, "chat_1")]);
+    for (const [chatId, target] of [["../escape", "file"], ["chat_1", "other"], ["", "directory"]]) {
+      assert.deepEqual(copyAssistantChatStoragePath(makeApp(home), chatId, target,
+        (text) => written.push(text), platform), { ok: false });
+    }
+    assert.equal(written.length, 2);
+    assert.deepEqual(copyAssistantChatStoragePath(makeApp(home), "chat_1", "file",
+      () => { throw new Error("clipboard unavailable"); }, platform), { ok: false });
+  });
+}

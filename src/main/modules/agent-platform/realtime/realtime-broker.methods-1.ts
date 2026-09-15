@@ -1,4 +1,4 @@
-import type { SiteCdpScope } from "../../web-surfaces";
+import type { SiteControlScope } from "../../web-surfaces";
 import type { RealtimeBrokerMethodContext } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
 import type {
@@ -96,7 +96,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
     observerToken?: string;
-    siteCdpScope?: SiteCdpScope;
+    siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle {
     const accepted = createDeferred<RealtimeQueryAccepted>();
     const completed = createDeferred<RealtimeQueryCompleted>();
@@ -105,16 +105,16 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     const expectedChatId = options.chatId?.trim() || "";
     const lane = options.lane ?? (options.requestType === "/api/btw" ? "btw" : "primary");
     const requestType = options.requestType ?? (lane === "primary" ? "/api/query" : "/api/btw");
-    if (lane === "selection-explain" && (requestType !== "/api/btw" || options.siteCdpScope)) {
+    if (lane === "selection-explain" && (requestType !== "/api/btw" || options.siteControlScope)) {
         const error = brokerError("invalid_request", "The selection explanation lane only accepts BTW queries without page-control authority");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
     }
     if (!self.acceptingDelivery) {
         const error = brokerError("connection_unavailable", "Realtime Broker is shutting down");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -123,14 +123,14 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     const registeredLane = expectedRunId ? self.getRunChannel(expectedRunId)?.lane : undefined;
     if (options.lane && registeredLane && options.lane !== registeredLane) {
         const error = brokerError("invalid_request", "runId belongs to a different Realtime lane");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
     }
     if (!operationId) {
         const error = brokerError("invalid_request", "query id is required");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -139,7 +139,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     const observer = observerToken ? self.findRootObserver(observerToken) : null;
     if (observerToken && !observer) {
         const error = brokerError("surface_generation_superseded", "Root Observer is no longer active");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -147,6 +147,7 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
     if (observer?.kind === "selection_explain" &&
         (lane !== "selection-explain" || observer.contextId !== expectedChatId)) {
         const error = brokerError("invalid_request", "The selection explanation observer must use its own Chat and lane");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
@@ -155,14 +156,14 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         observer.overviewLease?.state === "ready" &&
         expectedChatId && observer.overviewLease.chatId !== expectedChatId) {
         const error = brokerError("protocol_error", "query Chat does not match the active Main Chat context");
-        options.siteCdpScope?.release("The query was not accepted.");
+        options.siteControlScope?.release("The query was not accepted.");
         accepted.reject(error);
         completed.reject(error);
         return { accepted: accepted.promise, completed: completed.promise };
     }
     const upstreamRequestId = `desktop-query-${randomUUID()}`;
     const transaction: QueryTransaction = {
-        siteCdpScope: options.siteCdpScope,
+        siteControlScope: options.siteControlScope,
         lane,
         requestType,
         operationId,
@@ -189,9 +190,6 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         accessToken: options.token,
     };
     self.queriesByRequestId.set(upstreamRequestId, transaction);
-    transaction.acceptanceTimer = setTimeout(() => {
-        self.failQuery(transaction, brokerError("connection_unavailable", "query acceptance timed out"));
-    }, self.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
     if (options.signal) {
         transaction.abortListener = () => {
             self.failQuery(transaction, brokerError("connection_unavailable", "query aborted"));
@@ -199,10 +197,20 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         options.signal.addEventListener("abort", transaction.abortListener, { once: true });
     }
     void self.ensureConnected(options.baseUrl, options.token, lane)
-        .then(() => {
+        .then(async () => {
+        if (observerToken && lane === "primary") {
+            await Promise.all([...self.runChannels.values()].filter((run) => run.lane === "primary").map((run) => run.detachInFlight));
+            if (!self.findRootObserver(observerToken)) {
+                throw brokerError("surface_generation_superseded", "Root Observer changed before query delivery");
+            }
+        }
         if (options.signal?.aborted) {
             throw brokerError("connection_unavailable", "query aborted");
         }
+        if (self.queriesByRequestId.get(upstreamRequestId) !== transaction) return;
+        transaction.acceptanceTimer = setTimeout(() => {
+            self.failQuery(transaction, brokerError("connection_unavailable", "query acceptance timed out"));
+        }, self.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
         self.clients[lane].send({
             frame: "request",
             type: requestType,
@@ -339,13 +347,7 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
             }
             : null,
     };
-    if (input.kind === "main_chat") {
-        self.mainChatRootObserver = next;
-        if (!self.activeRootObserver || self.activeRootObserver.kind === "main_chat") {
-            self.activeRootObserver = next;
-        }
-    }
-    else if (input.kind === "selection_explain") {
+    if (input.kind === "selection_explain") {
         if (current) {
             self.auxiliaryRootObservers.delete(current.token);
             self.retireRootObserver(current, "surface_generation_superseded");
@@ -353,14 +355,13 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
         self.auxiliaryRootObservers.set(token, next);
     }
     else {
-        const previousActive = self.activeRootObserver;
+        // Main Chat, Copilot, and Kanban share one live observer; the
+        // independent explanation observer keeps its own Run stream.
+        const previous = self.activeRootObserver;
         self.activeRootObserver = next;
-        if (previousActive && previousActive.kind !== "main_chat" && previousActive !== current) {
-            self.retireRootObserver(previousActive, "surface_generation_superseded");
-        }
+        self.mainChatRootObserver = input.kind === "main_chat" ? next : null;
+        if (previous) self.retireRootObserver(previous, "surface_generation_superseded");
     }
-    if (current && input.kind !== "selection_explain")
-        self.retireRootObserver(current, "surface_generation_superseded");
     return input.kind === "main_chat"
         ? self.getMainChatRootObserver()
         : input.kind === "selection_explain"

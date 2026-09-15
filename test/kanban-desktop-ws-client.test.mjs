@@ -154,7 +154,9 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
         ok: true,
       payload: {
         boardId: "default",
-        projectId: "project-1",
+        scope: "project_set",
+        complete: true,
+        projectIds: ["project-1"],
         revision: 12,
         issues: [{ id: "ISS-1", title: "Cloud issue" }]
       }
@@ -364,7 +366,9 @@ test("kanban desktop ws client decodes Blob websocket messages", async (t) => {
       ok: true,
       payload: {
         boardId: "default",
-        projectId: "project-1",
+        scope: "project_set",
+        complete: true,
+        projectIds: ["project-1"],
         revision: 30,
         issues: [{ id: "ISS-blob", title: "Blob issue" }]
       }
@@ -446,7 +450,7 @@ test("kanban desktop ws client applies direct issue pushes without delivery ACK"
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
-      payload: { boardId: "default", projectId: "project-1", revision: 12, lastSeq: 12, issues: [] }
+      payload: { boardId: "default", scope: "project_set", complete: true, projectIds: ["project-1"], revision: 12, lastSeq: 12, issues: [] }
     })
   });
   await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", lastSeq: 12, hasMore: false, nextAfterSeq: 12, events: [] });
@@ -568,7 +572,7 @@ test("kanban desktop ws client queues issue pushes until snapshot and skips stal
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
-      payload: { boardId: "default", projectId: "project-1", revision: 11, lastSeq: 11, issues: [] }
+      payload: { boardId: "default", scope: "project_set", complete: true, projectIds: ["project-1"], revision: 11, lastSeq: 11, issues: [] }
     })
   });
   await waitFor(() => socket.sent.some((frame) => frame.type === "event.pull"), "event.pull request");
@@ -682,7 +686,7 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
       id: initialSnapshotRequest.id,
       type: "snapshot.get",
       ok: true,
-      payload: { boardId: "default", projectId: "project-1", revision: 12, lastSeq: 12, issues: [] }
+      payload: { boardId: "default", scope: "project_set", complete: true, projectIds: ["project-1"], revision: 12, lastSeq: 12, issues: [] }
     })
   });
   await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", lastSeq: 12, hasMore: false, nextAfterSeq: 12, events: [] });
@@ -707,7 +711,7 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
       id: resyncSnapshotRequest.id,
       type: "snapshot.get",
       ok: true,
-      payload: { boardId: "default", projectId: "project-1", revision: 13, lastSeq: 13, issues: [{ id: "ISS-13", title: "Resynced" }] }
+      payload: { boardId: "default", scope: "project_set", complete: true, projectIds: ["project-1"], revision: 13, lastSeq: 13, issues: [{ id: "ISS-13", title: "Resynced" }] }
     })
   });
   await waitFor(
@@ -936,7 +940,7 @@ test("kanban desktop ws client waits when sync.deliver has a deliverySeq gap", a
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
-      payload: { boardId: "default", projectId: "project-1", revision: 20, lastSeq: 20, issues: [] }
+      payload: { boardId: "default", scope: "project_set", complete: true, projectIds: ["project-1"], revision: 20, lastSeq: 20, issues: [] }
     })
   });
   await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", lastSeq: 20, hasMore: false, nextAfterSeq: 20, events: [] });

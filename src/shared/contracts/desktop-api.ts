@@ -1,3 +1,4 @@
+import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
 import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
@@ -885,6 +886,10 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  connectorAuthBrowser: {
+    onDialog(listener: (input: import("./agent-webclient-bridge").ConnectorAuthBrowserDialog | { dialogId: string; closed: true }) => void): () => void;
+    close(dialogId: string): Promise<void>;
+  };
   shell: {
     openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
   };
@@ -960,8 +965,10 @@ export interface DesktopApi {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
   };
   kanban: {
+    markResultRead: (input: { issueId: string; key: string; scope: string }) => Promise<{ ok: boolean; message?: string }>;
     listIssues: () => Promise<KanbanListResult>;
     resyncCloudBoard: () => Promise<KanbanListResult>;
+    saveLocalWorkflows: (input: import("./kanban").KanbanLocalWorkflow[]) => Promise<KanbanListResult>;
     getSettings: () => Promise<KanbanSettingsResult>;
     saveSettings: (input: KanbanSettingsInput) => Promise<KanbanSettingsResult>;
     getCloudConfig: () => Promise<KanbanCloudConfigResult>;
@@ -993,6 +1000,8 @@ export interface DesktopApi {
     listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
+    copyChatRunJson: (chatId: string, runId: string) => Promise<{ ok: boolean }>;
+    copyChatStoragePath: (chatId: string, target: "file" | "directory") => Promise<{ ok: boolean }>;
     revealChatInFolder: (chatId: string) => Promise<AssistantChatRevealResult>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
@@ -1119,6 +1128,7 @@ export interface DesktopApi {
     onStatusChanged: (listener: DesktopSsoStatusListener) => () => void;
     onEmbeddedLoginOpen: (listener: DesktopSsoEmbeddedLoginListener) => () => void;
   };
+  updates: DesktopUpdatesApi;
   help: {
     getSettings: () => Promise<DesktopHelpSettings>;
   };
@@ -1226,7 +1236,7 @@ export interface DesktopApi {
     };
   };
   diagnostics: {
-    /** Read-only, enabled at process launch with ZENMIND_PERF=1. */
+    /** Read-only, enabled at process launch with PERF=1. */
     performanceEnabled?: boolean;
     reportRendererError: (report: RendererDiagnosticReport) => void;
     openDesktopLogViewer: (target: DesktopLogTarget) => Promise<{ ok: boolean }>;

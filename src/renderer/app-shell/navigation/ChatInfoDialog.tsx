@@ -4,12 +4,14 @@ import type { TranslateFunction } from "../../../shared/i18n";
 import {
   buildChatInfoCopyAllText,
   buildChatInfoRows,
+  formatChatInfoRunTiming,
   type ChatInfoRow,
 } from "../../../shared/chat-info";
 import type { ChatInfoDialogState } from "./useChatInfoDialog";
 
-type CopyFeedback = "copied" | "failed";
+type CopyFeedback = "copied" | "failed" | "loading";
 type RevealFeedback = "idle" | "loading" | "failed";
+const DISPLAY_ONLY_FIELDS = new Set(["source", "createdAt", "updatedAt"]);
 const CODE_VALUE_FIELDS = new Set([
   "chatId",
   "agentKey",
@@ -18,7 +20,6 @@ const CODE_VALUE_FIELDS = new Set([
   "source",
   "createdAt",
   "updatedAt",
-  "lastRunId",
 ]);
 
 type ChatInfoDialogProps = {
@@ -90,7 +91,7 @@ export function ChatInfoDialog({
       : [],
     [state, t],
   );
-  const copyAllText = useMemo(() => buildChatInfoCopyAllText(rows), [rows]);
+  const copyAllText = useMemo(() => buildChatInfoCopyAllText(rows, state?.detail?.runs, t), [rows, state?.detail?.runs, t]);
 
   useEffect(() => {
     if (!state) return;
@@ -148,6 +149,44 @@ export function ChatInfoDialog({
     }
   }
 
+  async function copyStoragePath(target: "file" | "directory") {
+    const requestId = revealRequestIdRef.current;
+    setRevealFeedback("idle");
+    setRevealMessage("");
+    try {
+      const result = await window.electronAPI.assistant.copyChatStoragePath(activeChatId, target);
+      if (revealRequestIdRef.current !== requestId) return;
+      flashFeedback(`copy-path:${target}`, result.ok ? "copied" : "failed");
+    } catch {
+      if (revealRequestIdRef.current !== requestId) return;
+      flashFeedback(`copy-path:${target}`, "failed");
+    }
+  }
+
+  async function copyRunJson(runId: string) {
+    const key = `run-json:${runId}`;
+    if (copyFeedback[key] === "loading") return;
+    const requestId = revealRequestIdRef.current;
+    timersRef.current.forEach((timer) => window.clearTimeout(timer));
+    timersRef.current.clear();
+    setCopyFeedback({ [key]: "loading" });
+    try {
+      const result = await window.electronAPI.assistant.copyChatRunJson(activeChatId, runId);
+      if (revealRequestIdRef.current !== requestId) return;
+      flashFeedback(key, result.ok ? "copied" : "failed");
+    } catch {
+      if (revealRequestIdRef.current !== requestId) return;
+      flashFeedback(key, "failed");
+    }
+  }
+
+  function feedbackText(key: string, label: string) {
+    const feedback = copyFeedback[key];
+    return feedback === "loading" ? t("sidebar.chat.infoCopying")
+      : feedback === "copied" ? t("sidebar.chat.infoCopied")
+      : feedback === "failed" ? t("sidebar.chat.infoCopyFailed") : label;
+  }
+
   async function revealChatInFolder() {
     if (revealFeedback === "loading") return;
     const requestId = revealRequestIdRef.current + 1;
@@ -177,7 +216,7 @@ export function ChatInfoDialog({
         ? t("sidebar.chat.infoCopyFailed")
         : t("sidebar.chat.infoCopyField", { label: row.label });
     return (
-      <div className="sidebar-chat-info-row" key={row.key}>
+      <div className={`sidebar-chat-info-row${row.key === "chatId" ? " is-chat-id" : ""}`} key={row.key}>
         <span className="sidebar-chat-info-row-label">{row.label}</span>
         <pre
           className={[
@@ -185,6 +224,8 @@ export function ChatInfoDialog({
             CODE_VALUE_FIELDS.has(row.key) ? "is-code" : "",
           ].filter(Boolean).join(" ")}
         >{row.displayValue}</pre>
+        {!DISPLAY_ONLY_FIELDS.has(row.key) ? (
+        <div className="sidebar-chat-info-row-buttons">
         <button
           type="button"
           className={[
@@ -198,6 +239,17 @@ export function ChatInfoDialog({
         >
           <CopyIcon copied={feedback === "copied"} />
         </button>
+        {row.key === "chatId" ? (
+          <button type="button" className="sidebar-chat-info-row-copy sidebar-chat-info-path-copy"
+            title={feedbackText("copy-path:file", t("sidebar.chat.infoCopyFilePath"))}
+            aria-label={feedbackText("copy-path:file", t("sidebar.chat.infoCopyFilePath"))}
+            onClick={() => void copyStoragePath("file")}>
+            <CopyIcon copied={copyFeedback["copy-path:file"] === "copied"} />
+            <span>{t("sidebar.chat.infoPath")}</span>
+          </button>
+        ) : null}
+        </div>
+        ) : null}
       </div>
     );
   }
@@ -262,6 +314,34 @@ export function ChatInfoDialog({
           <div className="sidebar-chat-info-rows">
             {rows.map(renderRow)}
           </div>
+          <section className="sidebar-chat-info-runs" aria-label={t("sidebar.chat.infoRuns")}>
+            <h3>{t("sidebar.chat.infoRuns")} <span>{state.detail?.runs.length ?? 0}</span></h3>
+            {state.detail?.runs.map((run) => (
+              <div className="sidebar-chat-info-run" key={run.runId}>
+                  <div className="sidebar-chat-info-run-details">
+                    <code>{run.runId}</code>
+                    <div className="sidebar-chat-info-run-timing">{formatChatInfoRunTiming(run, t)}</div>
+                  </div>
+                  <div className="sidebar-chat-info-run-buttons">
+                    <button type="button" className="sidebar-agent-secondary-button sidebar-chat-info-action-button"
+                      title={feedbackText(`run-id:${run.runId}`, t("sidebar.chat.infoCopyRunId"))}
+                      aria-label={feedbackText(`run-id:${run.runId}`, t("sidebar.chat.infoCopyRunId"))}
+                      onClick={() => void copy(`run-id:${run.runId}`, run.runId)}>
+                      <CopyIcon copied={copyFeedback[`run-id:${run.runId}`] === "copied"} />
+                    </button>
+                    <button type="button" className="sidebar-agent-secondary-button sidebar-chat-info-action-button"
+                      title={feedbackText(`run-json:${run.runId}`, t("sidebar.chat.infoCopyRunJson"))}
+                      aria-label={feedbackText(`run-json:${run.runId}`, t("sidebar.chat.infoCopyRunJson"))}
+                      disabled={copyFeedback[`run-json:${run.runId}`] === "loading"}
+                      onClick={() => void copyRunJson(run.runId)}>
+                      <CopyIcon copied={copyFeedback[`run-json:${run.runId}`] === "copied"} />
+                      <span>{t("sidebar.chat.infoAll")}</span>
+                    </button>
+                  </div>
+              </div>
+            ))}
+            {state.detail && !state.detail.runs.length ? <p>{t("sidebar.chat.infoRunsEmpty")}</p> : null}
+          </section>
         </div>
         <footer className="sidebar-chat-info-footer">
           <div className="sidebar-agent-dialog-actions sidebar-chat-info-actions">

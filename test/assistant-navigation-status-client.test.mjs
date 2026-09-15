@@ -363,6 +363,11 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(client.getSnapshot().chatItems[0].lastRunContent, "updated from navigation push");
   assert.equal(client.getSnapshot().chatItems[0].updatedAt, EPOCH_MS + 50);
+  assert.deepEqual(pushEvents.at(-1), {
+    frame: "push", type: "chat.updated", chatId: "react-newest", runId: null,
+    status: null, finishReason: null, lastRunId: "run-newest",
+    lastRunContent: "updated from navigation push", updatedAt: EPOCH_MS + 50,
+  });
   assert.equal(debugMessages.some((message) => message.includes("time_contract_violation")), false);
 
   sockets[0].emit({ frame: "push", type: "run.started", data: {

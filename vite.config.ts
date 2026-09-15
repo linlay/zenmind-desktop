@@ -184,6 +184,8 @@ function brandRendererIndexPlugin(): Plugin {
 
 export default defineConfig({
   base: "./",
+  // Worktrees may share node_modules; keep optimized dependencies local to this checkout.
+  cacheDir: path.resolve(projectRoot, ".cache/vite"),
   plugins: [brandRendererIndexPlugin(), brandRuntimeIconPlugin(), brandDesktopPetPlugin(), react()],
   define: {
     __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(brand))

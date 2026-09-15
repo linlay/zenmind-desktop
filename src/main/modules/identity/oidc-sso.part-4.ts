@@ -1,10 +1,11 @@
+import { getCallbackOrigin } from "./callback-lifecycle";
 import http from "node:http";
 import type { App } from "electron";
 import type {
   DesktopSsoClaims
 } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
-import { CALLBACK_ORIGIN, CookieAccessTokenExchangeConfig, CookieAccessTokenExchangeRequest, DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT, DEFAULT_COOKIE_ACCESS_TOKEN_PATH, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoBrowserCookieDetails, DesktopSsoProxyState, ElectronFetchRuntime, FetchLike, FetchResponseLike, OidcConfig, TokenExchangeRequest, desktopSsoRuntimeState, isGoogleOidcConfig, usedAuthorizationCodes, usedDesktopSsoTickets } from "./oidc-sso.part-1";
+import { CookieAccessTokenExchangeConfig, CookieAccessTokenExchangeRequest, DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT, DEFAULT_COOKIE_ACCESS_TOKEN_PATH, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoBrowserCookieDetails, DesktopSsoProxyState, ElectronFetchRuntime, FetchLike, FetchResponseLike, OidcConfig, TokenExchangeRequest, desktopSsoRuntimeState, isGoogleOidcConfig, usedAuthorizationCodes, usedDesktopSsoTickets } from "./oidc-sso.part-1";
 import { loadDesktopSsoConfig } from "./oidc-sso.part-2";
 import { decodeJsonPart, getJwtPayload, getDesktopSsoBrowserCookieOrigins, getDesktopSsoProxySetCookieHeaders, getDesktopSsoProxyTargetOrigin, normalizeAudience, normalizeDesktopSsoAvatarUrlClaim, normalizeStringClaim, readFetchErrorBody, readFetchErrorStatus, rewriteDesktopSsoProxyLocation, rewriteDesktopSsoProxySetCookieHeader } from "./oidc-sso.part-3";
 
@@ -121,17 +122,18 @@ export function mergeDesktopSsoProxyCookies(browserCookieHeader: string | undefi
     .join("; ");
 }
 
-export function rewriteDesktopSsoProxyHeaderUrl(value: string, config: OidcConfig) {
+export function rewriteDesktopSsoProxyHeaderUrl(value: string, config: OidcConfig, origin = getCallbackOrigin()) {
   const targetOrigin = getDesktopSsoProxyTargetOrigin(config);
   return value
-    .replaceAll(CALLBACK_ORIGIN, targetOrigin)
-    .replaceAll(CALLBACK_ORIGIN.replace("localhost", "127.0.0.1"), targetOrigin);
+    .replaceAll(origin, targetOrigin)
+    .replaceAll(origin.replace("localhost", "127.0.0.1"), targetOrigin);
 }
 
 export function getDesktopSsoProxyRequestHeaders(
   request: http.IncomingMessage,
   upstreamUrl: URL,
-  proxyState: DesktopSsoProxyState
+  proxyState: DesktopSsoProxyState,
+  origin = getCallbackOrigin()
 ) {
   const blockedHeaders = new Set([
     "host",
@@ -156,7 +158,7 @@ export function getDesktopSsoProxyRequestHeaders(
     headers.origin = getDesktopSsoProxyTargetOrigin(proxyState.config);
   }
   if (headers.referer) {
-    headers.referer = rewriteDesktopSsoProxyHeaderUrl(headers.referer, proxyState.config);
+    headers.referer = rewriteDesktopSsoProxyHeaderUrl(headers.referer, proxyState.config, origin);
   }
   const cookieHeader = mergeDesktopSsoProxyCookies(request.headers.cookie, proxyState);
   if (cookieHeader) {
@@ -182,7 +184,7 @@ export function shouldRewriteDesktopSsoProxyBody(contentType: string) {
   return /(?:text|json|javascript|ecmascript|xml|x-www-form-urlencoded)/iu.test(contentType);
 }
 
-export function rewriteDesktopSsoProxyBody(body: Buffer, contentType: string, config: OidcConfig) {
+export function rewriteDesktopSsoProxyBody(body: Buffer, contentType: string, config: OidcConfig, origin = getCallbackOrigin()) {
   if (!shouldRewriteDesktopSsoProxyBody(contentType)) {
     return body;
   }
@@ -190,8 +192,8 @@ export function rewriteDesktopSsoProxyBody(body: Buffer, contentType: string, co
   const httpTargetOrigin = targetOrigin.replace(/^https:/iu, "http:");
   const rewrittenBody = body
     .toString("utf8")
-    .replaceAll(targetOrigin, CALLBACK_ORIGIN)
-    .replaceAll(httpTargetOrigin, CALLBACK_ORIGIN);
+    .replaceAll(targetOrigin, origin)
+    .replaceAll(httpTargetOrigin, origin);
   return Buffer.from(rewrittenBody, "utf8");
 }
 
@@ -201,6 +203,7 @@ export async function proxyDesktopSsoRequest(
   response: http.ServerResponse,
   requestUrl: URL
 ) {
+  const origin = requestUrl.origin;
   const upstreamUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, getDesktopSsoProxyTargetOrigin(proxyState.config));
   const method = (request.method || "GET").toUpperCase();
   const requestBodyBuffer = method === "GET" || method === "HEAD"
@@ -211,7 +214,7 @@ export async function proxyDesktopSsoRequest(
     : undefined;
   const upstreamResponse = await fetch(upstreamUrl, {
     method,
-    headers: getDesktopSsoProxyRequestHeaders(request, upstreamUrl, proxyState),
+    headers: getDesktopSsoProxyRequestHeaders(request, upstreamUrl, proxyState, origin),
     body: requestBody as BodyInit | undefined,
     redirect: "manual"
   });
@@ -233,7 +236,7 @@ export async function proxyDesktopSsoRequest(
       return;
     }
     if (headerName === "location") {
-      responseHeaders.location = rewriteDesktopSsoProxyLocation(value, upstreamUrl, proxyState.config);
+      responseHeaders.location = rewriteDesktopSsoProxyLocation(value, upstreamUrl, proxyState.config, origin);
       return;
     }
     responseHeaders[name] = value;
@@ -247,7 +250,7 @@ export async function proxyDesktopSsoRequest(
   }
 
   const rawBody = Buffer.from(await upstreamResponse.arrayBuffer());
-  const body = rewriteDesktopSsoProxyBody(rawBody, upstreamResponse.headers.get("content-type") ?? "", proxyState.config);
+  const body = rewriteDesktopSsoProxyBody(rawBody, upstreamResponse.headers.get("content-type") ?? "", proxyState.config, origin);
   response.writeHead(upstreamResponse.status, responseHeaders);
   response.end(method === "HEAD" ? undefined : body);
 }

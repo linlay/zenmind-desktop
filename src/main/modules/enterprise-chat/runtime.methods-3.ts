@@ -121,7 +121,6 @@ export function EnterpriseChatRuntime_reconcileDesktopActionMessages_3(self: Ent
             requestMessage.revokedAt ||
             request.targetDeviceId !== currentDeviceId ||
             !getEnterpriseChatRemoteAction(request.action) ||
-            ledger.hasLegacyMessage(requestMessage.id) ||
             ledger.find(scope, request.requestId)) {
             continue;
         }

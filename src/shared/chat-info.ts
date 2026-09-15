@@ -1,4 +1,4 @@
-import type { AssistantChatInfo } from "./contracts/copilot";
+import type { AssistantChatInfo, AssistantChatInfoRun } from "./contracts/copilot";
 import type { TranslateFunction } from "./i18n/types";
 
 export type ChatInfoSummary = {
@@ -30,7 +30,7 @@ function createChatInfoRow(
   };
 }
 
-function formatTimestamp(value: unknown) {
+export function formatTimestamp(value: unknown) {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     return undefined;
   }
@@ -62,11 +62,21 @@ export function buildChatInfoRows(input: {
       displayValue: formatTimestamp(updatedAt),
       copyValue: updatedAt === undefined ? undefined : String(updatedAt),
     }),
-    createChatInfoRow("lastRunId", t("sidebar.chat.infoField.lastRunId"), detail?.lastRunId),
-    createChatInfoRow("lastRunContent", t("sidebar.chat.infoField.lastRunContent"), detail?.lastRunContent),
   ].filter((row): row is ChatInfoRow => Boolean(row));
 }
 
-export function buildChatInfoCopyAllText(rows: ChatInfoRow[]) {
-  return rows.map((row) => `${row.label}: ${row.copyValue}`).join("\n");
+export function formatChatInfoRunTiming(run: AssistantChatInfoRun, t: TranslateFunction) {
+  const duration = run.startedAt !== undefined && run.completedAt !== undefined && run.completedAt >= run.startedAt
+    ? `${Math.round((run.completedAt - run.startedAt) / 1000)} s`
+    : "—";
+  const start = formatTimestamp(run.startedAt)?.replace(/\.\d{3}Z$/u, "Z") ?? "—";
+  const end = formatTimestamp(run.completedAt)?.replace(/\.\d{3}Z$/u, "Z") ?? "—";
+  return `${start} → ${end} · ${t("sidebar.chat.infoRunDuration")}: ${duration}`;
+}
+
+export function buildChatInfoCopyAllText(rows: ChatInfoRow[], runs: AssistantChatInfoRun[] = [], t?: TranslateFunction) {
+  return [
+    ...rows.map((row) => `${row.label}: ${row.copyValue}`),
+    ...runs.map((run) => `Run ID: ${run.runId}\n${t ? formatChatInfoRunTiming(run, t) : ""}`),
+  ].join("\n");
 }

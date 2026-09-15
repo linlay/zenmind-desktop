@@ -1,4 +1,5 @@
 import path from "node:path";
+import { selectChatRunJson } from "./chat-run-json";
 import fs from "node:fs";
 import {
   getAssistantExportDefaultPath,
@@ -28,7 +29,7 @@ import {
   createProjectAgentOrderPlan,
   validateProjectAgentOrderRequestKeys,
 } from "./project-agent-order";
-import { resolveAssistantChatStoragePaths } from "./chat-storage-path";
+import { copyAssistantChatStoragePath, resolveAssistantChatStoragePaths } from "./chat-storage-path";
 import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
 
 export interface AssistantIpcHandlerOptions {
@@ -667,6 +668,25 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   ipcMain.handle("assistant.getChatInfo", async (_event: any, chatId: string) =>
     assistantBridge?.getChatInfo(chatId)
   );
+
+  ipcMain.handle("assistant.copyChatRunJson", async (_event: any, chatId: string, runId: string) => {
+    if (typeof chatId !== "string" || !chatId.trim() || typeof runId !== "string" || !runId.trim()) return { ok: false };
+    try {
+      const result = await assistantBridge.downloadRawChatJSONL(chatId);
+      if (!result.ok) return { ok: false };
+      const json = selectChatRunJson(Buffer.from(result.bytes).toString("utf8"), runId);
+      const { clipboard } = require("electron") as typeof import("electron");
+      clipboard.writeText(json);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle("assistant.copyChatStoragePath", async (_event: any, chatId: string, target: "file" | "directory") => {
+    const { clipboard } = require("electron") as typeof import("electron");
+    return copyAssistantChatStoragePath(app, chatId, target, (text) => clipboard.writeText(text), platform);
+  });
 
   ipcMain.handle("assistant.revealChatInFolder", async (_event: any, chatId: string) =>
     revealAssistantChatInFileManager(chatId, { app, shell, platform })

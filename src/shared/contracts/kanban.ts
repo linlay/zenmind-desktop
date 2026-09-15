@@ -24,19 +24,11 @@ export const KANBAN_RUN_STATES = [
 
 export type KanbanStatus = typeof KANBAN_STATUSES[number];
 export type KanbanPriority = typeof KANBAN_PRIORITIES[number];
-export type KanbanWirePriority = "urgent" | "high" | "medium" | "low";
 export type KanbanSeverity = "critical" | "high" | "medium" | "low";
 export type KanbanRunState = typeof KANBAN_RUN_STATES[number];
 export type KanbanSyncMode = "local" | "cloud";
 export type KanbanSyncState = "local" | "syncing" | "synced" | "error";
 export type KanbanOrigin = "desktop" | "cloud_dispatch";
-
-const LEGACY_KANBAN_PRIORITY_ALIASES: Record<string, KanbanPriority> = {
-  urgent: "P0",
-  high: "P1",
-  medium: "P2",
-  low: "P3"
-};
 
 export function parseKanbanPriority(value: unknown): KanbanPriority | null {
   if (typeof value !== "string") return null;
@@ -44,7 +36,7 @@ export function parseKanbanPriority(value: unknown): KanbanPriority | null {
   if (KANBAN_PRIORITIES.includes(normalized as KanbanPriority)) {
     return normalized as KanbanPriority;
   }
-  return LEGACY_KANBAN_PRIORITY_ALIASES[value.trim().toLowerCase()] ?? null;
+  return null;
 }
 
 export interface KanbanCurrentUser {
@@ -388,7 +380,38 @@ export interface KanbanCloudDetailData {
   recentEvents: KanbanRecentEvent[];
 }
 
+export interface KanbanLocalWorkflow {
+  id: string;
+  name: string;
+  stages: Array<{ id: string; name: string; reviewRequired: boolean; rollbackToStageId?: string }>;
+}
+
+export type KanbanLocalWorkflowAction = {
+  type: "rollback";
+  fromStageId: string;
+  fromStatus: KanbanStatus;
+  toStageId: string;
+  reason: string;
+} | {
+  type: "refresh_rollback_rules";
+};
+
+export interface KanbanLocalWorkflowRollback {
+  id: string;
+  fromStageId: string;
+  fromStageName: string;
+  fromStatus: KanbanStatus;
+  toStageId: string;
+  toStageName: string;
+  reason: string;
+  actorId: string;
+  actorName: string;
+  createdAt: string;
+}
+
 export interface KanbanIssue {
+  /** Desktop-owned reading projection; never sent as cloud issue content. */
+  resultRead?: { key: string; scope: string; isRead: boolean };
   id: string;
   localIssueId?: string;
   remoteIssueId?: string | null;
@@ -407,6 +430,8 @@ export interface KanbanIssue {
   remainingEstimate: number;
   timeSpent: number;
   parentIssueId?: string | null;
+  localWorkflow?: KanbanLocalWorkflow;
+  localWorkflowRollbacks?: KanbanLocalWorkflowRollback[];
   workflowId?: string;
   typeId?: string;
   issueTypeKey?: string;
@@ -429,12 +454,15 @@ export interface KanbanIssue {
   workerAgent?: string | null;
   activeReviewId?: string | null;
   activeIssueRunId?: string | null;
-  /** Local-only legacy run identity. Cloud Contract 1.0 uses activeIssueRunId. */
+  /** Local Agent Platform run identity. Cloud Contract 1.0 uses activeIssueRunId. */
   activeRunId?: string | null;
   position: number;
   chatId: string | null;
   runId: string | null;
   runState: KanbanRunState | null;
+  /** Latest local run identity, retained after the active run ends. */
+  lastRunId?: string | null;
+  lastRunChatId?: string | null;
   runAgentKey?: string | null;
   runCommandId?: string | null;
   runStartedAt?: string | null;
@@ -471,6 +499,7 @@ export interface KanbanIssue {
 
 export interface KanbanProject {
   id: string;
+  syncMode?: KanbanSyncMode;
   parentId: string | null;
   slug: string;
   key?: string;
@@ -537,11 +566,10 @@ export interface KanbanCreateLocalProjectResult {
 }
 
 export interface KanbanIssueInput {
+  localWorkflowId?: string;
   title: string;
   projectId?: string | null;
   projectVersion?: string | null;
-  /** @deprecated Compatibility alias; normalized to projectVersion at the Desktop boundary. */
-  version?: string | null;
   dueDate?: string | null;
   resolution?: string | null;
   securityLevelKey?: string | null;
@@ -552,7 +580,7 @@ export interface KanbanIssueInput {
   timeSpent?: number;
   description?: string | null;
   status?: KanbanStatus;
-  priority?: KanbanPriority | KanbanWirePriority | null;
+  priority?: KanbanPriority | null;
   severity?: KanbanSeverity | null;
   assigneeAgentKey?: string | null;
   assigneeId?: string | null;
@@ -571,11 +599,10 @@ export interface KanbanIssueInput {
 }
 
 export interface KanbanIssueUpdateInput {
+  localWorkflowAction?: KanbanLocalWorkflowAction;
   title?: string;
   projectId?: string | null;
   projectVersion?: string | null;
-  /** @deprecated Compatibility alias; normalized to projectVersion at the Desktop boundary. */
-  version?: string | null;
   dueDate?: string | null;
   resolution?: string | null;
   securityLevelKey?: string | null;
@@ -586,7 +613,7 @@ export interface KanbanIssueUpdateInput {
   timeSpent?: number;
   description?: string | null;
   status?: KanbanStatus;
-  priority?: KanbanPriority | KanbanWirePriority | null;
+  priority?: KanbanPriority | null;
   severity?: KanbanSeverity | null;
   assigneeAgentKey?: string | null;
   assigneeId?: string | null;
@@ -627,6 +654,7 @@ export interface KanbanRunIssueResult extends KanbanIssueResult {
 }
 
 export interface KanbanListResult {
+  localWorkflows?: KanbanLocalWorkflow[];
   ok: boolean;
   message: string;
   issues: KanbanIssue[];
@@ -646,7 +674,6 @@ export interface KanbanListResult {
 export interface KanbanCloudConfig {
   serverUrl: string;
   remoteControlEnabled: boolean;
-  deviceAlias?: string;
 }
 
 export interface KanbanSettings {

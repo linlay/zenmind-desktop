@@ -44,7 +44,7 @@ test("appearance provider keeps auxiliary WebViews read-only and main-window con
       const documentId = '12345678-1234-1234-1234-123456789abc';
       let snapshot = null;
       contextBridge.exposeInMainWorld('appearanceFixture', { read: () => snapshot });
-      const read = () => ipcRenderer.sendToHost(request, { version: 1, documentId, origin: location.origin });
+      const read = () => ipcRenderer.sendToHost(request, { version: "1.1", documentId, origin: location.origin });
       ipcRenderer.on(request, read);
       ipcRenderer.on(response, (_event, envelope) => {
         if (envelope.documentId === documentId) snapshot = envelope.snapshot;

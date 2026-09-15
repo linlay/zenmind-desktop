@@ -1397,14 +1397,12 @@ test("enterprise chat resolves the action ledger after the final Electron userDa
   );
 });
 
-test("enterprise chat ledger migrates legacy handled IDs and does not retry interrupted executions", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "enterprise-chat-ledger-migration-"));
+test("enterprise chat ledger persists request identity and does not retry interrupted executions", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "enterprise-chat-ledger-restart-"));
   const ledgerPath = path.join(root, "enterprise-chat-action-ledger.json");
   try {
-    fs.writeFileSync(ledgerPath, JSON.stringify({ messageIds: ["legacy-message"] }));
     const scope = enterpriseChatActionScope("https://im.example.test", "alice", "device-1");
     const first = new EnterpriseChatActionLedger(ledgerPath);
-    assert.equal(first.hasLegacyMessage("legacy-message"), true);
     first.claim({
       scope,
       messageId: "interrupted-message",
@@ -1415,6 +1413,11 @@ test("enterprise chat ledger migrates legacy handled IDs and does not retry inte
     });
 
     const restarted = new EnterpriseChatActionLedger(ledgerPath);
+    assert.equal(restarted.claim({
+      scope, messageId: "redelivered-message", requestId: "interrupted-request",
+      conversationId: "direct-1", targetDeviceId: "device-1", action: "desktop.website.open"
+    }).created, false);
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(ledgerPath, "utf8"))).sort(), ["entries", "schemaVersion"]);
     const recovered = restarted.recoverExecuting(scope);
     assert.equal(recovered.length, 1);
     assert.equal(recovered[0].phase, "terminal");

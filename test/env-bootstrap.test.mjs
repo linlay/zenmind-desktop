@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const {
   bundledEnvZipExists,
+  applyProviderRegisterUpgradeInput,
   importEnvZipToRuntime,
   importBundledEnvZipToRuntime,
   resetBundledRuntimeEnv,
@@ -125,6 +126,7 @@ test("Desktop version upgrade preflight validates manifest and reads desktop-ini
         }
       }
     }),
+    "env/provider-register.json": '{"mode":"access-token","providers":["th-main"]}',
     "env/agents/new/agent.yml": "key: new\n",
     "env/teams/new/team.yml": "name: New\n"
   });
@@ -134,6 +136,7 @@ test("Desktop version upgrade preflight validates manifest and reads desktop-ini
     resourcesRoot,
     expectedDesktopVersion: "2.0.0"
   });
+  assert.equal(validated.providerRegister, '{"mode":"access-token","providers":["th-main"]}');
   assert.equal(validated.sourceZipPath, zipPath);
   assert.equal(validated.desktopVersion, "2.0.0");
   assert.equal(validated.desktopInit.services["agent-platform"].lifecycleArgs.deploy[1], "th-gpt-image-2");
@@ -602,4 +605,90 @@ test("runtime env requests bundled seed refresh when generated data exists witho
   fs.writeFileSync(path.join(runtimeRoot, "agents", "cutej", "agent.yml"), "key: cutej\n", "utf8");
 
   assert.equal(runtimeEnvNeedsBundledSeedRefresh(app, "win32"), false);
+});
+
+const Module = require("node:module");
+const originalModuleLoad = Module._load;
+let ensureUpgradeProviderKey;
+try {
+  Module._load = function (request, parent, isMain) {
+    if (request === "electron") return { net: {} };
+    return originalModuleLoad.call(this, request, parent, isMain);
+  };
+  ({ ensureProviderRegisterApiKey: ensureUpgradeProviderKey } = require("../dist-electron/main/modules/agent-platform/provider-register.js"));
+} finally {
+  Module._load = originalModuleLoad;
+}
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: version upgrade restores consumed registration and preserves the original backup on retry`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-provider-upgrade-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createPathApp(root);
+    if (platform === "win32") {
+      t.mock.method(require("node:child_process"), "execFileSync", () => Buffer.alloc(0));
+    }
+    const runtimeRoot = resolveRuntimeRoot(app, platform);
+    assert.ok(runtimeRoot.startsWith(root + path.sep), "the fixture must never use an installed Windows data root");
+    const target = path.join(runtimeRoot, "provider-register.json");
+    const provider = path.join(runtimeRoot, "registries", "providers", "th-main.yml");
+    fs.mkdirSync(path.dirname(provider), { recursive: true });
+    fs.writeFileSync(provider, "key: th-main\napiKey:\n");
+    const zipPath = path.join(root, "env.zip");
+    const content = JSON.stringify({ mode: "grant-jwt", endpoint: "https://example.test/register",
+      providers: ["th-main"], grant: { type: "jwt", token: "synthetic-upgrade-grant" } });
+    await writeEnvZip(zipPath, { "env/VERSION": "0.4.2", "env/desktop-init.json": "{}",
+      "env/provider-register.json": content });
+    const validated = await validateSelectedEnvZipForDesktopVersionUpgrade(app, zipPath, "0.4.2", platform);
+    assert.equal(fs.existsSync(target), false, "preflight must not mutate the runtime");
+    assert.equal(validated.providerRegister, content);
+    const backupDir = path.join(root, "backup");
+    applyProviderRegisterUpgradeInput(app, validated.providerRegister, backupDir, platform);
+    assert.equal(fs.readFileSync(target, "utf8"), content);
+    assert.equal(fs.readFileSync(provider, "utf8"), "key: th-main\napiKey:\n", "Desktop policy deployment must not edit service-owned config");
+    if (platform !== "win32") assert.equal(fs.statSync(target).mode & 0o777, 0o600);
+    let requests = 0;
+    const register = (fail = false) => ensureUpgradeProviderKey(app, {
+      platform, preparation: true, getDesktopDeviceId: () => "synthetic-device",
+      fetchImpl: async (_url, init) => {
+        requests += 1;
+        assert.equal(init.headers.Authorization, "Bearer synthetic-upgrade-grant");
+        if (fail) throw new Error("offline");
+        return new Response(JSON.stringify({ key: "dk_SyntheticUpgradeKey" }));
+      }
+    });
+    await assert.rejects(register(true));
+    assert.equal(fs.readFileSync(target, "utf8"), content, "network failure must retain retry material");
+    assert.equal((await register()).status, "applied");
+    assert.match(fs.readFileSync(provider, "utf8"), /apiKey: dk_SyntheticUpgradeKey/);
+    assert.equal(fs.existsSync(target), false, "successful grant registration is consumed");
+    assert.deepEqual(await register(), { status: "skipped", reason: "missing" });
+    assert.equal(requests, 2, "ordinary startup must not replay the consumed grant");
+    // A later service failure can require another reset deploy of the empty seed.
+    fs.writeFileSync(provider, "key: th-main\napiKey:\n");
+    applyProviderRegisterUpgradeInput(app, validated.providerRegister, backupDir, platform);
+    assert.equal(fs.readFileSync(target, "utf8"), content);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(backupDir, "provider-register.backup.json"), "utf8")), { content: null });
+
+    const manual = await validateEnvZipForDesktopManualImport(app, zipPath, "0.4.2", platform);
+    assert.equal(manual.providerRegister, content, "manual repair must carry the same registration policy");
+    fs.writeFileSync(provider, "key: th-main\napiKey: user-owned-key\n");
+    applyProviderRegisterUpgradeInput(app, undefined, path.join(root, "without-policy"), platform);
+    assert.equal(fs.existsSync(target), false, "a package without policy must not reuse an old grant");
+    assert.equal(fs.readFileSync(provider, "utf8"), "key: th-main\napiKey: user-owned-key\n");
+  });
+}
+
+test("upgrade registration preflight rejects malformed JSON without exposing the grant", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-provider-invalid-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createPathApp(root);
+  const zipPath = path.join(root, "env.zip");
+  for (const content of ['{"grant":"synthetic-secret"', '[]', 'null']) {
+    await writeEnvZip(zipPath, { "env/VERSION": "0.4.2", "env/desktop-init.json": "{}",
+      "env/provider-register.json": content });
+    await assert.rejects(validateSelectedEnvZipForDesktopVersionUpgrade(app, zipPath, "0.4.2", "darwin"),
+      error => error.message === "provider-register.json must contain a valid JSON object.");
+    assert.equal(fs.existsSync(resolveRuntimeRoot(app, "darwin")), false);
+  }
 });

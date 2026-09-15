@@ -1,5 +1,5 @@
 import type { DesktopSkinToken, ResolvedThemeMode } from "./desktop-skin-definition";
-import { AGENT_WEBCLIENT_APPEARANCE_COLOR_TOKENS, parseAgentWebclientAppearanceTokens } from "./contracts/agent-webclient-bridge";
+import { AGENT_WEBCLIENT_APPEARANCE_COLOR_TOKENS, parseAgentWebclientAppearanceTokens, parseSkinVisuals, type SkinVisuals } from "./contracts/agent-webclient-bridge";
 
 export const SKIN_PACKAGE_LIMITS = Object.freeze({
   archiveBytes: 32 * 1024 * 1024, expandedBytes: 48 * 1024 * 1024,
@@ -7,7 +7,7 @@ export const SKIN_PACKAGE_LIMITS = Object.freeze({
 });
 
 export type SkinPackageManifest = {
-  schemaVersion: 1;
+  schemaVersion: "1.1";
   id: string;
   name: string;
   version: string;
@@ -15,6 +15,7 @@ export type SkinPackageManifest = {
   preview?: string;
   variants: Record<ResolvedThemeMode, {
     tokens: Partial<Record<DesktopSkinToken, string>>;
+    visuals?: SkinVisuals;
     background?: { path: string; position: string };
   }>;
 };
@@ -51,7 +52,7 @@ export function validateSkinResourcePath(value: unknown) {
 
 export function parseSkinPackageManifest(value: unknown): SkinPackageManifest {
   const input = object(value);
-  if (input.schemaVersion !== 1) throw new SkinPackageError("unsupportedPackageVersion");
+  if (input.schemaVersion !== "1.1") throw new SkinPackageError("unsupportedPackageVersion");
   keys(input, ["schemaVersion", "id", "name", "version", "author", "preview", "variants"]);
   const id = label(input.id, 64), version = label(input.version, 40);
   if (!/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(id) ||
@@ -60,20 +61,25 @@ export function parseSkinPackageManifest(value: unknown): SkinPackageManifest {
   keys(variants, ["light", "dark"]);
   function variant(mode: ResolvedThemeMode): SkinPackageManifest["variants"][ResolvedThemeMode] {
     const variant = object(variants[mode]);
-    keys(variant, ["tokens", "background"]);
+    keys(variant, ["tokens", "background", "visuals"]);
+    const visuals = variant.visuals === undefined ? undefined : parseSkinVisuals(variant.visuals, raw => {
+      const path = validateSkinResourcePath(raw);
+      return /\.png$/i.test(path) ? path : null;
+    });
+    if (visuals === null) invalid();
     const tokens = parseAgentWebclientAppearanceTokens(variant.tokens ?? {});
     if (!tokens) invalid();
-    if (variant.background === undefined) return { tokens };
+    if (variant.background === undefined) return { tokens, ...(visuals ? { visuals } : {}) };
     const background = object(variant.background);
     keys(background, ["path", "position"]);
     const assetPath = validateSkinResourcePath(background.path);
     if (!/\.(png|jpe?g)$/i.test(assetPath)) invalid();
     const position = background.position ?? "center";
     if (typeof position !== "string" || !/^(center|top|bottom|left|right|(?:left|center|right) (?:top|center|bottom)|(?:100|\d{1,2})% (?:100|\d{1,2})%)$/.test(position)) invalid();
-    return { tokens, background: { path: assetPath, position } };
+    return { tokens, ...(visuals ? { visuals } : {}), background: { path: assetPath, position } };
   }
   const manifest: SkinPackageManifest = {
-    schemaVersion: 1, id, name: label(input.name, 80), version,
+    schemaVersion: input.schemaVersion as "1.1", id, name: label(input.name, 80), version,
     variants: { light: variant("light"), dark: variant("dark") }
   };
   if (input.author !== undefined) manifest.author = label(input.author, 80);
@@ -95,4 +101,8 @@ export function resolveSkinPackageTokens(tokens: SkinPackageManifest["variants"]
     result["--accent-rgb"] = accent.slice(accent.indexOf("(") + 1, -1).split(",").slice(0, 3).map((s) => s.trim()).join(", ");
   }
   return result;
+}
+
+export function skinPackageResources(manifest: SkinPackageManifest): string[] {
+  return [...new Set([manifest.preview, ...Object.values(manifest.variants).flatMap(variant => [variant.background?.path, ...Object.values(variant.visuals?.images ?? {})])].filter((path): path is string => Boolean(path)))];
 }

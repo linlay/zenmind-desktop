@@ -289,17 +289,11 @@ export function sanitizeDesktopPetStoredState(
   const windowState = candidate.window && typeof candidate.window === "object"
     ? candidate.window as { edgeDock?: unknown; previewExpanded?: unknown }
     : {};
-  const appearanceId = typeof candidate.appearanceId === "string" && candidate.appearanceId.trim()
-    ? normalizeDesktopPetAppearanceId(candidate.appearanceId)
-    : (typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
-      ? candidate.selectedPetId.trim()
-      : DEFAULT_DESKTOP_PET_ID) === DEFAULT_DESKTOP_PET_ID
-      ? DEFAULT_DESKTOP_PET_APPEARANCE_ID
-      : normalizeDesktopPetAppearanceId(String(candidate.selectedPetId).replace(/^builtin:/u, ""));
-  const rawSelectedPetId = typeof candidate.selectedPetId === "string" ? candidate.selectedPetId.trim() : "";
-  const selectedPetId = rawSelectedPetId.startsWith("user:")
-    ? rawSelectedPetId
-    : selectedPetIdForAppearance(appearanceId);
+  const rawSelectedPetId = typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
+    ? candidate.selectedPetId.trim()
+    : DEFAULT_DESKTOP_PET_ID;
+  const appearanceId = appearanceForSelectedPetId(rawSelectedPetId);
+  const selectedPetId = selectedPetIdForAppearance(appearanceId);
   return {
     schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
     enabled: supported ? candidate.enabled === true : false,
@@ -317,6 +311,12 @@ export function sanitizeDesktopPetStoredState(
       previewExpanded: windowState.previewExpanded === true
     }
   };
+}
+
+function appearanceForSelectedPetId(selectedPetId: string) {
+  return selectedPetId === DEFAULT_DESKTOP_PET_ID
+    ? DEFAULT_DESKTOP_PET_APPEARANCE_ID
+    : normalizeDesktopPetAppearanceId(selectedPetId.replace(/^builtin:/u, ""));
 }
 
 export function selectedPetIdForAppearance(appearanceId: string) {
@@ -365,12 +365,11 @@ export function toDesktopPetStateFile(state: DesktopPetStoredState) {
 }
 
 export function mergeDesktopPetRuntimeState(config: unknown, runtimeState: unknown) {
-  if (!runtimeState || typeof runtimeState !== "object" || Array.isArray(runtimeState)) {
-    return config;
-  }
   return {
     ...(config && typeof config === "object" && !Array.isArray(config) ? config as Record<string, unknown> : {}),
-    unreadCount: (runtimeState as { unreadCount?: unknown }).unreadCount
+    unreadCount: runtimeState && typeof runtimeState === "object" && !Array.isArray(runtimeState)
+      ? (runtimeState as { unreadCount?: unknown }).unreadCount
+      : 0
   };
 }
 
