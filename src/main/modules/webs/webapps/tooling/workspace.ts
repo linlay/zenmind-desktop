@@ -73,16 +73,23 @@ export function resolveExistingWorkspacePath(
     realPath = fs.realpathSync.native(candidate);
     const stat = fs.statSync(realPath);
     if (expectedType === "file" ? !stat.isFile() : !stat.isDirectory()) {
-      throw new Error(`not a ${expectedType}`);
+      throw Object.assign(new Error(`not a ${expectedType}`), { code: "WRONG_FILE_TYPE" });
     }
-  } catch {
+  } catch (error) {
+    const causeCode = (error as NodeJS.ErrnoException).code || "UNKNOWN";
     throw new WebappToolingError(
       stage,
       expectedType === "file" ? "file_unavailable" : "project_missing",
       expectedType === "file"
-        ? "The requested file is unavailable."
-        : "The WebApp project directory does not exist.",
-      { path: relativePath },
+        ? `The requested workspace file is unavailable (${causeCode}).`
+        : `The WebApp project directory is unavailable (${causeCode}).`,
+      {
+        path: relativePath,
+        category: causeCode === "EACCES" || causeCode === "EPERM" ? "authorization" : causeCode === "ENOENT" || causeCode === "ENOTDIR" ? "not_found" : "validation",
+        executionState: "not_started",
+        cause: { code: causeCode, message: `Workspace ${expectedType} resolution failed.` },
+        recovery: { strategy: "fix_resource", message: "Verify this relative path exists in the current Run workspace used by file tools and Desktop Actions. A Chat resource directory is not automatically that workspace; do not try unrelated host directories." },
+      },
     );
   }
   if (!isInsideOrEqual(realRoot, realPath)) {

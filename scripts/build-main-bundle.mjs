@@ -85,6 +85,11 @@ export async function buildMainBundle(rootDir = projectRoot) {
   if (!fs.statSync(webappToolingWorker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error("WebApp Tooling Worker bundle is missing");
   }
+  // Dev Main is tsc output; give it the same application-relative Worker
+  // entry as the packaged app. Never reuse another brand's staged app.
+  const developmentMainDir = path.join(rootDir, "dist-electron", "main");
+  fs.mkdirSync(developmentMainDir, { recursive: true });
+  fs.copyFileSync(webappToolingWorker, path.join(developmentMainDir, "webapp-tooling-worker.js"));
 
   return outdir;
 }

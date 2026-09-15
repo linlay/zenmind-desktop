@@ -599,7 +599,10 @@ export async function handleActionCallRaw(
   try {
     return await executeAction(options, normalizedRequest, invocation);
   } catch (error) {
-    return fail(action, "action_failed", error instanceof Error ? error.message : String(error));
+    return fail(action, "action_failed", error instanceof Error ? error.message : "Unexpected Desktop Action exception.", {
+      stage: "execution", executionState: "unknown",
+      cause: error instanceof Error ? { name: error.name, message: error.message, code: (error as NodeJS.ErrnoException).code } : { message: "Non-Error exception" },
+    });
   }
 }
 
@@ -620,20 +623,12 @@ export function normalizeActionResponseTimePayload(
     };
   } catch (error) {
     if (!(error instanceof ActionBridgeTimeContractError)) throw error;
-    return {
-      ok: false,
-      action: response.action,
-      error: {
-        code: "time_contract_violation",
-        message: "time contract violation",
-        details: {
-          code: "time_contract_violation",
-          field: error.field,
-          location: error.location,
-          expected: "epoch_ms_int64"
-        }
-      }
-    };
+    return fail(response.action, "time_contract_violation", "time contract violation", {
+      code: "time_contract_violation",
+      field: error.field,
+      location: error.location,
+      expected: "epoch_ms_int64"
+    });
   }
 }
 

@@ -635,3 +635,10 @@
 - Issue card 的 awaiting 文案跟随同一 Chat 的导航快照：question 显示等待回答，approval 显示等待批准，form／planning 与导航栏一致；同一 Chat 切换 awaiting 类型立即更新，黄色胶囊和旋转图标保持，结束 awaiting 后恢复进行中。
 
 - macOS / Windows 深浅色与窄列检查 Issue card 字号：主标题 13px，项目名、状态（含 awaiting）、底部负责人／执行者、时间／到期日和操作文字 11px；长标题与长名称仍正确截断，旋转图标不挤压文字。
+
+## WebApp Tooling 故障与恢复
+
+- 在 macOS、Windows 的干净 dev 构建与正式 app.asar 中，通过真实 Platform Run 完成 init、目录 validate、build、归档 validate、install、open、getStatus；install 原样使用 build 返回的 outputPath/id，确认 running 和非空 webUrl。
+- 删除测试安装副本的 Worker 入口后调用 package.init，确认返回 tooling_worker_unavailable、ENOENT、not_started 和 repair_host；工程不应创建。不要修改正在使用的正式安装文件。
+- 用测试 Worker 注入加载异常、提前退出和超时，确认模型收到原因、执行状态、恢复提示及可关联的诊断编号；不能自动重放写动作或让 Agent 直接启动内部脚本。
+- 在当前 Run Workspace 外放置同名 ZIP，确认 install 拒绝而不搜索其他目录；验证缺失文件、错误文件类型、权限拒绝、绝对路径、Windows 盘符及 Junction 越界的诊断分别准确。

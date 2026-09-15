@@ -9,6 +9,23 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
+
+// Public failures now include shared diagnostics; keep exact assertions for
+// the existing domain payload so extra issue snapshots still fail the test.
+function assertActionFailure(actual, expected) {
+  assert.equal(actual.ok, false);
+  const { category, stage, executionState, recovery, diagnosticId, ...domain } = actual.error.details;
+  assert.equal(typeof category, "string");
+  assert.equal(typeof stage, "string");
+  assert.ok(["not_started", "partial", "rolled_back", "unknown"].includes(executionState));
+  assert.equal(typeof recovery.strategy, "string");
+  assert.equal(typeof recovery.message, "string");
+  const error = { ...actual.error, details: domain };
+  if (!expected.error.details && Object.keys(domain).length === 0) delete error.details;
+  assert.deepEqual({ ...actual, error }, expected);
+}
+
+
 const JSZip = require("jszip");
 
 const {
@@ -792,10 +809,6 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   const { options } = createDesktopActionOptions(t);
   const workspaceRoot = path.join(options.app.getPath("home"), "agent-workspace");
   fs.mkdirSync(workspaceRoot, { recursive: true });
-  options.webappToolingWorkerPath = path.join(
-    process.cwd(),
-    "dist-electron/main/modules/webs/webapps/tooling/worker.js"
-  );
   let confirmations = 0;
   options.confirmRendererAction = async () => {
     confirmations += 1;
@@ -893,7 +906,7 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   const installed = await handleAgentPlatformDesktopActionRequest(options, {
     action: "desktop.webapp.install",
     source,
-    args: { workspaceArchivePath: "artifacts/example.zip", expectedId: initialized.result.id }
+    args: { workspaceArchivePath: built.result.outputPath, expectedId: built.result.id }
   });
   assert.equal(installed.ok, true);
   assert.equal(installed.result.webappId, initialized.result.id);
@@ -936,7 +949,8 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   });
   assert.equal(absolute.ok, false);
   assert.equal(absolute.error.code, "invalid_path");
-  assert.equal(absolute.error.details.stage, "archive");
+  assert.equal(absolute.error.details.stage, "arguments");
+  assert.equal(absolute.error.details.executionState, "not_started");
   assert.equal(JSON.stringify(absolute).includes(workspaceRoot), false);
 
   const missingWorkspace = await handleAgentPlatformDesktopActionRequest(options, {
@@ -945,7 +959,8 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
     args: { projectPath: "apps/example" }
   });
   assert.equal(missingWorkspace.ok, false);
-  assert.equal(missingWorkspace.error.code, "forbidden");
+  assert.equal(missingWorkspace.error.code, "workspace_unavailable");
+  assert.equal(missingWorkspace.error.details.executionState, "not_started");
 
   const forgedSource = await handleAgentPlatformDesktopActionRequest(options, {
     action: "desktop.webapp.package.validate",
@@ -1876,7 +1891,7 @@ test("desktop.webapp.publish exposes only its single-instance success result", a
     args: { id },
     permissionMode: "full_access"
   });
-  assert.deepEqual(invalid, {
+  assertActionFailure(invalid, {
     ok: false,
     action: "desktop.webapp.publish",
     error: {
@@ -2480,7 +2495,7 @@ test("desktop pet show reports a failure unless the window is actually enabled",
 
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "pet_enable_failed");
-  assert.equal("details" in response.error, false);
+  assert.equal(response.error.details.executionState, "unknown");
 });
 
 test("dedicated Desktop setting actions replace the removed generic Setting family", async (t) => {
@@ -2999,7 +3014,8 @@ test("desktop pet actions reject unknown local appearances and removed legacy na
   });
   assert.equal(missingResponse.ok, false);
   assert.equal(missingResponse.error.code, "pet_appearance_not_found");
-  assert.deepEqual(missingResponse.error.details, { appearanceId: "user:missing" });
+  assert.equal(missingResponse.error.details.appearanceId, "user:missing");
+  assert.equal(missingResponse.error.details.executionState, "unknown");
   assert.deepEqual(calls.saveSettings, []);
 
   for (const action of [
@@ -3090,7 +3106,7 @@ test("desktop website mutations return only the committed item or identifier", a
   assert.equal(typeof listed.result.items[0].updatedAt, "number");
 
   const duplicate = await handleDesktopActionRequest(options, request);
-  assert.deepEqual(duplicate, {
+  assertActionFailure(duplicate, {
     ok: false,
     action: "desktop.website.add",
     error: {
@@ -3139,7 +3155,7 @@ test("desktop website mutations return only the committed item or identifier", a
       permissionMode: "full_access",
       args
     });
-    assert.deepEqual(failed, {
+    assertActionFailure(failed, {
       ok: false,
       action,
       error: {
@@ -3167,7 +3183,7 @@ test("desktop website add returns detailed input issues", async (t) => {
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "website_add_failed");
   assert.match(response.error.message, /url|网站地址/u);
-  assert.deepEqual(response, {
+  assertActionFailure(response, {
     ok: false,
     action: "desktop.website.add",
     error: {
@@ -3273,7 +3289,7 @@ test("desktop kanban business failures do not expose issue snapshots", async (t)
     moveIssue: async () => ({ ok: false, message: "move rejected", issues: leakedIssues })
   });
 
-  assert.deepEqual(
+  assertActionFailure(
     await handleDesktopActionRequest(options, {
       action: "desktop.kanban.getIssue",
       args: { id: "issue-missing" }
@@ -3296,7 +3312,7 @@ test("desktop kanban business failures do not expose issue snapshots", async (t)
     ["desktop.kanban.moveIssue", { id: "issue-1", status: "in_progress", position: 1 }, "kanban_move_failed", "move rejected", { issueId: "issue-1" }]
   ]) {
     const expectedError = { code, message, ...(details ? { details } : {}) };
-    assert.deepEqual(
+    assertActionFailure(
       await handleDesktopActionRequest(options, {
         action,
         permissionMode: "full_access",
@@ -3330,7 +3346,8 @@ test("desktop kanban rejects incomplete successful domain results", async (t) =>
     });
     assert.equal(response.ok, false, action);
     assert.equal(response.error.code, "invalid_action_result", action);
-    assert.equal("details" in response.error, false, action);
+    assert.equal(response.error.details.executionState, "unknown", action);
+    assert.equal("issue" in response.error.details, false, action);
   }
 });
 
@@ -3627,3 +3644,39 @@ for (const platform of ["darwin", "win32"]) {
     assert.deepEqual(calls.navigation, ["/help"]);
   });
 }
+
+test("WebApp path preflight runs before Worker launch and missing archives retain the OS cause", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const workspaceRoot = path.join(options.app.getPath("home"), "tooling-preflight");
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  options.webappToolingWorkerPath = path.join(workspaceRoot, "missing-worker.js");
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder", workspaceRoot };
+  for (const projectPath of ["/absolute/app", "C:\\private\\app", "\\\\server\\share\\app", "../outside"]) {
+    const result = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.webapp.package.init", source, args: { projectPath, key: "preflight-test", label: "Preflight" }
+    });
+    assert.equal(result.error.code, "invalid_path");
+    assert.equal(result.error.details.stage, "arguments");
+    assert.equal(result.error.details.executionState, "not_started");
+    assert.equal(result.error.details.issues[0].path, "args.projectPath");
+  }
+  const missingWorker = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.package.init", source, args: { projectPath: "app", key: "preflight-test", label: "Preflight" }
+  });
+  assert.equal(missingWorker.error.code, "tooling_worker_unavailable");
+  assert.equal(missingWorker.error.details.cause.code, "ENOENT");
+  assert.equal(missingWorker.error.details.recovery.strategy, "repair_host");
+  assert.ok(missingWorker.error.details.diagnosticId);
+  assert.equal(fs.existsSync(path.join(workspaceRoot, "app")), false);
+
+  options.getMainWindow = () => ({ isDestroyed: () => false, webContents: { send() {}, isDestroyed: () => false } });
+  options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "confirm" });
+  const missingArchive = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.install", source, args: { workspaceArchivePath: "releases/missing.zip" }
+  });
+  assert.equal(missingArchive.error.code, "file_unavailable");
+  assert.equal(missingArchive.error.details.cause.code, "ENOENT");
+  assert.equal(missingArchive.error.details.executionState, "not_started");
+  assert.match(missingArchive.error.details.recovery.message, /current Run workspace/);
+  assert.equal(JSON.stringify(missingArchive).includes(workspaceRoot), false);
+});

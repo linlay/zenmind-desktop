@@ -1234,7 +1234,7 @@ test("reverse CDP validation retains field diagnostics in the error frame", asyn
 
 test("Desktop action errors use flat transport diagnostics without internal result envelope", async (t) => {
   const { broker, socket, token } = createHarness(t);
-  const details = { issues: [{ path: "args.input", code: "required", expected: "object", actual: "missing" }], recovery: "Read desktop-action/references/kanban.md" };
+  const details = { category: "validation", stage: "arguments", executionState: "not_started", issues: [{ path: "args.input", code: "required", expected: "object", actual: "missing" }], recovery: { strategy: "fix_input", message: "Read desktop-action/references/kanban.md" } };
   broker.setDesktopBridgeProvider({
     action: async request => ({ ok: false, action: request.action, error: { code: "invalid_args", message: "args.input must be an object.", details } }),
     cdp: async () => ({ ok: true }),
@@ -1246,4 +1246,20 @@ test("Desktop action errors use flat transport diagnostics without internal resu
     frame: "error", type: "invalid_args", id: "action-invalid", code: 400, msg: "args.input must be an object.",
     data: { action: "desktop.kanban.createIssue", details },
   });
+});
+
+test("Desktop Worker internal failures preserve causes and use a server error frame", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const details = { category: "internal", stage: "internal", executionState: "not_started", cause: { code: "ENOENT", message: "Worker entry missing" }, recovery: { strategy: "repair_host", message: "Rebuild Main and Worker together." }, diagnosticId: "diagnostic-worker-1" };
+  broker.setDesktopBridgeProvider({
+    action: async request => ({ ok: false, action: request.action, error: { code: "tooling_worker_unavailable", message: "Worker entry missing", details } }),
+    cdp: async () => ({ ok: true }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({ frame: "request", type: "desktop.webapp.package.init", id: "worker-missing", source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }, payload: {} });
+  await waitUntil(() => socket("primary").sent.some(frame => frame.id === "worker-missing"));
+  const frame = socket("primary").sent.find(frame => frame.id === "worker-missing");
+  assert.equal(frame.code, 500);
+  assert.equal(frame.type, "tooling_worker_unavailable");
+  assert.deepEqual(frame.data.details, details);
 });

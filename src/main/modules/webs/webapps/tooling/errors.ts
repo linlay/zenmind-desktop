@@ -40,8 +40,16 @@ export function serializeWebappToolingError(error: unknown): SerializedWebappToo
   return {
     stage: "internal",
     code: "tooling_failed",
-    message: "Desktop WebApp Tooling failed.",
-    details: {},
+    message: error instanceof Error ? `Desktop WebApp Tooling failed: ${error.message}` : "Desktop WebApp Tooling failed with a non-Error exception.",
+    details: {
+      executionState: "unknown",
+      cause: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        ...(typeof (error as NodeJS.ErrnoException).code === "string" ? { code: (error as NodeJS.ErrnoException).code } : {}),
+      } : { message: "Non-Error exception" },
+      recovery: { strategy: "inspect", message: "Inspect the original failure and existing output before retrying the operation." },
+    },
   };
 }
 

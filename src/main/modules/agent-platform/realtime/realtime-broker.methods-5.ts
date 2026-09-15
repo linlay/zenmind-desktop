@@ -1,3 +1,4 @@
+import { desktopActionErrorStatus } from "../../../../shared/desktop-action-diagnostics";
 import type { RealtimeBrokerMethodContext } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
 import { validateAgentPlatformPushTimeContract } from "../../../../shared/agent-platform-push-time-contract";
@@ -173,7 +174,7 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
             const data = isDesktopAction
                 ? { action: type, ...(isRecord(error.details) ? { details: error.details } : {}) }
                 : result;
-            self.sendDesktopBridgeError(id, readText(error.code) || "desktop_request_failed", 400, readText(error.message) || "Desktop rejected the request", data);
+            self.sendDesktopBridgeError(id, readText(error.code) || "desktop_request_failed", isDesktopAction ? desktopActionErrorStatus(isRecord(error.details) ? error.details.category : undefined) : 400, readText(error.message) || "Desktop rejected the request", data);
             return;
         }
         await self.sendDesktopBridgeSuccess(id, type, result, controller.signal);
