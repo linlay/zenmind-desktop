@@ -94,7 +94,7 @@
   grid-template-columns: minmax(300px, 360px) minmax(320px, 480px) minmax(120px, 1fr);
   align-items: center;
   gap: 12px;
-  padding: 8px 8px 7px;
+  padding: 8px 8px 2px;
   overflow: visible;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   background: var(--surface-strong);
@@ -1123,9 +1123,9 @@
 }
 
 .kanban-column-head {
-  height: 40px;
-  min-height: 40px;
-  flex: 0 0 40px;
+  height: 36px;
+  min-height: 36px;
+  flex: 0 0 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3228,6 +3228,8 @@
 
 .kanban-detail-header {
   position: relative;
+  height: 40px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
