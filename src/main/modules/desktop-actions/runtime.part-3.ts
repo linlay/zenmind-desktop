@@ -1,3 +1,4 @@
+import { isActionCredentialKey, sanitizeActionErrorText } from "./diagnostics";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -39,7 +40,7 @@ import {
   type WebappToolingTask
 } from "../webs";
 import { DesktopActionBridgeOptions, asRecord, fail, ok, readString } from "./runtime.part-1";
-import { DESKTOP_WEB_POST_STATE_ACTIONS, DESKTOP_WORKPANEL_MUTATION_ACTIONS, isSensitiveConfirmationKey, projectDesktopWebActionSurface, sanitizeConfirmationUrlText } from "./runtime.part-2";
+import { DESKTOP_WEB_POST_STATE_ACTIONS, DESKTOP_WORKPANEL_MUTATION_ACTIONS, projectDesktopWebActionSurface } from "./runtime.part-2";
 
 export function projectDesktopWebActionTab(
   value: unknown,
@@ -297,34 +298,12 @@ export function compactWebappItem(item: WebappEntry | null | undefined): Desktop
   };
 }
 
-export function redactWorkspaceRootText(value: string, workspaceRoot = "") {
-  const root = workspaceRoot.trim();
-  if (!root) return value;
-  const candidates = new Set([
-    root,
-    path.normalize(root),
-    root.replace(/\\/gu, "/"),
-    root.replace(/\//gu, "\\"),
-  ]);
-  let redacted = value;
-  for (const candidate of [...candidates].filter(Boolean).sort((left, right) => right.length - left.length)) {
-    redacted = redacted.split(candidate).join("[WORKSPACE]");
-  }
-  return redacted;
-}
-
-export function sanitizeWebappErrorText(value: string, workspaceRoot = "") {
-  return redactWorkspaceRootText(sanitizeConfirmationUrlText(value)
-    .replace(
-      /((?:access[_-]?token|api[_-]?key|authorization|client[_-]?secret|cookie|credential|jwt|password|private[_-]?key|refresh[_-]?token|secret|session[_-]?token|token)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
-      "$1[REDACTED]"
-    )
-    .replace(/\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, "[REDACTED]")
-    .replace(/\b(?:dk|th|sk)_[A-Za-z0-9_-]{8,}\b/gu, "[REDACTED]"), workspaceRoot);
+export function sanitizeWebappErrorText(value: string, _workspaceRoot = "") {
+  return sanitizeActionErrorText(value);
 }
 
 export function sanitizeWebappDiagnosticValue(value: unknown, key = "", depth = 0, workspaceRoot = ""): unknown {
-  if (isSensitiveConfirmationKey(key)) {
+  if (isActionCredentialKey(key)) {
     return "[REDACTED]";
   }
   if (typeof value === "string") {

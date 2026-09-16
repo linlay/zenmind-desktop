@@ -3678,5 +3678,52 @@ test("WebApp path preflight runs before Worker launch and missing archives retai
   assert.equal(missingArchive.error.details.cause.code, "ENOENT");
   assert.equal(missingArchive.error.details.executionState, "not_started");
   assert.match(missingArchive.error.details.recovery.message, /current Run workspace/);
-  assert.equal(JSON.stringify(missingArchive).includes(workspaceRoot), false);
+  assert.equal(JSON.stringify(missingArchive).includes(workspaceRoot), true);
+});
+
+test("WebApp diagnostic redaction preserves root workspace paths and ordinary versions", () => {
+  const { sanitizeWebappErrorText, sanitizeWebappDiagnosticValue } = require("../dist-electron/main/modules/desktop-actions/runtime.part-3.js");
+  for (const workspaceRoot of ["/", "/Users/example", "C:\\", "\\\\server\\share"]) {
+    const message = "ENOENT: no such file or directory, mkdir '/personal-workbench/distribution'; ECharts 5.5.0";
+    assert.equal(sanitizeWebappErrorText(message, workspaceRoot), message);
+    const diagnostic = { workspaceRoot, cause: { code: "ENOENT", message, stack: message + "\n at worker.js:12:3" } };
+    assert.deepEqual(sanitizeWebappDiagnosticValue(diagnostic, "", 0, workspaceRoot), diagnostic);
+  }
+});
+
+test("WebApp init supports writable descendants of a filesystem root and diagnoses invalid existing projects", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const home = fs.realpathSync.native(options.app.getPath("home"));
+  // Windows uses the temp directory's volume root; macOS uses / (which itself may be read-only).
+  const workspaceRoot = process.platform === "win32" ? path.win32.parse(home).root : path.posix.parse(home).root;
+  const projectPath = path.relative(workspaceRoot, path.join(home, "root-workspace-app")).split(path.sep).join("/");
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder", workspaceRoot };
+  const init = (projectPath) => handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.package.init", source, args: { projectPath, key: "root-workspace-app", label: "Root workspace app" },
+  });
+  const created = await init(projectPath);
+  assert.equal(created.ok, true, JSON.stringify(created));
+  const manifestPath = path.join(workspaceRoot, projectPath, "webapp.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  assert.match(manifest.id, /^webapp-[a-f0-9]{16}$/);
+  assert.equal((await init(projectPath)).ok, true);
+  assert.equal(JSON.parse(fs.readFileSync(manifestPath, "utf8")).id, manifest.id);
+  manifest.id = "";
+  const invalid = JSON.stringify(manifest);
+  fs.writeFileSync(manifestPath, invalid);
+  const rejected = await init(projectPath);
+  assert.equal(rejected.error.code, "manifest_invalid");
+  assert.match(rejected.error.details.recovery.message, /never fills an empty or placeholder id/);
+  assert.equal(rejected.error.details.context.resolvedProjectPath, path.dirname(manifestPath));
+  assert.equal(fs.readFileSync(manifestPath, "utf8"), invalid);
+  const filePath = path.join(home, "blocked-parent");
+  fs.writeFileSync(filePath, "keep");
+  const blockedRelative = path.relative(workspaceRoot, path.join(filePath, "distribution")).split(path.sep).join("/");
+  const blocked = await init(blockedRelative);
+  assert.equal(blocked.error.code, "project_init_failed", JSON.stringify(blocked));
+  assert.equal(blocked.error.details.stage, "manifest");
+  assert.equal(blocked.error.details.cause.syscall, "mkdir");
+  assert.ok(blocked.error.details.cause.code);
+  assert.equal(blocked.error.details.context.resolvedProjectPath, path.join(filePath, "distribution"));
+  assert.match(blocked.error.details.recovery.message, /workspace-relative/);
 });

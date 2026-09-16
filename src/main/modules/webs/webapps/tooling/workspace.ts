@@ -87,7 +87,7 @@ export function resolveExistingWorkspacePath(
         path: relativePath,
         category: causeCode === "EACCES" || causeCode === "EPERM" ? "authorization" : causeCode === "ENOENT" || causeCode === "ENOTDIR" ? "not_found" : "validation",
         executionState: "not_started",
-        cause: { code: causeCode, message: `Workspace ${expectedType} resolution failed.` },
+        cause: { code: causeCode, message: error instanceof Error ? error.message : String(error) },
         recovery: { strategy: "fix_resource", message: "Verify this relative path exists in the current Run workspace used by file tools and Desktop Actions. A Chat resource directory is not automatically that workspace; do not try unrelated host directories." },
       },
     );

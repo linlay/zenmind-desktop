@@ -9,11 +9,19 @@ const categories: Record<string, DesktopActionErrorCategory> = {
   renderer_timeout: "timeout", tooling_timeout: "timeout", tooling_busy: "conflict", output_exists: "conflict",
 };
 
+// Redact credential values, never diagnostic paths or metadata such as tokenCount.
+export function isActionCredentialKey(key: string): boolean {
+  return /^(?:(?:(?:access|refresh|session|id|auth|client|db|database|login|user|proxy)[_.-]?)?(?:token|password|passwd|pwd|secret)|authorization|cookies?|api[_. -]?key|credential|private[_.-]?key)$/iu.test(key);
+}
+
 export function sanitizeActionErrorText(value: string): string {
-  return value.replace(/\bBearer\s+\S+/giu, "Bearer [REDACTED]")
-    .replace(/((?:token|password|secret|authorization|cookie|api[_-]?key)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu, "$1[REDACTED]")
-    .replace(/(?:[A-Za-z]:[\\/]|\/(?:Users|home|private|tmp)\/)[^\s'"\n)]+/gu, "[HOST_PATH]")
-    .slice(0, 2048);
+  return value
+    .replace(/(["']?\b(?:(?:(?:access|refresh|session|id|auth|client|db|database|login|user|proxy)[_.-]?)?(?:token|password|passwd|pwd|secret)|authorization|cookies?|api[_. -]?key|credential|private[_.-]?key)["']?\s*[=:]\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|Bearer\s+[^\s,;&"'}]+|[^\s,;&"'}]+)/giu, (_match, prefix: string, secret: string) => {
+      const quote = secret.startsWith('"') ? '"' : secret.startsWith("'") ? "'" : "";
+      return `${prefix}${quote}[REDACTED]${quote}`;
+    })
+    .replace(/(\bBearer\s+)[^\s,;&"'}]+/giu, "$1[REDACTED]")
+    .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:)[^\s/@]*(@)/giu, "$1[REDACTED]$2");
 }
 
 function sanitizeDiagnostics(value: unknown, budget = { remaining: 12000 }, depth = 0): unknown {
@@ -33,7 +41,7 @@ function sanitizeDiagnostics(value: unknown, budget = { remaining: 12000 }, dept
       if (budget.remaining <= 0) break;
       budget.remaining -= key.length;
       const item = (value as Record<string, unknown>)[key];
-      result[key.slice(0, 128)] = /token|password|secret|authorization|cookie|credential|private[_-]?key|stack|workspaceRoot/iu.test(key)
+      result[key.slice(0, 128)] = isActionCredentialKey(key)
         ? "[REDACTED]" : sanitizeDiagnostics(item, budget, depth + 1);
     }
     return result;
