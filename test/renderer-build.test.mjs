@@ -4088,14 +4088,14 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /kanbanApi\.listIssues\(\)/);
   assert.match(kanbanPage, /kanbanApi\.createIssue/);
   assert.match(kanbanPage, /function canCreateIssueFromColumnDoubleClick\(status: KanbanStatus\)/);
-  assert.match(kanbanPage, /return status === "todo";/);
+  assert.match(kanbanPage, /function canCreateIssueFromColumnDoubleClick\(status: KanbanStatus\) \{\s*return KANBAN_CREATE_STATUSES.includes\(status\);/);
   assert.match(kanbanPage, /function shouldCreateIssueFromColumnDoubleClick/);
   assert.match(kanbanPage, /target\.closest\("\.issue-card"\)/);
   assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}canAdd && shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
-  assert.match(kanbanPage, /status === "todo" && canAdd[\s\S]{0,300}kanban\.column\.emptyTodoCreateHint/);
+  assert.match(kanbanPage, /canCreateIssueFromColumnDoubleClick\(status\) && canAdd[\s\S]{0,300}kanban\.column\.emptyTodoCreateHint/);
   assert.match(kanbanStyles, /\.kanban-empty-column-create-hint\s*\{/);
-  assert.match(zhCN, /"kanban\.column\.emptyTodoCreateHint": "双击此处新增问题"/);
-  assert.match(enUS, /"kanban\.column\.emptyTodoCreateHint": "Double-click here to create an issue"/);
+  assert.match(zhCN, /"kanban\.column\.emptyTodoCreateHint": "双击新建"/);
+  assert.match(enUS, /"kanban\.column\.emptyTodoCreateHint": "Double-click to create"/);
   assert.match(kanbanPage, /KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000/);
   assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success" \|\| feedbackPaused\) \{/);
   assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);

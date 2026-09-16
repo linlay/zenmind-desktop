@@ -1356,7 +1356,7 @@ function canEditKanbanIssueBody(issue: KanbanIssue | null | undefined) {
 }
 
 function canCreateIssueFromColumnDoubleClick(status: KanbanStatus) {
-  return status === "todo";
+  return KANBAN_CREATE_STATUSES.includes(status);
 }
 
 function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, status: KanbanStatus) {
@@ -2445,7 +2445,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const modalProjectId = form.projectId.trim();
   const modalProject = modalProjectId ? kanbanProjectsById.get(modalProjectId) : undefined;
   const modalProjectLabel = modalProject
-    ? modalProject.syncMode === "local" ? (modalProject.id === "default" ? t("kanban.projectFilter.defaultLocal") : modalProject.name) : getKanbanProjectOptionLabel(modalProject)
+    ? modalProject.syncMode === "local" && modalProject.id === "default" ? t("kanban.projectFilter.defaultLocal") : modalProject.name
     : t("kanban.projectFilter.local");
   const modalProjectVersions = Array.from(new Set([
     ...(form.projectVersion ? [form.projectVersion] : []),
@@ -2831,7 +2831,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                     }}
                   >
                     <span>{modalProjectLabel}</span>
-                    <span className="kanban-project-form-chevron" aria-hidden="true">⌄</span>
                   </button>
                   {projectFormMenuOpen ? (
                     <div className="kanban-project-form-menu" role="listbox" aria-label={t("kanban.detail.project")}>
@@ -2855,14 +2854,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                         }}
                       >{project.name}</button>)}
                       {filteredProjectFormOptions.length > 0 ? <div className="kanban-project-source-heading">{t("kanban.projectFilter.cloud")}</div> : null}
-                      {filteredProjectFormOptions.map(({ project, level }) => (
+                      {filteredProjectFormOptions.map(({ project, level }, index) => (
                         <button
                           key={project.id}
                           type="button"
                           role="option"
                           data-kanban-project-option
                           aria-selected={form.projectId === project.id}
-                          className={form.projectId === project.id ? "is-selected" : ""}
+                          className={`kanban-project-tree-option${form.projectId === project.id ? " is-selected" : ""}`}
                           style={{ paddingLeft: `${10 + (level * 16)}px` }}
                           onKeyDown={handleKanbanProjectOptionKeyDown}
                           onClick={() => {
@@ -2871,7 +2870,20 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                             setProjectFormQuery("");
                           }}
                         >
-                          {getKanbanProjectOptionLabel(project)}
+                          {Array.from({ length: level }, (_, depth) => {
+                            const branchLevel = depth + 1;
+                            const nextBranch = filteredProjectFormOptions.slice(index + 1).find((item) => item.level <= branchLevel);
+                            const continues = nextBranch?.level === branchLevel;
+                            const isBranch = branchLevel === level;
+                            if (!isBranch && !continues) return null;
+                            return <span
+                              key={depth}
+                              aria-hidden="true"
+                              className={`kanban-project-tree-guide${isBranch ? " is-branch" : ""}${isBranch && !continues ? " is-last" : ""}`}
+                              style={{ left: `${18 + depth * 16}px` }}
+                            />;
+                          })}
+                          <span className="kanban-project-tree-name">{project.name}</span>
                         </button>
                       ))}
                       {filteredProjectFormOptions.length === 0 && filteredLocalProjectFormOptions.length === 0 ? (
@@ -3274,9 +3286,9 @@ const KanbanColumn = memo(function KanbanColumn({
           ))}
         </SortableContext>
         {issues.length === 0 ? (
-          <div className={`kanban-empty-column ${status === "todo" && canAdd ? "is-create-enabled" : ""}`}>
+          <div className={`kanban-empty-column ${canCreateIssueFromColumnDoubleClick(status) && canAdd ? "is-create-enabled" : ""}`}>
             <strong>{t("kanban.column.empty")}</strong>
-            {status === "todo" && canAdd ? (
+            {canCreateIssueFromColumnDoubleClick(status) && canAdd ? (
               <span className="kanban-empty-column-create-hint">{t("kanban.column.emptyTodoCreateHint")}</span>
             ) : null}
           </div>
@@ -3718,9 +3730,6 @@ function KanbanProjectFilter({
       </Tooltip>
       {open ? (
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
-          <div className="kanban-project-source-filter" role="group" aria-label={t("kanban.projectFilter.source")}>
-            {(["all", "local", "cloud"] as const).map((source) => <button key={source} type="button" aria-pressed={projectSource === source} className={projectSource === source ? "is-active" : ""} onClick={() => onSourceChange(source)}>{t(source === "all" ? "kanban.projectFilter.allSources" : source === "local" ? "kanban.projectFilter.local" : "kanban.projectFilter.cloud")}</button>)}
-          </div>
           <KanbanProjectSearchInput
             value={searchQuery}
             autoFocus
@@ -3730,7 +3739,11 @@ function KanbanProjectFilter({
               setSearchQuery("");
               onOpenChange(false);
             }}
-          />
+          >
+            <div className="kanban-project-source-filter" role="group" aria-label={t("kanban.projectFilter.source")}>
+              {(["all", "local", "cloud"] as const).map((source) => <button key={source} type="button" aria-pressed={projectSource === source} className={projectSource === source ? "is-active" : ""} onClick={() => onSourceChange(source)}>{t(source === "all" ? "kanban.projectFilter.allSources" : source === "local" ? "kanban.projectFilter.local" : "kanban.projectFilter.cloud")}</button>)}
+            </div>
+          </KanbanProjectSearchInput>
           {!normalizedSearchQuery ? <button
             type="button"
             data-kanban-project-option
@@ -3742,6 +3755,7 @@ function KanbanProjectFilter({
             <span>{t("kanban.projectFilter.all")}</span>
             <span className="kanban-project-filter-item-count" aria-hidden="true">{totalCount}</span>
           </button> : null}
+          {localMatchesSearch || filteredLocalProjects.length > 0 ? <div className="kanban-project-source-heading">{t("kanban.projectFilter.local")}</div> : null}
           {localMatchesSearch ? <label
             className={`kanban-project-filter-row is-local ${includeLocalIssues ? "is-active" : ""}`}
             role="treeitem"
@@ -3756,7 +3770,7 @@ function KanbanProjectFilter({
               onKeyDown={handleKanbanProjectOptionKeyDown}
             />
             <span className="kanban-project-filter-project">
-              <span className="kanban-project-filter-name">{t("kanban.projectFilter.local")}</span>
+              <span className="kanban-project-filter-name">{t("kanban.projectFilter.allLocal")}</span>
               <span className="kanban-project-filter-path">{t("kanban.projectFilter.localHint")}</span>
             </span>
             <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: localIssueCount })}>{localIssueCount}</span>
@@ -3813,12 +3827,14 @@ function KanbanProjectFilter({
 function KanbanProjectSearchInput({
   value,
   autoFocus = false,
+  children,
   t,
   onChange,
   onEscape
 }: {
   value: string;
   autoFocus?: boolean;
+  children?: ReactNode;
   t: TranslateFunction;
   onChange: (value: string) => void;
   onEscape: () => void;
@@ -3861,6 +3877,7 @@ function KanbanProjectSearchInput({
           <span aria-hidden="true">×</span>
         </button>
       ) : null}
+      {children}
     </div>
   );
 }
