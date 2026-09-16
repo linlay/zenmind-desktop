@@ -20,7 +20,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
-import { DownloadOutlined, CloseOutlined } from "@ant-design/icons";
+import { CloseOutlined } from "@ant-design/icons";
 import {
   DndContext,
   DragOverlay,
@@ -7123,7 +7123,10 @@ export function AppSidebar({
                     if (canDownloadUpdate) void downloadSidebarUpdate();
                     else handleToolMenuOpenChange(true);
                   }}
-                ><DownloadOutlined className="sidebar-update-icon" aria-hidden="true" /><span className="sidebar-update-hover-label" aria-hidden="true">{t("updates.action")}</span></button> : null}
+                ><svg className="sidebar-update-icon" width="12" height="12" viewBox="64 64 896 896" fill="currentColor" aria-hidden="true" focusable="false">
+                  {/* Original DownloadOutlined silhouette; widen only the arrowhead by 1px at 12px. */}
+                  <path d="M505.7 661a8 8 0 0012.6 0l149.333-141.7c4.1-5.2.4-12.9-6.3-12.9H549.9V168c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v338.3H362.667c-6.7 0-10.4 7.7-6.3 12.9L505.7 661zM878 626h-60c-4.4 0-8 3.6-8 8v154H214V634c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v198c0 17.7 14.3 32 32 32h684c17.7 0 32-14.3 32-32V634c0-4.4-3.6-8-8-8z" />
+                </svg><span className="sidebar-update-hover-label" aria-hidden="true">{t("updates.action")}</span></button> : null}
               </div>
               <Modal
                 centered
