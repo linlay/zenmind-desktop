@@ -14,7 +14,7 @@ function fixture(t){
  fs.writeFileSync(path.join(npm,'package.json'),JSON.stringify({name:'npm',version:'10.9.4'}));
  const cli='console.log(JSON.stringify({node:process.versions.node,arch:process.arch,mode:process.env.ELECTRON_RUN_AS_NODE,args:process.argv.slice(2),cwd:process.cwd()}))';
  for(const name of ['npm-cli.js','npx-cli.js'])fs.writeFileSync(path.join(npm,'bin',name),cli);
- return {root,options:{stateRoot:path.join(root,'state'),resourcesRoot:resources,executable:process.execPath,nodeVersion:process.versions.node,platform:process.platform,arch:process.arch}};
+ return {root,options:{stateRoot:path.join(root,'state'),binDir:path.join(root,'.desktop','bin'),resourcesRoot:resources,executable:process.execPath,nodeVersion:process.versions.node,platform:process.platform,arch:process.arch}};
 }
 
 test('POSIX launchers bypass a conflicting nvm Node and preserve arguments and cwd',{skip:process.platform==='win32'},t=>{
@@ -33,11 +33,16 @@ test('POSIX launchers bypass a conflicting nvm Node and preserve arguments and c
  assert.equal(piped.stdout,'stdin中文');assert.equal(piped.stderr,'err');
 });
 
-test('runtime identity is stable for reuse and changes with the application executable',t=>{
+test('stable bin is reused and updated while retired runtime files remain available',t=>{
  const {root,options}=fixture(t);if(process.platform==='win32'){fs.mkdirSync(path.join(options.resourcesRoot,'amd64'),{recursive:true});fs.writeFileSync(path.join(options.resourcesRoot,'amd64/node.exe'),'test executable');options.arch='x64';options.probe=()=>({node:options.nodeVersion,arch:'x64'});}
  const first=prepareEmbeddedNodeRuntime(options),second=prepareEmbeddedNodeRuntime(options);assert.equal(first.binDir,second.binDir);
  fs.writeFileSync(path.join(options.resourcesRoot,'npm/package.json'),JSON.stringify({name:'npm',version:'10.9.5'}));
- const changed=prepareEmbeddedNodeRuntime(options);assert.notEqual(first.binDir,changed.binDir);
+ const changed=prepareEmbeddedNodeRuntime(options);assert.equal(first.binDir,changed.binDir);
+ assert.equal(changed.binDir,options.binDir);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(changed.binDir,'node_modules/npm/package.json'))).version,'10.9.5');
+ const retired=fs.readdirSync(options.stateRoot).filter(name=>name.startsWith('.node-retired-'));
+ assert.equal(retired.length,1);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(options.stateRoot,retired[0],'bin/node_modules/npm/package.json'))).version,'10.9.4');
  assert.ok(fs.existsSync(path.join(first.binDir,'node_modules/npm/bin/npm-cli.js')));
 });
 
@@ -71,4 +76,41 @@ test('branded macOS dev shells use build resources even when Electron reports pa
  assert.equal(embeddedNodeResourcesRoot(app,context,'/packaged/resources'),path.join(root,'build/resources/node-runtime'));
  assert.equal(embeddedNodeResourcesRoot(app,{...context,platform:'win32'},'/packaged/resources'),'/packaged/resources/node-runtime');
  assert.equal(embeddedNodeResourcesRoot({...app,isPackaged:false},{platform:'win32'},'/packaged/resources'),path.join(root,'build/resources/node-runtime'));
+});
+
+test('failed runtime update leaves the published bin usable', {skip:process.platform==='win32'}, t=>{
+ const {options}=fixture(t);const first=prepareEmbeddedNodeRuntime(options);
+ const before=fs.readFileSync(path.join(first.binDir,'runtime.json'),'utf8');
+ fs.writeFileSync(path.join(options.resourcesRoot,'npm/package.json'),JSON.stringify({name:'npm',version:'10.9.5'}));
+ assert.throws(()=>prepareEmbeddedNodeRuntime({...options,probe:()=>({node:'16.0.0',arch:options.arch})}),/mismatch/);
+ assert.equal(fs.readFileSync(path.join(first.binDir,'runtime.json'),'utf8'),before);
+ assert.equal(spawnSync(first.node,['--version'],{encoding:'utf8'}).stdout.trim(),'v'+options.nodeVersion);
+});
+
+test('failed publication restores the previous bin', {skip:process.platform==='win32'}, t=>{
+ const {options}=fixture(t);prepareEmbeddedNodeRuntime(options);
+ const before=fs.readFileSync(path.join(options.binDir,'runtime.json'),'utf8');
+ fs.writeFileSync(path.join(options.resourcesRoot,'npm/package.json'),JSON.stringify({name:'npm',version:'10.9.5'}));
+ const rename=fs.renameSync;
+ t.mock.method(fs,'renameSync',(from,to)=>{
+  if(String(from).includes('.node-stage-') && to===options.binDir) throw new Error('publication failed');
+  return rename(from,to);
+ });
+ assert.throws(()=>prepareEmbeddedNodeRuntime(options),/publication failed/);
+ assert.equal(fs.readFileSync(path.join(options.binDir,'runtime.json'),'utf8'),before);
+});
+
+test('Windows locked executable fails without replacing the existing runtime',t=>{
+ const {options}=fixture(t);fs.mkdirSync(path.join(options.resourcesRoot,'amd64'),{recursive:true});fs.writeFileSync(path.join(options.resourcesRoot,'amd64/node.exe'),'PE-fixture');
+ const win={...options,platform:'win32',arch:'x64',probe:()=>({node:options.nodeVersion,arch:'x64'})};
+ prepareEmbeddedNodeRuntime(win);
+ const before=fs.readFileSync(path.join(options.binDir,'runtime.json'),'utf8');
+ fs.writeFileSync(path.join(options.resourcesRoot,'npm/package.json'),JSON.stringify({name:'npm',version:'10.9.5'}));
+ const rename=fs.renameSync;
+ t.mock.method(fs,'renameSync',(from,to)=>{
+  if(from===options.binDir) throw Object.assign(new Error('locked'),{code:'EPERM'});
+  return rename(from,to);
+ });
+ assert.throws(()=>prepareEmbeddedNodeRuntime(win),/runtime is in use/);
+ assert.equal(fs.readFileSync(path.join(options.binDir,'runtime.json'),'utf8'),before);
 });

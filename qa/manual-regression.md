@@ -622,6 +622,9 @@
 
 ## 连接器使用 Desktop 内置 Node
 
+- 固定入口为 `<Desktop 数据根>/bin`；在 Agent Host Bash 和连接器中确认它先于系统 Node。将 npm 全局 prefix 指向系统 Node 所在目录，确认补充 PATH 后 Node/npm 仍命中 Desktop，同时全局 CLI 仍可发现。
+- 升级和移动应用后入口路径不变。准备失败保留旧 bin，发布失败回滚；Windows 占用阻止目录移动时明确报错，不覆盖旧 exe。旧哈希目录及退役目录保留给已有子进程。
+
 - macOS 将 nvm Node 16 或 x64 Node 放在用户 PATH 最前；Desktop 启动 Platform 后，经其环境运行 node/npm/企微 CLI，确认 Node 版本与架构跟随当前 Electron，用户终端的默认 Node 保持原样。
 - 从 Finder、终端分别启动；连接器的安装、版本检查、登录和业务执行均使用同一 runtime。退出或升级 Desktop 后重新生成当前程序路径对应的入口。
 - Windows 使用含空格和中文的应用/数据目录，验证直接 execFile/exec.Command 调用 node.exe，以及 npm.cmd、npx.cmd、子进程参数、退出码与 stdin/stdout/stderr，不弹额外控制台窗口。
