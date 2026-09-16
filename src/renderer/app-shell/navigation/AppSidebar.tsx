@@ -134,8 +134,6 @@ import {
   getCapabilityNavigationItem,
   type SidebarMode,
 } from "./capabilityNavigation";
-import { ConversationShareDialog } from "./ConversationShareDialog";
-import { useConversationShareDialog } from "./useConversationShareDialog";
 import { ChatInfoDialog } from "./ChatInfoDialog";
 import { useChatInfoDialog } from "./useChatInfoDialog";
 
@@ -418,6 +416,7 @@ const fixedToolRowsBase: Array<
         | "nav.mcpConnectors"
         | "nav.skills"
         | "nav.market"
+        | "nav.shareManagement"
         | "nav.settings";
     }
   >
@@ -458,6 +457,12 @@ const fixedToolRowsBase: Array<
       to: "/market",
       labelKey: "nav.market",
       icon: "market",
+    },
+    {
+      orderKey: "share-management",
+      to: "/share-management",
+      labelKey: "nav.shareManagement",
+      icon: "share",
     },
   ],
   [
@@ -1044,7 +1049,6 @@ type AppSidebarProps = {
   onCloseAssistantDock?: () => void;
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
-  onRefreshDesktopSsoStatus?: () => Promise<void> | void;
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
@@ -1058,6 +1062,7 @@ type AppSidebarProps = {
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onToggleChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onOpenChatHistory?: (agentKey?: string) => void;
+  onShareChat: (chatId: string, chatName: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
@@ -1078,6 +1083,10 @@ type AppSidebarProps = {
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
   onOpenGlobalSearch?: () => void;
+  toolMenuOpen: boolean;
+  onRequestToolMenuOpen: () => void;
+  onAutoOpenToolMenu: () => void;
+  onCloseToolMenu: () => void;
   onToggleCollapsed?: () => void;
   sidebarMode?: SidebarMode;
   settingsSections?: SettingsSidebarSection[];
@@ -1129,7 +1138,6 @@ export function AppSidebar({
   onCloseAssistantDock,
   onDesktopSsoLogin,
   onDesktopSsoLogout,
-  onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
   onReorderAssistantProjects,
   onUpdateAssistantChatOrder,
@@ -1137,6 +1145,7 @@ export function AppSidebar({
   onOpenChatWorkPanel,
   onToggleChatWorkPanel,
   onOpenChatHistory,
+  onShareChat,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
   onRefreshCopilotAgentOptions,
@@ -1157,6 +1166,10 @@ export function AppSidebar({
   onSidebarNavigateForward,
   onNavigateItem,
   onOpenGlobalSearch,
+  toolMenuOpen,
+  onRequestToolMenuOpen,
+  onAutoOpenToolMenu,
+  onCloseToolMenu,
   onToggleCollapsed,
   sidebarMode = "primary",
   settingsSections = [],
@@ -1202,7 +1215,6 @@ export function AppSidebar({
   const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
-  const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const desktopUpdate = useDesktopUpdates();
   const [updateFailure, setUpdateFailure] = useState<NonNullable<DesktopUpdateState["error"]> | null>(null);
   const [updateDownloadPending, setUpdateDownloadPending] = useState(false);
@@ -1268,7 +1280,6 @@ export function AppSidebar({
     useState<AssistantChatRenameDialogState | null>(null);
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
-  const conversationShareDialog = useConversationShareDialog(t);
   const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const chatsShowMoreFocusIndexRef = useRef<number | null>(null);
@@ -1279,7 +1290,6 @@ export function AppSidebar({
   } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const sidebarScrollThumbRef = useRef<HTMLDivElement | null>(null);
-  const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
   const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(
@@ -1965,9 +1975,9 @@ export function AppSidebar({
     }
     if (isPrimaryMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
       bootstrapGuideToolMenuAutoOpenedRef.current = true;
-      setToolMenuOpen(true);
+      onAutoOpenToolMenu();
     }
-  }, [bootstrapActive, isPrimaryMode]);
+  }, [bootstrapActive, isPrimaryMode, onAutoOpenToolMenu]);
 
   useEffect(() => {
     if (!bootstrapActive || typeof window === "undefined") {
@@ -2393,10 +2403,14 @@ export function AppSidebar({
     }
     if (subject.kind === "chat") {
       const chat = findAssistantNavChat(subject.chatId);
-      return chat ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId),
-        pinned: chat.pinned === true,
-        canPin: assistantChatPinningSupported && !chatOrderMutationPending,
-      } : null;
+      return chat
+        ? {
+            kind: "chat",
+            workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId),
+            pinned: chat.pinned === true,
+            canPin: assistantChatPinningSupported && !chatOrderMutationPending,
+          }
+        : null;
     }
 
     const item = findWebItem(subject.entryKey);
@@ -2479,7 +2493,9 @@ export function AppSidebar({
       );
     }
     if (target.kind === "chat") {
-      if (actionId === "chat.pin" || actionId === "chat.unpin") return target.canPin === true;
+      if (actionId === "chat.pin" || actionId === "chat.unpin") {
+        return target.canPin === true;
+      }
       return [
         "chat.export",
         "chat.exportHtml",
@@ -2586,7 +2602,7 @@ export function AppSidebar({
       } else if (actionId === "chat.exportHtml") {
         await handleAssistantExportChatHtml(chat);
       } else if (actionId === "chat.share") {
-        conversationShareDialog.open(chat.chatId, chat.chatName);
+        onShareChat(chat.chatId, chat.chatName);
       } else if (actionId === "chat.rename") {
         handleAssistantRenameChat(chat);
       } else if (actionId === "chat.workPanel.open") {
@@ -6119,7 +6135,7 @@ export function AppSidebar({
   }
 
   function closeToolMenu() {
-    setToolMenuOpen(false);
+    onCloseToolMenu();
   }
 
   function handleDesktopSsoMenuActionClick() {
@@ -6141,26 +6157,11 @@ export function AppSidebar({
   }
 
   function handleToolMenuOpenChange(open: boolean) {
-    const requestId = toolMenuOpenRequestIdRef.current + 1;
-    toolMenuOpenRequestIdRef.current = requestId;
     if (!open) {
       closeToolMenu();
       return;
     }
-
-    const refreshResult = onRefreshDesktopSsoStatus?.();
-    if (!refreshResult) {
-      setToolMenuOpen(true);
-      return;
-    }
-
-    Promise.resolve(refreshResult)
-      .catch(() => undefined)
-      .finally(() => {
-        if (toolMenuOpenRequestIdRef.current === requestId) {
-          setToolMenuOpen(true);
-        }
-      });
+    onRequestToolMenuOpen();
   }
 
   function renderToolMenu() {
@@ -6171,6 +6172,7 @@ export function AppSidebar({
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||
+        item.to === "/share-management" ||
         item.to === "/connectors" ||
         item.to === "/skills",
     );
@@ -6843,7 +6845,10 @@ export function AppSidebar({
     );
     const selectedCapabilityItem = pendingCapabilityItem ?? activeCapabilityItem;
     const firstSecondaryCapabilityItemId = capabilityNavigationItems.find(
-      (item) => item.id === "market" || item.id === "help",
+      (item) =>
+        item.id === "market" ||
+        item.id === "share-management" ||
+        item.id === "help",
     )?.id;
 
     return (
@@ -7141,18 +7146,6 @@ export function AppSidebar({
               </Modal>
               {renderAssistantChatRenameDialog()}
               {renderAssistantChatDeleteDialog()}
-              <ConversationShareDialog
-                state={conversationShareDialog.state}
-                t={t}
-                onClose={conversationShareDialog.close}
-                onCreate={() => void conversationShareDialog.create()}
-                onRetryList={conversationShareDialog.retryList}
-                onExpirationChange={conversationShareDialog.setExpiration}
-                onCopy={(shareId) => void conversationShareDialog.copy(shareId)}
-                onRequestRevoke={conversationShareDialog.requestRevoke}
-                onCancelRevoke={conversationShareDialog.cancelRevoke}
-                onConfirmRevoke={() => void conversationShareDialog.confirmRevoke()}
-              />
               <ChatInfoDialog
                 state={chatInfoDialog.state}
                 t={t}

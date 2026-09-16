@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type {
   AssistantChatSearchResult,
   AssistantNavAgentItem,
+  DesktopGlobalSearchActionShortcutId,
   DesktopGlobalSearchShortcut,
   DesktopGlobalSearchShortcutSlot
 } from "../../../shared/contracts";
@@ -391,6 +392,9 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatA
   if (actionId === "mcpConnectors") {
     return "/connectors";
   }
+  if (actionId === "shareManagement") {
+    return "/share-management";
+  }
   if (actionId === "settings") {
     return "/settings";
   }
@@ -433,6 +437,9 @@ function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.actionId === "mcpConnectors") {
     return <SidebarIllustration kind="connector" />;
   }
+  if (row.actionId === "shareManagement") {
+    return <SidebarIllustration kind="share" />;
+  }
   return <SidebarIllustration kind="settings" />;
 }
 
@@ -441,7 +448,12 @@ function resolveRowShortcut(
   targets: DesktopGlobalSearchShortcutTargets
 ): DesktopGlobalSearchShortcut | null {
   if (row.kind === "action") {
-    return row.actionId === "settings" ? null : { kind: "action", actionId: row.actionId };
+    return row.actionId === "newChat" ||
+      row.actionId === "history" ||
+      row.actionId === "agents" ||
+      row.actionId === "shareManagement"
+      ? { kind: "action", actionId: row.actionId }
+      : null;
   }
   if (row.kind === "chat") {
     const index = targets.attention.findIndex((target) => target.key === row.key);
@@ -459,15 +471,7 @@ function formatShortcutLabel(
     return "";
   }
   return shortcut.kind === "action"
-    ? shortcut.actionId === "newChat"
-      ? "N"
-      : shortcut.actionId === "history"
-        ? "H"
-      : shortcut.actionId === "agents"
-        ? "A"
-        : shortcut.actionId === "skills"
-          ? "S"
-          : "M"
+    ? getActionShortcutKey(shortcut.actionId)
     : shortcut.slot === 10
       ? "0"
       : String(shortcut.slot);
@@ -481,21 +485,26 @@ function formatAriaShortcut(
     return "";
   }
   const suffix = shortcut.kind === "action"
-    ? shortcut.actionId === "newChat"
-      ? "N"
-      : shortcut.actionId === "history"
-        ? "H"
-      : shortcut.actionId === "agents"
-        ? "A"
-        : shortcut.actionId === "skills"
-          ? "S"
-          : "M"
+    ? getActionShortcutKey(shortcut.actionId)
     : shortcut.slot === 10
       ? "0"
       : String(shortcut.slot);
   return shortcut.kind === "agent"
     ? `Alt+${suffix}`
     : `${platform === "darwin" ? "Meta" : "Control"}+${suffix}`;
+}
+
+function getActionShortcutKey(actionId: DesktopGlobalSearchActionShortcutId) {
+  switch (actionId) {
+    case "newChat":
+      return "N";
+    case "history":
+      return "H";
+    case "agents":
+      return "A";
+    case "shareManagement":
+      return "S";
+  }
 }
 
 function ShortcutKeyHint({

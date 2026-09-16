@@ -435,6 +435,7 @@ export interface AssistantConversationShareRequest {
 
 export interface AssistantConversationShareRecord {
   shareId: string;
+  chatId: string;
   url: string;
   createdAt: EpochMilliseconds;
   expiresAt: EpochMilliseconds | null;
