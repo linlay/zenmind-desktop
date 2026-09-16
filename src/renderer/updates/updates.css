@@ -3,12 +3,39 @@
 .desktop-update-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .desktop-update-version { font-size: 12px; opacity: .72; }
 .desktop-update-card p { margin: 0; font-size: 12px; opacity: .8; }
+.desktop-update-card p[role="alert"] { color: var(--danger, #dc2626); opacity: 1; }
 .desktop-update-card details { font-size: 12px; }
 .desktop-update-card summary { cursor: pointer; }
 .desktop-update-card ul { margin: 8px 0 0; padding-left: 18px; max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
 .desktop-update-actions, .desktop-update-preference { display: flex; align-items: center; gap: 10px; }
 .desktop-update-preference { font-size: 13px; margin-top: 4px; }
-.sidebar-update-label { margin-left: auto; font-size: 11px; white-space: nowrap; color: var(--ant-color-primary, #16828b); }
-.sidebar-tool-menu-trigger.has-update { position: relative; }
-.sidebar-tool-menu-trigger.has-update::after { content: ""; position: absolute; right: 8px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--ant-color-primary, #16828b); }
-.app-sidebar.is-collapsed .sidebar-update-label { display: none; }
+
+.desktop-update-card.is-settings { gap: 12px; padding: 20px; width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.desktop-update-card.is-settings .desktop-update-heading { flex-wrap: wrap; }
+.desktop-update-card.is-settings .desktop-update-heading strong { font-size: 15px; }
+.desktop-update-card.is-settings .desktop-update-status { font-weight: 500; opacity: 1; }
+.desktop-update-card.is-settings p { line-height: 1.6; }
+.desktop-update-card.is-settings .desktop-update-actions { flex-wrap: wrap; }
+.desktop-update-card.is-settings .desktop-update-preference { justify-content: space-between; flex-direction: row-reverse; padding-top: 16px; margin-top: 4px; border-top: 1px solid var(--line); line-height: 1.5; }
+
+.sidebar-tool-menu-anchor { position: relative; }
+.sidebar-tool-menu-trigger.has-update .sidebar-tool-menu-trigger-settings-icon,
+.sidebar-tool-menu-trigger.has-update .sidebar-settings-icon-slot { visibility: hidden; }
+.sidebar-update-trigger:focus-visible { outline: 2px solid var(--ant-color-primary, #16828b); outline-offset: 2px; }
+.sidebar-update-trigger:disabled { cursor: default; opacity: .65; }
+.app-sidebar.is-collapsed .sidebar-update-trigger { right: 50%; transform: translate(50%, -50%); }
+
+.sidebar-update-trigger { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: #3478ed; color: #fff; cursor: pointer; overflow: hidden; transition: width 160ms ease, background-color 160ms ease; }
+.sidebar-update-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; color: inherit; }
+.sidebar-update-hover-label { display: none; white-space: nowrap; font-size: 12px; font-weight: 500; line-height: 1; }
+.sidebar-update-trigger:not(:disabled):is(:hover, :focus-visible) { width: 64px; background: #2e70e4; }
+.sidebar-update-trigger:not(:disabled):is(:hover, :focus-visible) .sidebar-update-icon { display: none; }
+.sidebar-update-trigger:not(:disabled):is(:hover, :focus-visible) .sidebar-update-hover-label { display: inline; }
+.sidebar-tool-menu-anchor:has(.sidebar-update-trigger:not(:disabled):is(:hover, :focus-visible)) .sidebar-tool-menu-trigger { padding-right: 80px; }
+.app-sidebar.is-collapsed .sidebar-update-trigger:not(:disabled):is(:hover, :focus-visible) { width: 20px; }
+.app-sidebar.is-collapsed .sidebar-update-trigger:is(:hover, :focus-visible) .sidebar-update-icon { display: inline-flex; }
+.app-sidebar.is-collapsed .sidebar-update-trigger:is(:hover, :focus-visible) .sidebar-update-hover-label { display: none; }
+.app-sidebar.is-collapsed .sidebar-tool-menu-anchor:has(.sidebar-update-trigger) .sidebar-tool-menu-trigger { padding-right: 0; }
+@media (prefers-reduced-motion: reduce) { .sidebar-update-trigger { transition: none; } }
+
+.desktop-update-dialog-error { color: var(--danger, #dc2626); line-height: 1.6; }

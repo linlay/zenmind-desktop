@@ -22,7 +22,9 @@ export interface UpdateRuntimeOptions {
   downloadFile?: typeof downloadUpdateFile;
 }
 export function createUpdateRuntime(options: UpdateRuntimeOptions) {
-  let state: DesktopUpdateState = { phase: "disabled", currentVersion: options.currentVersion, progress: 0, autoDownload: true, canInstall: options.packaged && ["darwin", "win32"].includes(options.platform) };
+  // Desktop app-info uses a display tag (v0.4.5); feed versions remain strict SemVer.
+  const currentVersion = options.currentVersion.replace(/^v(?=\d)/, "");
+  let state: DesktopUpdateState = { phase: "disabled", currentVersion, progress: 0, autoDownload: false, canInstall: options.packaged && ["darwin", "win32"].includes(options.platform) };
   let release: DesktopUpdateManifest | undefined;
   let artifact: DesktopUpdateArtifact | undefined;
   let file = "";
@@ -33,7 +35,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
   let startupTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let lastCheck = 0;
-  try { state.autoDownload = JSON.parse(fs.readFileSync(options.preferencesPath, "utf8")).autoDownload !== false; } catch { /* Default preference. */ }
+  try { state.autoDownload = JSON.parse(fs.readFileSync(options.preferencesPath, "utf8")).autoDownload === true; } catch { /* Default preference. */ }
   const snapshot = () => structuredClone(state);
   const publish = (change: Partial<DesktopUpdateState>) => {
     state = { ...state, ...change };
@@ -54,12 +56,16 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     busy = Promise.resolve().then(task).catch((error) => {
       // Detailed diagnostics stay in main; URLs/paths never enter the renderer DTO.
       console.warn("[updates] operation failed", error);
-      publish({ phase: "error", error: error instanceof Error && ["activeRuns", "cleanupFailed", "updateBusy"].includes(error.message) ? error.message as DesktopUpdateState["error"] : "operationFailed" });
+      const failure = state.phase === "checking" ? "checkFailed"
+        : state.phase === "downloading" ? "downloadFailed"
+        : state.phase === "verifying" ? "verificationFailed"
+        : state.phase === "installing" ? "installFailed" : "operationFailed";
+      publish({ phase: "error", error: error instanceof Error && ["activeRuns", "cleanupFailed", "updateBusy"].includes(error.message) ? error.message as DesktopUpdateState["error"] : failure });
     }).then(snapshot).finally(() => { busy = undefined; });
     return busy;
   }
   async function download() {
-    if (!release || !artifact || compareUpdateVersions(release.version, options.currentVersion) <= 0) return;
+    if (!release || !artifact || compareUpdateVersions(release.version, currentVersion) <= 0) return;
     controller = new AbortController();
     const deadline = setTimeout(() => controller?.abort(), 60 * 60_000);
     try {
@@ -100,7 +106,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       } finally { clearTimeout(deadline); controller = undefined; }
       lastCheck = Date.now();
       artifact = release.artifacts[`${options.platform}-${options.arch}`];
-      const newer = compareUpdateVersions(release.version, options.currentVersion) > 0;
+      const newer = compareUpdateVersions(release.version, currentVersion) > 0;
       publish({ checkedAt: new Date(lastCheck).toISOString(), version: newer ? release.version : undefined, releaseNotes: newer ? release.releaseNotes : undefined, phase: !newer ? "current" : artifact ? "available" : "unavailable", progress: 0 });
       if (newer && artifact && state.autoDownload) await download();
     }); },

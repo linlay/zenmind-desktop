@@ -24,7 +24,7 @@ export interface DesktopUpdateState {
   autoDownload: boolean;
   canInstall: boolean;
   checkedAt?: string;
-  error?: "operationFailed" | "configInvalid" | "activeRuns" | "cleanupFailed" | "updateBusy";
+  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "activeRuns" | "cleanupFailed" | "updateBusy";
 }
 export interface DesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>;

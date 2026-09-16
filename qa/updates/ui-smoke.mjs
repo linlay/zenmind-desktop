@@ -13,6 +13,7 @@ import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {DesktopUpdateCard} from ${JSON.stringify(path.join(repo, "src/renderer/updates/DesktopUpdateCard.tsx"))};
 import ${JSON.stringify(path.join(repo, "src/renderer/styles.css"))};
+import ${JSON.stringify(path.join(repo, "src/renderer/pages/settings/SettingsPage.css"))};
 let state={phase:'ready',currentVersion:'0.4.1',version:'0.5.0',progress:100,autoDownload:true,canInstall:true,releaseNotes:{'zh-CN':['新增应用更新功能','改善启动体验']}};
 const listeners=new Set();
 window.calls=[];
@@ -30,7 +31,7 @@ await until('document.querySelector("button")?.textContent.includes("重启并�
 fs.writeFileSync(path.join(__dirname,'ready.png'),(await win.webContents.capturePage()).toPNG());
 await js('document.querySelector("button").click()');await until('window.calls.includes("install")');
 await js('setUpdate({phase:"downloading",progress:43})');await until('document.body.textContent.includes("43%")');assert.equal(await js('[...document.querySelectorAll("button")].filter(b=>b.textContent.includes("检查更新")).every(b=>b.disabled)'),true);
-await js('setUpdate({phase:"error",error:"activeRuns"})');await until('document.body.textContent.includes("等待任务结束")');
+await js('setUpdate({phase:"error",error:"activeRuns"})');await until('document.body.textContent.includes("等待任务结束")');await until('document.querySelectorAll(".desktop-update-card").length===1');assert.equal(await js('document.querySelector(".menu").textContent'),"");fs.writeFileSync(path.join(__dirname,'error.png'),(await win.webContents.capturePage()).toPNG());assert.equal(await js('getComputedStyle(document.querySelector(".is-settings")).paddingTop'),"20px");
 await js('setUpdate({phase:"disabled",error:undefined,version:undefined,releaseNotes:undefined})');await until('document.querySelectorAll(".desktop-update-card").length===1');
 await js('setUpdate({phase:"ready",version:"0.5.0",canInstall:false})');await until('document.querySelector("button")?.disabled');
 console.log('Update UI smoke passed: '+__dirname);win.destroy();app.quit();})().catch(e=>{console.error(e);app.exit(1)});

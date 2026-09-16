@@ -1,6 +1,7 @@
 import { SkinHeading } from "../../appearance/SkinVisual";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
+import type { DesktopUpdateState } from "../../../shared/desktop-updates";
 import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
@@ -19,7 +20,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
-import { CloseOutlined } from "@ant-design/icons";
+import { DownloadOutlined, CloseOutlined } from "@ant-design/icons";
 import {
   DndContext,
   DragOverlay,
@@ -1203,6 +1204,27 @@ export function AppSidebar({
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const desktopUpdate = useDesktopUpdates();
+  const [updateFailure, setUpdateFailure] = useState<NonNullable<DesktopUpdateState["error"]> | null>(null);
+  const [updateDownloadPending, setUpdateDownloadPending] = useState(false);
+  const canRetryUpdateDownload = Boolean(desktopUpdate?.version && desktopUpdate.phase === "error" &&
+    ["downloadFailed", "verificationFailed"].includes(desktopUpdate.error ?? ""));
+  const canDownloadUpdate = desktopUpdate?.phase === "available" || canRetryUpdateDownload;
+  const hasDesktopUpdate = canRetryUpdateDownload || Boolean(desktopUpdate && !desktopUpdate.error &&
+    ["available", "downloading", "verifying", "ready", "installing"].includes(desktopUpdate.phase));
+
+  async function downloadSidebarUpdate() {
+    if (updateDownloadPending) return;
+    setUpdateDownloadPending(true);
+    try {
+      const result = await window.electronAPI.updates.download();
+      if (result.phase === "error" || result.error) setUpdateFailure(result.error ?? "operationFailed");
+    } catch {
+      setUpdateFailure("operationFailed");
+    } finally {
+      setUpdateDownloadPending(false);
+    }
+  }
+
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
     useState<BootstrapGuideFloatingBubble[]>([]);
   const [bootstrapGuideDismissedBubbles, setBootstrapGuideDismissedBubbles] =
@@ -7044,19 +7066,19 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
-                      desktopUpdate?.phase === "ready" ? "has-update" : "",
+                      hasDesktopUpdate ? "has-update" : "",
                       activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    aria-label={desktopUpdate?.phase === "ready" ? `${t("nav.sidebar.openSettings")} · ${t("updates.phase.ready")}` : t("nav.sidebar.openSettings")}
+                    aria-label={hasDesktopUpdate ? `${t("nav.sidebar.openSettings")} · ${t(`updates.phase.${desktopUpdate!.phase}`)}` : t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}
-                    title={t("nav.settings")}
+                    title={hasDesktopUpdate ? t(`updates.phase.${desktopUpdate!.phase}`) : t("nav.settings")}
                   >
                     {!shouldRenderDesktopSsoTrigger ? (
-                      <span className="sidebar-link-icon">
+                      <span className="sidebar-link-icon sidebar-settings-icon-slot">
                         <SidebarIllustration kind="settings" />
                       </span>
                     ) : shouldRenderDesktopSsoTriggerAvatar &&
@@ -7069,7 +7091,6 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
-                    {desktopUpdate?.phase === "ready" ? <span className="sidebar-update-label">{t("updates.phase.ready")}</span> : null}
                     {shouldRenderActiveToolMenuLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
@@ -7092,7 +7113,29 @@ export function AppSidebar({
                     </span>
                   </button>
                 </Popover>
+                {hasDesktopUpdate ? <button
+                  type="button"
+                  className="sidebar-update-trigger"
+                  aria-label={t(canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  title={t(canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  disabled={updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
+                  onClick={() => {
+                    if (canDownloadUpdate) void downloadSidebarUpdate();
+                    else handleToolMenuOpenChange(true);
+                  }}
+                ><DownloadOutlined className="sidebar-update-icon" aria-hidden="true" /><span className="sidebar-update-hover-label" aria-hidden="true">{t("updates.action")}</span></button> : null}
               </div>
+              <Modal
+                centered
+                open={updateFailure !== null}
+                title={t("updates.phase.error")}
+                okText={t("common.close")}
+                cancelButtonProps={{ style: { display: "none" } }}
+                onOk={() => setUpdateFailure(null)}
+                onCancel={() => setUpdateFailure(null)}
+              >
+                {updateFailure ? <p className="desktop-update-dialog-error" role="alert">{t(`updates.error.${updateFailure}`)}</p> : null}
+              </Modal>
               {renderAssistantChatRenameDialog()}
               {renderAssistantChatDeleteDialog()}
               <ConversationShareDialog

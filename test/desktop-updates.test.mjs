@@ -70,6 +70,7 @@ test("disabled source never checks or downloads", async (t) => {
 for (const platform of ["darwin", "win32"]) test(`${platform} checks, verifies and invokes install only after cleanup`, async (t) => {
   const order = [];
   const { runtime, events, installs } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64", verifyPublisher: async () => { order.push("signature"); }, prepareInstall: async () => { order.push("cleanup"); return true; } });
+  runtime.setAutoDownload(true);
   assert.equal((await runtime.check()).phase, "ready");
   assert.ok(events.some((s) => s.phase === "verifying"));
   await runtime.install();
@@ -90,6 +91,7 @@ test("manual download preference and cache reuse survive runtime recreation", as
 test("bad checksum or publisher never reaches ready", async (t) => {
   for (const patch of [{ downloadFile: async (_a, file) => fs.promises.writeFile(file, "broken") }, { verifyPublisher: async () => { throw new Error("bad signature"); } }]) {
     const { runtime, events, installs } = fixture(t, patch);
+    runtime.setAutoDownload(true);
     assert.equal((await runtime.check()).phase, "error");
     await runtime.install();
     assert.equal(installs.length, 0);
@@ -99,11 +101,13 @@ test("bad checksum or publisher never reaches ready", async (t) => {
 test("install rechecks cache and fails closed on running tasks or cleanup failure", async (t) => {
   for (const error of ["activeRuns", "cleanupFailed"]) {
     const { runtime, installs } = fixture(t, { prepareInstall: async () => { throw new Error(error); } });
+    runtime.setAutoDownload(true);
     await runtime.check();
     assert.equal((await runtime.install()).error, error);
     assert.equal(installs.length, 0);
   }
   const { runtime, root, installs } = fixture(t);
+  runtime.setAutoDownload(true);
   await runtime.check();
   fs.writeFileSync(path.join(root, `${hash}.zip`), "tampered");
   assert.equal((await runtime.install()).phase, "error");
@@ -112,6 +116,7 @@ test("install rechecks cache and fails closed on running tasks or cleanup failur
 test("unsupported architectures, older versions and development mode cannot install", async (t) => {
   for (const [options, phase] of [[{ arch: "ia32" }, "unavailable"], [{ currentVersion: "0.6.0" }, "current"], [{ packaged: false }, "ready"]]) {
     const { runtime, installs } = fixture(t, options);
+    runtime.setAutoDownload(true);
     assert.equal((await runtime.check()).phase, phase);
     if (phase === "current") {
       assert.equal((await runtime.download()).phase, "current", "explicit download cannot enable a downgrade");
@@ -177,4 +182,31 @@ test("unconfigured manifest clears stale metadata without an error or download",
   assert.equal(state.version, undefined);
   assert.equal(state.releaseNotes, undefined);
   await runtime.download(); await runtime.install(); assert.equal(installs.length, 0);
+});
+
+test("display version tags compare correctly and download errors identify their stage", async (t) => {
+  const { runtime } = fixture(t, { currentVersion: "v0.4.5", downloadFile: async () => { throw new Error("HTTP 404"); } });
+  runtime.setAutoDownload(false);
+  const available = await runtime.check();
+  assert.equal(available.phase, "available");
+  assert.equal(available.currentVersion, "0.4.5");
+  const failed = await runtime.download();
+  assert.equal(failed.error, "downloadFailed");
+});
+test("feed failures identify the check stage", async (t) => {
+  const { runtime } = fixture(t, { fetchManifest: async () => { throw new Error("HTTP 503"); } });
+  assert.equal((await runtime.check()).error, "checkFailed");
+});
+
+test("new profiles check metadata only until download is requested", async (t) => {
+  let downloads = 0;
+  const { runtime } = fixture(t, { downloadFile: async () => { downloads++; throw new Error("HTTP 404"); } });
+  assert.equal(runtime.getState().autoDownload, false);
+  assert.equal((await runtime.check()).phase, "available");
+  assert.equal(downloads, 0);
+  assert.equal((await runtime.download()).error, "downloadFailed");
+  assert.equal(downloads, 1);
+  assert.equal(runtime.getState().version, "0.5.0");
+  assert.equal((await runtime.download()).error, "downloadFailed");
+  assert.equal(downloads, 2, "failed downloads can be retried from the retained update entry");
 });
