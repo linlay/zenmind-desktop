@@ -88,3 +88,18 @@ test("update IPC rejects guest frames and other windows, cleans up handlers", as
   assert.equal(read({ sender, senderFrame: mainFrame }).phase, "disabled");
   app.emit("will-quit"); assert.equal(handlers.size, 0); assert.equal(powerMonitor.listenerCount("resume"), 0);
 });
+
+test("update startup gate accepts fully started apps and rejects startup/quit", () => {
+  const { STARTUP_PHASES, isStartupPhaseAtLeast } = require("../dist-electron/main/app/lifecycle/startup-phases.js");
+  // Exercise the production guard expression so a readiness whitelist cannot omit the final phase.
+  const source = fs.readFileSync(new URL("../src/main/app/runtime.operations-5.ts", import.meta.url), "utf8");
+  const guard = source.match(/if \(([^\n]+)\) throw new Error\("updateBusy"\);/);
+  assert.ok(guard);
+  const isBlocked = new Function("factoryContext", "isStartupPhaseAtLeast", `return (${guard[1]});`);
+  for (const startupPhase of STARTUP_PHASES) {
+    for (const isHandlingQuit of [false, true]) {
+      const expected = isHandlingQuit || !["core-ready", "non-core-ready", "degraded"].includes(startupPhase);
+      assert.equal(isBlocked({ appState: { startupPhase, isHandlingQuit } }, isStartupPhaseAtLeast), expected, `${startupPhase}, quitting=${isHandlingQuit}`);
+    }
+  }
+});
