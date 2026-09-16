@@ -1,5 +1,5 @@
 import { app, clipboard, globalShortcut, protocol } from "electron";
-import { getDesktopDeviceId, issueAgentAccessToken } from "../modules/identity";
+import { desktopPlatformSubject, getDesktopDeviceId, getDesktopSsoStatus, issueAgentAccessToken } from "../modules/identity";
 import { getDesktopSsoAccessToken } from "../modules/identity";
 import { createWebsFacade, type WebsFacade } from "../modules/webs";
 import { type AppShellRuntime } from "../modules/shell";
@@ -34,7 +34,7 @@ import { type StartupPhase } from "./lifecycle/startup-phases";
 import { createNoPrimaryShutdownReport, parseInstallerShutdownRequest, writeShutdownAck } from "./lifecycle/shutdown-ack";
 import { type ResourceDirectoryWatcher } from "./resource-directory-watcher";
 import { configureAgentMarketPlatformCaller } from "../modules/marketplace";
-import { configureSkillMarketPlatformCaller } from "../modules/marketplace";
+import { configureSkillMarketPlatformCaller, configureConnectorMarketPlatformCaller } from "../modules/marketplace";
 import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
 import { createMainProcessRuntime_block14_2, createMainProcessRuntime_block17_3, createMainProcessRuntime_block18_4, createMainProcessRuntime_startupRestoreController_5, createMainProcessRuntime_webSurfaceRuntime_6, createMainProcessRuntime_webviewContextMenuController_7, createMainProcessRuntime_enterpriseChatRuntime_8, createMainProcessRuntime_cdpIntegration_9, createMainProcessRuntime_systemIdentityRuntime_10, createMainProcessRuntime_setStartupPhase_11, createMainProcessRuntime_initializeUserDataRootsAndSettings_12, createMainProcessRuntime_delay_13 } from "./runtime.operations-1";
 import { createMainProcessRuntime_logsRuntime_1, createMainProcessRuntime_block68_2, createMainProcessRuntime_startupEnvironmentRuntime_3, createMainProcessRuntime_block71_4, createMainProcessRuntime_block72_5, createMainProcessRuntime_desktopSsoController_6, createMainProcessRuntime_block74_7, createMainProcessRuntime_block75_8, createMainProcessRuntime_settingsRuntime_9, createMainProcessRuntime_block77_10, createMainProcessRuntime_startupPipeline_11 } from "./runtime.operations-2";
@@ -172,16 +172,23 @@ export function createMainProcessRuntime() {
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
   const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   const appState = createMainAppState();
-  const identityTokenProvider = (targetApp: typeof app, reason: Parameters<typeof issueAgentAccessToken>[1]) =>
-    issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId) =>
-      servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId)
-    );
+  const identityTokenProvider = async (targetApp: typeof app, reason: Parameters<typeof issueAgentAccessToken>[1]) => {
+    const currentSubject = () => desktopPlatformSubject(getDesktopSsoStatus(targetApp).authenticated, getDesktopSsoAccessToken());
+    const subject = currentSubject();
+    const result = await issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId, context) =>
+      servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId, context), subject);
+    if (subject !== currentSubject()) return { ok: false, token: "", message: "Desktop identity changed; retry the request." };
+    return result;
+  };
   const servicesIntegrationPorts = createMainProcessRuntime_block18_4(factoryContext);
   servicesFacade = createServicesFacade(servicesIntegrationPorts);
   configureAgentMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
   configureSkillMarketPlatformCaller((targetPath, options) =>
+    callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
+  );
+  configureConnectorMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
   const websIntegrationPorts = createMainProcessRuntime_block14_2(factoryContext);

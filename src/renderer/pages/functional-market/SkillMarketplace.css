@@ -30,7 +30,6 @@
 .is-webapp-discovery .market-store-section-head { padding: 0; }
 .skill-discovery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-content: start; }
 .skill-discovery-featured { margin-bottom: 30px; }
-.skill-discovery-featured-empty { margin: 0; padding: 14px; border: 1px dashed var(--market-control-border); border-radius: 10px; color: var(--market-control-muted); font-size: 12px; }
 .skill-discovery-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .skill-discovery-section-heading h2 { margin-bottom: 0; }
 .skill-discovery .skill-discovery-shuffle { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--market-control-muted); font-size: 12px; }

@@ -1,0 +1,14 @@
+.connector-discovery { flex-direction: column; }
+.connector-market-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+.connector-market-status .ant-alert { flex: 1; min-width: 0; }
+.connector-discovery .connector-card-action.ant-btn { margin-left: auto; height: 22px; padding: 0 4px; font-size: 11px; font-weight: 400; line-height: 20px; }
+.connector-detail-icon { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; background: var(--surface-raised); color: var(--text-primary); font-size: 24px; }
+.connector-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.connector-detail-actions.is-column { flex-direction: column; }
+.connector-suggestions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.connector-token-form { display: flex; flex-direction: column; gap: 16px; }
+.connector-token-field { display: flex; flex-direction: column; gap: 6px; }
+.connector-token-field small { color: var(--text-secondary); }
+.connector-discovery .skill-discovery-card-footer { flex-wrap: wrap; }
+.connector-discovery .skill-discovery-card-footer .ant-tag { margin-inline-end: 0; }
+@media (max-width: 560px) { .connector-market-status { align-items: stretch; flex-direction: column; } .connector-detail-layout { grid-template-columns: minmax(0, 1fr); } }

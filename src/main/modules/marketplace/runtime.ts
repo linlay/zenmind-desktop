@@ -1,4 +1,5 @@
 import type { App } from "electron";
+import { installConnectorMarketItem, listConnectorMarketItems, uninstallConnectorMarketItem } from "./connector-market";
 import type {
   AgentAuthIssueResult,
   AgentAuthRefreshReason,
@@ -110,6 +111,7 @@ const MARKET_SECTIONS: readonly MarketSection[] = [
   "pets",
   "cli",
   "mcps",
+  "connectors",
   "websiteApps",
   "softwarePackages"
 ];
@@ -212,6 +214,7 @@ function combineMarketSections(
   petMarket: MarketSectionResult,
   cliMarket: MarketSectionResult,
   mcpMarket: MarketSectionResult,
+  connectorMarket: MarketSectionResult,
   websiteAppMarket: MarketSectionResult,
   softwarePackageMarket: MarketSectionResult
 ): MarketListResult {
@@ -223,13 +226,14 @@ function combineMarketSections(
     petMarket.message,
     cliMarket.message,
     mcpMarket.message,
+    connectorMarket.message,
     websiteAppMarket.message,
     softwarePackageMarket.message
   ].filter(Boolean))].join(" ");
   return {
     ok: true,
-    sourceUrl: softwarePackageMarket.sourceUrl || websiteAppMarket.sourceUrl || mcpMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
-    offline: pluginMarket.offline || skillMarket.offline || agentMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline || mcpMarket.offline || websiteAppMarket.offline || softwarePackageMarket.offline,
+    sourceUrl: softwarePackageMarket.sourceUrl || websiteAppMarket.sourceUrl || connectorMarket.sourceUrl || mcpMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
+    offline: pluginMarket.offline || skillMarket.offline || agentMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline || mcpMarket.offline || connectorMarket.offline || websiteAppMarket.offline || softwarePackageMarket.offline,
     message,
     items: [
       ...pluginMarket.items,
@@ -239,6 +243,7 @@ function combineMarketSections(
       ...petMarket.items,
       ...cliMarket.items,
       ...mcpMarket.items,
+      ...connectorMarket.items,
       ...websiteAppMarket.items,
       ...softwarePackageMarket.items
     ],
@@ -256,6 +261,8 @@ function combineMarketSections(
     cliOffline: cliMarket.offline,
     mcpMessage: mcpMarket.message,
     mcpOffline: mcpMarket.offline,
+    connectorMessage: connectorMarket.message,
+    connectorOffline: connectorMarket.offline,
     websiteAppMessage: websiteAppMarket.message,
     websiteAppOffline: websiteAppMarket.offline,
     softwarePackageMessage: softwarePackageMarket.message,
@@ -271,7 +278,7 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
   const sections = new Set((options.sections ?? MARKET_SECTIONS).filter((section) =>
     MARKET_SECTIONS.includes(section)
   ));
-  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket] = await Promise.all([
+  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket] = await Promise.all([
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "plugins")
       ? listPluginMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
@@ -293,6 +300,9 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "mcps")
       ? listMcpMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "connectors")
+      ? listConnectorMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "websiteApps")
       ? listWebsiteAppMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
@@ -300,7 +310,7 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
       ? listSoftwarePackageMarketItems(app, options)
       : EMPTY_MARKET_SECTION
   ]);
-  return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket };
+  return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket };
 }
 
 async function resolveInstalledItemType(
@@ -323,8 +333,8 @@ async function resolveInstalledItemType(
 }
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
-  const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket } = await loadMarketSections(app, options);
-  const result = combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket);
+  const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket } = await loadMarketSections(app, options);
+  const result = combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket);
   if (!options.includeFavorites) {
     return result;
   }
@@ -416,6 +426,8 @@ export async function installMarketItem(
     catalogSnapshot: catalog.catalog
   };
   switch (item?.type) {
+    case "connector":
+      return installConnectorMarketItem(app, itemId, installOptions);
     case "software-package":
       return installSoftwarePackageMarketItem(app, itemId, installOptions);
     case "plugin":
@@ -466,6 +478,9 @@ export async function uninstallMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const type = await resolveInstalledItemType(app, itemId, options);
+  if (type === "connector") {
+    return uninstallConnectorMarketItem(app, itemId);
+  }
   const result = type === "plugin"
     ? await uninstallPluginMarketItem(app, itemId, options)
     : type === "pet"

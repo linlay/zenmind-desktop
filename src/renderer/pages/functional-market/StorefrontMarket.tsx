@@ -74,8 +74,6 @@ type InstalledSkillSource = "cloud" | "local";
 type SearchFilterMenu = "scope" | null;
 type MarketFeedbackType = "success" | "info" | "warning" | "error";
 const MARKET_STATUS_AUTO_DISMISS_MS = 4_000;
-const MCP_STATUS_POLL_INTERVAL_MS = 2_000;
-const MCP_STATUS_POLL_MAX_ATTEMPTS = 30;
 const MARKET_SKILL_TONES = ["rose", "coral", "amber", "lime", "mint", "sky", "blue", "violet"] as const;
 const MARKET_PACKAGE_POPOVER_CLASS_NAMES = {
   body: "market-store-package-popover-body",
@@ -177,7 +175,7 @@ function marketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "sandboxImages") return result.sandboxMessage ?? "";
   if (tab === "pets") return result.petMessage ?? "";
   if (tab === "websiteApps") return result.websiteAppMessage ?? "";
-  if (tab === "mcps") return result.mcpMessage ?? "";
+  if (tab === "mcps") return result.connectorMessage ?? "";
   if (tab === "softwarePackages") return result.softwarePackageMessage ?? "";
   return result.cliMessage ?? "";
 }
@@ -190,7 +188,7 @@ function clearMarketMessageForTab(result: ReturnType<typeof createEmptyMarketRes
   else if (tab === "sandboxImages") next.sandboxMessage = "";
   else if (tab === "pets") next.petMessage = "";
   else if (tab === "websiteApps") next.websiteAppMessage = "";
-  else if (tab === "mcps") next.mcpMessage = "";
+  else if (tab === "mcps") next.connectorMessage = "";
   else if (tab === "softwarePackages") next.softwarePackageMessage = "";
   else next.cliMessage = "";
   return next;
@@ -203,7 +201,7 @@ function marketOfflineForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "sandboxImages") return Boolean(result.sandboxOffline);
   if (tab === "pets") return Boolean(result.petOffline);
   if (tab === "websiteApps") return Boolean(result.websiteAppOffline);
-  if (tab === "mcps") return Boolean(result.mcpOffline);
+  if (tab === "mcps") return Boolean(result.connectorOffline);
   if (tab === "softwarePackages") return Boolean(result.softwarePackageOffline);
   return Boolean(result.cliOffline);
 }
@@ -315,6 +313,8 @@ function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"
       return t("market.type.cli");
     case "mcp":
       return t("market.type.mcp");
+    case "connector":
+      return t("market.connector.type");
     case "website-app":
       return t("market.type.websiteApp");
     case "software-package":
@@ -338,6 +338,7 @@ function marketTypeIcon(type: MarketItemType) {
     case "cli":
       return <CodeOutlined />;
     case "mcp":
+    case "connector":
       return <LinkOutlined />;
     case "website-app":
       return <GlobalOutlined />;
@@ -616,15 +617,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     () => marketResult.items.filter((item) => item.type === itemType),
     [itemType, marketResult.items]
   );
-  const pendingMcpRuntimeSignature = useMemo(() => marketResult.items
-    .filter((item) =>
-      item.type === "mcp" &&
-      isInstalledMarketItem(item) &&
-      (item.mcpRuntimeStatus === "configuration-written" || item.mcpRuntimeStatus === "pending")
-    )
-    .map((item) => `${item.id}:${item.mcpRuntimeStatus}`)
-    .sort()
-    .join("|"), [marketResult.items]);
   const visibleItems = useMemo(
     () => activeItems.filter((item) => {
         const matchesView = activeTab === "skills"
@@ -730,61 +722,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     }, MARKET_STATUS_AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
   }, [activeTab, marketStatusMessage, shouldShowMarketStatus]);
-
-  useEffect(() => {
-    if (activeTab !== "mcps" || !pendingMcpRuntimeSignature) {
-      return undefined;
-    }
-    let cancelled = false;
-    let requestPending = false;
-    let attempts = 0;
-    let timer: number | undefined;
-    const stopPolling = () => {
-      if (timer === undefined) return;
-      window.clearInterval(timer);
-      timer = undefined;
-    };
-    const poll = async () => {
-      if (cancelled || requestPending) return;
-      if (attempts >= MCP_STATUS_POLL_MAX_ATTEMPTS) {
-        stopPolling();
-        return;
-      }
-      attempts += 1;
-      requestPending = true;
-      try {
-        const command = getMarketMethod("list");
-        if (!command) return;
-        const next = await command({ sections: ["mcps"] });
-        if (cancelled) return;
-        const nextMcpItems = next.items.filter((item) => item.type === "mcp");
-        setMarketResult((current) => ({
-          ...current,
-          mcpMessage: next.mcpMessage,
-          mcpOffline: next.mcpOffline,
-          items: [
-            ...current.items.filter((item) => item.type !== "mcp"),
-            ...preserveCurrentFavoriteState(nextMcpItems, current.items)
-          ]
-        }));
-      } catch (reason) {
-        if (!cancelled) {
-          console.warn("[market-storefront] MCP runtime status poll failed", reason);
-        }
-      } finally {
-        requestPending = false;
-        if (attempts >= MCP_STATUS_POLL_MAX_ATTEMPTS) {
-          stopPolling();
-        }
-      }
-    };
-    void poll();
-    timer = window.setInterval(() => void poll(), MCP_STATUS_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      stopPolling();
-    };
-  }, [activeTab, pendingMcpRuntimeSignature]);
 
   useEffect(() => {
     if (!searchFilterMenu) {
@@ -1131,6 +1068,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   function renderPrimaryAction(item: MarketItem, compact = false) {
     const busy = busyItemId === item.id;
+    if (item.type === "connector") {
+      return <Button onClick={() => navigate("/connectors")}>{t("market.connector.openCenter")}</Button>;
+    }
     if (item.type === "mcp") {
       return <Button onClick={() => navigate("/connectors")}>{t("market.connector.custom")}</Button>;
     }
@@ -1324,7 +1264,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           {t("market.websiteApp.open")}
         </Button>
       </div>
-    ) : null;
+    ) : selectedDetailItem.type === "connector" ? renderPrimaryAction(selectedDetailItem) : null;
 
     return (
       <Modal
@@ -1751,10 +1691,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   }
 
   if (activeTab === "mcps") {
-    return <ConnectorMarketplace items={activeItems} loading={isLoadingMarket} busyItemId={busyItemId}
-      onTabChange={handleMarketTabChange} onDetail={(item) => void openDetail(item)}
+    return <ConnectorMarketplace items={activeItems} loading={isLoadingMarket}
+      onTabChange={handleMarketTabChange} onChanged={() => refreshEverything(false, true)}
       onManage={() => navigate("/connectors")}
-      detail={renderDetailDialog()}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
         <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
         <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"

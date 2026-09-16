@@ -647,6 +647,7 @@ export function isMarketSection(value: unknown): value is NonNullable<MarketList
     value === "sandboxImages" ||
     value === "pets" ||
     value === "cli" ||
+    value === "connectors" ||
     value === "websiteApps";
 }
 

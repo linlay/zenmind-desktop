@@ -6,6 +6,7 @@ import {
   type ConnectorAuthBrowserDialog, type ConnectorAuthBrowserIdentity,
 } from "../../../shared/contracts/agent-webclient-bridge";
 import { registerIsolatedAuthGuest } from "../../infrastructure/electron/isolated-auth-guest";
+import { CONNECTOR_AUTH_BROWSER_HOST_REQUEST } from "../../../shared/connector-auth-host";
 import type { SurfaceContext } from "./ipc.shared";
 
 type Dialog = { data: ConnectorAuthBrowserDialog; sender: WebContents; owner: WebContents; release(): void; cleanup(): void };
@@ -17,9 +18,9 @@ export function readConnectorAuthBrowserIdentity(value: unknown): ConnectorAuthB
   return { connectorId: input.connectorId, sessionId: input.sessionId };
 }
 
-export function readEmbeddedAuthorization(value: unknown, identity: ConnectorAuthBrowserIdentity): string {
+export function readEmbeddedAuthorization(value: unknown, identity: ConnectorAuthBrowserIdentity, allowHostChoice = false): string {
   const data = value as Record<string, unknown> | null;
-  if (!data || data.connectorId !== identity.connectorId || data.sessionId !== identity.sessionId || data.authBrowser !== "embedded" ||
+  if (!data || data.connectorId !== identity.connectorId || data.sessionId !== identity.sessionId || (!allowHostChoice && data.authBrowser !== "embedded") ||
       data.status !== "pending" || typeof data.expiresAt !== "string" || !(Date.parse(data.expiresAt) > Date.now()) ||
       typeof data.authorizationUrl !== "string" || data.authorizationUrl.length > 16384) throw new Error("Authorization session is not available");
   const url = new URL(data.authorizationUrl);
@@ -30,6 +31,7 @@ export function readEmbeddedAuthorization(value: unknown, identity: ConnectorAut
 export function registerConnectorAuthBrowser(ipc: IpcMain, options: {
   authorize(sender: WebContents): SurfaceContext;
   availability(): Promise<{ baseUrl: string; token: string }>;
+  getMainWebContents?(): WebContents | null;
   subscribeLifecycle?(listener: () => void): () => unknown;
 }) {
   const dialogs = new Map<number, Dialog>();
@@ -49,7 +51,13 @@ export function registerConnectorAuthBrowser(ipc: IpcMain, options: {
       connectorId: dialog.data.connectorId, sessionId: dialog.data.sessionId,
     });
   };
-  ipc.handle(CONNECTOR_AUTH_BROWSER_CHANNEL, async (event: IpcMainInvokeEvent, call: unknown) => {
+  const authorize = (sender: WebContents, host: boolean) => {
+    if (!host) return options.authorize(sender);
+    const owner = options.getMainWebContents?.();
+    if (!owner || owner.isDestroyed() || owner !== sender) throw new Error("Untrusted Desktop authorization source");
+    return { sender, target: { registrationId: `desktop:${owner.id}`, ownerWebContentsId: owner.id, currentUrl: owner.getURL() } };
+  };
+  const handle = async (event: IpcMainInvokeEvent, call: unknown, host: boolean) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted authorization frame");
     const request = call as { action?: unknown; input?: unknown } | null;
     const identity = readConnectorAuthBrowserIdentity(request?.input);
@@ -61,7 +69,7 @@ export function registerConnectorAuthBrowser(ipc: IpcMain, options: {
       if (current?.sender === event.sender && current.data.sessionId === identity.sessionId && current.data.connectorId === identity.connectorId) dismiss(current, false);
       return;
     }
-    const context = options.authorize(event.sender);
+    const context = authorize(event.sender, host);
     const ownerId = context.target.ownerWebContentsId;
     const { baseUrl, token } = await options.availability();
     const url = new URL("/api/admin/connectors/auth", baseUrl);
@@ -71,8 +79,10 @@ export function registerConnectorAuthBrowser(ipc: IpcMain, options: {
     if (!response.ok) throw new Error("Authorization status is unavailable");
     const result = await response.json() as { code?: number; data?: unknown };
     if (result.code !== 0) throw new Error("Authorization status is unavailable");
-    const authorizationUrl = readEmbeddedAuthorization(result.data, identity);
-    const fresh = options.authorize(event.sender);
+    const chosen = (request?.input as { browser?: unknown } | undefined)?.browser;
+    if (chosen !== undefined && (!host || chosen !== "embedded")) throw new Error("Invalid authorization browser choice");
+    const authorizationUrl = readEmbeddedAuthorization(result.data, identity, host && chosen === "embedded");
+    const fresh = authorize(event.sender, host);
     if (revisions.get(event.sender.id) !== revision || fresh.target.registrationId !== context.target.registrationId ||
         fresh.target.ownerWebContentsId !== ownerId || fresh.target.currentUrl !== context.target.currentUrl) throw new Error("Authorization source changed");
     const owner = webContents.fromId(ownerId);
@@ -93,11 +103,13 @@ export function registerConnectorAuthBrowser(ipc: IpcMain, options: {
     const release = registerIsolatedAuthGuest(data.partition, ownerId, data.url);
     const sender = event.sender;
     const close = () => { next(sender); dismiss(dialog, false); };
-    const navigation = (_event: unknown, _url: string, inPlace: boolean, mainFrame: boolean) => { if (mainFrame && !inPlace) close(); };
+    const navigation = (_event: unknown, url: string, inPlace: boolean, mainFrame: boolean) => {
+      if (mainFrame && (!inPlace || (host && url !== context.target.currentUrl))) close();
+    };
     const expiry = setTimeout(close, Math.max(1, Date.parse((result.data as { expiresAt: string }).expiresAt) - Date.now()));
     const unsubscribe = options.subscribeLifecycle?.(() => {
       try {
-        const target = options.authorize(sender).target;
+        const target = authorize(sender, host).target;
         if (target.registrationId !== context.target.registrationId || target.currentUrl !== context.target.currentUrl) close();
       } catch { close(); }
     });
@@ -113,7 +125,9 @@ export function registerConnectorAuthBrowser(ipc: IpcMain, options: {
     sender.on("did-start-navigation", navigation);
     owner.once("destroyed", close);
     owner.send(CONNECTOR_AUTH_BROWSER_HOST_EVENT, data);
-  });
+  };
+  ipc.handle(CONNECTOR_AUTH_BROWSER_CHANNEL, (event, call) => handle(event, call, false));
+  ipc.handle(CONNECTOR_AUTH_BROWSER_HOST_REQUEST, (event, call) => handle(event, call, true));
   ipc.handle(CONNECTOR_AUTH_BROWSER_HOST_CLOSE, (event: IpcMainInvokeEvent, dialogId: unknown) => {
     const dialog = dialogs.get(event.sender.id);
     if (event.senderFrame !== event.sender.mainFrame || !dialog || dialog.data.dialogId !== dialogId) throw new Error("Authorization window is unavailable");

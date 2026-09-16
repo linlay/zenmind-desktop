@@ -17,7 +17,7 @@ test("software package market is wired through the renderer tab, status and acti
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
 
   assert.match(model, /softwarePackages:\s*"software-package"/u);
-  assert.match(model, /mcps:\s*"mcp"/u);
+  assert.match(model, /mcps:\s*"connector"/u);
   assert.match(model, /market\.tab\.softwarePackages\.subtitle/u);
   assert.match(model, /softwarePackageMessage:\s*""/u);
   assert.match(model, /softwarePackageOffline:\s*false/u);
@@ -85,20 +85,6 @@ test("skill market reuses the Skills Center lightning icon with stable pastel to
   assert.doesNotMatch(storefront, /SafetyCertificateOutlined/u);
   assert.doesNotMatch(storefront, /marketSkillAvatarLabel|market-store-avatar-letter/u);
   assert.doesNotMatch(styles, /\.market-store-avatar-letter/u);
-});
-
-test("Market polls pending MCP runtime status without refreshing unrelated sections", () => {
-  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
-
-  assert.match(storefront, /pendingMcpRuntimeSignature/u);
-  assert.match(storefront, /activeTab !== "mcps" \|\| !pendingMcpRuntimeSignature/u);
-  assert.match(storefront, /command\(\{ sections: \["mcps"\] \}\)/u);
-  assert.match(storefront, /MCP_STATUS_POLL_INTERVAL_MS = 2_000/u);
-  assert.match(storefront, /window\.setInterval\(\(\) => void poll\(\), MCP_STATUS_POLL_INTERVAL_MS\)/u);
-  assert.match(storefront, /window\.clearInterval\(timer\)/u);
-  assert.match(storefront, /item\.mcpRuntimeStatus === "configuration-written" \|\| item\.mcpRuntimeStatus === "pending"/u);
-  assert.match(storefront, /MCP_STATUS_POLL_MAX_ATTEMPTS = 30/u);
-  assert.match(storefront, /attempts >= MCP_STATUS_POLL_MAX_ATTEMPTS[\s\S]*?stopPolling\(\)/u);
 });
 
 test("market actions show progress and preserve success or error feedback after catalog refresh", () => {
