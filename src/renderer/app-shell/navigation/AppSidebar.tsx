@@ -1217,12 +1217,29 @@ export function AppSidebar({
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const desktopUpdate = useDesktopUpdates();
   const [updateFailure, setUpdateFailure] = useState<NonNullable<DesktopUpdateState["error"]> | null>(null);
+  const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [updateInstallPending, setUpdateInstallPending] = useState(false);
   const [updateDownloadPending, setUpdateDownloadPending] = useState(false);
   const canRetryUpdateDownload = Boolean(desktopUpdate?.version && desktopUpdate.phase === "error" &&
     ["downloadFailed", "verificationFailed"].includes(desktopUpdate.error ?? ""));
+  const updateDownloadPercent = desktopUpdate?.phase === "downloading"
+    ? Math.max(0, Math.min(100, Math.round(desktopUpdate.progress))) : null;
   const canDownloadUpdate = desktopUpdate?.phase === "available" || canRetryUpdateDownload;
   const hasDesktopUpdate = canRetryUpdateDownload || Boolean(desktopUpdate && !desktopUpdate.error &&
     ["available", "downloading", "verifying", "ready", "installing"].includes(desktopUpdate.phase));
+
+  async function installSidebarUpdate() {
+    if (updateInstallPending || desktopUpdate?.phase !== "ready" || !desktopUpdate.canInstall) return;
+    const dirty = document.querySelector('[data-native-image-dirty="true"], [data-work-panel-document-dirty="true"], [data-webclient-document-dirty="true"]');
+    if (dirty && !window.confirm(t("updates.confirmDrafts"))) return;
+    setUpdateInstallPending(true);
+    try {
+      const result = await window.electronAPI.updates.install();
+      setUpdateConfirmOpen(false);
+      if (result.phase === "error" || result.error) setUpdateFailure(result.error ?? "installFailed");
+    } catch { setUpdateConfirmOpen(false); setUpdateFailure("installFailed"); }
+    finally { setUpdateInstallPending(false); }
+  }
 
   async function downloadSidebarUpdate() {
     if (updateDownloadPending) return;
@@ -6192,7 +6209,10 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
-        <DesktopUpdateCard compact />
+        <DesktopUpdateCard compact onDownload={() => void downloadSidebarUpdate()} onViewAbout={() => {
+          closeToolMenu();
+          onSelectSettingsSection?.("about");
+        }} />
         {shouldRenderDesktopSsoAccount ? (
           <>
             {renderAccountMenuUserItem()}
@@ -7117,19 +7137,38 @@ export function AppSidebar({
                 </Popover>
                 {hasDesktopUpdate ? <button
                   type="button"
-                  className="sidebar-update-trigger"
-                  aria-label={t(canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
-                  title={t(canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
-                  disabled={updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
+                  className={`sidebar-update-trigger${updateDownloadPercent !== null ? " is-downloading" : ""}${desktopUpdate?.phase === "ready" ? " is-ready" : ""}`}
+                  aria-label={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  title={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  disabled={updateInstallPending || updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
                   onClick={() => {
                     if (canDownloadUpdate) void downloadSidebarUpdate();
+                    else if (desktopUpdate?.phase === "ready") setUpdateConfirmOpen(true);
                     else handleToolMenuOpenChange(true);
                   }}
-                ><svg className="sidebar-update-icon" width="12" height="12" viewBox="64 64 896 896" fill="currentColor" aria-hidden="true" focusable="false">
+                >{updateDownloadPercent !== null ? <span className="sidebar-update-percent">{updateDownloadPercent}%</span> : <><svg className="sidebar-update-icon" width="12" height="12" viewBox="64 64 896 896" fill="currentColor" aria-hidden="true" focusable="false">
                   {/* Original DownloadOutlined silhouette; widen only the arrowhead by 1px at 12px. */}
                   <path d="M505.7 661a8 8 0 0012.6 0l149.333-141.7c4.1-5.2.4-12.9-6.3-12.9H549.9V168c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v338.3H362.667c-6.7 0-10.4 7.7-6.3 12.9L505.7 661zM878 626h-60c-4.4 0-8 3.6-8 8v154H214V634c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v198c0 17.7 14.3 32 32 32h684c17.7 0 32-14.3 32-32V634c0-4.4-3.6-8-8-8z" />
-                </svg><span className="sidebar-update-hover-label" aria-hidden="true">{t("updates.action")}</span></button> : null}
+                </svg><span className="sidebar-update-hover-label" aria-hidden="true">{t(desktopUpdate?.phase === "ready" ? "updates.action" : "updates.download")}</span></>}</button> : null}
               </div>
+              <Modal
+                centered
+                open={updateConfirmOpen}
+                title={t("updates.action")}
+                okText={t("updates.install")}
+                cancelText={t("common.cancel")}
+                confirmLoading={updateInstallPending}
+                okButtonProps={{ disabled: desktopUpdate?.phase !== "ready" || !desktopUpdate?.canInstall }}
+                cancelButtonProps={{ disabled: updateInstallPending }}
+                closable={!updateInstallPending}
+                maskClosable={!updateInstallPending}
+                keyboard={!updateInstallPending}
+                onOk={() => void installSidebarUpdate()}
+                onCancel={() => { if (!updateInstallPending) setUpdateConfirmOpen(false); }}
+              >
+                <p>{t("updates.restartHint")}</p>
+                {!desktopUpdate?.canInstall ? <p>{t("updates.developmentHint")}</p> : null}
+              </Modal>
               <Modal
                 centered
                 open={updateFailure !== null}

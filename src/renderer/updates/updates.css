@@ -39,3 +39,20 @@
 @media (prefers-reduced-motion: reduce) { .sidebar-update-trigger { transition: none; } }
 
 .desktop-update-dialog-error { color: var(--danger, #dc2626); line-height: 1.6; }
+
+.desktop-update-menu-title { font-size: 13px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.desktop-update-card.is-compact .desktop-update-actions { flex-wrap: wrap; gap: 8px; }
+
+.desktop-update-test-form fieldset { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.desktop-update-test-form label { display: grid; gap: 6px; font-size: 13px; }
+.desktop-update-test-form .desktop-update-actions { flex-wrap: wrap; }
+
+.sidebar-update-trigger.is-downloading { width: 40px; opacity: 1; }
+.sidebar-update-percent { font-size: 12px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sidebar-tool-menu-anchor:has(.sidebar-update-trigger.is-downloading) .sidebar-tool-menu-trigger { padding-right: 56px; }
+.app-sidebar.is-collapsed .sidebar-tool-menu-anchor:has(.sidebar-update-trigger.is-downloading) .sidebar-tool-menu-trigger { padding-right: 0; }
+
+.app-sidebar:not(.is-collapsed) .sidebar-update-trigger.is-ready { width: max-content; padding: 0 10px; }
+.app-sidebar:not(.is-collapsed) .sidebar-update-trigger.is-ready .sidebar-update-icon { display: none; }
+.app-sidebar:not(.is-collapsed) .sidebar-update-trigger.is-ready .sidebar-update-hover-label { display: inline; }
+.app-sidebar:not(.is-collapsed) .sidebar-tool-menu-anchor:has(.sidebar-update-trigger.is-ready) .sidebar-tool-menu-trigger { padding-right: 80px; }

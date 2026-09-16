@@ -15,7 +15,9 @@ export interface DesktopUpdateManifest {
   artifacts: Record<string, DesktopUpdateArtifact>;
 }
 export type DesktopUpdatePhase = "disabled" | "not-configured" | "idle" | "checking" | "current" | "unavailable" | "available" | "downloading" | "verifying" | "ready" | "installing" | "error";
+export type DesktopTestUpdateInput = { manifest: unknown } | { version: string; url: string; size: number; sha256: string };
 export interface DesktopUpdateState {
+  source?: "official" | "test";
   phase: DesktopUpdatePhase;
   currentVersion: string;
   version?: string;
@@ -29,6 +31,8 @@ export interface DesktopUpdateState {
 export interface DesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>;
   check(): Promise<DesktopUpdateState>;
+  loadTest(input: DesktopTestUpdateInput): Promise<DesktopUpdateState>;
+  clearTest(): Promise<DesktopUpdateState>;
   download(): Promise<DesktopUpdateState>;
   install(): Promise<DesktopUpdateState>;
   setAutoDownload(enabled: boolean): Promise<DesktopUpdateState>;

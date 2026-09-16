@@ -26,4 +26,4 @@ node scripts/create-update-manifest.mjs /path/to/release-input.json /path/to/lat
 
 正式上线前必须执行两平台真机安装回归；单测及 UI 模拟不能替代签名/权限/安装器验证。
 
-官网查询接口为 `GET /api/updates/desktop-latest.json`。清单请求 404 显示“暂无更新信息”，并清除先前查询结果；安装包请求 404、清单 503 和非法 JSON 仍显示错误。接口不包裹 `data`。示例配置里的官网域名需与实际部署及产品身份匹配。
+Desktop 向 `desktop-init.json` 中 `updates.feedUrl` 初始化的 canonical 地址发送 GET 请求；示例使用 `/api/updates/desktop-latest.json` 路径，实际域名和路径均由配置决定。清单请求 404 显示“暂无更新信息”，并清除先前查询结果；安装包请求 404、清单 503 和非法 JSON 仍显示错误。接口不包裹 `data`。示例配置里的官网域名需与实际部署及产品身份匹配。

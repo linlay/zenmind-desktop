@@ -471,6 +471,8 @@ const api: DesktopApi = {
   updates: {
     getState: () => ipcRenderer.invoke("updates.getState"),
     check: () => ipcRenderer.invoke("updates.check"),
+    loadTest: (input) => ipcRenderer.invoke("updates.loadTest", input),
+    clearTest: () => ipcRenderer.invoke("updates.clearTest"),
     download: () => ipcRenderer.invoke("updates.download"),
     install: () => ipcRenderer.invoke("updates.install"),
     setAutoDownload: (enabled) => ipcRenderer.invoke("updates.setAutoDownload", enabled),

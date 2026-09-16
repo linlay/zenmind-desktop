@@ -1,3 +1,4 @@
+import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
@@ -90,7 +91,7 @@ import type {
 } from "../../../shared/webapp-manifest";
 
 type KanbanConnectionState = "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
-type DebugCategoryId = "device" | "state" | "logs" | "realtime" | "wsServer" | "authTokens" | "other";
+type DebugCategoryId = "device" | "state" | "logs" | "realtime" | "wsServer" | "authTokens" | "updates" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
 type DebugLogDirection = "in" | "out" | "system";
 
@@ -163,7 +164,7 @@ type SettingsDebugTextAreaFieldProps = {
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
 const SETTINGS_NOTICE_AUTO_CLOSE_MS = 5000;
-const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "other"];
+const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "updates", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
   popup: {
     root: "settings-select-popup"
@@ -243,6 +244,7 @@ function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunctio
 
 function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction) {
   switch (categoryId) {
+    case "updates": return t("updates.test.title");
     case "device":
       return t("settings.debug.categories.device");
     case "state":
@@ -2066,6 +2068,7 @@ function DebugSettingsPanel() {
 
   function renderActiveCategory() {
     switch (activeCategoryId) {
+      case "updates": return <DebugUpdatePanel />;
       case "device":
         return <DeviceIdentityDebugCard />;
       case "state":

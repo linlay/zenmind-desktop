@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { DesktopUpdateArtifact, DesktopUpdateConfig, DesktopUpdateManifest, DesktopUpdateState } from "../../../shared/desktop-updates";
+import type { DesktopUpdateArtifact, DesktopUpdateConfig, DesktopUpdateManifest, DesktopUpdateState, DesktopTestUpdateInput } from "../../../shared/desktop-updates";
 import { compareUpdateVersions, parseUpdateManifest } from "./manifest";
 import { downloadUpdateFile, fetchUpdateManifest, verifyUpdateFile } from "./download";
 
@@ -25,6 +25,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
   // Desktop app-info uses a display tag (v0.4.5); feed versions remain strict SemVer.
   const currentVersion = options.currentVersion.replace(/^v(?=\d)/, "");
   let state: DesktopUpdateState = { phase: "disabled", currentVersion, progress: 0, autoDownload: false, canInstall: options.packaged && ["darwin", "win32"].includes(options.platform) };
+  let testConfig: DesktopUpdateConfig | undefined;
   let release: DesktopUpdateManifest | undefined;
   let artifact: DesktopUpdateArtifact | undefined;
   let file = "";
@@ -42,6 +43,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     if (!disposed) options.emit(snapshot());
   };
   function refreshConfig() {
+    if (testConfig) return testConfig;
     const config = options.readConfig();
     const key = JSON.stringify(config);
     if (key !== configKey) {
@@ -88,7 +90,9 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       }
       return snapshot();
     },
-    check() { return action(async () => {
+    check() {
+      if (testConfig) return Promise.resolve(snapshot());
+      return action(async () => {
       const config = refreshConfig();
       if (!config.enabled || state.phase === "ready" || state.phase === "installing") return;
       publish({ phase: "checking", error: undefined });
@@ -110,6 +114,33 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       publish({ checkedAt: new Date(lastCheck).toISOString(), version: newer ? release.version : undefined, releaseNotes: newer ? release.releaseNotes : undefined, phase: !newer ? "current" : artifact ? "available" : "unavailable", progress: 0 });
       if (newer && artifact && state.autoDownload) await download();
     }); },
+    async loadTest(input: DesktopTestUpdateInput) {
+      if (busy || disposed || state.phase === "installing") throw new Error("updateBusy");
+      if (!input || typeof input !== "object" || JSON.stringify(input).length > 256 * 1024) throw new Error("Invalid test update");
+      const raw = "manifest" in input ? input.manifest : {
+        schemaVersion: 1, productId: options.productId, channel: "stable", version: input.version,
+        publishedAt: new Date().toISOString(), releaseNotes: {},
+        artifacts: { [`${options.platform}-${options.arch}`]: { url: input.url, size: input.size, sha256: input.sha256 } }
+      };
+      const channel = (raw as { channel?: unknown } | null)?.channel;
+      if (typeof channel !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(channel)) throw new Error("Invalid test channel");
+      const candidate = parseUpdateManifest(raw, options.productId, channel);
+      const target = candidate.artifacts[`${options.platform}-${options.arch}`];
+      if (!target || compareUpdateVersions(candidate.version, currentVersion) <= 0) throw new Error("Test update requires a newer version for this platform");
+      // Validate everything before replacing the current selection. Never persist the test feed.
+      testConfig = { enabled: true, channel, feedUrl: "" };
+      release = candidate; artifact = target; file = "";
+      publish({ source: "test", phase: "available", version: candidate.version, releaseNotes: candidate.releaseNotes,
+        progress: 0, checkedAt: undefined, error: undefined });
+      return snapshot();
+    },
+    async clearTest() {
+      if (busy || disposed || state.phase === "installing") throw new Error("updateBusy");
+      if (!testConfig) return snapshot();
+      testConfig = undefined; configKey = ""; release = undefined; artifact = undefined; file = ""; lastCheck = 0;
+      publish({ source: "official", phase: "idle", version: undefined, releaseNotes: undefined, progress: 0, checkedAt: undefined, error: undefined });
+      return api.getState();
+    },
     download() { return action(async () => { refreshConfig(); if (state.phase !== "ready" && state.phase !== "installing") await download(); }); },
     install() { return action(async () => {
       refreshConfig();
@@ -125,7 +156,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       fs.mkdirSync(path.dirname(options.preferencesPath), { recursive: true });
       fs.writeFileSync(options.preferencesPath, JSON.stringify({ autoDownload: enabled }) + "\n");
       publish({ autoDownload: enabled });
-      if (enabled && state.phase === "available") void api.download();
+      if (enabled && !testConfig && state.phase === "available") void api.download();
       return snapshot();
     },
     start() {
