@@ -96,7 +96,9 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
   if (current.capabilities.hasCli && (!current.bound || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
     onPhase("preparing"); check();
     let preparation = await api.prepareConnector(id); check();
-    const deadline = Date.now() + 180_000;
+    // Platform preparation has a 15-minute limit; do not abandon a valid
+    // installation after only three minutes on slow networks.
+    const deadline = Date.now() + 15 * 60_000;
     while (preparation.status === "pending" || preparation.status === "preparing") {
       if (Date.now() > deadline) throw new Error("market.connector.flow.timeout");
       await wait(signal); check();
