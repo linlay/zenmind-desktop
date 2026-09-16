@@ -3603,11 +3603,6 @@ div.sidebar-chats-group-popover {
   background: transparent;
 }
 
-:root[data-theme="dark"] .worker-panel-header-body,
-:root[data-theme="dark"] .assistant-worker-name {
-  color: #f6f6f6;
-}
-
 :root[data-theme="dark"] .worker-panel-role,
 :root[data-theme="dark"] .worker-panel-preview,
 :root[data-theme="dark"] .worker-panel-time-label,
