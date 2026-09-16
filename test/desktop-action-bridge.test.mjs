@@ -3727,3 +3727,11 @@ test("WebApp init supports writable descendants of a filesystem root and diagnos
   assert.equal(blocked.error.details.context.resolvedProjectPath, path.join(filePath, "distribution"));
   assert.match(blocked.error.details.recovery.message, /workspace-relative/);
 });
+
+
+test("Desktop rejects unresolved Platform path aliases before filesystem access", () => {
+  const { normalizeWorkspaceRelativePath } = require("../dist-electron/main/modules/webs/webapps/tooling/workspace.js");
+  for (const input of ["@chat/webapps/demo", "@workspace/webapps/demo", "@chat", String.raw`@workspace\webapps\demo`]) {
+    assert.equal(normalizeWorkspaceRelativePath(input), "");
+  }
+});

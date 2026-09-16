@@ -12,6 +12,7 @@ export function normalizeWorkspaceRelativePath(value: unknown) {
   const raw = typeof value === "string" ? value.trim() : "";
   if (
     !raw ||
+    /^@(chat|workspace)(?:[\\/]|$)/iu.test(raw) ||
     raw.length > 2_048 ||
     /[\u0000-\u001f\u007f]/u.test(raw) ||
     /^[a-z][a-z\d+.-]*:/iu.test(raw) ||
