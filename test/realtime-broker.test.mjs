@@ -1044,6 +1044,33 @@ test("AWCP business failures stay in response frames while host failures stay AG
   });
 });
 
+test("AWCP preflight proof is sent directly in AGW error data, not a nested details envelope", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  const source = { runId: "run-preflight", chatId: "chat-preflight", agentKey: "agent-1" };
+  broker.siteControlGrants.bind({ ...source, owner: { kind: "agent", agentKey: "agent-1" } }, scope);
+  const proof = { stage: "desktop_preflight", executionStarted: false, reason: "input_schema_mismatch",
+    violations: [{ instancePath: "/conditions", keyword: "type" }] };
+  broker.setDesktopBridgeProvider({
+    action: async () => assert.fail("AWCP entered desktop_action"),
+    cdp: async () => assert.fail("AWCP entered raw CDP"),
+    awcpSnapshot: async () => assert.fail("unexpected snapshot"),
+    awcpInvoke: async () => { throw Object.assign(new Error("Invalid input"), {
+      code: "awcp_preflight_rejected", statusCode: 400, details: proof,
+    }); },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "preflight-input", source,
+    payload: { revision: "revision-a", action: "orders.read", args: {} } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "preflight-input"));
+  const frame = socket("primary").sent.find((frame) => frame.id === "preflight-input");
+  assert.equal(frame.frame, "error");
+  assert.equal(frame.type, "awcp_preflight_rejected");
+  assert.equal(frame.code, 400);
+  assert.deepEqual(frame.data, proof);
+  assert.equal(frame.data.details, undefined);
+});
+
 test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a terminal frame", async (t) => {
   const { broker, socket, token } = createHarness(t);
   const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
