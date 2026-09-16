@@ -665,3 +665,7 @@
 - 删除测试安装副本的 Worker 入口后调用 package.init，确认返回 tooling_worker_unavailable、ENOENT、not_started 和 repair_host；工程不应创建。不要修改正在使用的正式安装文件。
 - 用测试 Worker 注入加载异常、提前退出和超时，确认模型收到原因、执行状态、恢复提示及可关联的诊断编号；不能自动重放写动作或让 Agent 直接启动内部脚本。
 - 在当前 Run Workspace 外放置同名 ZIP，确认 install 拒绝而不搜索其他目录；验证缺失文件、错误文件类型、权限拒绝、绝对路径、Windows 盘符及 Junction 越界的诊断分别准确。
+
+## Agents 导航分组
+
+- macOS / Windows 分别在中英文和浅深色下进入 Agents：依次显示平台组（智能体、技能中心、连接器中心、Registries、归档对话）、云端组（市场）与帮助组（帮助）；禁用市场或帮助时隐藏对应空组，分组标题不可点击，菜单选中态、页面跳转和返回应用正常。

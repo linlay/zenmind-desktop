@@ -5439,12 +5439,6 @@ div.sidebar-chats-group-popover {
   width: 100%;
 }
 
-.sidebar-capability-divider {
-  height: 1px;
-  margin: 6px 10px 5px;
-  background: var(--line);
-}
-
 .sidebar-settings-empty {
   padding: 10px;
   color: var(--ink-muted);
