@@ -841,7 +841,7 @@ export type DesktopWindowState = {
   windowControlsMasked: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
-export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "skills" | "mcpConnectors";
+export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "shareManagement";
 export type DesktopGlobalSearchShortcutSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type DesktopGlobalSearchShortcut =
   | { kind: "action"; actionId: DesktopGlobalSearchActionShortcutId }
@@ -1014,7 +1014,7 @@ export interface DesktopApi {
     exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
     exportChatHtml: (chatId: string) => Promise<AssistantNavActionResult>;
     shareChat: (request: AssistantConversationShareRequest) => Promise<AssistantConversationShareCreateResult>;
-    listChatShares: (chatId: string) => Promise<AssistantConversationShareListResult>;
+    listConversationShares: () => Promise<AssistantConversationShareListResult>;
     revokeChatShare: (shareId: string) => Promise<AssistantConversationShareRevokeResult>;
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => () => void;
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => () => void;

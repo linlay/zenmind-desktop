@@ -118,6 +118,7 @@ type SettingsPageProps = {
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onWebappPublishStateChange?: (id: string, state: WebappPublishState | null) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
+  onTunnelHubEnabledChange?: (enabled: boolean) => void;
   debugVisible: boolean;
   onCloseDebug: () => void;
 };
@@ -560,6 +561,20 @@ function normalizeTunnelHubSettings(settings?: Partial<TunnelHubSettings> | null
     ...defaultTunnelHubSettings,
     ...(settings ?? {})
   };
+}
+
+const tunnelHubSettingsErrorKeys: Record<string, TranslationKey> = {
+  "Device ID must be a lowercase DNS label up to 63 characters.": "settings.tunnelHub.invalidDeviceId",
+  "Relay URL is invalid.": "settings.tunnelHub.invalidRelayUrl",
+  "Sign in before enabling Tunnel Hub.": "settings.tunnelHub.signInRequired"
+};
+
+function localizeTunnelHubSettingsError(message: string, t: TranslateFunction): string {
+  let localized = message;
+  for (const [source, key] of Object.entries(tunnelHubSettingsErrorKeys)) {
+    localized = localized.replaceAll(source, t(key));
+  }
+  return localized;
 }
 
 function isMarketVisible(settings: MarketSettings) {
@@ -2407,6 +2422,7 @@ export function SettingsPage({
   onWebappRuntimeStateChange,
   onWebappPublishStateChange,
   onAssistantSettingsChange,
+  onTunnelHubEnabledChange,
   debugVisible,
   onCloseDebug
 }: SettingsPageProps) {
@@ -2741,6 +2757,7 @@ export function SettingsPage({
   function commitSavedTunnelHubSettings(settings: TunnelHubSettings) {
     savedTunnelHubSettingsRef.current = settings;
     setSavedTunnelHubSettings(settings);
+    onTunnelHubEnabledChange?.(settings.enabled === true);
   }
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
@@ -4023,7 +4040,7 @@ export function SettingsPage({
         setAppPairingResult(null);
       }
       if (!result.ok) {
-        throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
+        throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.saveFailed"));
       }
       setReadErrorSections(["tunnelHub"], "");
       showSectionNotice("tunnelHub", result.message, "success");
@@ -4062,7 +4079,7 @@ export function SettingsPage({
         setAppPairingResult(null);
       }
       if (!result.ok) {
-        throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
+        throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.enableIncomplete"));
       }
       setReadErrorSections(["tunnelHub"], "");
       showSectionNotice(

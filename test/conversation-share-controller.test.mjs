@@ -46,6 +46,7 @@ function createFixture(t, tunnelOverrides = {}) {
 function shareRecord(overrides = {}) {
   return {
     shareId: "opaque_abc",
+    chatId: "chat-1",
     url: "https://share.example.test/share/opaque_abc",
     createdAt: 1_786_363_200_000,
     expiresAt: 1_788_955_200_000,
@@ -209,8 +210,8 @@ test("list and revoke use only the Tunnel client", async (t) => {
   const app = createFixture(t);
   const calls = [];
   const client = {
-    async list(target, conversationId) {
-      calls.push({ method: "list", target, conversationId });
+    async list(target) {
+      calls.push({ method: "list", target });
       return [shareRecord({ expiresAt: null })];
     },
     async revoke(target, shareId) {
@@ -218,13 +219,12 @@ test("list and revoke use only the Tunnel client", async (t) => {
     }
   };
 
-  const listed = await listConversationShares(app, client, " chat-1 ");
+  const listed = await listConversationShares(app, client);
   const revoked = await revokeConversationShare(app, client, "opaque-abc_123");
 
   assert.equal(listed.ok, true);
   assert.equal(revoked.ok, true);
   assert.deepEqual(calls.map((call) => call.method), ["list", "revoke"]);
-  assert.equal(calls[0].conversationId, "chat-1");
   assert.equal(calls[1].shareId, "opaque-abc_123");
   assert.equal(calls[0].target.origin, "https://tunnel.example.test");
 });
@@ -243,7 +243,7 @@ test("controller maps typed Tunnel failures without exposing secrets", async (t)
       async list() {
         throw error;
       }
-    }, "chat-1");
+    });
     assert.equal(result.ok, false);
     assert.match(result.message, messagePattern);
     assert.doesNotMatch(result.message, /Bearer|header\./u);

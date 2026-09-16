@@ -736,8 +736,8 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     conversationShare.create(request)
   );
 
-  ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>
-    conversationShare.list(chatId)
+  ipcMain.handle("assistant.listConversationShares", async () =>
+    conversationShare.list()
   );
 
   ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>

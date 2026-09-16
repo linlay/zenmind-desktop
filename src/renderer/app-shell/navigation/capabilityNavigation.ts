@@ -10,6 +10,7 @@ export type CapabilityNavigationItemId =
   | "registries"
   | "archives"
   | "market"
+  | "share-management"
   | "help";
 
 export type CapabilityNavigationItem = {
@@ -58,6 +59,12 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
     to: "/market",
     labelKey: "nav.market",
     icon: "market",
+  },
+  {
+    id: "share-management",
+    to: "/share-management",
+    labelKey: "nav.shareManagement",
+    icon: "share",
   },
   {
     id: "help",
