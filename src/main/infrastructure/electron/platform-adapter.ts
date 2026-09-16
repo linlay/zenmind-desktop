@@ -101,9 +101,7 @@ export function resolveGlobalSearchCommandShortcut(
     case "a":
       return { kind: "action", actionId: "agents" };
     case "s":
-      return { kind: "action", actionId: "skills" };
-    case "m":
-      return { kind: "action", actionId: "mcpConnectors" };
+      return { kind: "action", actionId: "shareManagement" };
     default:
       return null;
   }

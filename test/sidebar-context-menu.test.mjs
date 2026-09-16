@@ -103,6 +103,18 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
   ]);
   assert.equal(ids({ kind: "chat", workPanelOpen: true })[0], "chat.workPanel.close");
   assert.deepEqual(ids({
+    kind: "chat",
+    workPanelOpen: false
+  }), [
+    "chat.workPanel.open",
+    "chat.exportMenu",
+    "chat.share",
+    "chat.rename",
+    "chat.archive",
+    "chat.delete",
+    "chat.info"
+  ]);
+  assert.deepEqual(ids({
     kind: "web",
     webKind: "website",
     openMode: "window",
@@ -155,19 +167,30 @@ test("sidebar renderer accepts every chat action exposed by the native menu", ()
   const chatActionGate = sidebarSource.match(
     /if \(target\.kind === "chat"\) \{([\s\S]*?)\n    \}/u
   )?.[1] ?? "";
-  for (const actionId of actionIds({ kind: "chat" })) {
+  for (const actionId of actionIds({
+    kind: "chat",
+    workPanelOpen: false
+  })) {
     assert.match(chatActionGate, new RegExp(`"${actionId.replace(".", "\\.")}"`, "u"));
   }
 });
 
-test("sidebar chat sharing remains available from the menu without a header button", () => {
+test("AppShell owns the shared chat dialog while the sidebar only forwards chat context", () => {
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
-  assert.doesNotMatch(sidebarSource, /sidebar-chats-share-button/u);
-  assert.match(sidebarSource, /actionId === "chat\.share"/u);
-  assert.match(sidebarSource, /conversationShareDialog\.open\(chat\.chatId, chat\.chatName\)/u);
+  const appShellSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
+    "utf8"
+  );
+  assert.match(sidebarSource, /"chat\.share"/u);
+  assert.doesNotMatch(sidebarSource, /shareAvailable|conversationShareAvailable/u);
+  assert.match(sidebarSource, /onShareChat\(chat\.chatId, chat\.chatName\)/u);
+  assert.doesNotMatch(sidebarSource, /ConversationShareDialog|useConversationShareDialog/u);
+  assert.match(appShellSource, /const shellOverlay = useShellOverlay\(\)/u);
+  assert.match(appShellSource, /<ConversationShareDialog/u);
+  assert.match(appShellSource, /className="main-chat-header-action main-chat-share-button"/u);
 });
 
 test("sidebar native context request validation rejects injected and malformed fields", () => {
@@ -185,6 +208,16 @@ test("sidebar native context request validation rejects injected and malformed f
     x: 1,
     y: 2,
     target: { kind: "chat", workPanelOpen: false, label: "Injected" }
+  }), null);
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 1,
+    y: 2,
+    target: { kind: "chat", workPanelOpen: "false" }
+  }), null);
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 1,
+    y: 2,
+    target: { kind: "chat", workPanelOpen: false, shareAvailable: true }
   }), null);
   const validWebTarget = {
     kind: "web",
