@@ -10,7 +10,7 @@ const electron = {
   session: { fromPartition: key => { if(!sessions.has(key)) sessions.set(key,{}); return sessions.get(key); } },
 };
 globalThis.__connectorElectron = electron;
-const {outputFiles}=await build({stdin:{contents:`export * from './src/main/modules/agent-platform/connector-auth-browser'; export * from './src/main/infrastructure/electron/isolated-auth-guest'; export * from './src/shared/contracts/agent-webclient-bridge';`,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'electron-mock',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const {net,webContents,session}=globalThis.__connectorElectron;'}));}}]});
+const {outputFiles}=await build({stdin:{contents:`export * from './src/main/modules/agent-platform/connector-auth-browser'; export * from './src/main/infrastructure/electron/isolated-auth-guest'; export * from './src/shared/contracts/agent-webclient-bridge'; export * from './src/shared/connector-auth-host';`,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'electron-mock',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const {net,webContents,session}=globalThis.__connectorElectron;'}));}}]});
 const api=await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 let status;
 function wc(id){const e=new EventEmitter();Object.assign(e,{id,mainFrame:{},isDestroyed:()=>false,sent:[],send(channel,data){this.sent.push({channel,data});}});contents.set(id,e);return e;}
@@ -66,4 +66,46 @@ test('macOS and Windows auth guests reject preload, popups, downloads and non-we
  guest.emit('will-redirect',{preventDefault(){prevented++;}},'https://work.weixin.qq.com/callback');assert.equal(prevented,1);
  dispose();assert.equal(api.prepareIsolatedAuthGuest(1,{}, {partition,src:'https://work.weixin.qq.com/auth'}),false);
  }
+});
+
+test('market host opens the same isolated login dialog without granting guest root privileges', async () => {
+  const owner = wc(501), guest = wc(502);
+  owner.getURL = () => 'file:///desktop/index.html#/market';
+  status = {connectorId:'wecom',sessionId:'market-login',authBrowser:'embedded',status:'pending',authorizationUrl:'https://work.weixin.qq.com/auth',expiresAt:new Date(Date.now()+60000).toISOString()};
+  const handlers = new Map();
+  api.registerConnectorAuthBrowser({handle:(name,fn)=>handlers.set(name,fn)}, {
+    availability:async()=>({baseUrl:'http://127.0.0.1:8080',token:'test'}),
+    getMainWebContents:()=>owner,
+    authorize:()=>{throw Error('unregistered guest');}
+  });
+  const request = {action:'open',input:{connectorId:'wecom',sessionId:'market-login'}};
+  const invoke = handlers.get(api.CONNECTOR_AUTH_BROWSER_HOST_REQUEST);
+  try {
+    await assert.rejects(invoke({sender:guest,senderFrame:guest.mainFrame}, request), /Untrusted Desktop/);
+    await assert.rejects(invoke({sender:owner,senderFrame:{}}, request), /Untrusted authorization frame/);
+    await invoke({sender:owner,senderFrame:owner.mainFrame},request);
+    assert.equal(owner.sent.length,1);
+    const dialog = owner.sent[0].data;
+    assert.equal(dialog.connectorId,'wecom');
+    assert.match(dialog.partition,/^connector-auth:/);
+    await invoke({sender:owner,senderFrame:owner.mainFrame},request);
+    assert.equal(owner.sent.length,1);
+    owner.emit('did-start-navigation',{},'file:///desktop/index.html#/agent/cutej',true,true);
+    assert.deepEqual(owner.sent.at(-1).data,{dialogId:dialog.dialogId,closed:true});
+  } finally { owner.emit('destroyed'); }
+});
+
+test('only the trusted host can choose embedded for a system-default authorization session', async () => {
+ const owner=wc(601);owner.getURL=()=> 'file:///desktop/index.html#/market';const handlers=new Map();
+ status={connectorId:'wecom',sessionId:'choice',authBrowser:'system',status:'pending',authorizationUrl:'https://work.weixin.qq.com/auth',expiresAt:new Date(Date.now()+60000).toISOString()};
+ api.registerConnectorAuthBrowser({handle:(n,f)=>handlers.set(n,f)},{availability:async()=>({baseUrl:'http://127.0.0.1:8080',token:'test'}),getMainWebContents:()=>owner,authorize:()=>({sender:owner,target:{registrationId:'guest',ownerWebContentsId:owner.id,currentUrl:owner.getURL()}})});
+ const event={sender:owner,senderFrame:owner.mainFrame};const input={connectorId:'wecom',sessionId:'choice',browser:'embedded'};
+ try {
+  await assert.rejects(handlers.get(api.CONNECTOR_AUTH_BROWSER_CHANNEL)(event,{action:'open',input}));
+  await handlers.get(api.CONNECTOR_AUTH_BROWSER_HOST_REQUEST)(event,{action:'open',input});
+  assert.equal(owner.sent[0].data.sessionId,'choice');
+  await handlers.get(api.CONNECTOR_AUTH_BROWSER_HOST_REQUEST)(event,{action:'close',input});
+  assert.equal(owner.sent.filter(x=>x.channel===api.CONNECTOR_AUTH_BROWSER_EVENT).length,0);
+  status.status='authorized';await assert.rejects(handlers.get(api.CONNECTOR_AUTH_BROWSER_HOST_REQUEST)(event,{action:'open',input}));
+ }finally{owner.emit('destroyed');}
 });

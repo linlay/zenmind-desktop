@@ -115,6 +115,8 @@ export function marketRoute(type: MarketItemType) {
       return "cli-tools";
     case "mcp":
       return "mcps";
+    case "connector":
+      return "connectors";
     case "website-app":
       return "webapps";
     case "software-package":
@@ -302,15 +304,18 @@ export async function downloadAsset(
   item: MarketCatalogItem,
   asset: MarketAsset,
   options: MarketplaceOptions = {},
-  downloadUrl = asset.url
+  downloadUrl = asset.url,
+  maxBytes = MAX_MARKET_DOWNLOAD_BYTES
 ) {
-  if (asset.sizeBytes > MAX_MARKET_DOWNLOAD_BYTES) {
-    throw new Error(t("market.main.downloadTooLarge", { maxBytes: MAX_MARKET_DOWNLOAD_BYTES }));
+  const limit = Math.min(maxBytes, MAX_MARKET_DOWNLOAD_BYTES);
+  if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error("Invalid download size limit");
+  if (asset.sizeBytes > limit) {
+    throw new Error(t("market.main.downloadTooLarge", { maxBytes: limit }));
   }
   const response = await requestMarket(app, downloadUrl, {}, options, "market asset download");
   const bytes = await readResponseBytesWithLimit(
     response,
-    asset.sizeBytes > 0 ? asset.sizeBytes : MAX_MARKET_DOWNLOAD_BYTES
+    asset.sizeBytes > 0 ? asset.sizeBytes : limit
   );
   if (asset.sizeBytes > 0 && bytes.length !== asset.sizeBytes) {
     throw new Error(t("market.main.downloadSizeMismatch", { expected: asset.sizeBytes, actual: bytes.length }));
@@ -413,13 +418,23 @@ export function platformCandidates(
 export function selectAsset(
   item: Pick<MarketCatalogItem, "type" | "sandboxKind"> & {
     assets?: Record<string, MarketAsset>;
-  }
+  },
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch
 ) {
   const assets = item.assets ?? {};
-  for (const candidate of platformCandidates()) {
+  for (const candidate of platformCandidates(platform, arch)) {
     const asset = assets[candidate];
     if (asset && isDesktopInstallableAsset(item, asset)) {
       return { key: candidate, asset };
+    }
+  }
+  // Connector distribution on macOS accepts the darwin family as requested.
+  // Preserve the selected key for server resolve/download and provenance.
+  if (platform === "darwin" && item.type === "connector") {
+    for (const key of Object.keys(assets).sort()) {
+      const asset = assets[key];
+      if (key.startsWith("darwin") && isDesktopInstallableAsset(item, asset)) return { key, asset };
     }
   }
   const universal = assets.universal;

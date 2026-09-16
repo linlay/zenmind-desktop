@@ -81,7 +81,7 @@ export const MARKET_TAB_ITEM_TYPES: Record<MarketTab, MarketItemType> = {
   sandboxImages: "sandbox-image",
   pets: "pet",
   cli: "cli",
-  mcps: "mcp",
+  mcps: "connector",
   websiteApps: "website-app",
   softwarePackages: "software-package"
 };
@@ -192,6 +192,8 @@ export function createEmptyMarketResult(): MarketListResult {
     cliOffline: false,
     mcpMessage: "",
     mcpOffline: false,
+    connectorMessage: "",
+    connectorOffline: false,
     websiteAppMessage: "",
     websiteAppOffline: false,
     softwarePackageMessage: "",

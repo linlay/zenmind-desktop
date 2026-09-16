@@ -307,6 +307,10 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   });
   const agentWebclientBridgeRuntime = registerAgentWebclientBridgeIpcHandlers(ipcMain, {
     app,
+    getMainWebContents: () => {
+      const mainWindow = options.getMainWindow();
+      return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+    },
     browserSurfaces: options.browserSurfaces,
     isTrustedAgentWebclientSession: options.isTrustedAgentWebclientSession,
     normalizeWorkPanelOpenLocalResourceRequest: normalizeChatWorkPanelOpenLocalResourceRequest,

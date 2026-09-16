@@ -156,12 +156,11 @@ export function SkillMarketplace(props: Props) {
       <div className="skill-discovery-scroll">
         {installedView && skillPins.failed ? <p role="alert" className="skill-discovery-pin-error">{t("market.discovery.pinSyncFailed")} <button onClick={skillPins.retry}>{t("market.discovery.retry")}</button></p> : null}
         {!installedView ? <>
-          {!query ? <section className="skill-discovery-featured">
+          {!query && featured.length > 0 ? <section className="skill-discovery-featured">
             <div className="skill-discovery-section-heading"><h2>{t("market.discovery.featured")}</h2>
               <button className="skill-discovery-shuffle" disabled={featuredCount <= 3} onClick={() => setFeaturedOffset((value) => value + 3)}><ReloadOutlined />{t("market.discovery.shuffle")}</button>
             </div>
             <div className="skill-discovery-grid">{featured.map((item) => card(item))}</div>
-            {!featured.length ? <p className="skill-discovery-featured-empty">{t("market.discovery.noFeatured")}</p> : null}
           </section> : null}
           <div className="skill-discovery-collections" role="tablist" aria-label={t("market.discovery.collections")}>
             {(["recommended", "packages"] as const).map((value) => <button key={value} role="tab" aria-selected={collection === value} onClick={() => setCollection(value)}>{t(`market.discovery.${value}`)}</button>)}

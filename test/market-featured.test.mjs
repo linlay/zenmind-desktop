@@ -11,12 +11,19 @@ test("skill profile featured is a strict boolean", () => {
   }
 });
 
-test("catalog projects backend skill.featured without deriving it from downloads", () => {
+test("catalog uses the administrator-owned top-level featured flag", () => {
+  const item = { type: "skill", version: "1.0.0", skill: { kind: "single" } };
   const items = normalizeCatalog({ items: [
-    { id: "selected", type: "skill", version: "1.0.0", skill: { kind: "single", featured: true }, downloadCount: 1 },
-    { id: "popular", type: "skill", version: "1.0.0", skill: { kind: "single", featured: false }, downloadCount: 999 },
-    { id: "missing", type: "skill", version: "1.0.0", skill: { kind: "single" }, downloadCount: 999 },
-    { id: "disabled", type: "skill", version: "1.0.0", skillFeatured: false, skill: { kind: "single", featured: true } }
+    { ...item, id: "selected", featured: true, skillFeatured: false },
+    { ...item, id: "popular", downloadCount: 999 },
+    { ...item, id: "disabled", featured: false, skillFeatured: true, skill: { kind: "single", featured: true } },
+    { ...item, id: "legacy-only", skill: { kind: "single", featured: true } },
+    { ...item, id: "string", featured: "true" },
+    { ...item, id: "number", featured: 1 }
   ] }).items;
-  assert.deepEqual(items.map((item) => [item.id, item.skillFeatured]), [["selected", true], ["popular", false], ["missing", false], ["disabled", false]]);
+  assert.deepEqual(items.map(item => [item.id, item.skillFeatured]), [
+    ["selected", true], ["popular", false], ["disabled", false], ["legacy-only", false], ["string", false], ["number", false]
+  ]);
+  // Catalog snapshots are normalized again when reused by installation/list APIs.
+  assert.deepEqual(normalizeCatalog({ items }).items.map(item => item.skillFeatured), items.map(item => item.skillFeatured));
 });

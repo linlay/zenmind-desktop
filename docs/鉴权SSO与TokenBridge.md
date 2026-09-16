@@ -125,3 +125,9 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 - Realtime/WorkPanel bridge：`src/main/modules/agent-platform/ipc.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
 - Tunnel Hub 身份桥：`src/main/modules/tunnel/registration.ts`、`src/main/modules/tunnel/runtime.ts`、`src/main/modules/tunnel/client-endpoint.ts`
 - 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/service-webview-main-world.test.mjs`
+
+## 连接器的用户主体
+
+Desktop 请求本地 Platform 时，在已验证的当前 SSO 会话下，以 canonical access token 的 issuer 与 subject 派生不透明的本地主体。展示用用户资料和固定应用用户名不能作为连接器凭据所有者。IdentityCenter 为该主体签发本地访问令牌；换票缓存、并发请求和完成后的复验均按主体隔离，用户切换时旧请求不得交付给新用户。Platform 根据已验证主体隔离绑定偏好和凭据，不能信任业务参数传来的用户 ID。
+
+Desktop SSO 和第三方连接器授权是不同状态。市场连接器未扫码时，执行清单的授权流程；不能把第三方授权失败变成 Desktop 退出，也不能把有效的 Desktop SSO 当成第三方已登录。
