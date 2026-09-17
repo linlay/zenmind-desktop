@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { SiteControlScope } from "../cdp/site-scope";
+import { AwcpDiscoveryBindings } from "./discovery-binding";
 import {
   AwcpSchemaCompileError,
   compileAwcpSchema,
@@ -49,6 +50,7 @@ type AwcpActionDescriptor = {
   action: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  example: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
 };
 
@@ -60,6 +62,11 @@ type AwcpActionSnapshot = {
 type PreparedActionContract = {
   input: AwcpSchemaValidator;
   output?: AwcpSchemaValidator;
+};
+
+type PreparedSnapshot = {
+  snapshot: AwcpActionSnapshot;
+  actions: Map<string, PreparedActionContract>;
 };
 
 type ActiveInvocation = {
@@ -90,6 +97,7 @@ const AWCP_ERROR_CODES = new Set([
 
 export class AwcpGuestBridge {
   private readonly active = new Map<string, ActiveInvocation>();
+  private readonly discoveries = new AwcpDiscoveryBindings<PreparedSnapshot>();
 
   constructor(private readonly browserSurfaces: Pick<BrowserSurfaceRegistry, "findWebContentsById">) {}
 
@@ -99,8 +107,11 @@ export class AwcpGuestBridge {
     signal?: AbortSignal,
   ): Promise<AwcpSnapshotResponse> {
     assertToken("requestId", requestId, AWCP_LIMITS.maxRequestIdLength);
+    this.discoveries.clear(scope);
     return this.withGuest(requestId, scope, signal, false, async (guest, lifecycleFailure) => {
-      const snapshot = await this.readValidatedSnapshot(guest, lifecycleFailure);
+      const prepared = await this.readValidatedSnapshot(guest, lifecycleFailure);
+      const snapshot = prepared.snapshot;
+      this.discoveries.remember(scope, guest, snapshot.revision, prepared);
       return {
         ok: true,
         method: "AWCP.getSnapshot",
@@ -118,25 +129,35 @@ export class AwcpGuestBridge {
   ): Promise<AwcpActionResponse> {
     const payload = validateInvokePayload(requestId, input);
     return this.withGuest(requestId, scope, signal, true, async (guest, lifecycleFailure) => {
-      const snapshot = await this.readValidatedSnapshot(guest, lifecycleFailure);
+      const bindingFailure = this.discoveries.rejection(scope, guest, payload.revision);
+      if (bindingFailure) {
+        throw awcpPreflightFailure(bindingFailure, "The invocation does not match the discovered page instance and revision.");
+      }
+      const prepared = this.discoveries.contract(scope);
+      if (!prepared) throw awcpPreflightFailure("discovery_required", "Discover AWCP before invocation.");
+      const snapshot = await this.readSnapshot(guest, lifecycleFailure);
       if (snapshot.revision !== payload.revision) {
-        return awcpBusinessFailure(requestId, payload.action, "stale_snapshot", "The AWCP snapshot is stale.");
+        throw awcpPreflightFailure("stale_snapshot", "The AWCP snapshot is stale. Discover again before constructing new arguments.");
       }
-      const descriptor = snapshot.actions.find((candidate) => candidate.action === payload.action);
-      if (!descriptor) {
-        return awcpBusinessFailure(requestId, payload.action, "action_not_found", "The AWCP action is unavailable.");
+      if (stableAwcpJSON(snapshot) !== stableAwcpJSON(prepared.snapshot)) {
+        throw awcpHostError("awcp_invalid_contract", "The page changed its AWCP descriptors without changing revision.");
       }
-      const contract = prepareActionContract(descriptor);
+      const contract = prepared.actions.get(payload.action);
+      if (!contract) {
+        throw awcpPreflightFailure("action_not_found", "The AWCP action is unavailable.");
+      }
       const inputViolations = contract.input(payload.args);
       if (inputViolations.length > 0) {
-        return awcpBusinessFailure(
-          requestId,
-          payload.action,
-          "invalid_arguments",
+        throw awcpPreflightFailure(
+          "input_schema_mismatch",
           "The AWCP action arguments do not satisfy inputSchema.",
           { violations: inputViolations },
         );
       }
+
+      const changedBinding = this.discoveries.rejection(scope, guest, payload.revision);
+      if (changedBinding) throw awcpPreflightFailure(changedBinding, "The discovered page changed before invocation.");
+      if (signal?.aborted) throw awcpHostError("awcp_cancelled", "The AWCP invocation was cancelled before page execution.");
 
       const envelope = JSON.stringify({ requestId, ...payload });
       const result = await Promise.race([
@@ -162,6 +183,25 @@ export class AwcpGuestBridge {
   }
 
   private async readValidatedSnapshot(
+    guest: WebContents,
+    lifecycleFailure: Promise<never>,
+  ): Promise<PreparedSnapshot> {
+    const snapshot = await this.readSnapshot(guest, lifecycleFailure);
+    const actions = new Map<string, PreparedActionContract>();
+    for (const descriptor of snapshot.actions) {
+      const contract = prepareActionContract(descriptor);
+      const violations = contract.input(descriptor.example);
+      if (violations.length > 0) {
+        throw awcpHostError("awcp_invalid_contract", `AWCP Action ${descriptor.action} example does not satisfy inputSchema.`, {
+          action: descriptor.action, schemaPath: "/example", keyword: "example", violations,
+        });
+      }
+      actions.set(descriptor.action, contract);
+    }
+    return { snapshot, actions };
+  }
+
+  private async readSnapshot(
     guest: WebContents,
     lifecycleFailure: Promise<never>,
   ): Promise<AwcpActionSnapshot> {
@@ -244,7 +284,10 @@ export class AwcpGuestBridge {
     signal?.addEventListener("abort", onAbort, { once: true });
 
     try {
-      if (signal?.aborted) onAbort();
+      if (signal?.aborted) {
+        onAbort();
+        return await lifecycleFailure;
+      }
       return await execute(guest, lifecycleFailure);
     } catch (error) {
       if (isAwcpHostError(error)) throw error;
@@ -276,6 +319,7 @@ export class AwcpGuestBridge {
       invocation.cancel(awcpHostError("awcp_cancelled", "The AWCP bridge stopped."));
     }
     this.active.clear();
+    this.discoveries.dispose();
   }
 }
 
@@ -300,13 +344,24 @@ function validateActionSnapshot(input: unknown): AwcpActionSnapshot {
   if (!Array.isArray(input.actions) || input.actions.length > AWCP_LIMITS.maxActions) {
     throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action list.");
   }
-  const serialized = JSON.stringify(input);
+  const serialized = stableAwcpJSON(input);
   if (Buffer.byteLength(serialized, "utf8") > AWCP_LIMITS.maxSnapshotBytes) {
     throw awcpHostError("awcp_invalid_contract", "The page AWCP snapshot exceeds 256 KiB.");
   }
   let previousAction = "";
-  for (const candidate of input.actions) {
-    validateActionDescriptor(candidate);
+  for (const [index, candidate] of input.actions.entries()) {
+    try {
+      validateActionDescriptor(candidate);
+    } catch (error) {
+      if (!(error instanceof AwcpHostError) || error.code !== "awcp_invalid_contract") throw error;
+      const name = candidate && typeof candidate === "object" && !Array.isArray(candidate) &&
+        typeof (candidate as Record<string, unknown>).action === "string"
+        ? (candidate as Record<string, unknown>).action as string : "<invalid>";
+      throw awcpHostError("awcp_invalid_contract", error.message, {
+        action: name, schemaPath: `/actions/${index}${error.details?.schemaPath ?? ""}`,
+        keyword: error.details?.keyword ?? "descriptor",
+      });
+    }
     if (candidate.action <= previousAction) {
       throw awcpHostError("awcp_invalid_contract", "The page AWCP actions are not strictly sorted.");
     }
@@ -315,11 +370,24 @@ function validateActionSnapshot(input: unknown): AwcpActionSnapshot {
   return input as AwcpActionSnapshot;
 }
 
+function stableAwcpJSON(value: unknown): string {
+  const order = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(order);
+    if (input && typeof input === "object") {
+      const record = input as Record<string, unknown>;
+      return Object.fromEntries(Object.keys(record).sort().map((key) => [key, order(record[key])]));
+    }
+    return input;
+  };
+  return JSON.stringify(order(value));
+}
+
 function validateActionDescriptor(input: unknown): asserts input is AwcpActionDescriptor {
   assertPlainRecord(input, "AWCP action descriptor", "awcp_invalid_contract");
   const keys = Object.keys(input).sort().join(",");
-  if (keys !== "action,description,inputSchema" && keys !== "action,description,inputSchema,outputSchema") {
-    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action descriptor.");
+  if (keys !== "action,description,example,inputSchema" && keys !== "action,description,example,inputSchema,outputSchema") {
+    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action descriptor.",
+      { schemaPath: "", keyword: "required" });
   }
   if (typeof input.action !== "string" || !input.action || input.action.length > AWCP_LIMITS.maxActionLength || !AWCP_ACTION_PATTERN.test(input.action)) {
     throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action name.");
@@ -329,6 +397,10 @@ function validateActionDescriptor(input: unknown): asserts input is AwcpActionDe
   }
   assertPlainRecord(input.inputSchema, "AWCP inputSchema", "awcp_invalid_contract");
   assertMaximumDepth(input.inputSchema, AWCP_LIMITS.maxSchemaDepth, "AWCP inputSchema");
+  if (!input.example || typeof input.example !== "object" || Array.isArray(input.example)) {
+    throw awcpHostError("awcp_invalid_contract", "AWCP example must be a JSON object.",
+      { schemaPath: "/example", keyword: "type" });
+  }
   if (Object.prototype.hasOwnProperty.call(input, "outputSchema")) {
     assertPlainRecord(input.outputSchema, "AWCP outputSchema", "awcp_invalid_contract");
     assertMaximumDepth(input.outputSchema, AWCP_LIMITS.maxSchemaDepth, "AWCP outputSchema");
@@ -336,20 +408,17 @@ function validateActionDescriptor(input: unknown): asserts input is AwcpActionDe
 }
 
 function prepareActionContract(descriptor: AwcpActionDescriptor): PreparedActionContract {
-  try {
-    return {
-      input: compileAwcpSchema(descriptor.inputSchema),
-      ...(Object.prototype.hasOwnProperty.call(descriptor, "outputSchema")
-        ? { output: compileAwcpSchema(descriptor.outputSchema as Record<string, unknown>) }
-        : {}),
-    };
-  } catch (error) {
-    if (!(error instanceof AwcpSchemaCompileError)) throw error;
-    throw awcpHostError(
-      "awcp_invalid_contract",
-      "The page returned an AWCP schema that cannot be compiled.",
-    );
-  }
+  const compile = (schema: Record<string, unknown>, name: "inputSchema" | "outputSchema") => {
+    try { return compileAwcpSchema(schema); }
+    catch (error) {
+      if (!(error instanceof AwcpSchemaCompileError)) throw error;
+      throw awcpHostError("awcp_invalid_contract", `AWCP Action ${descriptor.action} ${name} cannot be compiled.`,
+        { action: descriptor.action, schemaPath: `/${name}${error.schemaPath.slice(1)}`, keyword: error.keyword });
+    }
+  };
+  const input = compile(descriptor.inputSchema, "inputSchema");
+  const output = descriptor.outputSchema ? compile(descriptor.outputSchema, "outputSchema") : undefined;
+  return { input, ...(output ? { output } : {}) };
 }
 
 function assertMaximumDepth(root: unknown, maximum: number, name: string) {
@@ -370,19 +439,14 @@ function assertMaximumDepth(root: unknown, maximum: number, name: string) {
   visit(root, 0, new Set());
 }
 
-function awcpBusinessFailure(
-  requestId: string,
-  action: string,
-  code: "stale_snapshot" | "action_not_found" | "invalid_arguments",
+function awcpPreflightFailure(
+  reason: "stale_snapshot" | "action_not_found" | "input_schema_mismatch" | "page_changed" | "discovery_required",
   message: string,
   details?: { violations: AwcpSchemaViolation[] },
-): AwcpActionResponse {
-  return {
-    ok: false,
-    requestId,
-    action,
-    error: { code, message, ...(details ? { details } : {}) },
-  };
+) {
+  return awcpHostError("awcp_preflight_rejected", message, {
+    reason, stage: "desktop_preflight", executionStarted: false, ...details,
+  });
 }
 
 function validateActionResponse(input: unknown, requestId: string, action: string): AwcpActionResponse {
@@ -506,7 +570,7 @@ function cancelGuest(guest: WebContents, requestId: string) {
 }
 
 function awcpHostError(code: string, message: string, details?: Record<string, unknown>) {
-  const statusCode = code === "awcp_invalid_request"
+  const statusCode = code === "awcp_invalid_request" || code === "awcp_preflight_rejected"
     ? 400
     : code === "awcp_duplicate_request" || code === "site_control_unavailable"
       ? 409
