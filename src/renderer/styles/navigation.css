@@ -1706,8 +1706,7 @@ div.sidebar-chats-group-popover {
   transition: opacity 0.16s ease-in-out;
 }
 
-.sidebar-website-child-row:hover .sidebar-website-child-action,
-.sidebar-website-child-row:focus-within .sidebar-website-child-action {
+.sidebar-website-child-row:hover .sidebar-website-child-action {
   opacity: 1;
   pointer-events: auto;
 }
@@ -5553,13 +5552,20 @@ div.sidebar-chats-group-popover {
   cursor: pointer;
 }
 
-.sidebar-capability-row:hover .sidebar-capability-visibility-button,
-.sidebar-capability-row:focus-within .sidebar-capability-visibility-button {
+.app-sidebar:not(.is-collapsed) .sidebar-primary-link + .sidebar-capability-visibility-button {
+  /* Match the website action slot: row border 1px + margin 3px + inset 4px. */
+  right: 8px;
+}
+
+.sidebar-capability-row:hover .sidebar-capability-visibility-button {
   opacity: 1;
 }
 
 .sidebar-capability-visibility-button[aria-pressed="true"] {
   color: var(--accent-strong);
+}
+
+.sidebar-capabilities-nav .sidebar-capability-visibility-button[aria-pressed="true"] {
   opacity: 1;
 }
 
@@ -5576,8 +5582,7 @@ div.sidebar-chats-group-popover {
   opacity: 0;
 }
 
-.app-sidebar.is-collapsed .sidebar-capability-row:hover .sidebar-capability-visibility-button,
-.app-sidebar.is-collapsed .sidebar-capability-row:focus-within .sidebar-capability-visibility-button {
+.app-sidebar.is-collapsed .sidebar-capability-row:hover .sidebar-capability-visibility-button {
   opacity: 1;
 }
 
@@ -5585,7 +5590,12 @@ div.sidebar-chats-group-popover {
   opacity: 0;
 }
 
-.sidebar-capability-row:hover .sidebar-primary-link + .sidebar-capability-visibility-button,
-.sidebar-capability-row:focus-within .sidebar-primary-link + .sidebar-capability-visibility-button {
+.app-sidebar .sidebar-capability-row:hover .sidebar-primary-link + .sidebar-capability-visibility-button[aria-pressed="true"] {
   opacity: 1;
+}
+
+/* Open status and the hover menu share the original action slot. */
+.app-sidebar.is-collapsed .sidebar-pinned-web-row .sidebar-website-child-actions .sidebar-website-status-dot {
+  top: 6px;
+  right: 7px;
 }

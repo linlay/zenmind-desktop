@@ -13,19 +13,20 @@ export function createArtifactRuntime(options: {
   // Resolve/create storage only after a push or a trusted list request, preserving first-install detection.
   const store = new ArtifactStore(() => getArtifactDatabasePath(options.app, options.platform));
   let notification: ReturnType<typeof setTimeout> | null = null;
+  function recordChange(write: () => boolean) {
+    try {
+      if (!write() || notification) return;
+      notification = setTimeout(() => {
+        notification = null;
+        const window = options.getMainWindow();
+        if (window && !window.isDestroyed()) window.webContents.send("artifacts.changed");
+      }, 50);
+      notification.unref?.();
+    } catch (error) { options.onError(error); }
+  }
   const unsubscribe = options.broker.subscribePush({
     types: ["resource.pushed"], kind: "internal", consumerId: "desktop-artifact-index",
-    onPush(frame) {
-      try {
-        if (!store.ingest(frame) || notification) return;
-        notification = setTimeout(() => {
-          notification = null;
-          const window = options.getMainWindow();
-          if (window && !window.isDestroyed()) window.webContents.send("artifacts.changed");
-        }, 50);
-        notification.unref?.();
-      } catch (error) { options.onError(error); }
-    },
+    onPush(frame) { recordChange(() => store.ingest(frame)); },
   });
   options.ipcMain.handle("artifacts.list", (event, input) => {
     const window = options.getMainWindow();
@@ -34,6 +35,9 @@ export function createArtifactRuntime(options: {
     return store.list(input);
   });
   return {
+    recordPublished(event: Record<string, unknown>) {
+      recordChange(() => store.ingestPublished(event));
+    },
     dispose() {
       unsubscribe();
       if (notification) clearTimeout(notification);

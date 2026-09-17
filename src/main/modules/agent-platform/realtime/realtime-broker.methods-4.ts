@@ -225,6 +225,14 @@ export function RealtimeBroker_consumeRunEvent_5(self: RealtimeBrokerMethodConte
         if (transaction.siteControlScope) self.siteControlGrants.bind(transaction.acceptedValue, transaction.siteControlScope);
         transaction.accepted.resolve(transaction.acceptedValue);
     }
+    if (run.lane === "primary" && type === "artifact.publish") {
+        // Observe only validated canonical events; this does not create a Run subscription.
+        try {
+            self.options.onArtifactPublished?.({ ...event, chatId: run.chatId, runId: run.runId });
+        } catch {
+            self.options.onDiagnostic?.("artifact_index_delivery_failed");
+        }
+    }
     self.appendReplay(run, event, seq, path);
     for (const id of run.subscribers) {
         const subscription = self.runSubscriptions.get(id);

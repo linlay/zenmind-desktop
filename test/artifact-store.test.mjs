@@ -80,3 +80,27 @@ test("main Push subscription records while the page is closed, restricts IPC and
   assert.equal(stopped, true);
   assert.equal(handlers.size, 0);
 });
+
+test("primary artifact.publish records every valid item without a gateway upload", (t) => {
+  const { home } = setup(t);
+  const store = new ArtifactStore(() => path.join(home, 'artifacts.db'));
+  const { RealtimeBroker_consumeRunEvent_5: consume } = require('../dist-electron/main/modules/agent-platform/realtime/realtime-broker.methods-4.js');
+  const published = { type: 'artifact.publish', seq: 1, chatId: 'chat-1', runId: 'run-1', timestamp: 1_800_000_000_000,
+    artifacts: [event().data, { ...event().data, artifactId: 'artifact-2', name: 'second.md' }, { artifactId: 'invalid' }] };
+  const errors = [];
+  const broker = { options: { onArtifactPublished: value => store.ingestPublished(value), onDiagnostic: value => errors.push(value) },
+    diagnostics: { seqRegressionCount: 0, seqGapCount: 0 }, appendReplay() {}, runSubscriptions: new Map() };
+  const run = { lane: 'primary', chatId: 'chat-1', runId: 'run-1', lastSeq: 0, subscribers: new Set() };
+  consume(broker, run, published, null);
+  assert.equal(store.list().total, 2);
+  consume(broker, run, published, null);
+  assert.equal(store.list().total, 2);
+  assert.equal(store.ingest(event()), false);
+  consume(broker, { ...run, lane: 'btw', lastSeq: 0 }, { ...published, artifacts: [{ ...event().data, artifactId: 'btw' }] }, null);
+  assert.equal(store.list().total, 2);
+  assert.throws(() => consume(broker, run, { ...published, seq: 2, chatId: 'wrong' }, null), /chatId conflicts/);
+  assert.throws(() => consume(broker, run, { ...published, seq: 2, timestamp: 1_800_000_000 }, null));
+  broker.options.onArtifactPublished = () => { throw new Error('database unavailable'); };
+  assert.doesNotThrow(() => consume(broker, run, { ...published, seq: 2 }, null));
+  assert.deepEqual(errors, ['artifact_index_delivery_failed']);
+});

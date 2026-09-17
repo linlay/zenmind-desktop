@@ -20,13 +20,13 @@ window.electronAPI={sidebarContextMenu:{popup:async(request)=>{window.menuReques
 function Fixture(){
  const location=useLocation(),navigate=useNavigate();
  const [order,setOrder]=useState(()=>JSON.parse(localStorage.getItem('test-order')||'null')||['kanban','schedules','new-chat','chats','group:assistants','group:webs']);
- const [options,setOptions]=useState({collapsed:false,platform:'darwin',market:true,help:true,sso:null,menuOpen:false,website:false});
+ const [options,setOptions]=useState({collapsed:false,platform:'darwin',market:true,help:true,sso:null,menuOpen:false,website:false,websitePinned:true});
  const [retained,setRetained]=useState(null);
  const mode=retained?.locationKey===location.key?retained.mode:location.state?.sidebarMode==='capabilities'?'capabilities':resolveSidebarMode(location.pathname,order);
  useEffect(()=>{setRetained(current=>current?.locationKey===location.key?current:null)},[location.key]);
  window.navigate=navigate;window.setOptions=(patch)=>setOptions(old=>({...old,...patch}));window.order=order;window.mode=mode;
  return <div className={'app-shell '+(mode!=='primary'?'is-secondary-sidebar-mode ':'')+(options.platform==='darwin'?'is-mac-platform':'is-windows-platform')}>
- <div className="app-sidebar-shell"><AppSidebar desktopSsoStatus={options.sso} isCollapsed={options.collapsed} isMac={options.platform==='darwin'} isWindows={options.platform==='win32'} currentPathname={location.pathname} currentRoute={location.pathname} sidebarMode={mode} sidebarNavOrder={options.website?[...order,'website:qa']:order} onSidebarNavOrderChange={next=>{setRetained({locationKey:location.key,mode});setOrder(next);localStorage.setItem('test-order',JSON.stringify(next));}} webItems={options.website?[{id:'qa',entryKey:'website:qa',label:'QA Website',kind:'website',url:'https://example.com',createdAt:1,updatedAt:1}]:[]} pinnedWebEntryKeys={options.website?['website:qa']:[]} webOpenEntryKeys={options.website?['website:qa']:[]} onSetWebItemPinned={async()=>{}} onCloseWebItem={async(item)=>{window.closedWebsites.push(item.entryKey);}} marketEnabled={options.market} helpEnabled={options.help} toolMenuOpen={options.menuOpen} onRequestToolMenuOpen={()=>{}} onAutoOpenToolMenu={()=>{}} onCloseToolMenu={()=>{}} onRequestToolNavigate={to=>{const mode=resolveSidebarMode(to);if(to===location.pathname){setRetained({locationKey:location.key,mode});}else{navigate(to,{state:{sidebarMode:mode}});}return true;}} onRequestNavigate={to=>{navigate(to);return true;}} onExitSecondarySidebarMode={()=>navigate('/kanban')}/></div></div>;
+ <div className="app-sidebar-shell"><AppSidebar desktopSsoStatus={options.sso} isCollapsed={options.collapsed} isMac={options.platform==='darwin'} isWindows={options.platform==='win32'} currentPathname={location.pathname} currentRoute={location.pathname} sidebarMode={mode} sidebarNavOrder={options.website?[...order,'website:qa']:order} onSidebarNavOrderChange={next=>{setRetained({locationKey:location.key,mode});setOrder(next);localStorage.setItem('test-order',JSON.stringify(next));}} webItems={options.website?[{id:'qa',entryKey:'website:qa',label:'QA Website',kind:'website',url:'https://example.com',createdAt:1,updatedAt:1}]:[]} pinnedWebEntryKeys={options.website&&options.websitePinned?['website:qa']:[]} webOpenEntryKeys={options.website?['website:qa']:[]} onSetWebItemPinned={async()=>{}} onCloseWebItem={async(item)=>{window.closedWebsites.push(item.entryKey);}} marketEnabled={options.market} helpEnabled={options.help} toolMenuOpen={options.menuOpen} onRequestToolMenuOpen={()=>{}} onAutoOpenToolMenu={()=>{}} onCloseToolMenu={()=>{}} onRequestToolNavigate={to=>{const mode=resolveSidebarMode(to);if(to===location.pathname){setRetained({locationKey:location.key,mode});}else{navigate(to,{state:{sidebarMode:mode}});}return true;}} onRequestNavigate={to=>{navigate(to);return true;}} onExitSecondarySidebarMode={()=>navigate('/kanban')}/></div></div>;
 }
 createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={['/agents']}><Fixture/></MemoryRouter>);
 `, resolveDir: repo, loader: "tsx" }, outfile: path.join(root, "fixture.js"), bundle: true, loader: { ".svg": "dataurl" }, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', __DESKTOP_APP_BRAND__: JSON.stringify(require(path.join(repo, "dist-electron/shared/brand.js")).APP_BRAND) } });
@@ -41,6 +41,9 @@ for(const [id,route] of [['agents','/agents'],['skills','/skills'],['mcp-servers
  await js('document.querySelector('+JSON.stringify('[data-sidebar-capability-id="'+id+'"]').concat(').parentElement.querySelector("button").click()'));
  await until('window.order[0]==='+JSON.stringify('capability:'+id));
  assert.equal(await js('window.mode'),'capabilities');
+ win.webContents.sendInputEvent({type:'mouseMove',x:1000,y:700});
+ assert.equal(await js('getComputedStyle(document.querySelector('+JSON.stringify('[data-sidebar-capability-id="'+id+'"]').concat(').parentElement.querySelector("button")).opacity')), '1');
+
  await js('window.navigate("/kanban")');await until('window.mode==="primary"');
  await js('window.navigate('+JSON.stringify(route)+')');await until('window.mode==="primary"');
  assert.equal(await js('window.order[0]'), 'capability:'+id);
@@ -52,6 +55,9 @@ await js('document.activeElement.blur()');
 const point=await js(\`(()=>{const r=document.querySelector('[data-sidebar-capability-id="agents"]').getBoundingClientRect();return {x:Math.round(r.left+12),y:Math.round(r.top+r.height/2)}})()\`);
 win.webContents.sendInputEvent({type:'mouseMove',x:1000,y:700});
 await until(\`getComputedStyle(document.querySelector('[data-sidebar-capability-id="agents"]').parentElement.querySelector('button')).opacity==='0'\`);
+await js('window.navigate("/connectors");document.querySelector("[data-sidebar-capability-id=mcp-servers]").focus()');
+await until('document.querySelector("[data-sidebar-capability-id=mcp-servers]").classList.contains("sidebar-link-active")');
+assert.equal(await js('getComputedStyle(document.querySelector("[data-sidebar-capability-id=mcp-servers]").parentElement.querySelector("button")).opacity'),'0');
 win.webContents.sendInputEvent({type:'mouseMove',...point});
 await until(\`getComputedStyle(document.querySelector('[data-sidebar-capability-id="agents"]').parentElement.querySelector('button')).opacity==='1'\`);
 // Account identity stays stable while capability pages are selected.
@@ -110,14 +116,39 @@ for(const platform of ['darwin','win32']){
   await js('window.setOptions('+JSON.stringify({platform,collapsed})+')');
   await until('document.querySelector(".sidebar-pinned-web-row .sidebar-website-child-action")');
   assert.equal(await js('document.querySelectorAll(".sidebar-pinned-web-row .sidebar-website-status-action").length'),0);
+  if(!collapsed){
+   const centers=await js('(()=>{const a=document.querySelector(".sidebar-pinned-web-row .sidebar-website-child-action").getBoundingClientRect();const b=document.querySelector("[data-sidebar-capability-id=mcp-servers]").parentElement.querySelector("button").getBoundingClientRect();return [a.left+a.width/2,b.left+b.width/2]})()');
+   assert.ok(Math.abs(centers[0]-centers[1])<1,'Capability and website action centers align: '+centers);
+  }
   const count=await js('window.menuRequests.length');
   await js('document.querySelector(".sidebar-pinned-web-row .sidebar-website-child-action").focus();document.querySelector(".sidebar-pinned-web-row .sidebar-website-child-action").click()');
   await until('window.menuRequests.length>'+count);
   const request=await js('window.menuRequests.at(-1)');
   assert.equal(request.target.webKind,'website');assert.equal(request.target.pinned,true);assert.equal(request.target.canClose,true);
+  await until('getComputedStyle(document.querySelector(".sidebar-pinned-web-row .sidebar-website-status-dot")).opacity==="1"');
   assert.equal(await js('window.closedWebsites.length'),0);
  }
 }
+await js('window.setOptions({collapsed:false,websitePinned:false});window.navigate("/webs/website:qa")');
+await until('document.querySelector(".sidebar-website-child-row:not(.sidebar-pinned-web-row) .sidebar-website-child-action")');
+assert.equal(await js('document.querySelectorAll(".sidebar-website-status-action").length'),0);
+const websiteMenuCount=await js('window.menuRequests.length');
+await js('document.querySelector(".sidebar-website-child-row .sidebar-website-child-action").focus();document.querySelector(".sidebar-website-child-row .sidebar-website-child-action").click()');
+await until('window.menuRequests.length>'+websiteMenuCount);
+assert.equal(await js('window.menuRequests.at(-1).target.pinned'),false);
+// Selected and focused Website retains its green dot until the row is actually hovered.
+win.webContents.sendInputEvent({type:'mouseMove',x:1000,y:700});
+await until('getComputedStyle(document.querySelector(".sidebar-website-child-row .sidebar-website-child-action")).opacity==="0"');
+await js('document.querySelector(".sidebar-website-child-row").scrollIntoView({block:"center"});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+const websitePoint=await js('(()=>{const r=document.querySelector(".sidebar-website-child-row").getBoundingClientRect();return {x:Math.round(r.left+12),y:Math.round(r.top+r.height/2)}})()');
+win.webContents.sendInputEvent({type:'mouseMove',...websitePoint});
+await until('getComputedStyle(document.querySelector(".sidebar-website-child-row .sidebar-website-child-action")).opacity==="1"');
+await until('getComputedStyle(document.querySelector(".sidebar-website-child-row .sidebar-website-status-dot")).opacity==="0"');
+win.webContents.sendInputEvent({type:'mouseMove',x:1000,y:700});
+await until('getComputedStyle(document.querySelector(".sidebar-website-child-row .sidebar-website-child-action")).opacity==="0"');
+
+await until('getComputedStyle(document.querySelector(".sidebar-website-child-row .sidebar-website-status-dot")).opacity==="1"');
+assert.equal(await js('window.closedWebsites.length'),0);
 console.log('Capability navigation UI smoke passed: '+__dirname);win.destroy();app.quit();})().catch(e=>{console.error(e);app.exit(1)});
 `);
 const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;

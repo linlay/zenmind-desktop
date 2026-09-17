@@ -3311,15 +3311,6 @@ export function AppSidebar({
     }
   }
 
-  async function handleCloseWebItem(
-    event: MouseEvent<HTMLElement>,
-    item: WebEntry,
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-    await closeWebItem(item);
-  }
-
   async function removeWebappItem(item: WebEntry) {
     if (item.kind !== "webapp" || webItemRemovePendingId) {
       return;
@@ -4999,7 +4990,6 @@ export function AppSidebar({
         faviconCache?.[webItem.entryKey]?.faviconUrl ||
         buildWebsiteFaviconUrl(webItem.id);
       const webappActionLabel = t("sidebar.webapp.actions");
-      const closeWebsiteLabel = t("sidebar.website.close");
       return (
         <div
           key={item.to}
@@ -5064,14 +5054,13 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {isWebsite && options.topLevel ? (
+          {isWebsite ? (
             <span className="sidebar-website-child-actions">
-              <Tooltip content={t("nav.settings")}>
+              {isOpen ? <span className="sidebar-website-status-dot" aria-hidden="true" /> : null}
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
-                  aria-label={t("nav.settings")}
-                  title={t("nav.settings")}
+                  aria-label={t("common.more")}
                   aria-haspopup="menu"
                   disabled={Boolean(webClosePendingEntryKey)}
                   onClick={(event) => {
@@ -5083,56 +5072,22 @@ export function AppSidebar({
                     );
                   }}
                 >
-                  <SidebarIllustration kind="settings" />
+                  <SidebarActionIcon kind="more_actions" />
                 </button>
-              </Tooltip>
             </span>
           ) : null}
-          {isOpen && isWebsite && !options.topLevel ? (
-            <Tooltip content={closeWebsiteLabel}>
-              <button
-                type="button"
-                className={`assistant-worker-icon-button sidebar-website-status-action${closing ? " is-closing" : ""}`}
-                aria-label={closeWebsiteLabel}
-                title={closeWebsiteLabel}
-                tabIndex={-1}
-                disabled={Boolean(webClosePendingEntryKey)}
-                onClick={(event) => void handleCloseWebItem(event, webItem)}
-              >
-                {closing ? (
-                  <span
-                    className="assistant-material-icon is-loading"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <>
-                    <span
-                      className="sidebar-website-status-dot"
-                      aria-hidden="true"
-                    />
-                    <SidebarActionIcon
-                      kind="close"
-                      className="sidebar-website-status-close"
-                    />
-                  </>
-                )}
-              </button>
-            </Tooltip>
-          ) : null}
-          {showWebappAction && !(options.topLevel && isCollapsed) ? (
+          {showWebappAction ? (
             <span className="sidebar-website-child-actions">
-              {isWebappRunning ? (
+              {isOpen || isWebappRunning ? (
                 <span
                   className="sidebar-website-status-dot sidebar-webapp-status-dot"
                   aria-hidden="true"
                 />
               ) : null}
-              <Tooltip content={webappActionLabel}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
                   aria-label={webappActionLabel}
-                  title={webappActionLabel}
                   tabIndex={-1}
                   disabled={Boolean(
                     webItemRemovePendingId || webClosePendingEntryKey,
@@ -5156,7 +5111,6 @@ export function AppSidebar({
                     <SidebarActionIcon kind="more_actions" />
                   )}
                 </button>
-              </Tooltip>
             </span>
           ) : null}
         </div>

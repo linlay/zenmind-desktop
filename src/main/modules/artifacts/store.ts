@@ -14,7 +14,7 @@ function text(value: unknown, maxLength: number): string {
   return typeof value === "string" && value.length <= maxLength && !/[\u0000-\u001f]/u.test(value) ? value.trim() : "";
 }
 
-// Consume the primary WS resource.pushed contract, never Run stream artifacts.
+// Resource upload notifications share the same metadata index as published artifacts.
 export function parseArtifactPush(value: unknown): DesktopArtifactRecord | null {
   const frame = record(value);
   if (!frame || frame.frame !== "push" || frame.type !== "resource.pushed") return null;
@@ -44,6 +44,21 @@ export function getArtifactDatabasePath(app: App, platform: NodeJS.Platform = pr
 
 export class ArtifactStore {
   constructor(private readonly databasePath: () => string) {}
+
+  ingestPublished(event: Record<string, unknown>): boolean {
+    if (event.type !== "artifact.publish" || !Array.isArray(event.artifacts) ||
+        !isAgentPlatformEpochMilliseconds(event.timestamp)) return false;
+    let changed = false;
+    for (const value of event.artifacts) {
+      const artifact = record(value);
+      if (!artifact) continue;
+      const written = this.ingest({ frame: "push", type: "resource.pushed", data: {
+        ...artifact, chatId: event.chatId, pushedAt: event.timestamp,
+      } });
+      changed = written || changed;
+    }
+    return changed;
+  }
 
   private withDatabase<T>(read: (db: DatabaseSync) => T): T {
     const filename = this.databasePath();
