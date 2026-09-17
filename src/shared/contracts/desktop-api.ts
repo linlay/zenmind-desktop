@@ -1,4 +1,4 @@
-import type { DesktopArtifactListInput, DesktopArtifactListResult } from "../artifacts";
+import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
 import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
@@ -879,6 +879,7 @@ export interface RendererDiagnosticReport {
 
 export interface DesktopApi {
   artifacts: {
+    act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;
     list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;
     onChanged: (listener: () => void) => () => void;
   };

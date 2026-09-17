@@ -1,3 +1,4 @@
+export { registerArtifactActionIpc } from "./actions";
 import type { App, BrowserWindow, IpcMain } from "electron";
 import type { RealtimeBroker } from "../agent-platform";
 import { ArtifactStore, getArtifactDatabasePath } from "./store";

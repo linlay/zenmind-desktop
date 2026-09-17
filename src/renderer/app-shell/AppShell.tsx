@@ -4957,7 +4957,16 @@ export function AppShell() {
               }
             />
             <Route path="/artifact-management" element={
-              <RouteSuspense><ArtifactManagementPage onOpenChat={openChatFromShareManagement} /></RouteSuspense>
+              <RouteSuspense><ArtifactManagementPage onOpenChat={openChatFromShareManagement} onView={(request) => {
+                const route = `/resource-viewer/${encodeURIComponent(request.agentKey)}?${new URLSearchParams({ chatId: request.chatId, file: request.relativePath.split("/").map(encodeURIComponent).join("/") })}`;
+                const opened = dispatchWorkPanelCommand({
+                  type: "openItem", ownerChatId: request.chatId,
+                  descriptor: { kind: "webclient", module: "artifact", route, title: request.name,
+                    context: { agentKey: request.agentKey, chatId: request.chatId, artifactId: request.artifactId, relativePath: request.relativePath } },
+                });
+                if (opened.ok) openChatFromShareManagement(request);
+                return opened.ok;
+              }} /></RouteSuspense>
             } />
             <Route
               path="/share-management"

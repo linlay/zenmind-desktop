@@ -20,3 +20,13 @@ export interface DesktopArtifactListResult {
   records: DesktopArtifactRecord[];
   total: number;
 }
+
+export interface DesktopArtifactActionInput {
+  chatId: string;
+  artifactId: string;
+  action: "view" | "download";
+}
+
+export type DesktopArtifactActionResult =
+  | { ok: true; agentKey: string; relativePath: string; cancelled?: boolean }
+  | { ok: false };

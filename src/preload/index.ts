@@ -88,6 +88,7 @@ const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ??
 
 const api: DesktopApi = {
   artifacts: {
+    act: (input) => ipcRenderer.invoke("artifacts.act", input),
     list: (input) => ipcRenderer.invoke("artifacts.list", input),
     onChanged: (listener) => {
       const handler = () => listener();

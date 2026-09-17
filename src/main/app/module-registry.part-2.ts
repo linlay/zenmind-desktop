@@ -1,3 +1,4 @@
+import { registerArtifactActionIpc } from "../modules/artifacts";
 import type {
   MarketListResult
 } from "../../shared/contracts";
@@ -198,7 +199,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       const declaredSize = Number(response.headers.get("content-length") || "0");
       if (declaredSize > 100 * 1024 * 1024) return null;
       const bytes = Buffer.from(await response.arrayBuffer());
-      if (!bytes.length || bytes.length > 100 * 1024 * 1024) return null;
+      if (bytes.length > 100 * 1024 * 1024) return null;
       return {
         bytes,
         mimeType: response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "",
@@ -208,6 +209,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       return null;
     }
   };
+  registerArtifactActionIpc(ipcMain, {
+    getMainWindow: options.getMainWindow,
+    getChatInfo: (chatId) => assistantBridge.getChatInfo(chatId),
+    fetchResource: ({ chatId, relativePath }) => fetchDocumentResource({
+      chatId, relativePath: relativePath.split("/").map(encodeURIComponent).join("/"),
+    }),
+    showSaveDialog: options.showSaveDialog,
+  });
   registerChatWorkPanelDocumentHtmlIpcHandlers(ipcMain, {
     app,
     showSaveDialog: options.showSaveDialog,
