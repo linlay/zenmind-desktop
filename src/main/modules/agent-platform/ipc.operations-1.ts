@@ -36,11 +36,23 @@ export async function registerAgentWebclientBridgeIpcHandlers_availability_2(fac
     const diagnostic = beginPlatformLoadDiagnostic("availability");
     try {
         diagnostic.next("service-state");
-        const state = await factoryContext.options.getServiceState(factoryContext.options.app, AGENT_PLATFORM_SERVICE_ID);
-        diagnostic.serviceState(state.status);
-        const baseUrl = state.status === "running"
-            ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
+        const connectionState = factoryContext.options.realtimeBroker.getConnectionState();
+        const connectedBaseUrl = connectionState.phase === "connected"
+            ? connectionState.key?.endpoint.trim() || ""
             : "";
+        let baseUrl = connectedBaseUrl;
+        if (baseUrl) {
+            // A protocol-ready Broker connection is stronger availability evidence than
+            // a cold Windows process-identity probe, which may be temporarily inconclusive.
+            diagnostic.serviceState("running");
+        }
+        else {
+            const state = await factoryContext.options.getServiceState(factoryContext.options.app, AGENT_PLATFORM_SERVICE_ID);
+            diagnostic.serviceState(state.status);
+            baseUrl = state.status === "running"
+                ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
+                : "";
+        }
         if (!baseUrl)
             throw new Error("Agent Platform is unavailable");
         diagnostic.next("access-token");
