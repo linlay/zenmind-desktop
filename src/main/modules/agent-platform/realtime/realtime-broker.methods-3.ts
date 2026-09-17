@@ -5,7 +5,6 @@ import {
   type AgentPlatformRealtimeFrame,
   type RealtimeIdentityRotationReason
 } from "./agent-platform-realtime-client";
-import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 import { BrokerRun, MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, QueryTransaction, RealtimeLane, brokerError, frameError, isObserverDetachReason, isRecord, isTerminalEvent, readText } from "./realtime-broker.shared";
 
 export function RealtimeBroker_getDiagnostics_1(self: RealtimeBrokerMethodContext) {
@@ -95,18 +94,6 @@ export function RealtimeBroker_getDiagnostics_1(self: RealtimeBrokerMethodContex
         }),
         ...self.diagnostics,
     };
-}
-
-export function RealtimeBroker_appendDebugTrace_2(self: RealtimeBrokerMethodContext, input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]) {
-    return self.debugTrace.append(input);
-}
-
-export function RealtimeBroker_getDebugTraceEntries_3(self: RealtimeBrokerMethodContext) {
-    return self.debugTrace.snapshot();
-}
-
-export function RealtimeBroker_clearDebugTrace_4(self: RealtimeBrokerMethodContext) {
-    self.debugTrace.clear();
 }
 
 export function RealtimeBroker_rotateIdentity_5(self: RealtimeBrokerMethodContext, reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") {

@@ -13,11 +13,11 @@ import {
   type AgentPlatformRealtimeSocketFactory,
   type RealtimeIdentityRotationReason,
 } from "./agent-platform-realtime-client";
-import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
+import type { AgentRealtimeDebugTraceInput } from "./realtime-debug-trace";
 import { BrokerRun, ConnectionSubscription, DesktopBridgeRequestProvider, PendingClone, PendingRequest, PushSubscription, QueryTransaction, RealtimeLane, RealtimeQueryCompleted, RealtimeQueryHandle, RootObserverIdentity, RootObserverState, RunActionGrant, RunSubscription } from "./realtime-broker.shared";
 import { RealtimeBroker_getConnectionPhase_1, RealtimeBroker_getConnectionState_2, RealtimeBroker_getConnectionStates_3, RealtimeBroker_setDesktopBridgeProvider_4, RealtimeBroker_getRunChannel_5, RealtimeBroker_setRunChannel_6, RealtimeBroker_deleteRunChannel_7, RealtimeBroker_findRootObserver_8, RealtimeBroker_snapshotRootObserver_9, RealtimeBroker_ensureConnected_10, RealtimeBroker_query_11, RealtimeBroker_forwardRequest_12, RealtimeBroker_activateRootObserver_13, RealtimeBroker_getActiveRootObserver_14, RealtimeBroker_getMainChatRootObserver_15, RealtimeBroker_promoteMainChatRootObserver_16, RealtimeBroker_releaseRootObserver_17, RealtimeBroker_retireRootObserver_18, RealtimeBroker_releaseObservedRun_19 } from "./realtime-broker.methods-1";
 import { RealtimeBroker_subscribeClone_1, RealtimeBroker_subscribePush_2, RealtimeBroker_subscribeConnection_3, RealtimeBroker_subscribeRun_4, RealtimeBroker_unsubscribe_5, RealtimeBroker_registerRunActionGrant_6, RealtimeBroker_revokeRunActionGrant_7, RealtimeBroker_clearRunActionGrants_8, RealtimeBroker_cleanupConsumer_9 } from "./realtime-broker.methods-2";
-import { RealtimeBroker_getDiagnostics_1, RealtimeBroker_appendDebugTrace_2, RealtimeBroker_getDebugTraceEntries_3, RealtimeBroker_clearDebugTrace_4, RealtimeBroker_rotateIdentity_5, RealtimeBroker_beginShutdown_6, RealtimeBroker_dispose_7, RealtimeBroker_handleConnectionState_8, RealtimeBroker_handleFrame_9, RealtimeBroker_handleQueryStream_10, RealtimeBroker_bufferProvisionalQueryEvent_11, RealtimeBroker_commitProvisionalQueryEvents_12 } from "./realtime-broker.methods-3";
+import { RealtimeBroker_getDiagnostics_1, RealtimeBroker_rotateIdentity_5, RealtimeBroker_beginShutdown_6, RealtimeBroker_dispose_7, RealtimeBroker_handleConnectionState_8, RealtimeBroker_handleFrame_9, RealtimeBroker_handleQueryStream_10, RealtimeBroker_bufferProvisionalQueryEvent_11, RealtimeBroker_commitProvisionalQueryEvents_12 } from "./realtime-broker.methods-3";
 import { RealtimeBroker_registerProvisionalRun_1, RealtimeBroker_bindQuerySubscription_2, RealtimeBroker_handleRunStream_3, RealtimeBroker_releaseRunObserver_4, RealtimeBroker_consumeRunEvent_5, RealtimeBroker_appendReplay_6, RealtimeBroker_replayToSubscriber_7, RealtimeBroker_completeRun_8, RealtimeBroker_failQuery_9, RealtimeBroker_startAttach_10, RealtimeBroker_restoreRun_11 } from "./realtime-broker.methods-4";
 import { RealtimeBroker_handlePush_1, RealtimeBroker_handleInboundRequest_2, RealtimeBroker_handleDesktopBridgeRequest_3, RealtimeBroker_awaitRunActionReadiness_4, RealtimeBroker_sendDesktopBridgeSuccess_5, RealtimeBroker_sendDesktopBridgeChunk_6, RealtimeBroker_sendDesktopBridgeError_7 } from "./realtime-broker.methods-5";
 import { RealtimeBroker_waitForCloneRun_1, RealtimeBroker_notifyPendingClones_2, RealtimeBroker_rejectPendingClones_3, RealtimeBroker_detachPendingClones_4, RealtimeBroker_pruneRetainedTerminalRuns_5, RealtimeBroker_hasSystemRunLease_6, RealtimeBroker_detachRunIfUnobserved_7, RealtimeBroker_cleanupPending_8, RealtimeBroker_prepareConnectionIdentity_9 } from "./realtime-broker.methods-6";
@@ -43,7 +43,7 @@ export class RealtimeBroker {
   private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
   private disposed = false;
   private acceptingDelivery = true;
-  private readonly debugTrace = new RealtimeDebugTraceBuffer();
+  private debugRecorder: { append(input: AgentRealtimeDebugTraceInput): void } | null = null;
   private diagnostics = {
     unknownFrameCount: 0,
     unknownRequestIdCount: 0,
@@ -98,11 +98,22 @@ export class RealtimeBroker {
         },
         onState: (state) => this.handleConnectionState(lane, state),
         onDiagnostic: (message) => options.onDiagnostic?.(`${lane}:${message}`),
-        onTrace: (direction, frame) => this.debugTrace.append({
-          layer: "platform-ws",
-          direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
-          data: { lane, ...frame },
-        }),
+        onTrace: (direction, frame) => {
+          const upstreamRequestId = typeof frame.id === "string" ? frame.id : "";
+          const localRequestId = upstreamRequestId
+            ? this.queriesByRequestId.get(upstreamRequestId)?.operationId ||
+              this.pendingRequests.get(upstreamRequestId)?.localId || ""
+            : "";
+          this.debugRecorder?.append({
+            layer: "platform-ws",
+            direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
+            data: {
+              lane,
+              ...frame,
+              ...(localRequestId ? { requestId: localRequestId, upstreamRequestId } : {}),
+            },
+          });
+        },
       });
     this.clients = { primary: createClient("primary"), btw: createClient("btw") };
   }
@@ -234,11 +245,9 @@ export class RealtimeBroker {
 
   getDiagnostics() { return RealtimeBroker_getDiagnostics_1(this as any); }
 
-  appendDebugTrace(input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]) { return RealtimeBroker_appendDebugTrace_2(this as any, input); }
+  setDebugRecorder(recorder: { append(input: AgentRealtimeDebugTraceInput): void } | null) { this.debugRecorder = recorder; }
 
-  getDebugTraceEntries() { return RealtimeBroker_getDebugTraceEntries_3(this as any); }
-
-  clearDebugTrace() { return RealtimeBroker_clearDebugTrace_4(this as any); }
+  appendDebugTrace(input: AgentRealtimeDebugTraceInput) { this.debugRecorder?.append(input); }
 
   rotateIdentity(reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") { return RealtimeBroker_rotateIdentity_5(this as any, reason); }
 

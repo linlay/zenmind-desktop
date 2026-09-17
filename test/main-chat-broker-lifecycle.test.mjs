@@ -63,6 +63,8 @@ async function harness(t) {
     heartbeatTimeoutMs: 0,
     acceptanceTimeoutMs: 2_000,
   });
+  const traces = [];
+  broker.setDebugRecorder({ append: (entry) => traces.push(entry) });
   t.after(() => { broker.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
   await broker.ensureConnected("http://127.0.0.1:7078", "test-token");
   const sender = Object.assign(new EventEmitter(), {
@@ -141,7 +143,7 @@ async function harness(t) {
     listeners.get(OPEN)({ sender }, { sessionId: "port" });
     await until(() => sender.messages.some(({ message }) => message.type === "state" && message.state.phase === "connected"));
   };
-  return { broker, registry, sender, sockets, syncs, frames, submit, query, accept, open, register, registration,
+  return { broker, registry, sender, sockets, syncs, traces, frames, submit, query, accept, open, register, registration,
     repeat: () => assert.deepEqual(registry.registerSurfaceResult(currentRegistration, 1), { ok: true }),
     beforeSync: (callback) => { beforeCanonicalSync = callback; },
   };
@@ -288,7 +290,7 @@ test("mismatched new-chat source fails locally with a diagnostic and never repai
   assert.equal(h.frames().find((f) => f.id === "rejected-query").type, "target_unavailable");
   assert.equal(h.sockets[0].sent.some((f) => f.type === "/api/query"), false);
   assert.equal(h.broker.getMainChatRootObserver().token, stale.token);
-  const trace = h.broker.getDebugTraceEntries().find((entry) => entry.data?.event === "main-chat-query-bundle-rejected");
+  const trace = h.traces.find((entry) => entry.data?.event === "main-chat-query-bundle-rejected");
   assert.equal(trace.data.sourceMatches, false);
   assert.equal(trace.data.contextMatches, true);
   assert.equal(JSON.stringify(trace.data).includes("test-token"), false);

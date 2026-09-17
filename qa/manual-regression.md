@@ -71,6 +71,9 @@
 
 ## WebClient 调试与网站菜单入口
 
+- 解锁 Desktop 调试后分别打开内置服务和外部网站，确认调试卡片默认在内容区右下角展开；收起后切换标签或页面再返回，保持各自的展开状态与吸附位置，URL 导航不会重置状态。
+- 在 macOS 与 Windows 分别把展开卡片和收起浮标拖向四角，确认松手吸附、窄窗口和全屏下不越界，拖动不会点击下方 WebView。拖动中切页、切走窗口、关闭调试或隐藏页面后，不得留下拦截点击的透明层。
+- 验证复制内容继续脱敏 token、授权码和 secret；卡片可用 Esc 收起，浮标可用 Enter/Space 展开，拖动手柄可用方向键切换吸附角落，应用级弹窗始终位于调试卡片上方。
 - macOS 与 Windows 分别在运行配置中启用 `DEBUG_PANEL_ENABLED=true` 并刷新 Agent Chat，确认顶栏显示 Debug 按钮；关闭或未设置该开关时隐藏。已有 Chat 点击后在宿主 WorkPanel 打开对应 Debug item，重复点击复用已有 item；未建立 Chat 时不发起打开请求，宿主 WorkPanel 显隐按钮保持原有行为。
 - 同时启用 `SETTINGS_MENU_ENABLED=true`、`QUICK_ACTIONS_ENABLED=true`，确认 `DESKTOP_APP=true` 的 WebClient 根页面、Agent Chat 与 Copilot 均不显示 Settings Menu 或 Quick Actions；Standalone 网站仍按各自开关显示。
 
@@ -269,11 +272,17 @@
 - 制造 detach/reattach 紧邻交接：detach 尚未写出时新 observer 应取消旧 detach；detach 已写出时新 attach 必须等待响应后从 lastSeq 开始。确认旧 generation 的迟到完成不会覆盖新 observer，且不重新出现 listeners attach/detach 高频抖动。
 - 分别断开 Primary 和 BTW，确认另一 lane 的 Inspector phase 与活动 Run 不被标记为断线；账号、endpoint 或 device identity 变化时两条 lane 一起轮换。Primary 收到 BTW runId 的 `run.finished` 后能收敛对应 BTW RunChannel。
 - 进入 Kanban 前先在其他页面打开 Copilot Dock；进入 `/kanban` 后确认 Dock guest 立即 inactive 并卸载，Launcher、System Bar、程序化 open/toggle 和旧 Kanban session 都不能恢复 Dock。Kanban Chat、claim、run prepare、native run 与事件同步继续正常；离开 Kanban 后其他页面原有 Dock session 可以恢复。
-- 打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合；Inspector 和日志不得包含 token、Cookie、用户正文或完整业务帧。
+- 打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合；日志不得包含 token、Cookie、用户正文或完整业务帧。Inspector 的实时预览只在 Events 页面打开时保留最多 2,000 条或 16 MiB 的脱敏事件，不写入文件；主动录制允许临时保存脱敏业务内容，但预览、文件、导出和页面中仍不得出现凭据。
 - 从设置的调试分类打开“桌面运行时观察器”，确认独立窗口可持续列出所有 Registry Surface、每个已打开 WebView 及未登记 WebView；Surface、WebContents ID、PID、owner、URL（不含查询参数/凭据）和 active/loading/crashed 状态与实际运行一致。
 - 在观察器中按 RSS、5 分钟增量和 CPU 排序，确认多个 WebView 共享 renderer PID 时显示同一进程 RSS 并明确标记 shared，不把进程内存伪装成单 WebView 独占内存；macOS 与 Windows 都能持续刷新且冻结后数值停止变化。
-- 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
-- 切换 Targets、Events、Topology、System，确认原有 Primary/BTW、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
+- 选择任一存活 WebView 后切换概览、内存和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。点击该目标的录制事件入口后，应复用 Events 的同一列表并只增加 Surface 条件；目标销毁后已录制历史仍可查看。
+- 打开 Events 且未选择快照时，无论是否录制都应按序号倒序实时展示最近事件；切换到其他大 Tab 后停止并清空这份内存预览。连续录制至少两份快照，关闭并重开观察器时正在录制的快照继续增长且列表恢复；每次结束先进入生成中，完成后才能分析。后一份不得覆盖前一份，支持切换、取消选择、删除、清空和导出；退出桌面应用后内部快照被清理，用户导出的 JSONL 保留。
+- 在一次录制中短时产生超过 500 条 WS/Bridge 事件，确认事件数、连续序号和脱敏后内容逐条一致，没有 12/500 条截断。Bridge 列表优先展示业务事件名而非统一 `frame`；大正文、长数组和深层结构可从详情完整读取，token、Cookie、secret 不进入页面、内部文件或导出。
+- 对事件按目标、方向、层级、lane、业务类型、异常、关联 ID、统一关键词和时间范围筛选；统一关键词应对名称、摘要和脱敏后的完整内容执行不区分大小写的模糊匹配。快速切换快照和筛选，确认旧查询结果不覆盖当前选择。分页每页不超过 200 条；详情搜索显示当前序号与总命中数，Enter/Shift+Enter 及上下按钮可循环切换，当前命中自动滚动到可视区且与其他命中使用不同背景色；详情仍可复制。
+- 查看旧快照的同时录制新快照，确认查询不会造成新录制丢失。概览显示事件总数、异常、速率、方向和业务类型分布及完整性；运行趋势按 PID 对齐事件时间轴，内存下降显示负增量，共享 PID 不重复计入总内存，采样延迟或失败明确计数。
+- 模拟磁盘写入失败、Worker 退出、16 MiB 单条/队列边界、256 MiB 或 30 分钟单份边界及 1 GiB 当前运行总空间边界，确认停止当前录制并保留可读前缀，状态和原因标为不完整，业务 WS 继续工作；空间不足不覆盖或自动删除旧快照。
+- macOS 与 Windows 分别验证录制 Worker 的打包路径、原生保存对话框、流式导出、句柄关闭和文件删除。强制退出后重启只清理本功能确认拥有且不属于当前活动实例的遗留目录；清理失败必须可见并可重试。
+- 切换 Targets、Events、Topology、System，确认原有 Primary/BTW、Frame Port、Run 恢复诊断仍可查看；录制开始/结束、删除或导出都不销毁 Surface、WebView 或 Broker 状态。
 
 ## 首装引导 Chat
 

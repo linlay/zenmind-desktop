@@ -458,7 +458,11 @@ function ExternalWebviewPane({
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
-      <WebviewDebugOverlay url={tab.currentUrl} surfaceIdentity={surfaceIdentity} />
+      <WebviewDebugOverlay
+        active={active && surfaceActive}
+        url={tab.currentUrl}
+        surfaceIdentity={surfaceIdentity}
+      />
     </div>
   );
 }

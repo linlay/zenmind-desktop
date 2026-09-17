@@ -1,0 +1,184 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.overlay[data-dragging="true"] {
+  cursor: grabbing;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.item {
+  position: absolute;
+  max-width: calc(100% - min(24px, 8%));
+  max-height: calc(100% - min(24px, 8%));
+  pointer-events: auto;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.topLeft {
+  top: min(12px, 4%);
+  left: min(12px, 4%);
+}
+
+.topRight {
+  top: min(12px, 4%);
+  right: min(12px, 4%);
+}
+
+.bottomLeft {
+  bottom: min(12px, 4%);
+  left: min(12px, 4%);
+}
+
+.bottomRight {
+  right: min(12px, 4%);
+  bottom: min(12px, 4%);
+}
+
+.item[data-dragging="true"] {
+  top: var(--webview-debug-float-y);
+  right: auto;
+  bottom: auto;
+  left: var(--webview-debug-float-x);
+}
+
+.card {
+  display: flex;
+  width: 360px;
+  max-height: min(240px, calc(100% - min(24px, 8%)));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--desktop-ui-card) 92%, transparent);
+  box-shadow: var(--panel-shadow);
+  color: var(--desktop-ui-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  backdrop-filter: blur(12px);
+}
+
+.header {
+  display: flex;
+  min-height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 5px 4px 10px;
+  border-bottom: 1px solid var(--desktop-ui-border-soft);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.header:active {
+  cursor: grabbing;
+}
+
+.header:focus-visible,
+.floatButton:focus-visible,
+.actionButton:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+}
+
+.title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.actionButton {
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: 5px;
+  background: var(--desktop-ui-card-soft);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.actionButton:hover {
+  border-color: var(--accent-strong);
+}
+
+.actionButton[data-state="copied"] {
+  color: #15803d;
+}
+
+.actionButton[data-state="failed"] {
+  color: #b91c1c;
+}
+
+.collapseButton {
+  width: 24px;
+  padding-inline: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.body {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.surfaceId {
+  margin-bottom: 4px;
+  color: var(--accent-strong);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.url {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.floatButton {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--desktop-ui-card) 92%, transparent);
+  box-shadow: var(--panel-shadow);
+  color: var(--accent-strong);
+  cursor: grab;
+  touch-action: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+}
+
+.floatButton:active {
+  cursor: grabbing;
+}

@@ -422,6 +422,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     },
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
+    getAgentRealtimeInspectorWindow: () => agentRealtimeInspectorWindowController.getWindow(),
     openAgentPlatformMonitorWindow,
     openAgentRealtimeInspectorWindow,
     openDesktopActionWorkbenchWindow,

@@ -3704,6 +3704,7 @@ export function ServiceWebviewSurface({
       )}
       <div className="embedded-surface-frame-shell">
         <WebviewDebugOverlay
+          active={active !== false}
           url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl}
           surfaceIdentity={surfaceIdentity}
         />

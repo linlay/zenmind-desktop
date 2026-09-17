@@ -5,7 +5,6 @@ import {
   CloseCircleFilled,
   CodeOutlined,
   CopyOutlined,
-  DeleteOutlined,
   DisconnectOutlined,
   LoadingOutlined,
   PauseOutlined,
@@ -15,30 +14,37 @@ import {
   WarningFilled,
 } from "@ant-design/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type {
   AgentRealtimeDebugProcess,
   AgentRealtimeDebugSnapshot,
   AgentRealtimeDebugTarget,
-  AgentRealtimeDebugTraceDirection,
-  AgentRealtimeDebugTraceEntry,
-  AgentRealtimeDebugTraceLayer,
 } from "../../shared/contracts";
 import { useI18n } from "../i18n/useI18n";
+import { AgentRealtimeRecordingPanel } from "./AgentRealtimeRecordingPanel";
 import "./AgentRealtimeInspectorPage.css";
 
 type ViewId = "targets" | "events" | "topology" | "system";
-type DetailTab = "overview" | "memory" | "events" | "raw";
-type LayerFilter = "all" | AgentRealtimeDebugTraceLayer;
-type DirectionFilter = "all" | AgentRealtimeDebugTraceDirection;
+type DetailTab = "overview" | "memory" | "raw";
 type SortKey = "memory" | "delta" | "cpu" | "surface";
 type MemoryPoint = { capturedAt: number; bytes: number };
 type MemoryHistory = Record<number, MemoryPoint[]>;
-type TracePresentation = { json: string; size: string; searchText: string };
-
-const MAX_RENDERED_FRAMES = 500;
 const MEMORY_HISTORY_WINDOW_MS = 5 * 60 * 1_000;
 const MEMORY_WARNING_BYTES = 384 * 1024 * 1024;
 const MEMORY_DELTA_WARNING_BYTES = 64 * 1024 * 1024;
+const DETAIL_PANEL_DEFAULT_WIDTH = 360;
+const DETAIL_PANEL_MIN_WIDTH = 300;
+const DETAIL_PANEL_MAX_WIDTH = 720;
+const OBSERVER_MAIN_MIN_WIDTH = 560;
+const DETAIL_RESIZER_WIDTH = 8;
+
+function constrainDetailPanelWidth(width: number, availableWidth: number) {
+  const availableMaximum = Math.max(
+    DETAIL_PANEL_MIN_WIDTH,
+    availableWidth - OBSERVER_MAIN_MIN_WIDTH - DETAIL_RESIZER_WIDTH,
+  );
+  return Math.round(Math.min(Math.max(width, DETAIL_PANEL_MIN_WIDTH), DETAIL_PANEL_MAX_WIDTH, availableMaximum));
+}
 
 function formatJson(value: unknown) {
   try {
@@ -50,10 +56,12 @@ function formatJson(value: unknown) {
 
 function formatBytes(bytes: number | undefined) {
   if (typeof bytes !== "number" || !Number.isFinite(bytes)) return "—";
-  if (bytes < 1024) return `${Math.max(0, Math.round(bytes))} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  const sign = bytes < 0 ? "−" : "";
+  const absolute = Math.abs(bytes);
+  if (absolute < 1024) return `${sign}${Math.round(absolute)} B`;
+  if (absolute < 1024 * 1024) return `${sign}${(absolute / 1024).toFixed(1)} KB`;
+  if (absolute < 1024 * 1024 * 1024) return `${sign}${(absolute / 1024 / 1024).toFixed(1)} MB`;
+  return `${sign}${(absolute / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function formatPercent(value: number | undefined) {
@@ -72,44 +80,6 @@ function formatFrameTime(value: number, locale: string) {
 
 function formatDiagnosticTime(value: number | undefined, locale: string) {
   return value ? formatFrameTime(value, locale) : "—";
-}
-
-function describeTrace(entry: AgentRealtimeDebugTraceEntry) {
-  const data = entry.data && typeof entry.data === "object" && !Array.isArray(entry.data)
-    ? entry.data as Record<string, unknown>
-    : {};
-  const input = data.input && typeof data.input === "object" && !Array.isArray(data.input)
-    ? data.input as Record<string, unknown>
-    : {};
-  const label = [data.frame, data.kind, data.type, data.method, input.kind]
-    .find((value) => typeof value === "string" && value.trim());
-  return typeof label === "string" ? label : "event";
-}
-
-function createTracePresentation(entry: AgentRealtimeDebugTraceEntry): TracePresentation {
-  const json = formatJson(entry.data);
-  const bytes = new TextEncoder().encode(json).byteLength;
-  return {
-    json,
-    size: bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`,
-    searchText: [
-      entry.sequence,
-      entry.direction,
-      entry.layer,
-      entry.surfaceId,
-      entry.surfaceKind,
-      entry.route,
-      describeTrace(entry),
-      json,
-    ].join(" ").toLocaleLowerCase(),
-  };
-}
-
-function directionGlyph(direction: AgentRealtimeDebugTraceDirection) {
-  if (direction === "desktop-to-platform") return "D → P";
-  if (direction === "platform-to-desktop") return "P → D";
-  if (direction === "surface-to-desktop") return "S → D";
-  return "D → S";
 }
 
 function memoryDelta(points: MemoryPoint[] | undefined) {
@@ -184,28 +154,81 @@ export function AgentRealtimeInspectorPage() {
   const [view, setView] = useState<ViewId>("targets");
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [search, setSearch] = useState("");
-  const [layer, setLayer] = useState<LayerFilter>("all");
-  const [direction, setDirection] = useState<DirectionFilter>("all");
-  const [eventSurfaceId, setEventSurfaceId] = useState("all");
-  const [follow, setFollow] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("memory");
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
-  const [selectedSequence, setSelectedSequence] = useState<number | null>(null);
+  const [recordingSurfaceId, setRecordingSurfaceId] = useState<string | undefined>();
   const [collapsedPids, setCollapsedPids] = useState<Set<number>>(new Set());
+  const [detailPanelWidth, setDetailPanelWidth] = useState(DETAIL_PANEL_DEFAULT_WIDTH);
+  const [detailPanelResizing, setDetailPanelResizing] = useState(false);
+  const observerBodyRef = useRef<HTMLElement | null>(null);
+  const detailResizeCleanupRef = useRef<(() => void) | null>(null);
   const refreshPendingRef = useRef(false);
-  const frameListRef = useRef<HTMLDivElement | null>(null);
-  const lastSequenceRef = useRef(0);
-  const tracePresentationCacheRef = useRef(new Map<number, TracePresentation>());
+
+  function availableObserverWidth() {
+    return observerBodyRef.current?.clientWidth || window.innerWidth;
+  }
+
+  function handleDetailResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || view === "events") return;
+    event.preventDefault();
+    detailResizeCleanupRef.current?.();
+    const resizer = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startClientX = event.clientX;
+    const startWidth = detailPanelWidth;
+    try {
+      resizer.setPointerCapture(pointerId);
+    } catch {
+      // Window-level listeners continue the resize if pointer capture is unavailable.
+    }
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      if (pointerEvent.cancelable) pointerEvent.preventDefault();
+      setDetailPanelWidth(constrainDetailPanelWidth(
+        startWidth + startClientX - pointerEvent.clientX,
+        availableObserverWidth(),
+      ));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("blur", cleanup);
+      if (detailResizeCleanupRef.current === cleanup) detailResizeCleanupRef.current = null;
+      setDetailPanelResizing(false);
+      try {
+        if (resizer.hasPointerCapture(pointerId)) resizer.releasePointerCapture(pointerId);
+      } catch {
+        // Pointer capture may already be released after leaving the window.
+      }
+    };
+    const handlePointerEnd = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) cleanup();
+    };
+    detailResizeCleanupRef.current = cleanup;
+    setDetailPanelResizing(true);
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("blur", cleanup);
+  }
+
+  function handleDetailResizerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") nextWidth = detailPanelWidth + 20;
+    if (event.key === "ArrowRight") nextWidth = detailPanelWidth - 20;
+    if (event.key === "Home") nextWidth = DETAIL_PANEL_MIN_WIDTH;
+    if (event.key === "End") nextWidth = DETAIL_PANEL_MAX_WIDTH;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    setDetailPanelWidth(constrainDetailPanelWidth(nextWidth, availableObserverWidth()));
+  }
 
   async function loadSnapshot() {
     if (refreshPendingRef.current) return;
     refreshPendingRef.current = true;
     try {
-      const nextSnapshot = await window.electronAPI.diagnostics.getAgentRealtimeDebugSnapshot({
-        afterSequence: lastSequenceRef.current,
-      });
-      const newestSequence = nextSnapshot.trace.at(-1)?.sequence;
-      if (newestSequence !== undefined) lastSequenceRef.current = newestSequence;
+      const nextSnapshot = await window.electronAPI.diagnostics.getAgentRealtimeDebugSnapshot();
       setMemoryHistory((current) => {
         const next: MemoryHistory = { ...current };
         const cutoff = Number(nextSnapshot.capturedAt) - MEMORY_HISTORY_WINDOW_MS;
@@ -218,19 +241,7 @@ export function AgentRealtimeInspectorPage() {
         }
         return next;
       });
-      setSnapshot((currentSnapshot) => {
-        if (!currentSnapshot) return nextSnapshot;
-        const knownSequences = new Set(currentSnapshot.trace.map((entry) => entry.sequence));
-        const mergedTrace = [
-          ...currentSnapshot.trace,
-          ...nextSnapshot.trace.filter((entry) => !knownSequences.has(entry.sequence)),
-        ].slice(-MAX_RENDERED_FRAMES);
-        const liveSequences = new Set(mergedTrace.map((entry) => entry.sequence));
-        for (const sequence of tracePresentationCacheRef.current.keys()) {
-          if (!liveSequences.has(sequence)) tracePresentationCacheRef.current.delete(sequence);
-        }
-        return { ...nextSnapshot, trace: mergedTrace };
-      });
+      setSnapshot(nextSnapshot);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -239,21 +250,18 @@ export function AgentRealtimeInspectorPage() {
     }
   }
 
-  async function clearTrace() {
-    try {
-      const nextSnapshot = await window.electronAPI.diagnostics.clearAgentRealtimeDebugTrace();
-      setSnapshot(nextSnapshot);
-      setSelectedSequence(null);
-      lastSequenceRef.current = 0;
-      tracePresentationCacheRef.current.clear();
-      setMessage("");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    }
-  }
-
   useEffect(() => {
     void loadSnapshot();
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => setDetailPanelWidth((current) =>
+      constrainDetailPanelWidth(current, availableObserverWidth()));
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      detailResizeCleanupRef.current?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -338,41 +346,6 @@ export function AgentRealtimeInspectorPage() {
     setSelectedTargetId(preferred?.targetId || null);
   }, [memoryHistory, processByPid, selectedTargetId, snapshot?.runtime.targets]);
 
-  const surfaceIds = useMemo(() => {
-    const values = new Set<string>();
-    snapshot?.runtime.targets.forEach((target) => {
-      if (target.surfaceId) values.add(target.surfaceId);
-    });
-    snapshot?.trace.forEach((entry) => {
-      if (entry.surfaceId) values.add(entry.surfaceId);
-    });
-    return [...values].sort((left, right) => left.localeCompare(right));
-  }, [snapshot]);
-
-  const filteredFrames = useMemo(() => {
-    const normalized = search.trim().toLocaleLowerCase();
-    return (snapshot?.trace || []).flatMap((entry) => {
-      if (layer !== "all" && entry.layer !== layer) return [];
-      if (direction !== "all" && entry.direction !== direction) return [];
-      if (eventSurfaceId !== "all" && entry.surfaceId !== eventSurfaceId) return [];
-      const presentation = tracePresentationCacheRef.current.get(entry.sequence) || createTracePresentation(entry);
-      tracePresentationCacheRef.current.set(entry.sequence, presentation);
-      if (normalized && !presentation.searchText.includes(normalized)) return [];
-      return [{ entry, presentation }];
-    });
-  }, [direction, eventSurfaceId, layer, search, snapshot?.trace]);
-
-  useEffect(() => {
-    if (!follow || !frameListRef.current || view !== "events") return;
-    frameListRef.current.scrollTop = frameListRef.current.scrollHeight;
-  }, [filteredFrames.length, follow, view]);
-
-  const selectedEntry = selectedSequence === null
-    ? null
-    : snapshot?.trace.find((entry) => entry.sequence === selectedSequence) || null;
-  const selectedSurfaceEvents = selectedTarget?.surfaceId
-    ? (snapshot?.trace || []).filter((entry) => entry.surfaceId === selectedTarget.surfaceId).slice(-12).reverse()
-    : [];
   const primaryConnection = snapshot?.connections.primary;
   const btwConnection = snapshot?.connections.btw;
   const connected = primaryConnection?.phase === "connected";
@@ -396,7 +369,6 @@ export function AgentRealtimeInspectorPage() {
       target: selectedTarget,
       process: selectedProcess,
       memoryHistory: selectedHistory,
-      recentEvents: selectedSurfaceEvents,
     }));
   }
 
@@ -451,10 +423,6 @@ export function AgentRealtimeInspectorPage() {
             <ReloadOutlined />
             {t("common.refresh")}
           </button>
-          <button type="button" disabled={!snapshot?.trace.length} onClick={() => void clearTrace()}>
-            <DeleteOutlined />
-            {t("settings.debug.realtime.clear")}
-          </button>
         </div>
       </header>
 
@@ -464,7 +432,13 @@ export function AgentRealtimeInspectorPage() {
         </div>
       ) : null}
 
-      <section className="runtime-observer-body">
+      <section
+        ref={observerBodyRef}
+        className={`runtime-observer-body${view === "events" ? " is-events" : ""}${detailPanelResizing ? " is-detail-resizing" : ""}`}
+        style={view === "events" ? undefined : {
+          gridTemplateColumns: `minmax(${OBSERVER_MAIN_MIN_WIDTH}px, 1fr) ${DETAIL_RESIZER_WIDTH}px ${detailPanelWidth}px`,
+        }}
+      >
         <div className="runtime-observer-main">
           <nav className="runtime-view-tabs" aria-label={t("settings.debug.realtime.views") }>
             {tabs.map((tab) => (
@@ -472,7 +446,10 @@ export function AgentRealtimeInspectorPage() {
                 key={tab.id}
                 type="button"
                 className={view === tab.id ? "is-active" : ""}
-                onClick={() => setView(tab.id)}
+                onClick={() => {
+                  setView(tab.id);
+                  if (tab.id === "events") setRecordingSurfaceId(undefined);
+                }}
               >
                 {tab.label}
               </button>
@@ -566,61 +543,7 @@ export function AgentRealtimeInspectorPage() {
           ) : null}
 
           {view === "events" ? (
-            <section className="runtime-events">
-              <div className="runtime-event-filters">
-                <select value={layer} onChange={(event) => setLayer(event.target.value as LayerFilter)}>
-                  <option value="all">{t("settings.debug.realtime.all")}</option>
-                  <option value="platform-ws">Platform WS</option>
-                  <option value="surface-bridge">Surface Bridge</option>
-                </select>
-                <select value={direction} onChange={(event) => setDirection(event.target.value as DirectionFilter)}>
-                  <option value="all">{t("settings.debug.realtime.allDirections")}</option>
-                  <option value="platform-to-desktop">P → D</option>
-                  <option value="desktop-to-platform">D → P</option>
-                  <option value="surface-to-desktop">S → D</option>
-                  <option value="desktop-to-surface">D → S</option>
-                </select>
-                <select value={eventSurfaceId} onChange={(event) => setEventSurfaceId(event.target.value)}>
-                  <option value="all">{t("settings.debug.realtime.allSurfaces")}</option>
-                  {surfaceIds.map((surfaceId) => <option key={surfaceId} value={surfaceId}>{surfaceId}</option>)}
-                </select>
-                <button type="button" className={follow ? "is-active" : ""} onClick={() => setFollow((current) => !current)}>
-                  {t("settings.debug.realtime.follow")}
-                </button>
-              </div>
-              <div className="runtime-event-grid runtime-event-head" role="row">
-                <span>{t("settings.debug.realtime.time")}</span>
-                <span>{t("settings.debug.realtime.direction")}</span>
-                <span>{t("settings.debug.realtime.layer")}</span>
-                <span>Surface ID</span>
-                <span>{t("settings.debug.realtime.event")}</span>
-                <span>{t("settings.debug.realtime.size")}</span>
-              </div>
-              <div ref={frameListRef} className="runtime-event-list">
-                {filteredFrames.length === 0 ? (
-                  <div className="runtime-empty">{t("settings.debug.realtime.empty")}</div>
-                ) : filteredFrames.map(({ entry, presentation }) => (
-                  <button
-                    key={entry.sequence}
-                    type="button"
-                    className={`runtime-event-grid runtime-event-row${selectedSequence === entry.sequence ? " is-selected" : ""}`}
-                    onClick={() => {
-                      setSelectedSequence(entry.sequence);
-                      const target = snapshot?.runtime.targets.find((candidate) => candidate.surfaceId === entry.surfaceId);
-                      if (target) setSelectedTargetId(target.targetId);
-                      setDetailTab("events");
-                    }}
-                  >
-                    <time>{formatFrameTime(Number(entry.recordedAt), locale)}</time>
-                    <code>{directionGlyph(entry.direction)}</code>
-                    <span>{entry.layer === "platform-ws" ? "Platform WS" : "Surface Bridge"}</span>
-                    <strong title={entry.surfaceId || ""}>{entry.surfaceId || "—"}</strong>
-                    <span title={describeTrace(entry)}>{describeTrace(entry)}</span>
-                    <span>{presentation.size}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
+            <AgentRealtimeRecordingPanel surfaceId={recordingSurfaceId} runtime={snapshot?.runtime} />
           ) : null}
 
           {view === "topology" ? (
@@ -700,35 +623,65 @@ export function AgentRealtimeInspectorPage() {
                   </>
                 ) : <div className="runtime-empty">No active Overview lease</div>}
               </article>
-              <article>
-                <h2>{t("settings.debug.realtime.logicalFramePorts")}</h2>
-                <div className="runtime-system-list">
-                  {(snapshot?.logicalSessions || []).map((session) => (
-                    <button key={`${session.logicalSessionId}:${session.openedAt}`} type="button" onClick={() => {
-                      const target = snapshot?.runtime.targets.find((candidate) => candidate.surfaceId === session.surfaceId);
-                      if (target) selectTarget(target);
-                    }}>
-                      <code>{session.logicalSessionId}</code><span>{session.surfaceId || "—"}</span><span>{session.phase}</span><span>L{session.logicalGeneration} / P{session.physicalGeneration}</span>
-                      {session.streams.map((stream) => (
-                        <span key={stream.requestId} title={`${stream.type} ${stream.chatId}`}>
-                          {stream.virtual ? "clone" : "root"} {stream.runId || "pending"} · seq {stream.lastSeq}
-                        </span>
-                      ))}
-                    </button>
-                  ))}
+              <article className="runtime-system-wide">
+                <header className="runtime-system-heading">
+                  <h2>{t("settings.debug.realtime.logicalFramePorts")}</h2>
+                  <p>{t("settings.debug.realtime.logicalFramePortsDescription")}</p>
+                </header>
+                <div className="runtime-diagnostic-cards">
+                  {(snapshot?.logicalSessions || []).map((session) => {
+                    const target = snapshot?.runtime.targets.find((candidate) => candidate.surfaceId === session.surfaceId);
+                    return (
+                      <section key={`${session.logicalSessionId}:${session.openedAt}`} className="runtime-diagnostic-card">
+                        <div className="runtime-diagnostic-card-title">
+                          <strong>{session.surfaceId || t("settings.debug.realtime.closedSurface")}</strong>
+                          <span className={`runtime-state is-${session.phase === "connected" ? "visible" : "hidden"}`}>{session.phase}</span>
+                        </div>
+                        <dl>
+                          <div><dt>Session</dt><dd title={session.logicalSessionId}>{session.logicalSessionId}</dd></div>
+                          <div><dt>Generation</dt><dd>L{session.logicalGeneration} / P{session.physicalGeneration}</dd></div>
+                          <div><dt>Reconnects</dt><dd>{session.reconnectCount}</dd></div>
+                          <div><dt>Requests / streams</dt><dd>{session.pendingRequestCount} / {session.activeStreamCount}</dd></div>
+                        </dl>
+                        <div className="runtime-diagnostic-streams">
+                          {session.streams.map((stream) => (
+                            <span key={stream.requestId} title={`${stream.type} · ${stream.chatId} · ${stream.requestId}`}>
+                              {stream.virtual ? "clone" : "root"} · {stream.runId || "pending"} · seq {stream.lastSeq}
+                            </span>
+                          ))}
+                          {!session.streams.length ? <span>{t("settings.debug.realtime.noActiveStreams")}</span> : null}
+                        </div>
+                        {target ? (
+                          <button type="button" onClick={() => selectTarget(target)}>{t("settings.debug.realtime.viewTarget")}</button>
+                        ) : <small>{t("settings.debug.realtime.targetClosed")}</small>}
+                      </section>
+                    );
+                  })}
                   {!snapshot?.logicalSessions.length ? <div className="runtime-empty">{t("settings.debug.realtime.noLogicalSessions")}</div> : null}
                 </div>
               </article>
-              <article>
-                <h2>{t("settings.debug.realtime.runRecovery")}</h2>
-                <div className="runtime-system-list">
+              <article className="runtime-system-wide">
+                <header className="runtime-system-heading">
+                  <h2>{t("settings.debug.realtime.runRecovery")}</h2>
+                  <p>{t("settings.debug.realtime.runRecoveryDescription")}</p>
+                </header>
+                <div className="runtime-diagnostic-cards">
                   {(snapshot?.runRecovery || []).map((run) => (
-                    <div key={run.runId}>
-                      <code>{run.runId}</code><span>{run.lane}</span><span>seq {run.lastSeq}</span><span>{run.state} / {run.upstreamState}</span><span>clones {run.cloneCount}</span>
-                      <span>last {run.lastEventType || "—"}{run.lastEventSeq === undefined ? "" : ` @${run.lastEventSeq}`}</span>
-                      <span>plan/task {run.lastPlanTaskEventType || "—"}{run.lastPlanTaskEventSeq === undefined ? "" : ` @${run.lastPlanTaskEventSeq}`}</span>
-                      <span title={run.lastRestoreResult}>{run.lastRestoreResult}</span>
-                    </div>
+                    <section key={run.runId} className="runtime-diagnostic-card">
+                      <div className="runtime-diagnostic-card-title">
+                        <strong title={run.runId}>{run.runId}</strong>
+                        <span>{run.lane}</span>
+                      </div>
+                      <dl>
+                        <div><dt>State</dt><dd>{run.state} / {run.upstreamState}</dd></div>
+                        <div><dt>Sequence</dt><dd>{run.lastSeq}</dd></div>
+                        <div><dt>Observers</dt><dd>{run.rootObserverCount} root / {run.cloneCount} clone</dd></div>
+                        <div><dt>Restores</dt><dd>{run.restoreCount}</dd></div>
+                        <div><dt>Last event</dt><dd>{run.lastEventType || "—"}{run.lastEventSeq === undefined ? "" : ` @${run.lastEventSeq}`}</dd></div>
+                        <div><dt>Plan / task</dt><dd>{run.lastPlanTaskEventType || "—"}{run.lastPlanTaskEventSeq === undefined ? "" : ` @${run.lastPlanTaskEventSeq}`}</dd></div>
+                      </dl>
+                      <p className="runtime-diagnostic-result" title={run.lastRestoreResult}>{run.lastRestoreResult || "—"}</p>
+                    </section>
                   ))}
                   {!snapshot?.runRecovery.length ? <div className="runtime-empty">{t("settings.debug.realtime.noTrackedRuns")}</div> : null}
                 </div>
@@ -737,9 +690,27 @@ export function AgentRealtimeInspectorPage() {
           ) : null}
         </div>
 
-        <aside className="runtime-detail">
+        {view !== "events" ? (
+          <div
+            className={`runtime-detail-resizer${detailPanelResizing ? " is-active" : ""}`}
+            role="separator"
+            tabIndex={0}
+            aria-label={t("settings.debug.realtime.resizeDetail")}
+            aria-orientation="vertical"
+            aria-valuemin={DETAIL_PANEL_MIN_WIDTH}
+            aria-valuemax={Math.min(DETAIL_PANEL_MAX_WIDTH, Math.max(DETAIL_PANEL_MIN_WIDTH, availableObserverWidth() - OBSERVER_MAIN_MIN_WIDTH - DETAIL_RESIZER_WIDTH))}
+            aria-valuenow={detailPanelWidth}
+            onDoubleClick={() => setDetailPanelWidth(constrainDetailPanelWidth(DETAIL_PANEL_DEFAULT_WIDTH, availableObserverWidth()))}
+            onKeyDown={handleDetailResizerKeyDown}
+            onPointerDown={handleDetailResizerPointerDown}
+          >
+            <span aria-hidden="true" />
+          </div>
+        ) : null}
+
+        {view !== "events" ? <aside className="runtime-detail">
           <div className="runtime-detail-tabs">
-            {(["overview", "memory", "events", "raw"] as const).map((tab) => (
+            {(["overview", "memory", "raw"] as const).map((tab) => (
               <button key={tab} type="button" className={detailTab === tab ? "is-active" : ""} onClick={() => setDetailTab(tab)}>
                 {t(`settings.debug.realtime.detail.${tab}`)}
               </button>
@@ -755,6 +726,14 @@ export function AgentRealtimeInspectorPage() {
                     <div><strong>{selectedTarget.surfaceId || selectedTarget.label}</strong><span>{targetNeedsAttention(selectedTarget, selectedProcess, selectedDelta) ? t("settings.debug.realtime.attention") : targetState(selectedTarget)}</span></div>
                     <button type="button" title={t("settings.debug.realtime.copy")} onClick={() => void copySelectedSnapshot()}><CopyOutlined /></button>
                   </div>
+                  {selectedTarget.surfaceId ? (
+                    <button type="button" className="runtime-target-events-button" onClick={() => {
+                      setRecordingSurfaceId(selectedTarget.surfaceId);
+                      setView("events");
+                    }}>
+                      {t("settings.debug.realtime.recording.viewSurfaceEvents")}
+                    </button>
+                  ) : null}
                 </section>
                 <section className="runtime-detail-section">
                   <h2>{t("settings.debug.realtime.identity")}</h2>
@@ -793,29 +772,6 @@ export function AgentRealtimeInspectorPage() {
                   </div>
                   <MemorySparkline points={selectedHistory} />
                 </section>
-                <section className="runtime-detail-section">
-                  <div className="runtime-section-heading">
-                    <h2>{t("settings.debug.realtime.recentEvents")}</h2>
-                    <span>{selectedSurfaceEvents.length}</span>
-                  </div>
-                  <div className="runtime-detail-events is-compact">
-                    {selectedSurfaceEvents.slice(0, 5).map((entry) => (
-                      <button
-                        key={entry.sequence}
-                        type="button"
-                        onClick={() => {
-                          setSelectedSequence(entry.sequence);
-                          setDetailTab("events");
-                        }}
-                      >
-                        <time>{formatFrameTime(Number(entry.recordedAt), locale)}</time>
-                        <strong>{describeTrace(entry)}</strong>
-                        <span>{directionGlyph(entry.direction)}</span>
-                      </button>
-                    ))}
-                    {selectedSurfaceEvents.length === 0 ? <div className="runtime-empty">{t("settings.debug.realtime.noSurfaceEvents")}</div> : null}
-                  </div>
-                </section>
               </>
             ) : detailTab === "memory" ? (
               <section className="runtime-detail-section runtime-memory-detail">
@@ -833,21 +789,6 @@ export function AgentRealtimeInspectorPage() {
                 </dl>
                 <p>{t("settings.debug.realtime.processMemoryExplanation")}</p>
               </section>
-            ) : detailTab === "events" ? (
-              <section className="runtime-detail-section">
-                <div className="runtime-section-heading"><h2>{t("settings.debug.realtime.recentEvents")}</h2><span>{selectedSurfaceEvents.length}</span></div>
-                <div className="runtime-detail-events">
-                  {selectedSurfaceEvents.map((entry) => (
-                    <button key={entry.sequence} type="button" className={selectedEntry?.sequence === entry.sequence ? "is-selected" : ""} onClick={() => setSelectedSequence(entry.sequence)}>
-                      <time>{formatFrameTime(Number(entry.recordedAt), locale)}</time>
-                      <strong>{describeTrace(entry)}</strong>
-                      <span>{directionGlyph(entry.direction)}</span>
-                    </button>
-                  ))}
-                  {selectedSurfaceEvents.length === 0 ? <div className="runtime-empty">{t("settings.debug.realtime.noSurfaceEvents")}</div> : null}
-                </div>
-                {selectedEntry ? <pre>{tracePresentationCacheRef.current.get(selectedEntry.sequence)?.json || formatJson(selectedEntry.data)}</pre> : null}
-              </section>
             ) : (
               <pre className="runtime-raw">{formatJson({ target: selectedTarget, process: selectedProcess })}</pre>
             )}
@@ -862,7 +803,7 @@ export function AgentRealtimeInspectorPage() {
               {t("settings.debug.realtime.copySnapshot")}
             </button>
           </footer>
-        </aside>
+        </aside> : null}
       </section>
     </main>
   );

@@ -694,10 +694,30 @@ const api: DesktopApi = {
       ipcRenderer.invoke("diagnostics.openAgentRealtimeInspector"),
     openAgentRealtimeTargetDevTools: (input) =>
       ipcRenderer.invoke("diagnostics.openAgentRealtimeTargetDevTools", input),
-    getAgentRealtimeDebugSnapshot: (input) =>
-      ipcRenderer.invoke("diagnostics.getAgentRealtimeDebugSnapshot", input),
-    clearAgentRealtimeDebugTrace: () =>
-      ipcRenderer.invoke("diagnostics.clearAgentRealtimeDebugTrace")
+    getAgentRealtimeDebugSnapshot: () =>
+      ipcRenderer.invoke("diagnostics.getAgentRealtimeDebugSnapshot"),
+    startAgentRealtimeRecording: () =>
+      ipcRenderer.invoke("diagnostics.startAgentRealtimeRecording"),
+    stopAgentRealtimeRecording: () =>
+      ipcRenderer.invoke("diagnostics.stopAgentRealtimeRecording"),
+    listAgentRealtimeRecordings: () =>
+      ipcRenderer.invoke("diagnostics.listAgentRealtimeRecordings"),
+    setAgentRealtimeLiveEventsEnabled: (input) =>
+      ipcRenderer.invoke("diagnostics.setAgentRealtimeLiveEventsEnabled", input),
+    queryAgentRealtimeLiveEvents: (input) =>
+      ipcRenderer.invoke("diagnostics.queryAgentRealtimeLiveEvents", input),
+    getAgentRealtimeLiveEvent: (input) =>
+      ipcRenderer.invoke("diagnostics.getAgentRealtimeLiveEvent", input),
+    queryAgentRealtimeRecordingEvents: (input) =>
+      ipcRenderer.invoke("diagnostics.queryAgentRealtimeRecordingEvents", input),
+    getAgentRealtimeRecordingEvent: (input) =>
+      ipcRenderer.invoke("diagnostics.getAgentRealtimeRecordingEvent", input),
+    getAgentRealtimeRecordingSamples: (input) =>
+      ipcRenderer.invoke("diagnostics.getAgentRealtimeRecordingSamples", input),
+    deleteAgentRealtimeRecording: (input) =>
+      ipcRenderer.invoke("diagnostics.deleteAgentRealtimeRecording", input),
+    exportAgentRealtimeRecording: (input) =>
+      ipcRenderer.invoke("diagnostics.exportAgentRealtimeRecording", input)
   },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),

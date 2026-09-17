@@ -41,7 +41,7 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "../modules/marketplace";
-import { getAgentPlatformMinimaxSettingsPublic } from "../modules/agent-platform";
+import { getAgentPlatformMinimaxSettingsPublic, registerAgentRealtimeInspectorIpcHandlers } from "../modules/agent-platform";
 import { ContainerHubClient, getAssistantSettings, readAssistantSettings, saveAssistantSettings, toPublicAssistantSettings } from "../modules/assistant";
 import {
   cancelAssistantAttachmentTask,
@@ -468,14 +468,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       }
     },
   });
-  const readAgentRealtimeDebugSnapshot = (afterSequence?: unknown) => {
+  const readAgentRealtimeDebugSnapshot = () => {
     const brokerDiagnostics = assistantBridgeRuntime.realtimeBroker.getDiagnostics();
     const bridgeDiagnostics = agentWebclientBridgeRuntime.getDiagnostics();
-    const trace = assistantBridgeRuntime.realtimeBroker.getDebugTraceEntries();
-    const normalizedAfterSequence = typeof afterSequence === "number" &&
-      Number.isSafeInteger(afterSequence) && afterSequence >= 0
-      ? afterSequence
-      : null;
     const replayEventCount = brokerDiagnostics.replay.reduce((total: number, item: { eventCount: number }) =>
       total + item.eventCount,
     0);
@@ -596,38 +591,20 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         restoreCount: run.restoreCount,
         lastRestoreResult: run.lastRestoreResult,
       })),
-      trace: normalizedAfterSequence === null
-        ? trace
-        : trace.filter((entry: { sequence: number }) => entry.sequence > normalizedAfterSequence),
     };
   };
-  ipcMain.handle("diagnostics.getAgentRealtimeDebugSnapshot", async (_event: any, input?: unknown) =>
-    readAgentRealtimeDebugSnapshot(
-      input && typeof input === "object" ? (input as { afterSequence?: unknown }).afterSequence : undefined,
-    ),
-  );
-  ipcMain.handle("diagnostics.openAgentRealtimeInspector", async () =>
-    options.openAgentRealtimeInspectorWindow(),
-  );
-  ipcMain.handle("diagnostics.openAgentRealtimeTargetDevTools", async (_event: any, input?: unknown) => {
-    const webContentsId = input && typeof input === "object"
-      ? Number((input as { webContentsId?: unknown }).webContentsId)
-      : 0;
-    if (!Number.isSafeInteger(webContentsId) || webContentsId <= 0) {
-      return { ok: false, message: "A valid WebContents ID is required" };
-    }
-    const diagnostic = options.browserSurfaces.listWebContentsDiagnostics()
-      .find((contents) => contents.webContentsId === webContentsId && contents.type === "webview");
-    const contents = diagnostic ? options.browserSurfaces.findWebContentsById(webContentsId) : null;
-    if (!contents || contents.isDestroyed()) {
-      return { ok: false, message: "The WebView is no longer available" };
-    }
-    contents.openDevTools({ mode: "detach" });
-    return { ok: true };
-  });
-  ipcMain.handle("diagnostics.clearAgentRealtimeDebugTrace", async () => {
-    assistantBridgeRuntime.realtimeBroker.clearDebugTrace();
-    return readAgentRealtimeDebugSnapshot();
+  registerAgentRealtimeInspectorIpcHandlers({
+    app,
+    ipcMain,
+    browserSurfaces: options.browserSurfaces,
+    realtimeBroker: assistantBridgeRuntime.realtimeBroker,
+    mainProcessDir: options.mainProcessDir,
+    inspectorRoutePath: options.agentRealtimeInspectorRoute,
+    getInspectorWindow: options.getAgentRealtimeInspectorWindow,
+    readSnapshot: readAgentRealtimeDebugSnapshot,
+    openInspectorWindow: options.openAgentRealtimeInspectorWindow,
+    showSaveDialog: options.showSaveDialog,
+    getMainWindow: options.getMainWindow,
   });
   registerHelpIpcHandlers(ipcMain, app);
 

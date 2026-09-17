@@ -8670,6 +8670,14 @@ test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL
   const appShell = readAppShellSource();
   const debugModeContext = readSourceFile("src", "renderer", "debug", "DebugModeContext.ts");
   const webviewDebugOverlay = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.tsx");
+  const webviewDebugFloatHook = readSourceFile("src", "renderer", "components", "useWebviewDebugFloat.ts");
+  const webviewDebugFloatStyles = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.module.css");
+  const webviewDebugFloatGeometry = loadTypeScriptCommonJs(
+    "src",
+    "renderer",
+    "debug",
+    "webviewDebugFloatGeometry.ts"
+  );
   const webviewDebugUrl = loadTypeScriptCommonJs("src", "renderer", "debug", "webviewDebugUrl.ts");
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const externalWebviewPage = readSourceFile(
@@ -8722,13 +8730,50 @@ test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL
   assert.match(webviewDebugOverlay, /formatWebviewDebugSurfaceLabel/u);
   assert.match(webviewDebugOverlay, /clipboard\.writeText\(copyText\)/u);
   assert.match(webviewDebugOverlay, /settings\.debug\.webviewOverlay\.copyAll/u);
-  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceIdentity=\{surfaceIdentity\}/u);
-  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceIdentity=\{surfaceIdentity\} \/>/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*auto;/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*text;/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay:hover \.webview-debug-copy-button/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-surface-id/u);
-  assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
+  assert.match(webviewDebugOverlay, /const \[expanded, setExpanded\] = useState\(true\)/u);
+  assert.match(webviewDebugOverlay, /if \(!debugMode\) \{[\s\S]{0,80}setExpanded\(true\)/u);
+  assert.match(webviewDebugOverlay, /useWebviewDebugFloat\(visible\)/u);
+  assert.match(webviewDebugOverlay, /event\.key !== "Escape" \|\| !expanded/u);
+  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,80}active=\{active !== false\}[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceIdentity=\{surfaceIdentity\}/u);
+  assert.match(externalWebviewPage, /<WebviewDebugOverlay[\s\S]{0,80}active=\{active && surfaceActive\}[\s\S]{0,80}url=\{tab\.currentUrl\}[\s\S]{0,80}surfaceIdentity=\{surfaceIdentity\}/u);
+  assert.match(webviewDebugFloatHook, /const DRAG_THRESHOLD_PX = 5/u);
+  assert.match(webviewDebugFloatHook, /new ResizeObserver\(\(\) => cancelActiveDrag\(\)\)/u);
+  assert.match(webviewDebugFloatHook, /setPointerCapture\(pointerId\)/u);
+  assert.match(webviewDebugFloatHook, /visibilitychange/u);
+  assert.match(webviewDebugFloatStyles, /\.overlay\[data-dragging="true"\][\s\S]{0,100}pointer-events: auto/u);
+  assert.match(webviewDebugFloatStyles, /\.card[\s\S]{0,160}width: 360px[\s\S]{0,180}max-height: min\(240px, calc\(100% - min\(24px, 8%\)\)\)/u);
+  assert.doesNotMatch(externalWebviewStyles, /webview-debug-url-overlay|webview-debug-copy-button/u);
+
+  assert.deepEqual(
+    webviewDebugFloatGeometry.clampWebviewDebugFloatPosition(
+      { x: -100, y: 999 },
+      { width: 100, height: 80 },
+      { width: 500, height: 300 },
+      12
+    ),
+    { x: 12, y: 208 }
+  );
+  assert.deepEqual(
+    webviewDebugFloatGeometry.clampWebviewDebugFloatPosition(
+      { x: 50, y: 50 },
+      { width: 100, height: 80 },
+      { width: 80, height: 60 },
+      12
+    ),
+    { x: 0, y: 0 }
+  );
+  assert.equal(
+    webviewDebugFloatGeometry.resolveWebviewDebugDockCorner(
+      { x: 300, y: 190 },
+      { width: 100, height: 80 },
+      { width: 500, height: 300 }
+    ),
+    "bottom-right"
+  );
+  assert.equal(
+    webviewDebugFloatGeometry.moveWebviewDebugDockCorner("bottom-right", "ArrowLeft"),
+    "bottom-left"
+  );
 });
 
 test("help page uses the configured anonymous Help webview", () => {

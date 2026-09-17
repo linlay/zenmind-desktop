@@ -217,6 +217,77 @@ export interface AgentRealtimeDebugTraceEntry {
   route?: string;
 }
 
+export type AgentRealtimeRecordingState =
+  | "preparing"
+  | "recording"
+  | "finalizing"
+  | "completed"
+  | "incomplete";
+
+export interface AgentRealtimeRecordingSummary {
+  id: string;
+  name: string;
+  state: AgentRealtimeRecordingState;
+  startedAt: EpochMilliseconds;
+  endedAt?: EpochMilliseconds;
+  eventCount: number;
+  sampleCount: number;
+  bytes: number;
+  errorCount: number;
+  lastSequence: number;
+  layerCounts: Partial<Record<AgentRealtimeDebugTraceLayer, number>>;
+  directionCounts: Partial<Record<AgentRealtimeDebugTraceDirection, number>>;
+  eventTypeCounts: Record<string, number>;
+  incompleteReason?: string;
+}
+
+export interface AgentRealtimeRecordingEventSummary {
+  sequence: number;
+  recordedAt: EpochMilliseconds;
+  layer: AgentRealtimeDebugTraceLayer;
+  direction: AgentRealtimeDebugTraceDirection;
+  name: string;
+  summary: string;
+  size: number;
+  isError: boolean;
+  lane?: "primary" | "btw";
+  surfaceId?: string;
+  requestId?: string;
+  upstreamRequestId?: string;
+  runId?: string;
+  chatId?: string;
+}
+
+export interface AgentRealtimeRecordingEventPage {
+  items: AgentRealtimeRecordingEventSummary[];
+  nextCursor?: number;
+  total: number;
+}
+
+export interface AgentRealtimeRecordingEventFilter {
+  cursor?: number;
+  limit?: number;
+  order?: "asc" | "desc";
+  layer?: AgentRealtimeDebugTraceLayer;
+  direction?: AgentRealtimeDebugTraceDirection;
+  lane?: "primary" | "btw";
+  surfaceId?: string;
+  eventName?: string;
+  associationId?: string;
+  errorsOnly?: boolean;
+  query?: string;
+  from?: EpochMilliseconds;
+  to?: EpochMilliseconds;
+}
+
+export interface AgentRealtimeRecordingSample {
+  sampledAt: EpochMilliseconds;
+  runtime: AgentRealtimeDebugSnapshot["runtime"];
+  connections: AgentRealtimeDebugSnapshot["connections"];
+  delayedByMs: number;
+  error?: string;
+}
+
 export interface AgentRealtimeDebugSurface {
   surfaceId: string;
   webContentsId: number;
@@ -410,7 +481,6 @@ export interface AgentRealtimeDebugSnapshot {
   surfaces: AgentRealtimeDebugSurface[];
   logicalSessions: AgentRealtimeDebugLogicalSession[];
   runRecovery: AgentRealtimeDebugRunRecovery[];
-  trace: AgentRealtimeDebugTraceEntry[];
 }
 
 export interface DesktopSsoClaims {
@@ -1242,10 +1312,36 @@ export interface DesktopApi {
     openAgentRealtimeTargetDevTools: (input: {
       webContentsId: number;
     }) => Promise<{ ok: boolean; message?: string }>;
-    getAgentRealtimeDebugSnapshot: (input?: {
-      afterSequence?: number;
-    }) => Promise<AgentRealtimeDebugSnapshot>;
-    clearAgentRealtimeDebugTrace: () => Promise<AgentRealtimeDebugSnapshot>;
+    getAgentRealtimeDebugSnapshot: () => Promise<AgentRealtimeDebugSnapshot>;
+    startAgentRealtimeRecording: () => Promise<AgentRealtimeRecordingSummary>;
+    stopAgentRealtimeRecording: () => Promise<AgentRealtimeRecordingSummary>;
+    listAgentRealtimeRecordings: () => Promise<AgentRealtimeRecordingSummary[]>;
+    setAgentRealtimeLiveEventsEnabled: (input: { enabled: boolean }) => Promise<{ ok: true }>;
+    queryAgentRealtimeLiveEvents: (input: {
+      filter?: AgentRealtimeRecordingEventFilter;
+    }) => Promise<AgentRealtimeRecordingEventPage>;
+    getAgentRealtimeLiveEvent: (input: {
+      sequence: number;
+    }) => Promise<AgentRealtimeDebugTraceEntry | null>;
+    queryAgentRealtimeRecordingEvents: (input: {
+      recordingId: string;
+      filter?: AgentRealtimeRecordingEventFilter;
+    }) => Promise<AgentRealtimeRecordingEventPage>;
+    getAgentRealtimeRecordingEvent: (input: {
+      recordingId: string;
+      sequence: number;
+    }) => Promise<AgentRealtimeDebugTraceEntry | null>;
+    getAgentRealtimeRecordingSamples: (input: {
+      recordingId: string;
+      from?: EpochMilliseconds;
+      to?: EpochMilliseconds;
+    }) => Promise<AgentRealtimeRecordingSample[]>;
+    deleteAgentRealtimeRecording: (input: {
+      recordingId: string;
+    }) => Promise<{ ok: true }>;
+    exportAgentRealtimeRecording: (input: {
+      recordingId: string;
+    }) => Promise<{ ok: boolean; canceled?: boolean; message?: string }>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;

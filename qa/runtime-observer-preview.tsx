@@ -64,12 +64,6 @@ function makeSnapshot(): AgentRealtimeDebugSnapshot {
     target({ targetId: "orphan", label: "Old Panel", webContentsId: 51, webContentsType: "webview", pid: 31004, url: "https://app.zenmind.ai/old-panel", title: "Old Panel", active: false, orphaned: true }),
     target({ targetId: "crashed", surfaceId: "website:console", registrationId: "reg-console", label: "Console", surfaceKind: "website", surfaceType: "website", surfaceRole: "website", surfaceLevel: "root", interaction: "interactive", ownerWebContentsId: 1, webContentsId: 32, webContentsType: "webview", pid: 28672, url: "https://console.zenmind.ai/", title: "Console", active: false, crashed: true }),
   ];
-  const trace = [
-    { sequence: 1, recordedAt: (Date.now() - 3200) as typeof capturedAt, layer: "surface-bridge" as const, direction: "surface-to-desktop" as const, surfaceId: "copilot-dock", surfaceKind: "service", surfaceRole: "copilot-dock" as const, surfaceLevel: "child" as const, parentSurfaceId: "main-chat", interaction: "interactive" as const, route: "/copilot/coder", data: { type: "attach", webContentsId: 12 } },
-    { sequence: 2, recordedAt: (Date.now() - 2800) as typeof capturedAt, layer: "surface-bridge" as const, direction: "desktop-to-surface" as const, surfaceId: "copilot-dock", data: { type: "dom-ready" } },
-    { sequence: 3, recordedAt: (Date.now() - 1800) as typeof capturedAt, layer: "platform-ws" as const, direction: "desktop-to-platform" as const, surfaceId: "main-chat", data: { frame: "request.query", requestId: "req-42" } },
-    { sequence: 4, recordedAt: (Date.now() - 900) as typeof capturedAt, layer: "platform-ws" as const, direction: "platform-to-desktop" as const, surfaceId: "main-chat", data: { frame: "run.start", runId: "run-84" } },
-  ];
   return {
     capturedAt,
     runtime: { surfaceCount: 12, webviewCount: 9, orphanWebviewCount: 1, totalWorkingSetBytes: 842 * MB, processes, targets },
@@ -82,15 +76,24 @@ function makeSnapshot(): AgentRealtimeDebugSnapshot {
     surfaces: [],
     logicalSessions: [{ logicalSessionId: "session-main", surfaceId: "main-chat", webContentsId: 11, phase: "connected", logicalGeneration: 4, physicalGeneration: 4, reconnectCount: 0, openedAt: (Date.now() - 480000) as typeof capturedAt, pendingRequestCount: 0, activeStreamCount: 1 }],
     runRecovery: [{ lane: "primary", runId: "run-84", chatId: "chat-42", lastSeq: 18, state: "observed", rootObserverCount: 1, cloneCount: 0, upstreamState: "attached", restoreCount: 0, lastRestoreResult: "not-needed" }],
-    trace,
   };
 }
 
 (window as any).electronAPI = {
   diagnostics: {
     getAgentRealtimeDebugSnapshot: async () => makeSnapshot(),
-    clearAgentRealtimeDebugTrace: async () => ({ ...makeSnapshot(), trace: [] }),
     openAgentRealtimeTargetDevTools: async () => ({ ok: true }),
+    startAgentRealtimeRecording: async () => { throw new Error("Preview does not record live events"); },
+    stopAgentRealtimeRecording: async () => { throw new Error("Preview does not record live events"); },
+    listAgentRealtimeRecordings: async () => [],
+    setAgentRealtimeLiveEventsEnabled: async () => ({ ok: true }),
+    queryAgentRealtimeLiveEvents: async () => ({ items: [], total: 0 }),
+    getAgentRealtimeLiveEvent: async () => null,
+    queryAgentRealtimeRecordingEvents: async () => ({ items: [], total: 0 }),
+    getAgentRealtimeRecordingEvent: async () => null,
+    getAgentRealtimeRecordingSamples: async () => [],
+    deleteAgentRealtimeRecording: async () => ({ ok: true }),
+    exportAgentRealtimeRecording: async () => ({ ok: false, canceled: true }),
   },
   clipboard: { writeText: async () => ({ ok: true }) },
 };

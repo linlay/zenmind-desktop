@@ -44,6 +44,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
       "main/index": path.join(rootSrc, "main", "index.ts"),
       "main/attachment-worker": path.join(rootSrc, "main", "modules", "assistant", "attachments", "attachment-worker.ts"),
       "main/conversation-html-worker": path.join(rootSrc, "main", "modules", "conversation-share", "html-worker.ts"),
+      "main/runtime-recording-worker": path.join(rootSrc, "main", "modules", "agent-platform", "realtime", "runtime-recording-worker.ts"),
       "main/webapp-tooling-worker": path.join(rootSrc, "main", "modules", "webs", "webapps", "tooling", "worker.ts"),
       "preload/plugin-window": path.join(rootSrc, "preload", "plugin-window.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
@@ -85,11 +86,16 @@ export async function buildMainBundle(rootDir = projectRoot) {
   if (!fs.statSync(webappToolingWorker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error("WebApp Tooling Worker bundle is missing");
   }
+  const runtimeRecordingWorker = path.join(outdir, "main", "runtime-recording-worker.js");
+  if (!fs.statSync(runtimeRecordingWorker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error("Runtime recording Worker bundle is missing");
+  }
   // Dev Main is tsc output; give it the same application-relative Worker
   // entry as the packaged app. Never reuse another brand's staged app.
   const developmentMainDir = path.join(rootDir, "dist-electron", "main");
   fs.mkdirSync(developmentMainDir, { recursive: true });
   fs.copyFileSync(webappToolingWorker, path.join(developmentMainDir, "webapp-tooling-worker.js"));
+  fs.copyFileSync(runtimeRecordingWorker, path.join(developmentMainDir, "runtime-recording-worker.js"));
 
   return outdir;
 }

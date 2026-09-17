@@ -49,6 +49,9 @@ export type MainIpcRegistrationOptions = {
   bundledEnvZipExistsAtStartup: boolean;
   runtimeRootExistedAtStartup: boolean;
   runtimeRootAtProcessStart: string;
+  mainProcessDir: string;
+  agentRealtimeInspectorRoute: string;
+  getAgentRealtimeInspectorWindow: () => BrowserWindow | null;
   showFileDialog: (...args: any[]) => Promise<any>;
   showSaveDialog: (...args: any[]) => Promise<any>;
   showMessageBox: (...args: any[]) => Promise<any>;
