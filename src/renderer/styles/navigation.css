@@ -1427,6 +1427,9 @@
   border-color: var(--control-border);
 }
 
+.sidebar-group-heading[data-sidebar-group-id="pinned"],
+.sidebar-group-heading[data-sidebar-group-id="pinned"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="pinned"]:focus-visible,
 .sidebar-group-heading[data-sidebar-group-id="assistants"],
 .sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
 .sidebar-group-heading[data-sidebar-group-id="assistants"]:focus-visible,
@@ -1441,6 +1444,7 @@
   box-shadow: none;
 }
 
+.sidebar-group-heading[data-sidebar-group-id="pinned"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
@@ -3564,6 +3568,7 @@ div.sidebar-chats-group-popover {
   background: transparent;
 }
 
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="pinned"].is-active:not(:hover):not(:focus-visible),
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
@@ -3572,12 +3577,15 @@ div.sidebar-chats-group-popover {
   box-shadow: none;
 }
 
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="pinned"]:hover,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="pinned"]:focus-visible,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"]:focus-visible,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"]:focus-visible,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"]:hover,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"]:focus-visible,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="pinned"].is-active,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active,
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"].is-active {
@@ -3593,11 +3601,6 @@ div.sidebar-chats-group-popover {
 :root[data-theme="dark"] .assistant-worker-header.is-active {
   color: #f6f6f6;
   background: transparent;
-}
-
-:root[data-theme="dark"] .worker-panel-header-body,
-:root[data-theme="dark"] .assistant-worker-name {
-  color: #f6f6f6;
 }
 
 :root[data-theme="dark"] .worker-panel-role,
@@ -5429,12 +5432,6 @@ div.sidebar-chats-group-popover {
   flex-direction: column;
   gap: 3px;
   width: 100%;
-}
-
-.sidebar-capability-divider {
-  height: 1px;
-  margin: 6px 10px 5px;
-  background: var(--line);
 }
 
 .sidebar-settings-empty {

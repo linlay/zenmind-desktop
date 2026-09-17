@@ -148,30 +148,17 @@ test("the app shell renders capability routes as a fixed secondary sidebar", () 
   );
 });
 
-test("the capability sidebar groups Share Management below Market", () => {
-  const sidebarSource = fs.readFileSync(
-    path.join(
-      projectRoot,
-      "src",
-      "renderer",
-      "app-shell",
-      "navigation",
-      "AppSidebar.tsx",
-    ),
-    "utf8",
-  );
-  const navigationStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "styles", "navigation.css"),
-    "utf8",
-  );
-
-  assert.match(
-    sidebarSource,
-    /firstSecondaryCapabilityItemId\s*=\s*capabilityNavigationItems\.find\([\s\S]*?item\.id === "market"[\s\S]*?item\.id === "share-management"[\s\S]*?item\.id === "help"[\s\S]*?item\.id === firstSecondaryCapabilityItemId[\s\S]*?className="sidebar-capability-divider"[\s\S]*?<NavLink/u,
-  );
-  assert.match(
-    navigationStyles,
-    /\.sidebar-capability-divider\s*\{[\s\S]*?height:\s*1px;[\s\S]*?background:\s*var\(--line\);/u,
+test("capability navigation groups platform, cloud and help entries", () => {
+  assert.deepEqual(
+    Object.fromEntries(["platform", "cloud", "help"].map((group) => [
+      group,
+      CAPABILITY_NAVIGATION_ITEMS.filter((item) => item.group === group).map((item) => item.id),
+    ])),
+    {
+      platform: ["agents", "skills", "mcp-servers", "registries", "archives"],
+      cloud: ["market", "share-management"],
+      help: ["help"],
+    },
   );
 });
 

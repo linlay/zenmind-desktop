@@ -15,6 +15,7 @@ export type CapabilityNavigationItemId =
 
 export type CapabilityNavigationItem = {
   id: CapabilityNavigationItemId;
+  group: "platform" | "cloud" | "help";
   to: string;
   labelKey: TranslationKey;
   icon: SidebarIllustrationKind;
@@ -24,6 +25,7 @@ export type CapabilityNavigationItem = {
 export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = [
   {
     id: "agents",
+    group: "platform",
     to: "/agents",
     labelKey: "nav.agents",
     icon: "agent",
@@ -31,6 +33,7 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
   },
   {
     id: "skills",
+    group: "platform",
     to: "/skills",
     labelKey: "nav.skills",
     icon: "skill",
@@ -38,36 +41,42 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
   },
   {
     id: "mcp-servers",
+    group: "platform",
     to: "/connectors",
     labelKey: "nav.mcpConnectors",
     icon: "connector",
   },
   {
     id: "registries",
+    group: "platform",
     to: "/registries",
     labelKey: "nav.registries",
     icon: "service",
   },
   {
     id: "archives",
+    group: "platform",
     to: "/archives",
     labelKey: "nav.archives",
     icon: "archive",
   },
   {
     id: "market",
+    group: "cloud",
     to: "/market",
     labelKey: "nav.market",
     icon: "market",
   },
   {
     id: "share-management",
+    group: "cloud",
     to: "/share-management",
     labelKey: "nav.shareManagement",
     icon: "share",
   },
   {
     id: "help",
+    group: "help",
     to: "/help",
     labelKey: "nav.help",
     icon: "help",

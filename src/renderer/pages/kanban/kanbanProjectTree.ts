@@ -20,7 +20,7 @@ export function getKanbanIssueProjectName(issue: Pick<KanbanIssue, "syncMode" | 
   return project?.name.trim() || issue.projectName?.trim() || projectId || "—";
 }
 
-export function listKanbanLocalProjectOptions(issues: KanbanIssue[], defaultName: string) {
+export function listKanbanLocalProjectOptions(issues: KanbanIssue[], defaultName: string, catalog: KanbanProject[] = []) {
   const projects = new Map<string, { id: string; name: string; count: number }>();
   projects.set("default", { id: "default", name: defaultName, count: 0 });
   for (const issue of issues) {
@@ -31,7 +31,17 @@ export function listKanbanLocalProjectOptions(issues: KanbanIssue[], defaultName
     current.count += 1;
     projects.set(id, current);
   }
-  return [...projects.values()].sort((a, b) => a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
+  for (const project of catalog) {
+    if (project.syncMode !== "local") continue;
+    const id = project.id.trim();
+    if (!id) continue;
+    projects.set(id, {
+      id,
+      name: id === "default" ? defaultName : project.name.trim() || projects.get(id)?.name || id,
+      count: projects.get(id)?.count ?? 0
+    });
+  }
+  return [...projects.values()].sort((a, b) => a.id === b.id ? 0 : a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
 }
 
 export function matchesKanbanProjectSelection(

@@ -1,6 +1,7 @@
 import { SkinHeading } from "../../appearance/SkinVisual";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
+import type { DesktopUpdateState } from "../../../shared/desktop-updates";
 import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
@@ -1215,6 +1216,44 @@ export function AppSidebar({
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const desktopUpdate = useDesktopUpdates();
+  const [updateFailure, setUpdateFailure] = useState<NonNullable<DesktopUpdateState["error"]> | null>(null);
+  const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [updateInstallPending, setUpdateInstallPending] = useState(false);
+  const [updateDownloadPending, setUpdateDownloadPending] = useState(false);
+  const canRetryUpdateDownload = Boolean(desktopUpdate?.version && desktopUpdate.phase === "error" &&
+    ["downloadFailed", "verificationFailed"].includes(desktopUpdate.error ?? ""));
+  const updateDownloadPercent = desktopUpdate?.phase === "downloading"
+    ? Math.max(0, Math.min(100, Math.round(desktopUpdate.progress))) : null;
+  const canDownloadUpdate = desktopUpdate?.phase === "available" || canRetryUpdateDownload;
+  const hasDesktopUpdate = canRetryUpdateDownload || Boolean(desktopUpdate && !desktopUpdate.error &&
+    ["available", "downloading", "verifying", "ready", "installing"].includes(desktopUpdate.phase));
+
+  async function installSidebarUpdate() {
+    if (updateInstallPending || desktopUpdate?.phase !== "ready" || !desktopUpdate.canInstall) return;
+    const dirty = document.querySelector('[data-native-image-dirty="true"], [data-work-panel-document-dirty="true"], [data-webclient-document-dirty="true"]');
+    if (dirty && !window.confirm(t("updates.confirmDrafts"))) return;
+    setUpdateInstallPending(true);
+    try {
+      const result = await window.electronAPI.updates.install();
+      setUpdateConfirmOpen(false);
+      if (result.phase === "error" || result.error) setUpdateFailure(result.error ?? "installFailed");
+    } catch { setUpdateConfirmOpen(false); setUpdateFailure("installFailed"); }
+    finally { setUpdateInstallPending(false); }
+  }
+
+  async function downloadSidebarUpdate() {
+    if (updateDownloadPending) return;
+    setUpdateDownloadPending(true);
+    try {
+      const result = await window.electronAPI.updates.download();
+      if (result.phase === "error" || result.error) setUpdateFailure(result.error ?? "operationFailed");
+    } catch {
+      setUpdateFailure("operationFailed");
+    } finally {
+      setUpdateDownloadPending(false);
+    }
+  }
+
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
     useState<BootstrapGuideFloatingBubble[]>([]);
   const [bootstrapGuideDismissedBubbles, setBootstrapGuideDismissedBubbles] =
@@ -6170,7 +6209,10 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
-        <DesktopUpdateCard compact />
+        <DesktopUpdateCard compact onDownload={() => void downloadSidebarUpdate()} onViewAbout={() => {
+          closeToolMenu();
+          onSelectSettingsSection?.("about");
+        }} />
         {shouldRenderDesktopSsoAccount ? (
           <>
             {renderAccountMenuUserItem()}
@@ -6822,12 +6864,13 @@ export function AppSidebar({
       pendingPath ?? "",
     );
     const selectedCapabilityItem = pendingCapabilityItem ?? activeCapabilityItem;
-    const firstSecondaryCapabilityItemId = capabilityNavigationItems.find(
-      (item) =>
-        item.id === "market" ||
-        item.id === "share-management" ||
-        item.id === "help",
-    )?.id;
+    const capabilityGroups = (["platform", "cloud", "help"] as const)
+      .map((id) => ({
+        id,
+        label: t(`nav.capabilities.group.${id}`),
+        items: capabilityNavigationItems.filter((item) => item.group === id),
+      }))
+      .filter((group) => group.items.length > 0);
 
     return (
       <div className="sidebar-settings-nav sidebar-capabilities-nav">
@@ -6845,40 +6888,36 @@ export function AppSidebar({
           className="sidebar-settings-directory sidebar-capabilities-directory"
           aria-label={t("nav.capabilities")}
         >
-          <div className="settings-section-group-items">
-            {capabilityNavigationItems.map((item) => {
-              const isActive = selectedCapabilityItem?.id === item.id;
-              return (
-                <Fragment key={item.id}>
-                  {item.id === firstSecondaryCapabilityItemId ? (
-                    <div
-                      className="sidebar-capability-divider"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  <NavLink
-                    to={item.to}
-                    aria-current={isActive ? "page" : undefined}
-                    className={[
-                      "sidebar-link",
-                      isActive ? "sidebar-link-active" : "",
-                      pendingCapabilityItem?.id === item.id
-                        ? "is-pending"
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={(event) => handleToolItemClick(event, item.to)}
-                  >
-                    <span className="sidebar-link-icon" aria-hidden="true">
-                      <SidebarIllustration kind={item.icon} />
-                    </span>
-                    <span className="sidebar-link-label">{item.label}</span>
-                  </NavLink>
-                </Fragment>
-              );
-            })}
-          </div>
+          {capabilityGroups.map((group) => (
+            <div className="settings-section-group" key={group.id} role="group" aria-labelledby={`capability-group-${group.id}`}>
+              <div className="settings-section-group-heading" id={`capability-group-${group.id}`}>
+                {group.label}
+              </div>
+              <div className="settings-section-group-items">
+                {group.items.map((item) => {
+                  const isActive = selectedCapabilityItem?.id === item.id;
+                  return (
+                    <NavLink
+                      key={item.id}
+                      to={item.to}
+                      aria-current={isActive ? "page" : undefined}
+                      className={[
+                        "sidebar-link",
+                        isActive ? "sidebar-link-active" : "",
+                        pendingCapabilityItem?.id === item.id ? "is-pending" : "",
+                      ].filter(Boolean).join(" ")}
+                      onClick={(event) => handleToolItemClick(event, item.to)}
+                    >
+                      <span className="sidebar-link-icon" aria-hidden="true">
+                        <SidebarIllustration kind={item.icon} />
+                      </span>
+                      <span className="sidebar-link-label">{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </div>
     );
@@ -7049,19 +7088,19 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
-                      desktopUpdate?.phase === "ready" ? "has-update" : "",
+                      hasDesktopUpdate ? "has-update" : "",
                       activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    aria-label={desktopUpdate?.phase === "ready" ? `${t("nav.sidebar.openSettings")} · ${t("updates.phase.ready")}` : t("nav.sidebar.openSettings")}
+                    aria-label={hasDesktopUpdate ? `${t("nav.sidebar.openSettings")} · ${t(`updates.phase.${desktopUpdate!.phase}`)}` : t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}
-                    title={t("nav.settings")}
+                    title={hasDesktopUpdate ? t(`updates.phase.${desktopUpdate!.phase}`) : t("nav.settings")}
                   >
                     {!shouldRenderDesktopSsoTrigger ? (
-                      <span className="sidebar-link-icon">
+                      <span className="sidebar-link-icon sidebar-settings-icon-slot">
                         <SidebarIllustration kind="settings" />
                       </span>
                     ) : shouldRenderDesktopSsoTriggerAvatar &&
@@ -7074,7 +7113,6 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
-                    {desktopUpdate?.phase === "ready" ? <span className="sidebar-update-label">{t("updates.phase.ready")}</span> : null}
                     {shouldRenderActiveToolMenuLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
@@ -7097,7 +7135,51 @@ export function AppSidebar({
                     </span>
                   </button>
                 </Popover>
+                {hasDesktopUpdate ? <button
+                  type="button"
+                  className={`sidebar-update-trigger${updateDownloadPercent !== null ? " is-downloading" : ""}${desktopUpdate?.phase === "ready" ? " is-ready" : ""}`}
+                  aria-label={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  title={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  disabled={updateInstallPending || updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
+                  onClick={() => {
+                    if (canDownloadUpdate) void downloadSidebarUpdate();
+                    else if (desktopUpdate?.phase === "ready") setUpdateConfirmOpen(true);
+                    else handleToolMenuOpenChange(true);
+                  }}
+                >{updateDownloadPercent !== null ? <span className="sidebar-update-percent">{updateDownloadPercent}%</span> : <><svg className="sidebar-update-icon" width="12" height="12" viewBox="64 64 896 896" fill="currentColor" aria-hidden="true" focusable="false">
+                  {/* Original DownloadOutlined silhouette; widen only the arrowhead by 1px at 12px. */}
+                  <path d="M505.7 661a8 8 0 0012.6 0l149.333-141.7c4.1-5.2.4-12.9-6.3-12.9H549.9V168c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v338.3H362.667c-6.7 0-10.4 7.7-6.3 12.9L505.7 661zM878 626h-60c-4.4 0-8 3.6-8 8v154H214V634c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v198c0 17.7 14.3 32 32 32h684c17.7 0 32-14.3 32-32V634c0-4.4-3.6-8-8-8z" />
+                </svg><span className="sidebar-update-hover-label" aria-hidden="true">{t(desktopUpdate?.phase === "ready" ? "updates.action" : "updates.download")}</span></>}</button> : null}
               </div>
+              <Modal
+                centered
+                open={updateConfirmOpen}
+                title={t("updates.action")}
+                okText={t("updates.install")}
+                cancelText={t("common.cancel")}
+                confirmLoading={updateInstallPending}
+                okButtonProps={{ disabled: desktopUpdate?.phase !== "ready" || !desktopUpdate?.canInstall }}
+                cancelButtonProps={{ disabled: updateInstallPending }}
+                closable={!updateInstallPending}
+                maskClosable={!updateInstallPending}
+                keyboard={!updateInstallPending}
+                onOk={() => void installSidebarUpdate()}
+                onCancel={() => { if (!updateInstallPending) setUpdateConfirmOpen(false); }}
+              >
+                <p>{t("updates.restartHint")}</p>
+                {!desktopUpdate?.canInstall ? <p>{t("updates.developmentHint")}</p> : null}
+              </Modal>
+              <Modal
+                centered
+                open={updateFailure !== null}
+                title={t("updates.phase.error")}
+                okText={t("common.close")}
+                cancelButtonProps={{ style: { display: "none" } }}
+                onOk={() => setUpdateFailure(null)}
+                onCancel={() => setUpdateFailure(null)}
+              >
+                {updateFailure ? <p className="desktop-update-dialog-error" role="alert">{t(`updates.error.${updateFailure}`)}</p> : null}
+              </Modal>
               {renderAssistantChatRenameDialog()}
               {renderAssistantChatDeleteDialog()}
               <ChatInfoDialog

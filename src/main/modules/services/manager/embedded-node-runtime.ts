@@ -3,12 +3,13 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import type { App } from "electron";
-import { getDesktopStateRoot } from "../../../infrastructure/filesystem/user-paths";
+import { getDesktopRoot, getDesktopStateRoot } from "../../../infrastructure/filesystem/user-paths";
 import { isDesktopDevelopmentRuntime, type DesktopDevelopmentRuntimeContext } from "../../../infrastructure/electron/development-runtime";
 import { buildServiceEnv } from "./command-env";
 
 export interface EmbeddedNodeRuntimeOptions {
   stateRoot: string;
+  binDir: string;
   resourcesRoot: string;
   executable: string;
   nodeVersion: string;
@@ -48,7 +49,7 @@ export function embeddedNodeLaunchers(platform: NodeJS.Platform, executable: str
   };
 }
 
-/** Immutable, app-specific launchers outside the signed application and service-owned directories. */
+/** Publish verified commands at a stable Desktop-owned path, retaining replaced files for live processes. */
 export function prepareEmbeddedNodeRuntime(options: EmbeddedNodeRuntimeOptions) {
   const { executable, nodeVersion, platform, arch } = options;
   if (!path.isAbsolute(executable) || !fs.statSync(executable).isFile()) throw new Error("Desktop Node executable is unavailable");
@@ -63,15 +64,18 @@ export function prepareEmbeddedNodeRuntime(options: EmbeddedNodeRuntimeOptions) 
   const nativeLauncher = platform === "win32" ? fs.readFileSync(path.join(options.resourcesRoot, launcherArch, "node.exe")) : null;
   const identity = JSON.stringify({ schema: 1, executable, nodeVersion, platform, arch, npm: npmPackage.version,
     nativeHash: nativeLauncher ? createHash("sha256").update(nativeLauncher).digest("hex") : "" });
-  const key = createHash("sha256").update(identity).digest("hex").slice(0, 24);
   fs.mkdirSync(options.stateRoot, { recursive: true, mode: 0o700 });
   if (fs.lstatSync(options.stateRoot).isSymbolicLink()) throw new Error("Desktop Node runtime root must be a real directory");
-  const root = path.join(options.stateRoot, key);
-  const binDir = path.join(root, "bin");
+  const binDir = options.binDir;
+  if (!path.isAbsolute(binDir)) throw new Error("Desktop Node bin directory must be absolute");
+  fs.mkdirSync(path.dirname(binDir), { recursive: true, mode: 0o700 });
   const node = path.join(binDir, platform === "win32" ? "node.exe" : "node");
-  const marker = path.join(root, "runtime.json");
-  const existing = fs.existsSync(root);
-  if (!existing) {
+  const marker = path.join(binDir, "runtime.json");
+  const existing = fs.lstatSync(binDir, { throwIfNoEntry: false });
+  if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) throw new Error("Desktop Node bin must be a real directory");
+  const reusable = existing && fs.existsSync(marker) && fs.readFileSync(marker, "utf8") === identity;
+  if (existing && !fs.existsSync(marker)) throw new Error("Desktop Node bin is not managed by Desktop");
+  if (!reusable) {
     const stage = fs.mkdtempSync(path.join(options.stateRoot, ".node-stage-"));
     try {
       const bin = path.join(stage, "bin");
@@ -82,16 +86,34 @@ export function prepareEmbeddedNodeRuntime(options: EmbeddedNodeRuntimeOptions) 
       }
       if (nativeLauncher) fs.writeFileSync(path.join(bin, "node.exe"), nativeLauncher, { mode: 0o755 });
       fs.writeFileSync(path.join(bin, ".desktop-node-runtime.json"), JSON.stringify({ electronPath: executable }), { mode: 0o600 });
-      fs.writeFileSync(path.join(stage, "runtime.json"), identity, { mode: 0o600 });
+      fs.writeFileSync(path.join(bin, "runtime.json"), identity, { mode: 0o600 });
       verifyNode(path.join(bin, platform === "win32" ? "node.exe" : "node"), options);
-      fs.renameSync(stage, root);
+      let retired: string | undefined;
+      if (existing) {
+        retired = fs.mkdtempSync(path.join(options.stateRoot, ".node-retired-"));
+        try {
+          // Windows may deny a rename while another process holds a file without
+          // delete sharing. Never overwrite a loaded node.exe; keep the old bin intact.
+          fs.renameSync(binDir, path.join(retired, "bin"));
+        } catch (error) {
+          fs.rmdirSync(retired);
+          if (platform === "win32") throw new Error("Desktop Node runtime is in use; stop its processes and retry", { cause: error });
+          throw error;
+        }
+      }
+      try { fs.renameSync(bin, binDir); }
+      catch (error) {
+        if (retired) fs.renameSync(path.join(retired, "bin"), binDir);
+        throw error;
+      }
+      // Retired files and legacy hashed runtimes stay available to existing children.
     } finally { fs.rmSync(stage, { recursive: true, force: true }); }
   }
-  if (fs.lstatSync(root).isSymbolicLink() || fs.readFileSync(marker, "utf8") !== identity || !fs.lstatSync(node).isFile()
+  if (fs.readFileSync(marker, "utf8") !== identity || !fs.lstatSync(node).isFile()
       || !fs.statSync(path.join(binDir, "node_modules/npm/bin/npm-cli.js")).isFile()) {
     throw new Error("Desktop Node runtime is incomplete");
   }
-  if (existing) verifyNode(node, options);
+  if (reusable) verifyNode(node, options);
   return { binDir, node, nodeVersion, npmVersion: npmPackage.version };
 }
 
@@ -106,7 +128,7 @@ export function getEmbeddedNodeStartEnv(app: App): NodeJS.ProcessEnv | undefined
   if (!process.versions.electron) return undefined;
   const resourcesRoot = embeddedNodeResourcesRoot(app);
   const runtime = prepareEmbeddedNodeRuntime({
-    stateRoot: path.join(getDesktopStateRoot(app), "node-runtime"), resourcesRoot,
+    stateRoot: path.join(getDesktopStateRoot(app), "node-runtime"), binDir: path.join(getDesktopRoot(app), "bin"), resourcesRoot,
     executable: process.execPath, nodeVersion: process.versions.node, platform: process.platform, arch: process.arch
   });
   const inherited = buildServiceEnv();

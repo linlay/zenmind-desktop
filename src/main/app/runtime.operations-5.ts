@@ -1,3 +1,4 @@
+import { isStartupPhaseAtLeast } from "./lifecycle/startup-phases";
 import { registerDesktopUpdates } from "../modules/updates";
 import { startPerformanceDiagnostics } from "./performance-diagnostics";
 import {
@@ -181,7 +182,7 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
         currentVersion: factoryContext.desktopAppInfo.version,
         getMainWindow: factoryContext.getMainWindow,
         prepareInstall: async () => {
-            if (factoryContext.appState.isHandlingQuit || !["core-ready", "degraded"].includes(factoryContext.appState.startupPhase)) throw new Error("updateBusy");
+            if (factoryContext.appState.isHandlingQuit || !isStartupPhaseAtLeast(factoryContext.appState.startupPhase, "core-ready")) throw new Error("updateBusy");
             const diagnostics = factoryContext.realtimeBroker.getDiagnostics();
             if (diagnostics.pendingQueryCount || diagnostics.replay.some((run) => run.state !== "terminal")) {
                 throw new Error("activeRuns");
