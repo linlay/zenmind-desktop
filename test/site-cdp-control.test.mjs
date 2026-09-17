@@ -9,6 +9,50 @@ const { RunSiteControlGrants } = require('../dist-electron/main/modules/agent-pl
 const { withSiteCdpFocus } = require('../dist-electron/main/modules/web-surfaces/cdp/site-focus.js');
 const { AwcpGuestBridge } = require('../dist-electron/main/modules/web-surfaces/awcp/guest-bridge.js');
 const { compileAwcpSchema } = require('../dist-electron/main/modules/web-surfaces/awcp/schema-validator.js');
+const { createSurfaceIdentity } = require('../dist-electron/shared/surface-identity.js');
+const { captureCopilotSiteControlScope } = require('../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+
+test('persistent Copilot Dock switches Website context without replacing its guest or moving existing Run scopes', (t) => {
+  const h = createSiteHarness();
+  const a = h.site('dock-a');
+  const b = h.site('dock-b');
+  const guest = h.guest('http://127.0.0.1:7788/copilot/helper');
+  const scopes = [];
+  t.after(() => scopes.forEach((scope) => scope.release()));
+  function switchTo(site) {
+    h.foreground(site);
+    const dock = {
+      ...createSurfaceIdentity('copilot-dock', '', { parentSurfaceId: site.surfaceId }),
+      registrationId: 'persistent-dock', surfaceIdentityKey: site.surfaceIdentityKey,
+      surfaceKind: 'service', surfaceType: 'agent-copilot', serviceId: 'agent-webclient',
+      pageRoute: site.pageRoute, label: 'Copilot', url: guest.url, active: true,
+      tabs: [h.tab(guest)], activeTabId: `tab-${guest.id}`,
+    };
+    h.register(dock);
+    const target = h.registry.resolveWebviewSurfaceTarget(guest.id);
+    assert.equal(target.registrationId, 'persistent-dock');
+    assert.equal(target.parentSurfaceId, site.surfaceId);
+    assert.equal(target.surfaceIdentityKey, site.surfaceIdentityKey);
+    assert.equal(target.pageRoute, site.pageRoute);
+    const scope = captureCopilotSiteControlScope(h.registry, target);
+    scope.activate();
+    scopes.push(scope);
+    assert.equal(scope.readSurface().id, site.surfaceId);
+    return dock;
+  }
+  switchTo(a);
+  const dockB = switchTo(b);
+  assert.equal(scopes[0].readSurface().id, a.surfaceId);
+  assert.equal(scopes[0].readSurface().tabs[0].webContentsId, a.tabs[0].webContentsId);
+  assert.deepEqual(h.registry.registerSurfaceResult({ ...dockB, surfaceIdentityKey: a.surfaceIdentityKey }, 8), {
+    ok: false, reason: 'ownership_conflict',
+  });
+  assert.throws(() => captureCopilotSiteControlScope(h.registry, {
+    ...h.registry.resolveWebviewSurfaceTarget(guest.id), surfaceIdentityKey: a.surfaceIdentityKey,
+  }), /Copilot context does not match/);
+  switchTo(a);
+  assert.equal(scopes[1].readSurface().id, b.surfaceId);
+});
 
 test('AWCP type diagnostics identify the rejected node without exposing its value', () => {
   const validate = compileAwcpSchema({

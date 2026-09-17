@@ -618,6 +618,7 @@
 
 ## Website Copilot 默认选择与会话恢复
 
+- macOS 与 Windows 分别打开 Website A 的 Copilot 并提问，切到 B 打开 Copilot 再提问，然后返回 A 继续提问；覆盖两站相同及不同 Agent、B 无历史及已有历史会话。确认同一个 Dock WebContents 保持挂载，登记的父网站和上下文随切换更新，无 `surface_identity_conflict`；A 的后台 Run 仍只能控制 A，B 的新 Run 只能控制 B。
 - macOS 与 Windows 分别冷打开未设置专属 Copilot 的 Website，确认自动选中全局默认 Copilot；给另一个 Website 设置专属智能体后，确认该站优先使用专属设置。
 - 延迟智能体详情加载，确认返回后仍自动选中指定智能体，不停留在未选择状态。
 - 在 Website A 切换智能体并打开或创建聊天，切到 Website B、普通 Chat 后再返回 A，确认恢复 A 的智能体与 chatId，B 保持独立；旧页面的迟到 URL 不能覆盖新页面会话。

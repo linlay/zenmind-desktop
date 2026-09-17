@@ -14,6 +14,7 @@ import {
 } from "../../../shared/canonical-chat-sync";
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
 import {
+  COPILOT_DOCK_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID,
   type SurfaceIdentity,
   type SurfaceRole
@@ -249,10 +250,15 @@ export function registeredSurfaceIdentitiesConflict(
   existing: Pick<EmbeddedCdpSurfaceRegistration, "surfaceId" | "surfaceRole" | "surfaceIdentityKey">,
   candidate: Pick<EmbeddedCdpSurfaceRegistration, "surfaceId" | "surfaceRole" | "surfaceIdentityKey">,
 ) {
-  return existing.surfaceId.trim() === candidate.surfaceId.trim() && (
-    existing.surfaceRole !== candidate.surfaceRole ||
-    (existing.surfaceIdentityKey?.trim() || "") !== (candidate.surfaceIdentityKey?.trim() || "")
-  );
+  if (existing.surfaceId.trim() !== candidate.surfaceId.trim()) return false;
+  if (existing.surfaceRole !== candidate.surfaceRole) return true;
+  // The singleton Dock's key is its current page context, not its guest identity.
+  // Context/parent changes keep the Dock mounted; owner and parent authorization
+  // remain enforced by registerSurfaceResult and query-time SiteControlScope.
+  if (existing.surfaceId.trim() === COPILOT_DOCK_SURFACE_ID && existing.surfaceRole === "copilot-dock") {
+    return false;
+  }
+  return (existing.surfaceIdentityKey?.trim() || "") !== (candidate.surfaceIdentityKey?.trim() || "");
 }
 
 export type RegisteredWebviewSurfaceTarget = {
