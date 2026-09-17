@@ -87,6 +87,14 @@ const fallbackInitialLocaleSettings: LocaleSettings = {
 const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
 
 const api: DesktopApi = {
+  artifacts: {
+    list: (input) => ipcRenderer.invoke("artifacts.list", input),
+    onChanged: (listener) => {
+      const handler = () => listener();
+      ipcRenderer.on("artifacts.changed", handler);
+      return () => { ipcRenderer.off("artifacts.changed", handler); };
+    },
+  },
   connectorAuthBrowser: {
     onDialog(listener) {
       const handler = (_event: unknown, input: Parameters<typeof listener>[0]) => listener(input);

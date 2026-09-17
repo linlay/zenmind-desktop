@@ -1,3 +1,4 @@
+import type { DesktopArtifactListInput, DesktopArtifactListResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
 import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
@@ -877,6 +878,10 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  artifacts: {
+    list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;
+    onChanged: (listener: () => void) => () => void;
+  };
   connectorAuthBrowser: {
     onDialog(listener: (input: import("./agent-webclient-bridge").ConnectorAuthBrowserDialog | { dialogId: string; closed: true }) => void): () => void;
     close(dialogId: string): Promise<void>;

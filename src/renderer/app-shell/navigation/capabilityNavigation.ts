@@ -10,6 +10,7 @@ export type CapabilityNavigationItemId =
   | "registries"
   | "archives"
   | "market"
+  | "artifact-management"
   | "share-management"
   | "help";
 
@@ -68,6 +69,13 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
     icon: "market",
   },
   {
+    id: "artifact-management",
+    group: "cloud",
+    to: "/artifact-management",
+    labelKey: "nav.artifactManagement",
+    icon: "archive",
+  },
+  {
     id: "share-management",
     group: "cloud",
     to: "/share-management",
@@ -106,10 +114,16 @@ export function isCapabilityNavigationRoute(route: string) {
   return getCapabilityNavigationItem(route) !== null;
 }
 
-export function resolveSidebarMode(route: string): SidebarMode {
+export function createCapabilityNavOrderKey(id: CapabilityNavigationItemId): `capability:${CapabilityNavigationItemId}` {
+  return `capability:${id}`;
+}
+
+export function resolveSidebarMode(route: string, mainOrder: readonly string[] = []): SidebarMode {
   const pathname = getRoutePathname(route);
   if (pathname === "/settings" || pathname.startsWith("/settings/")) {
     return "settings";
   }
-  return isCapabilityNavigationRoute(pathname) ? "capabilities" : "primary";
+  const item = getCapabilityNavigationItem(pathname);
+  return item && !mainOrder.includes(createCapabilityNavOrderKey(item.id))
+    ? "capabilities" : "primary";
 }

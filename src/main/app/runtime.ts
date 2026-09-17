@@ -1,4 +1,5 @@
-import { app, clipboard, globalShortcut, protocol } from "electron";
+import { createArtifactRuntime } from "../modules/artifacts";
+import { app, clipboard, globalShortcut, protocol, ipcMain } from "electron";
 import { getDesktopDeviceId, issueAgentAccessToken } from "../modules/identity";
 import { getDesktopSsoAccessToken } from "../modules/identity";
 import { createWebsFacade, type WebsFacade } from "../modules/webs";
@@ -217,6 +218,11 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   const getMainWindow = () => appShellRuntime?.getMainWindow() ?? null;
+  const artifactRuntime = createArtifactRuntime({
+    app, platform: startupPlatform, broker: realtimeBroker, ipcMain, getMainWindow,
+    onError: (error) => console.warn("[artifacts] failed to record push", error),
+  });
+  app.once("will-quit", () => artifactRuntime.dispose());
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
   const startupRestoreController = createMainProcessRuntime_startupRestoreController_5(factoryContext);
   const servicesRuntime = createServicesRuntime({

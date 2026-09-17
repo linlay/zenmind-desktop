@@ -49,6 +49,7 @@ test("capability navigation keeps the agreed item order", () => {
       "registries",
       "archives",
       "market",
+      "artifact-management",
       "share-management",
       "help",
     ],
@@ -62,6 +63,7 @@ test("capability navigation keeps the agreed item order", () => {
       "/registries",
       "/archives",
       "/market",
+      "/artifact-management",
       "/share-management",
       "/help",
     ],
@@ -127,7 +129,7 @@ test("the app shell renders capability routes as a fixed secondary sidebar", () 
 
   assert.match(
     appShellSource,
-    /const sidebarMode = resolveSidebarMode\(location\.pathname\);/u,
+    /const sidebarMode = retainedSidebarMode\?\.locationKey === location\.key[\s\S]*?resolveSidebarMode\(location\.pathname, sidebarNavOrder\);/u,
   );
   assert.match(
     appShellSource,
@@ -156,7 +158,7 @@ test("capability navigation groups platform, cloud and help entries", () => {
     ])),
     {
       platform: ["agents", "skills", "mcp-servers", "registries", "archives"],
-      cloud: ["market", "share-management"],
+      cloud: ["market", "artifact-management", "share-management"],
       help: ["help"],
     },
   );
@@ -190,4 +192,19 @@ test("the account menu keeps Market and Share Management as capability subpage e
   );
   assert.equal(resolveSidebarMode("/market"), "capabilities");
   assert.equal(resolveSidebarMode("/share-management"), "capabilities");
+});
+
+
+test("shown capabilities keep primary navigation for roots and supported detail routes", () => {
+  for (const item of CAPABILITY_NAVIGATION_ITEMS) {
+    const key = mod.exports.createCapabilityNavOrderKey(item.id);
+    assert.equal(key, `capability:${item.id}`);
+    assert.equal(resolveSidebarMode(item.to, [key]), "primary");
+    assert.equal(resolveSidebarMode(item.to, []), "capabilities");
+    if (item.detailPathPrefix) {
+      assert.equal(resolveSidebarMode(`${item.detailPathPrefix}example?tab=details`, [key]), "primary");
+    }
+  }
+  assert.equal(resolveSidebarMode("/settings", ["capability:settings"]), "settings");
+  assert.equal(resolveSidebarMode("/agents", ["agents", "capability:unknown"]), "capabilities");
 });

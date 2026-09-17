@@ -1,0 +1,53 @@
+.artifact-management-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  color: var(--ink);
+  background: var(--desktop-ui-bg);
+  font-size: 12px;
+}
+
+.artifact-management-header,
+.artifact-management-toolbar,
+.artifact-management-pagination,
+.artifact-management-search,
+.artifact-management-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact-management-header,
+.artifact-management-toolbar { justify-content: space-between; margin-bottom: 14px; }
+.artifact-management-header h1 { margin: 0; font-size: 18px; }
+.artifact-management-header p { margin: 6px 0 0; color: var(--ink-soft); }
+.artifact-management-toolbar { color: var(--ink-muted); }
+.artifact-management-search { width: min(420px, 70%); padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--control-radius); }
+.artifact-management-search:focus-within { border-color: var(--accent); }
+.artifact-management-search input { width: 100%; min-width: 0; outline: none; border: none; background: transparent; color: var(--ink); }
+.artifact-management-button { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--control-radius); color: var(--ink); background: transparent; cursor: pointer; flex-shrink: 0; }
+.artifact-management-button:hover:not(:disabled) { background: var(--control-hover-bg); }
+.artifact-management-button:disabled { opacity: .45; cursor: default; }
+.artifact-management-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--ink-muted); text-align: center; }
+.artifact-management-empty > .anticon { font-size: 28px; }
+.artifact-management-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+.artifact-management-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.artifact-management-table th { text-align: left; color: var(--ink-muted); font-weight: 500; }
+.artifact-management-table th:first-child { width: 40%; }
+.artifact-management-table th:nth-child(2) { width: 25%; }
+.artifact-management-table th:nth-child(3) { width: 12%; }
+.artifact-management-table td, .artifact-management-table th { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.artifact-management-table strong { display: block; font-weight: 500; }
+.artifact-management-table small { display: block; margin: 4px 0; color: var(--ink-muted); }
+.artifact-management-table summary { cursor: pointer; color: var(--ink-soft); margin-top: 6px; }
+.artifact-management-table dl { font-size: 11px; }
+.artifact-management-table dt { color: var(--ink-muted); margin-top: 6px; }
+.artifact-management-table dd { margin: 2px 0 0; }
+.artifact-management-chat { border: none; padding: 0; color: var(--accent-strong); background: none; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.artifact-management-chat:hover { text-decoration: underline; }
+.artifact-management-size { white-space: nowrap; }
+.artifact-management-pagination { justify-content: flex-end; padding-top: 12px; }

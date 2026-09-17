@@ -131,6 +131,8 @@ import {
 import { Flex, Modal } from "antd";
 import {
   CAPABILITY_NAVIGATION_ITEMS,
+  createCapabilityNavOrderKey,
+  type CapabilityNavigationItemId,
   getCapabilityNavigationItem,
   type SidebarMode,
 } from "./capabilityNavigation";
@@ -144,6 +146,7 @@ type SidebarNavItem = {
   collapsedLabel?: string;
   icon: SidebarIllustrationKind;
   webItem?: WebEntry;
+  capabilityId?: CapabilityNavigationItemId;
 };
 
 type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
@@ -416,6 +419,7 @@ const fixedToolRowsBase: Array<
         | "nav.mcpConnectors"
         | "nav.skills"
         | "nav.market"
+        | "nav.artifactManagement"
         | "nav.shareManagement"
         | "nav.settings";
     }
@@ -457,6 +461,12 @@ const fixedToolRowsBase: Array<
       to: "/market",
       labelKey: "nav.market",
       icon: "market",
+    },
+    {
+      orderKey: "artifact-management",
+      to: "/artifact-management",
+      labelKey: "nav.artifactManagement",
+      icon: "archive",
     },
     {
       orderKey: "share-management",
@@ -1078,6 +1088,7 @@ type AppSidebarProps = {
   onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
+  onRequestToolNavigate?: (targetPath: string) => boolean;
   onRequestAgentChatNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
@@ -1161,6 +1172,7 @@ export function AppSidebar({
   onExportWebappItem,
   onRemoveWebappItem,
   onRequestNavigate,
+  onRequestToolNavigate,
   onRequestAgentChatNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
@@ -1675,8 +1687,16 @@ export function AppSidebar({
     [webNavItems, pinnedWebEntryKeys],
   );
 
+  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
+    (item) => (item.id !== "market" || marketEnabled) && (item.id !== "help" || helpEnabled),
+  ).map((item) => ({ ...item, label: t(item.labelKey) }));
+  const shownCapabilityNavItems: SidebarNavItem[] = capabilityNavigationItems
+    .filter((item) => sidebarNavOrder.includes(createCapabilityNavOrderKey(item.id)))
+    .map((item) => ({ ...item, orderKey: createCapabilityNavOrderKey(item.id), capabilityId: item.id }));
+
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
+      ...shownCapabilityNavItems,
       {
         ...kanbanNavItemBase,
         label: t("nav.kanban"),
@@ -1712,9 +1732,6 @@ export function AppSidebar({
     )
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
-  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
-    (item) => (item.id !== "market" || marketEnabled) && (item.id !== "help" || helpEnabled),
-  ).map((item) => ({ ...item, label: t(item.labelKey) }));
   const settingsToolItem = fixedToolItems.find(
     (item) => item.to === "/settings",
   );
@@ -1737,7 +1754,7 @@ export function AppSidebar({
       if (item.entryType) {
         return false;
       }
-      return isRouteActive(item.to);
+      return item.capabilityId ? isFixedToolRouteActive(item.to) : isRouteActive(item.to);
     });
     if (activeTopLevelItem) {
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
@@ -2177,7 +2194,14 @@ export function AppSidebar({
     if (targetPath === "/help") {
       dismissBootstrapGuideBubble("help");
     }
-    handleItemClick(event, targetPath);
+    if (onRequestToolNavigate) {
+      event.preventDefault();
+      if (onRequestToolNavigate(targetPath)) {
+        onNavigateItem?.();
+      }
+    } else {
+      handleItemClick(event, targetPath);
+    }
     closeToolMenu();
   }
 
@@ -4308,6 +4332,32 @@ export function AppSidebar({
       .join(" ");
   }
 
+  function renderCapabilityVisibilityButton(capabilityId: CapabilityNavigationItemId) {
+    const key = createCapabilityNavOrderKey(capabilityId);
+    const shown = sidebarNavOrder.includes(key);
+    const label = t(shown ? "sidebar.navigation.hideFromNavigation" : "sidebar.navigation.showInNavigation");
+    return <button
+      type="button"
+      className="sidebar-capability-visibility-button"
+      aria-label={label}
+      title={label}
+      aria-pressed={shown}
+      disabled={!onSidebarNavOrderChange}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const remaining = sidebarNavOrder.filter((entry) => entry !== key);
+        onSidebarNavOrderChange?.(shown ? remaining : [key, ...remaining]);
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16" />
+        {shown ? <path d="m12 12 2 2 4-4" /> : <path d="M15 9v6m-3-3h6" />}
+      </svg>
+    </button>;
+  }
+
   function renderSidebarLink(
     item: SidebarNavItem,
     extraClassName = "sidebar-primary-link",
@@ -4315,7 +4365,7 @@ export function AppSidebar({
     const visibleLabel =
       isCollapsed && item.collapsedLabel ? item.collapsedLabel : item.label;
     const focusId = createSidebarLinkFocusId(item.orderKey);
-    return (
+    const link = (
       <NavLink
         key={item.to}
         to={item.to}
@@ -4323,8 +4373,11 @@ export function AppSidebar({
         aria-label={item.label}
         title={item.label}
         {...getSidebarRovingItemProps(focusId)}
+        data-sidebar-capability-id={item.capabilityId}
         data-sidebar-nav-kind="link"
-        className={() => getSidebarLinkClassName(item.to, extraClassName)}
+        className={() => item.capabilityId
+          ? ["sidebar-link", extraClassName, isFixedToolRouteActive(item.to) ? "sidebar-link-active" : ""].filter(Boolean).join(" ")
+          : getSidebarLinkClassName(item.to, extraClassName)}
       >
         <span className="sidebar-link-icon">
           <SidebarIllustration
@@ -4335,6 +4388,9 @@ export function AppSidebar({
         <span className="sidebar-link-label">{visibleLabel}</span>
       </NavLink>
     );
+    return item.capabilityId ? <div className="sidebar-capability-row" key={item.orderKey}>
+      {link}{renderCapabilityVisibilityButton(item.capabilityId)}
+    </div> : link;
   }
 
   function renderChatsNewChatButton(options: { inPopover?: boolean } = {}) {
@@ -5008,7 +5064,31 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {isOpen && isWebsite && !(options.topLevel && isCollapsed) ? (
+          {isWebsite && options.topLevel ? (
+            <span className="sidebar-website-child-actions">
+              <Tooltip content={t("nav.settings")}>
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
+                  aria-label={t("nav.settings")}
+                  title={t("nav.settings")}
+                  aria-haspopup="menu"
+                  disabled={Boolean(webClosePendingEntryKey)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openNativeSidebarContextMenu(
+                      { kind: "web", entryKey: webItem.entryKey },
+                      event.currentTarget,
+                    );
+                  }}
+                >
+                  <SidebarIllustration kind="settings" />
+                </button>
+              </Tooltip>
+            </span>
+          ) : null}
+          {isOpen && isWebsite && !options.topLevel ? (
             <Tooltip content={closeWebsiteLabel}>
               <button
                 type="button"
@@ -6189,6 +6269,7 @@ export function AppSidebar({
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||
+        item.to === "/artifact-management" ||
         item.to === "/share-management" ||
         item.to === "/connectors" ||
         item.to === "/skills",
@@ -6897,22 +6978,25 @@ export function AppSidebar({
                 {group.items.map((item) => {
                   const isActive = selectedCapabilityItem?.id === item.id;
                   return (
-                    <NavLink
-                      key={item.id}
-                      to={item.to}
-                      aria-current={isActive ? "page" : undefined}
-                      className={[
-                        "sidebar-link",
-                        isActive ? "sidebar-link-active" : "",
-                        pendingCapabilityItem?.id === item.id ? "is-pending" : "",
-                      ].filter(Boolean).join(" ")}
-                      onClick={(event) => handleToolItemClick(event, item.to)}
-                    >
-                      <span className="sidebar-link-icon" aria-hidden="true">
-                        <SidebarIllustration kind={item.icon} />
-                      </span>
-                      <span className="sidebar-link-label">{item.label}</span>
-                    </NavLink>
+                    <div className="sidebar-capability-row" key={item.id}>
+                      <NavLink
+                        data-sidebar-capability-id={item.id}
+                        to={item.to}
+                        aria-current={isActive ? "page" : undefined}
+                        className={[
+                          "sidebar-link",
+                          isActive ? "sidebar-link-active" : "",
+                          pendingCapabilityItem?.id === item.id ? "is-pending" : "",
+                        ].filter(Boolean).join(" ")}
+                        onClick={(event) => handleToolItemClick(event, item.to)}
+                      >
+                        <span className="sidebar-link-icon" aria-hidden="true">
+                          <SidebarIllustration kind={item.icon} />
+                        </span>
+                        <span className="sidebar-link-label">{item.label}</span>
+                      </NavLink>
+                      {renderCapabilityVisibilityButton(item.id)}
+                    </div>
                   );
                 })}
               </div>
@@ -6924,9 +7008,6 @@ export function AppSidebar({
   }
 
   const shouldRenderCollapsed = isCollapsed && isPrimaryMode;
-  const activeToolMenuItem =
-    fixedToolItems.find((item) => isFixedToolRouteActive(item.to)) ??
-    (isFixedToolRouteActive(helpToolItem.to) ? helpToolItem : undefined);
   const shouldRenderDesktopSsoTrigger =
     desktopSsoStatus?.configured === true;
   const shouldRenderDesktopSsoTriggerAvatar =
@@ -6935,13 +7016,9 @@ export function AppSidebar({
   const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar
     ? getDesktopSsoUserLabel()
     : "";
-  const shouldRenderActiveToolMenuLabel =
-    shouldRenderDesktopSsoTriggerAvatar && Boolean(activeToolMenuItem);
-  const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger
-    ? desktopSsoStatus.authenticated
-      ? activeToolMenuItem?.label || desktopSsoUserLabel
-      : t("sidebar.sso.signedOut")
-    : t("nav.settings");
+  const toolMenuTriggerLabel = shouldRenderDesktopSsoTriggerAvatar
+    ? desktopSsoUserLabel
+    : t("sidebar.sso.signedOut");
 
   return (
     <>
@@ -7055,7 +7132,7 @@ export function AppSidebar({
               ? renderCapabilitiesNav()
               : <SortableNavEntries
                   order={sidebarNavOrder}
-                  sortableKeys={["kanban", "schedules", "new-chat", ...pinnedWebNavItems.map((item) => item.orderKey)]}
+                  sortableKeys={["kanban", "schedules", "new-chat", ...shownCapabilityNavItems.map((item) => item.orderKey), ...pinnedWebNavItems.map((item) => item.orderKey)]}
                   onChange={onSidebarNavOrderChange}
                   hint={t("sidebar.navigation.reorderHint", { modifier: "Alt" })}
                   renderItem={(key) => {
@@ -7089,7 +7166,6 @@ export function AppSidebar({
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
                       hasDesktopUpdate ? "has-update" : "",
-                      activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
@@ -7103,8 +7179,7 @@ export function AppSidebar({
                       <span className="sidebar-link-icon sidebar-settings-icon-slot">
                         <SidebarIllustration kind="settings" />
                       </span>
-                    ) : shouldRenderDesktopSsoTriggerAvatar &&
-                      !shouldRenderActiveToolMenuLabel ? (
+                    ) : shouldRenderDesktopSsoTriggerAvatar ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
                         label={desktopSsoUserLabel}
@@ -7113,12 +7188,6 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
-                    {shouldRenderActiveToolMenuLabel ? (
-                      <AccountMenuAvatar
-                        avatarUrl={desktopSsoStatus.user?.avatarUrl}
-                        label={desktopSsoUserLabel}
-                      />
-                    ) : null}
                     {shouldRenderDesktopSsoTrigger ? (
                       <span
                         className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"

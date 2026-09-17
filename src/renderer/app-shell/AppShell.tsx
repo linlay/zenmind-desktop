@@ -11,7 +11,9 @@ import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import { beginChatPerformanceNavigation } from "../services/performanceDiagnostics";
 import {
-  isCapabilityNavigationRoute,
+  CAPABILITY_NAVIGATION_ITEMS,
+  createCapabilityNavOrderKey,
+  type SidebarMode,
   resolveSidebarMode,
 } from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
@@ -262,6 +264,9 @@ const HelpPage = lazy(() =>
 const FunctionalMarketPage = lazy(() =>
   import("../pages/functional-market").then((module) => ({ default: module.FunctionalMarketPage }))
 );
+const ArtifactManagementPage = lazy(() =>
+  import("../pages/artifact-management/ArtifactManagementPage").then((module) => ({ default: module.ArtifactManagementPage }))
+);
 const ShareManagementPage = lazy(() =>
   import("../pages/share-management/ShareManagementPage").then((module) => ({ default: module.ShareManagementPage }))
 );
@@ -395,12 +400,12 @@ function getSecondarySidebarExitFallbackPath(
     : "/";
 }
 
-function isSecondarySidebarRoute(targetPath: string) {
+function isSecondarySidebarRoute(targetPath: string, mainOrder: readonly string[] = []) {
   const targetPathname = targetPath.split("?")[0] || "/";
   return (
     isSettingsRedirectRoute(targetPath) ||
     matchSettingsRoute(targetPathname) ||
-    isCapabilityNavigationRoute(targetPathname)
+    resolveSidebarMode(targetPathname, mainOrder) === "capabilities"
   );
 }
 
@@ -408,11 +413,12 @@ function resolveSecondarySidebarExitTargetPath(
   targetPath: string,
   kanbanEnabled: boolean,
   chatAgentKey = "",
+  mainOrder: readonly string[] = [],
 ) {
   const targetPathname = targetPath.split("?")[0] || "/";
   if (
     !targetPath ||
-    isSecondarySidebarRoute(targetPath) ||
+    isSecondarySidebarRoute(targetPath, mainOrder) ||
     (!kanbanEnabled && isKanbanNavigationPath(targetPath))
   ) {
     return getSecondarySidebarExitFallbackPath(
@@ -423,8 +429,8 @@ function resolveSecondarySidebarExitTargetPath(
   return targetPath;
 }
 
-function removeSecondarySidebarRoutesFromHistory(history: string[]) {
-  return history.filter((item) => !isSecondarySidebarRoute(item));
+function removeSecondarySidebarRoutesFromHistory(history: string[], mainOrder: readonly string[] = []) {
+  return history.filter((item) => !isSecondarySidebarRoute(item, mainOrder));
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
@@ -672,6 +678,7 @@ export function AppShell() {
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() =>
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
+  const [retainedSidebarMode, setRetainedSidebarMode] = useState<{ locationKey: string; mode: SidebarMode } | null>(null);
   const [kanbanEnabled, setKanbanEnabled] = useState(true);
   const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
   const [helpEnabled, setHelpEnabled] = useState(false);
@@ -912,12 +919,24 @@ export function AppShell() {
     location.pathname === "/control-center" ||
     location.pathname === "/market" ||
     isShareManagementRoute ||
+    location.pathname === "/artifact-management" ||
     location.pathname === "/help" ||
     matchSettingsRoute(location.pathname);
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
   const isSettingsRoute = matchSettingsRoute(location.pathname);
-  const sidebarMode = resolveSidebarMode(location.pathname);
+  const sidebarMode = retainedSidebarMode?.locationKey === location.key
+    ? retainedSidebarMode.mode
+    : location.state?.sidebarMode === "capabilities" && resolveSidebarMode(location.pathname) === "capabilities"
+      ? "capabilities"
+    : resolveSidebarMode(location.pathname, sidebarNavOrder);
+  function handleSidebarNavOrderChange(order: SidebarNavOrderItemKey[]) {
+    setRetainedSidebarMode({ locationKey: location.key, mode: sidebarMode });
+    setSidebarNavOrder(order);
+  }
+  useEffect(() => {
+    setRetainedSidebarMode((current) => current?.locationKey === location.key ? current : null);
+  }, [location.key]);
   const isSecondarySidebarMode = sidebarMode !== "primary";
   useEffect(() => {
     if (sidebarMode !== "primary") {
@@ -1205,7 +1224,11 @@ export function AppShell() {
     Boolean(desktopActionConfirmation) ||
     Boolean(conversationShareOverlay);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
-    return [...pinnedWebEntryKeys.map((key) => ({
+    // Keep temporarily disabled capabilities in the saved order; visibility is applied by the sidebar.
+    return [...CAPABILITY_NAVIGATION_ITEMS
+      .filter((item) => sidebarNavOrder.includes(createCapabilityNavOrderKey(item.id)))
+      .map((item) => ({ key: createCapabilityNavOrderKey(item.id), label: t(item.labelKey) })),
+      ...pinnedWebEntryKeys.map((key) => ({
       key: key as SidebarNavOrderItemKey,
       label: webItems.find((item) => item.entryKey === key)?.label ?? key,
     })), ...createDefaultSidebarNavOrderItems({
@@ -1221,7 +1244,7 @@ export function AppShell() {
       if (item.key === "group:webs") return { ...item, label: t("nav.websites") };
       return item;
     });
-  }, [kanbanEnabled, pinnedWebEntryKeys, webItems, t]);
+  }, [kanbanEnabled, pinnedWebEntryKeys, sidebarNavOrder, webItems, t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -3205,9 +3228,14 @@ export function AppShell() {
     ));
   }
 
-  function requestSidebarNavigation(targetPath: string) {
+  function requestSidebarNavigation(targetPath: string, fromToolMenu = false) {
     targetPath = resolveKanbanAwareNavigationPath(targetPath, kanbanEnabled);
+    const requestedMode = fromToolMenu ? resolveSidebarMode(targetPath) : undefined;
     if (targetPath === currentRoute) {
+      if (requestedMode) {
+        setRetainedSidebarMode({ locationKey: location.key, mode: requestedMode });
+        return true;
+      }
       return false;
     }
 
@@ -3225,7 +3253,7 @@ export function AppShell() {
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, SIDEBAR_NAVIGATION_LOCK_MS);
-    navigate(targetPath);
+    navigate(targetPath, { state: requestedMode ? { sidebarMode: requestedMode } : null });
     return true;
   }
 
@@ -3351,12 +3379,10 @@ export function AppShell() {
       lastPrimaryRouteRef.current,
       kanbanEnabled,
       chatRuntimeAgent.agentKey,
+      sidebarNavOrder,
     );
-    if (targetPath === currentRoute) {
-      return;
-    }
     setSidebarNavigationHistory((current) => ({
-      back: removeSecondarySidebarRoutesFromHistory(current.back),
+      back: removeSecondarySidebarRoutesFromHistory(current.back, sidebarNavOrder),
       forward: []
     }));
     setPendingSidebarNavigationPath(targetPath);
@@ -3378,12 +3404,14 @@ export function AppShell() {
       currentRoute,
       kanbanEnabled,
       chatRuntimeAgent.agentKey,
+      sidebarNavOrder,
     );
   }, [
     chatRuntimeAgent.agentKey,
     currentRoute,
     isSecondarySidebarMode,
     kanbanEnabled,
+    sidebarNavOrder,
   ]);
 
   useEffect(() => {
@@ -4695,7 +4723,7 @@ export function AppShell() {
           marketEnabled={marketEnabled}
           helpEnabled={helpEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
-          onSidebarNavOrderChange={navigationPreferencesLoaded ? setSidebarNavOrder : undefined}
+          onSidebarNavOrderChange={navigationPreferencesLoaded ? handleSidebarNavOrderChange : undefined}
           websiteNavOrder={normalizedWebGroupOrder}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
           webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
@@ -4752,6 +4780,7 @@ export function AppShell() {
           onExportWebappItem={exportWebappItem}
           onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
+          onRequestToolNavigate={(targetPath) => requestSidebarNavigation(targetPath, true)}
           onRequestAgentChatNavigate={requestNavigationWithAgentChatFocus}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
@@ -4927,6 +4956,9 @@ export function AppShell() {
                     : <Navigate to="/control-center" replace />
               }
             />
+            <Route path="/artifact-management" element={
+              <RouteSuspense><ArtifactManagementPage onOpenChat={openChatFromShareManagement} /></RouteSuspense>
+            } />
             <Route
               path="/share-management"
               element={
