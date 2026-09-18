@@ -2285,7 +2285,7 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
 
   try {
     writeTestEnv(userDataRoot, service.id, "SERVER_PORT=7078\n");
-    const overrides = __testInternals.getStartCommandEnvOverrides(app, service);
+    const overrides = await __testInternals.getStartCommandEnvOverrides(app, service);
     assert.equal(overrides, undefined);
     assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8"), "SERVER_PORT=7078\n");
   } finally {
@@ -3253,13 +3253,13 @@ test("core builtin start commands run in daemon mode", () => {
   );
 });
 
-test("desktop start commands skip a second builtin asset refresh", () => {
+test("desktop start commands skip a second builtin asset refresh", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
 
   try {
-    const options = __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
+    const options = await __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
 
     assert.equal(options.refreshBuiltinAsset, false);
     assert.equal(options.env, undefined);

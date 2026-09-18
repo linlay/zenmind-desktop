@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { configureSkillInstallerPlatformCaller } from "./skill-platform-installer";
 import type { MarketSkillPins } from "../../../shared/contracts/market-skill-pins";
 import type { App } from "electron";
 import type { MarketCommandResult } from "../../../shared/contracts";
@@ -55,6 +56,7 @@ let skillMarketPlatformCall: SkillMarketPlatformCall | null = null;
 
 export function configureSkillMarketPlatformCaller(call: SkillMarketPlatformCall | null) {
   skillMarketPlatformCall = call;
+  configureSkillInstallerPlatformCaller(call);
 }
 
 export function normalizeMarketSkillPins(value: unknown): MarketSkillPins {

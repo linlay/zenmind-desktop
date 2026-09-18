@@ -157,7 +157,7 @@ export function resolveNodeBinStartEnv() {
   return env;
 }
 
-export function getStartCommandEnvOverrides(app: App, service: ServiceDefinition) {
+export async function getStartCommandEnvOverrides(app: App, service: ServiceDefinition) {
   if (service.id === "agent-platform") return getEmbeddedNodeStartEnv(app);
   if (!NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)) {
     return undefined;
@@ -166,10 +166,10 @@ export function getStartCommandEnvOverrides(app: App, service: ServiceDefinition
   return resolveNodeBinStartEnv();
 }
 
-export function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): RunServiceCommandOptions {
+export async function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): Promise<RunServiceCommandOptions> {
   return {
     refreshBuiltinAsset: false,
-    env: getStartCommandEnvOverrides(app, service)
+    env: await getStartCommandEnvOverrides(app, service)
   };
 }
 
