@@ -1311,6 +1311,30 @@ test("skill publication requires Platform and never renames the watched target l
   assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "new content");
 });
 
+test("skill removal requires Platform and never renames the watched target locally", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-removal-"));
+  const app = createApp(root);
+  const target = getSkillInstallDir(app, "watched-skill");
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "SKILL.md"), "watched content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  configureSkillMarketPlatformCaller(null);
+  await assert.rejects(() => uninstallSkill(app, "watched-skill"), /启动服务/);
+  assert.equal(fs.existsSync(target), true);
+
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (from, to) => {
+    if (String(from).startsWith(getSkillsCenterDir(app))) throw new Error("EPERM watched target rename denied");
+    return rename(from, to);
+  });
+  configureSkillMarketPlatformCaller(createSkillPlatformMock(app));
+  const result = await uninstallSkill(app, "watched-skill");
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.existsSync(target), false);
+});
+
 test("skill Platform rejection does not mutate or compensate the target", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-reject-"));
   const app = createApp(root);
