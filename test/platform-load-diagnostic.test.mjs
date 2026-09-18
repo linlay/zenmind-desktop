@@ -50,6 +50,9 @@ test("availability logs the failing stage without changing errors or exposing cr
   const error = new Error("SECRET token and path");
   const context = { options: {
     app: {},
+    realtimeBroker: {
+      getConnectionState: () => ({ phase: "closed", key: null }),
+    },
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
     issueAccessToken: async () => { throw error; },
   } };

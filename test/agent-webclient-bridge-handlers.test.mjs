@@ -376,12 +376,25 @@ test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2
 test("Main Chat query rechecks route ownership after asynchronous availability", async () => {
   const target = mainTarget();
   let waitForState = false, complete;
+  let connectionPhase = "connected";
   const state = { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
   const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
     getServiceState: () => waitForState ? new Promise((resolve) => { complete = resolve; }) : Promise.resolve(state),
+    realtimeBroker: {
+      getConnectionState: () => ({
+        phase: connectionPhase,
+        generation: 1,
+        physicalConnectionCount: connectionPhase === "connected" ? 1 : 0,
+        reconnectCount: 0,
+        key: connectionPhase === "connected"
+          ? { endpoint: "http://127.0.0.1:7078", identitySessionId: "identity-1" }
+          : null,
+      }),
+    },
   });
   const sender = createSender(target.webContentsId, target.currentUrl);
   await openSession(runtime, sender, "async-state");
+  connectionPhase = "connecting";
   waitForState = true;
   send(runtime, sender, "async-state", { frame: "request", id: "old-query", type: "/api/query",
     payload: { requestId: "request-old", runId: "run-old", agentKey: "agent-1", message: "hello" } });
@@ -1216,3 +1229,35 @@ for (const type of ["/api/agents", "/api/chat"]) {
     assert.ok(!JSON.stringify(records()).includes("PRIVATE_BODY"));
   });
 }
+
+test("connected Platform keeps historical Chat loading independent of a stalled service identity probe", async () => {
+  const main = mainTarget();
+  let stallServiceState = false;
+  let serviceStateCalls = 0;
+  const runtime = createRuntime(new Map([[main.webContentsId, main]]), {
+    getServiceState: async () => {
+      serviceStateCalls += 1;
+      if (stallServiceState) return new Promise(() => undefined);
+      return { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
+    },
+  });
+  const sender = createSender(main.webContentsId, main.currentUrl);
+  await openSession(runtime, sender, "connected-chat-load");
+  const callsAfterOpen = serviceStateCalls;
+
+  stallServiceState = true;
+  send(runtime, sender, "connected-chat-load", {
+    frame: "request",
+    id: "load-chat-1",
+    type: "/api/chat",
+    payload: { chatId: "chat-1" },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.forwarded.length, 1);
+  assert.equal(runtime.calls.forwarded[0].type, "/api/chat");
+  assert.equal(runtime.calls.forwarded[0].baseUrl, "http://127.0.0.1:7078");
+  assert.equal(runtime.calls.forwarded[0].token, "token");
+  assert.equal(serviceStateCalls, callsAfterOpen);
+  assert.ok(sentFrames(sender).some((frame) => frame.id === "load-chat-1" && frame.frame === "response"));
+});
