@@ -5,7 +5,7 @@ import {
 import {
   type WebsFacade
 } from "../modules/webs";
-import { type AppShellRuntime } from "../modules/shell";
+import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
 import { createServicesRuntime } from "../modules/services";
 import type {
   DesktopAppInfo
@@ -84,6 +84,7 @@ export interface CreateMainProcessRuntimeContext {
   LOG_VIEWER_ROUTE: string;
   AGENT_REALTIME_INSPECTOR_ROUTE: string;
   DESKTOP_ACTION_WORKBENCH_ROUTE: string;
+  SELECTION_EXPLAIN_WINDOW_ROUTE: string;
   MAIN_PROCESS_DIR: ReturnType<typeof resolveElectronBundleRootFromRuntimeDir>;
   MAIN_PRELOAD_PATH: ReturnType<typeof getMainPreloadPath>;
   FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT: ReturnType<typeof getFocusedWebviewDevToolsShortcut>;
@@ -102,6 +103,7 @@ export interface CreateMainProcessRuntimeContext {
   servicesRuntime: ReturnType<typeof createServicesRuntime>;
   webSurfaceRuntime: ReturnType<typeof createWebSurfaceRuntime>;
   webviewContextMenuController: ReturnType<typeof createWebviewContextMenuController>;
+  selectionExplainWindowController: SelectionExplainWindowController | null;
   refreshDesktopSsoIdentityToken: (...args: any[]) => any;
   enterpriseChatRuntime: InstanceType<typeof EnterpriseChatRuntime>;
   cdpIntegration: ReturnType<typeof createCdpIntegration>;

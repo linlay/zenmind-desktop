@@ -70,8 +70,16 @@ import type {
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
-import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
+import type {
+  WebviewSelectionToolbarExecuteRequest,
+  WebviewSelectionToolbarExecuteResult,
+  WebviewSelectionToolbarStateListener,
+} from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
+import type {
+  SelectionExplainWindowState,
+  SelectionExplainWindowStateListener,
+} from "../selection-explain-window";
 import type {
   EmbeddedCdpSurfaceRegistration,
   EmbeddedCdpSurfaceRegistrationResult,
@@ -298,7 +306,7 @@ export interface AgentRealtimeDebugLogicalSession {
 }
 
 export interface AgentRealtimeDebugRunRecovery {
-  lane: "primary" | "btw";
+  lane: "primary" | "btw" | "selection-explain";
   runId: string;
   chatId: string;
   lastSeq: number;
@@ -317,7 +325,7 @@ export interface AgentRealtimeDebugRunRecovery {
 }
 
 export interface AgentRealtimeDebugConnection {
-  source: "desktop-main" | "desktop-btw";
+  source: "desktop-main" | "desktop-btw" | "desktop-explain";
   phase: AgentWebclientConnectionPhase;
   generation: number;
   physicalConnectionCount: 0 | 1;
@@ -343,6 +351,7 @@ export interface AgentRealtimeDebugSnapshot {
   connections: {
     primary: AgentRealtimeDebugConnection;
     btw: AgentRealtimeDebugConnection;
+    "selection-explain": AgentRealtimeDebugConnection;
   };
   broker: {
     pendingRequestCount: number;
@@ -1078,9 +1087,18 @@ export interface DesktopApi {
   serviceWebview: {
     getPreloadPath: () => Promise<string>;
     getPreloadUrl: () => Promise<string>;
+    executeSelectionToolbarAction: (
+      request: WebviewSelectionToolbarExecuteRequest
+    ) => Promise<WebviewSelectionToolbarExecuteResult>;
     onSelectionToolbarState: (
       listener: WebviewSelectionToolbarStateListener
     ) => () => void;
+  };
+  selectionExplain: {
+    getState: () => Promise<SelectionExplainWindowState | null>;
+    minimize: () => Promise<{ ok: boolean }>;
+    close: () => Promise<{ ok: boolean }>;
+    onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
     readSkillContent: (id: string) => Promise<MarketSkillContentResult>;

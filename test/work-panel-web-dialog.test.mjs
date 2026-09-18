@@ -152,7 +152,7 @@ test("Main-only dialog reservation survives parent remount without changing Chat
   const detached = { ...child, registrationId: "dialog-1", tabs: [tab(3, "https://example.test/current")], activeTabId: "tab-3" };
   assert.equal(registry.registerSurface(detached, 7), true);
   registry.unregisterSurface({ surfaceId: root.surfaceId, registrationId: root.registrationId }, 7);
-  assert.equal(registry.listChatWorkPanelSurfaces()[0].ownerChatId, "chat-1");
+  assert.equal(registry.resolveWebviewSurfaceTarget(3).ownerChatId, "chat-1");
   assert.equal(registry.resolveWebviewSurfaceTarget(3).surfaceId, child.surfaceId);
   assert.equal(registry.registerSurface(detached, 7), true, "navigation updates work while Main Chat is absent");
   assert.equal(registry.registerSurface({ ...detached, registrationId: "forged" }, 7), false);

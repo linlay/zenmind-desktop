@@ -64,4 +64,3 @@ export function targetInfoDescriptor(surface: EmbeddedCdpContainer, tab: Embedde
     copilotAgentKey: surface.copilotAgentKey || ""
   };
 }
-

@@ -34,4 +34,3 @@ export type EmbeddedCdpSurfaceTab = {
   canGoForward?: boolean;
   isLoading?: boolean;
 };
-

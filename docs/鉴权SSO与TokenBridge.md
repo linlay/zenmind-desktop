@@ -53,9 +53,13 @@ Desktop 设备身份与账号会话分开管理，但共同参与 Realtime gener
 
 ## 凭据分发
 
+Desktop 为 Agent Platform 签发 app token 时，从已经完成 SSO 验证的内存 canonical token 的 issuer 与 subject 派生稳定个人主体；不同账号或 issuer 必须得到不同主体，同一账号刷新 token 不改变主体。派生函数只做映射，不替代 SSO 签名和会话校验。Identity Center 继续通过既有 username 参数签发，保留 app scope 与 device claim，不改写服务配置或削弱 Backend 的个人连接器 owner 校验。
+
+token 缓存和 capability 并发签发按个人主体隔离；返回 token 的主体必须与请求相同，异步签发结束后还需确认 Desktop 当前身份未改变。Main、WorkPanel BTW 和 Selection Explain 使用同一身份 provider，不能让普通聊天和辅助流获得不同的身份边界。未登录时保留既有应用身份行为，但不能据此访问需要个人身份的连接器。
+
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary 与 BTW 两条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
+Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary、BTW 与 Selection Explain 三条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
 
 ```text
 页面发送 Platform request frame
