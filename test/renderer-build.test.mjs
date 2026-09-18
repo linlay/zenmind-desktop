@@ -6974,16 +6974,14 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockContextSession\(currentCopilotContextKey/u);
 });
 
-test("P1 web renderer builds public post-action state without Electron ids", () => {
-  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
-
-  assert.match(externalWebview, /const getDesktopWebActionState = \(\): DesktopWebActionStateResult/u);
-  assert.match(externalWebview, /activeTab: state\.tabs\.find\(\(tab\) => tab\.tabId === state\.activeTabId\) \?\? null/u);
-  assert.match(externalWebview, /case "desktop\.web\.navigate"[\s\S]{0,700}targetTabId: tabId, navigatedUrl: nextUrl/u);
-  assert.match(externalWebview, /case "desktop\.web\.openTab"[\s\S]{0,420}openedTabId: nextTab\.id/u);
-  assert.match(externalWebview, /result\.closedSurface[\s\S]{0,140}surface: null, tabs: \[\], activeTab: null/u);
-  assert.doesNotMatch(externalWebview, /getEmbeddedWebSurfaceState/u);
-  assert.doesNotMatch(externalWebview, /openedTab:\s*serializeTab/u);
+test("web page actions share the authorized Surface resolver and hide Electron ids", () => {
+  const actions = readSourceFile("src", "main", "modules", "desktop-actions", "web-surface-actions.ts");
+  const descriptors = readSourceFile("src", "main", "modules", "web-surfaces", "cdp", "surface-descriptors.ts");
+  assert.match(actions, /options\.executeCdpCommand\(\{ method, surfaceId, params/u);
+  assert.match(actions, /case "desktop\.web\.openTab": method = "Surface\.open"/u);
+  assert.match(actions, /case "desktop\.web\.closeTab": method = "Surface\.close"/u);
+  assert.match(descriptors, /containerId: surface\.id/u);
+  assert.doesNotMatch(descriptors, /webContentsId|guestId|targetId/u);
 });
 
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {

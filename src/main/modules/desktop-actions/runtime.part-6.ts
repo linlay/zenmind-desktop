@@ -1,3 +1,4 @@
+import { executeWebSurfaceAction } from "./web-surface-actions";
 import { randomUUID } from "node:crypto";
 import type {
   AssistantAttachment,
@@ -71,6 +72,11 @@ export async function executeAction(
         t("desktopDisplay.targetUnavailable")
       );
     }
+  }
+
+  if (action.startsWith("desktop.web.")) {
+    const response = await executeWebSurfaceAction(options, request, invocation);
+    if (response) return response;
   }
 
   switch (action) {
@@ -294,7 +300,7 @@ export async function executeAction(
         ? executeOpenLocalFileAction(options, request, args)
         : callRendererAction(options, request, args);
     case "desktop.web.exportArtifact":
-      return executeDesktopWebExportArtifact(options, action, args);
+      return executeDesktopWebExportArtifact(options, action, args, invocation.kind === "agentPlatform" ? request.source : undefined);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
       return ok(action, {

@@ -3,11 +3,56 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
-const { EmbeddedCdpGateway, createEmbeddedCdpTargetId } = require('../dist-electron/main/modules/web-surfaces/cdp/gateway.js');
+const { EmbeddedCdpGateway, createEmbeddedWebSurfaceId } = require('../dist-electron/main/modules/web-surfaces/cdp/gateway.js');
 const { createCdpIntegration } = require('../dist-electron/main/modules/web-surfaces/cdp/integration.js');
 const { RunSiteControlGrants } = require('../dist-electron/main/modules/agent-platform/realtime/run-site-control-grants.js');
 const { withSiteCdpFocus } = require('../dist-electron/main/modules/web-surfaces/cdp/site-focus.js');
 const { AwcpGuestBridge } = require('../dist-electron/main/modules/web-surfaces/awcp/guest-bridge.js');
+const { createSurfaceIdentity } = require('../dist-electron/shared/surface-identity.js');
+const { captureCopilotSiteControlScope } = require('../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+
+test('persistent Copilot Dock switches Website context without replacing its guest or moving existing Run scopes', (t) => {
+  const h = createSiteHarness();
+  const a = h.site('dock-a');
+  const b = h.site('dock-b');
+  const guest = h.guest('http://127.0.0.1:7788/copilot/helper');
+  const scopes = [];
+  t.after(() => scopes.forEach((scope) => scope.release()));
+  function switchTo(site) {
+    h.foreground(site);
+    const dock = {
+      ...createSurfaceIdentity('copilot-dock', '', { parentSurfaceId: site.surfaceId }),
+      registrationId: 'persistent-dock', surfaceIdentityKey: site.surfaceIdentityKey,
+      surfaceKind: 'service', surfaceType: 'agent-copilot', serviceId: 'agent-webclient',
+      pageRoute: site.pageRoute, label: 'Copilot', url: guest.url, active: true,
+      tabs: [h.tab(guest)], activeTabId: `tab-${guest.id}`,
+    };
+    h.register(dock);
+    const target = h.registry.resolveWebviewSurfaceTarget(guest.id);
+    assert.equal(target.registrationId, 'persistent-dock');
+    assert.equal(target.parentSurfaceId, site.surfaceId);
+    assert.equal(target.surfaceIdentityKey, site.surfaceIdentityKey);
+    assert.equal(target.pageRoute, site.pageRoute);
+    const scope = captureCopilotSiteControlScope(h.registry, target);
+    scope.activate();
+    scopes.push(scope);
+    assert.equal(scope.readContainer().id, site.surfaceId);
+    return dock;
+  }
+  switchTo(a);
+  const dockB = switchTo(b);
+  assert.equal(scopes[0].readContainer().id, a.surfaceId);
+  assert.equal(scopes[0].readContainer().tabs[0].webContentsId, a.tabs[0].webContentsId);
+  assert.deepEqual(h.registry.registerSurfaceResult({ ...dockB, surfaceIdentityKey: a.surfaceIdentityKey }, 8), {
+    ok: false, reason: 'ownership_conflict',
+  });
+  assert.throws(() => captureCopilotSiteControlScope(h.registry, {
+    ...h.registry.resolveWebviewSurfaceTarget(guest.id), surfaceIdentityKey: a.surfaceIdentityKey,
+  }), /Copilot context does not match/);
+  switchTo(a);
+  assert.equal(scopes[1].readContainer().id, b.surfaceId);
+});
+
 
 function gatewayFor(h, extra = {}) {
   return new EmbeddedCdpGateway({ getSurfaces: () => h.registry.listRegisteredSurfaces(),
@@ -83,10 +128,10 @@ test('independent Website Runs keep distinct target queries and reject each othe
   const aScope = grants.resolve(source);
   const bScope = grants.resolve({ runId: 'run-b', chatId: 'chat-b', teamId: 'team-b' });
   const gateway = gatewayFor(h);
-  const [at, bt] = await Promise.all([aScope, bScope].map((scope) => gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)));
-  assert.notEqual(at.targetId, bt.targetId);
-  assert.equal(at.surfaceId, a.surfaceId); assert.equal(bt.surfaceId, b.surfaceId);
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: at.targetId }, bScope), { code: 'target_not_in_current_surface' });
+  const [at, bt] = await Promise.all([aScope, bScope].map((scope) => gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)));
+  assert.notEqual(at.surfaceId, bt.surfaceId);
+  assert.equal(at.containerId, a.surfaceId); assert.equal(bt.containerId, b.surfaceId);
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: at.surfaceId }, bScope), { code: 'target_not_in_current_surface' });
 });
 
 test('background command focus transactions serialize, restore on errors, and revalidate queued grants', async (t) => {
@@ -109,37 +154,37 @@ test('authorized background Website discovers new and descendant tabs without ch
   const scope = h.capture(a); scope.activate(); t.after(() => scope.release());
   const gateway = gatewayFor(h);
   h.foreground(b);
-  const first = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
-  assert.equal(first.surfaceId, a.surfaceId);
+  const first = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
+  assert.equal(first.containerId, a.surfaceId);
   for (let n = 0; n < 2; n++) {
     const added = h.addTab(a);
     assert.equal(h.contents.get(added.webContentsId).throttle, false);
-    const targets = await gateway.executeCommand({ method: 'Target.getTargets' }, scope);
-    assert.equal(targets.result.targetInfos.length, n + 2);
-    const targetId = targets.result.currentTargetId;
-    await gateway.executeCommand({ method: 'Runtime.evaluate', targetId, params: { expression: 'document.title' } }, scope);
+    const targets = await gateway.executeCommand({ method: 'Surface.list' }, scope);
+    assert.equal(targets.result.surfaces.length, n + 2);
+    const surfaceId = targets.result.currentSurfaceId;
+    await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId, params: { expression: 'document.title' } }, scope);
     assert.equal(h.commands.at(-1).id, added.webContentsId);
-    assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).surfaceId, b.surfaceId);
+    assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' })).containerId, b.surfaceId);
   }
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: first.targetId }), { code: 'target_not_in_current_surface' });
-  const bTarget = (await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).targetId;
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: bTarget }, scope), { code: 'target_not_in_current_surface' });
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: first.surfaceId }), { code: 'target_not_in_current_surface' });
+  const bTarget = (await gateway.executeCommand({ method: 'Surface.getCurrent' })).surfaceId;
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: bTarget }, scope), { code: 'target_not_in_current_surface' });
 });
 
 test('scope identity cannot be forged, reattached to another application, or resurrected after close', async () => {
   const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b');
   const grants = new RunSiteControlGrants(); const scope = h.capture(a); grants.bind(identity, scope);
   const gateway = gatewayFor(h);
-  const target = (await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, grants.resolve(source))).targetId;
+  const target = (await gateway.executeCommand({ method: 'Surface.getCurrent' }, grants.resolve(source))).surfaceId;
   h.foreground(b);
-  await assert.rejects(gateway.executeCommand({ method: 'Target.getTargets' }, { ...scope }), { code: 'site_control_unavailable' });
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.list' }, { ...scope }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, chatId: 'wrong' }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, agentKey: 'wrong' }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, teamId: 'wrong' }), { code: 'site_control_unavailable' });
   h.closeTab(a, a.activeTabId);
   a.registrationId = 'reopened-a'; a.tabs = [h.tab(h.guest(a.url))]; a.activeTabId = a.tabs[0].tabId; h.register(a);
   assert.throws(() => grants.resolve(source), { code: 'site_control_unavailable' });
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: target }, scope), { code: 'site_control_unavailable' });
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: target }, scope), { code: 'site_control_unavailable' });
   const replacement = h.capture(a);
   assert.throws(() => grants.bind(identity, replacement), { code: 'site_control_unavailable' });
   grants.revokeAll();
@@ -154,21 +199,21 @@ test('background throttle leases are reference counted and restore original stat
   guest.throttle = false;
   const third = h.capture(a); third.activate(); third.release(); assert.equal(guest.throttle, false);
   const fourth = h.capture(a); fourth.activate(); guest.emit('render-process-gone');
-  assert.throws(() => fourth.readSurface(), { code: 'site_control_unavailable' });
+  assert.throws(() => fourth.readContainer(), { code: 'site_control_unavailable' });
   assert.equal(guest.listenerCount('destroyed'), 0);
 });
 
 test('WebApp keeps one guest across WorkPanel presentation and revokes when guest changes', async () => {
   const h = createSiteHarness(); const app = h.site('app', 'webapp'); const b = h.site('b');
   const scope = h.capture(app); scope.activate(); const gateway = gatewayFor(h);
-  const target = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const target = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
   h.foreground(b); app.presentationScope = 'workpanel'; app.ownerChatId = 'workpanel-chat'; h.register(app);
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)).targetId, target.targetId);
-  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: target.targetId, params: { expression: 'document.title' } }, scope);
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)).surfaceId, target.surfaceId);
+  await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: target.surfaceId, params: { expression: 'document.title' } }, scope);
   delete app.presentationScope; delete app.ownerChatId; h.register(app);
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)).targetId, target.targetId);
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)).surfaceId, target.surfaceId);
   app.tabs = [h.tab(h.guest(app.url))]; app.activeTabId = app.tabs[0].tabId; h.register(app);
-  await assert.rejects(gateway.executeCommand({ method: 'Target.getTargets' }, scope), { code: 'site_control_unavailable' });
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.list' }, scope), { code: 'site_control_unavailable' });
 });
 
 test('tab host controls carry exact guest generation and do not route WebApp tabs as WorkPanel items', async (t) => {
@@ -181,16 +226,16 @@ test('tab host controls carry exact guest generation and do not route WebApp tab
     switchTab: async (...args) => { calls.push(['switch', ...args]); },
     closeTab: async (...args) => { calls.push(['close', ...args]); },
   });
-  await integration.closeTarget(scope.readSurface(), app.tabs[0], scope);
+  await integration.closeTarget(scope.readContainer(), app.tabs[0], scope);
   assert.deepEqual(calls[0], ['close', app.surfaceId, app.tabs[0].tabId, undefined,
     { registrationId: app.registrationId, webContentsId: app.tabs[0].webContentsId }]);
   const a = h.site('a'); const aScope = h.capture(a); aScope.activate(); t.after(() => aScope.release());
-  const beforePopup = aScope.readSurface();
+  const beforePopup = aScope.readContainer();
   const old = a.tabs[0]; h.addTab(a); h.foreground(b);
   await integration.activateTarget(beforePopup, old, aScope);
   assert.equal(calls.at(-1)[0], 'switch');
   const gateway = gatewayFor(h, { activateTarget: integration.activateTarget, closeTarget: integration.closeTarget });
-  await gateway.executeCommand({ method: 'Page.bringToFront', targetId: createEmbeddedCdpTargetId(aScope.readSurface(), old) }, aScope);
+  await gateway.executeCommand({ method: 'Page.bringToFront', surfaceId: createEmbeddedWebSurfaceId(aScope.readContainer(), old) }, aScope);
   assert.equal(calls.at(-1)[0], 'switch'); assert.equal(calls.at(-1)[3], undefined);
 });
 
@@ -248,6 +293,41 @@ test('AWCP manual binding is scoped to one Run and exact guest', async (t) => {
     (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'manual_required',
   );
   assert.equal((await bridge.invoke('invoke-a', { revision: index.revision, action: 'orders.read', args: {} }, scopeA)).ok, true);
+});
+
+test('AWCP manual and invoke stay on the selected Surface across active tab changes', async (t) => {
+  const h = createSiteHarness(); const a = h.site('selected'); const b = h.site('outside');
+  const scope = h.capture(a); scope.activate();
+  const first = a.tabs[0];
+  const surfaceId = createEmbeddedWebSurfaceId(scope.readContainer(), first);
+  const guest = h.contents.get(first.webContentsId);
+  let invokes = 0;
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script);
+    invokes += 1;
+    return { ok: true, requestId: 'selected-invoke', action: 'orders.read', result: first.webContentsId };
+  };
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  const index = await bridge.manual('selected-index', {}, scope, undefined, surfaceId);
+  const second = h.addTab(a);
+  const secondId = createEmbeddedWebSurfaceId(scope.readContainer(), second);
+  h.contents.get(second.webContentsId).executeJavaScript = () => assert.fail('AWCP drifted to the active tab');
+  h.contents.get(b.tabs[0].webContentsId).executeJavaScript = () => assert.fail('AWCP escaped its Container');
+  const section = { section: 'orders.read', revision: index.revision };
+  const input = { revision: index.revision, action: 'orders.read', args: {} };
+  await assert.rejects(bridge.manual('other-section', section, scope, undefined, secondId),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'page_changed');
+  await bridge.manual('selected-section', section, scope, undefined, surfaceId);
+  await assert.rejects(bridge.invoke('other-invoke', input, scope, undefined, secondId),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'page_changed');
+  const outsideId = createEmbeddedWebSurfaceId(h.registry.listRegisteredSurfaces().find(s => s.surfaceId === b.surfaceId), b.tabs[0]);
+  for (const invalidId of [outsideId, 'page:missing', a.surfaceId]) {
+    await assert.rejects(bridge.manual('outside-index', {}, scope, undefined, invalidId), { code: 'awcp_target_unavailable' });
+    await assert.rejects(bridge.invoke('outside-invoke', input, scope, undefined, invalidId), { code: 'awcp_target_unavailable' });
+  }
+  assert.equal((await bridge.invoke('selected-invoke', input, scope, undefined, surfaceId)).result, first.webContentsId);
+  assert.equal(invokes, 1);
 });
 
 test('AWCP navigation invalidates bindings and released scopes remove listeners', async () => {
@@ -440,10 +520,10 @@ test('invalid mouse parameters never acquire page focus or send input', async (t
   const scope = h.capture(site); scope.activate(); t.after(() => scope.release());
   const phases = [];
   const gateway = gatewayFor(h, { controlSiteFocus: async (_surface, _tab, _scope, phase) => phases.push(phase) });
-  const { targetId } = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const { surfaceId } = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
   const commandsBefore = h.commands.length;
   await assert.rejects(gateway.executeCommand({
-    method: 'Input.dispatchMouseEvent', targetId,
+    method: 'Input.dispatchMouseEvent', surfaceId,
     params: { type: 'mousePressed', x: '646', y: '344', button: 'left', clickCount: '1' }
   }, scope), (error) => error.code === 'invalid_args' && error.details.issues.length === 3);
   assert.deepEqual(phases, []);
@@ -455,14 +535,14 @@ test('Input.click runs one authorized focus transaction and never forwards the v
   const scope = h.capture(a); scope.activate(); t.after(() => scope.release());
   const phases = [];
   const gateway = gatewayFor(h, { controlSiteFocus: async (_surface, _tab, _scope, phase) => { phases.push(phase); } });
-  const { targetId } = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const { surfaceId } = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
   const guest = h.contents.get(a.tabs[0].webContentsId);
   const original = guest.debugger.sendCommand;
   guest.debugger.sendCommand = async (method, params) => {
     await original(method, params);
     return method === 'Runtime.evaluate' ? { result: { value: { x: 10.5, y: 20.25, matched: true } } } : {};
   };
-  const { result } = await gateway.executeCommand({ method: 'Input.click', targetId, params: { x: 10.5, y: 20.25 } }, scope);
+  const { result } = await gateway.executeCommand({ method: 'Input.click', surfaceId, params: { x: 10.5, y: 20.25 } }, scope);
   assert.equal(result.status, 'clicked');
   assert.deepEqual(phases, ['capture', 'input', 'restore']);
   assert.equal(h.commands.some(c => c.method === 'Input.click'), false);
@@ -470,6 +550,6 @@ test('Input.click runs one authorized focus transaction and never forwards the v
   assert.equal(guest.debugger.isAttached(), false);
   const controller = new AbortController(); controller.abort();
   const before = h.commands.length;
-  await assert.rejects(gateway.executeCommand({ method: 'Input.click', targetId, params: { selector: '#b' } }, scope, controller.signal), /canceled/);
+  await assert.rejects(gateway.executeCommand({ method: 'Input.click', surfaceId, params: { selector: '#b' } }, scope, controller.signal), /canceled/);
   assert.equal(h.commands.length, before);
 });

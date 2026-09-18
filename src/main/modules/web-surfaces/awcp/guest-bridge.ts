@@ -1,3 +1,4 @@
+import { createWebSurfaceId } from "../../../../shared/web-surface";
 import type { WebContents } from "electron";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { SiteControlScope } from "../cdp/site-scope";
@@ -92,10 +93,11 @@ export class AwcpGuestBridge {
     input: unknown,
     scope: SiteControlScope,
     signal?: AbortSignal,
+    surfaceId?: string,
   ): Promise<AwcpManualResponse> {
     assertToken("requestId", requestId, AWCP_LIMITS.maxRequestIdLength);
     const payload = validateManualPayload(input);
-    return this.withGuest(requestId, scope, signal, false, async (guest, lifecycleFailure) => {
+    return this.withGuest(requestId, scope, signal, surfaceId, false, async (guest, lifecycleFailure) => {
       if ("section" in payload) {
         const bindingFailure = this.manuals.rejection(scope, guest, payload.revision);
         if (bindingFailure) {
@@ -137,9 +139,10 @@ export class AwcpGuestBridge {
     input: unknown,
     scope: SiteControlScope,
     signal?: AbortSignal,
+    surfaceId?: string,
   ): Promise<AwcpActionResponse> {
     const payload = validateInvokePayload(requestId, input);
-    return this.withGuest(requestId, scope, signal, true, async (guest, lifecycleFailure) => {
+    return this.withGuest(requestId, scope, signal, surfaceId, true, async (guest, lifecycleFailure) => {
       const bindingFailure = this.manuals.rejection(scope, guest, payload.revision);
       if (bindingFailure) {
         throw awcpPreflightFailure(bindingFailure, "The invocation does not match the current page manual binding.");
@@ -230,14 +233,17 @@ export class AwcpGuestBridge {
     requestId: string,
     scope: SiteControlScope,
     signal: AbortSignal | undefined,
+    surfaceId: string | undefined,
     cancelPageInvocation: boolean,
     execute: (guest: WebContents, lifecycleFailure: Promise<never>) => Promise<T>,
   ): Promise<T> {
     if (this.active.has(requestId)) {
       throw awcpHostError("awcp_duplicate_request", "AWCP request id is already active.");
     }
-    const surface = scope.readSurface();
-    const tab = surface.tabs?.find((candidate) => candidate.tabId === surface.activeTabId);
+    const surface = scope.readContainer();
+    const tab = surface.tabs?.find((candidate) => surfaceId
+      ? createWebSurfaceId(surface.id, surface.targetGeneration, candidate.tabId) === surfaceId
+      : candidate.tabId === surface.activeTabId);
     if (!tab) throw awcpHostError("awcp_target_unavailable", "The authorized page has no active tab.");
     scope.validateTab(tab);
     const guest = this.browserSurfaces.findWebContentsById(tab.webContentsId);

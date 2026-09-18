@@ -6,9 +6,12 @@ export const EMBEDDED_CDP_GATEWAY_PORT = 11789;
 export const EMBEDDED_CDP_GATEWAY_URL = `http://${EMBEDDED_CDP_GATEWAY_HOST}:${EMBEDDED_CDP_GATEWAY_PORT}`;
 
 export const DESKTOP_CDP_PUBLIC_METHODS = [
-  "Target.getCurrentTarget",
-  "Target.getTargets",
-  "Target.closeTarget",
+  "Surface.getCurrent",
+  "Surface.list",
+  "Surface.getState",
+  "Surface.goBack",
+  "Surface.open",
+  "Surface.close",
   "Page.bringToFront",
   "Page.enable",
   "Page.navigate",
@@ -74,7 +77,7 @@ export type EmbeddedCdpSurfaceRegistrationResult =
 
 export type EmbeddedCdpSurfaceTargetState = {
   tabId: string;
-  targetId: string;
+  surfaceId: string;
   currentUrl: string;
   title: string;
   isLoading: boolean;

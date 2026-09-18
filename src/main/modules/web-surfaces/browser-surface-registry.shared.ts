@@ -14,6 +14,7 @@ import {
 } from "../../../shared/canonical-chat-sync";
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
 import {
+  COPILOT_DOCK_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID,
   type SurfaceIdentity,
   type SurfaceRole
@@ -21,7 +22,7 @@ import {
 
 
 
-export type BrowserSurface = SurfaceIdentity & {
+export type BrowserContainer = SurfaceIdentity & {
   id: string;
   entryKey?: string;
   serviceId?: string;
@@ -249,10 +250,15 @@ export function registeredSurfaceIdentitiesConflict(
   existing: Pick<EmbeddedCdpSurfaceRegistration, "surfaceId" | "surfaceRole" | "surfaceIdentityKey">,
   candidate: Pick<EmbeddedCdpSurfaceRegistration, "surfaceId" | "surfaceRole" | "surfaceIdentityKey">,
 ) {
-  return existing.surfaceId.trim() === candidate.surfaceId.trim() && (
-    existing.surfaceRole !== candidate.surfaceRole ||
-    (existing.surfaceIdentityKey?.trim() || "") !== (candidate.surfaceIdentityKey?.trim() || "")
-  );
+  if (existing.surfaceId.trim() !== candidate.surfaceId.trim()) return false;
+  if (existing.surfaceRole !== candidate.surfaceRole) return true;
+  // The singleton Dock's key is its current page context, not its guest identity.
+  // Context/parent changes keep the Dock mounted; owner and parent authorization
+  // remain enforced by registerSurfaceResult and query-time SiteControlScope.
+  if (existing.surfaceId.trim() === COPILOT_DOCK_SURFACE_ID && existing.surfaceRole === "copilot-dock") {
+    return false;
+  }
+  return (existing.surfaceIdentityKey?.trim() || "") !== (candidate.surfaceIdentityKey?.trim() || "");
 }
 
 export type RegisteredWebviewSurfaceTarget = {
@@ -401,7 +407,7 @@ export function normalizeSurfaceMatchText(value: string) {
     .replace(/\/+$/u, "");
 }
 
-export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: string) {
+export function webEntryMatchesSurfaceTarget(item: BrowserContainer, target: string) {
   const normalizedTarget = normalizeSurfaceMatchText(target);
   if (!normalizedTarget) {
     return false;
@@ -430,6 +436,7 @@ export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: strin
 export interface CreateBrowserSurfaceRegistryContext {
   options: BrowserSurfaceRegistryOptions;
   registeredSurfaces: Map<string, RegisteredSurface>;
+  workPanelDialogRegistrations: Map<string, string>;
   registeredGuestTargets: Map<number, RegisteredWebviewSurfaceTarget>;
   pendingGuestTargetWaiters: Map<number, Set<PendingGuestTargetWaiter>>;
   surfaceAliases: Map<string, string>;
@@ -469,10 +476,10 @@ export interface CreateBrowserSurfaceRegistryContext {
   waitForWebviewSurfaceTargetMatching: (webContentsId: number, predicate: (target: RegisteredWebviewSurfaceTarget) => boolean, timeoutMs: number, signal?: AbortSignal) => Promise<RegisteredWebviewSurfaceTarget | null>;
   currentPageSnapshotMatchesSurface: (surfaceId: string, contents?: WebContents | null) => boolean;
   findWebContentsForSurfaceUrl: (surfaceUrl: string) => Electron.WebContents | null;
-  builtinBrowserSurface: (contents: WebContents | null, url?: string) => BrowserSurface;
-  listBrowserSurfaces: () => BrowserSurface[];
-  listChatWorkPanelSurfaces: () => BrowserSurface[];
-  listRegisteredSurfaces: () => BrowserSurface[];
+  builtinBrowserSurface: (contents: WebContents | null, url?: string) => BrowserContainer;
+  listBrowserContainers: () => BrowserContainer[];
+  listWorkPanelContainers: () => BrowserContainer[];
+  listRegisteredSurfaces: () => BrowserContainer[];
   listDiagnosticSurfaces: () => BrowserSurfaceDiagnosticSnapshot[];
   listWebContentsDiagnostics: () => BrowserWebContentsDiagnosticSnapshot[];
   getRegisteredSurfaceSnapshot: (surfaceId: string, registrationId: string, ownerWebContentsId: number) => { registered: RegisteredSurface; tabs: EmbeddedCdpSurfaceTabRegistration[]; } | null;

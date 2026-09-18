@@ -20,7 +20,7 @@ export class AwcpManualBindings {
   }
 
   rememberSection(scope: SiteControlScope, guest: WebContents, revision: string, action: string) {
-    scope.readSurface();
+    scope.readContainer();
     const current = this.bindings.get(scope);
     if (current && !current.changed && current.guest === guest && current.revision === revision &&
         current.indexActions.has(action) && !guest.isDestroyed()) {
@@ -34,7 +34,7 @@ export class AwcpManualBindings {
     revision: string,
     indexActions: ReadonlySet<string>,
   ) {
-    scope.readSurface();
+    scope.readContainer();
     this.clear(scope);
     const binding: Binding = {
       guest,

@@ -1002,10 +1002,6 @@
   right: 14px;
 }
 
-.app-shell.is-mac-platform.has-chat-work-panel .main-chat-header-actions {
-  top: 8px;
-}
-
 .app-shell.is-windows-platform .main-chat-header-actions {
   top: calc(var(--windows-titlebar-overlay-height) + 8px);
   right: 14px;
@@ -1050,11 +1046,22 @@
 }
 
 .main-chat-share-tooltip-trigger {
+  /* Anchor sharing to Main Chat while the panel toggle stays at the window edge. */
+  position: absolute;
+  right: 28px;
   display: inline-flex;
   width: 24px;
   height: 24px;
   border-radius: var(--control-radius-sm);
   pointer-events: auto;
+}
+
+.app-shell.has-chat-work-panel .main-chat-share-tooltip-trigger {
+  right: var(--chat-work-panel-width, 360px);
+}
+
+.app-shell.is-main-chat-collapsed-by-work-panel .main-chat-share-tooltip-trigger {
+  display: none;
 }
 
 .main-chat-share-tooltip-trigger.is-disabled {
