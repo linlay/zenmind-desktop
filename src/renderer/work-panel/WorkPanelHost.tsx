@@ -1,3 +1,4 @@
+import type { ExternalWebviewController } from "../pages/external-webview/ExternalWebviewPage";
 import { registerDesktopCloseShortcutHandler } from "../services/desktopCloseShortcutRegistry";
 import {
   AppstoreOutlined,
@@ -351,6 +352,7 @@ export function WorkPanelHost({
   const [webUrlError, setWebUrlError] = useState("");
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
   const [reviewPreloadUrl, setReviewPreloadUrl] = useState("");
+  const webControllers = useRef(new Map<string, ExternalWebviewController>());
   const nativeHtmlControllers = useRef(new Map<string, HtmlDocumentController>());
   const [resourceReviewCapabilities, setResourceReviewCapabilities] = useState<Record<string, ResourceReviewCapability>>({});
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
@@ -1745,11 +1747,22 @@ export function WorkPanelHost({
         if (!url) return actionError("invalid_url", "url must use http: or https: without credentials.");
         const bootstrapFailure = ensureTrustedWorkspace();
         if (bootstrapFailure) return bootstrapFailure;
-        return execute({
-          type: "openItem",
-          ownerChatId,
-          descriptor: { kind: "web", url },
-        });
+        const opened = execute({ type: "openItem", ownerChatId, descriptor: { kind: "web", url } });
+        if (!opened.ok) return opened;
+        const itemId = opened.result.item?.itemId;
+        const deadline = Date.now() + 8_000;
+        while (itemId && Date.now() < deadline) {
+          const item = current()?.items.find((candidate) => candidate.itemId === itemId);
+          if (!item) return actionError("surface_not_found", "The opened page was closed.");
+          const controller = webControllers.current.get(itemRuntimeKey(ownerChatId, itemId));
+          if (controller) {
+            const state = await controller.getState();
+            const page = state.tabs.find((tab) => tab.tabId === state.activeTabId);
+            if (page) return { ok: true, result: { ...opened.result, containerId: state.containerId, surfaceId: page.surfaceId, status: page.isLoading ? "loading" : "ready" } };
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+        return actionError("surface_not_ready", "The page opened but has not registered yet. Use Surface.list to rediscover it; do not open another page.");
       }
       case "desktop.workpanel.openLocalFile": {
         const claimId = typeof args.claimId === "string" ? args.claimId.trim() : "";
@@ -2217,6 +2230,13 @@ export function WorkPanelHost({
                           allowTabUrlCopy
                           allowUserTabCreation={false}
                           cdpActive={false}
+                          initialTabId={item.itemId}
+                          onControllerReady={item.descriptor.kind === "web" ? (controller) => {
+                            const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
+                            if (controller) webControllers.current.set(key, controller);
+                            else webControllers.current.delete(key);
+                          } : undefined}
+                          onCloseSurface={() => dispatchCommand({ type: "closeItem", ownerChatId: workspace.ownerChatId, itemId: item.itemId })}
                           chrome="browser"
                           enableDesktopWebActions={false}
                           onLoadingChange={(isLoading) => {

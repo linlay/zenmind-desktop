@@ -423,6 +423,18 @@ export function createMainProcessRuntime_cdpIntegration_9(factoryContext: Create
         }
         return response.result;
     },
+    openPage: async (surfaceId, tabId, url, ownerChatId, siteTarget) => {
+        const response = await callDesktopActionRenderer({
+            requestId: `surface-open-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            action: ownerChatId ? "desktop.workpanel.openWeb" : "desktop.web.openTab",
+            args: { surfaceId, tabId, url },
+            ...(siteTarget ? { siteCdpTarget: { surfaceId, tabId, ...siteTarget } } : {}),
+            ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
+        }, { getMainWindow: factoryContext.getMainWindow,
+            pendingRequests: factoryContext.assistantBridgeRuntime.desktopActionRendererRequests });
+        if (!response.ok) throw new Error(response.error?.message || "The page could not be opened.");
+        return response.result;
+    },
     closeTab: async (surfaceId, tabId, ownerChatId, siteTarget) => {
         const response = await callDesktopActionRenderer({
             requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,

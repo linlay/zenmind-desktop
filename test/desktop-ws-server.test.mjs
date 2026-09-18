@@ -300,6 +300,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
     host: "127.0.0.1",
     port: 0,
     desktopActionOptions: {
+      executeCdpCommand: async (request) => ({ surfaceId: request.surfaceId, result: { frameId: "frame-1" } }),
       getKanbanRuntime: () => kanbanRuntime,
       getDesktopAppInfo: () => cachedAppInfo,
       desktopPet: {
@@ -561,44 +562,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
     }
   });
   const webNavigateAction = await client.waitFor((message) => message.id === "web-navigate-action-1");
-  assert.deepEqual(webNavigateAction.data, {
-    ok: true,
-    action: "desktop.web.navigate",
-    result: {
-      surface: {
-        surfaceId: "browser",
-        surfaceRole: "browser",
-        surfaceLevel: "root",
-        interaction: "interactive",
-        kind: "browser",
-        label: "Browser",
-        url: "https://example.test/next",
-        route: "/browser",
-        open: true,
-        active: true
-      },
-      tabs: [{
-        tabId: "tab-1",
-        title: "Example",
-        currentUrl: "https://example.test/next",
-        active: true,
-        isLoading: false,
-        canGoBack: true,
-        canGoForward: false
-      }],
-      activeTab: {
-        tabId: "tab-1",
-        title: "Example",
-        currentUrl: "https://example.test/next",
-        active: true,
-        isLoading: false,
-        canGoBack: true,
-        canGoForward: false
-      },
-      targetTabId: "tab-1",
-      navigatedUrl: "https://example.test/next"
-    }
-  });
+  assert.deepEqual(webNavigateAction.data, { ok: true, action: "desktop.web.navigate", result: { frameId: "frame-1" } });
   client.send({
     frame: "request",
     type: "action.call",
@@ -614,7 +578,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(workPanelOpenWeb.type, "user_cancelled");
   assert.equal(workPanelOpenWeb.data.requiresConfirmation, true);
   assert.equal(desktopActionConfirmationCalls.length, 1);
-  assert.deepEqual(desktopActionRendererCalls.map((request) => request.action), ["desktop.web.navigate"]);
+  assert.deepEqual(desktopActionRendererCalls.map((request) => request.action), []);
   assert.ok(actionNames.includes("theme.get"));
   assert.ok(actionNames.includes("theme.set"));
   assert.ok(actionNames.includes("locale.get"));

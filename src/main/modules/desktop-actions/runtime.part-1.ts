@@ -118,8 +118,10 @@ export type DesktopActionBridgeOptions = {
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
+  resolveWebSurface?: (request: EmbeddedCdpCommandRequest) => Promise<{
+    surfaceId: string; containerId: string; surfaceKind: string; contents: WebContents; validate(): Promise<void>;
+  }>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteControlScope, signal?: AbortSignal) => Promise<{
-    targetId?: string;
     surfaceId?: string;
     result: unknown;
   }>;
@@ -202,8 +204,6 @@ export type DesktopCdpCallRequest = {
   requestId?: string;
   method?: string;
   params?: Record<string, unknown>;
-  targetId?: string;
-  sessionId?: string;
   surfaceId?: string;
   source?: DesktopActionSource;
 };
@@ -212,7 +212,6 @@ export type DesktopCdpCallResponse = {
   ok: boolean;
   method: string;
   result?: unknown;
-  targetId?: string;
   surfaceId?: string;
   error?: DesktopActionError;
 };

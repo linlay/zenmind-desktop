@@ -128,8 +128,8 @@ async function main() {
     scope.activate(); scopes.push(scope); return scope;
   };
   const aScope = capture('website:a');
-  const aTarget = (await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, aScope)).targetId;
-  await waitFor(() => aScope.readSurface().tabs.every((tab) => !tab.isLoading), 'initial A load');
+  const aTarget = (await gateway.executeCommand({ method: 'Surface.getCurrent' }, aScope)).surfaceId;
+  await waitFor(() => aScope.readContainer().tabs.every((tab) => !tab.isLoading), 'initial A load');
   await select('website:b');
   await new Promise((resolve) => setTimeout(resolve, 500));
   await win.webContents.executeJavaScript("document.querySelector('.external-webview-page:not(.is-inactive-surface) webview').shadowRoot.querySelector('iframe').focus()");
@@ -142,77 +142,77 @@ async function main() {
   assert.equal(await foregroundGuest.executeJavaScript("document.querySelector('#entry').value"), 'user foreground?');
   const windowFocused = win.isFocused();
   const focusedHostElement = await win.webContents.executeJavaScript("document.activeElement.getAttribute('src')");
-  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: aTarget, params: { expression: "document.querySelector('#entry').focus()" } }, aScope);
-  const inputBox = await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: aTarget, params: {expression:"(()=>{const r=document.querySelector('#entry').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()",returnByValue:true} }, aScope);
-  for (const type of ['mousePressed','mouseReleased']) await gateway.executeCommand({method:'Input.dispatchMouseEvent',targetId:aTarget,params:{type,...inputBox.result.result.value,button:'left',clickCount:1}},aScope);
-  await gateway.executeCommand({ method: 'Input.insertText', targetId: aTarget, params: { text: 'background input passed' } }, aScope);
-  const input = await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: aTarget, params: { expression: "document.querySelector('#entry').value", returnByValue: true } }, aScope);
+  await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: aTarget, params: { expression: "document.querySelector('#entry').focus()" } }, aScope);
+  const inputBox = await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: aTarget, params: {expression:"(()=>{const r=document.querySelector('#entry').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()",returnByValue:true} }, aScope);
+  for (const type of ['mousePressed','mouseReleased']) await gateway.executeCommand({method:'Input.dispatchMouseEvent',surfaceId:aTarget,params:{type,...inputBox.result.result.value,button:'left',clickCount:1}},aScope);
+  await gateway.executeCommand({ method: 'Input.insertText', surfaceId: aTarget, params: { text: 'background input passed' } }, aScope);
+  const input = await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: aTarget, params: { expression: "document.querySelector('#entry').value", returnByValue: true } }, aScope);
   assert.equal(input.result.result.value, 'background input passed');
   assert.equal(win.isFocused(), windowFocused);
   assert.equal(await win.webContents.executeJavaScript("document.activeElement.getAttribute('src')"), focusedHostElement);
   assert.equal(await foregroundGuest.executeJavaScript("document.querySelector('#entry').value"), 'user foreground?');
-  let targetId = aTarget;
+  let surfaceId = aTarget;
   for (let count = 2; count <= 3; count++) {
-    const box = await gateway.executeCommand({ method: 'Runtime.evaluate', targetId, params: { expression: "(()=>{const r=document.querySelector('#popup').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()", returnByValue: true } }, aScope);
+    const box = await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId, params: { expression: "(()=>{const r=document.querySelector('#popup').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()", returnByValue: true } }, aScope);
     const point = box.result.result.value;
-    for (const type of ['mousePressed', 'mouseReleased']) await gateway.executeCommand({ method: 'Input.dispatchMouseEvent', targetId, params: { type, ...point, button: 'left', clickCount: 1 } }, aScope);
-    await waitFor(() => aScope.readSurface().tabs.length === count, 'background popup ' + count);
-    const result = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, aScope); targetId = result.targetId;
-    await waitFor(() => !aScope.readSurface().tabs.find((tab) => tab.tabId === aScope.readSurface().activeTabId)?.isLoading, 'popup load');
+    for (const type of ['mousePressed', 'mouseReleased']) await gateway.executeCommand({ method: 'Input.dispatchMouseEvent', surfaceId, params: { type, ...point, button: 'left', clickCount: 1 } }, aScope);
+    await waitFor(() => aScope.readContainer().tabs.length === count, 'background popup ' + count);
+    const result = await gateway.executeCommand({ method: 'Surface.getCurrent' }, aScope); surfaceId = result.surfaceId;
+    await waitFor(() => !aScope.readContainer().tabs.find((tab) => tab.tabId === aScope.readContainer().activeTabId)?.isLoading, 'popup load');
     assert.equal(surface('website:b').tabs.length, 1);
     assert.equal(await win.webContents.executeJavaScript("document.activeElement.getAttribute('src')"), focusedHostElement);
     assert.equal(win.isFocused(), windowFocused);
-    assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).surfaceId, surface('website:b').surfaceId);
+    assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' })).containerId, surface('website:b').surfaceId);
   }
   // Native input follows the host's actual focused frame, unlike guest isFocused() on macOS.
   await win.webContents.debugger.sendCommand('Input.insertText', { text: '!' });
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await foregroundGuest.executeJavaScript("document.querySelector('#entry').value"), 'user foreground?!');
   win.webContents.debugger.detach();
-  const screenshot = await gateway.executeCommand({ method: 'Page.captureScreenshot', targetId: aTarget, params: { format: 'png' } }, aScope);
+  const screenshot = await gateway.executeCommand({ method: 'Page.captureScreenshot', surfaceId: aTarget, params: { format: 'png' } }, aScope);
   const png = nativeImage.createFromBuffer(Buffer.from(screenshot.result.data, 'base64'));
   assert.ok(png.getSize().width > 300 && png.getSize().height > 200);
   fs.writeFileSync(path.join(temp, 'background.png'), png.toPNG());
-  const aGuest = webContents.fromId(aScope.readSurface().tabs[0].webContentsId);
+  const aGuest = webContents.fromId(aScope.readContainer().tabs[0].webContentsId);
   const reloaded = new Promise((resolve) => aGuest.once('did-finish-load', resolve));
-  await gateway.executeCommand({ method: 'Page.reload', targetId: aTarget }, aScope);
+  await gateway.executeCommand({ method: 'Page.reload', surfaceId: aTarget }, aScope);
   await reloaded;
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).surfaceId, surface('website:b').surfaceId);
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' })).containerId, surface('website:b').surfaceId);
   win.webContents.send('webview.openTab', { target: 'desktop-browser', navigationKind: 'network', sourceGuestId: 999999, url: origin + '/unknown-popup' });
   await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(surface('website:b').tabs.length, 1); assert.equal(aScope.readSurface().tabs.length, 3);
-  await gateway.executeCommand({ method: 'Page.bringToFront', targetId: aTarget }, aScope);
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, aScope)).targetId, aTarget);
-  await gateway.executeCommand({ method: 'Target.closeTarget', targetId }, aScope);
-  assert.equal(aScope.readSurface().tabs.length, 2);
+  assert.equal(surface('website:b').tabs.length, 1); assert.equal(aScope.readContainer().tabs.length, 3);
+  await gateway.executeCommand({ method: 'Page.bringToFront', surfaceId: aTarget }, aScope);
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, aScope)).surfaceId, aTarget);
+  await gateway.executeCommand({ method: 'Surface.close', surfaceId }, aScope);
+  assert.equal(aScope.readContainer().tabs.length, 2);
   await select('webapp:app');
-  const appScope = capture('webapp:app'); const appTarget = (await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, appScope)).targetId;
+  const appScope = capture('webapp:app'); const appTarget = (await gateway.executeCommand({ method: 'Surface.getCurrent' }, appScope)).surfaceId;
   await win.webContents.executeJavaScript(`window.smoke.present({scope:'workpanel',ownerChatId:'chat-fixture',itemId:'app-item'})`);
   await select('website:b');
-  await waitFor(() => registrations.get(appScope.surfaceId)?.presentationScope === 'workpanel', 'WorkPanel presentation');
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, appScope)).targetId, appTarget);
-  const appShot = await gateway.executeCommand({ method: 'Page.captureScreenshot', targetId: appTarget, params: { format: 'png' } }, appScope);
+  await waitFor(() => registrations.get(appScope.containerId)?.presentationScope === 'workpanel', 'WorkPanel presentation');
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, appScope)).surfaceId, appTarget);
+  const appShot = await gateway.executeCommand({ method: 'Page.captureScreenshot', surfaceId: appTarget, params: { format: 'png' } }, appScope);
   assert.ok(nativeImage.createFromBuffer(Buffer.from(appShot.result.data, 'base64')).getSize().width > 300);
-  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: appTarget, params: { expression: "document.querySelector('#entry').focus()" } }, appScope);
-  await gateway.executeCommand({ method: 'Input.insertText', targetId: appTarget, params: { text: 'background WebApp passed' } }, appScope);
-  const appInput = await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: appTarget, params: { expression: "document.querySelector('#entry').value" } }, appScope);
+  await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: appTarget, params: { expression: "document.querySelector('#entry').focus()" } }, appScope);
+  await gateway.executeCommand({ method: 'Input.insertText', surfaceId: appTarget, params: { text: 'background WebApp passed' } }, appScope);
+  const appInput = await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: appTarget, params: { expression: "document.querySelector('#entry').value" } }, appScope);
   assert.equal(appInput.result.result.value, 'background WebApp passed');
-  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: appTarget, params: { expression: "window.open('/webapp-popup')" } }, appScope);
+  await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: appTarget, params: { expression: "window.open('/webapp-popup')" } }, appScope);
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.equal(appScope.readSurface().tabs.length, 1); assert.equal(surface('website:b').tabs.length, 1);
+  assert.equal(appScope.readContainer().tabs.length, 1); assert.equal(surface('website:b').tabs.length, 1);
   await win.webContents.executeJavaScript(`window.smoke.present({scope:'main-workspace'})`);
-  await waitFor(() => registrations.get(appScope.surfaceId)?.presentationScope !== 'workpanel', 'return to main workspace');
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, appScope)).targetId, appTarget);
-  await gateway.executeCommand({ method: 'Target.closeTarget', targetId: appTarget }, appScope);
-  assert.throws(() => appScope.readSurface(), { code: 'site_control_unavailable' });
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).surfaceId, surface('website:b').surfaceId);
+  await waitFor(() => registrations.get(appScope.containerId)?.presentationScope !== 'workpanel', 'return to main workspace');
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, appScope)).surfaceId, appTarget);
+  await gateway.executeCommand({ method: 'Surface.close', surfaceId: appTarget }, appScope);
+  assert.throws(() => appScope.readContainer(), { code: 'site_control_unavailable' });
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' })).containerId, surface('website:b').surfaceId);
   await waitFor(() => webContents.getAllWebContents().filter((contents) => contents.getType() === 'webview').length === 3, 'prior CDP guests disposed');
   closeTrace.push('begin Website shortcut checks');
-  const aSource = aScope.readSurface().tabs[0].webContentsId;
-  const aRegistration = registrations.get(aScope.surfaceId);
+  const aSource = aScope.readContainer().tabs[0].webContentsId;
+  const aRegistration = registrations.get(aScope.containerId);
   const traceBeforeInactiveClose = closeTrace.length;
   win.webContents.send('app.closeShortcut', { guestId: aSource, website: {
-    surfaceId: aScope.surfaceId, registrationId: aRegistration.registrationId,
+    surfaceId: aScope.containerId, registrationId: aRegistration.registrationId,
   } });
   await waitFor(() => closeTrace.length > traceBeforeInactiveClose, 'inactive Website close delivered');
   assert.equal(surface('website:a').tabs.length, 2);
@@ -225,7 +225,7 @@ async function main() {
   await waitFor(() => surface('website:a').tabs.every((tab) => !tab.isLoading), 'Website tabs loaded');
   const traceBeforeStaleClose = closeTrace.length;
   win.webContents.send('app.closeShortcut', { guestId: aSource, website: {
-    surfaceId: aScope.surfaceId, registrationId: 'closed-instance',
+    surfaceId: aScope.containerId, registrationId: 'closed-instance',
   } });
   await waitFor(() => closeTrace.length > traceBeforeStaleClose, 'stale Website close delivered');
   assert.equal(surface('website:a').tabs.length, 6);
@@ -249,7 +249,7 @@ async function main() {
   assert.equal(surface('website:b').tabs.length, 1);
   assert.equal(windowCloseRequests, 0, JSON.stringify(closeTrace));
   assert.equal(win.isDestroyed(), false);
-  assert.throws(() => aScope.readSurface(), { code: 'site_control_unavailable' });
+  assert.throws(() => aScope.readContainer(), { code: 'site_control_unavailable' });
   console.log('SITE_CDP_SMOKE_PASSED', JSON.stringify({ platform: process.platform, screenshot: path.join(temp, 'background.png'), cases: ['background input', 'coordinate popup', 'descendant popup', 'foreground keyboard isolation', 'background screenshot/reload', 'unknown opener rejection', 'switch/close tab', 'WebApp round-trip transfer/input', 'WebApp single-page popup', 'last-tab disposal', 'six consecutive Website shortcut closes from guest and renderer'] }));
 }
 app.whenReady().then(main).then(() => {

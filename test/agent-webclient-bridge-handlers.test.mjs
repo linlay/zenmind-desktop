@@ -1152,7 +1152,7 @@ for (const validParent of [true, false]) {
       const scope = runtime.calls.queries[0].siteControlScope;
       h.foreground(b);
       scope.activate();
-      assert.equal(scope.readSurface().surfaceId, a.surfaceId);
+      assert.equal(scope.readContainer().surfaceId, a.surfaceId);
       scope.release();
       assert.equal(runtime.calls.grants.length, 0);
     } else {

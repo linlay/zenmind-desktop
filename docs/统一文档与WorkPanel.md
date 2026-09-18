@@ -78,3 +78,7 @@ canonical Desktop/WebClient bridge v6 增加 `openDocument`，同时保留旧方
 Platform 上传的 Reference 可以是 Chat 根目录的单个文件名，也可以位于 `references/` 下。WebClient 打开、当前资源操作及 Desktop 本地解析使用相同的来源规则；Artifact 仍限于 `artifacts/`。owner Chat、规范路径和 realpath 校验继续生效。根目录 HTML Reference 只允许读取自身，不因此获得相邻 Chat 文件的读取权限。
 
 DOCX 正文由共用 WebClient Document Surface 承载，只读显示文字、表格、内嵌图片、分页和缩放，不依赖系统安装的 Office 或转换服务。随包分发的渲染库在独立 opaque-origin sandbox iframe 中运行；只有固定 nonce 脚本可执行，文档自带脚本、HTML altChunk、远端资源和表单均被禁止。父页面按 frame source 和随机 token 验证窄消息通道，只交付文档字节与阅读控制，不交付凭据或 Desktop 能力。下载仍返回原件；Reference 不可覆盖。其他 Office 格式保留现有元信息及显式文件操作。
+
+## 网页身份与操作
+
+Container 持有网页宿主与标签集合，每个可操作网页实例拥有独立 Surface 身份。普通 Chat 打开网址默认进入 WorkPanel，Website/WebApp Copilot 沿用所属容器；网页发现与操作共用来源授权，不因承载位置或前后台状态切换模型。本地文件预览与 WebApp bridge 权限不随之扩展。完整模型见[前端嵌入与导航](前端嵌入与导航.md#网页-container-与-surface)，动作与 CDP 边界见[桌面协议与动作桥](桌面协议与动作桥.md#网页-container-与-surface)。

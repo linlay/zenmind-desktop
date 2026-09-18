@@ -714,3 +714,14 @@
 - 检查其他 renderer 或子 frame 的 artifacts.act 被拒绝，非法相对路径、外部 URL、跨 Chat 资源引用不能下载。
 
 - 产物查看只依赖当前产物快照：历史事件缺少字段或包含未知事件时仍可打开。旧进程没有 artifacts.act 时提示重启；准备中有状态提示，WorkPanel 拒绝打开时显示失败，不能静默无响应。
+
+## Container / Surface 网页控制（macOS / Windows 均执行）
+
+- 普通 Chat 说“打开 https://example.com”时进入 WorkPanel；结果包含 surfaceId，随后可截图、读取 DOM、输入、导航及关闭。
+- 同一 Website 打开两个标签：Surface.list 返回不同 surfaceId、相同 containerId。选择第一个 Surface 后手动切换活动标签，后续操作仍作用于第一个。
+- Website Copilot Run 切到后台继续读取、点击和创建 tab；新 tab 可发现。Page.bringToFront 与关闭操作遵循所属容器生命周期，不影响其他容器。
+- Chat A 打开的 WorkPanel 网页在切换到 Chat B 后仍可由 A 的有效 Run 操作；B 无法发现或通过已知 ID 操作 A 的网页。终态 Run 不再获得网页操作授权。
+- 刷新和导航保留 Surface 身份；关闭重开后旧 ID 失败；排队期间替换 guest 的命令失败且不执行在新 guest 上。
+- WorkPanel 本地文件/原生文档不进入普通网页自动化列表，WebApp bridge 和 AWCP 不因 Surface 统一而增加权限。
+- AWCP 指定同一授权 Surface 完成手册读取和调用；指定其他应用或发现后切换到另一 Surface 调用须失败。
+- WorkPanel 网络页后台截图保留有效尺寸，输入后前台焦点恢复；macOS/Windows 坐标均为 CSS 像素。

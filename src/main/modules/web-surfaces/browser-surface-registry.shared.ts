@@ -22,7 +22,7 @@ import {
 
 
 
-export type BrowserSurface = SurfaceIdentity & {
+export type BrowserContainer = SurfaceIdentity & {
   id: string;
   entryKey?: string;
   serviceId?: string;
@@ -407,7 +407,7 @@ export function normalizeSurfaceMatchText(value: string) {
     .replace(/\/+$/u, "");
 }
 
-export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: string) {
+export function webEntryMatchesSurfaceTarget(item: BrowserContainer, target: string) {
   const normalizedTarget = normalizeSurfaceMatchText(target);
   if (!normalizedTarget) {
     return false;
@@ -475,10 +475,10 @@ export interface CreateBrowserSurfaceRegistryContext {
   waitForWebviewSurfaceTargetMatching: (webContentsId: number, predicate: (target: RegisteredWebviewSurfaceTarget) => boolean, timeoutMs: number, signal?: AbortSignal) => Promise<RegisteredWebviewSurfaceTarget | null>;
   currentPageSnapshotMatchesSurface: (surfaceId: string, contents?: WebContents | null) => boolean;
   findWebContentsForSurfaceUrl: (surfaceUrl: string) => Electron.WebContents | null;
-  builtinBrowserSurface: (contents: WebContents | null, url?: string) => BrowserSurface;
-  listBrowserSurfaces: () => BrowserSurface[];
-  listChatWorkPanelSurfaces: () => BrowserSurface[];
-  listRegisteredSurfaces: () => BrowserSurface[];
+  builtinBrowserSurface: (contents: WebContents | null, url?: string) => BrowserContainer;
+  listBrowserContainers: () => BrowserContainer[];
+  listWorkPanelContainers: () => BrowserContainer[];
+  listRegisteredSurfaces: () => BrowserContainer[];
   listDiagnosticSurfaces: () => BrowserSurfaceDiagnosticSnapshot[];
   listWebContentsDiagnostics: () => BrowserWebContentsDiagnosticSnapshot[];
   getRegisteredSurfaceSnapshot: (surfaceId: string, registrationId: string, ownerWebContentsId: number) => { registered: RegisteredSurface; tabs: EmbeddedCdpSurfaceTabRegistration[]; } | null;
