@@ -23,6 +23,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   const factoryContext: CreateBrowserSurfaceRegistryContext = {
     get options() { return options; },
     get registeredSurfaces() { return registeredSurfaces; },
+    get workPanelDialogRegistrations() { return workPanelDialogRegistrations; },
     get registeredGuestTargets() { return registeredGuestTargets; },
     get pendingGuestTargetWaiters() { return pendingGuestTargetWaiters; },
     get surfaceAliases() { return surfaceAliases; },
@@ -78,6 +79,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   >();
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
   const pendingRegistrationDiagnostics = new Map<string, PendingSurfaceRegistrationDiagnostic>();
+  const workPanelDialogRegistrations = new Map<string, string>();
   const lifecycleListeners = new Set<(event: BrowserSurfaceLifecycleEvent) => void>();
   const registrationDiagnosticDedupWindowMs = Math.max(
     10,
@@ -196,7 +198,22 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     ownerWebContentsId: number
   ) { return createBrowserSurfaceRegistry_getRegisteredSurfaceSnapshot_10(factoryContext, surfaceId, registrationId, ownerWebContentsId); }
 
+  // Main-only reservation captured from an already-authorized live WorkPanel
+  // surface. It survives Main Chat remounts without granting a different Chat.
+  function retainWorkPanelDialogSurface(surfaceId: string, registrationId: string, ownerWebContentsId: number, nextRegistrationId: string) {
+    const snapshot = getRegisteredSurfaceSnapshot(surfaceId, registrationId, ownerWebContentsId);
+    if (!snapshot || snapshot.registered.surfaceKind !== "chat-work-panel" || snapshot.registered.surfaceRole !== "workpanel-web" ||
+        !snapshot.registered.ownerChatId || workPanelDialogRegistrations.has(surfaceId)) return false;
+    workPanelDialogRegistrations.set(surfaceId, nextRegistrationId);
+    return true;
+  }
+  function releaseWorkPanelDialogSurface(surfaceId: string, registrationId: string) {
+    if (workPanelDialogRegistrations.get(surfaceId) === registrationId) workPanelDialogRegistrations.delete(surfaceId);
+  }
+
   return {
+    retainWorkPanelDialogSurface,
+    releaseWorkPanelDialogSurface,
     currentPageSnapshotMatchesSurface,
     findWebContentsById,
     findWebContentsForSurfaceUrl,

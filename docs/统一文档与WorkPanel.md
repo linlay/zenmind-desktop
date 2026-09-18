@@ -61,6 +61,10 @@ Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展�
 
 图片 Surface 对 PNG/JPEG/WebP 保留像素编辑、撤销/重做、AI 工具和区域批注。非编辑格式只读，不得通过错误扩展名或隐式栅格化覆盖原件；JPEG 不接受含透明像素的覆盖结果。系统打开、定位和解码链路必须分别回归 macOS 与 Windows。
 
+普通 Web tab 可通过右键菜单改为独立 dialog 展示，与面板内的 tab/guest 互斥。AppShell reducer 仍持有原 item、owner Chat 和批注草稿，只将宿主展示位置改为 dialog；公开 workspace/item 投影不变，重复打开或激活同一 item 聚焦既有窗口。Main 从已登记的真实来源 guest 捕获 surface 身份，以一次性转移标识衔接 UI 卸载，原 guest 销毁后才创建目标 guest；沿用原 surfaceId、ownerChatId、parentSurfaceId 与 WorkPanel 类型，并更新 live registration generation，防止旧 renderer 清理误删新登记。窗口里的页面继续通过同一 Chat 的 WorkPanel Run 授权访问，不成为普通 Browser 或其他 Chat 的 surface。Main-only reservation 使该 WorkPanel 身份不随 Main Chat guest 的切换或卸载消失，也不允许其他 renderer/Chat 获得它。
+
+窗口不设置 parent、modal 或 alwaysOnTop，遵循正常系统窗口排序；Main 只在生命周期上负责随主窗口关闭、renderer 失效或 item/workspace 回收清理。macOS 使用原生标题栏和 Cmd+W，Windows 隐藏菜单栏并使用 Ctrl+W。原生关闭按钮和快捷键都先交回 AppShell 走原有草稿保护。切换采用先释放后重建，重新加载当前实际 HTTP(S) 地址，Cookie 沿用默认 session，但未提交的 DOM 状态不跨窗口保留；批注仍留在 reducer 并明确标记重载失效。失败时先回收目标窗口和登记，再恢复原 item 在面板内展示。窗口中的远端 guest 不获得通用 Desktop preload 或 Token Bridge。窗口宿主工具栏提供“还原到 WorkPanel”：只由可信 shell 请求，Main 读取 guest 当前实际地址、释放 guest 与 dialog 登记后才回复；AppShell 保留原 item/stable key/surface 身份，记录当前显示地址并激活所属 Chat 的面板。还原不走关闭 item 或丢弃批注流程，重复打开原入口仍复用同一 item。
+
 ## 实时 loopback 项目
 
 `localhost`、`*.localhost`、`127.0.0.0/8` 和 `[::1]` 是 loopback。当 owner Chat 是绑定有效 workspace 的 Coder 时，WorkPanel 为该 Web item 赋予 `live-project-web` 交接语义，但不赋予页面任何新权限。preload 只可交付脱敏 DOM 摘要、selector/XPath、坐标、URL 和可选截图；Coder 修改 workspace 后再通过 HMR 或刷新验证。顶层导航离开 loopback 后立即退化为普通 Web。

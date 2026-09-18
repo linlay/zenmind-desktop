@@ -725,3 +725,13 @@
 - WorkPanel 本地文件/原生文档不进入普通网页自动化列表，WebApp bridge 和 AWCP 不因 Surface 统一而增加权限。
 - AWCP 指定同一授权 Surface 完成手册读取和调用；指定其他应用或发现后切换到另一 Surface 调用须失败。
 - WorkPanel 网络页后台截图保留有效尺寸，输入后前台焦点恢复；macOS/Windows 坐标均为 CSS 像素。
+## WorkPanel 网站独立窗口
+
+- macOS 与 Windows 分别右键普通网站 tab，选择“在独立窗口打开”：原 tab 从面板移除，原 guest 销毁后才创建独立 guest，不能存在两个网站实例；打开当前实际地址，登录 Cookie 可用。
+- 查看 WorkPanel 状态与 CDP：原 item、surfaceId、ownerChatId、parentSurfaceId 保留，guest/registration generation 更新；只能由原 Chat 的 WorkPanel Run 授权操作。切换 Chat 或卸载 Main Chat 后独立窗口仍保持原归属，其他 Chat 不可访问。
+- 重复打开同一 URL、activateTab 与 refreshWeb 操作既有独立窗口，不重新在面板创建 guest。原生窗口不设置父窗口、modal 或 alwaysOnTop，点击主窗口或其他应用时按正常系统层级切换。
+- 关闭窗口（关闭按钮、Cmd+W / Ctrl+W）经过原有草稿保护，取消关闭保留窗口；确认后回收 item/guest/登记。关闭所属 workspace、归档/删除 Chat、主窗口关闭或 renderer 失效均回收窗口。
+- 切换后批注草稿保留并标记重载失效，未提交 DOM 状态不迁移。加载失败先销毁目标窗口再恢复面板 item；非 Web tab 与仅复制地址菜单不显示该入口。
+
+- 独立窗口顶部点击“还原到 WorkPanel”，确认回到所属 Chat 并选中原 tab；从其他 Chat、其他主页面、面板隐藏及主窗口最小化状态分别验证。还原使用独立窗口当前地址（含 query/hash），不回到初始地址；原 item、surfaceId 与草稿保留，没有第二个并存 guest。再次弹出与还原可连续使用；仅点击窗口关闭按钮仍走关闭逻辑。
+- 在独立网页内部导航到同样的 restore URL，确认不会触发宿主还原动作；只有独立窗口的宿主工具栏可请求还原。

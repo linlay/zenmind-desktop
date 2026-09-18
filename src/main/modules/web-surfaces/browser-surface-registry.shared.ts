@@ -436,6 +436,7 @@ export function webEntryMatchesSurfaceTarget(item: BrowserContainer, target: str
 export interface CreateBrowserSurfaceRegistryContext {
   options: BrowserSurfaceRegistryOptions;
   registeredSurfaces: Map<string, RegisteredSurface>;
+  workPanelDialogRegistrations: Map<string, string>;
   registeredGuestTargets: Map<number, RegisteredWebviewSurfaceTarget>;
   pendingGuestTargetWaiters: Map<number, Set<PendingGuestTargetWaiter>>;
   surfaceAliases: Map<string, string>;

@@ -21,7 +21,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
   normalizeWorkPanelWebUrl,
@@ -353,6 +353,7 @@ export function WorkPanelHost({
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
   const [reviewPreloadUrl, setReviewPreloadUrl] = useState("");
   const webControllers = useRef(new Map<string, ExternalWebviewController>());
+  const webDialogTransfers = useRef(new Set<string>());
   const nativeHtmlControllers = useRef(new Map<string, HtmlDocumentController>());
   const [resourceReviewCapabilities, setResourceReviewCapabilities] = useState<Record<string, ResourceReviewCapability>>({});
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
@@ -566,6 +567,11 @@ export function WorkPanelHost({
     if (hasWorkPanelReviewDraft(session) && !force) return false;
     return dispatchCommand({ type: "closeItem", ownerChatId, itemId, ...(force ? { force: true } : {}) }).ok;
   };
+
+  useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogCloseRequested((transferId) => {
+    const dialog = stateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
+    if (dialog) closeItemWithReviewProtection(dialog.ownerChatId, dialog.itemId);
+  }), [dispatchCommand, t]);
 
   const closeOtherItemsWithReviewProtection = (ownerChatId: string, itemId: string) => {
     const workspace = stateRef.current.workspaces.find((candidate) => candidate.ownerChatId === ownerChatId);
@@ -1313,6 +1319,38 @@ export function WorkPanelHost({
       }
       return;
     }
+    if (result.actionId === "open-web-dialog" && currentItem.descriptor.kind === "web") {
+      const transferKey = itemRuntimeKey(ownerChatId, item.itemId);
+      if (webDialogTransfers.current.has(transferKey)) return;
+      const guest = findItemWebview(ownerChatId, item.itemId);
+      let sourceGuestId: number;
+      try { if (!guest) return; sourceGuestId = guest.getWebContentsId(); } catch { return; }
+      webDialogTransfers.current.add(transferKey);
+      let transferId: string | undefined;
+      try {
+        const prepared = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "prepare", sourceGuestId });
+        transferId = prepared.transferId;
+        if (!prepared.ok || !transferId || !prepared.surfaceId || prepared.ownerChatId !== ownerChatId) throw new Error("prepare_failed");
+        let moved = false;
+        flushSync(() => {
+          moved = dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId,
+            dialog: { ownerChatId, itemId: item.itemId, surfaceId: prepared.surfaceId!, transferId: transferId! },
+          }).ok;
+        });
+        if (!moved) throw new Error("item_unavailable");
+        const opened = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "open", transferId });
+        if (!opened.ok) throw new Error("open_failed");
+        dispatchCommand({ type: "stopReview", ownerChatId, itemId: item.itemId });
+        dispatchCommand({ type: "markReviewInvalid", ownerChatId, itemId: item.itemId, reason: "preview_reloaded" });
+      } catch {
+        if (transferId) {
+          await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId }).catch(() => undefined);
+          dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId, dialog: null });
+        }
+        modal.error({ content: t("chatWorkPanel.resourceActions.failed") });
+      } finally { webDialogTransfers.current.delete(transferKey); }
+      return;
+    }
     if (result.actionId === "copy-url" && item.descriptor.kind === "web") {
       let currentUrl = "";
       try {
@@ -1833,6 +1871,12 @@ export function WorkPanelHost({
           candidate.descriptor.kind === "web" && candidate.descriptor.url === url,
         );
         if (!item) return actionError("target_unavailable", "WorkPanel WebView item is unavailable.");
+        const dialog = stateRef.current.dialogItems?.find((entry) => entry.ownerChatId === ownerChatId && entry.itemId === item.itemId);
+        if (dialog) {
+          const refreshed = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "reload", transferId: dialog.transferId });
+          return refreshed.ok ? execute({ type: "activateItem", ownerChatId, itemId: item.itemId })
+            : actionError("target_unavailable", "WorkPanel dialog is unavailable.");
+        }
         const webview = findItemWebview(ownerChatId, item.itemId);
         if (!webview) return actionError("target_unavailable", "WorkPanel WebView guest is unavailable.");
         try {
@@ -1980,6 +2024,7 @@ export function WorkPanelHost({
           >
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
               {workspace.items.map((item) => {
+                if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
                 const active = workspace.activeItemId === item.itemId;
                 const closable = item.closable && !item.pinned;
                 const overview = item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
@@ -2059,6 +2104,7 @@ export function WorkPanelHost({
             <div className="chat-work-panel-body">
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
+                if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
                   const active = visible && workspace.activeItemId === item.itemId;
                   const resourceProfile = localResourceProfile(item);
                   const supportsLocalResourceActions = Boolean(
@@ -2334,7 +2380,7 @@ export function WorkPanelHost({
                             : undefined}
                           url={item.descriptor.kind === "local-file"
                             ? createWorkPanelLocalFileUrl(item.descriptor.handleId, item.descriptor.fileName)
-                            : item.descriptor.url}
+                            : state.webItemUrls?.[itemRuntimeKey(workspace.ownerChatId, item.itemId)] || item.descriptor.url}
                           workPanelToolbarKind={item.descriptor.kind === "local-file" ? "document" : "web"}
                         />
                       ) : item.descriptor.kind === "local-file" ? (

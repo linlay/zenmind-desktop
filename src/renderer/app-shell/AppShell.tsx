@@ -741,6 +741,7 @@ export function AppShell() {
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const workPanelDialogRestoresRef = useRef(new Set<string>());
   const [webappPresentationOwners, setWebappPresentationOwners] =
     useState<Record<string, WebappPresentationOwner>>({});
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
@@ -1437,6 +1438,11 @@ export function AppShell() {
 
   function commitWorkPanelState(nextState: WorkPanelState) {
     if (nextState === workPanelStateRef.current) return;
+    for (const dialog of workPanelStateRef.current.dialogItems ?? []) {
+      if (!nextState.workspaces.some((workspace) => workspace.ownerChatId === dialog.ownerChatId && workspace.items.some((item) => item.itemId === dialog.itemId))) {
+        void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId: dialog.transferId }).catch(() => undefined);
+      }
+    }
     workPanelStateRef.current = nextState;
     setWorkPanelState(nextState);
   }
@@ -2325,8 +2331,7 @@ export function AppShell() {
 
   useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
     if (progress.phase === "preparing") {
-      workPanelStateRef.current = EMPTY_WORK_PANEL_STATE;
-      setWorkPanelState(EMPTY_WORK_PANEL_STATE);
+      commitWorkPanelState(EMPTY_WORK_PANEL_STATE);
       setWebappPresentationOwners({});
       if (activeWebEntryKeyRef.current?.startsWith("webapp:")) {
         requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
@@ -4088,6 +4093,17 @@ export function AppShell() {
         }
       : command;
     const result = reduceWorkPanelCommand(currentState, normalizedCommand);
+    if (result.ok) {
+      for (const dialog of previousState.dialogItems ?? []) {
+        if (!result.nextState.dialogItems?.some((entry) => entry.transferId === dialog.transferId)) {
+          void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId: dialog.transferId }).catch(() => undefined);
+        }
+      }
+      if ((command.type === "openItem" || command.type === "activateItem") && result.item) {
+        const dialog = result.nextState.dialogItems?.find((entry) => entry.ownerChatId === command.ownerChatId && entry.itemId === result.item?.itemId);
+        if (dialog) void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "focus", transferId: dialog.transferId }).catch(() => undefined);
+      }
+    }
     if (result.nextState !== workPanelStateRef.current) {
       workPanelStateRef.current = result.nextState;
       setWorkPanelState(result.nextState);
@@ -4381,6 +4397,36 @@ export function AppShell() {
       requestSidebarNavigation(targetRoute);
     }
   }, [desiredChatRouteChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
+
+  useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogRestoreRequested((transferId) => {
+    if (workPanelDialogRestoresRef.current.has(transferId)) return;
+    const presentation = workPanelStateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
+    if (!presentation) return;
+    const workspace = workPanelStateRef.current.workspaces.find((entry) => entry.ownerChatId === presentation.ownerChatId);
+    const overview = workspace?.items.find((item) => item.descriptor.kind === "webclient" && item.descriptor.module === "overview");
+    const agentKey = overview?.descriptor.kind === "webclient" && overview.descriptor.module === "overview"
+      ? overview.descriptor.context.agentKey.trim() : activeChatRouteInfo.chatId === presentation.ownerChatId ? activeChatRouteInfo.agentKey : "";
+    workPanelDialogRestoresRef.current.add(transferId);
+    void (async () => {
+      try {
+        const restored = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "restore", transferId });
+        if (!restored.ok || !restored.url || restored.ownerChatId !== presentation.ownerChatId || restored.surfaceId !== presentation.surfaceId) {
+          setWorkPanelOpenError(t("chatWorkPanel.resourceActions.failed"));
+          return;
+        }
+        const result = dispatchWorkPanelCommand({ type: "setDialogPresentation", ownerChatId: presentation.ownerChatId,
+          itemId: presentation.itemId, dialog: null, restoreUrl: restored.url });
+        if (!result.ok) return; // The Chat or item may have been removed during transfer.
+        if (agentKey) {
+          const targetRoute = createAgentChatRoute(agentKey, presentation.ownerChatId);
+          requestChatWorkPanelOpenWhenRegistered(presentation.ownerChatId, agentKey, "show", targetRoute);
+          requestSidebarNavigation(targetRoute);
+        }
+      } catch {
+        setWorkPanelOpenError(t("chatWorkPanel.resourceActions.failed"));
+      } finally { workPanelDialogRestoresRef.current.delete(transferId); }
+    })();
+  }), [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation, t]);
 
   const toggleChatWorkPanelFromSidebar = useCallback((chatIdValue: string, agentKeyValue: string) => {
     const chatId = chatIdValue.trim();
