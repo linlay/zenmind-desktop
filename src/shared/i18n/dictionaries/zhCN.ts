@@ -2725,6 +2725,8 @@ export const zhCNMessages = {
   "startup.ssoUnavailable": "当前运行实例尚未加载单点登录，请重启桌面端。",
 
   "envBootstrap.resetUnsupportedPlatform": "当前平台不支持从内置 env.zip 重置运行环境。",
+  "envBootstrap.resetActiveProfile": "无法在运行中重置：运行目录包含正在使用的 Electron 浏览器数据。请完全退出应用后由离线维护流程重置；仅停止智能体平台或重新点击此按钮无法完成重置。现有数据未修改。",
+  "envBootstrap.resetRequiresOffline": "无法在应用运行中重置整个运行环境：后台服务或浏览器会话可能仍在使用其中的数据。请完全退出应用后由离线维护流程重置；仅停止智能体平台或重新点击此按钮无法完成重置。现有数据未修改。",
   "envBootstrap.bundledEnvZipMissing": "安装包内置 env.zip 不存在，无法重置运行环境。",
   "envBootstrap.runtimeRootNotDirectory": "运行环境路径不是目录：{path}",
   "envBootstrap.resetFailed": "运行环境重置失败：{message}",

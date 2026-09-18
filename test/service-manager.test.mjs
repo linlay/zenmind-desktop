@@ -3734,6 +3734,38 @@ test("forceStopServiceInstallDir cleans managed processes for agent-platform on 
   assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid"]);
 });
 
+test("failed force stop retains PID evidence and blocks builtin directory replacement", async () => {
+  const removed = [];
+  assert.equal(__testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" }, "/tmp/agent-platform", new Map(), {
+      isWindows: true,
+      collectState: () => createManagedStopState({ mainPidFilePath: "/tmp/agent-platform.pid", managedMainPid: 101 }),
+      terminateProcessTreeImpl: () => false,
+      removePidFileImpl: (file) => removed.push(file)
+    }
+  ), false);
+  assert.deepEqual(removed, []);
+  assert.equal(__testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" }, "/tmp/older-platform-version", new Map(), {
+      isWindows: true,
+      collectState: () => createManagedStopState({ mainPidFilePath: "/tmp/shared-platform.pid", managedMainPid: null }),
+      removePidFileImpl: (file) => removed.push(file)
+    }
+  ), true);
+  assert.deepEqual(removed, [], "must not erase a shared PID file belonging to another installed version");
+
+  const cleanup = require("../dist-electron/main/modules/services/manager/managed-cleanup.js");
+  const { stopBuiltinInstallDir } = require("../dist-electron/main/modules/services/manager/builtin-install.js");
+  const original = cleanup.forceStopServiceInstallDir;
+  const layout = { programDir: "/tmp/missing-platform-install", envPath: "/tmp/absent-shared-env", stateDir: "/tmp/shared-state" };
+  cleanup.forceStopServiceInstallDir = (_service, receivedLayout) => { assert.equal(receivedLayout, layout); return false; };
+  try {
+    await assert.rejects(stopBuiltinInstallDir({ id: "agent-platform", stopCommand: [] }, layout.programDir, layout), /could not be stopped/);
+  } finally {
+    cleanup.forceStopServiceInstallDir = original;
+  }
+});
+
 test("getServiceState removes stale pid files that point to unrelated live processes", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-stale-live-pid-"));
   const userDataRoot = path.join(tempRoot, "user-data");

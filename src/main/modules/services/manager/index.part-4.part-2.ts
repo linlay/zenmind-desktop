@@ -237,7 +237,7 @@ export async function installBuiltinServiceInternal(
       }
       didExtract = true;
       if (fs.existsSync(finalInstallDir)) {
-        await stopBuiltinInstallDir(service, finalInstallDir);
+        await stopBuiltinInstallDir(service, finalInstallDir, layout);
       }
       fs.rmSync(finalInstallDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       moveExtractedBuiltinRoot(extractedRoot, finalInstallDir);

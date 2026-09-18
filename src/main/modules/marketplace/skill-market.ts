@@ -315,7 +315,7 @@ export async function uninstallSkillMarketItem(app: App, itemId: string): Promis
     }
     replaceInstalledRecords(
       app,
-      records.filter((record) => !(record.type === "skill" && record.id === itemId))
+      readInstalledRecords(app).filter((record) => !(record.type === "skill" && record.id === itemId))
     );
     return {
       ok: true,
@@ -340,7 +340,7 @@ export async function uninstallSkillMarketItem(app: App, itemId: string): Promis
     if (deleted.packageDeleted) {
       replaceInstalledRecords(
         app,
-        records.filter((record) => !(record.type === "skill" && record.id === owningPackageID))
+        readInstalledRecords(app).filter((record) => !(record.type === "skill" && record.id === owningPackageID))
       );
     }
     return {
@@ -354,7 +354,7 @@ export async function uninstallSkillMarketItem(app: App, itemId: string): Promis
   return uninstallSkill(app, itemId, {
     onRemoved: () => replaceInstalledRecords(
       app,
-      records.filter((record) => !(record.type === "skill" && record.id === itemId))
+      readInstalledRecords(app).filter((record) => !(record.type === "skill" && record.id === itemId))
     )
   });
 }

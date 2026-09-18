@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { t } from "../../support/i18n/main-i18n";
 
@@ -45,49 +44,41 @@ export async function archiveSkillDirectory(root: string): Promise<Buffer> {
   return archive;
 }
 
-async function publish(call: SkillPlatformCaller, key: string, archive: Buffer) {
-  const boundary = `desktop-skill-${randomUUID()}`;
-  const rawBody = Buffer.concat([
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="skill.zip"\r\nContent-Type: application/zip\r\n\r\n`),
-    archive,
-    Buffer.from(`\r\n--${boundary}--\r\n`)
-  ]);
-  const result = await call(`/api/admin/skills/import?${new URLSearchParams({ key, overwrite: "true" })}`, {
-    method: "POST", rawBody, contentType: `multipart/form-data; boundary=${boundary}`
-  }) as { kind?: string; skill?: { key?: string } };
-  if (result?.kind !== "skill" || result.skill?.key !== key) throw new Error(t("skillInstaller.publicationUnconfirmed"));
-}
+type SkillSnapshot = { key: string; exists: boolean; revision: string; archiveBase64?: string };
 
-async function contentDigest(archive: Buffer) {
-  const zip = await JSZip.loadAsync(archive);
-  const digest = createHash("sha256");
-  for (const name of Object.keys(zip.files).sort()) {
-    const entry = zip.files[name];
-    digest.update(JSON.stringify([name, entry.dir]));
-    if (!entry.dir) digest.update(await entry.async("nodebuffer"));
+async function transact(call: SkillPlatformCaller, key: string, operation: "snapshot" | "replace" | "delete", expectedRevision?: string, archive?: Buffer): Promise<SkillSnapshot> {
+  const result = await call("/api/admin/skills/transaction", {
+    method: "POST", body: { key, operation, expectedRevision, ...(archive ? { archiveBase64: archive.toString("base64") } : {}) }
+  }) as SkillSnapshot;
+  if (result?.key !== key || typeof result.exists !== "boolean" ||
+      (result.exists ? !/^[a-f0-9]{64}$/.test(result.revision ?? "") : result.revision !== "missing") ||
+      (operation === "replace" && !result.exists) || (operation === "delete" && result.exists)) {
+    throw new Error(t("skillInstaller.publicationUnconfirmed"));
   }
-  return digest.digest("hex");
-}
-
-async function remove(call: SkillPlatformCaller, key: string) {
-  const response = await call("/api/admin/skills/delete", { method: "POST", body: { key } }) as { deleted?: boolean };
-  if (response?.deleted !== true) throw new Error(t("skillInstaller.removalUnconfirmed"));
+  return result;
 }
 
 // Serialize local publication and record compensation together. Files under
-// skills-center are read-only here: Platform owns every destructive operation.
-export function mutateSkillThroughPlatform(key: string, targetDir: string, archive: Buffer | null, commit: () => void) {
+// Platform owns both the consistent snapshot and the conditional mutation.
+// No filesystem read of a live skill occurs in Desktop, including compensation.
+export function mutateSkillThroughPlatform(key: string, _targetDir: string, archive: Buffer | null, commit: () => void) {
   const call = platformCaller;
   const operation = pendingMutation.catch(() => undefined).then(async () => {
     if (!call) throw new Error(t("skillInstaller.platformRequired"));
     if (!key || key === "." || key === ".." || /[\/\\\x00-\x1f]/u.test(key)) throw new Error(t("skillInstaller.invalidId"));
-    const previous = fs.existsSync(targetDir) ? await archiveSkillDirectory(targetDir) : null;
+    const snapshot = await transact(call, key, "snapshot");
+    if (snapshot.exists && (typeof snapshot.archiveBase64 !== "string" || snapshot.archiveBase64.length > 44 * 1024 * 1024)) {
+      throw new Error(t("skillInstaller.publicationUnconfirmed"));
+    }
+    const previous = snapshot.exists ? Buffer.from(snapshot.archiveBase64!, "base64") : null;
+    if (previous && (previous.length === 0 || previous.length > 32 * 1024 * 1024)) throw new Error(t("skillInstaller.archiveLimit"));
+    if (previous && previous.toString("base64") !== snapshot.archiveBase64) throw new Error(t("skillInstaller.publicationUnconfirmed"));
     const recoveryRoot = previous ? fs.mkdtempSync(path.join(os.tmpdir(), "desktop-skill-recovery-")) : "";
     const recoveryPath = recoveryRoot ? path.join(recoveryRoot, "previous.zip") : "";
     if (previous) fs.writeFileSync(recoveryPath, previous, { mode: 0o600 });
+    let published: SkillSnapshot;
     try {
-      if (archive) await publish(call, key, archive);
-      else await remove(call, key);
+      published = await transact(call, key, archive ? "replace" : "delete", snapshot.revision, archive ?? undefined);
     } catch (error) {
       // A transport failure may occur after server commit. Never automatically
       // issue an inverse operation when the publication result is uncertain.
@@ -97,16 +88,9 @@ export function mutateSkillThroughPlatform(key: string, targetDir: string, archi
       commit();
     } catch (error) {
       try {
-        if (archive) {
-          const current = await archiveSkillDirectory(targetDir);
-          if (await contentDigest(current) !== await contentDigest(archive)) {
-            throw new Error(t("skillInstaller.changedBeforeRestore"));
-          }
-        } else if (fs.existsSync(targetDir)) {
-          throw new Error(t("skillInstaller.recreatedBeforeRestore"));
-        }
-        if (previous) await publish(call, key, previous);
-        else await remove(call, key);
+        // Compare and restore happen under one Platform transaction lock.
+        // A later edit/recreation is rejected by the server with 409.
+        await transact(call, key, previous ? "replace" : "delete", published.revision, previous ?? undefined);
       } catch (rollbackError) {
         throw new Error(t("skillInstaller.compensationFailed", { message: String(error), rollback: String(rollbackError), recovery: recoveryPath ? t("skillInstaller.recoveryLocation", { path: recoveryPath }) : "" }), { cause: error });
       }
