@@ -14,22 +14,26 @@ function text(value: unknown, maxLength: number): string {
   return typeof value === "string" && value.length <= maxLength && !/[\u0000-\u001f]/u.test(value) ? value.trim() : "";
 }
 
-// Resource upload notifications share the same metadata index as published artifacts.
+// Main-lane publication pushes and upload notifications share one metadata index.
 export function parseArtifactPush(value: unknown): DesktopArtifactRecord | null {
   const frame = record(value);
-  if (!frame || frame.frame !== "push" || frame.type !== "resource.pushed") return null;
+  if (!frame || frame.frame !== "push" ||
+      (frame.type !== "artifact.published" && frame.type !== "resource.pushed")) return null;
   const data = record(frame.data) ?? record(frame.payload) ?? frame;
+  const published = frame.type === "artifact.published";
+  if (published && !text(data.runId, 256)) return null;
+  const pushedAt = published ? data.publishedAt : data.pushedAt;
   const chatId = text(data.chatId, 256);
   const artifactId = text(data.artifactId, 256);
   const name = text(data.name, 1024);
-  if (!chatId || !artifactId || !name || !isAgentPlatformEpochMilliseconds(data.pushedAt) ||
+  if (!chatId || !artifactId || !name || !isAgentPlatformEpochMilliseconds(pushedAt) ||
       !Number.isSafeInteger(data.sizeBytes) || Number(data.sizeBytes) < 0) return null;
   return {
     chatId, artifactId, name,
     mimeType: text(data.mimeType, 256),
     sizeBytes: Number(data.sizeBytes),
     sha256: text(data.sha256, 256),
-    pushedAt: data.pushedAt,
+    pushedAt,
   };
 }
 

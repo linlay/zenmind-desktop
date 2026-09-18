@@ -735,3 +735,8 @@
 
 - 独立窗口顶部点击“还原到 WorkPanel”，确认回到所属 Chat 并选中原 tab；从其他 Chat、其他主页面、面板隐藏及主窗口最小化状态分别验证。还原使用独立窗口当前地址（含 query/hash），不回到初始地址；原 item、surfaceId 与草稿保留，没有第二个并存 guest。再次弹出与还原可连续使用；仅点击窗口关闭按钮仍走关闭逻辑。
 - 在独立网页内部导航到同样的 restore URL，确认不会触发宿主还原动作；只有独立窗口的宿主工具栏可请求还原。
+
+### Main WS 产物发布通知
+
+- macOS / Windows 在产物发布前切换到其他 Chat 或产物管理页：收到 `frame: push / type: artifact.published` 后立即入库，不要求来源 Run observer 存在，不依赖网关上传。分别覆盖 MD、PNG、HTML、DOCX、XLSX、PPTX。
+- 使用 `publishedAt` 毫秒时间；重复 push、旧 stream 通知及上传完成通知不新增同一 Chat + Artifact。非法时间/缺失身份不入库。离线期间历史漏项不会被此实时接入自动补录。

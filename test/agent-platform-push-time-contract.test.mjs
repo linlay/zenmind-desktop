@@ -39,6 +39,7 @@ test("agent-platform push time contract accepts every documented push shape", ()
     ["awaiting.asking", { createdAt: EPOCH_MS, timeout: 600 }, EPOCH_MS],
     ["awaiting.answered", { answeredAt: EPOCH_MS, durationMs: 600 }, EPOCH_MS],
     ["resource.pushed", { pushedAt: EPOCH_MS }, EPOCH_MS],
+    ["artifact.published", { publishedAt: EPOCH_MS }, EPOCH_MS],
   ];
 
   for (const [type, data, expectedTime] of cases) {

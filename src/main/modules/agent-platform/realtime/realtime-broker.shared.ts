@@ -87,6 +87,7 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "awaiting.asking",
   "awaiting.answered",
   "resource.pushed",
+  "artifact.published",
 ]);
 
 export type Deferred<T> = {

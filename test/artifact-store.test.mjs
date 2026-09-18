@@ -63,7 +63,7 @@ test("main Push subscription records while the page is closed, restricts IPC and
   });
   t.after(() => runtime.dispose());
   assert.deepEqual(fs.readdirSync(home), []); // Factory must not change first-install detection.
-  assert.deepEqual(consumer.types, ["resource.pushed"]);
+  assert.deepEqual(consumer.types, ["artifact.published", "resource.pushed"]);
   assert.equal(consumer.kind, "internal");
   consumer.onPush(event());
   window = { isDestroyed: () => false, webContents };
@@ -103,4 +103,47 @@ test("primary artifact.publish records every valid item without a gateway upload
   broker.options.onArtifactPublished = () => { throw new Error('database unavailable'); };
   assert.doesNotThrow(() => consume(broker, run, { ...published, seq: 2 }, null));
   assert.deepEqual(errors, ['artifact_index_delivery_failed']);
+});
+
+const publication = (data = {}) => ({ frame: "push", type: "artifact.published", data: {
+  ...event().data, pushedAt: undefined, runId: "background-run", publishedAt: 1_800_000_000_000, ...data,
+} });
+
+test("publication push uses publishedAt and validates identity independently of file format", () => {
+  for (const name of ["a.md", "a.png", "a.html", "a.docx", "a.xlsx", "a.pptx"]) {
+    assert.equal(parseArtifactPush(publication({ name })).name, name);
+  }
+  for (const data of [{ runId: "" }, { publishedAt: undefined }, { publishedAt: 1_800_000_000 }, { sizeBytes: -1 }]) {
+    assert.equal(parseArtifactPush(publication(data)), null);
+  }
+  assert.equal(parseArtifactPush({ ...publication(), frame: "stream" }), null);
+  assert.equal(parseArtifactPush(publication()).pushedAt, 1_800_000_000_000);
+});
+
+test("Main publication push reaches the index with no Run channel or mounted page", (t) => {
+  const { app } = setup(t);
+  const { RealtimeBroker_handlePush_1: handlePush } = require('../dist-electron/main/modules/agent-platform/realtime/realtime-broker.methods-5.js');
+  const subscriptions = new Map();
+  const diagnostics = [];
+  // Deliberately no runChannels or active surface: delivery must be global.
+  const broker = { options: { onDiagnostic: value => diagnostics.push(value) }, diagnostics: { unknownFrameCount: 0 }, pushSubscriptions: subscriptions };
+  const runtime = createArtifactRuntime({ app, platform: "darwin",
+    broker: { subscribePush: (input) => { subscriptions.set("artifacts", { ...input, types: new Set(input.types) }); return () => subscriptions.clear(); } },
+    ipcMain: { handle() {}, removeHandler() {} }, getMainWindow: () => null,
+    onError: error => { throw error; },
+  });
+  t.after(() => runtime.dispose());
+  const store = new ArtifactStore(() => getArtifactDatabasePath(app, "darwin"));
+  const png = publication({ name: "image.png", mimeType: "image/png", sizeBytes: 1523175 });
+  handlePush(broker, png);
+  handlePush(broker, png);
+  handlePush(broker, event({ name: "image.png", mimeType: "image/png", sizeBytes: 1523175 }));
+  assert.equal(store.list().total, 1);
+  assert.equal(store.list().records[0].name, "image.png");
+  handlePush(broker, publication({ publishedAt: 1_799_999_999_999, name: "stale.png" }));
+  assert.equal(store.list().records[0].name, "image.png");
+  handlePush(broker, publication({ artifactId: "bad", publishedAt: 1_800_000_000 }));
+  assert.equal(store.list().total, 1);
+  assert.equal(broker.diagnostics.unknownFrameCount, 0);
+  assert.equal(diagnostics.length, 1);
 });
