@@ -2285,7 +2285,7 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
 
   try {
     writeTestEnv(userDataRoot, service.id, "SERVER_PORT=7078\n");
-    const overrides = __testInternals.getStartCommandEnvOverrides(app, service);
+    const overrides = await __testInternals.getStartCommandEnvOverrides(app, service);
     assert.equal(overrides, undefined);
     assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8"), "SERVER_PORT=7078\n");
   } finally {
@@ -3253,13 +3253,13 @@ test("core builtin start commands run in daemon mode", () => {
   );
 });
 
-test("desktop start commands skip a second builtin asset refresh", () => {
+test("desktop start commands skip a second builtin asset refresh", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
 
   try {
-    const options = __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
+    const options = await __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
 
     assert.equal(options.refreshBuiltinAsset, false);
     assert.equal(options.env, undefined);
@@ -3732,6 +3732,38 @@ test("forceStopServiceInstallDir cleans managed processes for agent-platform on 
   assert.equal(terminated, true);
   assert.deepEqual(terminatedPids, [101, 102]);
   assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid"]);
+});
+
+test("failed force stop retains PID evidence and blocks builtin directory replacement", async () => {
+  const removed = [];
+  assert.equal(__testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" }, "/tmp/agent-platform", new Map(), {
+      isWindows: true,
+      collectState: () => createManagedStopState({ mainPidFilePath: "/tmp/agent-platform.pid", managedMainPid: 101 }),
+      terminateProcessTreeImpl: () => false,
+      removePidFileImpl: (file) => removed.push(file)
+    }
+  ), false);
+  assert.deepEqual(removed, []);
+  assert.equal(__testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" }, "/tmp/older-platform-version", new Map(), {
+      isWindows: true,
+      collectState: () => createManagedStopState({ mainPidFilePath: "/tmp/shared-platform.pid", managedMainPid: null }),
+      removePidFileImpl: (file) => removed.push(file)
+    }
+  ), true);
+  assert.deepEqual(removed, [], "must not erase a shared PID file belonging to another installed version");
+
+  const cleanup = require("../dist-electron/main/modules/services/manager/managed-cleanup.js");
+  const { stopBuiltinInstallDir } = require("../dist-electron/main/modules/services/manager/builtin-install.js");
+  const original = cleanup.forceStopServiceInstallDir;
+  const layout = { programDir: "/tmp/missing-platform-install", envPath: "/tmp/absent-shared-env", stateDir: "/tmp/shared-state" };
+  cleanup.forceStopServiceInstallDir = (_service, receivedLayout) => { assert.equal(receivedLayout, layout); return false; };
+  try {
+    await assert.rejects(stopBuiltinInstallDir({ id: "agent-platform", stopCommand: [] }, layout.programDir, layout), /could not be stopped/);
+  } finally {
+    cleanup.forceStopServiceInstallDir = original;
+  }
 });
 
 test("getServiceState removes stale pid files that point to unrelated live processes", async () => {

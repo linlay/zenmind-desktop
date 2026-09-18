@@ -223,7 +223,7 @@ export async function startServiceInternal(
           getDesktopStartCommand(service),
           t("service.started", { name: service.name }),
           {
-            ...getDesktopStartCommandOptions(app, service),
+            ...await getDesktopStartCommandOptions(app, service),
             commandKind: "start",
             stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions,
             integrationPorts: options.integrationPorts
