@@ -1375,3 +1375,39 @@ test("Desktop Worker internal failures preserve causes and use a server error fr
   assert.equal(frame.type, "tooling_worker_unavailable");
   assert.deepEqual(frame.data.details, details);
 });
+
+test("ordinary Chat AWCP requires live Run ownership and reuses the exact page scope until termination", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const source = { chatId: "chat-awcp-wp", runId: "run-awcp-wp", agentKey: "agent-1" };
+  let acquired = 0, released = 0, calls = 0;
+  const scope = { readContainer() { return { tabs: [] }; }, release() { released++; } };
+  broker.setDesktopBridgeProvider({
+    acquireWorkPanelAwcpScope: (surfaceId, chatId) => {
+      assert.equal(surfaceId, "page:workpanel"); assert.equal(chatId, source.chatId); acquired++; return scope;
+    },
+    awcpManual: async (_id, _payload, granted) => { assert.equal(granted, scope); calls++; return { ok: true }; },
+    awcpInvoke: async (_id, _payload, granted) => { assert.equal(granted, scope); calls++; return { ok: true }; },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  let sequence = 0;
+  async function send(type = "desktop.awcp.manual", payload = { surfaceId: "page:workpanel" }, caller = source) {
+    const id = `wp-awcp-${++sequence}`;
+    socket("primary").emit({ frame: "request", type, id, source: caller, payload });
+    await waitUntil(() => socket("primary").sent.some((frame) => frame.id === id));
+    return socket("primary").sent.find((frame) => frame.id === id);
+  }
+  assert.equal((await send()).type, "source_chat_not_ready");
+  broker.registerRunActionGrant({ sourceId: "main-chat:awcp", ...source,
+    owner: { kind: "agent", agentKey: source.agentKey }, ready: Promise.resolve() });
+  assert.equal((await send("desktop.awcp.manual", {})).type, "protocol_error");
+  assert.equal((await send()).frame, "response");
+  assert.equal((await send("desktop.awcp.manual", { surfaceId: "page:workpanel", revision: "v1", section: "read" })).frame, "response");
+  assert.equal((await send("desktop.awcp.invoke", { surfaceId: "page:workpanel", revision: "v1", action: "read", args: {} })).frame, "response");
+  assert.equal(acquired, 1); assert.equal(calls, 3);
+  assert.equal((await send(undefined, undefined, { ...source, chatId: "chat-other" })).frame, "error");
+  assert.equal((await send(undefined, undefined, { ...source, agentKey: "agent-other" })).frame, "error");
+  socket("primary").emit({ frame: "push", type: "run.finished", data: { ...source,
+    status: "completed", finishReason: "complete", finishedAt: EPOCH_MS + 10 } });
+  assert.equal((await send()).type, "source_chat_not_ready");
+  assert.equal(released, 1); assert.equal(calls, 3);
+});

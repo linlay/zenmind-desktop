@@ -553,3 +553,73 @@ test('Input.click runs one authorized focus transaction and never forwards the v
   await assert.rejects(gateway.executeCommand({ method: 'Input.click', surfaceId, params: { selector: '#b' } }, scope, controller.signal), /canceled/);
   assert.equal(h.commands.length, before);
 });
+
+function workPanelPage(h, parent, name, chatId = 'chat-a', url = `https://${name}.example/`) {
+  const { createChatChildSurfaceIdentity } = require('../dist-electron/shared/surface-identity.js');
+  const guest = h.guest(url);
+  const key = `web:${name}`;
+  const page = { ...createChatChildSurfaceIdentity('workpanel-web', key, chatId, parent.surfaceId),
+    registrationId: `registration-${name}`, surfaceIdentityKey: key, surfaceKind: 'chat-work-panel',
+    ownerChatId: chatId, label: name, url, active: false, tabs: [h.tab(guest)], activeTabId: `tab-${guest.id}` };
+  h.register(page);
+  return { page, guest, id: createEmbeddedWebSurfaceId({ ...page, id: page.surfaceId, targetGeneration: page.registrationId }, page.tabs[0]) };
+}
+
+test('WorkPanel AWCP retains per-Run page manuals and rejects cross-Chat, local and stale pages', async (t) => {
+  const { acquireWorkPanelAwcpScope } = require('../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+  const h = createSiteHarness(); const parent = h.site('awcp-parent');
+  const a = workPanelPage(h, parent, 'awcp-a');
+  const b = workPanelPage(h, parent, 'awcp-b');
+  const other = workPanelPage(h, parent, 'awcp-other', 'chat-b');
+  const local = workPanelPage(h, parent, 'awcp-local', 'chat-a', 'file:///private/test.html');
+  const grants = new RunSiteControlGrants();
+  const bridge = new AwcpGuestBridge(h.registry);
+  t.after(() => { grants.revokeAll(); bridge.dispose(); });
+  const get = (id, caller = source) => grants.resolveWorkPanel(caller, id,
+    () => acquireWorkPanelAwcpScope(h.registry, id, caller.chatId));
+  let executions = 0;
+  for (const page of [a, b]) page.guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script);
+    executions++;
+    return { ok: true, requestId: 'wp-invoke', action: 'orders.read', result: { page: page.id } };
+  };
+  assert.throws(() => get(other.id), /does not belong/);
+  assert.throws(() => get(local.id), /does not belong/);
+  assert.throws(() => get(a.page.surfaceId), /does not belong/);
+  assert.throws(() => get(a.id, { ...source, chatId: 'chat-b' }), /conflicts/);
+  const scopeA = get(a.id);
+  await bridge.manual('wp-index', {}, scopeA, undefined, a.id);
+  await bridge.manual('wp-section', { section: 'orders.read', revision: 'revision-a' }, get(a.id), undefined, a.id);
+  await bridge.manual('wp-index-b', {}, get(b.id), undefined, b.id);
+  assert.equal(get(a.id), scopeA);
+  assert.equal((await bridge.invoke('wp-invoke', { revision: 'revision-a', action: 'orders.read', args: {} }, get(a.id), undefined, a.id)).result.page, a.id);
+  assert.equal(executions, 1);
+  // A different Run must read its own directory and section, even in the same Chat.
+  const otherRun = get(a.id, { ...source, runId: 'run-b' });
+  await assert.rejects(bridge.invoke('unread', { revision: 'revision-a', action: 'orders.read', args: {} }, otherRun, undefined, a.id),
+    (error) => error.details?.reason === 'manual_required');
+  a.guest.emit('did-start-navigation', {}, 'https://awcp-a.example/new', false, true);
+  await assert.rejects(bridge.invoke('navigated', { revision: 'revision-a', action: 'orders.read', args: {} }, get(a.id), undefined, a.id),
+    (error) => error.details?.reason === 'page_changed');
+  await bridge.manual('wp-new-index', {}, get(a.id), undefined, a.id);
+  h.closeTab(a.page, a.page.activeTabId);
+  assert.throws(() => get(a.id), /closed|replaced/);
+  grants.revoke(source.runId);
+  assert.equal(b.guest.throttle, true);
+  assert.throws(() => get(b.id), /ended/);
+  assert.equal(executions, 1);
+});
+
+test('WorkPanel AWCP probes ordinary websites and revokes access after a non-network navigation', async (t) => {
+  const { acquireWorkPanelAwcpScope } = require('../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+  const h = createSiteHarness(); const parent = h.site('no-awcp-parent');
+  const a = workPanelPage(h, parent, 'no-awcp');
+  const scope = acquireWorkPanelAwcpScope(h.registry, a.id, 'chat-a');
+  const bridge = new AwcpGuestBridge(h.registry);
+  t.after(() => { scope.release(); bridge.dispose(); });
+  a.guest.executeJavaScript = async () => ({ present: false });
+  await assert.rejects(bridge.manual('absent', {}, scope, undefined, a.id), (error) => error.code === 'awcp_protocol_unavailable');
+  a.guest.url = 'file:///private/test.html';
+  assert.throws(() => scope.readContainer(), /closed|replaced/);
+});

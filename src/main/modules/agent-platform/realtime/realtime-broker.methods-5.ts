@@ -157,12 +157,16 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
         }
         let result: unknown;
         if (isAwcpManual || isAwcpInvoke) {
-            const scope = self.siteControlGrants.resolve(actionSource);
-            if (!scope) {
-                throw brokerError("site_control_unavailable", "The source Run has no active page control capability");
-            }
+            let scope = self.siteControlGrants.resolve(actionSource);
             const { surfaceId, ...awcpPayload } = frame.payload;
             if (surfaceId !== undefined && (typeof surfaceId !== "string" || !surfaceId.trim())) throw brokerError("protocol_error", "Invalid AWCP surfaceId");
+            if (!scope) {
+                await self.awaitRunActionReadiness("desktop.workpanel.getState", actionSource, controller.signal);
+                if (controller.signal.aborted) return;
+                if (typeof surfaceId !== "string" || !surfaceId.trim()) throw brokerError("protocol_error", "WorkPanel AWCP requires an exact surfaceId");
+                scope = self.siteControlGrants.resolveWorkPanel(actionSource, surfaceId,
+                    () => provider.acquireWorkPanelAwcpScope(surfaceId, readText(actionSource.chatId)));
+            }
             result = isAwcpManual
                 ? await provider.awcpManual(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined)
                 : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);

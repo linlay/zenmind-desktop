@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { RegisteredWebviewSurfaceTarget } from "../browser-surface-registry.shared";
+import { createWebSurfaceId } from "../../../../shared/web-surface";
 
 const issuedScopes = new WeakSet<object>();
 const throttleLeases = new WeakMap<WebContents, { count: number; previous: boolean }>();
@@ -44,6 +45,7 @@ class SiteControlScope {
     readonly ownerWebContentsId: number,
     private readonly kind: "website" | "webapp" | "chat-work-panel",
     private readonly initialGuestId: number,
+    private readonly ownerChatId?: string,
   ) {
     issuedScopes.add(this);
     this.unsubscribe = registry.subscribeLifecycle((event) => {
@@ -89,6 +91,9 @@ class SiteControlScope {
     const snapshot = this.registry.getRegisteredSurfaceSnapshot(this.containerId, this.registrationId, this.ownerWebContentsId);
     const tabs = snapshot?.tabs.filter((tab) => !this.failedGuests.has(tab.webContentsId)) ?? [];
     if (!snapshot || snapshot.registered.surfaceKind !== this.kind || !tabs.length ||
+      (this.kind === "chat-work-panel" && (snapshot.registered.ownerChatId !== this.ownerChatId ||
+        tabs.some((tab) => !/^https?:/u.test(tab.currentUrl) ||
+          !/^https?:/u.test(this.registry.findWebContentsById(tab.webContentsId)?.getURL() || "")))) ||
       (this.kind !== "website" && (tabs.length !== 1 || tabs[0].webContentsId !== this.initialGuestId))) {
       this.release("The application page instance was closed or replaced.");
       throw scopeError(this.revoked);
@@ -172,7 +177,18 @@ export function acquireWorkPanelControlScope(registry: BrowserSurfaceRegistry, c
   const tab = container.tabs[0];
   const guest = tab && registry.resolveWebviewSurfaceTarget(tab.webContentsId);
   if (!guest) throw scopeError("The page is unavailable.");
-  const scope = new SiteControlScope(registry, container.id, container.targetGeneration || "", guest.ownerWebContentsId, "chat-work-panel", tab.webContentsId);
+  const scope = new SiteControlScope(registry, container.id, container.targetGeneration || "", guest.ownerWebContentsId, "chat-work-panel", tab.webContentsId, chatId);
   scope.activate();
   return scope;
+}
+
+/** Persistent AWCP lease: the Broker retains it for this Run and exact page. */
+export function acquireWorkPanelAwcpScope(registry: BrowserSurfaceRegistry, surfaceId: string, chatId: string) {
+  const container = registry.listWorkPanelContainers().find((entry) =>
+    entry.ownerChatId === chatId && entry.surfaceRole === "workpanel-web" &&
+    /^https?:/u.test(entry.url) && entry.tabs.some((tab) =>
+      /^https?:/u.test(tab.currentUrl) &&
+      createWebSurfaceId(entry.id, entry.targetGeneration || "", tab.tabId) === surfaceId));
+  if (!container) throw scopeError("The webpage is unavailable or does not belong to the calling Chat.");
+  return acquireWorkPanelControlScope(registry, container.id, chatId);
 }

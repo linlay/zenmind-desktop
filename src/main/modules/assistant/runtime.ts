@@ -1,4 +1,4 @@
-import { AwcpGuestBridge, type BrowserSurfaceRegistry, type SiteControlScope } from "../web-surfaces";
+import { AwcpGuestBridge, acquireWorkPanelAwcpScope, type BrowserSurfaceRegistry, type SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type {
   AssistantNavAgentItemsResult,
@@ -143,6 +143,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
+    acquireWorkPanelAwcpScope: (surfaceId, chatId) => acquireWorkPanelAwcpScope(options.browserSurfaces, surfaceId, chatId),
     action: (request, scope) => integration.handleAgentPlatformDesktopActionRequest({
       ...desktopActionOptions,
       resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request, scope),

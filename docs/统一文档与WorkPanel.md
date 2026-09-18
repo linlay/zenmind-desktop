@@ -86,3 +86,5 @@ DOCX 正文由共用 WebClient Document Surface 承载，只读显示文字、�
 ## 网页身份与操作
 
 Container 持有网页宿主与标签集合，每个可操作网页实例拥有独立 Surface 身份。普通 Chat 打开网址默认进入 WorkPanel，Website/WebApp Copilot 沿用所属容器；网页发现与操作共用来源授权，不因承载位置或前后台状态切换模型。本地文件预览与 WebApp bridge 权限不随之扩展。完整模型见[前端嵌入与导航](前端嵌入与导航.md#网页-container-与-surface)，动作与 CDP 边界见[桌面协议与动作桥](桌面协议与动作桥.md#网页-container-与-surface)。
+
+普通 Chat 对自己拥有的 HTTP(S) 网页可使用 AWCP，与 Website/WebApp 采用相同的目录、章节和调用协议。宿主先校验 canonical Run 与精确 Surface 归属，再探测页面协议；无 AWCP 是页面能力缺失，不代表 WorkPanel 容器不支持。授权不扩展到本地文件、其他 Chat 或通用 Desktop bridge。
