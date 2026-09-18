@@ -1,24 +1,50 @@
 import type { WebContents } from "electron";
 import type { SiteControlScope } from "../cdp/site-scope";
 
-type Binding<T> = {
+type Binding = {
   guest: WebContents;
   revision: string;
   changed: boolean;
-  contract?: T;
+  indexActions: ReadonlySet<string>;
+  readSections: Set<string>;
   dispose(): void;
 };
 
-// Main-owned, Run-scope-local contract. Page-provided revision never serves as
-// guest identity; a page change releases descriptors and compiled validators.
-export class AwcpDiscoveryBindings<T> {
-  private readonly bindings = new Map<SiteControlScope, Binding<T>>();
+// Main-owned, Run-scope-local manual binding. A page revision never replaces
+// exact guest identity, and only explicitly read sections become callable.
+export class AwcpManualBindings {
+  private readonly bindings = new Map<SiteControlScope, Binding>();
 
-  remember(scope: SiteControlScope, guest: WebContents, revision: string, contract: T) {
+  rememberIndex(scope: SiteControlScope, guest: WebContents, revision: string, actions: Iterable<string>) {
+    this.install(scope, guest, revision, new Set(actions));
+  }
+
+  rememberSection(scope: SiteControlScope, guest: WebContents, revision: string, action: string) {
+    scope.readSurface();
+    const current = this.bindings.get(scope);
+    if (current && !current.changed && current.guest === guest && current.revision === revision &&
+        current.indexActions.has(action) && !guest.isDestroyed()) {
+      current.readSections.add(action);
+    }
+  }
+
+  private install(
+    scope: SiteControlScope,
+    guest: WebContents,
+    revision: string,
+    indexActions: ReadonlySet<string>,
+  ) {
     scope.readSurface();
     this.clear(scope);
-    const binding: Binding<T> = { guest, revision, contract, changed: false, dispose: () => undefined };
-    const changed = () => { binding.changed = true; binding.contract = undefined; };
+    const binding: Binding = {
+      guest,
+      revision,
+      changed: false,
+      indexActions,
+      readSections: new Set(),
+      dispose: () => undefined,
+    };
+    const changed = () => { binding.changed = true; binding.readSections.clear(); };
     const navigating = (...args: unknown[]) => { if (args[3] === true) changed(); };
     const inPage = (...args: unknown[]) => { if (args[2] === true) changed(); };
     guest.on("did-start-navigation", navigating);
@@ -38,14 +64,22 @@ export class AwcpDiscoveryBindings<T> {
 
   rejection(scope: SiteControlScope, guest: WebContents, revision: string) {
     const binding = this.bindings.get(scope);
-    if (!binding) return "discovery_required";
+    if (!binding) return "manual_required";
     if (binding.changed || binding.guest !== guest || binding.guest.isDestroyed()) return "page_changed";
-    if (binding.revision !== revision) return "stale_snapshot";
+    if (binding.revision !== revision) return "stale_revision";
     return null;
   }
 
-  contract(scope: SiteControlScope): T | undefined {
-    return this.bindings.get(scope)?.contract;
+  actionKnown(scope: SiteControlScope, action: string): boolean | undefined {
+    return this.bindings.get(scope)?.indexActions.has(action);
+  }
+
+  sectionRead(scope: SiteControlScope, action: string): boolean {
+    return this.bindings.get(scope)?.readSections.has(action) ?? false;
+  }
+
+  invalidate(scope: SiteControlScope) {
+    this.clear(scope);
   }
 
   clear(scope: SiteControlScope) {
