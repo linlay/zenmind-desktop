@@ -1,4 +1,5 @@
-import { app, clipboard, globalShortcut, protocol } from "electron";
+import { createArtifactRuntime } from "../modules/artifacts";
+import { app, clipboard, globalShortcut, protocol, ipcMain } from "electron";
 import { desktopPlatformSubject, getDesktopDeviceId, getDesktopSsoStatus, issueAgentAccessToken } from "../modules/identity";
 import { getDesktopSsoAccessToken } from "../modules/identity";
 import { createWebsFacade, type WebsFacade } from "../modules/webs";
@@ -208,10 +209,12 @@ export function createMainProcessRuntime() {
   const assistantRunWakeLock = createAssistantRunWakeLock(startupPlatform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
   });
+  let artifactRuntime: ReturnType<typeof createArtifactRuntime> | undefined;
   const realtimeBroker = new RealtimeBroker({
     app,
     issueAccessToken: identityTokenProvider,
     getDesktopDeviceId,
+    onArtifactPublished: (event) => artifactRuntime?.recordPublished(event),
     onDiagnostic: (message) => console.warn(`[agent-platform-realtime] ${message}`)
   });
   const pluginClipboardBridge = createPluginClipboardBridge({
@@ -224,6 +227,11 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   const getMainWindow = () => appShellRuntime?.getMainWindow() ?? null;
+  artifactRuntime = createArtifactRuntime({
+    app, platform: startupPlatform, broker: realtimeBroker, ipcMain, getMainWindow,
+    onError: (error) => console.warn("[artifacts] failed to record push", error),
+  });
+  app.once("will-quit", () => artifactRuntime?.dispose());
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
   const startupRestoreController = createMainProcessRuntime_startupRestoreController_5(factoryContext);
   const servicesRuntime = createServicesRuntime({

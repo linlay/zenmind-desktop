@@ -8,7 +8,11 @@ import type { EpochMilliseconds } from "../../../shared/time-contract";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
 
-export type DesktopGlobalSearchActionId = DesktopGlobalSearchActionShortcutId | "settings";
+export type DesktopGlobalSearchActionId =
+  | DesktopGlobalSearchActionShortcutId
+  | "skills"
+  | "mcpConnectors"
+  | "settings";
 export type DesktopGlobalSearchSectionId = "awaiting" | "unread" | "actions" | "agents" | "chats";
 export type DesktopGlobalSearchProjectAgentKind = "coder" | "kbase";
 
@@ -190,6 +194,13 @@ function createActionRows(_currentAgentKey: string, t: TranslateFunction): Deskt
       actionId: "history",
       label: t("desktop.globalSearch.action.history"),
       description: t("desktop.globalSearch.action.history.description")
+    },
+    {
+      kind: "action",
+      key: "action:shareManagement",
+      actionId: "shareManagement",
+      label: t("desktop.globalSearch.action.shareManagement"),
+      description: t("desktop.globalSearch.action.shareManagement.description")
     },
     {
       kind: "action",

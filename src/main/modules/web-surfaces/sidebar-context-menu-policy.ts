@@ -98,14 +98,24 @@ export function normalizeSidebarContextMenuRequest(
       canOpenProjectEditor: target.canOpenProjectEditor
     };
   } else if (target.kind === "chat") {
-    if (!hasOnlyKeys(target, ["kind", "workPanelOpen", "pinned", "canPin"]) || !isBoolean(target.workPanelOpen)
-      || (target.pinned !== undefined && !isBoolean(target.pinned))
-      || (target.canPin !== undefined && !isBoolean(target.canPin))) {
+    if (
+      !hasOnlyKeys(target, [
+        "kind",
+        "workPanelOpen",
+        "pinned",
+        "canPin"
+      ]) ||
+      !isBoolean(target.workPanelOpen) ||
+      (target.pinned !== undefined && !isBoolean(target.pinned)) ||
+      (target.canPin !== undefined && !isBoolean(target.canPin))
+    ) {
       return null;
     }
-    normalizedTarget = { kind: "chat", workPanelOpen: target.workPanelOpen,
+    normalizedTarget = {
+      kind: "chat",
+      workPanelOpen: target.workPanelOpen,
       ...(target.pinned === undefined ? {} : { pinned: target.pinned as boolean }),
-      ...(target.canPin === undefined ? {} : { canPin: target.canPin as boolean }),
+      ...(target.canPin === undefined ? {} : { canPin: target.canPin as boolean })
     };
   } else if (target.kind === "web") {
     const commonKeys = [

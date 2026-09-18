@@ -221,10 +221,6 @@ export const BOARD_ID = "default";
 
 export const PROJECT_ID = "default";
 
-export const WORKFLOW_ID = "workflow-standard-requirement";
-
-export const ISSUE_TYPE_ID = "issue-type-standard-requirement";
-
 export const DATABASE_DIRECTORY = "desktop-kanban";
 
 export const DATABASE_FILENAME = "kanban.db";
@@ -280,10 +276,10 @@ export function normalizeStringList(value: unknown): string[] {
   return [...new Set(value.map(trimText).filter(Boolean))];
 }
 
-export function normalizeEffortSeconds(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+export function normalizeEffortSeconds(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
   const seconds = Math.trunc(value);
-  return Number.isSafeInteger(seconds) ? seconds : 0;
+  return Number.isSafeInteger(seconds) ? seconds : null;
 }
 
 export function parseStringList(value: string | null | undefined): string[] {
@@ -351,9 +347,9 @@ export function buildIssueDetailJson(issue: KanbanIssue) {
     securityLevelKey: issue.securityLevelKey ?? null,
     reporterId: issue.reporterId ?? null,
     componentKeys: normalizeStringList(issue.componentKeys),
-    originalEstimate: Math.max(0, Math.trunc(issue.originalEstimate || 0)),
-    remainingEstimate: Math.max(0, Math.trunc(issue.remainingEstimate || 0)),
-    timeSpent: Math.max(0, Math.trunc(issue.timeSpent || 0)),
+    originalEstimate: normalizeEffortSeconds(issue.originalEstimate),
+    remainingEstimate: normalizeEffortSeconds(issue.remainingEstimate),
+    timeSpent: normalizeEffortSeconds(issue.timeSpent),
     parentIssueId: issue.parentIssueId ?? null,
     issueTypeKey: issue.issueTypeKey ?? issue.typeId ?? "",
     stageKey: issue.stageKey ?? "",

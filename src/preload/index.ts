@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
   AssistantEvent,
@@ -102,6 +102,15 @@ const fallbackInitialLocaleSettings: LocaleSettings = {
 const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
 
 const api: DesktopApi = {
+  artifacts: {
+    act: (input) => ipcRenderer.invoke("artifacts.act", input),
+    list: (input) => ipcRenderer.invoke("artifacts.list", input),
+    onChanged: (listener) => {
+      const handler = () => listener();
+      ipcRenderer.on("artifacts.changed", handler);
+      return () => { ipcRenderer.off("artifacts.changed", handler); };
+    },
+  },
   connectorAuthBrowser: {
     onDialog(listener) {
       const handler = (_event: unknown, input: Parameters<typeof listener>[0]) => listener(input);
@@ -252,6 +261,10 @@ const api: DesktopApi = {
     revealChatInFolder: (chatId: string) => ipcRenderer.invoke("assistant.revealChatInFolder", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
+    addDroppedAttachments: (chatId: string | null | undefined, files: File[]) => {
+      const filePaths = files.map((file) => webUtils.getPathForFile(file));
+      return ipcRenderer.invoke("assistant.addDroppedAttachments", chatId, filePaths);
+    },
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
     addPastedImage: (chatId: string | null | undefined, input: AssistantPastedImageInput) =>
       ipcRenderer.invoke("assistant.addPastedImage", chatId, input),
@@ -268,7 +281,7 @@ const api: DesktopApi = {
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
     exportChatHtml: (chatId: string) => ipcRenderer.invoke("assistant.exportChatHtml", chatId),
     shareChat: (request: AssistantConversationShareRequest) => ipcRenderer.invoke("assistant.shareChat", request),
-    listChatShares: (chatId: string) => ipcRenderer.invoke("assistant.listChatShares", chatId),
+    listConversationShares: () => ipcRenderer.invoke("assistant.listConversationShares"),
     revokeChatShare: (shareId: string) => ipcRenderer.invoke("assistant.revokeChatShare", shareId),
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => {
       const handleNavigationAgentsChanged = (
@@ -497,6 +510,8 @@ const api: DesktopApi = {
   updates: {
     getState: () => ipcRenderer.invoke("updates.getState"),
     check: () => ipcRenderer.invoke("updates.check"),
+    loadTest: (input) => ipcRenderer.invoke("updates.loadTest", input),
+    clearTest: () => ipcRenderer.invoke("updates.clearTest"),
     download: () => ipcRenderer.invoke("updates.download"),
     install: () => ipcRenderer.invoke("updates.install"),
     setAutoDownload: (enabled) => ipcRenderer.invoke("updates.setAutoDownload", enabled),

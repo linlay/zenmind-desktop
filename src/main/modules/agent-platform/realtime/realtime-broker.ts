@@ -73,6 +73,7 @@ export class RealtimeBroker {
     connectTimeoutMs?: number;
     heartbeatTimeoutMs?: number;
     acceptanceTimeoutMs?: number;
+    onArtifactPublished?(event: Record<string, unknown>): void;
     onDiagnostic?(message: string): void;
     onConnectionState?(state: AgentPlatformRealtimeConnectionState): void;
   }) {

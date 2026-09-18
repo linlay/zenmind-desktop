@@ -1,3 +1,4 @@
+import { normalizeActionDiagnostics, sanitizeActionErrorText } from "./diagnostics";
 import type { SiteControlScope } from "../web-surfaces";
 import http from "node:http";
 import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions, WebContents } from "electron";
@@ -485,8 +486,8 @@ export const pageControlGrantStore = new PageControlGrantStore();
 export function actionError(code: string, message: string, details?: unknown): DesktopActionError {
   return {
     code,
-    message,
-    ...(details === undefined ? {} : { details })
+    message: sanitizeActionErrorText(message),
+    details: normalizeActionDiagnostics(code, details)
   };
 }
 
@@ -503,7 +504,8 @@ export function fail(action: string, code: string, message: string, details?: un
 }
 
 export function cdpFail(method: string, code: string, message: string, details?: unknown): DesktopCdpCallResponse {
-  return { ok: false, method, error: actionError(code, message, details) };
+  // CDP owns its existing diagnostic contract independently of Action errors.
+  return { ok: false, method, error: { code, message, ...(details === undefined ? {} : { details }) } };
 }
 
 export function asRecord(value: unknown): Record<string, unknown> {

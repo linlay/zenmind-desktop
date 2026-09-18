@@ -1,3 +1,4 @@
+import { CollapsibleIssueProperties, isEmptyIssuePropertyValue } from "./CollapsibleIssueProperties";
 import { resolveKanbanResultIdentity } from "../../../shared/kanban-result-read";
 import { useKanbanResultRead } from "./useKanbanResultRead";
 import { getKanbanIssueProjectName } from "./kanbanProjectTree";
@@ -8,7 +9,6 @@ import remarkGfm from "remark-gfm";
 import {
   ApartmentOutlined,
   ArrowRightOutlined,
-  CalendarOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
   CloseOutlined,
@@ -37,7 +37,6 @@ import type {
   KanbanStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
-import { createAgentWebclientRoute } from "../../../shared/agent-webclient-routes";
 import type { SupportedLocale, TranslateFunction } from "../../../shared/i18n";
 import { useDebugMode } from "../../debug/DebugModeContext";
 import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
@@ -83,6 +82,7 @@ type KanbanIssueDetailDialogProps = {
   onWorkflowAction?: (action: import("../../../shared/contracts").KanbanLocalWorkflowAction) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
   onOpenChat: (chatId: string, agentKey?: string | null) => string | null;
+  onJumpToChat: (chatId: string, agentKey: string) => void;
   cloudAction?: "claim" | "run" | null;
   cloudActionBusy?: boolean;
   onClaim?: () => void;
@@ -147,12 +147,12 @@ function createDetailDraft(issue: KanbanIssue): KanbanIssueDetailDraft {
 }
 
 function secondsToHoursInput(value: number | null | undefined) {
-  if (!value) return "";
+  if (value === null || value === undefined) return "";
   return String(Math.round((value / 3600) * 100) / 100);
 }
 
 function formatEffort(value: number | null | undefined, t: TranslateFunction) {
-  if (!value) return t("kanban.detail.notSet");
+  if (value === null || value === undefined) return t("kanban.detail.notSet");
   return t("kanban.detail.hours", { value: Math.round((value / 3600) * 100) / 100 });
 }
 
@@ -331,6 +331,7 @@ function DetailProperty({
   label: ReactNode;
   value: ReactNode;
   editing?: boolean;
+  empty?: boolean;
   editor?: ReactNode;
   copyValue?: string | number | null;
   copyTitle?: string;
@@ -512,6 +513,7 @@ export function KanbanIssueDetailDialog({
   onWorkflowAction,
   onDelete,
   onOpenChat,
+  onJumpToChat,
   cloudAction = null,
   cloudActionBusy = false,
   onClaim,
@@ -536,9 +538,18 @@ export function KanbanIssueDetailDialog({
   const [editing, setEditing] = useState(!isCloud && Boolean(initialEditStatus));
   const [saving, setSaving] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const attachmentUploadRef = useRef(false);
+  const attachmentDragDepth = useRef(0);
+  const [attachmentDragActive, setAttachmentDragActive] = useState(false);
   const [copyNotice, setCopyNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [chatEmbedPath, setChatEmbedPath] = useState<string | null>(null);
   const [selectedIssueChatId, setSelectedIssueChatId] = useState<string | null>(null);
+  const showingHistory = Boolean(chatEmbedPath);
+  useLayoutEffect(() => {
+    if (!showingHistory) return;
+    // Follow entry into history once; subsequent chat updates preserve manual scrolling.
+    document.getElementById("kanban-detail-runs")?.scrollIntoView({ block: "start" });
+  }, [showingHistory]);
   const [draft, setDraft] = useState(() => ({
     ...createDetailDraft(issue),
     status: initialEditStatus ?? issue.status
@@ -640,7 +651,7 @@ export function KanbanIssueDetailDialog({
     issueId: issue.id,
     key: resultIdentity?.key || "",
     scope: issue.resultRead?.scope || "",
-    ready: Boolean(resultIdentity && resultContent.trim() && !chatEmbedPath && !initialChatPending),
+    ready: Boolean(resultIdentity && resultContent.trim() && !editing && !chatEmbedPath && !initialChatPending),
     isRead: issue.resultRead?.key === resultIdentity?.key && issue.resultRead?.isRead === true,
     onRead: onResultRead,
     onError: () => onFeedback("error", t("kanban.detail.readFailed"))
@@ -740,8 +751,8 @@ export function KanbanIssueDetailDialog({
   const priorityLabel = issue.priority ? t(DETAIL_PRIORITY_LABELS[issue.priority]) : "—";
   const severityLabel = issue.severity ? t(`kanban.importance.${issue.severity}` as "kanban.importance.medium") : "—";
   const projectLabel = getKanbanIssueProjectName(issue, project, t("kanban.projectFilter.defaultLocal"));
-  const issueTypeLabel = issueType?.name || issue.issueTypeKey || issue.typeId || "—";
-  const workflowLabel = workflow?.name || issue.workflowId || "—";
+  const issueTypeLabel = isCloud ? issueType?.name || issue.issueTypeKey || issue.typeId || "—" : "—";
+  const workflowLabel = isCloud ? workflow?.name || issue.workflowId || "—" : issue.localWorkflow?.name || "—";
   const stageLabel = stage?.name || issue.stageName || issue.stageKey || "—";
   const createdAtLabel = formatDateTime(issue.createdAt, locale);
   const updatedAtLabel = formatDateTime(issue.updatedAt, locale);
@@ -848,7 +859,8 @@ export function KanbanIssueDetailDialog({
       openChat(matchedChat, runId);
       return;
     }
-    const embedPath = createAgentWebclientRoute({ agentKey, chatId });
+    const embedPath = onOpenChat(chatId, agentKey);
+    if (!embedPath) return;
     setInitialChatPending(false);
     setInitialChatUnavailable(false);
     setSelectedRunId(runId);
@@ -868,34 +880,36 @@ export function KanbanIssueDetailDialog({
     }
   }
 
-  async function addAttachment(insertImages = false) {
-    if (attachmentBusy) return;
+  async function addAttachment(insertImages = false, files?: File[]) {
+    if (!editing || isCloud || saving || attachmentUploadRef.current) return;
+    attachmentUploadRef.current = true;
     const chatId = draft.attachmentChatId || `kanban-issue-${issue.id}`;
     setAttachmentBusy(true);
     try {
-      const result = await window.electronAPI.assistant.pickAttachments(chatId);
+      const result = files
+        ? await window.electronAPI.assistant.addDroppedAttachments(chatId, files)
+        : await window.electronAPI.assistant.pickAttachments(chatId);
       if (result.cancelled) return;
       if (!result.ok && result.attachments.length === 0) {
         onFeedback("error", result.message);
         return;
       }
-      const patch: Partial<KanbanIssueDetailDraft> = {
-        attachmentChatId: result.chatId || chatId,
-        attachments: [...draft.attachments, ...result.attachments]
-      };
-      if (insertImages) {
-        const markdownImages = result.attachments
+      setDraft((current) => {
+        const markdownImages = insertImages ? result.attachments
           .filter((attachment) => attachment.mimeType.startsWith("image/") && (attachment.dataUrl || attachment.url))
-          .map((attachment) => `![${attachment.name}](${attachment.dataUrl || attachment.url})`);
-        if (markdownImages.length > 0) {
-          patch.description = appendMarkdown(draft.description, markdownImages.join("\n\n"));
-        }
-      }
-      updateDraft(patch);
+          .map((attachment) => `![${attachment.name}](${attachment.dataUrl || attachment.url})`) : [];
+        return {
+          ...current,
+          attachmentChatId: result.chatId || chatId,
+          attachments: [...current.attachments, ...result.attachments],
+          description: markdownImages.length > 0 ? appendMarkdown(current.description, markdownImages.join("\n\n")) : current.description
+        };
+      });
       onFeedback(result.ok ? "success" : "error", result.message);
     } catch (error) {
       onFeedback("error", error instanceof Error ? error.message : t("kanban.feedback.attachmentUploadFailed"));
     } finally {
+      attachmentUploadRef.current = false;
       setAttachmentBusy(false);
     }
   }
@@ -928,52 +942,56 @@ export function KanbanIssueDetailDialog({
     });
   }
 
+  const headerTitle = draft.title.trim() || Array.from(draft.description.trim().replace(/\s+/gu, " ")).slice(0, 20).join("");
+
   const dialog = (
-    <div className="kanban-detail-layer" role="presentation" onMouseDown={onClose}>
+    <div className="kanban-detail-layer" role="presentation" onMouseDown={onClose} onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}>
       <section
         className={`kanban-detail-dialog ${chatEmbedPath ? "is-chat-view" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={chatEmbedPath || initialChatPending ? t("kanban.chat.surfaceLabel") : undefined}
-        aria-labelledby={chatEmbedPath || initialChatPending ? undefined : "kanban-detail-title"}
+        aria-labelledby={chatEmbedPath || initialChatPending ? undefined : "kanban-detail-header-label"}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {copyNotice ? <div className={`kanban-detail-copy-notice is-${copyNotice.tone}`} role="status">{copyNotice.message}</div> : null}
         <header className="kanban-detail-header">
           <div className="kanban-detail-header-context">
-            <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{issue.syncMode !== "cloud" && (!issue.projectId?.trim() || issue.projectId.trim() === "default") ? projectLabel : project?.path || projectLabel}</span></div>
+            <div id="kanban-detail-header-label" className="kanban-detail-breadcrumb"><ApartmentOutlined /><span className="kanban-detail-header-project">{issue.syncMode !== "cloud" && (!issue.projectId?.trim() || issue.projectId.trim() === "default") ? projectLabel : project?.path || projectLabel}</span>{headerTitle ? <><span className="kanban-detail-header-separator" aria-hidden="true">/</span><strong className="kanban-detail-header-title" title={headerTitle}>{headerTitle}</strong></> : null}</div>
             {isCloud ? <span className="kanban-detail-pill is-origin is-cloud"><CloudOutlined />{t("kanban.detail.cloudOrigin")}</span> : null}
           </div>
           <div className="kanban-detail-window-actions">
             <button
               type="button"
               className="kanban-detail-secondary-button"
-              disabled={!chatEmbedPath && !latestOpenableIssueChat}
-              title={!chatEmbedPath && !latestOpenableIssueChat ? t("kanban.chat.noneAvailable") : undefined}
-              onClick={chatEmbedPath ? () => { setChatEmbedPath(null); setSelectedIssueChatId(null); setSelectedRunId(null); } : () => openChat()}
+              disabled={!chatEmbedPath && !initialChatPending && !latestOpenableIssueChat}
+              title={!chatEmbedPath && !initialChatPending && !latestOpenableIssueChat ? t("kanban.chat.noneAvailable") : undefined}
+              onClick={() => {
+                if (chatEmbedPath || initialChatPending) {
+                  setInitialChatPending(false);
+                  setChatEmbedPath(null);
+                  setSelectedIssueChatId(null);
+                  setSelectedRunId(null);
+                } else {
+                  openChat();
+                }
+              }}
             >
-              {chatEmbedPath ? <FileTextOutlined /> : <MessageOutlined />}
-              {chatEmbedPath ? t("kanban.chat.viewIssue") : t("kanban.chat.view")}
+              {chatEmbedPath || initialChatPending ? <FileTextOutlined /> : <HistoryOutlined />}
+              {chatEmbedPath || initialChatPending ? t("kanban.chat.viewIssue") : t("kanban.chat.history")}
             </button>
-            {!chatEmbedPath ? editing ? (
-              <>
-                <button type="button" className="kanban-detail-secondary-button" onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
-                <button type="button" className="kanban-detail-primary-button" disabled={saving} onClick={() => void saveDraft()}><SaveOutlined />{saving ? t("kanban.detail.saving") : t("kanban.form.save")}</button>
-              </>
-            ) : !isCloud ? (
-              <button type="button" className="kanban-detail-secondary-button" onClick={() => { setInitialChatPending(false); setEditing(true); }}><EditOutlined />{t("kanban.detail.editIssue")}</button>
-            ) : null : null}
             <button className="kanban-detail-close" type="button" onClick={onClose} aria-label={t("kanban.modal.close")}><CloseOutlined /></button>
           </div>
         </header>
 
         <div className="kanban-detail-body">
+          <div className="kanban-detail-primary-pane">
           {initialChatPending ? <div className="kanban-detail-chat-pending" role="status">{t("common.loading")}</div> : chatEmbedPath ? (
             <div className="kanban-detail-chat-surface">
               <ServiceWebviewSurface
                 key={`kanban-chat:${issue.id}:${selectedIssueChatId || chatEmbedPath}`}
                 active
-                ownerChatId={issueChatItems.find((chat) => chat.id === selectedIssueChatId)?.chatId}
+                ownerChatId={issueChatItems.find((chat) => chat.id === selectedIssueChatId)?.chatId || runs.find((run) => run.id === selectedRunId)?.chatId || undefined}
                 hostTheme={hostTheme}
                 serviceId="agent-webclient"
                 surfaceIdentity={createSurfaceIdentity("kanban-chat")}
@@ -986,20 +1004,21 @@ export function KanbanIssueDetailDialog({
               />
             </div>
           ) : <main className="kanban-detail-content">
-            {initialChatUnavailable ? <p role="status">{t("kanban.chat.currentRunUnavailable")}</p> : null}
-            <div className="kanban-detail-issue-heading">
+            {!editing && initialChatUnavailable ? <p role="status">{t("kanban.chat.currentRunUnavailable")}</p> : null}
+            {editing || cloudAction ? <div className="kanban-detail-issue-heading">
               <div className="kanban-detail-heading-row">
-                <div className="kanban-detail-heading-copy">
+                {editing ? <div className="kanban-detail-heading-copy">
+                  <label className="kanban-detail-title-label" htmlFor="kanban-detail-title"><span className="kanban-detail-section-icon" aria-hidden="true"><EditOutlined /></span>{t("kanban.form.title")}</label>
                   <input id="kanban-detail-title" className={`kanban-detail-title-input ${editing ? "is-editing" : ""}`} value={draft.title} disabled={!editing} onChange={(event) => updateDraft({ title: event.target.value })} autoFocus={editing} />
-                </div>
+                </div> : null}
                 <div className="kanban-detail-header-actions">
                   {cloudAction === "claim" ? <button type="button" className="kanban-detail-primary-button" disabled={cloudActionBusy} onClick={onClaim}><UserOutlined />{cloudActionBusy ? t("kanban.cloud.actionWorking") : t("kanban.cloud.claim")}</button> : null}
                   {cloudAction === "run" ? <button type="button" className="kanban-detail-primary-button" disabled={cloudActionBusy} onClick={onRun}><RobotOutlined />{cloudActionBusy ? t("kanban.cloud.actionWorking") : t("kanban.cloud.startProcessing")}</button> : null}
                 </div>
               </div>
-            </div>
+            </div> : null}
 
-            <DetailSection title={t("kanban.detail.runResultTitle")} icon={<RobotOutlined />}>
+            {!editing ? <DetailSection title={t("kanban.detail.runResultTitle")} icon={<RobotOutlined />}>
               <div ref={resultReadRef}>
                 {resultAvailableLocally && (lastRunResult.key !== resultKey || lastRunResult.loading)
                   ? <p role="status">{t("common.loading")}</p>
@@ -1007,7 +1026,7 @@ export function KanbanIssueDetailDialog({
                     ? <p role="status">{t("kanban.detail.runResultLoadFailed")}</p>
                     : <MarkdownPreview value={resultContent} emptyText={t("kanban.detail.noRunResult")} variant="description" t={t} />}
               </div>
-            </DetailSection>
+            </DetailSection> : null}
 
             <DetailSection title={t("kanban.detail.descriptionTitle")} icon={<FileTextOutlined />}>
               {editing ? <>
@@ -1019,23 +1038,54 @@ export function KanbanIssueDetailDialog({
               </> : <MarkdownPreview value={draft.description} emptyText={t("kanban.detail.noDescription")} variant="description" t={t} />}
             </DetailSection>
 
+            <div
+              className={`kanban-detail-attachment-dropzone ${attachmentDragActive ? "is-dragging" : ""}`}
+              aria-busy={attachmentBusy}
+              onDragEnter={(event) => {
+                if (!editing || attachmentUploadRef.current || !event.dataTransfer.types.includes("Files")) return;
+                event.preventDefault();
+                attachmentDragDepth.current += 1;
+                setAttachmentDragActive(true);
+              }}
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes("Files")) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = editing && !saving && !attachmentUploadRef.current ? "copy" : "none";
+              }}
+              onDragLeave={() => {
+                attachmentDragDepth.current = Math.max(0, attachmentDragDepth.current - 1);
+                if (attachmentDragDepth.current === 0) setAttachmentDragActive(false);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                attachmentDragDepth.current = 0;
+                setAttachmentDragActive(false);
+                const files = Array.from(event.dataTransfer.files);
+                if (files.length > 0) void addAttachment(false, files);
+              }}
+            >
             <DetailSection title={t("kanban.detail.attachmentsTitle")} icon={<PaperClipOutlined />} meta={t("kanban.detail.itemCount", { count: visibleAttachments.length })}>
               {visibleAttachments.length > 0 ? <div className="kanban-detail-attachment-list">{visibleAttachments.map((attachment) => (
                 <article key={attachment.id}><span className="kanban-detail-file-icon"><FileTextOutlined /></span><span><strong>{attachment.name}</strong><small>{attachment.mimeType || t("kanban.detail.file")} {formatFileSize(attachment.sizeBytes) ? `· ${formatFileSize(attachment.sizeBytes)}` : ""}</small></span><button type="button" onClick={() => void openAttachment(attachment)}>{t("kanban.detail.open")}</button>{editing ? <button type="button" className="is-remove" aria-label={t("kanban.form.removeAttachment", { name: attachment.name })} onClick={() => updateDraft({ attachments: draft.attachments.filter((item) => item.id !== attachment.id && item.sourceAttachmentId !== attachment.id) })}><CloseOutlined /></button> : null}</article>
               ))}</div> : <EmptyBlock>{t("kanban.detail.noAttachments")}</EmptyBlock>}
               {editing ? <button type="button" className="kanban-detail-dashed-button" disabled={attachmentBusy} onClick={() => void addAttachment()}><PaperClipOutlined />{attachmentBusy ? t("kanban.form.uploading") : t("kanban.form.addAttachment")}</button> : null}
+              {editing ? <p className="kanban-detail-attachment-drop-hint">{t(attachmentDragActive ? "kanban.detail.dropAttachments" : "kanban.detail.dragAttachments")}</p> : null}
             </DetailSection>
+            </div>
 
-            <DetailSection title={t("kanban.detail.commentsTitle")} icon={<MessageOutlined />} meta={t("kanban.detail.itemCount", { count: comments.length })}>
+            {!editing ? <DetailSection title={t("kanban.detail.commentsTitle")} icon={<MessageOutlined />} meta={t("kanban.detail.itemCount", { count: comments.length })}>
               {comments.length > 0 ? <div className="kanban-detail-comment-list">{comments.map((comment) => {
                 const author = usersDetailById.get(comment.authorUserId ?? "");
                 const name = author?.displayName || comment.authorAgent || comment.authorUserId || t("kanban.detail.unknownActor");
                 return <article key={comment.id}><DetailAvatar label={name} avatarUrl={author?.avatarUrl} agent={Boolean(comment.authorAgent)} /><div><p className="kanban-detail-comment-meta"><strong>{name}</strong><time>{formatDateTime(comment.createdAt, locale)}</time></p><MarkdownPreview value={comment.body} variant="comment" t={t} /></div></article>;
               })}</div> : <EmptyBlock>{t("kanban.detail.noComments")}</EmptyBlock>}
-            </DetailSection>
+            </DetailSection> : null}
           </main>}
+          </div>
 
           <aside className="kanban-detail-rail" aria-label={t("kanban.detail.properties")}>
+            <div className="kanban-detail-rail-content">
             <nav className="kanban-detail-anchor-nav" aria-label={t("kanban.detail.properties")}>
               {([
                 ["kanban-detail-basic", t("kanban.detail.basicTitle")],
@@ -1065,27 +1115,27 @@ export function KanbanIssueDetailDialog({
             </DetailSection>}
 
             <DetailSection sectionId="kanban-detail-basic" title={t("kanban.detail.basicTitle")} icon={<FileTextOutlined />}>
-              <dl className="kanban-detail-properties">
+              <CollapsibleIssueProperties key={issue.id} editing={editing} t={t}>
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.issueId")} value={remoteId} />
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.project")} value={projectLabel} />
                 <DetailProperty
                   {...copyBehavior}
-                  label={t("kanban.form.version")}
+                  empty={isEmptyIssuePropertyValue(issue.projectVersion)} label={t("kanban.form.version")}
                   value={issue.projectVersion || t("kanban.detail.notSet")}
                   editing={editing}
                   editor={<select value={draft.projectVersion} onChange={(event) => updateDraft({ projectVersion: event.target.value })}><option value="">{t("kanban.detail.notSet")}</option>{projectVersions.map((version) => <option key={version} value={version}>{version}</option>)}</select>}
                 />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.dueDate")} value={issue.dueDate || t("kanban.detail.notSet")} editing={editing} editor={<input type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.dueRisk")} value={issue.dueRisk || t("kanban.detail.notSet")} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.resolution")} value={issue.resolution || t("kanban.detail.notSet")} editing={editing} editor={<input maxLength={200} value={draft.resolution} onChange={(event) => updateDraft({ resolution: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.components")} value={issue.componentKeys.join(", ") || t("kanban.detail.notSet")} editing={editing} editor={<select multiple value={draft.componentKeys} onChange={(event) => updateDraft({ componentKeys: [...event.target.selectedOptions].map((option) => option.value) })}>{projectComponents.map((component) => <option key={component} value={component}>{component}</option>)}</select>} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.originalEstimate")} value={formatEffort(issue.originalEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.originalEstimateHours} onChange={(event) => updateDraft({ originalEstimateHours: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.remainingEstimate")} value={formatEffort(issue.remainingEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.remainingEstimateHours} onChange={(event) => updateDraft({ remainingEstimateHours: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.form.timeSpent")} value={formatEffort(issue.timeSpent, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.timeSpentHours} onChange={(event) => updateDraft({ timeSpentHours: event.target.value })} />} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.securityLevel")} value={issue.securityLevelKey || t("kanban.detail.notSet")} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.workflow")} value={workflowLabel} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.stage")} value={stageLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.dueDate)} label={t("kanban.form.dueDate")} value={issue.dueDate || t("kanban.detail.notSet")} editing={editing} editor={<input type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.dueRisk)} label={t("kanban.detail.dueRisk")} value={issue.dueRisk || t("kanban.detail.notSet")} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.resolution)} label={t("kanban.form.resolution")} value={issue.resolution || t("kanban.detail.notSet")} editing={editing} editor={<input maxLength={200} value={draft.resolution} onChange={(event) => updateDraft({ resolution: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.componentKeys)} label={t("kanban.form.components")} value={issue.componentKeys.join(", ") || t("kanban.detail.notSet")} editing={editing} editor={<select multiple value={draft.componentKeys} onChange={(event) => updateDraft({ componentKeys: [...event.target.selectedOptions].map((option) => option.value) })}>{projectComponents.map((component) => <option key={component} value={component}>{component}</option>)}</select>} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.originalEstimate)} label={t("kanban.form.originalEstimate")} value={formatEffort(issue.originalEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.originalEstimateHours} onChange={(event) => updateDraft({ originalEstimateHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.remainingEstimate)} label={t("kanban.form.remainingEstimate")} value={formatEffort(issue.remainingEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.remainingEstimateHours} onChange={(event) => updateDraft({ remainingEstimateHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.timeSpent)} label={t("kanban.form.timeSpent")} value={formatEffort(issue.timeSpent, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.timeSpentHours} onChange={(event) => updateDraft({ timeSpentHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.securityLevelKey)} label={t("kanban.detail.securityLevel")} value={issue.securityLevelKey || t("kanban.detail.notSet")} />
+                <DetailProperty {...copyBehavior} empty={!isCloud || isEmptyIssuePropertyValue(issueType?.name || issue.issueTypeKey || issue.typeId)} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(isCloud ? workflow?.name || issue.workflowId : issue.localWorkflow?.name)} label={t("kanban.detail.workflow")} value={workflowLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(stage?.name || issue.stageName || issue.stageKey)} label={t("kanban.detail.stage")} value={stageLabel} />
                 <DetailProperty
                   {...copyBehavior}
                   label={t("kanban.form.status")}
@@ -1095,23 +1145,23 @@ export function KanbanIssueDetailDialog({
                 />
                 <DetailProperty
                   {...copyBehavior}
-                  label={t("kanban.form.priority")}
+                  empty={isEmptyIssuePropertyValue(issue.priority)} label={t("kanban.form.priority")}
                   value={priorityLabel}
                   editing={editing}
                   editor={<select value={draft.priority ?? ""} onChange={(event) => updateDraft({ priority: event.target.value ? event.target.value as KanbanPriority : null })}><option value="">{t("kanban.detail.notSet")}</option>{KANBAN_PRIORITIES.map((priority) => <option key={priority} value={priority}>{t(DETAIL_PRIORITY_LABELS[priority])}</option>)}</select>}
                 />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.severity")} value={severityLabel} editing={editing} editor={<select value={draft.severity ?? ""} onChange={(event) => updateDraft({ severity: event.target.value ? event.target.value as KanbanSeverity : null })}><option value="">{t("kanban.detail.notSet")}</option>{(["critical", "high", "medium", "low"] as const).map((severity) => <option key={severity} value={severity}>{t(`kanban.importance.${severity}` as "kanban.importance.medium")}</option>)}</select>} />
-                {labels.length > 0 ? <DetailProperty {...copyBehavior} copyValue={labels.map((label) => label.name || label.key).join(", ")} label={t("kanban.detail.labelsTitle")} value={<span className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</span>} /> : null}
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.severity)} label={t("kanban.detail.severity")} value={severityLabel} editing={editing} editor={<select value={draft.severity ?? ""} onChange={(event) => updateDraft({ severity: event.target.value ? event.target.value as KanbanSeverity : null })}><option value="">{t("kanban.detail.notSet")}</option>{(["critical", "high", "medium", "low"] as const).map((severity) => <option key={severity} value={severity}>{t(`kanban.importance.${severity}` as "kanban.importance.medium")}</option>)}</select>} />
+                <DetailProperty empty={isEmptyIssuePropertyValue(labels)} {...copyBehavior} copyValue={labels.map((label) => label.name || label.key).join(", ")} label={t("kanban.detail.labelsTitle")} value={labels.length === 0 ? t("kanban.detail.notSet") : <span className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</span>} />
                 {resolvedFields.map((field) => {
                   const value = issue.customFields?.[field.def.key] ?? field.context.defaultValue;
-                  return <DetailProperty {...copyBehavior} copyValue={formatDynamicCopyValue(field, value, usersById, issuesByRemoteId, t)} key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, value, usersById, issuesByRemoteId, t)} />;
+                  return <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(value)} copyValue={formatDynamicCopyValue(field, value, usersById, issuesByRemoteId, t)} key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, value, usersById, issuesByRemoteId, t)} />;
                 })}
-                <DetailProperty {...copyBehavior} copyValue={createdAtLabel} label={t("kanban.detail.createdAt")} value={<><CalendarOutlined /> {createdAtLabel}</>} />
-                <DetailProperty {...copyBehavior} copyValue={updatedAtLabel} label={t("kanban.detail.updatedAt")} value={<><CalendarOutlined /> {updatedAtLabel}</>} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.createdBy")} value={createdByLabel} />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.updatedBy")} value={updatedByLabel} />
-                {debugMode ? <DetailProperty {...copyBehavior} label={t("kanban.detail.revision")} value={issue.revision ?? issue.lastRemoteRevision ?? "—"} /> : null}
-              </dl>
+                <DetailProperty {...copyBehavior} copyValue={createdAtLabel} empty={isEmptyIssuePropertyValue(issue.createdAt)} label={t("kanban.detail.createdAt")} value={createdAtLabel} />
+                <DetailProperty {...copyBehavior} copyValue={updatedAtLabel} empty={isEmptyIssuePropertyValue(issue.updatedAt)} label={t("kanban.detail.updatedAt")} value={updatedAtLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.createdByAgent || issue.createdBy)} label={t("kanban.detail.createdBy")} value={createdByLabel} />
+                <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.updatedByAgent || issue.updatedBy)} label={t("kanban.detail.updatedBy")} value={updatedByLabel} />
+                {debugMode ? <DetailProperty {...copyBehavior} empty={isEmptyIssuePropertyValue(issue.revision ?? issue.lastRemoteRevision)} label={t("kanban.detail.revision")} value={issue.revision ?? issue.lastRemoteRevision ?? "—"} /> : null}
+              </CollapsibleIssueProperties>
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-people" title={t("kanban.detail.peopleTitle")} icon={<UserOutlined />}>
@@ -1160,17 +1210,20 @@ export function KanbanIssueDetailDialog({
 
             <DetailSection sectionId="kanban-detail-runs" title={t("kanban.detail.runsTitle")} icon={<RobotOutlined />} meta={t("kanban.detail.itemCount", { count: runs.length })}>
               {runs.length > 0 ? <div className="kanban-detail-run-list">{runs.map((run) => {
-                const viewChatButton = run.chatId && "deviceId" in run && run.deviceId === localDeviceId
-                  ? <button type="button" onClick={() => openIssueChat(run.workerAgent || "", run.chatId || "", run.id)}>{t("kanban.chat.view")}</button>
-                  : run.chatId && !("deviceId" in run) && run.chatId === issue.chatId
-                    ? <button type="button" onClick={() => openIssueChat(run.workerAgent || resolveChatAgentKey(run.chatId || ""), run.chatId || "", run.id)}>{t("kanban.chat.view")}</button>
-                    : null;
+                const chatId = run.chatId || "";
+                const agentKey = resolveChatAgentKey(chatId, run.workerAgent);
+                const matchedChat = issueChatItems.find((chat) => chat.chatId === chatId);
+                const canOpenChat = Boolean(chatId && agentKey)
+                  && ("deviceId" in run ? Boolean(localDeviceId) && run.deviceId === localDeviceId : chatId === issue.chatId)
+                  && (!matchedChat || (matchedChat.local && matchedChat.state === "active"));
+                const viewChatButton = canOpenChat ? <div className="kanban-detail-run-actions">
+                  <button type="button" onClick={() => openIssueChat(agentKey, chatId, run.id)}>{t("kanban.chat.viewRun")}</button>
+                  <button type="button" onClick={() => onJumpToChat(chatId, agentKey)}>{t("kanban.chat.jumpToChat")}</button>
+                </div> : null;
                 return <div key={run.id} className={`kanban-detail-run-card ${chatEmbedPath && selectedRunId === run.id ? "is-selected" : ""}`} aria-current={chatEmbedPath && selectedRunId === run.id ? "true" : undefined}>
                   <span className="kanban-detail-run-icon"><RobotOutlined /></span>
                   <div className="kanban-detail-run-body">
                     <strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong>
-                    {run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}
-                    {run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}
                     <div className="kanban-detail-run-footer">
                       <dl className="kanban-detail-run-metrics">
                         <div><dt>{t("kanban.detail.runSpent")}</dt><dd>{formatRunDuration(run.startedAt, run.finishedAt, t)}</dd></div>
@@ -1191,7 +1244,16 @@ export function KanbanIssueDetailDialog({
             </DetailSection>
 
             {isCloud ? <div className="kanban-detail-readonly-note"><LockOutlined /><span>{t("kanban.detail.cloudReadonlyCompact")}</span></div> : null}
-            {!isCloud ? <button type="button" className="kanban-detail-danger-button" onClick={() => void onDelete()}><DeleteOutlined />{t("kanban.form.delete")}</button> : null}
+            </div>
+            {!isCloud ? <footer className="kanban-detail-rail-footer">
+              <button type="button" className="kanban-detail-danger-button" disabled={saving || attachmentBusy} onClick={() => void onDelete()}><DeleteOutlined />{t("kanban.form.delete")}</button>
+              <div className="kanban-detail-rail-footer-actions">
+                {editing ? <>
+                  <button type="button" className="kanban-detail-secondary-button" disabled={saving || attachmentBusy} onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
+                  <button type="button" className="kanban-detail-primary-button" disabled={saving || attachmentBusy} onClick={() => void saveDraft()}><SaveOutlined />{saving ? t("kanban.detail.saving") : t("kanban.form.save")}</button>
+                </> : <button type="button" className="kanban-detail-secondary-button" onClick={() => { setInitialChatPending(false); setChatEmbedPath(null); setSelectedIssueChatId(null); setSelectedRunId(null); setEditing(true); }}><EditOutlined />{t("kanban.detail.editIssue")}</button>}
+              </div>
+            </footer> : null}
           </aside>
         </div>
 

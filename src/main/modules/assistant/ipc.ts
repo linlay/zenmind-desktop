@@ -736,8 +736,8 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     conversationShare.create(request)
   );
 
-  ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>
-    conversationShare.list(chatId)
+  ipcMain.handle("assistant.listConversationShares", async () =>
+    conversationShare.list()
   );
 
   ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>
@@ -767,6 +767,21 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return { ok: false, chatId: chatId ?? "", message: t("attachment.cancelled"), attachments: [] };
     }
     return createAssistantAttachmentsFromFiles?.(app, chatId, result.filePaths, {
+      onProgress: emitAssistantAttachmentProgress
+    });
+  });
+
+  ipcMain.handle("assistant.addDroppedAttachments", async (event: any, chatId: string | null | undefined, filePaths: unknown) => {
+    if (!mainWindow?.webContents || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw new Error("Attachment drop requires the main window frame");
+    }
+    const nativePath = platform === "win32" ? path.win32 : path.posix;
+    if ((chatId != null && typeof chatId !== "string") || !Array.isArray(filePaths) || filePaths.length === 0
+      || filePaths.some((filePath) => typeof filePath !== "string" || !nativePath.isAbsolute(filePath))) {
+      throw new Error("Invalid dropped attachment files");
+    }
+    // Native paths are resolved by Electron preload on both Windows and macOS.
+    return createAssistantAttachmentsFromFiles?.(app, chatId, [...new Set(filePaths)], {
       onProgress: emitAssistantAttachmentProgress
     });
   });

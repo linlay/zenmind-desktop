@@ -1,3 +1,4 @@
+import type { beginPlatformLoadDiagnostic } from "./load-diagnostic";
 import type { App, WebContents } from "electron";
 import {
   isPlainBridgeRecord,
@@ -124,6 +125,7 @@ export type LogicalSession = {
   retiring: boolean;
   closed: boolean;
   rootObserverToken: string | null;
+  loadDiagnostics: Map<string, ReturnType<typeof beginPlatformLoadDiagnostic>>;
   chatLoadRequests: Map<string, { chatId: string; startedAt: number }>;
 };
 

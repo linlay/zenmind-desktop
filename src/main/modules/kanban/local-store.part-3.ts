@@ -10,11 +10,12 @@ import type {
   KanbanSyncMode,
   KanbanSyncState
 } from "../../../shared/contracts";
-import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanDesktopSyncCursor, KanbanIssueRow, KanbanProjectBindingRow, KanbanProjectRow, PROJECT_ID, SYNC_CACHE_SCHEMA_VERSION, WORKFLOW_ID, buildIssueDetailJson, createLocalIssueId, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseAttachmentsJson, parseCloudIssue, parseJsonRecord, parseStringList, readStoredDueDate, trimText } from "./local-store.part-1";
+import { AppPathProvider, BOARD_ID, KanbanDesktopSyncCursor, KanbanIssueRow, KanbanProjectBindingRow, KanbanProjectRow, PROJECT_ID, SYNC_CACHE_SCHEMA_VERSION, buildIssueDetailJson, createLocalIssueId, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseAttachmentsJson, parseCloudIssue, parseJsonRecord, parseStringList, readStoredDueDate, trimText } from "./local-store.part-1";
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
 
 export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
   const detail = parseJsonRecord(row.detail_json);
+  const localWorkflow = detail.localWorkflow as KanbanIssue["localWorkflow"];
   return {
     id: row.id,
     localIssueId: row.id,
@@ -34,11 +35,11 @@ export function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     remainingEstimate: normalizeEffortSeconds(detail.remainingEstimate),
     timeSpent: normalizeEffortSeconds(detail.timeSpent),
     parentIssueId: nullableTrimmedText(detail.parentIssueId),
-    localWorkflow: detail.localWorkflow as KanbanIssue["localWorkflow"],
+    localWorkflow,
     localWorkflowRollbacks: detail.localWorkflowRollbacks as KanbanIssue["localWorkflowRollbacks"],
-    workflowId: row.workflow_id,
-    typeId: row.type_id ?? undefined,
-    issueTypeKey: trimText(detail.issueTypeKey) || row.type_id || undefined,
+    workflowId: row.sync_mode === "cloud" ? row.workflow_id || undefined : localWorkflow?.id,
+    typeId: row.sync_mode === "cloud" ? row.type_id || undefined : undefined,
+    issueTypeKey: row.sync_mode === "cloud" ? trimText(detail.issueTypeKey) || row.type_id || undefined : undefined,
     stageId: row.stage_id ?? undefined,
     stageKey: trimText(detail.stageKey) || undefined,
     stageName: row.stage_name ?? undefined,
@@ -160,7 +161,7 @@ export function parseCloudProject(value: unknown): KanbanProject | null {
     position: typeof record.position === "number" && Number.isFinite(record.position) ? record.position : 0,
     revision: typeof record.revision === "number" && Number.isFinite(record.revision) ? record.revision : 0,
     visibility: trimText(record.visibility) || undefined,
-    defaultWorkflowId: trimText(record.defaultWorkflowId) || WORKFLOW_ID,
+    defaultWorkflowId: trimText(record.defaultWorkflowId),
     createdAt: trimText(record.createdAt) || timestamp,
     updatedAt: timestamp
   };
@@ -445,7 +446,7 @@ export function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject,
     project.revision ?? 0,
     syncMode,
     project.visibility ?? "workspace",
-    project.defaultWorkflowId ?? WORKFLOW_ID,
+    project.defaultWorkflowId ?? "",
     project.createdAt,
     project.updatedAt
   );
@@ -554,8 +555,8 @@ export function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync:
     issue.remoteIssueId ?? null,
     issue.boardId ?? BOARD_ID,
     issue.projectId ?? PROJECT_ID,
-    issue.workflowId ?? WORKFLOW_ID,
-    issue.typeId ?? ISSUE_TYPE_ID,
+    issue.syncMode === "cloud" ? issue.workflowId ?? "" : issue.localWorkflow?.id ?? "",
+    issue.syncMode === "cloud" ? issue.typeId ?? null : null,
     issue.stageId ?? null,
     issue.stageName ?? null,
     issue.statusId ?? null,
@@ -645,8 +646,8 @@ export function buildLocalIssue(
     originalEstimate: normalizeEffortSeconds(input.originalEstimate),
     remainingEstimate: normalizeEffortSeconds(input.remainingEstimate),
     timeSpent: normalizeEffortSeconds(input.timeSpent),
-    workflowId: WORKFLOW_ID,
-    typeId: ISSUE_TYPE_ID,
+    workflowId: undefined,
+    typeId: undefined,
     title,
     description: typeof input.description === "string" ? input.description.trim() : "",
     status,

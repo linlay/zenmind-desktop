@@ -239,3 +239,42 @@ test("Tooling rejects workspace escapes, ZIP Slip, compression bombs, and output
     false
   );
 });
+
+test("development and packaged Worker bundles execute the same public task", async (t) => {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "webapp-worker-layout-"));
+  t.after(() => fs.rmSync(workspaceRoot, { recursive: true, force: true }));
+  const brand = loadBrandConfig(projectRoot, resolveBrandId());
+  const workerPaths = [
+    path.join(projectRoot, "dist-electron/main/webapp-tooling-worker.js"),
+    path.join(brandBundleElectronDir(projectRoot, brand), "main/webapp-tooling-worker.js")
+  ];
+  assert.deepEqual(fs.readFileSync(workerPaths[0]), fs.readFileSync(workerPaths[1]));
+  for (const [index, workerPath] of workerPaths.entries()) {
+    const result = await executeWebappToolingInWorker({ operation: "package.init", workspaceRoot, projectPath: `app-${index}`, key: `layout-${index}`, label: "Layout" }, { workerPath });
+    assert.equal(result.projectPath, `app-${index}`);
+    assert.ok(fs.existsSync(path.join(workspaceRoot, result.manifestPath)));
+  }
+});
+
+test("missing and crashing Workers retain distinct actionable failures", async (t) => {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "webapp-worker-failure-"));
+  t.after(() => fs.rmSync(workspaceRoot, { recursive: true, force: true }));
+  const task = { operation: "package.init", workspaceRoot, projectPath: "app", key: "failure-test", label: "Failure" };
+  await assert.rejects(executeWebappToolingInWorker(task, { workerPath: path.join(workspaceRoot, "missing.cjs") }), error => {
+    assert.equal(error.code, "tooling_worker_unavailable");
+    assert.equal(error.details.executionState, "not_started");
+    assert.equal(error.details.cause.code, "ENOENT");
+    assert.equal(error.details.recovery.strategy, "repair_host");
+    return true;
+  });
+  const workerPath = path.join(workspaceRoot, "crash.cjs");
+  fs.writeFileSync(workerPath, 'throw Object.assign(new Error("injected Worker load failure"), {code:"WORKER_TEST_FAILURE"});');
+  await assert.rejects(executeWebappToolingInWorker(task, { workerPath }), error => {
+    assert.equal(error.code, "tooling_worker_failed");
+    assert.equal(error.details.cause.code, "WORKER_TEST_FAILURE");
+    assert.match(error.details.cause.message, /injected Worker load failure/);
+    assert.equal(error.details.executionState, "unknown");
+    return true;
+  });
+  assert.equal(fs.existsSync(path.join(workspaceRoot, "app")), false);
+});

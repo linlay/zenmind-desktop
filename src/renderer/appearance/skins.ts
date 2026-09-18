@@ -37,7 +37,6 @@ const light: SkinTokens = Object.freeze({
   "--shell-sidebar-bg": "rgba(231, 241, 230, 0.42)",
   "--shell-content-bg": "rgba(246, 250, 242, 0.88)",
   "--shell-titlebar-bg": "rgba(231, 241, 230, 0.84)",
-  "--shell-background-tint": "rgba(246, 250, 242, 0.06)"
 });
 
 const dark: SkinTokens = Object.freeze({
@@ -72,7 +71,6 @@ const dark: SkinTokens = Object.freeze({
   "--shell-sidebar-bg": "rgba(17, 38, 28, 0.4)",
   "--shell-content-bg": "rgba(20, 39, 29, 0.9)",
   "--shell-titlebar-bg": "rgba(20, 39, 29, 0.88)",
-  "--shell-background-tint": "rgba(9, 26, 20, 0.12)"
 });
 
 const MIST_DESKTOP_SKIN: DesktopSkinDefinition = Object.freeze({

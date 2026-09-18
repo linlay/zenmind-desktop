@@ -440,12 +440,25 @@ test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2
 test("Main Chat query rechecks route ownership after asynchronous availability", async () => {
   const target = mainTarget();
   let waitForState = false, complete;
+  let connectionPhase = "connected";
   const state = { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
   const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
     getServiceState: () => waitForState ? new Promise((resolve) => { complete = resolve; }) : Promise.resolve(state),
+    realtimeBroker: {
+      getConnectionState: () => ({
+        phase: connectionPhase,
+        generation: 1,
+        physicalConnectionCount: connectionPhase === "connected" ? 1 : 0,
+        reconnectCount: 0,
+        key: connectionPhase === "connected"
+          ? { endpoint: "http://127.0.0.1:7078", identitySessionId: "identity-1" }
+          : null,
+      }),
+    },
   });
   const sender = createSender(target.webContentsId, target.currentUrl);
   await openSession(runtime, sender, "async-state");
+  connectionPhase = "connecting";
   waitForState = true;
   send(runtime, sender, "async-state", { frame: "request", id: "old-query", type: "/api/query",
     payload: { requestId: "request-old", runId: "run-old", agentKey: "agent-1", message: "hello" } });
@@ -1374,4 +1387,66 @@ test("Kanban preview authorizes only its registered Chat read and attach/detach"
   await flush();
   assert.equal(sentFrames(sender).at(-1).type, "capability_denied");
   assert.equal(runtime.calls.queries.length, 0);
+});
+
+for (const type of ["/api/agents", "/api/chat"]) {
+  test(`${type} production watchdog observes delayed response and cleans up on close`, async (t) => {
+    const logs = [];
+    t.mock.method(console, "warn", (...args) => logs.push(args));
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const main = mainTarget();
+    const pending = [];
+    const runtime = createRuntime(new Map([[101, main]]), {
+      realtimeBroker: { forwardRequest: async (input) => { pending.push(input); return "upstream"; } },
+    });
+    const sender = createSender(101, main.currentUrl);
+    await openSession(runtime, sender, "diagnostic");
+    send(runtime, sender, "diagnostic", { frame: "request", id: "slow", type, payload: { chatId: "chat-1" } });
+    await flush();
+    t.mock.timers.tick(5000);
+    const records = () => logs.filter(([tag]) => tag === "[platform-load]").map(([, data]) => data);
+    assert.equal(records().at(-1).stage, "broker-response");
+    assert.equal(records().at(-1).operation, type);
+    pending[0].onFrame({ frame: "response", id: "slow", type, code: 0, data: { text: "PRIVATE_BODY" } });
+    assert.equal(records().at(-1).status, "succeeded");
+    send(runtime, sender, "diagnostic", { frame: "request", id: "abandoned", type, payload: {} });
+    await flush();
+    sender.destroy();
+    const count = records().length;
+    t.mock.timers.tick(10000);
+    assert.equal(records().length, count);
+    assert.ok(!JSON.stringify(records()).includes("PRIVATE_BODY"));
+  });
+}
+
+test("connected Platform keeps historical Chat loading independent of a stalled service identity probe", async () => {
+  const main = mainTarget();
+  let stallServiceState = false;
+  let serviceStateCalls = 0;
+  const runtime = createRuntime(new Map([[main.webContentsId, main]]), {
+    getServiceState: async () => {
+      serviceStateCalls += 1;
+      if (stallServiceState) return new Promise(() => undefined);
+      return { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
+    },
+  });
+  const sender = createSender(main.webContentsId, main.currentUrl);
+  await openSession(runtime, sender, "connected-chat-load");
+  const callsAfterOpen = serviceStateCalls;
+
+  stallServiceState = true;
+  send(runtime, sender, "connected-chat-load", {
+    frame: "request",
+    id: "load-chat-1",
+    type: "/api/chat",
+    payload: { chatId: "chat-1" },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.forwarded.length, 1);
+  assert.equal(runtime.calls.forwarded[0].type, "/api/chat");
+  assert.equal(runtime.calls.forwarded[0].baseUrl, "http://127.0.0.1:7078");
+  assert.equal(runtime.calls.forwarded[0].token, "token");
+  assert.equal(serviceStateCalls, callsAfterOpen);
+  assert.ok(sentFrames(sender).some((frame) => frame.id === "load-chat-1" && frame.frame === "response"));
 });

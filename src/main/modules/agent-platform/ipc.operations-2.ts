@@ -263,6 +263,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleOpen_3(facto
         closed: false,
         rootObserverToken: null,
         chatLoadRequests: new Map(),
+        loadDiagnostics: new Map(),
     };
     factoryContext.sessions.set(key, session);
     const keys = factoryContext.senderSessionKeys.get(event.sender.id) ?? new Set<string>();

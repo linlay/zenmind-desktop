@@ -1,3 +1,4 @@
+import { isActionCredentialKey, sanitizeActionErrorText } from "./diagnostics";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -34,11 +35,12 @@ import {
 import { isDesktopCopilotPageKey } from "../../../shared/assistant-settings";
 import {
   executeWebappToolingInWorker,
+  normalizeWorkspaceRelativePath,
   WebappToolingError,
   type WebappToolingTask
 } from "../webs";
 import { DesktopActionBridgeOptions, asRecord, fail, ok, readString } from "./runtime.part-1";
-import { DESKTOP_WEB_POST_STATE_ACTIONS, DESKTOP_WORKPANEL_MUTATION_ACTIONS, isSensitiveConfirmationKey, projectDesktopWebActionSurface, sanitizeConfirmationUrlText } from "./runtime.part-2";
+import { DESKTOP_WEB_POST_STATE_ACTIONS, DESKTOP_WORKPANEL_MUTATION_ACTIONS, projectDesktopWebActionSurface } from "./runtime.part-2";
 
 export function projectDesktopWebActionTab(
   value: unknown,
@@ -262,7 +264,7 @@ export async function callRendererAction(
     ...(response.error === undefined ? {} : { error: response.error })
   } satisfies DesktopActionCallResponse;
   if (!response.ok) {
-    return publicResponse;
+    return { ...publicResponse, ...fail(request.action, response.error?.code || "renderer_action_failed", response.error?.message || "Renderer action failed.", response.error?.details) };
   }
   const projection = projectRendererActionResult(request.action, response.result);
   if (!projection.handled) {
@@ -296,34 +298,12 @@ export function compactWebappItem(item: WebappEntry | null | undefined): Desktop
   };
 }
 
-export function redactWorkspaceRootText(value: string, workspaceRoot = "") {
-  const root = workspaceRoot.trim();
-  if (!root) return value;
-  const candidates = new Set([
-    root,
-    path.normalize(root),
-    root.replace(/\\/gu, "/"),
-    root.replace(/\//gu, "\\"),
-  ]);
-  let redacted = value;
-  for (const candidate of [...candidates].filter(Boolean).sort((left, right) => right.length - left.length)) {
-    redacted = redacted.split(candidate).join("[WORKSPACE]");
-  }
-  return redacted;
-}
-
-export function sanitizeWebappErrorText(value: string, workspaceRoot = "") {
-  return redactWorkspaceRootText(sanitizeConfirmationUrlText(value)
-    .replace(
-      /((?:access[_-]?token|api[_-]?key|authorization|client[_-]?secret|cookie|credential|jwt|password|private[_-]?key|refresh[_-]?token|secret|session[_-]?token|token)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
-      "$1[REDACTED]"
-    )
-    .replace(/\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, "[REDACTED]")
-    .replace(/\b(?:dk|th|sk)_[A-Za-z0-9_-]{8,}\b/gu, "[REDACTED]"), workspaceRoot);
+export function sanitizeWebappErrorText(value: string, _workspaceRoot = "") {
+  return sanitizeActionErrorText(value);
 }
 
 export function sanitizeWebappDiagnosticValue(value: unknown, key = "", depth = 0, workspaceRoot = ""): unknown {
-  if (isSensitiveConfirmationKey(key)) {
+  if (isActionCredentialKey(key)) {
     return "[REDACTED]";
   }
   if (typeof value === "string") {
@@ -556,10 +536,19 @@ export function trustedWebappWorkspaceSource(
   const runId = typeof source?.runId === "string" ? source.runId.trim() : "";
   const chatId = typeof source?.chatId === "string" ? source.chatId.trim() : "";
   const workspaceRoot = typeof source?.workspaceRoot === "string" ? source.workspaceRoot.trim() : "";
-  if (!runId || !chatId || !workspaceRoot || Boolean(source?.agentKey && source?.teamId)) {
+  if (!runId || !chatId || Boolean(source?.agentKey && source?.teamId)) {
     return {
       ok: false,
       response: fail(action, "forbidden", "This action requires a trusted Agent Platform Run workspace."),
+    };
+  }
+  if (!workspaceRoot) {
+    return {
+      ok: false,
+      response: fail(action, "workspace_unavailable", "This Run has no project Workspace bound for WebApp files.", {
+        stage: "arguments", category: "unavailable", executionState: "not_started",
+        recovery: { strategy: "user_action", message: "Bind a project Workspace for the Agent and continue in a Run using that Workspace. A Chat resource directory is not automatically the project Workspace." },
+      }),
     };
   }
   return { ok: true, workspaceRoot };
@@ -585,6 +574,16 @@ export async function executeWebappToolingAction(
   const action = request.action;
   const trusted = trustedWebappWorkspaceSource(action, request);
   if (!trusted.ok) return trusted.response;
+
+  for (const field of ["projectPath", "archivePath", "outputPath"]) {
+    if (Object.hasOwn(args, field) && !normalizeWorkspaceRelativePath(args[field])) {
+      return fail(action, "invalid_path", `${field} must be relative to the current Run workspace.`, {
+        stage: "arguments", category: "validation", executionState: "not_started",
+        issues: [{ path: `args.${field}`, code: "invalid_path", expected: "workspace-relative path without URI or parent traversal", actual: typeof args[field] }],
+        recovery: { strategy: "fix_input", message: `Use a relative ${field} in the current Run workspace. Do not pass an absolute host path.` },
+      });
+    }
+  }
 
   let task: WebappToolingTask;
   if (action === "desktop.webapp.package.init") {
@@ -633,13 +632,15 @@ export async function executeWebappToolingAction(
 
   try {
     const result = await executeWebappToolingInWorker(task, {
-      ...(options.webappToolingWorkerPath ? { workerPath: options.webappToolingWorkerPath } : {}),
+      // Dev and packaged Main have different module layouts. Resolve from the
+      // application root, never from the directory of an imported module.
+      workerPath: options.webappToolingWorkerPath || path.join(options.app.getAppPath(), "dist-electron", "main", "webapp-tooling-worker.js"),
     });
     return ok(action, result as DesktopWebappToolingResult);
   } catch (error) {
     if (error instanceof WebappToolingError) {
-      const details = sanitizeWebappDiagnosticValue(error.details) as Record<string, unknown>;
-      return fail(action, error.code, sanitizeWebappErrorText(error.message), {
+      const details = sanitizeWebappDiagnosticValue(error.details, "", 0, trusted.workspaceRoot) as Record<string, unknown>;
+      return fail(action, error.code, sanitizeWebappErrorText(error.message, trusted.workspaceRoot), {
         stage: error.stage,
         ...details,
       });

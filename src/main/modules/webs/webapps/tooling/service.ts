@@ -213,6 +213,34 @@ function ensureMinimalFrontend(projectPath: string, manifest: WebappManifest) {
 
 function initializeManifest(task: Extract<WebappToolingTask, { operation: "package.init" }>) {
   const project = resolveCreatableWorkspacePath(task.workspaceRoot, task.projectPath, "manifest");
+  try {
+    return initializeManifestAtProject(task, project);
+  } catch (error) {
+    const context = { workspaceRoot: project.workspaceRoot, projectPath: project.relativePath, resolvedProjectPath: project.absolutePath };
+    if (error instanceof WebappToolingError) {
+      throw new WebappToolingError(error.stage, error.code, error.message, {
+        ...error.details, operation: "package.init", context,
+        ...(["manifest_invalid", "invalid_json", "manifest_not_file", "manifest_too_large"].includes(error.code) ? {
+          recovery: { strategy: "fix_resource", message: "An existing webapp.json is invalid; init validates it and never fills an empty or placeholder id. Preserve this project, initialize a new empty distribution directory, then migrate frontend/backend assets and validated configuration without replacing the generated id." },
+        } : {}),
+      });
+    }
+    const cause = error as NodeJS.ErrnoException;
+    if (!cause || typeof cause.code !== "string") throw error;
+    throw new WebappToolingError("manifest", "project_init_failed", `WebApp initialization failed at '${project.absolutePath}': ${cause.message}`, {
+      operation: "package.init", path: project.relativePath, context,
+      category: ["EACCES", "EPERM", "EROFS"].includes(cause.code) ? "authorization" : "unavailable",
+      executionState: "unknown",
+      cause: { name: cause.name, code: cause.code, message: cause.message, ...(cause.syscall ? { syscall: cause.syscall } : {}), ...(cause.path ? { path: cause.path } : {}) },
+      recovery: { strategy: "fix_resource", message: "Check the resolved project path and its existing parent. Use a writable project directory within the current Run workspace and pass its workspace-relative path. A read-only filesystem root does not imply all mounted subdirectories are read-only. Inspect existing output before retrying; do not change source/workspaceRoot, use sudo, or create a placeholder webapp.json." },
+    });
+  }
+}
+
+function initializeManifestAtProject(
+  task: Extract<WebappToolingTask, { operation: "package.init" }>,
+  project: ReturnType<typeof resolveCreatableWorkspacePath>,
+) {
   const key = task.key.trim();
   const label = task.label.trim();
   if (!WEBAPP_KEY_PATTERN.test(key) || key.length < 3 || key.length > 64) {

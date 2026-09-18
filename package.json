@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.4.3",
+  "version": "0.4.6",
   "private": true,
   "description": "桌面壳",
   "main": "dist-electron/main/index.js",
@@ -22,6 +22,7 @@
     "build:main:types": "tsc -p tsconfig.main.json",
     "architecture:check": "node ./scripts/check-main-architecture.mjs",
     "typecheck:renderer": "tsc -p tsconfig.json --noEmit",
+    "stage:npm-runtime": "node ./scripts/stage-npm-runtime.mjs",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
     "build:main:prepared": "npm run build:main:types && npm run build:main:bundle",
     "build:renderer:prepared": "npm run typecheck:renderer && vite build",

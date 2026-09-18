@@ -17,7 +17,7 @@ export { WebappInstallError, WebappInstallPolicyError } from "./webapps/install-
 export type { WebappInstallStage } from "./webapps/install-errors";
 export { WebappToolingError } from "./webapps/tooling/errors";
 export type { WebappToolingTask } from "./webapps/tooling/service";
-export { resolveExistingWorkspacePath } from "./webapps/tooling/workspace";
+export { resolveExistingWorkspacePath, normalizeWorkspaceRelativePath } from "./webapps/tooling/workspace";
 export { executeWebappToolingInWorker } from "./webapps/tooling/worker";
 export { createDesktopMobileWebappCatalog, readDesktopMobileWebappItem } from "./webapps/mobile-catalog";
 export { restorePublishedWebapps } from "./webapps/publication-runtime";

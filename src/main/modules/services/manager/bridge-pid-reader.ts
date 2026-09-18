@@ -4,6 +4,13 @@ import { isProcessRunning } from "./process-cleanup";
 import { matchProcessInstallDirAsync, type ProcessInstallDirMatch } from "./process-identity";
 
 type Identity = { pid: number; key: string };
+const diagnosticTimes = new Map<string, number>();
+function reportPidDiagnostic(reason: string, details: Record<string, string | number | boolean>) {
+  const now = performance.now();
+  if (now - (diagnosticTimes.get(reason) ?? -Infinity) < 30_000) return;
+  diagnosticTimes.set(reason, now);
+  console.warn("[bridge-pid]", { platform: process.platform, reason, ...details });
+}
 async function readIdentity(filename: string, installDir: string): Promise<Identity | null> {
   try {
     const before = await fs.stat(filename);
@@ -13,7 +20,14 @@ async function readIdentity(filename: string, installDir: string): Promise<Ident
     const pid = Number(text);
     if (!Number.isSafeInteger(pid) || pid <= 0) return null;
     return { pid, key: `${installDir}\0${pid}\0${after.ino}:${after.mtimeMs}:${after.ctimeMs}:${after.size}` };
-  } catch { return null; }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Missing files are normal for stopped services. Never log paths or raw errors.
+    if (code !== "ENOENT") reportPidDiagnostic("pid-read-failed", {
+      code: code && /^(EBUSY|EACCES|EPERM|EIO|EMFILE|ENFILE)$/.test(code) ? code : "OTHER",
+    });
+    return null;
+  }
 }
 
 // Read-only bridge observations must never repair PID files or authorize process termination.
@@ -39,10 +53,15 @@ export function createBridgePidReader(deps: {
       const age = deps.now() - current.checkedAt;
       if (!current.pending && age >= 1000) {
         current.pending = (async () => {
+          const startedAt = deps.now();
           const match = await deps.match(identity.pid, installDir);
           const latest = await deps.readIdentity(filename, installDir);
           const valid = entries.get(filename) === current && latest?.key === identity.key && deps.isRunning(identity.pid);
           current.matched = valid && match === "matched";
+          const elapsedMs = Math.max(0, Math.round(deps.now() - startedAt));
+          if (!current.matched || elapsedMs >= 1000) reportPidDiagnostic("identity-probe", {
+            pid: identity.pid, match, identityStable: valid, elapsedMs,
+          });
           current.checkedAt = deps.now();
           return current.matched;
         })().catch(() => { current.matched = false; current.checkedAt = deps.now(); return false; })

@@ -24,3 +24,4 @@ export * from "./chat-work-panel-tab-context-menu";
 export * from "./webview-selection-toolbar";
 export * from "./selection-explain-window";
 export * from "./canonical-chat-sync";
+export * from "./artifacts";

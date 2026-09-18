@@ -21,7 +21,7 @@ const MAX_JSON_RESPONSE_BYTES = 1024 * 1024;
 const MAX_CONVERSATION_ID_BYTES = 255;
 const SHARE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/u;
 const RFC3339_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/u;
-const RECORD_KEYS = ["id", "url", "createdAt", "expiresAt", "lastAccessedAt", "singleUse"] as const;
+const RECORD_KEYS = ["id", "conversationId", "url", "createdAt", "expiresAt", "lastAccessedAt", "singleUse"] as const;
 
 export type TunnelConversationShareErrorKind =
   | "invalid_request"
@@ -52,10 +52,7 @@ export interface ConversationShareCreator {
 }
 
 export interface ConversationShareReader {
-  list(
-    target: ConversationShareTarget,
-    conversationId: string,
-  ): Promise<AssistantConversationShareRecord[]>;
+  list(target: ConversationShareTarget): Promise<AssistantConversationShareRecord[]>;
 }
 
 export interface ConversationShareRevoker {
@@ -98,6 +95,7 @@ export class TunnelConversationShareClient implements
     requireStatus(response, 201);
     const record = readConversationShareRecord(await readLimitedJson(response));
     if (
+      record.chatId !== input.conversationId ||
       record.lastAccessedAt !== null ||
       (input.expiration === "once"
         ? !record.singleUse || record.expiresAt !== null
@@ -113,15 +111,10 @@ export class TunnelConversationShareClient implements
 
   async list(
     target: ConversationShareTarget,
-    conversationId: string,
   ): Promise<AssistantConversationShareRecord[]> {
     requireValidTarget(target);
-    if (!isValidConversationId(conversationId)) {
-      throw new TunnelConversationShareError("invalid_request");
-    }
-    const query = new URLSearchParams({ conversationId });
     const response = await this.request(
-      `${target.origin}${CONVERSATION_SHARES_PATH}?${query.toString()}`,
+      `${target.origin}${CONVERSATION_SHARES_PATH}`,
       {
         method: "GET",
         headers: authorizationHeaders(target),
@@ -275,8 +268,13 @@ function readConversationShareRecord(value: unknown): AssistantConversationShare
     throw new TunnelConversationShareError("invalid_response");
   }
   const shareId = readTrimmedString(value.id);
+  const chatId = readTrimmedString(value.conversationId);
   const url = readTrimmedString(value.url);
-  if (!SHARE_ID_PATTERN.test(shareId) || !isSafeConversationShareUrl(url)) {
+  if (
+    !SHARE_ID_PATTERN.test(shareId) ||
+    !isValidConversationId(chatId) ||
+    !isSafeConversationShareUrl(url)
+  ) {
     throw new TunnelConversationShareError("invalid_response");
   }
   const createdAt = readRequiredRfc3339(value.createdAt);
@@ -292,7 +290,7 @@ function readConversationShareRecord(value: unknown): AssistantConversationShare
   ) {
     throw new TunnelConversationShareError("invalid_response");
   }
-  return { shareId, url, createdAt, expiresAt, lastAccessedAt, singleUse };
+  return { shareId, chatId, url, createdAt, expiresAt, lastAccessedAt, singleUse };
 }
 
 function readRequiredRfc3339(value: unknown) {

@@ -324,6 +324,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.doesNotMatch(routeDefinitions, /routePath:\s*"\/copilot"/u);
   assert.doesNotMatch(routeDefinitions, /"\/copilot\/:agentKey"/u);
   assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
+  assert.match(sidebar, /to:\s*"\/market"[\s\S]*?to:\s*"\/share-management"[\s\S]*?labelKey:\s*"nav\.shareManagement"/);
   assert.match(sidebar, /item\.to === "\/connectors"/);
   assert.match(brandMark, /\|\s*"connector"[\s\S]*?case "connector":[\s\S]*?<circle cx="6" cy="12" r="3" \/>/);
   assert.match(enDictionary, /"nav\.mcpConnectors":\s*"Connectors Center"/);
@@ -1184,7 +1185,7 @@ test("chat headers expose sorting and new chat while the chat menu keeps sharing
   );
   assert.match(
     sidebarSource,
-    /actionId === "chat\.share"[\s\S]{0,160}conversationShareDialog\.open\(chat\.chatId, chat\.chatName\)/u
+    /actionId === "chat\.share"[\s\S]{0,160}onShareChat\(chat\.chatId, chat\.chatName\)/u
   );
   assert.doesNotMatch(sidebarSource, /renderChatsShareButton|sidebar-chats-share-button|kind="share"/u);
   assert.doesNotMatch(brandMarkSource, /\| "share"|case "share"/u);
@@ -4087,14 +4088,14 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /kanbanApi\.listIssues\(\)/);
   assert.match(kanbanPage, /kanbanApi\.createIssue/);
   assert.match(kanbanPage, /function canCreateIssueFromColumnDoubleClick\(status: KanbanStatus\)/);
-  assert.match(kanbanPage, /return status === "todo";/);
+  assert.match(kanbanPage, /function canCreateIssueFromColumnDoubleClick\(status: KanbanStatus\) \{\s*return KANBAN_CREATE_STATUSES.includes\(status\);/);
   assert.match(kanbanPage, /function shouldCreateIssueFromColumnDoubleClick/);
   assert.match(kanbanPage, /target\.closest\("\.issue-card"\)/);
   assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}canAdd && shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
-  assert.match(kanbanPage, /status === "todo" && canAdd[\s\S]{0,300}kanban\.column\.emptyTodoCreateHint/);
+  assert.match(kanbanPage, /canCreateIssueFromColumnDoubleClick\(status\) && canAdd[\s\S]{0,300}kanban\.column\.emptyTodoCreateHint/);
   assert.match(kanbanStyles, /\.kanban-empty-column-create-hint\s*\{/);
-  assert.match(zhCN, /"kanban\.column\.emptyTodoCreateHint": "双击此处新增问题"/);
-  assert.match(enUS, /"kanban\.column\.emptyTodoCreateHint": "Double-click here to create an issue"/);
+  assert.match(zhCN, /"kanban\.column\.emptyTodoCreateHint": "双击新建"/);
+  assert.match(enUS, /"kanban\.column\.emptyTodoCreateHint": "Double-click to create"/);
   assert.match(kanbanPage, /KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000/);
   assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success" \|\| feedbackPaused\) \{/);
   assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);
@@ -5081,7 +5082,7 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appRuntime, /isGlobalSearchShortcut/);
   assert.match(appShellRuntime, /isGlobalSearchShortcut/);
   assert.match(appShell, /onOpenGlobalSearch/);
-  assert.match(appShell, /onOpenGlobalSearch=\{\(\) => setGlobalSearchOpen\(true\)\}/);
+  assert.match(appShell, /onOpenGlobalSearch=\{shellOverlay\.openGlobalSearch\}/);
   assert.match(sidebar, /onOpenGlobalSearch\?:\s*\(\)\s*=>\s*void;/);
   assert.match(
     sidebar,
@@ -5118,6 +5119,7 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(overlay, /row\.actionId === "agents"[\s\S]*?<SidebarIllustration kind="agent" \/>/);
   assert.match(overlay, /row\.actionId === "skills"[\s\S]*?<SidebarIllustration kind="skill" \/>/);
   assert.match(overlay, /row\.actionId === "mcpConnectors"[\s\S]*?<SidebarIllustration kind="connector" \/>/);
+  assert.match(overlay, /row\.actionId === "shareManagement"[\s\S]*?<SidebarIllustration kind="share" \/>/);
   assert.doesNotMatch(overlay, /row\.actionId === "controlCenter"/);
   assert.match(overlay, /return <SidebarIllustration kind="settings" \/>;/);
   assert.doesNotMatch(overlay, /AppstoreOutlined|ControlOutlined|PlusOutlined|SettingOutlined/);
@@ -5175,12 +5177,14 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.history": "Open chat history"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.skills": "Open Skills Center"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.mcpConnectors": "Open Connectors Center"/);
+  assert.match(i18nEn, /"desktop\.globalSearch\.action\.shareManagement": "Open Share Management"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.awaiting": "等待中"/);
   assert.doesNotMatch(i18nZh, /desktop\.globalSearch\.status\.awaiting/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.history": "打开对话历史"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.skills": "打开技能中心"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开连接器中心"/);
+  assert.match(i18nZh, /"desktop\.globalSearch\.action\.shareManagement": "打开分享管理"/);
 });
 
 test("Chinese chat copy consistently uses 对话 while technical sessions keep 会话", () => {
@@ -5378,7 +5382,7 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appSidebar, /createPortal\([\s\S]*?appShell,\s*\)/);
   assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
   assert.match(appSidebar, /window\.setTimeout\(\(\) => \{[\s\S]*?chat: true,[\s\S]*?help: true,[\s\S]*?BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS\);[\s\S]*?\}, \[bootstrapActive\]\);/);
-  assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?setToolMenuOpen\(true\)/);
+  assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?onAutoOpenToolMenu\(\)/);
   assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: showBootstrapHelpGuide/);
   assert.match(appSidebar, /showBootstrapHelpGuide \? "has-bootstrap-guide"/);
   assert.match(appSidebar, /sidebar\.bootstrapGuide\.actionChat/);
@@ -6165,7 +6169,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(
     globalStyles,
-    /\.app-window-controls-layer \.main-chat-work-panel-toggle\s*\{[^}]*pointer-events:\s*auto;/
+    /\.app-window-controls-layer \.main-chat-header-actions\s*\{[^}]*pointer-events:\s*auto;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -7019,12 +7023,14 @@ test("assistant static HTML export saves the complete document returned by the p
   const htmlExport = readSourceFile("src", "main", "modules", "conversation-share", "html-export.ts");
   const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const htmlRenderService = readSourceFile("src", "main", "modules", "conversation-share", "html-render-service.ts");
+  const conversationShareFacade = readSourceFile("src", "main", "modules", "conversation-share", "facade.ts");
   const htmlWorker = readSourceFile("src", "main", "modules", "conversation-share", "html-worker.ts");
   const mainBuild = readSourceFile("scripts", "build-main-bundle.mjs");
   const preload = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
-  const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
-  const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "navigation", "useConversationShareDialog.ts");
+  const shareDialog = readSourceFile("src", "renderer", "app-shell", "conversation-share", "ConversationShareDialog.tsx");
+  const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "conversation-share", "useConversationShareDialog.ts");
+  const shareManagement = readSourceFile("src", "renderer", "pages", "share-management", "ShareManagementPage.tsx");
   const copilotContract = readSourceFile("src", "shared", "contracts", "copilot.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
@@ -7032,64 +7038,94 @@ test("assistant static HTML export saves the complete document returned by the p
   assert.match(htmlExport, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
   assert.match(htmlExport, /getAvailableFilePath/u);
   assert.doesNotMatch(htmlExport, /downloadChatShareEventStream|frontend\/dist|conversation\.template\.html|base64|Buffer\.concat|fetch\(|tunnel|showSaveDialog/iu);
-  assert.match(assistantHandlers, /new ConversationHtmlRenderService/u);
-  assert.match(assistantHandlers, /conversationHtmlRenderer\.start\(\)/u);
+  assert.match(conversationShareFacade, /new ConversationHtmlRenderService/u);
+  assert.match(conversationShareFacade, /start:\s*\(\) => renderer\.start\(\)/u);
   assert.match(htmlRenderService, /Buffer\.from\(response\.html\)/u);
   assert.doesNotMatch(htmlRenderService, /Buffer\.concat|response\.text\(\)/u);
   assert.match(htmlWorker, /postMessage\(response, \[response\.html\]\)/u);
   assert.match(mainBuild, /"main\/conversation-html-worker"/u);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.exportChatHtml"/u);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listConversationShares"/u);
   assert.match(preload, /exportChatHtml:\s*\(chatId: string\) => ipcRenderer\.invoke\("assistant\.exportChatHtml", chatId\)/u);
   assert.match(desktopApi, /exportChatHtml:\s*\(chatId: string\) => Promise<AssistantNavActionResult>/u);
   assert.match(copilotContract, /ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS[\s\S]*?"once"[\s\S]*?"3h"[\s\S]*?"1d"[\s\S]*?"7d"[\s\S]*?"30d"[\s\S]*?"permanent"/u);
   assert.doesNotMatch(copilotContract, /"5m"|"30m"|"1h"|"5d"|"15d"/u);
-  assert.match(copilotContract, /interface AssistantConversationShareRecord[\s\S]*?createdAt: EpochMilliseconds;[\s\S]*?lastAccessedAt: EpochMilliseconds \| null;[\s\S]*?singleUse: boolean/u);
+  assert.match(copilotContract, /interface AssistantConversationShareRecord[\s\S]*?chatId: string;[\s\S]*?createdAt: EpochMilliseconds;[\s\S]*?lastAccessedAt: EpochMilliseconds \| null;[\s\S]*?singleUse: boolean/u);
   assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.once": "阅后即焚"/u);
   assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.7d": "7 天"/u);
   assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.30d": "30 天"/u);
   assert.doesNotMatch(zhCN, /shareExpiration\.(?:5m|30m|1h|5d|15d)/u);
   assert.match(shareDialog, /ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS\.map/u);
   assert.match(shareDialog, /state\.expiration === "once"[\s\S]*?shareExpiration\.onceWarning/u);
-  assert.match(shareDialog, /sidebar\.chat\.shareLastAccessedAt/u);
-  assert.match(shareDialog, /sidebar\.chat\.sharePermanent/u);
-  assert.match(shareDialog, /record\.singleUse[\s\S]*?sidebar\.chat\.shareSingleUse/u);
-  assert.match(shareDialog, /formatEpochMillis/u);
+  assert.match(shareDialog, /createdRecord[\s\S]*?onCopyCreatedLink/u);
+  assert.match(shareDialog, /shareManagement\.openTunnelSettings/u);
+  assert.doesNotMatch(shareDialog, /shareLastAccessedAt|shareRevoke|listChatShares/u);
   assert.doesNotMatch(shareDialog, /Date\.parse/u);
   assert.match(shareDialogHook, /DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION/u);
   assert.match(shareDialogHook, /shareChat\(\{[\s\S]*?expiration: current\.expiration/u);
-  assert.match(shareDialogHook, /listChatShares\(chatId\)/u);
-  assert.match(shareDialogHook, /revokeChatShare\(shareId\)/u);
+  assert.doesNotMatch(shareDialogHook, /listChatShares|listConversationShares|revokeChatShare/u);
   assert.match(shareDialogHook, /const generationRef = useRef\(0\)/u);
   assert.match(shareDialogHook, /generationRef\.current === generation/u);
+  assert.match(shareManagement, /listConversationShares\(\)/u);
+  assert.match(shareManagement, /listHistoryChats\(\)/u);
+  assert.match(shareManagement, /revokeChatShare\(shareId\)/u);
+  assert.match(shareManagement, /formatEpochMillis/u);
 });
 
-test("assistant share dialog keeps link and record actions stable", () => {
-  const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
-  const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "navigation", "useConversationShareDialog.ts");
+test("assistant share dialog stays create-only and share management owns record actions", () => {
+  const shareDialog = readSourceFile("src", "renderer", "app-shell", "conversation-share", "ConversationShareDialog.tsx");
+  const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "conversation-share", "useConversationShareDialog.ts");
+  const shareManagement = readSourceFile("src", "renderer", "pages", "share-management", "ShareManagementPage.tsx");
+  const shareDialogCSS = readSourceFile("src", "renderer", "styles", "conversation-share-dialog.css");
   const navigationCSS = readSourceFile("src", "renderer", "styles", "navigation.css");
 
-  assert.match(shareDialog, /sidebar-chat-share-link-control/u);
-  assert.match(shareDialog, /sidebar-chat-share-record-actions/u);
-  assert.match(shareDialog, /MessageOutlined[\s\S]*?LinkOutlined/u);
-  assert.match(shareDialog, /CheckOutlined[\s\S]*?CopyOutlined[\s\S]*?DisconnectOutlined/u);
-  assert.match(shareDialog, /sidebar-chat-share-section sidebar-chat-share-settings/u);
-  assert.match(shareDialog, /sidebar-chat-share-section sidebar-chat-share-current/u);
-  assert.match(shareDialog, /sidebar-chat-share-revoke-confirmation/u);
+  assert.match(shareDialog, /conversation-share-link-control/u);
+  assert.match(shareDialog, /ShareAltOutlined[\s\S]*?LinkOutlined/u);
+  assert.match(shareDialog, /CheckOutlined[\s\S]*?CopyOutlined/u);
+  assert.match(shareDialog, /conversation-share-section conversation-share-settings/u);
+  assert.doesNotMatch(shareDialog, /conversation-share-current|conversation-share-revoke-confirmation|DisconnectOutlined/u);
+  assert.match(shareManagement, /ShareManagementRecord/u);
+  assert.match(shareManagement, /CopyOutlined[\s\S]*?DisconnectOutlined/u);
+  assert.match(shareManagement, /share-management-revoke-confirmation/u);
+  assert.match(shareManagement, /chat\.agentKey\.trim\(\)/u);
+  assert.match(shareManagement, /disabled=\{!group\.agentKey\}[\s\S]*?shareManagement\.conversationUnavailable/u);
+  assert.match(shareManagement, /onOpenChat\(\{ agentKey: group\.agentKey, chatId: group\.chatId \}\)/u);
   assert.match(shareDialogHook, /COPY_FEEDBACK_DURATION_MS = 1_600/u);
   assert.match(shareDialogHook, /window\.clearTimeout\(copyFeedbackTimerRef\.current\)/u);
-  assert.match(navigationCSS, /sidebar-chat-share-create-row \.sidebar-chat-share-create-button[\s\S]*?height: 38px/u);
-  assert.match(navigationCSS, /sidebar-chat-share-link-control[\s\S]*?grid-template-columns: 34px minmax\(0, 1fr\)/u);
-  assert.match(navigationCSS, /sidebar-chat-share-record-main[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto/u);
-  assert.match(navigationCSS, /sidebar-chat-share-record-action-icon[\s\S]*?width: 42px;[\s\S]*?height: 42px/u);
-  assert.match(navigationCSS, /sidebar-chat-share-history[\s\S]*?overflow-y: auto;[\s\S]*?margin: -2px -2px 0;[\s\S]*?padding: 2px 2px 0;/u);
-  assert.match(navigationCSS, /sidebar-chat-share-meta div \+ div[\s\S]*?border-left/u);
+  assert.match(shareDialogCSS, /width: min\(720px, calc\(100vw - 32px\)\)/u);
+  assert.match(shareDialogCSS, /max-height: min\(640px, calc\(100vh - 32px\)\)/u);
+  assert.match(shareDialogCSS, /background: var\(--modal-mask-bg\)/u);
+  assert.match(shareDialogCSS, /border: 1px solid var\(--control-border\)/u);
+  assert.match(shareDialogCSS, /border-radius: var\(--overlay-radius\)/u);
+  assert.match(shareDialogCSS, /background: var\(--desktop-overlay-panel-bg\)/u);
+  assert.match(shareDialogCSS, /\.conversation-share-button\s*\{[\s\S]*?height: 32px/u);
+  assert.match(shareDialogCSS, /\.conversation-share-button\.is-compact\s*\{[\s\S]*?height: 30px/u);
+  assert.doesNotMatch(shareDialogCSS, /linear-gradient|backdrop-filter|(?:^|\n)\s*(?:width|height): 42px;/u);
+  assert.doesNotMatch(navigationCSS, /sidebar-chat-share-/u);
 });
 
-test("assistant share dialog renders identical action and list errors once", () => {
-  const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
+test("chat share entrypoints share AppShell state and expose precise disabled guidance", () => {
+  const appShell = readAppShellSource();
+  const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
+  const settings = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const shareIndex = appShell.indexOf('className="main-chat-header-action main-chat-share-button"');
+  const workPanelIndex = appShell.indexOf("main-chat-header-action main-chat-work-panel-toggle");
 
-  assert.match(shareDialog, /const showListError =[\s\S]*?state\.listStatus === "error"[\s\S]*?state\.listError !== state\.actionError/u);
-  assert.match(shareDialog, /\{showListError \? \([\s\S]*?\{state\.listError\}/u);
+  assert.ok(shareIndex >= 0 && workPanelIndex > shareIndex);
+  assert.match(appShell, /const \[tunnelHubEnabled, setTunnelHubEnabled\] = useState\(false\);[\s\S]{0,220}getTunnelHubSettings\(\)/u);
+  assert.match(appShell, /!desiredChatRouteChatId[\s\S]{0,100}sidebar\.chat\.shareRequiresConversation/u);
+  assert.match(appShell, /<Tooltip content=\{shareDisabledReason \|\| t\("sidebar\.chat\.shareTitle"\)\}>/u);
+  assert.match(appShell, /disabled=\{Boolean\(shareDisabledReason\)\}/u);
+  assert.match(appShell, /shellOverlay\.openConversationShare\(chatId, chatName\)/u);
+  assert.doesNotMatch(appShell, /conversationShareAvailable|shareAvailable/u);
+  assert.match(appShell, /onShareChat=\{openConversationShare\}/u);
+  assert.match(appShell, /tunnelHubEnabled=\{tunnelHubEnabled\}[\s\S]*?onOpenTunnelSettings=\{openTunnelSettings\}/u);
+  assert.match(appShell, /onOpenChat=\{openChatFromShareManagement\}/u);
+  assert.match(appShell, /function openChatFromShareManagement[\s\S]*?requestNavigationWithAgentChatFocus\(createAgentWebclientRoute\(request\)\)/u);
+  assert.match(appShell, /path="\/share-management"[\s\S]*?<ShareManagementPage/u);
+  assert.doesNotMatch(sidebar, /ConversationShareDialog|useConversationShareDialog/u);
+  assert.match(settings, /onTunnelHubEnabledChange\?\.\(settings\.enabled === true\)/u);
+  assert.match(appShell, /onTunnelHubEnabledChange=\{setTunnelHubEnabled\}/u);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
@@ -8332,8 +8368,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(appShell, /sidebar\.sso\.accessTokenStep/);
   assert.doesNotMatch(appShell, /handleDesktopSsoLogin\("switch"\)|sidebar\.sso\.switchAccount/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
-  assert.match(appShell, /async function refreshDesktopSsoStatus\(\)[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
-  assert.match(appShell, /onRefreshDesktopSsoStatus=\{refreshDesktopSsoStatus\}/);
+  assert.match(appShell, /const refreshDesktopSsoStatus = useCallback\(async \(\) => \{[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
+  assert.match(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
   assert.doesNotMatch(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\]/);
   assert.doesNotMatch(appShell, /className=\{desktopSsoClassName\}/);
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);
@@ -8342,9 +8378,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.userInfo/);
   assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.accessToken/);
   assert.doesNotMatch(sidebarSource, /onDesktopSsoSwitchAccount|handleDesktopSsoSwitchAccount|sidebar\.sso\.switchAccount/);
-  assert.match(sidebarSource, /onRefreshDesktopSsoStatus\?:\s*\(\) => Promise<void> \| void;/);
-  assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,360}onRefreshDesktopSsoStatus\?\.\(\)[\s\S]{0,360}setToolMenuOpen\(true\);/);
-  assert.match(sidebarSource, /toolMenuOpenRequestIdRef\.current === requestId/);
+  assert.doesNotMatch(sidebarSource, /onRefreshDesktopSsoStatus|setToolMenuOpen|toolMenuOpenRequestIdRef/u);
+  assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,180}onRequestToolMenuOpen\(\)/u);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoAccount = desktopSsoStatus\?\.configured === true;/);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoTrigger =[\s\S]{0,100}desktopSsoStatus\?\.configured === true;/);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoTriggerAvatar =[\s\S]{0,140}desktopSsoStatus\.authenticated;/);

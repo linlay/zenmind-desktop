@@ -2,11 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
-  KanbanCurrentUser,
-  KanbanStatus
+  KanbanCurrentUser
 } from "../../../shared/contracts";
-import { t } from "../../support/i18n/main-i18n";
-import { AppPathProvider, BOARD_ID, DATABASE_SCHEMA_VERSION, PROJECT_ID, WORKFLOW_ID, getDesktopKanbanDatabasePath, nowIso } from "./local-store.part-1";
+import { AppPathProvider, BOARD_ID, DATABASE_SCHEMA_VERSION, PROJECT_ID, getDesktopKanbanDatabasePath, nowIso } from "./local-store.part-1";
 
 export function ensureDesktopKanbanSchema(db: DatabaseSync) {
   db.exec("PRAGMA busy_timeout = 3000");
@@ -89,7 +87,7 @@ export function ensureDesktopKanbanSchema(db: DatabaseSync) {
       REMOTE_ISSUE_ID_ TEXT,
       BOARD_ID_ TEXT NOT NULL DEFAULT 'default',
       PROJECT_ID_ TEXT NOT NULL DEFAULT 'default',
-      WORKFLOW_ID_ TEXT NOT NULL DEFAULT 'workflow-standard-requirement',
+      WORKFLOW_ID_ TEXT NOT NULL DEFAULT '',
       TYPE_ID_ TEXT,
       STAGE_ID_ TEXT,
       STAGE_NAME_ TEXT,
@@ -337,29 +335,7 @@ export function seedDesktopKanban(db: DatabaseSync, currentUser: KanbanCurrentUs
     )
     VALUES (?, NULL, 'default', 'DEFAULT', 'All Projects', '', 'default', 0, 0, 'workspace', ?, ?, ?)
     ON CONFLICT(ID_) DO NOTHING
-  `).run(PROJECT_ID, WORKFLOW_ID, timestamp, timestamp);
-  db.prepare(`
-    INSERT INTO workflow (ID_, KEY_, NAME_, DESCRIPTION_, IS_DEFAULT_, CREATED_AT_, UPDATED_AT_)
-    VALUES (?, 'standard_requirement', ?, '', 1, ?, ?)
-    ON CONFLICT(ID_) DO UPDATE SET NAME_ = excluded.NAME_
-  `).run(WORKFLOW_ID, t("kanban.workflow.standardRequirement"), timestamp, timestamp);
-  const statuses: Array<{ id: string; key: KanbanStatus; name: string; position: number; terminal: number; review: number }> = [
-    { id: "workflow-status-backlog", key: "backlog", name: t("kanban.status.backlog"), position: 1, terminal: 0, review: 0 },
-    { id: "workflow-status-todo", key: "todo", name: t("kanban.status.todo"), position: 2, terminal: 0, review: 0 },
-    { id: "workflow-status-in-progress", key: "in_progress", name: t("kanban.status.inProgress"), position: 3, terminal: 0, review: 0 },
-    { id: "workflow-status-in-review", key: "in_review", name: t("kanban.status.inReview"), position: 4, terminal: 0, review: 1 },
-    { id: "workflow-status-completed", key: "completed", name: t("kanban.status.completed"), position: 5, terminal: 1, review: 0 }
-  ];
-  const insertStatus = db.prepare(`
-    INSERT INTO workflow_status (
-      ID_, WORKFLOW_ID_, KEY_, NAME_, COLUMN_KEY_, POSITION_, IS_START_, IS_TERMINAL_, REVIEW_REQUIRED_
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(ID_) DO UPDATE SET NAME_ = excluded.NAME_, COLUMN_KEY_ = excluded.COLUMN_KEY_
-  `);
-  for (const status of statuses) {
-    insertStatus.run(status.id, WORKFLOW_ID, status.key, status.name, status.key, status.position, status.key === "backlog" ? 1 : 0, status.terminal, status.review);
-  }
+  `).run(PROJECT_ID, "", timestamp, timestamp);
   db.prepare(`
     INSERT INTO user_account (ID_, EMAIL_, DISPLAY_NAME_, STATUS_, CREATED_AT_, UPDATED_AT_)
     VALUES (?, ?, ?, 'active', ?, ?)

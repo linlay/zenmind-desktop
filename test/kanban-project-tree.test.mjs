@@ -39,6 +39,35 @@ function project(overrides = {}) {
   };
 }
 
+test("local project options keep the default and issue projects when the catalog contains only cloud records", () => {
+  const { listKanbanLocalProjectOptions: list } = loadKanbanProjectTreeModule();
+  const options = list([
+    { syncMode: "local", projectId: "local-work", projectName: "Local work" },
+    { syncMode: "local", projectId: null },
+    { syncMode: "cloud", projectId: "cloud-work" }
+  ], "Default project", [project({ id: "default", syncMode: "cloud" }), project({ id: "cloud-work", syncMode: "cloud" })]);
+  assert.deepEqual(JSON.parse(JSON.stringify(options)), [
+    { id: "default", name: "Default project", count: 1 },
+    { id: "local-work", name: "Local work", count: 1 }
+  ]);
+  assert.equal(list([], "Default project", [])[0].id, "default");
+});
+
+test("local project options preserve empty catalog projects and prefer local catalog names without duplicates", () => {
+  const { listKanbanLocalProjectOptions: list } = loadKanbanProjectTreeModule();
+  const options = list([{ syncMode: "local", projectId: "work", projectName: "Old name" }], "Default project", [
+    project({ id: "default", syncMode: "local", name: "Stored default" }),
+    project({ id: "work", syncMode: "local", name: "New name" }),
+    project({ id: "empty", syncMode: "local", name: "Empty project" }),
+    project({ id: "work", syncMode: "cloud", name: "Cloud name" })
+  ]);
+  assert.equal(options.length, 3);
+  assert.equal(options[0].name, "Default project");
+  assert.equal(options.find((item) => item.id === "work").name, "New name");
+  assert.equal(options.find((item) => item.id === "work").count, 1);
+  assert.equal(options.find((item) => item.id === "empty").count, 0);
+});
+
 test("flattenKanbanProjectTree omits aggregate default root from selectable tree", () => {
   const { flattenKanbanProjectTree } = loadKanbanProjectTreeModule();
   const items = flattenKanbanProjectTree([

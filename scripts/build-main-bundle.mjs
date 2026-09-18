@@ -1,3 +1,5 @@
+import { stageNpmRuntime } from "./stage-npm-runtime.mjs";
+import { buildNodeLauncher } from "./build-node-launcher.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { builtinModules } from "node:module";
@@ -28,6 +30,8 @@ function getExternalModules() {
 }
 
 export async function buildMainBundle(rootDir = projectRoot) {
+  await stageNpmRuntime(rootDir);
+  await buildNodeLauncher(rootDir, { os: process.platform, arch: process.arch });
   const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
   const outdir = brandBundleElectronDir(rootDir, activeBrand);
   const rootSrc = path.join(rootDir, "src");
@@ -81,6 +85,11 @@ export async function buildMainBundle(rootDir = projectRoot) {
   if (!fs.statSync(webappToolingWorker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error("WebApp Tooling Worker bundle is missing");
   }
+  // Dev Main is tsc output; give it the same application-relative Worker
+  // entry as the packaged app. Never reuse another brand's staged app.
+  const developmentMainDir = path.join(rootDir, "dist-electron", "main");
+  fs.mkdirSync(developmentMainDir, { recursive: true });
+  fs.copyFileSync(webappToolingWorker, path.join(developmentMainDir, "webapp-tooling-worker.js"));
 
   return outdir;
 }

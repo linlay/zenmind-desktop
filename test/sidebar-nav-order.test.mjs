@@ -117,3 +117,19 @@ test("newly available entries append uniformly, including pins and chat entries"
     ["schedules", "website:docs", "new-chat", "chats"]);
   assert.deepEqual(normalizeSidebarNavOrder(null, items), items.map(({ key }) => key));
 });
+
+
+test("capability entries share the persisted mixed navigation order", () => {
+  const available = [
+    { key: "capability:agents", label: "Agents" },
+    { key: "capability:market", label: "Market" },
+    { key: "kanban", label: "Kanban" },
+    { key: "website:docs", label: "Docs" },
+  ];
+  const order = normalizeSidebarNavOrder(["kanban", "capability:market", "website:docs", "capability:agents"], available);
+  const moved = mod.exports.moveSidebarNavItem(order, "capability:agents", "kanban", false);
+  assert.deepEqual(moved, ["capability:agents", "kanban", "capability:market", "website:docs"]);
+  assert.deepEqual(normalizeSidebarNavOrder(JSON.parse(JSON.stringify(moved)), available), moved);
+  assert.deepEqual(normalizeSidebarNavOrder(moved.filter((key) => key !== "capability:agents"), available.slice(1)),
+    ["kanban", "capability:market", "website:docs"]);
+});

@@ -15,7 +15,6 @@ type AppPathProvider = {
 };
 
 const DEFAULT_PARENT_PROJECT_ID = "default";
-const DEFAULT_WORKFLOW_ID = "workflow-standard-requirement";
 
 function nowIso() {
   return new Date().toISOString();
@@ -104,7 +103,7 @@ export function createLocalDesktopProject(
       path,
       depth,
       position,
-      DEFAULT_WORKFLOW_ID,
+      "",
       timestamp,
       timestamp
     );

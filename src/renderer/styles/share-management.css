@@ -1,0 +1,432 @@
+.share-management-page {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  background: var(--desktop-ui-bg);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.share-management-page-header,
+.share-management-group > header,
+.share-management-record-main,
+.share-management-record-actions,
+.share-management-revoke-confirmation,
+.share-management-group-header-actions,
+.share-management-button,
+.share-management-link {
+  display: flex;
+  align-items: center;
+}
+
+.share-management-page-header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.share-management-page-header h1,
+.share-management-page-header p,
+.share-management-state-card h2,
+.share-management-state-card p,
+.share-management-group h2,
+.share-management-group p,
+.share-management-meta,
+.share-management-meta dt,
+.share-management-meta dd {
+  margin: 0;
+}
+
+.share-management-page-header h1 {
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.share-management-page-header p {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.share-management-page-header > .share-management-button {
+  flex: none;
+  margin-top: 2px;
+}
+
+.share-management-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+}
+
+.share-management-state-card {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 9px;
+  padding: 28px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.share-management-state-card > .anticon {
+  margin-bottom: 3px;
+  font-size: 24px;
+}
+
+.share-management-state-card h2 {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.share-management-state-card p {
+  max-width: 480px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.share-management-state-card .share-management-button {
+  margin-top: 6px;
+}
+
+.share-management-feedback {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.share-management-feedback.is-error {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+.share-management-feedback.is-success {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.share-management-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.share-management-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+}
+
+.share-management-list-count {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.share-management-list-items {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 4px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.share-management-list-item {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.share-management-list-item:hover {
+  background: var(--control-hover-bg);
+}
+
+.share-management-list-item[aria-current="true"] {
+  background: var(--accent-fill-subtle);
+}
+
+.share-management-list-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.share-management-list-item strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-management-list-item span {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-management-list-item small {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.share-management-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 16px 0;
+}
+
+.share-management-group {
+  min-width: 0;
+}
+
+.share-management-group > header {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 12px;
+}
+
+.share-management-group h2 {
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+.share-management-group-title {
+  min-width: 0;
+}
+
+.share-management-group p {
+  max-width: 640px;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-management-group-header-actions {
+  flex: none;
+  gap: 10px;
+}
+
+.share-management-group-link-count {
+  color: var(--ink-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.share-management-open-chat-button {
+  background: transparent;
+  white-space: nowrap;
+}
+
+.share-management-records {
+  display: grid;
+}
+
+.share-management-record {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.share-management-record-main {
+  min-width: 0;
+  gap: 8px;
+}
+
+.share-management-link {
+  min-width: 0;
+  height: 30px;
+  flex: 1 1 auto;
+  gap: 8px;
+  padding: 0 2px;
+  overflow: hidden;
+  color: var(--control-icon-color);
+}
+
+.share-management-link-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-management-record-actions,
+.share-management-revoke-confirmation {
+  flex: none;
+  gap: 6px;
+}
+
+.share-management-button {
+  min-height: 30px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--control-radius-sm);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.share-management-button:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+}
+
+.share-management-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.share-management-button.is-primary {
+  background: var(--control-primary-bg);
+  color: var(--accent-on);
+}
+
+.share-management-button.is-primary:hover:not(:disabled) {
+  background: var(--control-primary-hover);
+}
+
+.share-management-button.is-danger {
+  color: var(--danger);
+}
+
+.share-management-button.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.share-management-button[data-copied="true"] {
+  color: var(--accent-strong);
+}
+
+.share-management-button:disabled {
+  cursor: not-allowed;
+  opacity: var(--control-disabled-opacity);
+}
+
+.share-management-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.share-management-meta div {
+  min-width: 0;
+}
+
+.share-management-meta dt {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.share-management-meta dd {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 860px) {
+  .share-management-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+  }
+
+  .share-management-list {
+    flex: 0 0 auto;
+    max-height: 210px;
+  }
+
+  .share-management-detail {
+    flex: 1 1 auto;
+    min-height: 160px;
+  }
+}
+
+@media (max-width: 720px) {
+  .share-management-page {
+    padding: 10px;
+  }
+
+  .share-management-page-header h1 {
+    font-size: 16px;
+  }
+
+  .share-management-group > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .share-management-group-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .share-management-record-main {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .share-management-record-actions,
+  .share-management-revoke-confirmation {
+    width: 100%;
+  }
+
+  .share-management-record-actions > .share-management-button,
+  .share-management-revoke-confirmation > .share-management-button {
+    flex: 1 1 0;
+  }
+
+  .share-management-meta {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}

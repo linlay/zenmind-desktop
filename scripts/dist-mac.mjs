@@ -131,7 +131,7 @@ if (updateAppNotarized) {
   await runAndWait("xcrun", ["stapler", "staple", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait("xcrun", ["stapler", "validate", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
 }
-const updateVersion = fs.readFileSync(path.join(projectRoot, "VERSION"), "utf8").trim();
+const updateVersion = fs.readFileSync(path.join(projectRoot, "VERSION"), "utf8").trim().replace(/^v/iu, "");
 const updateZipPath = path.join(projectRoot, "dist", brand.id, `${brand.productName}-${updateVersion}-arm64.zip`);
 fs.rmSync(updateZipPath, { force: true });
 await runAndWait("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", updateAppPath, updateZipPath], brandProcessOptions({ cwd: projectRoot }));

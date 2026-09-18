@@ -42,11 +42,31 @@ const {
 test("capability navigation keeps the agreed item order", () => {
   assert.deepEqual(
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.id),
-    ["agents", "skills", "mcp-servers", "registries", "archives", "market", "help"],
+    [
+      "agents",
+      "skills",
+      "mcp-servers",
+      "registries",
+      "archives",
+      "market",
+      "artifact-management",
+      "share-management",
+      "help",
+    ],
   );
   assert.deepEqual(
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.to),
-    ["/agents", "/skills", "/connectors", "/registries", "/archives", "/market", "/help"],
+    [
+      "/agents",
+      "/skills",
+      "/connectors",
+      "/registries",
+      "/archives",
+      "/market",
+      "/artifact-management",
+      "/share-management",
+      "/help",
+    ],
   );
 });
 
@@ -58,6 +78,7 @@ test("capability routes select their root item and keep supported details active
     ["/skills", "skills"],
     ["/skills/demo-skill?tab=files", "skills"],
     ["/market", "market"],
+    ["/share-management", "share-management"],
     ["/connectors", "mcp-servers"],
     ["/registries", "registries"],
     ["/archives", "archives"],
@@ -108,7 +129,7 @@ test("the app shell renders capability routes as a fixed secondary sidebar", () 
 
   assert.match(
     appShellSource,
-    /const sidebarMode = resolveSidebarMode\(location\.pathname\);/u,
+    /const sidebarMode = retainedSidebarMode\?\.locationKey === location\.key[\s\S]*?resolveSidebarMode\(location\.pathname, sidebarNavOrder\);/u,
   );
   assert.match(
     appShellSource,
@@ -118,6 +139,10 @@ test("the app shell renders capability routes as a fixed secondary sidebar", () 
     appShellSource,
     /onExitSecondarySidebarMode=\{handleExitSecondarySidebarMode\}/u,
   );
+  assert.match(
+    appShellSource,
+    /const isShareManagementRoute = location\.pathname === "\/share-management";[\s\S]*?usesStandardBaseSurface[\s\S]*?isShareManagementRoute/u,
+  );
   assert.match(sidebarSource, /function renderCapabilitiesNav\(\)/u);
   assert.match(
     sidebarSource,
@@ -125,34 +150,21 @@ test("the app shell renders capability routes as a fixed secondary sidebar", () 
   );
 });
 
-test("the capability sidebar separates Market and Help from management entries", () => {
-  const sidebarSource = fs.readFileSync(
-    path.join(
-      projectRoot,
-      "src",
-      "renderer",
-      "app-shell",
-      "navigation",
-      "AppSidebar.tsx",
-    ),
-    "utf8",
-  );
-  const navigationStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "styles", "navigation.css"),
-    "utf8",
-  );
-
-  assert.match(
-    sidebarSource,
-    /firstSecondaryCapabilityItemId\s*=\s*capabilityNavigationItems\.find\([\s\S]*?item\.id === "market" \|\| item\.id === "help"[\s\S]*?item\.id === firstSecondaryCapabilityItemId[\s\S]*?className="sidebar-capability-divider"[\s\S]*?<NavLink/u,
-  );
-  assert.match(
-    navigationStyles,
-    /\.sidebar-capability-divider\s*\{[\s\S]*?height:\s*1px;[\s\S]*?background:\s*var\(--line\);/u,
+test("capability navigation groups platform, cloud and help entries", () => {
+  assert.deepEqual(
+    Object.fromEntries(["platform", "cloud", "help"].map((group) => [
+      group,
+      CAPABILITY_NAVIGATION_ITEMS.filter((item) => item.group === group).map((item) => item.id),
+    ])),
+    {
+      platform: ["agents", "skills", "mcp-servers", "registries", "archives"],
+      cloud: ["market", "artifact-management", "share-management"],
+      help: ["help"],
+    },
   );
 });
 
-test("the account menu keeps Market as an entry into the capability subpage", () => {
+test("the account menu keeps Market and Share Management as capability subpage entries", () => {
   const sidebarSource = fs.readFileSync(
     path.join(
       projectRoot,
@@ -169,6 +181,30 @@ test("the account menu keeps Market as an entry into the capability subpage", ()
   const legacyMenu = sidebarSource.slice(menuStart, menuEnd);
 
   assert.match(legacyMenu, /to:\s*"\/market"/u);
+  assert.match(
+    legacyMenu,
+    /to:\s*"\/market"[\s\S]*?to:\s*"\/share-management"/u,
+  );
   assert.equal(getCapabilityNavigationItem("/market")?.id, "market");
+  assert.equal(
+    getCapabilityNavigationItem("/share-management")?.id,
+    "share-management",
+  );
   assert.equal(resolveSidebarMode("/market"), "capabilities");
+  assert.equal(resolveSidebarMode("/share-management"), "capabilities");
+});
+
+
+test("shown capabilities keep primary navigation for roots and supported detail routes", () => {
+  for (const item of CAPABILITY_NAVIGATION_ITEMS) {
+    const key = mod.exports.createCapabilityNavOrderKey(item.id);
+    assert.equal(key, `capability:${item.id}`);
+    assert.equal(resolveSidebarMode(item.to, [key]), "primary");
+    assert.equal(resolveSidebarMode(item.to, []), "capabilities");
+    if (item.detailPathPrefix) {
+      assert.equal(resolveSidebarMode(`${item.detailPathPrefix}example?tab=details`, [key]), "primary");
+    }
+  }
+  assert.equal(resolveSidebarMode("/settings", ["capability:settings"]), "settings");
+  assert.equal(resolveSidebarMode("/agents", ["agents", "capability:unknown"]), "capabilities");
 });
