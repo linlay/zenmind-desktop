@@ -1,7 +1,7 @@
 export { createBrowserSurfaceRegistry } from "./browser-surface-registry";
 export type { BrowserSurfaceRegistry, BrowserSurfaceRegistryOptions, RegisteredWebviewSurfaceTarget } from "./browser-surface-registry";
 export { AwcpGuestBridge } from "./awcp/guest-bridge";
-export type { AwcpActionResponse, AwcpInvokePayload } from "./awcp/guest-bridge";
+export type { AwcpActionResponse, AwcpInvokePayload, AwcpManualPayload, AwcpManualResponse } from "./awcp/guest-bridge";
 export { inspectCurrentPageCdpElement, readCurrentPageCdpLocation } from "./cdp/current-page-inspector";
 export type { CurrentPageCdpElementSnapshot } from "./cdp/current-page-inspector";
 export { DESKTOP_CDP_TARGET_TIMEOUT_CODE, isDesktopCdpTimeoutError, readDesktopCdpErrorDetails } from "./cdp/debugger";

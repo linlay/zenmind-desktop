@@ -832,7 +832,7 @@ test("replay window reports seq_expired instead of fabricating a prefix", async 
 });
 
 test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
-  assert.equal(getDesktopActionDefinition("desktop.awcp.snapshot"), null);
+  assert.equal(getDesktopActionDefinition("desktop.awcp.manual"), null);
   assert.equal(getDesktopActionDefinition("desktop.awcp.invoke"), null);
   const { broker, socket, token } = createHarness(t);
   const calls = [];
@@ -1024,27 +1024,35 @@ test("AWCP business failures stay in response frames while host failures stay AG
   broker.setDesktopBridgeProvider({
     action: async (request) => ({ ok: false, action: request.action, error: { code: "ordinary_failure", message: "failed" } }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcpSnapshot: async (_requestId, granted, signal) => {
-      calls.push({ snapshot: true, granted, signal });
-      return { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] };
+    awcpManual: async (_requestId, payload, granted, signal) => {
+      calls.push({ manual: true, payload, granted, signal });
+      return { ok: true, method: "AWCP.getManual", revision: "revision-a",
+        site: { name: "Orders", description: "Order operations." }, sections: [] };
     },
     awcpInvoke: async (requestId, payload, granted, signal) => {
       calls.push({ requestId, payload, granted, signal });
-      return { ok: false, requestId, action: payload.action, error: { code: "stale_snapshot", message: "stale" } };
+      return { ok: false, requestId, action: payload.action, error: { code: "stale_revision", message: "stale" } };
     },
   });
   await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
   const source = { runId: "run-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
-  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot", source, payload: {} });
-  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot"));
-  const snapshot = socket("primary").sent.find((frame) => frame.id === "awcp-snapshot");
-  assert.equal(snapshot.frame, "response");
-  assert.deepEqual(snapshot.data, { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] });
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.manual", id: "awcp-manual", source, payload: {} });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-manual"));
+  const manual = socket("primary").sent.find((frame) => frame.id === "awcp-manual");
+  assert.equal(manual.frame, "response");
+  assert.deepEqual(manual.data, { ok: true, method: "AWCP.getManual", revision: "revision-a",
+    site: { name: "Orders", description: "Order operations." }, sections: [] });
   assert.equal(calls[0].granted, scope);
 
-  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot-extra", source, payload: { targetId: "forged" } });
-  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot-extra"));
-  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-snapshot-extra").frame, "error");
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.manual", id: "awcp-manual-extra", source, payload: { targetId: "forged" } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-manual-extra"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-manual-extra").frame, "error");
+  assert.equal(calls.length, 1);
+
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.manual", id: "awcp-manual-legacy", source,
+    payload: { section: "orders.read" } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-manual-legacy"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-manual-legacy").frame, "error");
   assert.equal(calls.length, 1);
 
   socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-1", source,
@@ -1052,7 +1060,7 @@ test("AWCP business failures stay in response frames while host failures stay AG
   await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-1"));
   const awcp = socket("primary").sent.find((frame) => frame.id === "awcp-1");
   assert.equal(awcp.frame, "response");
-  assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_snapshot", message: "stale" } });
+  assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_revision", message: "stale" } });
   assert.equal(calls[1].granted, scope);
 
   socket("primary").emit({ frame: "request", type: "desktop.pet.show", id: "ordinary-1", source, payload: {} });
@@ -1062,11 +1070,12 @@ test("AWCP business failures stay in response frames while host failures stay AG
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpManual: async () => ({ ok: true, method: "AWCP.getManual", revision: "revision-a",
+      site: { name: "Orders", description: "Order operations." }, sections: [] }),
     awcpInvoke: async () => { throw Object.assign(new Error("invalid page response"), {
       code: "awcp_invalid_response",
       statusCode: 502,
-      details: { reason: "output_schema_mismatch", violations: [{ instancePath: "/items", keyword: "type" }] },
+      details: { reason: "response_shape_mismatch" },
     }); },
   });
   socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-2", source,
@@ -1075,10 +1084,47 @@ test("AWCP business failures stay in response frames while host failures stay AG
   const hostFailure = socket("primary").sent.find((frame) => frame.id === "awcp-2");
   assert.equal(hostFailure.frame, "error");
   assert.equal(hostFailure.type, "awcp_invalid_response");
-  assert.deepEqual(hostFailure.data, {
-    reason: "output_schema_mismatch",
-    violations: [{ instancePath: "/items", keyword: "type" }],
+  assert.deepEqual(hostFailure.data, { reason: "response_shape_mismatch" });
+});
+
+test("AWCP routes manual and invoke by surfaceId without forwarding host selectors to the page", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
+  const source = { runId: "run-surface-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
+  broker.siteControlGrants.bind({ ...source, owner: { kind: "agent", agentKey: "agent-1" } }, scope);
+  const calls = [];
+  const handle = async (requestId, payload, granted, signal, surfaceId) => {
+    calls.push({ payload, granted, surfaceId });
+    return { ok: true, requestId };
+  };
+  broker.setDesktopBridgeProvider({
+    action: async () => assert.fail("AWCP entered desktop_action"),
+    cdp: async () => assert.fail("AWCP entered raw CDP"),
+    awcpManual: handle, awcpInvoke: handle,
   });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  let sequence = 0;
+  const send = async (type, payload) => {
+    const id = `surface-awcp-${++sequence}`;
+    socket("primary").emit({ frame: "request", type, id, source, payload });
+    await waitUntil(() => socket("primary").sent.some(frame => frame.id === id));
+    return socket("primary").sent.find(frame => frame.id === id);
+  };
+  for (const [type, payload] of [
+    ["desktop.awcp.manual", {}],
+    ["desktop.awcp.manual", { section: "orders.read", revision: "revision-a" }],
+    ["desktop.awcp.invoke", { action: "orders.read", revision: "revision-a", args: {} }],
+  ]) {
+    assert.equal((await send(type, { ...payload, surfaceId: "page:selected" })).frame, "response");
+    assert.deepEqual(calls.at(-1), { payload, granted: scope, surfaceId: "page:selected" });
+    for (const invalid of ["", " ", 7, null]) {
+      assert.equal((await send(type, { ...payload, surfaceId: invalid })).type, "protocol_error");
+    }
+  }
+  assert.equal(calls.length, 3);
+  assert.equal((await send("desktop.awcp.manual", { surfaceId: "page:selected", section: "orders.read" })).type, "protocol_error");
+  assert.equal((await send("desktop.awcp.manual", { targetId: "removed" })).type, "protocol_error");
+  assert.equal(calls.length, 3);
 });
 
 test("AWCP preflight proof is sent directly in AGW error data, not a nested details envelope", async (t) => {
@@ -1086,12 +1132,11 @@ test("AWCP preflight proof is sent directly in AGW error data, not a nested deta
   const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
   const source = { runId: "run-preflight", chatId: "chat-preflight", agentKey: "agent-1" };
   broker.siteControlGrants.bind({ ...source, owner: { kind: "agent", agentKey: "agent-1" } }, scope);
-  const proof = { stage: "desktop_preflight", executionStarted: false, reason: "input_schema_mismatch",
-    violations: [{ instancePath: "/conditions", keyword: "type" }] };
+  const proof = { stage: "desktop_preflight", executionStarted: false, reason: "page_changed" };
   broker.setDesktopBridgeProvider({
     action: async () => assert.fail("AWCP entered desktop_action"),
     cdp: async () => assert.fail("AWCP entered raw CDP"),
-    awcpSnapshot: async () => assert.fail("unexpected snapshot"),
+    awcpManual: async () => assert.fail("unexpected manual"),
     awcpInvoke: async () => { throw Object.assign(new Error("Invalid input"), {
       code: "awcp_preflight_rejected", statusCode: 400, details: proof,
     }); },
@@ -1119,7 +1164,8 @@ test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a te
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpManual: async () => ({ ok: true, method: "AWCP.getManual", revision: "revision-a",
+      site: { name: "Orders", description: "Order operations." }, sections: [] }),
     awcpInvoke: async (requestId, payload, _granted, signal) => {
       invocationSignal = signal;
       return new Promise((resolve) => signal.addEventListener("abort", () => resolve({

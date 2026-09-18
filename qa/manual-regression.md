@@ -723,7 +723,7 @@
 - Chat A 打开的 WorkPanel 网页在切换到 Chat B 后仍可由 A 的有效 Run 操作；B 无法发现或通过已知 ID 操作 A 的网页。终态 Run 不再获得网页操作授权。
 - 刷新和导航保留 Surface 身份；关闭重开后旧 ID 失败；排队期间替换 guest 的命令失败且不执行在新 guest 上。
 - WorkPanel 本地文件/原生文档不进入普通网页自动化列表，WebApp bridge 和 AWCP 不因 Surface 统一而增加权限。
-- AWCP 指定同一授权 Surface 完成手册读取和调用；指定其他应用或发现后切换到另一 Surface 调用须失败。
+- AWCP 通过同一 `surfaceId` 完成目录读取、带 revision 的章节读取及调用；其间切换活动标签仍操作原 Surface。未读章节、指定其他应用的 Surface、传入 Container ID 或改用另一 Surface 调用须失败，不执行页面 handler。macOS / Windows 均验证页面 CDK 字段错误保留原响应，Desktop 不自动重试。
 - WorkPanel 网络页后台截图保留有效尺寸，输入后前台焦点恢复；macOS/Windows 坐标均为 CSS 像素。
 ## WorkPanel 网站独立窗口
 
