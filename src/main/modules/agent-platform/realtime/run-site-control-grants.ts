@@ -29,7 +29,7 @@ export class RunSiteControlGrants {
       : source.teamId === grant.owner.teamId && !source.agentKey;
     if (source.chatId !== grant.chatId || !ownerMatches) throw denied("The CDP source conflicts with the accepted Run identity.");
     if (!grant.scope) throw denied("The Run application control grant has ended.");
-    grant.scope.readSurface();
+    grant.scope.readContainer();
     return grant.scope;
   }
 

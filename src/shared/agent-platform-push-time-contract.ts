@@ -19,6 +19,7 @@ const REQUIRED_PUSH_TIME_FIELDS: Readonly<Record<string, string>> = {
   "awaiting.asking": "createdAt",
   "awaiting.answered": "answeredAt",
   "resource.pushed": "pushedAt",
+  "artifact.published": "publishedAt",
 };
 
 const STRUCTURED_PUSH_TIME_FIELDS = [
@@ -35,6 +36,7 @@ const STRUCTURED_PUSH_TIME_FIELDS = [
   "expiresAt",
   "readAt",
   "pushedAt",
+  "publishedAt",
 ] as const;
 
 const ARCHIVE_RESTORED_REQUIRED_SUMMARY_FIELDS = [

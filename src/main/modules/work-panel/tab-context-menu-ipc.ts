@@ -1,3 +1,4 @@
+import { registerWorkPanelWebDialogIpc, type WorkPanelDialogSurfaces } from "./web-dialog";
 import {
   BrowserWindow as ElectronBrowserWindow,
   Menu as ElectronMenu,
@@ -26,6 +27,7 @@ import { t } from "../../support/i18n/main-i18n";
 
 type ChatWorkPanelTabContextMenuHandlerOptions = {
   getMainWindow(): BrowserWindow | null;
+  browserSurfaces?: WorkPanelDialogSurfaces;
   app?: Electron.App;
   platform?: NodeJS.Platform | string;
   openLocalResource?: (
@@ -148,6 +150,11 @@ function buildWorkPanelTemplate(
     },
     ...(request.profile === "web"
       ? [{
+          id: "open-web-dialog",
+          enabled: request.canClose,
+          label: t("chatWorkPanel.tabContextMenu.openInDialog"),
+          click: click("open-web-dialog")
+        }, {
           id: "copy-url",
           label: t("webviewContextMenu.page.copy-url"),
           click: click("copy-url")
@@ -219,6 +226,7 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
   ipcMain: Pick<IpcMain, "handle">,
   options: ChatWorkPanelTabContextMenuHandlerOptions
 ) {
+  registerWorkPanelWebDialogIpc(ipcMain, options.getMainWindow, options.browserSurfaces);
   const BrowserWindow = options.BrowserWindow ?? ElectronBrowserWindow;
   const Menu = options.Menu ?? ElectronMenu;
 

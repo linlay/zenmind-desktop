@@ -502,6 +502,8 @@ export const enUSMessages = {
   "chatWorkPanel.resize": "Resize Work Panel",
   "chatWorkPanel.tabContextMenu.enterFullscreen": "Enter Full Screen",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "Exit Full Screen",
+  "chatWorkPanel.dialog.restore": "Restore to WorkPanel",
+  "chatWorkPanel.tabContextMenu.openInDialog": "Open in Separate Window",
   "chatWorkPanel.tabContextMenu.enterReview": "Enter Review Mode",
   "chatWorkPanel.tabContextMenu.exitReview": "Exit Review Mode",
   "chatWorkPanel.tabContextMenu.downloadArtifact": "Download Artifact File",

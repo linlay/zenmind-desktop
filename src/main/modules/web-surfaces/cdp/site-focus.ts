@@ -10,10 +10,10 @@ export async function withSiteCdpFocus<T>(scope: SiteControlScope | undefined,
   const owner = scope.ownerWebContentsId;
   const previous = pending.get(owner) ?? Promise.resolve();
   const current = previous.catch(() => undefined).then(async () => {
-    scope.readSurface();
+    scope.readContainer();
     await control("capture");
     try {
-      scope.readSurface();
+      scope.readContainer();
       return await execute();
     } finally {
       await control("restore");

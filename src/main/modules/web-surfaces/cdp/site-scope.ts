@@ -39,19 +39,19 @@ class SiteControlScope {
 
   constructor(
     private readonly registry: BrowserSurfaceRegistry,
-    readonly surfaceId: string,
+    readonly containerId: string,
     readonly registrationId: string,
     readonly ownerWebContentsId: number,
-    private readonly kind: "website" | "webapp",
+    private readonly kind: "website" | "webapp" | "chat-work-panel",
     private readonly initialGuestId: number,
   ) {
     issuedScopes.add(this);
     this.unsubscribe = registry.subscribeLifecycle((event) => {
-      if (event.surface.surfaceId !== surfaceId) return;
+      if (event.surface.surfaceId !== containerId) return;
       if (event.type === "unregistered" || event.surface.registrationId !== registrationId) {
         this.release("The application page instance was closed or replaced.");
       } else if (this.enabled) {
-        try { this.readSurface(); } catch { /* readSurface revokes invalid scopes. */ }
+        try { this.readContainer(); } catch { /* readContainer revokes invalid scopes. */ }
       }
     });
   }
@@ -59,7 +59,7 @@ class SiteControlScope {
   activate() {
     if (this.revoked) return;
     this.enabled = true;
-    try { this.readSurface(); } catch { /* Retain a revoked capability; never fall back to the foreground. */ }
+    try { this.readContainer(); } catch { /* Retain a revoked capability; never fall back to the foreground. */ }
   }
 
   release(reason = "The page control Run has ended.") {
@@ -84,12 +84,12 @@ class SiteControlScope {
     return () => this.releaseListeners.delete(listener);
   }
 
-  readSurface() {
+  readContainer() {
     if (this.revoked || !this.enabled) throw scopeError(this.revoked || "The page control Run is not accepted yet.");
-    const snapshot = this.registry.getRegisteredSurfaceSnapshot(this.surfaceId, this.registrationId, this.ownerWebContentsId);
+    const snapshot = this.registry.getRegisteredSurfaceSnapshot(this.containerId, this.registrationId, this.ownerWebContentsId);
     const tabs = snapshot?.tabs.filter((tab) => !this.failedGuests.has(tab.webContentsId)) ?? [];
     if (!snapshot || snapshot.registered.surfaceKind !== this.kind || !tabs.length ||
-      (this.kind === "webapp" && (tabs.length !== 1 || tabs[0].webContentsId !== this.initialGuestId))) {
+      (this.kind !== "website" && (tabs.length !== 1 || tabs[0].webContentsId !== this.initialGuestId))) {
       this.release("The application page instance was closed or replaced.");
       throw scopeError(this.revoked);
     }
@@ -105,7 +105,7 @@ class SiteControlScope {
         const restore = acquireThrottleLease(contents);
         const onGone = () => {
           this.failedGuests.add(contents.id);
-          try { this.readSurface(); } catch { /* Last guest removal revokes this scope. */ }
+          try { this.readContainer(); } catch { /* Last guest removal revokes this scope. */ }
         };
         contents.once("destroyed", onGone);
         contents.once("render-process-gone", onGone);
@@ -124,7 +124,7 @@ class SiteControlScope {
     return {
       ...registered,
       surfaceKind: this.kind,
-      id: this.surfaceId,
+      id: this.containerId,
       targetGeneration: this.registrationId,
       open: true,
       tabs,
@@ -136,7 +136,7 @@ class SiteControlScope {
   }
 
   validateTab(tab: { tabId: string; webContentsId: number }) {
-    if (!this.readSurface().tabs?.some((candidate) => candidate.tabId === tab.tabId && candidate.webContentsId === tab.webContentsId)) {
+    if (!this.readContainer().tabs?.some((candidate) => candidate.tabId === tab.tabId && candidate.webContentsId === tab.webContentsId)) {
       throw Object.assign(new Error("The application tab is closed or unavailable."), { code: "target_not_found" });
     }
   }
@@ -161,4 +161,18 @@ export function captureCopilotSiteControlScope(registry: BrowserSurfaceRegistry,
   }
   return new SiteControlScope(registry, parent.surfaceId, snapshot.registered.registrationId,
     dock.ownerWebContentsId, parent.surfaceKind, snapshot.tabs[0].webContentsId);
+}
+
+/** Short-lived execution lease, issued only after owner Chat authorization. */
+export function acquireWorkPanelControlScope(registry: BrowserSurfaceRegistry, containerId: string, chatId: string) {
+  const container = registry.listWorkPanelContainers().find((entry) => entry.id === containerId);
+  if (!container || container.ownerChatId !== chatId || container.surfaceRole !== "workpanel-web" || !/^https?:/u.test(container.url)) {
+    throw scopeError("The page does not belong to the calling Chat.");
+  }
+  const tab = container.tabs[0];
+  const guest = tab && registry.resolveWebviewSurfaceTarget(tab.webContentsId);
+  if (!guest) throw scopeError("The page is unavailable.");
+  const scope = new SiteControlScope(registry, container.id, container.targetGeneration || "", guest.ownerWebContentsId, "chat-work-panel", tab.webContentsId);
+  scope.activate();
+  return scope;
 }

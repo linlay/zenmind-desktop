@@ -26,7 +26,7 @@ export function createArtifactRuntime(options: {
     } catch (error) { options.onError(error); }
   }
   const unsubscribe = options.broker.subscribePush({
-    types: ["resource.pushed"], kind: "internal", consumerId: "desktop-artifact-index",
+    types: ["artifact.published", "resource.pushed"], kind: "internal", consumerId: "desktop-artifact-index",
     onPush(frame) { recordChange(() => store.ingest(frame)); },
   });
   options.ipcMain.handle("artifacts.list", (event, input) => {

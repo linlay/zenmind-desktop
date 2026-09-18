@@ -70,8 +70,7 @@ test("desktop cdp helper times out with sanitized debug details", async () => {
     expression: "window.__super_secret_script_value",
     returnByValue: true
   }, {
-    targetId: "desktop-target",
-    surfaceId: "site:target",
+    surfaceId: "desktop-target",
     webContentsId: 99,
     url: "https://example.test/path?token=super-secret#hash",
     title: "Example Page",
@@ -82,8 +81,7 @@ test("desktop cdp helper times out with sanitized debug details", async () => {
   assert.equal(isDesktopCdpTimeoutError(error), true);
   assert.equal(error.code, DESKTOP_CDP_TARGET_TIMEOUT_CODE);
   assert.equal(error.details.method, "Runtime.evaluate");
-  assert.equal(error.details.targetId, "desktop-target");
-  assert.equal(error.details.surfaceId, "site:target");
+  assert.equal(error.details.surfaceId, "desktop-target");
   assert.equal(error.details.webContentsId, 99);
   assert.equal(error.details.url, "https://example.test/path");
   assert.deepEqual(error.details.paramKeys, ["expression", "returnByValue"]);
@@ -134,12 +132,12 @@ test("embedded cdp gateway command execution times out instead of hanging", asyn
       expression: "window.__secret_should_not_log",
       returnByValue: true
     },
-    targetId: gatewayInternals.stableTargetId(surface, tab)
+    surfaceId: gatewayInternals.stableSurfaceId(surface, tab)
   }));
 
   assert.equal(isDesktopCdpTimeoutError(error), true);
   assert.equal(error.code, DESKTOP_CDP_TARGET_TIMEOUT_CODE);
-  assert.equal(error.details.surfaceId, "site:slow");
+  assert.equal(error.details.surfaceId, gatewayInternals.stableSurfaceId(surface, tab));
   assert.equal(error.details.webContentsId, 42);
   assert.equal(error.details.url, "https://example.test/live");
   assert.deepEqual(error.details.paramKeys, ["expression", "returnByValue"]);
@@ -198,12 +196,12 @@ test("embedded cdp Page.reload uses guest reload APIs without attaching the debu
     resolveWebContents: () => contents,
     logger
   });
-  const targetId = gatewayInternals.stableTargetId(surface, tab);
+  const surfaceId = gatewayInternals.stableSurfaceId(surface, tab);
 
   const normal = await gateway.executeCommand({
     method: "Page.reload",
     params: { ignoreCache: false },
-    targetId
+    surfaceId
   });
   assert.deepEqual(normal.result, {});
   assert.deepEqual(calls, ["reload"]);
@@ -212,7 +210,7 @@ test("embedded cdp Page.reload uses guest reload APIs without attaching the debu
   const connection = { sendJSON() {} };
   const ignoredCache = await gateway.handleWebContentsCommand(
     connection,
-    { surface, tab, targetId },
+    { surface, tab, surfaceId },
     "Page.reload",
     { ignoreCache: true }
   );
@@ -226,7 +224,7 @@ test("embedded cdp Page.reload uses guest reload APIs without attaching the debu
     gateway.executeCommand({
       method: "Page.reload",
       params: { ignoreCache: "false" },
-      targetId
+      surfaceId
     }),
     (error) => error?.code === "invalid_args" && /params.ignoreCache expected boolean, received string/u.test(error.message)
   );
@@ -234,7 +232,7 @@ test("embedded cdp Page.reload uses guest reload APIs without attaching the debu
     gateway.executeCommand({
       method: "Page.reload",
       params: { loaderId: "unsupported" },
-      targetId
+      surfaceId
     }),
     (error) => error?.code === "invalid_args" && /only accepts/u.test(error.message)
   );
@@ -256,12 +254,12 @@ test("embedded cdp target ids survive guest replacement but change with a new su
     surfaceKind: "website",
     open: true
   };
-  const firstTargetId = gatewayInternals.stableTargetId(surface, tab);
-  const replacementTargetId = gatewayInternals.stableTargetId(surface, {
+  const firstTargetId = gatewayInternals.stableSurfaceId(surface, tab);
+  const replacementTargetId = gatewayInternals.stableSurfaceId(surface, {
     ...tab,
     webContentsId: 42
   });
-  const rebuiltTargetId = gatewayInternals.stableTargetId({
+  const rebuiltTargetId = gatewayInternals.stableSurfaceId({
     ...surface,
     targetGeneration: "surface-generation-2"
   }, tab);
@@ -270,7 +268,7 @@ test("embedded cdp target ids survive guest replacement but change with a new su
   assert.notEqual(rebuiltTargetId, firstTargetId);
 });
 
-test("embedded cdp Target.closeTarget delegates the current tab to the host transaction", async () => {
+test("embedded cdp Surface.close delegates the current tab to the host transaction", async () => {
   const tab = {
     tabId: "close-tab",
     currentUrl: "https://example.test/close",
@@ -296,23 +294,23 @@ test("embedded cdp Target.closeTarget delegates the current tab to the host tran
       closeCalls.push({ surfaceId: resolvedSurface.id, tabId: resolvedTab.tabId });
     }
   });
-  const targetId = gatewayInternals.stableTargetId(surface, tab);
+  const surfaceId = gatewayInternals.stableSurfaceId(surface, tab);
   const response = await gateway.executeCommand({
-    method: "Target.closeTarget",
-    targetId
+    method: "Surface.close",
+    surfaceId
   });
 
   assert.deepEqual(response.result, { success: true });
-  assert.equal(response.targetId, targetId);
-  assert.equal(response.surfaceId, surface.id);
+  assert.equal(response.surfaceId, surfaceId);
+  assert.equal(response.containerId, surface.id);
   assert.deepEqual(closeCalls, [{ surfaceId: surface.id, tabId: tab.tabId }]);
 
   const websocketResponses = [];
   const connection = { sendJSON: (payload) => websocketResponses.push(payload) };
-  await gateway.handleTextMessage(connection, targetId, JSON.stringify({
+  await gateway.handleTextMessage(connection, surfaceId, JSON.stringify({
     id: 9,
-    method: "Target.closeTarget",
-    params: { targetId }
+    method: "Surface.close",
+    params: { surfaceId }
   }));
   assert.deepEqual(websocketResponses, [{ id: 9, result: { success: true } }]);
   assert.deepEqual(closeCalls, [
@@ -320,10 +318,10 @@ test("embedded cdp Target.closeTarget delegates the current tab to the host tran
     { surfaceId: surface.id, tabId: tab.tabId }
   ]);
 
-  await gateway.handleTextMessage(connection, targetId, JSON.stringify({
+  await gateway.handleTextMessage(connection, surfaceId, JSON.stringify({
     id: 10,
-    method: "Target.closeTarget",
-    params: { targetId: "desktop-conflict" }
+    method: "Surface.close",
+    params: { surfaceId: "desktop-conflict" }
   }));
   assert.equal(websocketResponses[1].id, 10);
   assert.equal(websocketResponses[1].error.code, -32602);
@@ -432,39 +430,39 @@ test("embedded cdp target queries expose every live tab from the current surface
     resolveWebContents: () => null
   });
 
-  const response = await gateway.executeCommand({ method: "Target.getTargets" });
+  const response = await gateway.executeCommand({ method: "Surface.list" });
   assert.deepEqual(
-    response.result.targetInfos.map((target) => target.surfaceId),
+    response.result.surfaces.map((target) => target.containerId),
     ["site:current", "site:current"]
   );
-  assert.deepEqual(response.result.targetInfos.map((target) => target.tabId), ["current-tab-1", "current-tab-2"]);
-  assert.equal(new Set(response.result.targetInfos.map((target) => target.targetId)).size, 2);
-  assert.equal(response.result.currentTargetInfo.surfaceId, "site:current");
-  assert.equal(response.result.currentTargetInfo.tabId, "current-tab-2");
-  assert.equal(response.result.currentTargetId, response.result.currentTargetInfo.targetId);
-  assert.equal(response.result.currentSurfaceId, "site:current");
+  assert.deepEqual(response.result.surfaces.map((target) => target.tabId), ["current-tab-1", "current-tab-2"]);
+  assert.equal(new Set(response.result.surfaces.map((target) => target.surfaceId)).size, 2);
+  assert.equal(response.result.currentSurface.containerId, "site:current");
+  assert.equal(response.result.currentSurface.tabId, "current-tab-2");
+  assert.equal(response.result.currentSurfaceId, response.result.currentSurface.surfaceId);
+  assert.equal(response.result.currentContainerId, "site:current");
   assert.equal(response.result.activeTabId, "current-tab-2");
-  assert.equal(response.surfaceId, "site:current");
-  assert.equal(response.result.targetInfos.filter((target) => target.current).length, 1);
+  assert.equal(response.containerId, "site:current");
+  assert.equal(response.result.surfaces.filter((target) => target.current).length, 1);
 
-  const currentResponse = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
-  assert.equal(currentResponse.result.targetInfo.tabId, "current-tab-2");
-  assert.equal(currentResponse.result.currentTargetId, response.result.currentTargetId);
+  const currentResponse = await gateway.executeCommand({ method: "Surface.getCurrent" });
+  assert.equal(currentResponse.result.surface.tabId, "current-tab-2");
+  assert.equal(currentResponse.result.currentSurfaceId, response.result.currentSurfaceId);
   assert.equal(currentResponse.result.activeTabId, "current-tab-2");
 
   await assert.rejects(
     gateway.executeCommand({
-      method: "Target.getTargets",
+      method: "Surface.list",
       params: { scope: "all" }
     }),
     (error) => error?.code === "invalid_args" && /does not accept params/u.test(error.message)
   );
 
   surfaces[2].activeTabId = null;
-  const attachingActiveTabResponse = await gateway.executeCommand({ method: "Target.getTargets" });
-  assert.equal(attachingActiveTabResponse.result.targetInfos.length, 2);
-  assert.equal(attachingActiveTabResponse.result.currentTargetInfo, null);
-  assert.equal(attachingActiveTabResponse.result.currentTargetId, null);
+  const attachingActiveTabResponse = await gateway.executeCommand({ method: "Surface.list" });
+  assert.equal(attachingActiveTabResponse.result.surfaces.length, 2);
+  assert.equal(attachingActiveTabResponse.result.currentSurface, null);
+  assert.equal(attachingActiveTabResponse.result.currentSurfaceId, null);
   assert.equal(attachingActiveTabResponse.result.activeTabId, null);
 });
 
@@ -522,17 +520,17 @@ test("embedded cdp current target excludes active child surfaces and is registra
 
   for (const ordered of [[dock, website], [website, dock]]) {
     surfaces = ordered;
-    const response = await gateway.executeCommand({ method: "Target.getTargets" });
-    assert.deepEqual(response.result.targetInfos.map((target) => target.surfaceId), [website.id]);
-    assert.equal(response.result.currentSurfaceId, website.id);
-    assert.deepEqual((await gateway.listTargets()).map((target) => target.surfaceId), [website.id]);
+    const response = await gateway.executeCommand({ method: "Surface.list" });
+    assert.deepEqual(response.result.surfaces.map((target) => target.containerId), [website.id]);
+    assert.equal(response.result.currentContainerId, website.id);
+    assert.deepEqual((await gateway.listTargets()).map((target) => target.containerId), [website.id]);
   }
 
   await assert.rejects(
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "document.title" },
-      targetId: gatewayInternals.stableTargetId(dock, dockTab)
+      surfaceId: gatewayInternals.stableSurfaceId(dock, dockTab)
     }),
     (error) => error?.code === "target_not_in_current_surface"
   );
@@ -569,15 +567,15 @@ test("embedded cdp current target fails closed when multiple public root surface
     resolveWebContents: () => null
   });
 
-  const response = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
-  assert.equal(response.result.currentTargetId, null);
+  const response = await gateway.executeCommand({ method: "Surface.getCurrent" });
+  assert.equal(response.result.currentSurfaceId, null);
   assert.equal(response.result.currentSurfaceId, null);
   assert.deepEqual(await gateway.listTargets(), []);
   await assert.rejects(
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "1+1" },
-      targetId: gatewayInternals.stableTargetId(first, first.tabs[0])
+      surfaceId: gatewayInternals.stableSurfaceId(first, first.tabs[0])
     }),
     (error) => error?.code === "target_not_in_current_surface"
   );
@@ -605,24 +603,24 @@ test("embedded cdp target queries return an explicit empty current state without
     resolveWebContents: () => null
   });
 
-  const targetsResponse = await gateway.executeCommand({ method: "Target.getTargets" });
-  assert.equal(targetsResponse.result.targetInfos.length, 0);
-  assert.equal(targetsResponse.result.currentTargetInfo, null);
-  assert.equal(targetsResponse.result.currentTargetId, null);
+  const targetsResponse = await gateway.executeCommand({ method: "Surface.list" });
+  assert.equal(targetsResponse.result.surfaces.length, 0);
+  assert.equal(targetsResponse.result.currentSurface, null);
   assert.equal(targetsResponse.result.currentSurfaceId, null);
-  assert.equal(Object.hasOwn(targetsResponse, "targetId"), false);
+  assert.equal(targetsResponse.result.currentSurfaceId, null);
+  assert.equal(Object.hasOwn(targetsResponse, "surfaceId"), false);
   assert.equal(Object.hasOwn(targetsResponse, "surfaceId"), false);
 
-  const currentResponse = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
-  assert.equal(currentResponse.result.targetInfo, null);
-  assert.equal(currentResponse.result.currentTargetId, null);
+  const currentResponse = await gateway.executeCommand({ method: "Surface.getCurrent" });
+  assert.equal(currentResponse.result.surface, null);
+  assert.equal(currentResponse.result.currentSurfaceId, null);
   assert.equal(currentResponse.result.currentSurfaceId, null);
 
   await assert.rejects(
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "1+1" },
-      targetId: gatewayInternals.stableTargetId(backgroundSurface, backgroundTab)
+      surfaceId: gatewayInternals.stableSurfaceId(backgroundSurface, backgroundTab)
     }),
     (error) => error?.code === "target_not_in_current_surface"
   );
@@ -638,9 +636,9 @@ test("embedded cdp target queries return an explicit empty current state without
     }],
     resolveWebContents: () => null
   });
-  const emptyResponse = await emptyGateway.executeCommand({ method: "Target.getTargets" });
-  assert.deepEqual(emptyResponse.result.targetInfos, []);
-  assert.equal(emptyResponse.result.currentTargetInfo, null);
+  const emptyResponse = await emptyGateway.executeCommand({ method: "Surface.list" });
+  assert.deepEqual(emptyResponse.result.surfaces, []);
+  assert.equal(emptyResponse.result.currentSurface, null);
 
 });
 
@@ -711,22 +709,22 @@ test("embedded cdp commands require a target from the current surface and allow 
     (error) => error?.code === "target_required"
   );
 
-  const inactiveTargetId = gatewayInternals.stableTargetId(surfaces[0], currentTabs[1]);
+  const inactiveTargetId = gatewayInternals.stableSurfaceId(surfaces[0], currentTabs[1]);
   const result = await gateway.executeCommand({
     method: "Runtime.evaluate",
     params: { expression: "1+1" },
-    targetId: inactiveTargetId
+    surfaceId: inactiveTargetId
   });
-  assert.equal(result.targetId, inactiveTargetId);
-  assert.equal(result.surfaceId, "site:current");
+  assert.equal(result.surfaceId, inactiveTargetId);
+  assert.equal(result.containerId, "site:current");
   assert.deepEqual(sentCommands, [{ id: 302, method: "Runtime.evaluate", params: { expression: "1+1" } }]);
 
-  const backgroundTargetId = gatewayInternals.stableTargetId(surfaces[1], backgroundTab);
+  const backgroundTargetId = gatewayInternals.stableSurfaceId(surfaces[1], backgroundTab);
   await assert.rejects(
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "2+2" },
-      targetId: backgroundTargetId
+      surfaceId: backgroundTargetId
     }),
     (error) => error?.code === "target_not_in_current_surface"
   );
@@ -735,7 +733,7 @@ test("embedded cdp commands require a target from the current surface and allow 
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "3+3" },
-      targetId: "desktop-closed-target"
+      surfaceId: "desktop-closed-target"
     }),
     (error) => error?.code === "target_not_found"
   );
@@ -782,6 +780,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
       label: "Work Panel",
       url: ownedTab.currentUrl,
       surfaceKind: "chat-work-panel",
+      surfaceRole: "workpanel-web",
       ownerChatId: "chat-owned",
       open: true,
       active: false,
@@ -794,6 +793,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
       label: "Work Panel",
       url: otherTab.currentUrl,
       surfaceKind: "chat-work-panel",
+      surfaceRole: "workpanel-web",
       ownerChatId: "chat-other",
       open: true,
       active: false,
@@ -807,24 +807,24 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
     resolveWebContents: (_surface, tab) => contents.get(tab.webContentsId) ?? null
   });
 
-  const targets = await gateway.executeCommand({ method: "Target.getTargets" });
-  assert.deepEqual(targets.result.targetInfos.map((target) => target.surfaceId), ["site:current"]);
+  const targets = await gateway.executeCommand({ method: "Surface.list" });
+  assert.deepEqual(targets.result.surfaces.map((target) => target.containerId), ["site:current"]);
 
-  const ownedTargetId = gatewayInternals.stableTargetId(surfaces[1], ownedTab);
+  const ownedTargetId = gatewayInternals.stableSurfaceId(surfaces[1], ownedTab);
   const result = await gateway.executeCommand({
     method: "Runtime.evaluate",
     params: { expression: "document.title" },
-    targetId: ownedTargetId,
+    surfaceId: ownedTargetId,
     source: { chatId: "chat-owned" }
   });
-  assert.equal(result.surfaceId, "web:owned");
+  assert.equal(result.containerId, "web:owned");
   assert.equal(sentCommands.at(-1).id, 502);
 
   await assert.rejects(
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "document.title" },
-      targetId: gatewayInternals.stableTargetId(surfaces[2], otherTab),
+      surfaceId: gatewayInternals.stableSurfaceId(surfaces[2], otherTab),
       source: { chatId: "chat-owned" }
     }),
     (error) => error?.code === "target_not_owned_by_chat"
@@ -834,7 +834,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
     gateway.executeCommand({
       method: "Runtime.evaluate",
       params: { expression: "document.title" },
-      targetId: "desktop-stale-work-panel-target",
+      surfaceId: "desktop-stale-work-panel-target",
       source: { chatId: "chat-owned" }
     }),
     (error) => error?.code === "target_not_found"
@@ -961,7 +961,7 @@ test("browser surface registry uses explicit guest registrations for complete su
     { ok: false, reason: "route_not_aligned" }
   );
 
-  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
+  assert.equal(registry.listBrowserContainers().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
   assert.deepEqual(registry.registerSurfaceResult({
     registrationId: "docs-registration",
     ...docsIdentity,
@@ -1014,7 +1014,7 @@ test("browser surface registry uses explicit guest registrations for complete su
     activeTabId: "app-tab"
   }, 7), { ok: true });
 
-  const surfaces = registry.listBrowserSurfaces();
+  const surfaces = registry.listBrowserContainers();
   const registeredSurfaces = registry.listRegisteredSurfaces();
   const docs = surfaces.find((surface) => surface.id === docsIdentity.surfaceId);
   const app = surfaces.find((surface) => surface.id === appIdentity.surfaceId);
@@ -1040,17 +1040,17 @@ test("browser surface registry uses explicit guest registrations for complete su
     surfaceId: "website:docs"
   }, 7), false);
   docsContents.destroyed = true;
-  const docsWithoutActiveGuest = registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId);
+  const docsWithoutActiveGuest = registry.listBrowserContainers().find((surface) => surface.id === docsIdentity.surfaceId);
   assert.equal(docsWithoutActiveGuest.open, true);
   assert.equal(docsWithoutActiveGuest.activeTabId, "docs-tab-background");
   assert.equal(docsWithoutActiveGuest.targetGeneration, "docs-registration");
   assert.deepEqual(docsWithoutActiveGuest.tabs.map((tab) => tab.tabId), ["docs-tab-background"]);
   docsBackgroundContents.destroyed = true;
-  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
+  assert.equal(registry.listBrowserContainers().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
 
   currentPageSnapshot = null;
   registry.unregisterSurfacesForOwner(7);
-  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === appIdentity.surfaceId).open, false);
+  assert.equal(registry.listBrowserContainers().find((surface) => surface.id === appIdentity.surfaceId).open, false);
 });
 
 test("browser surface registry keeps Copilot Dock live-active while excluding it from public CDP current", () => {
@@ -1150,4 +1150,46 @@ test("current page cdp inspector uses the shared command helper", () => {
   const source = fs.readFileSync(path.join(process.cwd(), "src", "main", "modules", "web-surfaces", "cdp", "current-page-inspector.ts"), "utf8");
 
   assert.match(source, /sendDesktopCdpCommand/u);
+});
+
+test("Surface discovery and selection share Chat ownership and exclude file previews", async () => {
+  const make = (id, chatId, url) => ({
+    id, surfaceId: id, targetGeneration: 'generation-1', surfaceKind: 'chat-work-panel',
+    surfaceRole: 'workpanel-web', surfaceLevel: 'child', interaction: 'interactive',
+    ownerChatId: chatId, label: id, url, open: true, active: false,
+    tabs: [{ tabId: id + '-item', webContentsId: id.length, currentUrl: url, title: id }],
+    activeTabId: id + '-item',
+  });
+  const containers = [make('owned', 'chat-a', 'https://a.test'), make('other', 'chat-b', 'https://b.test'), make('local', 'chat-a', 'file:///private/document')];
+  const gateway = new EmbeddedCdpGateway({ getSurfaces: () => containers, resolveWebContents: () => null });
+  const discovered = await gateway.executeCommand({ method: 'Surface.list', source: { chatId: 'chat-a' } });
+  assert.deepEqual(discovered.result.surfaces.map((page) => page.containerId), ['owned']);
+  assert.equal(JSON.stringify(discovered).includes('targetId'), false);
+  const page = discovered.result.surfaces[0];
+  const state = await gateway.executeCommand({ method: 'Surface.getState', surfaceId: page.surfaceId, source: { chatId: 'chat-a' } });
+  assert.equal(state.result.surface.surfaceId, page.surfaceId);
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.getState', surfaceId: page.surfaceId, source: { chatId: 'chat-b' } }), { code: 'target_not_owned_by_chat' });
+  containers[0].activeTabId = 'different';
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getState', surfaceId: page.surfaceId, source: { chatId: 'chat-a' } })).surfaceId, page.surfaceId);
+  containers[0].targetGeneration = 'reopened';
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.getState', surfaceId: page.surfaceId, source: { chatId: 'chat-a' } }), { code: 'target_not_found' });
+});
+
+test("queued Surface operations reject a replaced guest instead of executing on its successor", async () => {
+  const { withCdpCommandQueue } = require('../dist-electron/main/modules/web-surfaces/cdp/command-queue.js');
+  let release;
+  const container = { id: 'site:queue', surfaceId: 'site:queue', targetGeneration: 'registration',
+    surfaceKind: 'website', surfaceRole: 'website', surfaceLevel: 'root', interaction: 'interactive',
+    label: 'Queue', url: 'https://queue.test', active: true, open: true,
+    tabs: [{ tabId: 'tab-a', webContentsId: 919, currentUrl: 'https://queue.test', title: 'A' }], activeTabId: 'tab-a' };
+  const gateway = new EmbeddedCdpGateway({ getSurfaces: () => [container], resolveWebContents: () => { throw new Error('must not execute'); } });
+  const barrier = withCdpCommandQueue(919, () => new Promise((resolve) => { release = resolve; }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const surfaceId = gatewayInternals.stableSurfaceId(container, container.tabs[0]);
+  const pending = gateway.executeCommand({ method: 'Page.reload', surfaceId });
+  await new Promise((resolve) => setImmediate(resolve));
+  container.tabs = [{ ...container.tabs[0], webContentsId: 920 }];
+  release();
+  await barrier;
+  await assert.rejects(pending, { code: 'target_not_found' });
 });

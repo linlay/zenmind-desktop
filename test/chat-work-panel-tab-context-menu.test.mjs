@@ -171,7 +171,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   assert.equal(popupOptions.x, 299);
   assert.equal(popupOptions.y, 0);
 
-  selectedActionId = "copy-url";
+  selectedActionId = "open-web-dialog";
   assert.deepEqual(await invokeHandler({ sender }, {
     mode: "work-panel",
     x: 1,
@@ -180,10 +180,11 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     isFullscreen: false,
     canClose: true,
     canCloseOthers: false
-  }), { actionId: "copy-url" });
+  }), { actionId: "open-web-dialog" });
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
     "toggle-fullscreen",
     "reload",
+    "open-web-dialog",
     "copy-url",
     "separator",
     "close-tab",
@@ -314,7 +315,7 @@ test("Work Panel tab context menu groups every profile without empty separators"
     {
       profile: "web",
       expected: [
-        "toggle-fullscreen", "reload", "copy-url", "separator", "close-tab", "close-other-tabs"
+        "toggle-fullscreen", "reload", "open-web-dialog", "copy-url", "separator", "close-tab", "close-other-tabs"
       ]
     },
     {

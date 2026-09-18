@@ -1,3 +1,7 @@
+import type { EmbeddedCdpContainer, EmbeddedCdpSurfaceTab } from "./containers";
+export type { EmbeddedCdpContainer, EmbeddedCdpSurfaceTab } from "./containers";
+import { targetDescriptor, targetInfoDescriptor } from "./surface-descriptors";
+import { createWebSurfaceId, type WebContainer } from "../../../../shared/web-surface";
 import { executeClick } from "./click";
 import { withCdpCommandQueue } from "./command-queue";
 import type { DesktopClickParams } from "../../../../shared/desktop-click";
@@ -10,11 +14,10 @@ import type { AddressInfo, Socket } from "node:net";
 import type { WebContents } from "electron";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
-  EMBEDDED_CDP_GATEWAY_PORT,
-  type EmbeddedCdpSurfaceKind
+  EMBEDDED_CDP_GATEWAY_PORT
 } from "../../../../shared/embedded-cdp";
 import { PRODUCT_NAME } from "../../../../shared/brand";
-import type { SurfaceIdentity } from "../../../../shared/surface-identity";
+
 import {
   DESKTOP_CDP_TARGET_TIMEOUT_CODE,
   isDesktopCdpTimeoutError,
@@ -22,45 +25,16 @@ import {
   sendDesktopCdpCommand
 } from "./debugger";
 
-export type EmbeddedCdpSurface = SurfaceIdentity & {
-  id: string;
-  targetGeneration?: string;
-  label: string;
-  url: string;
-  kind?: "webview";
-  active?: boolean;
-  currentUrl?: string;
-  title?: string;
-  webContentsId?: number;
-  copilotAgentKey?: string;
-  surfaceRoute?: string;
-  embedPath?: string;
-  surfaceKind: EmbeddedCdpSurfaceKind;
-  open: boolean;
-  tabs?: EmbeddedCdpSurfaceTab[];
-  activeTabId?: string | null;
-  ownerChatId?: string;
-};
-
-export type EmbeddedCdpSurfaceTab = {
-  tabId: string;
-  currentUrl: string;
-  title: string;
-  webContentsId: number;
-  faviconUrl?: string;
-  canGoBack?: boolean;
-  canGoForward?: boolean;
-  isLoading?: boolean;
-};
-
 type EmbeddedCdpGatewayOptions = {
   host?: string;
   port?: number;
-  getSurfaces: () => EmbeddedCdpSurface[] | Promise<EmbeddedCdpSurface[]>;
-  resolveWebContents: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => WebContents | null | Promise<WebContents | null>;
-  activateTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<void>;
-  closeTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<unknown>;
-  controlSiteFocus?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") => Promise<unknown>;
+  getSurfaces: () => EmbeddedCdpContainer[] | Promise<EmbeddedCdpContainer[]>;
+  resolveWebContents: (surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab) => WebContents | null | Promise<WebContents | null>;
+  activateTarget?: (surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<void>;
+  acquireWorkPanelScope?: (containerId: string, chatId: string) => SiteControlScope;
+  openPage?: (container: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, url: string, scope?: SiteControlScope) => Promise<unknown>;
+  closeTarget?: (surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<unknown>;
+  controlSiteFocus?: (surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") => Promise<unknown>;
   version?: string;
   commandTimeoutMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
@@ -83,7 +57,7 @@ type CdpResponse = {
 };
 
 type CdpConnectionSession = {
-  targetId: string;
+  surfaceId: string;
   webContentsId: number;
   debuggerRef: WebContents["debugger"];
   ownsAttach: boolean;
@@ -93,7 +67,7 @@ type CdpConnectionSession = {
 export type EmbeddedCdpCommandRequest = {
   method: string;
   params?: Record<string, unknown>;
-  targetId?: string;
+  surfaceId?: string;
   source?: { chatId?: string };
 };
 
@@ -111,14 +85,8 @@ export class EmbeddedCdpTargetError extends Error {
   }
 }
 
-export function createEmbeddedCdpTargetId(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
-  const generation = surface.targetGeneration || String(tab.webContentsId);
-  const source = `webview:${generation}:${surface.id}:${tab.tabId}`;
-  return `desktop-${crypto.createHash("sha1").update(source).digest("hex").slice(0, 16)}`;
-}
-
-function encodePathSegment(value: string) {
-  return encodeURIComponent(value).replace(/%2F/giu, "-");
+export function createEmbeddedWebSurfaceId(surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab) {
+  return createWebSurfaceId(surface.id, surface.targetGeneration || String(tab.webContentsId), tab.tabId);
 }
 
 function cdpError(id: number | undefined, code: number, message: string, data?: unknown): CdpResponse {
@@ -158,61 +126,6 @@ function isLoopbackAddress(value: string | undefined) {
   return value === "127.0.0.1" || value === "::ffff:127.0.0.1" || value === "::1";
 }
 
-function targetDescriptor(
-  surface: EmbeddedCdpSurface,
-  tab: EmbeddedCdpSurfaceTab,
-  targetId: string,
-  origins: { httpOrigin: string; wsOrigin: string }
-) {
-  const url = tab.currentUrl || surface.currentUrl || surface.url || "about:blank";
-  const title = tab.title || surface.title || surface.label || url;
-  const encodedTargetId = encodePathSegment(targetId);
-  return {
-    description: "",
-    devtoolsFrontendUrl: `/devtools/inspector.html?ws=${origins.wsOrigin.replace(/^wss?:\/\//u, "")}/devtools/page/${encodedTargetId}`,
-    id: targetId,
-    title,
-    type: "page",
-    url,
-    webSocketDebuggerUrl: `${origins.wsOrigin}/devtools/page/${encodedTargetId}`,
-    surfaceId: surface.id,
-    tabId: tab.tabId,
-    surfaceKind: surface.surfaceKind,
-    surfaceRole: surface.surfaceRole,
-    surfaceLevel: surface.surfaceLevel,
-    parentSurfaceId: surface.parentSurfaceId || "",
-    interaction: surface.interaction,
-    open: surface.open,
-    surfaceRoute: surface.surfaceRoute || "",
-    copilotAgentKey: surface.copilotAgentKey || ""
-  };
-}
-
-function targetInfoDescriptor(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, targetId: string, current: boolean) {
-  const url = tab.currentUrl || surface.currentUrl || surface.url || "about:blank";
-  const title = tab.title || surface.title || surface.label || url;
-  return {
-    attached: false,
-    canAccessOpener: false,
-    active: current,
-    current,
-    targetId,
-    title,
-    type: "webview",
-    url,
-    surfaceId: surface.id,
-    tabId: tab.tabId,
-    surfaceKind: surface.surfaceKind,
-    surfaceRole: surface.surfaceRole,
-    surfaceLevel: surface.surfaceLevel,
-    parentSurfaceId: surface.parentSurfaceId || "",
-    interaction: surface.interaction,
-    open: surface.open,
-    surfaceRoute: surface.surfaceRoute || "",
-    copilotAgentKey: surface.copilotAgentKey || ""
-  };
-}
-
 function readWebContentsString(contents: WebContents, key: "getTitle" | "getURL") {
   try {
     const reader = (contents as unknown as Record<string, unknown>)[key];
@@ -222,7 +135,7 @@ function readWebContentsString(contents: WebContents, key: "getTitle" | "getURL"
   }
 }
 
-function surfaceTabs(surface: EmbeddedCdpSurface): EmbeddedCdpSurfaceTab[] {
+function surfaceTabs(surface: EmbeddedCdpContainer): EmbeddedCdpSurfaceTab[] {
   if (Array.isArray(surface.tabs) && surface.tabs.length > 0) {
     return surface.tabs;
   }
@@ -237,7 +150,7 @@ function surfaceTabs(surface: EmbeddedCdpSurface): EmbeddedCdpSurfaceTab[] {
   }];
 }
 
-function activeSurfaceTab(surface: EmbeddedCdpSurface) {
+function activeSurfaceTab(surface: EmbeddedCdpContainer) {
   const tabs = surfaceTabs(surface);
   if (Array.isArray(surface.tabs)) {
     return surface.activeTabId
@@ -450,8 +363,25 @@ export class EmbeddedCdpGateway {
       return [];
     }
     return surfaceTabs(surface).map((tab) =>
-      targetDescriptor(surface, tab, createEmbeddedCdpTargetId(surface, tab), origins)
+      targetDescriptor(surface, tab, createEmbeddedWebSurfaceId(surface, tab), origins)
     );
+  }
+
+  /** Main-only resolver for capabilities that consume bytes without exposing them to tools. */
+  async resolveWebSurface(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) {
+    if (scope) requireSiteControlScope(scope);
+    const target = await this.resolveCommandTarget(request, scope);
+    const contents = await this.options.resolveWebContents(target.surface, target.tab);
+    if (!contents || contents.isDestroyed()) throw new EmbeddedCdpTargetError("target_not_found", "The page is unavailable.");
+    return {
+      surfaceId: target.surfaceId, containerId: target.surface.id, surfaceKind: target.surface.surfaceKind, contents,
+      validate: async () => {
+        const live = await this.resolveCommandTarget(request, scope);
+        if (contents.isDestroyed() || live.tab.webContentsId !== contents.id || live.surface.targetGeneration !== target.surface.targetGeneration) {
+          throw new EmbeddedCdpTargetError("target_not_found", "The page was closed or replaced.");
+        }
+      },
+    };
   }
 
   async executeCommand(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope, signal?: AbortSignal) {
@@ -461,71 +391,97 @@ export class EmbeddedCdpGateway {
       throw new Error("method is required");
     }
     const params = request.params ?? {};
-    if (method === "Target.getTargets" || method === "Target.getCurrentTarget") {
+    if (method === "Surface.list" || method === "Surface.getCurrent") {
       validateDesktopCdpParams(method, request.params);
       if (Object.keys(params).length > 0) {
         throw new EmbeddedCdpInvalidArgsError(`${method} does not accept params.`);
       }
-      const surface = scope ? scope.readSurface() : this.resolveCurrentSurface(await this.listValidSurfaces());
-      const tabs = surface ? surfaceTabs(surface) : [];
+      const surface = scope ? scope.readContainer() : request.source?.chatId ? null : this.resolveCurrentSurface(await this.listValidSurfaces());
+      const visible = scope ? [scope.readContainer()] : await this.authorizedContainers(request);
+
       const currentTab = surface ? activeSurfaceTab(surface) : null;
-      const targetId = surface && currentTab ? createEmbeddedCdpTargetId(surface, currentTab) : null;
-      const targetInfo = surface && currentTab && targetId
-        ? targetInfoDescriptor(surface, currentTab, targetId, true)
+      const surfaceId = surface && currentTab ? createEmbeddedWebSurfaceId(surface, currentTab) : null;
+      const targetInfo = surface && currentTab && surfaceId
+        ? targetInfoDescriptor(surface, currentTab, surfaceId, true)
         : null;
-      if (method === "Target.getCurrentTarget") {
+      if (method === "Surface.getCurrent") {
         return {
-          ...(targetId && surface ? { targetId, surfaceId: surface.id } : {}),
+          ...(surfaceId && surface ? { surfaceId, containerId: surface.id } : {}),
           result: {
-            targetInfo,
-            currentTargetId: targetId,
-            currentSurfaceId: surface?.id ?? null,
+            surface: targetInfo,
+            currentSurfaceId: surfaceId,
+            currentContainerId: surface?.id ?? null,
             activeTabId: currentTab?.tabId ?? null
           }
         };
       }
       return {
-        ...(targetId && surface ? { targetId, surfaceId: surface.id } : {}),
+        ...(surfaceId && surface ? { surfaceId, containerId: surface.id } : {}),
         result: {
-          targetInfos: surface
-            ? tabs.map((tab) => {
-                const candidateTargetId = createEmbeddedCdpTargetId(surface, tab);
-                return targetInfoDescriptor(surface, tab, candidateTargetId, candidateTargetId === targetId);
-              })
-            : [],
-          currentTargetInfo: targetInfo,
-          currentTargetId: targetId,
-          currentSurfaceId: surface?.id ?? null,
+          containers: visible.map((container): WebContainer => ({
+            containerId: container.id, label: container.label, kind: container.surfaceKind, active: Boolean(container.active),
+            surfaceIds: surfaceTabs(container).map((tab) => createEmbeddedWebSurfaceId(container, tab)),
+          })),
+          surfaces: visible.flatMap((container) => surfaceTabs(container).map((tab) => {
+            const id = createEmbeddedWebSurfaceId(container, tab);
+            return targetInfoDescriptor(container, tab, id, id === surfaceId);
+          })),
+          currentSurface: targetInfo,
+          currentSurfaceId: surfaceId,
+          currentContainerId: surface?.id ?? null,
           activeTabId: currentTab?.tabId ?? null
         }
       };
     }
-    const { surface, tab, targetId } = await this.resolveCommandTarget(request, scope);
+    if (method === "Page.navigate") {
+      let url: URL;
+      try { url = new URL(String(params.url)); } catch { throw new EmbeddedCdpInvalidArgsError("Page.navigate requires an HTTP(S) URL."); }
+      if (!/^https?:$/u.test(url.protocol) || url.username || url.password) throw new EmbeddedCdpInvalidArgsError("Page.navigate requires an HTTP(S) URL without credentials.");
+    }
+    const { surface, tab, surfaceId } = await this.resolveCommandTarget(request, scope);
     validateDesktopCdpParams(method, request.params);
-    return withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
+    const ownedScope = !scope && surface.surfaceKind === "chat-work-panel" && request.source?.chatId
+      ? this.options.acquireWorkPanelScope?.(surface.id, request.source.chatId) : undefined;
+    scope ??= ownedScope;
+    try { return await withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
       ? (phase) => this.options.controlSiteFocus!(surface, tab, scope, phase) : undefined, async () => {
-      if (method === "Target.closeTarget") {
+      const live = await this.resolveCommandTarget(request, scope);
+      if (live.tab.webContentsId !== tab.webContentsId || live.surface.targetGeneration !== surface.targetGeneration) {
+        throw new EmbeddedCdpTargetError("target_not_found", "The page instance was replaced before execution.");
+      }
+      if (method === "Surface.open") {
+        if (typeof params.url !== "string" || !/^https?:\/\//u.test(params.url) || !this.options.openPage) {
+          throw new EmbeddedCdpInvalidArgsError("Surface.open requires an HTTP(S) URL and a supported container.");
+        }
+        const url = new URL(params.url);
+        if (url.username || url.password) throw new EmbeddedCdpInvalidArgsError("URL credentials are not allowed.");
+        return { result: await this.options.openPage(surface, tab, url.href, scope) };
+      }
+      if (method === "Surface.getState") {
+        return { surfaceId, result: { surface: targetInfoDescriptor(surface, tab, surfaceId, Boolean(surface.active && surface.activeTabId === tab.tabId)) } };
+      }
+      if (method === "Surface.close") {
         if (Object.keys(params).length > 0) {
-          throw new EmbeddedCdpInvalidArgsError("Target.closeTarget does not accept params after targetId resolution.");
+          throw new EmbeddedCdpInvalidArgsError("Surface.close does not accept params after surfaceId resolution.");
         }
         if (!this.options.closeTarget) {
-          throw new Error("Target.closeTarget is unavailable.");
+          throw new Error("Surface.close is unavailable.");
         }
         await this.options.closeTarget(surface, tab, scope);
         return {
-          targetId,
-          surfaceId: surface.id,
+          surfaceId,
+          containerId: surface.id,
           result: { success: true }
         };
       }
       if (signal?.aborted) throw new Error("canceled");
-      const result = await this.handleWebContentsCommandOnce(surface, tab, targetId, method, params, scope, signal);
+      const result = await this.handleWebContentsCommandOnce(surface, tab, surfaceId, method, params, scope, signal);
       return {
-        targetId,
-        surfaceId: surface.id,
+        surfaceId,
+        containerId: surface.id,
         result
       };
-    }));
+    })); } finally { ownedScope?.release(); }
   }
 
   private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -549,10 +505,10 @@ export class EmbeddedCdpGateway {
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/json/activate/")) {
-      const targetId = decodeURIComponent(url.pathname.slice("/json/activate/".length));
-      let target: { surface: EmbeddedCdpSurface; tab: EmbeddedCdpSurfaceTab; targetId: string };
+      const surfaceId = decodeURIComponent(url.pathname.slice("/json/activate/".length));
+      let target: { surface: EmbeddedCdpContainer; tab: EmbeddedCdpSurfaceTab; surfaceId: string };
       try {
-        target = await this.resolveCommandTarget({ method: "Page.bringToFront", targetId });
+        target = await this.resolveCommandTarget({ method: "Page.bringToFront", surfaceId });
       } catch (error) {
         const code = error instanceof EmbeddedCdpTargetError ? error.code : "target_not_found";
         responseJSON(res, 404, { error: code });
@@ -560,7 +516,7 @@ export class EmbeddedCdpGateway {
       }
       await this.options.activateTarget?.(target.surface, target.tab);
       const origins = parseTargetUrl(req, this.host, this.port);
-      responseJSON(res, 200, targetDescriptor(target.surface, target.tab, target.targetId, origins));
+      responseJSON(res, 200, targetDescriptor(target.surface, target.tab, target.surfaceId, origins));
       return;
     }
     if (req.method === "GET" && url.pathname === "/json/new") {
@@ -585,8 +541,8 @@ export class EmbeddedCdpGateway {
       socket.destroy();
       return;
     }
-    const targetId = decodeURIComponent(url.pathname.slice("/devtools/page/".length));
-    const target = await this.resolveCurrentTargetById(targetId);
+    const surfaceId = decodeURIComponent(url.pathname.slice("/devtools/page/".length));
+    const target = await this.resolveCurrentTargetById(surfaceId);
     if (!target) {
       socket.destroy();
       return;
@@ -603,13 +559,13 @@ export class EmbeddedCdpGateway {
     const connection = new CdpWebSocketConnection(
       socket,
       (text) => {
-        void this.handleTextMessage(connection, targetId, text);
+        void this.handleTextMessage(connection, surfaceId, text);
       },
       () => this.releaseConnection(connection)
     );
   }
 
-  private async handleTextMessage(connection: CdpWebSocketConnection, targetId: string, text: string) {
+  private async handleTextMessage(connection: CdpWebSocketConnection, surfaceId: string, text: string) {
     let command: CdpCommand;
     try {
       command = JSON.parse(text) as CdpCommand;
@@ -618,31 +574,36 @@ export class EmbeddedCdpGateway {
       return;
     }
     const id = command.id;
-    const method = typeof command.method === "string" ? command.method : "";
+    const rawMethod = typeof command.method === "string" ? command.method : "";
+    const method = rawMethod === "Target.closeTarget" ? "Surface.close" : rawMethod;
+    if (rawMethod === "Target.closeTarget" && command.params && "targetId" in command.params) {
+      command.params = { ...command.params, surfaceId: command.params.targetId };
+      delete command.params.targetId;
+    }
     if (!method) {
       connection.sendJSON(cdpError(id, -32600, "Invalid request: method is required."));
       return;
     }
     try {
       validateDesktopCdpParams(method, command.params);
-      if (method === "Target.closeTarget") {
-        const paramsTargetId = typeof command.params?.targetId === "string"
-          ? command.params.targetId.trim()
+      if (method === "Surface.close") {
+        const paramsSurfaceId = typeof command.params?.surfaceId === "string"
+          ? command.params.surfaceId.trim()
           : "";
-        if (paramsTargetId && paramsTargetId !== targetId) {
-          throw new EmbeddedCdpInvalidArgsError("params.targetId conflicts with the current WebSocket target.");
+        if (paramsSurfaceId && paramsSurfaceId !== surfaceId) {
+          throw new EmbeddedCdpInvalidArgsError("params.surfaceId conflicts with the current WebSocket target.");
         }
-        const extraParamKeys = Object.keys(command.params ?? {}).filter((key) => key !== "targetId");
+        const extraParamKeys = Object.keys(command.params ?? {}).filter((key) => key !== "surfaceId");
         if (extraParamKeys.length > 0) {
-          throw new EmbeddedCdpInvalidArgsError("Target.closeTarget only accepts params.targetId.");
+          throw new EmbeddedCdpInvalidArgsError("Target.closeTarget only accepts params.surfaceId.");
         }
       }
-      const target = await this.resolveCommandTarget({ method, targetId });
+      const target = await this.resolveCommandTarget({ method, surfaceId });
       const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click"
-        ? this.handleWebContentsCommandOnce(target.surface, target.tab, targetId, method, command.params ?? {})
+        ? this.handleWebContentsCommandOnce(target.surface, target.tab, surfaceId, method, command.params ?? {})
         : this.handleWebContentsCommand(connection, target, method, command.params ?? {}));
       connection.sendJSON({ id, result });
-      if (method === "Target.closeTarget") {
+      if (method === "Surface.close") {
         this.releaseConnection(connection);
       }
     } catch (error) {
@@ -679,13 +640,13 @@ export class EmbeddedCdpGateway {
 
   private async handleWebContentsCommand(
     connection: CdpWebSocketConnection,
-    target: { surface: EmbeddedCdpSurface; tab: EmbeddedCdpSurfaceTab; targetId: string },
+    target: { surface: EmbeddedCdpContainer; tab: EmbeddedCdpSurfaceTab; surfaceId: string },
     method: string,
     params: Record<string, unknown>
   ) {
-    if (method === "Target.closeTarget") {
+    if (method === "Surface.close") {
       if (!this.options.closeTarget) {
-        throw new Error("Target.closeTarget is unavailable.");
+        throw new Error("Surface.close is unavailable.");
       }
       await this.options.closeTarget(target.surface, target.tab);
       return { success: true };
@@ -699,16 +660,16 @@ export class EmbeddedCdpGateway {
       return {};
     }
     if (method === "Page.reload") {
-      return this.reloadWebContents(target.surface, target.targetId, contents, params);
+      return this.reloadWebContents(target.surface, target.surfaceId, contents, params);
     }
-    const session = this.ensureDebuggerSession(connection, target.targetId, contents);
-    return sendDesktopCdpCommand(session.debuggerRef, method, params, this.buildCommandDebugContext(target.surface, target.targetId, contents));
+    const session = this.ensureDebuggerSession(connection, target.surfaceId, contents);
+    return sendDesktopCdpCommand(session.debuggerRef, method, params, this.buildCommandDebugContext(target.surface, target.surfaceId, contents));
   }
 
   private async handleWebContentsCommandOnce(
-    surface: EmbeddedCdpSurface,
+    surface: EmbeddedCdpContainer,
     tab: EmbeddedCdpSurfaceTab,
-    targetId: string,
+    surfaceId: string,
     method: string,
     params: Record<string, unknown>,
     scope?: SiteControlScope,
@@ -728,7 +689,7 @@ export class EmbeddedCdpGateway {
       return {};
     }
     if (method === "Page.reload") {
-      return this.reloadWebContents(surface, targetId, contents, params);
+      return this.reloadWebContents(surface, surfaceId, contents, params);
     }
     const debuggerRef = contents.debugger;
     const ownsAttach = !debuggerRef.isAttached();
@@ -736,19 +697,25 @@ export class EmbeddedCdpGateway {
       debuggerRef.attach(DEFAULT_PROTOCOL_VERSION);
     }
     const emulateFocus = Boolean(scope);
-    const debugContext = this.buildCommandDebugContext(surface, targetId, contents);
+    const debugContext = this.buildCommandDebugContext(surface, surfaceId, contents);
     try {
       if (emulateFocus) {
         // Chromium ignores input in an unfocused guest. Emulation does not focus the host window.
         await sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled: true }, debugContext);
         scope?.validateTab(tab);
       }
+      if (method === "Surface.goBack") {
+        const history = await sendDesktopCdpCommand(debuggerRef, "Page.getNavigationHistory", {}, debugContext) as { currentIndex: number; entries: Array<{ id: number }> };
+        const previous = history.entries[history.currentIndex - 1];
+        if (!previous) throw new EmbeddedCdpInvalidArgsError("The page has no previous history entry.");
+        return await sendDesktopCdpCommand(debuggerRef, "Page.navigateToHistoryEntry", { entryId: previous.id }, debugContext);
+      }
       if (method === "Input.click") {
         return await executeClick(params as DesktopClickParams, contents,
           (name, args, timeoutMs) => sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs }),
           async () => {
             scope?.validateTab(tab);
-            const current = await this.resolveCommandTarget({ method, targetId, source: { chatId: surface.ownerChatId } }, scope);
+            const current = await this.resolveCommandTarget({ method, surfaceId, source: { chatId: surface.ownerChatId } }, scope);
             if (current.tab.webContentsId !== contents.id) throw new Error("target_replaced");
           }, signal);
       }
@@ -767,13 +734,13 @@ export class EmbeddedCdpGateway {
   }
 
   private buildCommandDebugContext(
-    surface: EmbeddedCdpSurface,
-    targetId: string,
+    surface: EmbeddedCdpContainer,
+    surfaceId: string,
     contents: WebContents
   ) {
     return {
-      targetId,
-      surfaceId: surface.id,
+      surfaceId,
+      containerId: surface.id,
       webContentsId: contents.id,
       url: readWebContentsString(contents, "getURL") || surface.currentUrl || surface.url,
       title: readWebContentsString(contents, "getTitle") || surface.title || surface.label,
@@ -783,8 +750,8 @@ export class EmbeddedCdpGateway {
   }
 
   private reloadWebContents(
-    surface: EmbeddedCdpSurface,
-    targetId: string,
+    surface: EmbeddedCdpContainer,
+    surfaceId: string,
     contents: WebContents,
     params: Record<string, unknown>
   ) {
@@ -800,8 +767,8 @@ export class EmbeddedCdpGateway {
     const logger = this.options.logger ?? console;
     const details = {
       method: "Page.reload",
-      targetId,
-      surfaceId: surface.id,
+      surfaceId,
+      containerId: surface.id,
       webContentsId: contents.id,
       mode: ignoreCache ? "reloadIgnoringCache" : "reload"
     };
@@ -823,7 +790,7 @@ export class EmbeddedCdpGateway {
     }
   }
 
-  private async ensureWebContents(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
+  private async ensureWebContents(surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab) {
     let contents = await this.options.resolveWebContents(surface, tab);
     if (contents && !contents.isDestroyed()) {
       return contents;
@@ -841,11 +808,11 @@ export class EmbeddedCdpGateway {
 
   private ensureDebuggerSession(
     connection: CdpWebSocketConnection,
-    targetId: string,
+    surfaceId: string,
     contents: WebContents
   ): CdpConnectionSession {
     const current = this.sessions.get(connection);
-    if (current && current.targetId === targetId && current.webContentsId === contents.id) {
+    if (current && current.surfaceId === surfaceId && current.webContentsId === contents.id) {
       return current;
     }
     if (current) {
@@ -865,7 +832,7 @@ export class EmbeddedCdpGateway {
     };
     debuggerRef.on("message", messageListener);
     const session = {
-      targetId,
+      surfaceId,
       webContentsId: contents.id,
       debuggerRef,
       ownsAttach,
@@ -900,7 +867,18 @@ export class EmbeddedCdpGateway {
     return surfaces.filter((surface) => surface.id && surface.url);
   }
 
-  private resolveCurrentSurface(surfaces: EmbeddedCdpSurface[]) {
+  private async authorizedContainers(request: EmbeddedCdpCommandRequest) {
+    const containers = await this.listValidSurfaces();
+    const current = this.resolveCurrentSurface(containers);
+    const chatId = request.source?.chatId?.trim();
+    return containers.filter((container) => (!chatId && container === current) || (
+      Boolean(chatId) && container.surfaceKind === "chat-work-panel" &&
+      container.surfaceRole === "workpanel-web" && container.ownerChatId === chatId &&
+      /^https?:/u.test(container.url)
+    ));
+  }
+
+  private resolveCurrentSurface(surfaces: EmbeddedCdpContainer[]) {
     const currentSurfaces = surfaces.filter((surface) => (
       surface.active &&
       surface.surfaceLevel !== "child" &&
@@ -909,31 +887,31 @@ export class EmbeddedCdpGateway {
     return currentSurfaces.length === 1 ? currentSurfaces[0] : null;
   }
 
-  private targetsForSurface(surface: EmbeddedCdpSurface) {
+  private targetsForSurface(surface: EmbeddedCdpContainer) {
     return surfaceTabs(surface).map((tab) => ({
       surface,
       tab,
-      targetId: createEmbeddedCdpTargetId(surface, tab)
+      surfaceId: createEmbeddedWebSurfaceId(surface, tab)
     }));
   }
 
-  private async resolveCurrentTargetById(targetId: string) {
+  private async resolveCurrentTargetById(surfaceId: string) {
     const surfaces = await this.listValidSurfaces();
     const currentSurface = this.resolveCurrentSurface(surfaces);
     if (!currentSurface) {
       return null;
     }
-    return this.targetsForSurface(currentSurface).find((target) => target.targetId === targetId) ?? null;
+    return this.targetsForSurface(currentSurface).find((target) => target.surfaceId === surfaceId) ?? null;
   }
 
   private async resolveCommandTarget(request: EmbeddedCdpCommandRequest, scope?: SiteControlScope) {
-    const targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
-    if (!targetId) {
-      throw new EmbeddedCdpTargetError("target_required", "targetId is required for this CDP method.");
+    const surfaceId = typeof request.surfaceId === "string" ? request.surfaceId.trim() : "";
+    if (!surfaceId) {
+      throw new EmbeddedCdpTargetError("target_required", "surfaceId is required for this CDP method.");
     }
     if (scope) {
-      const surface = scope.readSurface();
-      const target = this.targetsForSurface(surface).find((candidate) => candidate.targetId === targetId);
+      const surface = scope.readContainer();
+      const target = this.targetsForSurface(surface).find((candidate) => candidate.surfaceId === surfaceId);
       if (!target) throw new EmbeddedCdpTargetError("target_not_in_current_surface", "The target does not belong to the Run application instance.");
       return target;
     }
@@ -942,9 +920,10 @@ export class EmbeddedCdpGateway {
     const requestedChatId = typeof request.source?.chatId === "string" ? request.source.chatId.trim() : "";
     const matchingTarget = surfaces
       .flatMap((surface) => this.targetsForSurface(surface))
-      .find((target) => target.targetId === targetId) ?? null;
+      .find((target) => target.surfaceId === surfaceId) ?? null;
     if (matchingTarget?.surface.surfaceKind === "chat-work-panel") {
-      if (requestedChatId && matchingTarget.surface.ownerChatId === requestedChatId) {
+      if (requestedChatId && matchingTarget.surface.ownerChatId === requestedChatId &&
+          matchingTarget.surface.surfaceRole === "workpanel-web" && /^https?:/u.test(matchingTarget.surface.url)) {
         return matchingTarget;
       }
       if (requestedChatId) {
@@ -954,9 +933,13 @@ export class EmbeddedCdpGateway {
         );
       }
     }
+    if (requestedChatId && !matchingTarget) throw new EmbeddedCdpTargetError("target_not_found", "The page is closed or unavailable.");
+    if (requestedChatId) {
+      throw new EmbeddedCdpTargetError("target_not_owned_by_chat", "The page is outside this Chat's authorized WorkPanel. A Website/WebApp Run requires its own page grant.");
+    }
     if (!currentSurface) {
       const existsOutsideCurrentSurface = surfaces
-        .some((surface) => this.targetsForSurface(surface).some((target) => target.targetId === targetId));
+        .some((surface) => this.targetsForSurface(surface).some((target) => target.surfaceId === surfaceId));
       if (existsOutsideCurrentSurface) {
         throw new EmbeddedCdpTargetError("target_not_in_current_surface", "The target does not belong to the current Desktop surface.");
       }
@@ -967,13 +950,13 @@ export class EmbeddedCdpGateway {
           : "The current Desktop surface does not expose a CDP target."
       );
     }
-    const currentTarget = this.targetsForSurface(currentSurface).find((target) => target.targetId === targetId);
+    const currentTarget = this.targetsForSurface(currentSurface).find((target) => target.surfaceId === surfaceId);
     if (currentTarget) {
       return currentTarget;
     }
     const existsInAnotherSurface = surfaces
       .filter((surface) => surface.id !== currentSurface.id)
-      .some((surface) => this.targetsForSurface(surface).some((target) => target.targetId === targetId));
+      .some((surface) => this.targetsForSurface(surface).some((target) => target.surfaceId === surfaceId));
     if (existsInAnotherSurface) {
       throw new EmbeddedCdpTargetError("target_not_in_current_surface", "The target does not belong to the current Desktop surface.");
     }
@@ -983,6 +966,6 @@ export class EmbeddedCdpGateway {
 
 export const __testInternals = {
   createServerFrame,
-  stableTargetId: createEmbeddedCdpTargetId,
+  stableSurfaceId: createEmbeddedWebSurfaceId,
   targetDescriptor
 };

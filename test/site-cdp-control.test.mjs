@@ -3,84 +3,56 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
-const { EmbeddedCdpGateway, createEmbeddedCdpTargetId } = require('../dist-electron/main/modules/web-surfaces/cdp/gateway.js');
+const { EmbeddedCdpGateway, createEmbeddedWebSurfaceId } = require('../dist-electron/main/modules/web-surfaces/cdp/gateway.js');
 const { createCdpIntegration } = require('../dist-electron/main/modules/web-surfaces/cdp/integration.js');
 const { RunSiteControlGrants } = require('../dist-electron/main/modules/agent-platform/realtime/run-site-control-grants.js');
 const { withSiteCdpFocus } = require('../dist-electron/main/modules/web-surfaces/cdp/site-focus.js');
 const { AwcpGuestBridge } = require('../dist-electron/main/modules/web-surfaces/awcp/guest-bridge.js');
-const { compileAwcpSchema } = require('../dist-electron/main/modules/web-surfaces/awcp/schema-validator.js');
+const { createSurfaceIdentity } = require('../dist-electron/shared/surface-identity.js');
+const { captureCopilotSiteControlScope } = require('../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
 
-test('AWCP type diagnostics identify the rejected node without exposing its value', () => {
-  const validate = compileAwcpSchema({
-    type: 'object', properties: {
-      value: { type: 'object', properties: { nodes: { type: 'array', items: { type: 'object' } } } },
-      'a/b~c': { type: 'array', items: { type: 'string' } },
-    },
+test('persistent Copilot Dock switches Website context without replacing its guest or moving existing Run scopes', (t) => {
+  const h = createSiteHarness();
+  const a = h.site('dock-a');
+  const b = h.site('dock-b');
+  const guest = h.guest('http://127.0.0.1:7788/copilot/helper');
+  const scopes = [];
+  t.after(() => scopes.forEach((scope) => scope.release()));
+  function switchTo(site) {
+    h.foreground(site);
+    const dock = {
+      ...createSurfaceIdentity('copilot-dock', '', { parentSurfaceId: site.surfaceId }),
+      registrationId: 'persistent-dock', surfaceIdentityKey: site.surfaceIdentityKey,
+      surfaceKind: 'service', surfaceType: 'agent-copilot', serviceId: 'agent-webclient',
+      pageRoute: site.pageRoute, label: 'Copilot', url: guest.url, active: true,
+      tabs: [h.tab(guest)], activeTabId: `tab-${guest.id}`,
+    };
+    h.register(dock);
+    const target = h.registry.resolveWebviewSurfaceTarget(guest.id);
+    assert.equal(target.registrationId, 'persistent-dock');
+    assert.equal(target.parentSurfaceId, site.surfaceId);
+    assert.equal(target.surfaceIdentityKey, site.surfaceIdentityKey);
+    assert.equal(target.pageRoute, site.pageRoute);
+    const scope = captureCopilotSiteControlScope(h.registry, target);
+    scope.activate();
+    scopes.push(scope);
+    assert.equal(scope.readContainer().id, site.surfaceId);
+    return dock;
+  }
+  switchTo(a);
+  const dockB = switchTo(b);
+  assert.equal(scopes[0].readContainer().id, a.surfaceId);
+  assert.equal(scopes[0].readContainer().tabs[0].webContentsId, a.tabs[0].webContentsId);
+  assert.deepEqual(h.registry.registerSurfaceResult({ ...dockB, surfaceIdentityKey: a.surfaceIdentityKey }, 8), {
+    ok: false, reason: 'ownership_conflict',
   });
-  assert.deepEqual(validate({ value: { nodes: { item: [{ secret: 'private' }] } } }), [{
-    instancePath: '/value/nodes', keyword: 'type', expectedType: 'array', actualType: 'object',
-  }]);
-  assert.deepEqual(validate({ 'a/b~c': [null] }), [{
-    instancePath: '/a~1b~0c/0', keyword: 'type', expectedType: 'string', actualType: 'null',
-  }]);
-  assert.deepEqual(validate({ value: { nodes: [{}] } }), []);
+  assert.throws(() => captureCopilotSiteControlScope(h.registry, {
+    ...h.registry.resolveWebviewSurfaceTarget(guest.id), surfaceIdentityKey: a.surfaceIdentityKey,
+  }), /Copilot context does not match/);
+  switchTo(a);
+  assert.equal(scopes[1].readContainer().id, b.surfaceId);
 });
 
-test('AWCP anyOf diagnostics select the actual typed condition branch', () => {
-  const validate = compileAwcpSchema({
-    type: 'object', required: ['value'], properties: { value: { $ref: '#/$defs/condition' } }, additionalProperties: false,
-    $defs: { condition: {
-      type: 'object', anyOf: [
-        { type: 'object', properties: { join: { type: 'string', enum: ['and', 'or'] }, nodes: { type: 'array', minItems: 1, items: { $ref: '#/$defs/condition' } } }, required: ['join', 'nodes'], additionalProperties: false },
-        { type: 'object', properties: { field: { type: 'string', enum: ['supplier'] }, oper: { type: 'string', enum: ['eq'] }, stringValue: { type: 'string' } }, required: ['field', 'oper', 'stringValue'], additionalProperties: false },
-        { type: 'object', properties: { field: { type: 'string', enum: ['amount'] }, oper: { type: 'string', enum: ['gt'] }, numberValue: { type: 'number' } }, required: ['field', 'oper', 'numberValue'], additionalProperties: false },
-      ],
-    } },
-  });
-  assert.deepEqual(validate({ value: { field: 'amount', oper: 'gt', numberValue: '10' } }), [{
-    instancePath: '/value/numberValue', keyword: 'type', expectedType: 'number', actualType: 'string',
-  }]);
-  const unknownField = validate({ value: { field: 'unknown', oper: 'gt', numberValue: 10 } });
-  assert.ok(unknownField.length > 0 && unknownField.every((error) => error.instancePath === '/value/field'));
-  const unknownOper = validate({ value: { field: 'amount', oper: 'unknown', numberValue: 10 } });
-  assert.ok(unknownOper.length > 0 && unknownOper.every((error) => error.instancePath === '/value/oper'));
-  const withFunc = compileAwcpSchema({
-    type: 'object', properties: { value: { $ref: '#/$defs/condition' } },
-    $defs: { condition: { type: 'object', anyOf: [
-      { type: 'object', properties: { field: { const: 'amount' }, oper: { const: 'gt' }, numberValue: { type: 'number' } }, required: ['field', 'oper', 'numberValue'], additionalProperties: false },
-      { type: 'object', properties: { field: { const: 'amount' }, func: { const: 'count' }, oper: { const: 'gt' }, numberValue: { type: 'number' } }, required: ['field', 'func', 'oper', 'numberValue'], additionalProperties: false },
-    ] } },
-  });
-  assert.deepEqual(withFunc({ value: { field: 'amount', func: 'count', oper: 'gt', numberValue: '10' } }), [{
-    instancePath: '/value/numberValue', keyword: 'type', expectedType: 'number', actualType: 'string',
-  }]);
-  const unknownFunc = withFunc({ value: { field: 'amount', func: 'unknown', oper: 'gt', numberValue: 10 } });
-  assert.ok(unknownFunc.length > 0 && unknownFunc.every((error) => error.instancePath === '/value/func'));
-});
-
-test('AWCP discovery rejects an invalid unused Action atomically and never runs a handler', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-atomic'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  let handlerCalls = 0;
-  let badAction = { action: 'orders.write', description: 'Write', inputSchema: { type: 'object', properties: { value: { $ref: '#/$defs/missing' } } }, example: {} };
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return { revision: 'revision-a', actions: [awcpSnapshot().actions[0], badAction] };
-    handlerCalls++;
-    return null;
-  };
-  await assert.rejects(bridge.snapshot('bad-ref', scope), (error) => error.code === 'awcp_invalid_contract' &&
-    error.details?.action === 'orders.write' && error.details?.keyword === '$ref');
-  badAction = { action: 'orders.write', description: 'Write', inputSchema: { type: 'object', required: ['ids'], properties: { ids: { type: 'array', items: { type: 'string' } } } }, example: {} };
-  await assert.rejects(bridge.snapshot('bad-example', scope), (error) => error.code === 'awcp_invalid_contract' &&
-    error.details?.action === 'orders.write' && error.details?.violations?.some((v) => v.keyword === 'required'));
-  badAction = { action: 'orders.write', description: 'Write', inputSchema: { type: 'object' } };
-  await assert.rejects(bridge.snapshot('missing-example', scope), { code: 'awcp_invalid_contract' });
-  assert.equal(handlerCalls, 0);
-  await assert.rejects(bridge.invoke('no-partial', { revision: 'revision-a', action: 'orders.read', args: {} }, scope),
-    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'discovery_required');
-});
 
 function gatewayFor(h, extra = {}) {
   return new EmbeddedCdpGateway({ getSurfaces: () => h.registry.listRegisteredSurfaces(),
@@ -89,18 +61,64 @@ function gatewayFor(h, extra = {}) {
 const identity = { runId: 'run-a', chatId: 'chat-a', owner: { kind: 'agent', agentKey: 'agent-a' } };
 const source = { runId: 'run-a', chatId: 'chat-a', agentKey: 'agent-a' };
 
-function awcpSnapshot(action = 'orders.read', inputSchema = { type: 'object' }, outputSchema, example = {}) {
+function awcpIndex(actions = ['orders.read'], revision = 'revision-a') {
   return {
-    revision: 'revision-a',
-    actions: [{
-      action,
-      description: `Invoke ${action}`,
-      inputSchema,
-      example,
-      ...(outputSchema === undefined ? {} : { outputSchema }),
-    }],
+    revision,
+    site: { name: 'Orders', description: 'Order operations.' },
+    sections: actions.map((action) => ({ section: action, title: `Use ${action}` })),
   };
 }
+
+function awcpSection(action = 'orders.read', options = {}) {
+  return {
+    revision: options.revision ?? 'revision-a',
+    section: action,
+    description: options.description ?? `Perform ${action}.`,
+    inputSchema: options.inputSchema ?? { type: 'object' },
+    ...(options.omitExamples ? {} : { examples: options.examples ?? [{}] }),
+  };
+}
+
+function awcpProbe(actualVersion = 1, overrides = {}) {
+  return { present: true, entryType: 'object', actualVersion, manualType: 'function', invokeType: 'function', ...overrides };
+}
+
+function awcpManualValue(script, options = {}) {
+  if (!script.includes('.manual(')) return undefined;
+  const action = options.action ?? 'orders.read';
+  return script.includes('section')
+    ? (options.section ?? awcpSection(action, options))
+    : (options.index ?? awcpIndex(options.actions ?? [action], options.revision));
+}
+
+test('AWCP treats Schema as page-owned data and accepts a section without examples', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-isolation'); const scope = h.capture(a); scope.activate();
+  const guest = h.contents.get(a.tabs[0].webContentsId);
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  let handlerCalls = 0;
+  const successResponse = { ok: true, requestId: 'invoke-read', action: 'orders.read', result: {} };
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) {
+      if (!script.includes('section')) return awcpIndex(['orders.read', 'orders.write']);
+      return script.includes('orders.write')
+        ? awcpSection('orders.write', { inputSchema: { $ref: 'https://page.invalid/schema' } })
+        : awcpSection('orders.read', { omitExamples: true });
+    }
+    handlerCalls += 1;
+    return successResponse;
+  };
+
+  const index = await bridge.manual('manual-index', {}, scope);
+  assert.deepEqual(index.sections.map(({ section }) => section), ['orders.read', 'orders.write']);
+  const read = await bridge.manual('manual-read', { section: 'orders.read', revision: index.revision }, scope);
+  assert.equal('examples' in read, false);
+  await bridge.manual('manual-write', { section: 'orders.write', revision: index.revision }, scope);
+  assert.deepEqual(await bridge.invoke('invoke-read', {
+    revision: 'revision-a', action: 'orders.read', args: {},
+  }, scope), successResponse);
+  assert.equal(handlerCalls, 1);
+});
 
 test('independent Website Runs keep distinct target queries and reject each other', async (t) => {
   const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b');
@@ -110,10 +128,10 @@ test('independent Website Runs keep distinct target queries and reject each othe
   const aScope = grants.resolve(source);
   const bScope = grants.resolve({ runId: 'run-b', chatId: 'chat-b', teamId: 'team-b' });
   const gateway = gatewayFor(h);
-  const [at, bt] = await Promise.all([aScope, bScope].map((scope) => gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)));
-  assert.notEqual(at.targetId, bt.targetId);
-  assert.equal(at.surfaceId, a.surfaceId); assert.equal(bt.surfaceId, b.surfaceId);
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: at.targetId }, bScope), { code: 'target_not_in_current_surface' });
+  const [at, bt] = await Promise.all([aScope, bScope].map((scope) => gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)));
+  assert.notEqual(at.surfaceId, bt.surfaceId);
+  assert.equal(at.containerId, a.surfaceId); assert.equal(bt.containerId, b.surfaceId);
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: at.surfaceId }, bScope), { code: 'target_not_in_current_surface' });
 });
 
 test('background command focus transactions serialize, restore on errors, and revalidate queued grants', async (t) => {
@@ -136,37 +154,37 @@ test('authorized background Website discovers new and descendant tabs without ch
   const scope = h.capture(a); scope.activate(); t.after(() => scope.release());
   const gateway = gatewayFor(h);
   h.foreground(b);
-  const first = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
-  assert.equal(first.surfaceId, a.surfaceId);
+  const first = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
+  assert.equal(first.containerId, a.surfaceId);
   for (let n = 0; n < 2; n++) {
     const added = h.addTab(a);
     assert.equal(h.contents.get(added.webContentsId).throttle, false);
-    const targets = await gateway.executeCommand({ method: 'Target.getTargets' }, scope);
-    assert.equal(targets.result.targetInfos.length, n + 2);
-    const targetId = targets.result.currentTargetId;
-    await gateway.executeCommand({ method: 'Runtime.evaluate', targetId, params: { expression: 'document.title' } }, scope);
+    const targets = await gateway.executeCommand({ method: 'Surface.list' }, scope);
+    assert.equal(targets.result.surfaces.length, n + 2);
+    const surfaceId = targets.result.currentSurfaceId;
+    await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId, params: { expression: 'document.title' } }, scope);
     assert.equal(h.commands.at(-1).id, added.webContentsId);
-    assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).surfaceId, b.surfaceId);
+    assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' })).containerId, b.surfaceId);
   }
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: first.targetId }), { code: 'target_not_in_current_surface' });
-  const bTarget = (await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).targetId;
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: bTarget }, scope), { code: 'target_not_in_current_surface' });
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: first.surfaceId }), { code: 'target_not_in_current_surface' });
+  const bTarget = (await gateway.executeCommand({ method: 'Surface.getCurrent' })).surfaceId;
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: bTarget }, scope), { code: 'target_not_in_current_surface' });
 });
 
 test('scope identity cannot be forged, reattached to another application, or resurrected after close', async () => {
   const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b');
   const grants = new RunSiteControlGrants(); const scope = h.capture(a); grants.bind(identity, scope);
   const gateway = gatewayFor(h);
-  const target = (await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, grants.resolve(source))).targetId;
+  const target = (await gateway.executeCommand({ method: 'Surface.getCurrent' }, grants.resolve(source))).surfaceId;
   h.foreground(b);
-  await assert.rejects(gateway.executeCommand({ method: 'Target.getTargets' }, { ...scope }), { code: 'site_control_unavailable' });
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.list' }, { ...scope }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, chatId: 'wrong' }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, agentKey: 'wrong' }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, teamId: 'wrong' }), { code: 'site_control_unavailable' });
   h.closeTab(a, a.activeTabId);
   a.registrationId = 'reopened-a'; a.tabs = [h.tab(h.guest(a.url))]; a.activeTabId = a.tabs[0].tabId; h.register(a);
   assert.throws(() => grants.resolve(source), { code: 'site_control_unavailable' });
-  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', targetId: target }, scope), { code: 'site_control_unavailable' });
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: target }, scope), { code: 'site_control_unavailable' });
   const replacement = h.capture(a);
   assert.throws(() => grants.bind(identity, replacement), { code: 'site_control_unavailable' });
   grants.revokeAll();
@@ -181,21 +199,21 @@ test('background throttle leases are reference counted and restore original stat
   guest.throttle = false;
   const third = h.capture(a); third.activate(); third.release(); assert.equal(guest.throttle, false);
   const fourth = h.capture(a); fourth.activate(); guest.emit('render-process-gone');
-  assert.throws(() => fourth.readSurface(), { code: 'site_control_unavailable' });
+  assert.throws(() => fourth.readContainer(), { code: 'site_control_unavailable' });
   assert.equal(guest.listenerCount('destroyed'), 0);
 });
 
 test('WebApp keeps one guest across WorkPanel presentation and revokes when guest changes', async () => {
   const h = createSiteHarness(); const app = h.site('app', 'webapp'); const b = h.site('b');
   const scope = h.capture(app); scope.activate(); const gateway = gatewayFor(h);
-  const target = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const target = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
   h.foreground(b); app.presentationScope = 'workpanel'; app.ownerChatId = 'workpanel-chat'; h.register(app);
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)).targetId, target.targetId);
-  await gateway.executeCommand({ method: 'Runtime.evaluate', targetId: target.targetId, params: { expression: 'document.title' } }, scope);
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)).surfaceId, target.surfaceId);
+  await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: target.surfaceId, params: { expression: 'document.title' } }, scope);
   delete app.presentationScope; delete app.ownerChatId; h.register(app);
-  assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope)).targetId, target.targetId);
+  assert.equal((await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)).surfaceId, target.surfaceId);
   app.tabs = [h.tab(h.guest(app.url))]; app.activeTabId = app.tabs[0].tabId; h.register(app);
-  await assert.rejects(gateway.executeCommand({ method: 'Target.getTargets' }, scope), { code: 'site_control_unavailable' });
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.list' }, scope), { code: 'site_control_unavailable' });
 });
 
 test('tab host controls carry exact guest generation and do not route WebApp tabs as WorkPanel items', async (t) => {
@@ -208,16 +226,16 @@ test('tab host controls carry exact guest generation and do not route WebApp tab
     switchTab: async (...args) => { calls.push(['switch', ...args]); },
     closeTab: async (...args) => { calls.push(['close', ...args]); },
   });
-  await integration.closeTarget(scope.readSurface(), app.tabs[0], scope);
+  await integration.closeTarget(scope.readContainer(), app.tabs[0], scope);
   assert.deepEqual(calls[0], ['close', app.surfaceId, app.tabs[0].tabId, undefined,
     { registrationId: app.registrationId, webContentsId: app.tabs[0].webContentsId }]);
   const a = h.site('a'); const aScope = h.capture(a); aScope.activate(); t.after(() => aScope.release());
-  const beforePopup = aScope.readSurface();
+  const beforePopup = aScope.readContainer();
   const old = a.tabs[0]; h.addTab(a); h.foreground(b);
   await integration.activateTarget(beforePopup, old, aScope);
   assert.equal(calls.at(-1)[0], 'switch');
   const gateway = gatewayFor(h, { activateTarget: integration.activateTarget, closeTarget: integration.closeTarget });
-  await gateway.executeCommand({ method: 'Page.bringToFront', targetId: createEmbeddedCdpTargetId(aScope.readSurface(), old) }, aScope);
+  await gateway.executeCommand({ method: 'Page.bringToFront', surfaceId: createEmbeddedWebSurfaceId(aScope.readContainer(), old) }, aScope);
   assert.equal(calls.at(-1)[0], 'switch'); assert.equal(calls.at(-1)[3], undefined);
 });
 
@@ -230,469 +248,270 @@ test('scope expires when closed before Run acceptance and revoked grants never f
   assert.throws(() => grants.resolve(source), { code: 'site_control_unavailable' });
 });
 
-test('AWCP snapshot reads and validates the current Registry without invoking an Action', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-snapshot'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
-  const scripts = [];
-  guest.executeJavaScript = async (script) => {
-    scripts.push(script);
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return awcpSnapshot();
-    return assert.fail('snapshot request invoked an Action');
-  };
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  const result = await bridge.snapshot('snapshot-a', scope);
-  assert.deepEqual(result, {
-    ok: true,
-    method: 'AWCP.getSnapshot',
-    revision: 'revision-a',
-    actions: awcpSnapshot().actions,
-  });
-  assert.equal(scripts.some((script) => script.includes('globalThis.awcp.invoke')), false);
-});
-
-test('AWCP discovery is bound to a Run and exact guest, not matching page revisions', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-binding');
-  const scope = h.capture(a); scope.activate();
-  const otherRun = h.capture(a); otherRun.activate();
-  const bridge = new AwcpGuestBridge(h.registry);
-  t.after(() => { bridge.dispose(); scope.release(); otherRun.release(); });
-  const scripts = [];
-  const originalTab = a.tabs[0];
-  const originalGuest = h.contents.get(originalTab.webContentsId);
-  originalGuest.executeJavaScript = async (script) => {
-    scripts.push(script);
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return awcpSnapshot();
-    return { ok: true, requestId: 'original-invoke', action: 'orders.read', result: {} };
-  };
-  const payload = { revision: 'revision-a', action: 'orders.read', args: {} };
-  const rejects = (reason) => (error) => error.code === 'awcp_preflight_rejected' &&
-    error.details.reason === reason && error.details.stage === 'desktop_preflight' && error.details.executionStarted === false;
-  await assert.rejects(bridge.invoke('undiscovered', payload, scope), rejects('discovery_required'));
-  assert.equal(scripts.length, 0);
-  await bridge.snapshot('discover-original', scope);
-  await assert.rejects(bridge.invoke('other-run', payload, otherRun), rejects('discovery_required'));
-  assert.equal(scripts.length, 2);
-  const secondTab = h.addTab(a);
-  const secondGuest = h.contents.get(secondTab.webContentsId);
-  let secondCalls = 0;
-  secondGuest.executeJavaScript = async (script) => {
-    secondCalls++;
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return awcpSnapshot(); // deliberately identical revision and Action
-    return { ok: true, requestId: 'second-invoke', action: 'orders.read', result: {} };
-  };
-  await assert.rejects(bridge.invoke('wrong-page', payload, scope), rejects('page_changed'));
-  assert.equal(secondCalls, 0);
-  a.activeTabId = originalTab.tabId; h.register(a);
-  assert.equal((await bridge.invoke('original-invoke', payload, scope)).ok, true);
-  a.activeTabId = secondTab.tabId; h.register(a);
-  await bridge.snapshot('discover-second', scope);
-  assert.equal((await bridge.invoke('second-invoke', payload, scope)).ok, true);
-});
-
-test('AWCP refresh and main-frame in-page navigation invalidate discovery even with an unchanged revision', async (t) => {
-  for (const event of ['did-start-navigation', 'did-navigate-in-page']) {
-    const h = createSiteHarness(); const a = h.site('awcp-navigation'); const scope = h.capture(a); scope.activate();
-    const guest = h.contents.get(a.tabs[0].webContentsId);
-    let invokes = 0;
-    guest.executeJavaScript = async (script) => {
-      if (script.includes('protocolVersion')) return 1;
-      if (script.includes('.snapshot()')) return awcpSnapshot();
-      invokes++;
-      return { ok: true, requestId: 'after-rediscovery', action: 'orders.read', result: {} };
-    };
-    const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-    await bridge.snapshot('before-navigation', scope);
-    assert.ok(bridge.discoveries.contract(scope));
-    guest.emit(event, {}, 'https://awcp-navigation.example/new', ...(event === 'did-start-navigation' ? [false, true] : [true]));
-    assert.equal(bridge.discoveries.contract(scope), undefined);
-    const payload = { revision: 'revision-a', action: 'orders.read', args: {} };
-    await assert.rejects(bridge.invoke('stale-page', payload, scope),
-      (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'page_changed');
-    assert.equal(invokes, 0);
-    await bridge.snapshot('after-navigation', scope);
-    assert.equal((await bridge.invoke('after-rediscovery', payload, scope)).ok, true);
-    assert.equal(invokes, 1);
-  }
-});
-
-test('AWCP discovery listeners are bounded and released with the scope or bridge', async () => {
-  for (const cleanup of ['scope', 'bridge']) {
-    const h = createSiteHarness(); const a = h.site('awcp-cleanup'); const scope = h.capture(a); scope.activate();
-    const guest = h.contents.get(a.tabs[0].webContentsId);
-    guest.executeJavaScript = async (script) => script.includes('protocolVersion') ? 1 : awcpSnapshot();
-    const bridge = new AwcpGuestBridge(h.registry);
-    try {
-      for (let i = 0; i < 12; i++) await bridge.snapshot(`discovery-${i}`, scope);
-      assert.equal(guest.listenerCount('did-start-navigation'), 1);
-      assert.equal(guest.listenerCount('did-navigate-in-page'), 1);
-      if (cleanup === 'scope') scope.release(); else bridge.dispose();
-      assert.equal(guest.listenerCount('did-start-navigation'), 0);
-      assert.equal(guest.listenerCount('did-navigate-in-page'), 0);
-      assert.equal(guest.listenerCount('destroyed'), cleanup === 'scope' ? 0 : 1);
-      assert.equal(guest.listenerCount('render-process-gone'), cleanup === 'scope' ? 0 : 1);
-    } finally { bridge.dispose(); scope.release(); }
-  }
-});
-
-test('AWCP already-aborted calls never discover or invoke page Actions', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-aborted'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('.cancel(')) return true;
-    assert.fail('aborted call executed a page script');
-  };
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  const controller = new AbortController(); controller.abort();
-  await assert.rejects(bridge.snapshot('aborted-snapshot', scope, controller.signal), { code: 'awcp_cancelled' });
-  await assert.rejects(bridge.invoke('aborted-invoke', { revision: 'revision-a', action: 'orders.read', args: {} }, scope, controller.signal), { code: 'awcp_cancelled' });
-});
-
-test('AWCP captures one active guest and cancel never drifts to a newly active tab', async (t) => {
-  const h = createSiteHarness(); const a = h.site('a'); const scope = h.capture(a); scope.activate();
-  const firstGuest = h.contents.get(a.tabs[0].webContentsId);
-  const scripts = [];
-  let holdInvoke;
-  firstGuest.executeJavaScript = (script) => {
-    scripts.push(script);
-    if (script.includes('protocolVersion')) return Promise.resolve(1);
-    if (script.includes('.snapshot()')) return Promise.resolve(awcpSnapshot());
-    if (script.includes('.cancel(')) return Promise.resolve(true);
-    return new Promise((resolve) => { holdInvoke = resolve; });
-  };
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  await bridge.snapshot('discover-cancel', scope);
-  const pending = bridge.invoke('request-a', { revision: 'revision-a', action: 'orders.read', args: { value: "');throw new Error('unsafe')//" } }, scope);
-  await new Promise((resolve) => setImmediate(resolve));
-  const secondTab = h.addTab(a);
-  const secondGuest = h.contents.get(secondTab.webContentsId);
-  secondGuest.executeJavaScript = () => assert.fail('cancel drifted to the newly active tab');
-  assert.equal(bridge.cancel('request-a'), true);
-  await assert.rejects(pending, { code: 'awcp_cancelled' });
-  assert.ok(scripts.some((script) => script.includes('globalThis.awcp.invoke')));
-  assert.ok(scripts.some((script) => script.includes('globalThis.awcp?.cancel')));
-  holdInvoke?.({ ok: true, requestId: 'request-a', action: 'orders.read', result: null });
-  assert.equal(bridge.cancel('request-a'), false);
-});
-
-test('AWCP preserves business failures and rejects protocol, correlation, and payload violations', async (t) => {
-  const h = createSiteHarness(); const a = h.site('a'); const scope = h.capture(a); scope.activate();
+test('AWCP directory is lightweight and section reads are revision-bound', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-manual'); const scope = h.capture(a); scope.activate();
   const guest = h.contents.get(a.tabs[0].webContentsId);
   const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  let protocolVersion = 1;
-  let response = { ok: false, requestId: 'request-a', action: 'orders.read', error: { code: 'stale_snapshot', message: 'stale' } };
+  let invokeCalls = 0;
   guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return protocolVersion;
-    if (script.includes('.snapshot()')) return awcpSnapshot();
-    return response;
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script);
+    invokeCalls += 1;
+    return { ok: true, requestId: 'invoke-a', action: 'orders.read', result: {} };
   };
 
-  await bridge.snapshot('discover-business', scope);
-  assert.deepEqual(await bridge.invoke('request-a', { revision: 'revision-a', action: 'orders.read', args: {} }, scope), response);
-  response = { ok: true, requestId: 'wrong', action: 'orders.read', result: null };
-  await assert.rejects(bridge.invoke('request-b', { revision: 'revision-a', action: 'orders.read', args: {} }, scope), { code: 'awcp_response_mismatch' });
-  protocolVersion = 2;
-  await assert.rejects(bridge.invoke('request-c', { revision: 'revision-a', action: 'orders.read', args: {} }, scope), { code: 'awcp_protocol_unavailable' });
-  protocolVersion = 1;
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return protocolVersion;
-    if (script.includes('.snapshot()')) return awcpSnapshot();
-    throw Object.assign(new Error('untrusted guest failure'), { code: 'guest_internal_error' });
-  };
   await assert.rejects(
-    bridge.invoke('request-transport', { revision: 'revision-a', action: 'orders.read', args: {} }, scope),
-    { code: 'awcp_transport_failed', message: 'The authorized page AWCP invocation failed.' },
+    bridge.manual('section-first', { section: 'orders.read', revision: 'revision-a' }, scope),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'manual_required',
   );
-  await assert.rejects(bridge.invoke('request-d', { revision: 'revision-a', action: 'orders.read', args: {}, targetId: 'forged' }, scope), { code: 'awcp_invalid_request' });
-  await assert.rejects(bridge.invoke('request-e', { revision: 'revision-a', action: 'Orders.read', args: {} }, scope), { code: 'awcp_invalid_request' });
-  await assert.rejects(bridge.invoke('request-f', { revision: 'revision-a', action: 'orders.read', args: { value: Number.NaN } }, scope), { code: 'awcp_invalid_request' });
+  const index = await bridge.manual('index', {}, scope);
+  assert.deepEqual(index.sections, [{ section: 'orders.read', title: 'Use orders.read' }]);
+  assert.equal('inputSchema' in index, false);
+  await assert.rejects(bridge.manual('legacy-section', { section: 'orders.read' }, scope), { code: 'awcp_invalid_request' });
+  const section = await bridge.manual('section', { section: 'orders.read', revision: index.revision }, scope);
+  assert.equal(section.section, 'orders.read');
+  assert.equal(section.revision, index.revision);
+  assert.equal(invokeCalls, 0);
 });
 
-test('AWCP scope revocation cancels its captured guest and clears the invocation', async (t) => {
-  const h = createSiteHarness(); const a = h.site('a'); const scope = h.capture(a); scope.activate();
+test('AWCP manual binding is scoped to one Run and exact guest', async (t) => {
+  const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b');
+  const scopeA = h.capture(a); scopeA.activate(); const scopeB = h.capture(b); scopeB.activate();
+  const bridge = new AwcpGuestBridge(h.registry);
+  t.after(() => { bridge.dispose(); scopeA.release(); scopeB.release(); });
+  for (const site of [a, b]) {
+    h.contents.get(site.tabs[0].webContentsId).executeJavaScript = async (script) => {
+      if (script.includes('actualVersion')) return awcpProbe();
+      if (script.includes('.manual(')) return awcpManualValue(script);
+      return { ok: true, requestId: script.includes('invoke-a') ? 'invoke-a' : 'invoke-b', action: 'orders.read', result: site.surfaceId };
+    };
+  }
+  const index = await bridge.manual('index-a', {}, scopeA);
+  await bridge.manual('section-a', { section: 'orders.read', revision: index.revision }, scopeA);
+  await assert.rejects(
+    bridge.invoke('invoke-b', { revision: index.revision, action: 'orders.read', args: {} }, scopeB),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'manual_required',
+  );
+  assert.equal((await bridge.invoke('invoke-a', { revision: index.revision, action: 'orders.read', args: {} }, scopeA)).ok, true);
+});
+
+test('AWCP manual and invoke stay on the selected Surface across active tab changes', async (t) => {
+  const h = createSiteHarness(); const a = h.site('selected'); const b = h.site('outside');
+  const scope = h.capture(a); scope.activate();
+  const first = a.tabs[0];
+  const surfaceId = createEmbeddedWebSurfaceId(scope.readContainer(), first);
+  const guest = h.contents.get(first.webContentsId);
+  let invokes = 0;
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script);
+    invokes += 1;
+    return { ok: true, requestId: 'selected-invoke', action: 'orders.read', result: first.webContentsId };
+  };
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  const index = await bridge.manual('selected-index', {}, scope, undefined, surfaceId);
+  const second = h.addTab(a);
+  const secondId = createEmbeddedWebSurfaceId(scope.readContainer(), second);
+  h.contents.get(second.webContentsId).executeJavaScript = () => assert.fail('AWCP drifted to the active tab');
+  h.contents.get(b.tabs[0].webContentsId).executeJavaScript = () => assert.fail('AWCP escaped its Container');
+  const section = { section: 'orders.read', revision: index.revision };
+  const input = { revision: index.revision, action: 'orders.read', args: {} };
+  await assert.rejects(bridge.manual('other-section', section, scope, undefined, secondId),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'page_changed');
+  await bridge.manual('selected-section', section, scope, undefined, surfaceId);
+  await assert.rejects(bridge.invoke('other-invoke', input, scope, undefined, secondId),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'page_changed');
+  const outsideId = createEmbeddedWebSurfaceId(h.registry.listRegisteredSurfaces().find(s => s.surfaceId === b.surfaceId), b.tabs[0]);
+  for (const invalidId of [outsideId, 'page:missing', a.surfaceId]) {
+    await assert.rejects(bridge.manual('outside-index', {}, scope, undefined, invalidId), { code: 'awcp_target_unavailable' });
+    await assert.rejects(bridge.invoke('outside-invoke', input, scope, undefined, invalidId), { code: 'awcp_target_unavailable' });
+  }
+  assert.equal((await bridge.invoke('selected-invoke', input, scope, undefined, surfaceId)).result, first.webContentsId);
+  assert.equal(invokes, 1);
+});
+
+test('AWCP navigation invalidates bindings and released scopes remove listeners', async () => {
+  const h = createSiteHarness(); const a = h.site('awcp-navigation'); const guest = h.contents.get(a.tabs[0].webContentsId);
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script);
+    return { ok: true, requestId: 'invoke-after-navigation', action: 'orders.read', result: null };
+  };
+  const scope = h.capture(a); scope.activate();
+  const bridge = new AwcpGuestBridge(h.registry);
+  const baseline = guest.listenerCount('did-start-navigation');
+  const index = await bridge.manual('index-navigation', {}, scope);
+  await bridge.manual('section-navigation', { section: 'orders.read', revision: index.revision }, scope);
+  assert.equal(guest.listenerCount('did-start-navigation'), baseline + 1);
+  guest.emit('did-start-navigation', {}, 'https://example.test/next', false, true);
+  await assert.rejects(
+    bridge.invoke('invoke-after-navigation', { revision: index.revision, action: 'orders.read', args: {} }, scope),
+    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'page_changed',
+  );
+  scope.release();
+  assert.equal(guest.listenerCount('did-start-navigation'), baseline);
+  bridge.dispose();
+});
+
+test('AWCP cancellation remains pinned to the captured guest', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-cancel'); const scope = h.capture(a); scope.activate();
   const guest = h.contents.get(a.tabs[0].webContentsId);
   const scripts = [];
   guest.executeJavaScript = (script) => {
     scripts.push(script);
-    if (script.includes('protocolVersion')) return Promise.resolve(1);
-    if (script.includes('.snapshot()')) return Promise.resolve(awcpSnapshot());
+    if (script.includes('actualVersion')) return Promise.resolve(awcpProbe());
+    if (script.includes('.manual(')) return Promise.resolve(awcpManualValue(script));
     if (script.includes('.cancel(')) return Promise.resolve(true);
     return new Promise(() => undefined);
   };
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => bridge.dispose());
-  await bridge.snapshot('discover-revoke', scope);
-  const pending = bridge.invoke('request-a', { revision: 'revision-a', action: 'orders.read', args: {} }, scope);
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  const index = await bridge.manual('index-cancel', {}, scope);
+  await bridge.manual('section-cancel', { section: 'orders.read', revision: index.revision }, scope);
+  const pending = bridge.invoke('request-cancel', { revision: index.revision, action: 'orders.read', args: {} }, scope);
   await new Promise((resolve) => setImmediate(resolve));
-  scope.release();
-  await assert.rejects(pending, { code: 'site_control_unavailable', statusCode: 409 });
+  const secondTab = h.addTab(a);
+  h.contents.get(secondTab.webContentsId).executeJavaScript = () => assert.fail('cancel drifted to a new guest');
+  assert.equal(bridge.cancel('request-cancel'), true);
+  await assert.rejects(pending, { code: 'awcp_cancelled' });
   assert.ok(scripts.some((script) => script.includes('globalThis.awcp?.cancel')));
-  assert.equal(bridge.cancel('request-a'), false);
 });
 
-test('AWCP guest close and main-frame navigation terminate only the captured invocation', async (t) => {
-  for (const lifecycle of ['destroyed', 'did-start-navigation']) {
-    const h = createSiteHarness(); const a = h.site(lifecycle); const scope = h.capture(a); scope.activate();
+test('AWCP distinguishes missing, unsupported and malformed entry points', async (t) => {
+  const cases = [
+    [{ present: false }, 'awcp_protocol_unavailable'],
+    [awcpProbe(0), 'awcp_unsupported_protocol'],
+    [awcpProbe(1, { manualType: 'object' }), 'awcp_invalid_contract'],
+  ];
+  for (const [probe, code] of cases) {
+    const h = createSiteHarness(); const a = h.site(code); const scope = h.capture(a); scope.activate();
     const guest = h.contents.get(a.tabs[0].webContentsId);
-    guest.executeJavaScript = (script) => {
-      if (script.includes('protocolVersion')) return Promise.resolve(1);
-      if (script.includes('.snapshot()')) return Promise.resolve(awcpSnapshot());
-      if (script.includes('.cancel(')) return Promise.resolve(true);
-      return new Promise(() => undefined);
-    };
+    guest.executeJavaScript = async (script) => script.includes('actualVersion') ? probe : awcpIndex();
     const bridge = new AwcpGuestBridge(h.registry);
     t.after(() => { bridge.dispose(); scope.release(); });
-    const requestId = `request-${lifecycle}`;
-    await bridge.snapshot(`discover-${lifecycle}`, scope);
-    const pending = bridge.invoke(requestId, { revision: 'revision-a', action: 'orders.read', args: {} }, scope);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    if (lifecycle === 'destroyed') guest.emit('destroyed');
-    else guest.emit('did-start-navigation', {}, 'https://example.test/next', false, true);
-
-    await assert.rejects(pending, {
-      code: lifecycle === 'destroyed' ? 'site_control_unavailable' : 'awcp_navigation_interrupted',
+    await assert.rejects(bridge.manual(`manual-${code}`, {}, scope), (error) => {
+      assert.equal(error.code, code);
+      if (code === 'awcp_unsupported_protocol') {
+        assert.deepEqual(error.details, { supportedVersions: [1], actualVersion: 0 });
+      }
+      return true;
     });
-    assert.equal(bridge.cancel(requestId), false);
   }
 });
 
-test('AWCP validates inputSchema before invoking the page handler', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-input'); const scope = h.capture(a); scope.activate();
+test('AWCP forwards page-owned field errors without Desktop Schema prevalidation', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-fields'); const scope = h.capture(a); scope.activate();
   const guest = h.contents.get(a.tabs[0].webContentsId);
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
   let invokeCalls = 0;
   guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) {
-      return awcpSnapshot('orders.read', {
-        type: 'object',
-        required: ['ids'],
-        additionalProperties: false,
-        properties: { ids: { type: 'array', items: { type: 'string' } } },
-      }, undefined, { ids: ['one'] });
-    }
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script, {
+      inputSchema: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' } } },
+    });
     invokeCalls += 1;
-    return { ok: true, requestId: 'request-input', action: 'orders.read', result: null };
-  };
-
-  await bridge.snapshot('discover-input', scope);
-  await assert.rejects(bridge.invoke('request-input', {
-    revision: 'revision-a', action: 'orders.read', args: { ids: '' },
-  }, scope), (error) => {
-    assert.equal(error.code, 'awcp_preflight_rejected');
-    assert.equal(error.details.executionStarted, false);
-    assert.equal(error.details.reason, 'input_schema_mismatch');
-    assert.deepEqual(error.details.violations, [{
-      instancePath: '/ids', keyword: 'type', expectedType: 'array', actualType: 'string',
-    }]);
-    return true;
-  });
-  assert.equal(invokeCalls, 0);
-});
-
-test('AWCP enforces typed leaf and group anyOf condition schemas', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-condition'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  const leaf = {
-    type: 'object', required: ['field', 'oper', 'stringValue'], additionalProperties: false,
-    properties: { field: { type: 'string', enum: ['status'] }, oper: { type: 'string', enum: ['eq'] }, stringValue: { type: 'string' } },
-  };
-  const condition = {
-    type: 'object', anyOf: [
-      leaf,
-      {
-        type: 'object', required: ['join', 'nodes'], additionalProperties: false,
-        properties: {
-          join: { type: 'string', enum: ['and', 'or'] },
-          nodes: { type: 'array', minItems: 1, items: leaf },
-        },
-      },
-    ],
-  };
-  let invokeCalls = 0;
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return awcpSnapshot('orders.query', condition, undefined,
-      { field: 'status', oper: 'eq', stringValue: 'open' });
-    invokeCalls += 1;
-    const requestId = ['request-leaf', 'request-group'].find((candidate) => script.includes(candidate)) ?? '';
-    return { ok: true, requestId, action: 'orders.query', result: null };
-  };
-
-  await bridge.snapshot('discover-condition', scope);
-  for (const [requestId, args] of [
-    ['request-nodes-object', { join: 'and', nodes: { item: [] } }],
-    ['request-missing-join', { nodes: [{ field: 'status', oper: 'eq', stringValue: 'open' }] }],
-    ['request-missing-value', { field: 'status', oper: 'eq' }],
-  ]) {
-    await assert.rejects(bridge.invoke(requestId, { revision: 'revision-a', action: 'orders.query', args }, scope),
-      (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'input_schema_mismatch');
-  }
-  assert.equal(invokeCalls, 0);
-
-  const validLeaf = await bridge.invoke('request-leaf', {
-    revision: 'revision-a', action: 'orders.query', args: { field: 'status', oper: 'eq', stringValue: 'open' },
-  }, scope);
-  const validGroup = await bridge.invoke('request-group', {
-    revision: 'revision-a', action: 'orders.query',
-    args: { join: 'and', nodes: [{ field: 'status', oper: 'eq', stringValue: 'open' }] },
-  }, scope);
-  assert.equal(validLeaf.ok, true);
-  assert.equal(validGroup.ok, true);
-  assert.equal(invokeCalls, 2);
-});
-
-test('AWCP preflight returns stale_snapshot and action_not_found without invoking the page handler', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-preflight'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  let invokeCalls = 0;
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return awcpSnapshot();
-    invokeCalls += 1;
-    return null;
-  };
-
-  await bridge.snapshot('discover-preflight', scope);
-  await assert.rejects(bridge.invoke('request-stale', { revision: 'old', action: 'orders.read', args: {} }, scope),
-    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'stale_snapshot');
-  await assert.rejects(bridge.invoke('request-missing', { revision: 'revision-a', action: 'orders.missing', args: {} }, scope),
-    (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === 'action_not_found');
-  assert.equal(invokeCalls, 0);
-});
-
-test('AWCP enforces declared outputSchema and keeps an omitted or empty schema compatible', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-output'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  let snapshot = awcpSnapshot();
-  let result = { arbitrary: true };
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return snapshot;
-    const requestId = ['request-omitted', 'request-empty', 'request-valid', 'request-output-invalid']
-      .find((candidate) => script.includes(candidate)) ?? '';
-    return { ok: true, requestId, action: 'orders.read', result };
-  };
-
-  await bridge.snapshot('discover-output', scope);
-  const omitted = await bridge.invoke('request-omitted', { revision: 'revision-a', action: 'orders.read', args: {} }, scope);
-  assert.equal(omitted.ok, true);
-  snapshot = awcpSnapshot('orders.read', { type: 'object' }, {});
-  await bridge.snapshot('discover-empty-output', scope);
-  const empty = await bridge.invoke('request-empty', { revision: 'revision-a', action: 'orders.read', args: {} }, scope);
-  assert.equal(empty.ok, true);
-  snapshot = awcpSnapshot('orders.read', { type: 'object' }, {
-    type: 'object', required: ['items'], additionalProperties: false,
-    properties: { items: { type: 'array', items: { type: 'string' } } },
-  });
-  await bridge.snapshot('discover-typed-output', scope);
-  result = { items: ['one'] };
-  const valid = await bridge.invoke('request-valid', { revision: 'revision-a', action: 'orders.read', args: {} }, scope);
-  assert.equal(valid.ok, true);
-  result = { items: '' };
-  await assert.rejects(
-    bridge.invoke('request-output-invalid', { revision: 'revision-a', action: 'orders.read', args: {} }, scope),
-    (error) => error.code === 'awcp_invalid_response' &&
-      error.details?.reason === 'output_schema_mismatch' &&
-      error.details?.violations?.[0]?.instancePath === '/items',
-  );
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) return snapshot;
     return {
       ok: false,
-      requestId: 'request-raced-stale',
+      requestId: 'invalid-fields',
       action: 'orders.read',
-      error: { code: 'stale_snapshot', message: 'The Registry revision changed.' },
+      error: {
+        code: 'invalid_arguments',
+        message: 'Invalid arguments.',
+        details: { executionStarted: false, fieldErrors: [{ path: ['enabled'], messages: ['必须是 boolean 类型。'] }] },
+      },
     };
   };
-  const racedStale = await bridge.invoke(
-    'request-raced-stale',
-    { revision: 'revision-a', action: 'orders.read', args: {} },
-    scope,
-  );
-  assert.equal(racedStale.ok, false);
-  assert.equal(racedStale.error.code, 'stale_snapshot');
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  const index = await bridge.manual('index-fields', {}, scope);
+  await bridge.manual('section-fields', { section: 'orders.read', revision: index.revision }, scope);
+  const response = await bridge.invoke('invalid-fields', {
+    revision: index.revision, action: 'orders.read', args: { enabled: 'true' },
+  }, scope);
+  assert.equal(invokeCalls, 1);
+  assert.deepEqual(response.error.details.fieldErrors[0].path, ['enabled']);
+  assert.equal('stage' in response.error.details, false);
 });
 
-test('AWCP rejects invalid schemas before invoking the page handler', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-schema'); const scope = h.capture(a); scope.activate();
+test('AWCP host preflight rejects stale revisions, unknown actions and unread sections', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-preflight'); const scope = h.capture(a); scope.activate();
   const guest = h.contents.get(a.tabs[0].webContentsId);
-  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
   let invokeCalls = 0;
   guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) {
-      return awcpSnapshot('orders.read', { type: 'object' }, { $ref: 'https://untrusted.invalid/schema' });
-    }
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return awcpManualValue(script, { actions: ['orders.read', 'orders.write'] });
     invokeCalls += 1;
     return null;
   };
-
-  await assert.rejects(bridge.snapshot('discover-schema', scope), { code: 'awcp_invalid_contract' });
-  assert.equal(invokeCalls, 0);
-});
-
-test('AWCP rejects malformed snapshots without invoking the page handler', async (t) => {
-  const h = createSiteHarness(); const a = h.site('awcp-snapshot'); const scope = h.capture(a); scope.activate();
-  const guest = h.contents.get(a.tabs[0].webContentsId);
   const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
-  let invokeCalls = 0;
-  guest.executeJavaScript = async (script) => {
-    if (script.includes('protocolVersion')) return 1;
-    if (script.includes('.snapshot()')) {
-      return { revision: 'revision-a', actions: [{
-        action: 'orders.read', description: 'read', inputSchema: {}, outputSchema: null,
-      }] };
-    }
-    invokeCalls += 1;
-    return null;
-  };
-
-  await assert.rejects(
-    bridge.snapshot('request-snapshot', scope),
-    { code: 'awcp_invalid_contract' },
-  );
-  assert.equal(invokeCalls, 0);
-});
-
-test('AWCP never emits non-JSON success results', async (t) => {
-  const cycle = {};
-  cycle.self = cycle;
-  const sparse = [];
-  sparse.length = 2;
-  const invalidResults = [
-    undefined,
-    Number.NaN,
-    Number.POSITIVE_INFINITY,
-    1n,
-    () => undefined,
-    sparse,
-    Object.assign([], { extra: true }),
-    cycle,
-  ];
-  for (const [index, invalidResult] of invalidResults.entries()) {
-    const h = createSiteHarness(); const a = h.site(`awcp-json-${index}`); const scope = h.capture(a); scope.activate();
-    const guest = h.contents.get(a.tabs[0].webContentsId);
-    const bridge = new AwcpGuestBridge(h.registry);
-    t.after(() => { bridge.dispose(); scope.release(); });
-    const requestId = `request-json-${index}`;
-    guest.executeJavaScript = async (script) => {
-      if (script.includes('protocolVersion')) return 1;
-      if (script.includes('.snapshot()')) return awcpSnapshot();
-      return { ok: true, requestId, action: 'orders.read', result: invalidResult };
-    };
-    await bridge.snapshot(`discover-json-${index}`, scope);
+  const index = await bridge.manual('index-preflight', {}, scope);
+  await bridge.manual('section-preflight', { section: 'orders.read', revision: index.revision }, scope);
+  for (const [requestId, revision, action, reason] of [
+    ['stale', 'old', 'orders.read', 'stale_revision'],
+    ['missing', index.revision, 'orders.missing', 'action_not_found'],
+    ['unread', index.revision, 'orders.write', 'manual_required'],
+  ]) {
     await assert.rejects(
-      bridge.invoke(requestId, { revision: 'revision-a', action: 'orders.read', args: {} }, scope),
-      { code: 'awcp_invalid_response' },
+      bridge.invoke(requestId, { revision, action, args: {} }, scope),
+      (error) => error.code === 'awcp_preflight_rejected' && error.details.reason === reason,
     );
   }
+  assert.equal(invokeCalls, 0);
+});
+
+test('AWCP maps manual errors and invalidates a binding after a page stale response', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-stale'); const scope = h.capture(a); scope.activate();
+  const guest = h.contents.get(a.tabs[0].webContentsId);
+  let manualError = null;
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) {
+      if (!script.includes('section')) return awcpIndex(['orders.read']);
+      if (manualError) return { error: { code: manualError, section: 'orders.read', message: 'changed' } };
+      return awcpSection();
+    }
+    return { ok: false, requestId: 'page-stale', action: 'orders.read', error: { code: 'stale_revision', message: 'changed' } };
+  };
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  const index = await bridge.manual('index-stale', {}, scope);
+  manualError = 'section_not_found';
+  await assert.rejects(
+    bridge.manual('section-missing', { section: 'orders.read', revision: index.revision }, scope),
+    (error) => error.details.reason === 'action_not_found',
+  );
+  manualError = null;
+  await bridge.manual('section-stale', { section: 'orders.read', revision: index.revision }, scope);
+  const response = await bridge.invoke('page-stale', { revision: index.revision, action: 'orders.read', args: {} }, scope);
+  assert.equal(response.error.code, 'stale_revision');
+  await assert.rejects(
+    bridge.invoke('after-stale', { revision: index.revision, action: 'orders.read', args: {} }, scope),
+    (error) => error.details.reason === 'manual_required',
+  );
+});
+
+test('AWCP rejects old contract fields, mismatched correlation and non-JSON results', async (t) => {
+  const h = createSiteHarness(); const a = h.site('awcp-contract'); const scope = h.capture(a); scope.activate();
+  const guest = h.contents.get(a.tabs[0].webContentsId);
+  let directory = { ...awcpIndex(), sections: [{ section: 'orders.read', title: 'Use orders.read', action: 'orders.read' }] };
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    if (script.includes('.manual(')) return script.includes('section') ? awcpSection() : directory;
+    return { ok: true, requestId: 'wrong', action: 'orders.read', result: null };
+  };
+  const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
+  await assert.rejects(bridge.manual('legacy-directory', {}, scope), { code: 'awcp_invalid_contract' });
+  directory = awcpIndex();
+  const index = await bridge.manual('index-contract', {}, scope);
+  await bridge.manual('section-contract', { section: 'orders.read', revision: index.revision }, scope);
+  await assert.rejects(
+    bridge.invoke('correlated', { revision: index.revision, action: 'orders.read', args: {} }, scope),
+    { code: 'awcp_response_mismatch' },
+  );
+  guest.executeJavaScript = async (script) => {
+    if (script.includes('actualVersion')) return awcpProbe();
+    return { ok: true, requestId: 'invalid-json', action: 'orders.read', result: undefined };
+  };
+  await assert.rejects(
+    bridge.invoke('invalid-json', { revision: index.revision, action: 'orders.read', args: {} }, scope),
+    { code: 'awcp_invalid_response' },
+  );
 });
 
 test('invalid mouse parameters never acquire page focus or send input', async (t) => {
@@ -701,10 +520,10 @@ test('invalid mouse parameters never acquire page focus or send input', async (t
   const scope = h.capture(site); scope.activate(); t.after(() => scope.release());
   const phases = [];
   const gateway = gatewayFor(h, { controlSiteFocus: async (_surface, _tab, _scope, phase) => phases.push(phase) });
-  const { targetId } = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const { surfaceId } = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
   const commandsBefore = h.commands.length;
   await assert.rejects(gateway.executeCommand({
-    method: 'Input.dispatchMouseEvent', targetId,
+    method: 'Input.dispatchMouseEvent', surfaceId,
     params: { type: 'mousePressed', x: '646', y: '344', button: 'left', clickCount: '1' }
   }, scope), (error) => error.code === 'invalid_args' && error.details.issues.length === 3);
   assert.deepEqual(phases, []);
@@ -716,14 +535,14 @@ test('Input.click runs one authorized focus transaction and never forwards the v
   const scope = h.capture(a); scope.activate(); t.after(() => scope.release());
   const phases = [];
   const gateway = gatewayFor(h, { controlSiteFocus: async (_surface, _tab, _scope, phase) => { phases.push(phase); } });
-  const { targetId } = await gateway.executeCommand({ method: 'Target.getCurrentTarget' }, scope);
+  const { surfaceId } = await gateway.executeCommand({ method: 'Surface.getCurrent' }, scope);
   const guest = h.contents.get(a.tabs[0].webContentsId);
   const original = guest.debugger.sendCommand;
   guest.debugger.sendCommand = async (method, params) => {
     await original(method, params);
     return method === 'Runtime.evaluate' ? { result: { value: { x: 10.5, y: 20.25, matched: true } } } : {};
   };
-  const { result } = await gateway.executeCommand({ method: 'Input.click', targetId, params: { x: 10.5, y: 20.25 } }, scope);
+  const { result } = await gateway.executeCommand({ method: 'Input.click', surfaceId, params: { x: 10.5, y: 20.25 } }, scope);
   assert.equal(result.status, 'clicked');
   assert.deepEqual(phases, ['capture', 'input', 'restore']);
   assert.equal(h.commands.some(c => c.method === 'Input.click'), false);
@@ -731,6 +550,6 @@ test('Input.click runs one authorized focus transaction and never forwards the v
   assert.equal(guest.debugger.isAttached(), false);
   const controller = new AbortController(); controller.abort();
   const before = h.commands.length;
-  await assert.rejects(gateway.executeCommand({ method: 'Input.click', targetId, params: { selector: '#b' } }, scope, controller.signal), /canceled/);
+  await assert.rejects(gateway.executeCommand({ method: 'Input.click', surfaceId, params: { selector: '#b' } }, scope, controller.signal), /canceled/);
   assert.equal(h.commands.length, before);
 });

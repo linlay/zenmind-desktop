@@ -1,3 +1,11 @@
+export const CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL = "chatWorkPanel.webDialog";
+export const CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED = "chatWorkPanel.webDialogRestoreRequested";
+export const CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED = "chatWorkPanel.webDialogCloseRequested";
+export type WorkPanelWebDialogRequest =
+  | { action: "prepare"; sourceGuestId: number }
+  | { action: "open" | "focus" | "reload" | "close" | "restore"; transferId: string };
+export type WorkPanelWebDialogResult = { ok: boolean; transferId?: string; surfaceId?: string; ownerChatId?: string; url?: string };
+
 export const CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL =
   "chatWorkPanel.tabContextMenu.popup";
 export const CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL =
@@ -8,6 +16,7 @@ export const CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL =
 export type ChatWorkPanelTabContextMenuActionId =
   | "toggle-review"
   | "reload"
+  | "open-web-dialog"
   | "copy-url"
   | "copy-title"
   | "copy-path"
