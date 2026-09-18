@@ -185,6 +185,7 @@
 
 ### 对话分享入口与弹窗
 
+- macOS 与 Windows 分别连续打开、关闭 WorkPanel，确认 Main Chat 右上角分享与 WorkPanel 开关按钮的纵向位置保持不变。WorkPanel 开关保持窗口右侧原有定位；分享按钮在关闭时位于开关左侧，打开时跟随 Main Chat 右边界，拖动面板分隔线时不能进入 WorkPanel。Main Chat 被完全收起时隐藏分享按钮，恢复后重新显示；同时覆盖侧栏展开/收起、窗口缩放与 WorkPanel 全屏。
 - 从左下角工具菜单进入“分享管理”，确认切换为与“市场”一致的能力二级侧栏；“分享管理”位于“市场”下方、“帮助”上方并保持选中态。没有图片背景时浅深色均使用实色内容底板；图片皮肤和自定义照片下与市场、归档一样能隐约看见同一张壁纸，文字、按钮及详情保持清晰。点击“返回应用”可回到进入前的主工作区。
 - 每个分享分组头部右侧显示“打开对话”，点击后通过标准 Desktop 对话路由进入对应详情并正确聚焦；原对话已删除、历史记录缺失或缺少 Agent 身份时按钮显示“原对话不可用”且不可点击，分享链接仍可复制或撤销。
 - macOS、Windows × 浅色、深色分别关闭 Tunnel：所有已有对话的右键菜单都不出现“分享对话”；详情页右上角分享图标仍位于 WorkPanel 按钮左侧，呈禁用灰色与 `not-allowed` 光标，鼠标悬浮或键盘聚焦包装层时提示前往“设置 > 隧道”开启。
@@ -623,6 +624,7 @@
 
 ## Website Copilot 默认选择与会话恢复
 
+- macOS 与 Windows 分别打开 Website A 的 Copilot 并提问，切到 B 打开 Copilot 再提问，然后返回 A 继续提问；覆盖两站相同及不同 Agent、B 无历史及已有历史会话。确认同一个 Dock WebContents 保持挂载，登记的父网站和上下文随切换更新，无 `surface_identity_conflict`；A 的后台 Run 仍只能控制 A，B 的新 Run 只能控制 B。
 - macOS 与 Windows 分别冷打开未设置专属 Copilot 的 Website，确认自动选中全局默认 Copilot；给另一个 Website 设置专属智能体后，确认该站优先使用专属设置。
 - 延迟智能体详情加载，确认返回后仍自动选中指定智能体，不停留在未选择状态。
 - 在 Website A 切换智能体并打开或创建聊天，切到 Website B、普通 Chat 后再返回 A，确认恢复 A 的智能体与 chatId，B 保持独立；旧页面的迟到 URL 不能覆盖新页面会话。
@@ -718,3 +720,24 @@
 - 检查其他 renderer 或子 frame 的 artifacts.act 被拒绝，非法相对路径、外部 URL、跨 Chat 资源引用不能下载。
 
 - 产物查看只依赖当前产物快照：历史事件缺少字段或包含未知事件时仍可打开。旧进程没有 artifacts.act 时提示重启；准备中有状态提示，WorkPanel 拒绝打开时显示失败，不能静默无响应。
+
+## Container / Surface 网页控制（macOS / Windows 均执行）
+
+- 普通 Chat 说“打开 https://example.com”时进入 WorkPanel；结果包含 surfaceId，随后可截图、读取 DOM、输入、导航及关闭。
+- 同一 Website 打开两个标签：Surface.list 返回不同 surfaceId、相同 containerId。选择第一个 Surface 后手动切换活动标签，后续操作仍作用于第一个。
+- Website Copilot Run 切到后台继续读取、点击和创建 tab；新 tab 可发现。Page.bringToFront 与关闭操作遵循所属容器生命周期，不影响其他容器。
+- Chat A 打开的 WorkPanel 网页在切换到 Chat B 后仍可由 A 的有效 Run 操作；B 无法发现或通过已知 ID 操作 A 的网页。终态 Run 不再获得网页操作授权。
+- 刷新和导航保留 Surface 身份；关闭重开后旧 ID 失败；排队期间替换 guest 的命令失败且不执行在新 guest 上。
+- WorkPanel 本地文件/原生文档不进入普通网页自动化列表，WebApp bridge 和 AWCP 不因 Surface 统一而增加权限。
+- AWCP 指定同一授权 Surface 完成手册读取和调用；指定其他应用或发现后切换到另一 Surface 调用须失败。
+- WorkPanel 网络页后台截图保留有效尺寸，输入后前台焦点恢复；macOS/Windows 坐标均为 CSS 像素。
+## WorkPanel 网站独立窗口
+
+- macOS 与 Windows 分别右键普通网站 tab，选择“在独立窗口打开”：原 tab 从面板移除，原 guest 销毁后才创建独立 guest，不能存在两个网站实例；打开当前实际地址，登录 Cookie 可用。
+- 查看 WorkPanel 状态与 CDP：原 item、surfaceId、ownerChatId、parentSurfaceId 保留，guest/registration generation 更新；只能由原 Chat 的 WorkPanel Run 授权操作。切换 Chat 或卸载 Main Chat 后独立窗口仍保持原归属，其他 Chat 不可访问。
+- 重复打开同一 URL、activateTab 与 refreshWeb 操作既有独立窗口，不重新在面板创建 guest。原生窗口不设置父窗口、modal 或 alwaysOnTop，点击主窗口或其他应用时按正常系统层级切换。
+- 关闭窗口（关闭按钮、Cmd+W / Ctrl+W）经过原有草稿保护，取消关闭保留窗口；确认后回收 item/guest/登记。关闭所属 workspace、归档/删除 Chat、主窗口关闭或 renderer 失效均回收窗口。
+- 切换后批注草稿保留并标记重载失效，未提交 DOM 状态不迁移。加载失败先销毁目标窗口再恢复面板 item；非 Web tab 与仅复制地址菜单不显示该入口。
+
+- 独立窗口顶部点击“还原到 WorkPanel”，确认回到所属 Chat 并选中原 tab；从其他 Chat、其他主页面、面板隐藏及主窗口最小化状态分别验证。还原使用独立窗口当前地址（含 query/hash），不回到初始地址；原 item、surfaceId 与草稿保留，没有第二个并存 guest。再次弹出与还原可连续使用；仅点击窗口关闭按钮仍走关闭逻辑。
+- 在独立网页内部导航到同样的 restore URL，确认不会触发宿主还原动作；只有独立窗口的宿主工具栏可请求还原。

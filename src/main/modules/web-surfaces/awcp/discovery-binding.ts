@@ -15,7 +15,7 @@ export class AwcpDiscoveryBindings<T> {
   private readonly bindings = new Map<SiteControlScope, Binding<T>>();
 
   remember(scope: SiteControlScope, guest: WebContents, revision: string, contract: T) {
-    scope.readSurface();
+    scope.readContainer();
     this.clear(scope);
     const binding: Binding<T> = { guest, revision, contract, changed: false, dispose: () => undefined };
     const changed = () => { binding.changed = true; binding.contract = undefined; };

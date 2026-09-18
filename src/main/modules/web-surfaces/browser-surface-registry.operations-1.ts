@@ -342,7 +342,7 @@ export function createBrowserSurfaceRegistry_validateRegistrationIdentity_18(con
             const canonicalParentSurfaceId = context.resolveCanonicalSurfaceId(input.parentSurfaceId);
             if (canonicalParentSurfaceId !== input.parentSurfaceId ||
                 canonicalParentSurfaceId === input.surfaceId ||
-                !context.resolveRegisteredSurface(canonicalParentSurfaceId))
+                (!context.resolveRegisteredSurface(canonicalParentSurfaceId) && context.workPanelDialogRegistrations.get(input.surfaceId) !== input.registrationId))
                 return { ok: false, check: "invalid_parent_surface" };
             const visited = new Set([input.surfaceId]);
             let cursor = context.registeredSurfaces.get(canonicalParentSurfaceId);

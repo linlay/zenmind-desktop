@@ -1,9 +1,9 @@
-import type { SiteControlScope } from "./site-scope";
+import { acquireWorkPanelControlScope, type SiteControlScope } from "./site-scope";
 import type { WebContents } from "electron";
 import type { DesktopPageContextSnapshot, ServiceState } from "../../../../shared/contracts";
 import {
   EmbeddedCdpGateway,
-  type EmbeddedCdpSurface,
+  type EmbeddedCdpContainer,
   type EmbeddedCdpSurfaceTab
 } from "./gateway";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
@@ -17,6 +17,7 @@ type CdpIntegrationOptions = {
   listServices: ServiceLister;
   isLoopbackUrl(value: string): unknown;
   switchTab(surfaceId: string, tabId: string, ownerChatId?: string, siteTarget?: { registrationId: string; webContentsId: number }): Promise<unknown>;
+  openPage?(containerId: string, tabId: string, url: string, ownerChatId?: string, siteTarget?: { registrationId: string; webContentsId: number }): Promise<unknown>;
   closeTab(surfaceId: string, tabId: string, ownerChatId?: string, siteTarget?: { registrationId: string; webContentsId: number }): Promise<unknown>;
   controlSiteFocus?(surfaceId: string, tabId: string, siteTarget: { registrationId: string; webContentsId: number }, phase: "capture" | "restore" | "input"): Promise<unknown>;
   version: string;
@@ -31,7 +32,7 @@ type ServiceSurfaceInput = {
   isLoopbackUrl(value: string): unknown;
 };
 
-export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): EmbeddedCdpSurface | null {
+export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): EmbeddedCdpContainer | null {
   const webUrl = input.service.status === "running" ? String(input.service.healthMeta?.webUrl ?? "").trim() : "";
   if (input.service.frontendMode === "none" || !webUrl || !input.isLoopbackUrl(webUrl)) {
     return null;
@@ -83,35 +84,35 @@ export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): Emb
 export function createCdpIntegration(options: CdpIntegrationOptions) {
   let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
 
-  async function listSurfaces(): Promise<EmbeddedCdpSurface[]> {
+  async function listSurfaces(): Promise<EmbeddedCdpContainer[]> {
     const registeredSurfaces = options.browserSurfaces.listRegisteredSurfaces().map((surface) => ({
       ...surface,
       kind: "webview" as const,
       copilotAgentKey: surface.copilotAgentKey || ""
     }));
     const registeredSurfaceIds = new Set(registeredSurfaces.map((surface) => surface.surfaceId));
-    const webviewSurfaces = options.browserSurfaces.listBrowserSurfaces()
+    const webviewSurfaces = options.browserSurfaces.listBrowserContainers()
       .filter((surface) => !registeredSurfaceIds.has(surface.surfaceId))
       .map((surface) => ({
         ...surface,
         kind: "webview" as const,
         copilotAgentKey: surface.copilotAgentKey || ""
       }));
-    const chatWorkPanelSurfaces = options.browserSurfaces.listChatWorkPanelSurfaces()
+    const chatWorkPanelSurfaces = options.browserSurfaces.listWorkPanelContainers()
       .filter((surface) => !registeredSurfaceIds.has(surface.surfaceId))
       .map((surface) => ({
       ...surface,
       kind: "webview" as const
       }));
 
-    let serviceSurfaces: EmbeddedCdpSurface[] = [];
+    let serviceSurfaces: EmbeddedCdpContainer[] = [];
     try {
       const services = await options.listServices();
       const currentPageSnapshot = options.getCurrentPageSnapshot();
       const currentSurfaceId = currentPageSnapshot?.surfaceId ||
         currentPageSnapshot?.pageContext?.browserTarget?.surfaceId ||
         "";
-      const surfaces = await Promise.all(services.map(async (service): Promise<EmbeddedCdpSurface | null> => {
+      const surfaces = await Promise.all(services.map(async (service): Promise<EmbeddedCdpContainer | null> => {
         const webUrl = service.status === "running" ? service.healthMeta.webUrl.trim() : "";
         const isCurrentService = currentPageSnapshot?.pageKind === "webview" &&
           currentSurfaceId === createServiceSurfaceIdentity(service.id).surfaceId;
@@ -137,7 +138,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
         }
         return surface;
       }));
-      serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpSurface => (
+      serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpContainer => (
         surface !== null && !registeredSurfaceIds.has(surface.surfaceId)
       ));
     } catch (error) {
@@ -147,32 +148,32 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     return [...registeredSurfaces, ...webviewSurfaces, ...serviceSurfaces, ...chatWorkPanelSurfaces];
   }
 
-  function resolveWebContents(_surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab): WebContents | null {
+  function resolveWebContents(_surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab): WebContents | null {
     return options.browserSurfaces.findWebContentsById(tab.webContentsId);
   }
 
-  async function controlSiteFocus(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") {
+  async function controlSiteFocus(surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") {
     if (phase !== "restore") scope.validateTab(tab);
     return options.controlSiteFocus?.(surface.id, tab.tabId,
       { registrationId: scope.registrationId, webContentsId: tab.webContentsId }, phase);
   }
 
-  async function activateTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) {
+  async function activateTarget(surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) {
     if (scope) {
       scope.validateTab(tab);
-      surface = scope.readSurface();
+      surface = scope.readContainer();
     }
-    if (surface.activeTabId === tab.tabId || (surface.tabs?.length ?? 0) <= 1) {
+    if (!surface.ownerChatId && surface.active && (surface.activeTabId === tab.tabId || (surface.tabs?.length ?? 0) <= 1)) {
       return;
     }
-    await options.switchTab(surface.id, tab.tabId, scope ? undefined : surface.ownerChatId,
-      scope ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
+    await options.switchTab(surface.id, tab.tabId, surface.surfaceKind === "chat-work-panel" ? surface.ownerChatId : undefined,
+      scope && surface.surfaceKind !== "chat-work-panel" ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
   }
 
-  async function closeTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) {
+  async function closeTarget(surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) {
     scope?.validateTab(tab);
-    return options.closeTab(surface.id, tab.tabId, scope ? undefined : surface.ownerChatId,
-      scope ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
+    return options.closeTab(surface.id, tab.tabId, surface.surfaceKind === "chat-work-panel" ? surface.ownerChatId : undefined,
+      scope && surface.surfaceKind !== "chat-work-panel" ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
   }
 
   function start() {
@@ -181,9 +182,17 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     }
     embeddedCdpGateway = new EmbeddedCdpGateway({
       getSurfaces: listSurfaces,
+      acquireWorkPanelScope: (containerId, chatId) => acquireWorkPanelControlScope(options.browserSurfaces, containerId, chatId),
       resolveWebContents,
       activateTarget,
       closeTarget,
+      openPage: async (container, tab, url, scope) => {
+        scope?.validateTab(tab);
+        if (container.surfaceKind === "webapp") throw new Error("WebApp containers support one page only.");
+        if (!options.openPage) throw new Error("Opening a page is unavailable.");
+        return options.openPage(container.id, tab.tabId, url, container.surfaceKind === "chat-work-panel" ? container.ownerChatId : undefined,
+          scope && container.surfaceKind !== "chat-work-panel" ? { registrationId: scope.registrationId, webContentsId: tab.webContentsId } : undefined);
+      },
       controlSiteFocus,
       version: options.version
     });

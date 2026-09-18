@@ -7,7 +7,6 @@ type DesktopCdpDebugger = WebContents["debugger"];
 type DesktopCdpLogger = Pick<Console, "debug" | "warn">;
 
 export type DesktopCdpCommandDebugContext = {
-  targetId?: string;
   surfaceId?: string;
   webContentsId?: number;
   url?: string;
@@ -18,7 +17,6 @@ export type DesktopCdpCommandDebugContext = {
 
 export type DesktopCdpCommandDebugDetails = {
   method: string;
-  targetId?: string;
   surfaceId?: string;
   webContentsId?: number;
   url?: string;
@@ -76,7 +74,6 @@ function messageFromError(error: unknown) {
 function compactDetails(details: DesktopCdpCommandDebugDetails) {
   return {
     method: details.method,
-    ...(details.targetId ? { targetId: details.targetId } : {}),
     ...(details.surfaceId ? { surfaceId: details.surfaceId } : {}),
     ...(typeof details.webContentsId === "number" ? { webContentsId: details.webContentsId } : {}),
     ...(details.url ? { url: details.url } : {}),
@@ -106,7 +103,6 @@ export async function sendDesktopCdpCommand(
   const logger = context.logger ?? console;
   const baseDetails: DesktopCdpCommandDebugDetails = {
     method,
-    ...(context.targetId ? { targetId: context.targetId } : {}),
     ...(context.surfaceId ? { surfaceId: context.surfaceId } : {}),
     ...(typeof context.webContentsId === "number" ? { webContentsId: context.webContentsId } : {}),
     ...(context.url ? { url: sanitizeDebugUrl(context.url) } : {}),

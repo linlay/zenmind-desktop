@@ -47,11 +47,11 @@ import {
 } from "../../copilot/page-context/webActions";
 
 export type ExternalWebviewControllerState = {
-  surfaceId: string;
+  containerId: string;
   activeTabId: string | null;
   tabs: Array<{
     tabId: string;
-    targetId: string;
+    surfaceId: string;
     title: string;
     url: string;
     isLoading: boolean;
@@ -104,6 +104,7 @@ type ExternalWebviewPageProps = {
   onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
   cdpActive?: boolean;
   publishPageContext?: boolean;
+  initialTabId?: string;
   onControllerReady?: (controller: ExternalWebviewController | null) => void;
 };
 
@@ -500,7 +501,8 @@ export function ExternalWebviewPage({
   onIpcMessage,
   cdpActive,
   publishPageContext = true,
-  onControllerReady
+  onControllerReady,
+  initialTabId
 }: ExternalWebviewPageProps) {
   const { t } = useI18n();
   const location = useLocation();
@@ -579,6 +581,7 @@ export function ExternalWebviewPage({
 
   const createInitialBrowserState = () => {
     const initialTab = createTab(url, title);
+    if (initialTabId) initialTab.id = initialTabId;
     initialFaviconTabIdRef.current = initialTab.id;
     return {
       tabs: [initialTab],
@@ -1554,7 +1557,8 @@ export function ExternalWebviewPage({
           }
           const preferredTitle = typeof args.title === "string" ? args.title : "";
           const nextTab = openTab(nextUrl, preferredTitle);
-          return { ok: true, result: { ...getDesktopWebActionState(), openedTabId: nextTab.id } };
+          const state = await readControllerState(nextTab.id);
+          return { ok: true, result: { containerId: state.containerId, surfaceId: state.tabs.find((page) => page.tabId === nextTab.id)?.surfaceId } };
         }
         case "desktop.web.closeTab": {
           const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
@@ -1593,7 +1597,7 @@ export function ExternalWebviewPage({
   }, [active, activeTab?.id, enableDesktopWebActions, onCloseSurface, surfaceId, surfaceLabel, t, title, url]);
 
   useEffect(() => {
-    if (registeredSurfaceKind !== "website" && registeredSurfaceKind !== "webapp") return;
+    if (registeredSurfaceKind !== "website" && registeredSurfaceKind !== "webapp" && registeredSurfaceKind !== "chat-work-panel") return;
     return registerDesktopActionProviderForScope("site-cdp", async (request) => {
       const target = request.siteCdpTarget;
       if (!target || target.surfaceId !== surfaceId || target.registrationId !== surfaceRegistrationId) return null;
@@ -1604,6 +1608,12 @@ export function ExternalWebviewPage({
         webviewRefs.current.get(tab.id)?.focus();
         webviewRefs.current.get(tab.id)?.shadowRoot?.querySelector("iframe")?.focus({ preventScroll: true });
         return { ok: true, result: { webContentsId: tab.guestId } };
+      } else if (request.action === "desktop.web.openTab") {
+        const url = typeof request.args?.url === "string" ? normalizeEditableUrl(request.args.url) : "";
+        if (!url || registeredSurfaceKind === "webapp") return embeddedError("invalid_args", "This container cannot open the requested page.");
+        const next = openTab(url, "");
+        const state = await readControllerState(next.id);
+        return { ok: true, result: { containerId: state.containerId, surfaceId: state.tabs.find((page) => page.tabId === next.id)?.surfaceId } };
       } else if (request.action === "desktop.web.switchTab") {
         setActiveTab(tab.id);
         await syncEmbeddedCdpSurface(browserStateRef.current);
@@ -1630,11 +1640,11 @@ export function ExternalWebviewPage({
       const targets = response.targets ?? [];
       if (response.ok && (!waitForTabId || targets.some((target) => target.tabId === waitForTabId))) {
         return {
-          surfaceId,
+          containerId: surfaceId,
           activeTabId: response.activeTabId ?? null,
           tabs: targets.map((target) => ({
             tabId: target.tabId,
-            targetId: target.targetId,
+            surfaceId: target.surfaceId,
             title: target.title,
             url: target.currentUrl,
             isLoading: target.isLoading

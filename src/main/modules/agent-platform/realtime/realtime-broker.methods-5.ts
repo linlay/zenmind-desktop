@@ -116,8 +116,8 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
         const isAwcpInvoke = type === DESKTOP_AWCP_INVOKE_TYPE;
         const isAwcp = isAwcpSnapshot || isAwcpInvoke;
         const isDesktopAction = !isCdp && !isAwcp;
-        if (isAwcpSnapshot && Object.keys(frame.payload).length > 0) {
-            throw brokerError("protocol_error", "AWCP snapshot payload must be empty");
+        if (isAwcpSnapshot && Object.keys(frame.payload).some((key) => key !== "surfaceId")) {
+            throw brokerError("protocol_error", "AWCP snapshot payload only accepts an optional surfaceId");
         }
         let actionRequest: Record<string, unknown> | null = null;
         let actionSource: Record<string, unknown> = {};
@@ -131,6 +131,9 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
                 throw brokerError("protocol_error", "Desktop Action source must include runId and chatId and at most one Run owner");
             }
             await self.awaitRunActionReadiness(type, source, controller.signal);
+            if (type.startsWith("desktop.web.") && !self.siteControlGrants.resolve(source)) {
+                await self.awaitRunActionReadiness("desktop.workpanel.getState", source, controller.signal);
+            }
             if (controller.signal.aborted)
                 return;
             actionSource = source;
@@ -154,15 +157,19 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
             if (!scope) {
                 throw brokerError("site_control_unavailable", "The source Run has no active page control capability");
             }
+            const { surfaceId, ...awcpPayload } = frame.payload;
+            if (surfaceId !== undefined && (typeof surfaceId !== "string" || !surfaceId.trim())) throw brokerError("protocol_error", "Invalid AWCP surfaceId");
             result = isAwcpSnapshot
-                ? await provider.awcpSnapshot(id, scope, controller.signal)
-                : await provider.awcpInvoke(id, frame.payload, scope, controller.signal);
+                ? await provider.awcpSnapshot(id, scope, controller.signal, surfaceId as string | undefined)
+                : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);
         }
         else if (isDesktopAction) {
-            result = await provider.action(actionRequest as Record<string, unknown>);
+            result = await provider.action(actionRequest as Record<string, unknown>, type.startsWith("desktop.web.") ? self.siteControlGrants.resolve(actionSource) : undefined);
         }
         else {
-            result = await provider.cdp(frame.payload, self.siteControlGrants.resolve(cdpSource), controller.signal);
+            const scope = self.siteControlGrants.resolve(cdpSource);
+            if (!scope) await self.awaitRunActionReadiness("desktop.workpanel.getState", cdpSource, controller.signal);
+            result = await provider.cdp(frame.payload, scope, controller.signal);
         }
         if (controller.signal.aborted)
             return;

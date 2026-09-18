@@ -216,6 +216,12 @@ export function projectRendererActionResult(action: string, value: unknown): {
     if (!workspace) {
       return { handled: true, missingFields: ["state"] };
     }
+    if (action === "desktop.workpanel.openWeb") {
+      if (typeof source.surfaceId !== "string" || typeof source.containerId !== "string") {
+        return { handled: true, missingFields: ["surfaceId", "containerId"] };
+      }
+      return { handled: true, result: { workspace, surfaceId: source.surfaceId, containerId: source.containerId, status: source.status } };
+    }
     return { handled: true, result: { workspace } satisfies DesktopWorkPanelWorkspaceResult };
   }
 

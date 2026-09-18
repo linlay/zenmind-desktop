@@ -32,13 +32,17 @@ import {
   type WorkPanelReviewSession,
 } from "./work-panel-review";
 
+export type WorkPanelDialogPresentation = { ownerChatId: string; itemId: string; surfaceId: string; transferId: string };
 export type WorkPanelState = {
+  dialogItems?: WorkPanelDialogPresentation[];
+  webItemUrls?: Record<string, string>;
   workspaces: WorkPanelWorkspace[];
   visibleOwnerChatIds: string[];
   review: WorkPanelReviewRuntimeState;
 };
 
 export type WorkPanelCommand =
+  | { type: "setDialogPresentation"; ownerChatId: string; itemId: string; dialog: WorkPanelDialogPresentation | null; restoreUrl?: string }
   | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
   | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
@@ -641,9 +645,9 @@ function replaceReviewSession(
   };
 }
 
-export function reduceWorkPanelCommand(
+function reduceWorkPanelCommandCore(
   state: WorkPanelState,
-  command: WorkPanelCommand,
+  command: Exclude<WorkPanelCommand, { type: "setDialogPresentation" }>,
 ): WorkPanelCommandResult {
   const ownerChatId = cleanIdentity(command.ownerChatId);
   if (!ownerChatId) return fail(state, "invalid_request", "trusted owner chat is required");
@@ -1101,4 +1105,43 @@ export function reduceWorkPanelCommand(
       review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),
     },
   };
+}
+
+// Presentation is host-only runtime state; the public workspace/item projection
+// and its stable Chat identity do not change when a page moves to a dialog.
+export function reduceWorkPanelCommand(state: WorkPanelState, command: WorkPanelCommand): WorkPanelCommandResult {
+  if (command.type === "setDialogPresentation") {
+    const workspace = state.workspaces.find((entry) => entry.ownerChatId === command.ownerChatId);
+    const item = workspace?.items.find((entry) => entry.itemId === command.itemId);
+    if (!workspace || item?.descriptor.kind !== "web") return fail(state, "target_unavailable", "Web item unavailable");
+    if (command.dialog && (command.dialog.ownerChatId !== command.ownerChatId || command.dialog.itemId !== command.itemId ||
+        !command.dialog.surfaceId || !command.dialog.transferId)) return fail(state, "invalid_request", "Invalid dialog presentation");
+    const restoreUrl = command.restoreUrl === undefined ? "" : normalizeWorkPanelWebUrl(command.restoreUrl);
+    if (command.restoreUrl !== undefined && (command.dialog || !restoreUrl)) return fail(state, "invalid_request", "Invalid restore URL");
+    const dialogItems = (state.dialogItems ?? []).filter((entry) => entry.ownerChatId !== command.ownerChatId || entry.itemId !== command.itemId);
+    if (command.dialog) dialogItems.push(command.dialog);
+    const nextWorkspace = { ...workspace, activeItemId: command.dialog
+      ? workspace.items.find((entry) => !dialogItems.some((dialog) => dialog.ownerChatId === command.ownerChatId && dialog.itemId === entry.itemId))?.itemId ?? null
+      : item.itemId };
+    return { ok: true, item, workspaceId: workspace.workspaceId, state: nextWorkspace, nextState: {
+      ...state, dialogItems,
+      ...(!command.dialog ? { visibleOwnerChatIds: withVisibleWorkspace(state, command.ownerChatId) } : {}),
+      ...(restoreUrl ? { webItemUrls: { ...state.webItemUrls, [`${command.ownerChatId}\u0000${command.itemId}`]: restoreUrl } } : {}),
+      workspaces: state.workspaces.map((entry) => entry === workspace ? nextWorkspace : entry),
+    } };
+  }
+  const result = reduceWorkPanelCommandCore(state, command);
+  if (!result.ok || (!state.dialogItems?.length && !state.webItemUrls)) return result;
+  const dialogItems = (state.dialogItems ?? []).filter((dialog) => result.nextState.workspaces.some((workspace) =>
+    workspace.ownerChatId === dialog.ownerChatId && workspace.items.some((item) => item.itemId === dialog.itemId)));
+  const workspaces = result.nextState.workspaces.map((workspace) => {
+    if (!dialogItems.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === workspace.activeItemId)) return workspace;
+    const previous = state.workspaces.find((entry) => entry.ownerChatId === workspace.ownerChatId)?.activeItemId;
+    const visibleItems = workspace.items.filter((item) => !dialogItems.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId));
+    return { ...workspace, activeItemId: visibleItems.find((item) => item.itemId === previous)?.itemId ?? visibleItems[0]?.itemId ?? null };
+  });
+  const liveKeys = new Set(workspaces.flatMap((workspace) => workspace.items.map((item) => `${workspace.ownerChatId}\u0000${item.itemId}`)));
+  const webItemUrls = state.webItemUrls ? Object.fromEntries(Object.entries(state.webItemUrls).filter(([key]) => liveKeys.has(key))) : undefined;
+  return { ...result, ...(result.state ? { state: workspaces.find((workspace) => workspace.workspaceId === result.workspaceId) } : {}),
+    nextState: { ...result.nextState, workspaces, dialogItems, ...(webItemUrls ? { webItemUrls } : {}) } };
 }

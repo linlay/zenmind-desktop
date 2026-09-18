@@ -352,11 +352,11 @@ test("WorkPanel bridge keeps the v4/v5 compatibility matrix and deduplicates dia
   }
 });
 
-async function openSession(runtime, sender, sessionId) {
+async function openSession(runtime, sender, sessionId, expectedPhase = "connected") {
   runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId });
   await flush();
   const state = sender.messages.find(({ message }) => message.sessionId === sessionId && message.type === "state");
-  assert.equal(state.message.state.phase, "connected");
+  assert.equal(state.message.state.phase, expectedPhase);
 }
 
 function send(runtime, sender, sessionId, frame) {
@@ -395,10 +395,13 @@ for (const lane of ["primary", "selection-explain"]) {
       });
       let completeAvailability;
       const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+        realtimeBroker: {
+          getConnectionState: () => ({ phase: "idle", generation: 0, physicalConnectionCount: 0, reconnectCount: 0 }),
+        },
         getServiceState: () => new Promise((resolve) => { completeAvailability = resolve; }),
       });
       const sender = createSender(target.webContentsId, target.currentUrl);
-      await openSession(runtime, sender, "cold-availability");
+      await openSession(runtime, sender, "cold-availability", "connecting");
       assert.equal(typeof completeAvailability, "function");
       assert.equal(runtime.calls.connections.length, 0);
       assert.equal(runtime.calls.connectionSubscriptions.at(-1).lane, lane);
@@ -1341,7 +1344,7 @@ for (const validParent of [true, false]) {
       const scope = runtime.calls.queries[0].siteControlScope;
       h.foreground(b);
       scope.activate();
-      assert.equal(scope.readSurface().surfaceId, a.surfaceId);
+      assert.equal(scope.readContainer().surfaceId, a.surfaceId);
       scope.release();
       assert.equal(runtime.calls.grants.length, 0);
     } else {

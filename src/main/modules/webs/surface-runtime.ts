@@ -132,7 +132,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
     if (isBuiltinBrowserSurfaceTarget(target)) {
       return openBrowserUrl(resolveBuiltinBrowserUrl(target));
     }
-    const surfaces = browserSurfaceRegistry.listBrowserSurfaces();
+    const surfaces = browserSurfaceRegistry.listBrowserContainers();
     const surface = surfaces.find((candidate) => browserSurfaceRegistry.webEntryMatchesSurfaceTarget(candidate, target));
     if (!surface) {
       return {

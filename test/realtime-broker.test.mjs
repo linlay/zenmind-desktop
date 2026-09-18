@@ -1251,9 +1251,46 @@ test("WorkPanel waits for its canonical Run grant and terminal Push revokes it",
   assert.equal(calls.length, 1);
 });
 
+test("ordinary Chat Surface requests require a live canonical Run grant", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  let calls = 0;
+  broker.setDesktopBridgeProvider({
+    action: async () => { calls++; return { ok: true, result: {} }; },
+    cdp: async () => { calls++; return { ok: true, result: {} }; },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  const source = { chatId: "chat-surface", runId: "run-surface", agentKey: "agent-1" };
+  const requests = [
+    { frame: "request", type: "desktop.web.listSurfaces", source, payload: {} },
+    { frame: "request", type: "desktop.cdp.call", payload: { method: "Surface.list", source } },
+  ];
+  async function send(suffix, expected) {
+    for (const [index, request] of requests.entries()) {
+      const id = `surface-${suffix}-${index}`;
+      socket("primary").emit({ ...request, id });
+      await waitUntil(() => socket("primary").sent.some((frame) => frame.id === id));
+      const result = socket("primary").sent.find((frame) => frame.id === id);
+      assert.equal(result.frame, expected);
+      if (expected === "error") assert.equal(result.type, "source_chat_not_ready");
+    }
+  }
+  await send("unbound", "error");
+  assert.equal(calls, 0);
+  broker.registerRunActionGrant({ sourceId: "main-chat:surface", chatId: source.chatId, runId: source.runId,
+    owner: { kind: "agent", agentKey: source.agentKey }, ready: Promise.resolve() });
+  await send("ready", "response");
+  assert.equal(calls, 2);
+  socket("primary").emit({ frame: "push", type: "run.finished", data: { ...source,
+    status: "completed", finishReason: "complete", finishedAt: EPOCH_MS + 10 } });
+  await send("finished", "error");
+  assert.equal(calls, 2);
+});
+
 test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) => {
   const { broker, socket, token } = createHarness(t);
   const screenshot = Buffer.alloc(420_000, 7).toString("base64");
+  broker.siteControlGrants.bind({ runId: "run-1", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" } },
+    { release() {}, activate() {}, readContainer() { return { tabs: [] }; } });
   broker.setDesktopBridgeProvider({
     action: async (request) => ({
       ok: true,
@@ -1297,7 +1334,7 @@ test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) =
 
 test("AWCP business failures stay in response frames while host failures stay AGW errors", async (t) => {
   const { broker, socket, token } = createHarness(t);
-  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
   broker.siteControlGrants.bind(
     { runId: "run-awcp", chatId: "chat-awcp", owner: { kind: "agent", agentKey: "agent-1" } },
     scope,
@@ -1365,7 +1402,7 @@ test("AWCP business failures stay in response frames while host failures stay AG
 
 test("AWCP preflight proof is sent directly in AGW error data, not a nested details envelope", async (t) => {
   const { broker, socket, token } = createHarness(t);
-  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
   const source = { runId: "run-preflight", chatId: "chat-preflight", agentKey: "agent-1" };
   broker.siteControlGrants.bind({ ...source, owner: { kind: "agent", agentKey: "agent-1" } }, scope);
   const proof = { stage: "desktop_preflight", executionStarted: false, reason: "input_schema_mismatch",
@@ -1392,7 +1429,7 @@ test("AWCP preflight proof is sent directly in AGW error data, not a nested deta
 
 test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a terminal frame", async (t) => {
   const { broker, socket, token } = createHarness(t);
-  const scope = { release() {}, activate() {}, readSurface() { return { tabs: [] }; } };
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
   broker.siteControlGrants.bind(
     { runId: "run-awcp-cancel", chatId: "chat-awcp-cancel", owner: { kind: "agent", agentKey: "agent-1" } },
     scope,
@@ -1448,7 +1485,7 @@ for (const switchBeforeAcceptance of [false, true]) {
     const added = h.addTab(a);
     const calls = [];
     broker.setDesktopBridgeProvider({ action: async () => ({ ok: true }), cdp: async (_request, granted) => {
-      const surface = granted.readSurface(); calls.push(surface);
+      const surface = granted.readContainer(); calls.push(surface);
       return { ok: true, method: 'Target.getTargets', result: { count: surface.tabs.length } };
     } });
     const invoke = async (id, source = { runId: 'run-site', chatId: 'chat-site', agentKey: 'agent-1' }) => {
@@ -1484,10 +1521,10 @@ test('same-identity reconnect preserves site authority while account rotation re
   broker.releaseRootObserver(observer.token);
   socket('primary').disconnect();
   await broker.ensureConnected('http://127.0.0.1:8080', token);
-  assert.equal(scope.readSurface().surfaceId, a.surfaceId);
+  assert.equal(scope.readContainer().surfaceId, a.surfaceId);
   assert.equal(sockets.flatMap((socket) => requestOfType(socket, '/api/query')).length, 1);
   broker.rotateIdentity();
-  assert.throws(() => scope.readSurface(), { code: 'site_control_unavailable' });
+  assert.throws(() => scope.readContainer(), { code: 'site_control_unavailable' });
   assert.equal(h.contents.get(a.tabs[0].webContentsId).throttle, true);
 });
 
@@ -1553,6 +1590,8 @@ test("reverse CDP validation retains field diagnostics in the error frame", asyn
   const { handleDesktopCdpRequest } = require("../dist-electron/main/modules/desktop-actions/runtime.js");
   const { broker, socket, token } = createHarness(t);
   let executed = false;
+  broker.siteControlGrants.bind({ runId: "run-1", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" } },
+    { release() {}, activate() {}, readContainer() { return { tabs: [] }; } });
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true }),
     cdp: (request) => handleDesktopCdpRequest({ executeCdpCommand: async () => { executed = true; return { result: {} }; } }, request)
@@ -1561,7 +1600,7 @@ test("reverse CDP validation retains field diagnostics in the error frame", asyn
   socket("primary").emit({
     frame: "request", type: "desktop.cdp.call", id: "invalid-mouse",
     payload: {
-      method: "Input.dispatchMouseEvent", targetId: "desktop-test",
+      method: "Input.dispatchMouseEvent", surfaceId: "page:test",
       params: { type: "mousePressed", x: "646", y: "344", button: "left", clickCount: "1" },
       source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }
     }
@@ -1574,7 +1613,7 @@ test("reverse CDP validation retains field diagnostics in the error frame", asyn
   assert.equal(frame.data.method, "Input.dispatchMouseEvent");
   assert.equal(frame.data.error.details.issues.length, 3);
   assert.equal(frame.data.error.details.executed, false);
-  assert.equal(frame.data.error.details.targetId, "desktop-test");
+  assert.equal(frame.data.error.details.surfaceId, "page:test");
   assert.equal(executed, false);
 });
 

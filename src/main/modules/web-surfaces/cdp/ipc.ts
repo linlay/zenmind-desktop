@@ -5,7 +5,7 @@ import type {
   EmbeddedCdpSurfaceTargetStateRequest
 } from "../../../../shared/embedded-cdp";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
-import { createEmbeddedCdpTargetId } from "./gateway";
+import { createEmbeddedWebSurfaceId } from "./gateway";
 import { session as electronSession } from "electron";
 import { MAIN_CHAT_SURFACE_ID } from "../../../../shared/surface-identity";
 
@@ -82,7 +82,7 @@ export function registerEmbeddedCdpIpcHandlers(
         activeTabId: snapshot.registered.activeTabId,
         targets: snapshot.tabs.map((tab) => ({
           tabId: tab.tabId,
-          targetId: createEmbeddedCdpTargetId({
+          surfaceId: createEmbeddedWebSurfaceId({
             surfaceId: canonicalSurfaceId,
             id: canonicalSurfaceId,
             targetGeneration: registrationId,

@@ -505,6 +505,8 @@ export const zhCNMessages = {
   "chatWorkPanel.resize": "调整工作面板宽度",
   "chatWorkPanel.tabContextMenu.enterFullscreen": "进入全屏",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "退出全屏",
+  "chatWorkPanel.dialog.restore": "还原到 WorkPanel",
+  "chatWorkPanel.tabContextMenu.openInDialog": "在独立窗口打开",
   "chatWorkPanel.tabContextMenu.enterReview": "进入编辑模式",
   "chatWorkPanel.tabContextMenu.exitReview": "退出编辑模式",
   "chatWorkPanel.tabContextMenu.downloadArtifact": "下载产物文件",

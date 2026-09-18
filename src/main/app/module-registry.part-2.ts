@@ -174,6 +174,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   });
   registerChatWorkPanelTabContextMenuIpcHandlers(ipcMain, {
     getMainWindow: options.getMainWindow,
+    browserSurfaces: options.browserSurfaces,
     app,
     platform: options.platform,
   });
