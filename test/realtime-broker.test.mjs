@@ -82,7 +82,7 @@ function createHarness(t, options = {}) {
     broker.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const sourceByLane = { primary: "desktop-main", btw: "desktop-btw", "selection-explain": "desktop-selection-explain" };
+  const sourceByLane = { primary: "desktop-main", btw: "desktop-btw", "selection-explain": "desktop-explain" };
   const socket = (lane) => sockets.find((candidate) => candidate.source === sourceByLane[lane]);
   return { broker, diagnostics, sockets, socket, token: jwt() };
 }
@@ -121,7 +121,7 @@ function explanationObserver(overrides = {}) {
 }
 
 async function acceptedRun(h, { lane, runId, observerToken, onEvent = () => {}, signal }) {
-  const type = lane === "primary" ? "/api/query" : "/api/btw";
+  const type = "/api/query";
   const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: `op-${runId}`,
     lane, runId, chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" }, observerToken,
     consumerId: `source:${runId}`, signal, payload: { runId, chatId: "chat-1", agentKey: "agent-1", message: runId }, onEvent });
@@ -152,12 +152,13 @@ for (const platform of ["darwin", "win32"]) {
     const run = await acceptedRun(h, { lane: "selection-explain", runId: "run-explain", observerToken: observer.token });
     assert.equal(h.sockets.length, 3);
     const url = new URL(run.socket.url);
-    assert.equal(url.searchParams.get("source"), "desktop-selection-explain");
-    assert.equal(url.searchParams.get("surfaceId"), "desktop-selection-explain");
+    assert.equal(url.searchParams.get("source"), "desktop-explain");
+    assert.equal(url.searchParams.get("surfaceId"), "desktop-explain");
     assert.equal(url.searchParams.get("deviceId"), "desktop-test");
     assert.equal(states.at(-1).phase, "connected");
     assert.equal(h.broker.getDiagnostics().connections["selection-explain"].physicalConnectionCount, 1);
-    assert.equal(requestOfType(run.socket, "/api/query").length, 0);
+    assert.equal(requestOfType(run.socket, "/api/query").length, 1);
+    assert.equal(requestOfType(run.socket, "/api/btw").length, 0);
   });
 }
 
@@ -180,7 +181,7 @@ test("explanation handoff keeps one upstream stream, detaches only its source, a
   assert.deepEqual(await run.query.completed, { reason: "detached", lastSeq: 2 });
   assert.deepEqual([...h.broker.getMainChatRootObserver().runIds].sort(), ["run-main", "run-side"]);
   assert.deepEqual([...h.broker.getDiagnostics().auxiliaryRootObservers[0].runIds], ["run-explain"]);
-  assert.equal(requestOfType(run.socket, "/api/btw").length, 1);
+  assert.equal(requestOfType(run.socket, "/api/query").length, 1);
   assert.equal(requestOfType(run.socket, "/api/attach").length, 0);
   assert.equal(requestOfType(run.socket, "/api/detach").length, 0);
   sourceAbort.abort();
@@ -209,7 +210,7 @@ test("explanation handoff keeps one upstream stream, detaches only its source, a
   await restored.ready;
   assert.equal(requestOfType(run.socket, "/api/attach").length, 1);
   assert.equal(requestOfType(run.socket, "/api/attach")[0].payload.lastSeq, 3);
-  assert.equal(requestOfType(run.socket, "/api/btw").length, 1);
+  assert.equal(requestOfType(run.socket, "/api/query").length, 1);
 });
 
 test("explanation-only reconnect restores a handed-off stream repeatedly without replaying the query", async (t) => {
@@ -225,22 +226,22 @@ test("explanation-only reconnect restores a handed-off stream repeatedly without
   const before = h.broker.getConnectionStates();
   let current = explanation.socket;
   for (const seq of [2, 3]) {
-    const upstream = current.sent.find((frame) => frame.type === "/api/btw" || frame.type === "/api/attach");
+    const upstream = current.sent.find((frame) => frame.type === "/api/query" || frame.type === "/api/attach");
     current.emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "explain", "chat-1", seq) });
     await nextTurn();
     current.disconnect();
     await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "selection-explain");
-    current = h.sockets.filter((item) => item.source === "desktop-selection-explain").at(-1);
+    current = h.sockets.filter((item) => item.source === "desktop-explain").at(-1);
     await waitUntil(() => requestOfType(current, "/api/attach").length === 1);
     assert.equal(requestOfType(current, "/api/attach")[0].payload.lastSeq, seq);
-    assert.equal(requestOfType(current, "/api/btw").length, 0);
+    assert.equal(requestOfType(current, "/api/query").length, 0);
     assert.equal(h.broker.getConnectionStates().primary.generation, before.primary.generation);
     assert.equal(h.broker.getConnectionStates().btw.generation, before.btw.generation);
     assert.equal(primary.socket.closed, undefined);
     assert.equal(btw.socket.closed, undefined);
   }
   assert.equal(h.broker.getDiagnostics().replay.find((run) => run.runId === "explain").restoreCount, 2);
-  assert.equal(h.sockets.flatMap((socket) => requestOfType(socket, "/api/btw")).filter((frame) => frame.payload.runId === "explain").length, 1);
+  assert.equal(h.sockets.flatMap((socket) => requestOfType(socket, "/api/query")).filter((frame) => frame.payload.runId === "explain").length, 1);
 });
 
 test("explanation controls infer the registered lane and reject explicit cross-lane requests", async (t) => {
@@ -305,7 +306,7 @@ test("an explanation disconnect fails only its unaccepted query and pending requ
   void btw.query.completed.then(() => { otherRunCompleted = true; }, () => { otherRunCompleted = true; });
   const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: "pending-explain", lane: "selection-explain",
     chatId: "chat-1", observerToken: main.token, payload: { chatId: "chat-1" }, onEvent() {} });
-  await waitUntil(() => h.socket("selection-explain")?.sent.some((frame) => frame.type === "/api/btw"));
+  await waitUntil(() => h.socket("selection-explain")?.sent.some((frame) => frame.type === "/api/query"));
   const requestErrors = [];
   await h.broker.forwardRequest({ baseUrl: "http://127.0.0.1:8080", token: h.token, localId: "pending-read", consumerId: "explain",
     lane: "selection-explain", type: "/api/chat", payload: { chatId: "chat-1" }, onFrame() {}, onError: (error) => requestErrors.push(error) });
@@ -416,8 +417,8 @@ test("Primary and BTW lanes stay at exactly two physical sockets and multiplex R
   const queries = [
     ["primary", "/api/query", "run-main-1"],
     ["primary", "/api/query", "run-main-2"],
-    ["btw", "/api/btw", "run-btw-1"],
-    ["btw", "/api/btw", "run-btw-2"],
+    ["btw", "/api/query", "run-btw-1"],
+    ["btw", "/api/query", "run-btw-2"],
   ].map(([lane, requestType, runId]) => broker.query({
     baseUrl: "http://127.0.0.1:8080",
     token,
@@ -433,14 +434,14 @@ test("Primary and BTW lanes stay at exactly two physical sockets and multiplex R
     onEvent: (event) => received.push([runId, event.type]),
   }));
 
-  await waitUntil(() => sockets.length === 2 && requestOfType(socket("primary"), "/api/query").length === 2 && requestOfType(socket("btw"), "/api/btw").length === 2);
+  await waitUntil(() => sockets.length === 2 && requestOfType(socket("primary"), "/api/query").length === 2 && requestOfType(socket("btw"), "/api/query").length === 2);
   assert.deepEqual(sockets.map((item) => item.source).sort(), ["desktop-btw", "desktop-main"]);
 
   for (const [lane, , runId] of [
     ["primary", "/api/query", "run-main-1"],
     ["primary", "/api/query", "run-main-2"],
-    ["btw", "/api/btw", "run-btw-1"],
-    ["btw", "/api/btw", "run-btw-2"],
+    ["btw", "/api/query", "run-btw-1"],
+    ["btw", "/api/query", "run-btw-2"],
   ]) {
     const request = socket(lane).sent.find((frame) => frame.payload?.runId === runId);
     socket(lane).emit({ frame: "stream", id: request.id, event: runEvent("run.start", runId, "chat-1", 1) });
@@ -1080,8 +1081,8 @@ test("Primary push can terminate a BTW Run while BTW push is ignored", async (t)
     payload: { runId: "run-btw-push", chatId: "chat-1", message: "side" },
     onEvent: () => undefined,
   });
-  await waitUntil(() => requestOfType(socket("btw"), "/api/btw").length === 1);
-  const upstream = requestOfType(socket("btw"), "/api/btw")[0];
+  await waitUntil(() => requestOfType(socket("btw"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("btw"), "/api/query")[0];
   socket("btw").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-btw-push", "chat-1", 1) });
   await query.accepted;
   socket("btw").emit({ frame: "push", type: "run.finished", data: { runId: "run-btw-push", status: "wrong", finishedAt: EPOCH_MS + 2 } });
@@ -1094,7 +1095,7 @@ test("Primary push can terminate a BTW Run while BTW push is ignored", async (t)
   assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-btw-push").state, "terminal");
 });
 
-test("old Platform /api/btw route failure becomes btw_ws_unsupported", async (t) => {
+test("Platform query errors retain the authoritative error code", async (t) => {
   const { broker, socket, token } = createHarness(t);
   const query = broker.query({
     baseUrl: "http://127.0.0.1:8080",
@@ -1107,10 +1108,10 @@ test("old Platform /api/btw route failure becomes btw_ws_unsupported", async (t)
     payload: { runId: "run-old", chatId: "chat-1", message: "side" },
     onEvent: () => undefined,
   });
-  await waitUntil(() => requestOfType(socket("btw"), "/api/btw").length === 1);
-  const upstream = requestOfType(socket("btw"), "/api/btw")[0];
-  socket("btw").emit({ frame: "error", id: upstream.id, type: "invalid_request", msg: "unknown type: /api/btw" });
-  await assert.rejects(query.accepted, (error) => error.name === "btw_ws_unsupported");
+  await waitUntil(() => requestOfType(socket("btw"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("btw"), "/api/query")[0];
+  socket("btw").emit({ frame: "error", id: upstream.id, type: "invalid_request", msg: "query rejected" });
+  await assert.rejects(query.accepted, (error) => error.name === "invalid_request");
 });
 
 test("replay window reports seq_expired instead of fabricating a prefix", async (t) => {
@@ -1151,7 +1152,7 @@ test("replay window reports seq_expired instead of fabricating a prefix", async 
 });
 
 test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
-  assert.equal(getDesktopActionDefinition("desktop.awcp.snapshot"), null);
+  assert.equal(getDesktopActionDefinition("desktop.awcp.manual"), null);
   assert.equal(getDesktopActionDefinition("desktop.awcp.invoke"), null);
   const { broker, socket, token } = createHarness(t);
   const calls = [];
@@ -1343,27 +1344,35 @@ test("AWCP business failures stay in response frames while host failures stay AG
   broker.setDesktopBridgeProvider({
     action: async (request) => ({ ok: false, action: request.action, error: { code: "ordinary_failure", message: "failed" } }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcpSnapshot: async (_requestId, granted, signal) => {
-      calls.push({ snapshot: true, granted, signal });
-      return { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] };
+    awcpManual: async (_requestId, payload, granted, signal) => {
+      calls.push({ manual: true, payload, granted, signal });
+      return { ok: true, method: "AWCP.getManual", revision: "revision-a",
+        site: { name: "Orders", description: "Order operations." }, sections: [] };
     },
     awcpInvoke: async (requestId, payload, granted, signal) => {
       calls.push({ requestId, payload, granted, signal });
-      return { ok: false, requestId, action: payload.action, error: { code: "stale_snapshot", message: "stale" } };
+      return { ok: false, requestId, action: payload.action, error: { code: "stale_revision", message: "stale" } };
     },
   });
   await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
   const source = { runId: "run-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
-  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot", source, payload: {} });
-  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot"));
-  const snapshot = socket("primary").sent.find((frame) => frame.id === "awcp-snapshot");
-  assert.equal(snapshot.frame, "response");
-  assert.deepEqual(snapshot.data, { ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] });
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.manual", id: "awcp-manual", source, payload: {} });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-manual"));
+  const manual = socket("primary").sent.find((frame) => frame.id === "awcp-manual");
+  assert.equal(manual.frame, "response");
+  assert.deepEqual(manual.data, { ok: true, method: "AWCP.getManual", revision: "revision-a",
+    site: { name: "Orders", description: "Order operations." }, sections: [] });
   assert.equal(calls[0].granted, scope);
 
-  socket("primary").emit({ frame: "request", type: "desktop.awcp.snapshot", id: "awcp-snapshot-extra", source, payload: { targetId: "forged" } });
-  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-snapshot-extra"));
-  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-snapshot-extra").frame, "error");
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.manual", id: "awcp-manual-extra", source, payload: { targetId: "forged" } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-manual-extra"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-manual-extra").frame, "error");
+  assert.equal(calls.length, 1);
+
+  socket("primary").emit({ frame: "request", type: "desktop.awcp.manual", id: "awcp-manual-legacy", source,
+    payload: { section: "orders.read" } });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-manual-legacy"));
+  assert.equal(socket("primary").sent.find((frame) => frame.id === "awcp-manual-legacy").frame, "error");
   assert.equal(calls.length, 1);
 
   socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-1", source,
@@ -1371,7 +1380,7 @@ test("AWCP business failures stay in response frames while host failures stay AG
   await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "awcp-1"));
   const awcp = socket("primary").sent.find((frame) => frame.id === "awcp-1");
   assert.equal(awcp.frame, "response");
-  assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_snapshot", message: "stale" } });
+  assert.deepEqual(awcp.data, { ok: false, requestId: "awcp-1", action: "orders.read", error: { code: "stale_revision", message: "stale" } });
   assert.equal(calls[1].granted, scope);
 
   socket("primary").emit({ frame: "request", type: "desktop.pet.show", id: "ordinary-1", source, payload: {} });
@@ -1381,11 +1390,12 @@ test("AWCP business failures stay in response frames while host failures stay AG
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpManual: async () => ({ ok: true, method: "AWCP.getManual", revision: "revision-a",
+      site: { name: "Orders", description: "Order operations." }, sections: [] }),
     awcpInvoke: async () => { throw Object.assign(new Error("invalid page response"), {
       code: "awcp_invalid_response",
       statusCode: 502,
-      details: { reason: "output_schema_mismatch", violations: [{ instancePath: "/items", keyword: "type" }] },
+      details: { reason: "response_shape_mismatch" },
     }); },
   });
   socket("primary").emit({ frame: "request", type: "desktop.awcp.invoke", id: "awcp-2", source,
@@ -1394,10 +1404,47 @@ test("AWCP business failures stay in response frames while host failures stay AG
   const hostFailure = socket("primary").sent.find((frame) => frame.id === "awcp-2");
   assert.equal(hostFailure.frame, "error");
   assert.equal(hostFailure.type, "awcp_invalid_response");
-  assert.deepEqual(hostFailure.data, {
-    reason: "output_schema_mismatch",
-    violations: [{ instancePath: "/items", keyword: "type" }],
+  assert.deepEqual(hostFailure.data, { reason: "response_shape_mismatch" });
+});
+
+test("AWCP routes manual and invoke by surfaceId without forwarding host selectors to the page", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
+  const source = { runId: "run-surface-awcp", chatId: "chat-awcp", agentKey: "agent-1" };
+  broker.siteControlGrants.bind({ ...source, owner: { kind: "agent", agentKey: "agent-1" } }, scope);
+  const calls = [];
+  const handle = async (requestId, payload, granted, signal, surfaceId) => {
+    calls.push({ payload, granted, surfaceId });
+    return { ok: true, requestId };
+  };
+  broker.setDesktopBridgeProvider({
+    action: async () => assert.fail("AWCP entered desktop_action"),
+    cdp: async () => assert.fail("AWCP entered raw CDP"),
+    awcpManual: handle, awcpInvoke: handle,
   });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  let sequence = 0;
+  const send = async (type, payload) => {
+    const id = `surface-awcp-${++sequence}`;
+    socket("primary").emit({ frame: "request", type, id, source, payload });
+    await waitUntil(() => socket("primary").sent.some(frame => frame.id === id));
+    return socket("primary").sent.find(frame => frame.id === id);
+  };
+  for (const [type, payload] of [
+    ["desktop.awcp.manual", {}],
+    ["desktop.awcp.manual", { section: "orders.read", revision: "revision-a" }],
+    ["desktop.awcp.invoke", { action: "orders.read", revision: "revision-a", args: {} }],
+  ]) {
+    assert.equal((await send(type, { ...payload, surfaceId: "page:selected" })).frame, "response");
+    assert.deepEqual(calls.at(-1), { payload, granted: scope, surfaceId: "page:selected" });
+    for (const invalid of ["", " ", 7, null]) {
+      assert.equal((await send(type, { ...payload, surfaceId: invalid })).type, "protocol_error");
+    }
+  }
+  assert.equal(calls.length, 3);
+  assert.equal((await send("desktop.awcp.manual", { surfaceId: "page:selected", section: "orders.read" })).type, "protocol_error");
+  assert.equal((await send("desktop.awcp.manual", { targetId: "removed" })).type, "protocol_error");
+  assert.equal(calls.length, 3);
 });
 
 test("AWCP preflight proof is sent directly in AGW error data, not a nested details envelope", async (t) => {
@@ -1405,12 +1452,11 @@ test("AWCP preflight proof is sent directly in AGW error data, not a nested deta
   const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
   const source = { runId: "run-preflight", chatId: "chat-preflight", agentKey: "agent-1" };
   broker.siteControlGrants.bind({ ...source, owner: { kind: "agent", agentKey: "agent-1" } }, scope);
-  const proof = { stage: "desktop_preflight", executionStarted: false, reason: "input_schema_mismatch",
-    violations: [{ instancePath: "/conditions", keyword: "type" }] };
+  const proof = { stage: "desktop_preflight", executionStarted: false, reason: "page_changed" };
   broker.setDesktopBridgeProvider({
     action: async () => assert.fail("AWCP entered desktop_action"),
     cdp: async () => assert.fail("AWCP entered raw CDP"),
-    awcpSnapshot: async () => assert.fail("unexpected snapshot"),
+    awcpManual: async () => assert.fail("unexpected manual"),
     awcpInvoke: async () => { throw Object.assign(new Error("Invalid input"), {
       code: "awcp_preflight_rejected", statusCode: 400, details: proof,
     }); },
@@ -1438,7 +1484,8 @@ test("desktop.bridge.cancel aborts the exact in-flight AWCP request without a te
   broker.setDesktopBridgeProvider({
     action: async () => ({ ok: true, action: "desktop.pet.show", result: {} }),
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-    awcpSnapshot: async () => ({ ok: true, method: "AWCP.getSnapshot", revision: "revision-a", actions: [] }),
+    awcpManual: async () => ({ ok: true, method: "AWCP.getManual", revision: "revision-a",
+      site: { name: "Orders", description: "Order operations." }, sections: [] }),
     awcpInvoke: async (requestId, payload, _granted, signal) => {
       invocationSignal = signal;
       return new Promise((resolve) => signal.addEventListener("abort", () => resolve({
@@ -1648,3 +1695,66 @@ test("Desktop Worker internal failures preserve causes and use a server error fr
   assert.equal(frame.type, "tooling_worker_unavailable");
   assert.deepEqual(frame.data.details, details);
 });
+
+test("ordinary Chat AWCP requires live Run ownership and reuses the exact page scope until termination", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const source = { chatId: "chat-awcp-wp", runId: "run-awcp-wp", agentKey: "agent-1" };
+  let acquired = 0, released = 0, calls = 0;
+  const scope = { readContainer() { return { tabs: [] }; }, release() { released++; } };
+  broker.setDesktopBridgeProvider({
+    acquireWorkPanelAwcpScope: (surfaceId, chatId) => {
+      assert.equal(surfaceId, "page:workpanel"); assert.equal(chatId, source.chatId); acquired++; return scope;
+    },
+    awcpManual: async (_id, _payload, granted) => { assert.equal(granted, scope); calls++; return { ok: true }; },
+    awcpInvoke: async (_id, _payload, granted) => { assert.equal(granted, scope); calls++; return { ok: true }; },
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  let sequence = 0;
+  async function send(type = "desktop.awcp.manual", payload = { surfaceId: "page:workpanel" }, caller = source) {
+    const id = `wp-awcp-${++sequence}`;
+    socket("primary").emit({ frame: "request", type, id, source: caller, payload });
+    await waitUntil(() => socket("primary").sent.some((frame) => frame.id === id));
+    return socket("primary").sent.find((frame) => frame.id === id);
+  }
+  assert.equal((await send()).type, "source_chat_not_ready");
+  broker.registerRunActionGrant({ sourceId: "main-chat:awcp", ...source,
+    owner: { kind: "agent", agentKey: source.agentKey }, ready: Promise.resolve() });
+  assert.equal((await send("desktop.awcp.manual", {})).type, "protocol_error");
+  assert.equal((await send()).frame, "response");
+  assert.equal((await send("desktop.awcp.manual", { surfaceId: "page:workpanel", revision: "v1", section: "read" })).frame, "response");
+  assert.equal((await send("desktop.awcp.invoke", { surfaceId: "page:workpanel", revision: "v1", action: "read", args: {} })).frame, "response");
+  assert.equal(acquired, 1); assert.equal(calls, 3);
+  assert.equal((await send(undefined, undefined, { ...source, chatId: "chat-other" })).frame, "error");
+  assert.equal((await send(undefined, undefined, { ...source, agentKey: "agent-other" })).frame, "error");
+  socket("primary").emit({ frame: "push", type: "run.finished", data: { ...source,
+    status: "completed", finishReason: "complete", finishedAt: EPOCH_MS + 10 } });
+  assert.equal((await send()).type, "source_chat_not_ready");
+  assert.equal(released, 1); assert.equal(calls, 3);
+});
+
+for (const lane of ["primary", "btw", "selection-explain"]) {
+  test(`${lane} unified query preserves current selection annotations through acceptance and steer`, async (t) => {
+    const h = createHarness(t);
+    const references = [{ id: "selection-1", type: "selection", text: "selected original", annotation: "user instruction", annotationIndex: 7 }];
+    const payload = { chatId: "chat-1", agentKey: "agent-1", message: "explain", references };
+    const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token,
+      id: `selection-${lane}`, lane, requestType: lane === "primary" ? "/api/query" : "/api/btw",
+      chatId: "chat-1", payload, onEvent() {} });
+    await waitUntil(() => h.socket(lane)?.sent.some((frame) => frame.type === "/api/query"));
+    const socket = h.socket(lane);
+    const request = requestOfType(socket, "/api/query")[0];
+    assert.deepEqual(request.payload, payload);
+    assert.equal(requestOfType(socket, "/api/btw").length, 0);
+    socket.emit({ frame: "stream", id: request.id, event: runEvent("run.start", `run-${lane}`, "chat-1", 1) });
+    await query.accepted;
+    const id = await h.broker.forwardRequest({ baseUrl: "http://127.0.0.1:8080", token: h.token,
+      localId: "selection-steer", consumerId: "test", type: "/api/steer",
+      payload: { runId: `run-${lane}`, references }, onFrame() {}, onError() {} });
+    assert.deepEqual(requestOfType(socket, "/api/steer")[0].payload.references, references);
+    assert.equal(h.sockets.length, 1);
+    socket.emit({ frame: "response", id, data: { accepted: true } });
+    socket.emit({ frame: "stream", id: request.id, event: runEvent("run.complete", `run-${lane}`, "chat-1", 2) });
+    socket.emit({ frame: "stream", id: request.id, reason: "done", lastSeq: 2 });
+    await query.completed;
+  });
+}

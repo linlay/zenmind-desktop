@@ -728,8 +728,8 @@
 - Website Copilot Run 切到后台继续读取、点击和创建 tab；新 tab 可发现。Page.bringToFront 与关闭操作遵循所属容器生命周期，不影响其他容器。
 - Chat A 打开的 WorkPanel 网页在切换到 Chat B 后仍可由 A 的有效 Run 操作；B 无法发现或通过已知 ID 操作 A 的网页。终态 Run 不再获得网页操作授权。
 - 刷新和导航保留 Surface 身份；关闭重开后旧 ID 失败；排队期间替换 guest 的命令失败且不执行在新 guest 上。
-- WorkPanel 本地文件/原生文档不进入普通网页自动化列表，WebApp bridge 和 AWCP 不因 Surface 统一而增加权限。
-- AWCP 指定同一授权 Surface 完成手册读取和调用；指定其他应用或发现后切换到另一 Surface 调用须失败。
+- WorkPanel 本地文件/原生文档不进入普通网页自动化列表，WebApp bridge 不因 Surface 统一而增加权限；普通 Chat 的 HTTP(S) 网页可按原 Chat 授权使用页面提供的 AWCP。
+- AWCP 通过同一 `surfaceId` 完成目录读取、带 revision 的章节读取及调用；其间切换活动标签仍操作原 Surface。未读章节、指定其他应用的 Surface、传入 Container ID 或改用另一 Surface 调用须失败，不执行页面 handler。macOS / Windows 均验证页面 CDK 字段错误保留原响应，Desktop 不自动重试。
 - WorkPanel 网络页后台截图保留有效尺寸，输入后前台焦点恢复；macOS/Windows 坐标均为 CSS 像素。
 ## WorkPanel 网站独立窗口
 
@@ -741,3 +741,23 @@
 
 - 独立窗口顶部点击“还原到 WorkPanel”，确认回到所属 Chat 并选中原 tab；从其他 Chat、其他主页面、面板隐藏及主窗口最小化状态分别验证。还原使用独立窗口当前地址（含 query/hash），不回到初始地址；原 item、surfaceId 与草稿保留，没有第二个并存 guest。再次弹出与还原可连续使用；仅点击窗口关闭按钮仍走关闭逻辑。
 - 在独立网页内部导航到同样的 restore URL，确认不会触发宿主还原动作；只有独立窗口的宿主工具栏可请求还原。
+
+### Main WS 产物发布通知
+
+- macOS / Windows 在产物发布前切换到其他 Chat 或产物管理页：收到 `frame: push / type: artifact.published` 后立即入库，不要求来源 Run observer 存在，不依赖网关上传。分别覆盖 MD、PNG、HTML、DOCX、XLSX、PPTX。
+- 使用 `publishedAt` 毫秒时间；重复 push、旧 stream 通知及上传完成通知不新增同一 Chat + Artifact。非法时间/缺失身份不入库。离线期间历史漏项不会被此实时接入自动补录。
+
+## 普通 Chat WorkPanel AWCP（macOS / Windows 均执行）
+
+- 普通 Chat 打开提供 AWCP v1 的网络网页：使用返回的 surfaceId 读取目录、按 revision 读取章节并调用；切到其他 Chat 后原 Run 仍可操作。弹出独立窗口后重新发现有效 Surface 并读取手册，不沿用替换前的 guest 绑定。
+- 同 Run 的两个网页分别读取目录与章节，调用始终定位指定页面；另一个 Run 即使属于同 Chat，也必须读取自己的手册。
+- 普通网站未提供 AWCP 返回 awcp_protocol_unavailable，之后可按任务使用 DOM；协议损坏、版本错误和授权失败不能伪装为无 AWCP。
+- 已知其他 Chat、Website 容器或本地文件 ID 不能由普通 Chat 获得 AWCP；无 surfaceId 的普通 Chat 请求不得借用前台页。
+- 导航后旧章节调用在 handler 前拒绝，重新读目录及章节后可继续；关闭、替换 guest、Run 终态和身份轮换撤销授权并清理在途请求，不重放业务调用。
+
+
+### PR #114 上游协议对齐
+
+- macOS / Windows 分别验证主聊天、旁聊、详细解释并行：物理连接标识为 desktop-main / desktop-btw / desktop-explain，出站均为 /api/query，停止和重连只作用于来源 lane。
+- 使用 WebClient c2224645 与 Platform 6b23260c 或后续版本：选区批注保留顶层 text、annotation、annotationIndex；添加、纯选区 steer、旁聊和解释续问可用，删除其他批注后编号不重排。
+- 实时诊断中选区原文及批注不出现；query/steer 实际发送及回放仍保留完整内容。

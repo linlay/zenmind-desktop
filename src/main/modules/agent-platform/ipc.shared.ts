@@ -271,12 +271,11 @@ export function redactSelectionReferencesForTrace(value: unknown) {
   let changed = false;
   const nextReferences = references.map((reference) => {
     if (!isPlainBridgeRecord(reference) || reference.type !== "selection") return reference;
-    const meta = isPlainBridgeRecord(reference.meta) ? reference.meta : null;
-    if (!meta || typeof meta.text !== "string") return reference;
     changed = true;
     return {
       ...reference,
-      meta: { ...meta, text: "<REDACTED_SELECTION>" },
+      ...(typeof reference.text === "string" ? { text: "<REDACTED_SELECTION>" } : {}),
+      ...(typeof reference.annotation === "string" ? { annotation: "<REDACTED_SELECTION>" } : {}),
     };
   });
   return changed

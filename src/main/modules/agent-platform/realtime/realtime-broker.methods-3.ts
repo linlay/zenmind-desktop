@@ -266,13 +266,7 @@ export function RealtimeBroker_handleFrame_9(self: RealtimeBrokerMethodContext, 
             return;
         }
         if (kind === "error") {
-            const message = readText(frame.msg) || readText(frame.message);
-            const error = query.requestType === "/api/btw" &&
-                readText(frame.type) === "invalid_request" &&
-                message.includes("unknown type")
-                ? brokerError("btw_ws_unsupported", "Agent Platform does not support BTW over WebSocket")
-                : frameError(frame);
-            self.failQuery(query, error);
+            self.failQuery(query, frameError(frame));
         }
         else if (kind === "stream")
             self.handleQueryStream(query, frame);

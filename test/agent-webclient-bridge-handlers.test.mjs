@@ -34,13 +34,18 @@ test("selection reference text is redacted from Desktop realtime traces", () => 
       references: [{
         id: "selection-1",
         type: "selection",
-        meta: { text: "private selected text", sourceKind: "message" },
+        text: "private selected text",
+        annotation: "private annotation",
+        annotationIndex: 7,
       }],
     },
   };
   const redacted = redactSelectionReferencesForTrace(frame);
-  assert.equal(redacted.payload.references[0].meta.text, "<REDACTED_SELECTION>");
-  assert.equal(frame.payload.references[0].meta.text, "private selected text");
+  assert.equal(redacted.payload.references[0].text, "<REDACTED_SELECTION>");
+  assert.equal(frame.payload.references[0].text, "private selected text");
+  assert.equal(redacted.payload.references[0].annotation, "<REDACTED_SELECTION>");
+  assert.equal(redacted.payload.references[0].annotationIndex, 7);
+  assert.equal(frame.payload.references[0].annotation, "private annotation");
 });
 
 function createSender(id, url) {
@@ -1452,4 +1457,22 @@ test("connected Platform keeps historical Chat loading independent of a stalled 
   assert.equal(runtime.calls.forwarded[0].token, "token");
   assert.equal(serviceStateCalls, callsAfterOpen);
   assert.ok(sentFrames(sender).some((frame) => frame.id === "load-chat-1" && frame.frame === "response"));
+});
+
+
+test("physical diagnostics redact selection text and annotation in requests and replay without mutating wire data", () => {
+  const { sanitizeAgentRealtimeDebugValue } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
+  const reference = { type: "selection", id: "selected-1", text: "private original", annotation: "private instruction", annotationIndex: 9 };
+  for (const frame of [
+    { frame: "request", type: "/api/query", payload: { references: [reference] } },
+    { frame: "request", type: "/api/steer", payload: { references: [reference] } },
+    { frame: "stream", event: { type: "request.query", references: [reference] } },
+  ]) {
+    const trace = sanitizeAgentRealtimeDebugValue(frame);
+    assert.equal(JSON.stringify(trace).includes("private"), false);
+    const redacted = (trace.payload || trace.event).references[0];
+    assert.equal(redacted.annotationIndex, 9);
+    assert.equal(reference.text, "private original");
+    assert.equal(reference.annotation, "private instruction");
+  }
 });

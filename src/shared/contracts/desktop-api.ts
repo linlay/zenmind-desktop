@@ -325,7 +325,7 @@ export interface AgentRealtimeDebugRunRecovery {
 }
 
 export interface AgentRealtimeDebugConnection {
-  source: "desktop-main" | "desktop-btw" | "desktop-selection-explain";
+  source: "desktop-main" | "desktop-btw" | "desktop-explain";
   phase: AgentWebclientConnectionPhase;
   generation: number;
   physicalConnectionCount: 0 | 1;

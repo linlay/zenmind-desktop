@@ -213,7 +213,8 @@ export function RealtimeBroker_query_11(self: RealtimeBrokerMethodContext, optio
         }, self.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
         self.clients[lane].send({
             frame: "request",
-            type: requestType,
+            // Frame Port retains WebClient's BTW intent; Platform selects semantics by authenticated lane.
+            type: "/api/query",
             id: upstreamRequestId,
             payload: options.payload,
         });
@@ -277,7 +278,7 @@ export async function RealtimeBroker_forwardRequest_12(self: RealtimeBrokerMetho
         await self.ensureConnected(options.baseUrl, options.token, lane);
         self.clients[lane].send({
             frame: "request",
-            type,
+            type: type === "/api/btw" ? "/api/query" : type,
             id: upstreamId,
             payload: options.payload ?? {},
         });

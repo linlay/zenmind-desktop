@@ -30,7 +30,7 @@ export const REQUEST_TIMEOUT_MS = 30_000;
 
 export const DESKTOP_CDP_REQUEST_TYPE = "desktop.cdp.call";
 
-export const DESKTOP_AWCP_SNAPSHOT_TYPE = "desktop.awcp.snapshot";
+export const DESKTOP_AWCP_MANUAL_TYPE = "desktop.awcp.manual";
 
 export const DESKTOP_AWCP_INVOKE_TYPE = "desktop.awcp.invoke";
 
@@ -89,6 +89,7 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "awaiting.asking",
   "awaiting.answered",
   "resource.pushed",
+  "artifact.published",
 ]);
 
 export type Deferred<T> = {
@@ -250,9 +251,10 @@ export type RunActionGrant = {
 };
 
 export type DesktopBridgeRequestProvider = {
+  acquireWorkPanelAwcpScope(surfaceId: string, chatId: string): SiteControlScope;
   action(request: Record<string, unknown>, scope?: SiteControlScope): Promise<unknown>;
   cdp(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal): Promise<unknown>;
-  awcpSnapshot(requestId: string, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;
+  awcpManual(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;
   awcpInvoke(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;
 };
 

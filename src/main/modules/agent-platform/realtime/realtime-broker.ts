@@ -88,7 +88,7 @@ export class RealtimeBroker {
     const laneSources = {
       primary: "desktop-main",
       btw: "desktop-btw",
-      "selection-explain": "desktop-selection-explain",
+      "selection-explain": "desktop-explain",
     } as const;
     const createClient = (lane: RealtimeLane) => new AgentPlatformRealtimeClient({
         app: options.app,

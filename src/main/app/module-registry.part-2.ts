@@ -499,7 +499,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       total + item.bytes,
     0);
     const mapConnection = (
-      source: "desktop-main" | "desktop-btw" | "desktop-selection-explain",
+      source: "desktop-main" | "desktop-btw" | "desktop-explain",
       connection: typeof brokerDiagnostics.connections.primary,
       lane: "primary" | "btw" | "selection-explain",
     ) => ({
@@ -525,7 +525,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       connections: {
         primary: mapConnection("desktop-main", brokerDiagnostics.connections.primary, "primary"),
         btw: mapConnection("desktop-btw", brokerDiagnostics.connections.btw, "btw"),
-        "selection-explain": mapConnection("desktop-selection-explain", brokerDiagnostics.connections["selection-explain"], "selection-explain"),
+        "selection-explain": mapConnection("desktop-explain", brokerDiagnostics.connections["selection-explain"], "selection-explain"),
       },
       broker: {
         pendingRequestCount: brokerDiagnostics.pendingRequestCount,
