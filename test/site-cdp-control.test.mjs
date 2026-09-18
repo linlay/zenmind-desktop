@@ -34,7 +34,7 @@ function awcpSection(action = 'orders.read', options = {}) {
   };
 }
 
-function awcpProbe(actualVersion = 2, overrides = {}) {
+function awcpProbe(actualVersion = 1, overrides = {}) {
   return { present: true, entryType: 'object', actualVersion, manualType: 'function', invokeType: 'function', ...overrides };
 }
 
@@ -51,6 +51,7 @@ test('AWCP treats Schema as page-owned data and accepts a section without exampl
   const guest = h.contents.get(a.tabs[0].webContentsId);
   const bridge = new AwcpGuestBridge(h.registry); t.after(() => { bridge.dispose(); scope.release(); });
   let handlerCalls = 0;
+  const successResponse = { ok: true, requestId: 'invoke-read', action: 'orders.read', result: {} };
   guest.executeJavaScript = async (script) => {
     if (script.includes('actualVersion')) return awcpProbe();
     if (script.includes('.manual(')) {
@@ -60,7 +61,7 @@ test('AWCP treats Schema as page-owned data and accepts a section without exampl
         : awcpSection('orders.read', { omitExamples: true });
     }
     handlerCalls += 1;
-    return { ok: true, requestId: 'invoke-read', action: 'orders.read', result: {} };
+    return successResponse;
   };
 
   const index = await bridge.manual('manual-index', {}, scope);
@@ -68,9 +69,9 @@ test('AWCP treats Schema as page-owned data and accepts a section without exampl
   const read = await bridge.manual('manual-read', { section: 'orders.read', revision: index.revision }, scope);
   assert.equal('examples' in read, false);
   await bridge.manual('manual-write', { section: 'orders.write', revision: index.revision }, scope);
-  assert.equal((await bridge.invoke('invoke-read', {
+  assert.deepEqual(await bridge.invoke('invoke-read', {
     revision: 'revision-a', action: 'orders.read', args: {},
-  }, scope)).ok, true);
+  }, scope), successResponse);
   assert.equal(handlerCalls, 1);
 });
 
@@ -298,8 +299,8 @@ test('AWCP cancellation remains pinned to the captured guest', async (t) => {
 test('AWCP distinguishes missing, unsupported and malformed entry points', async (t) => {
   const cases = [
     [{ present: false }, 'awcp_protocol_unavailable'],
-    [awcpProbe(1), 'awcp_unsupported_protocol'],
-    [awcpProbe(2, { manualType: 'object' }), 'awcp_invalid_contract'],
+    [awcpProbe(0), 'awcp_unsupported_protocol'],
+    [awcpProbe(1, { manualType: 'object' }), 'awcp_invalid_contract'],
   ];
   for (const [probe, code] of cases) {
     const h = createSiteHarness(); const a = h.site(code); const scope = h.capture(a); scope.activate();
@@ -310,7 +311,7 @@ test('AWCP distinguishes missing, unsupported and malformed entry points', async
     await assert.rejects(bridge.manual(`manual-${code}`, {}, scope), (error) => {
       assert.equal(error.code, code);
       if (code === 'awcp_unsupported_protocol') {
-        assert.deepEqual(error.details, { supportedVersions: [2], actualVersion: 1 });
+        assert.deepEqual(error.details, { supportedVersions: [1], actualVersion: 0 });
       }
       return true;
     });

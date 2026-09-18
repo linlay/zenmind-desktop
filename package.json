@@ -38,7 +38,6 @@
     "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
     "test": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run i18n:check && npm run build && node --test --test-concurrency=1 ./test/*.test.mjs",
     "test:unit": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:prepared && node --test --test-concurrency=1 ./test/*.test.mjs",
-    "test:awcp-cdk-contract": "npm run build:main:prepared && node --test ./qa/awcp-cdk-contract.test.mjs",
     "build:skin-bow-example": "node qa/skin-packages/build-bow-example.mjs",
     "test:skin-visuals": "npm run build:main:prepared && npm run build:skin-bow-example && node --test test/skin-visuals.test.mjs test/desktop-skin-package.test.mjs && node qa/skin-visuals-smoke.mjs",
     "build:skin-example": "node qa/skin-packages/build-example.mjs",

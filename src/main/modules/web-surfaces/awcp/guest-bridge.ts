@@ -3,7 +3,7 @@ import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { SiteControlScope } from "../cdp/site-scope";
 import { AwcpManualBindings } from "./discovery-binding";
 
-export const AWCP_PROTOCOL_VERSION = 2;
+export const AWCP_PROTOCOL_VERSION = 1;
 export const AWCP_ACTION_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
 export const AWCP_LIMITS = Object.freeze({
   maxActionLength: 128,
