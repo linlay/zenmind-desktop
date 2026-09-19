@@ -2478,7 +2478,7 @@ test("Projects headers show hover cards for Coder and Knowledge Base agents only
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(assistantNavigation, /isAssistantNavProjectAgent\([\s\S]*?Pick<AssistantNavAgentItem, "mode">/);
+  assert.match(assistantNavigation, /isAssistantNavProjectAgent\([\s\S]*?Pick<AssistantNavAgentItem, "workspaceDir">/);
   assert.match(sidebarSource, /function getAssistantProjectKind\(/);
   assert.match(sidebarSource, /function renderProjectHoverCard\(/);
   assert.match(sidebarSource, /className="sidebar-project-hover-card"/);
@@ -2492,7 +2492,7 @@ test("Projects headers show hover cards for Coder and Knowledge Base agents only
   assert.match(popoverSource, /positionReferenceRef\?: React\.RefObject<HTMLElement \| null>;/);
   assert.match(popoverSource, /const positionReference = positionReferenceRef\?\.current \?\? triggerRef\.current;/);
   assert.match(popoverSource, /triggerMode === "click"[\s\S]*?children\.props\["aria-expanded"\]/);
-  assert.match(navigationClient, /function isWorkspaceProjectAgent[\s\S]*?mode === "CODER"[\s\S]*?mode === "KBASE"/);
+  assert.match(navigationClient, /function isWorkspaceProjectAgent[\s\S]*?Boolean\(agent\.workspaceDir\?\.trim\(\)\)/);
   assert.match(styles, /\.sidebar-project-hover-card-surface/);
   assert.match(styles, /\.sidebar-project-hover-card-status/);
   assert.match(zhCN, /"sidebar\.project\.card\.workspace": "工作目录：\{name\}"/);
@@ -4922,7 +4922,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createProject"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.reorderProjects"/);
-  assert.match(assistantHandlers, /"\/api\/agents\?scope=nav&mode=CODER&mode=KBASE"/);
+  assert.match(assistantHandlers, /"\/api\/agents\?scope=nav"/);
   assert.match(assistantHandlers, /"\/api\/agents\/order"[\s\S]{0,120}method: "PUT"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
   assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/admin\/agents\/create"/);
