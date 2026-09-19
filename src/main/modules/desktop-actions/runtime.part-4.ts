@@ -505,7 +505,7 @@ export function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: id === "desktop.connector.authenticate" ? getWebappAuthenticationConnectors(item.desktopBridge).length > 0 : id === "connector.read" ? Object.keys(item.desktopBridge?.connectorOperations ?? {}).length > 0 : id === "kanban.read" ? item.desktopBridge?.kanbanRead === true : id === "skill.read" ? !!item.copilot?.agentKey : true,
+          declared: id === "connector.write" ? item.desktopBridge?.connectorWrite === true : id === "desktop.connector.authenticate" ? getWebappAuthenticationConnectors(item.desktopBridge).length > 0 : id === "connector.read" ? Object.keys(item.desktopBridge?.connectorOperations ?? {}).length > 0 : id === "kanban.read" ? item.desktopBridge?.kanbanRead === true : id === "skill.read" ? !!item.copilot?.agentKey : true,
           permission: id === "desktop.microphone"
             ? microphonePermission
             : id === "desktop.notification" && !notificationAvailable
@@ -538,7 +538,7 @@ export async function executeNativeWebappAction(
     if (result) {
       const context = await captureWebappContext(options, webappId).catch(() => null);
       for (const capability of result.capabilities) {
-        if (capability.id === "connector.read" || capability.id === "kanban.read") {
+        if (capability.id === "connector.read" || capability.id === "connector.write" || capability.id === "kanban.read") {
           capability.permission = !capability.declared ? "unavailable" : context && hasWebappPermission(context, capability.id) ? "granted" : "prompt";
         }
       }

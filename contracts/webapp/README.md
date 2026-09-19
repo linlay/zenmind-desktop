@@ -18,7 +18,7 @@ const result = await connector.invoke({
 });
 ```
 
-应用的 `desktopBridge.connectorOperations` 必须包含对应 connectorId 与 operationId。声明不等于用户授权。`connector.list()` 和 `connector.describe({connectorId})` 用于发现已声明的操作；CLI/MCP adapter 由 Platform 选择，调用函数相同。平台负责执行只读政策和 operation revision 校验。
+应用的 `desktopBridge.connectorOperations` 必须包含对应 connectorId 与 operationId。声明不等于用户授权。`connector.list()` 和 `connector.describe({connectorId})` 用于发现已声明的操作；CLI/MCP adapter 由 Platform 选择，调用函数相同。Platform 根据 operation 的 effect 执行读写授权、Schema 和 revision 校验。
 
 收到 `connector_auth_required` / `connector_auth_expired` 后显示登录按钮，在新的用户点击中调用 `desktop.authenticateConnector({connectorId})`，只得到 `{status:'authorized'|'cancelled'|'failed'}`。认证接口不接受 URL、回调、账号或 token。成功后由业务显式重试原只读请求；SDK 不自动重放。
 
@@ -64,6 +64,24 @@ if (items.length) await artifact.open({ chatId, runId, artifactId: items[0].arti
 
 错误统一为 `DesktopBridgeError`，可读取 `code` 和 `action`；常见权限错误为 `app_permission_required`、`app_grant_required`、`operation_not_allowed`。`capabilities.has()` 仅表示能力已实现且应用声明，不表示已取得用户授权；应检查 `permission` 或发起权限申请。
 
-连接器登录可单独声明 `desktopBridge.connectorAuthentication: ["wecom"]`，不要求 `connectorOperations`。业务操作声明仍只控制 list/describe/invoke；已有业务声明也允许相应连接器登录。示例中的 example/item.list 仅表示已安装包中实际存在的操作，不代表 WeCom 提供日历或会议接口。
+连接器登录可单独声明 `desktopBridge.connectorAuthentication: ["wecom"]`，不要求 `connectorOperations`。业务操作声明仍只控制 list/describe/invoke；已有业务声明也允许相应连接器登录。示例中的 example/item.list 仅表示已安装包中实际存在的操作，具体连接器是否可用，以当前 Platform 的 describe 返回为准。
 
 连接器认证复用 Platform 现有凭据，工作台、Agent、管理界面使用同一连接器账号，不要求 personalConfig，也不新增用户目录。应用 grant 与宿主身份校验保留；登录成功不自动赋予应用业务调用权限。
+
+## 连接器写入与授权版本
+
+Manifest 新增 `desktopBridge.connectorWrite: true`，业务 operation 仍逐项列入 `connectorOperations`。页面先请求 `desktop.requestAccess({capability:'connector.read'})`；发送前单独请求 `desktop.requestAccess({capability:'connector.write'})`，仅 `status:'granted'` 才继续。新能力会出现在 `desktop.capabilities.list()` 中，未声明时不可授权。
+
+调用仍使用 `connector.invoke`，新增可选 `idempotencyKey` 和 `credentialRevision`，不增加独立 send 函数。写 operation 必须有 8–128 位字母、数字、点、下划线、冒号或连字符组成的幂等键。`credentialRevision` 来自前一次 invoke 返回，是非凭据的授权版本，连续回传可防止多步操作跨越登录变化。示意：
+
+```js
+const result = await connector.invoke({
+  connectorId: 'example', operationId: 'message.send',
+  revision: description.revision,
+  credentialRevision: previous.credentialRevision,
+  idempotencyKey: 'daily-reminder:2026-09-19',
+  arguments: { /* 按 describe 中的 inputSchema */ }
+});
+```
+
+Platform 相同键及参数返回已有成功结果，参数不同返回 `idempotency_conflict`。`invocation_outcome_unknown` 表示可能已经执行，页面必须提示核对，不能换键自动重发。Desktop 网络错误也不能推导为“肯定未发送”。SDK 不重试。Node 后端即使应用已获写授权也不能执行写 operation。

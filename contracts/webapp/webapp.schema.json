@@ -626,6 +626,9 @@
             "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
           }
         },
+        "connectorWrite": {
+          "type": "boolean"
+        },
         "connectorOperations": {
           "type": "object",
           "propertyNames": {

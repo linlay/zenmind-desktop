@@ -15,8 +15,8 @@ export function requireWebappPermission(context: WebappContext, capability: stri
 export async function requestWebappPermission(options: DesktopActionBridgeOptions, context: WebappContext,
   invocation: DesktopActionInvocationContext, capability: string) {
   if (invocation.kind !== "webappPage") throw new ConnectorError("forbidden");
-  if (capability !== "connector.read" && capability !== "kanban.read") throw new ConnectorError("invalid_arguments");
-  const declared = capability === "connector.read"
+  if (capability !== "connector.read" && capability !== "connector.write" && capability !== "kanban.read") throw new ConnectorError("invalid_arguments");
+  const declared = capability === "connector.write" ? context.item.desktopBridge?.connectorWrite === true : capability === "connector.read"
     ? Object.keys(context.item.desktopBridge?.connectorOperations ?? {}).length > 0
     : context.item.desktopBridge?.kanbanRead === true;
   if (!declared) throw new ConnectorError("operation_not_allowed");
@@ -25,7 +25,7 @@ export async function requestWebappPermission(options: DesktopActionBridgeOption
   if (!owner || owner.isDestroyed()) throw new ConnectorError("desktop_unavailable");
   const choice = await dialog.showMessageBox(owner, {
     type: "question", message: t("webapp.permission.title"),
-    detail: t("webapp.permission.detail", { appId: context.appId, capability }),
+    detail: t(capability === "connector.write" ? "webapp.permission.writeDetail" : "webapp.permission.detail", { appId: context.appId, capability }),
     buttons: [t("webapp.permission.allow"), t("common.cancel")], defaultId: 1, cancelId: 1
   });
   await context.check();

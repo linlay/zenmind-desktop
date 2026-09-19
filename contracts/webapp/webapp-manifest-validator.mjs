@@ -5249,6 +5249,7 @@ const webappManifestV2Schema = strictObject({
     version: literal(1),
     kanbanRead: boolean().optional(),
     connectorAuthentication: array(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).max(64).optional(),
+    connectorWrite: boolean().optional(),
     connectorOperations: record(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u), array(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).min(1).max(128)).optional()
   }).default({ version: 1 })
 }).superRefine((value, context) => {
