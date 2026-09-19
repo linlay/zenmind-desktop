@@ -4775,6 +4775,7 @@ export function AppShell() {
           sidebarNavOrder={normalizedSidebarNavOrder}
           onSidebarNavOrderChange={navigationPreferencesLoaded ? handleSidebarNavOrderChange : undefined}
           websiteNavOrder={normalizedWebGroupOrder}
+          onWebsiteNavOrderChange={setWebGroupOrder}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
           webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
           onSetWebItemPinned={handleSetWebItemPinned}

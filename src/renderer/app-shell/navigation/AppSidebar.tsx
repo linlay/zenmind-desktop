@@ -1031,6 +1031,7 @@ type AppSidebarProps = {
   sidebarNavOrder: SidebarNavOrderItemKey[];
   onSidebarNavOrderChange?: (order: SidebarNavOrderItemKey[]) => void;
   websiteNavOrder?: SidebarNavOrderItemKey[];
+  onWebsiteNavOrderChange?: (order: SidebarNavOrderItemKey[]) => void;
   pinnedWebEntryKeys?: string[];
   webPinningAvailable?: boolean;
   onSetWebItemPinned?: (item: WebEntry, pinned: boolean) => Promise<void>;
@@ -1121,6 +1122,7 @@ export function AppSidebar({
   sidebarNavOrder,
   onSidebarNavOrderChange,
   websiteNavOrder = [],
+  onWebsiteNavOrderChange,
   pinnedWebEntryKeys = [],
   webPinningAvailable = false,
   onSetWebItemPinned,
@@ -2483,7 +2485,7 @@ export function AppSidebar({
         isWebapp &&
         item.removable !== false &&
         !runtime.webItemRemovePendingId,
-      showRemove: isWebapp && !runtime.isCollapsed,
+      showRemove: isWebapp,
     };
     if (!isWebapp) {
       return { kind: "web", webKind: "website", ...commonTarget };
@@ -5839,6 +5841,20 @@ export function AppSidebar({
         icon: item.icon,
         active: isWebsiteGroupActive() && !pinnedWebNavItems.some((entry) => isRouteActive(entry.to)),
         children: unpinnedWebNavItems,
+        renderChildren: ({ roving }) => unpinnedWebNavItems.length > 0 ? (
+          <SortableNavEntries
+            order={webNavItems.map((entry) => entry.orderKey)}
+            sortableKeys={unpinnedWebNavItems.map((entry) => entry.orderKey)}
+            onChange={onWebsiteNavOrderChange}
+            hint={t("sidebar.navigation.reorderHint", { modifier: "Alt" })}
+            renderItem={(key) => {
+              const entry = unpinnedWebNavItems.find((candidate) => candidate.orderKey === key);
+              return entry ? renderSidebarChildLink(entry, { roving }) : null;
+            }}
+          />
+        ) : websitesLoaded ? (
+          <div className="sidebar-empty-hint">{t("sidebar.websites.empty")}</div>
+        ) : null,
       });
     }
     return renderSidebarLink(item);

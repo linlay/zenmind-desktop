@@ -281,15 +281,7 @@ export function buildSidebarContextMenuPolicy(
             : "web.open-in-window",
         group: 1,
         enabled: target.canOpenAlternative
-      },
-      {
-        id: target.hasPublicShareUrl
-          ? "web.copy-share-url"
-          : "web.open-publish-settings",
-        group: 1,
-        enabled: true
-      },
-      { id: "web.export", group: 1, enabled: target.canExport }
+      }
     );
     if (target.showRemove) {
       items.push({

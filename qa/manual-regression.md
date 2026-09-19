@@ -802,3 +802,8 @@
 - 查询当前用户、会议/日程、文档数量及最新五条；业务解析只在工作台。
 - macOS 和 Windows 验证中文 JSON、引号、百分号与 shell 元字符原样作为参数传递；不支持的 Windows 启动器明确报错，不退回 cmd /c。
 - 群消息用模拟接收端验证一次派发、重复键回执、冲突和未知结果不重发；真实发送需用户点击。
+
+## Sites 混合排序与 WebApp 菜单
+
+- macOS / Windows 分别拖动 Sites 中的 Website 与 WebApp 交错排序，检查插入线、Esc 取消、普通点击与右键；Alt + 上下键移动，展开列表和收起侧栏的 Popover 都可使用。重启后顺序恢复到 `config/webs/order.json`；置顶后再取消置顶保留 Sites 原位置，主导航、Projects 与 Chats 排序不变。
+- WebApp 右键菜单在展开、收起、置顶入口均包含 Pin/Unpin、Close、New window（独立窗口模式为返回工作区）和 Uninstall；没有 Publish、复制发布链接或 Export。不可卸载应用保持 Uninstall 禁用；关闭与卸载执行期间相应操作禁用。
