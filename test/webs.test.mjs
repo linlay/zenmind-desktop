@@ -875,3 +875,14 @@ test("install transaction activation can commit, rollback, and recover", (t) => 
   assert.equal(fs.readFileSync(path.join(installPath, "version.txt"), "utf8"), "committed");
   assert.deepEqual(recoverWebappInstallTransactions(app), []);
 });
+
+test('login-only WebApp tokens do not authorize connector business operations or backend login',()=>{
+ const item={id:webappId('auth-only-app'),schemaVersion:2,desktopBridge:{version:1,connectorAuthentication:['wecom']}};
+ const token=issueWebappActionToken(item,'localPageGateway');
+ try{
+  assert.equal(authorizeWebappActionToken(token,'desktop.authenticateConnector').ok,true);
+  assert.equal(authorizeWebappActionToken(token,'connector.invoke').ok,false);
+  assert.equal(authorizeWebappActionToken(token,'connector.list').ok,false);
+  assert.equal(isWebappActionAllowed(item,'backendActionToken','desktop.authenticateConnector'),false);
+ }finally{revokeWebappActionToken(token)}
+});

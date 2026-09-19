@@ -779,3 +779,5 @@
 - 固定 Copilot 使用指定 Agent 与声明技能；选择未声明技能或自行传 agentKey 被拒绝。后台运行订阅只含文本/状态，停止订阅不重提请求，其他应用不能停止运行；游标过期得到明确错误。
 - 完成 Agent 报告后以 chatId/runId 列产物；其他应用、未知 chatId、只有 artifactId 均被拒绝。检查预览、系统另存为、取消保存、超 1 MiB 文件；两平台路径均来自系统选择器。
 - 看板读取须单独确认；返回值不含本机路径、其他 Chat 权限，云断连隐藏云缓存；无 issue 写接口。自动化与其他预留原生能力返回 not_implemented。
+
+- 连接器共享凭据版本：WebApp 仅声明 connectorAuthentication、没有 connectorOperations 时仍可经宿主确认登录；登录不授予业务调用或 backend 登录权限。已有连接器登录应直接复用，管理界面退出后 Agent/WebApp 同步失效；不创建额外用户凭据目录。工作台不再展示已撤销的 WeCom 日程、会议读取入口。

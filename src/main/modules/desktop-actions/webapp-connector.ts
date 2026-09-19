@@ -1,3 +1,4 @@
+import { getWebappAuthenticationConnectors } from "../../../shared/webapp-bridge";
 import { requestWebappPermission, requireWebappPermission } from "./webapp-permissions";
 import { ConnectorError, platform, request, captureWebappContext } from "./webapp-platform-client";
 import fs from "node:fs/promises";
@@ -110,9 +111,10 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
     const allowed = action === "connector.list" ? [] : action === "connector.invoke" ? ["connectorId", "operationId", "revision", "arguments"] : ["connectorId"];
     if (Object.keys(args).some(key => !allowed.includes(key))) throw new ConnectorError("invalid_arguments");
     const connectorId = args.connectorId;
-    if (action !== "connector.list" && (typeof connectorId !== "string" || !Object.hasOwn(operations, connectorId) || !operations[connectorId]?.length)) throw new ConnectorError("operation_not_allowed");
+    if (action !== "connector.list" && action !== "desktop.authenticateConnector" && (typeof connectorId !== "string" || !Object.hasOwn(operations, connectorId) || !operations[connectorId]?.length)) throw new ConnectorError("operation_not_allowed");
     const identity = context;
     if (action === "desktop.authenticateConnector") {
+      if (typeof connectorId !== "string" || !getWebappAuthenticationConnectors(context.item.desktopBridge).includes(connectorId)) throw new ConnectorError("operation_not_allowed");
       if (invocation.kind !== "webappPage") throw new ConnectorError("forbidden");
       const key = `${identity.baseUrl}\0${identity.subject}\0${connectorId}`;
       let shared = logins.get(key);
@@ -132,7 +134,7 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
             try {
               await context.check();
               const active = options.webs.webappRuntime.getStatus(options.app, invocation.webappId);
-              if (active?.status !== "running" || (await platform(options)).subject !== identity.subject || !declared(options, invocation.webappId)[connectorId as string]?.length) return { status: "cancelled" };
+              if (active?.status !== "running" || (await platform(options)).subject !== identity.subject) return { status: "cancelled" };
             } catch { return { status: "cancelled" }; }
           }
           return { status: "cancelled" };
@@ -141,8 +143,8 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
         try { result = await Promise.race([shared.promise, observe()]); } finally { waiter.abort(); }
         if (result.status === "cancelled") return { ok: true, action, result };
         await context.check();
-        const fresh = await platform(options); const freshOperations = declared(options, invocation.webappId);
-        if (fresh.subject !== identity.subject || !freshOperations[connectorId as string]?.length) return { ok: true, action, result: { status: "cancelled" } };
+        const fresh = await platform(options);
+        if (fresh.subject !== identity.subject) return { ok: true, action, result: { status: "cancelled" } };
         return { ok: true, action, result };
       } finally { shared.waiters--; if (!shared.waiters) shared.abort.abort(); }
     }

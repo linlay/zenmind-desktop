@@ -366,6 +366,7 @@ const webappManifestV2Schema = z.strictObject({
   desktopBridge: z.strictObject({
     version: z.literal(1),
     kanbanRead: z.boolean().optional(),
+    connectorAuthentication: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).max(64).optional(),
     connectorOperations: z.record(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u), z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).min(1).max(128)).optional()
   }).default({ version: 1 })
 }).superRefine((value, context) => {

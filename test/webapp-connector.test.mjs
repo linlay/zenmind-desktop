@@ -179,3 +179,15 @@ test('Kanban only exposes read projections and suppresses disconnected cloud cac
  assert.equal(result.result.items.length,1);assert.equal(result.result.items[0].id,'local');
  assert.equal(JSON.stringify(result).includes('/private'),false);assert.equal(JSON.stringify(result).includes('other-chat'),false);
 });
+
+test('login-only declarations use existing auth without operation grants',async()=>{
+ const options=fixture();options.webs.webappManager.list()[0].desktopBridge={version:1,connectorAuthentication:['wecom']};
+ confirm=async()=>({response:0});const calls=[];
+ fetcher=async(url,request)=>{calls.push(url);assert.equal(new URL(url).pathname,'/api/desktop/connector/auth');assert.equal(request.method,'GET');return response({status:'authorized'})};
+ const result=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'wecom'},{kind:'webappPage',webappId:'one'});
+ assert.equal(result.result.status,'authorized');assert.equal(calls.length,1);
+ const invoke=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',operationId:'meetings.list',revision:'r',arguments:{}},{kind:'webappPage',webappId:'one'});
+ assert.equal(invoke.error.code,'operation_not_allowed');assert.equal(calls.length,1);
+ const wrong=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'other'},{kind:'webappPage',webappId:'one'});
+ assert.equal(wrong.error.code,'operation_not_allowed');
+});

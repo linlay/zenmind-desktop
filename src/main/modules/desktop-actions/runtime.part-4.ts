@@ -5,6 +5,7 @@ import type { OpenDialogOptions, SaveDialogOptions } from "electron";
 import { clipboard, dialog, Notification, shell, systemPreferences } from "electron";
 import {
   WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES,
+  getWebappAuthenticationConnectors,
   WEBAPP_BRIDGE_RESERVED_CAPABILITIES,
   WEBAPP_BRIDGE_VERSION,
   type WebappBridgeCapabilitiesResult,
@@ -504,7 +505,7 @@ export function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: (id === "connector.read" || id === "desktop.connector.authenticate") ? Object.keys(item.desktopBridge?.connectorOperations ?? {}).length > 0 : id === "kanban.read" ? item.desktopBridge?.kanbanRead === true : id === "skill.read" ? !!item.copilot?.agentKey : true,
+          declared: id === "desktop.connector.authenticate" ? getWebappAuthenticationConnectors(item.desktopBridge).length > 0 : id === "connector.read" ? Object.keys(item.desktopBridge?.connectorOperations ?? {}).length > 0 : id === "kanban.read" ? item.desktopBridge?.kanbanRead === true : id === "skill.read" ? !!item.copilot?.agentKey : true,
           permission: id === "desktop.microphone"
             ? microphonePermission
             : id === "desktop.notification" && !notificationAvailable

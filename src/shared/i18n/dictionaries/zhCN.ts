@@ -11,7 +11,7 @@ export const zhCNMessages = {
   "webapp.permission.detail": "允许 {appId} 在本次应用运行期间使用 {capability} 吗？",
   "webapp.permission.allow": "允许",
   "webapp.connector.signIn": "登录连接器 {connectorId}",
-  "webapp.connector.signInDetail": "应用请求使用此连接器。凭据仅由桌面端与平台管理。",
+  "webapp.connector.signInDetail": "应用请求登录此连接器。登录状态与智能体和连接器管理界面共用，业务调用仍需单独授权。",
   "webapp.connector.signInButton": "登录",
   "kanban.localWorkflow.invalidRollbackTarget": "回退目标必须是当前流程中位于本阶段之前的阶段。",
   "kanban.localWorkflow.invalidAction": "本地工作流操作无效，请重新打开任务后重试。",

@@ -11,9 +11,9 @@ import { connector, desktop, assistant, skill, artifact, kanban, automation }
 // 在点击处理器中申请当前运行实例的读取权限。
 const access = await desktop.requestAccess({ capability: 'connector.read' });
 if (access.status !== 'granted') return;
-const description = await connector.describe({ connectorId: 'wecom' });
+const description = await connector.describe({ connectorId: 'example' });
 const result = await connector.invoke({
-  connectorId: 'wecom', operationId: 'meetings.list',
+  connectorId: 'example', operationId: 'item.list',
   revision: description.revision, arguments: {}
 });
 ```
@@ -63,3 +63,7 @@ if (items.length) await artifact.open({ chatId, runId, artifactId: items[0].arti
 `artifact.read()` 返回 `ReadableStream<Uint8Array>`，内部是最多 1 MiB 的有界缓冲；`saveAs` 同样受此上限约束。超限返回 `artifact_too_large`。预览成功为 `{opened:true}`；另存为返回 `{saved:true}` 或 `{cancelled:true}`，不返回绝对文件路径。Platform 不存在全局产物列表时，SDK 不模拟全局列表。
 
 错误统一为 `DesktopBridgeError`，可读取 `code` 和 `action`；常见权限错误为 `app_permission_required`、`app_grant_required`、`operation_not_allowed`。`capabilities.has()` 仅表示能力已实现且应用声明，不表示已取得用户授权；应检查 `permission` 或发起权限申请。
+
+连接器登录可单独声明 `desktopBridge.connectorAuthentication: ["wecom"]`，不要求 `connectorOperations`。业务操作声明仍只控制 list/describe/invoke；已有业务声明也允许相应连接器登录。示例中的 example/item.list 仅表示已安装包中实际存在的操作，不代表 WeCom 提供日历或会议接口。
+
+连接器认证复用 Platform 现有凭据，工作台、Agent、管理界面使用同一连接器账号，不要求 personalConfig，也不新增用户目录。应用 grant 与宿主身份校验保留；登录成功不自动赋予应用业务调用权限。

@@ -11,7 +11,7 @@ export const enUSMessages = {
   "webapp.permission.detail": "Allow {appId} to use {capability} during this application session?",
   "webapp.permission.allow": "Allow",
   "webapp.connector.signIn": "Sign in to connector {connectorId}",
-  "webapp.connector.signInDetail": "The app requests access to this connector. Desktop and Platform manage its credentials.",
+  "webapp.connector.signInDetail": "The app requests connector sign-in. Sign-in is shared with agents and connector settings; business calls require separate permission.",
   "webapp.connector.signInButton": "Sign in",
   "kanban.localWorkflow.invalidRollbackTarget": "The rollback target must be an earlier stage in this workflow.",
   "kanban.localWorkflow.invalidAction": "Invalid local workflow action. Reopen the issue and retry.",
