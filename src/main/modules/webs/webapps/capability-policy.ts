@@ -15,9 +15,9 @@ export function getWebappAllowedActions(item: WebappEntry, scope: WebappCapabili
   }
   for (const [capability, capabilityActions] of Object.entries(WEBAPP_BRIDGE_CAPABILITY_ACTIONS)) {
     if (capability === "kanban.read" && !item.desktopBridge?.kanbanRead) continue;
-    if (capability === "connector.read" && !Object.keys(item.desktopBridge?.connectorOperations ?? {}).length) continue;
+    if (capability === "connector.execute" && (item.desktopBridge?.version !== 2 || !item.desktopBridge?.connectorExecution?.length)) continue;
     if (capability === "desktop.connector.authenticate" && !getWebappAuthenticationConnectors(item.desktopBridge).length) continue;
-    if (scope === "backendActionToken" && capability !== "assistant.chat" && capability !== "connector.read" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
+    if (scope === "backendActionToken" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
       continue;
     }
     for (const action of capabilityActions) {
