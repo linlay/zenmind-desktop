@@ -8,6 +8,7 @@ const desktopPetClassicDescription =
 
 export const enUSMessages = {
   "webapp.permission.title": "Application data access",
+  "webapp.permission.writeDetail": "Allow {appId} to perform its declared connector write operations, including sending messages, during this application session? A click in the app can send a real message.",
   "webapp.permission.detail": "Allow {appId} to use {capability} during this application session?",
   "webapp.permission.allow": "Allow",
   "webapp.connector.signIn": "Sign in to connector {connectorId}",

@@ -1,5 +1,5 @@
 import { getWebappAuthenticationConnectors } from "../../../shared/webapp-bridge";
-import { requestWebappPermission, requireWebappPermission } from "./webapp-permissions";
+import { hasWebappPermission, requestWebappPermission, requireWebappPermission } from "./webapp-permissions";
 import { ConnectorError, platform, request, captureWebappContext } from "./webapp-platform-client";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -108,7 +108,7 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
       return result;
     }
     const operations = declared(options, invocation.webappId);
-    const allowed = action === "connector.list" ? [] : action === "connector.invoke" ? ["connectorId", "operationId", "revision", "arguments"] : ["connectorId"];
+    const allowed = action === "connector.list" ? [] : action === "connector.invoke" ? ["connectorId", "operationId", "revision", "arguments", "idempotencyKey", "credentialRevision"] : ["connectorId"];
     if (Object.keys(args).some(key => !allowed.includes(key))) throw new ConnectorError("invalid_arguments");
     const connectorId = args.connectorId;
     if (action !== "connector.list" && action !== "desktop.authenticateConnector" && (typeof connectorId !== "string" || !Object.hasOwn(operations, connectorId) || !operations[connectorId]?.length)) throw new ConnectorError("operation_not_allowed");
@@ -149,12 +149,14 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
       } finally { shared.waiters--; if (!shared.waiters) shared.abort.abort(); }
     }
     if (action === "connector.invoke") {
+      if (args.credentialRevision !== undefined && (typeof args.credentialRevision !== "string" || !args.credentialRevision || args.credentialRevision.length > 256)) throw new ConnectorError("invalid_arguments");
+      if (args.idempotencyKey !== undefined && (typeof args.idempotencyKey !== "string" || !/^[a-zA-Z0-9._:-]{8,128}$/u.test(args.idempotencyKey))) throw new ConnectorError("invalid_arguments");
       if (typeof args.operationId !== "string" || typeof args.revision !== "string" || !args.revision ||
           !args.arguments || typeof args.arguments !== "object" || Array.isArray(args.arguments)) throw new ConnectorError("invalid_arguments");
       requireWebappPermission(context, "connector.read");
     }
     if (action === "connector.invoke" && !operations[connectorId as string].includes(args.operationId as string)) throw new ConnectorError("operation_not_allowed");
-    const grant = await request(identity.baseUrl, identity.token, "/api/desktop/webapp/grants", "POST", { appId: invocation.webappId, operations });
+    const grant = await request(identity.baseUrl, identity.token, "/api/desktop/webapp/grants", "POST", { appId: invocation.webappId, operations, ...(invocation.kind === "webappPage" && context.item.desktopBridge?.connectorWrite === true && hasWebappPermission(context, "connector.write") ? { allowWrite: true } : {}) });
     if (typeof grant?.token !== "string" || !grant.token.startsWith("wap_") || typeof grant.grantId !== "string" || grant.appId !== invocation.webappId || !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= Date.now()) throw new ConnectorError("invalid_platform_response");
     try {
       await context.check();

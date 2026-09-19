@@ -191,3 +191,25 @@ test('login-only declarations use existing auth without operation grants',async(
  const wrong=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'other'},{kind:'webappPage',webappId:'one'});
  assert.equal(wrong.error.code,'operation_not_allowed');
 });
+
+test('connector write consent is explicit, declared, page-only and forwarded independently of read consent',async()=>{
+ const options=fixture(); options.webs.webappManager.list()[0].desktopBridge.connectorWrite=true;
+ const grants=[];fetcher=async(url,request)=>{
+  if(request.method==='DELETE')return response({revoked:true});
+  if(url.includes('/grants')){grants.push(JSON.parse(request.body));return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000})}
+  return response({output:{success:true}});
+ };
+ confirm=async()=>({response:0});
+ const page={kind:'webappPage',webappId:'one'};
+ const input={connectorId:'wecom',operationId:'meetings.list',revision:'r',arguments:{},idempotencyKey:'daily-key-123'};
+ await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.read'},page);
+ await api.executeWebappConnector(options,'connector.invoke',input,page);
+ assert.equal(grants.at(-1).allowWrite ?? false,false);
+ assert.equal((await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.write'},page)).result.status,'granted');
+ await api.executeWebappConnector(options,'connector.invoke',input,page);
+ assert.equal(grants.at(-1).allowWrite,true);
+ await api.executeWebappConnector(options,'connector.invoke',input,{kind:'webappBackend',webappId:'one'});
+ assert.equal(grants.at(-1).allowWrite ?? false,false);
+ const undeclared=await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.write'},{kind:'webappPage',webappId:'two'});
+ assert.equal(undeclared.error.code,'operation_not_allowed');
+});
