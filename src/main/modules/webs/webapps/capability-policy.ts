@@ -1,22 +1,18 @@
 import type { WebappEntry } from "../../../../shared/contracts";
 import {
   WEBAPP_BRIDGE_ACTIONS,
-  getWebappAuthenticationConnectors,
   resolveWebappAction,
   WEBAPP_BRIDGE_CAPABILITY_ACTIONS,
 } from "../../../../shared/webapp-bridge";
 
 export type WebappCapabilityScope = "backendActionToken" | "localPageGateway";
 
-export function getWebappAllowedActions(item: WebappEntry, scope: WebappCapabilityScope) {
+export function getWebappAllowedActions(_item: WebappEntry, scope: WebappCapabilityScope) {
   const actions = new Set<string>();
   if (scope === "localPageGateway") {
     actions.add(WEBAPP_BRIDGE_ACTIONS.capabilitiesList);
   }
   for (const [capability, capabilityActions] of Object.entries(WEBAPP_BRIDGE_CAPABILITY_ACTIONS)) {
-    if (capability === "kanban.read" && !item.desktopBridge?.kanbanRead) continue;
-    if (capability === "connector.execute" && (item.desktopBridge?.version !== 2 || !item.desktopBridge?.connectorExecution?.length)) continue;
-    if (capability === "desktop.connector.authenticate" && !getWebappAuthenticationConnectors(item.desktopBridge).length) continue;
     if (scope === "backendActionToken" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
       continue;
     }

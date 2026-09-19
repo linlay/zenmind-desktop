@@ -1,4 +1,3 @@
-import type { WebappDesktopBridgeConfig } from "./webapp-manifest";
 export const WEBAPP_BRIDGE_VERSION = 2 as const;
 
 export const WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES = [
@@ -125,6 +124,3 @@ export function resolveWebappAction(action: string): string {
 }
 
 // Login permission is independent of a package's optional business operations.
-export function getWebappAuthenticationConnectors(config?: WebappDesktopBridgeConfig): string[] {
-  return [...new Set([...(config?.connectorAuthentication ?? []), ...(config?.connectorExecution ?? []).map(p => p.connectorId)])];
-}

@@ -210,7 +210,6 @@ async function getUserConfig() {
 
 export const desktop = Object.freeze({
   requestAccess: (input) => {
-    if (!navigator.userActivation?.isActive) throw new DesktopBridgeError("desktop.requestAccess", "user_gesture_required", "Click to grant application access.");
     return call("desktop.requestAccess", input);
   },
   authenticateConnector: (input) => {

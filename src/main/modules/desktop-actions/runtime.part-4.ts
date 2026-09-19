@@ -1,11 +1,8 @@
-import { captureWebappContext } from "./webapp-platform-client";
-import { hasWebappPermission } from "./webapp-permissions";
 import path from "node:path";
 import type { OpenDialogOptions, SaveDialogOptions } from "electron";
 import { clipboard, dialog, Notification, shell, systemPreferences } from "electron";
 import {
   WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES,
-  getWebappAuthenticationConnectors,
   WEBAPP_BRIDGE_RESERVED_CAPABILITIES,
   WEBAPP_BRIDGE_VERSION,
   type WebappBridgeCapabilitiesResult,
@@ -505,7 +502,7 @@ export function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: id === "desktop.connector.authenticate" ? getWebappAuthenticationConnectors(item.desktopBridge).length > 0 : id === "connector.execute" ? item.desktopBridge?.version === 2 && !!item.desktopBridge?.connectorExecution?.length : id === "kanban.read" ? item.desktopBridge?.kanbanRead === true : id === "skill.read" ? !!item.copilot?.agentKey : true,
+          declared: id === "skill.read" ? !!item.copilot?.agentKey : true,
           permission: id === "desktop.microphone"
             ? microphonePermission
             : id === "desktop.notification" && !notificationAvailable
@@ -535,14 +532,6 @@ export async function executeNativeWebappAction(
 ): Promise<DesktopActionCallResponse> {
   if (action === "desktop.capabilities.list") {
     const result = getWebappBridgeCapabilities(options, webappId);
-    if (result) {
-      const context = await captureWebappContext(options, webappId).catch(() => null);
-      for (const capability of result.capabilities) {
-        if (capability.id === "connector.execute" || capability.id === "kanban.read") {
-          capability.permission = !capability.declared ? "unavailable" : context && hasWebappPermission(context, capability.id) ? "granted" : "prompt";
-        }
-      }
-    }
     return result
       ? ok(action, result)
       : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp manifest schema v2.");

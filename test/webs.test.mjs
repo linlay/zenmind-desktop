@@ -606,7 +606,7 @@ test("public Bridge policy separates page interactions from backend data capabil
       version: 1
     }
   };
-  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read"]));
+  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
   assert.equal(isWebappActionAllowed(item, "localPageGateway", "desktop.native.clipboard.writeText"), true);
   assert.equal(isWebappActionAllowed(item, "backendActionToken", "desktop.native.clipboard.writeText"), false);
   const token = issueWebappActionToken(item, "backendActionToken");
@@ -876,21 +876,22 @@ test("install transaction activation can commit, rollback, and recover", (t) => 
   assert.deepEqual(recoverWebappInstallTransactions(app), []);
 });
 
-test('login-only WebApp tokens do not authorize connector business operations or backend login',()=>{
- const item={id:webappId('auth-only-app'),schemaVersion:2,desktopBridge:{version:1,connectorAuthentication:['wecom']}};
+test('installed WebApp page tokens allow connector operations without declarations',()=>{
+ const item={id:webappId('auth-only-app'),schemaVersion:2,desktopBridge:{version:1}};
  const token=issueWebappActionToken(item,'localPageGateway');
  try{
   assert.equal(authorizeWebappActionToken(token,'desktop.authenticateConnector').ok,true);
-  assert.equal(authorizeWebappActionToken(token,'connector.invoke').ok,false);
-  assert.equal(authorizeWebappActionToken(token,'connector.list').ok,false);
+  assert.equal(authorizeWebappActionToken(token,'connector.invoke').ok,true);
+  assert.equal(authorizeWebappActionToken(token,'connector.list').ok,true);
   assert.equal(isWebappActionAllowed(item,'backendActionToken','desktop.authenticateConnector'),false);
  }finally{revokeWebappActionToken(token)}
 });
 
- test('generic connector execution requires v2 and is never a backend capability',()=>{
+ test('legacy bridge fields are optional metadata and execution remains page-only',()=>{
   const parsed=parseWebappManifest({...manifest('generic'),desktopBridge:{version:2,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}});
   assert.equal(isWebappActionAllowed(parsed,'localPageGateway','connector.invoke'),true);
   assert.equal(isWebappActionAllowed(parsed,'backendActionToken','connector.invoke'),false);
   assert.throws(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorOperations:{wecom:['send']}}}));
-  assert.throws(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
+  assert.doesNotThrow(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
+  assert.equal(isWebappActionAllowed(parseWebappManifest(manifest('plain')),'localPageGateway','kanban.issues.list'),true);
  });

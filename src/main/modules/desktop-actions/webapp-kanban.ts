@@ -1,12 +1,9 @@
 import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./runtime.part-1";
 import { ConnectorError, captureWebappContext } from "./webapp-platform-client";
-import { requireWebappPermission } from "./webapp-permissions";
 export async function executeWebappKanban(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>, invocation: DesktopActionInvocationContext) {
   try {
     if (invocation.kind !== "webappPage" && invocation.kind !== "webappBackend") throw new ConnectorError("forbidden");
     const context = await captureWebappContext(options, invocation.webappId, invocation.signal);
-    if (!context.item.desktopBridge?.kanbanRead) throw new ConnectorError("operation_not_allowed");
-    requireWebappPermission(context, "kanban.read");
     const allowed = action === "kanban.boards.list" ? [] : action === "kanban.issues.get" ? ["issueId"] : ["projectId", "cursor", "limit"];
     if (Object.keys(args).some(key => !allowed.includes(key))) throw new ConnectorError("invalid_arguments");
     const runtime = options.getKanbanRuntime?.();

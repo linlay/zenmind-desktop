@@ -12,17 +12,16 @@ const response=data=>new Response(JSON.stringify({code:0,data}),{headers:{'Conte
 let sequence=0;
 function fixture(){
  const startedAt=++sequence;
- const items=['one','two'].map(id=>({id,desktopBridge:{version:2,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
+ const items=['one','two'].map(id=>({id}));
  return {app:{},services:{getResponsiveServiceState:async()=>({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}})},issueAgentAccessToken:async()=>({ok:true,token}),webs:{webappManager:{list:()=>items},webappRuntime:{getStatus:()=>({status:'running',startedAt})}},getMainWindow:()=>({isDestroyed:()=>false,webContents:{id:1}})};
 }
 test('business invocation uses a connector execution grant and revokes it without leaking credentials',async()=>{
  const calls=[];fetcher=async(url,options)=>{calls.push([new URL(url).pathname,options]);if(options.method==='DELETE')return response({revoked:true});if(url.includes('/grants'))return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000});return response({status:'succeeded',output:{items:[]}})};
  const options=fixture(); confirm=async()=>({response:0});
- await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.execute',connectorId:'wecom',adapter:'cli'},{kind:'webappPage',webappId:'one'});
  const result=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'cli',args:['calendar','schedules','list','--json','{}']},{kind:'webappPage',webappId:'one'});
  assert.equal(result.ok,true);assert.equal(calls.length,3);assert.equal(calls[1][1].headers.Authorization,'Bearer wap_test');assert.equal(calls[2][1].method,'DELETE');assert.equal(JSON.stringify(result).includes(token),false);
 });
-test('undeclared operations, caller-selected URL and backend login are denied',async()=>{
+test('obsolete operations, caller-selected URL and backend login are denied',async()=>{
  let calls=0;fetcher=async()=>{calls++;throw Error('unexpected')};confirm=()=>{throw Error('unexpected')};
  for(const [action,args,kind] of [['connector.invoke',{connectorId:'wecom',operationId:'delete',revision:'r',arguments:{}},'webappBackend'],['desktop.authenticateConnector',{connectorId:'wecom',url:'https://evil.test'},'webappPage'],['desktop.authenticateConnector',{connectorId:'wecom'},'webappBackend']]){
  const result=await api.executeWebappConnector(fixture(),action,args,{kind,webappId:'one'});assert.equal(result.ok,false);
@@ -58,16 +57,16 @@ test('an uninstalled app releases only its waiter, not another app or the shared
  const second=await b;assert.equal(second.result.status,'authorized');assert.equal(starts,1);assert.equal(cancels,0);
 });
 
-test('data consent is separate from connector login and cannot be granted by a backend',async()=>{
+test('legacy access requests succeed without declarations or confirmation',async()=>{
  const options=fixture();let calls=0;fetcher=async()=>{calls++;throw Error('unexpected')};
- const input={connectorId:'wecom',adapter:'cli',args:['calendar','schedules','list','--json','{}']};
- const denied=await api.executeWebappConnector(options,'connector.invoke',input,{kind:'webappPage',webappId:'one'});
- assert.equal(denied.error.code,'app_permission_required');
- const backend=await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.execute',connectorId:'wecom',adapter:'cli'},{kind:'webappBackend',webappId:'one'});
+ confirm=()=>{throw Error('installation is already consent')};
+ const page={kind:'webappPage',webappId:'one'};
+ for(const input of [{capability:'kanban.read'},{capability:'connector.execute',connectorId:'wecom',adapter:'cli'}]) {
+  assert.equal((await api.executeWebappConnector(options,'desktop.requestAccess',input,page)).result.status,'granted');
+ }
+ assert.equal(calls,0);
+ const backend=await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'kanban.read'},{kind:'webappBackend',webappId:'one'});
  assert.equal(backend.error.code,'forbidden');
- confirm=async()=>({response:1});
- const choice=await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.execute',connectorId:'wecom',adapter:'cli'},{kind:'webappPage',webappId:'one'});
- assert.equal(choice.result.status,'denied');assert.equal(calls,0);
 });
 
 test('a revoked runtime signal blocks response delivery and further calls',async()=>{
@@ -78,9 +77,9 @@ test('a revoked runtime signal blocks response delivery and further calls',async
   if(url.includes('/grants'))return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000});
   controller.abort();return response({items:[]});
  };
- const result=await api.executeWebappConnector(options,'connector.list',{},invocation);
+ const result=await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation);
  assert.equal(result.error.code,'app_grant_required');assert.equal(deleted,1);
- const again=await api.executeWebappConnector(options,'connector.list',{},invocation);
+ const again=await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation);
  assert.equal(again.error.code,'app_grant_required');
 });
 
@@ -88,9 +87,9 @@ test('an existing token cannot switch to another personal account',async()=>{
  const options=fixture();const controller=new AbortController();
  const invocation={kind:'webappPage',webappId:'one',signal:controller.signal};
  fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000}:{items:[]});
- assert.equal((await api.executeWebappConnector(options,'connector.list',{},invocation)).ok,true);
+ assert.equal((await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation)).ok,true);
  options.issueAgentAccessToken=async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'desktop-user:'+'b'.repeat(64)})).toString('base64url')+'.s'});
- const result=await api.executeWebappConnector(options,'connector.list',{},invocation);
+ const result=await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation);
  assert.equal(result.error.code,'app_grant_required');
 });
 
@@ -167,50 +166,59 @@ test('artifact reads reject oversized bytes and always revoke the grant',async()
 });
 
 test('Kanban only exposes read projections and suppresses disconnected cloud cache',async()=>{
- const options=fixture();options.webs.webappManager.list()[0].desktopBridge.kanbanRead=true;
+ const options=fixture();confirm=()=>{throw Error('unexpected consent')};
  options.getKanbanRuntime=()=>({listIssues:()=>({ok:true,connectionState:'closed',boardId:'cloud-board',projects:[],issues:[
   {id:'local',title:'Local',syncMode:'local',status:'todo',priority:1,runtimePath:'/private/local',chatId:'other-chat'},
   {id:'cloud',title:'Cloud',syncMode:'cloud',status:'todo',priority:1}
  ]})});
  const invocation={kind:'webappBackend',webappId:'one'};
- assert.equal((await api.executeWebappKanban(options,'kanban.issues.list',{},invocation)).error.code,'app_permission_required');
- confirm=async()=>({response:0});await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'kanban.read'},{kind:'webappPage',webappId:'one'});
  const result=await api.executeWebappKanban(options,'kanban.issues.list',{},invocation);
  assert.equal(result.result.items.length,1);assert.equal(result.result.items[0].id,'local');
  assert.equal(JSON.stringify(result).includes('/private'),false);assert.equal(JSON.stringify(result).includes('other-chat'),false);
 });
 
-test('login-only declarations use existing auth without operation grants',async()=>{
- const options=fixture();options.webs.webappManager.list()[0].desktopBridge={version:1,connectorAuthentication:['wecom']};
- confirm=async()=>({response:0});const calls=[];
+test('connector login needs no manifest declaration',async()=>{
+ const options=fixture();confirm=async()=>({response:0});const calls=[];
  fetcher=async(url,request)=>{calls.push(url);assert.equal(new URL(url).pathname,'/api/desktop/connector/auth');assert.equal(request.method,'GET');return response({status:'authorized'})};
  const result=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'wecom'},{kind:'webappPage',webappId:'one'});
  assert.equal(result.result.status,'authorized');assert.equal(calls.length,1);
- const invoke=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'cli',args:['calendar','schedules','list','--json','{}']},{kind:'webappPage',webappId:'one'});
- assert.equal(invoke.error.code,'operation_not_allowed');assert.equal(calls.length,1);
- const wrong=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'other'},{kind:'webappPage',webappId:'one'});
- assert.equal(wrong.error.code,'operation_not_allowed');
 });
 
-test('execution consent is scoped per connector and adapter; backend and legacy requests cannot execute',async()=>{
- const options=fixture();options.webs.webappManager.list()[0].desktopBridge.connectorExecution.push({connectorId:'wecom',adapter:'mcp'});
+test('connector discovery lists installed adapters without exposing catalog internals',async()=>{
+ const options=fixture();confirm=()=>{throw Error('unexpected consent')};
+ fetcher=async(url,request)=>{assert.equal(new URL(url).pathname,'/api/connectors');assert.equal(request.method,'GET');return response({connectors:[
+  {id:'wecom',name:'WeCom',version:'1.0.0',hasCli:true,hasMcp:true,preparation:{path:'/private'}},
+  {id:'no-adapter',name:'Other',hasCli:false,hasMcp:false}
+ ]})};
+ const result=await api.executeWebappConnector(options,'connector.list',{}, {kind:'webappPage',webappId:'one'});
+ assert.deepEqual(result.result,{items:[{connectorId:'wecom',name:'WeCom',packageVersion:'1.0.0',adapters:['cli','mcp']}]});
+});
+
+test('CLI and MCP execute without consent; backend and obsolete payloads remain invalid',async()=>{
+ const options=fixture();
  const grants=[];fetcher=async(url,request)=>{
   if(request.method==='DELETE')return response({revoked:true});
   if(url.includes('/grants')){grants.push(JSON.parse(request.body));return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000})}
   return response({exitCode:0,stdout:'{"success":true}'});
  };
- confirm=async()=>({response:0});const page={kind:'webappPage',webappId:'one'};
+ confirm=()=>{throw Error('unexpected consent')};const page={kind:'webappPage',webappId:'one'};
  const input={connectorId:'wecom',adapter:'cli',args:['message','aibot','send','--json','{"text":"%PATH% & 中文"}'],idempotencyKey:'daily-key-123'};
- const access=await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.execute',connectorId:'wecom',adapter:'cli'},page);
- assert.equal(access.result.status,'granted');
  assert.equal((await api.executeWebappConnector(options,'connector.invoke',input,page)).ok,true);
  assert.deepEqual(grants.at(-1),{version:2,appId:'one',execution:[{connectorId:'wecom',adapter:'cli'}]});
  const backend=await api.executeWebappConnector(options,'connector.invoke',input,{kind:'webappBackend',webappId:'one'});
  assert.equal(backend.error.code,'forbidden');assert.equal(grants.length,1);
  const mcp=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'mcp',component:'main',toolName:'send',arguments:{}},page);
- assert.equal(mcp.error.code,'app_permission_required');
+ assert.equal(mcp.ok,true);
+ assert.deepEqual(grants.at(-1).execution,[{connectorId:'wecom',adapter:'mcp'}]);
  const legacy=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',operationId:'message.send',revision:'old',arguments:{}},page);
  assert.equal(legacy.error.code,'connector_contract_upgrade_required');
  const oldAccess=await api.executeWebappConnector(options,'desktop.requestAccess',{capability:'connector.read'},page);
  assert.equal(oldAccess.error.code,'invalid_arguments');
+});
+
+test('legacy restrictive declarations do not constrain installed apps',async()=>{
+ const options=fixture();options.webs.webappManager.list()[0].desktopBridge={version:1,kanbanRead:false,connectorExecution:[]};
+ confirm=()=>{throw Error('unexpected consent')};
+ fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000}:{exitCode:0});
+ assert.equal((await api.executeWebappConnector(options,'connector.invoke',{connectorId:'another',adapter:'cli',args:['status']},{kind:'webappPage',webappId:'one'})).ok,true);
 });
