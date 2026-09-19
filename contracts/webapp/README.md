@@ -8,17 +8,28 @@
 import { connector, desktop, assistant, skill, artifact, kanban, automation }
   from '/__desktop/bridge.js';
 
-// 在点击处理器中申请当前运行实例的读取权限。
-const access = await desktop.requestAccess({ capability: 'connector.read' });
-if (access.status !== 'granted') return;
-const description = await connector.describe({ connectorId: 'example' });
-const result = await connector.invoke({
-  connectorId: 'example', operationId: 'item.list',
-  revision: description.revision, arguments: {}
+// 在点击处理器中，按连接器和 adapter 申请执行权限。
+const access = await desktop.requestAccess({
+  capability: 'connector.execute', connectorId: 'wecom', adapter: 'cli'
 });
+if (access.status !== 'granted') return;
+const result = await connector.invoke({
+  connectorId: 'wecom', adapter: 'cli',
+  args: ['calendar', 'schedules', 'list', '--json', JSON.stringify({
+    begin_time: '2026-09-19 00:00:00', end_time: '2026-09-19 23:59:59'
+  })]
+});
+if (result.exitCode !== 0) throw new Error('CLI failed');
+const output = JSON.parse(result.stdout); // 应用继续检查业务错误码。
 ```
 
-应用的 `desktopBridge.connectorOperations` 必须包含对应 connectorId 与 operationId。声明不等于用户授权。`connector.list()` 和 `connector.describe({connectorId})` 用于发现已声明的操作；CLI/MCP adapter 由 Platform 选择，调用函数相同。Platform 根据 operation 的 effect 执行读写授权、Schema 和 revision 校验。
+Manifest 声明 `desktopBridge:{version:2,connectorExecution:[{connectorId:"wecom",adapter:"cli"}]}`。声明不等于授权，旧的 connector.read/write 权限不升级。允许的 adapter 为 cli/mcp；同一连接器的两个 adapter 分别确认。该权限可读写、发消息，不推断命令只读性，也不提供操作系统沙箱。
+
+CLI 请求为 `{connectorId,adapter:"cli",args:string[],idempotencyKey?,credentialRevision?}`；返回 `{invocationId,connectorId,adapter,credentialRevision,exitCode,stdout?,stderr?}`，输出未经业务投影，WebApp 按连接器语义处理且不自动显示原始诊断。调用者不能指定可执行路径、环境或工作目录。
+
+MCP 请求为 `{connectorId,adapter:"mcp",component,toolName,arguments,idempotencyKey?,credentialRevision?}`；返回相同身份字段及 `mcp` 原生结果（content/structuredContent/isError），不要求只有结构化对象。只访问已配置组件和实际存在、未禁用工具，禁止自定义 URL。
+
+`connector.list()` 返回已授权连接器及 adapters；`describe({connectorId})` 返回 revision、adapters、components。revision 为描述信息，执行端自己冻结并复核包指纹，不要求应用维护业务 operation revision。
 
 收到 `connector_auth_required` / `connector_auth_expired` 后显示登录按钮，在新的用户点击中调用 `desktop.authenticateConnector({connectorId})`，只得到 `{status:'authorized'|'cancelled'|'failed'}`。认证接口不接受 URL、回调、账号或 token。成功后由业务显式重试原只读请求；SDK 不自动重放。
 
@@ -26,13 +37,13 @@ Node 后端将生成的 `bridge.mjs` 随应用复制到后端目录：
 
 ```js
 import { createBackendClient } from './bridge.mjs';
-const { connector, assistant, skill, artifact, kanban } = createBackendClient({
+const { assistant, skill, artifact, kanban } = createBackendClient({
   url: process.env.DESKTOP_ACTION_BRIDGE_URL,
   token: process.env.DESKTOP_ACTION_BRIDGE_TOKEN
 });
 ```
 
-仅受管后端使用 Desktop 注入的 loopback URL 与 token；不得转发至前端或日志。Node SDK 不依赖 DOM。UI 登录、权限确认、产物预览/保存和其他原生交互只允许页面调用。退出账号后 token 失效，登录并重启应用后重新获得。
+仅受管后端使用 Desktop 注入的 loopback URL 与 token；不得转发至前端或日志。Node SDK 不依赖 DOM。连接器 list/describe/invoke、UI 登录、权限确认、产物预览/保存和其他原生交互只允许页面调用。退出账号后 token 失效，登录并重启应用后重新获得。
 
 | 能力 | 当前接口与约束 |
 | --- | --- |
@@ -64,24 +75,14 @@ if (items.length) await artifact.open({ chatId, runId, artifactId: items[0].arti
 
 错误统一为 `DesktopBridgeError`，可读取 `code` 和 `action`；常见权限错误为 `app_permission_required`、`app_grant_required`、`operation_not_allowed`。`capabilities.has()` 仅表示能力已实现且应用声明，不表示已取得用户授权；应检查 `permission` 或发起权限申请。
 
-连接器登录可单独声明 `desktopBridge.connectorAuthentication: ["wecom"]`，不要求 `connectorOperations`。业务操作声明仍只控制 list/describe/invoke；已有业务声明也允许相应连接器登录。示例中的 example/item.list 仅表示已安装包中实际存在的操作，具体连接器是否可用，以当前 Platform 的 describe 返回为准。
+连接器登录可单独声明 `desktopBridge.connectorAuthentication:["wecom"]`，执行声明也允许相应连接器登录。认证复用现有 config，不创建额外凭据目录。
 
-连接器认证复用 Platform 现有凭据，工作台、Agent、管理界面使用同一连接器账号，不要求 personalConfig，也不新增用户目录。应用 grant 与宿主身份校验保留；登录成功不自动赋予应用业务调用权限。
+## 重试与执行回执
 
-## 连接器写入与授权版本
+SDK 不自动重试。应用为发送等有副作用请求提供稳定 idempotencyKey，Platform 在执行前落盘 claim，完成后保存原始结果；同键同请求返回收据，不同参数冲突，未完成 claim 返回 invocation_outcome_unknown。退出码非零和 MCP isError 仍是可回放的执行结果，不代表肯定未产生副作用。无幂等键调用不提供去重保障。
 
-Manifest 新增 `desktopBridge.connectorWrite: true`，业务 operation 仍逐项列入 `connectorOperations`。页面先请求 `desktop.requestAccess({capability:'connector.read'})`；发送前单独请求 `desktop.requestAccess({capability:'connector.write'})`，仅 `status:'granted'` 才继续。新能力会出现在 `desktop.capabilities.list()` 中，未声明时不可授权。
+credentialRevision 是不含凭据的账号状态版本，可在连续业务调用中回传；登录变化后执行前拒绝。超时、输出超限或响应丢失后不能换键自动重发。CLI 输出不是凭据保密沙箱；应用获得执行权限后可使用该 CLI 自身提供的数据功能。
 
-调用仍使用 `connector.invoke`，新增可选 `idempotencyKey` 和 `credentialRevision`，不增加独立 send 函数。写 operation 必须有 8–128 位字母、数字、点、下划线、冒号或连字符组成的幂等键。`credentialRevision` 来自前一次 invoke 返回，是非凭据的授权版本，连续回传可防止多步操作跨越登录变化。示意：
+## 升级
 
-```js
-const result = await connector.invoke({
-  connectorId: 'example', operationId: 'message.send',
-  revision: description.revision,
-  credentialRevision: previous.credentialRevision,
-  idempotencyKey: 'daily-reminder:2026-09-19',
-  arguments: { /* 按 describe 中的 inputSchema */ }
-});
-```
-
-Platform 相同键及参数返回已有成功结果，参数不同返回 `idempotency_conflict`。`invocation_outcome_unknown` 表示可能已经执行，页面必须提示核对，不能换键自动重发。Desktop 网络错误也不能推导为“肯定未发送”。SDK 不重试。Node 后端即使应用已获写授权也不能执行写 operation。
+撤销旧 operationId、connectorOperations、connectorWrite 契约。旧 operationId 请求返回 connector_contract_upgrade_required；旧权限请求被拒绝，旧 Manifest 不能静默升级为全量执行。无连接器执行声明的 Bridge v1 应用仍保留原有其他能力。Desktop、Platform 和应用新契约须同步升级，宿主 grant 请求固定 version:2。

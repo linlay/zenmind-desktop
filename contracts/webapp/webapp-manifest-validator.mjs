@@ -5246,13 +5246,18 @@ const webappManifestV2Schema = strictObject({
     ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
   }).optional(),
   desktopBridge: strictObject({
-    version: literal(1),
+    version: union([literal(1), literal(2)]),
     kanbanRead: boolean().optional(),
     connectorAuthentication: array(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).max(64).optional(),
-    connectorWrite: boolean().optional(),
-    connectorOperations: record(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u), array(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).min(1).max(128)).optional()
+    connectorExecution: array(strictObject({
+      connectorId: string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u),
+      adapter: _enum(["cli", "mcp"])
+    })).max(64).optional()
   }).default({ version: 1 })
 }).superRefine((value, context) => {
+  if (value.desktopBridge.connectorExecution?.length && value.desktopBridge.version !== 2) {
+    context.addIssue({ code: "custom", path: ["desktopBridge", "version"], message: "Connector execution requires desktopBridge version 2." });
+  }
   if (jsonBytes(value) > WEBAPP_MANIFEST_MAX_BYTES) {
     context.addIssue({
       code: "custom",

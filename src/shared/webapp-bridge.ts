@@ -1,11 +1,10 @@
 import type { WebappDesktopBridgeConfig } from "./webapp-manifest";
-export const WEBAPP_BRIDGE_VERSION = 1 as const;
+export const WEBAPP_BRIDGE_VERSION = 2 as const;
 
 export const WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES = [
   "assistant.chat",
   "assistant.image",
-  "connector.read",
-  "connector.write",
+  "connector.execute",
   "skill.read",
   "artifact.read",
   "kanban.read",
@@ -83,8 +82,7 @@ export const WEBAPP_BRIDGE_CAPABILITY_ACTIONS: Readonly<Record<WebappBridgeCapab
     "artifact.present": Object.freeze(["artifact.open", "artifact.saveAs"]),
     "artifact.read": Object.freeze(["artifact.list", "artifact.get", "artifact.read"]),
     "desktop.permissions": Object.freeze([WEBAPP_BRIDGE_ACTIONS.permissionsRequest]),
-    "connector.write": Object.freeze([]),
-    "connector.read": Object.freeze([WEBAPP_BRIDGE_ACTIONS.connectorList,WEBAPP_BRIDGE_ACTIONS.connectorDescribe,WEBAPP_BRIDGE_ACTIONS.connectorInvoke]),
+    "connector.execute": Object.freeze([WEBAPP_BRIDGE_ACTIONS.connectorList,WEBAPP_BRIDGE_ACTIONS.connectorDescribe,WEBAPP_BRIDGE_ACTIONS.connectorInvoke]),
     "desktop.connector.authenticate": Object.freeze([WEBAPP_BRIDGE_ACTIONS.connectorAuthenticate]),
     "assistant.chat": Object.freeze([WEBAPP_BRIDGE_ACTIONS.assistantChat, "assistant.events", "assistant.stop"]),
     "assistant.image": Object.freeze([
@@ -128,5 +126,5 @@ export function resolveWebappAction(action: string): string {
 
 // Login permission is independent of a package's optional business operations.
 export function getWebappAuthenticationConnectors(config?: WebappDesktopBridgeConfig): string[] {
-  return [...new Set([...(config?.connectorAuthentication ?? []), ...Object.keys(config?.connectorOperations ?? {})])];
+  return [...new Set([...(config?.connectorAuthentication ?? []), ...(config?.connectorExecution ?? []).map(p => p.connectorId)])];
 }

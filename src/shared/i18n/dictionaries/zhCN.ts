@@ -8,7 +8,7 @@ const desktopPetClassicDescription =
 
 export const zhCNMessages = {
   "webapp.permission.title": "应用数据访问授权",
-  "webapp.permission.writeDetail": "允许 {appId} 在本次应用运行期间执行声明的连接器写操作（包括发送消息）吗？授权后，在应用中点击发送按钮即可发出真实消息。",
+  "webapp.permission.executionDetail": "允许 {appId} 在本次应用运行期间执行 {connectorId} 的 {adapter} 命令吗？该权限可以读取数据、发送消息或修改数据，并不限定为只读。",
   "webapp.permission.detail": "允许 {appId} 在本次应用运行期间使用 {capability} 吗？",
   "webapp.permission.allow": "允许",
   "webapp.connector.signIn": "登录连接器 {connectorId}",

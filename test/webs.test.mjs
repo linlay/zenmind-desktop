@@ -886,3 +886,11 @@ test('login-only WebApp tokens do not authorize connector business operations or
   assert.equal(isWebappActionAllowed(item,'backendActionToken','desktop.authenticateConnector'),false);
  }finally{revokeWebappActionToken(token)}
 });
+
+ test('generic connector execution requires v2 and is never a backend capability',()=>{
+  const parsed=parseWebappManifest({...manifest('generic'),desktopBridge:{version:2,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}});
+  assert.equal(isWebappActionAllowed(parsed,'localPageGateway','connector.invoke'),true);
+  assert.equal(isWebappActionAllowed(parsed,'backendActionToken','connector.invoke'),false);
+  assert.throws(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorOperations:{wecom:['send']}}}));
+  assert.throws(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
+ });
