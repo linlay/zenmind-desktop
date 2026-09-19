@@ -53,7 +53,7 @@ Desktop 设备身份与账号会话分开管理，但共同参与 Realtime gener
 
 ## 凭据分发
 
-Desktop 为 Agent Platform 签发 app token 时，从已经完成 SSO 验证的内存 canonical token 的 issuer 与 subject 派生稳定个人主体；不同账号或 issuer 必须得到不同主体，同一账号刷新 token 不改变主体。派生函数只做映射，不替代 SSO 签名和会话校验。Identity Center 继续通过既有 username 参数签发，保留 app scope 与 device claim，不改写服务配置或削弱 Backend 的个人连接器 owner 校验。
+Desktop 为 Agent Platform 签发 app token 时，从已经完成 SSO 验证的内存 canonical token 的 issuer 与 subject 派生稳定个人主体；不同账号或 issuer 必须得到不同主体，同一账号刷新 token 不改变主体。派生函数只做映射，不替代 SSO 签名和会话校验。Identity Center 继续通过既有 username 参数签发，保留 app scope 与 device claim，不改写服务配置或削弱应用 grant 的主体校验。连接器认证仍复用当前部署的一套凭据，subject 不用于选择连接器凭据目录。
 
 token 缓存和 capability 并发签发按个人主体隔离；返回 token 的主体必须与请求相同，异步签发结束后还需确认 Desktop 当前身份未改变。Main、WorkPanel BTW 和 Selection Explain 使用同一身份 provider，不能让普通聊天和辅助流获得不同的身份边界。未登录时保留既有应用身份行为，但不能据此访问需要个人身份的连接器。
 

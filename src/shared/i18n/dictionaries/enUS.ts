@@ -313,7 +313,7 @@ export const enUSMessages = {
   "artifactManagement.restartRequired": "Artifact actions are not loaded. Restart Desktop and try again.",
   "artifactManagement.preparing": "Preparing artifact…",
   "artifactManagement.next": "Next",
-  "nav.shareManagement": "Share Management",
+  "nav.shareManagement": "Shares",
   "nav.settings": "Settings",
   "nav.help": "Help",
   "nav.capabilities": "Capability navigation",

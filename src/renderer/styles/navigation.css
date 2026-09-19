@@ -3295,7 +3295,9 @@ div.sidebar-chats-group-popover {
   padding: 4px;
 }
 
-.sidebar-tool-menu-popover {
+/* The inner account menu owns the surface, including when a skin is active. */
+:root div.sidebar-tool-menu-popover,
+:root[data-desktop-skin] div.sidebar-tool-menu-popover {
   overflow: visible;
   border: 0;
   border-radius: 0;
@@ -3378,6 +3380,22 @@ div.sidebar-chats-group-popover {
 
 .sidebar-account-menu .sidebar-tool-menu-item {
   justify-content: flex-start;
+}
+
+.sidebar-account-menu-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-account-menu-footer > .sidebar-tool-menu-item:first-child {
+  flex: 1;
+}
+
+.sidebar-account-menu-footer > .sidebar-tool-menu-item:last-child:not(:first-child) {
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
 }
 
 .sidebar-account-menu .sidebar-tool-menu-item:hover,
