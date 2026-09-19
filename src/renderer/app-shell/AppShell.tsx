@@ -4414,9 +4414,13 @@ export function AppShell() {
           setWorkPanelOpenError(t("chatWorkPanel.resourceActions.failed"));
           return;
         }
-        const result = dispatchWorkPanelCommand({ type: "setDialogPresentation", ownerChatId: presentation.ownerChatId,
-          itemId: presentation.itemId, dialog: null, restoreUrl: restored.url });
-        if (!result.ok) return; // The Chat or item may have been removed during transfer.
+        // Apply the whole window restoration synchronously so automatic dialog
+        // routing never sees a half-restored workspace.
+        for (const entry of restored.restoredItems ?? [{ transferId, surfaceId: presentation.surfaceId, url: restored.url }]) {
+          const item = workPanelStateRef.current.dialogItems?.find((candidate) => candidate.transferId === entry.transferId && candidate.surfaceId === entry.surfaceId);
+          if (item) dispatchWorkPanelCommand({ type: "setDialogPresentation", ownerChatId: item.ownerChatId,
+            itemId: item.itemId, dialog: null, restoreUrl: entry.url });
+        }
         if (agentKey) {
           const targetRoute = createAgentChatRoute(agentKey, presentation.ownerChatId);
           requestChatWorkPanelOpenWhenRegistered(presentation.ownerChatId, agentKey, "show", targetRoute);
@@ -5061,6 +5065,8 @@ export function AppShell() {
           launcher={{
             agentKey: activeChatRouteInfo.agentKey,
             agentMode: workPanelLauncherAgentMode,
+            agentLabel: workPanelLauncherAgent?.displayName ? `${workPanelLauncherAgent.displayName} (${activeChatRouteInfo.agentKey})` : activeChatRouteInfo.agentKey,
+            chatLabel: [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || activeChatWorkPanelChatId || "",
             projectEnabled: workPanelProjectEnabled,
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,

@@ -115,8 +115,10 @@ export function createBrowserSurfaceRegistry_registerSurfaceResult_2(context: Cr
         });
     }
     const canonicalSurfaceId = input.surfaceId.trim();
-    const dialogRegistrationId = context.workPanelDialogRegistrations.get(canonicalSurfaceId);
-    if (dialogRegistrationId && dialogRegistrationId !== input.registrationId) {
+    const dialogReservation = context.workPanelDialogRegistrations.get(canonicalSurfaceId);
+    if (dialogReservation && (dialogReservation.registrationId !== input.registrationId ||
+        dialogReservation.ownerChatId !== input.ownerChatId || dialogReservation.ownerWebContentsId !== ownerWebContentsId ||
+        dialogReservation.parentSurfaceId !== input.parentSurfaceId || input.surfaceRole !== "workpanel-web" || input.surfaceKind !== "chat-work-panel")) {
         // A late publication by the old embedded renderer cannot reclaim the
         // surface while Main owns its dialog presentation.
         return { ok: false, reason: "ownership_conflict" };
@@ -157,7 +159,7 @@ export function createBrowserSurfaceRegistry_registerSurfaceResult_2(context: Cr
         Boolean(parentSurface.ownerChatId &&
             registrationInput.ownerChatId &&
             parentSurface.ownerChatId !== registrationInput.ownerChatId &&
-            context.workPanelDialogRegistrations.get(registrationInput.surfaceId) !== registrationInput.registrationId))) {
+            context.workPanelDialogRegistrations.get(registrationInput.surfaceId)?.registrationId !== registrationInput.registrationId))) {
         return context.rejectSurfaceRegistration(registrationInput, ownerWebContentsId, "parent_surface_conflict", {
             existing: context.summarizeRegisteredSurface(parentSurface),
             conflict: {
@@ -284,7 +286,7 @@ export function createBrowserSurfaceRegistry_resolveRegisteredSurface_6(context:
 export function createBrowserSurfaceRegistry_removeChildSurfaces_7(context: CreateBrowserSurfaceRegistryContext, parentSurfaceId: string): void {
     const children = [...context.registeredSurfaces.values()]
         .filter((surface) => surface.parentSurfaceId === parentSurfaceId &&
-            context.workPanelDialogRegistrations.get(surface.surfaceId) !== surface.registrationId)
+            context.workPanelDialogRegistrations.get(surface.surfaceId)?.registrationId !== surface.registrationId)
         .map((surface) => surface.surfaceId);
     for (const childId of children) {
         const child = context.registeredSurfaces.get(childId);

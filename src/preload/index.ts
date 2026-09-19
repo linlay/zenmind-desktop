@@ -79,6 +79,7 @@ import {
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
 import {
   CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL,
+  CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED,
   CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED,
   CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED,
   CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
@@ -134,6 +135,11 @@ const api: DesktopApi = {
   },
   chatWorkPanelTabContextMenu: {
     webDialog: (request) => ipcRenderer.invoke(CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL, request),
+    onWebDialogOpenRequested: (listener) => {
+      const handler = (_event: unknown, request: import("../shared/chat-work-panel-tab-context-menu").WorkPanelWebDialogOpenRequest) => listener(request);
+      ipcRenderer.on(CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED, handler);
+      return () => { ipcRenderer.off(CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED, handler); };
+    },
     onWebDialogRestoreRequested: (listener) => {
       const handler = (_event: unknown, transferId: string) => listener(transferId);
       ipcRenderer.on(CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED, handler);

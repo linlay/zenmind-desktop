@@ -909,6 +909,7 @@ export interface DesktopApi {
   };
   chatWorkPanelTabContextMenu: {
     webDialog: (request: import("../chat-work-panel-tab-context-menu").WorkPanelWebDialogRequest) => Promise<import("../chat-work-panel-tab-context-menu").WorkPanelWebDialogResult>;
+    onWebDialogOpenRequested: (listener: (request: import("../chat-work-panel-tab-context-menu").WorkPanelWebDialogOpenRequest) => void) => () => void;
     onWebDialogRestoreRequested: (listener: (transferId: string) => void) => () => void;
     onWebDialogCloseRequested: (listener: (transferId: string) => void) => () => void;
     popup: (
