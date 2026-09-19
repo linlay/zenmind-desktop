@@ -5,7 +5,6 @@ import type {
   AssistantNavigationAttentionSummary,
 } from "./contracts";
 
-const PROJECT_AGENT_MODES = new Set(["CODER", "KBASE"]);
 const NAVIGATION_HIDDEN_AGENT_KEYS = new Set([
   "desktopAssistant",
   "webOperator",
@@ -28,7 +27,7 @@ function summarizeChats(
 export function isAssistantNavigationAttentionProjectAgent(agent: AssistantNavAgentItem) {
   return (
     !NAVIGATION_HIDDEN_AGENT_KEYS.has(agent.agentKey.trim()) &&
-    PROJECT_AGENT_MODES.has(agent.mode?.trim().toUpperCase() ?? "")
+    Boolean(agent.workspaceDir?.trim())
   );
 }
 

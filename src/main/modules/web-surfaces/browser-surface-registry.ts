@@ -79,7 +79,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   >();
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
   const pendingRegistrationDiagnostics = new Map<string, PendingSurfaceRegistrationDiagnostic>();
-  const workPanelDialogRegistrations = new Map<string, string>();
+  const workPanelDialogRegistrations: CreateBrowserSurfaceRegistryContext["workPanelDialogRegistrations"] = new Map();
   const lifecycleListeners = new Set<(event: BrowserSurfaceLifecycleEvent) => void>();
   const registrationDiagnosticDedupWindowMs = Math.max(
     10,
@@ -204,15 +204,25 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     const snapshot = getRegisteredSurfaceSnapshot(surfaceId, registrationId, ownerWebContentsId);
     if (!snapshot || snapshot.registered.surfaceKind !== "chat-work-panel" || snapshot.registered.surfaceRole !== "workpanel-web" ||
         !snapshot.registered.ownerChatId || workPanelDialogRegistrations.has(surfaceId)) return false;
-    workPanelDialogRegistrations.set(surfaceId, nextRegistrationId);
+    workPanelDialogRegistrations.set(surfaceId, { registrationId: nextRegistrationId, ownerChatId: snapshot.registered.ownerChatId, ownerWebContentsId, parentSurfaceId: snapshot.registered.parentSurfaceId });
+    return true;
+  }
+  // Only Main can extend an existing dialog reservation. The caller derives
+  // the sibling identity from the original Chat and the reducer's stable key.
+  function retainWorkPanelDialogSibling(sourceId: string, sourceRegistrationId: string, surfaceId: string, registrationId: string) {
+    const source = workPanelDialogRegistrations.get(sourceId);
+    if (!source || source.registrationId !== sourceRegistrationId ||
+        registeredSurfaces.has(surfaceId) || workPanelDialogRegistrations.has(surfaceId)) return false;
+    workPanelDialogRegistrations.set(surfaceId, { ...source, registrationId });
     return true;
   }
   function releaseWorkPanelDialogSurface(surfaceId: string, registrationId: string) {
-    if (workPanelDialogRegistrations.get(surfaceId) === registrationId) workPanelDialogRegistrations.delete(surfaceId);
+    if (workPanelDialogRegistrations.get(surfaceId)?.registrationId === registrationId) workPanelDialogRegistrations.delete(surfaceId);
   }
 
   return {
     retainWorkPanelDialogSurface,
+    retainWorkPanelDialogSibling,
     releaseWorkPanelDialogSurface,
     currentPageSnapshotMatchesSurface,
     findWebContentsById,

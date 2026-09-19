@@ -33,7 +33,6 @@ function toOptionalNonNegativeInteger(value: unknown) {
     : undefined;
 }
 
-const PROJECT_ASSISTANT_MODES = new Set(["CODER", "KBASE"]);
 const HIDDEN_CHAT_AGENT_KEYS = new Set(["desktopAssistant", "webOperator"]);
 
 function resolveAssistantNavUnreadCount(options: {
@@ -213,13 +212,13 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
 }
 
 export function isAssistantNavProjectAgent(
-  agent: Pick<AssistantNavAgentItem, "mode"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "workspaceDir"> | null | undefined,
 ) {
-  return PROJECT_ASSISTANT_MODES.has(agent?.mode?.trim().toUpperCase() ?? "");
+  return Boolean(agent?.workspaceDir?.trim());
 }
 
 export function isAssistantNavChatAgent(
-  agent: Pick<AssistantNavAgentItem, "agentKey" | "mode"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "agentKey" | "workspaceDir"> | null | undefined,
 ) {
   const agentKey = agent?.agentKey.trim() ?? "";
   return Boolean(agentKey) &&

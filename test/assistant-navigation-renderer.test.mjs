@@ -103,10 +103,10 @@ test("assistant nav resolves adjacent chats without wrapping", () => {
 test("assistant nav reorders only Project slots and appends omitted projects", () => {
   const items = [
     { agentKey: "chat-a", mode: "CHAT" },
-    { agentKey: "coder-a", mode: "CODER" },
+    { agentKey: "coder-a", mode: "CODER", workspaceDir: "/projects/a" },
     { agentKey: "copilot", mode: "REACT" },
-    { agentKey: "kbase-b", mode: "KBASE" },
-    { agentKey: "coder-new", mode: "CODER" },
+    { agentKey: "kbase-b", mode: "REACT", workspaceDir: "C:\\projects\\b" },
+    { agentKey: "coder-new", mode: "CODER", workspaceDir: "/projects/new" },
   ];
 
   const reordered = reorderAssistantNavProjectAgents(items, [
@@ -225,17 +225,22 @@ test("assistant nav preview caps visible awaiting rows at five", () => {
   );
 });
 
-test("assistant nav project predicate only accepts CODER and KBASE modes", () => {
-  assert.equal(isAssistantNavProjectAgent({ mode: "CODER" }), true);
-  assert.equal(isAssistantNavProjectAgent({ mode: "kbase" }), true);
-  assert.equal(isAssistantNavProjectAgent({ mode: "CHAT" }), false);
-  assert.equal(isAssistantNavProjectAgent({}), false);
+test("assistant nav project predicate uses workspace regardless of mode or directory existence", () => {
+  for (const mode of ["CODER", "KBASE", "CHAT", "REACT", undefined]) {
+    assert.equal(isAssistantNavProjectAgent({ mode, workspaceDir: " /projects/demo " }), true);
+    assert.equal(isAssistantNavProjectAgent({ mode, workspaceDir: "C:\\projects\\demo", workspaceDirExists: false }), true);
+    for (const workspaceDir of [undefined, "", "   "]) {
+      assert.equal(isAssistantNavProjectAgent({ mode, workspaceDir }), false);
+    }
+  }
+  assert.equal(isAssistantNavProjectAgent(null), false);
 });
 
 test("assistant nav Chats exclude projects and internal agents", () => {
   assert.equal(isAssistantNavChatAgent({ agentKey: "zenmi", mode: "CHAT" }), true);
   assert.equal(isAssistantNavChatAgent({ agentKey: "legacy" }), true);
-  assert.equal(isAssistantNavChatAgent({ agentKey: "coder", mode: "CODER" }), false);
+  assert.equal(isAssistantNavChatAgent({ agentKey: "project", mode: "REACT", workspaceDir: "/projects/demo" }), false);
+  assert.equal(isAssistantNavChatAgent({ agentKey: "coder", mode: "CODER" }), true);
   assert.equal(isAssistantNavChatAgent({ agentKey: "desktopAssistant", mode: "CHAT" }), false);
   assert.equal(isAssistantNavChatAgent({ agentKey: "webOperator", mode: "CHAT" }), false);
 });
@@ -617,4 +622,17 @@ test("project previews exclude pins before applying each display limit", () => {
   assert.equal(getAssistantNavAgentPreviewChats(agent, 20).length, 20);
   assert.equal(getAssistantNavAgentPreviewChats(agent, 20).at(-1).chatId, "chat-26");
   assert.equal(getAssistantNavAgentPreviewChats(agent, 20).some((item) => item.pinned), false);
+});
+
+test("root-agent API projection keeps zenmi available for startup and Chats new chat", () => {
+  // Platform resolves @root internally but omits workspaceDir from the catalog.
+  const [zenmi] = normalizeAssistantNavAgents([{ agentKey: "zenmi", mode: "REACT", displayName: "小宅", recentChats: [] }]);
+  const options = [zenmi, { agentKey: "project", mode: "REACT", workspaceDir: "/project" }].filter(isAssistantNavChatAgent);
+  assert.deepEqual(options, [zenmi]);
+  assert.equal(isAssistantNavProjectAgent(zenmi), false);
+  const runtime = resolveAssistantNavChatRuntimeAgent(options, { defaultChatAgentKey: "zenmi" });
+  assert.equal(runtime.agent, zenmi);
+  assert.equal(runtime.agentKey, "zenmi");
+  assert.equal(runtime.defaultAgentAvailable, true);
+  assert.deepEqual(resolveFirstInstallBootstrapNavigationTarget(options, [], { defaultChatAgentKey: "zenmi" }), { agentKey: "zenmi" });
 });

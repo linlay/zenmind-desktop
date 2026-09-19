@@ -61,9 +61,13 @@ Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展�
 
 图片 Surface 对 PNG/JPEG/WebP 保留像素编辑、撤销/重做、AI 工具和区域批注。非编辑格式只读，不得通过错误扩展名或隐式栅格化覆盖原件；JPEG 不接受含透明像素的覆盖结果。系统打开、定位和解码链路必须分别回归 macOS 与 Windows。
 
-普通 Web tab 可通过右键菜单改为独立 dialog 展示，与面板内的 tab/guest 互斥。AppShell reducer 仍持有原 item、owner Chat 和批注草稿，只将宿主展示位置改为 dialog；公开 workspace/item 投影不变，重复打开或激活同一 item 聚焦既有窗口。Main 从已登记的真实来源 guest 捕获 surface 身份，以一次性转移标识衔接 UI 卸载，原 guest 销毁后才创建目标 guest；沿用原 surfaceId、ownerChatId、parentSurfaceId 与 WorkPanel 类型，并更新 live registration generation，防止旧 renderer 清理误删新登记。窗口里的页面继续通过同一 Chat 的 WorkPanel Run 授权访问，不成为普通 Browser 或其他 Chat 的 surface。Main-only reservation 使该 WorkPanel 身份不随 Main Chat guest 的切换或卸载消失，也不允许其他 renderer/Chat 获得它。
+普通 Web tab 的右键入口将所属 Chat 的所有普通网站移到同一个独立浏览器窗口。窗口提供多 Tab、地址栏、前进/后退/刷新和新建 Tab，系统标题栏区域常驻智能体名称/标识、对话名称、对话标识和还原入口，网页内容区不再重复单独的归属 header。不同 Chat 使用不同窗口，不按域名或当前前台 Chat 合并。AppShell reducer 仍持有每个原 item、stable key、owner Chat 与批注草稿；每个 Tab 保留独立 Surface，Main 只拥有窗口、guest 和运行期转移 reservation，面板与 dialog 不并存挂载同一 item。
 
-窗口不设置 parent、modal 或 alwaysOnTop，遵循正常系统窗口排序；Main 只在生命周期上负责随主窗口关闭、renderer 失效或 item/workspace 回收清理。macOS 使用原生标题栏和 Cmd+W，Windows 隐藏菜单栏并使用 Ctrl+W。原生关闭按钮和快捷键都先交回 AppShell 走原有草稿保护。切换采用先释放后重建，重新加载当前实际 HTTP(S) 地址，Cookie 沿用默认 session，但未提交的 DOM 状态不跨窗口保留；批注仍留在 reducer 并明确标记重载失效。失败时先回收目标窗口和登记，再恢复原 item 在面板内展示。窗口中的远端 guest 不获得通用 Desktop preload 或 Token Bridge。窗口宿主工具栏提供“还原到 WorkPanel”：只由可信 shell 请求，Main 读取 guest 当前实际地址、释放 guest 与 dialog 登记后才回复；AppShell 保留原 item/stable key/surface 身份，记录当前显示地址并激活所属 Chat 的面板。还原不走关闭 item 或丢弃批注流程，重复打开原入口仍复用同一 item。
+初次转移从已登记的真实来源 guest 捕获身份，以一次性转移标识衔接 UI 卸载；原 guest 销毁后才创建目标 guest，更新 live registration generation，防止旧 renderer 清理误删新登记。同 Chat 后续打开的网站进入既有窗口。窗口内 HTTP(S) 链接新开页、`window.open` 与手动新建 Tab 都经真实来源 transfer 回到 AppShell 创建 item；Main 只可从既有 reservation 派生同 Chat 的新 Surface，不接受调用方选择其他 Chat。该 reservation 不随 Main Chat 切换或卸载消失，新页与原页继续受原 Chat 的 WorkPanel Run 授权约束，不能成为通用 Browser 或其他 Chat 的页面。
+
+窗口不设置 parent、modal 或 alwaysOnTop，遵循正常系统排序；macOS 使用融合标题栏并保留原生 traffic lights，Windows 使用标题栏 overlay 保留系统窗口控件并隐藏菜单栏；归属文本所在区域支持系统拖动，返回按钮排除在拖动区域之外。关闭整个窗口与系统标题栏区域“还原到 WorkPanel”执行同一整体还原：Main 捕获各 Tab 当前实际地址，释放所有 guest 和 reservation 后返回；AppShell 同步还原所有 item，进入所属 Chat，并选中窗口最后活动的 Tab。该操作不删除 item 或丢弃草稿。单个 Tab 的关闭与 macOS Cmd+W / Windows Ctrl+W（多 Tab 时）走原有 item 草稿保护；最后一个 Tab 的窗口快捷键以及 Cmd/Ctrl+Shift+W 还原整个窗口。关闭 workspace、归档/删除 Chat、主窗口关闭或 renderer 失效仍回收对应资源。
+
+窗口内切换 Tab 保留 guest 和页面状态；面板与独立窗口之间切换会重新加载当前 HTTP(S) 地址，Cookie 沿用默认 session，未提交 DOM 状态不跨宿主保留，批注草稿保留并明确标记重载失效。转移失败回收目标 guest/登记并恢复原 item；远端加载失败留在浏览器显示错误，可刷新或更换地址。远端 guest 不获得通用 Desktop preload、Token Bridge 或宿主控制通道，远端页面访问与宿主相同的控制 URL 不能触发窗口操作。
 
 ## 实时 loopback 项目
 

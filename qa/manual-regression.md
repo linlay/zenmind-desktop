@@ -159,6 +159,10 @@
 
 ## 项目侧边栏
 
+- 将默认智能体设为配置 workspaceRoot: "@root" 的通用智能体（如小宅 zenmi），确认 Platform 列表省略 workspaceDir，重启后确认离开 Loading core components 并进入默认对话，Chats 新建对话与默认智能体选择仍可用；macOS 与 Windows 均覆盖，确认根路径不泄漏到项目列表。
+
+- macOS 与 Windows 分别验证 Projects 仅按 workspaceDir 去除空白后是否非空分类：带目录的 REACT/CHAT Agent 显示为项目，无目录的 CODER/KBASE 不显示为项目；目录已删除的 Agent 仍保留项目归属。验证普通项目及非 CODER/KBASE 项目的拖拽保存、刷新顺序与 Git 分支显示。
+
 - 展开“项目”分组，确认标题栏显示“全部展开/全部收起项目”“刷新项目”和“新增项目”；收起外层分组后只保留“新增项目”，重新展开后前两个操作恢复，各项目原有展开状态保持不变，但“查看更多”恢复为首批 5 条。
 - 在外层项目分组展开时逐一悬浮“全部展开/全部收起项目”“刷新项目”和“新增项目”，确认每个按钮只显示一份自定义提示，不再同时出现浏览器原生 `title` 提示；外层收起时“新增项目”仍可正常打开创建流程。
 - 比较“全部展开/全部收起项目”与相邻刷新、新增图标，确认箭头和分隔线充分占满 16px 图标画布，视觉尺寸与描边重量一致，切换状态时按钮热区和标题栏布局不跳动。
@@ -735,14 +739,16 @@
 - WorkPanel 网络页后台截图保留有效尺寸，输入后前台焦点恢复；macOS/Windows 坐标均为 CSS 像素。
 ## WorkPanel 网站独立窗口
 
-- macOS 与 Windows 分别右键普通网站 tab，选择“在独立窗口打开”：原 tab 从面板移除，原 guest 销毁后才创建独立 guest，不能存在两个网站实例；打开当前实际地址，登录 Cookie 可用。
-- 查看 WorkPanel 状态与 CDP：原 item、surfaceId、ownerChatId、parentSurfaceId 保留，guest/registration generation 更新；只能由原 Chat 的 WorkPanel Run 授权操作。切换 Chat 或卸载 Main Chat 后独立窗口仍保持原归属，其他 Chat 不可访问。
-- 重复打开同一 URL、activateTab 与 refreshWeb 操作既有独立窗口，不重新在面板创建 guest。原生窗口不设置父窗口、modal 或 alwaysOnTop，点击主窗口或其他应用时按正常系统层级切换。
-- 关闭窗口（关闭按钮、Cmd+W / Ctrl+W）经过原有草稿保护，取消关闭保留窗口；确认后回收 item/guest/登记。关闭所属 workspace、归档/删除 Chat、主窗口关闭或 renderer 失效均回收窗口。
-- 切换后批注草稿保留并标记重载失效，未提交 DOM 状态不迁移。加载失败先销毁目标窗口再恢复面板 item；非 Web tab 与仅复制地址菜单不显示该入口。
-
-- 独立窗口顶部点击“还原到 WorkPanel”，确认回到所属 Chat 并选中原 tab；从其他 Chat、其他主页面、面板隐藏及主窗口最小化状态分别验证。还原使用独立窗口当前地址（含 query/hash），不回到初始地址；原 item、surfaceId 与草稿保留，没有第二个并存 guest。再次弹出与还原可连续使用；仅点击窗口关闭按钮仍走关闭逻辑。
-- 在独立网页内部导航到同样的 restore URL，确认不会触发宿主还原动作；只有独立窗口的宿主工具栏可请求还原。
+- macOS 与 Windows 分别在同一 Chat 打开三个网站，右键任意网站 tab 选择“在独立窗口打开”：全部网站进入同一个多 Tab 浏览器窗口；文件、Overview 等仍留在面板。每个原 guest 销毁后才创建目标 guest，登录 Cookie 可用。
+- 系统标题栏区域显示智能体名称/标识、对话名称与对话 ID 和还原按钮，内容区无重复 header；macOS 原生 traffic lights 与 Windows 系统窗口控件不遮挡文本或还原按钮。长名称和最小窗口宽度下标题截断但还原按钮可用；拖动标题区可移动窗口，点击还原按钮不触发拖动。另一个 Chat 打开独立窗口时不能合并两个对话。
+- 标签切换保留各页 DOM/表单状态；前进、后退、刷新、地址栏导航和“+”输入网址新建 Tab 可用。网站 target=_blank、window.open(HTTP(S)) 与后续新页再次新开链接都进入原窗口。
+- 切到其他 Chat、隐藏 WorkPanel 或卸载 Main Chat 后，从既有网页打开新 Tab 仍归原 Chat。检查 WorkPanel/CDP：每个 item 与 Surface 独立、ownerChatId/parentSurfaceId 正确，其他 Chat 无权访问。
+- 重复打开同一 URL、activateTab 与 refreshWeb 操作既有窗口对应 Tab，不创建重复 guest。窗口无父窗口、modal 或 alwaysOnTop；主窗口与其他应用可正常覆盖它。
+- 关闭单个 Tab 只关闭该 item，保留其他网页，含批注时走原有草稿保护。macOS Cmd+W / Windows Ctrl+W 在多 Tab 时关闭当前 Tab，最后一个 Tab 时还原；Cmd/Ctrl+Shift+W 还原整个窗口。
+- 关闭整个窗口或点击“还原到 WorkPanel”：全部网站返回原 Chat，保留当前实际地址（含 query/hash）、item/Surface 身份与草稿，选中最后活动的 Tab；不能删除网页。分别从其他 Chat、其他主页面、面板隐藏和主窗口最小化状态验证，连续弹出/还原可用。
+- 面板与独立窗口转移后批注保留并标记重载失效，未提交 DOM 状态不迁移。转移失败回收目标资源并恢复原 item；网络加载失败仍可刷新/修改地址。
+- 关闭所属 workspace、归档/删除 Chat、主窗口关闭或 renderer 失效均清理窗口、guest 与 reservation。远端页面导航到宿主 restore/action URL 不得触发宿主控制，也不能访问 Desktop preload。
+- 自动化补充：先运行 `npm run build:main:types`，再以 Electron 运行 `qa/work-panel-browser-smoke.cjs`；使用临时 profile 和本地测试网站，验证真实新 Tab、后台 Chat reservation、地址栏与整体还原，并输出明暗截图。
 
 ### Main WS 产物发布通知
 

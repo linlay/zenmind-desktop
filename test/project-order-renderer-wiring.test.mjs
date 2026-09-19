@@ -31,7 +31,7 @@ test("Projects reorder bridge is limited and wired across contract, preload, and
   assert.match(desktopApi, /reorderProjects: \(input: AssistantReorderProjectsRequest\) => Promise<AssistantReorderProjectsResult>/u);
   assert.match(preload, /reorderProjects: \(input: AssistantReorderProjectsRequest\) =>[\s\S]{0,100}ipcRenderer\.invoke\("assistant\.reorderProjects", input\)/u);
   assert.match(handlers, /ipcMain\.handle\("assistant\.reorderProjects"/u);
-  assert.match(handlers, /"\/api\/agents\?scope=nav&mode=CODER&mode=KBASE"/u);
+  assert.match(handlers, /"\/api\/agents\?scope=nav"/u);
   assert.match(handlers, /"\/api\/agents\/order"[\s\S]{0,100}method: "PUT"/u);
   assert.doesNotMatch(handlers, /"\/api\/admin\/agents"/u);
   assert.doesNotMatch(handlers, /"\/api\/admin\/agents\/order"/u);

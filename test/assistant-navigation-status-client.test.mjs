@@ -2237,7 +2237,7 @@ test("assistant navigation reads and caches Git branches with platform-specific 
   assert.equal(await resolveAssistantWorkspaceGitBranch(path.join(workspaceDir, "missing")), "");
 });
 
-test("assistant navigation enriches both Coder and Knowledge Base project branches", async () => {
+test("assistant navigation enriches workspace project branches regardless of mode", async () => {
   const requestedWorkspaces = [];
   const items = await enrichNavigationAgentsWithGitBranches([
     createAgent({
@@ -2263,10 +2263,10 @@ test("assistant navigation enriches both Coder and Knowledge Base project branch
     return workspaceDir.includes("kbase") ? "docs" : "main";
   });
 
-  assert.deepEqual(requestedWorkspaces.sort(), ["/tmp/coder-project", "/tmp/kbase-project"]);
+  assert.deepEqual(requestedWorkspaces.sort(), ["/tmp/chat-agent", "/tmp/coder-project", "/tmp/kbase-project"]);
   assert.equal(items.find((item) => item.agentKey === "coder")?.gitBranch, "main");
   assert.equal(items.find((item) => item.agentKey === "kbase")?.gitBranch, "docs");
-  assert.equal(items.find((item) => item.agentKey === "chat")?.gitBranch, undefined);
+  assert.equal(items.find((item) => item.agentKey === "chat")?.gitBranch, "main");
 });
 
 test("navigation fetches global pins independently of the regular and project cutoffs and keeps their pushes live", async (t) => {

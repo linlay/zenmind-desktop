@@ -110,8 +110,7 @@ export function buildAssistantNavigationChatsFromPlatform(chats: unknown): Assis
 }
 
 export function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
-  const mode = agent.mode?.trim().toUpperCase() ?? "";
-  return mode === "CODER" || mode === "KBASE";
+  return Boolean(agent.workspaceDir?.trim());
 }
 
 export async function enrichNavigationAgentsWithGitBranches(

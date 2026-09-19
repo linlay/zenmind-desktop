@@ -99,6 +99,8 @@ type WorkPanelHostProps = {
   launcher: {
     agentKey: string;
     agentMode: string;
+    agentLabel: string;
+    chatLabel: string;
     projectEnabled: boolean;
     projectDisabledReason?: string;
     lastRunId?: string;
@@ -354,6 +356,7 @@ export function WorkPanelHost({
   const [reviewPreloadUrl, setReviewPreloadUrl] = useState("");
   const webControllers = useRef(new Map<string, ExternalWebviewController>());
   const webDialogTransfers = useRef(new Set<string>());
+  const failedWebDialogTransfers = useRef(new Set<string>());
   const nativeHtmlControllers = useRef(new Map<string, HtmlDocumentController>());
   const [resourceReviewCapabilities, setResourceReviewCapabilities] = useState<Record<string, ResourceReviewCapability>>({});
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
@@ -1320,35 +1323,8 @@ export function WorkPanelHost({
       return;
     }
     if (result.actionId === "open-web-dialog" && currentItem.descriptor.kind === "web") {
-      const transferKey = itemRuntimeKey(ownerChatId, item.itemId);
-      if (webDialogTransfers.current.has(transferKey)) return;
-      const guest = findItemWebview(ownerChatId, item.itemId);
-      let sourceGuestId: number;
-      try { if (!guest) return; sourceGuestId = guest.getWebContentsId(); } catch { return; }
-      webDialogTransfers.current.add(transferKey);
-      let transferId: string | undefined;
-      try {
-        const prepared = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "prepare", sourceGuestId });
-        transferId = prepared.transferId;
-        if (!prepared.ok || !transferId || !prepared.surfaceId || prepared.ownerChatId !== ownerChatId) throw new Error("prepare_failed");
-        let moved = false;
-        flushSync(() => {
-          moved = dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId,
-            dialog: { ownerChatId, itemId: item.itemId, surfaceId: prepared.surfaceId!, transferId: transferId! },
-          }).ok;
-        });
-        if (!moved) throw new Error("item_unavailable");
-        const opened = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "open", transferId });
-        if (!opened.ok) throw new Error("open_failed");
-        dispatchCommand({ type: "stopReview", ownerChatId, itemId: item.itemId });
-        dispatchCommand({ type: "markReviewInvalid", ownerChatId, itemId: item.itemId, reason: "preview_reloaded" });
-      } catch {
-        if (transferId) {
-          await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId }).catch(() => undefined);
-          dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId, dialog: null });
-        }
-        modal.error({ content: t("chatWorkPanel.resourceActions.failed") });
-      } finally { webDialogTransfers.current.delete(transferKey); }
+      failedWebDialogTransfers.current.clear();
+      await moveWebToDialog(ownerChatId, currentItem);
       return;
     }
     if (result.actionId === "copy-url" && item.descriptor.kind === "web") {
@@ -1605,6 +1581,68 @@ export function WorkPanelHost({
       window.removeEventListener("scroll", handleWindowChange, true);
     };
   }, [addMenuOwnerChatId, addMenuView]);
+
+  async function moveWebToDialog(ownerChatId: string, item: WorkPanelItem) {
+    if (item.descriptor.kind !== "web") return;
+    const transferKey = itemRuntimeKey(ownerChatId, item.itemId);
+    if (webDialogTransfers.current.has(transferKey) || failedWebDialogTransfers.current.has(transferKey)) return;
+    if (stateRef.current.dialogItems?.some((entry) => entry.ownerChatId === ownerChatId && entry.itemId === item.itemId)) return;
+    const anchor = stateRef.current.dialogItems?.find((entry) => entry.ownerChatId === ownerChatId);
+    const guest = findItemWebview(ownerChatId, item.itemId);
+    const sourceGuestId = guest ? readWebviewGuestId(guest) : null;
+    if (!anchor && !sourceGuestId) return;
+    webDialogTransfers.current.add(transferKey);
+    let transferId: string | undefined;
+    let transferPhase = "prepare";
+    try {
+      const prepared = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog(anchor
+        ? { action: "prepareSibling", transferId: anchor.transferId, itemId: item.itemId, stableKey: item.stableKey,
+            url: stateRef.current.webItemUrls?.[transferKey] || item.descriptor.url, title: item.title,
+            ...(sourceGuestId ? { sourceGuestId } : {}) }
+        : { action: "prepare", sourceGuestId: sourceGuestId!, agentLabel: launcher.agentLabel || launcher.agentKey,
+            chatLabel: launcher.chatLabel || ownerChatId });
+      transferId = prepared.transferId;
+      if (!prepared.ok || !transferId || !prepared.surfaceId || prepared.ownerChatId !== ownerChatId) throw new Error("prepare_failed");
+      transferPhase = "presentation";
+      let moved = false;
+      flushSync(() => {
+        moved = dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId,
+          dialog: { ownerChatId, itemId: item.itemId, surfaceId: prepared.surfaceId!, transferId: transferId! },
+        }).ok;
+      });
+      if (!moved) throw new Error("item_unavailable");
+      transferPhase = "open";
+      const opened = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "open", transferId });
+      if (!opened.ok) throw new Error("open_failed");
+      dispatchCommand({ type: "stopReview", ownerChatId, itemId: item.itemId });
+      dispatchCommand({ type: "markReviewInvalid", ownerChatId, itemId: item.itemId, reason: "preview_reloaded" });
+    } catch {
+      console.warn("[work-panel-web-dialog] transfer failed", { phase: transferPhase, itemId: item.itemId, sourceGuestId });
+      failedWebDialogTransfers.current.add(transferKey);
+      if (transferId) {
+        await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId }).catch(() => undefined);
+        dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId, dialog: null });
+      }
+      modal.error({ content: t("chatWorkPanel.resourceActions.failed") });
+    } finally { webDialogTransfers.current.delete(transferKey); }
+  }
+
+  // A dialog is a presentation of the Chat's complete web workspace. Newly
+  // opened items use the existing Main reservation even when another Chat is active.
+  useEffect(() => {
+    for (const workspace of state.workspaces) {
+      if (!state.dialogItems?.some((entry) => entry.ownerChatId === workspace.ownerChatId)) continue;
+      for (const item of workspace.items) {
+        if (item.descriptor.kind === "web") void moveWebToDialog(workspace.ownerChatId, item);
+      }
+    }
+  }, [state]);
+
+  useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogOpenRequested(({ transferId, url }) => {
+    const source = stateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
+    const normalized = normalizeWorkPanelWebUrl(url);
+    if (source && normalized) dispatchCommand({ type: "openItem", ownerChatId: source.ownerChatId, descriptor: { kind: "web", url: normalized } });
+  }), [dispatchCommand]);
 
   useEffect(() => window.electronAPI.onWebviewOpenTab(({
     target,
@@ -2105,6 +2143,12 @@ export function WorkPanelHost({
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
                   if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
+                  // New dialog-bound items must not briefly mount a second guest
+                  // in the main window. Existing guests stay until Main captures them.
+                  if (item.descriptor.kind === "web" &&
+                      state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId) &&
+                      !webControllers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId)) &&
+                      !failedWebDialogTransfers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId))) return null;
                   const active = visible && workspace.activeItemId === item.itemId;
                   // Read-only observers belong to the visible, committed Main Chat.
                   // A hidden guest can fail registration after a Chat switch and

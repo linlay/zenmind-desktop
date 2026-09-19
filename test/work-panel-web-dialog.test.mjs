@@ -18,7 +18,7 @@ function setup({ failLoad = false } = {}) {
     close() { this.destroyed = true; this.emit("destroyed"); },
     getURL: () => "https://example.test/current?q=1", getTitle: () => "Current page",
     navigationHistory: { canGoBack: () => false, canGoForward: () => false }, isLoading: () => false,
-    setWindowOpenHandler() {}, reload() { this.reloaded = true; },
+    setWindowOpenHandler(handler) { this.openHandler = handler; }, reload() { this.reloaded = true; },
   });
   const source = guest(2);
   const snapshot = {
@@ -27,20 +27,29 @@ function setup({ failLoad = false } = {}) {
     url: "https://example.test", label: "Website", active: false, activeTabId: "tab-1",
     tabs: [{ tabId: "tab-1", webContentsId: 2, title: "Website", currentUrl: "https://example.test" }],
   };
+  const sources = new Map([[2, source]]);
+  const snapshots = new Map([[2, snapshot]]);
   class Window extends EventEmitter {
     constructor(options) {
       super(); assert.equal(source.isDestroyed(), true, "old guest must be released before a new window is created");
-      this.options = options; this.webContents = guest(3); this.content = guest(4); created.push(this);
+      this.options = options; this.webContents = guest(3); this.content = guest(4); this.guests = []; created.push(this);
+      this.webContents.executeJavaScript = async (code) => {
+        this.scripts ??= []; this.scripts.push(code);
+        if (code.startsWith("window.workPanelBrowser.add(")) {
+          if (failLoad) throw new Error("shell_failed");
+          const next = this.guests.length ? guest(4 + this.guests.length) : this.content;
+          this.guests.push(next);
+          this.webContents.emit("did-attach-webview", {}, next);
+        }
+      };
     }
     isDestroyed() { return this.destroyed === true; }
-    destroy() { this.destroyed = true; this.content.close(); this.emit("closed"); }
+    destroy() { this.destroyed = true; for (const guest of this.guests) if (!guest.isDestroyed()) guest.close(); this.emit("closed"); }
     close() { this.emit("close", { preventDefault() {} }); }
     setMenuBarVisibility() {}
     async loadURL(url) {
       this.url = url;
-      this.webContents.emit("did-attach-webview", {}, this.content);
-      if (failLoad) this.content.emit("did-fail-load", {}, -2, "failed", "", true);
-      else this.content.emit("did-finish-load");
+      if (failLoad) throw new Error("shell_load_failed");
     }
     show() { this.visible = true; }
     focus() { this.focused = true; }
@@ -48,14 +57,15 @@ function setup({ failLoad = false } = {}) {
   }
   let handler;
   registerWorkPanelWebDialogIpc({ handle: (_channel, next) => { handler = next; } }, () => owner, {
-    resolveWebviewSurfaceTarget: () => snapshot,
-    getRegisteredSurfaceSnapshot: () => ({ registered: snapshot, tabs: snapshot.tabs }),
+    resolveWebviewSurfaceTarget: id => snapshots.get(id),
+    getRegisteredSurfaceSnapshot: id => { const found = [...snapshots.values()].find(entry => entry.surfaceId === id); return found ? { registered: found, tabs: found.tabs } : null; },
     registerSurface: (next, ownerId) => { registered.push({ ...next, ownerWebContentsId: ownerId }); return true; },
     unregisterSurface: () => true,
     retainWorkPanelDialogSurface: () => true,
+    retainWorkPanelDialogSibling: () => true,
     releaseWorkPanelDialogSurface: () => {},
-  }, Window, { fromId: id => id === 2 ? source : null });
-  return { owner, source, snapshot, created, registered, sent, handler, event: { sender: owner.webContents, senderFrame: owner.webContents.mainFrame } };
+  }, Window, { fromId: id => sources.get(id) });
+  return { owner, source, snapshot, created, registered, sent, handler, addSource(id, chatId) { const next = guest(id); sources.set(id, next); snapshots.set(id, { ...snapshot, surfaceId: `wp-${id}`, ownerChatId: chatId, tabs: [{ ...snapshot.tabs[0], webContentsId: id }] }); return next; }, event: { sender: owner.webContents, senderFrame: owner.webContents.mainFrame } };
 }
 
 test("dialog transfer rejects foreign senders, non-WorkPanel guests and duplicate preparations", async () => {
@@ -108,7 +118,12 @@ test("load failure releases destination and owner listeners", async () => {
 });
 
 test("dialog platform chrome remains native without parent or topmost flags", () => {
-  assert.equal(workPanelWebDialogOptions("Website", "darwin").titleBarStyle, "default");
+  const mac = workPanelWebDialogOptions("Website", "darwin");
+  assert.equal(mac.titleBarStyle, "hidden");
+  assert.deepEqual(mac.trafficLightPosition, { x: 12, y: 13 });
+  const windows = workPanelWebDialogOptions("Website", "win32");
+  assert.equal(windows.titleBarStyle, "hidden");
+  assert.deepEqual(windows.titleBarOverlay, { height: 40 });
   assert.equal(workPanelWebDialogOptions("Website", "win32").autoHideMenuBar, true);
 });
 
@@ -160,6 +175,18 @@ test("Main-only dialog reservation survives parent remount without changing Chat
   assert.equal(registry.registerSurface(otherRoot, 7), true);
   assert.equal(registry.registerSurface(detached, 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(3).ownerChatId, "chat-1");
+  const siblingKey = "web:https://second.test/";
+  const siblingIdentity = createChatChildSurfaceIdentity("workpanel-web", siblingKey, "chat-1");
+  assert.equal(registry.retainWorkPanelDialogSibling(child.surfaceId, "forged", siblingIdentity.surfaceId, "sibling-1"), false);
+  assert.equal(registry.retainWorkPanelDialogSibling(child.surfaceId, detached.registrationId, child.surfaceId, "sibling-1"), false);
+  assert.equal(registry.retainWorkPanelDialogSibling(child.surfaceId, detached.registrationId, siblingIdentity.surfaceId, "sibling-1"), true);
+  guests.set(4, { ...guests.get(3), id: 4 });
+  const sibling = { ...detached, ...siblingIdentity, surfaceIdentityKey: siblingKey, registrationId: "sibling-1", tabs: [tab(4, "https://second.test/")], activeTabId: "tab-4" };
+  assert.equal(registry.registerSurface(sibling, 7), true, "a popup retains its original Chat while another Chat is active");
+  assert.equal(registry.resolveWebviewSurfaceTarget(4).ownerChatId, "chat-1");
+  assert.equal(registry.registerSurface({ ...sibling, ownerChatId: "chat-2" }, 7), false);
+  registry.releaseWorkPanelDialogSurface(sibling.surfaceId, sibling.registrationId);
+  registry.unregisterSurface({ surfaceId: sibling.surfaceId, registrationId: sibling.registrationId }, 7);
   registry.releaseWorkPanelDialogSurface(child.surfaceId, detached.registrationId);
   registry.unregisterSurface({ surfaceId: child.surfaceId, registrationId: detached.registrationId }, 7);
   assert.equal(registry.resolveWebviewSurfaceTarget(3), null);
@@ -181,7 +208,7 @@ test("trusted shell restore control returns current URL only after releasing the
   assert.equal(sent.length, count, "remote page navigation cannot invoke the shell control");
   dialog.content.getURL = () => "https://example.test/new-page?q=latest#section";
   const restored = await handler(event, { action: "restore", transferId: prepared.transferId });
-  assert.deepEqual(restored, { ok: true, url: "https://example.test/new-page?q=latest#section", surfaceId: "wp-1", ownerChatId: "chat-1" });
+  assert.deepEqual(restored, { ok: true, url: "https://example.test/new-page?q=latest#section", surfaceId: "wp-1", ownerChatId: "chat-1", restoredItems: [{ transferId: prepared.transferId, surfaceId: "wp-1", url: "https://example.test/new-page?q=latest#section" }] });
   assert.equal(dialog.content.isDestroyed(), true);
   assert.equal(owner.visible && owner.focused, true);
   assert.deepEqual(await handler(event, { action: "restore", transferId: prepared.transferId }), { ok: false });
@@ -204,4 +231,65 @@ test("restoration changes the displayed URL without changing WorkPanel item iden
   assert.equal(reopened.nextState.workspaces[0].items.length, 1);
   const closed = reduceWorkPanelCommand(reopened.nextState, { type: "closeItem", ownerChatId: "chat-1", itemId: opened.item.itemId });
   assert.deepEqual(closed.nextState.webItemUrls, {});
+});
+
+
+test("same Chat shares a browser with independently registered tabs, popups and whole-window restoration", async () => {
+  const { handler, event, created, registered, sent } = setup();
+  const first = await handler(event, { action: "prepare", sourceGuestId: 2, agentLabel: "Researcher (research)", chatLabel: "Compare tools" });
+  await handler(event, { action: "open", transferId: first.transferId });
+  const second = await handler(event, { action: "prepareSibling", transferId: first.transferId, itemId: "item-2", stableKey: "web:https://second.test/", url: "https://second.test/", title: "Second" });
+  assert.equal(second.ok, true);
+  await handler(event, { action: "open", transferId: second.transferId });
+  assert.equal(created.length, 1);
+  assert.equal(created[0].guests.length, 2);
+  assert.equal(new Set(registered.map(entry => entry.surfaceId)).size, 2);
+  assert.ok(registered.every(entry => entry.ownerChatId === "chat-1"));
+  assert.match(created[0].options.title, /Researcher.*Compare tools.*chat-1/);
+  assert.match(decodeURIComponent(created[0].url), /role="tablist"/);
+  assert.deepEqual(created[0].content.openHandler({ url: "https://popup.test/" }), { action: "deny" });
+  assert.deepEqual(sent.at(-1), ["chatWorkPanel.webDialogOpenRequested", { transferId: first.transferId, url: "https://popup.test/" }]);
+  const count = sent.length;
+  created[0].content.openHandler({ url: "file:///etc/passwd" });
+  assert.equal(sent.length, count);
+  created[0].close();
+  assert.deepEqual(sent.at(-1), ["chatWorkPanel.webDialogRestoreRequested", first.transferId]);
+  const result = await handler(event, { action: "restore", transferId: first.transferId });
+  assert.equal(result.restoredItems.length, 2);
+  assert.ok(created[0].guests.every(guest => guest.isDestroyed()));
+  assert.equal(created[0].isDestroyed(), true);
+});
+
+test("closing one tab leaves siblings alive and selecting an item selects its browser tab", async () => {
+  const { handler, event, created } = setup();
+  const first = await handler(event, { action: "prepare", sourceGuestId: 2 });
+  await handler(event, { action: "open", transferId: first.transferId });
+  const second = await handler(event, { action: "prepareSibling", transferId: first.transferId, itemId: "item-2", stableKey: "web:https://second.test/", url: "https://second.test/", title: "Second" });
+  await handler(event, { action: "open", transferId: second.transferId });
+  await handler(event, { action: "focus", transferId: first.transferId });
+  assert.ok(created[0].scripts.some(code => code === `window.workPanelBrowser.select("${first.transferId}")`));
+  await handler(event, { action: "close", transferId: first.transferId });
+  assert.equal(created[0].isDestroyed(), false);
+  assert.equal(created[0].guests[0].isDestroyed(), true);
+  assert.equal(created[0].guests[1].isDestroyed(), false);
+  assert.equal((await handler(event, { action: "reload", transferId: second.transferId })).ok, true);
+  await handler(event, { action: "close", transferId: second.transferId });
+});
+
+
+test("different Chats never share windows and a sibling cannot capture another Chat's guest", async () => {
+  const { handler, event, created, addSource } = setup();
+  addSource(20, "chat-2");
+  const first = await handler(event, { action: "prepare", sourceGuestId: 2 });
+  await handler(event, { action: "open", transferId: first.transferId });
+  assert.deepEqual(await handler(event, { action: "prepareSibling", transferId: first.transferId, itemId: "foreign", stableKey: "foreign", url: "https://second.test/", title: "Foreign", sourceGuestId: 20 }), { ok: false });
+  const second = await handler(event, { action: "prepare", sourceGuestId: 20 });
+  await handler(event, { action: "open", transferId: second.transferId });
+  assert.equal(created.length, 2);
+  const restored = await handler(event, { action: "restore", transferId: first.transferId });
+  assert.equal(restored.restoredItems.length, 1);
+  assert.equal(restored.ownerChatId, "chat-1");
+  assert.equal(created[1].isDestroyed(), false);
+  assert.equal((await handler(event, { action: "reload", transferId: second.transferId })).ok, true);
+  await handler(event, { action: "close", transferId: second.transferId });
 });
