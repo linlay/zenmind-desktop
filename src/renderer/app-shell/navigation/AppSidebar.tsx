@@ -6256,11 +6256,13 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {helpEnabled ? renderToolLink(helpToolItem, {
-          anchorRef: bootstrapGuideToolHelpAnchorRef,
-          bootstrapGuide: showBootstrapHelpGuide,
-        }) : null}
-        {settingsToolItem ? renderToolLink(settingsToolItem) : null}
+        <div className="sidebar-account-menu-footer" role="presentation">
+          {settingsToolItem ? renderToolLink(settingsToolItem) : null}
+          {helpEnabled ? renderToolLink(helpToolItem, {
+            anchorRef: bootstrapGuideToolHelpAnchorRef,
+            bootstrapGuide: showBootstrapHelpGuide,
+          }) : null}
+        </div>
       </div>
     );
   }
