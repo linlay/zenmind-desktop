@@ -2104,8 +2104,14 @@ export function WorkPanelHost({
             <div className="chat-work-panel-body">
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
-                if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
+                  if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
                   const active = visible && workspace.activeItemId === item.itemId;
+                  // Read-only observers belong to the visible, committed Main Chat.
+                  // A hidden guest can fail registration after a Chat switch and
+                  // retain a permanently closed Frame Port when shown again.
+                  // Recreate these guests on activation; keep editable items alive.
+                  if (!active && item.descriptor.kind === "webclient" &&
+                    (item.descriptor.module === "overview" || item.descriptor.module === "debug")) return null;
                   const resourceProfile = localResourceProfile(item);
                   const supportsLocalResourceActions = Boolean(
                     resourceProfile &&

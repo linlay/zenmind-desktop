@@ -71,6 +71,8 @@ Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展�
 
 ## 状态、标题与兼容
 
+Overview 与 Debug 是只读实时观察页，仅在所属 Main Chat 完成可信登记、WorkPanel 可见且对应 tab 激活时挂载 guest。隐藏面板、切换 Chat 或切换 tab 时回收这两类 guest 与 Frame Port，下次激活重新创建，避免后台初始化被父 Chat 归属校验拒绝后永久复用已关闭的 Port。item 与 workspace 身份继续保留；Broker 的 Main Chat Overview lease 不随 UI guest 回收而释放。普通网页、文档编辑与批注仍遵循各自的保活和草稿保护规则。
+
 WebClient 文档和 Desktop 原生 Surface 都向 WorkPanel 提交当前 item 绑定的 dirty、busy 和 annotation count。关闭当前、关闭其他、切换原生编辑器和 WorkPanel 全屏生命周期共用同一未保存保护规则。
 
 File descriptor 的 tab 标题固定为“显式 title > 路径 basename > `file`”，同时支持 POSIX、Windows 与 UNC 分隔符。WebClient 主动生成，Desktop 对旧 bundle 再做相同兜底；该修复不改 stable key、`surfaceId` 或 descriptor schema。
