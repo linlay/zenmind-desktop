@@ -82,6 +82,12 @@ export class AgentPlatformAssistantBridge {
 
   async completeImage(request: AgentPlatformImageCompletionRequest): Promise<AgentPlatformImageCompletionResult> { return AgentPlatformAssistantBridge_completeImage_5(this, request); }
 
+  async observeRun(input: Omit<Parameters<RealtimeBroker["subscribeRun"]>[0], "baseUrl" | "token" | "kind" | "role">) {
+    const available = await this.resolvePlatform();
+    if (!available.ok) throw new Error("Agent Platform is unavailable");
+    return this.realtimeBroker.subscribeRun({ ...input, baseUrl: available.baseUrl, token: available.token, kind: "internal", role: "internal" });
+  }
+
   async stopRun(runId: string): Promise<AssistantStopRunResult> { return AgentPlatformAssistantBridge_stopRun_6(this, runId); }
 
   async submitAwaiting(request: AssistantSubmitAwaitingRequest): Promise<AssistantSubmitAwaitingResult> { return AgentPlatformAssistantBridge_submitAwaiting_7(this, request); }

@@ -7,6 +7,12 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const zhCNMessages = {
+  "webapp.permission.title": "应用数据访问授权",
+  "webapp.permission.detail": "允许 {appId} 在本次应用运行期间使用 {capability} 吗？",
+  "webapp.permission.allow": "允许",
+  "webapp.connector.signIn": "登录连接器 {connectorId}",
+  "webapp.connector.signInDetail": "应用请求使用此连接器。凭据仅由桌面端与平台管理。",
+  "webapp.connector.signInButton": "登录",
   "kanban.localWorkflow.invalidRollbackTarget": "回退目标必须是当前流程中位于本阶段之前的阶段。",
   "kanban.localWorkflow.invalidAction": "本地工作流操作无效，请重新打开任务后重试。",
   "kanban.localWorkflow.running": "执行中的任务暂不能回退，请先停止或等待当前执行结束。",

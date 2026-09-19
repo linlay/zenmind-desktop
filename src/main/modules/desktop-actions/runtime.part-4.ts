@@ -1,3 +1,5 @@
+import { captureWebappContext } from "./webapp-platform-client";
+import { hasWebappPermission } from "./webapp-permissions";
 import path from "node:path";
 import type { OpenDialogOptions, SaveDialogOptions } from "electron";
 import { clipboard, dialog, Notification, shell, systemPreferences } from "electron";
@@ -494,18 +496,18 @@ export function getWebappBridgeCapabilities(
     bridgeVersion: WEBAPP_BRIDGE_VERSION,
     capabilities: [
       ...WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES.map((id) => {
-        const status = id === "native.microphone" && microphonePermission === "unavailable"
+        const status = id === "desktop.microphone" && microphonePermission === "unavailable"
           ? "unavailable" as const
-          : id === "native.notification" && !notificationAvailable
+          : id === "desktop.notification" && !notificationAvailable
             ? "unavailable" as const
             : "available" as const;
         return {
           id,
           status,
-          declared: true,
-          permission: id === "native.microphone"
+          declared: (id === "connector.read" || id === "desktop.connector.authenticate") ? Object.keys(item.desktopBridge?.connectorOperations ?? {}).length > 0 : id === "kanban.read" ? item.desktopBridge?.kanbanRead === true : id === "skill.read" ? !!item.copilot?.agentKey : true,
+          permission: id === "desktop.microphone"
             ? microphonePermission
-            : id === "native.notification" && !notificationAvailable
+            : id === "desktop.notification" && !notificationAvailable
               ? "unavailable" as const
               : "not_required" as const
         };
@@ -532,6 +534,14 @@ export async function executeNativeWebappAction(
 ): Promise<DesktopActionCallResponse> {
   if (action === "desktop.capabilities.list") {
     const result = getWebappBridgeCapabilities(options, webappId);
+    if (result) {
+      const context = await captureWebappContext(options, webappId).catch(() => null);
+      for (const capability of result.capabilities) {
+        if (capability.id === "connector.read" || capability.id === "kanban.read") {
+          capability.permission = !capability.declared ? "unavailable" : context && hasWebappPermission(context, capability.id) ? "granted" : "prompt";
+        }
+      }
+    }
     return result
       ? ok(action, result)
       : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp manifest schema v2.");

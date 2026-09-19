@@ -364,7 +364,9 @@ const webappManifestV2Schema = z.strictObject({
     ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
   }).optional(),
   desktopBridge: z.strictObject({
-    version: z.literal(1)
+    version: z.literal(1),
+    kanbanRead: z.boolean().optional(),
+    connectorOperations: z.record(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u), z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).min(1).max(128)).optional()
   }).default({ version: 1 })
 }).superRefine((value, context) => {
   if (jsonBytes(value) > WEBAPP_MANIFEST_MAX_BYTES) {

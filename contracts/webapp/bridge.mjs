@@ -1,6 +1,4 @@
-export const WEBAPP_BRIDGE_MODULE_PATH = "/__desktop/bridge.js";
-
-export const WEBAPP_BRIDGE_MODULE_SOURCE = String.raw`const ACTION_PATH = "/__desktop/actions/call";
+const ACTION_PATH = "/__desktop/actions/call";
 const ASSISTANT_IMAGE_UPLOAD_PATH = "/__desktop/assistant/image/uploads";
 const APP_CONFIG_PATH = "/__desktop/app-config.json";
 const USER_CONFIG_PATH = "/__desktop/user-config.json";
@@ -376,4 +374,3 @@ export function createBackendClient({ url, token }) {
     open: reserved("artifact.open"), saveAs: reserved("artifact.saveAs")
   }) });
 }
-`;

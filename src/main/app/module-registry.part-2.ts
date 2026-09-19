@@ -1,3 +1,4 @@
+import { invalidateWebappActionTokens } from "../modules/webs";
 import { registerArtifactActionIpc } from "../modules/artifacts";
 import type {
   MarketListResult
@@ -794,7 +795,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     stopTunnelHubRuntime,
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
     stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut(),
-    invalidateRealtimeIdentity: () => assistantBridgeRuntime.realtimeBroker.rotateIdentity()
+    invalidateRealtimeIdentity: () => {
+      // Old page/backend grants must not follow the next signed-in account.
+      invalidateWebappActionTokens();
+      assistantBridgeRuntime.realtimeBroker.rotateIdentity();
+    }
   });
   registerEnterpriseChatIpcHandlers(
     ipcMain,

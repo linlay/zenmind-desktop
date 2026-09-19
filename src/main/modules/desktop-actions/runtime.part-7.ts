@@ -179,7 +179,7 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
               webappId: authorization.webappId
             }
           },
-          { kind: "webappBackend", webappId: authorization.webappId }
+          { kind: "webappBackend", webappId: authorization.webappId, signal: authorization.signal }
         );
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {
@@ -212,7 +212,7 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
               webappId: authorization.webappId
             }
           },
-          { kind: "webappPage", webappId: authorization.webappId }
+          { kind: "webappPage", webappId: authorization.webappId, signal: authorization.signal }
         );
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {

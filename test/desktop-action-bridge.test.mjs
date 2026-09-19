@@ -1213,6 +1213,9 @@ test("desktop.display routes to the Main renderer without confirmation", async (
 
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-user:'+'a'.repeat(64)})).toString('base64url')+'.s'});
+  options.services.getResponsiveServiceState = async () => ({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}});
+  options.webs = {...options.webs, webappRuntime:{...options.webs.webappRuntime,getStatus:()=>({status:'running',startedAt:123})}};
   const id = webappId("assistant-app");
   const webappDir = path.join(getDesktopWebappsDataRoot(options.app), id);
   const manifestPath = path.join(webappDir, "webapp.json");
@@ -1289,6 +1292,20 @@ test("WebApp assistant chat uses its configured Desktop agent and forwards the m
   assert.equal(helper.ok, true);
   assert.equal(helper.result.agentKey, "summary-agent");
   assert.equal(calls.completions.at(-1).agentKey, "summary-agent");
+
+  installedManifest.copilot = { agentKey: "fixed-writer", mustUseSkills: ["report-writer", "read-data"] };
+  fs.writeFileSync(manifestPath, JSON.stringify(installedManifest), "utf8");
+  const fixed = await handleWebappPageActionRequest(options, id, {
+    action: "assistant.chat", args: { message: "Use fixed Copilot", skillIds: ["report-writer"] }
+  });
+  assert.equal(fixed.ok, true);
+  assert.equal(fixed.action, "assistant.chat");
+  assert.equal(calls.completions.at(-1).agentKey, "fixed-writer");
+  assert.deepEqual(calls.completions.at(-1).mustUseSkills, ["report-writer"]);
+  const forgedSkill = await handleWebappPageActionRequest(options, id, {
+    action: "assistant.chat", args: { message: "hello", skillIds: ["unrelated-private-skill"] }
+  });
+  assert.equal(forgedSkill.error.code, "invalid_args");
 
   const oversized = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
@@ -2105,8 +2122,8 @@ test("WebApp Bridge capability list enables all public capabilities and distingu
   assert.equal(response.ok, true);
   assert.equal(response.result.bridgeVersion, 1);
   const chat = response.result.capabilities.find((entry) => entry.id === "assistant.chat");
-  const clipboard = response.result.capabilities.find((entry) => entry.id === "native.clipboard.write");
-  const screen = response.result.capabilities.find((entry) => entry.id === "native.screen.capture");
+  const clipboard = response.result.capabilities.find((entry) => entry.id === "desktop.clipboard.write");
+  const screen = response.result.capabilities.find((entry) => entry.id === "desktop.screen.capture");
   assert.deepEqual({ status: chat.status, declared: chat.declared }, { status: "available", declared: true });
   assert.deepEqual({ status: clipboard.status, declared: clipboard.declared }, { status: "available", declared: true });
   assert.deepEqual({ status: screen.status, declared: screen.declared }, { status: "reserved", declared: false });
@@ -2200,6 +2217,9 @@ test("desktop action bridge listens on configured port and refreshes when config
 
 test("Desktop Action Bridge keeps WebApp page and backend token scopes separate", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-user:'+'a'.repeat(64)})).toString('base64url')+'.s'});
+  options.services.getResponsiveServiceState = async () => ({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}});
+  options.webs = {...options.webs, webappRuntime:{...options.webs.webappRuntime,getStatus:()=>({status:'running',startedAt:123})}};
   const port = await getFreeLoopbackPort();
   const id = webappId("scope-v5");
   const item = {

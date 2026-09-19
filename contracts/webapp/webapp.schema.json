@@ -614,6 +614,25 @@
         "version": {
           "type": "number",
           "const": 1
+        },
+        "kanbanRead": {
+          "type": "boolean"
+        },
+        "connectorOperations": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "additionalProperties": {
+            "minItems": 1,
+            "maxItems": 128,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            }
+          }
         }
       },
       "required": [

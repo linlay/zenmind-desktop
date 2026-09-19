@@ -7,6 +7,12 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const enUSMessages = {
+  "webapp.permission.title": "Application data access",
+  "webapp.permission.detail": "Allow {appId} to use {capability} during this application session?",
+  "webapp.permission.allow": "Allow",
+  "webapp.connector.signIn": "Sign in to connector {connectorId}",
+  "webapp.connector.signInDetail": "The app requests access to this connector. Desktop and Platform manage its credentials.",
+  "webapp.connector.signInButton": "Sign in",
   "kanban.localWorkflow.invalidRollbackTarget": "The rollback target must be an earlier stage in this workflow.",
   "kanban.localWorkflow.invalidAction": "Invalid local workflow action. Reopen the issue and retry.",
   "kanban.localWorkflow.running": "Wait for the current run to finish or stop it before rolling back.",

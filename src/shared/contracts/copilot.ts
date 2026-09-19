@@ -517,6 +517,7 @@ export interface AssistantPastedImageInput {
 export type AssistantAccessLevel = "default" | "auto_approve" | "full_access";
 
 export interface AssistantStartRunRequest {
+  mustUseSkills?: string[];
   chatId?: string | null;
   runId?: string | null;
   requestId?: string | null;

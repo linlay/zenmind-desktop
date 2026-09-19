@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { build } from "vite";
+import { build as bundle } from "esbuild";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const entry = path.join(repoRoot, "src", "shared", "webapp-manifest.ts");
@@ -63,11 +64,17 @@ try {
   const generatedSchema = path.join(temporaryRoot, schemaName);
   fs.writeFileSync(generatedSchema, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
 
+  const sdkBundle = await bundle({ entryPoints: [path.join(repoRoot, "src/main/modules/webs/webapps/bridge-module.ts")], bundle: true, write: false, format: "esm" });
+  const sdk = await import(`data:text/javascript;base64,${Buffer.from(sdkBundle.outputFiles[0].text).toString("base64")}`);
+  const generatedSdk = path.join(temporaryRoot, "bridge.mjs");
+  fs.writeFileSync(generatedSdk, sdk.WEBAPP_BRIDGE_MODULE_SOURCE, "utf8");
   if (checkOnly) {
+    assertSameFile(path.join(contractRoot, "bridge.mjs"), generatedSdk);
     assertSameFile(path.join(contractRoot, validatorName), generatedValidator);
     assertSameFile(path.join(contractRoot, schemaName), generatedSchema);
   } else {
     fs.mkdirSync(contractRoot, { recursive: true });
+    fs.copyFileSync(generatedSdk, path.join(contractRoot, "bridge.mjs"));
     fs.copyFileSync(generatedValidator, path.join(contractRoot, validatorName));
     fs.copyFileSync(generatedSchema, path.join(contractRoot, schemaName));
   }
@@ -75,7 +82,7 @@ try {
   if (skillRoot) {
     const generatedRoot = path.join(skillRoot, "references", "generated");
     fs.mkdirSync(generatedRoot, { recursive: true });
-    for (const name of [validatorName, schemaName]) {
+    for (const name of [validatorName, schemaName, "bridge.mjs"]) {
       fs.copyFileSync(path.join(temporaryRoot, name), path.join(generatedRoot, name));
     }
   }

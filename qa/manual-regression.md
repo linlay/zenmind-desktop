@@ -763,3 +763,13 @@
 - macOS / Windows 分别验证主聊天、旁聊、详细解释并行：物理连接标识为 desktop-main / desktop-btw / desktop-explain，出站均为 /api/query，停止和重连只作用于来源 lane。
 - 使用 WebClient c2224645 与 Platform 6b23260c 或后续版本：选区批注保留顶层 text、annotation、annotationIndex；添加、纯选区 steer、旁聊和解释续问可用，删除其他批注后编号不重排。
 - 实时诊断中选区原文及批注不出现；query/steer 实际发送及回放仍保留完整内容。
+
+## WebApp 统一能力桥
+
+- macOS / Windows：页面从同源加载 SDK，托管 Node 后端使用注入的 `/webapps` token；后端调用认证、权限确认、预览/另存为被拒绝，普通 Website/Tunnel 无法调用页面能力。
+- 声明连接器操作后，未确认数据授权时 invoke 被拒绝；取消授权不发业务请求。确认后 CLI/MCP 均走同一 SDK，验证 operation revision 过期/无权限错误。
+- 在两个 WebApp 同时登录同一连接器，只出现一个宿主确认与认证窗口。分别验证 embedded 与 system 入口、成功、关闭、过期；关闭一个应用不取消另一应用共享的 Platform session。
+- 登录等待或数据读取期间停止/重启/卸载应用、退出/切换账号，旧请求不投递结果；重新登录后重启应用并重新授权。确认前后不向 WebApp 暴露 token 或认证 URL。
+- 固定 Copilot 使用指定 Agent 与声明技能；选择未声明技能或自行传 agentKey 被拒绝。后台运行订阅只含文本/状态，停止订阅不重提请求，其他应用不能停止运行；游标过期得到明确错误。
+- 完成 Agent 报告后以 chatId/runId 列产物；其他应用、未知 chatId、只有 artifactId 均被拒绝。检查预览、系统另存为、取消保存、超 1 MiB 文件；两平台路径均来自系统选择器。
+- 看板读取须单独确认；返回值不含本机路径、其他 Chat 权限，云断连隐藏云缓存；无 issue 写接口。自动化与其他预留原生能力返回 not_implemented。

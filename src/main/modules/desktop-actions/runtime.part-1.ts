@@ -142,8 +142,8 @@ export type DesktopActionInvocationContext =
   | { kind: "desktop" }
   | { kind: "agentPlatform" }
   | { kind: "agentWebclientWorkPanel" }
-  | { kind: "webappPage"; webappId: string }
-  | { kind: "webappBackend"; webappId: string };
+  | { kind: "webappPage"; webappId: string; signal?: AbortSignal }
+  | { kind: "webappBackend"; webappId: string; signal?: AbortSignal };
 
 export type AgentWebclientWorkPanelAction = "openItem" | "activateItem" | "closeItem";
 
