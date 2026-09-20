@@ -13,6 +13,7 @@ const { registerSsoIpcHandlers } = require("../dist-electron/main/modules/identi
 const { createDesktopSsoController } = require("../dist-electron/main/modules/identity/sso-controller.js");
 const {
   __testInternals,
+  completeDesktopSsoRestoredBrowserSession,
   failDesktopSsoFlow,
   finalizeDesktopSsoLoginAttempt,
   getDesktopSsoAccessToken,
@@ -441,6 +442,8 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
   });
 
   const calls = {
+    statusEvents: [],
+    restoreResults: [],
     defaultSets: [],
     defaultRemoves: [],
     defaultFlushes: 0,
@@ -478,7 +481,8 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
       defaultSession,
       fromPartition: () => assert.fail("SSO must use the default Session")
     },
-    getMainWindow: () => null,
+    getMainWindow: () => ({ webContents: { send: (...args) => calls.statusEvents.push(args) } }),
+    onRestoreResult: (result) => calls.restoreResults.push(result),
     openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
     openExternal: async () => undefined
   });
@@ -1045,4 +1049,77 @@ test("desktop sso cookie flow writes no state when browser session validation fa
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), false);
+});
+
+
+test("runtime SSO refresh invalidates rejected or expired identity and broadcasts account state", async (t) => {
+  for (const scenario of [
+    { status: 401, force: true, expiresIn: 3600, state: "signed_out" },
+    { status: 403, force: true, expiresIn: 3600, state: "signed_out" },
+    { status: 302, force: true, expiresIn: 3600, state: "signed_out" },
+    { status: 503, force: true, expiresIn: 3600, state: "temporarily_unavailable" },
+    { status: 503, force: false, expiresIn: -1, state: "temporarily_unavailable" },
+    { status: 503, force: false, expiresIn: 600, state: "authenticated" }
+  ]) {
+    await t.test(JSON.stringify(scenario), async (t) => {
+      const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-runtime-expiry-", async (_url, init) => {
+        assert.equal(init.redirect, "manual");
+        return new Response("upstream failure", { status: scenario.status });
+      });
+      const token = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + scenario.expiresIn });
+      completeDesktopSsoRestoredBrowserSession(app, token, { sub: "runtime-user", name: "Runtime User" });
+      await assert.rejects(controller.refreshBrowserCookieAccessTokenIfNeeded(scenario.force));
+      const authenticated = scenario.state === "authenticated";
+      assert.equal(getDesktopSsoStatus(app).authenticated, authenticated);
+      assert.equal(getDesktopSsoAccessToken(), authenticated ? token : null);
+      assert.equal(calls.statusEvents.length, authenticated ? 0 : 1);
+      if (!authenticated) {
+        assert.equal(calls.statusEvents[0][0], "sso.statusChanged");
+        assert.equal(calls.statusEvents[0][1].user, null);
+        assert.equal(calls.restoreResults.at(-1).state, scenario.state);
+      }
+      const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+      assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), scenario.state !== "signed_out");
+    });
+  }
+});
+
+test("runtime SSO refresh renews canonical token and its Cookie together", async (t) => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 7200;
+  const freshToken = createUnsignedJwt({ sub: "runtime-user", exp: expiresAt });
+  const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-runtime-renew-", async () =>
+    new Response(JSON.stringify({ access_token: freshToken }), { headers: { "content-type": "application/json" } })
+  );
+  completeDesktopSsoRestoredBrowserSession(app,
+    createUnsignedJwt({ sub: "runtime-user", exp: expiresAt - 7100 }), { sub: "runtime-user" });
+  const tokens = await Promise.all([
+    controller.refreshBrowserCookieAccessTokenIfNeeded(), controller.refreshBrowserCookieAccessTokenIfNeeded()
+  ]);
+  assert.deepEqual(tokens, [freshToken, freshToken]);
+  assert.equal(calls.fetches.length, 1);
+  assert.equal(getDesktopSsoAccessToken(), freshToken);
+  assert.equal(getDesktopSsoStatus(app).authenticated, true);
+  assert.equal(calls.defaultSets.find((cookie) => cookie.name === "access_token").expirationDate, expiresAt);
+});
+
+test("late runtime refresh rejection cannot sign out a replacement account", async (t) => {
+  let respond;
+  let started;
+  const requestStarted = new Promise((resolve) => { started = resolve; });
+  const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-runtime-stale-", async () => {
+    started();
+    return new Promise((resolve) => { respond = resolve; });
+  });
+  const expiresAt = Math.floor(Date.now() / 1000) + 7200;
+  completeDesktopSsoRestoredBrowserSession(app,
+    createUnsignedJwt({ sub: "old-user", exp: expiresAt }), { sub: "old-user" });
+  const refresh = controller.refreshBrowserCookieAccessTokenIfNeeded(true);
+  await requestStarted;
+  const replacementToken = createUnsignedJwt({ sub: "new-user", exp: expiresAt });
+  completeDesktopSsoRestoredBrowserSession(app, replacementToken, { sub: "new-user" });
+  respond(new Response("expired", { status: 401 }));
+  assert.equal(await refresh, "");
+  assert.equal(getDesktopSsoAccessToken(), replacementToken);
+  assert.equal(getDesktopSsoStatus(app).user.sub, "new-user");
+  assert.equal(calls.statusEvents.length, 0);
 });
