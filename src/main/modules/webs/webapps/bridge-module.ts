@@ -15,7 +15,7 @@ export class DesktopBridgeError extends Error {
   }
 }
 
-async function call(action, args = {}) {
+async function call(action, args = {}, transport, signal) {
   let body;
   try {
     body = JSON.stringify({ action, args });
@@ -24,9 +24,10 @@ async function call(action, args = {}) {
   }
   let response;
   try {
-    response = await fetch(ACTION_PATH, {
+    response = await fetch(transport?.url || ACTION_PATH, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(transport ? { Authorization: "Bearer " + transport.token } : {}) },
+      credentials: "omit", redirect: "error", signal,
       body
     });
   } catch (error) {
@@ -71,14 +72,14 @@ async function listCapabilities() {
 async function uploadAssistantImageInputs(source, mask) {
   if (!(source instanceof Blob)) {
     throw new DesktopBridgeError(
-      "desktop.assistant.image",
+      "assistant.image",
       "invalid_args",
       "source must be an image Blob."
     );
   }
   if (mask !== undefined && mask !== null && !(mask instanceof Blob)) {
     throw new DesktopBridgeError(
-      "desktop.assistant.image",
+      "assistant.image",
       "invalid_args",
       "mask must be a PNG Blob."
     );
@@ -93,7 +94,7 @@ async function uploadAssistantImageInputs(source, mask) {
     response = await fetch(ASSISTANT_IMAGE_UPLOAD_PATH, { method: "POST", body: form });
   } catch (error) {
     throw new DesktopBridgeError(
-      "desktop.assistant.image",
+      "assistant.image",
       "bridge_unavailable",
       "Desktop image upload bridge is unavailable.",
       { cause: error?.name || "Error" }
@@ -104,14 +105,14 @@ async function uploadAssistantImageInputs(source, mask) {
     payload = await response.json();
   } catch {
     throw new DesktopBridgeError(
-      "desktop.assistant.image",
+      "assistant.image",
       "invalid_response",
       "Desktop image upload bridge returned an invalid response."
     );
   }
   if (!response.ok || !payload?.ok || typeof payload.uploadId !== "string") {
     throw new DesktopBridgeError(
-      "desktop.assistant.image",
+      "assistant.image",
       payload?.error?.code || "image_upload_failed",
       payload?.error?.message || "Desktop image upload failed."
     );
@@ -121,16 +122,16 @@ async function uploadAssistantImageInputs(source, mask) {
 
 async function generateAssistantImage(input = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw new DesktopBridgeError("desktop.assistant.image", "invalid_args", "Image request must be an object.");
+    throw new DesktopBridgeError("assistant.image", "invalid_args", "Image request must be an object.");
   }
   const { source, mask, ...request } = input;
   const uploadId = source instanceof Blob
     ? await uploadAssistantImageInputs(source, mask)
     : "";
   if (mask instanceof Blob && !uploadId) {
-    throw new DesktopBridgeError("desktop.assistant.image", "invalid_args", "mask requires a source image.");
+    throw new DesktopBridgeError("assistant.image", "invalid_args", "mask requires a source image.");
   }
-  return call("desktop.assistant.image", {
+  return call("assistant.image", {
     ...request,
     ...(uploadId ? { uploadId } : {})
   });
@@ -210,6 +211,13 @@ async function getUserConfig() {
 }
 
 export const desktop = Object.freeze({
+  requestAccess: (input) => {
+    return call("desktop.requestAccess", input);
+  },
+  authenticateConnector: (input) => {
+    if (!navigator.userActivation?.isActive) throw new DesktopBridgeError("desktop.authenticateConnector", "user_gesture_required", "Click to sign in to the connector.");
+    return call("desktop.authenticateConnector", input);
+  },
   app: Object.freeze({
     getConfig: getAppConfig,
     getUserConfig
@@ -223,35 +231,29 @@ export const desktop = Object.freeze({
       );
     }
   }),
-  assistant: Object.freeze({
-    chat: (message) => call("desktop.assistant.chat", { message }),
-    image: generateAssistantImage,
-    cancelImage: (requestId) => call("desktop.assistant.image.cancel", { requestId })
-  }),
-  native: Object.freeze({
     browser: Object.freeze({
-      openExternal: (input) => call("desktop.native.browser.openExternal", input)
+      openExternal: (input) => call("desktop.browser.openExternal", input)
     }),
     dialog: Object.freeze({
-      selectFiles: (input = {}) => call("desktop.native.dialog.selectFiles", input),
-      selectDirectory: () => call("desktop.native.dialog.selectDirectory"),
-      selectSavePath: (input = {}) => call("desktop.native.dialog.selectSavePath", input)
+      selectFiles: (input = {}) => call("desktop.dialog.selectFiles", input),
+      selectDirectory: () => call("desktop.dialog.selectDirectory"),
+      selectSavePath: (input = {}) => call("desktop.dialog.selectSavePath", input)
     }),
     microphone: Object.freeze({
-      getPermission: () => call("desktop.native.microphone.getPermission"),
-      requestAccess: () => call("desktop.native.microphone.requestAccess"),
+      getPermission: () => call("desktop.microphone.getPermission"),
+      requestAccess: () => call("desktop.microphone.requestAccess"),
       async open(constraints = {}) {
-        await call("desktop.native.microphone.requestAccess");
+        await call("desktop.microphone.requestAccess");
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new DesktopBridgeError(
-            "desktop.native.microphone.open",
+            "desktop.microphone.open",
             "unavailable",
             "Microphone capture is unavailable in this WebApp."
           );
         }
         if (!constraints || typeof constraints !== "object" || Array.isArray(constraints)) {
           throw new DesktopBridgeError(
-            "desktop.native.microphone.open",
+            "desktop.microphone.open",
             "invalid_args",
             "Microphone constraints must be an object."
           );
@@ -264,7 +266,7 @@ export const desktop = Object.freeze({
         } catch (error) {
           const permissionDenied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
           throw new DesktopBridgeError(
-            "desktop.native.microphone.open",
+            "desktop.microphone.open",
             permissionDenied ? "permission_denied" : "media_unavailable",
             permissionDenied ? "Microphone permission was denied." : "Microphone capture failed.",
             { cause: error?.name || "Error" }
@@ -273,33 +275,104 @@ export const desktop = Object.freeze({
       }
     }),
     clipboard: Object.freeze({
-      writeText: (input) => call("desktop.native.clipboard.writeText", input),
-      readText: reserved("desktop.native.clipboard.readText")
+      writeText: (input) => call("desktop.clipboard.writeText", input),
+      readText: reserved("desktop.clipboard.readText")
     }),
     notification: Object.freeze({
-      show: (input) => call("desktop.native.notification.show", input)
+      show: (input) => call("desktop.notification.show", input)
     }),
     screen: Object.freeze({
-      capture: reserved("desktop.native.screen.capture")
+      capture: reserved("desktop.screen.capture")
     }),
     file: Object.freeze({
-      reveal: reserved("desktop.native.file.reveal")
+      reveal: reserved("desktop.file.reveal")
     }),
     window: Object.freeze({
-      getState: reserved("desktop.native.window.getState"),
-      minimize: reserved("desktop.native.window.minimize"),
-      maximize: reserved("desktop.native.window.maximize"),
-      restore: reserved("desktop.native.window.restore"),
-      close: reserved("desktop.native.window.close")
+      getState: reserved("desktop.window.getState"),
+      minimize: reserved("desktop.window.minimize"),
+      maximize: reserved("desktop.window.maximize"),
+      restore: reserved("desktop.window.restore"),
+      close: reserved("desktop.window.close")
     }),
     camera: Object.freeze({
-      getPermission: reserved("desktop.native.camera.getPermission"),
-      requestAccess: reserved("desktop.native.camera.requestAccess"),
-      open: reserved("desktop.native.camera.open")
+      getPermission: reserved("desktop.camera.getPermission"),
+      requestAccess: reserved("desktop.camera.requestAccess"),
+      open: reserved("desktop.camera.open")
     }),
     share: Object.freeze({
-      open: reserved("desktop.native.share.open")
+      open: reserved("desktop.share.open")
     })
-  })
 });
+
+const image = Object.assign(generateAssistantImage, {
+  cancel: (requestId) => call("assistant.image.cancel", { requestId })
+});
+function createDataClient(call, image) {
+const connector = Object.freeze({
+  list: () => call("connector.list"),
+  describe: (input) => call("connector.describe", input),
+  invoke: (input) => call("connector.invoke", input)
+});
+const skill = Object.freeze({ list: () => call("skill.list"), describe: (input) => call("skill.describe", input) });
+const automation = Object.freeze({
+  list: reserved("automation.list"), get: reserved("automation.get"),
+  create: reserved("automation.create"), update: reserved("automation.update"),
+  pause: reserved("automation.pause"), resume: reserved("automation.resume"), remove: reserved("automation.remove"),
+  runs: Object.freeze({ list: reserved("automation.runs.list"), get: reserved("automation.runs.get") })
+});
+const kanban = Object.freeze({
+  boards: Object.freeze({ list: () => call("kanban.boards.list") }),
+  issues: Object.freeze({ list: (input = {}) => call("kanban.issues.list", input), get: (input) => call("kanban.issues.get", input) })
+});
+const artifact = Object.freeze({
+  open: (input) => call("artifact.open", input),
+  saveAs: (input) => call("artifact.saveAs", input),
+  list: (input) => call("artifact.list", input),
+  get: (input) => call("artifact.get", input),
+  read: async (input) => {
+    const result = await call("artifact.read", input);
+    if (typeof result?.dataBase64 !== "string") throw new DesktopBridgeError("artifact.read", "invalid_response", "Invalid artifact response.");
+    const bytes = Uint8Array.from(atob(result.dataBase64), value => value.charCodeAt(0));
+    return new Blob([bytes]).stream();
+  }
+});
+const assistant = Object.freeze({
+  stop: (input) => call("assistant.stop", input),
+  async *subscribe(input, { signal } = {}) {
+    let cursor = input.cursor || 0;
+    while (!signal?.aborted) {
+      const result = await call("assistant.events", { runId: input.runId, cursor }, signal);
+      for (const event of result.events) { if (signal?.aborted) return; yield event; }
+      cursor = result.cursor;
+      if (result.terminal) return;
+      await new Promise(resolve => {
+        const done = () => { clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); };
+        const timer = setTimeout(done, 500);
+        signal?.addEventListener("abort", done, { once: true });
+      });
+    }
+  },
+  chat: (input) => call("assistant.chat", typeof input === "string" ? { message: input } : input),
+  image
+});
+return Object.freeze({ connector, skill, automation, kanban, artifact, assistant });
+}
+export const { connector, skill, automation, kanban, artifact, assistant } = createDataClient((action, args, signal) => call(action, args, undefined, signal), Object.freeze(image));
+
+// Copy the generated bridge.mjs into a managed Node backend. Credentials stay
+// in that process and must never be forwarded to frontend code or logs.
+export function createBackendClient({ url, token }) {
+  const target = new URL(url);
+  if (target.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(target.hostname) ||
+      target.pathname !== "/webapps" || target.username || target.password || target.search || target.hash ||
+      typeof token !== "string" || !token) {
+    throw new DesktopBridgeError("backend.init", "invalid_args", "Use Desktop's injected backend bridge configuration.");
+  }
+  const transport = { url: target.href.replace(/\/$/u, "") + "/actions/call", token };
+  const client = createDataClient((action, args, signal) => call(action, args, transport, signal), reserved("assistant.image"));
+  return Object.freeze({ ...client, artifact: Object.freeze({
+    list: client.artifact.list, get: client.artifact.get, read: client.artifact.read,
+    open: reserved("artifact.open"), saveAs: reserved("artifact.saveAs")
+  }) });
+}
 `;

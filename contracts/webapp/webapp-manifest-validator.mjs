@@ -5245,8 +5245,15 @@ const webappManifestV2Schema = strictObject({
       string().min(3).max(64).regex(WEBAPP_COPILOT_SKILL_KEY_PATTERN)
     ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
   }).optional(),
+  // Legacy capability fields are accepted for existing packages but no longer gate access.
   desktopBridge: strictObject({
-    version: literal(1)
+    version: union([literal(1), literal(2)]),
+    kanbanRead: boolean().optional(),
+    connectorAuthentication: array(string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)).max(64).optional(),
+    connectorExecution: array(strictObject({
+      connectorId: string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u),
+      adapter: _enum(["cli", "mcp"])
+    })).max(64).optional()
   }).default({ version: 1 })
 }).superRefine((value, context) => {
   if (jsonBytes(value) > WEBAPP_MANIFEST_MAX_BYTES) {

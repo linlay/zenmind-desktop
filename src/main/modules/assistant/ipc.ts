@@ -150,11 +150,11 @@ export async function revealAssistantChatInFileManager(
   }
 }
 
-function readAgentCatalogKeys(value: unknown, path: string) {
+function readProjectAgentCatalogKeys(value: unknown, path: string) {
   if (!Array.isArray(value)) {
     throw new Error(`${path} must be an array`);
   }
-  return value.map((item, index) => {
+  return value.flatMap((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new Error(`${path}[${index}] must be an object`);
     }
@@ -164,7 +164,8 @@ function readAgentCatalogKeys(value: unknown, path: string) {
     if (!key) {
       throw new Error(`${path}[${index}].key is required`);
     }
-    return key;
+    const workspaceDir = (item as Record<string, unknown>).workspaceDir;
+    return typeof workspaceDir === "string" && workspaceDir.trim() ? [key] : [];
   });
 }
 
@@ -544,12 +545,12 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       }
       const projectAgents = await callAgentPlatform(
         app,
-        "/api/agents?scope=nav&mode=CODER&mode=KBASE",
+        "/api/agents?scope=nav",
       );
       const agentOrder = await callAgentPlatform(app, "/api/agents/order");
       const plan = createProjectAgentOrderPlan({
         requestedProjectAgentKeys: normalizedRequestedAgentKeys,
-        currentProjectAgentKeys: readAgentCatalogKeys(
+        currentProjectAgentKeys: readProjectAgentCatalogKeys(
           projectAgents,
           "assistant.projectOrder.projects",
         ),
@@ -736,8 +737,8 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     conversationShare.create(request)
   );
 
-  ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>
-    conversationShare.list(chatId)
+  ipcMain.handle("assistant.listConversationShares", async () =>
+    conversationShare.list()
   );
 
   ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>

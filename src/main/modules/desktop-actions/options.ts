@@ -36,6 +36,7 @@ export interface DesktopActionContextDependencies {
   showSaveDialog?: (...args: any[]) => unknown;
   callRendererAction: (...args: any[]) => unknown;
   confirmRendererAction?: (...args: any[]) => unknown;
+  resolveWebSurface?: (...args: any[]) => Promise<unknown>;
   executeCdpCommand: (request: unknown, scope?: SiteControlScope) => Promise<unknown>;
   hasTunnelWebappSubscriber?: () => boolean;
   emitWebappChanged?: (...args: any[]) => unknown;
@@ -84,6 +85,7 @@ export function createDesktopActionOptions(
       workPanelLocalFileRegistry.discardPreparedClaim(claimId),
     confirmRendererAction: dependencies.confirmRendererAction,
     executeCdpCommand: dependencies.executeCdpCommand,
+    resolveWebSurface: dependencies.resolveWebSurface,
     getKanbanRuntime: context.getKanbanRuntime,
     hasTunnelWebappSubscriber: dependencies.hasTunnelWebappSubscriber,
     emitWebappChanged: dependencies.emitWebappChanged,

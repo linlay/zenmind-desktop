@@ -21,6 +21,7 @@ export function createBrowserSurfaceRegistry_validateSurfaceRegistration_1(conte
         "agent-overview",
         "agent-debug",
         "agent-btw",
+        "agent-selection-explain",
         "agent-project",
         "agent-management",
         "project",
@@ -114,6 +115,14 @@ export function createBrowserSurfaceRegistry_registerSurfaceResult_2(context: Cr
         });
     }
     const canonicalSurfaceId = input.surfaceId.trim();
+    const dialogReservation = context.workPanelDialogRegistrations.get(canonicalSurfaceId);
+    if (dialogReservation && (dialogReservation.registrationId !== input.registrationId ||
+        dialogReservation.ownerChatId !== input.ownerChatId || dialogReservation.ownerWebContentsId !== ownerWebContentsId ||
+        dialogReservation.parentSurfaceId !== input.parentSurfaceId || input.surfaceRole !== "workpanel-web" || input.surfaceKind !== "chat-work-panel")) {
+        // A late publication by the old embedded renderer cannot reclaim the
+        // surface while Main owns its dialog presentation.
+        return { ok: false, reason: "ownership_conflict" };
+    }
     const existingSurface = context.registeredSurfaces.get(canonicalSurfaceId);
     if (existingSurface && existingSurface.ownerWebContentsId !== ownerWebContentsId) {
         return context.rejectSurfaceRegistration(input, ownerWebContentsId, "owner_webcontents_conflict", {
@@ -149,7 +158,8 @@ export function createBrowserSurfaceRegistry_registerSurfaceResult_2(context: Cr
     if (parentSurface && (parentSurface.ownerWebContentsId !== ownerWebContentsId ||
         Boolean(parentSurface.ownerChatId &&
             registrationInput.ownerChatId &&
-            parentSurface.ownerChatId !== registrationInput.ownerChatId))) {
+            parentSurface.ownerChatId !== registrationInput.ownerChatId &&
+            context.workPanelDialogRegistrations.get(registrationInput.surfaceId)?.registrationId !== registrationInput.registrationId))) {
         return context.rejectSurfaceRegistration(registrationInput, ownerWebContentsId, "parent_surface_conflict", {
             existing: context.summarizeRegisteredSurface(parentSurface),
             conflict: {
@@ -275,7 +285,8 @@ export function createBrowserSurfaceRegistry_resolveRegisteredSurface_6(context:
 
 export function createBrowserSurfaceRegistry_removeChildSurfaces_7(context: CreateBrowserSurfaceRegistryContext, parentSurfaceId: string): void {
     const children = [...context.registeredSurfaces.values()]
-        .filter((surface) => surface.parentSurfaceId === parentSurfaceId)
+        .filter((surface) => surface.parentSurfaceId === parentSurfaceId &&
+            context.workPanelDialogRegistrations.get(surface.surfaceId)?.registrationId !== surface.registrationId)
         .map((surface) => surface.surfaceId);
     for (const childId of children) {
         const child = context.registeredSurfaces.get(childId);

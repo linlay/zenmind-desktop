@@ -409,19 +409,19 @@ test("WebApp SDK hides internal endpoints and separates chat from binary image u
       json: async () => ({
         ok: true,
         action: request.action,
-        result: request.action === "desktop.assistant.image"
+        result: ["desktop.assistant.image", "assistant.image"].includes(request.action)
           ? { agentKey: "zenmi", images: [{ dataBase64: "AA==", mimeType: "image/png", sizeBytes: 1 }] }
           : { text: "摘要", agentKey: "summary-agent", chatId: "chat", runId: "run" }
       })
     };
   };
   const sourceUrl = `data:text/javascript;base64,${Buffer.from(WEBAPP_BRIDGE_MODULE_SOURCE).toString("base64")}#${Date.now()}`;
-  const { desktop } = await import(sourceUrl);
+  const { desktop, assistant } = await import(sourceUrl);
 
   assert.deepEqual(await desktop.app.getConfig(), {
     features: { summarize: { prompt: "输出摘要" } }
   });
-  assert.deepEqual(await desktop.assistant.chat("会议原文"), {
+  assert.deepEqual(await assistant.chat("会议原文"), {
     text: "摘要",
     agentKey: "summary-agent",
     chatId: "chat",
@@ -429,10 +429,10 @@ test("WebApp SDK hides internal endpoints and separates chat from binary image u
   });
   assert.equal(calls[0].url, "/__desktop/app-config.json");
   assert.deepEqual(JSON.parse(calls[1].options.body), {
-    action: "desktop.assistant.chat",
+    action: "assistant.chat",
     args: { message: "会议原文" }
   });
-  const imageResult = await desktop.assistant.image({
+  const imageResult = await assistant.image({
     requestId: "image-request-1",
     operation: "inpaint",
     source: new Blob(["source"], { type: "image/png" }),
@@ -441,7 +441,7 @@ test("WebApp SDK hides internal endpoints and separates chat from binary image u
   assert.equal(imageResult.agentKey, "zenmi");
   assert.equal(calls[2].url, "/__desktop/assistant/image/uploads");
   assert.deepEqual(JSON.parse(calls[3].options.body), {
-    action: "desktop.assistant.image",
+    action: "assistant.image",
     args: { requestId: "image-request-1", operation: "inpaint", uploadId: "webimg-1" }
   });
 });
@@ -598,7 +598,7 @@ test("userConfig keeps field definitions in the package and actual values in Des
   assert.equal(invalid.issues[0].field, "apiToken");
 });
 
-test("public Bridge policy enables every page capability and keeps backend tokens scoped to assistant.chat", () => {
+test("public Bridge policy separates page interactions from backend data capabilities", () => {
   const item = {
     id: webappId("capability-app"),
     schemaVersion: 2,
@@ -606,17 +606,21 @@ test("public Bridge policy enables every page capability and keeps backend token
       version: 1
     }
   };
-  assert.deepEqual(getWebappAllowedActions(item, "backendActionToken"), ["desktop.assistant.chat"]);
+  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
   assert.equal(isWebappActionAllowed(item, "localPageGateway", "desktop.native.clipboard.writeText"), true);
   assert.equal(isWebappActionAllowed(item, "backendActionToken", "desktop.native.clipboard.writeText"), false);
   const token = issueWebappActionToken(item, "backendActionToken");
-  assert.deepEqual(authorizeWebappActionToken(token, "desktop.assistant.chat"), {
+  const authorization = authorizeWebappActionToken(token, "desktop.assistant.chat");
+  const { signal, ...grant } = authorization;
+  assert.equal(signal.aborted, false);
+  assert.deepEqual(grant, {
     ok: true,
     webappId: webappId("capability-app"),
     scope: "backendActionToken"
   });
   assert.equal(authorizeWebappActionToken(token, "desktop.native.clipboard.writeText").ok, false);
   revokeWebappActionToken(token);
+  assert.equal(signal.aborted, true);
   assert.equal(authorizeWebappActionToken(token, "desktop.assistant.chat").ok, false);
 });
 
@@ -871,3 +875,23 @@ test("install transaction activation can commit, rollback, and recover", (t) => 
   assert.equal(fs.readFileSync(path.join(installPath, "version.txt"), "utf8"), "committed");
   assert.deepEqual(recoverWebappInstallTransactions(app), []);
 });
+
+test('installed WebApp page tokens allow connector operations without declarations',()=>{
+ const item={id:webappId('auth-only-app'),schemaVersion:2,desktopBridge:{version:1}};
+ const token=issueWebappActionToken(item,'localPageGateway');
+ try{
+  assert.equal(authorizeWebappActionToken(token,'desktop.authenticateConnector').ok,true);
+  assert.equal(authorizeWebappActionToken(token,'connector.invoke').ok,true);
+  assert.equal(authorizeWebappActionToken(token,'connector.list').ok,true);
+  assert.equal(isWebappActionAllowed(item,'backendActionToken','desktop.authenticateConnector'),false);
+ }finally{revokeWebappActionToken(token)}
+});
+
+ test('legacy bridge fields are optional metadata and both transports support execution',()=>{
+  const parsed=parseWebappManifest({...manifest('generic'),desktopBridge:{version:2,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}});
+  assert.equal(isWebappActionAllowed(parsed,'localPageGateway','connector.invoke'),true);
+  assert.equal(isWebappActionAllowed(parsed,'backendActionToken','connector.invoke'),true);
+  assert.throws(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorOperations:{wecom:['send']}}}));
+  assert.doesNotThrow(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
+  assert.equal(isWebappActionAllowed(parseWebappManifest(manifest('plain')),'localPageGateway','kanban.issues.list'),true);
+ });

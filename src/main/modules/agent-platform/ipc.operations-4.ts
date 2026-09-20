@@ -35,6 +35,11 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleWorkPanelInv
         return failure("target_unavailable", "trusted WorkPanel owner chat is unavailable");
     const record = isPlainBridgeRecord(call) ? call : {};
     const method = typeof record.method === "string" ? record.method : "";
+    if (context.kind === "agent-selection-explain") {
+        return method === "getCapabilities"
+            ? { ok: true, capabilities: [] }
+            : failure("capability_denied", "selection explanation cannot access WorkPanel");
+    }
     const capabilities = [
         ...(context.kind === "agent-chat" || context.kind === "agent-copilot" || context.kind === "agent-overview"
             ? ["workpanel.open" as const]

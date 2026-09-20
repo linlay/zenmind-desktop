@@ -40,12 +40,14 @@ export function registerDesktopUpdates(options: {
   const handlers = {
     "updates.getState": () => runtime.getState(),
     "updates.check": () => runtime.check(),
+    "updates.loadTest": (input: import("../../../shared/desktop-updates").DesktopTestUpdateInput) => runtime.loadTest(input),
+    "updates.clearTest": () => runtime.clearTest(),
     "updates.download": () => runtime.download(),
     "updates.install": () => runtime.install(),
     "updates.setAutoDownload": (enabled: boolean) => runtime.setAutoDownload(enabled)
   };
   for (const [channel, handler] of Object.entries(handlers)) {
-    ipcMain.handle(channel, (event, value) => { trusted(event); return handler(value); });
+    ipcMain.handle(channel, (event, value) => { trusted(event); return (handler as (input: unknown) => unknown)(value); });
   }
   const resume = () => runtime.resume();
   powerMonitor.on("resume", resume);

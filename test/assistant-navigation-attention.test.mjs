@@ -23,6 +23,7 @@ function createAgent(agentKey, mode, unreadCount, hasPendingAwaiting = false) {
     latestPreview: "",
     recentChats: [],
     mode,
+    workspaceDir: ["CODER", "KBASE"].includes(mode) ? "/projects/demo" : undefined,
   };
 }
 
@@ -124,4 +125,13 @@ test("navigation attention includes ordinary pins without double-counting projec
     projects: { unreadCount: 2, pendingCount: 1 },
     total: { unreadCount: 4, pendingCount: 3 },
   });
+});
+
+test("project attention follows workspace presence rather than mode", () => {
+  const result = summarizeAssistantNavigationAttention({ items: [
+    { ...createAgent("workspace-react", "REACT", 4, true), workspaceDir: "C:\\projects\\demo", workspaceDirExists: false },
+    { ...createAgent("no-workspace-coder", "CODER", 9, true), workspaceDir: "  " },
+    { ...createAgent("desktopAssistant", "REACT", 9, true), workspaceDir: "/hidden" },
+  ] });
+  assert.deepEqual(result.projects, { unreadCount: 4, pendingCount: 1 });
 });

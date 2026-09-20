@@ -49,12 +49,13 @@ for (const key of Object.keys(COLLECTION_STYLES)) {
   for (const mode of ['light', 'dark']) {
     assert.deepEqual(manifest.variants[mode].tokens, original.variants[mode].tokens);
     assert.deepEqual(manifest.variants[mode].background, original.variants[mode].background);
-    assert.deepEqual(Object.keys(manifest.variants[mode].visuals.images).sort(), [...api.SKIN_VISUAL_SLOTS].sort());
+    const defaults = key === 'pink-kitty' ? ['chat.attach', 'chat.screenshot', 'navigation.refresh', 'entry.new_project'] : [];
+    assert.deepEqual(Object.keys(manifest.variants[mode].visuals.images).sort(), api.SKIN_VISUAL_SLOTS.filter(slot => !defaults.includes(slot)).sort());
   }
   assert.equal(hash(parsed.images.get(manifest.variants.light.background.path)), backgroundBefore);
   ready.push({ key, source, manifest, allFiles, bytes });
   validation.push({ file: key + '.skin.zip', name: manifest.name, schemaVersion: manifest.schemaVersion, version: manifest.version,
-    bytes: bytes.length, zipEntries: Object.keys(zip.files).length, visualFiles: files.size, slotsPerVariant: api.SKIN_VISUAL_SLOTS.length,
+    bytes: bytes.length, zipEntries: Object.keys(zip.files).length, visualFiles: files.size, slotsPerVariant: Object.keys(manifest.variants.light.visuals.images).length,
     visualBytes, backgroundSha256: backgroundBefore, backgroundUnchanged: true, paletteUnchanged: true, sha256: hash(bytes),
     validation: 'canonical 1.1 manifest + ZIP path/CRC/limits + all PNG dimensions + visual PNG decode + full semantic slots passed' });
 }
@@ -77,7 +78,7 @@ function render(){const s=skins[selected],v=s.manifest.variants[mode],t=v.tokens
 $('name').textContent=s.manifest.name;$('style').textContent=s.style+' · '+mode+' · '+Object.keys(s.manifest.variants[mode].visuals.images).length+' 个语义槽';$('download').href=s.key+'.skin.zip';
 const stage=$('stage');stage.style.backgroundImage='url(sources/'+s.key+'/'+v.background.path+')';stage.style.color=t['--ink'];
 $('side').style.background=t['--shell-sidebar-bg'];$('main').style.background=t['--shell-content-bg'];$('composer').style.background=t['--surface-strong'];
-const image=slot=>'sources/'+s.key+'/'+v.visuals.images[slot];
+const image=slot=>v.visuals.images[slot]?'sources/'+s.key+'/'+v.visuals.images[slot]:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="'+t['--control-icon-color']+'" stroke-width="1.8" stroke-linecap="round"><path d="'+(slot==='chat.attach'?'M12 4v16M4 12h16':'M4 9V4h5m6 0h5v5M4 15v5h5m6 0h5v-5')+'"/></svg>');
 document.querySelectorAll('[data-slot]').forEach(img=>{img.src=image(img.dataset.slot)});
 document.querySelectorAll('[data-heading]').forEach(img=>img.src=image('heading.'+img.dataset.heading+'.zh-CN'));
 $('send').style.background=t['--control-primary-bg'];$('send').querySelector('img').src=image('chat.send');$('stop').querySelector('img').src=image('chat.stop');

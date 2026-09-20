@@ -8,7 +8,7 @@ export const kittyPaths = {
  sidebar_right: '<path d="M2 8V2l6 4h8l6-4v16q0 4-4 4H6q-4 0-4-4Z"/><path d="M15 6v16"/>',
  kanban: '<path d="M2 9V2l6 4h8l6-4v14q0 6-10 6T2 16Z"/><path d="M7 10v6m5-6v4m5-4v8"/>',
  automation: '<path d="M4 8 3 2l6 3m6 0 6-3-1 6"/><circle cx="12" cy="13" r="9"/><path d="M12 8v6l4 2M6 21l-2 2m14-2 2 2"/>',
- new_chat: '<path d="M3 15V2l5 4h7l5-4v7M3 15q0 4 4 4l-2 4 7-4"/><path d="m12 19 1-5 7-7 3 3-7 7-4 2"/>',
+ new_chat: '<path d="M7 3.5h10a5 5 0 0 1 5 5v7a5 5 0 0 1-5 5h-7l-6 2v-5a5 5 0 0 1-2-4v-5a5 5 0 0 1 5-5Z"/><path d="M12 8v8m-4-4h8"/><g fill="#F18DB5" stroke="#B73970" stroke-width=".8"><path d="M6 3Q1-1 2 4q0 3 4 1Q10 8 10 4q1-5-4-1Z"/><circle cx="6" cy="4" r="1.2"/></g>',
  chat: '<path d="M2 10V2l6 4h8l6-4v12q0 6-9 6H8l-5 3 1-5q-2-2-2-8Z"/><path d="M7 12h.1m10 0h.1M11 15h2"/>',
  project: '<path d="M2 9V3l5 3 5-3 4 5h4q2 0 2 3v8q0 3-3 3H5q-3 0-3-3Z"/><path d="M2 10h20"/>',
  website: '<path d="M3 8V2l6 3m6 0 6-3v6"/><circle cx="12" cy="13" r="9"/><ellipse cx="12" cy="13" rx="4" ry="9"/><path d="M3 13h18"/>',
@@ -24,19 +24,33 @@ export const kittyPaths = {
  refresh: '<path d="M21 8C15-3 1 3 2 14s19 12 20 2M21 2v6h-6"/><path d="m4 17 3-3 3 3M7 14v6"/>',
  more: '<g fill="currentColor" stroke="none"><ellipse cx="4" cy="12" rx="3" ry="4" transform="rotate(-20 4 12)"/><ellipse cx="12" cy="10" rx="3" ry="4"/><ellipse cx="20" cy="12" rx="3" ry="4" transform="rotate(20 20 12)"/></g>'
 };
-// Draw glyphs individually with rounded stroke joins; ears grow from the first glyph,
-// and the final baseline curls into a tail instead of using a separate corner ornament.
+// Candy lettering: rounded sticker outlines, alternating pastel gradients and a bow.
+// All artwork stays within the existing 104 px canvas and native heading slot.
 export function drawKittyHeading(ctx, label, ink, accent, background) {
- ctx.font='bold 62px "CollectionSans"'; ctx.textBaseline='alphabetic';ctx.lineJoin='round';ctx.lineCap='round';
+ const dark = background.toUpperCase() === '#2C1924';
+ const colors = dark ? [['#FFD0E5','#F28BBC'],['#E8D5FF','#BA9CEB'],['#CEF8E9','#80CAB6']]
+                     : [['#FFB4D2','#D94187'],['#DAC4FF','#9461C6'],['#B7ECDF','#369D89']];
+ ctx.font='bold 62px "CollectionSans"'; ctx.textBaseline='alphabetic';
+ ctx.lineJoin='round';ctx.lineCap='round';
  let x=12;
  for (const [i,ch] of [...label].entries()) {
-  ctx.save();ctx.translate(x,77+(i%2?2:0));ctx.rotate((i%2?1:-1)*.025);
-  ctx.strokeStyle=background;ctx.lineWidth=8;ctx.strokeText(ch,0,0);
-  ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.lineWidth=1.8;ctx.strokeText(ch,0,0);ctx.fillText(ch,0,0);ctx.restore();
+  ctx.save();ctx.translate(x,79+(i%2?2:-1));ctx.rotate((i%2?1:-1)*.045);
+  ctx.strokeStyle=dark?'#793859':'#E49AB9';ctx.lineWidth=12;ctx.strokeText(ch,0,3);
+  ctx.strokeStyle=dark?'#FFF0F8':'#FFFFFF';ctx.lineWidth=9;ctx.strokeText(ch,0,0);
+  const gradient=ctx.createLinearGradient(0,-54,0,3);
+  gradient.addColorStop(0,colors[i%3][0]);gradient.addColorStop(1,colors[i%3][1]);
+  ctx.fillStyle=gradient;ctx.fillText(ch,0,0);ctx.restore();
   x+=ctx.measureText(ch).width;
  }
- ctx.strokeStyle=ink;ctx.fillStyle=accent;ctx.lineWidth=3;
- ctx.beginPath();ctx.moveTo(17,29);ctx.lineTo(16,14);ctx.quadraticCurveTo(17,11,20,15);ctx.lineTo(30,26);ctx.closePath();ctx.fill();ctx.stroke();
- ctx.beginPath();ctx.moveTo(49,26);ctx.lineTo(60,14);ctx.quadraticCurveTo(63,11,63,16);ctx.lineTo(62,30);ctx.closePath();ctx.fill();ctx.stroke();
- ctx.strokeStyle=accent;ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(16,92);ctx.bezierCurveTo(x*.45,88,x*.8,100,x+9,89);ctx.bezierCurveTo(x+30,75,x+34,101,x+16,102);ctx.stroke();
+ // A tiny pink satin bow above the first letter; no ornament replaces a glyph.
+ ctx.save();ctx.translate(32,18);ctx.rotate(-.12);
+ ctx.strokeStyle=dark?'#FFE3F1':'#C5447C';ctx.lineWidth=2.5;ctx.fillStyle='#F68FB8';
+ ctx.beginPath();ctx.moveTo(0,0);ctx.bezierCurveTo(-28,-20,-26,19,0,5);
+ ctx.bezierCurveTo(27,22,27,-18,0,0);ctx.fill();ctx.stroke();
+ ctx.fillStyle='#FFD0E3';ctx.beginPath();ctx.ellipse(0,2,5,7,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
+ // Compact gold sparkle balances the bow at the far end.
+ ctx.fillStyle=dark?'#FFE3A1':'#EAA94A';
+ ctx.beginPath();ctx.moveTo(x+19,38);ctx.quadraticCurveTo(x+20,49,x+29,51);
+ ctx.quadraticCurveTo(x+20,53,x+19,64);ctx.quadraticCurveTo(x+17,53,x+9,51);
+ ctx.quadraticCurveTo(x+17,49,x+19,38);ctx.fill();
 }

@@ -35,7 +35,7 @@ export function createConversationShareFacade(options: ConversationShareFacadeOp
       saveConversationHtmlExport(options.app, renderer, chatId, platform),
     create: (request: AssistantConversationShareRequest) =>
       createConversationShare(options.app, renderer, client, request),
-    list: (chatId: string) => listConversationShares(options.app, client, chatId),
+    list: () => listConversationShares(options.app, client),
     revoke: (shareId: string) => revokeConversationShare(options.app, client, shareId)
   };
 }

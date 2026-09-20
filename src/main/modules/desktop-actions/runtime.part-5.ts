@@ -219,27 +219,6 @@ export function validateExportFilename(value: unknown, extension: string) {
   return value.trim();
 }
 
-export function resolveCurrentRootWebapp(
-  options: DesktopActionBridgeOptions
-): { snapshot: DesktopPageContextSnapshot; contents: DesktopExportWebContents } | null {
-  const snapshot = options.getCurrentPageSnapshot();
-  if (
-    !snapshot ||
-    snapshot.pageKind !== "webview" ||
-    typeof snapshot.webContentsId !== "number" ||
-    !snapshot.surfaceId?.startsWith("app:") ||
-    !snapshot.surfaceRoute?.startsWith("/webs/webapp:")
-  ) {
-    return null;
-  }
-  const contents = options.getWebContentsById?.(snapshot.webContentsId) ??
-    webContents?.fromId(snapshot.webContentsId) ?? null;
-  if (!contents || contents.isDestroyed()) {
-    return null;
-  }
-  return { snapshot, contents };
-}
-
 export async function readDesktopExportProvider(
   contents: DesktopExportWebContents
 ): Promise<
@@ -316,16 +295,18 @@ export async function writeDesktopExportFile(
 export async function executeDesktopWebExportArtifact(
   options: DesktopActionBridgeOptions,
   action: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  source?: DesktopActionCallRequest["source"]
 ): Promise<DesktopActionCallResponse> {
   const format = readString(args, "format").toLowerCase();
   if (!isDesktopWebExportFormat(format)) {
     return fail(action, "export_format_unsupported", "format must be png, html, project, or pdf.");
   }
-  const target = resolveCurrentRootWebapp(options);
-  if (!target) {
-    return fail(action, "current_webapp_required", "The current active root surface must be a WebApp.");
-  }
+  const surfaceId = readString(args, "surfaceId");
+  if (!surfaceId) return fail(action, "invalid_args", "surfaceId is required.");
+  const target = await options.resolveWebSurface?.({ method: "Surface.getState", surfaceId, ...(source ? { source } : {}) });
+  if (!target || target.surfaceKind !== "webapp") return fail(action, "current_webapp_required", "The authorized Surface must be a WebApp with an export provider.");
+  await target.validate();
   const provider = await readDesktopExportProvider(target.contents);
   if (provider.status === "unavailable") {
     return fail(action, "export_provider_unavailable", "The current WebApp does not expose export provider v1.");
@@ -340,6 +321,7 @@ export async function executeDesktopWebExportArtifact(
     return fail(action, "export_format_unsupported", `The current WebApp does not support ${format} export.`);
   }
 
+  await target.validate();
   const spec = DESKTOP_WEB_EXPORT_SPEC[format];
   let filename = "";
   let data: Buffer | null = null;
@@ -392,11 +374,12 @@ export async function executeDesktopWebExportArtifact(
     });
   }
 
+  await target.validate();
   const safeFilename = sanitizeDownloadFilename(filename, `poster${spec.extension}`);
   try {
     const filePath = await writeDesktopExportFile(options, safeFilename, data);
     return ok(action, {
-      surfaceId: target.snapshot.surfaceId!,
+      surfaceId: target.surfaceId,
       format,
       filePath,
       filename: path.basename(filePath),

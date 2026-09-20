@@ -108,7 +108,11 @@ function sanitizeValue(
     const output: Record<string, unknown> = {};
     const entries = Object.entries(value as Record<string, unknown>);
     for (const [key, item] of entries.slice(0, MAX_OBJECT_KEYS)) {
-      output[key] = sanitizeValue(item, state, depth + 1, key);
+      // Apply at every nesting depth, including upstream frames and replayed references.
+      output[key] = (value as Record<string, unknown>).type === "selection" &&
+        (key === "text" || key === "annotation")
+        ? REDACTED_VALUE
+        : sanitizeValue(item, state, depth + 1, key);
     }
     if (entries.length > MAX_OBJECT_KEYS) {
       output.__truncatedKeys = entries.length - MAX_OBJECT_KEYS;

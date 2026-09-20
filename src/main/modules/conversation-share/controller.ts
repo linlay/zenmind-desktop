@@ -67,21 +67,13 @@ export async function createConversationShare(
 export async function listConversationShares(
   app: App,
   shareReader: ConversationShareReader,
-  chatId: string,
 ): Promise<AssistantConversationShareListResult> {
-  const conversationId = typeof chatId === "string" ? chatId.trim() : "";
-  if (!conversationId) {
-    return { ok: false, message: t("assistant.chatIdRequired") };
-  }
-  if (!isValidConversationId(conversationId)) {
-    return { ok: false, message: t("assistant.chatShareConversationIdInvalid") };
-  }
   const target = resolveConversationShareTarget(app);
   if (!target.ok) {
     return target;
   }
   try {
-    const records = await shareReader.list(target.target, conversationId);
+    const records = await shareReader.list(target.target);
     return { ok: true, message: "", records };
   } catch (error) {
     return { ok: false, message: mapTunnelShareError(error, "list") };

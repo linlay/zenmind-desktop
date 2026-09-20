@@ -1,3 +1,4 @@
+import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
@@ -90,7 +91,7 @@ import type {
 } from "../../../shared/webapp-manifest";
 
 type KanbanConnectionState = "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
-type DebugCategoryId = "device" | "state" | "logs" | "realtime" | "wsServer" | "authTokens" | "other";
+type DebugCategoryId = "device" | "state" | "logs" | "realtime" | "wsServer" | "authTokens" | "updates" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
 type DebugLogDirection = "in" | "out" | "system";
 
@@ -118,6 +119,7 @@ type SettingsPageProps = {
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onWebappPublishStateChange?: (id: string, state: WebappPublishState | null) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
+  onTunnelHubEnabledChange?: (enabled: boolean) => void;
   debugVisible: boolean;
   onCloseDebug: () => void;
 };
@@ -162,7 +164,7 @@ type SettingsDebugTextAreaFieldProps = {
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
 const SETTINGS_NOTICE_AUTO_CLOSE_MS = 5000;
-const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "other"];
+const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "updates", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
   popup: {
     root: "settings-select-popup"
@@ -242,6 +244,7 @@ function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunctio
 
 function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction) {
   switch (categoryId) {
+    case "updates": return t("updates.test.title");
     case "device":
       return t("settings.debug.categories.device");
     case "state":
@@ -560,6 +563,20 @@ function normalizeTunnelHubSettings(settings?: Partial<TunnelHubSettings> | null
     ...defaultTunnelHubSettings,
     ...(settings ?? {})
   };
+}
+
+const tunnelHubSettingsErrorKeys: Record<string, TranslationKey> = {
+  "Device ID must be a lowercase DNS label up to 63 characters.": "settings.tunnelHub.invalidDeviceId",
+  "Relay URL is invalid.": "settings.tunnelHub.invalidRelayUrl",
+  "Sign in before enabling Tunnel Hub.": "settings.tunnelHub.signInRequired"
+};
+
+function localizeTunnelHubSettingsError(message: string, t: TranslateFunction): string {
+  let localized = message;
+  for (const [source, key] of Object.entries(tunnelHubSettingsErrorKeys)) {
+    localized = localized.replaceAll(source, t(key));
+  }
+  return localized;
 }
 
 function isMarketVisible(settings: MarketSettings) {
@@ -2051,6 +2068,7 @@ function DebugSettingsPanel() {
 
   function renderActiveCategory() {
     switch (activeCategoryId) {
+      case "updates": return <DebugUpdatePanel />;
       case "device":
         return <DeviceIdentityDebugCard />;
       case "state":
@@ -2407,6 +2425,7 @@ export function SettingsPage({
   onWebappRuntimeStateChange,
   onWebappPublishStateChange,
   onAssistantSettingsChange,
+  onTunnelHubEnabledChange,
   debugVisible,
   onCloseDebug
 }: SettingsPageProps) {
@@ -2741,6 +2760,7 @@ export function SettingsPage({
   function commitSavedTunnelHubSettings(settings: TunnelHubSettings) {
     savedTunnelHubSettingsRef.current = settings;
     setSavedTunnelHubSettings(settings);
+    onTunnelHubEnabledChange?.(settings.enabled === true);
   }
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
@@ -4023,7 +4043,7 @@ export function SettingsPage({
         setAppPairingResult(null);
       }
       if (!result.ok) {
-        throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
+        throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.saveFailed"));
       }
       setReadErrorSections(["tunnelHub"], "");
       showSectionNotice("tunnelHub", result.message, "success");
@@ -4062,7 +4082,7 @@ export function SettingsPage({
         setAppPairingResult(null);
       }
       if (!result.ok) {
-        throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
+        throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.enableIncomplete"));
       }
       setReadErrorSections(["tunnelHub"], "");
       showSectionNotice(

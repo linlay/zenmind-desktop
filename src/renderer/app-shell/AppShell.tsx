@@ -1,6 +1,6 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
-import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
+import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { ConnectorAuthBrowser } from "../connectors/ConnectorAuthBrowser";
 import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
@@ -11,17 +11,22 @@ import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import { beginChatPerformanceNavigation } from "../services/performanceDiagnostics";
 import {
-  isCapabilityNavigationRoute,
+  CAPABILITY_NAVIGATION_ITEMS,
+  createCapabilityNavOrderKey,
+  type SidebarMode,
   resolveSidebarMode,
 } from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
 import { BrandMark, SidebarActionIcon } from "../components/BrandMark";
 import { PageFeedbackStack } from "../components/PageFeedbackStack";
+import { Tooltip } from "../components/Tooltip";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
 import { DesktopDisplayOverlay, type DesktopDisplayOverlayRequest } from "./DesktopDisplayOverlay";
 import { ChatHistoryDialog } from "./history/ChatHistoryDialog";
+import { ConversationShareDialog } from "./conversation-share/ConversationShareDialog";
+import { useShellOverlay } from "./useShellOverlay";
 import {
   BuiltinBrowserSurfaceHost,
   CanonicalWebappSurfaceHost,
@@ -259,6 +264,12 @@ const HelpPage = lazy(() =>
 const FunctionalMarketPage = lazy(() =>
   import("../pages/functional-market").then((module) => ({ default: module.FunctionalMarketPage }))
 );
+const ArtifactManagementPage = lazy(() =>
+  import("../pages/artifact-management/ArtifactManagementPage").then((module) => ({ default: module.ArtifactManagementPage }))
+);
+const ShareManagementPage = lazy(() =>
+  import("../pages/share-management/ShareManagementPage").then((module) => ({ default: module.ShareManagementPage }))
+);
 const PluginSettingsPage = lazy(() =>
   import("../pages/plugin/PluginSettingsPage").then((module) => ({ default: module.PluginSettingsPage }))
 );
@@ -389,12 +400,12 @@ function getSecondarySidebarExitFallbackPath(
     : "/";
 }
 
-function isSecondarySidebarRoute(targetPath: string) {
+function isSecondarySidebarRoute(targetPath: string, mainOrder: readonly string[] = []) {
   const targetPathname = targetPath.split("?")[0] || "/";
   return (
     isSettingsRedirectRoute(targetPath) ||
     matchSettingsRoute(targetPathname) ||
-    isCapabilityNavigationRoute(targetPathname)
+    resolveSidebarMode(targetPathname, mainOrder) === "capabilities"
   );
 }
 
@@ -402,11 +413,12 @@ function resolveSecondarySidebarExitTargetPath(
   targetPath: string,
   kanbanEnabled: boolean,
   chatAgentKey = "",
+  mainOrder: readonly string[] = [],
 ) {
   const targetPathname = targetPath.split("?")[0] || "/";
   if (
     !targetPath ||
-    isSecondarySidebarRoute(targetPath) ||
+    isSecondarySidebarRoute(targetPath, mainOrder) ||
     (!kanbanEnabled && isKanbanNavigationPath(targetPath))
   ) {
     return getSecondarySidebarExitFallbackPath(
@@ -417,8 +429,8 @@ function resolveSecondarySidebarExitTargetPath(
   return targetPath;
 }
 
-function removeSecondarySidebarRoutesFromHistory(history: string[]) {
-  return history.filter((item) => !isSecondarySidebarRoute(item));
+function removeSecondarySidebarRoutesFromHistory(history: string[], mainOrder: readonly string[] = []) {
+  return history.filter((item) => !isSecondarySidebarRoute(item, mainOrder));
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
@@ -578,6 +590,7 @@ function resolveWindowDragTarget(target: Element | null) {
 
 export function AppShell() {
   const { locale, setLocale, t } = useI18n();
+  const shellOverlay = useShellOverlay();
   const location = useLocation();
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
@@ -665,10 +678,25 @@ export function AppShell() {
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() =>
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
+  const [retainedSidebarMode, setRetainedSidebarMode] = useState<{ locationKey: string; mode: SidebarMode } | null>(null);
   const [kanbanEnabled, setKanbanEnabled] = useState(true);
   const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
   const [helpEnabled, setHelpEnabled] = useState(false);
   const [helpSettingsLoaded, setHelpSettingsLoaded] = useState(false);
+  const [tunnelHubEnabled, setTunnelHubEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI.settings.getTunnelHubSettings()
+      .then((settings) => {
+        if (!cancelled) setTunnelHubEnabled(settings.enabled === true);
+      })
+      .catch(() => {
+        if (!cancelled) setTunnelHubEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     let requestId = 0;
     const refresh = () => {
@@ -713,6 +741,7 @@ export function AppShell() {
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const workPanelDialogRestoresRef = useRef(new Set<string>());
   const [webappPresentationOwners, setWebappPresentationOwners] =
     useState<Record<string, WebappPresentationOwner>>({});
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
@@ -730,7 +759,16 @@ export function AppShell() {
       chatNavAgentOptions,
     ],
   );
-  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const globalSearchOverlay = shellOverlay.activeOverlay?.kind === "globalSearch"
+    ? shellOverlay.activeOverlay
+    : null;
+  const globalSearchOpen = globalSearchOverlay !== null;
+  const toolMenuOverlay = shellOverlay.activeOverlay?.kind === "toolMenu"
+    ? shellOverlay.activeOverlay
+    : null;
+  const conversationShareOverlay = shellOverlay.activeOverlay?.kind === "conversationShare"
+    ? shellOverlay.activeOverlay
+    : null;
   const chatHistoryDialogRequestIdRef = useRef(0);
   const [chatHistoryDialog, setChatHistoryDialog] =
     useState<ChatHistoryDialogRequest | null>(null);
@@ -876,17 +914,36 @@ export function AppShell() {
     location.pathname.startsWith("/plugin-settings/");
   const isKanbanRoute = location.pathname === "/kanban";
   const isMarketRoute = location.pathname === "/market";
+  const isShareManagementRoute = location.pathname === "/share-management";
   const usesStandardBaseSurface =
     isKanbanRoute ||
     location.pathname === "/control-center" ||
     location.pathname === "/market" ||
+    isShareManagementRoute ||
+    location.pathname === "/artifact-management" ||
     location.pathname === "/help" ||
     matchSettingsRoute(location.pathname);
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
   const isSettingsRoute = matchSettingsRoute(location.pathname);
-  const sidebarMode = resolveSidebarMode(location.pathname);
+  const sidebarMode = retainedSidebarMode?.locationKey === location.key
+    ? retainedSidebarMode.mode
+    : location.state?.sidebarMode === "capabilities" && resolveSidebarMode(location.pathname) === "capabilities"
+      ? "capabilities"
+    : resolveSidebarMode(location.pathname, sidebarNavOrder);
+  function handleSidebarNavOrderChange(order: SidebarNavOrderItemKey[]) {
+    setRetainedSidebarMode({ locationKey: location.key, mode: sidebarMode });
+    setSidebarNavOrder(order);
+  }
+  useEffect(() => {
+    setRetainedSidebarMode((current) => current?.locationKey === location.key ? current : null);
+  }, [location.key]);
   const isSecondarySidebarMode = sidebarMode !== "primary";
+  useEffect(() => {
+    if (sidebarMode !== "primary") {
+      shellOverlay.closeToolMenu(toolMenuOverlay);
+    }
+  }, [shellOverlay.closeToolMenu, sidebarMode, toolMenuOverlay]);
   const activeAgentChatFocusRequestId =
     !globalSearchOpen &&
     !chatHistoryDialog &&
@@ -1164,9 +1221,15 @@ export function AppShell() {
   // History is a renderer modal: its mask covers the Dock without hiding
   // the guest or detaching its live session while browsing history.
   const copilotDockNativeDialogVisible =
-    nativeDialogVisible || Boolean(desktopActionConfirmation);
+    nativeDialogVisible ||
+    Boolean(desktopActionConfirmation) ||
+    Boolean(conversationShareOverlay);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
-    return [...pinnedWebEntryKeys.map((key) => ({
+    // Keep temporarily disabled capabilities in the saved order; visibility is applied by the sidebar.
+    return [...CAPABILITY_NAVIGATION_ITEMS
+      .filter((item) => sidebarNavOrder.includes(createCapabilityNavOrderKey(item.id)))
+      .map((item) => ({ key: createCapabilityNavOrderKey(item.id), label: t(item.labelKey) })),
+      ...pinnedWebEntryKeys.map((key) => ({
       key: key as SidebarNavOrderItemKey,
       label: webItems.find((item) => item.entryKey === key)?.label ?? key,
     })), ...createDefaultSidebarNavOrderItems({
@@ -1182,7 +1245,7 @@ export function AppShell() {
       if (item.key === "group:webs") return { ...item, label: t("nav.websites") };
       return item;
     });
-  }, [kanbanEnabled, pinnedWebEntryKeys, webItems, t]);
+  }, [kanbanEnabled, pinnedWebEntryKeys, sidebarNavOrder, webItems, t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -1375,6 +1438,11 @@ export function AppShell() {
 
   function commitWorkPanelState(nextState: WorkPanelState) {
     if (nextState === workPanelStateRef.current) return;
+    for (const dialog of workPanelStateRef.current.dialogItems ?? []) {
+      if (!nextState.workspaces.some((workspace) => workspace.ownerChatId === dialog.ownerChatId && workspace.items.some((item) => item.itemId === dialog.itemId))) {
+        void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId: dialog.transferId }).catch(() => undefined);
+      }
+    }
     workPanelStateRef.current = nextState;
     setWorkPanelState(nextState);
   }
@@ -2224,7 +2292,7 @@ export function AppShell() {
     }
   }
 
-  async function refreshDesktopSsoStatus() {
+  const refreshDesktopSsoStatus = useCallback(async () => {
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
       setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
@@ -2232,7 +2300,11 @@ export function AppShell() {
     }
     const status = await ssoApi.getStatus();
     setDesktopSsoStatus(status);
-  }
+  }, [t]);
+
+  const requestToolMenuOpen = useCallback(() => {
+    void shellOverlay.requestToolMenuOpen(refreshDesktopSsoStatus);
+  }, [refreshDesktopSsoStatus, shellOverlay.requestToolMenuOpen]);
 
   useEffect(() => {
     startDesktopActionRendererBridge();
@@ -2259,8 +2331,7 @@ export function AppShell() {
 
   useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
     if (progress.phase === "preparing") {
-      workPanelStateRef.current = EMPTY_WORK_PANEL_STATE;
-      setWorkPanelState(EMPTY_WORK_PANEL_STATE);
+      commitWorkPanelState(EMPTY_WORK_PANEL_STATE);
       setWebappPresentationOwners({});
       if (activeWebEntryKeyRef.current?.startsWith("webapp:")) {
         requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
@@ -2376,10 +2447,8 @@ export function AppShell() {
   }, [navigate]);
 
   useEffect(() => {
-    return window.electronAPI.onOpenGlobalSearch(() => {
-      setGlobalSearchOpen(true);
-    });
-  }, []);
+    return window.electronAPI.onOpenGlobalSearch(shellOverlay.openGlobalSearch);
+  }, [shellOverlay.openGlobalSearch]);
 
   useEffect(() => {
     if (!pendingAgentChatFocusRequest || globalSearchOpen) {
@@ -3164,9 +3233,14 @@ export function AppShell() {
     ));
   }
 
-  function requestSidebarNavigation(targetPath: string) {
+  function requestSidebarNavigation(targetPath: string, fromToolMenu = false) {
     targetPath = resolveKanbanAwareNavigationPath(targetPath, kanbanEnabled);
+    const requestedMode = fromToolMenu ? resolveSidebarMode(targetPath) : undefined;
     if (targetPath === currentRoute) {
+      if (requestedMode) {
+        setRetainedSidebarMode({ locationKey: location.key, mode: requestedMode });
+        return true;
+      }
       return false;
     }
 
@@ -3184,7 +3258,7 @@ export function AppShell() {
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, SIDEBAR_NAVIGATION_LOCK_MS);
-    navigate(targetPath);
+    navigate(targetPath, { state: requestedMode ? { sidebarMode: requestedMode } : null });
     return true;
   }
 
@@ -3214,6 +3288,13 @@ export function AppShell() {
     chatId: string;
   }) {
     setChatHistoryDialog(null);
+    requestNavigationWithAgentChatFocus(createAgentWebclientRoute(request));
+  }
+
+  function openChatFromShareManagement(request: {
+    agentKey: string;
+    chatId: string;
+  }) {
     requestNavigationWithAgentChatFocus(createAgentWebclientRoute(request));
   }
 
@@ -3303,12 +3384,10 @@ export function AppShell() {
       lastPrimaryRouteRef.current,
       kanbanEnabled,
       chatRuntimeAgent.agentKey,
+      sidebarNavOrder,
     );
-    if (targetPath === currentRoute) {
-      return;
-    }
     setSidebarNavigationHistory((current) => ({
-      back: removeSecondarySidebarRoutesFromHistory(current.back),
+      back: removeSecondarySidebarRoutesFromHistory(current.back, sidebarNavOrder),
       forward: []
     }));
     setPendingSidebarNavigationPath(targetPath);
@@ -3330,12 +3409,14 @@ export function AppShell() {
       currentRoute,
       kanbanEnabled,
       chatRuntimeAgent.agentKey,
+      sidebarNavOrder,
     );
   }, [
     chatRuntimeAgent.agentKey,
     currentRoute,
     isSecondarySidebarMode,
     kanbanEnabled,
+    sidebarNavOrder,
   ]);
 
   useEffect(() => {
@@ -4012,6 +4093,17 @@ export function AppShell() {
         }
       : command;
     const result = reduceWorkPanelCommand(currentState, normalizedCommand);
+    if (result.ok) {
+      for (const dialog of previousState.dialogItems ?? []) {
+        if (!result.nextState.dialogItems?.some((entry) => entry.transferId === dialog.transferId)) {
+          void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId: dialog.transferId }).catch(() => undefined);
+        }
+      }
+      if ((command.type === "openItem" || command.type === "activateItem") && result.item) {
+        const dialog = result.nextState.dialogItems?.find((entry) => entry.ownerChatId === command.ownerChatId && entry.itemId === result.item?.itemId);
+        if (dialog) void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "focus", transferId: dialog.transferId }).catch(() => undefined);
+      }
+    }
     if (result.nextState !== workPanelStateRef.current) {
       workPanelStateRef.current = result.nextState;
       setWorkPanelState(result.nextState);
@@ -4306,6 +4398,40 @@ export function AppShell() {
     }
   }, [desiredChatRouteChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
 
+  useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogRestoreRequested((transferId) => {
+    if (workPanelDialogRestoresRef.current.has(transferId)) return;
+    const presentation = workPanelStateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
+    if (!presentation) return;
+    const workspace = workPanelStateRef.current.workspaces.find((entry) => entry.ownerChatId === presentation.ownerChatId);
+    const overview = workspace?.items.find((item) => item.descriptor.kind === "webclient" && item.descriptor.module === "overview");
+    const agentKey = overview?.descriptor.kind === "webclient" && overview.descriptor.module === "overview"
+      ? overview.descriptor.context.agentKey.trim() : activeChatRouteInfo.chatId === presentation.ownerChatId ? activeChatRouteInfo.agentKey : "";
+    workPanelDialogRestoresRef.current.add(transferId);
+    void (async () => {
+      try {
+        const restored = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "restore", transferId });
+        if (!restored.ok || !restored.url || restored.ownerChatId !== presentation.ownerChatId || restored.surfaceId !== presentation.surfaceId) {
+          setWorkPanelOpenError(t("chatWorkPanel.resourceActions.failed"));
+          return;
+        }
+        // Apply the whole window restoration synchronously so automatic dialog
+        // routing never sees a half-restored workspace.
+        for (const entry of restored.restoredItems ?? [{ transferId, surfaceId: presentation.surfaceId, url: restored.url }]) {
+          const item = workPanelStateRef.current.dialogItems?.find((candidate) => candidate.transferId === entry.transferId && candidate.surfaceId === entry.surfaceId);
+          if (item) dispatchWorkPanelCommand({ type: "setDialogPresentation", ownerChatId: item.ownerChatId,
+            itemId: item.itemId, dialog: null, restoreUrl: entry.url });
+        }
+        if (agentKey) {
+          const targetRoute = createAgentChatRoute(agentKey, presentation.ownerChatId);
+          requestChatWorkPanelOpenWhenRegistered(presentation.ownerChatId, agentKey, "show", targetRoute);
+          requestSidebarNavigation(targetRoute);
+        }
+      } catch {
+        setWorkPanelOpenError(t("chatWorkPanel.resourceActions.failed"));
+      } finally { workPanelDialogRestoresRef.current.delete(transferId); }
+    })();
+  }), [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation, t]);
+
   const toggleChatWorkPanelFromSidebar = useCallback((chatIdValue: string, agentKeyValue: string) => {
     const chatId = chatIdValue.trim();
     const agentKey = agentKeyValue.trim();
@@ -4395,25 +4521,71 @@ export function AppShell() {
     );
   }, []);
 
-  const mainChatWorkPanelToggle = showMainChatWorkPanelToggle ? (
-    <button
-      type="button"
-      className={`main-chat-work-panel-toggle${activeChatWorkPanelVisible ? " is-active" : ""}`}
-      aria-label={t(activeChatWorkPanelVisible
-        ? "sidebar.chat.workPanel.close"
-        : "sidebar.chat.workPanel.open")}
-      aria-pressed={activeChatWorkPanelVisible}
-      disabled={!desiredChatRouteChatId}
-      title={t(activeChatWorkPanelVisible
-        ? "sidebar.chat.workPanel.close"
-        : "sidebar.chat.workPanel.open")}
-      onClick={toggleMainChatWorkPanel}
-    >
-      <SidebarActionIcon
-        kind="sidebar_left"
-        className="main-chat-work-panel-toggle-icon"
-      />
-    </button>
+  const activeChatName = desiredChatRouteChatId
+    ? [
+        ...assistantPinnedChatItems,
+        ...assistantNavChatItems,
+        ...assistantNavAgents.flatMap((agent) => agent.recentChats),
+      ].find((chat) => chat.chatId === desiredChatRouteChatId)?.chatName ||
+      t("sidebar.chat.current")
+    : t("sidebar.chat.current");
+  const shareDisabledReason = !desiredChatRouteChatId
+    ? t("sidebar.chat.shareRequiresConversation")
+    : "";
+  const openConversationShare = (chatId: string, chatName: string) => {
+    shellOverlay.openConversationShare(chatId, chatName);
+  };
+  const openTunnelSettings = () => {
+    requestSidebarNavigation(buildSettingsSectionPath("tunnelHub"));
+  };
+  const openTunnelSettingsFromShare = () => {
+    if (conversationShareOverlay) {
+      shellOverlay.closeConversationShare(conversationShareOverlay);
+    }
+    openTunnelSettings();
+  };
+  const mainChatHeaderActions = showMainChatWorkPanelToggle ? (
+    <div className="main-chat-header-actions">
+      <Tooltip content={shareDisabledReason || t("sidebar.chat.shareTitle")}>
+        <span
+          className={`main-chat-share-tooltip-trigger${shareDisabledReason ? " is-disabled" : ""}`}
+          tabIndex={shareDisabledReason ? 0 : -1}
+          aria-label={shareDisabledReason || undefined}
+        >
+          <button
+            type="button"
+            className="main-chat-header-action main-chat-share-button"
+            aria-label={t("sidebar.chat.shareTitle")}
+            disabled={Boolean(shareDisabledReason)}
+            onClick={() => {
+              if (desiredChatRouteChatId) {
+                openConversationShare(desiredChatRouteChatId, activeChatName);
+              }
+            }}
+          >
+            <ShareAltOutlined aria-hidden="true" />
+          </button>
+        </span>
+      </Tooltip>
+      <button
+        type="button"
+        className={`main-chat-header-action main-chat-work-panel-toggle${activeChatWorkPanelVisible ? " is-active" : ""}`}
+        aria-label={t(activeChatWorkPanelVisible
+          ? "sidebar.chat.workPanel.close"
+          : "sidebar.chat.workPanel.open")}
+        aria-pressed={activeChatWorkPanelVisible}
+        disabled={!desiredChatRouteChatId}
+        title={t(activeChatWorkPanelVisible
+          ? "sidebar.chat.workPanel.close"
+          : "sidebar.chat.workPanel.open")}
+        onClick={toggleMainChatWorkPanel}
+      >
+        <SidebarActionIcon
+          kind="sidebar_left"
+          className="main-chat-work-panel-toggle-icon"
+        />
+      </button>
+    </div>
   ) : null;
 
   return (
@@ -4434,6 +4606,7 @@ export function AppShell() {
         usesServiceWebviewSurface ? "has-service-webview-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
+        location.pathname === "/help" ? "has-help-surface" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
         showsEmptyContentSurface ? "has-empty-content-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
@@ -4442,7 +4615,7 @@ export function AppShell() {
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
         isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
-        showMainChatWorkPanelToggle ? "has-main-chat-work-panel-toggle" : "",
+        showMainChatWorkPanelToggle ? "has-main-chat-header-actions" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
@@ -4486,7 +4659,7 @@ export function AppShell() {
                   className="app-system-bar-action"
                   aria-label={t("desktop.globalSearch.title")}
                   title={t("desktop.globalSearch.shortcutHint")}
-                  onClick={() => setGlobalSearchOpen(true)}
+                  onClick={shellOverlay.openGlobalSearch}
                 >
                   <SettingsSidebarIcon kind="search" />
                 </button>
@@ -4584,7 +4757,7 @@ export function AppShell() {
         <div className="app-window-drag-region" />
       </div>
       <div className="app-window-controls-layer">
-        {mainChatWorkPanelToggle}
+        {mainChatHeaderActions}
       </div>
       <div className="app-sidebar-shell">
         <AppSidebar
@@ -4600,8 +4773,9 @@ export function AppShell() {
           marketEnabled={marketEnabled}
           helpEnabled={helpEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
-          onSidebarNavOrderChange={navigationPreferencesLoaded ? setSidebarNavOrder : undefined}
+          onSidebarNavOrderChange={navigationPreferencesLoaded ? handleSidebarNavOrderChange : undefined}
           websiteNavOrder={normalizedWebGroupOrder}
+          onWebsiteNavOrderChange={setWebGroupOrder}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
           webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
           onSetWebItemPinned={handleSetWebItemPinned}
@@ -4634,7 +4808,6 @@ export function AppShell() {
           onCloseAssistantDock={closeAssistantDock}
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
-          onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onReorderAssistantProjects={reorderAssistantProjects}
           onUpdateAssistantChatOrder={updateAssistantChatOrder}
@@ -4642,6 +4815,7 @@ export function AppShell() {
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
           onToggleChatWorkPanel={toggleChatWorkPanelFromSidebar}
           onOpenChatHistory={openChatHistoryDialog}
+          onShareChat={openConversationShare}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
@@ -4657,11 +4831,16 @@ export function AppShell() {
           onExportWebappItem={exportWebappItem}
           onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
+          onRequestToolNavigate={(targetPath) => requestSidebarNavigation(targetPath, true)}
           onRequestAgentChatNavigate={requestNavigationWithAgentChatFocus}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
-          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
+          onOpenGlobalSearch={shellOverlay.openGlobalSearch}
+          toolMenuOpen={toolMenuOverlay !== null}
+          onRequestToolMenuOpen={requestToolMenuOpen}
+          onAutoOpenToolMenu={shellOverlay.openToolMenuIfIdle}
+          onCloseToolMenu={() => shellOverlay.closeToolMenu(toolMenuOverlay)}
           onToggleCollapsed={toggleSidebarCollapsed}
           sidebarMode={sidebarMode}
           settingsSections={visibleSettingsSections}
@@ -4771,6 +4950,7 @@ export function AppShell() {
                     onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
                     onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
                     onAssistantSettingsChange={setAssistantSettings}
+                    onTunnelHubEnabledChange={setTunnelHubEnabled}
                     debugVisible={debugSettingsUnlocked}
                     onCloseDebug={handleCloseDebugSettings}
                   />
@@ -4827,6 +5007,30 @@ export function AppShell() {
                     : <Navigate to="/control-center" replace />
               }
             />
+            <Route path="/artifact-management" element={
+              <RouteSuspense><ArtifactManagementPage onOpenChat={openChatFromShareManagement} onView={(request) => {
+                const route = `/resource-viewer/${encodeURIComponent(request.agentKey)}?${new URLSearchParams({ chatId: request.chatId, file: request.relativePath.split("/").map(encodeURIComponent).join("/") })}`;
+                const opened = dispatchWorkPanelCommand({
+                  type: "openItem", ownerChatId: request.chatId,
+                  descriptor: { kind: "webclient", module: "artifact", route, title: request.name,
+                    context: { agentKey: request.agentKey, chatId: request.chatId, artifactId: request.artifactId, relativePath: request.relativePath } },
+                });
+                if (opened.ok) openChatFromShareManagement(request);
+                return opened.ok;
+              }} /></RouteSuspense>
+            } />
+            <Route
+              path="/share-management"
+              element={
+                <RouteSuspense>
+                  <ShareManagementPage
+                    tunnelHubEnabled={tunnelHubEnabled}
+                    onOpenTunnelSettings={openTunnelSettings}
+                    onOpenChat={openChatFromShareManagement}
+                  />
+                </RouteSuspense>
+              }
+            />
             <Route path="/help" element={
               !helpSettingsLoaded ? null : helpEnabled
                 ? <RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>
@@ -4862,6 +5066,8 @@ export function AppShell() {
           launcher={{
             agentKey: activeChatRouteInfo.agentKey,
             agentMode: workPanelLauncherAgentMode,
+            agentLabel: workPanelLauncherAgent?.displayName ? `${workPanelLauncherAgent.displayName} (${activeChatRouteInfo.agentKey})` : activeChatRouteInfo.agentKey,
+            chatLabel: [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || activeChatWorkPanelChatId || "",
             projectEnabled: workPanelProjectEnabled,
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,
@@ -5068,6 +5274,17 @@ export function AppShell() {
           onChatRemoved={handleHistoryChatRemoved}
         />
       ) : null}
+      {conversationShareOverlay ? (
+        <ConversationShareDialog
+          key={conversationShareOverlay.sessionId}
+          chatId={conversationShareOverlay.chatId}
+          chatName={conversationShareOverlay.chatName}
+          tunnelHubEnabled={tunnelHubEnabled}
+          t={t}
+          onClose={() => shellOverlay.closeConversationShare(conversationShareOverlay)}
+          onOpenTunnelSettings={openTunnelSettingsFromShare}
+        />
+      ) : null}
       <DesktopGlobalSearchOverlay
         open={globalSearchOpen}
         agents={assistantNavAgents}
@@ -5075,7 +5292,11 @@ export function AppShell() {
         defaultChatAgentKey={chatRuntimeAgent.agentKey}
         shortcutPlatform={isMac ? "darwin" : isWindows ? "win32" : null}
         t={t}
-        onClose={() => setGlobalSearchOpen(false)}
+        onClose={() => {
+          if (globalSearchOverlay) {
+            shellOverlay.closeGlobalSearch(globalSearchOverlay);
+          }
+        }}
         onOpenHistory={() => openChatHistoryDialog()}
         onNavigate={requestNavigationWithAgentChatFocus}
       />

@@ -14,15 +14,16 @@ import {
   type SurfaceRole
 } from "../../../shared/surface-identity";
 import type { CreateBrowserSurfaceRegistryContext } from "./browser-surface-registry.shared";
-import { BrowserSurface, BrowserSurfaceDiagnosticSnapshot, BrowserSurfaceLifecycleEvent, BrowserSurfaceRegistryOptions, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, PendingSurfaceRegistrationDiagnostic, RegisteredSurface, RegisteredWebviewSurfaceTarget, SurfaceRegistrationDiagnostic, SurfaceRegistrationRejectionReason, SurfaceRegistrationValidation, webEntryMatchesSurfaceTarget } from "./browser-surface-registry.shared";
+import { BrowserContainer, BrowserSurfaceDiagnosticSnapshot, BrowserSurfaceLifecycleEvent, BrowserSurfaceRegistryOptions, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, PendingSurfaceRegistrationDiagnostic, RegisteredSurface, RegisteredWebviewSurfaceTarget, SurfaceRegistrationDiagnostic, SurfaceRegistrationRejectionReason, SurfaceRegistrationValidation, webEntryMatchesSurfaceTarget } from "./browser-surface-registry.shared";
 import { createBrowserSurfaceRegistry_emitLifecycle_1, createBrowserSurfaceRegistry_subscribeLifecycle_2, createBrowserSurfaceRegistry_reportRegistrationDiagnostic_3, createBrowserSurfaceRegistry_summarizeRegisteredSurface_4, createBrowserSurfaceRegistry_createRegistrationDiagnostic_5, createBrowserSurfaceRegistry_flushRegistrationDiagnostic_6, createBrowserSurfaceRegistry_scheduleRegistrationDiagnosticFlush_7, createBrowserSurfaceRegistry_rejectSurfaceRegistration_8, createBrowserSurfaceRegistry_settleRegistrationDiagnostics_9, createBrowserSurfaceRegistry_resolveCanonicalSurfaceId_10, createBrowserSurfaceRegistry_removeAliasesForSurface_11, createBrowserSurfaceRegistry_addDerivedAliases_12, createBrowserSurfaceRegistry_fallbackSurfaceType_13, createBrowserSurfaceRegistry_settleGuestTargetWaiters_14, createBrowserSurfaceRegistry_removeGuestTargetsForSurface_15, createBrowserSurfaceRegistry_indexRegisteredSurface_16, createBrowserSurfaceRegistry_expectedRolesForRegistration_17, createBrowserSurfaceRegistry_validateRegistrationIdentity_18, createBrowserSurfaceRegistry_isValidSurfaceTab_19 } from "./browser-surface-registry.operations-1";
 import { createBrowserSurfaceRegistry_validateSurfaceRegistration_1, createBrowserSurfaceRegistry_registerSurfaceResult_2, createBrowserSurfaceRegistry_registerSurface_3, createBrowserSurfaceRegistry_unregisterSurface_4, createBrowserSurfaceRegistry_unregisterSurfacesForOwner_5, createBrowserSurfaceRegistry_resolveRegisteredSurface_6, createBrowserSurfaceRegistry_removeChildSurfaces_7, createBrowserSurfaceRegistry_findRegisteredSurfaceWebContents_8, createBrowserSurfaceRegistry_findWebContentsById_9, createBrowserSurfaceRegistry_resolveWebviewSurfaceTarget_10, createBrowserSurfaceRegistry_waitForWebviewSurfaceTarget_11 } from "./browser-surface-registry.operations-2";
-import { createBrowserSurfaceRegistry_waitForWebviewSurfaceTargetMatching_1, createBrowserSurfaceRegistry_currentPageSnapshotMatchesSurface_2, createBrowserSurfaceRegistry_findWebContentsForSurfaceUrl_3, createBrowserSurfaceRegistry_builtinBrowserSurface_4, createBrowserSurfaceRegistry_listBrowserSurfaces_5, createBrowserSurfaceRegistry_listChatWorkPanelSurfaces_6, createBrowserSurfaceRegistry_listRegisteredSurfaces_7, createBrowserSurfaceRegistry_listDiagnosticSurfaces_8, createBrowserSurfaceRegistry_listWebContentsDiagnostics_9, createBrowserSurfaceRegistry_getRegisteredSurfaceSnapshot_10 } from "./browser-surface-registry.operations-3";
+import { createBrowserSurfaceRegistry_waitForWebviewSurfaceTargetMatching_1, createBrowserSurfaceRegistry_currentPageSnapshotMatchesSurface_2, createBrowserSurfaceRegistry_findWebContentsForSurfaceUrl_3, createBrowserSurfaceRegistry_builtinBrowserSurface_4, createBrowserSurfaceRegistry_listBrowserContainers_5, createBrowserSurfaceRegistry_listWorkPanelContainers_6, createBrowserSurfaceRegistry_listRegisteredSurfaces_7, createBrowserSurfaceRegistry_listDiagnosticSurfaces_8, createBrowserSurfaceRegistry_listWebContentsDiagnostics_9, createBrowserSurfaceRegistry_getRegisteredSurfaceSnapshot_10 } from "./browser-surface-registry.operations-3";
 
 export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOptions) {
   const factoryContext: CreateBrowserSurfaceRegistryContext = {
     get options() { return options; },
     get registeredSurfaces() { return registeredSurfaces; },
+    get workPanelDialogRegistrations() { return workPanelDialogRegistrations; },
     get registeredGuestTargets() { return registeredGuestTargets; },
     get pendingGuestTargetWaiters() { return pendingGuestTargetWaiters; },
     get surfaceAliases() { return surfaceAliases; },
@@ -63,8 +64,8 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     get currentPageSnapshotMatchesSurface() { return currentPageSnapshotMatchesSurface; },
     get findWebContentsForSurfaceUrl() { return findWebContentsForSurfaceUrl; },
     get builtinBrowserSurface() { return builtinBrowserSurface; },
-    get listBrowserSurfaces() { return listBrowserSurfaces; },
-    get listChatWorkPanelSurfaces() { return listChatWorkPanelSurfaces; },
+    get listBrowserContainers() { return listBrowserContainers; },
+    get listWorkPanelContainers() { return listWorkPanelContainers; },
     get listRegisteredSurfaces() { return listRegisteredSurfaces; },
     get listDiagnosticSurfaces() { return listDiagnosticSurfaces; },
     get listWebContentsDiagnostics() { return listWebContentsDiagnostics; },
@@ -78,6 +79,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   >();
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
   const pendingRegistrationDiagnostics = new Map<string, PendingSurfaceRegistrationDiagnostic>();
+  const workPanelDialogRegistrations: CreateBrowserSurfaceRegistryContext["workPanelDialogRegistrations"] = new Map();
   const lifecycleListeners = new Set<(event: BrowserSurfaceLifecycleEvent) => void>();
   const registrationDiagnosticDedupWindowMs = Math.max(
     10,
@@ -178,13 +180,13 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
 
   function findWebContentsForSurfaceUrl(surfaceUrl: string) { return createBrowserSurfaceRegistry_findWebContentsForSurfaceUrl_3(factoryContext, surfaceUrl); }
 
-  function builtinBrowserSurface(contents: WebContents | null, url = BUILTIN_BROWSER_DEFAULT_URL): BrowserSurface { return createBrowserSurfaceRegistry_builtinBrowserSurface_4(factoryContext, contents, url); }
+  function builtinBrowserSurface(contents: WebContents | null, url = BUILTIN_BROWSER_DEFAULT_URL): BrowserContainer { return createBrowserSurfaceRegistry_builtinBrowserSurface_4(factoryContext, contents, url); }
 
-  function listBrowserSurfaces(): BrowserSurface[] { return createBrowserSurfaceRegistry_listBrowserSurfaces_5(factoryContext); }
+  function listBrowserContainers(): BrowserContainer[] { return createBrowserSurfaceRegistry_listBrowserContainers_5(factoryContext); }
 
-  function listChatWorkPanelSurfaces(): BrowserSurface[] { return createBrowserSurfaceRegistry_listChatWorkPanelSurfaces_6(factoryContext); }
+  function listWorkPanelContainers(): BrowserContainer[] { return createBrowserSurfaceRegistry_listWorkPanelContainers_6(factoryContext); }
 
-  function listRegisteredSurfaces(): BrowserSurface[] { return createBrowserSurfaceRegistry_listRegisteredSurfaces_7(factoryContext); }
+  function listRegisteredSurfaces(): BrowserContainer[] { return createBrowserSurfaceRegistry_listRegisteredSurfaces_7(factoryContext); }
 
   function listDiagnosticSurfaces(): BrowserSurfaceDiagnosticSnapshot[] { return createBrowserSurfaceRegistry_listDiagnosticSurfaces_8(factoryContext); }
 
@@ -196,14 +198,39 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     ownerWebContentsId: number
   ) { return createBrowserSurfaceRegistry_getRegisteredSurfaceSnapshot_10(factoryContext, surfaceId, registrationId, ownerWebContentsId); }
 
+  // Main-only reservation captured from an already-authorized live WorkPanel
+  // surface. It survives Main Chat remounts without granting a different Chat.
+  function retainWorkPanelDialogSurface(surfaceId: string, registrationId: string, ownerWebContentsId: number, nextRegistrationId: string) {
+    const snapshot = getRegisteredSurfaceSnapshot(surfaceId, registrationId, ownerWebContentsId);
+    if (!snapshot || snapshot.registered.surfaceKind !== "chat-work-panel" || snapshot.registered.surfaceRole !== "workpanel-web" ||
+        !snapshot.registered.ownerChatId || workPanelDialogRegistrations.has(surfaceId)) return false;
+    workPanelDialogRegistrations.set(surfaceId, { registrationId: nextRegistrationId, ownerChatId: snapshot.registered.ownerChatId, ownerWebContentsId, parentSurfaceId: snapshot.registered.parentSurfaceId });
+    return true;
+  }
+  // Only Main can extend an existing dialog reservation. The caller derives
+  // the sibling identity from the original Chat and the reducer's stable key.
+  function retainWorkPanelDialogSibling(sourceId: string, sourceRegistrationId: string, surfaceId: string, registrationId: string) {
+    const source = workPanelDialogRegistrations.get(sourceId);
+    if (!source || source.registrationId !== sourceRegistrationId ||
+        registeredSurfaces.has(surfaceId) || workPanelDialogRegistrations.has(surfaceId)) return false;
+    workPanelDialogRegistrations.set(surfaceId, { ...source, registrationId });
+    return true;
+  }
+  function releaseWorkPanelDialogSurface(surfaceId: string, registrationId: string) {
+    if (workPanelDialogRegistrations.get(surfaceId)?.registrationId === registrationId) workPanelDialogRegistrations.delete(surfaceId);
+  }
+
   return {
+    retainWorkPanelDialogSurface,
+    retainWorkPanelDialogSibling,
+    releaseWorkPanelDialogSurface,
     currentPageSnapshotMatchesSurface,
     findWebContentsById,
     findWebContentsForSurfaceUrl,
     findRegisteredSurfaceWebContents,
     builtinBrowserSurface,
-    listBrowserSurfaces,
-    listChatWorkPanelSurfaces,
+    listBrowserContainers,
+    listWorkPanelContainers,
     listDiagnosticSurfaces,
     listRegisteredSurfaces,
     listWebContentsDiagnostics,

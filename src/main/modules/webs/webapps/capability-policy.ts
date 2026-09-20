@@ -1,6 +1,7 @@
 import type { WebappEntry } from "../../../../shared/contracts";
 import {
   WEBAPP_BRIDGE_ACTIONS,
+  resolveWebappAction,
   WEBAPP_BRIDGE_CAPABILITY_ACTIONS,
 } from "../../../../shared/webapp-bridge";
 
@@ -12,13 +13,14 @@ export function getWebappAllowedActions(_item: WebappEntry, scope: WebappCapabil
     actions.add(WEBAPP_BRIDGE_ACTIONS.capabilitiesList);
   }
   for (const [capability, capabilityActions] of Object.entries(WEBAPP_BRIDGE_CAPABILITY_ACTIONS)) {
-    if (scope === "backendActionToken" && capability !== "assistant.chat") {
+    if (scope === "backendActionToken" && capability !== "connector.execute" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
       continue;
     }
     for (const action of capabilityActions) {
       actions.add(action);
     }
   }
+
   return [...actions];
 }
 
@@ -27,5 +29,5 @@ export function isWebappActionAllowed(
   scope: WebappCapabilityScope,
   action: string
 ) {
-  return getWebappAllowedActions(item, scope).includes(action);
+  return getWebappAllowedActions(item, scope).includes(resolveWebappAction(action));
 }

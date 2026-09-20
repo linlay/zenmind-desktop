@@ -375,6 +375,7 @@ export function AgentRealtimeInspectorPage() {
     : [];
   const primaryConnection = snapshot?.connections.primary;
   const btwConnection = snapshot?.connections.btw;
+  const explanationConnection = snapshot?.connections["selection-explain"];
   const connected = primaryConnection?.phase === "connected";
   function selectTarget(target: AgentRealtimeDebugTarget) {
     setSelectedTargetId(target.targetId);
@@ -458,9 +459,9 @@ export function AgentRealtimeInspectorPage() {
         </div>
       </header>
 
-      {message || primaryConnection?.lastError || btwConnection?.lastError ? (
+      {message || primaryConnection?.lastError || btwConnection?.lastError || explanationConnection?.lastError ? (
         <div className="runtime-observer-error" role="status">
-          {message || primaryConnection?.lastError || btwConnection?.lastError}
+          {message || primaryConnection?.lastError || btwConnection?.lastError || explanationConnection?.lastError}
         </div>
       ) : null}
 
@@ -661,17 +662,18 @@ export function AgentRealtimeInspectorPage() {
             <section className="runtime-system">
               <article>
                 <h2>{t("settings.debug.realtime.physicalConnection")}</h2>
-                {[primaryConnection, btwConnection].map((connection, index) => (
-                  <dl key={index === 0 ? "primary" : "btw"}>
-                    <div><dt>Lane</dt><dd>{index === 0 ? "Primary" : "BTW"}</dd></div>
+                {(["primary", "btw", "selection-explain"] as const).map((lane) => {
+                  const connection = snapshot?.connections[lane];
+                  return <dl key={lane}>
+                    <div><dt>Lane</dt><dd>{lane === "primary" ? "Primary" : lane === "btw" ? "BTW" : "Selection Explain"}</dd></div>
                     <div><dt>Phase</dt><dd>{connection?.phase || "idle"}</dd></div>
                     <div><dt>Session ID</dt><dd>{connection?.physicalSessionId || "—"}</dd></div>
                     <div><dt>Generation</dt><dd>{connection?.generation ?? 0}</dd></div>
                     <div><dt>Last inbound</dt><dd>{formatDiagnosticTime(connection?.lastInboundAt, locale)}</dd></div>
                     <div><dt>Heartbeat</dt><dd>{formatDiagnosticTime(connection?.lastHeartbeatAt, locale)}</dd></div>
                     <div><dt>Reconnects</dt><dd>{connection?.reconnectCount ?? 0}</dd></div>
-                  </dl>
-                ))}
+                  </dl>;
+                })}
               </article>
               <article>
                 <h2>Overview lease</h2>

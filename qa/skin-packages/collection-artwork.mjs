@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { themedGeometry, themedOutlines, drawThemedHeading } from './themed-artwork.mjs';
 import { kittyPaths, drawKittyHeading, kittyUnreadOutline } from './kitty-artwork.mjs';
 import path from 'node:path';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
@@ -35,36 +36,33 @@ const mapping = { 'navigation.search':'search','navigation.back':'back','navigat
 
 export const COLLECTION_STYLES = {
   'pink-kitty': { label: '猫爪 · 猫耳 · 猫尾', motif: 'bow', rounded: true },
-  'tahiti': { label: '棕榈 · 海岛', motif: 'palm', rounded: true },
-  'maldives': { label: '海浪 · 水光', motif: 'wave', rounded: true },
-  'gold-saints': { label: '星芒 · 金色铭文', motif: 'star', rounded: false },
-  'walnut-song': { label: '窗棂 · 宋体', motif: 'lattice', rounded: false }
+  'tahiti': { label: '山海 · 海龟 · 神秘岛纹', motif: 'palm', rounded: true },
+  'maldives': { label: '海洋 · 鱼群 · 扇贝', motif: 'wave', rounded: true },
+  'gold-saints': { label: '射手座 · 黄金翼甲 · 圣斗士', motif: 'star', rounded: false },
+  'walnut-song': { label: '榫卯 · 木作 · 宋式书卷', motif: 'lattice', rounded: false }
 };
-function ornament(kind, accent, color) {
-  if (kind === 'bow') return `<path d="M18 3q-5-5-6-1t6 3q5 5 6 1t-6-3" fill="${accent}" stroke="${color}" stroke-width=".7"/><circle cx="18" cy="3" r="1.3" fill="${color}"/>`;
-  if (kind === 'palm') return `<g fill="none" stroke="${accent}" stroke-width="1.1" stroke-linecap="round"><path d="M20 6q0-4-2-6m2 3q-4-4-6-1m6 1q3-5 5-2m-5 2q-4-1-5 2m5-2q4-1 5 2"/></g>`;
-  if (kind === 'wave') return `<path d="M3 24q3-2 6 0t6 0 6 0" fill="none" stroke="${accent}" stroke-width="1.15" stroke-linecap="round"/>`;
-  if (kind === 'star') return `<path d="m20-2 1.2 3.8L25 3l-3.8 1.2L20 8l-1.2-3.8L15 3l3.8-1.2Z" fill="${accent}" stroke="${color}" stroke-width=".4"/>`;
-  return `<path d="M18 0h6v6M21 0v3h3" fill="none" stroke="${accent}" stroke-width=".85"/>`;
-}
 export async function createCollectionArtwork(manifest, key) {
   const design = COLLECTION_STYLES[key];
   if (!design) throw new Error(`Unknown collection theme: ${key}`);
   const files = new Map();
-  const next = structuredClone(manifest); next.schemaVersion = '1.1'; next.version = '1.1.0';
+  const next = structuredClone(manifest); next.schemaVersion = '1.1'; next.version = key === 'pink-kitty' ? '1.1.1' : key === 'gold-saints' ? '1.2.2' : '1.2.1';
   for (const mode of ['light', 'dark']) {
     const tokens = next.variants[mode].tokens;
     const color = tokens['--control-icon-color'], accent = tokens['--accent'], ink = tokens['--ink'];
     const images = {};
-    for (const [name, original] of Object.entries(paths)) {
-      const geometry = key === 'pink-kitty' ? kittyPaths[name] : design.rounded ? original : original.replace(/rx="[34]"/g, 'rx="1"');
+    for (const [name, original] of Object.entries(key === 'pink-kitty' ? paths : { ...paths, screenshot: paths.expand })) {
+      const geometry = key === 'pink-kitty' ? kittyPaths[name] : themedGeometry(key, name, original);
       const stroke = name === 'send' ? tokens['--accent-on'] : name === 'stop' ? (mode === 'light' ? '#BA3452' : '#FF9BAF') : color;
-      const motif = key === 'pink-kitty' || name === 'stop' || name === 'send' ? '' : ornament(design.motif, accent, color);
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="${key === 'pink-kitty' ? '0 0 24 24' : '-2 -3 29 29'}" color="${stroke}"><g fill="none" stroke="${stroke}" stroke-width="${design.rounded ? 1.8 : 1.6}" stroke-linecap="${design.rounded ? 'round' : 'square'}" stroke-linejoin="${design.rounded ? 'round' : 'miter'}">${geometry}</g>${motif}</svg>`;
+      const motif = '';
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="${key === 'pink-kitty' ? '0 0 24 24' : '-2 -2 28 28'}" color="${stroke}"><g fill="none" stroke="${stroke}" stroke-width="${design.rounded ? 1.8 : 1.6}" stroke-linecap="${design.rounded ? 'round' : 'square'}" stroke-linejoin="${design.rounded ? 'round' : 'miter'}">${geometry}</g>${motif}</svg>`;
       const canvas = createCanvas(96, 96);canvas.getContext('2d').drawImage(await loadImage(Buffer.from(svg)), 0, 0);
       files.set(`visuals/${mode}-${name}.png`, canvas.toBuffer('image/png'));
     }
-    for (const [slot, name] of Object.entries(mapping)) images[slot] = `visuals/${mode}-${name}.png`;
+    for (const [slot, name] of Object.entries(mapping)) images[slot] = `visuals/${mode}-${key !== 'pink-kitty' && slot === 'chat.screenshot' ? 'screenshot' : name}.png`;
+    if (key === 'pink-kitty') {
+      for (const slot of ['chat.attach', 'chat.screenshot', 'navigation.refresh', 'entry.new_project']) delete images[slot];
+      for (const name of ['attach', 'refresh']) files.delete(`visuals/${mode}-${name}.png`);
+    }
     for (const [group, zh, en] of [['pinned', '置顶', 'Pinned'], ['chats', '对话', 'Chats'], ['projects', '项目', 'Projects'], ['websites', '站点', 'Sites']]) {
       for (const [locale, label] of [['zh-CN', zh], ['en-US', en]]) {
         const font = `bold 62px "${design.rounded ? 'CollectionSans' : 'CollectionSerif'}"`;
@@ -72,18 +70,14 @@ export async function createCollectionArtwork(manifest, key) {
         const width = Math.ceil(probe.measureText(label).width + 68);
         const canvas = createCanvas(width, 104), ctx = canvas.getContext('2d');ctx.font = font;ctx.textBaseline = 'middle';
         if (key === 'pink-kitty') { drawKittyHeading(ctx, label, ink, accent, tokens['--bg-base']); } else {
-        ctx.fillStyle = ink;ctx.strokeStyle = tokens['--bg-base'];ctx.lineWidth = 3;ctx.strokeText(label, 10, 55);ctx.fillText(label, 10, 55);
-        ctx.strokeStyle = accent;ctx.lineWidth = design.motif === 'lattice' ? 1.8 : 2.4;
-        ctx.beginPath();ctx.moveTo(12, 91);ctx.lineTo(width - 34, 91);ctx.stroke();
-        const ornamentSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="12 -5 18 18">${ornament(design.motif, accent, color)}</svg>`;
-        ctx.drawImage(await loadImage(Buffer.from(ornamentSvg)), width - 46, 4, 42, 42);
+        await drawThemedHeading(ctx, {key,label,ink,accent,background:tokens['--bg-base'],width,loadImage});
         }
         const filename = `visuals/${mode}-${group}-${locale}.png`;files.set(filename, canvas.toBuffer('image/png'));images[`heading.${group}.${locale}`] = filename;
       }
     }
     next.variants[mode].visuals = { images, styles: {
       unread: accent, unreadText: tokens['--accent-on'], unreadShape: 'circle',
-      ...(key === 'pink-kitty' ? { unreadOutline: kittyUnreadOutline } : {}),
+      unreadOutline: key === 'pink-kitty' ? kittyUnreadOutline : themedOutlines[key],
       badgeShape: design.rounded ? 'round' : 'pill', headingStyle: design.rounded ? 'rounded' : 'default'
     } };
   }

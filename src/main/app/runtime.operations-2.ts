@@ -185,7 +185,7 @@ factoryContext.appShellRuntime = createAppShellRuntime({
             return false;
         }
         return factoryContext.websFacade.webappRuntime
-          .allowsLocalPageCapability(requestingUrl, "native.microphone");
+          .allowsLocalPageCapability(requestingUrl, "desktop.microphone");
     },
     getHelpUrl: () => readHelpSettings(app, factoryContext.startupPlatform).url
 });

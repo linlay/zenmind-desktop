@@ -7,7 +7,53 @@ import {
   type AgentPlatformRealtimeConnectionState,
   type AgentPlatformRealtimeFrame
 } from "./agent-platform-realtime-client";
-import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, RealtimeLane, RealtimeQueryCompleted, RunActionGrant, RunSubscription, brokerError, cloneBindingError, sameRunOwner } from "./realtime-broker.shared";
+import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, BrokerRun, RealtimeLane, RealtimeQueryCompleted, RunActionGrant, RunSubscription, brokerError, cloneBindingError, sameRunOwner } from "./realtime-broker.shared";
+
+function handoffSelectionExplanation(
+    self: RealtimeBrokerMethodContext,
+    run: BrokerRun,
+    observerToken: string,
+) {
+    if (run.lane !== "selection-explain" || self.findRootObserver(observerToken)?.kind !== "selection_explain") return;
+    const detached = { reason: "detached", lastSeq: run.lastSeq };
+    const sourceTokens = new Set<string>();
+    for (const token of [...run.rootObserverTokens]) {
+        const source = self.findRootObserver(token);
+        if (token === observerToken || source?.kind === "selection_explain") continue;
+        sourceTokens.add(token);
+        run.rootObserverTokens.delete(token);
+        source?.runIds.delete(run.runId);
+        source?.overviewLease?.runIds.delete(run.runId);
+    }
+    // The new observer is already subscribed before the source is released,
+    // so the same upstream query stream stays attached throughout the handoff.
+    for (const subscription of [...self.runSubscriptions.values()]) {
+        if (subscription.lane !== run.lane || subscription.runId !== run.runId ||
+            !subscription.observerToken || !sourceTokens.has(subscription.observerToken)) continue;
+        self.unsubscribe(subscription.id);
+        subscription.onComplete?.(detached);
+    }
+    for (const pending of [...self.pendingClones.values()]) {
+        if (pending.runId === run.runId && sourceTokens.has(pending.observerToken)) pending.resolve("detached");
+    }
+    const query = run.query;
+    if (!query || (query.rootObserverToken && self.findRootObserver(query.rootObserverToken)?.kind === "selection_explain")) return;
+    query.sourceDetached = true;
+    self.queriesByRequestId.delete(query.upstreamRequestId);
+    run.query = null;
+    if (query.subscriptionId) self.unsubscribe(query.subscriptionId);
+    query.subscriptionId = null;
+    if (query.signal && query.abortListener) query.signal.removeEventListener("abort", query.abortListener);
+    query.abortListener = undefined;
+    query.signal = undefined;
+    if (query.acceptanceTimer) clearTimeout(query.acceptanceTimer);
+    query.acceptanceTimer = null;
+    query.onEvent = () => undefined;
+    void query.eventQueue.then(
+        () => query.completed.resolve(detached),
+        () => query.completed.resolve(detached),
+    );
+}
 
 export async function RealtimeBroker_subscribeClone_1(self: RealtimeBrokerMethodContext, options: {
     kind?: "overview" | "debug";
@@ -160,6 +206,22 @@ export function RealtimeBroker_subscribeRun_4(self: RealtimeBrokerMethodContext,
         role: options.role ?? (options.kind === "internal" ? "internal" : "root_observer"),
         ...(options.observerToken ? { observerToken: options.observerToken } : {}),
     };
+    if (subscription.role === "root_observer") {
+        const observerToken = subscription.observerToken?.trim() || "";
+        const observer = observerToken ? self.findRootObserver(observerToken) : null;
+        if (!observerToken || !observer) {
+            throw brokerError("surface_generation_superseded", "Root Observer is no longer active");
+        }
+        if (observer.kind === "selection_explain" &&
+            (lane !== "selection-explain" || observer.contextId !== chatId)) {
+            throw brokerError("invalid_request", "The selection explanation observer must use its own Chat and lane");
+        }
+        if (observer.kind === "main_chat" &&
+            observer.overviewLease?.state === "ready" &&
+            observer.overviewLease.chatId !== chatId) {
+            throw brokerError("protocol_error", "Run Chat does not match the active Main Chat context");
+        }
+    }
     let run = self.getRunChannel(runId, lane);
     if (!run) {
         if (self.getRunChannel(runId)) {
@@ -181,6 +243,7 @@ export function RealtimeBroker_subscribeRun_4(self: RealtimeBrokerMethodContext,
             restoreCount: 0,
             lastRestoreResult: "never",
             upstreamRequestId: null,
+            upstreamSource: "attach_stream",
             query: null,
             replay: [],
             replayBytes: 0,
@@ -198,18 +261,6 @@ export function RealtimeBroker_subscribeRun_4(self: RealtimeBrokerMethodContext,
     }
     else if (options.owner && run.owner && !sameRunOwner(run.owner, options.owner)) {
         throw brokerError("invalid_request", "runId belongs to a different Run owner");
-    }
-    if (subscription.role === "root_observer") {
-        const observerToken = subscription.observerToken?.trim() || "";
-        const observer = observerToken ? self.findRootObserver(observerToken) : null;
-        if (!observerToken || !observer) {
-            throw brokerError("surface_generation_superseded", "Root Observer is no longer active");
-        }
-        if (observer.kind === "main_chat" &&
-            observer.overviewLease?.state === "ready" &&
-            observer.overviewLease.chatId !== chatId) {
-            throw brokerError("protocol_error", "Run Chat does not match the active Main Chat context");
-        }
     }
     self.replayToSubscriber(run, subscription);
     if (run.terminal) {
@@ -232,6 +283,7 @@ export function RealtimeBroker_subscribeRun_4(self: RealtimeBrokerMethodContext,
         run.rootObserverTokens.add(observerToken);
         observer.runIds.add(run.runId);
         observer.overviewLease?.runIds.add(run.runId);
+        handoffSelectionExplanation(self, run, observerToken);
         self.notifyPendingClones(run);
     }
     run.baseUrl = options.baseUrl;

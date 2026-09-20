@@ -19,18 +19,29 @@ export function KanbanExecutorPicker({ agents, value, disabled, onChange, defaul
   const [query, setQuery] = useState("");
   const labelId = useId();
   const listId = useId();
-  const preview = agents.slice(0, PREVIEW_AGENT_COUNT);
+  const defaultAgent = agents.find((agent) => agent.agentKey === defaultValue);
+  const orderedAgents = defaultAgent
+    ? [defaultAgent, ...agents.filter((agent) => agent.agentKey !== defaultValue)]
+    : agents;
+  const preview = orderedAgents.slice(0, PREVIEW_AGENT_COUNT);
   const selected = agents.find((agent) => agent.agentKey === value);
   if (selected && !preview.some((agent) => agent.agentKey === value)) preview.push(selected);
   const search = query.trim().toLocaleLowerCase();
-  const visibleAgents = expanded ? agents.filter((agent) => `${agent.displayName} ${agent.agentKey}`.toLocaleLowerCase().includes(search)) : preview;
+  const visibleAgents = expanded ? orderedAgents.filter((agent) => `${agent.displayName} ${agent.agentKey}`.toLocaleLowerCase().includes(search)) : preview;
   return <div className="kanban-field">
     <div className="kanban-field-head">
       <div className="kanban-executor-heading">
         <span id={labelId}>{t("kanban.form.executor")}</span>
-        <button type="button" className="kanban-executor-more" disabled={disabled || defaultValue === value || Boolean(value && !selected)} onClick={onSetDefault}>
-          {t(defaultValue === value ? "kanban.form.executorDefault" : "kanban.form.executorSetDefault")}
-        </button>
+        {defaultValue === value ? (
+          <small className="kanban-executor-default-status" role="status">
+            <CheckOutlined aria-hidden="true" />
+            {t("kanban.form.executorDefault")}
+          </small>
+        ) : (
+          <button type="button" className="kanban-executor-more" disabled={disabled || Boolean(value && !selected)} onClick={onSetDefault}>
+            {t("kanban.form.executorSetDefault")}
+          </button>
+        )}
       </div>
       <div className="kanban-executor-actions">
         {expanded && <input className="kanban-executor-search" type="search" value={query}

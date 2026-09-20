@@ -1,3 +1,9 @@
+import { executeWebappKanban } from "./webapp-kanban";
+import { startWebappAssistant, executeWebappAssistant } from "./webapp-assistant";
+import { captureWebappContext } from "./webapp-platform-client";
+import { isWebappConnectorAction, executeWebappConnector, rememberWebappChat } from "./webapp-connector";
+import { resolveWebappAction } from "../../../shared/webapp-bridge";
+import { executeWebSurfaceAction } from "./web-surface-actions";
 import { randomUUID } from "node:crypto";
 import type {
   AssistantAttachment,
@@ -71,6 +77,11 @@ export async function executeAction(
         t("desktopDisplay.targetUnavailable")
       );
     }
+  }
+
+  if (action.startsWith("desktop.web.")) {
+    const response = await executeWebSurfaceAction(options, request, invocation);
+    if (response) return response;
   }
 
   switch (action) {
@@ -183,14 +194,14 @@ export async function executeAction(
     }
     case "desktop.assistant.chat": {
       const isWebappInvocation = invocation.kind === "webappPage" || invocation.kind === "webappBackend";
-      const allowedWebappArgs = new Set(["message"]);
+      const allowedWebappArgs = new Set(["message", "skillIds", "background"]);
       if (isWebappInvocation) {
         const rejectedKeys = Object.keys(args).filter((key) => !allowedWebappArgs.has(key));
         if (rejectedKeys.length > 0) {
           return fail(
             action,
             "invalid_args",
-            `WebApp assistant calls only accept message; rejected: ${rejectedKeys.join(", ")}.`
+            `WebApp assistant calls only accept message, skillIds and background; rejected: ${rejectedKeys.join(", ")}.`
           );
         }
       }
@@ -200,11 +211,24 @@ export async function executeAction(
       }
       const settings = options.getAssistantSettings(options.app);
       let agentKey = settings.desktopHelperAgentKey;
+      let mustUseSkills: string[] | undefined;
       if (isWebappInvocation) {
         const item = options.webs.webappManager.list(options.app)
           .find((candidate) => candidate.id === invocation.webappId) ?? null;
         if (!item) {
           return fail(action, "forbidden", "WebApp is not installed.");
+        }
+        if (item.copilot) {
+          agentKey = item.copilot.agentKey;
+          mustUseSkills = [...item.copilot.mustUseSkills];
+        }
+        if (args.skillIds !== undefined) {
+          const allowedSkills = new Set(item.copilot?.mustUseSkills ?? []);
+          if (!Array.isArray(args.skillIds) || args.skillIds.length > 16 ||
+              args.skillIds.some((id) => typeof id !== "string" || !allowedSkills.has(id))) {
+            return fail(action, "invalid_args", "skillIds must be a subset of this WebApp's declared Copilot skills.");
+          }
+          mustUseSkills = [...new Set(args.skillIds as string[])];
         }
         const agentField = item.userConfig?.fields.find((field) =>
           field.type === "select" && "source" in field && field.source === "desktop.agents"
@@ -237,12 +261,23 @@ export async function executeAction(
           `assistant input must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`
         );
       }
+      const webappContext = isWebappInvocation ? await captureWebappContext(options, invocation.webappId, invocation.signal) : null;
+      if (isWebappInvocation && args.background !== undefined && typeof args.background !== "boolean") return fail(action, "invalid_args", "background must be boolean.");
+      if (webappContext && args.background === true) {
+        const result = await startWebappAssistant(options, webappContext, { agentKey, source: "copilot", action: "chat", message, ...(mustUseSkills?.length ? { mustUseSkills } : {}) });
+        return ok(action, result);
+      }
       const completion = await options.assistantBridge.completeText({
         agentKey,
         source: "copilot",
         action: "chat",
-        message
+        message,
+        ...(mustUseSkills?.length ? { mustUseSkills } : {})
       });
+      if (isWebappInvocation) {
+        await webappContext!.check();
+        if (completion.ok && completion.chatId) rememberWebappChat(webappContext!.key, completion.chatId);
+      }
       if (!completion.ok) {
         return fail(action, "assistant_failed", completion.message, {
           runId: completion.runId,
@@ -294,7 +329,7 @@ export async function executeAction(
         ? executeOpenLocalFileAction(options, request, args)
         : callRendererAction(options, request, args);
     case "desktop.web.exportArtifact":
-      return executeDesktopWebExportArtifact(options, action, args);
+      return executeDesktopWebExportArtifact(options, action, args, invocation.kind === "agentPlatform" ? request.source : undefined);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
       return ok(action, {
@@ -637,9 +672,15 @@ export async function handleActionCall(
   request: DesktopActionCallRequest,
   invocation: DesktopActionInvocationContext = { kind: "desktop" }
 ): Promise<DesktopActionCallResponse> {
-  return normalizeActionResponseTimePayload(
-    await handleActionCallRaw(options, request, invocation)
+  const isWebapp = invocation.kind === "webappPage" || invocation.kind === "webappBackend";
+  if (["kanban.boards.list", "kanban.issues.list", "kanban.issues.get"].includes(request.action)) return executeWebappKanban(options, request.action, asRecord(request.args), invocation);
+  if (request.action === "assistant.events" || request.action === "assistant.stop") return executeWebappAssistant(options, request.action, asRecord(request.args), invocation);
+  if (isWebappConnectorAction(request.action)) return executeWebappConnector(options, request.action, asRecord(request.args), invocation);
+  const action = isWebapp ? resolveWebappAction(request.action) : request.action;
+  const response = normalizeActionResponseTimePayload(
+    await handleActionCallRaw(options, { ...request, action }, invocation)
   );
+  return isWebapp ? { ...response, action: request.action } : response;
 }
 
 export async function handleDesktopActionRequest(

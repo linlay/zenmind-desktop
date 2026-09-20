@@ -10,10 +10,13 @@ export type CapabilityNavigationItemId =
   | "registries"
   | "archives"
   | "market"
+  | "artifact-management"
+  | "share-management"
   | "help";
 
 export type CapabilityNavigationItem = {
   id: CapabilityNavigationItemId;
+  group: "platform" | "cloud" | "help";
   to: string;
   labelKey: TranslationKey;
   icon: SidebarIllustrationKind;
@@ -23,6 +26,7 @@ export type CapabilityNavigationItem = {
 export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = [
   {
     id: "agents",
+    group: "platform",
     to: "/agents",
     labelKey: "nav.agents",
     icon: "agent",
@@ -30,6 +34,7 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
   },
   {
     id: "skills",
+    group: "platform",
     to: "/skills",
     labelKey: "nav.skills",
     icon: "skill",
@@ -37,30 +42,49 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
   },
   {
     id: "mcp-servers",
+    group: "platform",
     to: "/connectors",
     labelKey: "nav.mcpConnectors",
     icon: "connector",
   },
   {
     id: "registries",
+    group: "platform",
     to: "/registries",
     labelKey: "nav.registries",
     icon: "service",
   },
   {
     id: "archives",
+    group: "platform",
     to: "/archives",
     labelKey: "nav.archives",
     icon: "archive",
   },
   {
     id: "market",
+    group: "cloud",
     to: "/market",
     labelKey: "nav.market",
     icon: "market",
   },
   {
+    id: "artifact-management",
+    group: "cloud",
+    to: "/artifact-management",
+    labelKey: "nav.artifactManagement",
+    icon: "archive",
+  },
+  {
+    id: "share-management",
+    group: "cloud",
+    to: "/share-management",
+    labelKey: "nav.shareManagement",
+    icon: "share",
+  },
+  {
     id: "help",
+    group: "help",
     to: "/help",
     labelKey: "nav.help",
     icon: "help",
@@ -90,10 +114,16 @@ export function isCapabilityNavigationRoute(route: string) {
   return getCapabilityNavigationItem(route) !== null;
 }
 
-export function resolveSidebarMode(route: string): SidebarMode {
+export function createCapabilityNavOrderKey(id: CapabilityNavigationItemId): `capability:${CapabilityNavigationItemId}` {
+  return `capability:${id}`;
+}
+
+export function resolveSidebarMode(route: string, mainOrder: readonly string[] = []): SidebarMode {
   const pathname = getRoutePathname(route);
   if (pathname === "/settings" || pathname.startsWith("/settings/")) {
     return "settings";
   }
-  return isCapabilityNavigationRoute(pathname) ? "capabilities" : "primary";
+  const item = getCapabilityNavigationItem(pathname);
+  return item && !mainOrder.includes(createCapabilityNavOrderKey(item.id))
+    ? "capabilities" : "primary";
 }

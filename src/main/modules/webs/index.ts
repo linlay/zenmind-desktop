@@ -7,7 +7,7 @@ export { createWebSurfaceRuntime } from "./surface-runtime";
 export { createWebsFacade } from "./facade";
 export type { WebsFacade } from "./facade";
 export type { WebsIntegrationPorts } from "./integration-ports";
-export { authorizeWebappActionToken } from "./webapps/action-tokens";
+export { authorizeWebappActionToken, invalidateWebappActionTokens } from "./webapps/action-tokens";
 export { disposeWebappInstallation } from "./webapps/actions";
 export { consumeWebappImageUpload } from "./webapps/image-upload-registry";
 export { activateWebappInstall, commitWebappInstall, recoverWebappInstallTransactions, rollbackWebappInstall } from "./webapps/install-transaction";

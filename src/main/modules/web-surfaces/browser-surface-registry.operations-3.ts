@@ -12,7 +12,7 @@ import {
   createWebEntrySurfaceIdentity
 } from "../../../shared/surface-identity";
 import type { CreateBrowserSurfaceRegistryContext } from "./browser-surface-registry.shared";
-import { BrowserSurface, BrowserSurfaceDiagnosticSnapshot, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, guestTargetMatches } from "./browser-surface-registry.shared";
+import { BrowserContainer, BrowserSurfaceDiagnosticSnapshot, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, guestTargetMatches } from "./browser-surface-registry.shared";
 
 export function createBrowserSurfaceRegistry_waitForWebviewSurfaceTargetMatching_1(context: CreateBrowserSurfaceRegistryContext, webContentsId: number, predicate: (target: RegisteredWebviewSurfaceTarget) => boolean, timeoutMs: number, signal?: AbortSignal): Promise<RegisteredWebviewSurfaceTarget | null> {
     if (signal?.aborted ||
@@ -105,7 +105,7 @@ export function createBrowserSurfaceRegistry_findWebContentsForSurfaceUrl_3(cont
     }) ?? null;
 }
 
-export function createBrowserSurfaceRegistry_builtinBrowserSurface_4(context: CreateBrowserSurfaceRegistryContext, contents: WebContents | null, url: string): BrowserSurface {
+export function createBrowserSurfaceRegistry_builtinBrowserSurface_4(context: CreateBrowserSurfaceRegistryContext, contents: WebContents | null, url: string): BrowserContainer {
     const resolved = context.resolveRegisteredSurface(BUILTIN_BROWSER_SURFACE_ID);
     const activeTab = resolved?.activeTab ?? null;
     const activeContents = resolved?.contents ?? contents;
@@ -132,7 +132,7 @@ export function createBrowserSurfaceRegistry_builtinBrowserSurface_4(context: Cr
     };
 }
 
-export function createBrowserSurfaceRegistry_listBrowserSurfaces_5(context: CreateBrowserSurfaceRegistryContext): BrowserSurface[] {
+export function createBrowserSurfaceRegistry_listBrowserContainers_5(context: CreateBrowserSurfaceRegistryContext): BrowserContainer[] {
     const builtinContents = context.findWebContentsForSurfaceUrl(BUILTIN_BROWSER_DEFAULT_URL);
     return [
         context.builtinBrowserSurface(builtinContents),
@@ -166,8 +166,8 @@ export function createBrowserSurfaceRegistry_listBrowserSurfaces_5(context: Crea
     ];
 }
 
-export function createBrowserSurfaceRegistry_listChatWorkPanelSurfaces_6(context: CreateBrowserSurfaceRegistryContext): BrowserSurface[] {
-    const surfaces: BrowserSurface[] = [];
+export function createBrowserSurfaceRegistry_listWorkPanelContainers_6(context: CreateBrowserSurfaceRegistryContext): BrowserContainer[] {
+    const surfaces: BrowserContainer[] = [];
     for (const [surfaceId, candidate] of context.registeredSurfaces) {
         if (candidate.surfaceKind !== "chat-work-panel") {
             continue;
@@ -201,8 +201,8 @@ export function createBrowserSurfaceRegistry_listChatWorkPanelSurfaces_6(context
     return surfaces;
 }
 
-export function createBrowserSurfaceRegistry_listRegisteredSurfaces_7(context: CreateBrowserSurfaceRegistryContext): BrowserSurface[] {
-    const surfaces: BrowserSurface[] = [];
+export function createBrowserSurfaceRegistry_listRegisteredSurfaces_7(context: CreateBrowserSurfaceRegistryContext): BrowserContainer[] {
+    const surfaces: BrowserContainer[] = [];
     for (const surfaceId of [...context.registeredSurfaces.keys()]) {
         const resolved = context.resolveRegisteredSurface(surfaceId);
         if (!resolved)

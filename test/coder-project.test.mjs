@@ -338,8 +338,8 @@ test("assistant.listNavigationAgents force refresh bypasses the cached navigatio
 test("assistant.reorderProjects writes the public valid catalog while preserving non-Project slots", async () => {
   const { calls, handlers } = registerProjectHandlers({
     async callAgentPlatform(endpoint, options) {
-      if (endpoint === "/api/agents?scope=nav&mode=CODER&mode=KBASE") {
-        return [{ key: "coder-a" }, { key: "coder-new" }, { key: "kbase-b" }];
+      if (endpoint === "/api/agents?scope=nav") {
+        return [{ key: "chat-a", mode: "CODER" }, { key: "coder-a", workspaceDir: "/projects/a" }, { key: "coder-new", workspaceDir: "/projects/new" }, { key: "kbase-b", mode: "REACT", workspaceDir: "C:\\projects\\b" }];
       }
       if (endpoint === "/api/agents/order" && !options) {
         return {
@@ -397,8 +397,8 @@ test("assistant.reorderProjects rejects invalid requests before reading Agent Pl
 test("assistant.reorderProjects maps stale and Platform failures to structured results", async () => {
   const stale = registerProjectHandlers({
     async callAgentPlatform(endpoint) {
-      if (endpoint === "/api/agents?scope=nav&mode=CODER&mode=KBASE") {
-        return [{ key: "coder-a" }];
+      if (endpoint === "/api/agents?scope=nav") {
+        return [{ key: "coder-a", workspaceDir: "/projects/a" }];
       }
       if (endpoint === "/api/agents/order") {
         return { order: ["coder-a", "chat-a"] };
@@ -418,8 +418,8 @@ test("assistant.reorderProjects maps stale and Platform failures to structured r
 
   const platformFailure = registerProjectHandlers({
     async callAgentPlatform(endpoint, options) {
-      if (endpoint === "/api/agents?scope=nav&mode=CODER&mode=KBASE") {
-        return [{ key: "coder-a" }];
+      if (endpoint === "/api/agents?scope=nav") {
+        return [{ key: "coder-a", workspaceDir: "/projects/a" }];
       }
       if (endpoint === "/api/agents/order" && !options) {
         return { order: ["coder-a"] };

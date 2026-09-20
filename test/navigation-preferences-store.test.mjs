@@ -39,6 +39,14 @@ for (const platform of ["darwin", "win32"]) {
     assert.deepEqual(readWebPinnedKeys(app, platform), []);
     assert.deepEqual(readWebOrderKeys(app, [], platform), ["website:docs", "webapp:editor"]);
   });
+  test(`capability visibility and mixed order survive reload on ${platform}`, (t) => {
+    const { app } = setup(t, platform);
+    const order = ["capability:skills", "kanban", "website:docs", "capability:help", "new-chat"];
+    writeNavigationOrder(app, order, platform);
+    assert.deepEqual(readNavigationOrder(app, platform), order);
+    writeNavigationOrder(app, order.filter((key) => key !== "capability:skills"), platform);
+    assert.deepEqual(readNavigationOrder(app, platform), ["kanban", "website:docs", "capability:help", "new-chat"]);
+  });
   test(`missing files never import retired profile fields on ${platform}`, (t) => {
     const { app, root, profile, main, pins, sites } = setup(t, platform);
     const retired = { navigation: { mainOrder: ["kanban"], webOrder: ["website:docs"], pinnedWebEntryKeys: ["website:docs"] } };

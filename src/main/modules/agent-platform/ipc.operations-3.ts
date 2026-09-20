@@ -5,10 +5,12 @@ import {
   type AgentWebclientPlatformFramePortSendInput
 } from "../../../shared/contracts";
 import {
-  MAIN_CHAT_SURFACE_ID
+  MAIN_CHAT_SURFACE_ID,
+  SELECTION_EXPLAIN_SURFACE_ID,
 } from "../../../shared/surface-identity";
 import type { RegisterAgentWebclientBridgeIpcHandlersContext } from "./ipc.shared";
-import { resolveAttachChatId, rootObserverNewChatSourceKey } from "./ipc.shared";
+import { resolveSelectionExplainTransport } from "./selection-explain-transport";
+import { redactSelectionReferencesForTrace, resolveAttachChatId, rootObserverNewChatSourceKey } from "./ipc.shared";
 import { LIVE_CHAT_SURFACE_IDS, LIVE_REQUEST_TYPES, PlatformFrameRecord, StreamBinding, authorizeSurface, bridgeErrorCode, createRootObserverToken, frameError, frameErrorOptions, parseRequestFrame, protocolError, readOwner, readText, rootObserverContextId, rootObserverKind, updateBindingFromFrame } from "./ipc.shared";
 
 export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(factoryContext: RegisterAgentWebclientBridgeIpcHandlersContext, event: any, input: AgentWebclientPlatformFramePortSendInput): Promise<void> {
@@ -74,6 +76,15 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     // Only query/attach/BTW streams require the additional active-surface authorization below.
     const isLive = LIVE_REQUEST_TYPES.has(frame.type);
     let payload: Record<string, unknown> = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    let explanationLane: "selection-explain" | undefined;
+    try {
+        const transport = resolveSelectionExplainTransport(context, frame.type, payload);
+        payload = transport.payload;
+        explanationLane = transport.lane;
+    } catch (error) {
+        factoryContext.sendFrame(session, frameError(frame.id, "protocol_error", error instanceof Error ? error.message : String(error)));
+        return;
+    }
     let newChatSource: StreamBinding["newChatSource"] = null;
     if (frame.type === "/api/query") {
         try {
@@ -107,10 +118,14 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             context.target.surfaceRole === "btw" &&
             context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
             Boolean(context.target.ownerChatId);
+        const isSelectionExplain = context.kind === "agent-selection-explain" &&
+            context.target.surfaceRole === "selection-explain" &&
+            context.target.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+            Boolean(context.target.ownerChatId);
         const allowedSurface = frame.type === "/api/query"
             ? isLiveChat
             : frame.type === "/api/btw" || frame.type === "/api/attach"
-                ? isLiveChat || isBTW || isReadonlyVirtualAttach
+                ? isLiveChat || isBTW || isSelectionExplain || isReadonlyVirtualAttach
                 : false;
         if (!allowedSurface || !context.target.active) {
             factoryContext.sendFrame(session, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
@@ -339,7 +354,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     factoryContext.options.realtimeBroker.appendDebugTrace({
         layer: "surface-bridge",
         direction: "surface-to-desktop",
-        data: frame,
+        data: redactSelectionReferencesForTrace(frame),
         surfaceId: context.target.surfaceId,
         webContentsId: event.sender.id,
         surfaceKind: context.kind,
@@ -416,7 +431,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             const subscription = factoryContext.options.realtimeBroker.subscribeRun({
                 baseUrl,
                 token,
-                lane: context.kind === "agent-btw" ? "btw" : "primary",
+                lane: explanationLane ?? (context.kind === "agent-btw" ? "btw" : "primary"),
                 runId: binding.runId,
                 chatId: binding.chatId,
                 lastSeq: binding.lastSeq,
@@ -462,7 +477,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
                 siteControlScope,
                 baseUrl,
                 token,
-                lane: binding.type === "/api/btw" ? "btw" : "primary",
+                lane: explanationLane ?? (binding.type === "/api/btw" ? "btw" : "primary"),
                 requestType: binding.type,
                 id: frame.id,
                 payload,
@@ -526,6 +541,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         await factoryContext.options.realtimeBroker.forwardRequest({
             baseUrl,
             token,
+            ...(explanationLane ? { lane: explanationLane } : {}),
             localId: frame.id,
             consumerId: session.consumerId,
             type: frame.type,

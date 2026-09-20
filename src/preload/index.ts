@@ -62,16 +62,35 @@ import type {
   WebviewOpenTabRequest,
   ChatWorkPanelTabContextMenuPopupRequest,
   SidebarContextMenuPopupRequest,
+  WebviewSelectionToolbarExecuteRequest,
+  WebviewSelectionToolbarExecuteResult,
   WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
+import type {
+  SelectionExplainWindowState,
+  SelectionExplainWindowStateListener,
+} from "../shared/selection-explain-window";
+import {
+  SELECTION_EXPLAIN_WINDOW_CLOSE_CHANNEL,
+  SELECTION_EXPLAIN_WINDOW_GET_STATE_CHANNEL,
+  SELECTION_EXPLAIN_WINDOW_MINIMIZE_CHANNEL,
+  SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL,
+} from "../shared/selection-explain-window";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
 import { CONNECTOR_AUTH_BROWSER_HOST_REQUEST } from "../shared/connector-auth-host";
 import {
+  CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL,
+  CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED,
+  CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED,
+  CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED,
   CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
 } from "../shared/chat-work-panel-tab-context-menu";
-import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
+import {
+  WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL,
+} from "../shared/webview-selection-toolbar";
 import {
   CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
   CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
@@ -88,6 +107,15 @@ const fallbackInitialLocaleSettings: LocaleSettings = {
 const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
 
 const api: DesktopApi = {
+  artifacts: {
+    act: (input) => ipcRenderer.invoke("artifacts.act", input),
+    list: (input) => ipcRenderer.invoke("artifacts.list", input),
+    onChanged: (listener) => {
+      const handler = () => listener();
+      ipcRenderer.on("artifacts.changed", handler);
+      return () => { ipcRenderer.off("artifacts.changed", handler); };
+    },
+  },
   connectorAuthBrowser: {
     open: input => ipcRenderer.invoke(CONNECTOR_AUTH_BROWSER_HOST_REQUEST, { action: "open", input }),
     dismiss: input => ipcRenderer.invoke(CONNECTOR_AUTH_BROWSER_HOST_REQUEST, { action: "close", input }),
@@ -114,6 +142,22 @@ const api: DesktopApi = {
       ipcRenderer.invoke(SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL, request)
   },
   chatWorkPanelTabContextMenu: {
+    webDialog: (request) => ipcRenderer.invoke(CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL, request),
+    onWebDialogOpenRequested: (listener) => {
+      const handler = (_event: unknown, request: import("../shared/chat-work-panel-tab-context-menu").WorkPanelWebDialogOpenRequest) => listener(request);
+      ipcRenderer.on(CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED, handler);
+      return () => { ipcRenderer.off(CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED, handler); };
+    },
+    onWebDialogRestoreRequested: (listener) => {
+      const handler = (_event: unknown, transferId: string) => listener(transferId);
+      ipcRenderer.on(CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED, handler);
+      return () => { ipcRenderer.off(CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED, handler); };
+    },
+    onWebDialogCloseRequested: (listener) => {
+      const handler = (_event: unknown, transferId: string) => listener(transferId);
+      ipcRenderer.on(CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED, handler);
+      return () => { ipcRenderer.off(CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED, handler); };
+    },
     popup: (request: ChatWorkPanelTabContextMenuPopupRequest) =>
       ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request),
     openLocalResource: (request) =>
@@ -265,7 +309,7 @@ const api: DesktopApi = {
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
     exportChatHtml: (chatId: string) => ipcRenderer.invoke("assistant.exportChatHtml", chatId),
     shareChat: (request: AssistantConversationShareRequest) => ipcRenderer.invoke("assistant.shareChat", request),
-    listChatShares: (chatId: string) => ipcRenderer.invoke("assistant.listChatShares", chatId),
+    listConversationShares: () => ipcRenderer.invoke("assistant.listConversationShares"),
     revokeChatShare: (shareId: string) => ipcRenderer.invoke("assistant.revokeChatShare", shareId),
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => {
       const handleNavigationAgentsChanged = (
@@ -389,6 +433,8 @@ const api: DesktopApi = {
   serviceWebview: {
     getPreloadPath: () => ipcRenderer.invoke("serviceWebview.getPreloadPath"),
     getPreloadUrl: () => ipcRenderer.invoke("serviceWebview.getPreloadUrl"),
+    executeSelectionToolbarAction: (request: WebviewSelectionToolbarExecuteRequest) =>
+      ipcRenderer.invoke(WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL, request) as Promise<WebviewSelectionToolbarExecuteResult>,
     onSelectionToolbarState: (listener: WebviewSelectionToolbarStateListener) => {
       const handleSelectionToolbarState = (
         _event: Electron.IpcRendererEvent,
@@ -401,6 +447,19 @@ const api: DesktopApi = {
         ipcRenderer.off(WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL, handleSelectionToolbarState);
       };
     }
+  },
+  selectionExplain: {
+    getState: () => ipcRenderer.invoke(SELECTION_EXPLAIN_WINDOW_GET_STATE_CHANNEL) as Promise<SelectionExplainWindowState | null>,
+    minimize: () => ipcRenderer.invoke(SELECTION_EXPLAIN_WINDOW_MINIMIZE_CHANNEL) as Promise<{ ok: boolean }>,
+    close: () => ipcRenderer.invoke(SELECTION_EXPLAIN_WINDOW_CLOSE_CHANNEL) as Promise<{ ok: boolean }>,
+    onState: (listener: SelectionExplainWindowStateListener) => {
+      const handleState = (
+        _event: Electron.IpcRendererEvent,
+        state: SelectionExplainWindowState,
+      ) => listener(state);
+      ipcRenderer.on(SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL, handleState);
+      return () => ipcRenderer.off(SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL, handleState);
+    },
   },
   market: {
     importConnector: () => ipcRenderer.invoke("market.importConnector"),
@@ -492,6 +551,8 @@ const api: DesktopApi = {
   updates: {
     getState: () => ipcRenderer.invoke("updates.getState"),
     check: () => ipcRenderer.invoke("updates.check"),
+    loadTest: (input) => ipcRenderer.invoke("updates.loadTest", input),
+    clearTest: () => ipcRenderer.invoke("updates.clearTest"),
     download: () => ipcRenderer.invoke("updates.download"),
     install: () => ipcRenderer.invoke("updates.install"),
     setAutoDownload: (enabled) => ipcRenderer.invoke("updates.setAutoDownload", enabled),

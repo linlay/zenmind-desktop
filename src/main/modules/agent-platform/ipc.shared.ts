@@ -31,7 +31,8 @@ import {
 import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
-  MAIN_CHAT_SURFACE_ID
+  MAIN_CHAT_SURFACE_ID,
+  SELECTION_EXPLAIN_SURFACE_ID,
 } from "../../../shared/surface-identity";
 import {
   readAgentWebclientCanonicalChatSource,
@@ -169,6 +170,7 @@ export function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
     value === "agent-overview" ||
     value === "agent-debug" ||
     value === "agent-btw" ||
+    value === "agent-selection-explain" ||
     value === "agent-project" ||
     value === "agent-management"
     ? value
@@ -179,6 +181,10 @@ export function rootObserverKind(target: RegisteredWebviewSurfaceTarget) {
   if (target.surfaceId === MAIN_CHAT_SURFACE_ID && target.surfaceRole === "main-chat") return "main_chat" as const;
   if (target.surfaceId === COPILOT_DOCK_SURFACE_ID && target.surfaceRole === "copilot-dock") return "copilot_dock" as const;
   if (target.surfaceId === KANBAN_CHAT_SURFACE_ID && target.surfaceRole === "kanban-chat") return "kanban_chat" as const;
+  if (
+    target.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+    target.surfaceRole === "selection-explain"
+  ) return "selection_explain" as const;
   return null;
 }
 
@@ -256,6 +262,26 @@ export function sessionKey(senderId: number, sessionId: string) {
 }
 
 export type PlatformFrameRecord = Record<string, unknown>;
+
+export function redactSelectionReferencesForTrace(value: unknown) {
+  if (!isPlainBridgeRecord(value)) return value;
+  const payload = isPlainBridgeRecord(value.payload) ? value.payload : null;
+  const references = Array.isArray(payload?.references) ? payload.references : null;
+  if (!payload || !references) return value;
+  let changed = false;
+  const nextReferences = references.map((reference) => {
+    if (!isPlainBridgeRecord(reference) || reference.type !== "selection") return reference;
+    changed = true;
+    return {
+      ...reference,
+      ...(typeof reference.text === "string" ? { text: "<REDACTED_SELECTION>" } : {}),
+      ...(typeof reference.annotation === "string" ? { annotation: "<REDACTED_SELECTION>" } : {}),
+    };
+  });
+  return changed
+    ? { ...value, payload: { ...payload, references: nextReferences } }
+    : value;
+}
 
 export type FrameErrorOptions = {
   retryable?: boolean;

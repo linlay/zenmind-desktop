@@ -14,6 +14,7 @@ const target = {
 function record(overrides = {}) {
   return {
     id: "share_abc",
+    conversationId: "chat_1",
     url: "https://share.example.test/share/share_abc",
     createdAt: "2026-08-17T10:00:00.000Z",
     expiresAt: "2026-09-16T10:00:00.000Z",
@@ -77,6 +78,21 @@ test("Tunnel client requires explicit null metadata for permanent shares", async
   assert.equal(result.lastAccessedAt, null);
 });
 
+test("Tunnel client rejects a create response for a different conversation", async () => {
+  const client = new TunnelConversationShareClient(async () =>
+    jsonResponse(record({ conversationId: "chat_other" }), 201)
+  );
+  await assert.rejects(
+    () => client.create({
+      target,
+      conversationId: "chat_1",
+      expiration: "30d",
+      snapshot: Buffer.from('{"version":1}')
+    }),
+    (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_response"
+  );
+});
+
 test("Tunnel client requires explicit single-use metadata for once shares", async () => {
   const client = new TunnelConversationShareClient(async () =>
     jsonResponse(record({ id: "share_once", expiresAt: null, singleUse: true }), 201)
@@ -103,9 +119,9 @@ test("Tunnel client rejects missing or inconsistent single-use metadata", async 
   ];
   const client = new TunnelConversationShareClient(async () => responses.shift());
 
-  await assert.rejects(() => client.list(target, "chat_1"));
-  await assert.rejects(() => client.list(target, "chat_1"));
-  await assert.rejects(() => client.list(target, "chat_1"));
+  await assert.rejects(() => client.list(target));
+  await assert.rejects(() => client.list(target));
+  await assert.rejects(() => client.list(target));
 });
 
 test("Tunnel client lists RFC3339 metadata and rejects duplicate IDs", async () => {
@@ -121,15 +137,16 @@ test("Tunnel client lists RFC3339 metadata and rejects duplicate IDs", async () 
     return responses.shift();
   });
 
-  const records = await client.list(target, "chat / 1");
+  const records = await client.list(target);
+  assert.equal(records[0].chatId, "chat_1");
   assert.equal(records[0].lastAccessedAt, Date.parse("2026-08-17T10:05:00.000Z"));
   assert.equal(records[0].expiresAt, null);
-  assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares?conversationId=chat+%2F+1");
+  assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares");
   assert.equal(requests[0].init.method, "GET");
   assert.equal(requests[0].init.redirect, "manual");
 
   await assert.rejects(
-    () => client.list(target, "chat_1"),
+    () => client.list(target),
     (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_response"
   );
 });
@@ -172,12 +189,12 @@ test("Tunnel client rejects unsafe targets before network access", async () => {
     "https://0.0.0.0:18181"
   ]) {
     await assert.rejects(
-      () => client.list({ ...target, origin }, "chat_1"),
+      () => client.list({ ...target, origin }),
       (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_request",
       origin
     );
   }
-  await assert.rejects(() => client.list({ ...target, accessToken: "bad token" }, "chat_1"));
+  await assert.rejects(() => client.list({ ...target, accessToken: "bad token" }));
   assert.equal(calls, 0);
 });
 
@@ -218,7 +235,7 @@ test("Tunnel client classifies timeout and network failures without leaking deta
   });
 
   await assert.rejects(
-    () => timeoutClient.list(target, "chat_1"),
+    () => timeoutClient.list(target),
     (error) => {
       assert.equal(error.kind, "timeout");
       assert.doesNotMatch(error.message, /secret-site-token/u);
@@ -226,7 +243,7 @@ test("Tunnel client classifies timeout and network failures without leaking deta
     }
   );
   await assert.rejects(
-    () => networkClient.list(target, "chat_1"),
+    () => networkClient.list(target),
     (error) => {
       assert.equal(error.kind, "unavailable");
       assert.doesNotMatch(error.message, /secret-site-token|response body/u);

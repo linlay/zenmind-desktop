@@ -9,7 +9,7 @@ test("chat regression: report every string number before sending a mouse event",
   let calls = 0;
   const options = { executeCdpCommand: async () => { calls++; return { result: {} }; } };
   const params = { type: "mousePressed", x: "646", y: "344", button: "left", clickCount: "1" };
-  const response = await handleDesktopCdpRequest(options, { method: "Input.dispatchMouseEvent", params, targetId: "desktop-test" });
+  const response = await handleDesktopCdpRequest(options, { method: "Input.dispatchMouseEvent", params, surfaceId: "desktop-test" });
   assert.equal(calls, 0);
   assert.equal(response.error.code, "invalid_args");
   assert.deepEqual(response.error.details.issues, [
@@ -23,7 +23,7 @@ test("chat regression: report every string number before sending a mouse event",
   assert.match(response.error.message, /button="left" is valid/);
   assert.deepEqual(params, { type: "mousePressed", x: "646", y: "344", button: "left", clickCount: "1" });
   for (const type of ["mousePressed", "mouseReleased", "mouseMoved"]) {
-    const success = await handleDesktopCdpRequest(options, { method: "Input.dispatchMouseEvent", params: { type, x: 136.875, y: 255.5, button: "left", clickCount: 1 }, targetId: "desktop-test" });
+    const success = await handleDesktopCdpRequest(options, { method: "Input.dispatchMouseEvent", params: { type, x: 136.875, y: 255.5, button: "left", clickCount: 1 }, surfaceId: "desktop-test" });
     assert.equal(success.ok, true);
   }
   assert.equal(calls, 3);
@@ -63,9 +63,9 @@ test("diagnostics do not echo arbitrary nested values", () => {
 test("target errors have recovery; unknown execution failures do not promise no effects", async () => {
   for (const code of ["target_not_in_current_surface", "cdp_failed"]) {
     const options = { executeCdpCommand: async () => { throw Object.assign(new Error("failed"), { code }); } };
-    const response = await handleDesktopCdpRequest(options, { method: "Input.insertText", targetId: "desktop-test", params: { text: "text" } });
-    assert.equal(response.error.details.targetId, "desktop-test");
+    const response = await handleDesktopCdpRequest(options, { method: "Input.insertText", surfaceId: "desktop-test", params: { text: "text" } });
+    assert.equal(response.error.details.surfaceId, "desktop-test");
     assert.equal(response.error.details.executed, code === "cdp_failed" ? undefined : false);
-    if (code !== "cdp_failed") assert.match(response.error.details.recovery, /Target.getTargets/);
+    if (code !== "cdp_failed") assert.match(response.error.details.recovery, /Surface.list/);
   }
 });

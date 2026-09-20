@@ -1,12 +1,8 @@
+import { createWebSurfaceId } from "../../../../shared/web-surface";
 import type { WebContents } from "electron";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { SiteControlScope } from "../cdp/site-scope";
-import {
-  AwcpSchemaCompileError,
-  compileAwcpSchema,
-  type AwcpSchemaValidator,
-  type AwcpSchemaViolation,
-} from "./schema-validator";
+import { AwcpManualBindings } from "./discovery-binding";
 
 export const AWCP_PROTOCOL_VERSION = 1;
 export const AWCP_ACTION_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
@@ -14,14 +10,18 @@ export const AWCP_LIMITS = Object.freeze({
   maxActionLength: 128,
   maxRevisionLength: 128,
   maxRequestIdLength: 128,
+  maxTitleLength: 128,
+  maxDescriptionLength: 16 * 1024,
+  maxExamples: 32,
   maxErrorMessageLength: 4096,
   maxErrorDetailsBytes: 128 * 1024,
   maxResponseBytes: 64 * 1024 * 1024,
-  maxActions: 128,
-  maxDescriptionLength: 2048,
-  maxSchemaDepth: 20,
-  maxSnapshotBytes: 256 * 1024,
+  maxSections: 128,
+  maxIndexBytes: 64 * 1024,
+  maxSectionBytes: 256 * 1024,
 });
+
+export type AwcpManualPayload = Record<string, never> | { section: string; revision: string };
 
 export type AwcpInvokePayload = {
   revision: string;
@@ -38,29 +38,23 @@ export type AwcpActionResponse =
       error: { code: string; message: string; details?: unknown };
     };
 
-export type AwcpSnapshotResponse = {
-  ok: true;
-  method: "AWCP.getSnapshot";
+type AwcpManualIndex = {
   revision: string;
-  actions: AwcpActionDescriptor[];
+  site: { name: string; description: string };
+  sections: Array<{ section: string; title: string }>;
 };
 
-type AwcpActionDescriptor = {
-  action: string;
+type AwcpManualSection = {
+  revision: string;
+  section: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
+  examples?: Record<string, unknown>[];
 };
 
-type AwcpActionSnapshot = {
-  revision: string;
-  actions: AwcpActionDescriptor[];
-};
-
-type PreparedActionContract = {
-  input: AwcpSchemaValidator;
-  output?: AwcpSchemaValidator;
-};
+export type AwcpManualResponse =
+  | ({ ok: true; method: "AWCP.getManual" } & AwcpManualIndex)
+  | ({ ok: true; method: "AWCP.getManual" } & AwcpManualSection);
 
 type ActiveInvocation = {
   guest: WebContents;
@@ -81,7 +75,7 @@ class AwcpHostError extends Error {
 
 const AWCP_ERROR_CODES = new Set([
   "action_not_found",
-  "stale_snapshot",
+  "stale_revision",
   "invalid_arguments",
   "execution_failed",
   "cancelled",
@@ -90,23 +84,53 @@ const AWCP_ERROR_CODES = new Set([
 
 export class AwcpGuestBridge {
   private readonly active = new Map<string, ActiveInvocation>();
+  private readonly manuals = new AwcpManualBindings();
 
   constructor(private readonly browserSurfaces: Pick<BrowserSurfaceRegistry, "findWebContentsById">) {}
 
-  async snapshot(
+  async manual(
     requestId: string,
+    input: unknown,
     scope: SiteControlScope,
     signal?: AbortSignal,
-  ): Promise<AwcpSnapshotResponse> {
+    surfaceId?: string,
+  ): Promise<AwcpManualResponse> {
     assertToken("requestId", requestId, AWCP_LIMITS.maxRequestIdLength);
-    return this.withGuest(requestId, scope, signal, false, async (guest, lifecycleFailure) => {
-      const snapshot = await this.readValidatedSnapshot(guest, lifecycleFailure);
-      return {
-        ok: true,
-        method: "AWCP.getSnapshot",
-        revision: snapshot.revision,
-        actions: snapshot.actions,
-      };
+    const payload = validateManualPayload(input);
+    return this.withGuest(requestId, scope, signal, surfaceId, false, async (guest, lifecycleFailure) => {
+      if ("section" in payload) {
+        const bindingFailure = this.manuals.rejection(scope, guest, payload.revision);
+        if (bindingFailure) {
+          throw awcpPreflightFailure(bindingFailure, "The section request does not match the current page manual binding.");
+        }
+        if (this.manuals.actionKnown(scope, payload.section) === false) {
+          throw awcpPreflightFailure("action_not_found", "The requested AWCP manual section is unavailable.");
+        }
+      }
+      const value = await this.readPageManual(guest, payload, lifecycleFailure);
+      if ("section" in payload) {
+        const manualError = validateManualError(value, payload.section);
+        if (manualError === "stale_revision") {
+          this.manuals.invalidate(scope);
+          throw awcpPreflightFailure("stale_revision", "The AWCP page revision changed. Read the directory again.");
+        }
+        if (manualError === "section_not_found") {
+          throw awcpPreflightFailure("action_not_found", "The requested AWCP manual section is unavailable.");
+        }
+        const section = validateManualSection(value, payload.section, payload.revision);
+        const bindingFailure = this.manuals.rejection(scope, guest, payload.revision);
+        if (bindingFailure) {
+          throw awcpPreflightFailure(bindingFailure, "The page manual binding changed while reading the section.");
+        }
+        if (this.manuals.actionKnown(scope, payload.section) === false) {
+          throw awcpPreflightFailure("action_not_found", "The requested AWCP manual section is no longer available.");
+        }
+        this.manuals.rememberSection(scope, guest, section.revision, section.section);
+        return { ok: true, method: "AWCP.getManual", ...section };
+      }
+      const index = validateManualIndex(value);
+      this.manuals.rememberIndex(scope, guest, index.revision, index.sections.map(({ section }) => section));
+      return { ok: true, method: "AWCP.getManual", ...index };
     });
   }
 
@@ -115,28 +139,25 @@ export class AwcpGuestBridge {
     input: unknown,
     scope: SiteControlScope,
     signal?: AbortSignal,
+    surfaceId?: string,
   ): Promise<AwcpActionResponse> {
     const payload = validateInvokePayload(requestId, input);
-    return this.withGuest(requestId, scope, signal, true, async (guest, lifecycleFailure) => {
-      const snapshot = await this.readValidatedSnapshot(guest, lifecycleFailure);
-      if (snapshot.revision !== payload.revision) {
-        return awcpBusinessFailure(requestId, payload.action, "stale_snapshot", "The AWCP snapshot is stale.");
+    return this.withGuest(requestId, scope, signal, surfaceId, true, async (guest, lifecycleFailure) => {
+      const bindingFailure = this.manuals.rejection(scope, guest, payload.revision);
+      if (bindingFailure) {
+        throw awcpPreflightFailure(bindingFailure, "The invocation does not match the current page manual binding.");
       }
-      const descriptor = snapshot.actions.find((candidate) => candidate.action === payload.action);
-      if (!descriptor) {
-        return awcpBusinessFailure(requestId, payload.action, "action_not_found", "The AWCP action is unavailable.");
+      if (!this.manuals.sectionRead(scope, payload.action)) {
+        const reason = this.manuals.actionKnown(scope, payload.action) === false ? "action_not_found" : "manual_required";
+        throw awcpPreflightFailure(reason, reason === "manual_required"
+          ? "Read this AWCP manual section before invoking it."
+          : "The AWCP action is unavailable.");
       }
-      const contract = prepareActionContract(descriptor);
-      const inputViolations = contract.input(payload.args);
-      if (inputViolations.length > 0) {
-        return awcpBusinessFailure(
-          requestId,
-          payload.action,
-          "invalid_arguments",
-          "The AWCP action arguments do not satisfy inputSchema.",
-          { violations: inputViolations },
-        );
-      }
+
+      const changedBinding = this.manuals.rejection(scope, guest, payload.revision);
+      if (changedBinding) throw awcpPreflightFailure(changedBinding, "The page changed before invocation.");
+      if (signal?.aborted) throw awcpHostError("awcp_cancelled", "The AWCP invocation was cancelled before page execution.");
+      await this.ensurePageProtocol(guest, lifecycleFailure);
 
       const envelope = JSON.stringify({ requestId, ...payload });
       const result = await Promise.race([
@@ -147,51 +168,82 @@ export class AwcpGuestBridge {
         lifecycleFailure,
       ]);
       const response = validateActionResponse(result, requestId, payload.action);
-      if (response.ok && contract.output) {
-        const outputViolations = contract.output(response.result);
-        if (outputViolations.length > 0) {
-          throw awcpHostError(
-            "awcp_invalid_response",
-            "The page AWCP result does not satisfy its declared outputSchema.",
-            { reason: "output_schema_mismatch", violations: outputViolations },
-          );
-        }
-      }
+      if (!response.ok && response.error.code === "stale_revision") this.manuals.invalidate(scope);
       return response;
     });
   }
 
-  private async readValidatedSnapshot(
+  private async readPageManual(
     guest: WebContents,
+    request: AwcpManualPayload,
     lifecycleFailure: Promise<never>,
-  ): Promise<AwcpActionSnapshot> {
-    const protocolVersion = await Promise.race([
-      guest.executeJavaScript("globalThis.awcp?.protocolVersion ?? null", true),
+  ): Promise<unknown> {
+    await this.ensurePageProtocol(guest, lifecycleFailure);
+    const envelope = JSON.stringify(request);
+    const value = await Promise.race([
+      guest.executeJavaScript(`globalThis.awcp.manual(JSON.parse(${JSON.stringify(envelope)}))`, true),
       lifecycleFailure,
     ]);
-    if (protocolVersion !== AWCP_PROTOCOL_VERSION) {
-      throw awcpHostError("awcp_protocol_unavailable", "The authorized page does not expose AWCP protocol version 1.");
+    assertJsonValue(value, "AWCP manual", "awcp_invalid_contract");
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  private async ensurePageProtocol(guest: WebContents, lifecycleFailure: Promise<never>) {
+    const probe = await Promise.race([
+      guest.executeJavaScript(`(() => {
+        const api = globalThis.awcp;
+        if (api === undefined || api === null) return { present: false };
+        const entryType = typeof api;
+        if (entryType !== "object" && entryType !== "function") return { present: true, entryType };
+        const version = api.protocolVersion;
+        const actualVersion = typeof version === "string"
+          ? version.slice(0, 128)
+          : typeof version === "number"
+            ? (Number.isFinite(version) ? version : "number")
+            : version === null || typeof version === "boolean"
+              ? version
+              : typeof version;
+        return { present: true, entryType, actualVersion, manualType: typeof api.manual, invokeType: typeof api.invoke };
+      })()`, true),
+      lifecycleFailure,
+    ]);
+    assertPlainRecord(probe, "AWCP protocol probe", "awcp_invalid_contract");
+    if (probe.present === false) {
+      throw awcpHostError("awcp_protocol_unavailable", "The authorized page does not expose AWCP.");
     }
-    const snapshotValue = await Promise.race([
-      guest.executeJavaScript("globalThis.awcp.snapshot()", true),
-      lifecycleFailure,
-    ]);
-    const snapshot = validateActionSnapshot(snapshotValue);
-    return JSON.parse(JSON.stringify(snapshot)) as AwcpActionSnapshot;
+    if (probe.present !== true) {
+      throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP protocol probe.");
+    }
+    if ((probe.entryType !== "object" && probe.entryType !== "function") || probe.actualVersion === "undefined") {
+      throw awcpHostError("awcp_invalid_contract", "The authorized page exposes an invalid AWCP entry point.");
+    }
+    if (probe.actualVersion !== AWCP_PROTOCOL_VERSION) {
+      throw awcpHostError(
+        "awcp_unsupported_protocol",
+        "The authorized page exposes an unsupported AWCP protocol version.",
+        { supportedVersions: [AWCP_PROTOCOL_VERSION], actualVersion: probe.actualVersion },
+      );
+    }
+    if (probe.manualType !== "function" || probe.invokeType !== "function") {
+      throw awcpHostError("awcp_invalid_contract", "The authorized page exposes an invalid AWCP entry point.");
+    }
   }
 
   private async withGuest<T>(
     requestId: string,
     scope: SiteControlScope,
     signal: AbortSignal | undefined,
+    surfaceId: string | undefined,
     cancelPageInvocation: boolean,
     execute: (guest: WebContents, lifecycleFailure: Promise<never>) => Promise<T>,
   ): Promise<T> {
     if (this.active.has(requestId)) {
       throw awcpHostError("awcp_duplicate_request", "AWCP request id is already active.");
     }
-    const surface = scope.readSurface();
-    const tab = surface.tabs?.find((candidate) => candidate.tabId === surface.activeTabId);
+    const surface = scope.readContainer();
+    const tab = surface.tabs?.find((candidate) => surfaceId
+      ? createWebSurfaceId(surface.id, surface.targetGeneration, candidate.tabId) === surfaceId
+      : candidate.tabId === surface.activeTabId);
     if (!tab) throw awcpHostError("awcp_target_unavailable", "The authorized page has no active tab.");
     scope.validateTab(tab);
     const guest = this.browserSurfaces.findWebContentsById(tab.webContentsId);
@@ -212,31 +264,26 @@ export class AwcpGuestBridge {
     const active: ActiveInvocation = { guest, cancel: failLifecycle };
     this.active.set(requestId, active);
 
+    const operation = cancelPageInvocation ? "invocation" : "manual request";
     const onDestroyed = () => failLifecycle(awcpHostError(
       "awcp_target_unavailable",
-      cancelPageInvocation
-        ? "The authorized page guest closed during the AWCP invocation."
-        : "The authorized page guest closed during the AWCP snapshot request.",
+      `The authorized page guest closed during the AWCP ${operation}.`,
     ));
     const onNavigation = (...eventArgs: unknown[]) => {
       if (eventArgs[3] === true) {
         failLifecycle(awcpHostError(
           "awcp_navigation_interrupted",
-          cancelPageInvocation
-            ? "The authorized page navigated during the AWCP invocation."
-            : "The authorized page navigated during the AWCP snapshot request.",
+          `The authorized page navigated during the AWCP ${operation}.`,
         ));
       }
     };
     const onAbort = () => failLifecycle(awcpHostError(
       "awcp_cancelled",
-      cancelPageInvocation ? "The AWCP invocation was cancelled." : "The AWCP snapshot request was cancelled.",
+      `The AWCP ${operation} was cancelled.`,
     ));
     const unsubscribeScope = scope.onRelease(() => failLifecycle(awcpHostError(
       "site_control_unavailable",
-      cancelPageInvocation
-        ? "The page control capability ended during the AWCP invocation."
-        : "The page control capability ended during the AWCP snapshot request.",
+      `The page control capability ended during the AWCP ${operation}.`,
     )));
     guest.once("destroyed", onDestroyed);
     guest.once("render-process-gone", onDestroyed);
@@ -244,16 +291,14 @@ export class AwcpGuestBridge {
     signal?.addEventListener("abort", onAbort, { once: true });
 
     try {
-      if (signal?.aborted) onAbort();
+      if (signal?.aborted) {
+        onAbort();
+        return await lifecycleFailure;
+      }
       return await execute(guest, lifecycleFailure);
     } catch (error) {
       if (isAwcpHostError(error)) throw error;
-      throw awcpHostError(
-        "awcp_transport_failed",
-        cancelPageInvocation
-          ? "The authorized page AWCP invocation failed."
-          : "The authorized page AWCP snapshot request failed.",
-      );
+      throw awcpHostError("awcp_transport_failed", `The authorized page AWCP ${operation} failed.`);
     } finally {
       if (this.active.get(requestId) === active) this.active.delete(requestId);
       signal?.removeEventListener("abort", onAbort);
@@ -276,7 +321,18 @@ export class AwcpGuestBridge {
       invocation.cancel(awcpHostError("awcp_cancelled", "The AWCP bridge stopped."));
     }
     this.active.clear();
+    this.manuals.dispose();
   }
+}
+
+function validateManualPayload(input: unknown): AwcpManualPayload {
+  assertPlainRecord(input, "AWCP manual payload");
+  const keys = Object.keys(input).sort();
+  if (keys.length === 0) return {};
+  assertExactKeys(input, ["revision", "section"], "AWCP manual payload");
+  assertAction(input.section, "section");
+  assertToken("revision", input.revision, AWCP_LIMITS.maxRevisionLength);
+  return { section: input.section, revision: input.revision };
 }
 
 function validateInvokePayload(requestId: unknown, input: unknown): AwcpInvokePayload {
@@ -290,106 +346,114 @@ function validateInvokePayload(requestId: unknown, input: unknown): AwcpInvokePa
   return input as AwcpInvokePayload;
 }
 
-function validateActionSnapshot(input: unknown): AwcpActionSnapshot {
-  assertPlainRecord(input, "AWCP snapshot", "awcp_invalid_contract");
-  assertJsonValue(input, "AWCP snapshot", "awcp_invalid_contract");
-  assertExactKeys(input, ["actions", "revision"], "AWCP snapshot", "awcp_invalid_contract");
-  if (typeof input.revision !== "string" || !input.revision || input.revision.length > AWCP_LIMITS.maxRevisionLength) {
-    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP snapshot revision.");
+function validateManualIndex(input: unknown): AwcpManualIndex {
+  assertPlainRecord(input, "AWCP manual index", "awcp_invalid_contract");
+  assertExactKeys(input, ["revision", "sections", "site"], "AWCP manual index", "awcp_invalid_contract");
+  assertToken("revision", input.revision, AWCP_LIMITS.maxRevisionLength, "awcp_invalid_contract");
+  assertPlainRecord(input.site, "AWCP site", "awcp_invalid_contract");
+  assertExactKeys(input.site, ["description", "name"], "AWCP site", "awcp_invalid_contract");
+  assertText(input.site.name, "AWCP site name", AWCP_LIMITS.maxTitleLength);
+  assertText(input.site.description, "AWCP site description", AWCP_LIMITS.maxDescriptionLength);
+  if (!Array.isArray(input.sections) || input.sections.length > AWCP_LIMITS.maxSections) {
+    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP section index.");
   }
-  if (!Array.isArray(input.actions) || input.actions.length > AWCP_LIMITS.maxActions) {
-    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action list.");
-  }
-  const serialized = JSON.stringify(input);
-  if (Buffer.byteLength(serialized, "utf8") > AWCP_LIMITS.maxSnapshotBytes) {
-    throw awcpHostError("awcp_invalid_contract", "The page AWCP snapshot exceeds 256 KiB.");
-  }
-  let previousAction = "";
-  for (const candidate of input.actions) {
-    validateActionDescriptor(candidate);
-    if (candidate.action <= previousAction) {
-      throw awcpHostError("awcp_invalid_contract", "The page AWCP actions are not strictly sorted.");
+  let previous = "";
+  for (const item of input.sections) {
+    assertPlainRecord(item, "AWCP section summary", "awcp_invalid_contract");
+    assertExactKeys(item, ["section", "title"], "AWCP section summary", "awcp_invalid_contract");
+    assertAction(item.section, "section", "awcp_invalid_contract");
+    if (item.section <= previous) {
+      throw awcpHostError("awcp_invalid_contract", "AWCP sections must be strictly sorted.");
     }
-    previousAction = candidate.action;
+    assertText(item.title, "AWCP section title", AWCP_LIMITS.maxTitleLength);
+    previous = item.section;
   }
-  return input as AwcpActionSnapshot;
+  if (Buffer.byteLength(stableAwcpJSON(input), "utf8") > AWCP_LIMITS.maxIndexBytes) {
+    throw awcpHostError("awcp_invalid_contract", "The page AWCP manual index exceeds 64 KiB.");
+  }
+  return input as AwcpManualIndex;
 }
 
-function validateActionDescriptor(input: unknown): asserts input is AwcpActionDescriptor {
-  assertPlainRecord(input, "AWCP action descriptor", "awcp_invalid_contract");
-  const keys = Object.keys(input).sort().join(",");
-  if (keys !== "action,description,inputSchema" && keys !== "action,description,inputSchema,outputSchema") {
-    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action descriptor.");
+function validateManualSection(input: unknown, requestedSection: string, requestedRevision: string): AwcpManualSection {
+  assertPlainRecord(input, "AWCP manual section", "awcp_invalid_contract");
+  const expected = Object.prototype.hasOwnProperty.call(input, "examples")
+    ? ["description", "examples", "inputSchema", "revision", "section"]
+    : ["description", "inputSchema", "revision", "section"];
+  assertExactKeys(input, expected, "AWCP manual section", "awcp_invalid_contract");
+  assertToken("revision", input.revision, AWCP_LIMITS.maxRevisionLength, "awcp_invalid_contract");
+  assertAction(input.section, "section", "awcp_invalid_contract");
+  if (input.section !== requestedSection || input.revision !== requestedRevision) {
+    throw awcpHostError("awcp_invalid_contract", "The page returned a different AWCP manual section.");
   }
-  if (typeof input.action !== "string" || !input.action || input.action.length > AWCP_LIMITS.maxActionLength || !AWCP_ACTION_PATTERN.test(input.action)) {
-    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action name.");
-  }
-  if (typeof input.description !== "string" || !input.description.trim() || input.description.length > AWCP_LIMITS.maxDescriptionLength) {
-    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP action description.");
-  }
+  assertText(input.description, "AWCP section description", AWCP_LIMITS.maxDescriptionLength);
   assertPlainRecord(input.inputSchema, "AWCP inputSchema", "awcp_invalid_contract");
-  assertMaximumDepth(input.inputSchema, AWCP_LIMITS.maxSchemaDepth, "AWCP inputSchema");
-  if (Object.prototype.hasOwnProperty.call(input, "outputSchema")) {
-    assertPlainRecord(input.outputSchema, "AWCP outputSchema", "awcp_invalid_contract");
-    assertMaximumDepth(input.outputSchema, AWCP_LIMITS.maxSchemaDepth, "AWCP outputSchema");
+  assertJsonValue(input.inputSchema, "AWCP inputSchema", "awcp_invalid_contract");
+  if (Object.prototype.hasOwnProperty.call(input, "examples")) {
+    if (!Array.isArray(input.examples) || input.examples.length > AWCP_LIMITS.maxExamples) {
+      throw awcpHostError("awcp_invalid_contract", "AWCP examples must be a bounded array.");
+    }
+    input.examples.forEach((example, index) => {
+      assertPlainRecord(example, `AWCP example ${index}`, "awcp_invalid_contract");
+      assertJsonValue(example, `AWCP example ${index}`, "awcp_invalid_contract");
+    });
   }
+  if (Buffer.byteLength(stableAwcpJSON(input), "utf8") > AWCP_LIMITS.maxSectionBytes) {
+    throw awcpHostError("awcp_invalid_contract", "The page AWCP manual section exceeds 256 KiB.");
+  }
+  return input as AwcpManualSection;
 }
 
-function prepareActionContract(descriptor: AwcpActionDescriptor): PreparedActionContract {
-  try {
-    return {
-      input: compileAwcpSchema(descriptor.inputSchema),
-      ...(Object.prototype.hasOwnProperty.call(descriptor, "outputSchema")
-        ? { output: compileAwcpSchema(descriptor.outputSchema as Record<string, unknown>) }
-        : {}),
-    };
-  } catch (error) {
-    if (!(error instanceof AwcpSchemaCompileError)) throw error;
-    throw awcpHostError(
-      "awcp_invalid_contract",
-      "The page returned an AWCP schema that cannot be compiled.",
-    );
+function validateManualError(input: unknown, requestedSection: string): "section_not_found" | "stale_revision" | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(record, "error")) return null;
+  if (Object.keys(record).join(",") !== "error") {
+    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP manual error.");
   }
+  if (!record.error || typeof record.error !== "object" || Array.isArray(record.error)) {
+    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP manual error.");
+  }
+  const error = record.error as Record<string, unknown>;
+  if (Object.keys(error).sort().join(",") !== "code,message,section" ||
+      (error.code !== "section_not_found" && error.code !== "stale_revision") ||
+      error.section !== requestedSection || typeof error.message !== "string" || !error.message.trim() ||
+      error.message.length > AWCP_LIMITS.maxErrorMessageLength) {
+    throw awcpHostError("awcp_invalid_contract", "The page returned an invalid AWCP manual error.");
+  }
+  return error.code;
 }
 
-function assertMaximumDepth(root: unknown, maximum: number, name: string) {
-  const visit = (value: unknown, depth: number, ancestors: Set<object>) => {
-    if (!value || typeof value !== "object") return;
-    if (depth > maximum) {
-      throw awcpHostError("awcp_invalid_contract", `${name} exceeds the maximum depth.`);
+function stableAwcpJSON(value: unknown): string {
+  const order = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(order);
+    if (input && typeof input === "object") {
+      const record = input as Record<string, unknown>;
+      return Object.fromEntries(Object.keys(record).sort().map((key) => [key, order(record[key])]));
     }
-    if (ancestors.has(value)) {
-      throw awcpHostError("awcp_invalid_contract", `${name} contains a cycle.`);
-    }
-    ancestors.add(value);
-    for (const child of Array.isArray(value) ? value : Object.values(value)) {
-      visit(child, depth + 1, ancestors);
-    }
-    ancestors.delete(value);
+    return input;
   };
-  visit(root, 0, new Set());
+  return JSON.stringify(order(value));
 }
 
-function awcpBusinessFailure(
-  requestId: string,
-  action: string,
-  code: "stale_snapshot" | "action_not_found" | "invalid_arguments",
+function assertText(value: unknown, name: string, maximum: number) {
+  if (typeof value !== "string" || !value.trim() || value.length > maximum) {
+    throw awcpHostError("awcp_invalid_contract", `${name} must be non-empty and at most ${maximum} characters.`);
+  }
+}
+
+function awcpPreflightFailure(
+  reason: "stale_revision" | "action_not_found" | "page_changed" | "manual_required",
   message: string,
-  details?: { violations: AwcpSchemaViolation[] },
-): AwcpActionResponse {
-  return {
-    ok: false,
-    requestId,
-    action,
-    error: { code, message, ...(details ? { details } : {}) },
-  };
+) {
+  return awcpHostError("awcp_preflight_rejected", message, {
+    reason, stage: "desktop_preflight", executionStarted: false,
+  });
 }
 
 function validateActionResponse(input: unknown, requestId: string, action: string): AwcpActionResponse {
   assertPlainRecord(input, "AWCP response", "awcp_invalid_response");
   assertJsonValue(input, "AWCP response", "awcp_invalid_response");
-  const serialized = JSON.stringify(input);
-  if (Buffer.byteLength(serialized, "utf8") > AWCP_LIMITS.maxResponseBytes) {
+  if (Buffer.byteLength(JSON.stringify(input), "utf8") > AWCP_LIMITS.maxResponseBytes) {
     throw awcpHostError("awcp_response_too_large", "The page AWCP response exceeds 64 MiB.");
   }
   if (input.requestId !== requestId || input.action !== action) {
@@ -399,9 +463,7 @@ function validateActionResponse(input: unknown, requestId: string, action: strin
     assertExactKeys(input, ["action", "ok", "requestId", "result"], "AWCP success response", "awcp_invalid_response");
     return input as AwcpActionResponse;
   }
-  if (input.ok !== false) {
-    throw awcpHostError("awcp_invalid_response", "The page returned an invalid AWCP response.");
-  }
+  if (input.ok !== false) throw awcpHostError("awcp_invalid_response", "The page returned an invalid AWCP response.");
   assertExactKeys(input, ["action", "error", "ok", "requestId"], "AWCP failure response", "awcp_invalid_response");
   assertPlainRecord(input.error, "AWCP error", "awcp_invalid_response");
   const errorKeys = Object.keys(input.error).sort();
@@ -412,7 +474,8 @@ function validateActionResponse(input: unknown, requestId: string, action: strin
   if (typeof code !== "string" || (!AWCP_ERROR_CODES.has(code) && !/^action\..+$/.test(code))) {
     throw awcpHostError("awcp_invalid_response", "The page returned an invalid AWCP error code.");
   }
-  if (typeof input.error.message !== "string" || input.error.message.length > AWCP_LIMITS.maxErrorMessageLength) {
+  if (typeof input.error.message !== "string" || !input.error.message.trim() ||
+      input.error.message.length > AWCP_LIMITS.maxErrorMessageLength) {
     throw awcpHostError("awcp_invalid_response", "The page returned an invalid AWCP error message.");
   }
   if (Object.prototype.hasOwnProperty.call(input.error, "details") &&
@@ -422,15 +485,20 @@ function validateActionResponse(input: unknown, requestId: string, action: strin
   return input as AwcpActionResponse;
 }
 
-function assertAction(value: unknown): asserts value is string {
+function assertAction(value: unknown, name = "action", code = "awcp_invalid_request"): asserts value is string {
   if (typeof value !== "string" || !value || value.length > AWCP_LIMITS.maxActionLength || !AWCP_ACTION_PATTERN.test(value)) {
-    throw awcpHostError("awcp_invalid_request", "AWCP action is invalid.");
+    throw awcpHostError(code, `AWCP ${name} is invalid.`);
   }
 }
 
-function assertToken(name: string, value: unknown, maxLength: number): asserts value is string {
+function assertToken(
+  name: string,
+  value: unknown,
+  maxLength: number,
+  code = "awcp_invalid_request",
+): asserts value is string {
   if (typeof value !== "string" || !value || value.length > maxLength) {
-    throw awcpHostError("awcp_invalid_request", `AWCP ${name} is invalid.`);
+    throw awcpHostError(code, `AWCP ${name} is invalid.`);
   }
 }
 
@@ -454,7 +522,7 @@ function assertExactKeys(
   name: string,
   code = "awcp_invalid_request",
 ) {
-  if (Object.keys(value).sort().join(",") !== expected.join(",")) {
+  if (Object.keys(value).sort().join(",") !== [...expected].sort().join(",")) {
     throw awcpHostError(code, `${name} has unsupported fields.`);
   }
 }
@@ -466,9 +534,7 @@ function assertJsonValue(root: unknown, name: string, code = "awcp_invalid_reque
       if (Number.isFinite(value)) return;
       throw awcpHostError(code, `${name} contains a non-finite number.`);
     }
-    if (!value || typeof value !== "object") {
-      throw awcpHostError(code, `${name} contains a non-JSON value.`);
-    }
+    if (!value || typeof value !== "object") throw awcpHostError(code, `${name} contains a non-JSON value.`);
     if (ancestors.has(value)) throw awcpHostError(code, `${name} contains a cycle.`);
     ancestors.add(value);
     if (Object.getOwnPropertySymbols(value).length > 0) {
@@ -479,7 +545,7 @@ function assertJsonValue(root: unknown, name: string, code = "awcp_invalid_reque
       if (keys.length !== value.length || keys.some((key, index) => key !== String(index))) {
         throw awcpHostError(code, `${name} contains a sparse or extended array.`);
       }
-      for (let index = 0; index < value.length; index += 1) visit(value[index], ancestors);
+      for (const item of value) visit(item, ancestors);
       ancestors.delete(value);
       return;
     }
@@ -506,7 +572,7 @@ function cancelGuest(guest: WebContents, requestId: string) {
 }
 
 function awcpHostError(code: string, message: string, details?: Record<string, unknown>) {
-  const statusCode = code === "awcp_invalid_request"
+  const statusCode = code === "awcp_invalid_request" || code === "awcp_preflight_rejected"
     ? 400
     : code === "awcp_duplicate_request" || code === "site_control_unavailable"
       ? 409

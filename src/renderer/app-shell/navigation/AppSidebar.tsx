@@ -131,11 +131,11 @@ import {
 import { Flex, Modal } from "antd";
 import {
   CAPABILITY_NAVIGATION_ITEMS,
+  createCapabilityNavOrderKey,
+  type CapabilityNavigationItemId,
   getCapabilityNavigationItem,
   type SidebarMode,
 } from "./capabilityNavigation";
-import { ConversationShareDialog } from "./ConversationShareDialog";
-import { useConversationShareDialog } from "./useConversationShareDialog";
 import { ChatInfoDialog } from "./ChatInfoDialog";
 import { useChatInfoDialog } from "./useChatInfoDialog";
 
@@ -146,6 +146,7 @@ type SidebarNavItem = {
   collapsedLabel?: string;
   icon: SidebarIllustrationKind;
   webItem?: WebEntry;
+  capabilityId?: CapabilityNavigationItemId;
 };
 
 type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
@@ -418,6 +419,8 @@ const fixedToolRowsBase: Array<
         | "nav.mcpConnectors"
         | "nav.skills"
         | "nav.market"
+        | "nav.artifactManagement"
+        | "nav.shareManagement"
         | "nav.settings";
     }
   >
@@ -458,6 +461,18 @@ const fixedToolRowsBase: Array<
       to: "/market",
       labelKey: "nav.market",
       icon: "market",
+    },
+    {
+      orderKey: "artifact-management",
+      to: "/artifact-management",
+      labelKey: "nav.artifactManagement",
+      icon: "archive",
+    },
+    {
+      orderKey: "share-management",
+      to: "/share-management",
+      labelKey: "nav.shareManagement",
+      icon: "share",
     },
   ],
   [
@@ -1016,6 +1031,7 @@ type AppSidebarProps = {
   sidebarNavOrder: SidebarNavOrderItemKey[];
   onSidebarNavOrderChange?: (order: SidebarNavOrderItemKey[]) => void;
   websiteNavOrder?: SidebarNavOrderItemKey[];
+  onWebsiteNavOrderChange?: (order: SidebarNavOrderItemKey[]) => void;
   pinnedWebEntryKeys?: string[];
   webPinningAvailable?: boolean;
   onSetWebItemPinned?: (item: WebEntry, pinned: boolean) => Promise<void>;
@@ -1044,7 +1060,6 @@ type AppSidebarProps = {
   onCloseAssistantDock?: () => void;
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
-  onRefreshDesktopSsoStatus?: () => Promise<void> | void;
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
@@ -1058,6 +1073,7 @@ type AppSidebarProps = {
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onToggleChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onOpenChatHistory?: (agentKey?: string) => void;
+  onShareChat: (chatId: string, chatName: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
@@ -1073,11 +1089,16 @@ type AppSidebarProps = {
   onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
+  onRequestToolNavigate?: (targetPath: string) => boolean;
   onRequestAgentChatNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
   onOpenGlobalSearch?: () => void;
+  toolMenuOpen: boolean;
+  onRequestToolMenuOpen: () => void;
+  onAutoOpenToolMenu: () => void;
+  onCloseToolMenu: () => void;
   onToggleCollapsed?: () => void;
   sidebarMode?: SidebarMode;
   settingsSections?: SettingsSidebarSection[];
@@ -1101,6 +1122,7 @@ export function AppSidebar({
   sidebarNavOrder,
   onSidebarNavOrderChange,
   websiteNavOrder = [],
+  onWebsiteNavOrderChange,
   pinnedWebEntryKeys = [],
   webPinningAvailable = false,
   onSetWebItemPinned,
@@ -1129,7 +1151,6 @@ export function AppSidebar({
   onCloseAssistantDock,
   onDesktopSsoLogin,
   onDesktopSsoLogout,
-  onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
   onReorderAssistantProjects,
   onUpdateAssistantChatOrder,
@@ -1137,6 +1158,7 @@ export function AppSidebar({
   onOpenChatWorkPanel,
   onToggleChatWorkPanel,
   onOpenChatHistory,
+  onShareChat,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
   onRefreshCopilotAgentOptions,
@@ -1152,11 +1174,16 @@ export function AppSidebar({
   onExportWebappItem,
   onRemoveWebappItem,
   onRequestNavigate,
+  onRequestToolNavigate,
   onRequestAgentChatNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
   onNavigateItem,
   onOpenGlobalSearch,
+  toolMenuOpen,
+  onRequestToolMenuOpen,
+  onAutoOpenToolMenu,
+  onCloseToolMenu,
   onToggleCollapsed,
   sidebarMode = "primary",
   settingsSections = [],
@@ -1202,15 +1229,31 @@ export function AppSidebar({
   const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
-  const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const desktopUpdate = useDesktopUpdates();
   const [updateFailure, setUpdateFailure] = useState<NonNullable<DesktopUpdateState["error"]> | null>(null);
+  const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [updateInstallPending, setUpdateInstallPending] = useState(false);
   const [updateDownloadPending, setUpdateDownloadPending] = useState(false);
   const canRetryUpdateDownload = Boolean(desktopUpdate?.version && desktopUpdate.phase === "error" &&
     ["downloadFailed", "verificationFailed"].includes(desktopUpdate.error ?? ""));
+  const updateDownloadPercent = desktopUpdate?.phase === "downloading"
+    ? Math.max(0, Math.min(100, Math.round(desktopUpdate.progress))) : null;
   const canDownloadUpdate = desktopUpdate?.phase === "available" || canRetryUpdateDownload;
   const hasDesktopUpdate = canRetryUpdateDownload || Boolean(desktopUpdate && !desktopUpdate.error &&
     ["available", "downloading", "verifying", "ready", "installing"].includes(desktopUpdate.phase));
+
+  async function installSidebarUpdate() {
+    if (updateInstallPending || desktopUpdate?.phase !== "ready" || !desktopUpdate.canInstall) return;
+    const dirty = document.querySelector('[data-native-image-dirty="true"], [data-work-panel-document-dirty="true"], [data-webclient-document-dirty="true"]');
+    if (dirty && !window.confirm(t("updates.confirmDrafts"))) return;
+    setUpdateInstallPending(true);
+    try {
+      const result = await window.electronAPI.updates.install();
+      setUpdateConfirmOpen(false);
+      if (result.phase === "error" || result.error) setUpdateFailure(result.error ?? "installFailed");
+    } catch { setUpdateConfirmOpen(false); setUpdateFailure("installFailed"); }
+    finally { setUpdateInstallPending(false); }
+  }
 
   async function downloadSidebarUpdate() {
     if (updateDownloadPending) return;
@@ -1268,7 +1311,6 @@ export function AppSidebar({
     useState<AssistantChatRenameDialogState | null>(null);
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
-  const conversationShareDialog = useConversationShareDialog(t);
   const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const chatsShowMoreFocusIndexRef = useRef<number | null>(null);
@@ -1279,7 +1321,6 @@ export function AppSidebar({
   } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const sidebarScrollThumbRef = useRef<HTMLDivElement | null>(null);
-  const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
   const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(
@@ -1648,8 +1689,16 @@ export function AppSidebar({
     [webNavItems, pinnedWebEntryKeys],
   );
 
+  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
+    (item) => (item.id !== "market" || marketEnabled) && (item.id !== "help" || helpEnabled),
+  ).map((item) => ({ ...item, label: t(item.labelKey) }));
+  const shownCapabilityNavItems: SidebarNavItem[] = capabilityNavigationItems
+    .filter((item) => sidebarNavOrder.includes(createCapabilityNavOrderKey(item.id)))
+    .map((item) => ({ ...item, orderKey: createCapabilityNavOrderKey(item.id), capabilityId: item.id }));
+
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
+      ...shownCapabilityNavItems,
       {
         ...kanbanNavItemBase,
         label: t("nav.kanban"),
@@ -1685,9 +1734,6 @@ export function AppSidebar({
     )
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
-  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
-    (item) => (item.id !== "market" || marketEnabled) && (item.id !== "help" || helpEnabled),
-  ).map((item) => ({ ...item, label: t(item.labelKey) }));
   const settingsToolItem = fixedToolItems.find(
     (item) => item.to === "/settings",
   );
@@ -1710,7 +1756,7 @@ export function AppSidebar({
       if (item.entryType) {
         return false;
       }
-      return isRouteActive(item.to);
+      return item.capabilityId ? isFixedToolRouteActive(item.to) : isRouteActive(item.to);
     });
     if (activeTopLevelItem) {
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
@@ -1965,9 +2011,9 @@ export function AppSidebar({
     }
     if (isPrimaryMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
       bootstrapGuideToolMenuAutoOpenedRef.current = true;
-      setToolMenuOpen(true);
+      onAutoOpenToolMenu();
     }
-  }, [bootstrapActive, isPrimaryMode]);
+  }, [bootstrapActive, isPrimaryMode, onAutoOpenToolMenu]);
 
   useEffect(() => {
     if (!bootstrapActive || typeof window === "undefined") {
@@ -2150,7 +2196,14 @@ export function AppSidebar({
     if (targetPath === "/help") {
       dismissBootstrapGuideBubble("help");
     }
-    handleItemClick(event, targetPath);
+    if (onRequestToolNavigate) {
+      event.preventDefault();
+      if (onRequestToolNavigate(targetPath)) {
+        onNavigateItem?.();
+      }
+    } else {
+      handleItemClick(event, targetPath);
+    }
     closeToolMenu();
   }
 
@@ -2393,10 +2446,14 @@ export function AppSidebar({
     }
     if (subject.kind === "chat") {
       const chat = findAssistantNavChat(subject.chatId);
-      return chat ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId),
-        pinned: chat.pinned === true,
-        canPin: assistantChatPinningSupported && !chatOrderMutationPending,
-      } : null;
+      return chat
+        ? {
+            kind: "chat",
+            workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId),
+            pinned: chat.pinned === true,
+            canPin: assistantChatPinningSupported && !chatOrderMutationPending,
+          }
+        : null;
     }
 
     const item = findWebItem(subject.entryKey);
@@ -2428,7 +2485,7 @@ export function AppSidebar({
         isWebapp &&
         item.removable !== false &&
         !runtime.webItemRemovePendingId,
-      showRemove: isWebapp && !runtime.isCollapsed,
+      showRemove: isWebapp,
     };
     if (!isWebapp) {
       return { kind: "web", webKind: "website", ...commonTarget };
@@ -2479,7 +2536,9 @@ export function AppSidebar({
       );
     }
     if (target.kind === "chat") {
-      if (actionId === "chat.pin" || actionId === "chat.unpin") return target.canPin === true;
+      if (actionId === "chat.pin" || actionId === "chat.unpin") {
+        return target.canPin === true;
+      }
       return [
         "chat.export",
         "chat.exportHtml",
@@ -2586,7 +2645,7 @@ export function AppSidebar({
       } else if (actionId === "chat.exportHtml") {
         await handleAssistantExportChatHtml(chat);
       } else if (actionId === "chat.share") {
-        conversationShareDialog.open(chat.chatId, chat.chatName);
+        onShareChat(chat.chatId, chat.chatName);
       } else if (actionId === "chat.rename") {
         handleAssistantRenameChat(chat);
       } else if (actionId === "chat.workPanel.open") {
@@ -3252,15 +3311,6 @@ export function AppSidebar({
     } finally {
       setWebClosePendingEntryKey("");
     }
-  }
-
-  async function handleCloseWebItem(
-    event: MouseEvent<HTMLElement>,
-    item: WebEntry,
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-    await closeWebItem(item);
   }
 
   async function removeWebappItem(item: WebEntry) {
@@ -4275,6 +4325,32 @@ export function AppSidebar({
       .join(" ");
   }
 
+  function renderCapabilityVisibilityButton(capabilityId: CapabilityNavigationItemId) {
+    const key = createCapabilityNavOrderKey(capabilityId);
+    const shown = sidebarNavOrder.includes(key);
+    const label = t(shown ? "sidebar.navigation.hideFromNavigation" : "sidebar.navigation.showInNavigation");
+    return <button
+      type="button"
+      className="sidebar-capability-visibility-button"
+      aria-label={label}
+      title={label}
+      aria-pressed={shown}
+      disabled={!onSidebarNavOrderChange}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const remaining = sidebarNavOrder.filter((entry) => entry !== key);
+        onSidebarNavOrderChange?.(shown ? remaining : [key, ...remaining]);
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16" />
+        {shown ? <path d="m12 12 2 2 4-4" /> : <path d="M15 9v6m-3-3h6" />}
+      </svg>
+    </button>;
+  }
+
   function renderSidebarLink(
     item: SidebarNavItem,
     extraClassName = "sidebar-primary-link",
@@ -4282,7 +4358,7 @@ export function AppSidebar({
     const visibleLabel =
       isCollapsed && item.collapsedLabel ? item.collapsedLabel : item.label;
     const focusId = createSidebarLinkFocusId(item.orderKey);
-    return (
+    const link = (
       <NavLink
         key={item.to}
         to={item.to}
@@ -4290,8 +4366,11 @@ export function AppSidebar({
         aria-label={item.label}
         title={item.label}
         {...getSidebarRovingItemProps(focusId)}
+        data-sidebar-capability-id={item.capabilityId}
         data-sidebar-nav-kind="link"
-        className={() => getSidebarLinkClassName(item.to, extraClassName)}
+        className={() => item.capabilityId
+          ? ["sidebar-link", extraClassName, isFixedToolRouteActive(item.to) ? "sidebar-link-active" : ""].filter(Boolean).join(" ")
+          : getSidebarLinkClassName(item.to, extraClassName)}
       >
         <span className="sidebar-link-icon">
           <SidebarIllustration
@@ -4302,6 +4381,9 @@ export function AppSidebar({
         <span className="sidebar-link-label">{visibleLabel}</span>
       </NavLink>
     );
+    return item.capabilityId ? <div className="sidebar-capability-row" key={item.orderKey}>
+      {link}{renderCapabilityVisibilityButton(item.capabilityId)}
+    </div> : link;
   }
 
   function renderChatsNewChatButton(options: { inPopover?: boolean } = {}) {
@@ -4910,7 +4992,6 @@ export function AppSidebar({
         faviconCache?.[webItem.entryKey]?.faviconUrl ||
         buildWebsiteFaviconUrl(webItem.id);
       const webappActionLabel = t("sidebar.webapp.actions");
-      const closeWebsiteLabel = t("sidebar.website.close");
       return (
         <div
           key={item.to}
@@ -4975,51 +5056,40 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {isOpen && isWebsite && !(options.topLevel && isCollapsed) ? (
-            <Tooltip content={closeWebsiteLabel}>
-              <button
-                type="button"
-                className={`assistant-worker-icon-button sidebar-website-status-action${closing ? " is-closing" : ""}`}
-                aria-label={closeWebsiteLabel}
-                title={closeWebsiteLabel}
-                tabIndex={-1}
-                disabled={Boolean(webClosePendingEntryKey)}
-                onClick={(event) => void handleCloseWebItem(event, webItem)}
-              >
-                {closing ? (
-                  <span
-                    className="assistant-material-icon is-loading"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <>
-                    <span
-                      className="sidebar-website-status-dot"
-                      aria-hidden="true"
-                    />
-                    <SidebarActionIcon
-                      kind="close"
-                      className="sidebar-website-status-close"
-                    />
-                  </>
-                )}
-              </button>
-            </Tooltip>
-          ) : null}
-          {showWebappAction && !(options.topLevel && isCollapsed) ? (
+          {isWebsite ? (
             <span className="sidebar-website-child-actions">
-              {isWebappRunning ? (
+              {isOpen ? <span className="sidebar-website-status-dot" aria-hidden="true" /> : null}
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
+                  aria-label={t("common.more")}
+                  aria-haspopup="menu"
+                  disabled={Boolean(webClosePendingEntryKey)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openNativeSidebarContextMenu(
+                      { kind: "web", entryKey: webItem.entryKey },
+                      event.currentTarget,
+                    );
+                  }}
+                >
+                  <SidebarActionIcon kind="more_actions" />
+                </button>
+            </span>
+          ) : null}
+          {showWebappAction ? (
+            <span className="sidebar-website-child-actions">
+              {isOpen || isWebappRunning ? (
                 <span
                   className="sidebar-website-status-dot sidebar-webapp-status-dot"
                   aria-hidden="true"
                 />
               ) : null}
-              <Tooltip content={webappActionLabel}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
                   aria-label={webappActionLabel}
-                  title={webappActionLabel}
                   tabIndex={-1}
                   disabled={Boolean(
                     webItemRemovePendingId || webClosePendingEntryKey,
@@ -5043,7 +5113,6 @@ export function AppSidebar({
                     <SidebarActionIcon kind="more_actions" />
                   )}
                 </button>
-              </Tooltip>
             </span>
           ) : null}
         </div>
@@ -5772,6 +5841,20 @@ export function AppSidebar({
         icon: item.icon,
         active: isWebsiteGroupActive() && !pinnedWebNavItems.some((entry) => isRouteActive(entry.to)),
         children: unpinnedWebNavItems,
+        renderChildren: ({ roving }) => unpinnedWebNavItems.length > 0 ? (
+          <SortableNavEntries
+            order={webNavItems.map((entry) => entry.orderKey)}
+            sortableKeys={unpinnedWebNavItems.map((entry) => entry.orderKey)}
+            onChange={onWebsiteNavOrderChange}
+            hint={t("sidebar.navigation.reorderHint", { modifier: "Alt" })}
+            renderItem={(key) => {
+              const entry = unpinnedWebNavItems.find((candidate) => candidate.orderKey === key);
+              return entry ? renderSidebarChildLink(entry, { roving }) : null;
+            }}
+          />
+        ) : websitesLoaded ? (
+          <div className="sidebar-empty-hint">{t("sidebar.websites.empty")}</div>
+        ) : null,
       });
     }
     return renderSidebarLink(item);
@@ -6119,7 +6202,7 @@ export function AppSidebar({
   }
 
   function closeToolMenu() {
-    setToolMenuOpen(false);
+    onCloseToolMenu();
   }
 
   function handleDesktopSsoMenuActionClick() {
@@ -6141,26 +6224,11 @@ export function AppSidebar({
   }
 
   function handleToolMenuOpenChange(open: boolean) {
-    const requestId = toolMenuOpenRequestIdRef.current + 1;
-    toolMenuOpenRequestIdRef.current = requestId;
     if (!open) {
       closeToolMenu();
       return;
     }
-
-    const refreshResult = onRefreshDesktopSsoStatus?.();
-    if (!refreshResult) {
-      setToolMenuOpen(true);
-      return;
-    }
-
-    Promise.resolve(refreshResult)
-      .catch(() => undefined)
-      .finally(() => {
-        if (toolMenuOpenRequestIdRef.current === requestId) {
-          setToolMenuOpen(true);
-        }
-      });
+    onRequestToolMenuOpen();
   }
 
   function renderToolMenu() {
@@ -6171,6 +6239,8 @@ export function AppSidebar({
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||
+        item.to === "/artifact-management" ||
+        item.to === "/share-management" ||
         item.to === "/connectors" ||
         item.to === "/skills",
     );
@@ -6190,7 +6260,10 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
-        <DesktopUpdateCard compact />
+        <DesktopUpdateCard compact onDownload={() => void downloadSidebarUpdate()} onViewAbout={() => {
+          closeToolMenu();
+          onSelectSettingsSection?.("about");
+        }} />
         {shouldRenderDesktopSsoAccount ? (
           <>
             {renderAccountMenuUserItem()}
@@ -6199,11 +6272,13 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {helpEnabled ? renderToolLink(helpToolItem, {
-          anchorRef: bootstrapGuideToolHelpAnchorRef,
-          bootstrapGuide: showBootstrapHelpGuide,
-        }) : null}
-        {settingsToolItem ? renderToolLink(settingsToolItem) : null}
+        <div className="sidebar-account-menu-footer" role="presentation">
+          {settingsToolItem ? renderToolLink(settingsToolItem) : null}
+          {helpEnabled ? renderToolLink(helpToolItem, {
+            anchorRef: bootstrapGuideToolHelpAnchorRef,
+            bootstrapGuide: showBootstrapHelpGuide,
+          }) : null}
+        </div>
       </div>
     );
   }
@@ -6842,9 +6917,13 @@ export function AppSidebar({
       pendingPath ?? "",
     );
     const selectedCapabilityItem = pendingCapabilityItem ?? activeCapabilityItem;
-    const firstSecondaryCapabilityItemId = capabilityNavigationItems.find(
-      (item) => item.id === "market" || item.id === "help",
-    )?.id;
+    const capabilityGroups = (["platform", "cloud", "help"] as const)
+      .map((id) => ({
+        id,
+        label: t(`nav.capabilities.group.${id}`),
+        items: capabilityNavigationItems.filter((item) => item.group === id),
+      }))
+      .filter((group) => group.items.length > 0);
 
     return (
       <div className="sidebar-settings-nav sidebar-capabilities-nav">
@@ -6862,49 +6941,45 @@ export function AppSidebar({
           className="sidebar-settings-directory sidebar-capabilities-directory"
           aria-label={t("nav.capabilities")}
         >
-          <div className="settings-section-group-items">
-            {capabilityNavigationItems.map((item) => {
-              const isActive = selectedCapabilityItem?.id === item.id;
-              return (
-                <Fragment key={item.id}>
-                  {item.id === firstSecondaryCapabilityItemId ? (
-                    <div
-                      className="sidebar-capability-divider"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  <NavLink
-                    to={item.to}
-                    aria-current={isActive ? "page" : undefined}
-                    className={[
-                      "sidebar-link",
-                      isActive ? "sidebar-link-active" : "",
-                      pendingCapabilityItem?.id === item.id
-                        ? "is-pending"
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={(event) => handleToolItemClick(event, item.to)}
-                  >
-                    <span className="sidebar-link-icon" aria-hidden="true">
-                      <SidebarIllustration kind={item.icon} />
-                    </span>
-                    <span className="sidebar-link-label">{item.label}</span>
-                  </NavLink>
-                </Fragment>
-              );
-            })}
-          </div>
+          {capabilityGroups.map((group) => (
+            <div className="settings-section-group" key={group.id} role="group" aria-labelledby={`capability-group-${group.id}`}>
+              <div className="settings-section-group-heading" id={`capability-group-${group.id}`}>
+                {group.label}
+              </div>
+              <div className="settings-section-group-items">
+                {group.items.map((item) => {
+                  const isActive = selectedCapabilityItem?.id === item.id;
+                  return (
+                    <div className="sidebar-capability-row" key={item.id}>
+                      <NavLink
+                        data-sidebar-capability-id={item.id}
+                        to={item.to}
+                        aria-current={isActive ? "page" : undefined}
+                        className={[
+                          "sidebar-link",
+                          isActive ? "sidebar-link-active" : "",
+                          pendingCapabilityItem?.id === item.id ? "is-pending" : "",
+                        ].filter(Boolean).join(" ")}
+                        onClick={(event) => handleToolItemClick(event, item.to)}
+                      >
+                        <span className="sidebar-link-icon" aria-hidden="true">
+                          <SidebarIllustration kind={item.icon} />
+                        </span>
+                        <span className="sidebar-link-label">{item.label}</span>
+                      </NavLink>
+                      {renderCapabilityVisibilityButton(item.id)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </div>
     );
   }
 
   const shouldRenderCollapsed = isCollapsed && isPrimaryMode;
-  const activeToolMenuItem =
-    fixedToolItems.find((item) => isFixedToolRouteActive(item.to)) ??
-    (isFixedToolRouteActive(helpToolItem.to) ? helpToolItem : undefined);
   const shouldRenderDesktopSsoTrigger =
     desktopSsoStatus?.configured === true;
   const shouldRenderDesktopSsoTriggerAvatar =
@@ -6913,13 +6988,9 @@ export function AppSidebar({
   const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar
     ? getDesktopSsoUserLabel()
     : "";
-  const shouldRenderActiveToolMenuLabel =
-    shouldRenderDesktopSsoTriggerAvatar && Boolean(activeToolMenuItem);
-  const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger
-    ? desktopSsoStatus.authenticated
-      ? activeToolMenuItem?.label || desktopSsoUserLabel
-      : t("sidebar.sso.signedOut")
-    : t("nav.settings");
+  const toolMenuTriggerLabel = shouldRenderDesktopSsoTriggerAvatar
+    ? desktopSsoUserLabel
+    : t("sidebar.sso.signedOut");
 
   return (
     <>
@@ -7033,7 +7104,7 @@ export function AppSidebar({
               ? renderCapabilitiesNav()
               : <SortableNavEntries
                   order={sidebarNavOrder}
-                  sortableKeys={["kanban", "schedules", "new-chat", ...pinnedWebNavItems.map((item) => item.orderKey)]}
+                  sortableKeys={["kanban", "schedules", "new-chat", ...shownCapabilityNavItems.map((item) => item.orderKey), ...pinnedWebNavItems.map((item) => item.orderKey)]}
                   onChange={onSidebarNavOrderChange}
                   hint={t("sidebar.navigation.reorderHint", { modifier: "Alt" })}
                   renderItem={(key) => {
@@ -7067,7 +7138,6 @@ export function AppSidebar({
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
                       hasDesktopUpdate ? "has-update" : "",
-                      activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
@@ -7081,8 +7151,7 @@ export function AppSidebar({
                       <span className="sidebar-link-icon sidebar-settings-icon-slot">
                         <SidebarIllustration kind="settings" />
                       </span>
-                    ) : shouldRenderDesktopSsoTriggerAvatar &&
-                      !shouldRenderActiveToolMenuLabel ? (
+                    ) : shouldRenderDesktopSsoTriggerAvatar ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
                         label={desktopSsoUserLabel}
@@ -7091,12 +7160,6 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
-                    {shouldRenderActiveToolMenuLabel ? (
-                      <AccountMenuAvatar
-                        avatarUrl={desktopSsoStatus.user?.avatarUrl}
-                        label={desktopSsoUserLabel}
-                      />
-                    ) : null}
                     {shouldRenderDesktopSsoTrigger ? (
                       <span
                         className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"
@@ -7115,19 +7178,38 @@ export function AppSidebar({
                 </Popover>
                 {hasDesktopUpdate ? <button
                   type="button"
-                  className="sidebar-update-trigger"
-                  aria-label={t(canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
-                  title={t(canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
-                  disabled={updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
+                  className={`sidebar-update-trigger${updateDownloadPercent !== null ? " is-downloading" : ""}${desktopUpdate?.phase === "ready" ? " is-ready" : ""}`}
+                  aria-label={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  title={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  disabled={updateInstallPending || updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
                   onClick={() => {
                     if (canDownloadUpdate) void downloadSidebarUpdate();
+                    else if (desktopUpdate?.phase === "ready") setUpdateConfirmOpen(true);
                     else handleToolMenuOpenChange(true);
                   }}
-                ><svg className="sidebar-update-icon" width="12" height="12" viewBox="64 64 896 896" fill="currentColor" aria-hidden="true" focusable="false">
+                >{updateDownloadPercent !== null ? <span className="sidebar-update-percent">{updateDownloadPercent}%</span> : <><svg className="sidebar-update-icon" width="12" height="12" viewBox="64 64 896 896" fill="currentColor" aria-hidden="true" focusable="false">
                   {/* Original DownloadOutlined silhouette; widen only the arrowhead by 1px at 12px. */}
                   <path d="M505.7 661a8 8 0 0012.6 0l149.333-141.7c4.1-5.2.4-12.9-6.3-12.9H549.9V168c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v338.3H362.667c-6.7 0-10.4 7.7-6.3 12.9L505.7 661zM878 626h-60c-4.4 0-8 3.6-8 8v154H214V634c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v198c0 17.7 14.3 32 32 32h684c17.7 0 32-14.3 32-32V634c0-4.4-3.6-8-8-8z" />
-                </svg><span className="sidebar-update-hover-label" aria-hidden="true">{t("updates.action")}</span></button> : null}
+                </svg><span className="sidebar-update-hover-label" aria-hidden="true">{t(desktopUpdate?.phase === "ready" ? "updates.action" : "updates.download")}</span></>}</button> : null}
               </div>
+              <Modal
+                centered
+                open={updateConfirmOpen}
+                title={t("updates.action")}
+                okText={t("updates.install")}
+                cancelText={t("common.cancel")}
+                confirmLoading={updateInstallPending}
+                okButtonProps={{ disabled: desktopUpdate?.phase !== "ready" || !desktopUpdate?.canInstall }}
+                cancelButtonProps={{ disabled: updateInstallPending }}
+                closable={!updateInstallPending}
+                maskClosable={!updateInstallPending}
+                keyboard={!updateInstallPending}
+                onOk={() => void installSidebarUpdate()}
+                onCancel={() => { if (!updateInstallPending) setUpdateConfirmOpen(false); }}
+              >
+                <p>{t("updates.restartHint")}</p>
+                {!desktopUpdate?.canInstall ? <p>{t("updates.developmentHint")}</p> : null}
+              </Modal>
               <Modal
                 centered
                 open={updateFailure !== null}
@@ -7141,18 +7223,6 @@ export function AppSidebar({
               </Modal>
               {renderAssistantChatRenameDialog()}
               {renderAssistantChatDeleteDialog()}
-              <ConversationShareDialog
-                state={conversationShareDialog.state}
-                t={t}
-                onClose={conversationShareDialog.close}
-                onCreate={() => void conversationShareDialog.create()}
-                onRetryList={conversationShareDialog.retryList}
-                onExpirationChange={conversationShareDialog.setExpiration}
-                onCopy={(shareId) => void conversationShareDialog.copy(shareId)}
-                onRequestRevoke={conversationShareDialog.requestRevoke}
-                onCancelRevoke={conversationShareDialog.cancelRevoke}
-                onConfirmRevoke={() => void conversationShareDialog.confirmRevoke()}
-              />
               <ChatInfoDialog
                 state={chatInfoDialog.state}
                 t={t}

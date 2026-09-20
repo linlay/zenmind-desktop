@@ -10,6 +10,7 @@ export type SidebarNavOrderItemKey =
   | "market"
   | "skills"
   | "help"
+  | `capability:${string}`
   | `service:${string}`
   | `experimental:${string}`
   | `website:${string}`

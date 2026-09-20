@@ -816,7 +816,7 @@ test("main window forwards global search commands only while the overlay is visi
     isDevToolsShortcut: () => false,
     isGlobalSearchShortcut: () => false,
     resolveGlobalSearchCommandShortcut: (_platform, input) =>
-      input.key === "m" ? { kind: "action", actionId: "mcpConnectors" } : null,
+      input.key === "s" ? { kind: "action", actionId: "shareManagement" } : null,
     isHandlingQuit: () => false,
     clearWindow: () => {},
   });
@@ -825,12 +825,12 @@ test("main window forwards global search commands only while the overlay is visi
     preventDefault: () => {
       prevented = true;
     },
-  }, { type: "keyDown", key: "m", meta: true });
+  }, { type: "keyDown", key: "s", meta: true });
 
   assert.equal(prevented, true);
   assert.deepEqual(target.webContents.sentMessages, [{
     channel: "app.globalSearchShortcut",
-    payload: { kind: "action", actionId: "mcpConnectors" },
+    payload: { kind: "action", actionId: "shareManagement" },
   }]);
 
   visible = false;
@@ -839,7 +839,7 @@ test("main window forwards global search commands only while the overlay is visi
     preventDefault: () => {
       prevented = true;
     },
-  }, { type: "keyDown", key: "m", meta: true });
+  }, { type: "keyDown", key: "s", meta: true });
   assert.equal(prevented, false);
   assert.equal(target.webContents.sentMessages.length, 1);
 });

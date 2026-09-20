@@ -61,11 +61,21 @@ Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展�
 
 图片 Surface 对 PNG/JPEG/WebP 保留像素编辑、撤销/重做、AI 工具和区域批注。非编辑格式只读，不得通过错误扩展名或隐式栅格化覆盖原件；JPEG 不接受含透明像素的覆盖结果。系统打开、定位和解码链路必须分别回归 macOS 与 Windows。
 
+普通 Web tab 的右键入口将所属 Chat 的所有普通网站移到同一个独立浏览器窗口。窗口提供多 Tab、地址栏、前进/后退/刷新和新建 Tab，系统标题栏区域常驻智能体名称/标识、对话名称、对话标识和还原入口，网页内容区不再重复单独的归属 header。不同 Chat 使用不同窗口，不按域名或当前前台 Chat 合并。AppShell reducer 仍持有每个原 item、stable key、owner Chat 与批注草稿；每个 Tab 保留独立 Surface，Main 只拥有窗口、guest 和运行期转移 reservation，面板与 dialog 不并存挂载同一 item。
+
+初次转移从已登记的真实来源 guest 捕获身份，以一次性转移标识衔接 UI 卸载；原 guest 销毁后才创建目标 guest，更新 live registration generation，防止旧 renderer 清理误删新登记。同 Chat 后续打开的网站进入既有窗口。窗口内 HTTP(S) 链接新开页、`window.open` 与手动新建 Tab 都经真实来源 transfer 回到 AppShell 创建 item；Main 只可从既有 reservation 派生同 Chat 的新 Surface，不接受调用方选择其他 Chat。该 reservation 不随 Main Chat 切换或卸载消失，新页与原页继续受原 Chat 的 WorkPanel Run 授权约束，不能成为通用 Browser 或其他 Chat 的页面。
+
+窗口不设置 parent、modal 或 alwaysOnTop，遵循正常系统排序；macOS 使用融合标题栏并保留原生 traffic lights，Windows 使用标题栏 overlay 保留系统窗口控件并隐藏菜单栏；归属文本所在区域支持系统拖动，返回按钮排除在拖动区域之外。关闭整个窗口与系统标题栏区域“还原到 WorkPanel”执行同一整体还原：Main 捕获各 Tab 当前实际地址，释放所有 guest 和 reservation 后返回；AppShell 同步还原所有 item，进入所属 Chat，并选中窗口最后活动的 Tab。该操作不删除 item 或丢弃草稿。单个 Tab 的关闭与 macOS Cmd+W / Windows Ctrl+W（多 Tab 时）走原有 item 草稿保护；最后一个 Tab 的窗口快捷键以及 Cmd/Ctrl+Shift+W 还原整个窗口。关闭 workspace、归档/删除 Chat、主窗口关闭或 renderer 失效仍回收对应资源。
+
+窗口内切换 Tab 保留 guest 和页面状态；面板与独立窗口之间切换会重新加载当前 HTTP(S) 地址，Cookie 沿用默认 session，未提交 DOM 状态不跨宿主保留，批注草稿保留并明确标记重载失效。转移失败回收目标 guest/登记并恢复原 item；远端加载失败留在浏览器显示错误，可刷新或更换地址。远端 guest 不获得通用 Desktop preload、Token Bridge 或宿主控制通道，远端页面访问与宿主相同的控制 URL 不能触发窗口操作。
+
 ## 实时 loopback 项目
 
 `localhost`、`*.localhost`、`127.0.0.0/8` 和 `[::1]` 是 loopback。当 owner Chat 是绑定有效 workspace 的 Coder 时，WorkPanel 为该 Web item 赋予 `live-project-web` 交接语义，但不赋予页面任何新权限。preload 只可交付脱敏 DOM 摘要、selector/XPath、坐标、URL 和可选截图；Coder 修改 workspace 后再通过 HMR 或刷新验证。顶层导航离开 loopback 后立即退化为普通 Web。
 
 ## 状态、标题与兼容
+
+Overview 与 Debug 是只读实时观察页，仅在所属 Main Chat 完成可信登记、WorkPanel 可见且对应 tab 激活时挂载 guest。隐藏面板、切换 Chat 或切换 tab 时回收这两类 guest 与 Frame Port，下次激活重新创建，避免后台初始化被父 Chat 归属校验拒绝后永久复用已关闭的 Port。item 与 workspace 身份继续保留；Broker 的 Main Chat Overview lease 不随 UI guest 回收而释放。普通网页、文档编辑与批注仍遵循各自的保活和草稿保护规则。
 
 WebClient 文档和 Desktop 原生 Surface 都向 WorkPanel 提交当前 item 绑定的 dirty、busy 和 annotation count。关闭当前、关闭其他、切换原生编辑器和 WorkPanel 全屏生命周期共用同一未保存保护规则。
 
@@ -78,3 +88,9 @@ canonical Desktop/WebClient bridge v6 增加 `openDocument`，同时保留旧方
 Platform 上传的 Reference 可以是 Chat 根目录的单个文件名，也可以位于 `references/` 下。WebClient 打开、当前资源操作及 Desktop 本地解析使用相同的来源规则；Artifact 仍限于 `artifacts/`。owner Chat、规范路径和 realpath 校验继续生效。根目录 HTML Reference 只允许读取自身，不因此获得相邻 Chat 文件的读取权限。
 
 DOCX 正文由共用 WebClient Document Surface 承载，只读显示文字、表格、内嵌图片、分页和缩放，不依赖系统安装的 Office 或转换服务。随包分发的渲染库在独立 opaque-origin sandbox iframe 中运行；只有固定 nonce 脚本可执行，文档自带脚本、HTML altChunk、远端资源和表单均被禁止。父页面按 frame source 和随机 token 验证窄消息通道，只交付文档字节与阅读控制，不交付凭据或 Desktop 能力。下载仍返回原件；Reference 不可覆盖。其他 Office 格式保留现有元信息及显式文件操作。
+
+## 网页身份与操作
+
+Container 持有网页宿主与标签集合，每个可操作网页实例拥有独立 Surface 身份。普通 Chat 打开网址默认进入 WorkPanel，Website/WebApp Copilot 沿用所属容器；网页发现与操作共用来源授权，不因承载位置或前后台状态切换模型。本地文件预览与 WebApp bridge 权限不随之扩展。完整模型见[前端嵌入与导航](前端嵌入与导航.md#网页-container-与-surface)，动作与 CDP 边界见[桌面协议与动作桥](桌面协议与动作桥.md#网页-container-与-surface)。
+
+普通 Chat 对自己拥有的 HTTP(S) 网页可使用 AWCP，与 Website/WebApp 采用相同的目录、章节和调用协议。宿主先校验 canonical Run 与精确 Surface 归属，再探测页面协议；无 AWCP 是页面能力缺失，不代表 WorkPanel 容器不支持。授权不扩展到本地文件、其他 Chat 或通用 Desktop bridge。

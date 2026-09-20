@@ -1,4 +1,4 @@
-import { AwcpGuestBridge, type BrowserSurfaceRegistry, type SiteControlScope } from "../web-surfaces";
+import { AwcpGuestBridge, acquireWorkPanelAwcpScope, type BrowserSurfaceRegistry, type SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type {
   AssistantNavAgentItemsResult,
@@ -137,15 +137,21 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getMainWindow: options.getMainWindow,
       pendingRequests: desktopActionConfirmationRequests
     }),
+    resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request),
     executeCdpCommand: async (request: unknown, scope?: SiteControlScope, signal?: AbortSignal) => options.cdpIntegration.start().executeCommand(request, scope, signal),
     emitWebappChanged,
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
-    action: (request) => integration.handleAgentPlatformDesktopActionRequest(desktopActionOptions, request as any),
-    cdp: (request, scope, signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, signal),
-    awcpSnapshot: (requestId, scope, signal) => awcpGuestBridge.snapshot(requestId, scope, signal),
-    awcpInvoke: (requestId, request, scope, signal) => awcpGuestBridge.invoke(requestId, request, scope, signal),
+    acquireWorkPanelAwcpScope: (surfaceId, chatId) => acquireWorkPanelAwcpScope(options.browserSurfaces, surfaceId, chatId),
+    action: (request, scope) => integration.handleAgentPlatformDesktopActionRequest({
+      ...desktopActionOptions,
+      resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request, scope),
+      executeCdpCommand: (command: any) => options.cdpIntegration.start().executeCommand(command, scope),
+    }, request as any),
+    cdp: (request, scope, signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, signal, true),
+    awcpManual: (requestId, request, scope, signal, surfaceId) => awcpGuestBridge.manual(requestId, request, scope, signal, surfaceId),
+    awcpInvoke: (requestId, request, scope, signal, surfaceId) => awcpGuestBridge.invoke(requestId, request, scope, signal, surfaceId),
   });
 
   const desktopWsServerOptions = {

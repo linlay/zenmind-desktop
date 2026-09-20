@@ -118,8 +118,10 @@ export type DesktopActionBridgeOptions = {
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
+  resolveWebSurface?: (request: EmbeddedCdpCommandRequest) => Promise<{
+    surfaceId: string; containerId: string; surfaceKind: string; contents: WebContents; validate(): Promise<void>;
+  }>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteControlScope, signal?: AbortSignal) => Promise<{
-    targetId?: string;
     surfaceId?: string;
     result: unknown;
   }>;
@@ -140,8 +142,8 @@ export type DesktopActionInvocationContext =
   | { kind: "desktop" }
   | { kind: "agentPlatform" }
   | { kind: "agentWebclientWorkPanel" }
-  | { kind: "webappPage"; webappId: string }
-  | { kind: "webappBackend"; webappId: string };
+  | { kind: "webappPage"; webappId: string; signal?: AbortSignal }
+  | { kind: "webappBackend"; webappId: string; signal?: AbortSignal };
 
 export type AgentWebclientWorkPanelAction = "openItem" | "activateItem" | "closeItem";
 
@@ -202,8 +204,6 @@ export type DesktopCdpCallRequest = {
   requestId?: string;
   method?: string;
   params?: Record<string, unknown>;
-  targetId?: string;
-  sessionId?: string;
   surfaceId?: string;
   source?: DesktopActionSource;
 };
@@ -212,7 +212,6 @@ export type DesktopCdpCallResponse = {
   ok: boolean;
   method: string;
   result?: unknown;
-  targetId?: string;
   surfaceId?: string;
   error?: DesktopActionError;
 };

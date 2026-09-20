@@ -192,6 +192,7 @@ function createWorkPanelRendererResult(action) {
   return {
     ok: true,
     workspaceId: workspace.workspaceId,
+    ...(action === "desktop.workpanel.openWeb" ? { surfaceId: "page:opened", containerId: "web:container", status: "ready" } : {}),
     item: workspace.items[0],
     state: { ...workspace, internalLayout: { width: 800 } },
     workspaces: [workspace, { workspaceId: "workpanel:other-chat", ownerChatId: "other-chat", items: [], activeItemId: null }]
@@ -1061,116 +1062,16 @@ test("Agent Platform context exempts approved WorkPanel Web actions without exem
   assert.equal(rendererCalls.length, 2);
 });
 
-test("P1 renderer mutations expose exact bounded post-action state", async (t) => {
+test("WorkPanel and settings mutations expose bounded post-action state", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const workspace = createWorkPanelWorkspace();
-  const webState = createWebActionState();
-  options.callRendererAction = async (request) => {
-    let result;
-    if (request.action === "desktop.web.activateSurface") {
-      result = { surface: expectedWebState.surface };
-    } else if (request.action.startsWith("desktop.web.")) {
-      result = {
-        ...webState,
-        ...(request.action === "desktop.web.navigate"
-          ? { targetTabId: "tab-1", navigatedUrl: "https://example.test/next", internalNavigationId: "nav-1" }
-          : {}),
-        ...(request.action === "desktop.web.reload" || request.action === "desktop.web.goBack"
-          ? { targetTabId: "tab-1" }
-          : {}),
-        ...(request.action === "desktop.web.openTab"
-          ? { openedTabId: "tab-1", openedTab: webState.activeTab }
-          : {}),
-        ...(request.action === "desktop.web.closeTab"
-          ? {
-              closedTabId: "tab-2",
-              closedSurface: false,
-              remainingTabIds: ["tab-1"],
-              activeTabId: "tab-1"
-            }
-          : {})
-      };
-    } else if (request.action.startsWith("desktop.workpanel.")) {
-      result = createWorkPanelRendererResult(request.action);
-    } else {
-      result = {
-        pageKey: "help",
-        preference: { enabled: true, agentKey: "helper" },
-        desktopCopilotPages: { help: { enabled: true }, market: { enabled: false } }
-      };
-    }
-    return { requestId: request.requestId, action: request.action, ok: true, result };
-  };
-
-  const expectedTabs = [
-    {
-      tabId: "tab-1",
-      title: "Example",
-      currentUrl: "https://example.test/",
-      faviconUrl: "https://example.test/favicon.ico",
-      active: true,
-      isLoading: false,
-      canGoBack: true,
-      canGoForward: false
-    },
-    {
-      tabId: "tab-2",
-      title: "Second",
-      currentUrl: "https://second.test/",
-      active: false,
-      isLoading: true,
-      canGoBack: false,
-      canGoForward: true
-    }
-  ];
-  const expectedWebState = {
-    surface: {
-      surfaceId: "browser",
-      surfaceRole: "browser",
-      surfaceLevel: "root",
-      interaction: "interactive",
-      kind: "browser",
-      label: "Browser",
-      url: "https://example.test/",
-      route: "/browser",
-      open: true,
-      active: true
-    },
-    tabs: expectedTabs,
-    activeTab: expectedTabs[0]
-  };
-  const activated = await handleDesktopActionRequest(options, {
-    action: "desktop.web.activateSurface",
-    args: { surfaceId: "browser" },
-    permissionMode: "full_access"
-  });
-  assert.deepEqual(activated, {
-    ok: true,
-    action: "desktop.web.activateSurface",
-    result: { surface: expectedWebState.surface }
-  });
-  const webExpectations = new Map([
-    ["desktop.web.navigate", { ...expectedWebState, targetTabId: "tab-1", navigatedUrl: "https://example.test/next" }],
-    ["desktop.web.reload", { ...expectedWebState, targetTabId: "tab-1" }],
-    ["desktop.web.goBack", { ...expectedWebState, targetTabId: "tab-1" }],
-    ["desktop.web.openTab", { ...expectedWebState, openedTabId: "tab-1" }],
-    ["desktop.web.closeTab", { ...expectedWebState, closedTabId: "tab-2", closedSurface: false }],
-    ["desktop.web.switchTab", expectedWebState]
-  ]);
-  for (const [action, expectedResult] of webExpectations) {
-    const response = await handleDesktopActionRequest(options, {
-      action,
-      args: { surfaceId: "browser", tabId: "tab-1", url: "https://example.test/next" },
-      permissionMode: "full_access"
-    });
-    assert.deepEqual(response, { ok: true, action, result: expectedResult });
-    assert.equal(JSON.stringify(response).includes("guestId"), false);
-    assert.equal(JSON.stringify(response).includes("webContentsId"), false);
-  }
-
+  options.callRendererAction = async (request) => ({ requestId: request.requestId, action: request.action, ok: true,
+    result: request.action.startsWith("desktop.workpanel.") ? createWorkPanelRendererResult(request.action) : {
+      pageKey: "help", preference: { enabled: true, agentKey: "helper" }, desktopCopilotPages: { help: { enabled: true } }
+    } });
   const workPanelExpectations = new Map([
     ["desktop.workpanel.openTab", { workspace }],
-    ["desktop.workpanel.openWeb", { workspace }],
+    ["desktop.workpanel.openWeb", { workspace, surfaceId: "page:opened", containerId: "web:container", status: "ready" }],
     ["desktop.workpanel.refreshWeb", { workspace }],
     ["desktop.workpanel.activateTab", { workspace }],
     ["desktop.workpanel.closeTab", { closedItemId: "item-1", workspace }],
@@ -1219,38 +1120,22 @@ test("P1 renderer mutations expose exact bounded post-action state", async (t) =
   assert.deepEqual(invalidAgent.error.details.agentOptions, [{ value: "helper", label: "Helper" }]);
 });
 
-test("desktop.web.closeTab returns an explicit empty post-state after the final tab", async (t) => {
+test("Desktop web actions select one Surface through the shared CDP resolver", async (t) => {
   const { options } = createDesktopActionOptions(t);
-  options.callRendererAction = async (request) => ({
-    requestId: request.requestId,
-    action: request.action,
-    ok: true,
-    result: {
-      surface: null,
-      tabs: [],
-      activeTab: null,
-      closedTabId: "tab-1",
-      closedSurface: true,
-      remainingTabIds: [],
-      activeTabId: null
-    }
-  });
-  const response = await handleDesktopActionRequest(options, {
-    action: "desktop.web.closeTab",
-    args: { surfaceId: "browser", tabId: "tab-1" },
-    permissionMode: "full_access"
-  });
-  assert.deepEqual(response, {
-    ok: true,
-    action: "desktop.web.closeTab",
-    result: {
-      surface: null,
-      tabs: [],
-      activeTab: null,
-      closedTabId: "tab-1",
-      closedSurface: true
-    }
-  });
+  const calls = [];
+  options.callRendererAction = async () => { throw new Error("must not route to foreground renderer"); };
+  options.executeCdpCommand = async (request) => { calls.push(request); return { surfaceId: request.surfaceId, result: { success: true } }; };
+  for (const [action, method] of [["closeTab", "Surface.close"], ["reload", "Page.reload"], ["refreshSurface", "Page.reload"], ["navigate", "Page.navigate"], ["switchTab", "Page.bringToFront"], ["activateSurface", "Page.bringToFront"], ["openTab", "Surface.open"], ["goBack", "Surface.goBack"]]) {
+    const response = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.web." + action, args: { surfaceId: "page:exact", url: "https://example.test" },
+      source: { chatId: "trusted-chat" }, permissionMode: "full_access",
+    });
+    assert.equal(response.ok, true, action);
+    assert.deepEqual(response.result, { success: true });
+    assert.equal(calls.at(-1).method, method);
+    assert.equal(calls.at(-1).surfaceId, "page:exact");
+    assert.deepEqual(calls.at(-1).source, { chatId: "trusted-chat" });
+  }
 });
 
 test("desktop.workpanel.closeTab returns a null workspace when the reducer destroys it", async (t) => {
@@ -1328,6 +1213,9 @@ test("desktop.display routes to the Main renderer without confirmation", async (
 
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-user:'+'a'.repeat(64)})).toString('base64url')+'.s'});
+  options.services.getResponsiveServiceState = async () => ({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}});
+  options.webs = {...options.webs, webappRuntime:{...options.webs.webappRuntime,getStatus:()=>({status:'running',startedAt:123})}};
   const id = webappId("assistant-app");
   const webappDir = path.join(getDesktopWebappsDataRoot(options.app), id);
   const manifestPath = path.join(webappDir, "webapp.json");
@@ -1404,6 +1292,20 @@ test("WebApp assistant chat uses its configured Desktop agent and forwards the m
   assert.equal(helper.ok, true);
   assert.equal(helper.result.agentKey, "summary-agent");
   assert.equal(calls.completions.at(-1).agentKey, "summary-agent");
+
+  installedManifest.copilot = { agentKey: "fixed-writer", mustUseSkills: ["report-writer", "read-data"] };
+  fs.writeFileSync(manifestPath, JSON.stringify(installedManifest), "utf8");
+  const fixed = await handleWebappPageActionRequest(options, id, {
+    action: "assistant.chat", args: { message: "Use fixed Copilot", skillIds: ["report-writer"] }
+  });
+  assert.equal(fixed.ok, true);
+  assert.equal(fixed.action, "assistant.chat");
+  assert.equal(calls.completions.at(-1).agentKey, "fixed-writer");
+  assert.deepEqual(calls.completions.at(-1).mustUseSkills, ["report-writer"]);
+  const forgedSkill = await handleWebappPageActionRequest(options, id, {
+    action: "assistant.chat", args: { message: "hello", skillIds: ["unrelated-private-skill"] }
+  });
+  assert.equal(forgedSkill.error.code, "invalid_args");
 
   const oversized = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
@@ -2218,10 +2120,11 @@ test("WebApp Bridge capability list enables all public capabilities and distingu
     args: {}
   });
   assert.equal(response.ok, true);
-  assert.equal(response.result.bridgeVersion, 1);
+  // Legacy manifest metadata does not downgrade the current public SDK contract.
+  assert.equal(response.result.bridgeVersion, 2);
   const chat = response.result.capabilities.find((entry) => entry.id === "assistant.chat");
-  const clipboard = response.result.capabilities.find((entry) => entry.id === "native.clipboard.write");
-  const screen = response.result.capabilities.find((entry) => entry.id === "native.screen.capture");
+  const clipboard = response.result.capabilities.find((entry) => entry.id === "desktop.clipboard.write");
+  const screen = response.result.capabilities.find((entry) => entry.id === "desktop.screen.capture");
   assert.deepEqual({ status: chat.status, declared: chat.declared }, { status: "available", declared: true });
   assert.deepEqual({ status: clipboard.status, declared: clipboard.declared }, { status: "available", declared: true });
   assert.deepEqual({ status: screen.status, declared: screen.declared }, { status: "reserved", declared: false });
@@ -2315,6 +2218,9 @@ test("desktop action bridge listens on configured port and refreshes when config
 
 test("Desktop Action Bridge keeps WebApp page and backend token scopes separate", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-user:'+'a'.repeat(64)})).toString('base64url')+'.s'});
+  options.services.getResponsiveServiceState = async () => ({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}});
+  options.webs = {...options.webs, webappRuntime:{...options.webs.webappRuntime,getStatus:()=>({status:'running',startedAt:123})}};
   const port = await getFreeLoopbackPort();
   const id = webappId("scope-v5");
   const item = {
@@ -2561,41 +2467,17 @@ test("dedicated Desktop setting actions replace the removed generic Setting fami
   }
 });
 
-test("Desktop web actions retain page interaction while page reads use CDP", async (t) => {
+test("Desktop web actions retain page interaction through the Surface resolver", async (t) => {
   const { options } = createDesktopActionOptions(t);
-  const rendererActions = [];
-  options.callRendererAction = async (request) => {
-    rendererActions.push(request);
-    return {
-      requestId: request.requestId,
-      action: request.action,
-      ok: true,
-      result: { handled: request.action }
-    };
-  };
-
-  for (const action of [
-    "desktop.web.listSurfaces",
-    "desktop.web.getSurfaceState",
-    "desktop.web.interactElement",
-    "desktop.web.executeScript"
-  ]) {
-    const response = await handleDesktopActionRequest(options, {
-      action,
-      args: {},
-      permissionMode: "full_access"
-    });
-    assert.equal(response.ok, true, action);
-    assert.equal(response.result.handled, action);
+  const calls = [];
+  options.executeCdpCommand = async (request) => { calls.push(request); return { result: { handled: request.method } }; };
+  for (const [action, method] of [["listSurfaces", "Surface.list"], ["getSurfaceState", "Surface.getState"], ["interactElement", "Runtime.evaluate"], ["executeScript", "Runtime.evaluate"]]) {
+    const response = await handleDesktopActionRequest(options, { action: "desktop.web." + action,
+      args: { surfaceId: "page:exact", selector: "#button", action: "click", script: "document.title" }, permissionMode: "full_access" });
+    assert.equal(response.ok, true);
+    assert.equal(response.result.handled, method);
   }
-
-  assert.deepEqual(rendererActions.map((request) => request.action), [
-    "desktop.web.listSurfaces",
-    "desktop.web.getSurfaceState",
-    "desktop.web.interactElement",
-    "desktop.web.executeScript"
-  ]);
-
+  assert.equal(calls.length, 4);
   for (const action of [
     "desktop.web.getActiveSurface",
     "desktop.web.getPageContext",
@@ -2655,25 +2537,26 @@ test("desktop web exportArtifact writes provider bytes to Downloads without retu
   };
   options.getCurrentPageSnapshot = () => snapshot;
   options.getWebContentsById = (id) => id === 701 ? contents : null;
+  options.resolveWebSurface = async ({ surfaceId }) => ({ surfaceId, containerId: "app:poster", surfaceKind: "webapp", contents, validate: async () => undefined });
   options.getMainWindow = () => ({ isDestroyed: () => false });
   options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
 
   const first = await handleDesktopActionRequest(options, {
     action: "desktop.web.exportArtifact",
-    args: { format: "html" },
+    args: { surfaceId: "page:export", format: "html" },
     expectedPageKey: "poster-page"
   });
   const second = await handleDesktopActionRequest(options, {
     action: "desktop.web.exportArtifact",
-    args: { format: "html" }
+    args: { surfaceId: "page:export", format: "html" }
   });
   const pdf = await handleDesktopActionRequest(options, {
     action: "desktop.web.exportArtifact",
-    args: { format: "pdf" }
+    args: { surfaceId: "page:export", format: "pdf" }
   });
 
   assert.equal(first.ok, true);
-  assert.equal(first.result.surfaceId, "app:poster");
+  assert.equal(first.result.surfaceId, "page:export");
   assert.equal(first.result.filename, "结构化海报.html");
   assert.equal(first.result.mimeType, "text/html");
   assert.equal("data" in first.result, false);
@@ -2714,25 +2597,27 @@ test("desktop web exportArtifact rejects child surfaces, invalid payloads, and o
   };
   options.getCurrentPageSnapshot = () => ({ ...rootSnapshot, surfaceId: "copilot-dock" });
   options.getWebContentsById = () => contents;
+  options.resolveWebSurface = async ({ surfaceId }) => ({ surfaceId, containerId: "app:poster",
+    surfaceKind: options.getCurrentPageSnapshot().surfaceId === "app:poster" ? "webapp" : "service", contents, validate: async () => undefined });
   options.getMainWindow = () => ({ isDestroyed: () => false });
   options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
   const child = await handleDesktopActionRequest(options, {
     action: "desktop.web.exportArtifact",
-    args: { format: "png" }
+    args: { surfaceId: "page:export", format: "png" }
   });
   assert.equal(child.error.code, "current_webapp_required");
 
   options.getCurrentPageSnapshot = () => rootSnapshot;
   const invalid = await handleDesktopActionRequest(options, {
     action: "desktop.web.exportArtifact",
-    args: { format: "png" }
+    args: { surfaceId: "page:export", format: "png" }
   });
   assert.equal(invalid.error.code, "export_payload_invalid");
 
   mode = "oversized";
   const oversized = await handleDesktopActionRequest(options, {
     action: "desktop.web.exportArtifact",
-    args: { format: "png" }
+    args: { surfaceId: "page:export", format: "png" }
   });
   assert.equal(oversized.error.code, "export_too_large");
 });
@@ -2965,23 +2850,11 @@ test("desktop action HTTP and Agent Platform responses share the minimal pet res
   );
 });
 
-test("HTTP and Agent Platform receive the same projected P1 web result", async (t) => {
+test("HTTP and Agent Platform receive the same Surface command result", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const port = await getFreeLoopbackPort();
   t.after(() => stopDesktopActionBridge());
-  options.callRendererAction = async (request) => {
-    const state = createWebActionState();
-    return {
-      requestId: request.requestId,
-      action: request.action,
-      ok: true,
-      result: {
-        ...state,
-        targetTabId: "tab-1",
-        navigatedUrl: "https://example.test/next"
-      }
-    };
-  };
+  options.executeCdpCommand = async () => ({ surfaceId: "page:exact", result: { frameId: "frame-1" } });
   writeDesktopActionBridgeSettingsConfig(options.app, { schemaVersion: 1, port });
   const server = startDesktopActionBridge(options);
   await waitForListening(server);
@@ -3000,7 +2873,7 @@ test("HTTP and Agent Platform receive the same projected P1 web result", async (
   assert.equal(JSON.stringify(httpResponse).includes("guestId"), false);
   assert.equal(JSON.stringify(httpResponse).includes("webContentsId"), false);
   assert.deepEqual(Object.keys(httpResponse.result), [
-    "surface", "tabs", "activeTab", "targetTabId", "navigatedUrl"
+    "frameId"
   ]);
 });
 
@@ -3356,8 +3229,7 @@ test("desktop cdp bridge surfaces target timeout distinctly", async (t) => {
   options.executeCdpCommand = async () => {
     throw new DesktopCdpTimeoutError({
       method: "Runtime.evaluate",
-      targetId: "desktop-timeout",
-      surfaceId: "website:timeout",
+      surfaceId: "desktop-timeout",
       webContentsId: 42,
       url: "https://example.test/page",
       title: "Example",
@@ -3373,14 +3245,13 @@ test("desktop cdp bridge surfaces target timeout distinctly", async (t) => {
       expression: "1+1",
       returnByValue: true
     },
-    targetId: "desktop-timeout"
+    surfaceId: "desktop-timeout"
   });
 
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "target_timeout");
   assert.match(response.error.message, /Runtime\.evaluate/u);
-  assert.equal(response.error.details.targetId, "desktop-timeout");
-  assert.equal(response.error.details.surfaceId, "website:timeout");
+  assert.equal(response.error.details.surfaceId, "desktop-timeout");
   assert.deepEqual(response.error.details.paramKeys, ["expression", "returnByValue"]);
 });
 
@@ -3395,7 +3266,7 @@ test("desktop cdp bridge preserves current-surface target errors", async (t) => 
   const response = await handleDesktopCdpRequest(options, {
     method: "Runtime.evaluate",
     params: { expression: "1+1" },
-    targetId: "desktop-background-target"
+    surfaceId: "desktop-background-target"
   });
 
   assert.equal(response.ok, false);
@@ -3408,48 +3279,48 @@ test("public CDP JSON cannot provide an internal application capability", async 
   const calls = [];
   options.executeCdpCommand = async (request, scope) => { calls.push({ request, scope }); return { result: {} }; };
   const response = await handleDesktopCdpRequest(options, {
-    method: "Target.getTargets", surfaceId: "background-site", scope: { surfaceId: "background-site" },
+    method: "Surface.list", surfaceId: "background-site", scope: { surfaceId: "background-site" },
     siteCdpTarget: { registrationId: "forged" },
     source: { runId: "authorized-run", chatId: "authorized-chat", agentKey: "authorized-agent" },
   });
-  assert.equal(response.ok, true);
-  assert.deepEqual(calls, [{ request: { method: "Target.getTargets", params: {}, targetId: "", source: { chatId: "authorized-chat" } }, scope: undefined }]);
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "invalid_args");
+  assert.deepEqual(calls, []);
 });
 
-test("desktop cdp bridge normalizes Target.closeTarget ids and rejects conflicts", async (t) => {
+test("desktop cdp bridge normalizes Surface.close ids and rejects conflicts", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const calls = [];
   options.executeCdpCommand = async (request) => {
     calls.push(request);
     return {
-      targetId: request.targetId,
-      surfaceId: "website:current",
+      surfaceId: request.surfaceId,
       result: { success: true }
     };
   };
 
   const paramsResponse = await handleDesktopCdpRequest(options, {
-    method: "Target.closeTarget",
-    params: { targetId: "desktop-from-params" }
+    method: "Surface.close",
+    params: { surfaceId: "desktop-from-params" }
   });
   assert.equal(paramsResponse.ok, true);
   assert.deepEqual(paramsResponse.result, { success: true });
-  assert.equal(calls[0].targetId, "desktop-from-params");
+  assert.equal(calls[0].surfaceId, "desktop-from-params");
   assert.deepEqual(calls[0].params, {});
 
   const topLevelResponse = await handleDesktopCdpRequest(options, {
-    method: "Target.closeTarget",
-    targetId: "desktop-top-level",
+    method: "Surface.close",
+    surfaceId: "desktop-top-level",
     source: { chatId: "chat-owned", agentKey: "ignored-for-cdp" }
-  });
+  }, undefined, undefined, true);
   assert.equal(topLevelResponse.ok, true);
-  assert.equal(calls[1].targetId, "desktop-top-level");
+  assert.equal(calls[1].surfaceId, "desktop-top-level");
   assert.deepEqual(calls[1].source, { chatId: "chat-owned" });
 
   const conflictResponse = await handleDesktopCdpRequest(options, {
-    method: "Target.closeTarget",
-    targetId: "desktop-one",
-    params: { targetId: "desktop-two" }
+    method: "Surface.close",
+    surfaceId: "desktop-one",
+    params: { surfaceId: "desktop-two" }
   });
   assert.equal(conflictResponse.ok, false);
   assert.equal(conflictResponse.error.code, "invalid_args");

@@ -1,3 +1,4 @@
+import type { ExternalWebviewController } from "../pages/external-webview/ExternalWebviewPage";
 import { registerDesktopCloseShortcutHandler } from "../services/desktopCloseShortcutRegistry";
 import {
   AppstoreOutlined,
@@ -20,7 +21,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
   normalizeWorkPanelWebUrl,
@@ -98,6 +99,8 @@ type WorkPanelHostProps = {
   launcher: {
     agentKey: string;
     agentMode: string;
+    agentLabel: string;
+    chatLabel: string;
     projectEnabled: boolean;
     projectDisabledReason?: string;
     lastRunId?: string;
@@ -351,6 +354,9 @@ export function WorkPanelHost({
   const [webUrlError, setWebUrlError] = useState("");
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
   const [reviewPreloadUrl, setReviewPreloadUrl] = useState("");
+  const webControllers = useRef(new Map<string, ExternalWebviewController>());
+  const webDialogTransfers = useRef(new Set<string>());
+  const failedWebDialogTransfers = useRef(new Set<string>());
   const nativeHtmlControllers = useRef(new Map<string, HtmlDocumentController>());
   const [resourceReviewCapabilities, setResourceReviewCapabilities] = useState<Record<string, ResourceReviewCapability>>({});
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
@@ -564,6 +570,11 @@ export function WorkPanelHost({
     if (hasWorkPanelReviewDraft(session) && !force) return false;
     return dispatchCommand({ type: "closeItem", ownerChatId, itemId, ...(force ? { force: true } : {}) }).ok;
   };
+
+  useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogCloseRequested((transferId) => {
+    const dialog = stateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
+    if (dialog) closeItemWithReviewProtection(dialog.ownerChatId, dialog.itemId);
+  }), [dispatchCommand, t]);
 
   const closeOtherItemsWithReviewProtection = (ownerChatId: string, itemId: string) => {
     const workspace = stateRef.current.workspaces.find((candidate) => candidate.ownerChatId === ownerChatId);
@@ -1311,6 +1322,11 @@ export function WorkPanelHost({
       }
       return;
     }
+    if (result.actionId === "open-web-dialog" && currentItem.descriptor.kind === "web") {
+      failedWebDialogTransfers.current.clear();
+      await moveWebToDialog(ownerChatId, currentItem);
+      return;
+    }
     if (result.actionId === "copy-url" && item.descriptor.kind === "web") {
       let currentUrl = "";
       try {
@@ -1566,6 +1582,68 @@ export function WorkPanelHost({
     };
   }, [addMenuOwnerChatId, addMenuView]);
 
+  async function moveWebToDialog(ownerChatId: string, item: WorkPanelItem) {
+    if (item.descriptor.kind !== "web") return;
+    const transferKey = itemRuntimeKey(ownerChatId, item.itemId);
+    if (webDialogTransfers.current.has(transferKey) || failedWebDialogTransfers.current.has(transferKey)) return;
+    if (stateRef.current.dialogItems?.some((entry) => entry.ownerChatId === ownerChatId && entry.itemId === item.itemId)) return;
+    const anchor = stateRef.current.dialogItems?.find((entry) => entry.ownerChatId === ownerChatId);
+    const guest = findItemWebview(ownerChatId, item.itemId);
+    const sourceGuestId = guest ? readWebviewGuestId(guest) : null;
+    if (!anchor && !sourceGuestId) return;
+    webDialogTransfers.current.add(transferKey);
+    let transferId: string | undefined;
+    let transferPhase = "prepare";
+    try {
+      const prepared = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog(anchor
+        ? { action: "prepareSibling", transferId: anchor.transferId, itemId: item.itemId, stableKey: item.stableKey,
+            url: stateRef.current.webItemUrls?.[transferKey] || item.descriptor.url, title: item.title,
+            ...(sourceGuestId ? { sourceGuestId } : {}) }
+        : { action: "prepare", sourceGuestId: sourceGuestId!, agentLabel: launcher.agentLabel || launcher.agentKey,
+            chatLabel: launcher.chatLabel || ownerChatId });
+      transferId = prepared.transferId;
+      if (!prepared.ok || !transferId || !prepared.surfaceId || prepared.ownerChatId !== ownerChatId) throw new Error("prepare_failed");
+      transferPhase = "presentation";
+      let moved = false;
+      flushSync(() => {
+        moved = dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId,
+          dialog: { ownerChatId, itemId: item.itemId, surfaceId: prepared.surfaceId!, transferId: transferId! },
+        }).ok;
+      });
+      if (!moved) throw new Error("item_unavailable");
+      transferPhase = "open";
+      const opened = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "open", transferId });
+      if (!opened.ok) throw new Error("open_failed");
+      dispatchCommand({ type: "stopReview", ownerChatId, itemId: item.itemId });
+      dispatchCommand({ type: "markReviewInvalid", ownerChatId, itemId: item.itemId, reason: "preview_reloaded" });
+    } catch {
+      console.warn("[work-panel-web-dialog] transfer failed", { phase: transferPhase, itemId: item.itemId, sourceGuestId });
+      failedWebDialogTransfers.current.add(transferKey);
+      if (transferId) {
+        await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId }).catch(() => undefined);
+        dispatchCommand({ type: "setDialogPresentation", ownerChatId, itemId: item.itemId, dialog: null });
+      }
+      modal.error({ content: t("chatWorkPanel.resourceActions.failed") });
+    } finally { webDialogTransfers.current.delete(transferKey); }
+  }
+
+  // A dialog is a presentation of the Chat's complete web workspace. Newly
+  // opened items use the existing Main reservation even when another Chat is active.
+  useEffect(() => {
+    for (const workspace of state.workspaces) {
+      if (!state.dialogItems?.some((entry) => entry.ownerChatId === workspace.ownerChatId)) continue;
+      for (const item of workspace.items) {
+        if (item.descriptor.kind === "web") void moveWebToDialog(workspace.ownerChatId, item);
+      }
+    }
+  }, [state]);
+
+  useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogOpenRequested(({ transferId, url }) => {
+    const source = stateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
+    const normalized = normalizeWorkPanelWebUrl(url);
+    if (source && normalized) dispatchCommand({ type: "openItem", ownerChatId: source.ownerChatId, descriptor: { kind: "web", url: normalized } });
+  }), [dispatchCommand]);
+
   useEffect(() => window.electronAPI.onWebviewOpenTab(({
     target,
     navigationKind,
@@ -1745,11 +1823,22 @@ export function WorkPanelHost({
         if (!url) return actionError("invalid_url", "url must use http: or https: without credentials.");
         const bootstrapFailure = ensureTrustedWorkspace();
         if (bootstrapFailure) return bootstrapFailure;
-        return execute({
-          type: "openItem",
-          ownerChatId,
-          descriptor: { kind: "web", url },
-        });
+        const opened = execute({ type: "openItem", ownerChatId, descriptor: { kind: "web", url } });
+        if (!opened.ok) return opened;
+        const itemId = opened.result.item?.itemId;
+        const deadline = Date.now() + 8_000;
+        while (itemId && Date.now() < deadline) {
+          const item = current()?.items.find((candidate) => candidate.itemId === itemId);
+          if (!item) return actionError("surface_not_found", "The opened page was closed.");
+          const controller = webControllers.current.get(itemRuntimeKey(ownerChatId, itemId));
+          if (controller) {
+            const state = await controller.getState();
+            const page = state.tabs.find((tab) => tab.tabId === state.activeTabId);
+            if (page) return { ok: true, result: { ...opened.result, containerId: state.containerId, surfaceId: page.surfaceId, status: page.isLoading ? "loading" : "ready" } };
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+        return actionError("surface_not_ready", "The page opened but has not registered yet. Use Surface.list to rediscover it; do not open another page.");
       }
       case "desktop.workpanel.openLocalFile": {
         const claimId = typeof args.claimId === "string" ? args.claimId.trim() : "";
@@ -1820,6 +1909,12 @@ export function WorkPanelHost({
           candidate.descriptor.kind === "web" && candidate.descriptor.url === url,
         );
         if (!item) return actionError("target_unavailable", "WorkPanel WebView item is unavailable.");
+        const dialog = stateRef.current.dialogItems?.find((entry) => entry.ownerChatId === ownerChatId && entry.itemId === item.itemId);
+        if (dialog) {
+          const refreshed = await window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "reload", transferId: dialog.transferId });
+          return refreshed.ok ? execute({ type: "activateItem", ownerChatId, itemId: item.itemId })
+            : actionError("target_unavailable", "WorkPanel dialog is unavailable.");
+        }
         const webview = findItemWebview(ownerChatId, item.itemId);
         if (!webview) return actionError("target_unavailable", "WorkPanel WebView guest is unavailable.");
         try {
@@ -1967,6 +2062,7 @@ export function WorkPanelHost({
           >
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
               {workspace.items.map((item) => {
+                if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
                 const active = workspace.activeItemId === item.itemId;
                 const closable = item.closable && !item.pinned;
                 const overview = item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
@@ -2046,7 +2142,20 @@ export function WorkPanelHost({
             <div className="chat-work-panel-body">
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
+                  if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
+                  // New dialog-bound items must not briefly mount a second guest
+                  // in the main window. Existing guests stay until Main captures them.
+                  if (item.descriptor.kind === "web" &&
+                      state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId) &&
+                      !webControllers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId)) &&
+                      !failedWebDialogTransfers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId))) return null;
                   const active = visible && workspace.activeItemId === item.itemId;
+                  // Read-only observers belong to the visible, committed Main Chat.
+                  // A hidden guest can fail registration after a Chat switch and
+                  // retain a permanently closed Frame Port when shown again.
+                  // Recreate these guests on activation; keep editable items alive.
+                  if (!active && item.descriptor.kind === "webclient" &&
+                    (item.descriptor.module === "overview" || item.descriptor.module === "debug")) return null;
                   const resourceProfile = localResourceProfile(item);
                   const supportsLocalResourceActions = Boolean(
                     resourceProfile &&
@@ -2217,6 +2326,13 @@ export function WorkPanelHost({
                           allowTabUrlCopy
                           allowUserTabCreation={false}
                           cdpActive={false}
+                          initialTabId={item.itemId}
+                          onControllerReady={item.descriptor.kind === "web" ? (controller) => {
+                            const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
+                            if (controller) webControllers.current.set(key, controller);
+                            else webControllers.current.delete(key);
+                          } : undefined}
+                          onCloseSurface={() => dispatchCommand({ type: "closeItem", ownerChatId: workspace.ownerChatId, itemId: item.itemId })}
                           chrome="browser"
                           enableDesktopWebActions={false}
                           onLoadingChange={(isLoading) => {
@@ -2314,7 +2430,7 @@ export function WorkPanelHost({
                             : undefined}
                           url={item.descriptor.kind === "local-file"
                             ? createWorkPanelLocalFileUrl(item.descriptor.handleId, item.descriptor.fileName)
-                            : item.descriptor.url}
+                            : state.webItemUrls?.[itemRuntimeKey(workspace.ownerChatId, item.itemId)] || item.descriptor.url}
                           workPanelToolbarKind={item.descriptor.kind === "local-file" ? "document" : "web"}
                         />
                       ) : item.descriptor.kind === "local-file" ? (

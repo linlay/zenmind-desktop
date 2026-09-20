@@ -1,3 +1,5 @@
+import { invalidateWebappActionTokens } from "../modules/webs";
+import { registerArtifactActionIpc } from "../modules/artifacts";
 import type {
   MarketListResult
 } from "../../shared/contracts";
@@ -173,6 +175,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   });
   registerChatWorkPanelTabContextMenuIpcHandlers(ipcMain, {
     getMainWindow: options.getMainWindow,
+    browserSurfaces: options.browserSurfaces,
     app,
     platform: options.platform,
   });
@@ -198,7 +201,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       const declaredSize = Number(response.headers.get("content-length") || "0");
       if (declaredSize > 100 * 1024 * 1024) return null;
       const bytes = Buffer.from(await response.arrayBuffer());
-      if (!bytes.length || bytes.length > 100 * 1024 * 1024) return null;
+      if (bytes.length > 100 * 1024 * 1024) return null;
       return {
         bytes,
         mimeType: response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "",
@@ -208,6 +211,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       return null;
     }
   };
+  registerArtifactActionIpc(ipcMain, {
+    getMainWindow: options.getMainWindow,
+    getChatInfo: (chatId) => assistantBridge.getChatInfo(chatId),
+    fetchResource: ({ chatId, relativePath }) => fetchDocumentResource({
+      chatId, relativePath: relativePath.split("/").map(encodeURIComponent).join("/"),
+    }),
+    showSaveDialog: options.showSaveDialog,
+  });
   registerChatWorkPanelDocumentHtmlIpcHandlers(ipcMain, {
     app,
     showSaveDialog: options.showSaveDialog,
@@ -290,7 +301,13 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     consumeFirstInstallBootstrapNavigation: options.consumeFirstInstallBootstrapNavigation
   });
 
-  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces, {
+    isMainWindow: (senderWebContentsId) => {
+      const mainWindow = options.getMainWindow();
+      return Boolean(mainWindow && !mainWindow.isDestroyed() &&
+        !mainWindow.webContents.isDestroyed() && mainWindow.webContents.id === senderWebContentsId);
+    },
+  });
   const canonicalChatSync = registerCanonicalChatSyncIpc(ipcMain, {
     resolveRenderer: (ownerWebContentsId) => {
       const mainWindow = options.getMainWindow();
@@ -487,9 +504,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       total + item.bytes,
     0);
     const mapConnection = (
-      source: "desktop-main" | "desktop-btw",
+      source: "desktop-main" | "desktop-btw" | "desktop-explain",
       connection: typeof brokerDiagnostics.connections.primary,
-      lane: "primary" | "btw",
+      lane: "primary" | "btw" | "selection-explain",
     ) => ({
       source,
       phase: connection.phase,
@@ -513,6 +530,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       connections: {
         primary: mapConnection("desktop-main", brokerDiagnostics.connections.primary, "primary"),
         btw: mapConnection("desktop-btw", brokerDiagnostics.connections.btw, "btw"),
+        "selection-explain": mapConnection("desktop-explain", brokerDiagnostics.connections["selection-explain"], "selection-explain"),
       },
       broker: {
         pendingRequestCount: brokerDiagnostics.pendingRequestCount,
@@ -573,7 +591,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
           : {}),
       })),
       runRecovery: brokerDiagnostics.replay.map((run: {
-        lane: "primary" | "btw"; runId: string; chatId: string; lastSeq: number;
+        lane: "primary" | "btw" | "selection-explain"; runId: string; chatId: string; lastSeq: number;
         lastEventType?: string; lastEventSeq?: number; lastPlanTaskEventType?: string;
         lastPlanTaskEventSeq?: number; state: string; terminalReason?: string;
         terminalSource?: string; rootObserverCount: number; cloneCount: number;
@@ -781,7 +799,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     stopTunnelHubRuntime,
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
     stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut(),
-    invalidateRealtimeIdentity: () => assistantBridgeRuntime.realtimeBroker.rotateIdentity()
+    invalidateRealtimeIdentity: () => {
+      // Old page/backend grants must not follow the next signed-in account.
+      invalidateWebappActionTokens();
+      assistantBridgeRuntime.realtimeBroker.rotateIdentity();
+    }
   });
   registerEnterpriseChatIpcHandlers(
     ipcMain,

@@ -1,3 +1,4 @@
+import { resolveWebappAction } from "../../../../shared/webapp-bridge";
 import { randomBytes } from "node:crypto";
 import type { WebappEntry } from "../../../../shared/contracts";
 import {
@@ -9,6 +10,7 @@ type WebappActionGrant = {
   webappId: string;
   scope: WebappCapabilityScope;
   actions: Set<string>;
+  controller: AbortController;
 };
 
 const grants = new Map<string, WebappActionGrant>();
@@ -17,6 +19,7 @@ export function issueWebappActionToken(item: WebappEntry, scope: WebappCapabilit
   const token = randomBytes(32).toString("base64url");
   grants.set(token, {
     webappId: item.id,
+    controller: new AbortController(),
     scope,
     actions: new Set(getWebappAllowedActions(item, scope))
   });
@@ -25,6 +28,7 @@ export function issueWebappActionToken(item: WebappEntry, scope: WebappCapabilit
 
 export function revokeWebappActionToken(token: string) {
   if (token) {
+    grants.get(token)?.controller.abort();
     grants.delete(token);
   }
 }
@@ -35,15 +39,18 @@ export function authorizeWebappActionToken(
   requiredScope?: WebappCapabilityScope
 ) {
   const grant = grants.get(token);
-  return grant && grant.actions.has(action) && (!requiredScope || grant.scope === requiredScope)
-    ? { ok: true as const, webappId: grant.webappId, scope: grant.scope }
+  return grant && grant.actions.has(resolveWebappAction(action)) && (!requiredScope || grant.scope === requiredScope)
+    ? { ok: true as const, webappId: grant.webappId, scope: grant.scope, signal: grant.controller.signal }
     : { ok: false as const, webappId: "", scope: null };
 }
 
+export function invalidateWebappActionTokens() {
+  for (const grant of grants.values()) grant.controller.abort();
+  grants.clear();
+}
+
 export const __actionTokenTestInternals = {
-  clear() {
-    grants.clear();
-  },
+  clear: invalidateWebappActionTokens,
   size() {
     return grants.size;
   }

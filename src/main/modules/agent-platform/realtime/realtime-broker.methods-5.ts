@@ -6,7 +6,7 @@ import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
 import {
   type AgentPlatformRealtimeFrame
 } from "./agent-platform-realtime-client";
-import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, DESKTOP_AWCP_INVOKE_TYPE, DESKTOP_AWCP_SNAPSHOT_TYPE, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, RealtimeLane, brokerError, framePayload, isRecord, pushIdentity, readText } from "./realtime-broker.shared";
+import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, DESKTOP_AWCP_INVOKE_TYPE, DESKTOP_AWCP_MANUAL_TYPE, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, RealtimeLane, brokerError, framePayload, isRecord, pushIdentity, readText } from "./realtime-broker.shared";
 
 export function RealtimeBroker_handlePush_1(self: RealtimeBrokerMethodContext, frame: AgentPlatformRealtimeFrame) {
     const type = readText(frame.type);
@@ -61,7 +61,7 @@ export function RealtimeBroker_handleInboundRequest_2(self: RealtimeBrokerMethod
         return;
     const type = readText(frame.type);
     if (lane === "primary" &&
-        (getDesktopActionDefinition(type) || type === DESKTOP_AWCP_SNAPSHOT_TYPE || type === DESKTOP_AWCP_INVOKE_TYPE || type === DESKTOP_CDP_REQUEST_TYPE)) {
+        (getDesktopActionDefinition(type) || type === DESKTOP_AWCP_MANUAL_TYPE || type === DESKTOP_AWCP_INVOKE_TYPE || type === DESKTOP_CDP_REQUEST_TYPE)) {
         void self.handleDesktopBridgeRequest(id, type, frame);
         return;
     }
@@ -74,7 +74,9 @@ export function RealtimeBroker_handleInboundRequest_2(self: RealtimeBrokerMethod
             code: 409,
             msg: lane === "primary"
                 ? "Desktop cannot handle this request in the current view"
-                : "Desktop BTW lane does not support inbound requests",
+                : lane === "btw"
+                    ? "Desktop BTW lane does not support inbound requests"
+                    : "Desktop selection explanation lane does not support inbound requests",
             data: {
                 code: errorType,
                 message: lane === "primary"
@@ -110,12 +112,18 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     self.inboundDesktopRequests.set(id, controller);
     try {
         const isCdp = type === DESKTOP_CDP_REQUEST_TYPE;
-        const isAwcpSnapshot = type === DESKTOP_AWCP_SNAPSHOT_TYPE;
+        const isAwcpManual = type === DESKTOP_AWCP_MANUAL_TYPE;
         const isAwcpInvoke = type === DESKTOP_AWCP_INVOKE_TYPE;
-        const isAwcp = isAwcpSnapshot || isAwcpInvoke;
+        const isAwcp = isAwcpManual || isAwcpInvoke;
         const isDesktopAction = !isCdp && !isAwcp;
-        if (isAwcpSnapshot && Object.keys(frame.payload).length > 0) {
-            throw brokerError("protocol_error", "AWCP snapshot payload must be empty");
+        if (isAwcpManual) {
+            const keys = Object.keys(frame.payload).filter((key) => key !== "surfaceId");
+            const isIndexRequest = keys.length === 0;
+            const isSectionRequest = keys.sort().join(",") === "revision,section" &&
+                typeof frame.payload.section === "string" && typeof frame.payload.revision === "string";
+            if (!isIndexRequest && !isSectionRequest) {
+                throw brokerError("protocol_error", "AWCP manual payload accepts section and revision together, plus an optional surfaceId");
+            }
         }
         let actionRequest: Record<string, unknown> | null = null;
         let actionSource: Record<string, unknown> = {};
@@ -129,6 +137,9 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
                 throw brokerError("protocol_error", "Desktop Action source must include runId and chatId and at most one Run owner");
             }
             await self.awaitRunActionReadiness(type, source, controller.signal);
+            if (type.startsWith("desktop.web.") && !self.siteControlGrants.resolve(source)) {
+                await self.awaitRunActionReadiness("desktop.workpanel.getState", source, controller.signal);
+            }
             if (controller.signal.aborted)
                 return;
             actionSource = source;
@@ -147,20 +158,28 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
             throw brokerError("protocol_error", "CDP source must include Run, Chat and exactly one owner");
         }
         let result: unknown;
-        if (isAwcpSnapshot || isAwcpInvoke) {
-            const scope = self.siteControlGrants.resolve(actionSource);
+        if (isAwcpManual || isAwcpInvoke) {
+            let scope = self.siteControlGrants.resolve(actionSource);
+            const { surfaceId, ...awcpPayload } = frame.payload;
+            if (surfaceId !== undefined && (typeof surfaceId !== "string" || !surfaceId.trim())) throw brokerError("protocol_error", "Invalid AWCP surfaceId");
             if (!scope) {
-                throw brokerError("site_control_unavailable", "The source Run has no active page control capability");
+                await self.awaitRunActionReadiness("desktop.workpanel.getState", actionSource, controller.signal);
+                if (controller.signal.aborted) return;
+                if (typeof surfaceId !== "string" || !surfaceId.trim()) throw brokerError("protocol_error", "WorkPanel AWCP requires an exact surfaceId");
+                scope = self.siteControlGrants.resolveWorkPanel(actionSource, surfaceId,
+                    () => provider.acquireWorkPanelAwcpScope(surfaceId, readText(actionSource.chatId)));
             }
-            result = isAwcpSnapshot
-                ? await provider.awcpSnapshot(id, scope, controller.signal)
-                : await provider.awcpInvoke(id, frame.payload, scope, controller.signal);
+            result = isAwcpManual
+                ? await provider.awcpManual(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined)
+                : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);
         }
         else if (isDesktopAction) {
-            result = await provider.action(actionRequest as Record<string, unknown>);
+            result = await provider.action(actionRequest as Record<string, unknown>, type.startsWith("desktop.web.") ? self.siteControlGrants.resolve(actionSource) : undefined);
         }
         else {
-            result = await provider.cdp(frame.payload, self.siteControlGrants.resolve(cdpSource), controller.signal);
+            const scope = self.siteControlGrants.resolve(cdpSource);
+            if (!scope) await self.awaitRunActionReadiness("desktop.workpanel.getState", cdpSource, controller.signal);
+            result = await provider.cdp(frame.payload, scope, controller.signal);
         }
         if (controller.signal.aborted)
             return;
@@ -182,7 +201,7 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     catch (error) {
         if (!controller.signal.aborted) {
             const errorCode = error instanceof Error ? readText((error as Error & { code?: string }).code) || error.name : "";
-            if ((type === DESKTOP_AWCP_SNAPSHOT_TYPE || type === DESKTOP_AWCP_INVOKE_TYPE) && errorCode) {
+            if ((type === DESKTOP_AWCP_MANUAL_TYPE || type === DESKTOP_AWCP_INVOKE_TYPE) && errorCode) {
                 const statusCode = error instanceof Error && typeof (error as Error & { statusCode?: unknown }).statusCode === "number"
                     ? (error as Error & { statusCode: number }).statusCode
                     : errorCode === "site_control_unavailable" ? 409 : 502;

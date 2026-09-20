@@ -8,3 +8,5 @@ export { registerAgentWebclientBridgeIpcHandlers } from "./ipc";
 export { ensureProviderRegisterApiKey, getProviderRegisterMode, clearAccessTokenProviderKeys, invalidateProviderRegistration } from "./provider-register";
 export type { AgentPlatformRealtimeFrame } from "./realtime/agent-platform-realtime-client";
 export { AGENT_PLATFORM_KNOWN_PUSH_TYPES, RealtimeBroker } from "./realtime/realtime-broker";
+
+export { readEmbeddedAuthorization } from "./connector-auth-browser";

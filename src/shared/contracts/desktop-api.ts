@@ -1,3 +1,4 @@
+import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
 import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
@@ -70,8 +71,16 @@ import type {
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
-import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
+import type {
+  WebviewSelectionToolbarExecuteRequest,
+  WebviewSelectionToolbarExecuteResult,
+  WebviewSelectionToolbarStateListener,
+} from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
+import type {
+  SelectionExplainWindowState,
+  SelectionExplainWindowStateListener,
+} from "../selection-explain-window";
 import type {
   EmbeddedCdpSurfaceRegistration,
   EmbeddedCdpSurfaceRegistrationResult,
@@ -298,7 +307,7 @@ export interface AgentRealtimeDebugLogicalSession {
 }
 
 export interface AgentRealtimeDebugRunRecovery {
-  lane: "primary" | "btw";
+  lane: "primary" | "btw" | "selection-explain";
   runId: string;
   chatId: string;
   lastSeq: number;
@@ -317,7 +326,7 @@ export interface AgentRealtimeDebugRunRecovery {
 }
 
 export interface AgentRealtimeDebugConnection {
-  source: "desktop-main" | "desktop-btw";
+  source: "desktop-main" | "desktop-btw" | "desktop-explain";
   phase: AgentWebclientConnectionPhase;
   generation: number;
   physicalConnectionCount: 0 | 1;
@@ -343,6 +352,7 @@ export interface AgentRealtimeDebugSnapshot {
   connections: {
     primary: AgentRealtimeDebugConnection;
     btw: AgentRealtimeDebugConnection;
+    "selection-explain": AgentRealtimeDebugConnection;
   };
   broker: {
     pendingRequestCount: number;
@@ -842,7 +852,7 @@ export type DesktopWindowState = {
   windowControlsMasked: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
-export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "skills" | "mcpConnectors";
+export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "shareManagement";
 export type DesktopGlobalSearchShortcutSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type DesktopGlobalSearchShortcut =
   | { kind: "action"; actionId: DesktopGlobalSearchActionShortcutId }
@@ -878,6 +888,11 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  artifacts: {
+    act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;
+    list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;
+    onChanged: (listener: () => void) => () => void;
+  };
   connectorAuthBrowser: {
     open(input: import("./agent-webclient-bridge").ConnectorAuthBrowserIdentity & { browser?: "embedded" }): Promise<void>;
     dismiss(input: import("./agent-webclient-bridge").ConnectorAuthBrowserIdentity): Promise<void>;
@@ -897,6 +912,10 @@ export interface DesktopApi {
     ) => Promise<SidebarContextMenuPopupResult>;
   };
   chatWorkPanelTabContextMenu: {
+    webDialog: (request: import("../chat-work-panel-tab-context-menu").WorkPanelWebDialogRequest) => Promise<import("../chat-work-panel-tab-context-menu").WorkPanelWebDialogResult>;
+    onWebDialogOpenRequested: (listener: (request: import("../chat-work-panel-tab-context-menu").WorkPanelWebDialogOpenRequest) => void) => () => void;
+    onWebDialogRestoreRequested: (listener: (transferId: string) => void) => () => void;
+    onWebDialogCloseRequested: (listener: (transferId: string) => void) => () => void;
     popup: (
       request: ChatWorkPanelTabContextMenuPopupRequest
     ) => Promise<ChatWorkPanelTabContextMenuPopupResult>;
@@ -1018,7 +1037,7 @@ export interface DesktopApi {
     exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
     exportChatHtml: (chatId: string) => Promise<AssistantNavActionResult>;
     shareChat: (request: AssistantConversationShareRequest) => Promise<AssistantConversationShareCreateResult>;
-    listChatShares: (chatId: string) => Promise<AssistantConversationShareListResult>;
+    listConversationShares: () => Promise<AssistantConversationShareListResult>;
     revokeChatShare: (shareId: string) => Promise<AssistantConversationShareRevokeResult>;
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => () => void;
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => () => void;
@@ -1073,9 +1092,18 @@ export interface DesktopApi {
   serviceWebview: {
     getPreloadPath: () => Promise<string>;
     getPreloadUrl: () => Promise<string>;
+    executeSelectionToolbarAction: (
+      request: WebviewSelectionToolbarExecuteRequest
+    ) => Promise<WebviewSelectionToolbarExecuteResult>;
     onSelectionToolbarState: (
       listener: WebviewSelectionToolbarStateListener
     ) => () => void;
+  };
+  selectionExplain: {
+    getState: () => Promise<SelectionExplainWindowState | null>;
+    minimize: () => Promise<{ ok: boolean }>;
+    close: () => Promise<{ ok: boolean }>;
+    onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
     importConnector(): Promise<MarketCommandResult>;
