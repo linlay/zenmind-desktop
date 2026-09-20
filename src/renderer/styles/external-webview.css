@@ -57,6 +57,7 @@
   --browser-top: #dee6ee;
   --browser-surface: rgba(255, 255, 255, 0.96);
   --browser-surface-strong: #ffffff;
+  /* Transparent external pages need a white canvas even when browser chrome is dark. */
   --browser-frame-bg: #ffffff;
   --browser-tab: rgba(95, 99, 104, 0.12);
   --browser-tab-active: #ffffff;
@@ -131,7 +132,6 @@
   --browser-top: #2b3138;
   --browser-surface: rgba(41, 45, 54, 0.96);
   --browser-surface-strong: #2d323a;
-  --browser-frame-bg: #1f2329;
   --browser-tab: rgba(0, 0, 0, 0.18);
   --browser-tab-active: #3a4048;
   --browser-tab-hover: rgba(255, 255, 255, 0.18);
