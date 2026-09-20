@@ -6152,8 +6152,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
   );
-  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*8px;/);
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*12px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*12px;/);
   assert.match(globalStyles, /\.app-shell\s*\{[^}]*--windows-titlebar-background:\s*var\(--bg-base\);/);
   assert.doesNotMatch(
     globalStyles,
