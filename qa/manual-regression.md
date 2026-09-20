@@ -418,6 +418,7 @@
 ## 上传 Reference 预览回归
 
 - macOS / Windows 分别上传 PNG、PDF、DOCX、文本；新建与历史 Chat 的卡片均可打开，运行中可阅读，再次点击聚焦同一 Tab。
+- New Chat 先上传 DOCX 再首次发送：上传预建 Chat 后，query 受理应将原 guest 的 `newChat` 路由提升为 canonical Chat；不切换聊天，立即点击附件即可显示 WorkPanel 预览。受理前切换到其他 Chat 或新的 New Chat 时，迟到结果不得改写当前页面。
 - 验证 Chat 根目录文件与 `references/` 子目录文件；路径越界、编码遍历、跨 Chat 与逃逸 symlink 仍须拒绝。
 - DOCX 查看中文表格、内嵌图片、翻页、缩放与刷新；损坏、加密、超限、无权限、文件不存在时显示可操作错误，不自动下载。
 - 图片与文本修改 Reference 只能创建 Artifact；DOCX 保持只读，下载拿到原文件。
