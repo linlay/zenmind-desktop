@@ -5760,12 +5760,11 @@ export function AppSidebar({
             ) : null}
             {args.groupId === "webs" ? (
               <>
-                <Tooltip content={t("sidebar.website.actions")}>
+                <Tooltip content={t("sidebar.website.actions")} hoverOnly>
                   <button
                     type="button"
                     className="assistant-worker-icon-button sidebar-website-add-button"
                     aria-label={t("sidebar.website.actions")}
-                    title={t("sidebar.website.actions")}
                     tabIndex={-1}
                     onClick={(event) => {
                       event.stopPropagation();

@@ -5073,15 +5073,6 @@ export function SettingsPage({
                 <h1>{t("settings.websites.label")}</h1>
                 <p>{t("settings.websites.description")}</p>
               </div>
-              <div className="control-center-dashboard-metrics" aria-label={t("settings.websites.metricsAria")}>
-                <div className="control-center-metric-card">
-                  <span className="summary-kicker">{t("settings.websites.metricEntries")}</span>
-                  <div className="control-center-metric-value">
-                    <strong>{websiteItems.length}</strong>
-                    <span className="control-center-metric-chip">{t("settings.websites.metricPinned")}</span>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="control-center-shell web-settings-shell">
