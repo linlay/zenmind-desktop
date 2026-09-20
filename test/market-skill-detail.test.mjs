@@ -8,7 +8,7 @@ const { registerMarketplaceIpcHandlers } = require("../dist-electron/main/module
 const apiBaseUrl = "https://example.invalid/market/api/v1";
 const app = {};
 
-test("skill docs use only fixed public endpoint without token, cookies or identity fields", async () => {
+test("anonymous skill docs use the fixed endpoint without token, cookies or identity fields", async () => {
   const calls = [];
   let authCalls = 0;
   const result = await readMarketSkillContent(app, "demo-skill", {

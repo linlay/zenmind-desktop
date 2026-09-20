@@ -673,14 +673,18 @@ export async function installSkillFromCommand(
   }
 }
 
+// Reserved skill identities owned by Platform's builtin connectors (connector/builtin.go).
+// They are runtime capabilities, not user-installed market skills.
+const PLATFORM_BUILTIN_SKILL_IDS = new Set(["builtin-dbx", "builtin-httpx"]);
+
 export function listInstalledSkills(app: App): MarketItem[] {
   const root = getSkillsCenterDir(app);
   if (!fs.existsSync(root)) {
     return [];
   }
   return fs.readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !entry.name.includes(".backup-"))
-    .map((entry) => {
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !entry.name.includes(".backup-") && !PLATFORM_BUILTIN_SKILL_IDS.has(entry.name.toLowerCase()))
+    .map((entry): MarketItem => {
       const installPath = path.join(root, entry.name);
       const metadata = readSkillMetadata(installPath);
       return {
@@ -695,7 +699,7 @@ export function listInstalledSkills(app: App): MarketItem[] {
         installedVersion: metadata.version,
         installPath
       };
-    });
+    }).filter(item => !PLATFORM_BUILTIN_SKILL_IDS.has(item.id.toLowerCase()));
 }
 
 export async function uninstallSkill(

@@ -67,6 +67,8 @@ export type MarketplaceOptions = MarketListOptions & {
   containerHubAuthToken?: string;
   fetchImpl?: typeof fetch;
   issueMarketAccessToken?: MarketAccessTokenIssuer;
+  /** Main-process identity snapshot; null keeps browsing anonymous. Never supplied by renderer IPC. */
+  readMarketViewer?: () => string | null;
   createContainerHubClient?: (config: {
     baseURL: string;
     authToken?: string;

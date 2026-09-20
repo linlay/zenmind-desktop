@@ -1116,6 +1116,8 @@ export interface DesktopApi {
     setConnectorEnabled(input: { connectorId: string; enabled: boolean }): Promise<MarketConnectorConnection>;
     disconnectConnector(id: string): Promise<MarketConnectorDisconnectResult>;
     getConnectorTokenSchema(id: string): Promise<MarketConnectorTokenSchema>;
+    getCustomMcpConfig(): Promise<{ path: string; content: string }>;
+    saveCustomMcpConfig(input: { content: string }): Promise<{ path: string; content: string }>;
     saveConnectorCredentials(input: { connectorId: string; credentials: Record<string, string> }): Promise<MarketConnectorConnection>;
     setConnectorAgent(input: { connectorId: string; agentKey: string; enabled: boolean }): Promise<MarketConnectorAgentState>;
     getConnectorAgent(agentKey: string): Promise<MarketConnectorAgentState>;

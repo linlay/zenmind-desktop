@@ -57,7 +57,7 @@ test('connector IPC rejects foreign windows/frames before file selection or muta
  const handlers=new Map(),frame={},webContents={mainFrame:frame,isDestroyed:()=>false};
  let dialogs=0;
  registerMarketplaceIpcHandlers({handle:(name,fn)=>handlers.set(name,fn)},{app:{},mainWindow:{webContents,isDestroyed:()=>false},showArchiveDialog:async()=>{dialogs++;return {canceled:true,filePaths:[]};},t:key=>key});
- for(const key of ['market.importConnector','market.createConnector','market.connectConnector','market.saveConnectorCredentials','market.setConnectorAgent']) {
+ for(const key of ['market.getCustomMcpConfig','market.saveCustomMcpConfig','market.importConnector','market.createConnector','market.connectConnector','market.saveConnectorCredentials','market.setConnectorAgent']) {
   await assert.rejects(handlers.get(key)({sender:{},senderFrame:frame},{}),/forbidden/);
   await assert.rejects(handlers.get(key)({sender:webContents,senderFrame:{}},{}),/forbidden/);
  }

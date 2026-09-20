@@ -68,6 +68,7 @@ import { SkillMarketplace } from "./SkillMarketplace";
 import { MarketCardDescription } from "./MarketCardDescription";
 import { ConnectorMarketplace } from "./ConnectorMarketplace";
 import { SkillDetailDialog } from "./SkillDetailDialog";
+import { MarketIdentityBoundary } from "./MarketIdentityBoundary";
 
 type RangeMode = "all" | "installed" | "favorites" | "updates";
 type InstalledSkillSource = "cloud" | "local";
@@ -585,7 +586,11 @@ function storefrontDetailRows(
     .filter((row) => row.value.length > 0);
 }
 
-export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }: MarketViewProps) {
+export function StorefrontMarket(props: MarketViewProps) {
+  return <MarketIdentityBoundary><StorefrontMarketContent {...props} /></MarketIdentityBoundary>;
+}
+
+function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }: MarketViewProps) {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
@@ -606,6 +611,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const [pendingSkillUninstall, setPendingSkillUninstall] = useState<MarketItem | null>(null);
   const searchFilterRef = useRef<HTMLDivElement | null>(null);
   const marketLoadGeneration = useRef(0);
+  const marketMounted = useRef(true);
   const marketActionInFlight = useRef(false);
   const skillLaunchInFlight = useRef(false);
 
@@ -637,6 +643,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const shouldShowMarketStatus = Boolean(feedback) || Boolean(marketOffline && marketStatusMessage);
 
   async function loadMarket(force = false, preserveFeedback = false) {
+    if (!marketMounted.current) return null;
     const generation = ++marketLoadGeneration.current;
     setIsLoadingMarket(true);
     try {
@@ -651,6 +658,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       } catch {
         includeFavorites = false;
       }
+      if (generation !== marketLoadGeneration.current) return null;
       setIsMarketAuthenticated(includeFavorites);
       const next = await command({ includeFavorites });
       if (generation !== marketLoadGeneration.current) return null;
@@ -682,7 +690,25 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   }
 
   useEffect(() => {
+    marketMounted.current = true;
     void loadMarket(false);
+    return () => {
+      marketMounted.current = false;
+      marketLoadGeneration.current++;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Skill Center can delete resources without touching Desktop's market records.
+    const refreshOnReturn = () => {
+      if (document.visibilityState === "visible") void loadMarket(false, true);
+    };
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
   }, []);
 
   useEffect(() => window.electronAPI.webs.onChanged((event) => {

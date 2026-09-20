@@ -156,13 +156,26 @@ async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Pro
 export async function listSkillMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketSectionResult> {
   const [result, packages] = await Promise.all([
     loadSkillCatalog(app, options),
-    listPlatformSkillPackages()
+    skillMarketPlatformCall ? listPlatformSkillPackages(false).catch(() => null) : Promise.resolve(null)
   ]);
   const localSkills = listInstalledSkills(app);
+  const localById = new Map(localSkills.map(skill => [skill.id, skill]));
+  // Market records describe provenance, not proof that a resource still exists.
+  // Do not delete them during reads; skill-package lookup outages must not look like deletion.
+  const records = readInstalledRecords(app).flatMap(record => {
+    if (record.type !== "skill") return [record];
+    if (record.skillPackage) {
+      if (packages === null) return [record];
+      const current = packages.find(pkg => pkg.id === record.id);
+      return current ? [{ ...record, version: current.version || record.version }] : [];
+    }
+    const current = localById.get(record.resourceKey || record.id);
+    return current ? [{ ...record, version: current.installedVersion || current.version, installPath: current.installPath }] : [];
+  });
   return {
     items: mergePlatformSkillPackageState(
-      mergeCatalogItems(app, result.catalog.items, localSkills),
-      packages,
+      mergeCatalogItems(app, result.catalog.items, localSkills, records),
+      packages ?? [],
       localSkills
     ),
     offline: result.offline,

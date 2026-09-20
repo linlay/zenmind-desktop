@@ -1,5 +1,6 @@
+import { ConnectorIcon } from "./ConnectorIcon";
 import { Alert, Button, Modal, Tag } from "antd";
-import { LinkOutlined } from "@ant-design/icons";
+import { MessageOutlined } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MarketItem } from "@shared/contracts";
@@ -7,7 +8,9 @@ import type { MarketConnectorConnection } from "@shared/contracts/market-connect
 import type { TranslationKey } from "../../../shared/i18n";
 import { useI18n } from "../../i18n/useI18n";
 import type { MarketConnectorFlowRuntime } from "./useMarketConnectorFlow";
-import "./SkillDetailDialog.css";
+import { BrandMark } from "../../components/BrandMark";
+import { PRODUCT_NAME } from "../../../shared/brand";
+import "./ConnectorLifecycle.css";
 
 export function ConnectorStateTag({ connection, installed, checking = false }: { connection?: MarketConnectorConnection; installed: boolean; checking?: boolean }) {
   const { t } = useI18n();
@@ -19,38 +22,57 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect }: 
   if (!item) return null;
   const connection = runtime.getConnection(item);
   const installed = runtime.isInstalled(item);
+  const error = runtime.getError(item);
   const blocked = runtime.busy || runtime.loading || !!runtime.stateError || (!installed && item.state === "incompatible");
-  const suggestions = [
-    ["market.connector.flow.usageLearn", "market.connector.flow.draftLearn"],
-    ["market.connector.flow.usageRead", "market.connector.flow.draftRead"],
-    ["market.connector.flow.usageTask", "market.connector.flow.draftTask"],
-  ] as const;
-  return <Modal open centered width={820} footer={null} title={item.name} onCancel={onClose}>
-    <div className="skill-detail-layout connector-detail-layout">
-      <div className="skill-detail-main">
-        <header className="skill-detail-heading"><span className="connector-detail-icon"><LinkOutlined /></span><div><h2>{item.name}</h2><ConnectorStateTag connection={connection} installed={installed} checking={runtime.loading && !connection} /></div></header>
-        {runtime.error && <Alert type="error" showIcon message={runtime.error.startsWith("market.") ? t(runtime.error as TranslationKey) : runtime.error} action={<Button size="small" disabled={runtime.busy} onClick={() => void runtime.retry()}>{t("market.connector.flow.retry")}</Button>} />}
-        {runtime.flow?.item.id === item.id && runtime.busy && <Alert type="info" message={t(`market.connector.flow.phase.${runtime.flow.phase}` as TranslationKey)} action={<Button size="small" onClick={() => void runtime.cancel()}>{t("market.connector.flow.cancel")}</Button>} />}
-        <p className="skill-detail-description">{item.description || t("market.discovery.noDescription")}</p>
-        <div className="skill-detail-tags">{item.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
-        {item.readme && <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{item.readme}</ReactMarkdown>}
-        <h3>{t("market.connector.flow.usage")}</h3>
-        <div className="connector-suggestions">{suggestions.map(([label, draft]) => <Button key={label} disabled={blocked} onClick={() => void runtime.start(item, true, true, t(draft, { name: item.name }))}>{t(label)}</Button>)}</div>
-        <p className="skill-detail-hint">{t("market.connector.flow.accountScope")}</p>
+  const fallback = ["draftLearn", "draftRead", "draftTask"].map(key => t(`market.connector.flow.${key}` as TranslationKey, { name: item.name }));
+  let suggestions = fallback;
+  try {
+    const prompts: unknown = JSON.parse(item.metadata?.prompts || "null");
+    if (Array.isArray(prompts)) {
+      const values = prompts.filter((value): value is string => typeof value === "string" && !!value.trim()).map(value => value.trim()).slice(0, 3);
+      if (values.length) suggestions = values;
+    }
+  } catch { /* Invalid optional metadata does not block connecting. */ }
+  return <Modal open centered width={600} footer={null} title={null} onCancel={onClose}
+    styles={{ content: { borderRadius: 20, padding: 0, overflow: "hidden" }, body: { maxHeight: "calc(100dvh - 80px)", overflow: "hidden" } }}>
+    <div className="connector-detail-dialog" key={item.id}>
+      <header className="connector-detail-header">
+      <div className="connector-detail-brand-row" aria-hidden="true">
+        <BrandMark className="connector-detail-brand" ariaLabel={PRODUCT_NAME} />
+        <span className="connector-detail-dots">···</span>
+        <span className="connector-detail-icon"><ConnectorIcon item={item} /></span>
       </div>
-      <aside className="skill-detail-side">
-        <dl><dt>{t("market.storefront.detail.version")}</dt><dd>{item.version}</dd><dt>{t("market.storefront.detail.author")}</dt><dd>{item.author || "—"}</dd></dl>
-        {runtime.stateError && <Alert type="warning" showIcon message={t("market.connector.flow.stateUnavailable")} description={runtime.stateError} action={<Button size="small" onClick={() => void runtime.refresh()}>{t("market.connector.flow.retry")}</Button>} />}
-        <div className="connector-detail-actions is-column">
+      <h2 className="connector-detail-title">{t("market.connector.flow.detailTitle", { name: item.name })}</h2>
+      <p className="connector-detail-description">{item.description || t("market.discovery.noDescription")}</p>
+      <div className="connector-detail-status"><ConnectorStateTag connection={connection} installed={installed} checking={runtime.loading && !connection} /></div>
+      {error && <Alert type="error" showIcon closable onClose={runtime.dismissError} message={error.startsWith("market.") ? t(error as TranslationKey) : error} action={<Button size="small" disabled={runtime.busy} onClick={() => void runtime.retry(item)}>{t("market.connector.flow.retry")}</Button>} />}
+      {runtime.flow?.item.id === item.id && runtime.busy && <Alert type="info" message={t(`market.connector.flow.phase.${runtime.flow.phase}` as TranslationKey)} action={<Button size="small" onClick={() => void runtime.cancel()}>{t("market.connector.flow.cancel")}</Button>} />}
+      {runtime.flow?.item.id === item.id && runtime.busy && runtime.flow.session?.authorizationUrl && <div className="connector-detail-actions"><Button disabled={runtime.openingAuth} onClick={() => void runtime.reopenAuth()}>{t("market.connector.flow.reopenAuthorization")}</Button></div>}
+      {runtime.stateError && <Alert type="warning" showIcon message={t("market.connector.flow.stateUnavailable")} description={runtime.stateError} action={<Button size="small" onClick={() => void runtime.refresh()}>{t("market.connector.flow.retry")}</Button>} />}
+      <div className="connector-detail-actions connector-detail-primary-actions">
+        <Button type="primary" disabled={blocked || (connection?.readiness !== "ready" && installed && connection?.capabilities.canConnect === false)} loading={runtime.busy && runtime.flow?.item.id === item.id} onClick={() => void runtime.start(item, true, true)}>{t(connection?.readiness === "ready" ? "market.connector.flow.try" : "market.connector.flow.connect")}</Button>
+        {connection?.bound && connection.capabilities.canDisconnect && <Button disabled={runtime.busy} onClick={() => onDisconnect(item)}>{t("market.connector.flow.disconnect")}</Button>}
+      </div>
+      {!installed && item.state === "incompatible" && <Alert type="warning" message={item.message || t("market.state.incompatible")} />}
+      </header>
+      <div className="connector-detail-scroll">
+      <section className="connector-detail-usage">
+        <h3>{t("market.connector.flow.usage")}</h3>
+        <div className="connector-suggestions">{suggestions.map((prompt, index) => <Button key={`${index}-${prompt}`} icon={<MessageOutlined />} disabled={blocked} onClick={() => void runtime.start(item, true, true, prompt)}>{prompt}</Button>)}</div>
+      </section>
+      <details className="connector-detail-more">
+        <summary>{t("market.connector.flow.details")}</summary>
+        <div className="connector-detail-info">
+        <dl><div><dt>{t("market.storefront.detail.version")}</dt><dd>{item.version}</dd></div><div><dt>{t("market.storefront.detail.author")}</dt><dd>{item.author || "—"}</dd></div></dl>
+        <div className="connector-detail-actions">
           {item.state === "update-available" && <Button disabled={blocked} onClick={() => void runtime.mutate(item, "update")}>{t("market.action.update")} · {item.installedVersion} → {item.version}</Button>}
-          {connection?.readiness === "ready" ? <Button type="primary" disabled={blocked} onClick={() => void runtime.start(item, true, true)}>{t("market.connector.flow.try")}</Button>
-            : <Button type="primary" disabled={blocked || (installed && connection?.capabilities.canConnect === false)} loading={runtime.busy && runtime.flow?.item.id === item.id} onClick={() => void runtime.start(item, true, true)}>{t("market.connector.flow.connect")}</Button>}
-          {connection?.bound ? <Button disabled={blocked || (!connection.enabled && !connection.capabilities.canEnable)} onClick={() => void (connection.enabled ? runtime.mutate(item, "disable") : runtime.start(item, true))}>{t(connection.enabled ? "market.connector.flow.disable" : "market.connector.flow.enable")}</Button>
-            : <Button disabled={blocked} onClick={() => void runtime.start(item, false)}>{t("market.connector.flow.connectAccount")}</Button>}
-          {connection?.bound && connection.capabilities.canDisconnect && <Button danger disabled={runtime.busy} onClick={() => onDisconnect(item)}>{t("market.connector.flow.disconnect")}</Button>}
+          {connection?.bound ? <Button disabled={blocked || (!connection.enabled && !connection.capabilities.canEnable)} onClick={() => void (connection.enabled ? runtime.mutate(item, "disable") : runtime.start(item, true))}>{t(connection.enabled ? "market.connector.flow.disable" : "market.connector.flow.enable")}</Button> : <Button disabled={blocked} onClick={() => void runtime.start(item, false)}>{t("market.connector.flow.connectAccount")}</Button>}
         </div>
-        {!installed && item.state === "incompatible" && <Alert type="warning" message={item.message || t("market.state.incompatible")} />}
-      </aside>
+        </div>
+        <p className="connector-detail-scope">{t("market.connector.flow.accountScope")}</p>
+        {item.readme && <div className="connector-detail-readme"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{item.readme}</ReactMarkdown></div>}
+      </details>
+      </div>
     </div>
   </Modal>;
 }

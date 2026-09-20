@@ -11,7 +11,7 @@ import type {
   MarketItemType,
   MarketPlatformSpec
 } from "../../../shared/contracts";
-import { getDesktopDeviceInfo } from "../identity";
+import { getDesktopDeviceInfo, getDesktopSsoStatus } from "../identity";
 import { t } from "../../support/i18n/main-i18n";
 import { Catalog, InstallableMarketType, InstalledRecord, MARKET_AUTH_ME_PATH, MAX_MARKET_DOWNLOAD_BYTES, MarketAccessTokenReason, MarketCatalogItemNotFoundError, MarketplaceCatalogResult, MarketplaceOptions, asObject, asString, configuredMarketAccessTokenIssuer, downloadsRoot, getMarketApiBaseUrl, getMarketplaceCatalogUrl, installedRecordsPath, isDesktopInstallableAsset, normalizeAsset, normalizeCatalog, normalizeMarketItemType, normalizePlatformSpec, readInstalledRecords, resolveMarketFetchImpl, shouldRequireInstallableAsset } from "./common.part-1";
 
@@ -200,6 +200,45 @@ export async function requestMarketJson(
   return response.json() as Promise<unknown>;
 }
 
+/** Visibility remains server-authoritative; this key only fences in-flight responses. */
+export function readMarketViewer(app: App, options: MarketplaceOptions = {}): string | null {
+  if (options.readMarketViewer) return options.readMarketViewer();
+  const status = getDesktopSsoStatus();
+  return status.authenticated && status.user
+    ? JSON.stringify([status.user.issuer, status.user.sub, status.user.audience]) : null;
+}
+
+export async function requestVisibleMarketJson(
+  app: App, url: string, options: MarketplaceOptions = {}, label = "market visibility request"
+) {
+  const viewer = readMarketViewer(app, options);
+  if (!viewer) {
+    const result = await requestPublicMarketJson(app, url, options, label);
+    if (readMarketViewer(app, options) !== viewer) throw new Error("Market identity changed; reload the catalog.");
+    return result;
+  }
+  // Credentials go only to the configured API, never a custom public catalog host.
+  const base = getMarketApiBaseUrl(app, options).replace(/\/+$/u, "");
+  const target = new URL(url);
+  const trusted = base && target.origin === new URL(base).origin && target.pathname.startsWith(new URL(base).pathname + "/");
+  if (!trusted) throw new Error("Authenticated market request must use the configured API.");
+  const guardedOptions: MarketplaceOptions = {
+    ...options,
+    issueMarketAccessToken: async (targetApp, reason) => {
+      if (readMarketViewer(app, options) !== viewer) throw new Error("Market identity changed; reload the catalog.");
+      const token = await issueMarketAccessToken(targetApp, reason, options);
+      if (!token || readMarketViewer(app, options) !== viewer) throw new Error("Market authentication is unavailable; sign in again.");
+      return token;
+    }
+  };
+  // Catalog allows anonymous fallback even for invalid tokens: validate first so
+  // an expired login gets the standard refresh/retry instead of silently losing private items.
+  await verifyMarketAuthentication(app, base, guardedOptions);
+  const result = await requestMarketJson(app, url, guardedOptions, label, { cache: "no-store" });
+  if (readMarketViewer(app, options) !== viewer) throw new Error("Market identity changed; reload the catalog.");
+  return result;
+}
+
 export async function requestPublicMarketJson(
   app: App,
   url: string,
@@ -209,6 +248,7 @@ export async function requestPublicMarketJson(
   const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
   const response = await fetchImpl(url, {
     credentials: "omit",
+    cache: "no-store",
     redirect: "error"
   });
   if (!response.ok) {
@@ -226,7 +266,8 @@ export async function verifyMarketAuthentication(
     app,
     `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`,
     options,
-    "market authentication request"
+    "market authentication request",
+    { cache: "no-store" }
   ));
   const user = asObject(response.user);
   if (!asString(user.id).trim()) {
@@ -562,7 +603,7 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
     };
   }
   try {
-    const catalog = normalizeCatalog(await requestPublicMarketJson(app, catalogUrl, options, label));
+    const catalog = normalizeCatalog(await requestVisibleMarketJson(app, catalogUrl, options, label));
     return {
       catalog,
       offline: false,
@@ -639,8 +680,7 @@ export function catalogItemToMarketItem(item: MarketCatalogItem, record: Install
   };
 }
 
-export function mergeCatalogItems(app: App, catalogItems: MarketCatalogItem[], localItems: MarketItem[]) {
-  const records = readInstalledRecords(app);
+export function mergeCatalogItems(app: App, catalogItems: MarketCatalogItem[], localItems: MarketItem[], records = readInstalledRecords(app)) {
   const localByKey = new Map(localItems.map((item) => [`${item.type}:${item.id}`, item]));
   const result = catalogItems.map((item) => {
     const key = `${item.type}:${item.id}`;

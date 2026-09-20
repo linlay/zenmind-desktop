@@ -1,3 +1,4 @@
+import { getCustomMcpConfig, saveCustomMcpConfig } from "./custom-mcp-config";
 import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesystem/download-paths";
 import { readMarketSkillContent } from "./skill-detail";
 import { readMarketSkillPins, saveMarketSkillPins } from "./skill-market";
@@ -98,6 +99,8 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
   ipcMain.handle("market.getSkillPins", async (event: any) => { assertPinSender(event); return readMarketSkillPins(); });
   ipcMain.handle("market.saveSkillPins", async (event: any, input: unknown) => { assertPinSender(event); return saveMarketSkillPins(input); });
   const connectorHandlers = {
+    getCustomMcpConfig: () => getCustomMcpConfig(app),
+    saveCustomMcpConfig: (input: unknown) => runServiceMutation(() => saveCustomMcpConfig(app, input)),
     createConnector: createCustomConnector,
     getConnectorConnections: readConnectorConnections,
     getConnectorConnection: readConnectorConnection,

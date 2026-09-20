@@ -1,6 +1,8 @@
+import { ConnectorMessages } from "./ConnectorMessages";
+import { ConnectorIcon } from "./ConnectorIcon";
 import { useState, type ReactNode } from "react";
-import { CheckOutlined, LinkOutlined, LoadingOutlined, PlusCircleOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Modal } from "antd";
+import { CheckOutlined, LoadingOutlined, MessageOutlined, PlusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { Modal } from "antd";
 import { useNavigate } from "react-router-dom";
 import type { MarketItem } from "@shared/contracts";
 import type { TranslationKey } from "../../../shared/i18n";
@@ -9,7 +11,8 @@ import { useI18n } from "../../i18n/useI18n";
 import { MarketCardDescription } from "./MarketCardDescription";
 import { MarketPageFrame } from "./MarketPageFrame";
 import { getMarketTabDefinitions, matchesMarketItemQuery, type MarketTab } from "./marketPageModel";
-import { ConnectorDetailDialog, ConnectorStateTag } from "./ConnectorDetailDialog";
+import { ConnectorDetailDialog } from "./ConnectorDetailDialog";
+import { ConnectorMcpManagerDialog } from "./ConnectorMcpManagerDialog";
 import { ConnectorCustomDialog } from "./ConnectorCustomDialog";
 import { ConnectorCredentialsDialog } from "./ConnectorCredentialsDialog";
 import { useMarketConnectorFlow } from "./useMarketConnectorFlow";
@@ -27,6 +30,7 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [customOpen, setCustomOpen] = useState(false);
+  const [mcpManagerOpen, setMcpManagerOpen] = useState(false);
   const [localItems, setLocalItems] = useState<MarketItem[]>([]);
   const [query, setQuery] = useState("");
   const [detailItem, setDetailItem] = useState<MarketItem | null>(null);
@@ -42,40 +46,38 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   return <MarketPageFrame activeTab="mcps" tabs={getMarketTabDefinitions(t)} onTabChange={props.onTabChange}
     toolbar={<div className="skill-discovery-toolbar"><label className="skill-discovery-search"><SearchOutlined aria-hidden="true" />
       <input type="search" aria-label={t("market.connector.search")} placeholder={t("market.connector.search")} value={query} onChange={event => setQuery(event.target.value)} /></label>
-      <button type="button" className="skill-discovery-outline" onClick={() => setCustomOpen(true)}><PlusCircleOutlined aria-hidden="true" />{t("market.connector.custom")}</button></div>}>
+      <button type="button" className="skill-discovery-outline" onClick={() => setMcpManagerOpen(true)}><PlusCircleOutlined aria-hidden="true" />{t("market.connector.custom")}</button></div>}>
     <div className="skill-discovery connector-discovery">
+      <ConnectorMessages runtime={runtime} />
       {props.feedback}
-      {runtime.stateError && <div className="connector-market-status"><Alert type="warning" showIcon message={t("market.connector.flow.stateUnavailable")} description={runtime.stateError} /><Button onClick={() => void runtime.refresh()}>{t("market.connector.flow.retry")}</Button></div>}
-      {runtime.error && <div className="connector-market-status"><Alert type="error" showIcon message={message(runtime.error)} /><Button disabled={runtime.busy} onClick={() => void runtime.retry()}>{t("market.connector.flow.retry")}</Button>{runtime.flow?.session && !runtime.busy && <Button onClick={() => void runtime.cancel()}>{t("market.connector.flow.cancel")}</Button>}</div>}
-      {runtime.notice && <div className="connector-market-status"><Alert type="info" showIcon message={message(runtime.notice)} /></div>}
-      {runtime.flow && runtime.busy && runtime.flow.phase !== "credentials" && <div className="connector-market-status"><Alert type="info" message={`${runtime.flow.item.name} · ${t(`market.connector.flow.phase.${runtime.flow.phase}` as TranslationKey)}`} />
-        {runtime.flow.session?.authorizationUrl && <>
-          <Button disabled={runtime.openingAuth} onClick={() => void runtime.reopenAuth("embedded")}>{t("connectorAuth.openInside")}</Button>
-          <Button disabled={runtime.openingAuth} onClick={() => void runtime.reopenAuth("system")}>{t("connectorAuth.openOutside")}</Button>
-        </>}<Button onClick={() => void runtime.cancel()}>{t("market.connector.flow.cancel")}</Button></div>}
       <div className="skill-discovery-scroll"><div className="skill-discovery-grid" aria-busy={props.loading || runtime.loading}>
         {visible.map(item => {
           const connection = runtime.getConnection(item), installed = runtime.isInstalled(item);
           const ready = connection?.readiness === "ready";
           const checking = runtime.loading && !connection;
+          const statusLabel = checking ? t("market.connector.flow.checking") : connection ? t(`market.connector.flow.state.${connection.readiness}` as TranslationKey) : t(installed ? "market.connector.flow.stateUnavailable" : "market.connector.flow.notInstalled");
+          const statusTone = ready ? "ready" : installed || checking ? "pending" : "idle";
+          const actionLabel = t(checking ? "market.connector.flow.checking" : ready ? "market.connector.flow.try" : installed ? "market.connector.flow.installedAwaitingConnection" : "market.connector.flow.connect");
           const disabled = runtime.busy || runtime.loading || !!runtime.stateError || (!installed && item.state === "incompatible");
-          return <article className="skill-discovery-card" key={item.id}>
-            <div className="skill-discovery-card-head"><span className={`skill-discovery-icon tone-${item.id.length % 6}`} aria-hidden="true"><LinkOutlined /></span>
-              <button type="button" className="skill-discovery-name" title={item.name} onClick={() => setDetailItem(item)}>{item.name}</button>
-              <button type="button" className="skill-discovery-install" disabled={disabled} aria-label={`${item.name}: ${t(checking ? "market.connector.flow.checking" : ready ? "market.connector.flow.try" : "market.connector.flow.connect")}`}
-                title={t(checking ? "market.connector.flow.checking" : ready ? "market.connector.flow.try" : "market.connector.flow.connect")} onClick={() => void runtime.start(item, true, true)}>
-                {checking || (runtime.busy && runtime.flow?.item.id === item.id) ? <LoadingOutlined /> : ready ? <CheckOutlined /> : <PlusOutlined />}
-              </button></div>
+          return <article className="skill-discovery-card connector-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
+            onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) setDetailItem(item); }}
+            onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailItem(item); } }}>
+            <div className="skill-discovery-card-head"><span className={`skill-discovery-icon tone-${item.id.length % 6}`} aria-hidden="true"><ConnectorIcon item={item} /></span>
+              <div className="connector-card-title"><button type="button" className="skill-discovery-name" title={item.name} onClick={() => setDetailItem(item)}>{item.name}</button>
+                <span className={`connector-runtime-dot is-${statusTone}`} role="img" aria-label={statusLabel} title={statusLabel} /></div>
+              <div className="connector-card-actions">
+                {item.state === "update-available" && <button type="button" className="skill-discovery-install connector-card-update" disabled={disabled} aria-label={`${item.name}: ${t("market.action.update")}`} title={t("market.action.update")} onClick={() => void runtime.mutate(item, "update")}><ReloadOutlined aria-hidden="true" /></button>}
+                {item.state !== "update-available" && <button type="button" className="skill-discovery-install" disabled={disabled} aria-label={`${item.name}: ${actionLabel}`}
+                  title={!installed && item.state === "incompatible" ? item.message || t("market.state.incompatible") : actionLabel} onClick={() => { if (installed && !ready) setDetailItem(item); else void runtime.start(item, true, true); }}>
+                  {checking || (runtime.busy && runtime.flow?.item.id === item.id) ? <LoadingOutlined aria-hidden="true" /> : ready ? <MessageOutlined aria-hidden="true" /> : installed ? <CheckOutlined aria-hidden="true" /> : <PlusOutlined aria-hidden="true" />}
+                </button>}
+              </div></div>
             <MarketCardDescription text={item.description || t("market.discovery.noDescription")} onDetail={() => setDetailItem(item)} />
-            <div className="skill-discovery-card-footer"><ConnectorStateTag connection={connection} installed={installed} checking={checking} />
-              {item.state === "update-available" && <Button className="connector-card-action" type="link" size="small" disabled={disabled} onClick={() => void runtime.mutate(item, "update")}>{t("market.action.update")}</Button>}
-              {ready && <Button className="connector-card-action" type="link" size="small" disabled={disabled} onClick={() => void runtime.start(item, true, true)}>{t("market.connector.flow.try")}</Button>}
-              {!installed && item.state === "incompatible" && <span className="skill-discovery-kind">{item.message || t("market.state.incompatible")}</span>}
-            </div>
           </article>;
         })}
       </div>{!visible.length && <div className="skill-discovery-empty" role="status">{t(props.loading ? "market.storefront.loading" : "market.connector.empty")}</div>}</div>
     </div>
+    <ConnectorMcpManagerDialog open={mcpManagerOpen} onClose={() => setMcpManagerOpen(false)} onSaved={() => { void runtime.refresh(); props.onChanged?.(); }} onAdvanced={() => { setMcpManagerOpen(false); setCustomOpen(true); }} />
     <ConnectorCustomDialog open={customOpen} onClose={() => setCustomOpen(false)} onManage={props.onManage} onSaved={(item, connect) => {
       setLocalItems(previous => [...previous.filter(value => value.connectorId !== item.connectorId), item]); setDetailItem(item); props.onChanged?.(); void runtime.refresh();
       if (connect) void runtime.start(item, true, true);
