@@ -535,7 +535,7 @@ export function createRuntimeEnvResetFailure(
 }
 
 export async function resetBundledRuntimeEnv(
-  app: AppPathReader & AppPackageReader,
+  app: AppPathReader & AppPackageReader & { isReady?: () => boolean },
   platform: NodeJS.Platform = process.platform,
   options: {
     resourcesRoot?: string;
@@ -544,6 +544,27 @@ export async function resetBundledRuntimeEnv(
   } = {}
 ): Promise<RuntimeEnvResetResult> {
   const runtimeRoot = resolveRuntimeRoot(app, platform);
+  // A live Desktop can have services using the runtime even when its browser
+  // profile was explicitly configured elsewhere. Only offline callers may reset.
+  if (app.isReady?.()) {
+    throw createRuntimeEnvResetFailure(t("envBootstrap.resetRequiresOffline"), { runtimeRoot });
+  }
+  // Moving a live Chromium profile is unsafe even after Platform is stopped.
+  // Offline callers may not expose Electron profile paths; real Desktop does.
+  const pathApi = pathApiForResolvedRoot(platform, runtimeRoot);
+  for (const name of ["userData", "sessionData"] as const) {
+    let profileRoot: string;
+    try {
+      profileRoot = app.getPath(name);
+    } catch {
+      continue;
+    }
+    if (!profileRoot) continue;
+    const relative = pathApi.relative(pathApi.resolve(runtimeRoot), pathApi.resolve(profileRoot));
+    if (relative === "" || (!pathApi.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${pathApi.sep}`))) {
+      throw createRuntimeEnvResetFailure(t("envBootstrap.resetActiveProfile"), { runtimeRoot });
+    }
+  }
   if (platform !== "darwin" && platform !== "win32") {
     throw createRuntimeEnvResetFailure(t("envBootstrap.resetUnsupportedPlatform"), {});
   }

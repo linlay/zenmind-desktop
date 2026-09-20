@@ -110,7 +110,7 @@ test("platform candidates keep fallbacks within the current CPU architecture", (
 });
 
 function createApp(root) {
-  return {
+  const app = {
     isPackaged: false,
     getVersion() {
       return "0.3.40";
@@ -122,6 +122,70 @@ function createApp(root) {
       if (name === "temp") return path.join(root, "temp");
       throw new Error(`unexpected getPath(${name})`);
     }
+  };
+  configureSkillMarketPlatformCaller(createSkillPlatformMock(app));
+  return app;
+}
+
+// Explicit fake service for installer tests. Production never mutates these
+// target paths; this helper emulates the Platform snapshot/CAS contract. Capture
+// service-side filesystem functions so tests can forbid Desktop live-tree reads.
+function createSkillPlatformMock(app) {
+  const io = Object.fromEntries(["lstatSync", "readFileSync", "readdirSync", "rmSync", "mkdirSync", "writeFileSync"].map(name => [name, fs[name].bind(fs)]));
+  function snapshot(target) {
+    try { io.lstatSync(target); } catch (error) {
+      if (error.code === "ENOENT") return { exists: false, revision: "missing", entries: [] };
+      throw error;
+    }
+    const hash = createHash("sha256"), entries = [];
+    function visit(relative) {
+      const full = path.join(target, relative), stat = io.lstatSync(full);
+      assert.equal(stat.isSymbolicLink(), false);
+      const directory = stat.isDirectory();
+      assert.ok(directory || stat.isFile());
+      const bytes = directory ? Buffer.alloc(0) : io.readFileSync(full);
+      hash.update(JSON.stringify([relative, directory, bytes.length])); hash.update(bytes);
+      if (relative) entries.push({ relative, directory, bytes, mode: stat.mode & 0o777 });
+      if (directory) for (const name of io.readdirSync(full).sort()) visit(relative ? `${relative}/${name}` : name);
+    }
+    visit("");
+    return { exists: true, revision: hash.digest("hex"), entries };
+  }
+  return async (targetPath, options) => {
+    if (targetPath === "/api/admin/skill-packages") return [];
+    assert.equal(targetPath, "/api/admin/skills/transaction");
+    assert.equal(options.method, "POST");
+    const { key, operation, expectedRevision, archiveBase64 } = options.body;
+    const target = getSkillInstallDir(app, key);
+    if (operation === "snapshot") {
+      const current = snapshot(target), zip = new JSZip();
+      for (const entry of current.entries) {
+        if (entry.directory) zip.folder(entry.relative);
+        else zip.file(entry.relative, entry.bytes, { unixPermissions: entry.mode });
+      }
+      return { key, exists: current.exists, revision: current.revision,
+        ...(current.exists ? { archiveBase64: await zip.generateAsync({ type: "base64", platform: "UNIX" }) } : {}) };
+    }
+    assert.ok(operation === "replace" || operation === "delete");
+    const prepared = [];
+    if (operation === "replace") {
+      const zip = await JSZip.loadAsync(Buffer.from(archiveBase64, "base64"));
+      for (const entry of Object.values(zip.files)) prepared.push({ name: entry.name, dir: entry.dir, bytes: entry.dir ? null : await entry.async("nodebuffer") });
+    }
+    // No await between comparison and filesystem mutation: this models the
+    // server transaction lock, not a Desktop preflight check.
+    if (snapshot(target).revision !== expectedRevision) throw Object.assign(new Error("skill revision conflict"), { status: 409 });
+    io.rmSync(target, { recursive: true, force: true });
+    if (operation === "replace") {
+      io.mkdirSync(target, { recursive: true });
+      for (const entry of prepared) {
+        const file = path.join(target, entry.name);
+        if (entry.dir) io.mkdirSync(file, { recursive: true });
+        else { io.mkdirSync(path.dirname(file), { recursive: true }); io.writeFileSync(file, entry.bytes); }
+      }
+    }
+    const result = snapshot(target);
+    return { key, exists: result.exists, revision: result.revision };
   };
 }
 
@@ -1249,6 +1313,255 @@ test("Skill file changes roll back when the installation record commit fails", a
     /record removal failed/u
   );
   assert.equal(fs.readFileSync(path.join(installDir, "SKILL.md"), "utf8"), "old skill\n");
+});
+
+test("skill publication requires Platform and never renames the watched target locally", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-required-"));
+  const app = createApp(root);
+  const source = path.join(root, "source");
+  const target = getSkillInstallDir(app, "source");
+  fs.mkdirSync(source, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "SKILL.md"), "old content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  configureSkillMarketPlatformCaller(null);
+  await assert.rejects(() => installSkillFromPath(app, source), /启动服务/);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "old content");
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (from, to) => {
+    if (String(from).startsWith(getSkillsCenterDir(app))) throw new Error("EPERM watched target rename denied");
+    return rename(from, to);
+  });
+  configureSkillMarketPlatformCaller(createSkillPlatformMock(app));
+  await installSkillFromPath(app, source);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "new content");
+});
+
+test("skill removal requires Platform and never renames the watched target locally", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-removal-"));
+  const app = createApp(root);
+  const target = getSkillInstallDir(app, "watched-skill");
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "SKILL.md"), "watched content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  configureSkillMarketPlatformCaller(null);
+  await assert.rejects(() => uninstallSkill(app, "watched-skill"), /启动服务/);
+  assert.equal(fs.existsSync(target), true);
+
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (from, to) => {
+    if (String(from).startsWith(getSkillsCenterDir(app))) throw new Error("EPERM watched target rename denied");
+    return rename(from, to);
+  });
+  configureSkillMarketPlatformCaller(createSkillPlatformMock(app));
+  const result = await uninstallSkill(app, "watched-skill");
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.existsSync(target), false);
+});
+
+test("skill Platform rejection does not mutate or compensate the target", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-reject-"));
+  const app = createApp(root);
+  const source = path.join(root, "source");
+  const target = getSkillInstallDir(app, "source");
+  for (const dir of [source, target]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.writeFileSync(path.join(target, "SKILL.md"), "old content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let calls = 0;
+  const mock = createSkillPlatformMock(app);
+  configureSkillMarketPlatformCaller(async (...args) => {
+    calls++;
+    if (args[1].body.operation === "snapshot") return mock(...args);
+    throw new Error("API rejected import");
+  });
+  await assert.rejects(() => installSkillFromPath(app, source), (error) => {
+    assert.match(error.message, /API rejected import/);
+    const recovery = error.message.match(/原版本备份：(.+?)。/)[1];
+    assert.equal(fs.existsSync(recovery), true);
+    t.after(() => fs.rmSync(path.dirname(recovery), { recursive: true, force: true }));
+    return true;
+  });
+  assert.equal(calls, 2);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "old content");
+});
+
+test("failed remote skill compensation retains a usable recovery ZIP", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-compensate-"));
+  const app = createApp(root);
+  const source = path.join(root, "source");
+  const target = getSkillInstallDir(app, "source");
+  for (const dir of [source, target]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.writeFileSync(path.join(target, "SKILL.md"), "old content");
+  fs.writeFileSync(path.join(target, ".runtime-env.json"), '{"fixture":"old"}');
+  fs.mkdirSync(path.join(target, "assets", "empty"), { recursive: true });
+  fs.writeFileSync(path.join(target, "assets", "old.txt"), "old asset");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const mock = createSkillPlatformMock(app);
+  let calls = 0;
+  configureSkillMarketPlatformCaller((...args) => {
+    if (++calls > 2) throw new Error("restore unavailable");
+    return mock(...args);
+  });
+  let recovery;
+  await assert.rejects(() => installSkillFromPath(app, source, {
+    onPublished: () => { throw new Error("record commit failed"); }
+  }), (error) => {
+    assert.match(error.message, /record commit failed/);
+    assert.match(error.message, /restore unavailable/);
+    recovery = error.message.match(/原版本备份：(.+?)。/)[1];
+    return true;
+  });
+  t.after(() => fs.rmSync(path.dirname(recovery), { recursive: true, force: true }));
+  const zip = await JSZip.loadAsync(fs.readFileSync(recovery));
+  assert.equal(await zip.file("SKILL.md").async("string"), "old content");
+  assert.equal(await zip.file(".runtime-env.json").async("string"), '{"fixture":"old"}');
+  assert.equal(await zip.file("assets/old.txt").async("string"), "old asset");
+  assert.equal(zip.files["assets/empty/"].dir, true);
+  assert.equal(calls, 3);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "new content");
+});
+
+test("skill response loss never compensates a possibly committed remote publication", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-response-loss-"));
+  const app = createApp(root);
+  const source = path.join(root, "source");
+  const target = getSkillInstallDir(app, "source");
+  for (const dir of [source, target]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.writeFileSync(path.join(target, "SKILL.md"), "old content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const mock = createSkillPlatformMock(app);
+  let calls = 0;
+  configureSkillMarketPlatformCaller(async (...args) => {
+    calls++;
+    const result = await mock(...args);
+    if (args[1].body.operation === "snapshot") return result;
+    throw new Error("connection lost after commit");
+  });
+  await assert.rejects(() => installSkillFromPath(app, source), (error) => {
+    const recovery = error.message.match(/原版本备份：(.+?)。/)[1];
+    t.after(() => fs.rmSync(path.dirname(recovery), { recursive: true, force: true }));
+    assert.match(error.message, /connection lost after commit/);
+    return true;
+  });
+  assert.equal(calls, 2);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "new content");
+});
+
+test("skill record failure preserves later edits instead of blindly compensating", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-later-edit-"));
+  const app = createApp(root);
+  const source = path.join(root, "source");
+  const target = getSkillInstallDir(app, "source");
+  for (const dir of [source, target]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.writeFileSync(path.join(target, "SKILL.md"), "old content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const mock = createSkillPlatformMock(app);
+  let replacements = 0, rejectedStatus;
+  configureSkillMarketPlatformCaller(async (...args) => {
+    if (args[1].body.operation === "replace" && ++replacements === 2) {
+      // The later edit arrives only when the compensation reaches the server,
+      // after any Desktop-side preflight could already have passed.
+      fs.writeFileSync(path.join(target, "SKILL.md"), "later edit");
+    }
+    try { return await mock(...args); }
+    catch (error) { rejectedStatus = error.status; throw error; }
+  });
+  await assert.rejects(() => installSkillFromPath(app, source, { onPublished: () => {
+    throw new Error("record failed");
+  } }), (error) => {
+    assert.match(error.message, /skill revision conflict/);
+    const recovery = error.message.match(/原版本备份：(.+?)。/)[1];
+    t.after(() => fs.rmSync(path.dirname(recovery), { recursive: true, force: true }));
+    return true;
+  });
+  assert.equal(rejectedStatus, 409);
+  assert.equal(replacements, 2);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "later edit");
+});
+
+test("skill publication rejects an edit made after snapshot and before server comparison", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-stale-snapshot-"));
+  const app = createApp(root), source = path.join(root, "source"), target = getSkillInstallDir(app, "source");
+  for (const dir of [source, target]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.writeFileSync(path.join(target, "SKILL.md"), "snapshot content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const mock = createSkillPlatformMock(app);
+  let calls = 0, rejectedStatus, committed = false;
+  configureSkillMarketPlatformCaller(async (...args) => {
+    calls++;
+    if (args[1].body.operation === "replace") fs.writeFileSync(path.join(target, "SKILL.md"), "intervening edit");
+    try { return await mock(...args); }
+    catch (error) { rejectedStatus = error.status; throw error; }
+  });
+  await assert.rejects(() => installSkillFromPath(app, source, { onPublished: () => { committed = true; } }), error => {
+    assert.match(error.message, /skill revision conflict/);
+    const recovery = error.message.match(/原版本备份：(.+?)。/)[1];
+    t.after(() => fs.rmSync(path.dirname(recovery), { recursive: true, force: true }));
+    return true;
+  });
+  assert.equal(calls, 2);
+  assert.equal(rejectedStatus, 409);
+  assert.equal(committed, false);
+  assert.equal(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), "intervening edit");
+});
+
+test("Desktop publication and compensation do not read the live skill tree", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-platform-no-local-read-"));
+  const app = createApp(root), source = path.join(root, "source"), target = getSkillInstallDir(app, "source");
+  for (const dir of [source, target]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  fs.writeFileSync(path.join(target, "SKILL.md"), "old content");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  configureSkillMarketPlatformCaller(createSkillPlatformMock(app));
+  for (const name of ["readFileSync", "readdirSync", "lstatSync", "statSync", "existsSync"]) {
+    const original = fs[name].bind(fs);
+    t.mock.method(fs, name, (file, ...args) => {
+      if (typeof file === "string" && (file === target || file.startsWith(target + path.sep))) {
+        throw new Error(`Desktop read live tree through ${name}`);
+      }
+      return original(file, ...args);
+    });
+  }
+  await assert.rejects(() => installSkillFromPath(app, source, { onPublished: () => { throw new Error("record failed"); } }), /record failed/);
+  await assert.rejects(() => uninstallSkill(app, "source", { onRemoved: () => { throw new Error("record removal failed"); } }), /record removal failed/);
+  assert.equal((await installSkillFromPath(app, source)).ok, true);
+  assert.equal((await uninstallSkill(app, "source")).ok, true);
+  t.mock.restoreAll();
+  assert.equal(fs.existsSync(target), false);
+});
+
+test("skill preparation cleanup failure does not invert publication or hide its error", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-cleanup-failure-"));
+  const app = createApp(root);
+  const source = path.join(root, "source");
+  fs.mkdirSync(source, { recursive: true });
+  fs.writeFileSync(path.join(source, "SKILL.md"), "new content");
+  const remove = fs.rmSync;
+  const leftovers = [];
+  t.mock.method(console, "warn", () => undefined);
+  t.mock.method(fs, "rmSync", (target, options) => {
+    if (path.basename(String(target)).startsWith("desktop-skill-prepare-")) {
+      leftovers.push(target);
+      throw new Error("temporary directory still open");
+    }
+    return remove(target, options);
+  });
+  t.after(() => {
+    for (const leftover of leftovers) remove(leftover, { recursive: true, force: true });
+    remove(root, { recursive: true, force: true });
+  });
+  assert.equal((await installSkillFromPath(app, source)).ok, true);
+  configureSkillMarketPlatformCaller(null);
+  await assert.rejects(() => installSkillFromPath(app, source), /启动服务/);
+  assert.equal(leftovers.length, 2);
 });
 
 test("refreshMarketCatalog combines catalog plugins with catalog skills", async (t) => {
@@ -3322,7 +3635,7 @@ test("importSkillFromCommand runs an npm or npx download command and installs th
   const npxPath = path.join(binDir, process.platform === "win32" ? "npx.cmd" : "npx");
   const script = process.platform === "win32"
     ? `@echo off
-echo %USERPROFILE% | findstr /C:"skills-center" >nul || exit /b 42
+echo %USERPROFILE% | findstr /C:"desktop-skill-download-" >nul || exit /b 42
 set target=%USERPROFILE%\\.claude\\skills\\downloaded-skill
 mkdir "%target%"
 echo # Downloaded Skill>"%target%\\SKILL.md"
@@ -3331,7 +3644,7 @@ echo {"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","descr
     : `#!/bin/sh
 set -eu
 case "$HOME" in
-  *skills-center/.downloads/desktop-skill-download-*/home) ;;
+  *desktop-skill-download-*/home) ;;
   *) echo "unexpected HOME: $HOME" >&2; exit 42 ;;
 esac
 target="$HOME/.claude/skills/downloaded-skill"

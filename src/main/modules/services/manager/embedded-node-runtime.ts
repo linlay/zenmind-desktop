@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import type { App } from "electron";
 import { getDesktopRoot, getDesktopStateRoot } from "../../../infrastructure/filesystem/user-paths";
 import { isDesktopDevelopmentRuntime, type DesktopDevelopmentRuntimeContext } from "../../../infrastructure/electron/development-runtime";
@@ -15,24 +17,40 @@ export interface EmbeddedNodeRuntimeOptions {
   nodeVersion: string;
   platform: NodeJS.Platform;
   arch: string;
-  probe?: (executable: string) => { node: string; arch: string };
+  probe?: (executable: string) => { node: string; arch: string } | Promise<{ node: string; arch: string }>;
 }
 
 function quoteShell(value: string) { return `'${value.replace(/'/g, `'"'"'`)}'`; }
 
-function probeNode(executable: string) {
-  const result = spawnSync(executable, ["-p", "JSON.stringify({node:process.versions.node,arch:process.arch})"], {
+const execFileAsync = promisify(execFile);
+async function probeNode(executable: string) {
+  const result = await execFileAsync(executable, ["-p", "JSON.stringify({node:process.versions.node,arch:process.arch})"], {
     encoding: "utf8", timeout: 10000, windowsHide: true
   });
-  if (result.error || result.status !== 0) throw new Error("Desktop embedded Node could not start");
   try { return JSON.parse(result.stdout.trim()) as { node: string; arch: string }; }
   catch { throw new Error("Desktop embedded Node mode is unavailable"); }
 }
 
-function verifyNode(executable: string, options: EmbeddedNodeRuntimeOptions) {
-  const actual = (options.probe ?? probeNode)(executable);
+async function verifyNode(executable: string, options: EmbeddedNodeRuntimeOptions) {
+  const actual = await (options.probe ?? probeNode)(executable);
   if (actual.node !== options.nodeVersion || actual.arch !== options.arch) throw new Error("Desktop Node runtime version or architecture mismatch");
 }
+
+async function retryFileOperation<T>(platform: NodeJS.Platform, operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await operation(); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Antivirus and recently exited children can transiently retain Windows
+      // handles. Never busy-wait on Electron's main thread or retry bad paths.
+      if (platform !== "win32" || !["EPERM", "EBUSY", "EACCES"].includes(code ?? "") || attempt >= 4) throw error;
+      await delay(40 * 2 ** attempt);
+    }
+  }
+}
+
+const preparations = new Map<string, Promise<EmbeddedNodeRuntime>>();
+interface EmbeddedNodeRuntime { binDir: string; node: string; nodeVersion: string; npmVersion: string; }
 
 /** These wrappers set Electron's mode on the Node child only, never on Platform. */
 export function embeddedNodeLaunchers(platform: NodeJS.Platform, executable: string, binDir: string) {
@@ -50,70 +68,113 @@ export function embeddedNodeLaunchers(platform: NodeJS.Platform, executable: str
 }
 
 /** Publish verified commands at a stable Desktop-owned path, retaining replaced files for live processes. */
-export function prepareEmbeddedNodeRuntime(options: EmbeddedNodeRuntimeOptions) {
+export function prepareEmbeddedNodeRuntime(options: EmbeddedNodeRuntimeOptions): Promise<EmbeddedNodeRuntime> {
+  const resolved = path.resolve(options.binDir);
+  const key = options.platform === "win32" ? resolved.toLowerCase() : resolved;
+  const active = preparations.get(key);
+  if (active) return active;
+  const task = prepareRuntime(options).finally(() => { preparations.delete(key); });
+  preparations.set(key, task);
+  return task;
+}
+
+async function prepareRuntime(options: EmbeddedNodeRuntimeOptions): Promise<EmbeddedNodeRuntime> {
   const { executable, nodeVersion, platform, arch } = options;
-  if (!path.isAbsolute(executable) || !fs.statSync(executable).isFile()) throw new Error("Desktop Node executable is unavailable");
+  const io = fs.promises;
+  const retry = <T>(operation: () => Promise<T>) => retryFileOperation(platform, operation);
+  if (!path.isAbsolute(executable) || !(await io.stat(executable)).isFile()) throw new Error("Desktop Node executable is unavailable");
   if (!["darwin", "linux", "win32"].includes(platform)) throw new Error("Desktop Node runtime is unsupported on this platform");
   const npmSource = path.join(options.resourcesRoot, "npm");
-  const npmPackage = JSON.parse(fs.readFileSync(path.join(npmSource, "package.json"), "utf8"));
+  const npmPackage = JSON.parse(await io.readFile(path.join(npmSource, "package.json"), "utf8"));
   if (npmPackage.name !== "npm" || typeof npmPackage.version !== "string") throw new Error("Invalid bundled npm runtime");
   for (const name of ["npm-cli.js", "npx-cli.js"]) {
-    if (!fs.statSync(path.join(npmSource, "bin", name)).isFile()) throw new Error("Bundled npm entry is missing");
+    if (!(await io.stat(path.join(npmSource, "bin", name))).isFile()) throw new Error("Bundled npm entry is missing");
   }
   const launcherArch = arch === "x64" ? "amd64" : arch;
-  const nativeLauncher = platform === "win32" ? fs.readFileSync(path.join(options.resourcesRoot, launcherArch, "node.exe")) : null;
+  const nativeLauncher = platform === "win32" ? await io.readFile(path.join(options.resourcesRoot, launcherArch, "node.exe")) : null;
   const identity = JSON.stringify({ schema: 1, executable, nodeVersion, platform, arch, npm: npmPackage.version,
     nativeHash: nativeLauncher ? createHash("sha256").update(nativeLauncher).digest("hex") : "" });
-  fs.mkdirSync(options.stateRoot, { recursive: true, mode: 0o700 });
-  if (fs.lstatSync(options.stateRoot).isSymbolicLink()) throw new Error("Desktop Node runtime root must be a real directory");
+  await io.mkdir(options.stateRoot, { recursive: true, mode: 0o700 });
+  if ((await io.lstat(options.stateRoot)).isSymbolicLink()) throw new Error("Desktop Node runtime root must be a real directory");
   const binDir = options.binDir;
   if (!path.isAbsolute(binDir)) throw new Error("Desktop Node bin directory must be absolute");
-  fs.mkdirSync(path.dirname(binDir), { recursive: true, mode: 0o700 });
+  await io.mkdir(path.dirname(binDir), { recursive: true, mode: 0o700 });
   const node = path.join(binDir, platform === "win32" ? "node.exe" : "node");
   const marker = path.join(binDir, "runtime.json");
-  const existing = fs.lstatSync(binDir, { throwIfNoEntry: false });
+  const existing = await io.lstat(binDir).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return undefined; throw error; });
   if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) throw new Error("Desktop Node bin must be a real directory");
-  const reusable = existing && fs.existsSync(marker) && fs.readFileSync(marker, "utf8") === identity;
-  if (existing && !fs.existsSync(marker)) throw new Error("Desktop Node bin is not managed by Desktop");
+  const oldIdentity = existing ? await io.readFile(marker, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") throw new Error("Desktop Node bin is not managed by Desktop");
+    throw error;
+  }) : undefined;
+  const complete = async () => {
+    const commands = Object.keys(embeddedNodeLaunchers(platform, executable, binDir)).map(name => path.join(binDir, name));
+    for (const file of [node, ...commands, path.join(binDir, ".desktop-node-runtime.json"),
+      path.join(binDir, "node_modules/npm/bin/npm-cli.js"), path.join(binDir, "node_modules/npm/bin/npx-cli.js")]) {
+      try { if (!(await io.stat(file)).isFile()) return false; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
+    }
+    return true;
+  };
+  const reusable = oldIdentity === identity && await complete();
   if (!reusable) {
-    const stage = fs.mkdtempSync(path.join(options.stateRoot, ".node-stage-"));
+    const stage = await io.mkdtemp(path.join(options.stateRoot, ".node-stage-"));
+    let failure: unknown;
+    let phase = "npm copy";
     try {
       const bin = path.join(stage, "bin");
-      fs.mkdirSync(path.join(bin, "node_modules"), { recursive: true, mode: 0o700 });
-      fs.cpSync(npmSource, path.join(bin, "node_modules", "npm"), { recursive: true, dereference: true });
+      await io.mkdir(path.join(bin, "node_modules"), { recursive: true, mode: 0o700 });
+      await retry(() => io.cp(npmSource, path.join(bin, "node_modules", "npm"), { recursive: true, dereference: true }));
+      phase = "launcher preparation";
       for (const [name, content] of Object.entries(embeddedNodeLaunchers(platform, executable, binDir))) {
-        fs.writeFileSync(path.join(bin, name), content, { mode: 0o755 });
+        await io.writeFile(path.join(bin, name), content, { mode: 0o755 });
       }
-      if (nativeLauncher) fs.writeFileSync(path.join(bin, "node.exe"), nativeLauncher, { mode: 0o755 });
-      fs.writeFileSync(path.join(bin, ".desktop-node-runtime.json"), JSON.stringify({ electronPath: executable }), { mode: 0o600 });
-      fs.writeFileSync(path.join(bin, "runtime.json"), identity, { mode: 0o600 });
-      verifyNode(path.join(bin, platform === "win32" ? "node.exe" : "node"), options);
+      if (nativeLauncher) await io.writeFile(path.join(bin, "node.exe"), nativeLauncher, { mode: 0o755 });
+      await io.writeFile(path.join(bin, ".desktop-node-runtime.json"), JSON.stringify({ electronPath: executable }), { mode: 0o600 });
+      await io.writeFile(path.join(bin, "runtime.json"), identity, { mode: 0o600 });
+      phase = "runtime verification";
+      await verifyNode(path.join(bin, platform === "win32" ? "node.exe" : "node"), options);
       let retired: string | undefined;
+      phase = "previous runtime retirement";
       if (existing) {
-        retired = fs.mkdtempSync(path.join(options.stateRoot, ".node-retired-"));
-        try {
-          // Windows may deny a rename while another process holds a file without
-          // delete sharing. Never overwrite a loaded node.exe; keep the old bin intact.
-          fs.renameSync(binDir, path.join(retired, "bin"));
-        } catch (error) {
-          fs.rmdirSync(retired);
+        retired = await io.mkdtemp(path.join(options.stateRoot, ".node-retired-"));
+        try { await retry(() => io.rename(binDir, path.join(retired!, "bin"))); }
+        catch (error) {
+          // Cleanup must never mask the original locked-directory error.
+          await io.rmdir(retired).catch(() => {});
           if (platform === "win32") throw new Error("Desktop Node runtime is in use; stop its processes and retry", { cause: error });
           throw error;
         }
       }
-      try { fs.renameSync(bin, binDir); }
+      phase = "runtime publication";
+      try { await retry(() => io.rename(bin, binDir)); }
       catch (error) {
-        if (retired) fs.renameSync(path.join(retired, "bin"), binDir);
+        if (retired) {
+          try { await retry(() => io.rename(path.join(retired!, "bin"), binDir)); }
+          catch (restoreError) {
+            throw new AggregateError([error, restoreError], `Runtime publication and rollback failed; previous runtime retained at ${retired}`, { cause: error });
+          }
+        }
         throw error;
       }
-      // Retired files and legacy hashed runtimes stay available to existing children.
-    } finally { fs.rmSync(stage, { recursive: true, force: true }); }
+      // Retired files stay available to existing children; never delete them here.
+    } catch (error) {
+      failure = new Error(`Desktop Node runtime preparation failed during ${phase}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    try { await retry(() => io.rm(stage, { recursive: true, force: true })); }
+    catch (cleanupError) {
+      if (failure) {
+        failure = new AggregateError([failure, cleanupError], `${(failure as Error).message}; staging cleanup failed at ${stage}`, { cause: failure });
+      } else {
+        // Publication already succeeded. An unused staging directory cannot make
+        // the valid runtime unavailable; retain it for later diagnosis.
+        console.warn(`[embedded-node] staging cleanup failed at ${stage}`, cleanupError);
+      }
+    }
+    if (failure) throw failure;
   }
-  if (fs.readFileSync(marker, "utf8") !== identity || !fs.lstatSync(node).isFile()
-      || !fs.statSync(path.join(binDir, "node_modules/npm/bin/npm-cli.js")).isFile()) {
-    throw new Error("Desktop Node runtime is incomplete");
-  }
-  if (reusable) verifyNode(node, options);
+  if (await io.readFile(marker, "utf8") !== identity || !await complete()) throw new Error("Desktop Node runtime is incomplete");
+  if (reusable) await verifyNode(node, options);
   return { binDir, node, nodeVersion, npmVersion: npmPackage.version };
 }
 
@@ -123,11 +184,11 @@ export function embeddedNodeResourcesRoot(app: Pick<App, "isPackaged" | "getAppP
     : path.join(packagedRoot, "node-runtime");
 }
 
-export function getEmbeddedNodeStartEnv(app: App): NodeJS.ProcessEnv | undefined {
+export async function getEmbeddedNodeStartEnv(app: App): Promise<NodeJS.ProcessEnv | undefined> {
   // Node-based tooling/tests have no embedded Electron runtime to export.
   if (!process.versions.electron) return undefined;
   const resourcesRoot = embeddedNodeResourcesRoot(app);
-  const runtime = prepareEmbeddedNodeRuntime({
+  const runtime = await prepareEmbeddedNodeRuntime({
     stateRoot: path.join(getDesktopStateRoot(app), "node-runtime"), binDir: path.join(getDesktopRoot(app), "bin"), resourcesRoot,
     executable: process.execPath, nodeVersion: process.versions.node, platform: process.platform, arch: process.arch
   });
