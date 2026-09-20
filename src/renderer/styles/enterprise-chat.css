@@ -1765,3 +1765,40 @@
     pointer-events: auto;
   }
 }
+
+/* Keep download status and the actual save location visible on each attachment. */
+.enterprise-chat-download-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.enterprise-chat-download-path {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  user-select: text;
+  color: var(--text-secondary, #697386);
+}
+.enterprise-chat-download-error {
+  color: var(--danger, #c03c3c);
+  overflow-wrap: anywhere;
+}
+.enterprise-chat-download-reveal {
+  align-self: flex-start;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--enterprise-chat-accent-strong);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.enterprise-chat-attachment-download:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.enterprise-chat-download-reveal:focus-visible {
+  outline: 2px solid var(--enterprise-chat-accent-strong);
+  outline-offset: 2px;
+}

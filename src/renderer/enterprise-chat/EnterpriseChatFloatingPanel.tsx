@@ -10,6 +10,7 @@ import {
   FileZipOutlined,
   FolderOpenOutlined,
   LaptopOutlined,
+  LoadingOutlined,
   MessageOutlined,
   MoreOutlined,
   PaperClipOutlined,
@@ -308,7 +309,11 @@ export function EnterpriseChatFloatingPanel({
   const [groupTitle, setGroupTitle] = useState("");
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
   const [actionResults, setActionResults] = useState<Record<string, string>>({});
-  const [downloadedAttachmentIds, setDownloadedAttachmentIds] = useState<Record<string, true>>({});
+  const [attachmentDownloads, setAttachmentDownloads] = useState<Record<string, {
+    status: "downloading" | "saved" | "cancelled" | "error";
+    path?: string;
+    error?: string;
+  }>>({});
   const [handledActionMessageIds, setHandledActionMessageIds] = useState<Record<string, true>>({});
   const [pendingActionMessage, setPendingActionMessage] = useState<EnterpriseChatMessage | null>(null);
   const [attachmentData, setAttachmentData] = useState<Record<string, string>>({});
@@ -350,7 +355,8 @@ export function EnterpriseChatFloatingPanel({
   } | null>(null);
   const searchPreferenceScopeRef = useRef("");
   const reviewedActionMessageIdsRef = useRef(new Set<string>());
-  const attachmentDownloadResetTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const pendingDownloadsRef = useRef(new Set<string>());
+  const downloadGenerationRef = useRef(0);
   const signedIn = hasCompleteEnterpriseLogin(desktopSsoStatus);
   const preferenceScope = conversationPreferenceScope(snapshot);
 
@@ -445,12 +451,12 @@ export function EnterpriseChatFloatingPanel({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [agentChatPickerOpen]);
 
-  useEffect(() => () => {
-    for (const timer of attachmentDownloadResetTimersRef.current.values()) {
-      clearTimeout(timer);
-    }
-    attachmentDownloadResetTimersRef.current.clear();
-  }, []);
+  useEffect(() => {
+    downloadGenerationRef.current += 1;
+    pendingDownloadsRef.current.clear();
+    setAttachmentDownloads({});
+    return () => { downloadGenerationRef.current += 1; };
+  }, [preferenceScope]);
 
   useEffect(() => {
     if (!preferenceScope || !snapshot) {
@@ -1094,37 +1100,48 @@ export function EnterpriseChatFloatingPanel({
   }
 
   async function downloadAttachment(attachment: EnterpriseChatAttachment) {
-    setBusy(`download:${attachment.id}`);
-    setError("");
+    if (pendingDownloadsRef.current.has(attachment.id)) return;
+    pendingDownloadsRef.current.add(attachment.id);
+    const generation = downloadGenerationRef.current;
+    setAttachmentDownloads((current) => ({
+      ...current, [attachment.id]: { status: "downloading" }
+    }));
     try {
       const result = await window.electronAPI.enterpriseChat.downloadAttachment({
         fileId: attachment.id,
         name: attachment.name,
         contentType: attachment.contentType
       });
-      if (result.ok) {
-        setDownloadedAttachmentIds((current) => ({ ...current, [attachment.id]: true }));
-        const existingTimer = attachmentDownloadResetTimersRef.current.get(attachment.id);
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-        }
-        const timer = setTimeout(() => {
-          setDownloadedAttachmentIds((current) => {
-            if (!current[attachment.id]) {
-              return current;
-            }
-            const next = { ...current };
-            delete next[attachment.id];
-            return next;
-          });
-          attachmentDownloadResetTimersRef.current.delete(attachment.id);
-        }, 3000);
-        attachmentDownloadResetTimersRef.current.set(attachment.id, timer);
+      if (generation !== downloadGenerationRef.current) return;
+      if (result.ok && result.path) {
+        setAttachmentDownloads((current) => ({
+          ...current, [attachment.id]: { status: "saved", path: result.path }
+        }));
+      } else if (result.cancelled || result.message === "Download cancelled.") {
+        setAttachmentDownloads((current) => ({
+          ...current, [attachment.id]: { status: "cancelled" }
+        }));
+      } else {
+        throw new Error(result.message || t("enterpriseChat.downloadFailed"));
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (generation !== downloadGenerationRef.current) return;
+      setAttachmentDownloads((current) => ({
+        ...current, [attachment.id]: {
+          status: "error", error: reason instanceof Error ? reason.message : String(reason)
+        }
+      }));
     } finally {
-      setBusy("");
+      if (generation === downloadGenerationRef.current) pendingDownloadsRef.current.delete(attachment.id);
+    }
+  }
+
+  async function revealDownloadedAttachment(path: string) {
+    try {
+      const result = await window.electronAPI.services.revealPath(path, { targetType: "file" });
+      if (!result?.ok) throw new Error(result?.message || t("enterpriseChat.revealFailed"));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -1331,6 +1348,7 @@ export function EnterpriseChatFloatingPanel({
 
   function renderAttachment(attachment: EnterpriseChatAttachment) {
     const imageData = attachmentData[attachment.id];
+    const download = attachmentDownloads[attachment.id];
     return (
       <div className="enterprise-chat-attachment" key={attachment.id}>
         {isImageAttachment(attachment) && imageData?.startsWith("data:") ? (
@@ -1357,15 +1375,38 @@ export function EnterpriseChatFloatingPanel({
             {formatFileSize(attachment.sizeBytes)}
             {imageData === "loading" ? ` · ${t("enterpriseChat.loadingImage")}` : ""}
           </small>
+          {download && (
+            <span className="enterprise-chat-download-feedback" role="status" aria-live="polite">
+              {download.status === "downloading" && t("enterpriseChat.downloading")}
+              {download.status === "cancelled" && t("enterpriseChat.downloadCancelled")}
+              {download.status === "error" && (
+                <span className="enterprise-chat-download-error">
+                  {t("enterpriseChat.downloadFailed")}: {download.error}
+                </span>
+              )}
+              {download.status === "saved" && download.path && (
+                <>
+                  <span>{t("enterpriseChat.downloaded")}</span>
+                  <span className="enterprise-chat-download-path" title={download.path}>{download.path}</span>
+                  <button type="button" className="enterprise-chat-download-reveal"
+                    onClick={() => void revealDownloadedAttachment(download.path!)}>
+                    <FolderOpenOutlined /> {t("enterpriseChat.showInFolder")}
+                  </button>
+                </>
+              )}
+            </span>
+          )}
         </span>
         <button
           type="button"
           className="enterprise-chat-attachment-download"
-          aria-label={t("enterpriseChat.download")}
-          disabled={busy === `download:${attachment.id}`}
+          aria-label={t(download?.status === "error" ? "enterpriseChat.retryDownload" : "enterpriseChat.download")}
+          title={t(download?.status === "error" ? "enterpriseChat.retryDownload" : "enterpriseChat.download")}
+          aria-busy={download?.status === "downloading"}
+          disabled={download?.status === "downloading"}
           onClick={() => void downloadAttachment(attachment)}
         >
-          {downloadedAttachmentIds[attachment.id] ? <CheckOutlined /> : <DownloadOutlined />}
+          {download?.status === "downloading" ? <LoadingOutlined spin /> : download?.status === "saved" ? <CheckOutlined /> : <DownloadOutlined />}
         </button>
       </div>
     );
@@ -1597,8 +1638,11 @@ export function EnterpriseChatFloatingPanel({
                           ) : null}
                         </>
                       )}
-                      <time>
+                      <time dateTime={new Date(message.createdAt).toISOString()}>
                         {new Intl.DateTimeFormat(locale, {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
                           hour: "2-digit",
                           minute: "2-digit"
                         }).format(message.createdAt)}
