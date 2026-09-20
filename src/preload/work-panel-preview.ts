@@ -26,6 +26,7 @@ let selectionLayer: HTMLDivElement | null = null;
 let hoverBox: HTMLDivElement | null = null;
 let draftBox: HTMLDivElement | null = null;
 let resizeFrame = 0;
+let printing = false;
 let invalidAnnotationIds = new Set<string>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -132,6 +133,7 @@ function ensureOverlayRoot() {
   overlayRoot.id = OVERLAY_ROOT_ID;
   Object.assign(overlayRoot.style, {
     position: "fixed",
+    display: printing ? "none" : "",
     inset: "0",
     zIndex: "2147483646",
     pointerEvents: "none",
@@ -659,5 +661,8 @@ if (isReviewableDocument()) {
   });
   window.addEventListener("scroll", scheduleRender, true);
   window.addEventListener("resize", scheduleRender);
+  window.visualViewport?.addEventListener("resize", scheduleRender);
+  window.addEventListener("beforeprint", () => { printing = true; if (overlayRoot) overlayRoot.style.display = "none"; });
+  window.addEventListener("afterprint", () => { printing = false; if (overlayRoot) overlayRoot.style.display = ""; });
   window.addEventListener("pagehide", clearOverlay, { once: true });
 }

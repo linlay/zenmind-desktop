@@ -1,6 +1,7 @@
+import { resolveWorkPanelBrowserShortcut } from "../../../shared/work-panel-browser";
 import { t } from "../../support/i18n/main-i18n";
 import { randomUUID } from "node:crypto";
-import { BrowserWindow, webContents, type IpcMain, type WebContents } from "electron";
+import { BrowserWindow, webContents, clipboard, shell as electronShell, type IpcMain, type WebContents } from "electron";
 import { CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL, CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED, CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED, CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED, type WorkPanelWebDialogResult } from "../../../shared/chat-work-panel-tab-context-menu";
 import { normalizeWorkPanelWebUrl } from "../../../shared/work-panel";
 import { createChatChildSurfaceIdentity } from "../../../shared/surface-identity";
@@ -120,6 +121,12 @@ export function registerWorkPanelWebDialogIpc(
     });
     dialog.webContents.on("render-process-gone", () => requestRestore(group));
     const shortcut = (event: Electron.Event, input: Electron.Input) => {
+      const command = resolveWorkPanelBrowserShortcut(process.platform, input);
+      if (command) {
+        event.preventDefault();
+        void shell(group, "command", group.activeId, command).catch(() => undefined);
+        return;
+      }
       const modifier = process.platform === "darwin" ? input.meta : input.control;
       if (input.type === "keyDown" && modifier && input.key.toLowerCase() === "w") {
         event.preventDefault();
@@ -144,7 +151,15 @@ export function registerWorkPanelWebDialogIpc(
       else if (action === "select") select(current);
       else if (action === "close") current.owner.webContents.send(CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED, current.id);
       else if (guest && !guest.isDestroyed()) {
-        if (action === "reload") guest.reload();
+        if (action === "copy" || action === "external") {
+          const url = normalizeWorkPanelWebUrl(guest.getURL());
+          if (!url || current.id !== group.activeId) return;
+          if (action === "copy") clipboard.writeText(url);
+          else void electronShell.openExternal(url).catch(() => {
+            void shell(group, "error", current.id, t("externalWebview.actionFailed")).catch(() => undefined);
+          });
+        }
+        else if (action === "reload") guest.reload();
         else if (action === "back" && guest.navigationHistory.canGoBack()) guest.navigationHistory.goBack();
         else if (action === "forward" && guest.navigationHistory.canGoForward()) guest.navigationHistory.goForward();
         else if (action === "navigate") {
@@ -163,7 +178,9 @@ export function registerWorkPanelWebDialogIpc(
       preferences.webSecurity = true;
     });
     dialog.webContents.on("did-attach-webview", (_event, guest) => {
-      guest.on("before-input-event", shortcut);
+      guest.on("before-input-event", (event, input) => {
+        if (group.records.get(group.activeId)?.guest === guest) shortcut(event, input);
+      });
       const attach = group.pending;
       group.pending = undefined;
       if (attach) attach(guest); else guest.close({ waitForBeforeUnload: false });

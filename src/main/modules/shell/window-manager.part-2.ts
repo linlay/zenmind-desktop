@@ -1,3 +1,4 @@
+import { resolveWorkPanelBrowserShortcut, WORK_PANEL_BROWSER_SHORTCUT_CHANNEL } from "../../../shared/work-panel-browser";
 import type { App, NativeTheme } from "electron";
 import { configureIsolatedAuthGuest, prepareIsolatedAuthGuest } from "../../infrastructure/electron/isolated-auth-guest";
 import {
@@ -68,6 +69,18 @@ export function configureAttachedWebview<
         return;
       }
       mainWindow.webContents.send("app.globalSearchShortcut", globalSearchCommandShortcut);
+      return;
+    }
+
+    const browserCommand = options.isWorkPanelWebview?.(contents) === true
+      && /^https?:\/\//i.test(contents.getURL())
+      ? resolveWorkPanelBrowserShortcut(options.platform, input) : null;
+    if (browserCommand) {
+      const mainWindow = options.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        event.preventDefault();
+        mainWindow.webContents.send(WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, { guestId: contents.id, command: browserCommand });
+      }
       return;
     }
 

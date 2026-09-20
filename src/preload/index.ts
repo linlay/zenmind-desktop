@@ -1,3 +1,4 @@
+import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
@@ -916,6 +917,11 @@ const api: DesktopApi = {
     return () => {
       ipcRenderer.off("app.closeShortcut", handleCloseShortcut);
     };
+  },
+  onWorkPanelBrowserShortcut: (listener: (request: WorkPanelBrowserShortcut) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: WorkPanelBrowserShortcut) => listener(request);
+    ipcRenderer.on(WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, handler);
+    return () => { ipcRenderer.off(WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, handler); };
   },
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => {
     ipcRenderer.on("app.workPanelFullscreenExitShortcut", listener);
