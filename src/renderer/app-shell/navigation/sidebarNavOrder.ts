@@ -97,6 +97,13 @@ export function normalizeSidebarNavOrder(
   ];
 }
 
+export function createPersistedSidebarNavOrder(
+  order: SidebarNavOrderItemKey[],
+): SidebarNavOrderItemKey[] {
+  const fixedGroupKeySet = new Set(FIXED_SIDEBAR_GROUP_ORDER);
+  return order.filter((key) => !fixedGroupKeySet.has(key));
+}
+
 export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey }>(
   items: T[],
   order: SidebarNavOrderItemKey[]

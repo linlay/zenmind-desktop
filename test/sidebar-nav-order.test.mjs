@@ -35,6 +35,7 @@ new Function("exports", "require", "module", "__filename", "__dirname", outputTe
 const {
   createDefaultSidebarNavOrderItems,
   normalizeSidebarNavOrder,
+  createPersistedSidebarNavOrder,
   partitionSidebarWebItems,
   moveSidebarNavItem,
 } = mod.exports;
@@ -53,7 +54,7 @@ test("default order is stable and missing items append after valid saved entries
   );
   assert.deepEqual(
     normalizeSidebarNavOrder(
-      ["kanban", "schedules", "group:assistants", "group:webs"],
+      ["kanban", "schedules"],
       availableItems,
     ),
     ["kanban", "schedules", "new-chat", "chats", "group:assistants", "group:webs"],
@@ -70,10 +71,26 @@ test("fixed sidebar groups stay below reorderable primary entries", () => {
 
   assert.deepEqual(
     normalizeSidebarNavOrder(
-      ["schedules", "new-chat", "chats", "group:assistants", "group:webs", "kanban"],
+      ["schedules", "new-chat", "kanban"],
       availableItems,
     ),
     ["schedules", "new-chat", "kanban", "chats", "group:assistants", "group:webs"],
+  );
+});
+
+test("persisted navigation order contains only current reorderable entries", () => {
+  const renderedOrder = normalizeSidebarNavOrder(
+    ["schedules", "new-chat", "kanban"],
+    createDefaultSidebarNavOrderItems({
+      kanbanEnabled: true,
+      serviceItems: [],
+      experimentalItems: [],
+      webItems: [],
+    }),
+  );
+  assert.deepEqual(
+    createPersistedSidebarNavOrder(renderedOrder),
+    ["schedules", "new-chat", "kanban"],
   );
 });
 
