@@ -2156,7 +2156,7 @@
 }
 
 .kanban-empty-column strong {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 
@@ -2173,7 +2173,7 @@
 .kanban-empty-column-create-hint {
   margin-top: 5px;
   color: color-mix(in srgb, var(--kanban-accent) 72%, #7c8da5);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 400;
 }
 
