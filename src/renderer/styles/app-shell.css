@@ -26,7 +26,7 @@
 }
 
 .app-shell.has-embedded-surface {
-  --app-window-drag-height: 8px;
+  --app-window-drag-height: 12px;
   border-radius: 0;
   background: var(--embedded-surface-shell-bg);
   box-shadow: none;
@@ -35,11 +35,7 @@
 }
 
 .app-shell.is-mac-platform {
-  --app-window-drag-height: 8px;
-}
-
-.app-shell.is-mac-platform.has-main-chat-header-actions {
-  --app-window-drag-right: 76px;
+  --app-window-drag-height: 12px;
 }
 
 .app-shell.has-browser-chrome-surface.is-mac-platform {
