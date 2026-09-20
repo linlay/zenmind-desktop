@@ -192,3 +192,34 @@ test('managed incomplete npm runtime is rebuilt instead of permanently reusing i
  await prepareEmbeddedNodeRuntime(options);
  assert.ok(fs.existsSync(path.join(options.binDir,'node_modules/npm/bin/npx-cli.js')));
 });
+
+test('Desktop prepares once, command assembly only reads, and failed preparation can retry', {skip:process.platform==='win32'}, async t=>{
+ const {root,options}=fixture(t);
+ const runtimeModule=require('../dist-electron/main/modules/services/manager/embedded-node-runtime.js');
+ const electronDescriptor=Object.getOwnPropertyDescriptor(process.versions,'electron');
+ Object.defineProperty(process.versions,'electron',{value:'test',configurable:true});
+ t.after(()=>{if(electronDescriptor)Object.defineProperty(process.versions,'electron',electronDescriptor);else delete process.versions.electron;});
+ const app={isPackaged:false,getAppPath:()=>root,getPath:name=>path.join(root,name)};
+ const resources=path.join(root,'build/resources/node-runtime');
+ fs.mkdirSync(path.dirname(resources),{recursive:true});
+ fs.cpSync(options.resourcesRoot,resources,{recursive:true});
+ const npmEntry=path.join(resources,'npm/bin/npm-cli.js');
+ const cli=fs.readFileSync(npmEntry);
+ fs.rmSync(npmEntry);
+ assert.throws(()=>runtimeModule.getPreparedEmbeddedNodeStartEnv(app),/has not been prepared/);
+ await assert.rejects(runtimeModule.ensureEmbeddedNodeRuntime(app));
+ assert.throws(()=>runtimeModule.getPreparedEmbeddedNodeStartEnv(app),/has not been prepared/);
+ fs.writeFileSync(npmEntry,cli);
+ const copy=fs.promises.cp;let copies=0;
+ t.mock.method(fs.promises,'cp',async(...args)=>{copies++;return copy(...args);});
+ const first=runtimeModule.ensureEmbeddedNodeRuntime(app);
+ assert.equal(runtimeModule.ensureEmbeddedNodeRuntime(app),first);
+ await first;
+ const env=runtimeModule.getPreparedEmbeddedNodeStartEnv(app);
+ const bin=env.PATH.split(path.delimiter)[0];
+ assert.equal(fs.existsSync(path.join(bin,'node_modules/npm/bin/npm-cli.js')),true);
+ t.mock.method(fs.promises,'stat',async()=>{throw new Error('must not probe prepared runtime again');});
+ await runtimeModule.ensureEmbeddedNodeRuntime(app);
+ assert.deepEqual(runtimeModule.getPreparedEmbeddedNodeStartEnv(app),env);
+ assert.equal(copies,1);
+});

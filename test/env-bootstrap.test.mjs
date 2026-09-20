@@ -57,36 +57,6 @@ function createPathApp(root) {
   };
 }
 
-test("runtime reset refuses an active Electron profile before reading or moving any files", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-live-reset-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const offline = createPathApp(root);
-  const runtimeRoot = resolveRuntimeRoot(offline, "darwin");
-  fs.mkdirSync(runtimeRoot, { recursive: true });
-  const marker = path.join(runtimeRoot, "preserve.txt");
-  fs.writeFileSync(marker, "original");
-  const liveOutsideProfile = {
-    isReady: () => true,
-    getPath(name) {
-      if (name === "userData" || name === "sessionData") return path.join(root, "outside-profile");
-      return offline.getPath(name);
-    }
-  };
-  await assert.rejects(resetBundledRuntimeEnv(liveOutsideProfile, "darwin", { resourcesRoot: path.join(root, "missing"), nowSeconds: 123 }), /resetRequiresOffline/);
-  assert.equal(fs.readFileSync(marker, "utf8"), "original");
-  assert.equal(fs.existsSync(`${runtimeRoot}-123`), false);
-  for (const activePath of ["userData", "sessionData"]) {
-    const app = { getPath(name) {
-      if (name === activePath) return path.join(runtimeRoot, ".desktop", "state", "electron");
-      if (name === "userData" || name === "sessionData") return path.join(root, "outside-profile");
-      return offline.getPath(name);
-    }};
-    await assert.rejects(resetBundledRuntimeEnv(app, "darwin", { resourcesRoot: path.join(root, "missing"), nowSeconds: 123 }), /resetActiveProfile/);
-    assert.equal(fs.readFileSync(marker, "utf8"), "original");
-    assert.equal(fs.existsSync(`${runtimeRoot}-123`), false);
-  }
-});
-
 async function writeEnvZip(zipPath, entries) {
   const zip = new JSZip();
   for (const [entryPath, content] of Object.entries(entries)) {

@@ -1,4 +1,5 @@
 import type { App } from "electron";
+import { ensureEmbeddedNodeRuntime } from "./embedded-node-runtime";
 import type {
   ServiceCommandResult,
   ServiceId
@@ -192,6 +193,7 @@ export async function startServiceInternal(
         service: preStartState
       };
     } else {
+      if (service.id === "agent-platform") await ensureEmbeddedNodeRuntime(app);
       if (isHostManagedService(service)) {
         const layout = getServiceLayout(app, service);
         const fileEnv = readEnvFile(layout.envPath);
@@ -223,7 +225,7 @@ export async function startServiceInternal(
           getDesktopStartCommand(service),
           t("service.started", { name: service.name }),
           {
-            ...await getDesktopStartCommandOptions(app, service),
+            ...getDesktopStartCommandOptions(app, service),
             commandKind: "start",
             stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions,
             integrationPorts: options.integrationPorts

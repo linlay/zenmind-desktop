@@ -184,14 +184,32 @@ export function embeddedNodeResourcesRoot(app: Pick<App, "isPackaged" | "getAppP
     : path.join(packagedRoot, "node-runtime");
 }
 
-export async function getEmbeddedNodeStartEnv(app: App): Promise<NodeJS.ProcessEnv | undefined> {
-  // Node-based tooling/tests have no embedded Electron runtime to export.
-  if (!process.versions.electron) return undefined;
-  const resourcesRoot = embeddedNodeResourcesRoot(app);
-  const runtime = await prepareEmbeddedNodeRuntime({
-    stateRoot: path.join(getDesktopStateRoot(app), "node-runtime"), binDir: path.join(getDesktopRoot(app), "bin"), resourcesRoot,
-    executable: process.execPath, nodeVersion: process.versions.node, platform: process.platform, arch: process.arch
+// Desktop's executable, data root and bundled resources are fixed for this
+// process. Keep a successful preparation for its lifetime; failures are retryable.
+const appPreparations = new WeakMap<App, Promise<void>>();
+const appRuntimes = new WeakMap<App, EmbeddedNodeRuntime>();
+
+export function ensureEmbeddedNodeRuntime(app: App): Promise<void> {
+  if (!process.versions.electron) return Promise.resolve();
+  const pending = appPreparations.get(app);
+  if (pending) return pending;
+  const task = prepareEmbeddedNodeRuntime({
+    stateRoot: path.join(getDesktopStateRoot(app), "node-runtime"), binDir: path.join(getDesktopRoot(app), "bin"),
+    resourcesRoot: embeddedNodeResourcesRoot(app), executable: process.execPath,
+    nodeVersion: process.versions.node, platform: process.platform, arch: process.arch
+  }).then(runtime => { appRuntimes.set(app, runtime); }).catch(error => {
+    appPreparations.delete(app);
+    throw error;
   });
+  appPreparations.set(app, task);
+  return task;
+}
+
+/** Command assembly never copies files, probes Node, or starts preparation. */
+export function getPreparedEmbeddedNodeStartEnv(app: App): NodeJS.ProcessEnv | undefined {
+  if (!process.versions.electron) return undefined;
+  const runtime = appRuntimes.get(app);
+  if (!runtime) throw new Error("Desktop Node/npm runtime has not been prepared");
   const inherited = buildServiceEnv();
   const servicePath = [runtime.binDir, inherited.PATH ?? inherited.Path ?? ""].filter(Boolean).join(path.delimiter);
   return process.platform === "win32" ? { PATH: servicePath, Path: servicePath } : { PATH: servicePath };

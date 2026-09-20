@@ -2746,8 +2746,6 @@ export const enUSMessages = {
   "startup.ssoUnavailable": "The current instance has not loaded single sign-on. Restart Desktop.",
 
   "envBootstrap.resetUnsupportedPlatform": "This platform cannot reset the runtime environment from the bundled env.zip.",
-  "envBootstrap.resetActiveProfile": "Cannot reset while running: the runtime directory contains the active Electron browser profile. Fully quit the app and use an offline maintenance procedure. Stopping Agent Platform or clicking this button again is insufficient. Existing data was not changed.",
-  "envBootstrap.resetRequiresOffline": "Cannot reset the entire runtime while the app is running: background services or browser sessions may still use its data. Fully quit the app and use an offline maintenance procedure. Stopping Agent Platform or clicking this button again is insufficient. Existing data was not changed.",
   "envBootstrap.bundledEnvZipMissing": "The bundled env.zip was not found, so the runtime environment cannot be reset.",
   "envBootstrap.runtimeRootNotDirectory": "Runtime environment path is not a directory: {path}",
   "envBootstrap.resetFailed": "Runtime environment reset failed: {message}",
