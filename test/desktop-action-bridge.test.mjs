@@ -2120,7 +2120,8 @@ test("WebApp Bridge capability list enables all public capabilities and distingu
     args: {}
   });
   assert.equal(response.ok, true);
-  assert.equal(response.result.bridgeVersion, 1);
+  // Legacy manifest metadata does not downgrade the current public SDK contract.
+  assert.equal(response.result.bridgeVersion, 2);
   const chat = response.result.capabilities.find((entry) => entry.id === "assistant.chat");
   const clipboard = response.result.capabilities.find((entry) => entry.id === "desktop.clipboard.write");
   const screen = response.result.capabilities.find((entry) => entry.id === "desktop.screen.capture");

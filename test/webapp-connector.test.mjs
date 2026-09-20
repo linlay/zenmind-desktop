@@ -69,9 +69,9 @@ test('legacy access requests succeed without declarations or confirmation',async
  assert.equal(backend.error.code,'forbidden');
 });
 
-test('a revoked runtime signal blocks response delivery and further calls',async()=>{
+for (const kind of ['webappPage','webappBackend']) test(`${kind}: a revoked runtime signal blocks response delivery and further calls`,async()=>{
  const options=fixture();const controller=new AbortController();
- const invocation={kind:'webappPage',webappId:'one',signal:controller.signal};let deleted=0;
+ const invocation={kind,webappId:'one',signal:controller.signal};let deleted=0;
  fetcher=async(url,request)=>{
   if(request.method==='DELETE'){deleted++;return response({revoked:true})}
   if(url.includes('/grants'))return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000});
@@ -83,9 +83,9 @@ test('a revoked runtime signal blocks response delivery and further calls',async
  assert.equal(again.error.code,'app_grant_required');
 });
 
-test('an existing token cannot switch to another personal account',async()=>{
+for (const kind of ['webappPage','webappBackend']) test(`${kind}: an existing token cannot switch to another personal account`,async()=>{
  const options=fixture();const controller=new AbortController();
- const invocation={kind:'webappPage',webappId:'one',signal:controller.signal};
+ const invocation={kind,webappId:'one',signal:controller.signal};
  fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000}:{items:[]});
  assert.equal((await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation)).ok,true);
  options.issueAgentAccessToken=async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'desktop-user:'+'b'.repeat(64)})).toString('base64url')+'.s'});
@@ -194,7 +194,7 @@ test('connector discovery lists installed adapters without exposing catalog inte
  assert.deepEqual(result.result,{items:[{connectorId:'wecom',name:'WeCom',packageVersion:'1.0.0',adapters:['cli','mcp']}]});
 });
 
-test('CLI and MCP execute without consent; backend and obsolete payloads remain invalid',async()=>{
+test('CLI and MCP execute from either application transport; obsolete payloads remain invalid',async()=>{
  const options=fixture();
  const grants=[];fetcher=async(url,request)=>{
   if(request.method==='DELETE')return response({revoked:true});
@@ -206,8 +206,8 @@ test('CLI and MCP execute without consent; backend and obsolete payloads remain 
  assert.equal((await api.executeWebappConnector(options,'connector.invoke',input,page)).ok,true);
  assert.deepEqual(grants.at(-1),{version:2,appId:'one',execution:[{connectorId:'wecom',adapter:'cli'}]});
  const backend=await api.executeWebappConnector(options,'connector.invoke',input,{kind:'webappBackend',webappId:'one'});
- assert.equal(backend.error.code,'forbidden');assert.equal(grants.length,1);
- const mcp=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'mcp',component:'main',toolName:'send',arguments:{}},page);
+ assert.equal(backend.ok,true);assert.equal(grants.length,2);
+ const mcp=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'mcp',component:'main',toolName:'send',arguments:{}},{kind:'webappBackend',webappId:'one'});
  assert.equal(mcp.ok,true);
  assert.deepEqual(grants.at(-1).execution,[{connectorId:'wecom',adapter:'mcp'}]);
  const legacy=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',operationId:'message.send',revision:'old',arguments:{}},page);

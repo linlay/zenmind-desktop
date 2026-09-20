@@ -13,7 +13,7 @@ export function getWebappAllowedActions(_item: WebappEntry, scope: WebappCapabil
     actions.add(WEBAPP_BRIDGE_ACTIONS.capabilitiesList);
   }
   for (const [capability, capabilityActions] of Object.entries(WEBAPP_BRIDGE_CAPABILITY_ACTIONS)) {
-    if (scope === "backendActionToken" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
+    if (scope === "backendActionToken" && capability !== "connector.execute" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
       continue;
     }
     for (const action of capabilityActions) {

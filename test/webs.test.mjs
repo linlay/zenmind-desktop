@@ -606,7 +606,7 @@ test("public Bridge policy separates page interactions from backend data capabil
       version: 1
     }
   };
-  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
+  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
   assert.equal(isWebappActionAllowed(item, "localPageGateway", "desktop.native.clipboard.writeText"), true);
   assert.equal(isWebappActionAllowed(item, "backendActionToken", "desktop.native.clipboard.writeText"), false);
   const token = issueWebappActionToken(item, "backendActionToken");
@@ -887,10 +887,10 @@ test('installed WebApp page tokens allow connector operations without declaratio
  }finally{revokeWebappActionToken(token)}
 });
 
- test('legacy bridge fields are optional metadata and execution remains page-only',()=>{
+ test('legacy bridge fields are optional metadata and both transports support execution',()=>{
   const parsed=parseWebappManifest({...manifest('generic'),desktopBridge:{version:2,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}});
   assert.equal(isWebappActionAllowed(parsed,'localPageGateway','connector.invoke'),true);
-  assert.equal(isWebappActionAllowed(parsed,'backendActionToken','connector.invoke'),false);
+  assert.equal(isWebappActionAllowed(parsed,'backendActionToken','connector.invoke'),true);
   assert.throws(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorOperations:{wecom:['send']}}}));
   assert.doesNotThrow(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
   assert.equal(isWebappActionAllowed(parseWebappManifest(manifest('plain')),'localPageGateway','kanban.issues.list'),true);

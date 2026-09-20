@@ -33,13 +33,13 @@ Node 后端将生成的 `bridge.mjs` 随应用复制到后端目录：
 
 ```js
 import { createBackendClient } from './bridge.mjs';
-const { assistant, skill, artifact, kanban } = createBackendClient({
+const { connector, assistant, skill, artifact, kanban } = createBackendClient({
   url: process.env.DESKTOP_ACTION_BRIDGE_URL,
   token: process.env.DESKTOP_ACTION_BRIDGE_TOKEN
 });
 ```
 
-仅受管后端使用 Desktop 注入的 loopback URL 与 token；不得转发至前端或日志。Node SDK 不依赖 DOM。连接器 list/describe/invoke、UI 登录、兼容权限入口、产物预览/保存和其他原生交互只允许页面调用。退出账号后 token 失效，登录并重启应用后重新获得。
+仅受管后端使用 Desktop 注入的 loopback URL 与 token；不得转发至前端或日志。Node SDK 不依赖 DOM。连接器 list/describe/invoke 在前后端使用相同契约与短期应用授权，CLI/MCP 均支持；UI 登录、兼容权限入口、产物预览/保存和其他原生交互仍只允许页面调用。后端业务 API 必须校验访问者，不得公开转发任意 connector 请求或让远程访客隐式继承本机账号。退出账号后 token 失效，登录并重启应用后重新获得。
 
 | 能力 | 当前接口与约束 |
 | --- | --- |

@@ -141,7 +141,7 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
         return { ok: true, action, result };
       } finally { shared.waiters--; if (!shared.waiters) shared.abort.abort(); }
     }
-    if (invocation.kind !== "webappPage") throw new ConnectorError("forbidden");
+    // Both application transports use the same identity, instance and short-lived grant checks.
     if (action === "connector.invoke") {
       if (args.credentialRevision !== undefined && (typeof args.credentialRevision !== "string" || !args.credentialRevision || args.credentialRevision.length > 256)) throw new ConnectorError("invalid_arguments");
       if (args.idempotencyKey !== undefined && (typeof args.idempotencyKey !== "string" || !/^[a-zA-Z0-9._:-]{8,128}$/u.test(args.idempotencyKey))) throw new ConnectorError("invalid_arguments");
