@@ -37,6 +37,12 @@ export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "group:webs", label: "nav.websites" },
 ];
 
+const FIXED_SIDEBAR_GROUP_ORDER: SidebarNavOrderItemKey[] = [
+  "chats",
+  "group:assistants",
+  "group:webs",
+];
+
 export function createServiceSidebarNavOrderKey(serviceId: string): SidebarNavOrderItemKey {
   return `service:${serviceId}`;
 }
@@ -81,7 +87,21 @@ export function normalizeSidebarNavOrder(
       orderedKeys.push(item.key);
     }
   }
-  return orderedKeys;
+  const fixedGroupKeys = FIXED_SIDEBAR_GROUP_ORDER.filter((key) =>
+    availableKeys.has(key)
+  );
+  const fixedGroupKeySet = new Set(fixedGroupKeys);
+  return [
+    ...orderedKeys.filter((key) => !fixedGroupKeySet.has(key)),
+    ...fixedGroupKeys,
+  ];
+}
+
+export function createPersistedSidebarNavOrder(
+  order: SidebarNavOrderItemKey[],
+): SidebarNavOrderItemKey[] {
+  const fixedGroupKeySet = new Set(FIXED_SIDEBAR_GROUP_ORDER);
+  return order.filter((key) => !fixedGroupKeySet.has(key));
 }
 
 export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey }>(
