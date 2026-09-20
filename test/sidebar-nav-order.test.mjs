@@ -56,11 +56,11 @@ test("default order is stable and missing items append after valid saved entries
       ["kanban", "schedules", "group:assistants", "group:webs"],
       availableItems,
     ),
-    ["kanban", "schedules", "group:assistants", "group:webs", "new-chat", "chats"],
+    ["kanban", "schedules", "new-chat", "chats", "group:assistants", "group:webs"],
   );
 });
 
-test("Chats keeps an explicit saved navigation position", () => {
+test("fixed sidebar groups stay below reorderable primary entries", () => {
   const availableItems = createDefaultSidebarNavOrderItems({
     kanbanEnabled: true,
     serviceItems: [],
@@ -70,10 +70,10 @@ test("Chats keeps an explicit saved navigation position", () => {
 
   assert.deepEqual(
     normalizeSidebarNavOrder(
-      ["kanban", "schedules", "group:assistants", "chats", "group:webs"],
+      ["schedules", "new-chat", "chats", "group:assistants", "group:webs", "kanban"],
       availableItems,
     ),
-    ["kanban", "schedules", "group:assistants", "chats", "group:webs", "new-chat"],
+    ["schedules", "new-chat", "kanban", "chats", "group:assistants", "group:webs"],
   );
 });
 
@@ -111,11 +111,11 @@ test("mixed navigation order preserves moved Kanban, independent New Chat and we
   assert.deepEqual(moveSidebarNavItem(mixed, "kanban", "kanban", true), mixed);
 });
 
-test("newly available entries append uniformly, including pins and chat entries", () => {
+test("newly available reorderable entries append while Chats stays in the fixed groups", () => {
   const items = ["website:docs", "new-chat", "chats", "schedules"].map((key) => ({ key, label: key }));
   assert.deepEqual(normalizeSidebarNavOrder(["schedules", "schedules", null, "removed"], items),
     ["schedules", "website:docs", "new-chat", "chats"]);
-  assert.deepEqual(normalizeSidebarNavOrder(null, items), items.map(({ key }) => key));
+  assert.deepEqual(normalizeSidebarNavOrder(null, items), ["website:docs", "new-chat", "schedules", "chats"]);
 });
 
 
