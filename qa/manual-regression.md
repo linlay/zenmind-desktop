@@ -71,6 +71,8 @@
 
 ## WebClient 调试与网站菜单入口
 
+- macOS 与 Windows 分别悬停侧栏“站点”的新增/更多按钮，确认仅显示一个“新增或导入网站应用”提示；点击后提示立即消失，仅保留“添加网站 / 导入网站应用”菜单。覆盖提示出现前快速点击、提示出现后点击、菜单关闭后按钮仍有焦点，以及移出再悬停恢复单个提示。
+- 网站管理页右上角不再显示“入口 / 已固定”统计卡片，左侧列表仍显示网站数量，添加、编辑、保存和删除入口保留。
 - macOS 与 Windows 分别在运行配置中启用 `DEBUG_PANEL_ENABLED=true` 并刷新 Agent Chat，确认顶栏显示 Debug 按钮；关闭或未设置该开关时隐藏。已有 Chat 点击后在宿主 WorkPanel 打开对应 Debug item，重复点击复用已有 item；未建立 Chat 时不发起打开请求，宿主 WorkPanel 显隐按钮保持原有行为。
 - 同时启用 `SETTINGS_MENU_ENABLED=true`、`QUICK_ACTIONS_ENABLED=true`，确认 `DESKTOP_APP=true` 的 WebClient 根页面、Agent Chat 与 Copilot 均不显示 Settings Menu 或 Quick Actions；Standalone 网站仍按各自开关显示。
 
