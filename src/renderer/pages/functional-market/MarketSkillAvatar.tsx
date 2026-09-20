@@ -17,9 +17,10 @@ export function MarketSkillAvatar({ item }: { item: MarketItem }) {
   let hash = 5381;
   for (const character of item.id) hash = ((hash << 5) + hash) ^ character.charCodeAt(0);
   const isPackage = item.skill?.kind === "package";
+  const hasImage = Boolean(url && failed !== url);
   const local = item.source === "local" && !item.marketplaceAvailable;
-  return <span className={`skill-discovery-icon tone-${(hash >>> 0) % 6}${isPackage ? " is-package" : ""}`} aria-hidden="true">
-    {url && failed !== url ? <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url)} />
+  return <span className={`skill-discovery-icon tone-${(hash >>> 0) % 6}${isPackage ? " is-package" : ""}${hasImage ? " has-image" : ""}`} aria-hidden="true">
+    {hasImage ? <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url)} />
       : isPackage ? <AppstoreOutlined /> : local ? <FolderOpenOutlined /> : <SidebarIllustration kind="skill" />}
   </span>;
 }

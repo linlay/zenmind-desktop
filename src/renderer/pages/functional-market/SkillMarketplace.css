@@ -51,6 +51,7 @@
 .skill-discovery-icon.tone-3 { background: #fff0df; color: #e88f38; }
 .skill-discovery-icon.tone-4 { background: #e4f4ff; color: #299cd7; }
 .skill-discovery-icon.tone-5 { background: #f0e6ff; color: #a16adc; }
+.skill-discovery-icon.has-image { background: transparent; box-shadow: none; }
 .skill-discovery-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font-size: 13px !important; font-weight: 650 !important; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .skill-discovery-install { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border: 0; border-radius: 6px; background: var(--market-control-card-soft); color: var(--market-control-text); }
 .skill-discovery .skill-discovery-install.is-update { flex-basis: auto; min-width: 48px; padding: 0 6px; color: var(--market-control-blue); font-size: 11px; white-space: nowrap; }
