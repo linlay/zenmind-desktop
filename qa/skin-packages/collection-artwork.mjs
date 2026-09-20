@@ -45,7 +45,7 @@ export async function createCollectionArtwork(manifest, key) {
   const design = COLLECTION_STYLES[key];
   if (!design) throw new Error(`Unknown collection theme: ${key}`);
   const files = new Map();
-  const next = structuredClone(manifest); next.schemaVersion = '1.1'; next.version = key === 'pink-kitty' ? '1.1.0' : key === 'gold-saints' ? '1.2.2' : '1.2.1';
+  const next = structuredClone(manifest); next.schemaVersion = '1.1'; next.version = key === 'pink-kitty' ? '1.1.1' : key === 'gold-saints' ? '1.2.2' : '1.2.1';
   for (const mode of ['light', 'dark']) {
     const tokens = next.variants[mode].tokens;
     const color = tokens['--control-icon-color'], accent = tokens['--accent'], ink = tokens['--ink'];
@@ -59,6 +59,10 @@ export async function createCollectionArtwork(manifest, key) {
       files.set(`visuals/${mode}-${name}.png`, canvas.toBuffer('image/png'));
     }
     for (const [slot, name] of Object.entries(mapping)) images[slot] = `visuals/${mode}-${key !== 'pink-kitty' && slot === 'chat.screenshot' ? 'screenshot' : name}.png`;
+    if (key === 'pink-kitty') {
+      for (const slot of ['chat.attach', 'chat.screenshot', 'navigation.refresh', 'entry.new_project']) delete images[slot];
+      for (const name of ['attach', 'refresh']) files.delete(`visuals/${mode}-${name}.png`);
+    }
     for (const [group, zh, en] of [['pinned', '置顶', 'Pinned'], ['chats', '对话', 'Chats'], ['projects', '项目', 'Projects'], ['websites', '站点', 'Sites']]) {
       for (const [locale, label] of [['zh-CN', zh], ['en-US', en]]) {
         const font = `bold 62px "${design.rounded ? 'CollectionSans' : 'CollectionSerif'}"`;
