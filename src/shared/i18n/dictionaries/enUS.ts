@@ -563,6 +563,8 @@ export const enUSMessages = {
   "chatWorkPanel.image.zoom": "Display scale",
   "chatWorkPanel.image.zoomIn": "Zoom in",
   "chatWorkPanel.image.zoomOut": "Zoom out",
+  "chatWorkPanel.image.actualSize": "Actual size (100%)",
+  "chatWorkPanel.image.zoomPresets": "Zoom presets",
   "chatWorkPanel.image.fit": "Fit window",
   "chatWorkPanel.image.edit": "Edit",
   "chatWorkPanel.image.done": "Return to preview",

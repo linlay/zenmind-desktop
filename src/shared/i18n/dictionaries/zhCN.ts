@@ -563,6 +563,8 @@ export const zhCNMessages = {
   "chatWorkPanel.image.zoom": "显示比例",
   "chatWorkPanel.image.zoomIn": "放大",
   "chatWorkPanel.image.zoomOut": "缩小",
+  "chatWorkPanel.image.actualSize": "原始比例（100%）",
+  "chatWorkPanel.image.zoomPresets": "缩放预设",
   "chatWorkPanel.image.fit": "适合窗口",
   "chatWorkPanel.image.edit": "编辑",
   "chatWorkPanel.image.done": "返回预览",
