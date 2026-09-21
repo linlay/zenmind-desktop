@@ -48,7 +48,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     const key = JSON.stringify(config);
     if (key !== configKey) {
       configKey = key; release = undefined; artifact = undefined; file = "";
-      publish({ phase: config.enabled ? "idle" : "disabled", version: undefined, releaseNotes: undefined, error: undefined, progress: 0 });
+      publish({ phase: config.enabled ? "idle" : "disabled", version: undefined, releaseNotes: undefined, error: undefined, progress: 0, packageReady: false, restartRequired: false });
     }
     return config;
   }
@@ -62,9 +62,12 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
         : state.phase === "downloading" ? "downloadFailed"
         : state.phase === "verifying" ? "verificationFailed"
         : state.phase === "installing" ? "installFailed" : "operationFailed";
-      publish({ phase: "error", error: error instanceof Error && ["activeRuns", "cleanupFailed", "updateBusy"].includes(error.message) ? error.message as DesktopUpdateState["error"] : failure });
+      publish({ phase: state.packageReady && !state.restartRequired ? "ready" : "error", error: error instanceof Error && ["cleanupFailed", "updateBusy"].includes(error.message) ? error.message as DesktopUpdateState["error"] : failure });
     }).then(snapshot).finally(() => { busy = undefined; });
     return busy;
+  }
+  function cacheFile(target: DesktopUpdateArtifact) {
+    return path.join(options.cacheRoot, `${target.sha256}${options.platform === "darwin" ? ".zip" : ".exe"}`);
   }
   async function download() {
     if (!release || !artifact || compareUpdateVersions(release.version, currentVersion) <= 0) return;
@@ -72,20 +75,20 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     const deadline = setTimeout(() => controller?.abort(), 60 * 60_000);
     try {
       fs.mkdirSync(options.cacheRoot, { recursive: true, mode: 0o700 });
-      file = path.join(options.cacheRoot, `${artifact.sha256}${options.platform === "darwin" ? ".zip" : ".exe"}`);
-      publish({ phase: "downloading", progress: 0, error: undefined });
+      file = cacheFile(artifact);
+      publish({ phase: "downloading", progress: 0, error: undefined, packageReady: false });
       let cached = false;
       try { await verifyUpdateFile(file, artifact); cached = true; } catch { /* Download absent or corrupt cache again. */ }
       if (!cached) await (options.downloadFile ?? downloadUpdateFile)(artifact, file, controller.signal, (progress) => publish({ progress }));
       publish({ phase: "verifying", progress: 100 });
       await verifyUpdateFile(file, artifact);
       await options.verifyPublisher(file);
-      publish({ phase: "ready", progress: 100 });
+      publish({ phase: "ready", progress: 100, packageReady: true });
     } finally { clearTimeout(deadline); controller = undefined; }
   }
   const api = {
     getState() {
-      if (!busy) {
+      if (!busy && !state.restartRequired) {
         try { refreshConfig(); } catch { publish({ phase: "error", error: "configInvalid" }); }
       }
       return snapshot();
@@ -93,8 +96,9 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     check() {
       if (testConfig) return Promise.resolve(snapshot());
       return action(async () => {
+      if (state.restartRequired) return;
       const config = refreshConfig();
-      if (!config.enabled || state.phase === "ready" || state.phase === "installing") return;
+      if (!config.enabled || state.packageReady || state.restartRequired || state.phase === "installing") return;
       publish({ phase: "checking", error: undefined });
       controller = new AbortController();
       const deadline = setTimeout(() => controller?.abort(), 30_000);
@@ -103,7 +107,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
         if (raw === undefined) {
           release = undefined; artifact = undefined; file = "";
           lastCheck = Date.now();
-          publish({ phase: "not-configured", checkedAt: new Date(lastCheck).toISOString(), version: undefined, releaseNotes: undefined, progress: 0, error: undefined });
+          publish({ phase: "not-configured", checkedAt: new Date(lastCheck).toISOString(), version: undefined, releaseNotes: undefined, progress: 0, error: undefined, packageReady: false });
           return;
         }
         release = parseUpdateManifest(raw, options.productId);
@@ -111,11 +115,21 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       lastCheck = Date.now();
       artifact = release.artifacts[`${options.platform}-${options.arch}`];
       const newer = compareUpdateVersions(release.version, currentVersion) > 0;
-      publish({ checkedAt: new Date(lastCheck).toISOString(), version: newer ? release.version : undefined, releaseNotes: newer ? release.releaseNotes : undefined, phase: !newer ? "current" : artifact ? "available" : "unavailable", progress: 0 });
+      publish({ checkedAt: new Date(lastCheck).toISOString(), version: newer ? release.version : undefined, releaseNotes: newer ? release.releaseNotes : undefined, phase: !newer ? "current" : artifact ? "available" : "unavailable", progress: 0, packageReady: false });
+      // Rediscover a verified cache after restart without asking for another download.
+      if (newer && artifact) {
+        file = cacheFile(artifact);
+        try {
+          await verifyUpdateFile(file, artifact);
+          await options.verifyPublisher(file);
+          publish({ phase: "ready", progress: 100, packageReady: true });
+          return;
+        } catch { /* Missing or invalid cache still requires a download. */ }
+      }
       if (newer && artifact && state.autoDownload) await download();
     }); },
     async loadTest(input: DesktopTestUpdateInput) {
-      if (busy || disposed || state.phase === "installing") throw new Error("updateBusy");
+      if (busy || disposed || state.restartRequired || state.phase === "installing") throw new Error("updateBusy");
       if (!input || typeof input !== "object" || JSON.stringify(input).length > 256 * 1024) throw new Error("Invalid test update");
       const raw = "manifest" in input ? input.manifest : {
         schemaVersion: 1, productId: options.productId, version: input.version,
@@ -129,25 +143,38 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       testConfig = { enabled: true, feedUrl: "" };
       release = candidate; artifact = target; file = "";
       publish({ source: "test", phase: "available", version: candidate.version, releaseNotes: candidate.releaseNotes,
-        progress: 0, checkedAt: undefined, error: undefined });
+        progress: 0, checkedAt: undefined, error: undefined, packageReady: false, restartRequired: false });
       return snapshot();
     },
     async clearTest() {
-      if (busy || disposed || state.phase === "installing") throw new Error("updateBusy");
+      if (busy || disposed || state.restartRequired || state.phase === "installing") throw new Error("updateBusy");
       if (!testConfig) return snapshot();
       testConfig = undefined; configKey = ""; release = undefined; artifact = undefined; file = ""; lastCheck = 0;
-      publish({ source: "official", phase: "idle", version: undefined, releaseNotes: undefined, progress: 0, checkedAt: undefined, error: undefined });
+      publish({ source: "official", phase: "idle", version: undefined, releaseNotes: undefined, progress: 0, checkedAt: undefined, error: undefined, packageReady: false, restartRequired: false });
       return api.getState();
     },
-    download() { return action(async () => { refreshConfig(); if (state.phase !== "ready" && state.phase !== "installing") await download(); }); },
+    download() { return action(async () => { if (state.restartRequired) return; refreshConfig(); if (!state.restartRequired && !state.packageReady && state.phase !== "installing") await download(); }); },
     install() { return action(async () => {
+      if (state.restartRequired || state.phase === "installing") return;
       refreshConfig();
-      if (!state.canInstall || state.phase !== "ready" || !artifact || !release) return;
+      if (!state.canInstall || !state.packageReady || state.restartRequired || !artifact || !release) return;
       publish({ phase: "installing", error: undefined });
-      await verifyUpdateFile(file, artifact);
-      await options.verifyPublisher(file);
-      if (!await options.prepareInstall()) { publish({ phase: "ready" }); return; }
-      await options.install(file, release.version);
+      try {
+        await verifyUpdateFile(file, artifact);
+        await options.verifyPublisher(file);
+      } catch (error) {
+        publish({ phase: "verifying", packageReady: false });
+        throw error;
+      }
+      try {
+        if (!await options.prepareInstall()) { publish({ phase: "ready" }); return; }
+      } catch (error) {
+        // updateBusy is a pre-cleanup refusal; other failures may have stopped services.
+        if (!(error instanceof Error && error.message === "updateBusy")) publish({ restartRequired: true });
+        throw error;
+      }
+      try { await options.install(file, release.version); }
+      catch (error) { publish({ restartRequired: true }); throw error; }
     }); },
     setAutoDownload(enabled: boolean) {
       if (typeof enabled !== "boolean") throw new Error("Invalid update preference");

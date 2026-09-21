@@ -23,8 +23,12 @@ export interface DesktopUpdateState {
   progress: number;
   autoDownload: boolean;
   canInstall: boolean;
+  /** Verified cached package, independent of the last operation error. */
+  packageReady?: boolean;
+  /** Cleanup/native install may have stopped services; restart before another attempt. */
+  restartRequired?: boolean;
   checkedAt?: string;
-  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "activeRuns" | "cleanupFailed" | "updateBusy";
+  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy";
 }
 export interface DesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>;
@@ -35,4 +39,13 @@ export interface DesktopUpdatesApi {
   install(): Promise<DesktopUpdateState>;
   setAutoDownload(enabled: boolean): Promise<DesktopUpdateState>;
   onChanged(listener: (state: DesktopUpdateState) => void): () => void;
+}
+
+/** Shared action policy keeps sidebar and About recovery consistent. */
+export function desktopUpdateAction(state: DesktopUpdateState): "install" | "download" | "check" | "restart" | undefined {
+  if (["checking", "downloading", "verifying", "installing", "disabled"].includes(state.phase)) return undefined;
+  if (state.restartRequired) return "restart";
+  if (state.packageReady || state.phase === "ready") return "install";
+  if (state.phase === "available" || (state.version && ["downloadFailed", "verificationFailed"].includes(state.error ?? ""))) return "download";
+  return "check";
 }

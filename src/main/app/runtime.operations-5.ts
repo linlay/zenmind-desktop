@@ -180,10 +180,6 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
         getMainWindow: factoryContext.getMainWindow,
         prepareInstall: async () => {
             if (factoryContext.appState.isHandlingQuit || !isStartupPhaseAtLeast(factoryContext.appState.startupPhase, "core-ready")) throw new Error("updateBusy");
-            const diagnostics = factoryContext.realtimeBroker.getDiagnostics();
-            if (diagnostics.pendingQueryCount || diagnostics.replay.some((run) => run.state !== "terminal")) {
-                throw new Error("activeRuns");
-            }
             factoryContext.appState.isHandlingQuit = true;
             factoryContext.realtimeBroker.beginShutdown();
             factoryContext.appState.shutdownMode = "installer";

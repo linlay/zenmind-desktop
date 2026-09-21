@@ -89,6 +89,7 @@ for (const platform of ["darwin", "win32"]) test(`${platform} checks, verifies a
   assert.equal((await runtime.check()).phase, "ready");
   assert.ok(events.some((s) => s.phase === "verifying"));
   await runtime.install();
+  await runtime.install();
   assert.equal(installs.length, 1);
   assert.deepEqual(order, ["signature", "signature", "cleanup"]);
   assert.equal(events.some((s) => JSON.stringify(s).includes("https://")), false);
@@ -100,8 +101,8 @@ test("manual download preference and cache reuse survive runtime recreation", as
   assert.equal((await runtime.download()).phase, "ready");
   const again = fixture(t, { cacheRoot: root, preferencesPath: path.join(root, "preferences.json"), downloadFile: () => assert.fail("cache should be reused") });
   assert.equal(again.runtime.getState().autoDownload, false);
-  await again.runtime.check();
-  assert.equal((await again.runtime.download()).phase, "ready");
+  assert.equal((await again.runtime.check()).phase, "ready");
+  assert.equal(again.runtime.getState().packageReady, true);
 });
 test("bad checksum or publisher never reaches ready", async (t) => {
   for (const patch of [{ downloadFile: async (_a, file) => fs.promises.writeFile(file, "broken") }, { verifyPublisher: async () => { throw new Error("bad signature"); } }]) {
@@ -113,8 +114,8 @@ test("bad checksum or publisher never reaches ready", async (t) => {
     assert.equal(events.some((s) => s.phase === "ready"), false);
   }
 });
-test("install rechecks cache and fails closed on running tasks or cleanup failure", async (t) => {
-  for (const error of ["activeRuns", "cleanupFailed"]) {
+test("install rechecks cache and fails closed on startup or cleanup failure", async (t) => {
+  for (const error of ["updateBusy", "cleanupFailed"]) {
     const { runtime, installs } = fixture(t, { prepareInstall: async () => { throw new Error(error); } });
     runtime.setAutoDownload(true);
     await runtime.check();
@@ -298,4 +299,61 @@ for (const platform of ["darwin", "win32"]) test(`${platform} URL-selected feed 
   }
   const { runtime } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64" });
   assert.equal((await runtime.loadTest({ manifest: { ...manifest(), version: "0.6.0-dev.1" } })).phase, "available");
+});
+
+for (const platform of ["darwin", "win32"]) test(`${platform} pre-cleanup refusal retains package and retries install directly`, async (t) => {
+  let blocked = true, downloads = 0;
+  const { runtime, installs } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64",
+    prepareInstall: async () => { if (blocked) throw new Error("updateBusy"); return true; },
+    downloadFile: async (_a, file) => { downloads++; await fs.promises.writeFile(file, content); }
+  });
+  await runtime.check(); await runtime.download();
+  const failed = await runtime.install();
+  assert.equal(failed.phase, "ready"); assert.equal(failed.packageReady, true);
+  assert.equal(failed.error, "updateBusy");
+  assert.equal((await runtime.check()).phase, "ready");
+  blocked = false;
+  const retried = await runtime.install();
+  assert.equal(retried.error, undefined); assert.equal(installs.length, 1); assert.equal(downloads, 1);
+});
+test("cancelled preparation preserves ready state and does not install", async (t) => {
+  const { runtime, installs } = fixture(t, { prepareInstall: async () => false });
+  await runtime.check(); await runtime.download();
+  assert.equal((await runtime.install()).packageReady, true);
+  assert.equal(runtime.getState().phase, "ready"); assert.equal(installs.length, 0);
+});
+for (const platform of ["darwin", "win32"]) test(`${platform} native or cleanup failure retains package but requires service recovery`, async (t) => {
+  for (const stage of ["cleanup", "native"]) {
+    let attempts = 0;
+    const { runtime } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64",
+      prepareInstall: async () => { if (stage === "cleanup") { attempts++; throw new Error("cleanupFailed"); } return true; },
+      install: async () => { attempts++; throw new Error("native failure"); }
+    });
+    await runtime.check(); await runtime.download();
+    const failed = await runtime.install();
+    assert.equal(failed.packageReady, true); assert.equal(failed.restartRequired, true);
+    await runtime.check(); await runtime.download(); await runtime.install();
+    assert.equal(attempts, 1); assert.equal(runtime.getState().restartRequired, true);
+  }
+});
+test("tampered cache invalidates readiness and recovers through download", async (t) => {
+  const { runtime, root, installs } = fixture(t);
+  await runtime.check(); await runtime.download();
+  fs.writeFileSync(path.join(root, `${hash}.zip`), "tampered");
+  const failed = await runtime.install();
+  assert.equal(failed.packageReady, false); assert.equal(failed.error, "verificationFailed");
+  assert.equal(installs.length, 0);
+  await runtime.download(); await runtime.install(); assert.equal(installs.length, 1);
+});
+test("sidebar and About share recovery actions", () => {
+  const { desktopUpdateAction } = require("../dist-electron/shared/desktop-updates.js");
+  const base = { currentVersion: "0.4.1", version: "0.5.0", progress: 100, autoDownload: false, canInstall: true };
+  for (const [patch, expected] of [
+    [{ phase: "ready", packageReady: true, error: "updateBusy" }, "install"],
+    [{ phase: "error", packageReady: true, restartRequired: true, error: "cleanupFailed" }, "restart"],
+    [{ phase: "error", packageReady: false, error: "verificationFailed" }, "download"],
+    [{ phase: "error", error: "downloadFailed" }, "download"],
+    [{ phase: "error", error: "checkFailed" }, "check"],
+    [{ phase: "installing", packageReady: true }, undefined]
+  ]) assert.equal(desktopUpdateAction({ ...base, ...patch }), expected);
 });

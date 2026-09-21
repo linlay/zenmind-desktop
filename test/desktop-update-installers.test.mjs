@@ -103,3 +103,24 @@ test("update startup gate accepts fully started apps and rejects startup/quit", 
     }
   }
 });
+
+test("confirmed upgrade cleans up without waiting for running chats", async () => {
+  const source = fs.readFileSync(new URL("../src/main/app/runtime.operations-5.ts", import.meta.url), "utf8");
+  const body = source.match(/prepareInstall: async \(\) => \{([\s\S]*?)\n        \},\n        quit:/)?.[1];
+  assert.ok(body);
+  const prepare = new Function("factoryContext", "isStartupPhaseAtLeast", `return (async () => {${body}})();`);
+  const events = [];
+  const context = {
+    appState: { isHandlingQuit: false, startupPhase: "core-ready" },
+    realtimeBroker: {
+      getDiagnostics: () => ({ pendingQueryCount: 2, replay: [{ state: "running" }] }),
+      beginShutdown: () => events.push("shutdown")
+    },
+    runShutdownCleanup: async () => { events.push("cleanup"); return { ok: true }; },
+    pluginBridgeRuntime: { emitBeforeQuit: () => events.push("plugins") },
+    logsRuntime: { flush: async () => events.push("logs") }
+  };
+  assert.equal(await prepare(context, () => true), true);
+  assert.deepEqual(events, ["shutdown", "cleanup", "plugins", "logs"]);
+  assert.equal(context.appState.shutdownMode, "installer");
+});
