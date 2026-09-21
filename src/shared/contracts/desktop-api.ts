@@ -1,3 +1,4 @@
+import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
 import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
@@ -1359,6 +1360,7 @@ export interface DesktopApi {
   onOpenGlobalSearch: (listener: () => void) => () => void;
   onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
   onCloseShortcut: (listener: DesktopCloseShortcutListener) => () => void;
+  onWorkPanelBrowserShortcut: (listener: (request: WorkPanelBrowserShortcut) => void) => () => void;
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;

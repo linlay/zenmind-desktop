@@ -6,7 +6,7 @@ import type {
 } from "../../../../shared/contracts";
 import type { ServiceDefinition } from "../../../support/manifest/manifest-utils";
 import { getService } from "../service-registry";
-import { getEmbeddedNodeStartEnv } from "./embedded-node-runtime";
+import { getPreparedEmbeddedNodeStartEnv } from "./embedded-node-runtime";
 import type { ServicesIntegrationPorts } from "../integration-ports";
 import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 import {
@@ -158,7 +158,7 @@ export function resolveNodeBinStartEnv() {
 }
 
 export function getStartCommandEnvOverrides(app: App, service: ServiceDefinition) {
-  if (service.id === "agent-platform") return getEmbeddedNodeStartEnv(app);
+  if (service.id === "agent-platform") return getPreparedEmbeddedNodeStartEnv(app);
   if (!NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)) {
     return undefined;
   }

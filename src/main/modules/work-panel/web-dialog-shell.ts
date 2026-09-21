@@ -1,3 +1,4 @@
+import { workPanelDialogTools, WORK_PANEL_DIALOG_TOOLS_CSS } from "./web-dialog-tools";
 import { t } from "../../support/i18n/main-i18n";
 
 export const WORK_PANEL_DIALOG_RESTORE_URL = "https://workpanel.invalid/restore";
@@ -24,7 +25,7 @@ nav,form{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:
 button,a,input{font:inherit;color:CanvasText;background:Canvas;border:1px solid color-mix(in srgb,CanvasText 25%,transparent);border-radius:6px;padding:6px 10px}button,a{cursor:pointer;text-decoration:none}button:disabled{opacity:.4;cursor:default}button:hover,a:hover{background:color-mix(in srgb,CanvasText 8%,Canvas)}:focus-visible{outline:2px solid Highlight;outline-offset:2px}
 nav{overflow-x:auto;flex-shrink:0}#tabs{display:flex;gap:6px}.tab{display:flex;min-width:120px;max-width:240px;border-radius:6px;border:1px solid transparent}.tab[aria-selected=true]{border-color:Highlight;background:color-mix(in srgb,Highlight 12%,Canvas)}.tab button{border:0;background:transparent}.tab .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}
 form input{flex:1;min-width:0}main{flex:1;min-height:0;position:relative}webview{position:absolute;inset:0;display:flex;width:100%;height:100%}webview[hidden]{visibility:hidden;pointer-events:none}#error{color:MarkText;background:Mark;padding:6px 12px}#error:empty{display:none}
-</style></head><body data-platform="${chrome}"><div class="window-titlebar"><span class="window-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span><a href="${WORK_PANEL_DIALOG_RESTORE_URL}">${escapeHtml(t("chatWorkPanel.dialog.restore"))}</a></div>
+${WORK_PANEL_DIALOG_TOOLS_CSS}</style></head><body data-platform="${chrome}"><div class="window-titlebar"><span class="window-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span><a href="${WORK_PANEL_DIALOG_RESTORE_URL}">${escapeHtml(t("chatWorkPanel.dialog.restore"))}</a></div>
 <nav><div id="tabs" role="tablist"></div><button id="new" title="${escapeHtml(t("chatWorkPanel.dialog.newTab"))}">+</button></nav>
 <form><button type="button" id="back" aria-label="${escapeHtml(t("chatWorkPanel.dialog.back"))}">←</button><button type="button" id="forward" aria-label="${escapeHtml(t("chatWorkPanel.dialog.forward"))}">→</button><button type="button" id="reload" aria-label="${escapeHtml(t("chatWorkPanel.dialog.reload"))}">↻</button><input id="address" aria-label="${escapeHtml(t("chatWorkPanel.dialog.address"))}" placeholder="https://" spellcheck="false"><button type="submit">${escapeHtml(t("chatWorkPanel.dialog.go"))}</button></form><div id="error" role="status"></div><main></main>
 <script nonce="${nonce}">
@@ -43,5 +44,5 @@ window.workPanelBrowser={
 document.getElementById('new').onclick=()=>{creating=true;address.value='';address.focus();};
 for(const action of ['back','forward','reload'])document.getElementById(action).onclick=()=>send(action);
 document.querySelector('form').onsubmit=e=>{e.preventDefault();let url=address.value.trim();if(!url)return;if(!/^[a-z][a-z0-9+.-]*:/i.test(url))url='https://'+url;send(creating?'new':'navigate',active,url);creating=false;};
-</script></body></html>`;
+${workPanelDialogTools()}</script></body></html>`;
 }

@@ -158,7 +158,7 @@ test("WorkPanel Web guests share application cookies and only blur hidden or ina
   assert.match(externalWebview, /pageReviewActive\?: boolean;/u);
   assert.match(externalWebview, /onTogglePageReview\?: \(page: \{ url: string; title: string \}\) => void;/u);
   assert.match(externalWebview, /onClick=\{\(\) => onTogglePageReview\(\{/u);
-  assert.match(externalWebview, /pageReviewActive && workPanelBrowser && onTogglePageReview/u);
+  assert.match(externalWebview, /pageReviewActive && documentToolbar && onTogglePageReview/u);
   assert.match(externalWebview, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
   assert.match(
     externalWebview,

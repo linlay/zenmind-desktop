@@ -1837,3 +1837,30 @@ test("Chat Work Panel popups create an outer WorkPanel tab without navigating De
   ]);
   assert.deepEqual(externalUrls, []);
 });
+
+test("browser shortcuts carry the exact WorkPanel guest and never intercept other surfaces", () => {
+  for (const platform of ["darwin", "win32"]) {
+    const target = new FakeWindow();
+    const guest = new FakeWebContents(301);
+    const ordinary = new FakeWebContents(302);
+    const local = new FakeWebContents(303, "", "file:///preview.html");
+    const forwarded = [];
+    target.webContents.send = (...args) => forwarded.push(args);
+    const options = {
+      platform, getMainWindow: () => target,
+      isWorkPanelWebview: (contents) => contents !== ordinary,
+      isDevToolsShortcut: () => false, shouldDownloadUrl: () => false,
+      resolveOpenDisposition: () => "external", collectLoadDiagnostics: async () => ({}),
+      report: () => {}, openExternal: async () => {}, schedule: (callback) => callback(),
+    };
+    for (const contents of [guest, ordinary, local]) configureAttachedWebview(contents, options);
+    for (const contents of [guest, ordinary, local]) {
+      let prevented = false;
+      contents.emit("before-input-event", { preventDefault() { prevented = true; } }, {
+        type: "keyDown", key: "f", meta: platform === "darwin", control: platform === "win32",
+      });
+      assert.equal(prevented, contents === guest);
+    }
+    assert.deepEqual(forwarded, [["app.workPanelBrowserShortcut", { guestId:301, command:"find" }]]);
+  }
+});

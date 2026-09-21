@@ -20,8 +20,6 @@ import {
   ScissorOutlined,
   ThunderboltOutlined,
   UndoOutlined,
-  ZoomInOutlined,
-  ZoomOutOutlined,
 } from "@ant-design/icons";
 import { Popover, Tooltip } from "antd";
 import {
@@ -34,7 +32,6 @@ import {
   type ButtonHTMLAttributes,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 import type { ImageRegionAnnotation } from "../../shared/work-panel-review";
 import type {
@@ -42,8 +39,8 @@ import type {
   WorkPanelResourceImageSelection,
 } from "../../shared/work-panel-resource-image";
 import { useI18n } from "../i18n/useI18n";
+import { ImageZoomControl, IMAGE_ZOOM_STEPS } from "./ImageZoomControl";
 
-const ZOOM_STEPS = [10, 25, 50, 75, 100, 125, 150, 200, 400, 800];
 const HISTORY_LIMIT = 50;
 
 type Snapshot = {
@@ -1300,28 +1297,37 @@ export function WorkPanelResourceImage({
   };
 
   const changeZoom = (next: number) => {
+    if (!Number.isFinite(next)) return;
     setFitMode(false);
     setZoom(clamp(Math.round(next), 10, 800));
   };
 
   const stepZoom = (direction: -1 | 1) => {
     const currentZoom = effectiveZoom;
-    const ordered = direction > 0 ? ZOOM_STEPS : [...ZOOM_STEPS].reverse();
+    const ordered = direction > 0 ? IMAGE_ZOOM_STEPS : [...IMAGE_ZOOM_STEPS].reverse();
     const next = ordered.find((step) => direction > 0 ? step > currentZoom + 0.5 : step < currentZoom - 0.5);
     changeZoom(next ?? (direction > 0 ? 800 : 10));
   };
 
-  const onWheel = (event: ReactWheelEvent) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    changeZoom(effectiveZoom * (event.deltaY < 0 ? 1.1 : 0.9));
-  };
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !active) return;
+    const onWheel = (event: WheelEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+      event.preventDefault();
+      changeZoom(effectiveZoom * (event.deltaY < 0 ? 1.1 : 0.9));
+    };
+    // React's delegated wheel listener is passive; cancel native page zoom here.
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [active, effectiveZoom]);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root || !active) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!root.contains(document.activeElement)) return;
+      if (document.activeElement?.matches("input, textarea, select, [contenteditable=true]")) return;
       const command = event.metaKey || event.ctrlKey;
       if (!command) return;
       if (event.key === "0") { event.preventDefault(); setFitMode(true); }
@@ -1336,7 +1342,7 @@ export function WorkPanelResourceImage({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [active, editing, history.length]);
+  }, [active, editing, history.length, effectiveZoom]);
 
   const imageFilter = adjustOpen
     ? `brightness(${100 + adjust.exposure}%) contrast(${100 + adjust.contrast}%) saturate(${100 + adjust.saturation}%)`
@@ -1376,28 +1382,7 @@ export function WorkPanelResourceImage({
             </Popover>
             <div className="work-panel-image-spacer" />
             <div className="work-panel-image-toolbar-actions">
-              <button type="button" onClick={() => stepZoom(-1)} aria-label={t("chatWorkPanel.image.zoomOut")}><ZoomOutOutlined /></button>
-              <span className="work-panel-image-zoom-control">
-                <input
-                  type="number"
-                  min={10}
-                  max={800}
-                  value={Math.round(effectiveZoom)}
-                  aria-label={t("chatWorkPanel.image.zoom")}
-                  onChange={(event) => changeZoom(Number(event.target.value))}
-                />
-                <span>%</span>
-                <select aria-label={t("chatWorkPanel.image.zoom")} value="" onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === "fit") setFitMode(true);
-                  else if (value) changeZoom(Number(value));
-                }}>
-                  <option value="" disabled>▾</option>
-                  <option value="fit">{t("chatWorkPanel.image.fit")}</option>
-                  {ZOOM_STEPS.map((step) => <option key={step} value={step}>{step}%</option>)}
-                </select>
-              </span>
-              <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
+              <ImageZoomControl value={effectiveZoom} fit={fitMode} disabled={!current} onChange={changeZoom} onStep={stepZoom} onFit={() => setFitMode(true)} />
               <span className="work-panel-image-open-with">
                 <ExportOutlined aria-hidden="true" />
                 <select aria-label={t("chatWorkPanel.image.openWith")} disabled={saveBusy} value="" onChange={(event) => {
@@ -1426,12 +1411,7 @@ export function WorkPanelResourceImage({
             </div>
             <div className="work-panel-image-spacer" />
             <div className="work-panel-image-toolbar-actions">
-              <button type="button" onClick={() => stepZoom(-1)} aria-label={t("chatWorkPanel.image.zoomOut")}><ZoomOutOutlined /></button>
-              <span className="work-panel-image-zoom-control is-compact">
-                <input type="number" min={10} max={800} value={Math.round(effectiveZoom)} aria-label={t("chatWorkPanel.image.zoom")} onChange={(event) => changeZoom(Number(event.target.value))} />
-                <span>%</span>
-              </span>
-              <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
+              <ImageZoomControl value={effectiveZoom} fit={fitMode} disabled={!current} onChange={changeZoom} onStep={stepZoom} onFit={() => setFitMode(true)} />
               <ImageToolbarButton label={t("chatWorkPanel.image.save")} className={pixelDirty && !saveBusy && !aiBusy && !sourceConflict ? "is-primary" : ""} disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /></ImageToolbarButton>
             </div>
           </>
@@ -1688,7 +1668,7 @@ export function WorkPanelResourceImage({
         </div>
       ) : null}
 
-      <div ref={viewportRef} className="work-panel-image-viewport" onWheel={onWheel}>
+      <div ref={viewportRef} className="work-panel-image-viewport">
         {loading ? <div className="work-panel-image-empty">{t("common.loading")}</div> : null}
         {current ? (
           <div className="work-panel-image-stage" style={{ minWidth: current.width * effectiveZoom / 100 + 48, minHeight: current.height * effectiveZoom / 100 + 48 }}>

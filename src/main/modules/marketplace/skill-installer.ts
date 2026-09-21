@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { archiveSkillDirectory, mutateSkillThroughPlatform } from "./skill-platform-installer";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -204,31 +205,13 @@ function writeSkillMetadataIfMissing(skillDir: string, fallback: Partial<SkillMe
   );
 }
 
-function preserveBackup(targetDir: string) {
-  if (!fs.existsSync(targetDir)) {
-    return "";
-  }
-  const backupDir = `${targetDir}.backup-${Date.now()}`;
-  fs.rmSync(backupDir, { recursive: true, force: true });
-  fs.renameSync(targetDir, backupDir);
-  return backupDir;
-}
-
-function restoreBackup(targetDir: string, backupDir: string) {
-  fs.rmSync(targetDir, { recursive: true, force: true });
-  if (backupDir && fs.existsSync(backupDir)) {
-    fs.renameSync(backupDir, targetDir);
-  }
-}
-
-function cleanupBackup(backupDir: string) {
-  if (backupDir) {
-    try {
-      fs.rmSync(backupDir, { recursive: true, force: true });
-    } catch {
-      // The new file state and installation record are already committed.
-      // Hidden backup cleanup is best effort and must not invert that transaction.
-    }
+function cleanupPreparationDirectory(root: string) {
+  try {
+    fs.rmSync(root, { recursive: true, force: true });
+  } catch (error) {
+    // Publication may already be committed. Temporary cleanup cannot turn it
+    // into a failed install or hide the original Platform/record error.
+    console.warn("[skill-installer] temporary directory cleanup failed", error);
   }
 }
 
@@ -551,12 +534,11 @@ function buildMessage(skillName: string) {
 
 export async function installSkillFromPath(app: App, sourcePath: string, options: SkillInstallOptions = {}): Promise<MarketCommandResult> {
   const extension = path.basename(sourcePath).toLowerCase();
-  const skillsRoot = getSkillsCenterDir(app);
-  fs.mkdirSync(skillsRoot, { recursive: true });
-  const tempRoot = fs.mkdtempSync(path.join(skillsRoot, ".tmp-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-skill-prepare-"));
   let preparedDir = "";
   try {
-    const sourceStats = fs.statSync(sourcePath);
+    const sourceStats = fs.lstatSync(sourcePath);
+    if (sourceStats.isSymbolicLink()) throw new Error(t("skillInstaller.unsafeSymlink"));
     if (sourceStats.isDirectory()) {
       preparedDir = path.join(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
       fs.cpSync(sourcePath, preparedDir, { recursive: true });
@@ -620,19 +602,13 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
       message: buildMessage(metadata.name),
       installPath: targetDir
     };
-    fs.mkdirSync(path.dirname(targetDir), { recursive: true });
-    const backupDir = preserveBackup(targetDir);
-    try {
-      fs.cpSync(preparedDir, targetDir, { recursive: true });
+    const archive = await archiveSkillDirectory(preparedDir);
+    await mutateSkillThroughPlatform(metadata.id, targetDir, archive, () => {
       options.onPublished?.({ metadata, installPath: targetDir });
-      cleanupBackup(backupDir);
-    } catch (error) {
-      restoreBackup(targetDir, backupDir);
-      throw error;
-    }
+    });
     return result;
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    cleanupPreparationDirectory(tempRoot);
   }
 }
 
@@ -648,9 +624,7 @@ export async function installSkillFromCommand(
   const [rawCommand, ...rawArgs] = tokens;
   const { command, args } = normalizeSkillDownloadCommand(rawCommand, rawArgs);
   const execution = resolvePackageManagerExecution(command, args);
-  const downloadsRoot = path.join(getSkillsCenterDir(app), ".downloads");
-  fs.mkdirSync(downloadsRoot, { recursive: true });
-  const downloadRoot = fs.mkdtempSync(path.join(downloadsRoot, "desktop-skill-download-"));
+  const downloadRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-skill-download-"));
   try {
     await execFileAsync(execution.command, execution.args, {
       cwd: downloadRoot,
@@ -669,7 +643,7 @@ export async function installSkillFromCommand(
     }
     throw error;
   } finally {
-    fs.rmSync(downloadRoot, { recursive: true, force: true });
+    cleanupPreparationDirectory(downloadRoot);
   }
 }
 
@@ -708,14 +682,7 @@ export async function uninstallSkill(
   options: SkillUninstallOptions = {}
 ): Promise<MarketCommandResult> {
   const installDir = getSkillInstallDir(app, skillId);
-  const backupDir = preserveBackup(installDir);
-  try {
-    options.onRemoved?.();
-    cleanupBackup(backupDir);
-  } catch (error) {
-    restoreBackup(installDir, backupDir);
-    throw error;
-  }
+  await mutateSkillThroughPlatform(skillId, installDir, null, () => options.onRemoved?.());
   return {
     ok: true,
     itemId: skillId,

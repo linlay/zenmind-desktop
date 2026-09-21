@@ -13,6 +13,7 @@ import Style from "./index.module.css";
 
 type TooltipPlacement = "top" | "right" | "bottom" | "left";
 type TooltipChildProps = {
+  onClick?: React.MouseEventHandler<HTMLElement>;
   onBlur?: React.FocusEventHandler<HTMLElement>;
   onFocus?: React.FocusEventHandler<HTMLElement>;
   onMouseEnter?: React.MouseEventHandler<HTMLElement>;
@@ -32,6 +33,7 @@ interface TooltipProps {
   enterDelay?: number;
   leaveDelay?: number;
   disabled?: boolean;
+  hoverOnly?: boolean;
 }
 export const Tooltip: React.FC<TooltipProps> = (props) => {
   const {
@@ -42,6 +44,7 @@ export const Tooltip: React.FC<TooltipProps> = (props) => {
     enterDelay = 250,
     leaveDelay = 80,
     disabled = false,
+    hoverOnly = false,
   } = props;
   const tooltipId = useId();
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -233,7 +236,16 @@ export const Tooltip: React.FC<TooltipProps> = (props) => {
     },
     onFocus: (event: React.FocusEvent<HTMLElement>) => {
       children.props.onFocus?.(event);
-      show(0);
+      if (!hoverOnly) {
+        show(0);
+      }
+    },
+    onClick: (event: React.MouseEvent<HTMLElement>) => {
+      if (hoverOnly) {
+        clearTimers();
+        setIsVisible(false);
+      }
+      children.props.onClick?.(event);
     },
     onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
       children.props.onMouseEnter?.(event);

@@ -201,6 +201,7 @@ export type FetchResponseLike = {
 };
 
 export type FetchLike = (url: string, init?: {
+  redirect?: "manual" | "follow" | "error";
   method?: string;
   headers?: Record<string, string>;
   body?: string;

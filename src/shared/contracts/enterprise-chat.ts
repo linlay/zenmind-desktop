@@ -203,6 +203,7 @@ export interface EnterpriseChatAttachmentData {
 
 export interface EnterpriseChatDownloadResult {
   ok: boolean;
+  cancelled?: boolean;
   path: string;
   message: string;
 }

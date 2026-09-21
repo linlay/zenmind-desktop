@@ -26,7 +26,7 @@
 }
 
 .app-shell.has-embedded-surface {
-  --app-window-drag-height: 8px;
+  --app-window-drag-height: 12px;
   border-radius: 0;
   background: var(--embedded-surface-shell-bg);
   box-shadow: none;
@@ -35,11 +35,7 @@
 }
 
 .app-shell.is-mac-platform {
-  --app-window-drag-height: 8px;
-}
-
-.app-shell.is-mac-platform.has-main-chat-header-actions {
-  --app-window-drag-right: 76px;
+  --app-window-drag-height: 12px;
 }
 
 .app-shell.has-browser-chrome-surface.is-mac-platform {
@@ -1579,35 +1575,64 @@
   font-size: 12px;
 }
 
-.work-panel-image-zoom-control {
+.work-panel-image-zoom-group {
   display: inline-flex;
-  height: 30px;
-  box-sizing: border-box;
+  flex: 0 0 auto;
   align-items: center;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--embedded-surface-page-bg);
 }
 
+.work-panel-image-toolbar .work-panel-image-zoom-group button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.work-panel-image-zoom-control {
+  display: inline-flex;
+  height: 28px;
+  box-sizing: border-box;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--ink);
+}
+
+.work-panel-image-zoom-control:focus-within {
+  border-color: var(--control-focus-outline);
+  background: var(--work-panel-image-control-hover);
+}
+
 .work-panel-image-zoom-control input {
-  width: 52px;
+  box-sizing: border-box;
+  width: 42px;
+  min-width: 0;
   border: 0;
   outline: 0;
-  padding: 0 2px 0 7px;
+  padding: 0 3px;
   color: inherit;
   background: transparent;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-.work-panel-image-zoom-control select {
-  width: 28px;
-  border: 0;
-  padding: 0;
+.work-panel-image-toolbar .work-panel-image-zoom-group .work-panel-image-zoom-menu {
+  width: 22px;
+  min-height: 24px;
+  margin-left: 2px;
 }
 
-.work-panel-image-zoom-control.is-compact input {
-  width: 44px;
+.work-panel-image-toolbar .work-panel-image-zoom-menu .anticon {
+  font-size: 10px;
 }
 
 .work-panel-image-toolbar-actions {
@@ -3522,8 +3547,8 @@
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar.is-review-mode {

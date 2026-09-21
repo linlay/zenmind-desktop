@@ -657,7 +657,7 @@ test("desktop-init rejects a WebApp whose manifest id differs from its declared 
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", OPS_CONSOLE_WEBAPP_ID)), false);
 });
 
-test("desktop-init rejects an oversized Website seed without installing the earlier entries", (t) => {
+test("desktop-init installs Website seeds beyond the former 14-item limit", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-limit-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
@@ -675,9 +675,11 @@ test("desktop-init rejects an oversized Website seed without installing the earl
   });
 
   const result = applyDesktopInitBootstrap(app, "darwin");
-  assert.equal(result.appliedResult.webs, "failed");
-  assert.match(result.errors.webs, /14 Website limit/);
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "site-1")), false);
+  assert.equal(result.appliedResult.webs, "applied");
+  for (let index = 1; index <= 15; index += 1) {
+    const websitePath = path.join(desktopRoot(homePath), "data", "webs", "websites", `site-${index}`, "website.json");
+    assert.equal(readJson(websitePath).url, `https://site-${index}.example.com/`);
+  }
 });
 
 test("desktop-init mixed Sites uses the explicit Windows path branch", (t) => {
@@ -1513,6 +1515,9 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
   let startupState = {};
   let startupOptions = null;
   let resumedStartupCount = 0;
+  let serviceQueue = Promise.resolve();
+  let importBarrier = null;
+  let importEntered = () => {};
   const app = createApp("/tmp/zenmind-services-home");
 
   registerServicesIpcHandlers({
@@ -1539,8 +1544,12 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
     getServiceLogsMeta: async () => ({}),
     watchServiceLog: () => () => undefined,
     readServiceLog: async () => ({}),
-    runServiceMutation: async (task) => task(),
-    handleServiceStart: async () => ({}),
+    runServiceMutation: (task) => {
+      const next = serviceQueue.then(task);
+      serviceQueue = next.catch(() => {});
+      return next;
+    },
+    handleServiceStart: async () => { calls.push(["concurrent-start"]); return {}; },
     showFileDialog: async () => ({ canceled: false, filePaths: ["/tmp/env.zip"] }),
     showArchiveDialog: async () => ({}),
     openLogViewerWindow: async () => ({}),
@@ -1558,6 +1567,8 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
     },
     importEnvZipIntoExistingRuntime: async (_app, zipPath, desktopVersion, platform) => {
       calls.push(["platform-import", zipPath, desktopVersion, platform]);
+      importEntered();
+      if (importBarrier) await importBarrier;
       return { copiedFiles: 2, skippedFiles: 3 };
     },
     runtimeEnvExists: () => existingRuntime,
@@ -1619,6 +1630,21 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(resumedStartupCount, 0);
 
+  calls.length = 0;
+  let releaseImport;
+  importBarrier = new Promise((resolve) => { releaseImport = resolve; });
+  const entered = new Promise((resolve) => { importEntered = resolve; });
+  const pendingImport = handlers.get("services.importEnvZip")();
+  await entered;
+  const pendingStart = handlers.get("services.start")(null, "agent-platform");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.some(([name]) => name === "concurrent-start"), false);
+  releaseImport();
+  await pendingImport;
+  await pendingStart;
+  assert.ok(calls.findIndex(([name]) => name === "refreshConfig") < calls.findIndex(([name]) => name === "concurrent-start"));
+  importBarrier = null;
+  await new Promise((resolve) => setImmediate(resolve));
   calls.length = 0;
   startupOptions = null;
   app.isPackaged = false;

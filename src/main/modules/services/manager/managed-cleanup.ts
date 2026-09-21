@@ -583,7 +583,7 @@ function buildManagedServiceStopIssues(
 
 export function forceStopServiceInstallDir(
   service: ServiceDefinition,
-  installDir: string,
+  layoutOrInstallDir: ServiceLayout | string,
   env: Map<string, string>,
   options: {
     isWindows?: boolean;
@@ -598,7 +598,7 @@ export function forceStopServiceInstallDir(
   const terminateProcessImpl = options.terminateProcessImpl ?? terminateProcess;
   const terminateProcessTreeImpl = options.terminateProcessTreeImpl ?? terminateProcessTree;
   const removePidFileImpl = options.removePidFileImpl ?? removePidFile;
-  const state = collectState(service, installDir, env);
+  const state = collectState(service, layoutOrInstallDir, env);
   const pidsToTerminate = [
     state.managedMainPid,
     ...state.managedPortPids
@@ -610,7 +610,7 @@ export function forceStopServiceInstallDir(
     allTerminated = terminated && allTerminated;
   }
 
-  if (state.mainPidFilePath) {
+  if (allTerminated && state.managedMainPid && state.mainPidFilePath) {
     removePidFileImpl(state.mainPidFilePath);
   }
 
@@ -638,7 +638,6 @@ export function ensureManagedServiceStoppedForPlatform(
 
   const collectState = options.collectState ?? collectManagedServiceStopState;
   const forceStop = options.forceStop ?? forceStopServiceInstallDir;
-  const installDir = typeof layoutOrInstallDir === "string" ? layoutOrInstallDir : layoutOrInstallDir.programDir;
   const afterStopState = collectState(service, layoutOrInstallDir, env);
   const stopIssues = buildManagedServiceStopIssues(service, afterStopState, "stop");
   if (stopIssues.length === 0) {
@@ -649,7 +648,7 @@ export function ensureManagedServiceStoppedForPlatform(
     };
   }
 
-  forceStop(service, installDir, env);
+  forceStop(service, layoutOrInstallDir, env);
   const afterCleanupState = collectState(service, layoutOrInstallDir, env);
   const cleanupIssues = buildManagedServiceStopIssues(service, afterCleanupState, "cleanup");
   if (cleanupIssues.length === 0) {

@@ -2285,7 +2285,7 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
 
   try {
     writeTestEnv(userDataRoot, service.id, "SERVER_PORT=7078\n");
-    const overrides = __testInternals.getStartCommandEnvOverrides(app, service);
+    const overrides = await __testInternals.getStartCommandEnvOverrides(app, service);
     assert.equal(overrides, undefined);
     assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8"), "SERVER_PORT=7078\n");
   } finally {
@@ -3253,13 +3253,13 @@ test("core builtin start commands run in daemon mode", () => {
   );
 });
 
-test("desktop start commands skip a second builtin asset refresh", () => {
+test("desktop start commands skip a second builtin asset refresh", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
 
   try {
-    const options = __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
+    const options = await __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
 
     assert.equal(options.refreshBuiltinAsset, false);
     assert.equal(options.env, undefined);
@@ -3732,6 +3732,38 @@ test("forceStopServiceInstallDir cleans managed processes for agent-platform on 
   assert.equal(terminated, true);
   assert.deepEqual(terminatedPids, [101, 102]);
   assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid"]);
+});
+
+test("failed force stop retains PID evidence and blocks builtin directory replacement", async () => {
+  const removed = [];
+  assert.equal(__testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" }, "/tmp/agent-platform", new Map(), {
+      isWindows: true,
+      collectState: () => createManagedStopState({ mainPidFilePath: "/tmp/agent-platform.pid", managedMainPid: 101 }),
+      terminateProcessTreeImpl: () => false,
+      removePidFileImpl: (file) => removed.push(file)
+    }
+  ), false);
+  assert.deepEqual(removed, []);
+  assert.equal(__testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" }, "/tmp/older-platform-version", new Map(), {
+      isWindows: true,
+      collectState: () => createManagedStopState({ mainPidFilePath: "/tmp/shared-platform.pid", managedMainPid: null }),
+      removePidFileImpl: (file) => removed.push(file)
+    }
+  ), true);
+  assert.deepEqual(removed, [], "must not erase a shared PID file belonging to another installed version");
+
+  const cleanup = require("../dist-electron/main/modules/services/manager/managed-cleanup.js");
+  const { stopBuiltinInstallDir } = require("../dist-electron/main/modules/services/manager/builtin-install.js");
+  const original = cleanup.forceStopServiceInstallDir;
+  const layout = { programDir: "/tmp/missing-platform-install", envPath: "/tmp/absent-shared-env", stateDir: "/tmp/shared-state" };
+  cleanup.forceStopServiceInstallDir = (_service, receivedLayout) => { assert.equal(receivedLayout, layout); return false; };
+  try {
+    await assert.rejects(stopBuiltinInstallDir({ id: "agent-platform", stopCommand: [] }, layout.programDir, layout), /could not be stopped/);
+  } finally {
+    cleanup.forceStopServiceInstallDir = original;
+  }
 });
 
 test("getServiceState removes stale pid files that point to unrelated live processes", async () => {
@@ -7374,14 +7406,29 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
   }
 });
 
-test("runStartupPreparation prepares packaged first-launch core services in parallel", async () => {
+test("runStartupPreparation prepares packaged first-launch core services in parallel", async (t) => {
   const fixture = createStartupCoreAssetsFixture({ deployDelayMs: 600 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const installingTimes = new Map();
+  const runtimeModule = require("../dist-electron/main/modules/services/manager/embedded-node-runtime.js");
+  let releaseRuntime, runtimeEntered;
+  const runtimeGate = new Promise(resolve => { releaseRuntime = resolve; });
+  const entered = new Promise(resolve => { runtimeEntered = resolve; });
+  let ready = false;
+  const starting = [];
+  t.mock.method(runtimeModule, "ensureEmbeddedNodeRuntime", async () => {
+    runtimeEntered();
+    await runtimeGate;
+    ready = true;
+  });
 
   try {
-    const result = await runStartupPreparation(app, {
+    const pending = runStartupPreparation(app, {
+      onStarting(serviceId) {
+        assert.equal(ready, true, "all core services must wait for Node/npm");
+        starting.push(serviceId);
+      },
       onProgress(serviceId, phase) {
         if (
           ["identity-center", "agent-platform", "agent-webclient"].includes(serviceId) &&
@@ -7392,6 +7439,12 @@ test("runStartupPreparation prepares packaged first-launch core services in para
         }
       }
     });
+
+    await entered;
+    assert.deepEqual(starting, []);
+    releaseRuntime();
+    const result = await pending;
+    assert.deepEqual(new Set(starting), new Set(["identity-center", "agent-platform", "agent-webclient"]));
 
     const installStartTimes = ["identity-center", "agent-platform", "agent-webclient"].map((serviceId) => {
       assert.equal(installingTimes.has(serviceId), true, `${serviceId} should enter installing phase`);
@@ -7405,6 +7458,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.ok(spreadMs < 400, `expected parallel install progress, got spread ${spreadMs}ms`);
   } finally {
+    releaseRuntime();
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -8251,6 +8305,29 @@ test("0.4.1 to 0.4.2 startup restores consumed provider registration and commits
     assert.equal(requests, 2);
   } finally {
     globalThis.fetch = originalFetch;
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+
+test("Node preparation failure prevents every core start and is reported for retry", async (t) => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  const runtimeModule = require("../dist-electron/main/modules/services/manager/embedded-node-runtime.js");
+  t.mock.method(runtimeModule, "ensureEmbeddedNodeRuntime", async () => { throw new Error("npm fixture unavailable"); });
+  const starting = [];
+  try {
+    const result = await runStartupPreparation(app, { onStarting: id => starting.push(id) });
+    assert.deepEqual(starting, []);
+    assert.deepEqual(result.started, []);
+    assert.match(result.failures.join("\n"), /Desktop Node\/npm: npm fixture unavailable/);
+    for (const id of ["identity-center", "agent-platform", "agent-webclient"]) {
+      assert.notEqual((await getServiceState(app, id)).status, "running");
+    }
+  } finally {
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });

@@ -231,7 +231,7 @@ export async function EnterpriseChatRuntime_downloadAttachment_9(self: Enterpris
             filePath: path.join(self.app.getPath("downloads"), filename)
         };
     if (saveResult.canceled || !saveResult.filePath) {
-        return { ok: false, path: "", message: "Download cancelled." };
+        return { ok: false, cancelled: true, path: "", message: "Download cancelled." };
     }
     const target = saveResult.filePath;
     if (self.platform === "win32") {

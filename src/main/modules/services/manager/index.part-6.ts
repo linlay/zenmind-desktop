@@ -1,4 +1,5 @@
 import type { App } from "electron";
+import { ensureEmbeddedNodeRuntime } from "./embedded-node-runtime";
 import type {
   ServiceId,
   ServiceState,
@@ -182,6 +183,19 @@ export async function runStartupPreparation(
       }
 
       preparedDefaultServices.set(result.serviceId, result.service);
+    }
+
+    // Shared runtime preparation is a barrier before any core service starts.
+    // A failure must leave all three start callbacks uncalled and allow retry.
+    try {
+      await ensureEmbeddedNodeRuntime(app);
+    } catch (error) {
+      return {
+        mode: initialMode,
+        started: [],
+        failures: [...failures, `Desktop Node/npm: ${error instanceof Error ? error.message : String(error)}`],
+        preparedChanged: preparedChanged || Boolean(desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none")
+      };
     }
 
     const startOptions = {

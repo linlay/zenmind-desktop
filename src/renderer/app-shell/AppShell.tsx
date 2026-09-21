@@ -115,6 +115,7 @@ import {
 } from "../../shared/copilot-dock-layout";
 import { getServiceDisplayName } from "../service-display";
 import {
+  createPersistedSidebarNavOrder,
   createWebNavOrderKey,
   createDefaultSidebarNavOrderItems,
   normalizeSidebarNavOrder,
@@ -1249,6 +1250,10 @@ export function AppShell() {
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
+  );
+  const persistedSidebarNavOrder = useMemo(
+    () => createPersistedSidebarNavOrder(normalizedSidebarNavOrder),
+    [normalizedSidebarNavOrder]
   );
   const normalizedWebGroupOrder = useMemo(
     () => normalizeWebGroupOrder(webGroupOrder, webItems),
@@ -2733,15 +2738,15 @@ export function AppShell() {
     try {
       window.localStorage.setItem(
         SIDEBAR_NAV_ORDER_STORAGE_KEY,
-        JSON.stringify(normalizedSidebarNavOrder)
+        JSON.stringify(persistedSidebarNavOrder)
       );
     } catch {
       // Ignore persistence failures and keep the in-memory navigation order usable.
     }
     window.electronAPI.settings.saveNavigationPreferences({
-      mainOrder: normalizedSidebarNavOrder
+      mainOrder: persistedSidebarNavOrder
     }).catch(() => undefined);
-  }, [kanbanSettingsLoaded, navigationPreferencesLoaded, normalizedSidebarNavOrder]);
+  }, [kanbanSettingsLoaded, navigationPreferencesLoaded, persistedSidebarNavOrder]);
 
   useEffect(() => {
     try {

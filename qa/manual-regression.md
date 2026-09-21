@@ -1,5 +1,9 @@
 # Desktop 手工回归清单
 
+## 网站数量
+
+- macOS 与 Windows 分别在已有 14 个 Website 时继续添加网站，确认添加成功、列表完整，重启后保留；初始化导入超过 14 个 Website 时应全部安装。
+
 ## 网站 Copilot 选择
 
 - 在 macOS 与 Windows 分别打开侧栏“新增内嵌网站”和设置中的“内嵌网站”，确认“站点 Copilot”的可选 Agent 与顺序一致，均使用 Platform Copilot 列表，不混入仅存在于普通聊天或项目列表中的 Agent。
@@ -73,6 +77,8 @@
 
 ## WebClient 调试与网站菜单入口
 
+- macOS 与 Windows 分别悬停侧栏“站点”的新增/更多按钮，确认仅显示一个“新增或导入网站应用”提示；点击后提示立即消失，仅保留“添加网站 / 导入网站应用”菜单。覆盖提示出现前快速点击、提示出现后点击、菜单关闭后按钮仍有焦点，以及移出再悬停恢复单个提示。
+- 网站管理页右上角不再显示“入口 / 已固定”统计卡片，左侧列表仍显示网站数量，添加、编辑、保存和删除入口保留。
 - macOS 与 Windows 分别在运行配置中启用 `DEBUG_PANEL_ENABLED=true` 并刷新 Agent Chat，确认顶栏显示 Debug 按钮；关闭或未设置该开关时隐藏。已有 Chat 点击后在宿主 WorkPanel 打开对应 Debug item，重复点击复用已有 item；未建立 Chat 时不发起打开请求，宿主 WorkPanel 显隐按钮保持原有行为。
 - 同时启用 `SETTINGS_MENU_ENABLED=true`、`QUICK_ACTIONS_ENABLED=true`，确认 `DESKTOP_APP=true` 的 WebClient 根页面、Agent Chat 与 Copilot 均不显示 Settings Menu 或 Quick Actions；Standalone 网站仍按各自开关显示。
 
@@ -120,6 +126,8 @@
 - 覆盖待机、拖动、向右移动的镜像动画和招牌动作；点击人物可见部分仍打开应用，两个角标分别可点击，角标之间的透明间隔可以穿透；关闭后重新启用宠物，重复以上点击。
 
 ## SSO 重启恢复
+
+- macOS / Windows 登录后模拟换票 401/403 或跳转登录页：左下角立即显示未登录、旧凭据被撤销，市场公共条目仍可浏览，用户态操作要求重新登录。模拟 token 到期且换票 503/断网：显示未登录，网络恢复后可后台恢复；尚未到期的 token 提前刷新遇到 503 不应误退出。
 
 - Windows / macOS 分别验证系统浏览器与内嵌登录：先在 8080 启动测试服务，登录及退出均使用动态空闲端口，测试服务始终可访问；授权与换票使用同一实际回调地址，内嵌代理的跳转、页面资源和 Referer 不包含固定 8080。`localhost` 的同一动态端口在 `127.0.0.1` 与 `::1` 均可达，显式 IPv4 的 Google 流程保持可用；认证服务白名单允许动态回环端口。
 - 登录成功、拒绝授权、浏览器打开失败、取消、等待超过 5 分钟与完全退出应用后，确认两种地址族的监听端口均释放且可重新绑定；登录成功页完整显示并唤回 Desktop，不提供指向已释放端口的返回按钮。反复取消/重登、旧回调迟到不关闭新监听器；OIDC 前端退出回调与内嵌 Cookie 登录完成同样释放端口。
@@ -230,6 +238,7 @@
 - 在 macOS 与 Windows 的 Main Chat 点击指向 workspace 内 README.md 的绝对路径 Markdown 链接，确认 WorkPanel 打开 Markdown 预览；覆盖含空格路径、Windows 盘符与 UNC 路径。workspace 外路径和指向外部文件的符号链接必须拒绝，Desktop Action 本地文件入口仍拒绝绝对路径。
 - 用截断或浏览器无法解码但签名仍匹配的图片回归原生预览：WorkPanel 保持可操作，不显示错误条或错误占位文案，编辑入口禁用，其他 tab 与 Main Chat 不受影响。
 - 原生图片预览态顶部固定为单行，不直接显示文件名；hover 或键盘 focus 信息按钮时显示完整文件名、格式/大小和源尺寸。验证 10%–800% 比例、缩放、中性背景的编辑入口与打开方式，以及适合窗口、100%、比例直接输入、触控板/Cmd/Ctrl 缩放、拖拽平移、默认/其他应用打开、窄 WorkPanel、拉宽、全屏和窗口 resize；不得出现第二行或横向滚动条。
+- 图片缩放控件在预览/编辑态一致：缩小、百分比与单一下拉箭头、放大；原始比例从下拉菜单的 100% 选择，不再单独显示 1:1 按钮。输入 150 后 Enter 或失焦才应用，清空/非法输入恢复当前值，Esc 取消，越界输入限制到 10%–800%；预设含适合窗口与 100%，边界缩放按钮禁用。连续使用 Cmd/Ctrl +/- 必须逐档变化，输入框内 Cmd/Ctrl+A/Z 保持原生编辑行为；触控板缩放不改变整个应用比例。macOS/Windows、浅深色、窄面板与全屏下无双箭头、数字微调器或控件重叠。
 - 编辑态确认图片工具位于左侧 44px 单列图标栏，hover 后立即在右侧显示工具名，禁用项也能显示。顶部只保留“返回预览”、撤销/重做、缩放与保存；窄 WorkPanel 中仅次要按钮收敛为图标，普通样式的“返回预览”始终显示返回箭头和四字文案，整行无换行、无横向滚动；未修改时保存为普通禁用样式，产生可保存修改后才显示蓝色强调。左栏“变换”hover/focus 后在右侧显示旋转、水平/垂直翻转和自由变换二级菜单；图片尺寸与画布尺寸各自独立，画布尺寸扩大或缩小时原图像素不拉伸。建立矩形、椭圆、套索或画笔选区后启动自由变换，确认原选区像素被提取到可拖动边框，四角可缩放且角度可输入，取消不改图、应用只增加一步历史。批注、按批注修改、对象擦除、背景移除/替换、扩图、增强必须作为连续紫色按钮平铺在“调整”之后，不得再出现机器人总入口、聚合 AI 工具对话框或“选区/批注二选一”的重复入口。验证普通选区只用于自由变换和对象擦除，按批注修改只接受已经圈选且逐条填写要求的批注；批注面板以摘要列表呈现且仅展开当前一条。拖动批注面板标题和其他设置浮层手柄，确认可移开被遮区域且不会拖出画布容器；内容过多时只在浮层内部滚动，图片显示尺寸和适合窗口比例不发生跳变。再验证裁剪、尺寸、曝光/对比度/饱和度、选区添加/减去/反选/清除及 50 步撤销上限。像素修改前有批注时必须确认清除；超出 8192 单边或 4000 万像素时编辑入口禁用。
 - 在浅色和深色主题下逐项悬浮并用键盘聚焦图片编辑器按钮：画布尺寸、调整、自由变换、AI 参数、批注与保存弹窗中的主操作始终保持蓝色且文字可见；裁剪确认保持蓝色；普通按钮显示中性反馈；选中工具不丢失 active 底色；紫色 AI 工具不退化为透明背景；禁用按钮不响应 hover。默认窄 WorkPanel、拉宽和全屏下结果一致。
 - 验证擦除对象必须有选区，移除/替换背景、扩图和增强每次只产生一个 Zenmi 候选，运行中仍可缩放/平移且可取消；失败不丢草稿，结果不自动写入 Artifact。
@@ -277,7 +286,7 @@
 - 未使用 Side Chat 和详细解释时在 Realtime Inspector 确认 Primary WS 为 1、BTW 与 Selection Explain WS 均为 0；首次 BTW 后变为 1+1+0，首次详细解释后变为 1+1+1。随后并发普通、旁聊和解释 Run，并跨 Chat、WorkPanel 和 BTW tab 切换，确认物理 WS 总数始终不超过 3，RunChannel 数可以独立增加。
 - 分别开启和关闭桌宠发送 Main Chat Query，并覆盖 `run.started` Push 早于、晚于 Query `run.start` 两种顺序；两种情况下都只允许一次 `/api/query`。确认桌宠不注册独立 Broker consumer、不单独请求 `/api/agents` 或 `/api/chats`、不消费 Assistant Run 逐事件流，只在 Navigation 应用 `desktop-main` Primary Push 并发布新快照后更新，不得创建 RunChannel、发送 `/api/attach` 或导致 `duplicate_id`。
 - 构造 Chats unread=2、pending=1，Projects unread=4、pending=2，确认 Nav Bar 分组数字分别保持该值，桌宠同时显示蓝色 unread=6 与橙色 pending=3；将对应 Chat read、awaiting answered 后，两处必须在同一 Navigation Push 投影后一起减少。折叠/展开 Chats、从 8 条增加到 24 条不改变统计口径；重启及 Primary 断线重连后不得恢复消息缓存或本地持久化中的旧数字。
-- 展开桌宠“对话概览”，确认仅显示七天内的 unread 与 awaiting 会话，视窗完整容纳三条并可用滚轮继续浏览；chat name 与正文均为 13px，item 间有清晰的 1px 分割线，unread 为蓝点、awaiting 为橙色时钟且不显示回复入口。关闭按钮默认不占位且仅在 item hover/focus 时叠加出现；关闭只在当前桌宠投影中 dismiss，回复成功只提交新 Run，两者都不得调用 `/api/read`。打开对话只导航到 Main Chat，必须等内容显示后由 WebClient 发 read，并在 Platform `chat.read` Push 到达后让桌宠与 Sidebar 同步转为 read；单纯 hover、滚动和展开列表不得标记已读。
+- 展开桌宠“对话概览”，确认仅显示七天内的 unread 与 awaiting 会话，视窗完整容纳三条并可用滚轮继续浏览；chat name 与正文均为 13px，item 间有清晰的 1px 分割线，unread 为蓝点、awaiting 为橙色时钟且不显示回复入口。回复与关闭位于右侧独立网格列，关闭按钮固定预留位置且仅在 item hover/focus 时显示，两者不得重叠或引起文字跳动；键盘 Tab 可访问关闭按钮且焦点清晰，回复输入框独占下一行；关闭只在当前桌宠投影中 dismiss，回复成功只提交新 Run，两者都不得调用 `/api/read`。打开对话只导航到 Main Chat，必须等内容显示后由 WebClient 发 read，并在 Platform `chat.read` Push 到达后让桌宠与 Sidebar 同步转为 read；单纯 hover、滚动和展开列表不得标记已读。
 - Main Chat surface 获得可信 active 登记后、任何 live frame 到达前，在 Realtime Inspector 确认 Root Observer 与 Overview lease 已同时存在；未打开 WorkPanel 时不得创建 Overview WebView、UI subscriber 或额外 upstream attach。ownerless 新 Chat 先显示 `pending_chat_identity`，canonical Chat 建立后在同一 context epoch 内变为 `ready`。
 - 连续至少 30 次交错 Main Chat surface 登记、Frame Port open、Main attach/query 与 Overview attach，并穿插 A→B→C 快速切换；确认无需重试即可从本地 replay 连续收到事件，不产生 Overview upstream attach，关闭 clone 不产生 detach。正常首开、切换和恢复中不得出现 `Main Chat clone parent was released`、`sender is not a trusted Agent WebClient surface`、`parent_observer_closed: active Main Chat observer is unavailable`，也不得出现 `primary_stream_not_ready` 或其他基于等待时长的错误。
 - Main Chat 离开、owner Chat/context 变化、surface generation 替换和 guest 销毁时，确认 Overview/Debug subscriber 同步失效，正常切换的旧 Overview 以本地 `detached` 完成；每个变为无 observer 的非终态 RunChannel 只发送一次 upstream detach，Platform Run 继续执行。返回原 Chat 后从 Inspector 显示的 lastSeq attach，query 不得重发。隐藏、显示或关闭 WorkPanel 只改变 pending/UI subscriber 数，Overview lease 始终由当前 active Main Chat 持有；隐藏的所有 guest 必须保持 mounted 且 inactive。
@@ -329,6 +338,8 @@
 - 人为构造一次 Surface Registry 拒绝，确认 Main 只记录结构化 reason、surface/renderer/guest 身份和去重汇总，不记录 URL、token、Cookie、页面正文、identity key 或原始 Chat ID。
 
 ## Website 关闭快捷键
+
+- macOS 与 Windows 分别在浅色、深色下打开 Website 和 WorkPanel 网页：未声明背景的网页区域应保持白底，黑字清晰，工具栏跟随主题；显式深色背景的网页保持自己的背景。可用天猫国际商品详情页对照，同时确认淘宝首页仍为白底、本地透明 WebApp 仍能透出壁纸，切换主题不重建 guest。
 
 - macOS 与 Windows 分别打开至少 6 个 Website tabs，把焦点放在网页输入框、标签栏、地址栏与主侧栏，用 `Cmd+W` / `Ctrl+W` 连续关闭：每次只关闭当前 tab，优先选中左侧存活 tab，无左侧时选右侧；快速重复按键不要求重新点击页面。关闭非当前 tab 后，快捷键仍关闭当前 tab。
 - macOS 应用菜单的关闭命令与键盘保持一致。关闭最后一个 tab 后退出该 Website 页面，所有 guest 被销毁，持久 Sites 入口仍可重新打开，当前命令不关闭主窗口。
@@ -420,6 +431,7 @@
 ## 上传 Reference 预览回归
 
 - macOS / Windows 分别上传 PNG、PDF、DOCX、文本；新建与历史 Chat 的卡片均可打开，运行中可阅读，再次点击聚焦同一 Tab。
+- New Chat 先上传 DOCX 再首次发送：上传预建 Chat 后，query 受理应将原 guest 的 `newChat` 路由提升为 canonical Chat；不切换聊天，立即点击附件即可显示 WorkPanel 预览。受理前切换到其他 Chat 或新的 New Chat 时，迟到结果不得改写当前页面。
 - 验证 Chat 根目录文件与 `references/` 子目录文件；路径越界、编码遍历、跨 Chat 与逃逸 symlink 仍须拒绝。
 - DOCX 查看中文表格、内嵌图片、翻页、缩放与刷新；损坏、加密、超限、无权限、文件不存在时显示可操作错误，不自动下载。
 - 图片与文本修改 Reference 只能创建 Artifact；DOCX 保持只读，下载拿到原文件。
@@ -468,6 +480,7 @@
 
 - macOS / Windows 分别在展开与收起侧栏，将看板、新建对话、自动化和多个置顶 Website/WebApp 交错拖动；检查前后插入线、放开提交、Esc 取消和拖到列表外取消，拖拽不得打开页面，点击与右键菜单保持正常。
 - 聚焦上述入口后用 Alt + 上/下调整位置，普通方向键仍按视觉顺序导航；移动后焦点留在原入口，首尾不越界。
+- 检查 `navigation-order.json` 只包含当前可排序入口，不写入 Chats、Projects 或 Sites；三个固定分组始终位于可排序入口下方。
 - 重启确认混合顺序恢复；缺少独立排序文件时使用默认导航布局。已有主导航顺序时，新可用入口（含置顶站点）按可用集合顺序追加，不移动已有项；取消置顶恢复 Sites 原顺序，删除应用不显示幽灵行。Chats/Pinned Chat/Projects 的服务端顺序不受影响。
 
 - 主导航拖拽时目标前后显示与 Chat 相同的蓝色插入线（同一主题色、粗细与圆角），首行、末行及收起侧栏均可辨识；松手位置与提示一致。
@@ -745,6 +758,17 @@
 
 - 产物查看只依赖当前产物快照：历史事件缺少字段或包含未知事件时仍可打开。旧进程没有 artifacts.act 时提示重启；准备中有状态提示，WorkPanel 拒绝打开时显示失败，不能静默无响应。
 
+## Windows 技能与 Node 运行时事务回归
+
+- Platform 开启热重载，市场普通技能首次安装、覆盖更新、卸载均成功；正式目录由 Platform 发布，Desktop 不出现本地 preserveBackup 重命名错误。
+- 本地 ZIP/目录/命令导入使用相同入口；Platform 不可用或不支持条件事务接口时旧技能完整保留，无直接文件写入降级。
+- 注入市场安装记录写入失败，确认旧技能通过 Platform 恢复；补偿失败或请求结果不确定时提示恢复包路径，保留恢复包。
+- 快照取得后通过另一管理请求编辑同一技能，原替换/删除请求应收到 revision 冲突；在市场记录失败、补偿请求发出前插入另一次编辑或重新创建，补偿不得覆盖该新内容。确认恢复 ZIP 包含空目录、执行权限与隐藏配置，Desktop 不读取正在使用的正式技能目录。
+- 技能包与 MCP/CLI 连接器在 watcher 开启时安装、覆盖、删除；使用中拒绝规则和授权数据保持，操作后手动编辑仍触发热重载。
+- 首次启动先完成 env 和 Node/npm 准备，再并发启动 identity-center、agent-platform 和 agent-webclient；Node/npm 准备失败时三个服务均不进入启动阶段，修复资源后可重试。普通用户权限、含中文和空格的路径下，手动启动 Platform 与一键启动复用同一 Node 准备结果；npm 短时 EPERM 可恢复，持续占用有界失败，旧运行时保留。
+- Node 运行时发布失败可恢复旧版；清理失败不遮蔽原始错误，已成功发布时不误报服务准备失败；重新启动可修复不完整缓存。
+- 记录 Windows 实机执行结果；macOS 测试及交叉编译不能代替实机验收。
+
 ## Container / Surface 网页控制（macOS / Windows 均执行）
 
 - 普通 Chat 说“打开 https://example.com”时进入 WorkPanel；结果包含 surfaceId，随后可截图、读取 DOM、输入、导航及关闭。
@@ -837,3 +861,10 @@
 - 自定义 MCP JSON 保存走 Platform 导入，拒绝重复键/明文秘密，展示真实安装结果。
 - 市场安装技能后从技能中心删除，返回市场显示未安装；内置 builtin-dbx/httpx 不进入我安装的列表和数量。
 - 指定个人/多人资源使用当前 SSO 身份读取目录和技能详情；切换账号清除旧数据及在途响应。
+
+### WorkPanel 网页浏览器工具
+
+- macOS / Windows × 明 / 暗主题：普通网页的 Edit 改为批注图标，支持高亮切换、悬停说明；加载中与非 HTML 页面禁用。退出批注后草稿保留。
+- 更多菜单提供查找、打印、缩放、默认浏览器打开和复制链接；缩放连续点击保持菜单打开，边界为 25% / 300%，重置为 100%；刷新与切换标签保持站点缩放，Desktop 工具栏尺寸不变，批注框跟随元素。
+- 主面板及独立窗口分别验证 Cmd/Ctrl+F、P、+、-、0，焦点位于网页内部和地址栏时均生效；切换 Chat / tab 后不得作用于隐藏或旧 guest。查找验证中文、无匹配、前后匹配、Enter / Shift+Enter、Esc 关闭、导航后清理。
+- 打印打开系统对话框，取消可继续操作；打印内容不包含批注框与选择层。独立窗口菜单同样支持查找、打印、缩放和链接操作，关闭窗口还原后继续可用。

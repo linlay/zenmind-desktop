@@ -1,4 +1,6 @@
-import { ArrowLeftOutlined, EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
+import { PageAnnotationIcon } from "./PageAnnotationIcon";
+import { WorkPanelBrowserTools } from "./WorkPanelBrowserTools";
+import { ArrowLeftOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
 import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
@@ -128,6 +130,7 @@ type ExternalWebviewTabState = {
   partition?: string;
   userAgent?: string;
   guestId: number | null;
+  reviewable?: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
   isLoading: boolean;
@@ -140,7 +143,7 @@ type ExternalWebviewBrowserState = {
 
 type ExternalWebviewTabPatch = Partial<Pick<
   ExternalWebviewTabState,
-  "title" | "currentUrl" | "faviconUrl" | "guestId" | "canGoBack" | "canGoForward" | "isLoading"
+  "title" | "currentUrl" | "faviconUrl" | "guestId" | "canGoBack" | "canGoForward" | "isLoading" | "reviewable"
 >>;
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
@@ -375,18 +378,30 @@ function ExternalWebviewPane({
 
     };
 
+    const syncReviewableDocument = () => {
+      if (preloadUrl) {
+        const documentUrl = webview.getURL();
+        void webview.executeJavaScript("document.contentType").then((contentType: unknown) => {
+          if (webviewRef.current === webview && webview.getURL() === documentUrl) {
+            onTabStateChange(tab.id, { reviewable: contentType === "text/html" || contentType === "application/xhtml+xml" });
+          }
+        }).catch(() => undefined);
+      }
+    };
     const handleDomReady = () => {
       syncFromWebview();
       onDomReady(tab.id);
+      syncReviewableDocument();
     };
     const handleClose = () => {
       onCloseRequested(tab.id);
     };
     const handleDidStartLoading = () => {
-      syncFromWebview({ isLoading: true });
+      syncFromWebview({ isLoading: true, reviewable: false });
     };
     const handleDidStopLoading = () => {
       syncFromWebview({ isLoading: false });
+      syncReviewableDocument();
     };
     const handleDidFailLoad = () => {
       syncFromWebview({ isLoading: false });
@@ -435,7 +450,7 @@ function ExternalWebviewPane({
       webview.removeEventListener("close", handleClose);
       if (onIpcMessage) webview.removeEventListener("ipc-message", onIpcMessage as EventListener);
     };
-  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onIpcMessage, onTabStateChange, tab.currentUrl, tab.id]);
+  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onIpcMessage, onTabStateChange, preloadUrl, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -1035,7 +1050,8 @@ export function ExternalWebviewPage({
           nextTab.guestId === tab.guestId &&
           nextTab.canGoBack === tab.canGoBack &&
           nextTab.canGoForward === tab.canGoForward &&
-          nextTab.isLoading === tab.isLoading;
+          nextTab.isLoading === tab.isLoading &&
+          nextTab.reviewable === tab.reviewable;
         if (sameTab) {
           return tab;
         }
@@ -1948,7 +1964,7 @@ export function ExternalWebviewPage({
         </div>
         {showToolbar ? (
           <div className={`external-webview-toolbar${pageReviewActive ? " is-review-mode" : ""}`}>
-            {pageReviewActive && workPanelBrowser && onTogglePageReview ? (
+            {pageReviewActive && documentToolbar && onTogglePageReview ? (
               <>
                 <button
                   type="button"
@@ -2049,24 +2065,27 @@ export function ExternalWebviewPage({
                   {workPanelBrowser && onTogglePageReview ? (
                     <button
                       type="button"
-                      className="external-webview-toolbar-edit"
+                      className={`external-webview-toolbar-edit${pageReviewActive ? " is-active" : ""}`}
                       onClick={() => onTogglePageReview({
                         url: activeTab?.currentUrl ?? url,
                         title: activeTab?.title ?? title,
                       })}
-                      aria-label={t("chatWorkPanel.tabContextMenu.enterReview")}
-                      aria-pressed={false}
-                      title={t("chatWorkPanel.tabContextMenu.enterReview")}
+                      disabled={!pageReviewActive && !activeTab?.reviewable}
+                      aria-label={t(pageReviewActive ? "externalWebview.exitAnnotation" : "externalWebview.annotate")}
+                      aria-pressed={pageReviewActive}
+                      title={t(pageReviewActive ? "externalWebview.exitAnnotation" : !activeTab?.reviewable ? "externalWebview.annotationUnavailable" : "externalWebview.annotate")}
                     >
-                      <EditOutlined aria-hidden="true" />
-                      <span className="external-webview-toolbar-edit-label">
-                        {t("externalWebview.editPage")}
-                      </span>
+                      <PageAnnotationIcon />
                     </button>
                   ) : null}
                 </div>
               </>
             )}
+            {workPanelBrowser && !documentToolbar ? <WorkPanelBrowserTools
+              key={activeTab?.id}
+              webview={activeTab?.guestId ? webviewRefs.current.get(activeTab.id) ?? null : null}
+              active={active !== false}
+            /> : null}
           </div>
         ) : null}
         </div>

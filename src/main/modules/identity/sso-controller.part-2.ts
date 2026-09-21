@@ -20,6 +20,7 @@ import {
   getDesktopSsoWebSessionExchangeConfig,
   markDesktopSsoRestoreTemporarilyUnavailable,
   parseDesktopSsoCookieUserInfo,
+  persistDesktopSsoAccessToken,
   readDesktopSsoAccessToken,
   prepareDesktopSsoSessionRestore
 } from "./oidc-sso";
@@ -530,7 +531,41 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       if (accessTokenRefreshPromise) {
         return accessTokenRefreshPromise;
       }
-      accessTokenRefreshPromise = this.exchangeBrowserCookieAccessToken(fetchImpl)
+      const previousToken = getDesktopSsoAccessToken();
+      const isCurrentSession = () => getDesktopSsoAccessToken() === previousToken &&
+        getDesktopSsoStatus(options.app).updatedAt === status.updatedAt;
+      const request = fetchImpl || ((url, init) => options.session.defaultSession.fetch(url, init));
+      accessTokenRefreshPromise = exchangeBrowserCookieAccessToken(async (url, init) => {
+        const response = await request(url, { ...init, redirect: "manual" });
+        const httpStatus = response.status || 0;
+        if ([401, 403, 204].includes(httpStatus) || (httpStatus >= 300 && httpStatus < 400)) {
+          throw new DesktopSsoRestoreRequestError("Desktop SSO refresh rejected the upstream session.", response.status);
+        }
+        return response;
+      }, { persist: false, syncCookies: false, signal: AbortSignal.timeout(5_000) })
+        .then(async (token) => {
+          if (!isCurrentSession()) return "";
+          if (!token) throw new Error("Desktop SSO refresh returned no access token.");
+          await syncAccessTokenCookies(token);
+          if (!isCurrentSession()) return "";
+          persistDesktopSsoAccessToken(options.app, token);
+          return token;
+        })
+        .catch(async (error: unknown) => {
+          // A late refresh must not sign out a newly logged-in account.
+          if (!isCurrentSession()) return "";
+          const definitive = isDefinitiveRestoreFailure(error);
+          // A failed proactive refresh may keep using a token that is still valid.
+          if (!definitive && !force && !desktopSsoAccessTokenNeedsRefresh(options.app, 0)) throw error;
+          const nextStatus = definitive
+            ? clearDesktopSsoLocalSession(options.app, t("sso.restoreSessionExpired"))
+            : markDesktopSsoRestoreTemporarilyUnavailable(options.app, t("sso.restoreTemporarilyUnavailable"));
+          restoreState = definitive ? "signed_out" : "temporarily_unavailable";
+          options.getMainWindow()?.webContents.send("sso.statusChanged", nextStatus);
+          publishRestoreResult({ state: restoreState, status: nextStatus });
+          if (definitive) await clearRestoredDesktopSsoCookies();
+          throw error;
+        })
         .finally(() => {
           accessTokenRefreshPromise = null;
         });

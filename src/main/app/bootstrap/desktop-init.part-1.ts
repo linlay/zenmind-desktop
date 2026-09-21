@@ -11,7 +11,6 @@ import {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
 } from "../../infrastructure/filesystem/profile-store";
-import { MAX_WEBSITE_ITEMS } from "../../modules/webs";
 import {
   createWebsiteItem,
   getWebsiteDir,
@@ -656,10 +655,6 @@ export function applyWebsiteDefaults(
     }
     webappsToInstall.push(site);
     declaredOrder.push(site.entryKey);
-  }
-
-  if (existingWebsites.length + websitesToInstall.length > MAX_WEBSITE_ITEMS) {
-    throw new Error(`Website seed would exceed the ${MAX_WEBSITE_ITEMS} Website limit.`);
   }
 
   const webappsRoot = getDesktopWebappsDataRoot(app, platform);

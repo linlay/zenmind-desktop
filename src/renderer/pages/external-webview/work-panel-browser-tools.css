@@ -1,0 +1,30 @@
+.work-panel-browser-tools { flex-shrink: 0; position: relative; }
+.work-panel-browser-menu { width: 240px; display: flex; flex-direction: column; gap: 2px; color: var(--sidebar-operation-menu-text); font-size: 13px; font-weight: 400; line-height: 18px; }
+.work-panel-browser-menu button, .work-panel-browser-find button, .work-panel-browser-error button { font: inherit; color: inherit; background: transparent; border: 0; border-radius: 6px; padding: 8px; cursor: pointer; }
+.work-panel-browser-menu > button { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 4px 8px; text-align: left; }
+.work-panel-browser-menu button:hover:not(:disabled), .work-panel-browser-find button:hover { background: var(--control-hover-bg); }
+.work-panel-browser-menu button:disabled, .work-panel-browser-find button:disabled { opacity: .4; cursor: default; }
+.work-panel-browser-menu kbd { opacity: .55; font: inherit; margin-left: 16px; font-size: 12px; color: var(--sidebar-operation-menu-text-muted); }
+.work-panel-browser-zoom { display: flex; align-items: center; gap: 2px; padding: 4px 0; margin: 2px 0; border-block: 1px solid var(--sidebar-operation-menu-divider); }
+.work-panel-browser-zoom > span { flex: 1; padding-left: 8px; }
+.work-panel-browser-zoom output { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+.work-panel-browser-find, .work-panel-browser-error { position: absolute; top: calc(100% + 10px); right: 0; z-index: 100; display: flex; align-items: center; gap: 4px; padding: 6px; background: var(--bg-base, Canvas); color: var(--ink, CanvasText); border: 1px solid rgba(127,127,127,.3); border-radius: 8px; box-shadow: 0 6px 20px #0002; max-width: calc(100vw - 40px); }
+.work-panel-browser-find input { width: 140px; min-width: 40px; flex: 1; background: transparent; color: inherit; border: 0; padding: 5px; }
+.work-panel-browser-find output { min-width: 36px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.work-panel-browser-error { width: 260px; }
+.work-panel-browser-tools button:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+
+.external-webview-toolbar-edit:disabled { opacity: .4; cursor: default; }
+
+/* Match the compact host menus instead of inheriting Popover's content spacing. */
+.work-panel-browser-popover .ant-popover-inner {
+  padding: 6px;
+  border: 1px solid var(--sidebar-operation-menu-border);
+  border-radius: 12px;
+  background: var(--sidebar-operation-menu-bg);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+.work-panel-browser-zoom button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; font-size: 13px; }
+.work-panel-browser-menu button:hover:not(:disabled) { background: var(--sidebar-operation-menu-hover); }

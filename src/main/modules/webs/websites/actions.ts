@@ -16,7 +16,6 @@ import {
 } from "../common";
 import { t } from "../../../support/i18n/main-i18n";
 
-export const MAX_WEBSITE_ITEMS = 14;
 const WEBSITE_ADD_EXPECTED_INPUT = "object with url as a non-empty string, plus optional label and copilotAgentKey strings";
 
 function readInputCopilotAgentKey(value: unknown) {
@@ -160,15 +159,6 @@ export function listWebsiteItems(app: App) {
 
 export function addWebsiteItem(app: App, input: WebsiteInput) {
   const items = readWebsiteItems(app);
-  if (items.length >= MAX_WEBSITE_ITEMS) {
-    return {
-      ok: false,
-      item: null,
-      items,
-      message: t("website.maxItems", { count: MAX_WEBSITE_ITEMS })
-    };
-  }
-
   const inputIssues = validateWebsiteAddInput(input);
   if (inputIssues.length > 0) {
     return invalidWebsiteInputResult(items, input, inputIssues);
@@ -361,6 +351,5 @@ export function exportWebsiteItems(app: App) {
 }
 
 export const __testInternals = {
-  MAX_WEBSITE_ITEMS,
   parseItemsFileContent
 };
