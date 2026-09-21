@@ -41,7 +41,7 @@ Platform 分类使用来源中的语义文件名，而不是缓存名或内部�
 
 Main Chat 卡片、Markdown 链接、Project 文件、Artifact 和 Reference 只提交语义来源，不自行选择 Viewer。打开流程先规范化来源并获得内容类型；Desktop 的 HTML/图片调用 canonical `openDocument` 进入原生 registry，其他内容产生 WebClient descriptor。Standalone 始终进入 WebClient Document Surface。
 
-WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
+WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。WebClient WorkPanel bridge 与公开 Desktop Action 使用各自的返回契约：宿主必须在受信任调用路径保留 bridge 的成功标志、workspace 身份和当前 Chat 状态，不得把公开动作的 workspace 投影直接作为 bridge 结果，也不得透传其他 Chat 或 renderer 内部状态。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
 
 Workspace Markdown 链接可向文档入口提交绝对路径。Main 按该 Agent 的权威 workspace 和当前平台路径规则转换为相对路径，再验证文件 realpath 未越界；原生 registry 只接收相对身份。此规则不扩展 Desktop Action 的本地文件入口，后者仍只接受 workspace 相对路径。
 

@@ -561,6 +561,13 @@ test("trusted Agent WebClient WorkPanel calls bypass external confirmation while
       args
     });
     assert.equal(response.ok, true, action);
+    assert.deepEqual(response.result, {
+      ok: true,
+      workspaceId: "workpanel:chat-owner",
+      item: createWorkPanelWorkspace().items[0],
+      state: createWorkPanelWorkspace(),
+    }, `${action} must return the WebClient bridge success contract`);
+    assert.equal("workspaces" in response.result, false);
   }
 
   assert.equal(confirmationCalls.length, 0);
@@ -3605,4 +3612,24 @@ test("Desktop rejects unresolved Platform path aliases before filesystem access"
   for (const input of ["@chat/webapps/demo", "@workspace/webapps/demo", "@chat", String.raw`@workspace\webapps\demo`]) {
     assert.equal(normalizeWorkspaceRelativePath(input), "");
   }
+});
+
+
+test("WorkPanel bridge preserves close-last success and structured renderer failures", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.callRendererAction = async () => ({ ok: true, result: {
+    ok: true, workspaceId: "workpanel:chat-owner", item: createWorkPanelWorkspace().items[0],
+  } });
+  const closed = await handleAgentWebclientWorkPanelActionRequest(options, {
+    action: "closeItem", ownerChatId: "chat-owner", args: { itemId: "item-1" },
+  });
+  assert.equal(closed.result.ok, true);
+  assert.equal(closed.result.workspaceId, "workpanel:chat-owner");
+  assert.equal("state" in closed.result, false);
+  options.callRendererAction = async () => ({ ok: false, error: { code: "target_unavailable", message: "Missing item" } });
+  const failed = await handleAgentWebclientWorkPanelActionRequest(options, {
+    action: "closeItem", ownerChatId: "chat-owner", args: { itemId: "item-1" },
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.error.code, "target_unavailable");
 });

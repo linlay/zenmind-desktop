@@ -6,6 +6,8 @@ import type {
   WebappEntry,
   WebappPublishResult,
   WebappRuntimeState,
+  WorkPanelBridgeResult,
+  WorkPanelItem,
   WorkPanelWorkspace
 } from "../../../shared/contracts";
 import {
@@ -253,7 +255,8 @@ export function projectRendererActionResult(action: string, value: unknown): {
 export async function callRendererAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  resultContract: "desktop-action" | "workpanel-bridge" = "desktop-action"
 ) {
   const response = await options.callRendererAction({
     requestId: request.requestId || randomUUID(),
@@ -283,6 +286,23 @@ export async function callRendererAction(
       `${request.action} succeeded without the required public result fields.`,
       { missingFields: projection.missingFields }
     );
+  }
+  if (resultContract === "workpanel-bridge") {
+    const source = asRecord(response.result);
+    const state = source.state === undefined ? undefined : readWorkPanelWorkspace(source.state);
+    const workspaceId = readString(source, "workspaceId");
+    if (source.ok !== true || !workspaceId || state === null ||
+        (state && (state.workspaceId !== workspaceId || state.ownerChatId !== request.source?.chatId))) {
+      return fail(request.action, "invalid_action_result", "WorkPanel renderer returned an invalid bridge result.");
+    }
+    // The WebClient bridge expects its own success envelope, not the public
+    // Desktop Action projection ({ workspace }), which has no `ok` field.
+    return ok(request.action, {
+      ok: true,
+      workspaceId,
+      ...(source.item === undefined ? {} : { item: source.item as WorkPanelItem }),
+      ...(state ? { state } : {}),
+    } satisfies WorkPanelBridgeResult);
   }
   return ok(request.action, projection.result);
 }

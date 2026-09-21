@@ -327,7 +327,8 @@ export async function executeAction(
     case "desktop.workpanel.closeWorkpanel":
       return action === "desktop.workpanel.openLocalFile"
         ? executeOpenLocalFileAction(options, request, args)
-        : callRendererAction(options, request, args);
+        : callRendererAction(options, request, args,
+          invocation.kind === "agentWebclientWorkPanel" ? "workpanel-bridge" : "desktop-action");
     case "desktop.web.exportArtifact":
       return executeDesktopWebExportArtifact(options, action, args, invocation.kind === "agentPlatform" ? request.source : undefined);
     case "desktop.general.deviceName": {
