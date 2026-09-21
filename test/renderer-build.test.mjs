@@ -7082,10 +7082,11 @@ test("assistant static HTML export saves the complete document returned by the p
   assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.once": "阅后即焚"/u);
   assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.7d": "7 天"/u);
   assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.30d": "30 天"/u);
+  assert.match(zhCN, /"sidebar\.chat\.shareDetails": "分享说明"/u);
   assert.doesNotMatch(zhCN, /shareExpiration\.(?:5m|30m|1h|5d|15d)/u);
   assert.match(shareDialog, /ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS\.map/u);
   assert.match(shareDialog, /state\.expiration === "once"[\s\S]*?shareExpiration\.onceWarning/u);
-  assert.match(shareDialog, /createdRecord[\s\S]*?onCopyCreatedLink/u);
+  assert.match(shareDialog, /createdRecord[\s\S]*?copyCreatedLink/u);
   assert.match(shareDialog, /shareManagement\.openTunnelSettings/u);
   assert.doesNotMatch(shareDialog, /shareLastAccessedAt|shareRevoke|listChatShares/u);
   assert.doesNotMatch(shareDialog, /Date\.parse/u);
@@ -7110,7 +7111,8 @@ test("assistant share dialog stays create-only and share management owns record 
   assert.match(shareDialog, /conversation-share-link-control/u);
   assert.match(shareDialog, /ShareAltOutlined[\s\S]*?LinkOutlined/u);
   assert.match(shareDialog, /CheckOutlined[\s\S]*?CopyOutlined/u);
-  assert.match(shareDialog, /conversation-share-section conversation-share-settings/u);
+  assert.match(shareDialog, /<details className="conversation-share-details">[\s\S]*?<summary>[\s\S]*?shareDetails[\s\S]*?shareDetailsDescription/u);
+  assert.doesNotMatch(shareDialog, /conversation-share-dialog-footer|conversation-share-dialog-intro|conversation-share-hint|shareConfirm|shareSettings|sharePublicHint|common\.done/u);
   assert.doesNotMatch(shareDialog, /conversation-share-current|conversation-share-revoke-confirmation|DisconnectOutlined/u);
   assert.match(shareManagement, /ShareManagementRecord/u);
   assert.match(shareManagement, /CopyOutlined[\s\S]*?DisconnectOutlined/u);
@@ -7120,7 +7122,7 @@ test("assistant share dialog stays create-only and share management owns record 
   assert.match(shareManagement, /onOpenChat\(\{ agentKey: group\.agentKey, chatId: group\.chatId \}\)/u);
   assert.match(shareDialogHook, /COPY_FEEDBACK_DURATION_MS = 1_600/u);
   assert.match(shareDialogHook, /window\.clearTimeout\(copyFeedbackTimerRef\.current\)/u);
-  assert.match(shareDialogCSS, /width: min\(720px, calc\(100vw - 32px\)\)/u);
+  assert.match(shareDialogCSS, /width: min\(560px, calc\(100vw - 32px\)\)/u);
   assert.match(shareDialogCSS, /max-height: min\(640px, calc\(100vh - 32px\)\)/u);
   assert.match(shareDialogCSS, /background: var\(--modal-mask-bg\)/u);
   assert.match(shareDialogCSS, /border: 1px solid var\(--control-border\)/u);
@@ -7128,6 +7130,8 @@ test("assistant share dialog stays create-only and share management owns record 
   assert.match(shareDialogCSS, /background: var\(--desktop-overlay-panel-bg\)/u);
   assert.match(shareDialogCSS, /\.conversation-share-button\s*\{[\s\S]*?height: 32px/u);
   assert.match(shareDialogCSS, /\.conversation-share-button\.is-compact\s*\{[\s\S]*?height: 30px/u);
+  assert.match(shareDialogCSS, /\.conversation-share-details summary\s*\{/u);
+  assert.doesNotMatch(shareDialogCSS, /conversation-share-dialog-footer|conversation-share-dialog-intro|conversation-share-hint|conversation-share-section/u);
   assert.doesNotMatch(shareDialogCSS, /linear-gradient|backdrop-filter|(?:^|\n)\s*(?:width|height): 42px;/u);
   assert.doesNotMatch(navigationCSS, /sidebar-chat-share-/u);
 });

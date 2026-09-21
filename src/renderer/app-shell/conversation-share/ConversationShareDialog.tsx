@@ -103,12 +103,7 @@ export function ConversationShareDialog({
             </section>
           ) : (
             <>
-              <p className="conversation-share-dialog-intro">{t("sidebar.chat.shareConfirm")}</p>
-              <section
-                className="conversation-share-section conversation-share-settings"
-                aria-labelledby="conversation-share-settings-title"
-              >
-                <h3 id="conversation-share-settings-title">{t("sidebar.chat.shareSettings")}</h3>
+              <div className="conversation-share-settings">
                 <div className="conversation-share-create-row">
                   <label className="conversation-share-field">
                     <span>{t("sidebar.chat.shareExpiration")}</span>
@@ -147,7 +142,12 @@ export function ConversationShareDialog({
                     {t("sidebar.chat.shareExpiration.onceWarning")}
                   </p>
                 ) : null}
-              </section>
+              </div>
+
+              <details className="conversation-share-details">
+                <summary>{t("sidebar.chat.shareDetails")}</summary>
+                <p>{t("sidebar.chat.shareDetailsDescription")}</p>
+              </details>
 
               {state.notice ? (
                 <div className="conversation-share-feedback is-success" role="status">
@@ -184,16 +184,9 @@ export function ConversationShareDialog({
                   </button>
                 </section>
               ) : null}
-              <p className="conversation-share-hint">{t("sidebar.chat.sharePublicHint")}</p>
             </>
           )}
         </div>
-
-        <footer className="conversation-share-dialog-footer">
-          <button type="button" className="conversation-share-button" onClick={onClose}>
-            {t("common.done")}
-          </button>
-        </footer>
       </section>
     </div>
   );

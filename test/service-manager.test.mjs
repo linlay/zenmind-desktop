@@ -17,6 +17,7 @@ const { installWebsiteAppArchiveFromPath } = require("../dist-electron/main/modu
 const identityPorts = require("../dist-electron/main/modules/identity/index.js");
 const { ensureProviderRegisterApiKey } = require("../dist-electron/main/modules/agent-platform/provider-register.js");
 const { resolveConversationAssetOrigin } = require("../dist-electron/main/modules/conversation-share/target.js");
+const { BRAND_ID } = require("../dist-electron/shared/brand.js");
 const pluginBridgePorts = require("../dist-electron/main/modules/plugins/bridge.js");
 const pluginResourcePorts = require("../dist-electron/main/modules/plugins/resources.js");
 const pluginSettingsPorts = require("../dist-electron/main/modules/plugins/settings.js");
@@ -2585,7 +2586,8 @@ test("agent-webclient host-managed start args require base-url only", () => {
       [...__testInternals.resolveAgentWebclientHostStartOverrides(app).entries()],
       [
         ["BASE_URL", "http://127.0.0.1:7078"],
-        ["DESKTOP_APP", "true"]
+        ["DESKTOP_APP", "true"],
+        ["BRAND_ID", BRAND_ID]
       ]
     );
 
@@ -2601,6 +2603,7 @@ test("agent-webclient host-managed start args require base-url only", () => {
       [
         ["BASE_URL", "http://127.0.0.1:7078"],
         ["DESKTOP_APP", "true"],
+        ["BRAND_ID", BRAND_ID],
         ["CONVERSATION_EXPORT_ASSET_ORIGIN", "https://tunnel.example.test"]
       ]
     );

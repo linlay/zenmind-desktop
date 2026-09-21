@@ -4,6 +4,7 @@ import { type App } from "electron";
 import { getConfiguredServiceLifecycleArgs } from "../lifecycle-args";
 import { type ServicesIntegrationPorts } from "../integration-ports";
 import { integrationPorts } from "./manager-contracts";
+import { BRAND_ID } from "../../../../shared/brand";
 
 export function isHostManagedService(service: ServiceDefinition) {
   return isHostManagedAgentWebclientService(service);
@@ -68,7 +69,8 @@ export function resolveAgentWebclientHostStartOverrides(
   const baseUrl = resolveAgentWebclientHostBaseUrl(app);
   const overrides = new Map<string, string>([
     ["BASE_URL", baseUrl],
-    ["DESKTOP_APP", "true"]
+    ["DESKTOP_APP", "true"],
+    ["BRAND_ID", BRAND_ID]
   ]);
   const assetOrigin = integrationPorts(ports).resolveConversationAssetOrigin(app);
   if (assetOrigin.ok) {

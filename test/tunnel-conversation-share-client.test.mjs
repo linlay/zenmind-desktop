@@ -31,8 +31,8 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
-test("Tunnel client forwards the original Snapshot Buffer and exact creation protocol", async () => {
-  const snapshot = Buffer.from('{"version":1,"title":"opaque"}');
+test("Tunnel client submits the V1 snapshot and attachments in one multipart request", async () => {
+  const snapshot = Buffer.from('{"version":2,"title":"opaque"}');
   const requests = [];
   const client = new TunnelConversationShareClient(async (url, init) => {
     requests.push({ url: String(url), init });
@@ -43,7 +43,8 @@ test("Tunnel client forwards the original Snapshot Buffer and exact creation pro
     target,
     conversationId: "chat_1",
     expiration: "30d",
-    snapshot
+    snapshot,
+    attachments: []
   });
 
   assert.equal(result.shareId, "share_abc");
@@ -52,10 +53,10 @@ test("Tunnel client forwards the original Snapshot Buffer and exact creation pro
   assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares");
   assert.equal(requests[0].init.method, "POST");
   assert.equal(requests[0].init.redirect, "manual");
-  assert.equal(requests[0].init.body, snapshot);
+  assert.ok(requests[0].init.body instanceof FormData);
+  assert.equal(await requests[0].init.body.get("snapshot").text(), snapshot.toString());
   assert.equal(requests[0].init.headers.Authorization, "Bearer secret-site-token");
-  assert.equal(requests[0].init.headers["Content-Type"], "application/json; charset=utf-8");
-  assert.equal(requests[0].init.headers["Content-Length"], String(snapshot.byteLength));
+  assert.equal(requests[0].init.headers["Content-Type"], undefined);
   assert.equal(requests[0].init.headers["X-Conversation-Snapshot-Version"], "1");
   assert.equal(requests[0].init.headers["X-Conversation-ID"], "chat_1");
   assert.equal(requests[0].init.headers["X-Conversation-Share-Expiration"], "30d");
@@ -70,7 +71,8 @@ test("Tunnel client requires explicit null metadata for permanent shares", async
     target,
     conversationId: "chat_1",
     expiration: "permanent",
-    snapshot: Buffer.from('{"version":1}')
+    snapshot: Buffer.from('{"version":2}'),
+    attachments: []
   });
 
   assert.equal(result.shareId, "share_permanent");
@@ -87,7 +89,8 @@ test("Tunnel client rejects a create response for a different conversation", asy
       target,
       conversationId: "chat_1",
       expiration: "30d",
-      snapshot: Buffer.from('{"version":1}')
+      snapshot: Buffer.from('{"version":2}'),
+      attachments: []
     }),
     (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_response"
   );
@@ -101,7 +104,8 @@ test("Tunnel client requires explicit single-use metadata for once shares", asyn
     target,
     conversationId: "chat_1",
     expiration: "once",
-    snapshot: Buffer.from('{"version":1}')
+    snapshot: Buffer.from('{"version":2}'),
+    attachments: []
   });
 
   assert.equal(result.shareId, "share_once");
@@ -218,7 +222,8 @@ test("Tunnel client rejects redirects, invalid JSON, oversized JSON, URLs, RFC33
         target,
         conversationId: "chat_1",
         expiration: "30d",
-        snapshot: Buffer.from('{"version":1}')
+        snapshot: Buffer.from('{"version":2}'),
+        attachments: []
       }),
       (error) => error instanceof TunnelConversationShareError,
       `case ${index}`
@@ -264,7 +269,8 @@ test("Tunnel client enforces the local 20 MiB Snapshot boundary without fetching
       target,
       conversationId: "chat_1",
       expiration: "30d",
-      snapshot: Buffer.alloc(20 * 1024 * 1024 + 1)
+      snapshot: Buffer.alloc(20 * 1024 * 1024 + 1),
+      attachments: []
     }),
     (error) => error instanceof TunnelConversationShareError && error.status === 413
   );

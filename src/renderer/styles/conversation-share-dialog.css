@@ -13,7 +13,7 @@
 
 .conversation-share-dialog {
   display: flex;
-  width: min(720px, calc(100vw - 32px));
+  width: min(560px, calc(100vw - 32px));
   max-height: min(640px, calc(100vh - 32px));
   min-width: 0;
   min-height: 0;
@@ -27,7 +27,6 @@
 }
 
 .conversation-share-dialog-head,
-.conversation-share-dialog-footer,
 .conversation-share-dialog-heading,
 .conversation-share-create-row,
 .conversation-share-created-result,
@@ -63,10 +62,8 @@
 
 .conversation-share-dialog-heading h2,
 .conversation-share-dialog-heading p,
-.conversation-share-dialog-intro,
-.conversation-share-section h3,
 .conversation-share-warning,
-.conversation-share-hint,
+.conversation-share-details p,
 .conversation-share-tunnel-gate h3,
 .conversation-share-tunnel-gate p {
   margin: 0;
@@ -110,32 +107,28 @@
 .conversation-share-dialog-body {
   display: grid;
   min-height: 0;
-  gap: 14px;
+  gap: 12px;
   padding: 16px 18px;
   overflow-x: hidden;
   overflow-y: auto;
 }
 
-.conversation-share-dialog-intro,
-.conversation-share-hint,
 .conversation-share-tunnel-gate p {
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.55;
 }
 
-.conversation-share-section {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding-block: 2px;
-}
-
-.conversation-share-section h3,
 .conversation-share-tunnel-gate h3 {
   font-size: 12px;
   font-weight: 650;
   line-height: 18px;
+}
+
+.conversation-share-settings {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
 }
 
 .conversation-share-create-row {
@@ -239,6 +232,35 @@
   color: var(--ink);
 }
 
+.conversation-share-details {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.conversation-share-details summary {
+  width: max-content;
+  color: var(--ink-muted);
+  cursor: pointer;
+  line-height: 18px;
+  user-select: none;
+}
+
+.conversation-share-details summary:hover {
+  color: var(--ink);
+}
+
+.conversation-share-details summary:focus-visible {
+  color: var(--ink);
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.conversation-share-details p {
+  margin-top: 8px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
 .conversation-share-created-result {
   min-width: 0;
   gap: 8px;
@@ -279,11 +301,6 @@
   white-space: nowrap;
 }
 
-.conversation-share-hint {
-  color: var(--ink-muted);
-  font-size: 10px;
-}
-
 .conversation-share-tunnel-gate {
   display: grid;
   min-height: 180px;
@@ -306,13 +323,6 @@
 
 .conversation-share-tunnel-gate .conversation-share-button {
   margin-top: 4px;
-}
-
-.conversation-share-dialog-footer {
-  min-height: 50px;
-  justify-content: flex-end;
-  padding: 8px 18px;
-  border-top: 1px solid var(--line);
 }
 
 :root[data-theme="dark"] .conversation-share-dialog {

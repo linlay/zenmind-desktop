@@ -15,7 +15,7 @@ const CONVERSATION_SNAPSHOT_VERSION_HEADER = "X-Conversation-Snapshot-Version";
 const CONVERSATION_SHARE_EXPIRATION_HEADER = "X-Conversation-Share-Expiration";
 const CONVERSATION_ID_HEADER = "X-Conversation-ID";
 const CONVERSATION_SNAPSHOT_VERSION = "1";
-const CREATE_TIMEOUT_MS = 15_000;
+const CREATE_TIMEOUT_MS = 60_000;
 const READ_TIMEOUT_MS = 10_000;
 const MAX_JSON_RESPONSE_BYTES = 1024 * 1024;
 const MAX_CONVERSATION_ID_BYTES = 255;
@@ -45,6 +45,7 @@ export type ConversationShareCreateInput = {
   conversationId: string;
   expiration: AssistantConversationShareExpiration;
   snapshot: Buffer;
+  attachments: Array<{ id: string; name: string; bytes: Buffer }>;
 };
 
 export interface ConversationShareCreator {
@@ -76,19 +77,29 @@ export class TunnelConversationShareClient implements
     if (input.snapshot.byteLength > MAX_CONVERSATION_SNAPSHOT_BYTES) {
       throw new TunnelConversationShareError("invalid_request", 413);
     }
+    let attachmentBytes = 0;
+    const form = new FormData();
+    form.append("snapshot", new Blob([Uint8Array.from(input.snapshot)], { type: "application/json" }), "snapshot.json");
+    for (const attachment of input.attachments) {
+      if (!/^[a-f0-9]{24}$/u.test(attachment.id) || !attachment.name ||
+        attachmentBytes + attachment.bytes.length > MAX_CONVERSATION_SNAPSHOT_BYTES) {
+        throw new TunnelConversationShareError("invalid_request", 413);
+      }
+      attachmentBytes += attachment.bytes.length;
+      form.append("attachment:" + attachment.id,
+        new Blob([Uint8Array.from(attachment.bytes)], { type: "text/html" }), attachment.name);
+    }
     const response = await this.request(
       `${input.target.origin}${CONVERSATION_SHARES_PATH}`,
       {
         method: "POST",
         headers: {
           ...authorizationHeaders(input.target),
-          "Content-Type": "application/json; charset=utf-8",
-          "Content-Length": String(input.snapshot.byteLength),
           [CONVERSATION_SNAPSHOT_VERSION_HEADER]: CONVERSATION_SNAPSHOT_VERSION,
           [CONVERSATION_SHARE_EXPIRATION_HEADER]: input.expiration,
           [CONVERSATION_ID_HEADER]: input.conversationId,
         },
-        body: input.snapshot as unknown as BodyInit,
+        body: form,
       },
       CREATE_TIMEOUT_MS,
     );

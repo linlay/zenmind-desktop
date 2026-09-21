@@ -4,6 +4,7 @@ export const MAX_CONVERSATION_TEMPLATE_BYTES = 256 * 1024;
 export const CONVERSATION_EXPORT_TEMPLATE_PATH = "/assets/conversation-export/conversation.template.html";
 export const CONVERSATION_EXPORT_SNAPSHOT_MARKER = "__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__";
 export const CONVERSATION_EXPORT_ASSET_ORIGIN_MARKER = "__CONVERSATION_EXPORT_ASSET_ORIGIN__";
+export const CONVERSATION_EXPORT_LOCAL_BRAND_ID_MARKER = "__CONVERSATION_EXPORT_LOCAL_BRAND_ID__";
 
 export type ConversationHtmlWorkerErrorCode =
   | "request_invalid"
@@ -20,7 +21,7 @@ export type ConversationHtmlRenderResult =
   | { ok: false; message: string };
 
 export type ConversationSnapshotReadResult =
-  | { ok: true; bytes: Buffer }
+  | { ok: true; bytes: Buffer; attachments: Array<{ id: string; name: string; bytes: Buffer }> }
   | { ok: false; message: string };
 
 export type ConversationSnapshotReader = {
@@ -42,6 +43,7 @@ export type RenderConversationHtmlRequest = {
   templateUrl: string;
   templateCacheKey: string;
   assetOrigin: string;
+  brandId: string;
 };
 
 export type ReadConversationSnapshotRequest = {
@@ -66,6 +68,7 @@ export type ReadConversationSnapshotSuccess = {
   type: "snapshot";
   requestId: string;
   snapshot: ArrayBuffer;
+  attachments: Array<{ id: string; name: string; bytes: ArrayBuffer }>;
 };
 
 export type RenderConversationHtmlFailure = {

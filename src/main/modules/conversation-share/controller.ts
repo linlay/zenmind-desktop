@@ -53,6 +53,7 @@ export async function createConversationShare(
       conversationId,
       expiration: request.expiration,
       snapshot: snapshot.bytes,
+      attachments: snapshot.attachments,
     });
     return {
       ok: true,
