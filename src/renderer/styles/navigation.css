@@ -4391,32 +4391,8 @@ div.sidebar-chats-group-popover {
   pointer-events: none;
 }
 
-.startup-loading-screen::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background:
-    linear-gradient(0.25turn, transparent 0%, rgba(255, 255, 255, 0) 24%, rgba(255, 255, 255, 0.32) 50%, rgba(255, 255, 255, 0) 76%, transparent 100%),
-    linear-gradient(90deg, rgba(79, 136, 255, 0.035), rgba(20, 184, 166, 0.02), rgba(79, 136, 255, 0.035));
-  background-repeat: no-repeat;
-  background-size: 64vw 100%, 100% 100%;
-  background-position: -70vw 0, 0 0;
-  animation: startup-loading-background-shimmer 3.2s ease-in-out infinite;
-  mix-blend-mode: screen;
-  opacity: 0.7;
-  pointer-events: none;
-}
-
 :root[data-theme="dark"] .startup-loading-screen {
   background: rgba(15, 23, 42, 0.76);
-}
-
-:root[data-theme="dark"] .startup-loading-screen::before {
-  background:
-    linear-gradient(0.25turn, transparent 0%, rgba(255, 255, 255, 0) 24%, rgba(255, 255, 255, 0.14) 50%, rgba(255, 255, 255, 0) 76%, transparent 100%),
-    linear-gradient(90deg, rgba(96, 165, 250, 0.04), rgba(45, 212, 191, 0.025), rgba(96, 165, 250, 0.04));
-  opacity: 0.58;
 }
 
 .startup-loading-card {
@@ -4642,17 +4618,6 @@ div.sidebar-chats-group-popover {
   }
 }
 
-@keyframes startup-loading-background-shimmer {
-  0% {
-    background-position: -70vw 0, 0 0;
-  }
-
-  72%,
-  100% {
-    background-position: 106vw 0, 0 0;
-  }
-}
-
 @keyframes empty-content-surface-spin {
   to {
     transform: rotate(360deg);
@@ -4660,16 +4625,10 @@ div.sidebar-chats-group-popover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .startup-loading-screen::before,
   .startup-loading-dot.is-active,
   .sidebar-chat-info-spinner,
   .empty-content-surface-loader {
     animation: none;
-  }
-
-  .startup-loading-screen::before {
-    background-position: 0 0, 0 0;
-    opacity: 0.34;
   }
 }
 
