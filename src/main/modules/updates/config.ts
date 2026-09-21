@@ -16,11 +16,9 @@ export function normalizeUpdateConfig(value: unknown): DesktopUpdateConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid updates configuration");
   const input = value as Record<string, unknown>;
   if (typeof input.enabled !== "boolean") throw new Error("updates.enabled must be boolean");
-  const channel = input.channel ?? "stable";
-  if (typeof channel !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(channel)) throw new Error("Invalid updates channel");
   const feedUrl = input.feedUrl ? updateUrl(input.feedUrl) : "";
   if (input.enabled && !feedUrl) throw new Error("updates.feedUrl is required when enabled");
-  return { enabled: input.enabled, feedUrl, channel };
+  return { enabled: input.enabled, feedUrl };
 }
 export function getUpdateConfigPath(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDesktopConfigRoot(app, platform), "updates.json");
@@ -33,6 +31,6 @@ export function writeUpdateConfig(app: App, value: unknown, platform: NodeJS.Pla
 }
 export function readUpdateConfig(app: App): DesktopUpdateConfig {
   const target = getUpdateConfigPath(app);
-  if (!fs.existsSync(target)) return { enabled: false, feedUrl: "", channel: "stable" };
+  if (!fs.existsSync(target)) return { enabled: false, feedUrl: "" };
   return normalizeUpdateConfig(JSON.parse(fs.readFileSync(target, "utf8")));
 }

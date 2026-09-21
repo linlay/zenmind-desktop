@@ -106,7 +106,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
           publish({ phase: "not-configured", checkedAt: new Date(lastCheck).toISOString(), version: undefined, releaseNotes: undefined, progress: 0, error: undefined });
           return;
         }
-        release = parseUpdateManifest(raw, options.productId, config.channel);
+        release = parseUpdateManifest(raw, options.productId);
       } finally { clearTimeout(deadline); controller = undefined; }
       lastCheck = Date.now();
       artifact = release.artifacts[`${options.platform}-${options.arch}`];
@@ -118,17 +118,15 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       if (busy || disposed || state.phase === "installing") throw new Error("updateBusy");
       if (!input || typeof input !== "object" || JSON.stringify(input).length > 256 * 1024) throw new Error("Invalid test update");
       const raw = "manifest" in input ? input.manifest : {
-        schemaVersion: 1, productId: options.productId, channel: "stable", version: input.version,
+        schemaVersion: 1, productId: options.productId, version: input.version,
         publishedAt: new Date().toISOString(), releaseNotes: {},
         artifacts: { [`${options.platform}-${options.arch}`]: { url: input.url, size: input.size, sha256: input.sha256 } }
       };
-      const channel = (raw as { channel?: unknown } | null)?.channel;
-      if (typeof channel !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(channel)) throw new Error("Invalid test channel");
-      const candidate = parseUpdateManifest(raw, options.productId, channel);
+      const candidate = parseUpdateManifest(raw, options.productId);
       const target = candidate.artifacts[`${options.platform}-${options.arch}`];
       if (!target || compareUpdateVersions(candidate.version, currentVersion) <= 0) throw new Error("Test update requires a newer version for this platform");
       // Validate everything before replacing the current selection. Never persist the test feed.
-      testConfig = { enabled: true, channel, feedUrl: "" };
+      testConfig = { enabled: true, feedUrl: "" };
       release = candidate; artifact = target; file = "";
       publish({ source: "test", phase: "available", version: candidate.version, releaseNotes: candidate.releaseNotes,
         progress: 0, checkedAt: undefined, error: undefined });

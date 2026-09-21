@@ -17,9 +17,9 @@ const { downloadUpdateFile, fetchUpdateManifest } = require("../dist-electron/ma
 const { applyDesktopInitBootstrap, applyDesktopInitVersionUpgrade, resolveDesktopInitPath } = require("../dist-electron/main/app/bootstrap/desktop-init.js");
 const content = Buffer.from("test update bytes");
 const hash = createHash("sha256").update(content).digest("hex");
-const config = { enabled: true, channel: "stable", feedUrl: "https://updates.example.com/latest.json" };
+const config = { enabled: true, feedUrl: "https://updates.example.com/latest.json" };
 const artifact = { url: "https://updates.example.com/app.zip", size: content.length, sha256: hash };
-const manifest = () => ({ schemaVersion: 1, productId: "cutej", channel: "stable", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
+const manifest = () => ({ schemaVersion: 1, productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
 function temp(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-update-test-")); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; }
 function fixture(t, extra = {}) {
   const root = temp(t), events = [], installs = [];
@@ -31,7 +31,7 @@ function fixture(t, extra = {}) {
 test("configuration requires explicit enablement and HTTPS without credentials", () => {
   assert.deepEqual(normalizeUpdateConfig(config), config);
   assert.equal(normalizeUpdateConfig({ enabled: false }).feedUrl, "");
-  for (const input of [{}, { enabled: true }, { ...config, feedUrl: "http://localhost/latest.json" }, { ...config, feedUrl: "https://user:secret@example.com/latest.json" }, { ...config, channel: "../stable" }]) assert.throws(() => normalizeUpdateConfig(input));
+  for (const input of [{}, { enabled: true }, { ...config, feedUrl: "http://localhost/latest.json" }, { ...config, feedUrl: "https://user:secret@example.com/latest.json" }]) assert.throws(() => normalizeUpdateConfig(input));
 });
 test("SemVer precedence rejects downgrade and numeric prerelease traps", () => {
   assert.equal(compareUpdateVersions("0.10.0", "0.9.0"), 1);
@@ -41,9 +41,9 @@ test("SemVer precedence rejects downgrade and numeric prerelease traps", () => {
   for (const v of ["v1.0.0", "1.01.0", "1.0", "1.0.0-beta.01"]) assert.throws(() => compareUpdateVersions(v, "1.0.0"));
 });
 test("manifest rejects identity, version, URL, size and hash mismatches", () => {
-  assert.equal(parseUpdateManifest(manifest(), "cutej", "stable").version, "0.5.0");
-  for (const patch of [{ schemaVersion: 2 }, { productId: "zenmind" }, { channel: "beta" }, { version: "0.5.0-beta" }, { publishedAt: "yesterday" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), ...patch }, "cutej", "stable"));
-  for (const patch of [{ url: "http://example.com/app.zip" }, { url: "https://example.com/app.exe" }, { size: -1 }, { sha256: "bad" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), artifacts: { "darwin-arm64": { ...artifact, ...patch } } }, "cutej", "stable"));
+  assert.equal(parseUpdateManifest(manifest(), "cutej").version, "0.5.0");
+  for (const patch of [{ schemaVersion: 2 }, { productId: "zenmind" }, { version: "0.5.0-beta.01" }, { publishedAt: "yesterday" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), ...patch }, "cutej"));
+  for (const patch of [{ url: "http://example.com/app.zip" }, { url: "https://example.com/app.exe" }, { size: -1 }, { sha256: "bad" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), artifacts: { "darwin-arm64": { ...artifact, ...patch } } }, "cutej"));
 });
 for (const platform of ["darwin", "win32"]) test(`${platform} init consumes updates into canonical config and upgrade backs it up`, (t) => {
   const root = temp(t);
@@ -56,7 +56,7 @@ for (const platform of ["darwin", "win32"]) test(`${platform} init consumes upda
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), config);
   assert.equal(fs.existsSync(init), false);
   const backup = path.join(root, "backup");
-  const changed = { ...config, channel: "beta" };
+  const changed = { ...config, feedUrl: "https://test.example.com/latest.json" };
   applyDesktopInitVersionUpgrade(app, { updates: changed }, backup, platform);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), changed);
   assert.ok(fs.readdirSync(backup).some((name) => name.endsWith("updates.json")));
@@ -173,7 +173,7 @@ test("redirects cannot downgrade HTTPS and manifest is bounded", async (t) => {
 test("local release helper generates exact size and hash", async (t) => {
   const root = temp(t), file = path.join(root, "app.zip"); fs.writeFileSync(file, content);
   const output = await createUpdateManifest({ ...manifest(), artifacts: { "darwin-arm64": { file, url: artifact.url } } });
-  assert.deepEqual(parseUpdateManifest(output, "cutej", "stable").artifacts["darwin-arm64"], artifact);
+  assert.deepEqual(parseUpdateManifest(output, "cutej").artifacts["darwin-arm64"], artifact);
 });
 
 test("missing manifest is normal but missing artifacts and server errors still fail", async (t) => {
@@ -183,7 +183,7 @@ test("missing manifest is normal but missing artifacts and server errors still f
   await assert.rejects(fetchUpdateManifest(config.feedUrl, new AbortController().signal), /503/);
   await assert.rejects(downloadUpdateFile(artifact, path.join(root, "app.zip"), new AbortController().signal, () => {}), /404/);
   const raw = await fetchUpdateManifest(config.feedUrl, new AbortController().signal);
-  assert.throws(() => parseUpdateManifest(raw, "cutej", "stable"));
+  assert.throws(() => parseUpdateManifest(raw, "cutej"));
 });
 test("unconfigured manifest clears stale metadata without an error or download", async (t) => {
   let found = true;
@@ -283,4 +283,19 @@ test("test selection cannot race downloads and development mode cannot install",
   assert.equal(runtime.getState().canInstall, false);
   await runtime.install(); assert.equal(installs.length, 0);
   await runtime.clearTest(); assert.equal(runtime.getState().version, undefined);
+});
+
+for (const platform of ["darwin", "win32"]) test(`${platform} URL-selected feed accepts prereleases and rejects downgrades`, async (t) => {
+  for (const [currentVersion, version, phase] of [
+    ["0.4.9", "0.4.10-dev.1", "available"],
+    ["0.4.10-dev.1", "0.4.10-dev.2", "available"],
+    ["0.4.10-dev.2", "0.4.10", "available"],
+    ["0.4.10", "0.4.10-dev.3", "current"]
+  ]) {
+    const { runtime } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64", currentVersion,
+      fetchManifest: async () => ({ ...manifest(), version }) });
+    assert.equal((await runtime.check()).phase, phase);
+  }
+  const { runtime } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64" });
+  assert.equal((await runtime.loadTest({ manifest: { ...manifest(), version: "0.6.0-dev.1" } })).phase, "available");
 });

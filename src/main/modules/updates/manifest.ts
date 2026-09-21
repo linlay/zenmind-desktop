@@ -29,11 +29,10 @@ export function compareUpdateVersions(left: string, right: string): number {
   }
   return 0;
 }
-export function parseUpdateManifest(value: unknown, productId: string, channel: string): DesktopUpdateManifest {
+export function parseUpdateManifest(value: unknown, productId: string): DesktopUpdateManifest {
   const input = record(value);
-  if (input.schemaVersion !== 1 || input.productId !== productId || input.channel !== channel) throw new Error("Update manifest identity mismatch");
+  if (input.schemaVersion !== 1 || input.productId !== productId) throw new Error("Update manifest identity mismatch");
   semver(input.version);
-  if (channel === "stable" && semver(input.version).pre.length) throw new Error("Stable feed contains a prerelease");
   if (typeof input.publishedAt !== "string" || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.publishedAt) || !Number.isFinite(Date.parse(input.publishedAt))) throw new Error("Invalid update publication time");
   const notes: Record<string, string[]> = {};
   for (const [locale, lines] of Object.entries(record(input.releaseNotes))) {
@@ -50,5 +49,5 @@ export function parseUpdateManifest(value: unknown, productId: string, channel: 
     if (typeof item.sha256 !== "string" || !/^[a-fA-F0-9]{64}$/.test(item.sha256)) throw new Error("Invalid update artifact checksum");
     artifacts[key] = { url, size: item.size as number, sha256: item.sha256.toLowerCase() };
   }
-  return { schemaVersion: 1, productId, channel, version: input.version as string, publishedAt: input.publishedAt, releaseNotes: notes, artifacts };
+  return { schemaVersion: 1, productId, version: input.version as string, publishedAt: input.publishedAt, releaseNotes: notes, artifacts };
 }

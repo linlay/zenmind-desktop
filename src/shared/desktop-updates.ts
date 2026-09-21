@@ -2,13 +2,11 @@
 export interface DesktopUpdateConfig {
   enabled: boolean;
   feedUrl: string;
-  channel: string;
 }
 export interface DesktopUpdateArtifact { url: string; size: number; sha256: string }
 export interface DesktopUpdateManifest {
   schemaVersion: 1;
   productId: string;
-  channel: string;
   version: string;
   publishedAt: string;
   releaseNotes: Record<string, string[]>;

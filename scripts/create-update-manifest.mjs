@@ -4,9 +4,8 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 /** Release-side helper only: writes a local feed; does not upload or publish. */
-export async function createUpdateManifest({ productId, channel = "stable", version, releaseNotes, artifacts, publishedAt = new Date().toISOString() }) {
+export async function createUpdateManifest({ productId, version, releaseNotes, artifacts, publishedAt = new Date().toISOString() }) {
   if (!/^[a-z][a-z0-9-]*$/.test(productId ?? "")) throw new Error("Invalid product id");
-  if (!/^[a-z][a-z0-9-]*$/.test(channel)) throw new Error("Invalid channel");
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version ?? "")) throw new Error("Invalid version");
   const output = {};
   for (const [key, { file, url }] of Object.entries(artifacts)) {
@@ -22,7 +21,7 @@ export async function createUpdateManifest({ productId, channel = "stable", vers
     output[key] = { url: parsed.href, size: stat.size, sha256: hash.digest("hex") };
   }
   if (!Object.keys(output).length) throw new Error("At least one artifact is required");
-  return { schemaVersion: 1, productId, channel, version, publishedAt, releaseNotes, artifacts: output };
+  return { schemaVersion: 1, productId, version, publishedAt, releaseNotes, artifacts: output };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const [input, output] = process.argv.slice(2);
