@@ -353,10 +353,13 @@ export function cloneBindingError(
 }
 
 export function frameError(frame: AgentPlatformRealtimeFrame) {
-  return brokerError(
+  const error = brokerError(
     readText(frame.type) || "protocol_error",
     readText(frame.msg) || readText(frame.message) || "Agent Platform request failed",
   );
+  // Keep the upstream error envelope across the Error-based Broker boundary.
+  // The Frame Port must not recategorize a Platform rejection as a host error.
+  return Object.assign(error, { platformErrorFrame: frame });
 }
 
 export function framePayload(frame: AgentPlatformRealtimeFrame) {

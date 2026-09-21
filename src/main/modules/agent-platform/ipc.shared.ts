@@ -286,6 +286,7 @@ export function redactSelectionReferencesForTrace(value: unknown) {
 export type FrameErrorOptions = {
   retryable?: boolean;
   details?: Record<string, unknown>;
+  platformErrorFrame?: Record<string, unknown>;
 };
 
 export function frameError(
@@ -294,6 +295,9 @@ export function frameError(
   message: string,
   options: FrameErrorOptions = {},
 ): PlatformFrameRecord {
+  if (options.platformErrorFrame) {
+    return { ...options.platformErrorFrame, frame: "error", id };
+  }
   const status = code === "capability_denied" ? 403
     : code === "duplicate_id" ? 409
       : code === "connection_unavailable" ? 503
@@ -321,6 +325,8 @@ export function frameError(
 export function frameErrorOptions(error: unknown): FrameErrorOptions {
   if (!isPlainBridgeRecord(error)) return {};
   return {
+    ...(isPlainBridgeRecord(error.platformErrorFrame) && error.platformErrorFrame.frame === "error"
+      ? { platformErrorFrame: error.platformErrorFrame } : {}),
     ...(typeof error.retryable === "boolean" ? { retryable: error.retryable } : {}),
     ...(isPlainBridgeRecord(error.details) ? { details: error.details } : {}),
   };
