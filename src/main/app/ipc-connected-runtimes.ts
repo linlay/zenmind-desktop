@@ -183,7 +183,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     setWindowMode: (mode: unknown) => petRuntime.setWindowMode(mode),
     refreshState: () => petRuntime.refreshState(),
     replyMessage: (input: any) => petRuntime.replyMessage(assistantBridge, input),
-    dismissMessage: (input: any) => petRuntime.dismissMessage(input)
+    dismissMessage: (input: any) => petRuntime.dismissMessage(assistantBridge, input)
   });
 
   registerAppearanceIpcHandlers(ipcMain, { app, platform: options.platform, getMainWindow: options.getMainWindow });

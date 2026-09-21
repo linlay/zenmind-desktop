@@ -797,12 +797,26 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return result;
   }
 
-  function dismissMessage(input: any) {
+  async function dismissMessage(assistantBridge: { markChatRead: (chatId: string, runId?: string | null) => Promise<{ ok: boolean }> }, input: any) {
     const chatId = typeof input?.chatId === "string" ? input.chatId.trim() : "";
     const updatedAt = readEpochMillis(input?.updatedAt);
     if (!chatId || updatedAt === undefined) {
       return { ok: false };
     }
+    const message = getMessagesForState().find((item) => item.chatId === chatId);
+    // A stale card must not mark a newer Run as read.
+    if (!message || message.updatedAt !== updatedAt || (message.runId || null) !== (input.runId || null)) {
+      return { ok: false };
+    }
+    try {
+      const result = await assistantBridge.markChatRead(message.chatId, message.runId);
+      if (!result.ok) {
+        return { ok: false };
+      }
+    } catch {
+      return { ok: false };
+    }
+    // Read counts stay authoritative: Navigation consumes the Platform chat.read Push.
     desktopPetDismissedMessages.set(chatId, updatedAt);
     refreshState();
     return { ok: true };
