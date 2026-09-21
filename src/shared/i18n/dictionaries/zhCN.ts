@@ -3020,7 +3020,6 @@ export const zhCNMessages = {
   "desktopDisplay.targetUnavailable": "桌面主窗口已隐藏、最小化或不可用。",
 
   "website.listRead": "已读取内嵌网站。",
-  "website.maxItems": "最多可添加 {count} 个内嵌网站。",
   "website.alreadyExists": "这个网站已经是内嵌网站了。",
   "website.added": "已添加「{label}」。",
   "website.updated": "已更新「{label}」。",

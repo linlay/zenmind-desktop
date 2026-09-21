@@ -1,5 +1,9 @@
 # Desktop 手工回归清单
 
+## 网站数量
+
+- macOS 与 Windows 分别在已有 14 个 Website 时继续添加网站，确认添加成功、列表完整，重启后保留；初始化导入超过 14 个 Website 时应全部安装。
+
 ## 网站 Copilot 选择
 
 - 在 macOS 与 Windows 分别打开侧栏“新增内嵌网站”和设置中的“内嵌网站”，确认“站点 Copilot”的可选 Agent 与顺序一致，均使用 Platform Copilot 列表，不混入仅存在于普通聊天或项目列表中的 Agent。

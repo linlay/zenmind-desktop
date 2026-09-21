@@ -3020,7 +3020,6 @@ export const enUSMessages = {
   "desktopDisplay.targetUnavailable": "The Desktop Main Window is hidden, minimized, or unavailable.",
 
   "website.listRead": "Embedded websites loaded.",
-  "website.maxItems": "You can add up to {count} embedded websites.",
   "website.alreadyExists": "This website is already embedded.",
   "website.added": "Added \"{label}\".",
   "website.updated": "Updated \"{label}\".",

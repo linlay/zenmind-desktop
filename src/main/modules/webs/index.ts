@@ -25,6 +25,6 @@ export { getWebappPublishStatus, publishWebapp, unpublishWebapp } from "./webapp
 export { webappRuntime } from "./webapps/runtime";
 export { getWebappDir, readInstalledWebappItems, readWebappItemFromDir } from "./webapps/store";
 export { webappWindowManager } from "./webapps/window-manager";
-export { MAX_WEBSITE_ITEMS, addWebsiteItem, listWebsiteItems, removeWebsiteItem, updateWebsiteItem } from "./websites/actions";
+export { addWebsiteItem, listWebsiteItems, removeWebsiteItem, updateWebsiteItem } from "./websites/actions";
 export { registerWebsiteFaviconProtocol, registerWebsiteFaviconProtocolScheme } from "./websites/favicon-protocol";
 export { createWebsiteItem, getWebsiteDir, readWebsiteItems, writeWebsiteItem } from "./websites/store";
