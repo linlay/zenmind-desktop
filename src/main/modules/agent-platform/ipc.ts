@@ -40,6 +40,7 @@ import { registerAgentWebclientBridgeIpcHandlers_handleClose_1, registerAgentWeb
 
 export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   app: App;
+  getMainWebContents?(): WebContents | null;
   browserSurfaces: BrowserSurfaceRegistry;
   isTrustedAgentWebclientSession(sender: WebContents): boolean;
   realtimeBroker: RealtimeBroker;
@@ -265,6 +266,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   ipcMain.handle(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL, handleWorkPanelInvoke);
   registerConnectorAuthBrowser(ipcMain, {
     availability,
+    getMainWebContents: options.getMainWebContents,
     subscribeLifecycle: listener => options.browserSurfaces.subscribeLifecycle(listener),
     authorize(sender) {
       const result = authorizeSurface(sender, options.browserSurfaces, options.isTrustedAgentWebclientSession);

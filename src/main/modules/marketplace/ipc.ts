@@ -1,6 +1,9 @@
+import { getCustomMcpConfig, saveCustomMcpConfig } from "./custom-mcp-config";
 import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesystem/download-paths";
 import { readMarketSkillContent } from "./skill-detail";
 import { readMarketSkillPins, saveMarketSkillPins } from "./skill-market";
+import { createCustomConnector, importConnectorArchive } from "./connector-custom";
+import { readConnectorConnections, readConnectorConnection, prepareConnectorConnection, startConnectorConnection, cancelConnectorConnection, checkConnectorConnection, disconnectConnectorConnection, readConnectorTokenSchema, saveConnectorCredentials, setConnectorAgent, readConnectorAgent } from "./connector-state";
 
 export interface MarketplaceIpcHandlerOptions {
   app: any;
@@ -95,6 +98,32 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
   };
   ipcMain.handle("market.getSkillPins", async (event: any) => { assertPinSender(event); return readMarketSkillPins(); });
   ipcMain.handle("market.saveSkillPins", async (event: any, input: unknown) => { assertPinSender(event); return saveMarketSkillPins(input); });
+  const connectorHandlers = {
+    getCustomMcpConfig: () => getCustomMcpConfig(app),
+    saveCustomMcpConfig: (input: unknown) => runServiceMutation(() => saveCustomMcpConfig(app, input)),
+    createConnector: createCustomConnector,
+    getConnectorConnections: readConnectorConnections,
+    getConnectorConnection: readConnectorConnection,
+    prepareConnector: prepareConnectorConnection,
+    connectConnector: startConnectorConnection,
+    cancelConnectorConnection,
+    checkConnectorConnection: checkConnectorConnection,
+    disconnectConnector: disconnectConnectorConnection,
+    getConnectorTokenSchema: readConnectorTokenSchema,
+    saveConnectorCredentials,
+    setConnectorAgent,
+    getConnectorAgent: readConnectorAgent
+  };
+  for (const [name, handle] of Object.entries(connectorHandlers)) {
+    ipcMain.handle(`market.${name}`, async (event: any, input: unknown) => { assertPinSender(event); return handle(input); });
+  }
+  ipcMain.handle("market.importConnector", async (event: any) => {
+    assertPinSender(event);
+    const result = await showArchiveDialog(t("market.connector.importTitle"), ["zip"]);
+    assertPinSender(event);
+    if (result.canceled || !result.filePaths?.length) return { ok: false, canceled: true, itemId: "", type: "connector", state: "not-installed", message: t("market.importCancelled") };
+    return importConnectorArchive(result.filePaths[0]);
+  });
   ipcMain.handle("market.readSkillContent", async (event: any, id: unknown) => {
     const owner = options.getMainWindow ? options.getMainWindow() : mainWindow;
     if (!owner || owner.isDestroyed() || owner.webContents.isDestroyed()

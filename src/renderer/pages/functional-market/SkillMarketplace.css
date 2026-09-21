@@ -30,7 +30,6 @@
 .is-webapp-discovery .market-store-section-head { padding: 0; }
 .skill-discovery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-content: start; }
 .skill-discovery-featured { margin-bottom: 30px; }
-.skill-discovery-featured-empty { margin: 0; padding: 14px; border: 1px dashed var(--market-control-border); border-radius: 10px; color: var(--market-control-muted); font-size: 12px; }
 .skill-discovery-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .skill-discovery-section-heading h2 { margin-bottom: 0; }
 .skill-discovery .skill-discovery-shuffle { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--market-control-muted); font-size: 12px; }
@@ -52,6 +51,7 @@
 .skill-discovery-icon.tone-3 { background: #fff0df; color: #e88f38; }
 .skill-discovery-icon.tone-4 { background: #e4f4ff; color: #299cd7; }
 .skill-discovery-icon.tone-5 { background: #f0e6ff; color: #a16adc; }
+.skill-discovery-icon.has-image { background: transparent; box-shadow: none; }
 .skill-discovery-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font-size: 13px !important; font-weight: 650 !important; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .skill-discovery-install { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border: 0; border-radius: 6px; background: var(--market-control-card-soft); color: var(--market-control-text); }
 .skill-discovery .skill-discovery-install.is-update { flex-basis: auto; min-width: 48px; padding: 0 6px; color: var(--market-control-blue); font-size: 11px; white-space: nowrap; }
@@ -88,3 +88,6 @@
 @media (max-width: 760px) { .skill-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skill-discovery-toolbar { flex-wrap: wrap; } }
 @media (max-width: 680px) { .skill-discovery-search { width: 100%; } }
 @media (max-width: 560px) { .skill-discovery-grid { grid-template-columns: minmax(0, 1fr); } .skill-discovery-installed-heading { align-items: flex-start; flex-direction: column; } .skill-discovery-batch { flex-wrap: wrap; } }
+
+.skill-discovery-card.is-detail-clickable { cursor: pointer; }
+.skill-discovery-card.is-detail-clickable:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }

@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
-import { Modal } from "antd";
+import { Button, Modal } from "antd";
 import type { ConnectorAuthBrowserDialog } from "../../shared/contracts/agent-webclient-bridge";
 import { useI18n } from "../i18n/useI18n";
 
@@ -21,7 +21,11 @@ export function ConnectorAuthBrowser() {
     guest.current = view;
     view?.addEventListener("did-fail-load", failed);
   }, [failed]);
-  return <Modal open={!!dialog} title={t("connectorAuth.title")} footer={null} width={600}
+  return <Modal open={!!dialog} title={t("connectorAuth.title")} footer={<Button onClick={async () => {
+      if (!dialog) return;
+      try { const result = await window.electronAPI.shell.openExternal(dialog.url); if (!result.ok) setError(true); }
+      catch { setError(true); }
+    }}>{t("connectorAuth.openOutside")}</Button>} width={600}
     maskClosable={false} destroyOnClose onCancel={() => {
       if (dialog) void window.electronAPI.connectorAuthBrowser.close(dialog.dialogId).catch(() => setError(true));
     }}>
