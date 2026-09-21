@@ -48,6 +48,7 @@ import {
 } from "../../../shared/desktop-pet-visual";
 import { BRAND_ID, PRODUCT_NAME } from "../../../shared/brand";
 import { useI18n } from "../../i18n/useI18n";
+import { formatDesktopPetMessagePreview } from "./desktopPetMessagePreview";
 import {
   loadDesktopPetAlphaMask,
   pointIntersectsDesktopPetImage,
@@ -282,7 +283,7 @@ function formatMessageCardPreview(
   if (isThinking || message.status === "running") {
     return t("desktopPet.status.thinking");
   }
-  const preview = message.preview.trim();
+  const preview = formatDesktopPetMessagePreview(message.preview);
   if (preview) {
     return preview;
   }
@@ -1637,7 +1638,7 @@ export function DesktopPet() {
           >
             <div className="desktop-pet-task-head">
               <span className="desktop-pet-task-head-copy">
-                <strong>{statusPanelTitle}</strong>
+                <strong><MessageOutlined aria-hidden="true" />{statusPanelTitle}</strong>
               </span>
               <button
                 type="button"
