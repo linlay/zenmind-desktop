@@ -19,8 +19,14 @@ const sidebarCopilotCss = fs.readFileSync(
 );
 const windowManagerSource = [
   "window-manager.ts",
-  "window-manager.part-1.ts",
-  "window-manager.part-2.ts",
+  "main-window-options.ts",
+  "main-window-events.ts",
+  "main-window-lifecycle.ts",
+  "main-window-web-contents.ts",
+  "webview-events.ts",
+  "webview-attach-policy.ts",
+  "webview-shortcuts.ts",
+  "window-model.ts",
 ].map((fileName) => fs.readFileSync(
   path.join(projectRoot, "src", "main", "modules", "shell", fileName),
   "utf8",

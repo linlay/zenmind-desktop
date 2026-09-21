@@ -5,15 +5,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
-const readFamily = (relativePath) => {
-  const directory = path.dirname(relativePath);
-  const stem = path.basename(relativePath, ".ts");
-  return fs.readdirSync(path.join(root, directory))
-    .filter((name) => name === `${stem}.ts` || new RegExp(`^${stem}\\.part-\\d+\\.ts$`, "u").test(name))
-    .sort()
-    .map((name) => read(path.join(directory, name)))
-    .join("\n");
-};
+
 
 test("only the physical realtime client constructs the Agent Platform /ws URL", () => {
   const mainRoot = path.join(root, "src/main");
@@ -31,7 +23,7 @@ test("only the physical realtime client constructs the Agent Platform /ws URL", 
   visit(mainRoot);
   assert.deepEqual(matches.sort(), [
     "src/main/modules/agent-platform/realtime/agent-platform-realtime-client.ts",
-    "src/main/modules/kanban/ws-client.part-1.ts",
+    "src/main/modules/kanban/ws-transport.ts",
   ]);
 });
 
@@ -39,8 +31,8 @@ test("Assistant, navigation, and Desktop WS api are Broker consumers", () => {
   const sources = [
     "src/main/modules/agent-platform/bridge.ts",
     "src/main/modules/assistant/navigation-status-client.ts",
-    "src/main/modules/desktop-protocol/ws-server.ts",
-  ].map(readFamily);
+    "src/main/modules/desktop-protocol/ws-platform-adapter.ts",
+  ].map(read);
   for (const source of sources) {
     assert.match(source, /RealtimeBroker/u);
     assert.doesNotMatch(source, /new URL\(["']\/ws["']/u);
@@ -54,8 +46,8 @@ test("Assistant, navigation, and Desktop WS api are Broker consumers", () => {
 });
 
 test("known non-Agent-Platform sockets remain explicit static-gate exemptions", () => {
-  assert.match(readFamily("src/main/modules/kanban/ws-client.ts"), /new URL\("\/ws", config\.serverUrl\)/u);
-  assert.match(readFamily("src/main/modules/enterprise-chat/runtime.ts"), /createWebSocket/u);
+  assert.match(read("src/main/modules/kanban/ws-transport.ts"), /new URL\("\/ws", config\.serverUrl\)/u);
+  assert.match(read("src/main/modules/enterprise-chat/runtime.ts"), /createWebSocket/u);
   assert.match(read("src/main/modules/web-surfaces/cdp/gateway.ts"), /Sec-WebSocket-Accept/u);
   assert.match(read("src/renderer/pages/settings/SettingsPage.tsx"), /new WebSocket\(wsUrl\.toString\(\)\)/u);
 });

@@ -1,7 +1,7 @@
-import type { DesktopActionCallRequest } from "../../../shared/desktop-actions";
+import { type DesktopActionCallRequest } from "../../../shared/desktop-actions";
 import { buildInteractElementScript, type EmbeddedWebInteractAction } from "../../../shared/embedded-web-scripts";
-import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./runtime.part-1";
-import { fail, ok } from "./runtime.part-1";
+import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
+import { fail, ok } from "./action-values";
 
 /** All page actions resolve the same authorized Surface as desktop_cdp. */
 export async function executeWebSurfaceAction(

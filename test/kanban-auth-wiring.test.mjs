@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 test("Kanban registration injects the token provider into the real Platform caller", async () => {
-  const registry = ts.createSourceFile("registry.ts", fs.readFileSync("src/main/app/module-registry.part-2.ts", "utf8"), ts.ScriptTarget.Latest, true);
+  const registry = ts.createSourceFile("registry.ts", fs.readFileSync("src/main/app/ipc-connected-runtimes.ts", "utf8"), ts.ScriptTarget.Latest, true);
   let caller;
   function visit(node) {
     if (ts.isCallExpression(node) && node.expression.getText(registry) === "registerKanbanIpcHandlers") {
@@ -15,7 +15,7 @@ test("Kanban registration injects the token provider into the real Platform call
   }
   visit(registry);
   assert.ok(caller, "Kanban must register a Platform caller");
-  const source = ts.createSourceFile("caller.ts", fs.readFileSync("src/main/modules/desktop-actions/runtime.part-2.ts", "utf8"), ts.ScriptTarget.Latest, true);
+  const source = ts.createSourceFile("caller.ts", fs.readFileSync("src/main/modules/desktop-actions/platform-http.ts", "utf8"), ts.ScriptTarget.Latest, true);
   const implementation = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "callAgentPlatform");
   const reasons = [];
   const app = {};

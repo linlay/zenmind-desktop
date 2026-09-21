@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const pet = require("../dist-electron/main/modules/pet/desktop-pet.part-1.js");
+const pet = require("../dist-electron/main/modules/pet/desktop-pet.js");
 const websites = require("../dist-electron/main/modules/webs/websites/store.js");
 const actions = require("../dist-electron/main/modules/webs/websites/actions.js");
 

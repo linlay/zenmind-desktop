@@ -14,7 +14,7 @@ function readTypeScriptFamily(...segments) {
   const directory = path.dirname(target);
   const stem = path.basename(target, ".ts");
   return fs.readdirSync(directory)
-    .filter((name) => name === `${stem}.ts` || new RegExp(`^${stem}\\.part-\\d+\\.ts$`, "u").test(name))
+    .filter((name) => name === `${stem}.ts` || name === "realtime-diagnostics.ts" || name.startsWith("ipc-") && name.endsWith(".ts"))
     .sort()
     .map((name) => fs.readFileSync(path.join(directory, name), "utf8"))
     .join("\n");

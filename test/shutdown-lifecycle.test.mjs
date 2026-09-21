@@ -107,7 +107,7 @@ test("Windows WebApp process trees receive a graceful request before force clean
   assert.deepEqual(commands, [["taskkill.exe", "/PID", "5101", "/T"]]);
   assert.equal(commands[0].includes("/F"), false);
   assert.match(
-    readSource("src", "main", "modules", "webs", "webapps", "runtime.ts"),
+    readSource("src", "main", "modules", "webs", "webapps", "runtime-process.ts"),
     /if \(process\.platform === "win32"\) \{[\s\S]*?requestWindowsProcessTreeExitAsync\([\s\S]*?if \(exitedGracefully\) \{[\s\S]*?return true;[\s\S]*?terminateCapturedProcessTreeAsync/u
   );
 });

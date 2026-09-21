@@ -15,12 +15,42 @@ function readSourceFile(...segments) {
   if (!target.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(target) !== ".ts") {
     return source;
   }
+  const responsibilityEntrypoints = new Set([
+    "module-registry.ts", "desktop-init.ts", "runtime-environment.ts",
+    "agent-webclient-host.ts", "manifest-utils.ts"
+  ]);
+  const communicationEntrypoints = new Set([
+    "src/main/modules/desktop-actions/runtime.ts",
+    "src/main/modules/desktop-protocol/ws-server.ts",
+    "src/main/modules/agent-platform/bridge.shared.ts",
+    "src/main/modules/assistant/navigation-status-client.ts",
+    "src/main/modules/webs/webapps/runtime.ts"
+  ]);
+  if (responsibilityEntrypoints.has(path.basename(target)) ||
+      communicationEntrypoints.has(path.relative(projectRoot, target).split(path.sep).join("/"))) {
+    const readResponsibilities = (file, visited = new Set()) => {
+      if (visited.has(file)) return "";
+      visited.add(file);
+      const content = fs.readFileSync(file, "utf8");
+      const exports = [...content.matchAll(/export \* from "(\.\/[^"]+)"/gu)];
+      return [content, ...exports.map((match) => readResponsibilities(path.resolve(path.dirname(file), `${match[1]}.ts`), visited))].join("\n");
+    };
+    const contents = [readResponsibilities(target)];
+    if (path.basename(target) === "module-registry.ts") {
+      contents.push(...fs.readdirSync(path.dirname(target))
+        .filter((name) => name.startsWith("ipc-") && name !== "ipc-registration.ts" && name !== "ipc-registration-contracts.ts")
+        .map((name) => fs.readFileSync(path.join(path.dirname(target), name), "utf8")));
+    }
+    return contents.join("\n");
+  }
   const directory = path.dirname(target);
   const stem = path.basename(target, ".ts");
   const implementationParts = fs.readdirSync(directory)
     .filter((name) => name.startsWith(`${stem}.`) && name.endsWith(".ts"))
     .sort()
-    .map((name) => fs.readFileSync(path.join(directory, name), "utf8"));
+    .map((name) => communicationEntrypoints.has(path.relative(projectRoot, path.join(directory, name)).split(path.sep).join("/"))
+      ? readSourceFile(path.relative(projectRoot, path.join(directory, name)))
+      : fs.readFileSync(path.join(directory, name), "utf8"));
   return [source, ...implementationParts].join("\n");
 }
 
@@ -190,7 +220,7 @@ test("public source keeps ZenMind literals out of shared paths except brand-spec
   const files = collectTextFiles(path.join(projectRoot, "src"))
     .filter((filePath) => !path.relative(projectRoot, filePath).startsWith(path.join("src", "shared", "generated")));
   const allowedCompatibilityFiles = new Set([
-    path.join("src", "main", "infrastructure", "filesystem", "runtime-environment.ts"),
+    path.join("src", "main", "infrastructure", "filesystem", "runtime-env-archive.ts"),
     path.join("src", "main", "modules", "services", "manager", "program-layout.ts"),
     path.join("src", "main", "modules", "marketplace", "skill-installer.ts")
   ]);
@@ -5423,7 +5453,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx"),
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
-  const petActionBlock = bridge.match(/export async function executePetAction[\s\S]*?\n}\n\nexport type DesktopExportWebContents/)?.[0] ?? "";
+  const petActionBlock = readSourceFile("src", "main", "modules", "desktop-actions", "pet-actions.ts");
   const petStateContract = contracts.match(/export interface DesktopPetState \{[\s\S]*?\n\}/)?.[0] ?? "";
   const trustedWorkPanelHandler = bridge.match(
     /export async function handleAgentWebclientWorkPanelActionRequest[\s\S]*?\n}\n\nexport async function handleWebappPageActionRequest/,

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { executeKanbanAction } = require('../dist-electron/main/modules/desktop-actions/runtime.part-5.js');
+const { executeKanbanAction } = require('../dist-electron/main/modules/desktop-actions/kanban-actions.js');
 
 test('Kanban errors identify exact fields before any mutation on either platform', async () => {
   for (const platform of ['darwin', 'win32']) {

@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type JSZip from "jszip";
-import { resolveRuntimeRoot, type AppPathReader } from "./runtime-environment.part-1";
+import { resolveRuntimeRoot } from "./runtime-env-paths";
+import type { AppPathReader } from "./runtime-env-contracts";
 
 // This is Desktop's registration policy, not a service-owned Provider config.
 export async function readProviderRegisterUpgradeInput(zip: JSZip): Promise<string | undefined> {

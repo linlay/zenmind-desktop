@@ -1,5 +1,12 @@
-export * from "./desktop-pet.part-1";
-export * from "./desktop-pet.part-2";
+export * from "./pet-model";
+export * from "./pet-window-metrics";
+export * from "./pet-paths";
+export * from "./pet-state";
+export * from "./pet-status-values";
+export * from "./pet-settings";
+export * from "./pet-assets";
+export * from "./pet-window-layout";
+export * from "./pet-test-internals";
 export {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,

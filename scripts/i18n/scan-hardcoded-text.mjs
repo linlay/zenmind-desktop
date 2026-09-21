@@ -50,13 +50,13 @@ const allowedBlocks = [
     reason: "desktop pet generic status matcher"
   },
   {
-    file: "src/main/modules/pet/controller.part-1.ts",
+    file: "src/main/modules/pet/navigation-projection.ts",
     start: /DESKTOP_PET_GENERIC_TASK_PREVIEWS|DESKTOP_PET_DONE_PREVIEW_FALLBACK|DESKTOP_PET_GENERIC_DONE_PREVIEWS/u,
     end: /\]\);|DESKTOP_PET_DONE_PREVIEW_FALLBACK/u,
     reason: "desktop pet generic preview matcher"
   },
   {
-    file: "src/main/modules/pet/controller.part-2.ts",
+    file: "src/main/modules/pet/preview-controller.ts",
     start: /DESKTOP_PET_GENERIC_TASK_PREVIEWS|DESKTOP_PET_DONE_PREVIEW_FALLBACK|DESKTOP_PET_GENERIC_DONE_PREVIEWS/u,
     end: /\]\);|DESKTOP_PET_DONE_PREVIEW_FALLBACK/u,
     reason: "desktop pet generic preview matcher"

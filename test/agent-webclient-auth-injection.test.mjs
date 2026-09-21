@@ -9,7 +9,7 @@ const readFamily = (relativePath) => {
   const directory = path.dirname(relativePath);
   const stem = path.basename(relativePath, ".ts");
   return fs.readdirSync(path.join(root, directory))
-    .filter((name) => name === `${stem}.ts` || new RegExp(`^${stem}\\.part-\\d+\\.ts$`, "u").test(name))
+    .filter((name) => name === `${stem}.ts` || name.startsWith("webclient-") && name.endsWith(".ts"))
     .sort()
     .map((name) => read(path.join(directory, name)))
     .join("\n");

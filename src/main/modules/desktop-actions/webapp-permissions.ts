@@ -1,5 +1,5 @@
 import { ConnectorError, type WebappContext } from "./webapp-platform-client";
-import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./runtime.part-1";
+import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
 
 // Compatibility for installed SDK clients. Installation already grants access;
 // there is no per-capability consent state or confirmation dialog.

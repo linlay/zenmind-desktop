@@ -2,12 +2,11 @@ import { requestWebappPermission } from "./webapp-permissions";
 import { ConnectorError, platform, request, captureWebappContext } from "./webapp-platform-client";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID as artifactRequestId } from "node:crypto";
+import { randomUUID as artifactRequestId, randomUUID } from "node:crypto";
 import { artifactRelativePath } from "../artifacts";
 import { t } from "../../support/i18n/main-i18n";
 import { BrowserWindow, dialog, shell } from "electron";
-import { randomUUID } from "node:crypto";
-import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./runtime.part-1";
+import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
 import { configureIsolatedAuthGuest, registerIsolatedAuthGuest } from "../../infrastructure/electron/isolated-auth-guest";
 import { readEmbeddedAuthorization } from "../agent-platform";
 

@@ -30,9 +30,9 @@ function read(relativePath) {
 
 test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing separate", () => {
   const catalog = read("src/shared/desktop-actions.ts");
-  const bridge = read("src/main/modules/desktop-actions/runtime.ts");
+  const bridge = read("src/main/modules/desktop-actions/web-resource-actions.ts");
   const webappActions = read("src/main/modules/webs/webapps/actions.ts");
-  const wsServer = read("src/main/modules/desktop-protocol/ws-server.ts");
+  const wsServer = read("src/main/modules/desktop-protocol/ws-action-routing.ts");
   const wsContract = read("src/shared/desktop-ws.ts");
 
   for (const action of [

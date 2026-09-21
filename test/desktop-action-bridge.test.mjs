@@ -3560,7 +3560,7 @@ test("WebApp path preflight runs before Worker launch and missing archives retai
 });
 
 test("WebApp diagnostic redaction preserves root workspace paths and ordinary versions", () => {
-  const { sanitizeWebappErrorText, sanitizeWebappDiagnosticValue } = require("../dist-electron/main/modules/desktop-actions/runtime.part-3.js");
+  const { sanitizeWebappErrorText, sanitizeWebappDiagnosticValue } = require("../dist-electron/main/modules/desktop-actions/webapp-action-results.js");
   for (const workspaceRoot of ["/", "/Users/example", "C:\\", "\\\\server\\share"]) {
     const message = "ENOENT: no such file or directory, mkdir '/personal-workbench/distribution'; ECharts 5.5.0";
     assert.equal(sanitizeWebappErrorText(message, workspaceRoot), message);

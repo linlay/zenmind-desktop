@@ -5,10 +5,11 @@ const require = createRequire(import.meta.url);
 const root = "../dist-electron/main/modules/services/";
 const capabilities = require(`${root}manager/capabilities.js`);
 const registry = require(`${root}service-registry.js`);
-const states = require(`${root}manager/index.part-2.js`);
+const states = require(`${root}manager/service-state.js`);
+const policy = require(`${root}manager/verification-policy.js`);
 const layout = require(`${root}manager/layout.js`);
 const probes = require(`${root}manager/service-probes.js`);
-const verification = require(`${root}manager/index.part-4.part-2.js`);
+const verification = require(`${root}manager/verification.js`);
 
 for (const platform of ["darwin", "win32"]) {
   for (const scenario of ["success", "retry", "auth failure", "fallback", "persistent failure"]) {
@@ -23,9 +24,9 @@ for (const platform of ["darwin", "win32"]) {
       t.mock.method(registry, "getService", (id) => ({ id, name: id, desktop: { capabilities: { requires: requirements } } }));
       t.mock.method(layout, "getServiceLayout", () => ({}));
       t.mock.method(states, "getServiceState", async (_app, id) => ({ status: "running", healthMeta: { webUrl: `http://localhost/${id}` } }));
-      t.mock.method(states, "buildVerificationResult", () => ({ verified: true, actualStatus: "running", pidAlive: true, issues: [] }));
-      t.mock.method(states, "hasVerifyRunningRequirements", () => true);
-      t.mock.method(states, "getDependencyRunningVerificationTimeoutMs", () => scenario === "persistent failure" ? 0 : 30000);
+      t.mock.method(policy, "buildVerificationResult", () => ({ verified: true, actualStatus: "running", pidAlive: true, issues: [] }));
+      t.mock.method(policy, "hasVerifyRunningRequirements", () => true);
+      t.mock.method(policy, "getDependencyRunningVerificationTimeoutMs", () => scenario === "persistent failure" ? 0 : 30000);
       // A positive delay must not cause a second round after success.
       t.mock.method(probes, "getServiceVerificationDelayMs", () => 1500);
       const delays = t.mock.method(probes, "delay", async () => {});

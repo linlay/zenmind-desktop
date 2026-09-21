@@ -1,5 +1,6 @@
-import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./runtime.part-1";
+import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
 import { ConnectorError, captureWebappContext } from "./webapp-platform-client";
+
 export async function executeWebappKanban(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>, invocation: DesktopActionInvocationContext) {
   try {
     if (invocation.kind !== "webappPage" && invocation.kind !== "webappBackend") throw new ConnectorError("forbidden");

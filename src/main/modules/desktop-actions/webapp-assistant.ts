@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantStartRunRequest } from "../../../shared/contracts";
-import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./runtime.part-1";
+import { type AssistantStartRunRequest } from "../../../shared/contracts";
+import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
 import { captureWebappContext, ConnectorError, type WebappContext } from "./webapp-platform-client";
 import { rememberWebappChat } from "./webapp-connector";
 

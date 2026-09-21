@@ -1,6 +1,6 @@
 import type http from "node:http";
 import type { App } from "electron";
-import { desktopSsoRuntimeState } from "./oidc-sso.part-1";
+import { desktopSsoRuntimeState } from "./sso-state";
 
 export const CALLBACK_TIMEOUT_MS = 5 * 60_000;
 let timeout: ReturnType<typeof setTimeout> | undefined;

@@ -1,6 +1,7 @@
 import type { KanbanCurrentUser, KanbanLocalWorkflow } from "../../../shared/contracts";
-import { BOARD_ID, type AppPathProvider } from "./local-store.part-1";
-import { withDesktopKanbanDatabase } from "./local-store.part-2";
+import { BOARD_ID } from "./store-values";
+import type { AppPathProvider } from "./store-model";
+import { withDesktopKanbanDatabase } from "./store-database";
 import { validateLocalWorkflows } from "./local-workflows";
 
 export function saveLocalWorkflowDefinitions(app: AppPathProvider, user: KanbanCurrentUser, input: KanbanLocalWorkflow[]) {

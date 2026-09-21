@@ -1,2 +1,3 @@
-export * from "./module-registry.part-1";
-export * from "./module-registry.part-2";
+export * from "./ipc-registration-contracts";
+export * from "./realtime-diagnostics";
+export * from "./ipc-registration";

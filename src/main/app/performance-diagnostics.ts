@@ -2,7 +2,7 @@ import { app, screen, webContents, type WebContents } from "electron";
 import os from "node:os";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import type { BrowserSurfaceRegistry } from "../modules/web-surfaces";
-import { createAgentRealtimeRuntimeDiagnostics } from "./module-registry.part-1";
+import { createAgentRealtimeRuntimeDiagnostics } from "./realtime-diagnostics";
 import { getDesktopLogRoot } from "../support/logging/desktop";
 import { isPerformanceDiagnosticsEnabled, startPerformanceWriter, writePerformanceEvent } from "../support/logging/performance";
 

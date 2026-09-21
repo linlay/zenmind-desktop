@@ -115,7 +115,7 @@ for (const platform of ["win32", "darwin"]) {
       electron: { app, screen: { getAllDisplays: () => [] }, webContents: { getAllWebContents: () => [guest] } },
       "node:os": { release: () => "test", cpus: () => [{ model: "test" }], totalmem: () => 8192 },
       "node:perf_hooks": { monitorEventLoopDelay: () => ({ enable() {}, disable() { loopDisabled = true; }, reset() {}, max: 1000000, percentile: () => 1000000 }) },
-      "./module-registry.part-1": { createAgentRealtimeRuntimeDiagnostics: () => ({
+      "./realtime-diagnostics": { createAgentRealtimeRuntimeDiagnostics: () => ({
         processes: [{ pid: 100, type: "Tab", creationTime: 1, workingSetBytes: bytes, privateBytes: 500, cpuPercent: 1 }],
         targets: [{ webContentsId: 10, pid: 100, surfaceId: "main-chat", title: "PRIVATE_TITLE", url: "PRIVATE_URL", active: true }],
         surfaceCount: 1, webviewCount: 1, orphanWebviewCount: 0, totalWorkingSetBytes: bytes,

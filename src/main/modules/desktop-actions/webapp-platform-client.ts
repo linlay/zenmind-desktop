@@ -1,5 +1,6 @@
 import { net } from "electron";
-import type { DesktopActionBridgeOptions } from "./runtime.part-1";
+import { type DesktopActionBridgeOptions } from "./action-contracts";
+
 export class ConnectorError extends Error {
   constructor(readonly code: string) { super(code); }
 }
