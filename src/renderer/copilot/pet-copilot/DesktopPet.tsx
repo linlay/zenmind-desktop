@@ -48,6 +48,7 @@ import {
 } from "../../../shared/desktop-pet-visual";
 import { BRAND_ID, PRODUCT_NAME } from "../../../shared/brand";
 import { useI18n } from "../../i18n/useI18n";
+import { formatDesktopPetMessagePreview } from "./desktopPetMessagePreview";
 import {
   loadDesktopPetAlphaMask,
   pointIntersectsDesktopPetImage,
@@ -282,7 +283,7 @@ function formatMessageCardPreview(
   if (isThinking || message.status === "running") {
     return t("desktopPet.status.thinking");
   }
-  const preview = message.preview.trim();
+  const preview = formatDesktopPetMessagePreview(message.preview);
   if (preview) {
     return preview;
   }
@@ -545,6 +546,8 @@ export function DesktopPet() {
   const [isWidgetExpanded, setIsWidgetExpanded] = useState(false);
   const [replyingChatId, setReplyingChatId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [dismissingMessageIds, setDismissingMessageIds] = useState<readonly string[]>([]);
+  const [dismissErrorChatId, setDismissErrorChatId] = useState<string | null>(null);
   const [dismissedMessageKeys, setDismissedMessageKeys] = useState<readonly string[]>([]);
   // 回复发送后到后端状态回填前的乐观「思考中」占位（按 chatId），超时自动清除
   const [pendingReplyIds, setPendingReplyIds] = useState<readonly string[]>([]);
@@ -1260,22 +1263,35 @@ export function DesktopPet() {
     setDismissedMessageKeys((current) => current.includes(dismissedKey) ? current : [...current, dismissedKey]);
   }
 
-  function handleDismissMessage(message: DesktopPetMessageItem) {
-    hideMessageLocally(message);
-    void window.electronAPI.desktopPet
-      .dismissMessage({ chatId: message.chatId, runId: message.runId, updatedAt: message.updatedAt })
-      .catch(() => undefined);
-    if (replyingChatId === message.chatId) {
-      setReplyingChatId(null);
-    }
-    if (previewPanel?.status === "done" && previewPanel.chatId === message.chatId && previewPanel.runId === message.runId) {
-      void window.electronAPI.desktopPet.dismissPreview();
+  async function handleDismissMessage(message: DesktopPetMessageItem) {
+    if (dismissingMessageIds.includes(message.chatId)) return;
+    setDismissingMessageIds((current) => [...current, message.chatId]);
+    setDismissErrorChatId(null);
+    try {
+      const result = await window.electronAPI.desktopPet.dismissMessage({
+        chatId: message.chatId, runId: message.runId, updatedAt: message.updatedAt
+      });
+      if (!result.ok) {
+        setDismissErrorChatId(message.chatId);
+        return;
+      }
+      hideMessageLocally(message);
+      if (replyingChatId === message.chatId) {
+        setReplyingChatId(null);
+      }
+      if (previewPanel?.status === "done" && previewPanel.chatId === message.chatId && previewPanel.runId === message.runId) {
+        void window.electronAPI.desktopPet.dismissPreview();
+      }
+    } catch {
+      setDismissErrorChatId(message.chatId);
+    } finally {
+      setDismissingMessageIds((current) => current.filter((id) => id !== message.chatId));
     }
   }
 
   function handleDismissMessageClick(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem) {
     stopPanelClick(event);
-    handleDismissMessage(message);
+    void handleDismissMessage(message);
   }
 
   function handleOpenMessageClick(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem) {
@@ -1622,7 +1638,7 @@ export function DesktopPet() {
           >
             <div className="desktop-pet-task-head">
               <span className="desktop-pet-task-head-copy">
-                <strong>{statusPanelTitle}</strong>
+                <strong><MessageOutlined aria-hidden="true" />{statusPanelTitle}</strong>
               </span>
               <button
                 type="button"
@@ -1661,6 +1677,8 @@ export function DesktopPet() {
                             type="button"
                             className="desktop-pet-message-dismiss"
                             aria-label={t("desktopPet.message.close")}
+                            title={t("desktopPet.message.close")}
+                            disabled={dismissingMessageIds.includes(message.chatId)}
                             onClick={(event) => handleDismissMessageClick(event, message)}
                           >
                             <CloseOutlined aria-hidden="true" />
@@ -1672,6 +1690,9 @@ export function DesktopPet() {
                           onClick={(event) => handleOpenMessageClick(event, message)}
                         >
                           <span className="desktop-pet-message-copy">
+                            {dismissErrorChatId === message.chatId ? (
+                              <span role="alert">{t("desktopPet.message.closeFailed")}</span>
+                            ) : null}
                             <span className="desktop-pet-message-title-line">
                               <strong>{message.title}</strong>
                               {message.status === "awaiting" ? (

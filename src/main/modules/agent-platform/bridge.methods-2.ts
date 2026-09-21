@@ -139,6 +139,27 @@ export async function AgentPlatformAssistantBridge_deleteChat_4(self: any, chatI
     return { ok: true, message: t("assistant.chatDeleted") };
 }
 
+// Explicit pet dismissal marks only the displayed Chat/Run as read.
+export async function AgentPlatformAssistantBridge_markChatRead(self: any, chatId: string, runId?: string | null) {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+        return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    const availability = await self.resolvePlatform();
+    if (!availability.ok) {
+        return { ok: false, message: availability.message };
+    }
+    const response = await self.platformFetch(availability.baseUrl, "/api/read", {
+        method: "POST",
+        headers: self.jsonHeaders(availability.token),
+        body: JSON.stringify({ chatId: trimmedChatId, runId: runId?.trim() || undefined })
+    });
+    if (!response.ok) {
+        return { ok: false, message: await readErrorText(response) };
+    }
+    return { ok: true };
+}
+
 export async function AgentPlatformAssistantBridge_markAgentChatsRead_5(self: any, agentKey: string) {
     const trimmedAgentKey = agentKey.trim();
     if (!trimmedAgentKey) {
