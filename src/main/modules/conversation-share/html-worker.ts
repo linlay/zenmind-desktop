@@ -1,5 +1,6 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { TextDecoder } from "node:util";
+import { createHash } from "node:crypto";
 import { isLoopbackHostname } from "../../infrastructure/network/loopback-url";
 import {
   isTunnelHubForbiddenHostname,
@@ -7,6 +8,7 @@ import {
 } from "../tunnel";
 import {
   CONVERSATION_EXPORT_ASSET_ORIGIN_MARKER,
+  CONVERSATION_EXPORT_LOCAL_BRAND_ID_MARKER,
   CONVERSATION_EXPORT_SNAPSHOT_MARKER,
   CONVERSATION_EXPORT_TEMPLATE_PATH,
   MAX_CONVERSATION_HTML_BYTES,
@@ -21,12 +23,13 @@ import {
 
 const SNAPSHOT_MARKER = Buffer.from(CONVERSATION_EXPORT_SNAPSHOT_MARKER);
 const ASSET_ORIGIN_MARKER = Buffer.from(CONVERSATION_EXPORT_ASSET_ORIGIN_MARKER);
+const LOCAL_BRAND_ID_MARKER = Buffer.from(CONVERSATION_EXPORT_LOCAL_BRAND_ID_MARKER);
 const SNAPSHOT_TIMEOUT_MS = 15_000;
 const TEMPLATE_TIMEOUT_MS = 5_000;
 const STRICT_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 type TemplateMarker = {
-  kind: "snapshot" | "assetOrigin";
+  kind: "snapshot" | "assetOrigin" | "brandId";
   offset: number;
   length: number;
 };
@@ -36,6 +39,7 @@ export type ParsedConversationHtmlTemplate = {
   markers: TemplateMarker[];
   staticBytes: number;
   assetOriginMarkers: number;
+  brandIdMarkers: number;
 };
 
 type CachedTemplate = {
@@ -82,47 +86,58 @@ export function parseConversationHtmlTemplate(bytes: Buffer): ParsedConversation
   let cursor = 0;
   let snapshotMarkers = 0;
   let assetOriginMarkers = 0;
+  let brandIdMarkers = 0;
   let markerBytes = 0;
   while (cursor < bytes.length) {
     const snapshotOffset = bytes.indexOf(SNAPSHOT_MARKER, cursor);
     const assetOriginOffset = bytes.indexOf(ASSET_ORIGIN_MARKER, cursor);
-    if (snapshotOffset < 0 && assetOriginOffset < 0) break;
-    const snapshotNext = snapshotOffset >= 0 &&
-      (assetOriginOffset < 0 || snapshotOffset < assetOriginOffset);
-    const marker = snapshotNext
-      ? { kind: "snapshot" as const, offset: snapshotOffset, length: SNAPSHOT_MARKER.length }
-      : { kind: "assetOrigin" as const, offset: assetOriginOffset, length: ASSET_ORIGIN_MARKER.length };
+    const brandIdOffset = bytes.indexOf(LOCAL_BRAND_ID_MARKER, cursor);
+    const candidates = [
+      { kind: "snapshot" as const, offset: snapshotOffset, length: SNAPSHOT_MARKER.length },
+      { kind: "assetOrigin" as const, offset: assetOriginOffset, length: ASSET_ORIGIN_MARKER.length },
+      { kind: "brandId" as const, offset: brandIdOffset, length: LOCAL_BRAND_ID_MARKER.length }
+    ].filter((candidate) => candidate.offset >= 0)
+      .sort((left, right) => left.offset - right.offset);
+    const marker = candidates[0];
+    if (!marker) break;
     markers.push(marker);
     markerBytes += marker.length;
     if (marker.kind === "snapshot") snapshotMarkers += 1;
-    else assetOriginMarkers += 1;
+    else if (marker.kind === "assetOrigin") assetOriginMarkers += 1;
+    else brandIdMarkers += 1;
     cursor = marker.offset + marker.length;
   }
-  if (snapshotMarkers !== 1 || assetOriginMarkers < 1) {
+  if (snapshotMarkers !== 1 || assetOriginMarkers < 1 || brandIdMarkers !== 1) {
     throw new ConversationHtmlRenderFailure("template_invalid");
   }
   return {
     bytes,
     markers,
     staticBytes: bytes.length - markerBytes,
-    assetOriginMarkers
+    assetOriginMarkers,
+    brandIdMarkers
   };
 }
 
 export function assembleConversationHtml(
   template: ParsedConversationHtmlTemplate,
   snapshot: Buffer,
-  assetOrigin: string
+  assetOrigin: string,
+  brandId: string
 ): ArrayBuffer {
   const normalizedAssetOrigin = requireAssetOrigin(assetOrigin);
+  const normalizedBrandId = requireBrandId(brandId);
   const assetOriginBytes = Buffer.from(normalizedAssetOrigin);
+  const brandIdBytes = Buffer.from(normalizedBrandId);
   const escapedSnapshotBytes = measureEscapedSnapshotBytes(
     snapshot,
     MAX_CONVERSATION_HTML_BYTES - template.staticBytes -
-      template.assetOriginMarkers * assetOriginBytes.length
+      template.assetOriginMarkers * assetOriginBytes.length -
+      template.brandIdMarkers * brandIdBytes.length
   );
   const finalSize = template.staticBytes + escapedSnapshotBytes +
-    template.assetOriginMarkers * assetOriginBytes.length;
+    template.assetOriginMarkers * assetOriginBytes.length +
+    template.brandIdMarkers * brandIdBytes.length;
   if (finalSize <= 0 || finalSize > MAX_CONVERSATION_HTML_BYTES) {
     throw new ConversationHtmlRenderFailure(
       "too_large",
@@ -144,8 +159,10 @@ export function assembleConversationHtml(
     );
     if (marker.kind === "snapshot") {
       outputCursor = writeEscapedSnapshot(snapshot, outputBytes, outputCursor);
-    } else {
+    } else if (marker.kind === "assetOrigin") {
       outputCursor += assetOriginBytes.copy(outputBytes, outputCursor);
+    } else {
+      outputCursor += brandIdBytes.copy(outputBytes, outputCursor);
     }
     templateCursor = marker.offset + marker.length;
   }
@@ -325,7 +342,12 @@ async function renderConversationHtml(
     const snapshotPromise = loadSnapshot(request);
     const templatePromise = loadTemplate(request);
     const [snapshot, template] = await Promise.all([snapshotPromise, templatePromise]);
-    const html = assembleConversationHtml(template, snapshot.bytes, request.assetOrigin);
+    const html = assembleConversationHtml(
+      template,
+      snapshot.bytes,
+      request.assetOrigin,
+      request.brandId
+    );
     return {
       type: "result",
       requestId: request.requestId,
@@ -345,14 +367,68 @@ async function readConversationSnapshot(
       throw new ConversationHtmlRenderFailure("request_invalid");
     }
     const snapshot = await loadSnapshot(request);
-    const transferred = snapshot.bytes.buffer.slice(
-      snapshot.bytes.byteOffset,
-      snapshot.bytes.byteOffset + snapshot.bytes.byteLength
+    const parsed = JSON.parse(STRICT_UTF8_DECODER.decode(snapshot.bytes)) as {
+      version?: unknown;
+      attachments?: Array<{ id?: unknown; name?: unknown; mimeType?: unknown;
+        sourceRef?: unknown; size?: number; sha256?: string }>;
+    };
+    if (parsed.version !== 1 || !Array.isArray(parsed.attachments)) {
+      throw new ConversationHtmlRenderFailure("snapshot_invalid");
+    }
+    const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
+    const chatId = snapshotURL.searchParams.get("chatId") || "";
+    const attachments: Array<{ id: string; name: string; bytes: ArrayBuffer }> = [];
+    let totalBytes = 0;
+    const seen = new Set<string>();
+    for (const descriptor of parsed.attachments) {
+      const { id, name, sourceRef } = descriptor;
+      if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
+        typeof name !== "string" || !name || typeof sourceRef !== "string" ||
+        !/^artifacts\/(?!.*(?:^|\/)\.\.?\/)[^?#\\]+\.html?$/iu.test(sourceRef) ||
+        descriptor.mimeType !== "text/html") {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+      seen.add(id);
+      const resourceURL = new URL("/api/resource", snapshotURL);
+      resourceURL.searchParams.set("file", chatId + "/" + sourceRef);
+      const { bytes } = await fetchLimitedResponse({
+        url: resourceURL.toString(),
+        headers: { Accept: "text/html", Authorization: "Bearer " + request.bearerToken },
+        timeoutMs: SNAPSHOT_TIMEOUT_MS,
+        maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes,
+        expectedContentType: "text/html",
+        unavailableCode: "snapshot_unavailable",
+        invalidCode: "snapshot_invalid"
+      });
+      if (bytes.length === 0) throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      totalBytes += bytes.length;
+      if (totalBytes > MAX_CONVERSATION_SNAPSHOT_BYTES) {
+        throw new ConversationHtmlRenderFailure("too_large", totalBytes, MAX_CONVERSATION_SNAPSHOT_BYTES);
+      }
+      const actualHash = createHash("sha256").update(bytes).digest("hex");
+      if ((descriptor.size !== undefined && descriptor.size !== bytes.length) ||
+        (descriptor.sha256 && descriptor.sha256.toLowerCase() !== actualHash)) {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+      descriptor.size = bytes.length;
+      descriptor.sha256 = actualHash;
+      attachments.push({
+        id, name,
+        bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+      });
+    }
+    const encoded = Buffer.from(JSON.stringify(parsed));
+    if (encoded.length > MAX_CONVERSATION_SNAPSHOT_BYTES) {
+      throw new ConversationHtmlRenderFailure("too_large", encoded.length, MAX_CONVERSATION_SNAPSHOT_BYTES);
+    }
+    const transferred = encoded.buffer.slice(
+      encoded.byteOffset, encoded.byteOffset + encoded.byteLength
     ) as ArrayBuffer;
     return {
       type: "snapshot",
       requestId: request.requestId,
-      snapshot: transferred
+      snapshot: transferred,
+      attachments
     };
   } catch (error) {
     return failureResponse(request.requestId, error);
@@ -388,6 +464,17 @@ function requireAssetOrigin(value: string): string {
     throw new ConversationHtmlRenderFailure("request_invalid");
   }
   return parsed.origin;
+}
+
+function requireBrandId(value: string): string {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  const reserved = new Set([
+    "http", "https", "javascript", "data", "vbscript", "file", "blob"
+  ]);
+  if (!/^[a-z][a-z0-9-]*$/u.test(normalized) || reserved.has(normalized)) {
+    throw new ConversationHtmlRenderFailure("request_invalid");
+  }
+  return normalized;
 }
 
 function measureEscapedSnapshotBytes(snapshot: Buffer, maximum: number): number {
@@ -479,7 +566,7 @@ if (workerPort && isRenderWorker) workerPort.on("message", (request: Conversatio
       return;
     }
     if (response.type === "snapshot") {
-      workerPort.postMessage(response, [response.snapshot]);
+      workerPort.postMessage(response, [response.snapshot, ...response.attachments.map((attachment) => attachment.bytes)]);
       return;
     }
     workerPort.postMessage(response);

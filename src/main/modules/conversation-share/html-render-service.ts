@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { t } from "../../support/i18n/main-i18n";
+import { BRAND_ID } from "../../../shared/brand";
 import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname
@@ -92,7 +93,8 @@ export class ConversationHtmlRenderService {
         bearerToken: snapshotRequest.bearerToken,
         templateUrl: templateURL.toString(),
         templateCacheKey: templateURL.toString(),
-        assetOrigin: new URL(assetOrigin).origin
+        assetOrigin: new URL(assetOrigin).origin,
+        brandId: BRAND_ID
       });
       if (response.type !== "result") {
         if (response.type === "snapshot") {
@@ -140,7 +142,10 @@ export class ConversationHtmlRenderService {
         }
         throw new ConversationHtmlWorkerError("worker_failed");
       }
-      return { ok: true, bytes: Buffer.from(response.snapshot) };
+      return { ok: true, bytes: Buffer.from(response.snapshot),
+        attachments: response.attachments.map((attachment) => ({
+          id: attachment.id, name: attachment.name, bytes: Buffer.from(attachment.bytes)
+        })) };
     } catch (error) {
       if (error instanceof ConversationHtmlWorkerError && error.code === "too_large") {
         return { ok: false, message: t("assistant.chatShareSnapshotTooLarge") };

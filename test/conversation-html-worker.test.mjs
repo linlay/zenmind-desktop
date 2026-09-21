@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -15,10 +16,11 @@ const {
 
 const SNAPSHOT_MARKER = "__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__";
 const ASSET_ORIGIN_MARKER = "__CONVERSATION_EXPORT_ASSET_ORIGIN__";
+const LOCAL_BRAND_ID_MARKER = "__CONVERSATION_EXPORT_LOCAL_BRAND_ID__";
 
 function templateBytes() {
   return Buffer.from(
-    `<link href="${ASSET_ORIGIN_MARKER}/runtime.css"><script type="application/json">${SNAPSHOT_MARKER}</script><script src="${ASSET_ORIGIN_MARKER}/runtime.js"></script>`
+    `<meta name="conversation-export-local-brand" content="${LOCAL_BRAND_ID_MARKER}"><link href="${ASSET_ORIGIN_MARKER}/runtime.css"><script type="application/json">${SNAPSHOT_MARKER}</script><script src="${ASSET_ORIGIN_MARKER}/runtime.js"></script>`
   );
 }
 
@@ -28,18 +30,21 @@ test("conversation HTML byte assembler escapes script-sensitive snapshot bytes",
   const html = Buffer.from(assembleConversationHtml(
     template,
     snapshot,
-    "http://127.0.0.1:11961"
+    "http://127.0.0.1:11961",
+    "cutej"
   )).toString("utf8");
 
   assert.doesNotMatch(html, /<\/script>&/u);
   assert.match(html, /\\u003c\/script\\u003e\\u0026\\u2028\\u2029/u);
   assert.equal(html.split("http://127.0.0.1:11961").length - 1, 2);
+  assert.match(html, /conversation-export-local-brand" content="cutej"/u);
   assert.doesNotMatch(html, /__CONVERSATION_EXPORT_/u);
 
   const emptySnapshotHtml = Buffer.from(assembleConversationHtml(
     template,
     Buffer.alloc(0),
-    "http://127.0.0.1:11961"
+    "http://127.0.0.1:11961",
+    "cutej"
   )).toString("utf8");
   assert.doesNotMatch(emptySnapshotHtml, /__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__/u);
 });
@@ -48,7 +53,8 @@ test("conversation HTML template requires one snapshot marker and at least one a
   for (const template of [
     SNAPSHOT_MARKER,
     `${SNAPSHOT_MARKER}${SNAPSHOT_MARKER}${ASSET_ORIGIN_MARKER}`,
-    ASSET_ORIGIN_MARKER
+    ASSET_ORIGIN_MARKER,
+    `${SNAPSHOT_MARKER}${ASSET_ORIGIN_MARKER}`
   ]) {
     assert.throws(
       () => parseConversationHtmlTemplate(Buffer.from(template)),
@@ -95,7 +101,7 @@ test("conversation HTML worker aborts a timed-out response with a structured cod
 });
 
 test("conversation HTML render service keeps template fetch and assembly inside one persistent worker", async (t) => {
-  const snapshot = Buffer.from('{"version":1,"title":"安全 </script>","turns":[]}');
+  const snapshot = Buffer.from('{"version":1,"title":"安全 </script>","turns":[],"attachments":[]}');
   const template = templateBytes();
   let templateRequests = 0;
   let snapshotRequests = 0;
@@ -224,6 +230,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   const snapshotOnly = await renderer.readChatSnapshot("chat_1");
   assert.equal(snapshotOnly.ok, true);
   assert.equal(Buffer.compare(snapshotOnly.bytes, snapshot), 0);
+  assert.deepEqual(snapshotOnly.attachments, []);
   assert.equal(templateRequests, 1);
 
   snapshotMode = "redirect";
@@ -250,4 +257,56 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   const recovered = await renderer.renderChatHtml("chat_1", origin);
   assert.equal(recovered.ok, true);
   assert.equal(templateRequests, 2);
+});
+
+test("conversation snapshot freezes published HTML and rejects a changed artifact", async (t) => {
+  const published = Buffer.from("<h1>报告</h1>");
+  const changed = Buffer.from("<h1>已修改</h1>");
+  const expectedHash = createHash("sha256").update(published).digest("hex");
+  let served = published;
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url || "/", "http://127.0.0.1");
+    assert.equal(req.headers.authorization, "Bearer desktop-token");
+    if (url.pathname === "/api/chat/export") {
+      const snapshot = Buffer.from(JSON.stringify({ version: 1, turns: [], attachments: [{
+        id: "0123456789abcdef01234567", name: "报告.html", mimeType: "text/html",
+        sourceRef: "artifacts/report.html", size: published.length, sha256: expectedHash
+      }] }));
+      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
+      res.end(snapshot);
+      return;
+    }
+    if (url.pathname === "/api/resource") {
+      assert.equal(url.searchParams.get("file"), "chat_1/artifacts/report.html");
+      res.writeHead(200, { "Content-Type": "text/html", "Content-Length": served.length });
+      res.end(served);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const renderer = new ConversationHtmlRenderService({ snapshotProvider: {
+    async createChatSnapshotRequest() {
+      return { ok: true, snapshotUrl: `http://127.0.0.1:${address.port}/api/chat/export?chatId=chat_1&format=snapshot`,
+        bearerToken: "desktop-token" };
+    }
+  } });
+  renderer.start();
+  t.after(() => renderer.dispose());
+
+  const valid = await renderer.readChatSnapshot("chat_1");
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.attachments.map((item) => item.name), ["报告.html"]);
+  assert.equal(Buffer.compare(valid.attachments[0].bytes, published), 0);
+
+  served = changed;
+  const invalid = await renderer.readChatSnapshot("chat_1");
+  assert.equal(invalid.ok, false);
 });

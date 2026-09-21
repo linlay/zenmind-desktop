@@ -63,7 +63,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   const reader = {
     async readChatSnapshot(chatId) {
       calls.push({ method: "read", chatId });
-      return { ok: true, bytes: snapshot };
+      return { ok: true, bytes: snapshot, attachments: [] };
     }
   };
   const client = {
@@ -82,6 +82,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   assert.deepEqual(calls.map((call) => call.method), ["read", "create"]);
   assert.equal(calls[0].chatId, "chat-1");
   assert.equal(calls[1].input.snapshot, snapshot);
+  assert.deepEqual(calls[1].input.attachments, []);
   assert.equal(calls[1].input.conversationId, "chat-1");
   assert.equal(calls[1].input.expiration, "30d");
   assert.equal(calls[1].input.target.origin, "https://tunnel.example.test");
