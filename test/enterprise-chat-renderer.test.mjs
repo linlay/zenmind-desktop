@@ -23,7 +23,8 @@ function readSource(...segments) {
 
 test("enterprise IM configuration is independent from the enterprise chat business API", () => {
   const appRuntime = readSource("src", "main", "app", "runtime.ts");
-  const bootstrap = readSource("src", "main", "app", "bootstrap", "desktop-init.ts");
+  const bootstrap = ["desktop-init-apply.ts", "desktop-init-upgrade.ts"]
+    .map((file) => readSource("src", "main", "app", "bootstrap", file)).join("\n");
   const profile = readSource("src", "main", "infrastructure", "filesystem", "profile-store.ts");
   const settingsHandlers = readSource("src", "main", "modules", "settings", "ipc.ts");
   const preload = readSource("src", "preload", "index.ts");

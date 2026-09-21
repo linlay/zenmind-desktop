@@ -44,6 +44,7 @@ import {
   getDesktopSsoStatus
 } from "./sso-restore";
 import { readDesktopSsoAccessToken, desktopSsoAccessTokenNeedsRefresh } from "./sso-session";
+import { loadDesktopSsoConfig } from "./sso-config";
 import { t } from "../../support/i18n/main-i18n";
 import { getDesktopSsoBrowserUserAgent } from "../../infrastructure/electron/platform-adapter";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
@@ -178,22 +179,42 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
 
   async function exchangeBrowserCookieAccessToken(
     fetchImpl?: CookieAccessTokenFetch,
-    exchangeOptions: { signal?: AbortSignal; persist?: boolean; requireCookie?: boolean; syncCookies?: boolean } = {}
+    exchangeOptions: { signal?: AbortSignal; persist?: boolean; requireCookie?: boolean; syncCookies?: boolean; bearerToken?: string } = {}
   ) {
     const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
     if (!exchangeUrl) {
       return "";
     }
     const ssoSession = options.session.defaultSession;
-    const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl);
+    const bearerToken = exchangeOptions.bearerToken;
+    const cookieHeader = bearerToken === undefined
+      ? await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl)
+      : "";
+    if (bearerToken !== undefined && !bearerToken.trim()) {
+      throw new DesktopSsoRestoreRequestError("Desktop SSO refresh token is missing.", 401);
+    }
     if (!cookieHeader && exchangeOptions.requireCookie) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO access-token exchange cookie is missing.", 401);
     }
     const accessTokenFetch = fetchImpl || ((url, init) => ssoSession.fetch(url, init));
-    const request: CookieAccessTokenFetch = async (url, init) => accessTokenFetch(url, {
-      ...init,
-      ...(exchangeOptions.signal ? { signal: exchangeOptions.signal } : {})
-    });
+    const request: CookieAccessTokenFetch = async (url, init) => {
+      if (bearerToken !== undefined && url !== exchangeUrl && url !== getDesktopSsoCookieCSRFUrl(options.app)) {
+        throw new Error("Desktop SSO token exchange destination changed.");
+      }
+      // Use one configured credential source. Stale browser cookies must not
+      // override a restored Bearer session, including after a business 401.
+      const headers = bearerToken === undefined ? init?.headers : {
+        ...Object.fromEntries(Object.entries(init?.headers ?? {}).filter(([key]) =>
+          !["cookie", "authorization"].includes(key.toLowerCase()))),
+        ...(url === exchangeUrl ? { Authorization: `Bearer ${bearerToken}` } : {})
+      };
+      return accessTokenFetch(url, {
+        ...init,
+        headers,
+        ...(bearerToken !== undefined ? { credentials: "omit" as const, redirect: "manual" as const } : {}),
+        ...(exchangeOptions.signal ? { signal: exchangeOptions.signal } : {})
+      });
+    };
     const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(
       options.app,
       cookieHeader,
@@ -299,15 +320,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       let exchangeStatus: number | undefined;
       stage = "token-exchange";
       const accessToken = await exchangeBrowserCookieAccessToken(async (url, init) => {
-        const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
-        const useBearer = restoreAuthMode === "bearer" && url === exchangeUrl;
-        const response = await options.session.defaultSession.fetch(url, {
-          ...init,
-          ...(useBearer ? {
-            headers: { ...init?.headers, Authorization: `Bearer ${candidateToken}` },
-            redirect: "manual" as const
-          } : {})
-        });
+        const response = await options.session.defaultSession.fetch(url, init);
         exchangeStatus = response.status;
         if (
           response.status === 401 ||
@@ -324,6 +337,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }, {
         signal: abortController.signal,
         persist: false,
+        ...(restoreAuthMode === "bearer" ? { bearerToken: candidateToken } : {}),
         requireCookie: restoreAuthMode === "cookie",
         syncCookies: restoreAuthMode === "cookie"
       });
@@ -550,6 +564,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         return accessTokenRefreshPromise;
       }
       const previousToken = getDesktopSsoAccessToken();
+      const useBearer = loadDesktopSsoConfig(options.app).config?.sessionRestore?.authMode === "bearer";
       const isCurrentSession = () => getDesktopSsoAccessToken() === previousToken &&
         getDesktopSsoStatus(options.app).updatedAt === status.updatedAt;
       const request = fetchImpl || ((url, init) => options.session.defaultSession.fetch(url, init));
@@ -560,7 +575,10 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           throw new DesktopSsoRestoreRequestError("Desktop SSO refresh rejected the upstream session.", response.status);
         }
         return response;
-      }, { persist: false, syncCookies: false, signal: AbortSignal.timeout(5_000) })
+      }, {
+        persist: false, syncCookies: false, signal: AbortSignal.timeout(5_000),
+        ...(useBearer ? { bearerToken: previousToken || "" } : {})
+      })
         .then(async (token) => {
           if (!isCurrentSession()) return "";
           if (!token) throw new Error("Desktop SSO refresh returned no access token.");

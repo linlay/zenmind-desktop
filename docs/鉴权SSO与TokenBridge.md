@@ -39,7 +39,7 @@ Electron 默认 session 完成登录
 
 浏览器 SSO 默认使用 Cookie 恢复：验证上游浏览器会话，交换 access token，再从会话响应或用户信息接口确认稳定身份。用户信息接口若依赖派生 token Cookie，必须在换票后请求。
 
-显式启用 Bearer 恢复的配置允许主进程把磁盘 access token 作为恢复候选，携带到已配置的同源换票接口，再用返回的 token 调用同源用户信息接口。只有取得稳定用户身份后才写入派生 Cookie 并发布 canonical 凭据；过程中不要求旧 Cookie 仍然存在，不从 token claims 推断登录成功，不跟随携带 Bearer 的请求重定向。未配置该策略的站点不会自动发送磁盘 token。此选择仅影响启动恢复，标准 OIDC 和服务端票据换 Cookie 的登录与恢复流程保持各自语义。
+显式启用 Bearer 恢复的配置允许主进程把磁盘 access token 作为恢复候选，携带到已配置的同源换票接口，再用返回的 token 调用同源用户信息接口。只有取得稳定用户身份后才写入派生 Cookie 并发布 canonical 凭据；过程中不要求旧 Cookie 仍然存在，不从 token claims 推断登录成功，不跟随携带 Bearer 的请求重定向。未配置该策略的站点不会自动发送磁盘 token。该配置同时决定运行期续期的凭据来源：Bearer 模式向同一受信换票接口提交当前 canonical token，并省略 Cookie；默认 Cookie 模式继续使用浏览器会话。不能在恢复成功后静默改用另一种凭据续期。交互式登录和服务端票据换 Cookie 的流程保持各自语义。
 
 恢复结果分为三类：
 

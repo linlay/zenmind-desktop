@@ -1123,3 +1123,113 @@ test("late runtime refresh rejection cannot sign out a replacement account", asy
   assert.equal(getDesktopSsoStatus(app).user.sub, "new-user");
   assert.equal(calls.statusEvents.length, 0);
 });
+
+for (const mode of ["bearer", "cookie"]) {
+  test(`runtime ${mode} refresh honors configured transport and remains single flight`, async (t) => {
+    const now = Math.floor(Date.now() / 1000);
+    const previousToken = createUnsignedJwt({ sub: "runtime-user", exp: now + 90 });
+    const freshToken = createUnsignedJwt({ sub: "runtime-user", exp: now + 7200 });
+    const { app, controller, calls } = createCookieSsoRestoreFixture(t, `sso-runtime-${mode}-transport-`, async (url, init) => {
+      assert.equal(url, "https://ai.example.test/authorization");
+      assert.equal(init.redirect, "manual");
+      const headers = new Headers(init.headers);
+      if (mode === "bearer") {
+        assert.equal(headers.get("Authorization"), `Bearer ${previousToken}`);
+        assert.equal(headers.has("Cookie"), false);
+        assert.equal(init.credentials, "omit");
+      } else {
+        assert.equal(headers.has("Authorization"), false);
+        assert.match(headers.get("Cookie"), /_oauth2_proxy=browser-session/u);
+      }
+      return new Response(JSON.stringify({ access_token: freshToken }), { headers: { "content-type": "application/json" } });
+    }, mode === "bearer" ? { sessionRestore: { authMode: "bearer" }, userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" } } : {});
+    completeDesktopSsoRestoredBrowserSession(app, previousToken, { sub: "runtime-user" });
+    const results = await Promise.all([
+      controller.refreshBrowserCookieAccessTokenIfNeeded(true),
+      controller.refreshBrowserCookieAccessTokenIfNeeded(true)
+    ]);
+    assert.deepEqual(results, [freshToken, freshToken]);
+    assert.equal(calls.fetches.length, 1);
+    assert.equal(getDesktopSsoStatus(app).authenticated, true);
+    assert.equal(getDesktopSsoAccessToken(), freshToken);
+    assert.equal(calls.statusEvents.length, 0);
+  });
+}
+
+for (const status of [401, 403, 302, 503]) {
+  test(`runtime Bearer refresh preserves rejection semantics for upstream ${status}`, async (t) => {
+    const previousToken = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + 600 });
+    const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-runtime-bearer-response-", async (_url, init) => {
+      assert.equal(new Headers(init.headers).get("Authorization"), `Bearer ${previousToken}`);
+      assert.equal(new Headers(init.headers).has("Cookie"), false);
+      assert.equal(init.credentials, "omit");
+      assert.equal(init.redirect, "manual");
+      return new Response("upstream failure", { status });
+    }, { sessionRestore: { authMode: "bearer" }, userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" } });
+    completeDesktopSsoRestoredBrowserSession(app, previousToken, { sub: "runtime-user" });
+    await assert.rejects(controller.refreshBrowserCookieAccessTokenIfNeeded(false));
+    const temporary = status === 503;
+    assert.equal(getDesktopSsoStatus(app).authenticated, temporary);
+    assert.equal(getDesktopSsoAccessToken(), temporary ? previousToken : null);
+    assert.equal(calls.statusEvents.length, temporary ? 0 : 1);
+    if (!temporary) assert.equal(calls.restoreResults.at(-1).state, "signed_out");
+  });
+}
+
+test("late Bearer refresh rejection cannot clear a newly signed in account", async (t) => {
+  let respond, started;
+  const requestStarted = new Promise(resolve => { started = resolve; });
+  const expiresAt = Math.floor(Date.now() / 1000) + 7200;
+  const oldToken = createUnsignedJwt({ sub: "old-user", exp: expiresAt });
+  const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-runtime-bearer-account-switch-", async (_url, init) => {
+    started();
+    return new Promise(resolve => { respond = resolve; });
+  }, { sessionRestore: { authMode: "bearer" }, userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" } });
+  completeDesktopSsoRestoredBrowserSession(app, oldToken, { sub: "old-user" });
+  const refreshing = controller.refreshBrowserCookieAccessTokenIfNeeded(true);
+  await Promise.race([requestStarted, refreshing.then(() => { throw new Error("Refresh returned without making a request"); })]);
+  const newToken = createUnsignedJwt({ sub: "new-user", exp: expiresAt });
+  completeDesktopSsoRestoredBrowserSession(app, newToken, { sub: "new-user" });
+  const request = calls.fetches[0].init;
+  respond(new Response("expired", { status: 401 }));
+  assert.equal(await refreshing, "");
+  assert.equal(getDesktopSsoAccessToken(), newToken);
+  assert.equal(getDesktopSsoStatus(app).authenticated, true);
+  assert.equal(getDesktopSsoStatus(app).user.sub, "new-user");
+  assert.equal(calls.statusEvents.length, 0);
+  assert.equal(new Headers(request.headers).get("Authorization"), `Bearer ${oldToken}`);
+  assert.equal(request.credentials, "omit");
+});
+
+test("runtime Bearer refresh fetches CSRF anonymously and scopes identity to the token exchange", async (t) => {
+  const now = Math.floor(Date.now() / 1000);
+  const previousToken = createUnsignedJwt({ sub: "runtime-user", exp: now + 90 });
+  const freshToken = createUnsignedJwt({ sub: "runtime-user", exp: now + 7200 });
+  const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-runtime-bearer-csrf-", async (url, init) => {
+    const headers = new Headers(init.headers);
+    assert.equal(init.credentials, "omit");
+    assert.equal(init.redirect, "manual");
+    assert.equal(headers.has("Cookie"), false);
+    if (url === "https://ai.example.test/csrf") {
+      assert.equal(headers.has("Authorization"), false);
+      return new Response(JSON.stringify({ csrfToken: "test-csrf-value" }), { headers: { "content-type": "application/json" } });
+    }
+    assert.equal(url, "https://ai.example.test/authorization");
+    assert.equal(headers.get("Authorization"), `Bearer ${previousToken}`);
+    assert.equal(headers.get("X-CSRF-Token"), "test-csrf-value");
+    return new Response(JSON.stringify({ access_token: freshToken }), { headers: { "content-type": "application/json" } });
+  }, {
+    sessionRestore: { authMode: "bearer" },
+    userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" },
+    cookieAccessTokenExchange: {
+      url: "https://ai.example.test/authorization", method: "GET", accessTokenPath: "access_token",
+      csrfUrl: "https://ai.example.test/csrf"
+    }
+  });
+  completeDesktopSsoRestoredBrowserSession(app, previousToken, { sub: "runtime-user" });
+  assert.equal(await controller.refreshBrowserCookieAccessTokenIfNeeded(true), freshToken);
+  assert.deepEqual(calls.fetches.map(request => request.url), ["https://ai.example.test/csrf", "https://ai.example.test/authorization"]);
+  assert.equal(getDesktopSsoAccessToken(), freshToken);
+  assert.equal(getDesktopSsoStatus(app).authenticated, true);
+  assert.equal(calls.statusEvents.length, 0);
+});
