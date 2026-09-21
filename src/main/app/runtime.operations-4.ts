@@ -23,7 +23,8 @@ import {
   emitDesktopWsPush
 } from "../modules/desktop-protocol";
 import {
-  startTunnelHubRuntimeIfEnabled
+  startTunnelHubRuntimeIfEnabled,
+  stopTunnelHubRuntime
 } from "../modules/tunnel";
 import {
   createAgentWebclientRoute
@@ -209,12 +210,15 @@ export function createMainProcessRuntime_applyDesktopSsoRestoreResult_14(factory
             void factoryContext.startupPipeline.run();
         }
     }
-    if (result.state === "signed_out") {
+    if (result.state !== "authenticated") {
         factoryContext.ssoCredentialDependentRuntimesStarted = false;
+        if (factoryContext.nonCoreDesktopRuntimeStarted) {
+            void stopTunnelHubRuntime().catch(error => safeConsoleError("failed to stop Tunnel after SSO became unavailable", error));
+        }
         return;
     }
     if (result.state !== "authenticated" ||
-        previousRestoreState === "authenticated" ||
+        factoryContext.ssoCredentialDependentRuntimesStarted ||
         !isDesktopSsoCredentialRuntimeReady()) {
         return;
     }

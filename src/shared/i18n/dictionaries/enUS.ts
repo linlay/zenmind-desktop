@@ -1262,7 +1262,7 @@ export const enUSMessages = {
   "settings.mobilePairing.failed": "Pairing code generation failed.",
   "settings.mobilePairing.copyFailed": "Pairing payload copy failed.",
   "settings.tunnelHub.label": "Tunnel",
-  "settings.tunnelHub.description": "Create a Tunnel relay connection; enabling it also supports chat sharing.",
+  "settings.tunnelHub.description": "Enable chat sharing; Tunnel connects automatically after sign-in and pauses after sign-out.",
   "settings.tunnelHub.panelAria": "Desktop Tunnel Hub settings",
   "settings.tunnelHub.connectionTitle": "Relay connection",
   "settings.tunnelHub.deviceId": "Device ID",

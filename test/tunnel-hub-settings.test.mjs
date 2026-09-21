@@ -255,7 +255,7 @@ test("Tunnel Hub settings derive public URLs from host and recover legacy URL-on
   assert.equal(settings.webSocketUrl, "wss://legacy-public.example.test/ws");
 });
 
-test("Tunnel Hub enable saves drafts but falls back to disabled when config is incomplete", (t) => {
+test("Tunnel Hub enable persists intent without a signed-in user", (t) => {
   const app = createTempApp(t);
 
   const result = saveTunnelHubSettings(app, {
@@ -263,12 +263,11 @@ test("Tunnel Hub enable saves drafts but falls back to disabled when config is i
     relayUrl: "https://relay.example.test/tunnel"
   });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.settings.enabled, false);
-  assert.match(result.message, /Sign in/u);
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.enabled, true);
   assert.doesNotMatch(result.message, /Registration token/u);
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
-  assert.equal(stored.enabled, false);
+  assert.equal(stored.enabled, true);
   assert.equal(stored.relayUrl, "wss://relay.example.test/tunnel");
   assert.equal(fs.existsSync(legacyTunnelTokenPath(app)), false);
 });
@@ -283,9 +282,8 @@ test("Tunnel Hub ignores and clears legacy registration token without SSO", (t) 
     relayUrl: "wss://relay.example.test/tunnel"
   });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.settings.enabled, false);
-  assert.match(result.message, /Sign in/u);
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.enabled, true);
   assert.equal(fs.existsSync(tunnelRegistrationTokenPath(app)), false);
 });
 
@@ -299,11 +297,11 @@ test("Tunnel Hub legacy settings without enabled are treated as enabled only whe
     reconnectSeconds: 3
   }, null, 2)}\n`, "utf8");
 
-  assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(readTunnelHubSettings(app).enabled, true);
   assert.equal(readTunnelHubSettings(app).tlsInsecureSkipVerify, false);
 
   fs.writeFileSync(legacyTunnelTokenPath(app), "legacy-token\n", "utf8");
-  assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(readTunnelHubSettings(app).enabled, true);
 
   writeDesktopSsoAccessToken(app);
   assert.equal(readTunnelHubSettings(app).enabled, true);

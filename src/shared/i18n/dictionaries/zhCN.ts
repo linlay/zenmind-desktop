@@ -1262,7 +1262,7 @@ export const zhCNMessages = {
   "settings.mobilePairing.failed": "配对码生成失败。",
   "settings.mobilePairing.copyFailed": "配对内容复制失败。",
   "settings.tunnelHub.label": "隧道",
-  "settings.tunnelHub.description": "建立隧道中继连接；开启后支持分享对话。",
+  "settings.tunnelHub.description": "开启后支持分享对话；登录后自动连接，退出登录后暂停。",
   "settings.tunnelHub.panelAria": "Desktop 隧道中枢设置",
   "settings.tunnelHub.connectionTitle": "中继连接",
   "settings.tunnelHub.deviceId": "设备 ID",

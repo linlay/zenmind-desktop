@@ -252,11 +252,10 @@ export function readTunnelHubSettings(
 ): TunnelHubSettings {
   clearLegacyTunnelHubSecrets(app, platform);
   const stored = readStoredSettings(app, platform);
-  const identityToken = readTunnelHubRegistrationBearerToken(app, platform);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
   const publicHost = readStoredPublicHost(stored);
-  const complete = Boolean(identityToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
+  const complete = isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
     : complete;
@@ -314,7 +313,6 @@ export function saveTunnelHubSettings(
     : current.deviceId || createDefaultDeviceId(app);
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
-  const identityToken = readTunnelHubRegistrationBearerToken(app, platform);
   const issues: string[] = [];
   if (!isValidTunnelHubDeviceId(deviceId)) {
     issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
@@ -322,9 +320,6 @@ export function saveTunnelHubSettings(
   if (requestedEnabled) {
     if (!isValidRelayUrl(relayUrl)) {
       issues.push("Relay URL is invalid.");
-    }
-    if (!identityToken) {
-      issues.push("Sign in before enabling Tunnel Hub.");
     }
   }
 
@@ -344,15 +339,15 @@ export function saveTunnelHubSettings(
     return {
       ok: false,
       message: issues.join(" "),
-      settings: readTunnelHubSettings(app),
-      configPath: getSettingsPath(app)
+      settings: readTunnelHubSettings(app, platform),
+      configPath: getSettingsPath(app, platform)
     };
   }
   return {
     ok: true,
     message: nextSettings.enabled ? "Tunnel Hub settings saved and enabled." : "Tunnel Hub settings saved.",
-    settings: readTunnelHubSettings(app),
-    configPath: getSettingsPath(app)
+    settings: readTunnelHubSettings(app, platform),
+    configPath: getSettingsPath(app, platform)
   };
 }
 

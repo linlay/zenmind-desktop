@@ -122,6 +122,7 @@ export class TunnelHubRuntime {
   private client: TunnelClient | null = null;
   private startPromise: Promise<TunnelHubRuntimeCommandResult> | null = null;
   private stopping = false;
+  private generation = 0;
   private logs = "";
 
   constructor(private readonly options: TunnelHubRuntimeOptions) {}
@@ -157,13 +158,16 @@ export class TunnelHubRuntime {
     if (this.startPromise) {
       return this.startPromise;
     }
-    this.startPromise = this.startInternal().finally(() => {
-      this.startPromise = null;
+    const pending = this.startInternal(this.generation).finally(() => {
+      if (this.startPromise === pending) this.startPromise = null;
     });
-    return this.startPromise;
+    this.startPromise = pending;
+    return pending;
   }
 
   async stop(): Promise<TunnelHubRuntimeCommandResult> {
+    this.generation += 1;
+    this.startPromise = null;
     this.stopping = true;
     this.clearReconnectTimer();
     this.stopNetworkMonitor();
@@ -213,21 +217,19 @@ export class TunnelHubRuntime {
     };
   }
 
-  private async startInternal(): Promise<TunnelHubRuntimeCommandResult> {
+  private canConnect() {
+    return this.options.canUseDesktopSsoCredentials?.() !== false &&
+      Boolean(readTunnelHubRegistrationBearerToken(this.options.app));
+  }
+
+  private async startInternal(generation: number): Promise<TunnelHubRuntimeCommandResult> {
     clearLegacyTunnelHubSecrets(this.options.app);
-    if (this.options.canUseDesktopSsoCredentials?.() === false) {
-      this.stopNetworkMonitor();
-      this.phase = "stopped";
-      return this.commandResult(false, "Desktop single sign-on is not ready.");
-    }
     const settings = readTunnelHubSettings(this.options.app);
-    if (!settings.enabled) {
-      this.stopNetworkMonitor();
-      this.phase = "disabled";
-      const message = readTunnelHubRegistrationBearerToken(this.options.app)
-        ? "Tunnel Hub is disabled or incomplete."
-        : "Sign in before starting Tunnel Hub.";
-      return this.commandResult(false, message);
+    if (!settings.enabled || !this.canConnect()) {
+      await this.stop();
+      return this.commandResult(true, settings.enabled
+        ? "Tunnel Hub is enabled and waiting for sign-in."
+        : "Tunnel Hub is disabled.");
     }
     this.stopping = false;
     this.clearReconnectTimer();
@@ -239,6 +241,11 @@ export class TunnelHubRuntime {
     this.setPhase("starting");
     try {
       const ready = await ensureTunnelHubRegistrationReady(this.options.app);
+      if (generation !== this.generation) return this.commandResult(true, "Tunnel Hub start cancelled.");
+      if (!this.canConnect()) {
+        await this.stop();
+        return this.commandResult(true, "Tunnel Hub is enabled and waiting for sign-in.");
+      }
       this.setPhase(ready.registered ? "registered" : "connecting");
       if (!ready.identityToken) {
         throw new Error("Sign in before starting Tunnel Hub.");
@@ -247,6 +254,11 @@ export class TunnelHubRuntime {
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
       await this.connectTunnel(relayUrl, ready.identityToken, nextSettings.deviceId);
+      if (generation !== this.generation) return this.commandResult(true, "Tunnel Hub start cancelled.");
+      if (!this.canConnect()) {
+        await this.stop();
+        return this.commandResult(true, "Tunnel Hub is enabled and waiting for sign-in.");
+      }
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
@@ -255,6 +267,7 @@ export class TunnelHubRuntime {
       });
       return this.commandResult(true, "Tunnel Hub connected.");
     } catch (error) {
+      if (generation !== this.generation) return this.commandResult(true, "Tunnel Hub start cancelled.");
       this.lastError = messageFromError(error);
       this.setPhase("error");
       this.log(`start failed: ${this.lastError}`);
@@ -381,6 +394,10 @@ export class TunnelHubRuntime {
     this.clearReconnectTimer();
     const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled || this.stopping) {
+      return;
+    }
+    if (!this.canConnect()) {
+      void this.stop();
       return;
     }
     this.phase = "reconnecting";

@@ -456,10 +456,12 @@ test("Tunnel Hub runtime requires SSO and clears legacy tunnel secrets", async (
   });
 
   const result = await runtime.start();
-  assert.equal(result.ok, false);
-  assert.match(result.message, /Sign in/u);
+  assert.equal(result.ok, true);
+  assert.match(result.message, /waiting for sign-in/u);
+  assert.equal(result.status.phase, "stopped");
+  assert.equal(result.status.running, false);
   assert.equal(connectCalls.length, 0);
-  assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(readTunnelHubSettings(app).enabled, true);
   assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-token")), false);
   assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-registration-token")), false);
   assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-device-secret")), false);
@@ -1540,3 +1542,97 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
     }
   }
 });
+
+
+test("Tunnel enable waits for trusted SSO, reconnects after login and respects explicit disable", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-login-lifecycle-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  let authenticated = false;
+  let registrations = 0;
+  let connections = 0;
+  let closes = 0;
+  configureTunnelHubRegistrationController({
+    fetch: async () => {
+      registrations++;
+      return { ok: true, status: 200, text: async () => "{}" };
+    }
+  });
+  const runtime = new TunnelHubRuntime({
+    app,
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    canUseDesktopSsoCredentials: () => authenticated,
+    createTunnelClient: () => ({
+      connect: async () => { connections++; },
+      close: () => { closes++; },
+      on() {}
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => { await runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  const saved = await runtime.applySettings({ enabled: true, relayUrl: "wss://relay.example.test/tunnel" });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.settings.enabled, true);
+  assert.equal(saved.runtimeStatus.running, false);
+  writeDesktopSsoAccessToken(homePath);
+  await runtime.startIfEnabled();
+  assert.equal(registrations, 0, "disk token alone cannot bypass trusted SSO state");
+  authenticated = true;
+  assert.equal((await runtime.startIfEnabled()).connected, true);
+  assert.equal(connections, 1);
+  authenticated = false;
+  await runtime.stop();
+  assert.equal(closes, 1);
+  assert.equal(readTunnelHubSettings(app).enabled, true);
+  authenticated = true;
+  assert.equal((await runtime.startIfEnabled()).connected, true);
+  assert.equal(connections, 2);
+  await runtime.applySettings({ enabled: false });
+  await runtime.startIfEnabled();
+  assert.equal(connections, 2);
+  assert.equal(runtime.getStatus().phase, "disabled");
+});
+
+for (const pendingStage of ["registration", "connection"]) {
+  test(`Tunnel logout cancels pending ${pendingStage} without reconnecting`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-logout-race-"));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    writeDesktopSsoAccessToken(homePath);
+    saveTunnelHubSettings(app, { enabled: true, relayUrl: "wss://relay.example.test/tunnel" });
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    let connections = 0;
+    let connectedHooks = 0;
+    let authenticated = true;
+    configureTunnelHubRegistrationController({ fetch: async () => {
+      if (pendingStage === "registration") { entered(); await pending; }
+      return { ok: true, status: 200, text: async () => "{}" };
+    } });
+    const runtime = new TunnelHubRuntime({
+      app,
+      desktopWsServerOptions: createDesktopWsServerOptions(app),
+      canUseDesktopSsoCredentials: () => authenticated,
+      onConnected: () => { connectedHooks++; },
+      createTunnelClient: () => ({
+        connect: async () => { connections++; entered(); await pending; },
+        close() {}, on() {}
+      }),
+      logger: { log() {}, warn() {}, error() {} }
+    });
+    t.after(async () => { release(); await runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+    const attempt = runtime.start();
+    await started;
+    authenticated = false;
+    await runtime.stop();
+    release();
+    await attempt;
+    assert.equal(connections, pendingStage === "registration" ? 0 : 1);
+    assert.equal(connectedHooks, 0);
+    assert.equal(runtime.getStatus().phase, "stopped");
+    assert.equal(runtime.getStatus().lastError, undefined);
+    assert.equal(readTunnelHubSettings(app).enabled, true);
+  });
+}

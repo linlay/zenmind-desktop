@@ -1713,3 +1713,21 @@ for (const platform of ["darwin", "win32"]) {
     }
   });
 }
+
+
+for (const platform of ["darwin", "win32"]) {
+  test(`desktop-init enables Tunnel before sign-in on ${platform}`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-init-tunnel-enabled-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    writeDesktopInit(app, platform, {
+      tunnelHub: { enabled: true, relayUrl: "wss://relay.example.test/tunnel" }
+    });
+    const result = applyDesktopInitBootstrap(app, platform);
+    assert.equal(result.appliedResult.tunnelHub, "applied");
+    const stored = readJson(path.join(desktopRoot(homePath, platform), "config", "desktop", "tunnel-hub.json"));
+    assert.equal(stored.enabled, true);
+    assert.equal(stored.relayUrl, "wss://relay.example.test/tunnel");
+  });
+}
