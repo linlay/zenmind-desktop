@@ -23,6 +23,8 @@ const CORE_SERVICE_LIFECYCLE_COMMANDS = {
 } as const satisfies Record<string, readonly ServiceLifecycleCommandKind[]>;
 
 const AGENT_PLATFORM_DEPLOY_VALUE_FLAGS = [
+  "--document-preview-api-base-url",
+  "--document-preview-public-base-url",
   "--ai-vision-general-model-key",
   "--ai-vision-ocr-model-key",
   "--ai-web-fetch-model-key",
@@ -95,6 +97,10 @@ function normalizeLifecycleFlagValue(flag: string, value: string) {
   const normalized = value.trim();
   if (!normalized || normalized.startsWith("--")) {
     return null;
+  }
+  if (flag === "--document-preview-api-base-url" || flag === "--document-preview-public-base-url") {
+    return /^https?:\/\/([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:]+\])(:[0-9]+)?\/?$/.test(normalized)
+      && isValidHttpUrl(normalized) ? normalized : null;
   }
   if (REASONING_EFFORT_FLAGS.has(flag)) {
     const upper = normalized.toUpperCase();
