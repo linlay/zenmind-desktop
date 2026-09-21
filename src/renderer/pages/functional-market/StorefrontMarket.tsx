@@ -1369,7 +1369,10 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       const installed = isInstalledMarketItem(item);
       const updatable = item.state === "update-available";
       const label = t(updatable ? "market.action.update" : installed ? "market.state.installed" : "market.action.install");
-      return <article className="skill-discovery-card" key={`${item.type}:${item.id}`}>
+      return <article className="skill-discovery-card is-detail-clickable" key={`${item.type}:${item.id}`}
+        tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
+        onClick={(event) => { if (event.target instanceof Element && !event.target.closest("button, a, input, select, textarea, summary, details, [role=button]")) void openDetail(item); }}
+        onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void openDetail(item); } }}>
         <div className="skill-discovery-card-head">
           <span className="skill-discovery-icon tone-5" aria-hidden="true"><GlobalOutlined /></span>
           <button className="skill-discovery-name" title={item.name} onClick={() => void openDetail(item)}>{item.name}</button>

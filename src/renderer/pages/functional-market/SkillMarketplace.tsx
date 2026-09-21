@@ -101,7 +101,10 @@ export function SkillMarketplace(props: Props) {
     const busy = removing || props.busyItemId !== "";
     const installedState = isInstalledSkill(item);
     const isPackage = item.skill?.kind === "package";
-    const content = <article className={`skill-discovery-card${isPackage ? " is-package" : ""}${selected.includes(item.id) && managing ? " is-selected" : ""}`} key={item.id}>
+    const content = <article className={`skill-discovery-card is-detail-clickable${isPackage ? " is-package" : ""}${selected.includes(item.id) && managing ? " is-selected" : ""}`} key={item.id}
+      tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
+      onClick={(event) => { if (event.target instanceof Element && !event.target.closest("button, a, input, select, textarea, summary, details, [role=button]")) props.onDetail(item); }}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); props.onDetail(item); } }}>
       <div className="skill-discovery-card-head">
         {installedCard && managing ? <input type="checkbox" aria-label={item.name} checked={selected.includes(item.id)} disabled={busy}
           onChange={(event) => setSelected((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /> : null}

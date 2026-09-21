@@ -88,3 +88,6 @@
 @media (max-width: 760px) { .skill-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skill-discovery-toolbar { flex-wrap: wrap; } }
 @media (max-width: 680px) { .skill-discovery-search { width: 100%; } }
 @media (max-width: 560px) { .skill-discovery-grid { grid-template-columns: minmax(0, 1fr); } .skill-discovery-installed-heading { align-items: flex-start; flex-direction: column; } .skill-discovery-batch { flex-wrap: wrap; } }
+
+.skill-discovery-card.is-detail-clickable { cursor: pointer; }
+.skill-discovery-card.is-detail-clickable:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
