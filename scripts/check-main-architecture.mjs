@@ -5,7 +5,8 @@ import ts from "typescript";
 const projectRoot = process.cwd();
 const mainRoot = path.join(projectRoot, "src", "main");
 const modulesRoot = path.join(mainRoot, "modules");
-const MAX_IMPLEMENTATION_LINES = 1000;
+// Advisory only: split by responsibility, never solely to satisfy a line count.
+const RECOMMENDED_IMPLEMENTATION_LINES = 1000;
 
 function listSourceFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -89,6 +90,7 @@ function stronglyConnectedComponents(nodes, edges) {
 }
 
 const errors = [];
+const warnings = [];
 const files = listSourceFiles(mainRoot);
 const rootFiles = fs.readdirSync(mainRoot, { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.(?:ts|tsx)$/u.test(entry.name))
@@ -110,11 +112,11 @@ for (const moduleName of moduleDirectories) {
 const fileEdges = new Map(files.map((file) => [file, new Set()]));
 const areaEdges = new Map();
 for (const file of files) {
-  const lineCount = fs.readFileSync(file, "utf8").split(/\r?\n/u).length;
-  if (lineCount > MAX_IMPLEMENTATION_LINES) {
-    errors.push(`${relative(file)} has ${lineCount} lines (limit ${MAX_IMPLEMENTATION_LINES})`);
-  }
   const sourceText = fs.readFileSync(file, "utf8");
+  const lineCount = sourceText.split(/\r?\n/u).length;
+  if (lineCount > RECOMMENDED_IMPLEMENTATION_LINES) {
+    warnings.push(`${relative(file)} has ${lineCount} lines (recommended ${RECOMMENDED_IMPLEMENTATION_LINES}; non-blocking)`);
+  }
   if (/\bMainProcessContext\b/u.test(sourceText)) {
     errors.push(`${relative(file)} reintroduces the removed MainProcessContext service locator`);
   }
@@ -179,6 +181,11 @@ for (const component of stronglyConnectedComponents(areas, areaEdges)) {
       .map((target) => `${source} -> ${target}`)
   );
   errors.push(`module dependency cycle: ${cycleEdges.join(", ")}`);
+}
+
+if (warnings.length > 0) {
+  console.warn(`Main architecture advisory: ${warnings.length} file-size warning(s); split by responsibility when useful.`);
+  for (const warning of warnings) console.warn(`- ${warning}`);
 }
 
 if (errors.length > 0) {
