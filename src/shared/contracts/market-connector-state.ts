@@ -1,5 +1,5 @@
 export type ConnectorAuthMode = "token" | "oneid-token" | "oauth" | "mcp" | null;
-export type ConnectorAuthStatus = "not_required" | "delegated" | "configured" | "setup_required" | "unauthorized" | "preparing" | "pending" | "authorized" | "failed" | "canceled";
+export type ConnectorAuthStatus = "pending_verification" | "not_required" | "delegated" | "configured" | "setup_required" | "unauthorized" | "preparing" | "pending" | "authorized" | "failed" | "canceled";
 export interface MarketConnectorAuthSession {
   connectorId: string;
   sessionId: string;
@@ -8,6 +8,7 @@ export interface MarketConnectorAuthSession {
   authorizationUrl?: string;
   message?: string;
   expiresAt: string;
+  pendingVerification?: boolean;
 }
 export interface MarketConnectorPreparation {
   connectorId: string;
@@ -17,15 +18,14 @@ export interface MarketConnectorPreparation {
 }
 export interface MarketConnectorConnection {
   connectorId: string;
-  bound: boolean;
-  enabled: boolean;
-  readiness: "not_connected" | "disabled" | "preparing" | "authorization_required" | "ready" | "unavailable";
+  configured: boolean;
+  readiness: "configuration_required" | "pending_verification" | "preparing" | "authorization_required" | "ready" | "unavailable";
   authentication: MarketConnectorAuthSession;
   preparation?: MarketConnectorPreparation;
   capabilities: {
     canConnect: boolean;
     canDisconnect: boolean;
-    canEnable: boolean;
+    canCheck: boolean;
     authMode: ConnectorAuthMode;
     authBrowser: "system" | "embedded";
     hasCli: boolean;
@@ -47,7 +47,6 @@ export interface MarketConnectorAgentState {
 }
 export interface MarketConnectorDisconnectResult {
   connectorId: string;
-  bound: false;
-  enabled: false;
-  remote_revocation: "unsupported" | "failed" | "succeeded";
+  configured: boolean;
+  warnings?: string[];
 }

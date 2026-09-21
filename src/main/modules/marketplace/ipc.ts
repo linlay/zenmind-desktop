@@ -3,7 +3,7 @@ import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesyste
 import { readMarketSkillContent } from "./skill-detail";
 import { readMarketSkillPins, saveMarketSkillPins } from "./skill-market";
 import { createCustomConnector, importConnectorArchive } from "./connector-custom";
-import { readConnectorConnections, readConnectorConnection, prepareConnectorConnection, startConnectorConnection, cancelConnectorConnection, setConnectorConnectionEnabled, disconnectConnectorConnection, readConnectorTokenSchema, saveConnectorCredentials, setConnectorAgent, readConnectorAgent } from "./connector-state";
+import { readConnectorConnections, readConnectorConnection, prepareConnectorConnection, startConnectorConnection, cancelConnectorConnection, checkConnectorConnection, disconnectConnectorConnection, readConnectorTokenSchema, saveConnectorCredentials, setConnectorAgent, readConnectorAgent } from "./connector-state";
 
 export interface MarketplaceIpcHandlerOptions {
   app: any;
@@ -107,7 +107,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     prepareConnector: prepareConnectorConnection,
     connectConnector: startConnectorConnection,
     cancelConnectorConnection,
-    setConnectorEnabled: setConnectorConnectionEnabled,
+    checkConnectorConnection: checkConnectorConnection,
     disconnectConnector: disconnectConnectorConnection,
     getConnectorTokenSchema: readConnectorTokenSchema,
     saveConnectorCredentials,

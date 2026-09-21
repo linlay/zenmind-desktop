@@ -21,7 +21,7 @@ export async function openConnectorAuthorization(
   return browser;
 }
 
-export type ConnectorFlowPhase = "installing" | "preparing" | "authorizing" | "credentials" | "enabling" | "mounting" | "complete";
+export type ConnectorFlowPhase = "installing" | "preparing" | "authorizing" | "credentials" | "mounting" | "complete";
 export function connectorAuthorizationUrl(value?: string): string | null {
   if (!value || /[\s\u0000-\u001f\u007f]/.test(value)) return null;
   try { const url = new URL(value); return !url.username && !url.password && (url.protocol === "https:" || url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) ? url.href : null; }
@@ -66,7 +66,7 @@ export function createConnectorSessionOwner(cancel: (identity: { connectorId: st
   };
 }
 export interface MarketConnectorIntent {
-  item: MarketItem; installed: boolean; connectorId: string; enable: boolean; agentKey?: string;
+  item: MarketItem; installed: boolean; connectorId: string; mountAgent: boolean; agentKey?: string;
   credentials?: Record<string, string>; signal: AbortSignal;
   onPhase: (phase: ConnectorFlowPhase) => void;
   onInstalled: (connectorId: string) => void;
@@ -76,7 +76,7 @@ export interface MarketConnectorIntent {
   onCancellationError?: (error: unknown) => void;
 }
 /** Runs only for an explicit user intent. No state read invokes this function. */
-export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api: DesktopApi["market"], wait = connectorFlowDelay): Promise<{ connectorId: string; result: "complete" | "credentials" }> {
+export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api: DesktopApi["market"], wait = connectorFlowDelay): Promise<{ connectorId: string; result: "complete" | "credentials" | "pending_verification" }> {
   const { signal, onPhase, onConnection, onSession } = intent;
   const check = () => { if (signal.aborted) throw signal.reason || new Error("Canceled"); };
   let id = intent.connectorId;
@@ -93,7 +93,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
   }
   const read = async () => { check(); const state = await api.getConnectorConnection(id); check(); if (state.connectorId !== id) throw new Error("market.connector.flow.missingId"); onConnection(state); return state; };
   let current = await read();
-  if (current.capabilities.hasCli && (!current.bound || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
+  if (current.capabilities.hasCli && (!current.configured || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
     onPhase("preparing"); check();
     let preparation = await api.prepareConnector(id); check();
     // Platform preparation has a 15-minute limit; do not abandon a valid
@@ -108,7 +108,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
     if (preparation.status !== "ready") throw new Error(preparation.message || "market.connector.flow.notReady");
     current = await read();
   }
-  if (!current.bound || current.readiness === "authorization_required" || ["canceled", "failed"].includes(current.authentication.status)) {
+  if (intent.credentials || !current.configured || current.readiness === "authorization_required" || ["canceled", "failed"].includes(current.authentication.status)) {
     if (current.capabilities.authMode === "token" && !intent.credentials) {
       const schema = await api.getConnectorTokenSchema(id); check();
       intent.onTokenSchema(schema); onPhase("credentials"); return { connectorId: id, result: "credentials" };
@@ -122,20 +122,21 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
     }
     await owner.observe(session); check(); await onSession(session); check();
     const deadline = Date.now() + 15 * 60_000;
+    if (session.status === "pending_verification" || session.pendingVerification) return { connectorId: id, result: "pending_verification" };
     while (true) {
       current = await read();
       session = current.authentication;
       await owner.observe(session); check(); await onSession(session); check();
-      if (current.bound && ["authorized", "configured", "not_required", "delegated"].includes(session.status)) break;
+      if (current.readiness === "pending_verification" || session.pendingVerification) return { connectorId: id, result: "pending_verification" };
+      if (current.configured && ["authorized", "configured", "not_required", "delegated"].includes(session.status)) break;
       if (!connectorSessionActive(session)) throw new Error(session.message || "market.connector.flow.notReady");
       if (connectorSessionExpired(session) || Date.now() > deadline) throw new Error("market.connector.flow.timeout");
       await onSession(session); check(); await wait(signal);
     }
   }
-  if (intent.enable) {
-    onPhase("enabling"); check();
-    current = await api.setConnectorEnabled({ connectorId: id, enabled: true }); check(); onConnection(current);
-    if (!current.enabled || current.readiness !== "ready") throw new Error(current.authentication.message || "market.connector.flow.notReady");
+  if (current.readiness === "pending_verification" || (intent.credentials && current.authentication.pendingVerification)) return { connectorId: id, result: "pending_verification" };
+  if (intent.mountAgent) {
+    if (!current.configured || current.readiness !== "ready") throw new Error(current.authentication.message || "market.connector.flow.notReady");
     if (intent.agentKey) {
       onPhase("mounting"); check();
       let agent = await api.setConnectorAgent({ connectorId: id, agentKey: intent.agentKey, enabled: true }); check();

@@ -29,20 +29,39 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
     return result.data;
   });
   try {
+    await fetch(fixture.url + '/fixture/reset', { method: 'POST' });
     await state.disconnectConnectorConnection('bridge-none');
-    await assert.rejects(state.setConnectorConnectionEnabled({ connectorId: 'bridge-none', enabled: true }));
+    assert.equal((await state.readConnectorConnection('bridge-none')).configured, false);
     await state.startConnectorConnection('bridge-none');
-    assert.equal((await state.setConnectorConnectionEnabled({ connectorId: 'bridge-none', enabled: true })).readiness, 'ready');
-    assert.equal((await state.setConnectorConnectionEnabled({ connectorId: 'bridge-none', enabled: false })).readiness, 'disabled');
+    const connected = await state.readConnectorConnection('bridge-none');
+    assert.equal(connected.configured, true);
+    assert.equal(connected.readiness, 'ready');
+    assert.equal(connected.capabilities.canCheck, true);
+    assert.equal('canEnable' in connected.capabilities, false);
+    await state.checkConnectorConnection('bridge-none');
     await state.disconnectConnectorConnection('bridge-none');
-    assert.equal((await state.readConnectorConnection('bridge-none')).bound, false);
+    assert.equal((await state.readConnectorConnection('bridge-none')).configured, false);
 
     assert.equal((await state.readConnectorTokenSchema('bridge-token')).fields[0].key, 'API_KEY');
-    assert.equal((await state.saveConnectorCredentials({ connectorId: 'bridge-token', credentials: { API_KEY: fixture.token } })).bound, true);
-    await state.setConnectorConnectionEnabled({ connectorId: 'bridge-token', enabled: true });
+    assert.equal((await state.saveConnectorCredentials({ connectorId: 'bridge-token', credentials: { API_KEY: fixture.token } })).configured, true);
     await assert.rejects(state.saveConnectorCredentials({ connectorId: 'bridge-token', credentials: { API_KEY: 'wrong-token' } }));
     assert.equal((await state.readConnectorConnection('bridge-token')).readiness, 'ready');
+    // A temporary probe failure saves only the candidate. The submission must
+    // retain its pending result even when the old active credentials stay ready.
+    const pending = await state.saveConnectorCredentials({ connectorId: 'bridge-token', credentials: { API_KEY: 'fixture-next-token' } });
+    assert.equal(pending.authentication.status, 'pending_verification');
+    assert.equal(pending.authentication.pendingVerification, true);
+    assert.equal((await state.readConnectorConnection('bridge-token')).readiness, 'ready');
+    const before = await (await fetch(fixture.url + '/fixture/probes')).json();
+    await state.readConnectorConnections();
+    await state.readConnectorConnection('bridge-token');
+    const after = await (await fetch(fixture.url + '/fixture/probes')).json();
+    assert.equal(after.count, before.count, 'snapshot reads must not probe third parties');
+    await fetch(fixture.url + '/fixture/recover', { method: 'POST' });
+    assert.equal((await state.checkConnectorConnection('bridge-token')).authentication.status, 'authorized');
+    assert.equal((await state.readConnectorConnection('bridge-token')).readiness, 'ready');
     await state.disconnectConnectorConnection('bridge-token');
+    assert.equal((await state.readConnectorConnection('bridge-token')).configured, false);
 
     let session = await state.startConnectorConnection('bridge-oauth');
     for (let attempt = 0; attempt < 50 && session.status === 'preparing'; attempt++) {
@@ -53,7 +72,7 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
     assert.equal(session.authBrowser, 'embedded');
     assert.ok(session.authorizationUrl);
     await state.cancelConnectorConnection({ connectorId: 'bridge-oauth', sessionId: session.sessionId });
-    assert.equal((await state.readConnectorConnection('bridge-oauth')).bound, false);
+    assert.equal((await state.readConnectorConnection('bridge-oauth')).configured, false);
 
     const id = `bridge-import-${Date.now()}`;
     const imported = await custom.createCustomConnector({
@@ -61,18 +80,18 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
       mcpJson: JSON.stringify({ mcpServers: { main: { type: 'streamableHttp', url: fixture.upstream + '/mcp' } } }),
     });
     assert.equal(imported.connectorId, id);
-    assert.equal((await state.readConnectorConnection(id)).bound, false);
+    assert.equal((await state.readConnectorConnection(id)).configured, false);
     const output = { exports: {} };
     const source = fs.readFileSync(new URL('../src/renderer/pages/functional-market/connectorFlow.ts', import.meta.url), 'utf8');
     vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
       { module: output, exports: output.exports, URL, Date, Promise, Error, setTimeout, clearTimeout });
     const phases = [];
     const result = await output.exports.runMarketConnectorFlow({
-      item: { id }, installed: true, connectorId: id, enable: true, agentKey: 'mock-agent', signal: new AbortController().signal,
+      item: { id }, installed: true, connectorId: id, mountAgent: true, agentKey: 'mock-agent', signal: new AbortController().signal,
       onPhase: phase => phases.push(phase), onConnection() {}, onInstalled() {}, async onSession() {}, onTokenSchema() {},
     }, {
       getConnectorConnection: state.readConnectorConnection, connectConnector: state.startConnectorConnection,
-      cancelConnectorConnection: state.cancelConnectorConnection, setConnectorEnabled: state.setConnectorConnectionEnabled,
+      cancelConnectorConnection: state.cancelConnectorConnection, checkConnector: state.checkConnectorConnection,
       setConnectorAgent: state.setConnectorAgent, getConnectorAgent: state.readConnectorAgent,
     });
     assert.equal(result.result, 'complete');
@@ -81,7 +100,7 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
     assert.ok(agent.activeConnectorIds.includes(id));
     assert.equal(agent.reloadPending, false);
     await state.disconnectConnectorConnection(id);
-    assert.equal((await state.readConnectorConnection(id)).bound, false);
+    assert.equal((await state.readConnectorConnection(id)).configured, false);
   } finally {
     market.configureConnectorMarketPlatformCaller(null);
   }

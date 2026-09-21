@@ -9,24 +9,24 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 vm.runInNewContext(compiled, { module, exports: module.exports, URL, Date, Promise, Error, setTimeout, clearTimeout });
 const { runMarketConnectorFlow, createConnectorSessionOwner, connectorAuthorizationUrl, sameConnectorAuthorization } = module.exports;
 function setup() {
-  const calls = []; let bound = false;
+  const calls = []; let configured = false;
   const session = status => ({ connectorId: 'actual-id', sessionId: 'first', status, expiresAt: '', authBrowser: 'embedded', authorizationUrl: 'https://work.weixin.qq.com/step1' });
-  const state = () => ({ connectorId: 'actual-id', bound, enabled: bound, readiness: bound ? 'ready' : 'not_connected', authentication: session(bound ? 'authorized' : 'unauthorized'), capabilities: { hasCli: false, authMode: null } });
+  const state = () => ({ connectorId: 'actual-id', configured, readiness: configured ? 'ready' : 'configuration_required', authentication: session(configured ? 'authorized' : 'unauthorized'), capabilities: { hasCli: false, authMode: null } });
   const api = {
     install: async () => { calls.push('install'); return { ok: true, connectorId: 'actual-id' }; },
     getConnectorConnection: async () => state(),
-    connectConnector: async () => { calls.push('connect'); bound = true; return session('authorized'); },
+    connectConnector: async () => { calls.push('connect'); configured = true; return session('authorized'); },
     cancelConnectorConnection: async identity => { calls.push(`cancel:${identity.sessionId}`); return state(); },
     setConnectorEnabled: async () => { calls.push('enable'); return state(); },
     setConnectorAgent: async () => { calls.push('bind'); return { activeConnectorIds: ['actual-id'], reloadPending: false }; },
   };
   const controller = new AbortController();
-  const intent = { item: { id: 'market-id' }, installed: false, connectorId: 'market-id', enable: true, agentKey: 'xiaojun', signal: controller.signal, onPhase() {}, onInstalled() {}, onConnection() {}, async onSession() {}, onTokenSchema() {} };
+  const intent = { item: { id: 'market-id' }, installed: false, connectorId: 'market-id', mountAgent: true, agentKey: 'xiaojun', signal: controller.signal, onPhase() {}, onInstalled() {}, onConnection() {}, async onSession() {}, onTokenSchema() {} };
   return { calls, api, intent, controller, session, state };
 }
-test('market identity resolves to the installed Platform identity and one explicit add enables and mounts', async () => {
+test('market identity resolves to the installed Platform identity and one explicit add configures and mounts', async () => {
   const s = setup(); await runMarketConnectorFlow(s.intent, s.api, async () => {});
-  assert.deepEqual(s.calls, ['install', 'connect', 'enable', 'bind']);
+  assert.deepEqual(s.calls, ['install', 'connect', 'bind']);
 });
 test('cancel before connect returns cancels its late exact session without enabling or binding', async () => {
   const s = setup(); let finish, entered;
@@ -76,20 +76,20 @@ test('authorization display failure cancels the owned pending session before exi
   assert.deepEqual(s.calls, ['install', 'cancel:first']);
 });
 for (const status of ['canceled', 'failed']) {
-  test(`explicit retry reconnects a still-bound account after ${status} authorization`, async () => {
+  test(`explicit retry reconnects a still-configured account after ${status} authorization`, async () => {
     const s = setup(); let connected = false;
-    const failed = { ...s.state(), bound: true, readiness: 'unavailable', authentication: s.session(status) };
-    const ready = { ...failed, enabled: true, readiness: 'ready', authentication: s.session('authorized') };
+    const failed = { ...s.state(), configured: true, readiness: 'unavailable', authentication: s.session(status) };
+    const ready = { ...failed, readiness: 'ready', authentication: s.session('authorized') };
     s.api.getConnectorConnection = async () => connected ? ready : failed;
     s.api.connectConnector = async () => { s.calls.push('connect'); connected = true; return ready.authentication; };
     s.api.setConnectorEnabled = async () => { s.calls.push('enable'); return ready; };
     await runMarketConnectorFlow({ ...s.intent, installed: true, connectorId: 'actual-id' }, s.api, async () => {});
-    assert.deepEqual(s.calls, ['connect', 'enable', 'bind']);
+    assert.deepEqual(s.calls, ['connect', 'bind']);
   });
 }
-test('still-bound token authorization failure returns to credential input without enabling', async () => {
+test('still-configured token authorization failure returns to credential input without enabling', async () => {
   const s = setup();
-  s.api.getConnectorConnection = async () => ({ ...s.state(), bound: true, readiness: 'unavailable', authentication: s.session('failed'), capabilities: { hasCli: false, authMode: 'token' } });
+  s.api.getConnectorConnection = async () => ({ ...s.state(), configured: true, readiness: 'unavailable', authentication: s.session('failed'), capabilities: { hasCli: false, authMode: 'token' } });
   s.api.getConnectorTokenSchema = async () => ({ fields: [{ key: 'API_KEY', type: 'password', required: true }] });
   const result = await runMarketConnectorFlow({ ...s.intent, installed: true, connectorId: 'actual-id' }, s.api, async () => {});
   assert.equal(result.result, 'credentials'); assert.deepEqual(s.calls, []);
@@ -110,4 +110,35 @@ test('auth_browser policy selects only the configured login surface and keeps th
  assert.deepEqual(calls.pop(),['embedded',{connectorId:'wecom',sessionId:'same-session',browser:'embedded'}]);
  await assert.rejects(module.exports.openConnectorAuthorization({...session,status:'authorized'},api));
  assert.equal(calls.length,0);
+});
+
+test('pending token verification is reported without mounting or silently opening chat', async () => {
+  const s = setup();
+  s.api.getConnectorConnection = async () => ({...s.state(), capabilities:{hasCli:false,authMode:'token'}});
+  s.api.saveConnectorCredentials = async () => ({...s.state(), configured:true, readiness:'pending_verification', authentication:{...s.session('pending_verification'),pendingVerification:true}});
+  const result = await runMarketConnectorFlow({...s.intent,installed:true,connectorId:'actual-id',credentials:{API_KEY:'new-value'}},s.api);
+  assert.equal(result.result,'pending_verification');
+  assert.deepEqual(s.calls,[]);
+});
+test('saved pending replacement credentials keep their status even if the next snapshot has valid old credentials', async () => {
+  const s = setup();
+  s.api.getConnectorConnection = async () => ({...s.state(), capabilities:{hasCli:false,authMode:'token'}});
+  s.api.saveConnectorCredentials = async () => ({...s.state(), configured:true, readiness:'ready', authentication:{...s.session('authorized'),pendingVerification:true}});
+  const result = await runMarketConnectorFlow({...s.intent,installed:true,connectorId:'actual-id',credentials:{API_KEY:'new-value'}},s.api);
+  assert.equal(result.result,'pending_verification'); assert.deepEqual(s.calls,[]);
+});
+test('a ready connector with pending replacement credentials can still use its active credentials', async () => {
+  const s = setup();
+  s.api.getConnectorConnection = async () => ({...s.state(), configured:true, readiness:'ready', authentication:{...s.session('authorized'),pendingVerification:true}});
+  const result = await runMarketConnectorFlow({...s.intent,installed:true,connectorId:'actual-id'},s.api);
+  assert.equal(result.result,'complete'); assert.deepEqual(s.calls,['bind']);
+});
+
+test('explicit replacement credentials are submitted even when existing credentials are ready', async () => {
+  const s = setup();
+  const ready = {...s.state(), configured:true, readiness:'ready', authentication:s.session('authorized'), capabilities:{hasCli:false,authMode:'token'}};
+  s.api.getConnectorConnection = async () => ready;
+  s.api.saveConnectorCredentials = async input => { assert.equal(input.credentials.API_KEY,'replacement'); s.calls.push('save'); return ready; };
+  await runMarketConnectorFlow({...s.intent,installed:true,connectorId:'actual-id',credentials:{API_KEY:'replacement'}},s.api);
+  assert.deepEqual(s.calls,['save','bind']);
 });

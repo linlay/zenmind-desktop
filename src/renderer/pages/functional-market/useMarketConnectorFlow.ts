@@ -3,7 +3,7 @@ import type { MarketItem } from "@shared/contracts";
 import type { MarketConnectorAuthSession, MarketConnectorConnection, MarketConnectorTokenSchema } from "@shared/contracts/market-connector-state";
 import { openConnectorAuthorization, connectorAuthorizationUrl, connectorSessionActive, sameConnectorAuthorization, runMarketConnectorFlow, type ConnectorFlowPhase } from "./connectorFlow";
 
-interface FlowState { item: MarketItem; connectorId: string; phase: ConnectorFlowPhase; session?: MarketConnectorAuthSession; schema?: MarketConnectorTokenSchema; enable: boolean; openChat: boolean; draft?: string }
+interface FlowState { item: MarketItem; connectorId: string; phase: ConnectorFlowPhase; session?: MarketConnectorAuthSession; schema?: MarketConnectorTokenSchema; mountAgent: boolean; openChat: boolean; draft?: string }
 export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKey: string, draft?: string) => void) {
   const [connections, setConnections] = useState<Record<string, MarketConnectorConnection>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
@@ -39,7 +39,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     const request = ++revision.current;
     try { const list = await window.electronAPI.market.getConnectorConnections(); if (!mounted.current || request !== revision.current) return;
       setConnections(Object.fromEntries(list.map(item => [item.connectorId, item]))); setStateError("");
-      // Ready only proves recovery of preparation/auth/enable failures, not update or Agent mounting failures.
+      // Ready only proves recovery of preparation/auth failures, not update or Agent mounting failures.
       setFailure(previous => previous?.recoveredByReady && list.some(connection => connection.connectorId === previous.recoveredByReady && connection.readiness === "ready") ? null : previous);
     } catch (cause) { if (mounted.current && request === revision.current) setStateError(cause instanceof Error ? cause.message : String(cause)); }
     finally { if (mounted.current && request === revision.current) setLoading(false); }
@@ -99,15 +99,15 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
   const getId = (item: MarketItem) => aliases[item.id] || item.connectorId || item.id;
   const getConnection = (item: MarketItem) => connections[getId(item)];
   const isInstalled = (item: MarketItem) => item.connectorInstalled === true || !!aliases[item.id] || !!getConnection(item);
-  const start = async (item: MarketItem, enable = true, openChat = false, draft?: string, credentials?: Record<string, string>) => {
+  const start = async (item: MarketItem, mountAgent = true, openChat = false, draft?: string, credentials?: Record<string, string>) => {
     if (!mounted.current || controller.current) return;
-    const setError = (message: string, allowRecovery = true) => setFailure({ item, message, retry: () => start(item, enable, openChat, draft),
-      recoveredByReady: allowRecovery && latest.current && ["preparing", "authorizing", "enabling"].includes(latest.current.phase) ? latest.current.connectorId : undefined });
+    const setError = (message: string, allowRecovery = true) => setFailure({ item, message, retry: () => start(item, mountAgent, openChat, draft),
+      recoveredByReady: allowRecovery && latest.current && ["preparing", "authorizing"].includes(latest.current.phase) ? latest.current.connectorId : undefined });
     const abort = new AbortController(); controller.current = abort; revision.current++;
     setBusy(true); setFailure(null); setNotice("");
     browserChoice.current = undefined;
     const credentialSchema = credentials ? latest.current?.schema : undefined;
-    const initial: FlowState = { schema: credentialSchema, item, connectorId: getId(item), phase: isInstalled(item) ? "preparing" : "installing", enable, openChat, draft };
+    const initial: FlowState = { schema: credentialSchema, item, connectorId: getId(item), phase: isInstalled(item) ? "preparing" : "installing", mountAgent, openChat, draft };
     latest.current = initial; setFlow(initial);
     const change = (patch: Partial<FlowState>) => { if (!abort.signal.aborted && mounted.current && latest.current) { const value = { ...latest.current, ...patch }; latest.current = value; setFlow(value); } };
     let cancellationFailed = false;
@@ -122,13 +122,13 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     abort.signal.addEventListener("abort", clearAuthorizationTimer, { once: true });
     try {
       let agentKey: string | undefined;
-      if (enable) {
+      if (mountAgent) {
         const settings = await window.electronAPI.assistant.getSettings();
         if (abort.signal.aborted || !mounted.current) return;
         agentKey = settings.chatDefaultAgentKey.trim();
         if (!agentKey) throw new Error("market.discovery.defaultAgentRequired");
       }
-      const result = await Promise.race([runMarketConnectorFlow({ item, installed: isInstalled(item), connectorId: initial.connectorId, enable, agentKey, credentials, signal: abort.signal,
+      const result = await Promise.race([runMarketConnectorFlow({ item, installed: isInstalled(item), connectorId: initial.connectorId, mountAgent, agentKey, credentials, signal: abort.signal,
         onPhase: phase => {
           change({ phase });
           if (phase !== "authorizing") { clearAuthorizationTimer(); return; }
@@ -151,6 +151,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
         },
       }, window.electronAPI.market), authorizationTimeout]);
       if (abort.signal.aborted || !mounted.current) return;
+      if (result.result === "pending_verification") { setFlow(null); latest.current = null; setNotice("market.connector.flow.pendingVerification"); }
       if (result.result === "complete") { setFlow(null); latest.current = null; setNotice("market.connector.flow.phase.complete"); if (openChat && agentKey) callbacks.current.onChat?.(agentKey, draft); }
     } catch (cause) {
       if (authorizationTimedOut && mounted.current && controller.current === abort) {
@@ -171,7 +172,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       if (controller.current === abort) { controller.current = null; if (mounted.current) { setBusy(false); if (!cancellationFailed && latest.current) { const value = { ...latest.current, session: undefined }; latest.current = value; setFlow(value); } } try { await dismiss(); } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause), false); } void refresh(); callbacks.current.onChanged?.(); }
     }
   };
-  const mutate = async (item: MarketItem, action: "disable" | "disconnect" | "update") => {
+  const mutate = async (item: MarketItem, action: "check" | "disconnect" | "update") => {
     if (!mounted.current || controller.current) return;
     const setError = (message: string) => setFailure({ item, message, retry: () => mutate(item, action) });
     // A mutation must not retain a different connector's failed authorization flow.
@@ -183,8 +184,8 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
         if (!result.ok) throw new Error(result.message);
         if (!abort.signal.aborted) { updateConnection(await window.electronAPI.market.getConnectorConnection(result.connectorId || id)); setNotice("market.connector.flow.updated"); }
       }
-      else if (action === "disable") { const result = await window.electronAPI.market.setConnectorEnabled({ connectorId: id, enabled: false }); if (!abort.signal.aborted) updateConnection(result); }
-      else { const result = await window.electronAPI.market.disconnectConnector(id); if (abort.signal.aborted) return; updateConnection(await window.electronAPI.market.getConnectorConnection(id)); if (result.remote_revocation === "failed") setNotice("market.connector.flow.remoteFailed"); }
+      else if (action === "check") { const result = await window.electronAPI.market.checkConnectorConnection(id); if (!abort.signal.aborted) { updateConnection(result); if (["failed", "unauthorized"].includes(result.authentication.status)) throw new Error(result.authentication.message || "market.connector.flow.notReady"); if (result.authentication.pendingVerification || result.readiness === "pending_verification") setNotice("market.connector.flow.pendingVerification"); } }
+      else { const result = await window.electronAPI.market.disconnectConnector(id); if (abort.signal.aborted) return; updateConnection(await window.electronAPI.market.getConnectorConnection(id)); if (result.warnings?.length) setNotice(result.warnings.join("\n")); }
     } catch (cause) { if (mounted.current && !abort.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { if (controller.current === abort) { controller.current = null; if (mounted.current) setBusy(false); callbacks.current.onChanged?.(); void refresh(); } }
   };
@@ -192,7 +193,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     getError: (item: MarketItem) => failure && getId(failure.item) === getId(item) ? failure.message : "",
     notice, dismissNotice, flow, busy, refresh, getConnection, isInstalled, start, cancel, mutate,
     retry: (item?: MarketItem) => { if (failure && (!item || getId(failure.item) === getId(item))) return failure.retry(); },
-    submitCredentials: (credentials: Record<string, string>) => { const value = latest.current; return value ? start(value.item, value.enable, value.openChat, value.draft, credentials) : Promise.resolve(); },
+    submitCredentials: (credentials: Record<string, string>) => { const value = latest.current; return value ? start(value.item, value.mountAgent, value.openChat, value.draft, credentials) : Promise.resolve(); },
     openingAuth, authRedirectKey,
     reopenAuth: async (browser?: "embedded" | "system") => {
       if (!mounted.current || authOpening.current) return;
@@ -205,7 +206,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
         await dismiss();
         if (!mounted.current || latest.current?.session?.sessionId !== session.sessionId || !connectorSessionActive(latest.current.session)) return;
         await showSession(session, true);
-      } catch (cause) { if (mounted.current) setFailure({ item: current.item, message: cause instanceof Error ? cause.message : String(cause), retry: () => start(current.item, current.enable, current.openChat, current.draft) }); }
+      } catch (cause) { if (mounted.current) setFailure({ item: current.item, message: cause instanceof Error ? cause.message : String(cause), retry: () => start(current.item, current.mountAgent, current.openChat, current.draft) }); }
       finally { authOpening.current = false; if (mounted.current) setOpeningAuth(false); }
     },
   };

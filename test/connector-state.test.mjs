@@ -6,7 +6,7 @@ const market = require('../dist-electron/main/modules/marketplace/connector-mark
 const state = require('../dist-electron/main/modules/marketplace/connector-state.js');
 const custom = require('../dist-electron/main/modules/marketplace/connector-custom.js');
 const JSZip = require('jszip');
-const connection = (extra = {}) => ({connectorId:'example.office',bound:true,enabled:false,readiness:'disabled',authentication:{connectorId:'example.office',status:'configured'},capabilities:{canConnect:true,canDisconnect:true,canEnable:true,hasCli:true,hasMcp:false,authMode:'token',authBrowser:'system'},...extra});
+const connection = (extra = {}) => ({connectorId:'example.office',configured:true,readiness:'ready',authentication:{connectorId:'example.office',status:'configured'},capabilities:{canConnect:true,canDisconnect:true,canCheck:true,hasCli:true,hasMcp:false,authMode:'token',authBrowser:'system'},...extra});
 
 test('connection projection preserves configured status without leaking private fields', () => {
  const value = state.normalizeConnectorConnection({...connection(),credentials:{API_KEY:'secret'},internalPath:'/private'},'example.office');
@@ -14,7 +14,7 @@ test('connection projection preserves configured status without leaking private 
  assert.equal(value.authentication.sessionId,'');
  assert.equal(value.credentials,undefined);
  assert.equal(value.internalPath,undefined);
- assert.throws(()=>state.normalizeConnectorConnection(connection({bound:false,enabled:true}),'example.office'));
+ assert.throws(()=>state.normalizeConnectorConnection(connection({configured:undefined,bound:true,enabled:true}),'example.office'));
 });
 test('authorization rejects mismatched, expired or non-web sessions and drops terminal URLs', () => {
  const auth={connectorId:'example.office',status:'pending',sessionId:'session-1',expiresAt:new Date(Date.now()+60000).toISOString(),authorizationUrl:'https://accounts.example.test/login'};
@@ -22,12 +22,12 @@ test('authorization rejects mismatched, expired or non-web sessions and drops te
  for(const override of [{connectorId:'other'},{sessionId:''},{expiresAt:'2000-01-01'},{authorizationUrl:'file:///etc/passwd'},{authorizationUrl:'https://user:secret@example.test/'}]) assert.throws(()=>state.normalizeConnectorAuth({...auth,...override},'example.office'));
  assert.equal(state.normalizeConnectorAuth({...auth,status:'authorized'},'example.office').authorizationUrl,undefined);
 });
-test('exact cancellation and explicit enable use bounded structured inputs', async(t)=>{
+test('exact cancellation and explicit check use bounded structured inputs', async(t)=>{
  const calls=[]; market.configureConnectorMarketPlatformCaller(async(path,options)=>{calls.push([path,options]);return connection();});
  t.after(()=>market.configureConnectorMarketPlatformCaller(null));
  await state.cancelConnectorConnection({connectorId:'example.office',sessionId:'session-1'});
  assert.equal(calls[0][0],'/api/admin/connectors/auth/cancel?id=example.office&sessionId=session-1');
- await assert.rejects(state.setConnectorConnectionEnabled({connectorId:'example.office',enabled:'true'}));
+ await assert.rejects(state.checkConnectorConnection('../escape'));
  assert.equal(calls.length,2);
 });
 test('custom connector forwards original JSON in a fixed ZIP and never enables it', async(t)=>{
@@ -57,7 +57,7 @@ test('connector IPC rejects foreign windows/frames before file selection or muta
  const handlers=new Map(),frame={},webContents={mainFrame:frame,isDestroyed:()=>false};
  let dialogs=0;
  registerMarketplaceIpcHandlers({handle:(name,fn)=>handlers.set(name,fn)},{app:{},mainWindow:{webContents,isDestroyed:()=>false},showArchiveDialog:async()=>{dialogs++;return {canceled:true,filePaths:[]};},t:key=>key});
- for(const key of ['market.getCustomMcpConfig','market.saveCustomMcpConfig','market.importConnector','market.createConnector','market.connectConnector','market.saveConnectorCredentials','market.setConnectorAgent']) {
+ for(const key of ['market.getCustomMcpConfig','market.saveCustomMcpConfig','market.importConnector','market.createConnector','market.connectConnector','market.checkConnectorConnection','market.saveConnectorCredentials','market.setConnectorAgent']) {
   await assert.rejects(handlers.get(key)({sender:{},senderFrame:frame},{}),/forbidden/);
   await assert.rejects(handlers.get(key)({sender:webContents,senderFrame:{}},{}),/forbidden/);
  }
@@ -74,3 +74,28 @@ test('market package expectations are passed to Platform before activation',asyn
  });t.after(()=>market.configureConnectorMarketPlatformCaller(null));
  await assert.rejects(market.importConnectorBytes(Buffer.from('ZIP'),false,{id:'example.office',version:'1.0.0'}),/identity mismatch/);
 });
+
+ test('explicit check uses POST check and preserves pending candidate alongside active credentials', async(t) => {
+ const calls=[];
+ market.configureConnectorMarketPlatformCaller(async(path, options)=>{
+  calls.push([path,options]);
+  if(path.startsWith('/api/connectors/check?')) return {connectorId:'example.office',status:'authorized',pendingVerification:true,message:'Candidate verification pending'};
+  return connection();
+ });t.after(()=>market.configureConnectorMarketPlatformCaller(null));
+ const result=await state.checkConnectorConnection('example.office');
+ assert.equal(result.configured,true);
+ assert.equal(result.authentication.pendingVerification,true);
+ assert.equal(result.authentication.message,'Candidate verification pending');
+ assert.equal(calls[0][0],'/api/connectors/check?id=example.office');assert.equal(calls[0][1].method,'POST');
+ assert.equal(calls[1][0],'/api/connectors/connection?id=example.office');
+ });
+ test('saving credentials retains pending verification and disconnect warnings',async(t)=>{
+ market.configureConnectorMarketPlatformCaller(async(path)=>{
+  if(path.startsWith('/api/admin/connectors/auth?')) return {connectorId:'example.office',status:'pending_verification',pendingVerification:true};
+  if(path.startsWith('/api/connectors/disconnect?')) return {connectorId:'example.office',configured:false,warnings:['CLI logout incomplete']};
+  return connection({configured:false,readiness:'pending_verification'});
+ });t.after(()=>market.configureConnectorMarketPlatformCaller(null));
+ const result=await state.saveConnectorCredentials({connectorId:'example.office',credentials:{API_KEY:'candidate'}});
+ assert.equal(result.authentication.status,'pending_verification');assert.equal(result.authentication.pendingVerification,true);
+ assert.deepEqual(await state.disconnectConnectorConnection('example.office'),{connectorId:'example.office',configured:false,warnings:['CLI logout incomplete']});
+ });

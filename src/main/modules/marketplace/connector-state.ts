@@ -5,7 +5,7 @@ import type {
 import { asObject, asString } from "./common";
 import { callConnectorPlatform, connectorId } from "./connector-market";
 
-const states = new Set(["not_required", "delegated", "configured", "setup_required", "unauthorized", "preparing", "pending", "authorized", "failed", "canceled"]);
+const states = new Set(["not_required", "delegated", "configured", "pending_verification", "setup_required", "unauthorized", "preparing", "pending", "authorized", "failed", "canceled"]);
 function shortText(value: unknown, limit = 2048) { return asString(value).slice(0, limit); }
 function safeUrl(value: unknown) {
   if (typeof value !== "string" || value.length > 16384) throw new Error("Invalid connector authorization URL");
@@ -24,7 +24,8 @@ export function normalizeConnectorAuth(value: unknown, id: string): MarketConnec
   return { connectorId: id, sessionId, status: raw.status as MarketConnectorAuthSession["status"],
     authBrowser: raw.authBrowser as MarketConnectorAuthSession["authBrowser"], expiresAt,
     ...(active && raw.authorizationUrl ? { authorizationUrl: safeUrl(raw.authorizationUrl) } : {}),
-    ...(raw.message ? { message: shortText(raw.message) } : {}) };
+    ...(raw.message ? { message: shortText(raw.message) } : {}),
+    ...(raw.pendingVerification === true ? { pendingVerification: true } : {}) };
 }
 export function normalizeConnectorPreparation(value: unknown, id: string): MarketConnectorPreparation {
   const raw = asObject(value);
@@ -33,15 +34,15 @@ export function normalizeConnectorPreparation(value: unknown, id: string): Marke
 }
 export function normalizeConnectorConnection(value: unknown, id: string): MarketConnectorConnection {
   const raw = asObject(value), cap = asObject(raw.capabilities);
-  if (raw.connectorId !== id || typeof raw.bound !== "boolean" || typeof raw.enabled !== "boolean" || (!raw.bound && raw.enabled)
-      || !["not_connected", "disabled", "preparing", "authorization_required", "ready", "unavailable"].includes(asString(raw.readiness))) throw new Error("Invalid connector connection response");
-  for (const key of ["canConnect", "canDisconnect", "canEnable", "hasCli", "hasMcp"]) if (typeof cap[key] !== "boolean") throw new Error("Invalid connector capabilities");
+  if (raw.connectorId !== id || typeof raw.configured !== "boolean"
+      || !["configuration_required", "pending_verification", "preparing", "authorization_required", "ready", "unavailable"].includes(asString(raw.readiness))) throw new Error("Invalid connector connection response");
+  for (const key of ["canConnect", "canDisconnect", "canCheck", "hasCli", "hasMcp"]) if (typeof cap[key] !== "boolean") throw new Error("Invalid connector capabilities");
   if (cap.authMode !== null && !["token", "oneid-token", "oauth", "mcp"].includes(asString(cap.authMode))) throw new Error("Invalid connector authentication mode");
   if (cap.authBrowser !== "system" && cap.authBrowser !== "embedded") throw new Error("Invalid connector browser policy");
-  return { connectorId: id, bound: raw.bound, enabled: raw.enabled, readiness: raw.readiness as MarketConnectorConnection["readiness"],
+  return { connectorId: id, configured: raw.configured, readiness: raw.readiness as MarketConnectorConnection["readiness"],
     authentication: normalizeConnectorAuth(raw.authentication, id),
     ...(raw.preparation ? { preparation: normalizeConnectorPreparation(raw.preparation, id) } : {}),
-    capabilities: { canConnect: cap.canConnect as boolean, canDisconnect: cap.canDisconnect as boolean, canEnable: cap.canEnable as boolean,
+    capabilities: { canConnect: cap.canConnect as boolean, canDisconnect: cap.canDisconnect as boolean, canCheck: cap.canCheck as boolean,
       hasCli: cap.hasCli as boolean, hasMcp: cap.hasMcp as boolean, authMode: cap.authMode as MarketConnectorConnection["capabilities"]["authMode"], authBrowser: cap.authBrowser as "system" | "embedded" } };
 }
 export async function readConnectorConnections(): Promise<MarketConnectorConnection[]> {
@@ -67,16 +68,17 @@ export async function cancelConnectorConnection(value: unknown) {
   await callConnectorPlatform(`/api/admin/connectors/auth/cancel?${new URLSearchParams({ id, sessionId })}`, { method: "POST" });
   return readConnectorConnection(id);
 }
-export async function setConnectorConnectionEnabled(value: unknown) {
-  const raw = asObject(value), id = connectorId(raw.connectorId);
-  if (typeof raw.enabled !== "boolean") throw new Error("Explicit connector enabled state is required");
-  return normalizeConnectorConnection(await callConnectorPlatform("/api/connectors/connection", { method: "PUT", body: { connectorId: id, enabled: raw.enabled } }), id);
+export async function checkConnectorConnection(value: unknown) {
+  const id = connectorId(value);
+  const authentication = normalizeConnectorAuth(await callConnectorPlatform(`/api/connectors/check?id=${encodeURIComponent(id)}`, { method: "POST" }), id);
+  const connection = await readConnectorConnection(id);
+  return { ...connection, authentication };
 }
 export async function disconnectConnectorConnection(value: unknown): Promise<MarketConnectorDisconnectResult> {
   const id = connectorId(value);
   const raw = asObject(await callConnectorPlatform(`/api/connectors/disconnect?id=${encodeURIComponent(id)}`, { method: "POST" }));
-  if (raw.connectorId !== id || raw.bound !== false || raw.enabled !== false || !["unsupported", "failed", "succeeded"].includes(asString(raw.remote_revocation))) throw new Error("Invalid connector disconnect response");
-  return { connectorId: id, bound: false, enabled: false, remote_revocation: raw.remote_revocation as MarketConnectorDisconnectResult["remote_revocation"] };
+  if (raw.connectorId !== id || raw.configured !== false || (raw.warnings !== undefined && (!Array.isArray(raw.warnings) || raw.warnings.some(value => typeof value !== "string")))) throw new Error("Invalid connector disconnect response");
+  return { connectorId: id, configured: false, ...(Array.isArray(raw.warnings) ? { warnings: raw.warnings.map(value => shortText(value)) } : {}) };
 }
 export async function readConnectorTokenSchema(value: unknown): Promise<MarketConnectorTokenSchema> {
   const id = connectorId(value), raw = asObject(await callConnectorPlatform("/api/admin/connectors"));
@@ -98,8 +100,8 @@ export async function saveConnectorCredentials(value: unknown) {
   const raw = asObject(value), id = connectorId(raw.connectorId), credentials = asObject(raw.credentials);
   if (!Object.keys(credentials).length || Object.keys(credentials).length > 64 || Buffer.byteLength(JSON.stringify(credentials)) > 65536) throw new Error("Invalid connector credentials");
   for (const [key, field] of Object.entries(credentials)) if (!/^[A-Z][A-Z0-9_]*$/.test(key) || typeof field !== "string") throw new Error("Invalid connector credential value");
-  await callConnectorPlatform(`/api/admin/connectors/auth?id=${encodeURIComponent(id)}`, { method: "PUT", body: { credentials } });
-  return readConnectorConnection(id);
+  const authentication = normalizeConnectorAuth(await callConnectorPlatform(`/api/admin/connectors/auth?id=${encodeURIComponent(id)}`, { method: "PUT", body: { credentials } }), id);
+  return { ...await readConnectorConnection(id), authentication };
 }
 function normalizeAgentState(value: unknown, agentKey: string): MarketConnectorAgentState {
   const raw = asObject(value);
