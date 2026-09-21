@@ -68,7 +68,7 @@ export type PlatformChatSummary = {
 };
 
 export type PlatformChatOrder = {
-  pinnedOrder?: unknown;
+  pinnedChats?: unknown;
   sortMode?: unknown;
   updatedAt?: unknown;
 };

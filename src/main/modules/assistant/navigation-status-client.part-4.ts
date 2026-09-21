@@ -240,11 +240,7 @@ export class AssistantNavigationStatusClient {
         this.requestNavigationChats(baseUrl, token),
         this.requestNavigationChatOrder(baseUrl, token),
       ]);
-      const pinnedChatItems = chatOrderSnapshot.chatPinningSupported
-        ? (await this.requestNavigationChatList(baseUrl, token, true))
-            .map((chat, index) => mapNavigationChat(chat, "", `navigation.pinned[${index}]`))
-            .filter((chat): chat is AssistantNavChatItem => Boolean(chat?.agentKey && chat.pinned))
-        : [];
+      const { pinnedChatItems } = chatOrderSnapshot;
       // Activity retains owner-level attention for pinned project conversations.
       for (const agent of activityItems) {
         const pins = pinnedChatItems.filter((chat) => chat.agentKey === agent.agentKey);
@@ -282,10 +278,8 @@ export class AssistantNavigationStatusClient {
         throw error;
       }
       this.setSnapshot({
+        ...this.latestResult,
         ok: false,
-        items: [],
-        chatItems: [],
-        chatItemsHasMore: false,
         message,
         updatedAt: nowEpochMillis()
       });
@@ -398,13 +392,12 @@ export class AssistantNavigationStatusClient {
     baseUrl: string,
     token: string,
   ): Promise<AssistantNavigationChatsSnapshot> {
-    return buildAssistantNavigationChatsSnapshotFromPlatform(await this.requestNavigationChatList(baseUrl, token, false));
+    return buildAssistantNavigationChatsSnapshotFromPlatform(await this.requestNavigationChatList(baseUrl, token));
   }
 
   private async requestNavigationChatList(
     baseUrl: string,
     token: string,
-    pinned: boolean,
   ): Promise<PlatformChatSummary[]> {
     const id = `desktop-nav-chats-${++this.wsRequestSequence}`;
     const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
@@ -414,7 +407,7 @@ export class AssistantNavigationStatusClient {
         localId: id,
         consumerId: "assistant-navigation",
         type: "/api/chats",
-        payload: pinned ? { pinned: true } : {
+        payload: {
           mode: NAVIGATION_CHAT_AGENT_MODE,
           limit: NAVIGATION_CHAT_PROBE_LIMIT,
           pinned: false,
@@ -445,57 +438,54 @@ export class AssistantNavigationStatusClient {
     token: string,
   ): Promise<AssistantNavigationChatOrderSnapshot> {
     const id = `desktop-nav-chat-order-${++this.wsRequestSequence}`;
-    try {
-      const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
-        void this.realtimeBroker.forwardRequest({
-          baseUrl,
-          token,
-          localId: id,
-          consumerId: "assistant-navigation",
-          type: "/api/chats/order",
-          payload: {},
-          onFrame: (response) => {
-            this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
-            this.recordLiveFrame({
-              direction: "inbound",
-              kind: toText(response.frame) === "error" ? "error" : "response",
-              type: toText(response.type) || null,
-            });
-            if (toText(response.frame) === "error") {
-              reject(new Error(toText(response.msg) || "chat ordering is unavailable"));
-              return;
-            }
-            resolve(response as NavigationPushFrame);
-          },
-          onError: reject,
-        }).catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
-        this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats/order" });
-      });
-      const data = unwrapApiResponse<PlatformChatOrder>(frame);
-      const sortMode = toText(data?.sortMode);
-      if (sortMode !== "recent" && sortMode !== "manual") {
-        throw new Error("agent-platform returned an invalid chat sort mode");
-      }
-      if (data?.updatedAt !== undefined && data.updatedAt !== null) {
-        requireAgentPlatformEpochMillis(
-          data.updatedAt,
-          "navigation.chatOrder.updatedAt",
-        );
-      }
-      return {
-        chatSortMode: sortMode,
-        chatOrderingSupported: true,
-        chatPinningSupported: Array.isArray(data?.pinnedOrder),
-      };
-    } catch (error) {
-      this.options.onDebug?.(
-        `[chat-order] unavailable; using recent: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return {
-        chatSortMode: "recent",
-        chatOrderingSupported: false,
-      };
+    const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
+      void this.realtimeBroker.forwardRequest({
+        baseUrl,
+        token,
+        localId: id,
+        consumerId: "assistant-navigation",
+        type: "/api/chats/order",
+        payload: {},
+        onFrame: (response) => {
+          this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
+          this.recordLiveFrame({
+            direction: "inbound",
+            kind: toText(response.frame) === "error" ? "error" : "response",
+            type: toText(response.type) || null,
+          });
+          if (toText(response.frame) === "error") {
+            reject(new Error(toText(response.msg) || "chat ordering is unavailable"));
+            return;
+          }
+          resolve(response as NavigationPushFrame);
+        },
+        onError: reject,
+      }).catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+      this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats/order" });
+    });
+    const data = unwrapApiResponse<PlatformChatOrder>(frame);
+    const sortMode = toText(data?.sortMode);
+    if (sortMode !== "recent" && sortMode !== "manual") {
+      throw new Error("agent-platform returned an invalid chat sort mode");
     }
+    if (data?.updatedAt !== undefined && data.updatedAt !== null) {
+      requireAgentPlatformEpochMillis(
+        data.updatedAt,
+        "navigation.chatOrder.updatedAt",
+      );
+    }
+    if (!Array.isArray(data?.pinnedChats)) {
+      throw new Error("agent-platform returned an invalid chat order snapshot: pinnedChats must be an array");
+    }
+    const pinnedChatItems = data.pinnedChats
+      .map((chat, index) => mapNavigationChat(chat as PlatformChatSummary, "", `navigation.pinned[${index}]`))
+      .filter((chat): chat is AssistantNavChatItem => Boolean(chat?.agentKey && chat.pinned));
+    return {
+      pinnedChatItems,
+      chatSortMode: sortMode,
+      chatOrderingSupported: true,
+      chatPinningSupported: true,
+    };
   }
 
   private cacheChatSortMode(sortMode: AssistantChatSortMode) {

@@ -80,7 +80,8 @@ export type AssistantNavigationChatsSnapshot = {
 };
 
 export type AssistantNavigationChatOrderSnapshot = {
-  chatPinningSupported?: boolean;
+  pinnedChatItems: AssistantNavChatItem[];
+  chatPinningSupported: boolean;
   chatSortMode: AssistantChatSortMode;
   chatOrderingSupported: boolean;
 };

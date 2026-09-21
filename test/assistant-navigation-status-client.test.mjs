@@ -230,7 +230,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
             type: "/api/chats/order",
             id: request.id,
             code: 0,
-            data: { sortMode: "manual", updatedAt: EPOCH_MS },
+            data: { sortMode: "manual", pinnedChats: [], updatedAt: EPOCH_MS },
           }),
         }));
       }
@@ -482,7 +482,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(reconnected.chatItems.find((chat) => chat.chatId === "react-0")?.hasActiveRun, true);
 });
 
-test("assistant navigation degrades old Platforms to recent without losing Chats", async (t) => {
+test("assistant navigation reports a failed order snapshot without probing a pinned list", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
   const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-old-platform-"));
@@ -555,11 +555,10 @@ test("assistant navigation degrades old Platforms to recent without losing Chats
   t.after(() => client.stop());
 
   const snapshot = await client.refreshNow();
-  assert.equal(snapshot.ok, true);
-  assert.deepEqual(snapshot.chatItems.map((chat) => chat.chatId), ["legacy-chat"]);
-  assert.equal(snapshot.chatSortMode, "recent");
-  assert.equal(snapshot.chatOrderingSupported, false);
-  assert.ok(debugMessages.some((message) => message.includes("chat-order")));
+  assert.equal(snapshot.ok, false);
+  assert.deepEqual(snapshot.chatItems, []);
+  assert.match(snapshot.message, /route not found/);
+  assert.ok(debugMessages.some((message) => message.includes("route not found")));
 });
 
 test("assistant navigation replays chat runtime pushes that arrive during a snapshot refresh", async (t) => {
@@ -606,7 +605,7 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
             type: "/api/chats/order",
             id: request.id,
             code: 0,
-            data: { sortMode: "recent" },
+            data: { sortMode: "recent", pinnedChats: [] },
           }),
         }));
         return;
@@ -1045,7 +1044,7 @@ test("assistant navigation retains its last valid snapshot when a refreshed batc
             type: "/api/chats/order",
             id: request.id,
             code: 0,
-            data: { sortMode: "recent" },
+            data: { sortMode: "recent", pinnedChats: [] },
           }),
         }));
       }
@@ -2281,6 +2280,8 @@ test("navigation fetches global pins independently of the regular and project cu
     lastRunId: "loyw3v28", read: { isRead: false, readRunId: "" },
   });
   const pins = Array.from({ length: 30 }, (_, i) => platformChat(`pin-${i}`, i % 2 ? "CODER" : "REACT", true, i));
+  let orderData = { sortMode: "recent", pinnedChats: pins };
+  let orderFailure = false;
   globalThis.fetch = async (url) => {
     urls.push(String(url));
     return { ok: true, status: 200, json: async () => ({ code: 0, data: [
@@ -2297,8 +2298,12 @@ test("navigation fetches global pins independently of the regular and project cu
     cleanupConsumer() {},
     async forwardRequest(request) {
       requests.push({ type: request.type, payload: request.payload });
+      if (request.type === "/api/chats/order" && orderFailure) {
+        request.onFrame({ frame: "error", type: request.type, code: 503, msg: "snapshot unavailable" });
+        return;
+      }
       const data = request.type === "/api/chats/order"
-        ? { sortMode: "recent", pinnedOrder: pins.map((chat) => chat.chatId) }
+        ? orderData
         : request.payload.pinned
           ? pins
           : Array.from({ length: 25 }, (_, i) => platformChat(`regular-${i}`, "REACT", false, i));
@@ -2319,7 +2324,8 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(result.chatItems.length, 24);
   assert.equal(result.chatItemsHasMore, true);
   assert.equal(result.items.find((agent) => agent.agentKey === "project").recentChats.length, 50);
-  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && request.payload.pinned).payload, { pinned: true });
+  assert.equal(requests.filter((request) => request.type === "/api/chats" && request.payload.pinned === true).length, 0);
+  assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 1);
   assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { mode: "REACT", limit: 25, pinned: false });
   assert.equal(new URL(urls[0]).searchParams.get("chatsPinned"), "false");
   push({ frame: "push", type: "chat.read", data: {
@@ -2337,4 +2343,26 @@ test("navigation fetches global pins independently of the regular and project cu
   client.scheduleRefresh = () => { refreshScheduled = true; };
   push({ frame: "push", type: "chats.order.changed", data: { updatedAt: EPOCH_MS + 200 } });
   assert.equal(refreshScheduled, true);
+
+  // Neither a failed response nor a malformed snapshot may clear live pins.
+  const previousPins = client.getSnapshot().pinnedChatItems;
+  orderFailure = true;
+  const failed = await client.refreshNow();
+  assert.equal(failed.ok, false);
+  assert.match(failed.message, /snapshot unavailable/);
+  assert.deepEqual(failed.pinnedChatItems, previousPins);
+  orderFailure = false;
+  orderData = { sortMode: "recent", pinnedOrder: [] };
+  const malformed = await client.refreshNow();
+  assert.equal(malformed.ok, false);
+  assert.match(malformed.message, /pinnedChats/);
+  assert.deepEqual(malformed.pinnedChatItems, previousPins);
+
+  orderData = { sortMode: "manual", pinnedChats: [] };
+  const empty = await client.refreshNow();
+  assert.equal(empty.ok, true);
+  assert.equal(empty.chatSortMode, "manual");
+  assert.deepEqual(empty.pinnedChatItems, []);
+  assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 4);
+  assert.equal(requests.some((request) => request.type === "/api/chats" && request.payload.pinned === true), false);
 });
