@@ -861,7 +861,9 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
         : entry;
       setMarketResult((current) => ({ ...current, items: current.items.map(applyCompletedState) }));
       setSelectedDetailItem((current) => current ? applyCompletedState(current) : current);
-      setFeedback(item.type === "mcp" && actionName !== "uninstall"
+      setFeedback(item.type === "website-app" && result.type === "website-app" && actionName === "uninstall"
+        ? t("market.websiteApp.uninstalled", { name: item.name })
+        : item.type === "mcp" && actionName !== "uninstall"
         ? `${result.message} ${t("market.mcp.configureInAgentNotice")}`
         : result.message);
       setFeedbackType("success");
