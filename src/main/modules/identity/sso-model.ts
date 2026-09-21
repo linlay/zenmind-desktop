@@ -34,7 +34,7 @@ export type OidcConfig = {
   accessTokenCookie?: AccessTokenCookieConfig;
   accessTokenCookies?: AccessTokenCookieConfig[];
   browserSession?: DesktopSsoBrowserSessionConfig;
-  // Startup recovery only; interactive login retains its configured protocol.
+  // Recovery and runtime renewal use the same credential source; interactive login is unchanged.
   sessionRestore?: { authMode: "cookie" | "bearer" };
   userInfo?: DesktopSsoUserInfoConfig;
   avatarCache?: DesktopSsoAvatarCacheConfig;
@@ -168,6 +168,7 @@ export type FetchResponseLike = {
 };
 
 export type FetchLike = (url: string, init?: {
+  credentials?: "omit" | "same-origin" | "include";
   redirect?: "manual" | "follow" | "error";
   method?: string;
   headers?: Record<string, string>;

@@ -876,6 +876,11 @@
 - 解绑遇到 CLI 无法完成退出时显示后端 warnings；不显示已成功撤销远端授权。
 - 用当前 Platform 的真实 HTTP handlers 验证无授权连接、Token 提交及检查、OAuth 精确取消和 Agent 挂载，不能用旧版 mock 作为新契约验收。
 
+### 企业聊天冷启动与 SSO 续期
+
+- macOS / Windows：使用 Bearer 恢复配置登录后重启；首屏恢复登录、企业聊天入口可见，业务请求触发续期后入口仍保留。换票请求使用当前 Bearer，不携带旧 Cookie，不跟随重定向。
+- 默认 Cookie 模式仍使用浏览器会话。上游明确拒绝会话时清理登录态并隐藏企业聊天；临时网络失败且旧 token 仍有效时不误退出；旧账号迟到响应不得影响新账号。
+
 
 ### Office 在线预览的 CSRF 与顶层页面（macOS / Windows 均执行）
 
