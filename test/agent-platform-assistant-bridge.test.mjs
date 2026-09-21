@@ -1988,3 +1988,27 @@ test("agent platform assistant bridge decodes RFC 5987 UTF-8 filenames from cont
     globalThis.fetch = originalFetch;
   }
 });
+
+test("pet explicit mark read targets one Chat and Run and reports failure", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  let status = 200;
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), method: init.method, body: JSON.parse(String(init.body)) });
+    return new Response(status === 200 ? JSON.stringify({ code: 0, data: {} }) : "read failed", { status });
+  };
+  try {
+    assert.equal((await bridge.markChatRead(" chat_1 ", " run_1 ")).ok, true);
+    assert.deepEqual(requests[0], {
+      url: "http://127.0.0.1:18888/api/read", method: "POST", body: { chatId: "chat_1", runId: "run_1" }
+    });
+    status = 503;
+    assert.equal((await bridge.markChatRead("chat_1", "run_1")).ok, false);
+    assert.equal((await bridge.markChatRead(" ")).ok, false);
+    assert.equal(requests.length, 2);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});

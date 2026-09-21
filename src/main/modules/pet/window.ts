@@ -45,6 +45,7 @@ export function createDesktopPetBrowserWindow(options: {
 }) {
   const isMac = options.platform === "darwin";
   const isWindows = options.platform === "win32";
+  const focusable = options.focusable ?? true;
 
   const win = new BrowserWindow({
     ...options.bounds,
@@ -56,11 +57,14 @@ export function createDesktopPetBrowserWindow(options: {
     minimizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    focusable: options.focusable ?? true,
+    focusable,
     hasShadow: false,
     title: `${PRODUCT_NAME} Desktop Xianzun`,
     backgroundColor: "#00000000",
-    ...(isMac ? { type: "panel" as const } : {}),
+    // macOS non-activating panels are suitable for the sprite, not a reply editor.
+    // The interactive panel must become a key window to receive keyboard/IME input.
+    ...(isMac && !focusable ? { type: "panel" as const } : {}),
+    ...(isMac && focusable ? { acceptFirstMouse: true } : {}),
     ...(isWindows ? { thickFrame: false } : {}),
     webPreferences: {
       preload: options.preloadPath,

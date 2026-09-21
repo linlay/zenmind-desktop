@@ -19,7 +19,7 @@ test("assistant chat navigation never writes read state and keeps explicit mark-
   assert.doesNotMatch(contracts, /markChatRead/);
   assert.doesNotMatch(preload, /markChatRead|assistant\.markChatRead/);
   assert.doesNotMatch(assistantHandlers, /assistant\.markChatRead|\.markChatRead\(/);
-  assert.doesNotMatch(bridge, /async markChatRead\(/);
+  assert.match(bridge, /async markChatRead\(/); // Only explicit pet dismissal uses this Main-internal method.
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /markAgentChatsRead: \(agentKey: string\) => ipcRenderer\.invoke\("assistant\.markAgentChatsRead", agentKey\)/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.markAgentChatsRead"/);

@@ -27,7 +27,7 @@ import {
 import type { AgentPlatformRealtimeSocketFactory } from "./realtime/agent-platform-realtime-client";
 import { ActiveAssistantRun, AgentPlatformChatExportResult, AgentPlatformImageCompletionRequest, AgentPlatformImageCompletionResult, AgentPlatformRawChatJSONLResult, AssistantRunWakeLock } from "./bridge.shared";
 import { AgentPlatformAssistantBridge_acquireWakeLockForActiveRuns_1, AgentPlatformAssistantBridge_releaseWakeLockIfIdle_2, AgentPlatformAssistantBridge_startRun_3, AgentPlatformAssistantBridge_completeText_4, AgentPlatformAssistantBridge_completeImage_5, AgentPlatformAssistantBridge_stopRun_6, AgentPlatformAssistantBridge_submitAwaiting_7, AgentPlatformAssistantBridge_listAgents_8, AgentPlatformAssistantBridge_listMcpRuntimeStatuses_9, AgentPlatformAssistantBridge_listNavigationAgents_10, AgentPlatformAssistantBridge_listCopilotAgents_11, AgentPlatformAssistantBridge_listChats_12, AgentPlatformAssistantBridge_listHistoryChats_13 } from "./bridge.methods-1";
-import { AgentPlatformAssistantBridge_getChat_1, AgentPlatformAssistantBridge_getChatInfo_2, AgentPlatformAssistantBridge_searchChats_3, AgentPlatformAssistantBridge_deleteChat_4, AgentPlatformAssistantBridge_markAgentChatsRead_5, AgentPlatformAssistantBridge_renameChat_6, AgentPlatformAssistantBridge_archiveChat_7, AgentPlatformAssistantBridge_downloadChatExport_8, AgentPlatformAssistantBridge_createChatSnapshotRequest_9, AgentPlatformAssistantBridge_downloadRawChatJSONL_10 } from "./bridge.methods-2";
+import { AgentPlatformAssistantBridge_markChatRead, AgentPlatformAssistantBridge_getChat_1, AgentPlatformAssistantBridge_getChatInfo_2, AgentPlatformAssistantBridge_searchChats_3, AgentPlatformAssistantBridge_deleteChat_4, AgentPlatformAssistantBridge_markAgentChatsRead_5, AgentPlatformAssistantBridge_renameChat_6, AgentPlatformAssistantBridge_archiveChat_7, AgentPlatformAssistantBridge_downloadChatExport_8, AgentPlatformAssistantBridge_createChatSnapshotRequest_9, AgentPlatformAssistantBridge_downloadRawChatJSONL_10 } from "./bridge.methods-2";
 import { AgentPlatformAssistantBridge_runQuery_1, AgentPlatformAssistantBridge_dispose_2, AgentPlatformAssistantBridge_bestEffortInterrupt_3, AgentPlatformAssistantBridge_readPersistedFinalAssistantMessage_4, AgentPlatformAssistantBridge_uploadAttachments_5, AgentPlatformAssistantBridge_uploadAttachment_6, AgentPlatformAssistantBridge_attachmentToBlob_7, AgentPlatformAssistantBridge_getJson_8, AgentPlatformAssistantBridge_resolvePlatform_9, AgentPlatformAssistantBridge_platformFetch_10, AgentPlatformAssistantBridge_jsonHeaders_11 } from "./bridge.methods-3";
 
 export type AgentPlatformAssistantBridgePorts = {
@@ -112,6 +112,7 @@ export class AgentPlatformAssistantBridge {
 
   async deleteChat(chatId: string) { return AgentPlatformAssistantBridge_deleteChat_4(this, chatId); }
 
+  async markChatRead(chatId: string, runId?: string | null) { return AgentPlatformAssistantBridge_markChatRead(this, chatId, runId); }
   async markAgentChatsRead(agentKey: string) { return AgentPlatformAssistantBridge_markAgentChatsRead_5(this, agentKey); }
 
   async renameChat(chatId: string, chatName: string) { return AgentPlatformAssistantBridge_renameChat_6(this, chatId, chatName); }
