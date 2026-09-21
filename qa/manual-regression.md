@@ -876,7 +876,17 @@
 - 解绑遇到 CLI 无法完成退出时显示后端 warnings；不显示已成功撤销远端授权。
 - 用当前 Platform 的真实 HTTP handlers 验证无授权连接、Token 提交及检查、OAuth 精确取消和 Agent 挂载，不能用旧版 mock 作为新契约验收。
 
+
+### Office 在线预览的 CSRF 与顶层页面（macOS / Windows 均执行）
+
+- 配置浏览器可达的 document-hub，在 WorkPanel 分别打开 DOCX、PPTX、XLSX 并点击在线预览：新建普通网页 Tab 直接加载分享页，原文件 Tab 保留，预览页内部不报 CSRF 校验失败。
+- WebClient 与 document-hub 使用不同站点，清除文档服务 Cookie 后重试，确认编辑器配置请求正常完成；不修改 SameSite、安全策略或服务端 CSRF 校验。
+- 预览页刷新、切换 Tab、关闭以及返回原文件重新预览正常；分享失效时由服务拒绝，原文件可重新生成链接。
+- WorkPanel bridge 不可用或打开失败时在原文件显示错误并可重试，不在 WebClient 中回退嵌入 iframe。external 模式继续由用户点击打开系统浏览器。
+
 ### Tunnel 登录联动
 
 - macOS / Windows：无登录凭据时导入 enabled=true 和有效 Relay 地址，环境初始化成功；设置开关保持开启，不发起注册或连接。登录后自动连接，退出后停止，再次登录自动恢复，无需重新开关。
 - 认证暂不可用时停止连接，恢复认证后自动重连；注册或连接进行中退出登录，迟到结果不能重连。手动关闭后再次登录保持关闭。
+
+- 从 file、artifact、reference 三种文件页点击在线预览，确认宿主 capabilities 和实际 openItem 均成功；未授权管理页、其他 Chat 参数、非 HTTP(S) 地址及原生 descriptor 必须拒绝。

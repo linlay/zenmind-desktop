@@ -1476,3 +1476,70 @@ test("physical diagnostics redact selection text and annotation in requests and 
     assert.equal(reference.annotation, "private instruction");
   }
 });
+
+test("document WorkPanel guests can open only websites in their registered owner Chat", async () => {
+  for (const role of ["file", "artifact", "reference"]) {
+    const target = childTarget(202, role, "agent-management");
+    const dispatched = [];
+    const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+      dispatchWorkPanel: async (input) => {
+        dispatched.push(input);
+        return { ok: true, workspaceId: "workspace-1" };
+      },
+    });
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    const invoke = (call) => runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, call);
+    assert.ok((await invoke({ method: "getCapabilities" })).capabilities.includes("workpanel.open"));
+    const descriptor = { kind: "web", url: "https://docs.example.test/s/preview", title: "Report" };
+    assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor } })).ok, true);
+    assert.deepEqual(dispatched, [{ action: "openItem", ownerChatId: "chat-1", args: { descriptor } }]);
+    for (const method of ["openResource", "openDocument"]) {
+      assert.equal((await invoke({ method, input: { version: 6 } })).error.code, "capability_denied");
+    }
+    for (const kind of ["native", "webclient", "webapp-ref", "local-file"]) {
+      assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor: { kind } } })).error.code, "capability_denied");
+    }
+    for (const url of ["file:///tmp/report.docx", "javascript:alert(1)", "https://user:secret@docs.test/", "blob:https://docs.test/test"]) {
+      assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor: { ...descriptor, url } } })).error.code, "invalid_request");
+    }
+    for (const input of [
+      { version: 6, descriptor, ownerChatId: "other-chat" },
+      { version: 6, descriptor: { ...descriptor, ownerChatId: "other-chat" } },
+    ]) {
+      assert.equal((await invoke({ method: "openItem", input })).error.code, "invalid_request");
+    }
+    assert.equal(dispatched.length, 1);
+    sender.setURL("https://untrusted.test/");
+    assert.equal((await invoke({ method: "getCapabilities" })).error.code, "surface_unavailable");
+    runtime.registration.cleanupSender(sender.id);
+  }
+});
+
+test("other secondary surfaces do not gain document website opening privileges", async () => {
+  for (const [role, kind] of [["agent", "agent-management"], ["project", "agent-project"], ["debug", "agent-debug"], ["btw", "agent-btw"], ["selection-explain", "agent-selection-explain"]]) {
+    const target = childTarget(202, role, kind);
+    const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    const invoke = (call) => runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, call);
+    assert.equal((await invoke({ method: "getCapabilities" })).capabilities.includes("workpanel.open"), false);
+    assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor: { kind: "web", url: "https://docs.test/" } } })).error.code, "capability_denied");
+    runtime.registration.cleanupSender(sender.id);
+  }
+});
+
+
+test("document opening requires a registered child and owner Chat", async () => {
+  for (const overrides of [{ surfaceLevel: "root" }, { ownerChatId: "" }]) {
+    const target = childTarget(202, "file", "agent-management", overrides);
+    let dispatched = false;
+    const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+      dispatchWorkPanel: async () => { dispatched = true; return { ok: true }; },
+    });
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    const result = await runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, {
+      method: "openItem", input: { version: 6, descriptor: { kind: "web", url: "https://docs.test/" } },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(dispatched, false);
+  }
+});

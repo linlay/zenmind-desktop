@@ -87,7 +87,7 @@ canonical Desktop/WebClient bridge v6 增加 `openDocument`，同时保留旧方
 
 Platform 上传的 Reference 可以是 Chat 根目录的单个文件名，也可以位于 `references/` 下。WebClient 打开、当前资源操作及 Desktop 本地解析使用相同的来源规则；Artifact 仍限于 `artifacts/`。owner Chat、规范路径和 realpath 校验继续生效。根目录 HTML Reference 只允许读取自身，不因此获得相邻 Chat 文件的读取权限。
 
-DOCX 正文由共用 WebClient Document Surface 承载，只读显示文字、表格、内嵌图片、分页和缩放，不依赖系统安装的 Office 或转换服务。随包分发的渲染库在独立 opaque-origin sandbox iframe 中运行；只有固定 nonce 脚本可执行，文档自带脚本、HTML altChunk、远端资源和表单均被禁止。父页面按 frame source 和随机 token 验证窄消息通道，只交付文档字节与阅读控制，不交付凭据或 Desktop 能力。下载仍返回原件；Reference 不可覆盖。其他 Office 格式保留现有元信息及显式文件操作。
+DOCX、PPTX、XLSX 由 WebClient 的文件元信息卡发起在线预览。Platform 准备只读分享链接，Desktop 通过已有 WorkPanel bridge 将其交给 owner Chat 的独立普通网页 Tab，以顶层 WebView 加载。不能在本地 WebClient 中再嵌跨站预览 iframe，否则文档服务的 SameSite=Strict CSRF Cookie 无法发送。该网页沿用普通 WorkPanel Web 的 session、导航、URL 去重和关闭规则，不获得 Platform Token 或可信 WebClient bridge，也不放宽服务端 CSRF 校验。可信的 file、artifact、reference 子 Surface 只允许通过 openItem 打开 HTTP(S) 网页，归属始终取 Main Registry 的 owner Chat；不允许自报其他 Chat、打开原生文档或借此获得其他页面的权限。原文件 Tab 保留；链接失效后从原文件重新获取，未配置服务或 bridge 失败时明确显示原因。服务明确指定 external 模式时保留用户点击的外部浏览器入口。下载仍返回原件，Reference 不可覆盖。
 
 ## 网页身份与操作
 

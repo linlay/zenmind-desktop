@@ -40,8 +40,12 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleWorkPanelInv
             ? { ok: true, capabilities: [] }
             : failure("capability_denied", "selection explanation cannot access WorkPanel");
     }
+    const documentSurface = context.kind === "agent-management" &&
+        context.target.surfaceLevel === "child" &&
+        ["file", "artifact", "reference"].includes(context.target.surfaceRole);
     const capabilities = [
         ...(context.kind === "agent-chat" || context.kind === "agent-copilot" || context.kind === "agent-overview"
+            || documentSurface
             ? ["workpanel.open" as const]
             : []),
         "workpanel.activate" as const,
@@ -63,6 +67,24 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleWorkPanelInv
         (inputVersion === 5 && method === "openResource");
     if (!compatibleVersion) {
         return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
+    }
+    // Document guests may open a preview website in their registered owner Chat,
+    // but do not inherit the Chat surface's native/document opening privileges.
+    if (documentSurface && (method === "openItem" || method === "openResource" || method === "openDocument")) {
+        const descriptor = (input as WorkPanelOpenItemInput).descriptor;
+        if (method !== "openItem" || !isPlainBridgeRecord(descriptor) || descriptor.kind !== "web") {
+            return failure("capability_denied", "Document surfaces may only open WorkPanel websites");
+        }
+        if (Object.keys(input).some((key) => !["version", "descriptor"].includes(key)) ||
+            Object.keys(descriptor).some((key) => !["kind", "url", "title", "pinned", "closable"].includes(key))) {
+            return failure("invalid_request", "Invalid document preview website request");
+        }
+        try {
+            const url = new URL(readText(descriptor.url));
+            if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("invalid URL");
+        } catch {
+            return failure("invalid_request", "Document preview requires an HTTP(S) URL without credentials");
+        }
     }
     if (inputVersion === 4 || inputVersion === 5) {
         reportDeprecatedCompatibilityUse(inputVersion === 4 ? "agent-webclient.bridge-v4" : "agent-webclient.bridge-v5", { version: inputVersion, method });
