@@ -1,11 +1,11 @@
 import type { App } from "electron";
 import type { MarketSkillContentResult } from "../../../shared/contracts/market-skill-detail";
-import { getMarketApiBaseUrl, readResponseBytesWithLimit, requestPublicMarketJson, resolveMarketFetchImpl, type MarketplaceOptions } from "./common";
+import { getMarketApiBaseUrl, readResponseBytesWithLimit, requestVisibleMarketJson, resolveMarketFetchImpl, type MarketplaceOptions } from "./common";
 
 const MAX_SKILL_CONTENT_BYTES = 256 * 1024;
 const SKILL_CONTENT_TIMEOUT_MS = 15_000;
 
-/** Public metadata reads intentionally never enter Market's authenticated request path. */
+/** Use the same server visibility identity as the catalog, including restricted skills. */
 export async function readMarketSkillContent(
   app: App,
   id: unknown,
@@ -25,6 +25,7 @@ export async function readMarketSkillContent(
       redirect: "error",
       signal: AbortSignal.timeout(SKILL_CONTENT_TIMEOUT_MS)
     });
+    if (response.status === 401) return response;
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       throw new Error("market_skill_content_unavailable");
@@ -34,7 +35,7 @@ export async function readMarketSkillContent(
   };
   let payload: unknown;
   try {
-    payload = await requestPublicMarketJson(app, `${baseUrl}/skills/${encodeURIComponent(id)}/skill-md`,
+    payload = await requestVisibleMarketJson(app, `${baseUrl}/skills/${encodeURIComponent(id)}/skill-md`,
       { ...options, fetchImpl: boundedFetch }, "public skill documentation");
   } catch {
     // Remote error bodies can contain server paths or sensitive diagnostic data.

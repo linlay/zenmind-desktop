@@ -7,6 +7,7 @@ import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, S
 import type { PluginInstallResult } from "./manifest";
 import type { MarketSkillContentResult } from "./market-skill-detail";
 import type { MarketSkillPins, MarketSkillPinUpdate } from "./market-skill-pins";
+import type { MarketConnectorConnection, MarketConnectorAuthSession, MarketConnectorPreparation, MarketConnectorDisconnectResult, MarketConnectorTokenSchema, MarketConnectorAgentState } from "./market-connector-state";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
@@ -894,6 +895,9 @@ export interface DesktopApi {
     onChanged: (listener: () => void) => () => void;
   };
   connectorAuthBrowser: {
+    open(input: import("./agent-webclient-bridge").ConnectorAuthBrowserIdentity & { browser?: "embedded" }): Promise<void>;
+    dismiss(input: import("./agent-webclient-bridge").ConnectorAuthBrowserIdentity): Promise<void>;
+    onClosed(listener: (input: import("./agent-webclient-bridge").ConnectorAuthBrowserIdentity) => void): () => void;
     onDialog(listener: (input: import("./agent-webclient-bridge").ConnectorAuthBrowserDialog | { dialogId: string; closed: true }) => void): () => void;
     close(dialogId: string): Promise<void>;
   };
@@ -1103,6 +1107,21 @@ export interface DesktopApi {
     onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
+    importConnector(): Promise<MarketCommandResult>;
+    createConnector(input: { connectorJson: string; mcpJson?: string; cliJson?: string }): Promise<MarketCommandResult>;
+    getConnectorConnections(): Promise<MarketConnectorConnection[]>;
+    getConnectorConnection(id: string): Promise<MarketConnectorConnection>;
+    prepareConnector(id: string): Promise<MarketConnectorPreparation>;
+    connectConnector(id: string): Promise<MarketConnectorAuthSession>;
+    cancelConnectorConnection(input: { connectorId: string; sessionId: string }): Promise<MarketConnectorConnection>;
+    checkConnectorConnection(connectorId: string): Promise<MarketConnectorConnection>;
+    disconnectConnector(id: string): Promise<MarketConnectorDisconnectResult>;
+    getConnectorTokenSchema(id: string): Promise<MarketConnectorTokenSchema>;
+    getCustomMcpConfig(): Promise<{ path: string; content: string }>;
+    saveCustomMcpConfig(input: { content: string }): Promise<{ path: string; content: string }>;
+    saveConnectorCredentials(input: { connectorId: string; credentials: Record<string, string> }): Promise<MarketConnectorConnection>;
+    setConnectorAgent(input: { connectorId: string; agentKey: string; enabled: boolean }): Promise<MarketConnectorAgentState>;
+    getConnectorAgent(agentKey: string): Promise<MarketConnectorAgentState>;
     readSkillContent: (id: string) => Promise<MarketSkillContentResult>;
     getSkillPins: () => Promise<MarketSkillPins>;
     saveSkillPins: (update: MarketSkillPinUpdate) => Promise<MarketSkillPins>;

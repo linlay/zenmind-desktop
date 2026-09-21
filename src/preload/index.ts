@@ -1,6 +1,6 @@
 import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import { CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
+import { CONNECTOR_AUTH_BROWSER_EVENT, CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
   AssistantEvent,
   AssistantChatOrderMutationRequest,
@@ -78,6 +78,7 @@ import {
   SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL,
 } from "../shared/selection-explain-window";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
+import { CONNECTOR_AUTH_BROWSER_HOST_REQUEST } from "../shared/connector-auth-host";
 import {
   CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL,
   CHAT_WORK_PANEL_WEB_DIALOG_OPEN_REQUESTED,
@@ -117,6 +118,13 @@ const api: DesktopApi = {
     },
   },
   connectorAuthBrowser: {
+    open: input => ipcRenderer.invoke(CONNECTOR_AUTH_BROWSER_HOST_REQUEST, { action: "open", input }),
+    dismiss: input => ipcRenderer.invoke(CONNECTOR_AUTH_BROWSER_HOST_REQUEST, { action: "close", input }),
+    onClosed(listener) {
+      const handler = (_event: unknown, input: Parameters<typeof listener>[0]) => listener(input);
+      ipcRenderer.on(CONNECTOR_AUTH_BROWSER_EVENT, handler);
+      return () => { ipcRenderer.off(CONNECTOR_AUTH_BROWSER_EVENT, handler); };
+    },
     onDialog(listener) {
       const handler = (_event: unknown, input: Parameters<typeof listener>[0]) => listener(input);
       ipcRenderer.on(CONNECTOR_AUTH_BROWSER_HOST_EVENT, handler);
@@ -455,6 +463,21 @@ const api: DesktopApi = {
     },
   },
   market: {
+    importConnector: () => ipcRenderer.invoke("market.importConnector"),
+    createConnector: input => ipcRenderer.invoke("market.createConnector", input),
+    getConnectorConnections: () => ipcRenderer.invoke("market.getConnectorConnections"),
+    getConnectorConnection: id => ipcRenderer.invoke("market.getConnectorConnection", id),
+    prepareConnector: id => ipcRenderer.invoke("market.prepareConnector", id),
+    connectConnector: id => ipcRenderer.invoke("market.connectConnector", id),
+    cancelConnectorConnection: input => ipcRenderer.invoke("market.cancelConnectorConnection", input),
+    checkConnectorConnection: input => ipcRenderer.invoke("market.checkConnectorConnection", input),
+    disconnectConnector: id => ipcRenderer.invoke("market.disconnectConnector", id),
+    getConnectorTokenSchema: id => ipcRenderer.invoke("market.getConnectorTokenSchema", id),
+    getCustomMcpConfig: () => ipcRenderer.invoke("market.getCustomMcpConfig"),
+    saveCustomMcpConfig: input => ipcRenderer.invoke("market.saveCustomMcpConfig", input),
+    saveConnectorCredentials: input => ipcRenderer.invoke("market.saveConnectorCredentials", input),
+    setConnectorAgent: input => ipcRenderer.invoke("market.setConnectorAgent", input),
+    getConnectorAgent: key => ipcRenderer.invoke("market.getConnectorAgent", key),
     readSkillContent: (id: string) => ipcRenderer.invoke("market.readSkillContent", id),
     getSkillPins: () => ipcRenderer.invoke("market.getSkillPins"),
     saveSkillPins: (pins) => ipcRenderer.invoke("market.saveSkillPins", pins),

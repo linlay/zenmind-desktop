@@ -35,7 +35,7 @@ import { type StartupPhase } from "./lifecycle/startup-phases";
 import { createNoPrimaryShutdownReport, parseInstallerShutdownRequest, writeShutdownAck } from "./lifecycle/shutdown-ack";
 import { type ResourceDirectoryWatcher } from "./resource-directory-watcher";
 import { configureAgentMarketPlatformCaller } from "../modules/marketplace";
-import { configureSkillMarketPlatformCaller } from "../modules/marketplace";
+import { configureSkillMarketPlatformCaller, configureConnectorMarketPlatformCaller } from "../modules/marketplace";
 import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
 import { createMainProcessRuntime_block14_2, createMainProcessRuntime_block17_3, createMainProcessRuntime_block18_4, createMainProcessRuntime_startupRestoreController_5, createMainProcessRuntime_webSurfaceRuntime_6, createMainProcessRuntime_webviewContextMenuController_7, createMainProcessRuntime_enterpriseChatRuntime_8, createMainProcessRuntime_cdpIntegration_9, createMainProcessRuntime_systemIdentityRuntime_10, createMainProcessRuntime_setStartupPhase_11, createMainProcessRuntime_initializeUserDataRootsAndSettings_12, createMainProcessRuntime_delay_13, createMainProcessRuntime_selectionExplainWindowController_14 } from "./runtime.operations-1";
 import { createMainProcessRuntime_logsRuntime_1, createMainProcessRuntime_block68_2, createMainProcessRuntime_startupEnvironmentRuntime_3, createMainProcessRuntime_block71_4, createMainProcessRuntime_block72_5, createMainProcessRuntime_desktopSsoController_6, createMainProcessRuntime_block74_7, createMainProcessRuntime_block75_8, createMainProcessRuntime_settingsRuntime_9, createMainProcessRuntime_block77_10, createMainProcessRuntime_startupPipeline_11 } from "./runtime.operations-2";
@@ -189,6 +189,9 @@ export function createMainProcessRuntime() {
     callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
   configureSkillMarketPlatformCaller((targetPath, options) =>
+    callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
+  );
+  configureConnectorMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
   const websIntegrationPorts = createMainProcessRuntime_block14_2(factoryContext);

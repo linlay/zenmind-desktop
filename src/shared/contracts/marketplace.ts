@@ -1,5 +1,5 @@
-export type MarketItemType = "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "mcp" | "website-app" | "software-package";
-export type MarketSection = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "mcps" | "websiteApps" | "softwarePackages";
+export type MarketItemType = "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "mcp" | "connector" | "website-app" | "software-package";
+export type MarketSection = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "mcps" | "connectors" | "websiteApps" | "softwarePackages";
 export type MarketInstallState =
   | "not-installed"
   | "installed"
@@ -95,6 +95,7 @@ export interface MarketSkillProfile {
 }
 
 export interface MarketCatalogItem {
+  featured?: boolean;
   skillFeatured?: boolean;
   id: string;
   type: MarketItemType;
@@ -125,6 +126,8 @@ export interface MarketCatalogItem {
 }
 
 export interface MarketItem {
+  connectorId?: string;
+  connectorInstalled?: boolean;
   skillFeatured?: boolean;
   id: string;
   type: MarketItemType;
@@ -201,6 +204,8 @@ export interface MarketListResult {
   cliOffline?: boolean;
   mcpMessage?: string;
   mcpOffline?: boolean;
+  connectorMessage?: string;
+  connectorOffline?: boolean;
   websiteAppMessage?: string;
   websiteAppOffline?: boolean;
   softwarePackageMessage?: string;
@@ -225,6 +230,8 @@ export interface MarketFavoriteResult {
 }
 
 export interface MarketCommandResult {
+  canceled?: boolean;
+  connectorId?: string;
   ok: boolean;
   itemId: string;
   type: MarketItemType;

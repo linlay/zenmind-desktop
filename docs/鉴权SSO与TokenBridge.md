@@ -131,3 +131,7 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 - Realtime/WorkPanel bridge：`src/main/modules/agent-platform/ipc.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
 - Tunnel Hub 身份桥：`src/main/modules/tunnel/registration.ts`、`src/main/modules/tunnel/runtime.ts`、`src/main/modules/tunnel/client-endpoint.ts`
 - 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/service-webview-main-world.test.mjs`
+
+## 连接器的实例授权
+
+连接器绑定、启用和凭据由当前 Platform 实例统一管理，不随 Desktop 登录账号切换。保留主线为应用访问签发的已验证个人主体及其 WebApp、会话权限边界，但该主体不用于选择连接器凭据目录。企业 SSO 继续用于市场可见性和 OneID 令牌供给；退出后 OneID 调用受企业会话有效性约束，其他连接器授权由显式解绑清理。

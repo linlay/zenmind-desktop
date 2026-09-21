@@ -67,6 +67,8 @@ export type MarketplaceOptions = MarketListOptions & {
   containerHubAuthToken?: string;
   fetchImpl?: typeof fetch;
   issueMarketAccessToken?: MarketAccessTokenIssuer;
+  /** Main-process identity snapshot; null keeps browsing anonymous. Never supplied by renderer IPC. */
+  readMarketViewer?: () => string | null;
   createContainerHubClient?: (config: {
     baseURL: string;
     authToken?: string;
@@ -88,7 +90,7 @@ export type MarketAccessTokenIssuer = (
   reason: MarketAccessTokenReason
 ) => Promise<string> | string;
 
-export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "mcp" | "website-app" | "software-package">;
+export type InstallableMarketType = MarketItemType;
 
 export type MarketSectionResult = {
   items: MarketItem[];
@@ -198,6 +200,7 @@ export function isMarketItemType(value: unknown): value is MarketItemType {
     value === "pet" ||
     value === "cli" ||
     value === "mcp" ||
+    value === "connector" ||
     value === "website-app" ||
     value === "software-package"
   );
@@ -215,6 +218,7 @@ export function normalizeMarketItemType(value: unknown): MarketItemType | null {
     value === "pet" ||
     value === "cli" ||
     value === "mcp" ||
+    value === "connector" ||
     value === "website-app" ||
     value === "software-package"
   ) {
@@ -411,7 +415,7 @@ export function isDesktopInstallableAsset(
   item: Pick<MarketCatalogItem, "type" | "sandboxKind">,
   asset: MarketAsset
 ) {
-  if (item.type === "plugin" || item.type === "skill") {
+  if (item.type === "plugin" || item.type === "skill" || item.type === "connector") {
     return asset.archiveType === "zip";
   }
   if (item.type === "agent") {
@@ -440,6 +444,7 @@ export function isDesktopInstallableAsset(
 
 export function shouldRequireInstallableAsset(item: MarketCatalogItem) {
   return item.type === "plugin" ||
+    item.type === "connector" ||
     (item.type === "skill" && item.skill?.kind !== "package") ||
     item.type === "agent" ||
     item.type === "pet" ||
@@ -531,7 +536,9 @@ export function normalizeCatalog(input: unknown): Catalog {
       favoriteCount,
       favorited,
       skill: normalizeSkillProfile(item.skill),
-      skillFeatured: typeof item.skillFeatured === "boolean" ? item.skillFeatured : asObject(item.skill).featured === true,
+      // Featured is administrator-owned item metadata; legacy skill flags cannot override removal.
+      featured: item.featured === true,
+      skillFeatured: item.featured === true,
       dependencies: normalizeDependencies(item.dependencies),
       metadata,
       targets,
