@@ -92,6 +92,18 @@
   background: transparent;
 }
 
+/* Kanban shares the main column's reading veil. Keep cards and dialogs on
+   their own surfaces, without stacking opaque board layers over the image. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-kanban-controls > .app-content > .app-main,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-kanban-controls > .app-content > .app-main {
+  background: color-mix(in srgb, var(--bg-base) 88%, transparent);
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-kanban-controls :is(.kanban-page, .kanban-toolbar, .kanban-columns, .kanban-column),
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-kanban-controls :is(.kanban-page, .kanban-toolbar, .kanban-columns, .kanban-column) {
+  background: transparent;
+}
+
 /* Help has its own anonymous guest, outside the Agent WebClient appearance
    bridge. Clear only Desktop-owned layers; the help document owns its canvas. */
 :root[data-desktop-background="image"] .app-shell.has-help-surface > .app-content,
