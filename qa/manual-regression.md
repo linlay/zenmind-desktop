@@ -287,6 +287,8 @@
 - 分别开启和关闭桌宠发送 Main Chat Query，并覆盖 `run.started` Push 早于、晚于 Query `run.start` 两种顺序；两种情况下都只允许一次 `/api/query`。确认桌宠不注册独立 Broker consumer、不单独请求 `/api/agents` 或 `/api/chats`、不消费 Assistant Run 逐事件流，只在 Navigation 应用 `desktop-main` Primary Push 并发布新快照后更新，不得创建 RunChannel、发送 `/api/attach` 或导致 `duplicate_id`。
 - 构造 Chats unread=2、pending=1，Projects unread=4、pending=2，确认 Nav Bar 分组数字分别保持该值，桌宠同时显示蓝色 unread=6 与橙色 pending=3；将对应 Chat read、awaiting answered 后，两处必须在同一 Navigation Push 投影后一起减少。折叠/展开 Chats、从 8 条增加到 24 条不改变统计口径；重启及 Primary 断线重连后不得恢复消息缓存或本地持久化中的旧数字。
 - 展开桌宠“对话概览”，确认仅显示七天内的 unread 与 awaiting 会话，视窗完整容纳三条并可用滚轮继续浏览；标题为 13px 中等字重、摘要为 12px 次级文字，列表使用轻分隔线，unread 为蓝点、awaiting 为橙色时钟且不显示回复入口。默认标题与摘要占满行宽，不预留操作按钮的空白；hover 或键盘焦点进入该条消息时，文字为右侧独立网格列中的回复和关闭按钮让位，两按钮不得重叠；键盘 Tab 可访问关闭按钮且焦点清晰，回复输入框独占下一行；关闭表示标为已读并关闭，成功后移除该版本提醒；回复成功只提交新 Run，不调用 `/api/read`。打开对话只导航到 Main Chat，必须等内容显示后由 WebClient 发 read，并在 Platform `chat.read` Push 到达后让桌宠与 Sidebar 同步转为 read；单纯 hover、滚动和展开列表不得标记已读。
+- 桌宠混合提醒中 awaiting 排在普通 unread 前，同类按更新时间倒序；超过 50 条时较旧 awaiting 不被普通 unread 挤出。运行中 Chat 收到 `chat.updated` 的 `activeRun: null` 后再清空 unread，已结束任务不得重新显示为进行中，其他活动任务继续保留；未提供 activeRun 的普通更新不得清除运行状态。
+- 桌宠未读与待确认均为 0、仍有运行任务时，人物显示运行数量；展开/收起面板均保留数字。上方任务面板在 1/2/多任务时贴近人物，两项任务均完整显示；下方布局仍靠窗口顶部。
 - 构造 12 条 unread 提醒，关闭 10 条，确认每次通过 Platform 单 Chat `/api/read` 标记对应 Chat/Run 已读，`chat.read` Push 后宠物与侧栏未读同步降至 2；全部关闭后未读角标消失。“+N 更多”保留现有展示，数量随权威未读状态更新。请求失败或断网时卡片保留、提示失败且可重试，请求期间关闭按钮禁用；旧版本卡片不得标记新 Run 已读，同一会话新 Run 的提醒正常恢复。macOS 与 Windows 均需验证。
 - macOS 与 Windows 在其他应用前台时展开宠物概览，确认展开不抢键盘焦点；点击“回复”后可输入中文、英文，退格、取消和发送正常。收到导航推送后输入焦点与草稿保持；宠物人物窗口仍不抢焦点。
 - 桌宠概览在浅色/深色及 280/376/424px 宽度下检查原有浅青色半透明背景、标题与摘要层级、Markdown 摘要清理和 +N 更多；回复输入独占一行，与操作按钮相隔 12px，发送按钮下方有留白，列表滚动时卡片不得压缩并与下一条消息重叠。

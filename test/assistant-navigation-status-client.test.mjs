@@ -2366,3 +2366,27 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 4);
   assert.equal(requests.some((request) => request.type === "/api/chats" && request.payload.pinned === true), false);
 });
+
+test("explicit activeRun null clears finished tasks before unread is cleared", () => {
+  const initial = [
+    createNavigationChat({ chatId: "finished", lastRunId: "run-finished", hasActiveRun: true, isRead: false }),
+    createNavigationChat({ chatId: "still-running", hasActiveRun: true }),
+  ];
+  const frame = { frame: "push", type: "chat.updated", data: {
+    agentKey: "zenmi", chatId: "finished", activeRun: null, updatedAt: EPOCH_MS + 1,
+  } };
+  const finished = applyAssistantNavigationChatPush(initial, frame).items;
+  assert.equal(finished[0].hasActiveRun, false);
+  assert.equal(finished[0].isRead, false);
+  assert.equal(finished[1].hasActiveRun, true);
+  const read = applyAssistantNavigationChatPush(finished, { frame: "push", type: "chat.read", data: {
+    agentKey: "zenmi", chatId: "finished", lastRunId: "run-finished", agentUnreadCount: 0, readRunId: "run-finished", readAt: EPOCH_MS + 2,
+  } }).items;
+  assert.equal(read[0].isRead, true);
+  assert.equal(read[0].hasActiveRun, false);
+  assert.equal(read[1].hasActiveRun, true);
+  const omitted = applyAssistantNavigationChatPush(initial, { ...frame, data: {
+    agentKey: "zenmi", chatId: "finished", updatedAt: EPOCH_MS + 1,
+  } }).items;
+  assert.equal(omitted[0].hasActiveRun, true);
+});
