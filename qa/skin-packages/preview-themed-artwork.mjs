@@ -13,7 +13,7 @@ for(const mode of ['light','dark']){
   const x=i%2*720,y=Math.floor(i/2)*540;
   ctx.fillStyle=v.tokens['--bg-base'];ctx.fillRect(x,y,720,540);
   ctx.fillStyle=v.tokens['--ink'];ctx.font='bold 24px CollectionSans';ctx.fillText(names[i],x+28,y+38);
-  const slots=['navigation.search','navigation.back','navigation.forward','navigation.sidebar_left','navigation.sidebar_right','navigation.refresh','navigation.more_actions','entry.kanban','entry.automation','entry.new_chat','entry.project','entry.chat','entry.website','chat.send','chat.stop','chat.attach','chat.expand','chat.collapse','chat.screenshot','chat.voice','agent.terminal','agent.database','agent.library'];
+  const slots=['navigation.search','navigation.back','navigation.forward','navigation.sidebar_left','navigation.sidebar_right','navigation.refresh','navigation.more_actions','entry.kanban','entry.automation','entry.new_chat','entry.project','entry.chat','entry.website','chat.send','chat.stop','chat.attach','chat.expand','chat.collapse','chat.voice','agent.terminal','agent.database','agent.library'];
   for(let j=0;j<slots.length;j++){
    const xx=x+28+j%8*85, yy=y+66+Math.floor(j/8)*100;
    if(slots[j]==='chat.send'){ctx.fillStyle=v.tokens['--control-primary-bg'];ctx.fillRect(xx,yy,52,52);}

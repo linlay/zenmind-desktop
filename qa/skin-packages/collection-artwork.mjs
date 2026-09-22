@@ -57,9 +57,9 @@ export async function createCollectionArtwork(manifest, key) {
       const canvas = createCanvas(96, 96);canvas.getContext('2d').drawImage(await loadImage(Buffer.from(svg)), 0, 0);
       files.set(`visuals/${mode}-${name}.png`, canvas.toBuffer('image/png'));
     }
-    for (const [slot, name] of Object.entries(mapping)) images[slot] = `visuals/${mode}-${key !== 'pink-kitty' && slot === 'chat.screenshot' ? 'screenshot' : name}.png`;
+    for (const [slot, name] of Object.entries(mapping)) images[slot] = `visuals/${mode}-${name}.png`;
     if (key === 'pink-kitty') {
-      for (const slot of ['chat.attach', 'chat.screenshot', 'navigation.refresh', 'entry.new_project']) delete images[slot];
+      for (const slot of ['chat.attach', 'navigation.refresh', 'entry.new_project']) delete images[slot];
       for (const name of ['attach', 'refresh']) files.delete(`visuals/${mode}-${name}.png`);
     }
     for (const [group, zh, en] of [['pinned', '置顶', 'Pinned'], ['chats', '对话', 'Chats'], ['projects', '项目', 'Projects'], ['websites', '站点', 'Sites']]) {
