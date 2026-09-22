@@ -363,6 +363,9 @@ const api: DesktopApi = {
     }
   },
   services: {
+    getBrowserWebclient: () => ipcRenderer.invoke("services.getBrowserWebclient"),
+    openBrowserWebclient: () => ipcRenderer.invoke("services.openBrowserWebclient"),
+    stopBrowserWebclient: () => ipcRenderer.invoke("services.stopBrowserWebclient"),
     list: () => ipcRenderer.invoke("services.list"),
     getStartupRestoreState: () => ipcRenderer.invoke("services.getStartupRestoreState"),
     installBuiltinFromBundle: (serviceId: ServiceId) =>

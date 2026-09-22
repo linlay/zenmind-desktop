@@ -1,3 +1,4 @@
+import { stopBrowserWebclient } from "./browser-webclient-runtime";
 import { AgentWebclientHostRecord, AgentWebclientHostConfig } from "./webclient-host-types";
 import { type ServiceDefinition } from "../../support/manifest/manifest-utils";
 import { assertHostConfig, normalizeDesktopHosting } from "./webclient-host-config";
@@ -100,7 +101,8 @@ export async function startAgentWebclientHost(config: AgentWebclientHostConfig) 
   return getAgentWebclientHostState(serviceId);
 }
 
-export function stopAgentWebclientHost(serviceId = "agent-webclient") {
+export async function stopAgentWebclientHost(serviceId = "agent-webclient") {
+  await stopBrowserWebclient();
   const record = hosts.get(serviceId);
   if (!record) {
     return Promise.resolve(getAgentWebclientHostState(serviceId));

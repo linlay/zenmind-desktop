@@ -1,3 +1,4 @@
+import { stopBrowserWebclient } from "../modules/services";
 import {
   app
 } from "electron";
@@ -188,6 +189,7 @@ export function createMainProcessRuntime_startSsoCredentialDependentRuntimes_13(
 }
 
 export function createMainProcessRuntime_applyDesktopSsoRestoreResult_14(factoryContext: CreateMainProcessRuntimeContext, result: DesktopSsoRestoreResult) {
+    if (result.state !== "authenticated") void stopBrowserWebclient();
     const previousRestoreState = factoryContext.desktopSsoRestoreState;
     factoryContext.desktopSsoRestoreState = result.state;
     // Provider registration policy is independent of SSO configuration and never falls back to Grant.

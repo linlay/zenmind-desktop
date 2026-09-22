@@ -67,6 +67,14 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "localServices",
+      group: "integrations",
+      label: "localServices",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
       id: "plugins",
       group: "integrations",
       label: "plugins",
@@ -151,6 +159,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   kanban: { label: "settings.kanban.label", description: "settings.kanban.description" },
   assistant: { label: "settings.assistant.label", description: "settings.assistant.description" },
   market: { label: "settings.market.label", description: "settings.market.description" },
+  localServices: { label: "settings.localServices.label", description: "settings.localServices.description" },
   control: { label: "settings.control.label", description: "settings.control.description" },
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
   plugins: { label: "settings.plugins.label", description: "settings.plugins.description" },

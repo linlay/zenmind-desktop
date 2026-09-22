@@ -1,3 +1,4 @@
+import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -4780,6 +4781,8 @@ export function SettingsPage({
             </form>
           </div>
         );
+      case "localServices":
+        return <LocalServicesSettings isWindows={isWindows} />;
       case "control":
         return (
           <div className="settings-control-center-embed">

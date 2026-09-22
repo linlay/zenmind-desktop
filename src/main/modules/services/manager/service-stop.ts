@@ -1,3 +1,4 @@
+import { stopBrowserWebclient } from "../browser-webclient-runtime";
 import { type App } from "electron";
 import { type ServiceId, type ServiceCommandResult } from "../../../../shared/contracts";
 import { type ServicesIntegrationPorts } from "../integration-ports";
@@ -20,6 +21,7 @@ export async function stopService(
   serviceId: ServiceId,
   ports?: ServicesIntegrationPorts
 ): Promise<ServiceCommandResult> {
+  if (serviceId === "agent-platform" || serviceId === "agent-webclient") await stopBrowserWebclient();
   const service = getService(serviceId);
   const current = await getServiceState(app, serviceId, { integrationPorts: ports });
   if (service.serviceMode === "resource") {

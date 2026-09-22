@@ -899,3 +899,20 @@
 - 认证暂不可用时停止连接，恢复认证后自动重连；注册或连接进行中退出登录，迟到结果不能重连。手动关闭后再次登录保持关闭。
 
 - 从 file、artifact、reference 三种文件页点击在线预览，确认宿主 capabilities 和实际 openItem 均成功；未授权管理页、其他 Chat 参数、非 HTTP(S) 地址及原生 descriptor 必须拒绝。
+
+### 本机服务设置（macOS / Windows 均执行）
+
+- 主设置菜单打开“本机服务”，刷新及服务状态事件能更新 WebClient、Platform 状态；读取失败时显示错误，不继续提供旧地址。
+- 服务运行时复制实际端口的回环地址；停止、未安装或缺少端口时显示未就绪，复制按钮禁用；不回退默认端口。
+- WebClient 显示独立浏览器地址；点击“启动并在浏览器打开”后默认浏览器进入 standalone 界面，不再出现 DESKTOP_BRIDGE_UNAVAILABLE。
+- Platform 展开调用方式，HTTP 与 WS 地址一致；macOS 示例使用 curl，Windows 使用 curl.exe；示例只含 YOUR_ACCESS_TOKEN 占位符，无实际凭据。
+- 在已取得有效测试令牌时，HTTP 示例读取智能体列表；WS 示例等待 v2 connected 后读取列表并关闭连接。未持有令牌时不得描述为已授权。
+- 两张卡片的“管理服务”定位控制中心对应服务；复制成功与失败均有反馈；检查中英文、浅深色、窄窗口及键盘展开调用说明。
+
+### 独立浏览器 WebClient（macOS / Windows 均执行）
+
+- Platform 与 WebClient 运行后打开浏览器版，优先使用 7081；预先占用该端口时改用动态端口，原占用程序继续运行。重复打开复用实际地址，复制地址不含票据或 token。
+- 浏览器中发送聊天、读取历史和 Agent 列表、打开资源查看器；Desktop 内嵌聊天继续使用 Frame Port，原 7080 的业务 WS/HTTP Run 旁路仍被拒绝。
+- 新浏览器 profile 直接访问复制地址应要求从 Desktop 打开；打开票据只能使用一次，会话到期需重新打开。无 Cookie、跨源 HTTP 写请求、跨源 WS 与伪造 Host 均拒绝。浏览器 JS、网络响应和 URL 中无 Platform token。
+- 停止浏览器版使 HTTP/WS 连接关闭，但不停止 Platform 或内嵌 WebClient；停止依赖服务、退出登录、退出 Desktop 后浏览器会话失效。身份切换不能沿用旧会话读取新账号数据。
+- Windows 使用系统默认浏览器，macOS 同样由系统处理；系统打开失败给出错误，并允许重新点击。Platform 未运行时提示进入控制中心启动依赖。

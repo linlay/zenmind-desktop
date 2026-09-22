@@ -19,3 +19,5 @@ export type { ServicesFacade } from "./facade";
 export type { ServicesIntegrationPorts } from "./integration-ports";
 export { clearServices, getAllServices, getService, registerService, unregisterService } from "./service-registry";
 export { STARTUP_RESTORE_SERVICE_ORDER } from "./startup-order";
+
+export { stopBrowserWebclient } from "./browser-webclient-runtime";

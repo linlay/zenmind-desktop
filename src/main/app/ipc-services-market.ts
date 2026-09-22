@@ -87,6 +87,8 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
   registerServicesIpcHandlers(ipcMain, {
     app,
     shell: options.shell,
+    getMainWindow: options.getMainWindow,
+    openBrowserExternal: url => options.shell.openExternal(url),
     platform: options.platform,
     listServices: services.listServices,
     getServiceState: services.getServiceState,

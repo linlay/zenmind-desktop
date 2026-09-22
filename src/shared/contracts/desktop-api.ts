@@ -1,3 +1,4 @@
+import type { BrowserWebclientState, BrowserWebclientResult } from "./services";
 import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
 import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
@@ -1049,6 +1050,9 @@ export interface DesktopApi {
     publishDevToolsTarget: (target: CopilotDevToolsTargetInput) => Promise<{ ok: boolean; message?: string }>;
   };
   services: {
+    getBrowserWebclient: () => Promise<BrowserWebclientState>;
+    openBrowserWebclient: () => Promise<BrowserWebclientResult>;
+    stopBrowserWebclient: () => Promise<BrowserWebclientResult>;
     list: () => Promise<ServiceState[]>;
     getStartupRestoreState: () => Promise<StartupRestoreState>;
     installBuiltinFromBundle: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
