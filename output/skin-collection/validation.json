@@ -20,10 +20,10 @@
     "name": "青色·大溪地",
     "version": "1.4.0",
     "schemaVersion": "1.1",
-    "bytes": 4291916,
-    "zipEntries": 61,
-    "visualBytes": 981736,
-    "slotsPerVariant": 35,
+    "bytes": 4286632,
+    "zipEntries": 59,
+    "visualBytes": 976727,
+    "slotsPerVariant": 34,
     "backgrounds": {
       "light": {
         "path": "assets/background.png",
@@ -34,20 +34,19 @@
         "sha256": "def0259058c838d01486db5fa84c1b41ad0b8ab51ddf08338ef5871004d29edf"
       }
     },
-    "sha256": "19539ea96625de46bf2e1f889d6eacaa4713a3ab3216fc9fa5c3fa58b691a6fb",
+    "sha256": "7efe730eb274d2a6729d5bc52067238d2a9e08f161ce63d175e35010a86dc39f",
     "validation": "PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots",
-    "electronRasterDecode": true,
-    "browserImagesDecoded": true
+    "electronRasterDecode": true
   },
   {
     "file": "gold-saints.skin.zip",
     "name": "金黄·黄金圣斗士",
     "version": "1.5.0",
     "schemaVersion": "1.1",
-    "bytes": 4302695,
-    "zipEntries": 63,
-    "visualBytes": 862784,
-    "slotsPerVariant": 35,
+    "bytes": 4298912,
+    "zipEntries": 61,
+    "visualBytes": 859291,
+    "slotsPerVariant": 34,
     "backgrounds": {
       "light": {
         "path": "assets/background.png",
@@ -58,27 +57,25 @@
         "sha256": "1508e2ccf698fbd2f68d8fb21bd95c0094ef3e307a2c054b1a39fa1d780827c4"
       }
     },
-    "sha256": "04394c486358e392c855e2f9e8acd1beb1b6d7ecffbf7c3099aac2f9259948ec",
+    "sha256": "401eb006b4dff1bc549ed2d20fed45fd17e923509c81b7195ccff166dbf43335",
     "validation": "PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots",
-    "electronRasterDecode": true,
-    "browserImagesDecoded": true
+    "electronRasterDecode": true
   },
   {
     "file": "walnut-song.skin.zip",
     "name": "黑胡桃·宋式雅居",
     "schemaVersion": "1.1",
     "version": "1.2.1",
-    "bytes": 2235278,
-    "zipEntries": 64,
-    "visualFiles": 62,
-    "slotsPerVariant": 36,
-    "visualBytes": 162028,
+    "bytes": 2233632,
+    "zipEntries": 62,
+    "visualFiles": 60,
+    "slotsPerVariant": 35,
+    "visualBytes": 160547,
     "backgroundSha256": "090498cd2f2977c3dceb974dcdfe0dc3b9105a93769b25d09883c5f6ada5aa13",
     "backgroundUnchanged": true,
     "paletteUnchanged": true,
-    "sha256": "ecd38d5af76e78782d8c5e4ea4f9693a68d732b63d908611ec8611b0300ea36c",
+    "sha256": "0cc562927744f4292295186169dbd7605732d6712a63347742e60d62d3ab652f",
     "validation": "canonical 1.1 manifest + ZIP path/CRC/limits + all PNG dimensions + visual PNG decode + full semantic slots passed",
-    "electronRasterDecode": true,
-    "browserImagesDecoded": true
+    "electronRasterDecode": true
   }
 ]
