@@ -18,12 +18,12 @@
   {
     "file": "tahiti.skin.zip",
     "name": "青色·大溪地",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "schemaVersion": "1.1",
-    "bytes": 4300017,
-    "zipEntries": 63,
-    "visualBytes": 989562,
-    "slotsPerVariant": 36,
+    "bytes": 4291916,
+    "zipEntries": 61,
+    "visualBytes": 981736,
+    "slotsPerVariant": 35,
     "backgrounds": {
       "light": {
         "path": "assets/background.png",
@@ -34,7 +34,7 @@
         "sha256": "def0259058c838d01486db5fa84c1b41ad0b8ab51ddf08338ef5871004d29edf"
       }
     },
-    "sha256": "147326b66271bbfca8fbb61fdad31cc208d764c876511c95398152bed10e7926",
+    "sha256": "19539ea96625de46bf2e1f889d6eacaa4713a3ab3216fc9fa5c3fa58b691a6fb",
     "validation": "PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots",
     "electronRasterDecode": true,
     "browserImagesDecoded": true
@@ -42,12 +42,12 @@
   {
     "file": "gold-saints.skin.zip",
     "name": "金黄·黄金圣斗士",
-    "version": "1.3.0",
+    "version": "1.5.0",
     "schemaVersion": "1.1",
-    "bytes": 3672862,
-    "zipEntries": 64,
-    "visualBytes": 234931,
-    "slotsPerVariant": 36,
+    "bytes": 4302695,
+    "zipEntries": 63,
+    "visualBytes": 862784,
+    "slotsPerVariant": 35,
     "backgrounds": {
       "light": {
         "path": "assets/background.png",
@@ -58,7 +58,7 @@
         "sha256": "1508e2ccf698fbd2f68d8fb21bd95c0094ef3e307a2c054b1a39fa1d780827c4"
       }
     },
-    "sha256": "0c43d24918c0c2ed4eaa63c510dc7974c9a881fe8ec67afe71d9b2f8a1147cba",
+    "sha256": "04394c486358e392c855e2f9e8acd1beb1b6d7ecffbf7c3099aac2f9259948ec",
     "validation": "PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots",
     "electronRasterDecode": true,
     "browserImagesDecoded": true

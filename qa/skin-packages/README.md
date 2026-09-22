@@ -94,3 +94,5 @@ node qa/skin-packages/build-bow-example.mjs --base /absolute/path/hello-kitty.sk
 ```
 
 以上是需要合并到完整清单的片段，显示当前缺省值。省略任一项时沿用该页面的默认值；浅色 New Chat 缺省为 `transparent`。输入框与推荐卡片的底色不受这两个配置影响。需要同时更新 Desktop 和 WebClient 消费端，旧版本会拒绝不认识的 token。
+
+`chat.screenshot` 已不支持定制；旧包中的该字段会被静默忽略，不校验其值，也不加载所指资源。截图菜单使用客户端原生图标。

@@ -78,3 +78,24 @@ test('asset parser checks dimensions before allocating an image', () => {
   assert.equal(api.isSkinVisualDataUrl('data:image/png;base64,' + oversized.toString('base64')), false);
   assert.equal(api.isSkinVisualDataUrl('data:image/png;base64,iVBORw0KGgo='), false);
 });
+
+
+test('legacy screenshot overrides are ignored before asset validation, including full old manifests', () => {
+  const images = Object.fromEntries(api.SKIN_VISUAL_SLOTS.map(slot => [slot, 'visuals/icon.png']));
+  for (const legacy of ['../../invalid.svg', null, { invalid: true }]) {
+    let calls = 0;
+    const parsed = parseSkinVisuals({ images: { ...images, 'chat.screenshot': legacy } }, raw => {
+      calls++; assert.equal(raw, 'visuals/icon.png'); return raw;
+    });
+    assert.deepEqual(parsed.images, images);
+    assert.equal(calls, api.SKIN_VISUAL_SLOTS.length);
+    const manifest = parseSkinPackageManifest({ schemaVersion: '1.1', id: 'test.skin', name: 'Test', version: '1.0.0',
+      variants: { light: { visuals: { images: { 'chat.screenshot': legacy } } }, dark: {} } });
+    assert.deepEqual(manifest.variants.light.visuals.images, {});
+  }
+  assert(!api.SKIN_VISUAL_SLOTS.includes('chat.screenshot'));
+  assert.equal(parseSkinVisuals({ images: { 'unknown.slot': 'visuals/icon.png' } }, raw => raw), null);
+  const snapshot = api.parseAgentWebclientVisualSnapshot(state(1, { visuals: {
+    images: { 'chat.send': 'chat.send', 'chat.screenshot': 'invalid' }, styles: {} } }));
+  assert.deepEqual(snapshot.visuals.images, { 'chat.send': 'chat.send' });
+});
