@@ -916,3 +916,5 @@
 - 新浏览器 profile 直接访问复制地址应要求从 Desktop 打开；打开票据只能使用一次，会话到期需重新打开。无 Cookie、跨源 HTTP 写请求、跨源 WS 与伪造 Host 均拒绝。浏览器 JS、网络响应和 URL 中无 Platform token。
 - 停止浏览器版使 HTTP/WS 连接关闭，但不停止 Platform 或内嵌 WebClient；停止依赖服务、退出登录、退出 Desktop 后浏览器会话失效。身份切换不能沿用旧会话读取新账号数据。
 - Windows 使用系统默认浏览器，macOS 同样由系统处理；系统打开失败给出错误，并允许重新点击。Platform 未运行时提示进入控制中心启动依赖。
+
+- 聊天遮罩：在 macOS / Windows 导入按 light/dark 配置 `--new-chat-surface` / `--main-chat-surface` 的皮肤，验证 RGBA 颜色及 alpha=0/1、新建与已有会话切换；缺省或仅配置一项时其余沿用默认。切回无配置皮肤、切换明暗、刷新及宿主外观桥失效后无旧值残留，无图片时恢复实色。输入框、推荐卡片、正文不跟随整体 opacity；页面与草稿不重建。
