@@ -7890,7 +7890,7 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(desktopPet, /const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts\(\{[\s\S]{0,120}navigationAttention: petState\.navigationAttention[\s\S]{0,40}\}\);/);
   assert.match(desktopPet, /unreadBadgeCounts\.pendingCount > 0/);
   assert.match(desktopPet, /unreadBadgeCounts\.unreadCount > 0/);
-  assert.match(desktopPet, /const showUnreadBadges = unreadBadgeItems\.length > 0 && !shouldShowTaskPanel && !shouldShowPreviewPanel && !shouldShowStatusPanel;/);
+  assert.match(desktopPet, /const showUnreadBadges = unreadBadgeItems\.length > 0;/);
   assert.doesNotMatch(desktopPet, /latestVisibleMessageSummary/);
   assert.doesNotMatch(desktopPet, /statusPanelSummary/);
   assert.match(desktopPet, /resolveDesktopPetUnreadBadgeCounts/);

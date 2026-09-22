@@ -142,6 +142,10 @@ export function readPushActiveRun(event: NavigationPushEvent, fallback: boolean)
   if (explicitActiveRun !== null) {
     return explicitActiveRun;
   }
+  // Explicit null clears the previous run; omission preserves it.
+  if (event.activeRun === null) {
+    return false;
+  }
   const activeRun = readActiveRunValue(event.activeRun);
   if (activeRun !== null) {
     return activeRun;

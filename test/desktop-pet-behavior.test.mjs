@@ -657,7 +657,7 @@ test("desktop pet message list keeps only recent unread or awaiting chats", () =
 
   const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
 
-  assert.deepEqual(messages.map((message) => message.chatId), ["chat-unread", "chat-awaiting"]);
+  assert.deepEqual(messages.map((message) => message.chatId), ["chat-awaiting", "chat-unread"]);
 });
 
 test("desktop pet window modes keep the visible pet footprint anchored", () => {
@@ -2033,4 +2033,23 @@ test("desktop pet visual maps review, failed, and rare idle jumping onto standar
     activeStandardAction: "jumping",
     isReviewing: false
   }), "jumping");
+});
+
+test("desktop pet retains older awaiting messages ahead of the unread limit", () => {
+  const now = Date.now();
+  const unread = Array.from({ length: 50 }, (_, index) => ({
+    chatId: `unread-${index}`, chatName: `Unread ${index}`, agentKey: "cutej",
+    updatedAt: now - index, lastRunContent: "Completed", isRead: false,
+    hasActiveRun: false, hasPendingAwaiting: false
+  }));
+  const messages = createDesktopPetMessagesFromNavigationSnapshot({
+    ok: true, items: [{ agentKey: "cutej", displayName: "CuteJ", updatedAt: now,
+      recentChats: [...unread,
+        { ...unread[0], chatId: "older-awaiting", isRead: true, hasPendingAwaiting: true, updatedAt: now - 10000 },
+        { ...unread[0], chatId: "newer-awaiting", isRead: false, hasPendingAwaiting: true, updatedAt: now - 5000 }
+      ]
+    }]
+  });
+  assert.equal(messages.length, 50);
+  assert.deepEqual(messages.slice(0, 3).map(message => message.chatId), ["newer-awaiting", "older-awaiting", "unread-0"]);
 });
