@@ -281,7 +281,8 @@ export function buildSidebarContextMenuPolicy(
             : "web.open-in-window",
         group: 1,
         enabled: target.canOpenAlternative
-      }
+      },
+      { id: "web.open-in-browser", group: 1, enabled: true }
     );
     if (target.showRemove) {
       items.push({

@@ -954,6 +954,8 @@ export const enUSMessages = {
   "sidebar.webapp.importFailed": "The WebApp could not be imported. Check the ZIP package and try again.",
   "sidebar.webapp.actions": "WebApp actions",
   "sidebar.webapp.openInWindow": "New window",
+  "sidebar.webapp.openInBrowser": "Open in system browser",
+  "sidebar.webapp.openInBrowserFailed": "Unable to open the web app in the system browser.",
   "sidebar.webapp.openInWorkspace": "Open in Main Window",
   "sidebar.webapp.copyShareUrl": "Copy Share Link",
   "sidebar.webapp.openPublishSettings": "Publish to Get a Link",

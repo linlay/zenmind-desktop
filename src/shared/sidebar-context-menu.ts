@@ -27,6 +27,7 @@ export type SidebarContextMenuActionId =
   | "web.unpin"
   | "web.open-in-workspace"
   | "web.open-in-window"
+  | "web.open-in-browser"
   | "web.copy-share-url"
   | "web.open-publish-settings"
   | "web.export"

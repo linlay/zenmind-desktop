@@ -51,6 +51,7 @@ const LABEL_KEYS: Record<SidebarContextMenuLabelId, TranslationKey> = {
   "web.unpin": "sidebar.web.unpin",
   "web.open-in-workspace": "sidebar.webapp.openInWorkspace",
   "web.open-in-window": "sidebar.webapp.openInWindow",
+  "web.open-in-browser": "sidebar.webapp.openInBrowser",
   "web.copy-share-url": "sidebar.webapp.copyShareUrl",
   "web.open-publish-settings": "sidebar.webapp.openPublishSettings",
   "web.export": "sidebar.webapp.export",
