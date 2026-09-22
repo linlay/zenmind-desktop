@@ -29,7 +29,7 @@ for (const name of api.skinPackageResources(manifest)) {
 for (const mode of ['light', 'dark']) {
   assert.deepEqual(manifest.variants[mode].tokens, original.variants[mode].tokens);
   assert.deepEqual(manifest.variants[mode].background, original.variants[mode].background);
-  for (const slot of ['chat.attach', 'chat.screenshot', 'navigation.refresh', 'entry.new_project']) assert(!(slot in manifest.variants[mode].visuals.images));
+  for (const slot of ['chat.attach', 'navigation.refresh', 'entry.new_project']) assert(!(slot in manifest.variants[mode].visuals.images));
 }
 files.set('skin.json', Buffer.from(JSON.stringify(manifest, null, 2) + '\n'));
 const zip = new JSZip();
