@@ -1,0 +1,84 @@
+[
+  {
+    "file": "pink-kitty.skin.zip",
+    "name": "粉色·Hello Kitty",
+    "schemaVersion": "1.1",
+    "version": "1.1.1",
+    "bytes": 1847044,
+    "zipEntries": 58,
+    "visualFiles": 56,
+    "slotsPerVariant": 32,
+    "visualBytes": 313657,
+    "backgroundSha256": "01cf77b040b5b703c040be696f0329931d653db802c877532b0d96e0fa889c96",
+    "backgroundUnchanged": true,
+    "paletteUnchanged": true,
+    "sha256": "f6d123e03d3e485f95bc7bedc52eba3ab76823f5dcfd62270b79d9e8585d654c",
+    "validation": "Canonical manifest + ZIP/CRC/resources + PNG decode; four native fallback slots; original wallpaper and palette preserved"
+  },
+  {
+    "file": "tahiti.skin.zip",
+    "name": "青色·大溪地",
+    "version": "1.3.0",
+    "schemaVersion": "1.1",
+    "bytes": 4300017,
+    "zipEntries": 63,
+    "visualBytes": 989562,
+    "slotsPerVariant": 36,
+    "backgrounds": {
+      "light": {
+        "path": "assets/background.png",
+        "sha256": "64f4f231ac6bdfc776d1fb4681afc8869795beda02ed2823014fdb67274bdfb8"
+      },
+      "dark": {
+        "path": "assets/background-dark.png",
+        "sha256": "def0259058c838d01486db5fa84c1b41ad0b8ab51ddf08338ef5871004d29edf"
+      }
+    },
+    "sha256": "147326b66271bbfca8fbb61fdad31cc208d764c876511c95398152bed10e7926",
+    "validation": "PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots",
+    "electronRasterDecode": true,
+    "browserImagesDecoded": true
+  },
+  {
+    "file": "gold-saints.skin.zip",
+    "name": "金黄·黄金圣斗士",
+    "version": "1.3.0",
+    "schemaVersion": "1.1",
+    "bytes": 3672862,
+    "zipEntries": 64,
+    "visualBytes": 234931,
+    "slotsPerVariant": 36,
+    "backgrounds": {
+      "light": {
+        "path": "assets/background.png",
+        "sha256": "e0593f333533112f594425c47918389010c63b6210141c3927ccc4a74b4391b0"
+      },
+      "dark": {
+        "path": "assets/background-dark.png",
+        "sha256": "1508e2ccf698fbd2f68d8fb21bd95c0094ef3e307a2c054b1a39fa1d780827c4"
+      }
+    },
+    "sha256": "0c43d24918c0c2ed4eaa63c510dc7974c9a881fe8ec67afe71d9b2f8a1147cba",
+    "validation": "PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots",
+    "electronRasterDecode": true,
+    "browserImagesDecoded": true
+  },
+  {
+    "file": "walnut-song.skin.zip",
+    "name": "黑胡桃·宋式雅居",
+    "schemaVersion": "1.1",
+    "version": "1.2.1",
+    "bytes": 2235278,
+    "zipEntries": 64,
+    "visualFiles": 62,
+    "slotsPerVariant": 36,
+    "visualBytes": 162028,
+    "backgroundSha256": "090498cd2f2977c3dceb974dcdfe0dc3b9105a93769b25d09883c5f6ada5aa13",
+    "backgroundUnchanged": true,
+    "paletteUnchanged": true,
+    "sha256": "ecd38d5af76e78782d8c5e4ea4f9693a68d732b63d908611ec8611b0300ea36c",
+    "validation": "canonical 1.1 manifest + ZIP path/CRC/limits + all PNG dimensions + visual PNG decode + full semantic slots passed",
+    "electronRasterDecode": true,
+    "browserImagesDecoded": true
+  }
+]

@@ -1,0 +1,293 @@
+{
+  "schemaVersion": "1.1",
+  "id": "zenmind.gold-saints",
+  "name": "金黄·黄金圣斗士",
+  "version": "1.3.0",
+  "preview": "assets/background.png",
+  "variants": {
+    "light": {
+      "tokens": {
+        "--bg-base": "#FBF4E3",
+        "--surface": "rgba(255,252,243,0.72)",
+        "--surface-strong": "rgba(255,252,243,0.96)",
+        "--surface-soft": "rgba(255,252,243,0.86)",
+        "--surface-sidebar": "rgba(251,244,227,0.9)",
+        "--ink": "#493413",
+        "--ink-soft": "#705B36",
+        "--ink-muted": "#826D47",
+        "--line": "rgba(73,52,19,0.13)",
+        "--line-strong": "rgba(73,52,19,0.25)",
+        "--accent": "#946308",
+        "--accent-strong": "#795007",
+        "--accent-soft": "rgba(148,99,8,0.16)",
+        "--accent-on": "#FFFFFF",
+        "--control-button-bg": "rgba(255,252,243,0.92)",
+        "--control-select-bg": "#FFFCF3",
+        "--control-input-bg": "rgba(255,252,243,0.96)",
+        "--control-border": "rgba(73,52,19,0.22)",
+        "--control-hover-bg": "rgba(148,99,8,0.12)",
+        "--control-active-bg": "rgba(148,99,8,0.22)",
+        "--control-disabled-bg": "rgba(73,52,19,0.07)",
+        "--control-icon-color": "#705B36",
+        "--control-icon-hover-color": "#946308",
+        "--control-primary-bg": "#946308",
+        "--control-primary-hover": "#795007",
+        "--control-primary-active": "#634006",
+        "--control-popover-bg": "#FFFCF3",
+        "--control-tab-strip-bg": "rgba(251,244,227,0.9)",
+        "--control-tab-active-bg": "#FFFCF3",
+        "--control-tab-hover-bg": "rgba(255,252,243,0.8)",
+        "--nav-hover-bg": "rgba(148,99,8,0.1)",
+        "--nav-selected-bg": "rgba(148,99,8,0.18)",
+        "--nav-selected-text": "#634006",
+        "--nav-accent-selected-bg": "rgba(148,99,8,0.22)",
+        "--desktop-overlay-panel-bg": "#FFFCF3",
+        "--sidebar-operation-menu-bg": "#FFFCF3",
+        "--sidebar-operation-menu-border": "rgba(73,52,19,0.2)",
+        "--modal-mask-bg": "rgba(10,8,12,0.48)",
+        "--shell-sidebar-bg": "rgba(251,244,227,0.87)",
+        "--shell-content-bg": "rgba(251,244,227,0.58)",
+        "--shell-titlebar-bg": "rgba(251,244,227,0.94)",
+        "--control-radius": "10px",
+        "--control-radius-sm": "8px",
+        "--control-radius-lg": "14px",
+        "--overlay-radius": "16px"
+      },
+      "background": {
+        "path": "assets/background.png",
+        "position": "right center"
+      },
+      "visuals": {
+        "images": {
+          "navigation.search": "visuals/light-search.png",
+          "navigation.back": "visuals/light-back.png",
+          "navigation.forward": "visuals/light-forward.png",
+          "navigation.sidebar_left": "visuals/light-sidebar.png",
+          "navigation.sidebar_right": "visuals/light-sidebar_right.png",
+          "navigation.refresh": "visuals/light-refresh.png",
+          "navigation.more_actions": "visuals/light-more.png",
+          "entry.kanban": "visuals/light-kanban.png",
+          "entry.automation": "visuals/light-automation.png",
+          "entry.new_chat": "visuals/light-new_chat.png",
+          "entry.new_project": "visuals/light-project.png",
+          "entry.chat": "visuals/light-chat.png",
+          "entry.project": "visuals/light-project.png",
+          "entry.website": "visuals/light-website.png",
+          "chat.send": "visuals/light-send.png",
+          "chat.stop": "visuals/light-stop.png",
+          "chat.attach": "visuals/light-attach.png",
+          "chat.expand": "visuals/light-expand.png",
+          "chat.collapse": "visuals/light-collapse.png",
+          "chat.screenshot": "visuals/light-screenshot.png",
+          "chat.voice": "visuals/light-voice.png",
+          "agent.default": "visuals/light-project.png",
+          "agent.terminal": "visuals/light-terminal.png",
+          "agent.database": "visuals/light-database.png",
+          "agent.library": "visuals/light-library.png",
+          "agent.folder": "visuals/light-project.png",
+          "agent.coder": "visuals/light-terminal.png",
+          "agent.kbase": "visuals/light-library.png",
+          "heading.pinned.zh-CN": "visuals/light-pinned-zh-CN.png",
+          "heading.pinned.en-US": "visuals/light-pinned-en-US.png",
+          "heading.chats.zh-CN": "visuals/light-chats-zh-CN.png",
+          "heading.chats.en-US": "visuals/light-chats-en-US.png",
+          "heading.projects.zh-CN": "visuals/light-projects-zh-CN.png",
+          "heading.projects.en-US": "visuals/light-projects-en-US.png",
+          "heading.websites.zh-CN": "visuals/light-websites-zh-CN.png",
+          "heading.websites.en-US": "visuals/light-websites-en-US.png"
+        },
+        "styles": {
+          "unread": "#946308",
+          "unreadText": "#FFFFFF",
+          "unreadShape": "circle",
+          "unreadOutline": [
+            [
+              8,
+              78
+            ],
+            [
+              65,
+              21
+            ],
+            [
+              40,
+              21
+            ],
+            [
+              40,
+              4
+            ],
+            [
+              96,
+              4
+            ],
+            [
+              96,
+              60
+            ],
+            [
+              79,
+              60
+            ],
+            [
+              79,
+              35
+            ],
+            [
+              22,
+              92
+            ],
+            [
+              8,
+              92
+            ]
+          ],
+          "badgeShape": "pill",
+          "headingStyle": "default"
+        }
+      }
+    },
+    "dark": {
+      "tokens": {
+        "--bg-base": "#292010",
+        "--surface": "rgba(57,45,24,0.72)",
+        "--surface-strong": "rgba(57,45,24,0.96)",
+        "--surface-soft": "rgba(57,45,24,0.86)",
+        "--surface-sidebar": "rgba(41,32,16,0.9)",
+        "--ink": "#FFF1CE",
+        "--ink-soft": "#DDC99F",
+        "--ink-muted": "#BCA775",
+        "--line": "rgba(255,241,206,0.13)",
+        "--line-strong": "rgba(255,241,206,0.25)",
+        "--accent": "#EDC469",
+        "--accent-strong": "#FFDA8A",
+        "--accent-soft": "rgba(237,196,105,0.16)",
+        "--accent-on": "#292010",
+        "--control-button-bg": "rgba(57,45,24,0.92)",
+        "--control-select-bg": "#392D18",
+        "--control-input-bg": "rgba(57,45,24,0.96)",
+        "--control-border": "rgba(255,241,206,0.22)",
+        "--control-hover-bg": "rgba(237,196,105,0.12)",
+        "--control-active-bg": "rgba(237,196,105,0.22)",
+        "--control-disabled-bg": "rgba(255,241,206,0.07)",
+        "--control-icon-color": "#DDC99F",
+        "--control-icon-hover-color": "#EDC469",
+        "--control-primary-bg": "#EDC469",
+        "--control-primary-hover": "#FFDA8A",
+        "--control-primary-active": "#D5A849",
+        "--control-popover-bg": "#392D18",
+        "--control-tab-strip-bg": "rgba(41,32,16,0.9)",
+        "--control-tab-active-bg": "#392D18",
+        "--control-tab-hover-bg": "rgba(57,45,24,0.8)",
+        "--nav-hover-bg": "rgba(237,196,105,0.1)",
+        "--nav-selected-bg": "rgba(237,196,105,0.18)",
+        "--nav-selected-text": "#FFDA8A",
+        "--nav-accent-selected-bg": "rgba(237,196,105,0.22)",
+        "--desktop-overlay-panel-bg": "#392D18",
+        "--sidebar-operation-menu-bg": "#392D18",
+        "--sidebar-operation-menu-border": "rgba(255,241,206,0.2)",
+        "--modal-mask-bg": "rgba(10,8,12,0.48)",
+        "--shell-sidebar-bg": "rgba(41,32,16,0.87)",
+        "--shell-content-bg": "rgba(41,32,16,0.7)",
+        "--shell-titlebar-bg": "rgba(41,32,16,0.94)",
+        "--control-radius": "10px",
+        "--control-radius-sm": "8px",
+        "--control-radius-lg": "14px",
+        "--overlay-radius": "16px"
+      },
+      "background": {
+        "path": "assets/background-dark.png",
+        "position": "right center"
+      },
+      "visuals": {
+        "images": {
+          "navigation.search": "visuals/dark-search.png",
+          "navigation.back": "visuals/dark-back.png",
+          "navigation.forward": "visuals/dark-forward.png",
+          "navigation.sidebar_left": "visuals/dark-sidebar.png",
+          "navigation.sidebar_right": "visuals/dark-sidebar_right.png",
+          "navigation.refresh": "visuals/dark-refresh.png",
+          "navigation.more_actions": "visuals/dark-more.png",
+          "entry.kanban": "visuals/dark-kanban.png",
+          "entry.automation": "visuals/dark-automation.png",
+          "entry.new_chat": "visuals/dark-new_chat.png",
+          "entry.new_project": "visuals/dark-project.png",
+          "entry.chat": "visuals/dark-chat.png",
+          "entry.project": "visuals/dark-project.png",
+          "entry.website": "visuals/dark-website.png",
+          "chat.send": "visuals/dark-send.png",
+          "chat.stop": "visuals/light-stop.png",
+          "chat.attach": "visuals/dark-attach.png",
+          "chat.expand": "visuals/dark-expand.png",
+          "chat.collapse": "visuals/dark-collapse.png",
+          "chat.screenshot": "visuals/dark-screenshot.png",
+          "chat.voice": "visuals/dark-voice.png",
+          "agent.default": "visuals/dark-project.png",
+          "agent.terminal": "visuals/dark-terminal.png",
+          "agent.database": "visuals/dark-database.png",
+          "agent.library": "visuals/dark-library.png",
+          "agent.folder": "visuals/dark-project.png",
+          "agent.coder": "visuals/dark-terminal.png",
+          "agent.kbase": "visuals/dark-library.png",
+          "heading.pinned.zh-CN": "visuals/dark-pinned-zh-CN.png",
+          "heading.pinned.en-US": "visuals/dark-pinned-en-US.png",
+          "heading.chats.zh-CN": "visuals/dark-chats-zh-CN.png",
+          "heading.chats.en-US": "visuals/dark-chats-en-US.png",
+          "heading.projects.zh-CN": "visuals/dark-projects-zh-CN.png",
+          "heading.projects.en-US": "visuals/dark-projects-en-US.png",
+          "heading.websites.zh-CN": "visuals/dark-websites-zh-CN.png",
+          "heading.websites.en-US": "visuals/dark-websites-en-US.png"
+        },
+        "styles": {
+          "unread": "#EDC469",
+          "unreadText": "#292010",
+          "unreadShape": "circle",
+          "unreadOutline": [
+            [
+              8,
+              78
+            ],
+            [
+              65,
+              21
+            ],
+            [
+              40,
+              21
+            ],
+            [
+              40,
+              4
+            ],
+            [
+              96,
+              4
+            ],
+            [
+              96,
+              60
+            ],
+            [
+              79,
+              60
+            ],
+            [
+              79,
+              35
+            ],
+            [
+              22,
+              92
+            ],
+            [
+              8,
+              92
+            ]
+          ],
+          "badgeShape": "pill",
+          "headingStyle": "default"
+        }
+      }
+    }
+  }
+}

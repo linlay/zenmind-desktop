@@ -1,0 +1,26 @@
+[
+  {
+    "id": "tahiti",
+    "name": "青色·大溪地",
+    "mode": "built-in image_gen",
+    "prompt": "Use case: photorealistic-natural. Create a premium desktop wallpaper, landscape 16:9, ideally 2560x1440. Tahiti / French Polynesia turquoise lagoon with lush volcanic mountain silhouette in the far right background, delicate palm leaves at upper right edge, clear cyan water and subtle reef patterns, tranquil luminous tropical daylight. Refined travel photography with natural textures. Broad uncluttered calm aqua water across left and center for a desktop app interface. Full bleed, no borders, no text, no watermark, no UI."
+  },
+  {
+    "id": "gold-saints",
+    "name": "金黄·黄金圣斗士",
+    "mode": "built-in image_gen",
+    "prompt": "Use case: illustration-story. Create a luxurious golden Saint Seiya Gold Saints series desktop wallpaper, landscape 16:9 ideally 2560x1440. A striking Sagittarius Gold Saint in intricate gleaming golden armor with majestic folded golden wings standing at far right, elegant anime illustration, distant classical Sanctuary columns and twelve faint zodiac constellation motifs on deep warm amber atmosphere, luminous soft gold dust, cinematic finely drawn polished gold metal. Keep left and central two thirds quiet with restrained gold-ochre atmospheric gradients for desktop interface readability; character fully framed within right third with breathing room at edges. No lettering, no logo, no watermark, no UI, no collage."
+  },
+  {
+    "id": "walnut-song",
+    "name": "黑胡桃·宋式雅居",
+    "mode": "built-in image_gen",
+    "prompt": "Use case: historical-scene. Create an elegant Song dynasty inspired Chinese interior desktop background, landscape 16:9 ideally 2560x1440. Dark black walnut timber window frames and a refined low wooden tea desk at far right, one celadon vase with sparse plum blossom branch, distant misty mountains through delicate wooden lattice window, warm rice paper wall, extremely restrained Song literati aesthetic, fine wood grain, subtle ink wash landscape feeling blended with cinematic interior photography. Deep walnut brown, muted taupe, parchment, understated celadon accents. Keep center and left very quiet low-detail soft shaded warm wall/atmosphere for UI readability. No lavish palace, no modern objects, no text, no watermark, no UI."
+  },
+  {
+    "id": "pink-kitty",
+    "name": "粉色·Hello Kitty",
+    "mode": "built-in image_gen",
+    "prompt": "Use case: illustration-story. Create a delicate pink girlish Hello Kitty desktop wallpaper, landscape 16:9 ideally 2560x1440. Recognizable Hello Kitty white cat with yellow oval nose, black dot eyes and whiskers, no mouth, pink bow at one ear, wearing a sweet pink dress, seated on a tiny pastel cushion at far right. Soft blush pink dreamy setting, a few subtle ribbon bows, tiny hearts and pearls along outer corners, charming refined soft 3D toy illustration with velvety matte surfaces and gentle light, cream white and ballet pink palette. Central and left two thirds are airy uncluttered pale pink with minimal detail for a desktop application interface. No lettering, no watermark, no UI, no excessive sparkles."
+  }
+]
