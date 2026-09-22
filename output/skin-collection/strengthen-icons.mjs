@@ -11,7 +11,7 @@ const turtle='<path d="M10 6V4a2 2 0 0 1 4 0v2M7 8 3 6 2 8l4 4m11-4 4-2 1 2-4 4M
 for(const [ki,key] of ['gold-saints','tahiti'].entries())for(const [mi,mode]of ['light','dark'].entries()){
  const source=path.join(root,'sources',key),m=JSON.parse(fs.readFileSync(path.join(source,'skin.json'))),v=m.variants[mode],t=v.tokens,x=mi*560,y=ki*480;
  ctx.fillStyle=t['--bg-base'];ctx.fillRect(x,y,560,480);ctx.fillStyle=t['--ink'];ctx.font='17px sans-serif';ctx.fillText(`${key} ${mode} · before / after 24px`,x+20,y+30);
- const names=Object.keys({...paths,screenshot:paths.expand}).filter(n=>n!=='attach');
+ const names=Object.keys(paths).filter(n=>n!=='attach');
  for(const [i,name]of names.entries()){
   const filename=path.join(source,`visuals/${mode}-${name}.png`),old=await loadImage(filename);
   let g=themedGeometry(key,name,paths[name]??paths.expand);

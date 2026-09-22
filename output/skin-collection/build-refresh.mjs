@@ -22,13 +22,12 @@ for(const key of (selected.length?selected:['tahiti','gold-saints'])){
  m.variants.dark.background.path='assets/background-dark.png';
  for(const mode of ['light','dark']){
   delete m.variants[mode].visuals.images['chat.attach'];
-  delete m.variants[mode].visuals.images['chat.screenshot'];
   m.variants[mode].background.position='right center';
   for(const [slot,name] of Object.entries(m.variants[mode].visuals.images))if(slot.startsWith('heading.'))fs.copyFileSync(path.join(root,key+'-artwork',path.basename(name)),path.join(source,name));
  }
  if(key==='tahiti')for(const v of Object.values(m.variants))v.visuals.images['entry.website']=v.visuals.images['entry.project'];
  if(key==='gold-saints')m.variants.dark.visuals.images['chat.stop']='visuals/dark-stop.png';
- api.parseSkinPackageManifest(m);
+ Object.assign(m,api.parseSkinPackageManifest(m));
  const zip=new JSZip(),resources=api.skinPackageResources(m);
  zip.file('skin.json',JSON.stringify(m,null,2)+'\n');
  for(const name of resources)zip.file(name,fs.readFileSync(path.join(source,name)),{createFolders:false,date:new Date('2026-01-01T00:00:00Z')});
