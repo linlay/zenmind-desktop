@@ -69,3 +69,28 @@ node qa/skin-packages/build-bow-example.mjs --base /absolute/path/hello-kitty.sk
 - 图标图片显示在原按钮范围内，必须准备可识别的发送和停止形状，避免用相同装饰替代两者。macOS 红黄绿和 Windows 窗口控制不在普通图标槽中。
 
 两端都需运行本次 1.1 代码。Desktop 负责安装，WebClient 从只读外观资源桥按需获取当前 PNG，不必再次导入，也不会读取本地路径或保存宿主图片到自己的数据库。
+
+## 聊天页面遮罩
+
+在 `variants.light.tokens` / `variants.dark.tokens` 中分别设置 `--new-chat-surface`（新建对话）和 `--main-chat-surface`（已有对话）。可直接填写 `rgba(r, g, b, a)`，alpha 是不透明度：0 完全透明，1 完全不透明；也接受其他受控颜色格式。每项独立可选，仅在有图片背景时使用。
+
+```json
+{
+  "variants": {
+    "light": {
+      "tokens": {
+        "--new-chat-surface": "rgba(255, 255, 255, 0)",
+        "--main-chat-surface": "rgba(255, 255, 255, 0.8)"
+      }
+    },
+    "dark": {
+      "tokens": {
+        "--new-chat-surface": "rgba(16, 16, 16, 0.2)",
+        "--main-chat-surface": "rgba(16, 16, 16, 0.85)"
+      }
+    }
+  }
+}
+```
+
+以上是需要合并到完整清单的片段，显示当前缺省值。省略任一项时沿用该页面的默认值；浅色 New Chat 缺省为 `transparent`。输入框与推荐卡片的底色不受这两个配置影响。需要同时更新 Desktop 和 WebClient 消费端，旧版本会拒绝不认识的 token。

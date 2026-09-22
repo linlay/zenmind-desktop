@@ -4,6 +4,7 @@ import { build } from "esbuild";
 
 const { outputFiles } = await build({
   stdin: { contents: `export * from './src/shared/contracts/agent-webclient-bridge';
+    export * from './src/shared/desktop-skin-package';
     export * from './src/preload/appearance-receiver';
     export * from './src/renderer/service-webview/appearanceHost';
     export * from './src/renderer/appearance/webclientProjection';
@@ -17,6 +18,7 @@ const {
   AGENT_WEBCLIENT_APPEARANCE_REQUEST_CHANNEL: requestChannel,
   AGENT_WEBCLIENT_APPEARANCE_SNAPSHOT_CHANNEL: snapshotChannel,
   createAppearanceReceiver, createWebclientAppearanceHost,
+  readWebclientAppearanceProjection, parseSkinPackageManifest,
   isWebclientHostBackgroundSurface, createSurfaceIdentity, createServiceSurfaceIdentity
 } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 const snapshot = (revision = 1, extra = {}) => ({
@@ -201,4 +203,34 @@ test('management background changes refresh the existing relay without renegotia
   assert.deepEqual(h.themes, ['light']);
   assert.equal(h.sent.at(-1).message.documentId, h.documentId);
   h.host.dispose();
+});
+
+
+test('RGBA page surfaces survive manifest, Desktop projection and bridge validation per theme', () => {
+  const manifest = parseSkinPackageManifest({ schemaVersion: '1.1', id: 'test.veils', name: 'Veils', version: '1.0.0', variants: {
+    light: { tokens: { '--new-chat-surface': 'rgba(255, 255, 255, 0)', '--main-chat-surface': 'rgba(240, 230, 220, 0.3)' } },
+    dark: { tokens: { '--new-chat-surface': 'rgba(10, 20, 30, 1)', '--main-chat-surface': 'rgba(20, 30, 40, 0.5)' } }
+  } });
+  const previousDocument = globalThis.document, previousComputedStyle = globalThis.getComputedStyle;
+  globalThis.document = { createElement: () => ({ getContext: () => null }) };
+  try {
+    for (const resolvedTheme of ['light', 'dark']) {
+      const expected = manifest.variants[resolvedTheme].tokens;
+      globalThis.getComputedStyle = () => ({ getPropertyValue: key => expected[key] ?? '' });
+      const projection = readWebclientAppearanceProjection({ resolvedTheme, skin: { id: manifest.id } }, true, {});
+      assert.deepEqual(projection.tokens, expected);
+      assert.deepEqual(parse({ ...projection, revision: 1 }).tokens, expected);
+    }
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
+    assert.deepEqual(readWebclientAppearanceProjection({ resolvedTheme: 'light', skin: { id: 'default' } }, true, {}).tokens, {});
+  } finally { globalThis.document = previousDocument; globalThis.getComputedStyle = previousComputedStyle; }
+  const all = { ...Object.fromEntries(colors.map(key => [key, '#fff'])), '--control-radius': '8px', '--control-radius-sm': '4px', '--control-radius-lg': '12px', '--overlay-radius': '16px', '--control-disabled-opacity': '.5' };
+  assert.equal(Object.keys(all).length, colors.length + 5);
+  assert.deepEqual(tokens(all), all);
+  for (const key of ['--new-chat-surface', '--main-chat-surface']) {
+    for (const invalid of ['rgba(1, 2, 3, 1.1)', 'rgba(256, 2, 3, 0.5)', 'var(--surface)', 'url(https://example.com)', 0.5]) {
+      assert.equal(tokens({ [key]: invalid }), null);
+      assert.throws(() => parseSkinPackageManifest({ ...manifest, variants: { ...manifest.variants, light: { tokens: { [key]: invalid } } } }));
+    }
+  }
 });
