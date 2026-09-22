@@ -195,8 +195,9 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
     }
   }
   return [...messagesByChatId.values()].sort((left, right) => {
-    if (left.unread !== right.unread) {
-      return left.unread ? -1 : 1;
+    const awaitingPriority = Number(right.status === "awaiting") - Number(left.status === "awaiting");
+    if (awaitingPriority !== 0) {
+      return awaitingPriority;
     }
     const timeDelta = getDesktopPetTaskTimestamp(right.updatedAt) - getDesktopPetTaskTimestamp(left.updatedAt);
     if (timeDelta !== 0) {

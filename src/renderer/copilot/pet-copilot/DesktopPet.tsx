@@ -266,7 +266,10 @@ function getVisibleDesktopPetMessages(input: {
     .filter((message) => message.unread || message.status === "awaiting")
     .filter((message) => message.updatedAt >= oldestVisibleAt)
     .filter((message) => !input.dismissedKeys.has(getDesktopPetMessageVersionKey(message)))
-    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .sort((left, right) => {
+      const awaitingPriority = Number(right.status === "awaiting") - Number(left.status === "awaiting");
+      return awaitingPriority || right.updatedAt - left.updatedAt;
+    })
     .slice(0, DESKTOP_PET_MESSAGE_LIMIT);
 }
 
@@ -1096,9 +1099,19 @@ export function DesktopPet() {
           count: unreadBadgeCounts.unreadCount,
           ariaLabel: t("desktopPet.unread", { count: unreadBadgeCounts.unreadCount })
         }]
+      : []),
+    ...(runningTaskCount > 0 && unreadBadgeCounts.pendingCount === 0 && unreadBadgeCounts.unreadCount === 0
+      ? [{
+          key: "running" as const,
+          tone: "running" as const,
+          count: runningTaskCount,
+          ariaLabel: t("desktopPet.activity.runningCount", { count: runningTaskCount })
+        }]
       : [])
   ];
-  const showUnreadBadges = unreadBadgeItems.length > 0 && !shouldShowTaskPanel && !shouldShowPreviewPanel && !shouldShowStatusPanel;
+  // The pet and its panel are separate windows; expanding the panel must not
+  // remove the pet's only visible status/count affordance.
+  const showUnreadBadges = unreadBadgeItems.length > 0;
   const previewTitle = previewPanel ? formatInlinePetPreview(previewPanel.title) : "";
   const previewSummary = previewPanel && previewPanel.expanded
     ? formatInlinePetPreview(previewPanel.summary)
@@ -1837,10 +1850,11 @@ export function DesktopPet() {
                 key={badge.key}
                 className={`desktop-pet-unread-badge is-${badge.tone} is-${badge.key}`}
                 aria-label={badge.ariaLabel}
+                title={badge.ariaLabel}
                 onPointerDown={handleUnreadBadgePointerDown}
                 onClick={handleUnreadBadgeClick}
               >
-                {badge.key === "unread" && badge.count > 99
+                {badge.count > 99
                   ? "99+"
                   : String(badge.count)}
               </button>

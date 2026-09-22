@@ -1622,3 +1622,69 @@ body.desktop-pet-body,
   cursor: wait;
   opacity: 0.4;
 }
+
+/* Task cards size to their content instead of stretching the transparent host. */
+.desktop-pet-root.is-panel-window.has-tasks .desktop-pet-task-panel {
+  min-height: 0;
+  height: auto;
+  padding: 12px;
+  gap: 10px;
+  border-radius: 16px;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-issue-card {
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 12px;
+  min-height: 62px;
+  margin: 0;
+  padding: 11px 12px;
+  border-radius: 10px;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-issue-card:focus-visible {
+  outline: 2px solid #356db7;
+  outline-offset: 2px;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-task-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-task-status-badge {
+  width: 28px;
+  height: 28px;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-task-status-badge .anticon {
+  font-size: 14px;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-task-legend {
+  padding-top: 8px;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #60717c;
+}
+
+.desktop-pet-root.has-tasks .desktop-pet-task-legend i {
+  width: 6px;
+  height: 6px;
+}
+
+/* Keep short panels attached to the pet-facing edge of their native host. */
+.desktop-pet-root.is-panel-window.is-panel-placement-above.has-tasks {
+  --desktop-pet-task-panel-top: auto;
+  --desktop-pet-task-panel-bottom: 10px;
+}
+
+.desktop-pet-root.has-tasks.has-compact-tasks {
+  --desktop-pet-task-list-max: 142px;
+}
+
+.desktop-pet-unread-badge.is-running {
+  background: #167d8d;
+  box-shadow: 0 3px 8px rgba(22, 125, 141, 0.24);
+}
