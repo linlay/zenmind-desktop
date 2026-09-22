@@ -2568,6 +2568,9 @@ export function AppSidebar({
         target.canOpenAlternative
       );
     }
+    if (actionId === "web.open-in-browser") {
+      return target.webKind === "webapp";
+    }
     if (actionId === "web.export") {
       return target.webKind === "webapp" && target.canExport;
     }
@@ -2699,6 +2702,18 @@ export function AppSidebar({
       item.openMode !== "dialog"
     ) {
       runtime.onOpenWebappWindow?.(item);
+    } else if (actionId === "web.open-in-browser" && item.kind === "webapp") {
+      try {
+        const result = await window.electronAPI.webs.webapps.start(item.id);
+        if (!result.ok || result.state?.status !== "running" || !result.state.webUrl) {
+          window.alert(result.message || t("sidebar.webapp.openInBrowserFailed"));
+          return;
+        }
+        const opened = await window.electronAPI.shell.openExternal(result.state.webUrl);
+        if (!opened.ok) window.alert(t("sidebar.webapp.openInBrowserFailed"));
+      } catch {
+        window.alert(t("sidebar.webapp.openInBrowserFailed"));
+      }
     } else if (actionId === "web.export" && item.kind === "webapp") {
       await exportWebappItem(item);
     } else if (

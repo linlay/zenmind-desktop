@@ -328,6 +328,8 @@
 
 ## WebApp 单一展示所有权
 
+- macOS / Windows 分别在侧栏 WebApp 右键菜单选择“在系统浏览器打开”：已运行应用复用当前本地地址，未运行应用先启动再打开；不要求 Tunnel 发布，不切换原有展示模式。启动失败或系统浏览器打开失败时显示错误。
+
 
 - macOS 与 Windows 分别使用有图片的浅色/深色皮肤打开透明 WebApp，确认主区、WorkPanel 和 WorkPanel 全屏透出同一背景，图片不重新裁切或随 guest 滚动。切换皮肤和主区/WorkPanel 转移时输入、滚动与 guest identity 保留；隐藏面板或切到非 WebApp tab 后宿主表面恢复。
 - 用明确设置实色背景和背景图片的 WebApp 重复验证，确认页面自有背景优先；普通 Website、Browser、Service 页面不受影响。恢复无图片的默认皮肤及打开独立 WebApp 窗口时检查原有底色，不出现透明到系统桌面的意外变化。

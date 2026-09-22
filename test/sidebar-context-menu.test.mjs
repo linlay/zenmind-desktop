@@ -137,6 +137,7 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
   }), [
     "web.close",
     "web.open-in-workspace",
+    "web.open-in-browser",
     "web.remove"
   ]);
   assert.deepEqual(ids({
@@ -151,7 +152,8 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     showRemove: false
   }), [
     "web.close",
-    "web.open-in-window"
+    "web.open-in-window",
+    "web.open-in-browser"
   ]);
 });
 

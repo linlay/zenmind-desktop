@@ -954,6 +954,8 @@ export const zhCNMessages = {
   "sidebar.webapp.importFailed": "未能导入网站应用，请检查 ZIP 包后重试。",
   "sidebar.webapp.actions": "网站应用操作",
   "sidebar.webapp.openInWindow": "在新窗口打开",
+  "sidebar.webapp.openInBrowser": "在系统浏览器打开",
+  "sidebar.webapp.openInBrowserFailed": "无法在系统浏览器打开网站应用。",
   "sidebar.webapp.openInWorkspace": "在内置窗口打开",
   "sidebar.webapp.copyShareUrl": "复制分享链接",
   "sidebar.webapp.openPublishSettings": "点击去发布",
