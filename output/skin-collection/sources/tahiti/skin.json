@@ -1,0 +1,469 @@
+{
+  "schemaVersion": "1.1",
+  "id": "zenmind.tahiti",
+  "name": "青色·大溪地",
+  "version": "1.3.0",
+  "preview": "assets/background.png",
+  "variants": {
+    "light": {
+      "tokens": {
+        "--bg-base": "#EDF9F8",
+        "--surface": "rgba(252,255,254,0.72)",
+        "--surface-strong": "rgba(252,255,254,0.96)",
+        "--surface-soft": "rgba(252,255,254,0.86)",
+        "--surface-sidebar": "rgba(237,249,248,0.9)",
+        "--ink": "#153D42",
+        "--ink-soft": "#42656A",
+        "--ink-muted": "#55777B",
+        "--line": "rgba(21,61,66,0.13)",
+        "--line-strong": "rgba(21,61,66,0.25)",
+        "--accent": "#087C89",
+        "--accent-strong": "#066370",
+        "--accent-soft": "rgba(8,124,137,0.16)",
+        "--accent-on": "#FFFFFF",
+        "--control-button-bg": "rgba(252,255,254,0.92)",
+        "--control-select-bg": "#FCFFFE",
+        "--control-input-bg": "rgba(252,255,254,0.96)",
+        "--control-border": "rgba(21,61,66,0.22)",
+        "--control-hover-bg": "rgba(8,124,137,0.12)",
+        "--control-active-bg": "rgba(8,124,137,0.22)",
+        "--control-disabled-bg": "rgba(21,61,66,0.07)",
+        "--control-icon-color": "#42656A",
+        "--control-icon-hover-color": "#087C89",
+        "--control-primary-bg": "#087C89",
+        "--control-primary-hover": "#066370",
+        "--control-primary-active": "#04525D",
+        "--control-popover-bg": "#FCFFFE",
+        "--control-tab-strip-bg": "rgba(237,249,248,0.9)",
+        "--control-tab-active-bg": "#FCFFFE",
+        "--control-tab-hover-bg": "rgba(252,255,254,0.8)",
+        "--nav-hover-bg": "rgba(8,124,137,0.1)",
+        "--nav-selected-bg": "rgba(8,124,137,0.18)",
+        "--nav-selected-text": "#04525D",
+        "--nav-accent-selected-bg": "rgba(8,124,137,0.22)",
+        "--desktop-overlay-panel-bg": "#FCFFFE",
+        "--sidebar-operation-menu-bg": "#FCFFFE",
+        "--sidebar-operation-menu-border": "rgba(21,61,66,0.2)",
+        "--modal-mask-bg": "rgba(10,8,12,0.48)",
+        "--shell-sidebar-bg": "rgba(237,249,248,0.87)",
+        "--shell-content-bg": "rgba(237,249,248,0.58)",
+        "--shell-titlebar-bg": "rgba(237,249,248,0.94)",
+        "--control-radius": "10px",
+        "--control-radius-sm": "8px",
+        "--control-radius-lg": "14px",
+        "--overlay-radius": "16px"
+      },
+      "background": {
+        "path": "assets/background.png",
+        "position": "right center"
+      },
+      "visuals": {
+        "images": {
+          "navigation.search": "visuals/light-search.png",
+          "navigation.back": "visuals/light-back.png",
+          "navigation.forward": "visuals/light-forward.png",
+          "navigation.sidebar_left": "visuals/light-sidebar.png",
+          "navigation.sidebar_right": "visuals/light-sidebar_right.png",
+          "navigation.refresh": "visuals/light-refresh.png",
+          "navigation.more_actions": "visuals/light-more.png",
+          "entry.kanban": "visuals/light-kanban.png",
+          "entry.automation": "visuals/light-automation.png",
+          "entry.new_chat": "visuals/light-new_chat.png",
+          "entry.new_project": "visuals/light-project.png",
+          "entry.chat": "visuals/light-chat.png",
+          "entry.project": "visuals/light-project.png",
+          "entry.website": "visuals/light-project.png",
+          "chat.send": "visuals/light-send.png",
+          "chat.stop": "visuals/light-stop.png",
+          "chat.attach": "visuals/light-attach.png",
+          "chat.expand": "visuals/light-expand.png",
+          "chat.collapse": "visuals/light-collapse.png",
+          "chat.screenshot": "visuals/light-screenshot.png",
+          "chat.voice": "visuals/light-voice.png",
+          "agent.default": "visuals/light-project.png",
+          "agent.terminal": "visuals/light-terminal.png",
+          "agent.database": "visuals/light-database.png",
+          "agent.library": "visuals/light-library.png",
+          "agent.folder": "visuals/light-project.png",
+          "agent.coder": "visuals/light-terminal.png",
+          "agent.kbase": "visuals/light-library.png",
+          "heading.pinned.zh-CN": "visuals/light-pinned-zh-CN.png",
+          "heading.pinned.en-US": "visuals/light-pinned-en-US.png",
+          "heading.chats.zh-CN": "visuals/light-chats-zh-CN.png",
+          "heading.chats.en-US": "visuals/light-chats-en-US.png",
+          "heading.projects.zh-CN": "visuals/light-projects-zh-CN.png",
+          "heading.projects.en-US": "visuals/light-projects-en-US.png",
+          "heading.websites.zh-CN": "visuals/light-websites-zh-CN.png",
+          "heading.websites.en-US": "visuals/light-websites-en-US.png"
+        },
+        "styles": {
+          "unread": "#087C89",
+          "unreadText": "#FFFFFF",
+          "unreadShape": "circle",
+          "unreadOutline": [
+            [
+              43,
+              22
+            ],
+            [
+              40,
+              11
+            ],
+            [
+              43,
+              3
+            ],
+            [
+              50,
+              0
+            ],
+            [
+              57,
+              3
+            ],
+            [
+              60,
+              11
+            ],
+            [
+              57,
+              22
+            ],
+            [
+              69,
+              28
+            ],
+            [
+              85,
+              21
+            ],
+            [
+              96,
+              23
+            ],
+            [
+              100,
+              31
+            ],
+            [
+              85,
+              42
+            ],
+            [
+              75,
+              46
+            ],
+            [
+              75,
+              65
+            ],
+            [
+              68,
+              78
+            ],
+            [
+              85,
+              80
+            ],
+            [
+              91,
+              91
+            ],
+            [
+              77,
+              94
+            ],
+            [
+              59,
+              85
+            ],
+            [
+              50,
+              99
+            ],
+            [
+              41,
+              85
+            ],
+            [
+              23,
+              94
+            ],
+            [
+              9,
+              91
+            ],
+            [
+              15,
+              80
+            ],
+            [
+              32,
+              78
+            ],
+            [
+              25,
+              65
+            ],
+            [
+              25,
+              46
+            ],
+            [
+              15,
+              42
+            ],
+            [
+              0,
+              31
+            ],
+            [
+              4,
+              23
+            ],
+            [
+              15,
+              21
+            ],
+            [
+              31,
+              28
+            ]
+          ],
+          "badgeShape": "round",
+          "headingStyle": "rounded"
+        }
+      }
+    },
+    "dark": {
+      "tokens": {
+        "--bg-base": "#10292E",
+        "--surface": "rgba(23,54,61,0.72)",
+        "--surface-strong": "rgba(23,54,61,0.96)",
+        "--surface-soft": "rgba(23,54,61,0.86)",
+        "--surface-sidebar": "rgba(16,41,46,0.9)",
+        "--ink": "#E5F8F8",
+        "--ink-soft": "#B7D6D8",
+        "--ink-muted": "#8DB5B9",
+        "--line": "rgba(229,248,248,0.13)",
+        "--line-strong": "rgba(229,248,248,0.25)",
+        "--accent": "#68D3DA",
+        "--accent-strong": "#96E6EA",
+        "--accent-soft": "rgba(104,211,218,0.16)",
+        "--accent-on": "#10292E",
+        "--control-button-bg": "rgba(23,54,61,0.92)",
+        "--control-select-bg": "#17363D",
+        "--control-input-bg": "rgba(23,54,61,0.96)",
+        "--control-border": "rgba(229,248,248,0.22)",
+        "--control-hover-bg": "rgba(104,211,218,0.12)",
+        "--control-active-bg": "rgba(104,211,218,0.22)",
+        "--control-disabled-bg": "rgba(229,248,248,0.07)",
+        "--control-icon-color": "#B7D6D8",
+        "--control-icon-hover-color": "#68D3DA",
+        "--control-primary-bg": "#68D3DA",
+        "--control-primary-hover": "#96E6EA",
+        "--control-primary-active": "#48B8C1",
+        "--control-popover-bg": "#17363D",
+        "--control-tab-strip-bg": "rgba(16,41,46,0.9)",
+        "--control-tab-active-bg": "#17363D",
+        "--control-tab-hover-bg": "rgba(23,54,61,0.8)",
+        "--nav-hover-bg": "rgba(104,211,218,0.1)",
+        "--nav-selected-bg": "rgba(104,211,218,0.18)",
+        "--nav-selected-text": "#96E6EA",
+        "--nav-accent-selected-bg": "rgba(104,211,218,0.22)",
+        "--desktop-overlay-panel-bg": "#17363D",
+        "--sidebar-operation-menu-bg": "#17363D",
+        "--sidebar-operation-menu-border": "rgba(229,248,248,0.2)",
+        "--modal-mask-bg": "rgba(10,8,12,0.48)",
+        "--shell-sidebar-bg": "rgba(16,41,46,0.87)",
+        "--shell-content-bg": "rgba(16,41,46,0.7)",
+        "--shell-titlebar-bg": "rgba(16,41,46,0.94)",
+        "--control-radius": "10px",
+        "--control-radius-sm": "8px",
+        "--control-radius-lg": "14px",
+        "--overlay-radius": "16px"
+      },
+      "background": {
+        "path": "assets/background-dark.png",
+        "position": "right center"
+      },
+      "visuals": {
+        "images": {
+          "navigation.search": "visuals/dark-search.png",
+          "navigation.back": "visuals/dark-back.png",
+          "navigation.forward": "visuals/dark-forward.png",
+          "navigation.sidebar_left": "visuals/dark-sidebar.png",
+          "navigation.sidebar_right": "visuals/dark-sidebar_right.png",
+          "navigation.refresh": "visuals/dark-refresh.png",
+          "navigation.more_actions": "visuals/dark-more.png",
+          "entry.kanban": "visuals/dark-kanban.png",
+          "entry.automation": "visuals/dark-automation.png",
+          "entry.new_chat": "visuals/dark-new_chat.png",
+          "entry.new_project": "visuals/dark-project.png",
+          "entry.chat": "visuals/dark-chat.png",
+          "entry.project": "visuals/dark-project.png",
+          "entry.website": "visuals/dark-project.png",
+          "chat.send": "visuals/dark-send.png",
+          "chat.stop": "visuals/dark-stop.png",
+          "chat.attach": "visuals/dark-attach.png",
+          "chat.expand": "visuals/dark-expand.png",
+          "chat.collapse": "visuals/dark-collapse.png",
+          "chat.screenshot": "visuals/dark-screenshot.png",
+          "chat.voice": "visuals/dark-voice.png",
+          "agent.default": "visuals/dark-project.png",
+          "agent.terminal": "visuals/dark-terminal.png",
+          "agent.database": "visuals/dark-database.png",
+          "agent.library": "visuals/dark-library.png",
+          "agent.folder": "visuals/dark-project.png",
+          "agent.coder": "visuals/dark-terminal.png",
+          "agent.kbase": "visuals/dark-library.png",
+          "heading.pinned.zh-CN": "visuals/dark-pinned-zh-CN.png",
+          "heading.pinned.en-US": "visuals/dark-pinned-en-US.png",
+          "heading.chats.zh-CN": "visuals/dark-chats-zh-CN.png",
+          "heading.chats.en-US": "visuals/dark-chats-en-US.png",
+          "heading.projects.zh-CN": "visuals/dark-projects-zh-CN.png",
+          "heading.projects.en-US": "visuals/dark-projects-en-US.png",
+          "heading.websites.zh-CN": "visuals/dark-websites-zh-CN.png",
+          "heading.websites.en-US": "visuals/dark-websites-en-US.png"
+        },
+        "styles": {
+          "unread": "#68D3DA",
+          "unreadText": "#10292E",
+          "unreadShape": "circle",
+          "unreadOutline": [
+            [
+              43,
+              22
+            ],
+            [
+              40,
+              11
+            ],
+            [
+              43,
+              3
+            ],
+            [
+              50,
+              0
+            ],
+            [
+              57,
+              3
+            ],
+            [
+              60,
+              11
+            ],
+            [
+              57,
+              22
+            ],
+            [
+              69,
+              28
+            ],
+            [
+              85,
+              21
+            ],
+            [
+              96,
+              23
+            ],
+            [
+              100,
+              31
+            ],
+            [
+              85,
+              42
+            ],
+            [
+              75,
+              46
+            ],
+            [
+              75,
+              65
+            ],
+            [
+              68,
+              78
+            ],
+            [
+              85,
+              80
+            ],
+            [
+              91,
+              91
+            ],
+            [
+              77,
+              94
+            ],
+            [
+              59,
+              85
+            ],
+            [
+              50,
+              99
+            ],
+            [
+              41,
+              85
+            ],
+            [
+              23,
+              94
+            ],
+            [
+              9,
+              91
+            ],
+            [
+              15,
+              80
+            ],
+            [
+              32,
+              78
+            ],
+            [
+              25,
+              65
+            ],
+            [
+              25,
+              46
+            ],
+            [
+              15,
+              42
+            ],
+            [
+              0,
+              31
+            ],
+            [
+              4,
+              23
+            ],
+            [
+              15,
+              21
+            ],
+            [
+              31,
+              28
+            ]
+          ],
+          "badgeShape": "round",
+          "headingStyle": "rounded"
+        }
+      }
+    }
+  }
+}

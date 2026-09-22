@@ -37,7 +37,6 @@ const mapping = { 'navigation.search':'search','navigation.back':'back','navigat
 export const COLLECTION_STYLES = {
   'pink-kitty': { label: '猫爪 · 猫耳 · 猫尾', motif: 'bow', rounded: true },
   'tahiti': { label: '山海 · 海龟 · 神秘岛纹', motif: 'palm', rounded: true },
-  'maldives': { label: '海洋 · 鱼群 · 扇贝', motif: 'wave', rounded: true },
   'gold-saints': { label: '射手座 · 黄金翼甲 · 圣斗士', motif: 'star', rounded: false },
   'walnut-song': { label: '榫卯 · 木作 · 宋式书卷', motif: 'lattice', rounded: false }
 };

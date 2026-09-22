@@ -4,8 +4,8 @@ import {createCanvas,loadImage} from '@napi-rs/canvas';
 import {registerCollectionFonts} from './collection-artwork.mjs';
 registerCollectionFonts();
 const root=path.resolve('output/skin-collection');
-const keys=['gold-saints','maldives','tahiti','walnut-song'];
-const names=['射手座 · 黄金圣斗士','马尔代夫 · 鱼与贝壳','大溪地 · 山海与海龟','宋式 · 榫卯与书卷'];
+const keys=['gold-saints','tahiti','walnut-song'];
+const names=['射手座 · 黄金圣斗士','大溪地 · 山海与海龟','宋式 · 榫卯与书卷'];
 for(const mode of ['light','dark']){
  const canvas=createCanvas(1440,1080),ctx=canvas.getContext('2d');
  for(let i=0;i<keys.length;i++){
