@@ -17,11 +17,11 @@ const { createSettingsSectionDefinitions } = load("../src/renderer/settingsPageS
 const { resolveSettingsSectionId } = load("../src/shared/settings-routes.ts");
 const state = (status, port) => ({ status, healthMeta: { port, webUrl: "https://example.com/secret?token=private" } });
 
-test("only a running instance with a valid actual port publishes a loopback address", () => {
+test("configured endpoints remain visible while stopped and follow the actual port", () => {
   assert.equal(localServiceBaseUrl(state("running", 11949)), "http://127.0.0.1:11949");
   assert.equal(localServiceBaseUrl(undefined), "");
   for (const status of ["stopped", "error", "not-installed", "config-required", "dependency-missing", "initialization-required"]) {
-    assert.equal(localServiceBaseUrl(state(status, 11949)), "");
+    assert.equal(localServiceBaseUrl(state(status, 11949)), "http://127.0.0.1:11949");
   }
   for (const port of [null, undefined, 0, -1, 65536, 4.5, NaN, "11949"]) {
     assert.equal(localServiceBaseUrl(state("running", port)), "");
@@ -60,5 +60,25 @@ test("local services is reachable in settings on both desktop platforms", () => 
   for (const isWindows of [false, true]) {
     const sections = createSettingsSectionDefinitions({ isWindows }).filter((entry) => entry.visible);
     assert.equal(resolveSettingsSectionId("/settings/localServices", sections.map((entry) => entry.id)), "localServices");
+  }
+});
+
+
+test("copied examples include a valid token and its expiration on both platforms", () => {
+  const exp = Math.floor(Date.now() / 1000) + 300;
+  const token = `header.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.signature`;
+  for (const isWindows of [false, true]) {
+    const examples = platformConnectionExamples("http://127.0.0.1:11949", isWindows, token);
+    assert.ok(examples.http.includes(`Authorization: Bearer ${token}`));
+    assert.ok(examples.websocket.includes(JSON.stringify(token)));
+    assert.equal(examples.expiresAtMs, exp * 1000);
+  }
+});
+
+test("examples reject expired, missing-expiry and shell-unsafe tokens", () => {
+  const jwt = claims => `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
+  for (const token of [jwt({ exp: 1 }), jwt({}), jwt({ exp: "9999999999" }), 'bad.$(command).signature', 'bad.`command`.signature']) {
+    assert.throws(() => platformConnectionExamples("http://127.0.0.1:11949", false, token));
+    assert.throws(() => platformConnectionExamples("http://127.0.0.1:11949", true, token));
   }
 });
