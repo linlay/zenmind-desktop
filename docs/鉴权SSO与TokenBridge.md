@@ -137,3 +137,13 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 ## 连接器的实例授权
 
 连接器绑定、启用和凭据由当前 Platform 实例统一管理，不随 Desktop 登录账号切换。保留主线为应用访问签发的已验证个人主体及其 WebApp、会话权限边界，但该主体不用于选择连接器凭据目录。企业 SSO 继续用于市场可见性和 OneID 令牌供给；退出后 OneID 调用受企业会话有效性约束，其他连接器授权由显式解绑清理。
+
+## 独立浏览器 WebClient 会话
+
+Local services 的显式打开动作允许系统浏览器以当前 Desktop 的 Platform 身份访问同一实例。入口仅由主窗口顶层 frame 调用，Main 解析运行服务与目标，不接受页面传入任意服务地址。内嵌 guest 的 Frame Port 强约束不变；浏览器版是单独监听器上的明确 standalone 模式，不是缺少 Bridge 时的降级通道。
+
+Main 只把短时、一次性打开票据放入浏览器 URL fragment。打开页先清除 fragment，再同源 POST 换取随机 HttpOnly、SameSite=Strict 会话 Cookie。票据和会话只存在内存，数量与有效期有界；IPC 只返回不含票据的服务地址，不返回 Platform 或 SSO token。首次打开及会话到期需回到 Desktop 再次点击打开。
+
+HTTP 请求与 WS upgrade 校验精确 Host、Origin、会话及有效期；写请求与 WS 必须来自该入口的精确 origin。API 由 Main 注入可信 provider 签发的 Platform token，并忽略浏览器提交的授权和 Cookie；WS token 仅放入上游握手子协议，响应中移除该子协议，浏览器不可见。浏览器连接强制普通 WebClient source，不能声明 Desktop 物理 lane。所有票据、请求和长连接按已签发 token 的 issuer、subject、device 绑定当前身份；claims 读取仅用于可信 token 的身份比较，不替代验证。身份不匹配、SSO 失效或服务停止时不得沿用旧会话访问新身份。
+
+浏览器版不注入 Electron、WorkPanel 或原生页面能力。浏览器内聊天、查看器与管理功能由 WebClient standalone 实现；Desktop 原生动作仍遵守既有 Run 与 Surface 授权，普通浏览器会话不产生这些授权。首版不代理独立语音服务，运行配置关闭语音入口。

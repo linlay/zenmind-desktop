@@ -1,3 +1,4 @@
+import { registerBrowserWebclientIpc } from "./browser-webclient-ipc";
 import { t } from "../../support/i18n/main-i18n";
 import type { LogStreamSubscriptionRegistry } from "../../support/logging/subscriptions";
 import type { StartupEnvImportRequest } from "../../../shared/contracts";
@@ -13,6 +14,8 @@ export interface ServicesIpcHandlerOptions {
   app: any;
   shell: { showItemInFolder: (p: string) => void; openPath: (p: string) => Promise<string> };
   platform?: NodeJS.Platform;
+  getMainWindow?: () => { webContents: any } | null;
+  openBrowserExternal?: (url: string) => Promise<void>;
 
   // Service manager operations
   listServices: (app: any) => Promise<any[]>;
@@ -239,6 +242,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   // ---------------------------------------------------------------------------
   // services — list & state
   // ---------------------------------------------------------------------------
+  registerBrowserWebclientIpc(ipcMain, options);
+
   ipcMain.handle("services.list", async () => listServices(app));
 
   ipcMain.handle("services.getStartupRestoreState", async () =>

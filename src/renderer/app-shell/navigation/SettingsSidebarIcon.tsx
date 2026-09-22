@@ -85,6 +85,14 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
           <path d="M9 3v18M13 8h4M13 12h4M13 16h2" />
         </svg>
       );
+    case "localServices":
+      return (
+        <svg {...iconProps}>
+          <rect x="3" y="3" width="18" height="7" rx="2" />
+          <rect x="3" y="14" width="18" height="7" rx="2" />
+          <path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5" />
+        </svg>
+      );
     case "control":
       return (
         <svg {...iconProps}>

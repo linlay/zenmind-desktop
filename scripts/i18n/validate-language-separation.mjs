@@ -69,6 +69,7 @@ const allowedLatinTerms = [
   /Tunnel/g,
   /Hub/g,
   /Agent/g,
+  /Platform/g,
   /Identity/g,
   /Center/g,
   /Container/g,

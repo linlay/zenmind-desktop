@@ -292,3 +292,13 @@ export interface TunnelHubRuntimeCommandResult {
   status: TunnelHubRuntimeStatus;
   settings: TunnelHubSettings;
 }
+
+export interface BrowserWebclientState {
+  running: boolean;
+  url: string;
+}
+
+export interface BrowserWebclientResult extends BrowserWebclientState {
+  ok: boolean;
+  message?: string;
+}
