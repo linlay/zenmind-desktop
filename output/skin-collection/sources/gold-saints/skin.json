@@ -2,7 +2,7 @@
   "schemaVersion": "1.1",
   "id": "zenmind.gold-saints",
   "name": "金黄·黄金圣斗士",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "preview": "assets/background.png",
   "variants": {
     "light": {
@@ -75,7 +75,6 @@
           "entry.website": "visuals/light-website.png",
           "chat.send": "visuals/light-send.png",
           "chat.stop": "visuals/light-stop.png",
-          "chat.attach": "visuals/light-attach.png",
           "chat.expand": "visuals/light-expand.png",
           "chat.collapse": "visuals/light-collapse.png",
           "chat.screenshot": "visuals/light-screenshot.png",
@@ -216,8 +215,7 @@
           "entry.project": "visuals/dark-project.png",
           "entry.website": "visuals/dark-website.png",
           "chat.send": "visuals/dark-send.png",
-          "chat.stop": "visuals/light-stop.png",
-          "chat.attach": "visuals/dark-attach.png",
+          "chat.stop": "visuals/dark-stop.png",
           "chat.expand": "visuals/dark-expand.png",
           "chat.collapse": "visuals/dark-collapse.png",
           "chat.screenshot": "visuals/dark-screenshot.png",

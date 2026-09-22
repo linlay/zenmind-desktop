@@ -12,7 +12,7 @@ export function registerCollectionFonts(explicitFont) {
   if (!serif || !fs.existsSync(serif) || !GlobalFonts.registerFromPath(serif, 'CollectionSerif')) throw new Error('Missing Chinese serif font.');
 }
 
-const paths = {
+export const paths = {
   sidebar_right: '<rect x="3" y="4" width="18" height="16" rx="4"/><path d="M15 4v16"/>',
   chat: '<path d="M5 4h14a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9l-6 3V7a3 3 0 0 1 2-3Z"/>',
   search: '<circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5"/>',
@@ -32,7 +32,7 @@ const paths = {
   library: '<path d="M12 6Q6 2 3 5v15q4-3 9 0 5-3 9 0V5q-3-3-9 1v14"/>',
   refresh: '<path d="M20 10a8 8 0 1 0 0 6M20 3v7h-7"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
 };
-const mapping = { 'navigation.search':'search','navigation.back':'back','navigation.forward':'forward','navigation.sidebar_left':'sidebar','navigation.sidebar_right':'sidebar_right','navigation.refresh':'refresh','navigation.more_actions':'more','entry.kanban':'kanban','entry.automation':'automation','entry.new_chat':'new_chat','entry.new_project':'project','entry.chat':'chat','entry.project':'project','entry.website':'website','chat.send':'send','chat.stop':'stop','chat.attach':'attach','chat.expand':'expand','chat.collapse':'collapse','chat.screenshot':'expand','chat.voice':'voice','agent.default':'project','agent.terminal':'terminal','agent.database':'database','agent.library':'library','agent.folder':'project','agent.coder':'terminal','agent.kbase':'library' };
+const mapping = { 'navigation.search':'search','navigation.back':'back','navigation.forward':'forward','navigation.sidebar_left':'sidebar','navigation.sidebar_right':'sidebar_right','navigation.refresh':'refresh','navigation.more_actions':'more','entry.kanban':'kanban','entry.automation':'automation','entry.new_chat':'new_chat','entry.new_project':'project','entry.chat':'chat','entry.project':'project','entry.website':'website','chat.send':'send','chat.stop':'stop','chat.attach':'attach','chat.expand':'expand','chat.collapse':'collapse','chat.voice':'voice','agent.default':'project','agent.terminal':'terminal','agent.database':'database','agent.library':'library','agent.folder':'project','agent.coder':'terminal','agent.kbase':'library' };
 
 export const COLLECTION_STYLES = {
   'pink-kitty': { label: '猫爪 · 猫耳 · 猫尾', motif: 'bow', rounded: true },
@@ -49,7 +49,7 @@ export async function createCollectionArtwork(manifest, key) {
     const tokens = next.variants[mode].tokens;
     const color = tokens['--control-icon-color'], accent = tokens['--accent'], ink = tokens['--ink'];
     const images = {};
-    for (const [name, original] of Object.entries(key === 'pink-kitty' ? paths : { ...paths, screenshot: paths.expand })) {
+    for (const [name, original] of Object.entries(paths)) {
       const geometry = key === 'pink-kitty' ? kittyPaths[name] : themedGeometry(key, name, original);
       const stroke = name === 'send' ? tokens['--accent-on'] : name === 'stop' ? (mode === 'light' ? '#BA3452' : '#FF9BAF') : color;
       const motif = '';

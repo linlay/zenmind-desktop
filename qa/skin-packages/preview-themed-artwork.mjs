@@ -17,7 +17,8 @@ for(const mode of ['light','dark']){
   for(let j=0;j<slots.length;j++){
    const xx=x+28+j%8*85, yy=y+66+Math.floor(j/8)*100;
    if(slots[j]==='chat.send'){ctx.fillStyle=v.tokens['--control-primary-bg'];ctx.fillRect(xx,yy,52,52);}
-   ctx.drawImage(await loadImage(path.join(source,v.visuals.images[slots[j]])),xx,yy,52,52);
+   if(v.visuals.images[slots[j]])ctx.drawImage(await loadImage(path.join(source,v.visuals.images[slots[j]])),xx,yy,52,52);
+   else {ctx.strokeStyle=v.tokens['--control-icon-color'];ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xx+26,yy+12);ctx.lineTo(xx+26,yy+40);ctx.moveTo(xx+12,yy+26);ctx.lineTo(xx+40,yy+26);ctx.stroke();}
    ctx.font='11px system-ui';ctx.fillStyle=v.tokens['--ink-soft'];ctx.fillText(slots[j].split('.')[1],xx-4,yy+70);
   }
   for(let j=0;j<4;j++){

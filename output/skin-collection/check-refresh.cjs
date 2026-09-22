@@ -32,7 +32,7 @@ app.whenReady().then(async () => {
     report[i].browserImagesDecoded = true;
   }
   fs.writeFileSync(path.join(root, 'validation.json'), JSON.stringify(report, null, 2) + '\n');
-  console.log('PASS: both revised archives decode in Electron; four light/dark previews rendered.');
+  console.log('PASS: both archives decode in Electron; four light/dark previews rendered.');
 }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
   if (win && !win.isDestroyed()) win.destroy();
   fs.rmSync(temporary, { recursive: true, force: true });app.exit(process.exitCode || 0);

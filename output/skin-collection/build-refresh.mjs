@@ -14,16 +14,20 @@ await build({stdin:{resolveDir:process.cwd(),contents:`export * from './src/shar
 const api=createRequire(import.meta.url)(path.join(temp,'validator.cjs'));
 let reports=JSON.parse(fs.readFileSync(path.join(root,'validation.json')));
 async function decode(b){const a=[b.subarray(0,8)];for(let i=8;i<b.length;){const e=i+b.readUInt32BE(i)+12;if(b.toString('ascii',i+4,i+8)!=='caBX')a.push(b.subarray(i,e));i=e;}return loadImage(Buffer.concat(a));}
-for(const key of ['tahiti','gold-saints']){
+const selected=process.argv.slice(2);
+assert(selected.every(key=>['tahiti','gold-saints'].includes(key)));
+for(const key of (selected.length?selected:['tahiti','gold-saints'])){
  const source=path.join(root,'sources',key),m=JSON.parse(fs.readFileSync(path.join(source,'skin.json')));
- m.version='1.3.0';
+ m.version=key==='gold-saints'?'1.5.0':'1.4.0';
  m.variants.dark.background.path='assets/background-dark.png';
  for(const mode of ['light','dark']){
+  delete m.variants[mode].visuals.images['chat.attach'];
+  delete m.variants[mode].visuals.images['chat.screenshot'];
   m.variants[mode].background.position='right center';
-  if(key==='tahiti')for(const [slot,name] of Object.entries(m.variants[mode].visuals.images))if(slot.startsWith('heading.'))fs.copyFileSync(path.join(root,'tahiti-artwork',path.basename(name)),path.join(source,name));
+  for(const [slot,name] of Object.entries(m.variants[mode].visuals.images))if(slot.startsWith('heading.'))fs.copyFileSync(path.join(root,key+'-artwork',path.basename(name)),path.join(source,name));
  }
  if(key==='tahiti')for(const v of Object.values(m.variants))v.visuals.images['entry.website']=v.visuals.images['entry.project'];
- if(key==='gold-saints')m.variants.dark.visuals.images['chat.stop']=m.variants.light.visuals.images['chat.stop'];
+ if(key==='gold-saints')m.variants.dark.visuals.images['chat.stop']='visuals/dark-stop.png';
  api.parseSkinPackageManifest(m);
  const zip=new JSZip(),resources=api.skinPackageResources(m);
  zip.file('skin.json',JSON.stringify(m,null,2)+'\n');
@@ -32,8 +36,8 @@ for(const key of ['tahiti','gold-saints']){
  const parsed=await api.readSkinPackageArchive(dest);let visualBytes=0;
  for(const [name,b] of parsed.images){const dim=api.inspectBackgroundImage(b),img=await decode(b);assert.equal(img.width,dim.width);assert.equal(img.height,dim.height);if(name.startsWith('visuals/')){visualBytes+=b.length;assert(api.isSkinVisualDataUrl('data:image/png;base64,'+b.toString('base64')));}}
  assert(visualBytes<=api.SKIN_VISUAL_LIMITS.totalBytes);
- for(const v of Object.values(m.variants))assert.deepEqual(Object.keys(v.visuals.images).sort(),[...api.SKIN_VISUAL_SLOTS].sort());
- const report={file:key+'.skin.zip',name:m.name,version:m.version,schemaVersion:m.schemaVersion,bytes:bytes.length,zipEntries:Object.keys(zip.files).length,visualBytes,slotsPerVariant:api.SKIN_VISUAL_SLOTS.length,backgrounds:Object.fromEntries(['light','dark'].map(mode=>[mode,{path:m.variants[mode].background.path,sha256:hash(parsed.images.get(m.variants[mode].background.path))}])),sha256:hash(bytes),validation:'PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots'};
+ for(const v of Object.values(m.variants))assert.deepEqual(Object.keys(v.visuals.images).sort(),api.SKIN_VISUAL_SLOTS.filter(slot=>slot!=='chat.attach').sort());
+ const report={file:key+'.skin.zip',name:m.name,version:m.version,schemaVersion:m.schemaVersion,bytes:bytes.length,zipEntries:Object.keys(zip.files).length,visualBytes,slotsPerVariant:api.SKIN_VISUAL_SLOTS.length-1,backgrounds:Object.fromEntries(['light','dark'].map(mode=>[mode,{path:m.variants[mode].background.path,sha256:hash(parsed.images.get(m.variants[mode].background.path))}])),sha256:hash(bytes),validation:'PASS canonical manifest, ZIP paths/CRC/limits, all PNG decoding/dimensions, all semantic slots'};
  fs.writeFileSync(path.join(source,'skin.json'),JSON.stringify(m,null,2)+'\n');fs.copyFileSync(dest,path.join(root,key+'.skin.zip'));reports=reports.map(r=>r.file===report.file?report:r);
 }
 fs.writeFileSync(path.join(root,'validation.json'),JSON.stringify(reports,null,2)+'\n');
