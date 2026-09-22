@@ -1,25 +1,26 @@
 .local-services-settings { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.local-services-toolbar, .local-services-example-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.local-services-example-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .local-services-settings p { margin: 0; color: var(--ink-soft); line-height: 1.6; font-size: 12px; overflow-wrap: anywhere; }
-.local-services-card h2 { margin: 0 0 5px; font-size: 14px; color: var(--ink); }
+.local-services-card h2 { margin: 0; font-size: 14px; color: var(--ink); }
 .local-services-card h3 { margin: 0; font-size: 12px; color: var(--ink); }
 .local-services-card .settings-item-header { flex-wrap: wrap; }
 .local-services-body { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; }
-.local-services-body > .ant-btn { align-self: flex-start; }
 .local-services-address { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; min-width: 0; }
 .local-services-address > span { grid-column: 1 / -1; font-size: 12px; color: var(--ink-soft); }
 .local-services-address code { font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
-.local-services-note { padding: 12px; border-radius: 6px; background: var(--surface-soft); }
-.local-services-note strong { display: block; font-size: 12px; margin-bottom: 5px; }
 .local-services-examples summary { cursor: pointer; color: var(--accent); font-size: 13px; padding: 4px 0; }
 .local-services-examples summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .local-services-examples > p, .local-services-examples > h3, .local-services-example { margin-top: 12px; }
 .local-services-example pre { margin: 4px 0 0; padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; }
 @media (max-width: 640px) {
-  .local-services-toolbar, .local-services-example-header { align-items: flex-start; flex-direction: column; }
+  .local-services-example-header { align-items: flex-start; flex-direction: column; }
   .local-services-address { grid-template-columns: 1fr; }
   .local-services-address > .ant-btn { justify-self: start; }
 }
 
-.local-services-browser { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
-.local-services-browser-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.local-services-card .settings-item-header { gap: 12px; align-items: center; }
+.local-services-heading, .local-services-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.local-services-heading .ant-tag { margin: 0; }
+.local-services-actions { margin-left: auto; }
+.local-services-actions > .ant-btn-link { padding-inline: 4px; }
+.local-services-examples > .local-services-address { margin-top: 12px; }

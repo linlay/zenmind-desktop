@@ -147,3 +147,7 @@ Main 只把短时、一次性打开票据放入浏览器 URL fragment。打开�
 HTTP 请求与 WS upgrade 校验精确 Host、Origin、会话及有效期；写请求与 WS 必须来自该入口的精确 origin。API 由 Main 注入可信 provider 签发的 Platform token，并忽略浏览器提交的授权和 Cookie；WS token 仅放入上游握手子协议，响应中移除该子协议，浏览器不可见。浏览器连接强制普通 WebClient source，不能声明 Desktop 物理 lane。所有票据、请求和长连接按已签发 token 的 issuer、subject、device 绑定当前身份；claims 读取仅用于可信 token 的身份比较，不替代验证。身份不匹配、SSO 失效或服务停止时不得沿用旧会话访问新身份。
 
 浏览器版不注入 Electron、WorkPanel 或原生页面能力。浏览器内聊天、查看器与管理功能由 WebClient standalone 实现；Desktop 原生动作仍遵守既有 Run 与 Surface 授权，普通浏览器会话不产生这些授权。首版不代理独立语音服务，运行配置关闭语音入口。
+
+### 本机调用示例
+
+本机服务设置允许用户显式复制含 Platform App access token 的调用示例，复用现有 Agent Auth 签发能力，不导出 canonical SSO token。页面默认只显示占位符；点击复制时获取当前有效 token，校验到期时间并生成命令，完成后仅反馈到期时间，不将 token 保存到页面状态、配置或日志。剪贴板中的命令是固定快照，过期后用户需重新复制；此入口不为外部程序提供自动续期。

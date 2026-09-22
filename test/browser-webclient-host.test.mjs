@@ -133,6 +133,16 @@ test("runtime reuses its listener and trusted IPC opens the OS browser on macOS 
     ready = false;
     assert.equal((await handlers.get("services.openBrowserWebclient")(event)).ok, false);
     ready = true;
+    assert.equal((await handlers.get("services.openBrowserWebclient")(event)).ok, false);
+    assert.equal((await handlers.get("services.startBrowserWebclient")({ sender: {}, senderFrame: {} })).ok, false);
+    ready = false;
+    assert.equal((await handlers.get("services.startBrowserWebclient")(event)).ok, false);
+    ready = true;
+    const started = await handlers.get("services.startBrowserWebclient")(event);
+    assert.equal(started.ok, true);
+    assert.equal(started.running, true);
+    assert.equal(opened.length, 0);
+    assert.equal((await handlers.get("services.startBrowserWebclient")(event)).url, started.url);
     const first = await handlers.get("services.openBrowserWebclient")(event);
     const second = await handlers.get("services.openBrowserWebclient")(event);
     assert.equal(first.ok, true); assert.equal(second.url, first.url); assert.equal(opened.length, 2);

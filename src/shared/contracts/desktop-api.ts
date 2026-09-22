@@ -1051,6 +1051,7 @@ export interface DesktopApi {
   };
   services: {
     getBrowserWebclient: () => Promise<BrowserWebclientState>;
+    startBrowserWebclient: () => Promise<BrowserWebclientResult>;
     openBrowserWebclient: () => Promise<BrowserWebclientResult>;
     stopBrowserWebclient: () => Promise<BrowserWebclientResult>;
     list: () => Promise<ServiceState[]>;

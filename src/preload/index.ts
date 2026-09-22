@@ -364,6 +364,7 @@ const api: DesktopApi = {
   },
   services: {
     getBrowserWebclient: () => ipcRenderer.invoke("services.getBrowserWebclient"),
+    startBrowserWebclient: () => ipcRenderer.invoke("services.startBrowserWebclient"),
     openBrowserWebclient: () => ipcRenderer.invoke("services.openBrowserWebclient"),
     stopBrowserWebclient: () => ipcRenderer.invoke("services.stopBrowserWebclient"),
     list: () => ipcRenderer.invoke("services.list"),

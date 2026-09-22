@@ -1,22 +1,33 @@
 import type { ServiceState } from "../../../shared/contracts";
 
-// Publish only a live loopback endpoint, never a configured default or stale URL.
+// Keep the configured endpoint visible while stopped; runtime state supplies any reassigned port.
 export function localServiceBaseUrl(service: ServiceState | undefined): string {
-  if (service?.status !== "running") return "";
+  if (!service) return "";
   const port = service.healthMeta.port;
   if (!Number.isInteger(port) || !port || port < 1 || port > 65535) return "";
   return `http://127.0.0.1:${port}`;
 }
 
-export function platformConnectionExamples(baseUrl: string, isWindows: boolean) {
+export function platformConnectionExamples(baseUrl: string, isWindows: boolean, token?: string) {
+  let expiresAtMs: number | undefined;
+  if (token !== undefined) {
+    if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) throw new Error("Invalid access token");
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")));
+    if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp)) throw new Error("Missing token expiration");
+    expiresAtMs = claims.exp * 1000;
+    if (expiresAtMs <= Date.now()) throw new Error("Expired access token");
+  }
+  const accessToken = token ?? "YOUR_ACCESS_TOKEN";
   const wsUrl = new URL("/ws", baseUrl);
   wsUrl.protocol = "ws:";
   // Windows PowerShell aliases curl in some versions; explicitly use curl.exe.
   const curl = isWindows ? "curl.exe" : "curl";
   return {
     wsUrl: wsUrl.href,
-    http: `${curl} --fail-with-body --max-time 15 "${baseUrl}/api/agents" -H "Authorization: Bearer YOUR_ACCESS_TOKEN"`,
-    websocket: `const token = "YOUR_ACCESS_TOKEN";
+    expiresAtMs,
+    http: `${curl} --fail-with-body --max-time 15 "${baseUrl}/api/agents" -H "Authorization: Bearer ${accessToken}"`,
+    websocket: `const token = ${JSON.stringify(accessToken)};
 const ws = new WebSocket(${JSON.stringify(wsUrl.href)}, ["bearer." + token]);
 const timeout = setTimeout(() => ws.close(), 15000);
 ws.onmessage = ({ data }) => {
