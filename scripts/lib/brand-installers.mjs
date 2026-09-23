@@ -35,6 +35,9 @@ export function writeInstallerInclude(rootDir, brand) {
   const content = `!include nsDialogs.nsh
 !include FileFunc.nsh
 
+!define DESKTOP_UPDATE_LOG_NAMESPACE "${storageNamespace}"
+${fs.readFileSync(new URL("./windows-update-progress.nsh", import.meta.url), "utf8")}
+
 !ifdef DELETE_APP_DATA_ON_UNINSTALL
   !error "Windows data cleanup must remain owned by the validated custom uninstaller"
 !endif
@@ -359,6 +362,10 @@ FunctionEnd
 
 !ifndef BUILD_UNINSTALLER
 Function ${nsisPrefix}DataDirectoryPage
+  ; Do not expand StdUtils here: electron-builder may register its plugins after this include.
+  \${if} $DesktopUpdateMode == "1"
+    Abort
+  \${endif}
   \${if} \${Silent}
     Abort
   \${endif}
@@ -507,6 +514,7 @@ FunctionEnd
 
 !ifndef BUILD_UNINSTALLER
 !macro customInit
+  !insertmacro DesktopUpdateProgressInit
   !insertmacro setInstallModePerUser
   !insertmacro DesktopResolveDefaultInstallDir
   ReadRegStr $DesktopPreviousInstallDir HKCU "\${INSTALL_REGISTRY_KEY}" "InstallLocation"
@@ -552,6 +560,7 @@ FunctionEnd
 !ifndef BUILD_UNINSTALLER
 !macro customPageAfterChangeDir
   Page custom ${nsisPrefix}DataDirectoryPage ${nsisPrefix}DataDirectoryPageLeave
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW DesktopUpdateProgressShow
 !macroend
 !endif
 
@@ -567,6 +576,7 @@ FunctionEnd
   \${endif}
   !insertmacro DesktopResolveDefaultInstallDir
   StrCpy $INSTDIR "$DesktopDefaultInstallDir"
+  !insertmacro DesktopUpdateStage "old-uninstall-handled"
 !macroend
 
 !macro customUnInstallCheck
@@ -579,6 +589,9 @@ FunctionEnd
 !endif
 
 !macro customCheckAppRunning
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro DesktopUpdateStage "cleanup-start"
+  !endif
   !ifdef BUILD_UNINSTALLER
     Call un.${nsisPrefix}EnsureDataRootDefault
   !else
@@ -656,10 +669,15 @@ FunctionEnd
     SetErrorLevel 20
     Abort
   \${endif}
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro DesktopUpdateStage "cleanup-complete"
+    DetailPrint "正在替换旧版本并解压程序文件，请稍候..."
+  !endif
 !macroend
 
 !ifndef BUILD_UNINSTALLER
 !macro customInstall
+  !insertmacro DesktopUpdateStage "files-installed"
   Call ${nsisPrefix}EnsureDataRootDefault
   !insertmacro DesktopResolveDefaultInstallDir
   \${if} $INSTDIR != $DesktopDefaultInstallDir

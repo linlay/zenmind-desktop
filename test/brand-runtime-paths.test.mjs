@@ -1000,7 +1000,8 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.doesNotMatch(installerInclude, /CuteJInstallDirectoryPage/u);
   assert.doesNotMatch(installerInclude, /CuteJBrowseInstallDirectory/u);
   assert.match(installerInclude, /CuteJDataDirectoryPage/u);
-  assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
+  const customPages = installerInclude.match(/!macro customPageAfterChangeDir\s+([\s\S]*?)!macroend/u)?.[1] ?? "";
+  assert.match(customPages, /Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave/u);
   assert.match(installerInclude, /StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
   assert.match(installerInclude, /\$INSTDIR != \$DesktopDefaultInstallDir/u);
   assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
@@ -1517,7 +1518,8 @@ test("Windows installer keeps the program root fixed while the data root remains
   const dataDirectoryPage = installerInclude.match(/Function CuteJDataDirectoryPage\s+([\s\S]*?)FunctionEnd/u)?.[1] ?? "";
 
   assert.doesNotMatch(installerInclude, /InstallDirectoryPage|BrowseInstallDirectory|DesktopInstallParent/u);
-  assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
+  const customPages = installerInclude.match(/!macro customPageAfterChangeDir\s+([\s\S]*?)!macroend/u)?.[1] ?? "";
+  assert.match(customPages, /Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave/u);
   assert.match(dataDirectoryPage, /Call CuteJEnsureDataRootDefault/u);
   assert.doesNotMatch(dataDirectoryPage, /DesktopDataRootStored[\s\S]*?Abort/u);
   assert.match(dataDirectoryPage, /StrCpy \$DesktopDataParent "\$DesktopDataRoot"/u);
