@@ -1,4 +1,3 @@
-import { invalidateWebappActionTokens } from "../modules/webs";
 import { createAppPairingPayload } from "../modules/identity";
 import {
   cancelDesktopSsoLogin,
@@ -43,12 +42,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     refreshKanbanConnection: assistantBridgeRuntime.refreshKanbanDeviceInfo,
     stopTunnelHubRuntime,
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
-    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut(),
-    invalidateRealtimeIdentity: () => {
-      // Old page/backend grants must not follow the next signed-in account.
-      invalidateWebappActionTokens();
-      assistantBridgeRuntime.realtimeBroker.rotateIdentity();
-    }
+    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
   });
 
   registerEnterpriseChatIpcHandlers(

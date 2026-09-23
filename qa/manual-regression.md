@@ -267,7 +267,7 @@
 - 在 Main Chat、Copilot Dock 与 Kanban Chat 的用户/助手消息、Markdown 和代码块中分别拖选单一语义目标，确认 Desktop 工具条出现；跨消息/代码块、输入框、管理页、Website/WebApp 和普通浏览器 WebClient 不出现。抓取 guest/Main/renderer IPC，确认显示与执行 payload 均不包含选中文字。
 - 点击“添加到对话”，确认主 Composer 保留原草稿/文件/技能并增加 `N 条注释`，发送前没有 query；点击“在顺便问中提问”，确认右侧 BTW 打开并增加 `N 个已选文本片段`，同样不自动发送。发送受理后片段清空，受理前失败时仍保留。
 - 点击“详细解释”，确认单例小窗立即显示准备态，并定位到 CuteJ 主窗口 bounds 内的右下角（macOS 20px、Windows 16px 边距），而不是整个显示器的右下角。只产生一次 `/api/btw`，随后按 `chatId/runId` attach 并支持继续追问、复制与 Stop。重复点击复用窗口并重新对齐主窗口右下角；关闭窗口只 detach，不 interrupt。Realtime Inspector 中辅助 observer 不替换 Main Chat、Copilot Dock 或 Kanban Chat observer，详细解释的首次提问、续问、Stop 与恢复均使用独立 Selection Explain lane，物理连接不超过 Primary + BTW + Selection Explain 三条。
-- 在 macOS 与 Windows Desktop 同时启动主聊天、WorkPanel BTW 和详细解释，确认三个 runId 分别在三条 lane 交错输出；停止解释不影响其他两者，关闭解释窗只 detach。分别断开解释与 Primary 连接，检查已接受 Run 仅 attach 恢复、不新增 query、连接不互相顶替；切换账号后旧身份的三条连接均失效。普通网页划词只有添加到对话与旁聊，直接访问解释 URL 也不能启动或订阅解释 Run。
+- 在 macOS 与 Windows Desktop 同时启动主聊天、WorkPanel BTW 和详细解释，确认三个 runId 分别在三条 lane 交错输出；停止解释不影响其他两者，关闭解释窗只 detach。分别断开解释与 Primary 连接，检查已接受 Run 仅 attach 恢复、不新增 query、连接不互相顶替；官网登录、退出及切换账号不影响三条本地连接；本地 endpoint、设备或服务身份真正变化时旧连接仍失效。普通网页划词只有添加到对话与旁聊，直接访问解释 URL 也不能启动或订阅解释 Run。
 - 详细解释窗口使用自身启动明暗和默认实色外观，不出现 `AppearanceProvider` 或主窗口外观 IPC 权限错误。辅助窗口错误页只允许重新加载或关闭，不在本窗进入控制中心或 AppShell；打开、关闭及重新加载解释窗后，主窗口仍可新建对话并正常发送。主窗口 guest 重挂载期间，辅助窗口也不能登记 `main-chat` 身份。
 
 - 在 Main Chat、Website/Browser 的 Copilot Dock 与 Kanban Chat 之间切换并分别发起对话，确认同一时刻只有当前 surface 持有 live observer；Dock 继续加载内部 `/copilot/:agentKey`，Desktop 不再挂载全页 `copilot-chat`。
@@ -359,7 +359,7 @@
 - 后台 A 的老 tab 打开新 tab，新 tab 再打开后续 tab；每个 popup 只创建在 A，登记后立即可查询和操作。未知 sourceGuestId 不得回退到 B，Blob 保持同来源和 partition，下载既有行为不变。
 - A、B 同时运行时分别查询和操作，确认不能跨实例；伪造公共 source、surfaceId 或内部 target 字段不能获得后台权限；Run/Chat/owner 冲突拒绝。
 - query 提交后立即切页、隐藏/卸载 Dock、切换 Chat 或进入 Kanban，迟到 acceptance 仍只能绑定 A。提交后先关闭 A 则拒绝建立可用授权；历史 attach 不补发授权。
-- 同身份连接重连后继续操作 A，已发命令不重放；Run 终态、退出账号或身份更换后授权失效。多 Run 共享 guest 时直到最后一个授权释放才恢复原后台节流值，Desktop 重启不恢复 grant。
+- 同身份连接重连后继续操作 A，已发命令不重放；Run 终态或本地服务身份更换后授权失效，官网退出不撤销本地页面授权。多 Run 共享 guest 时直到最后一个授权释放才恢复原后台节流值，Desktop 重启不恢复 grant。
 - 关闭单 tab 后旧 targetId 失败；关闭整个 Website、停止 WebApp、重开同名应用或 guest 崩溃后旧授权不能复用，不能重开页面或退回 B。
 - WebApp 主区 ↔ WorkPanel 转移保持原 guest 和授权，隐藏 WorkPanel 后仍有有效截图尺寸与坐标；始终单页。切换独立窗口更换 guest 后旧授权失败。
 - 回归普通前台 CDP、WorkPanel 私有授权、最后一个 tab 关闭、公开 post-state、截图与下载。
@@ -922,3 +922,11 @@
 - Windows 使用系统默认浏览器，macOS 同样由系统处理；系统打开失败给出错误，并允许重新点击。Platform 未运行时提示进入控制中心启动依赖。
 
 - 聊天遮罩：在 macOS / Windows 导入按 light/dark 配置 `--new-chat-surface` / `--main-chat-surface` 的皮肤，验证 RGBA 颜色及 alpha=0/1、新建与已有会话切换；缺省或仅配置一项时其余沿用默认。切回无配置皮肤、切换明暗、刷新及宿主外观桥失效后无旧值残留，无图片时恢复实色。输入框、推荐卡片、正文不跟随整体 opacity；页面与草稿不重建。
+
+## 本地调用与官网登录解耦（Desktop / Platform 联合发布）
+
+- macOS / Windows：未登录启动，保留自动打开的 New Chat 及草稿；登录后直接发送，不新建或刷新页面。
+- 三条 lane 都有活动 Run 时登录、退出、切换官网账号，验证输出、stop/submit、旁聊及详细解释继续工作，不重复 query、不丢 observer。
+- 未登录官网时 WebApp 可发起前台/后台 Assistant、管理本机连接器和读取授权产物；官网状态变化不撤销其 grant。应用退出/重启、本地服务身份变化仍使旧授权失效。
+- 确认新 Chat 的 HTTP 资源、附件和 Run 控制均使用同一本地主体。旧版个人主体的持久 Run 控制记录仍按原所有权校验，不通过改写本地数据或冒用旧账号恢复。
+- Tunnel Hub、企业聊天、云看板、市场及显式 oneid-token 连接器保持自身登录联动；access-token Provider 模式退出后的 Key 清理和消费者停服门禁保持，不承诺该模式退出后模型继续可用。

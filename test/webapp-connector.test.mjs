@@ -6,7 +6,7 @@ const electron={net:{fetch:(...args)=>fetcher(...args)},dialog:{showMessageBox:(
 globalThis.__webappConnectorElectron=electron;
 const {outputFiles}=await build({stdin:{contents:`export * from './src/main/modules/desktop-actions/webapp-connector'; export * from './src/main/modules/desktop-actions/webapp-assistant'; export * from './src/main/modules/desktop-actions/webapp-platform-client'; export * from './src/main/modules/desktop-actions/webapp-kanban';`,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',banner:{js:'import {createRequire} from "node:module"; const require=createRequire('+JSON.stringify(process.cwd()+'/test/webapp-connector.test.mjs')+');'},plugins:[{name:'ports',setup(b){b.onResolve({filter:/\/artifacts$/},()=>({path:process.cwd()+'/src/main/modules/artifacts/actions.ts'}));b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const {net,dialog,BrowserWindow,shell,session}=globalThis.__webappConnectorElectron;'}));b.onResolve({filter:/agent-platform$/},()=>({path:'auth',namespace:'mock-auth'}));b.onLoad({filter:/.*/,namespace:'mock-auth'},()=>({contents:'export function readEmbeddedAuthorization(){throw Error("unexpected UI")}'}));b.onResolve({filter:/main-i18n$/},()=>({path:'i18n',namespace:'mock-i18n'}));b.onLoad({filter:/.*/,namespace:'mock-i18n'},()=>({contents:'export const t=(key)=>key;'}));}}]});
 const api=await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
-const subject='desktop-user:'+'a'.repeat(64);
+const subject='desktop-app';
 const token='header.'+Buffer.from(JSON.stringify({sub:subject})).toString('base64url')+'.signature';
 const response=data=>new Response(JSON.stringify({code:0,data}),{headers:{'Content-Type':'application/json'}});
 let sequence=0;
@@ -37,7 +37,7 @@ test('two WebApps share a host login and receive only its terminal status',async
  const results=await Promise.all([first,second]);assert.equal(prompts,1);for(const result of results)assert.deepEqual(result,{ok:true,action:'desktop.authenticateConnector',result:{status:'authorized'}});
 });
 test('identity change during host confirmation prevents login',async()=>{
- const options=fixture();confirm=async()=>{options.issueAgentAccessToken=async()=>({ok:true,token:'header.'+Buffer.from(JSON.stringify({sub:'desktop-user:'+'b'.repeat(64)})).toString('base64url')+'.signature'});return {response:0}};
+ const options=fixture();confirm=async()=>{options.issueAgentAccessToken=async()=>({ok:true,token:'header.'+Buffer.from(JSON.stringify({sub:'other-app'})).toString('base64url')+'.signature'});return {response:0}};
  let calls=0;fetcher=async()=>{calls++;throw Error('unexpected')};
  const result=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'wecom'},{kind:'webappPage',webappId:'one'});assert.equal(result.result.status,'cancelled');assert.equal(calls,0);
 });
@@ -83,12 +83,12 @@ for (const kind of ['webappPage','webappBackend']) test(`${kind}: a revoked runt
  assert.equal(again.error.code,'app_grant_required');
 });
 
-for (const kind of ['webappPage','webappBackend']) test(`${kind}: an existing token cannot switch to another personal account`,async()=>{
+for (const kind of ['webappPage','webappBackend']) test(`${kind}: an existing token cannot switch to another local service identity`,async()=>{
  const options=fixture();const controller=new AbortController();
  const invocation={kind,webappId:'one',signal:controller.signal};
  fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000}:{items:[]});
  assert.equal((await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation)).ok,true);
- options.issueAgentAccessToken=async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'desktop-user:'+'b'.repeat(64)})).toString('base64url')+'.s'});
+ options.issueAgentAccessToken=async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'other-app'})).toString('base64url')+'.s'});
  const result=await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation);
  assert.equal(result.error.code,'app_grant_required');
 });
