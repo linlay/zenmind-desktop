@@ -90,7 +90,7 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     requireObjectWhenPresent(key);
   }
 
-  if (present("updates")) normalizeUpdateConfig(defaults.updates);
+  if (present("updates")) normalizeUpdateConfig(defaults.updates, platform);
   const services = isRecord(defaults.services) ? defaults.services : {};
   const lifecycleArgs = normalizeServiceLifecycleArgsConfig({ services }, platform);
   const portDefaults = normalizeServicePortDefaultsConfig({ services }, platform);

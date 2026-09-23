@@ -18,11 +18,6 @@ export async function verifyMacUpdateHost(executable: string) {
   if (!/^TeamIdentifier=[A-Z0-9]+$/m.test(stderr)) throw new Error("Updates require a signed macOS release");
 }
 
-export async function verifyWindowsPublisher(file: string, currentExe: string) {
-  const script = `$ErrorActionPreference='Stop'; $a=Get-AuthenticodeSignature -LiteralPath ${psString(currentExe)}; $b=Get-AuthenticodeSignature -LiteralPath ${psString(file)}; if ($a.Status -ne 'Valid' -or $b.Status -ne 'Valid' -or !$a.SignerCertificate -or !$b.SignerCertificate -or $a.SignerCertificate.Subject -ne $b.SignerCertificate.Subject) { throw 'Update publisher signature mismatch' }`;
-  await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { windowsHide: true, timeout: 60_000 });
-}
-
 /** Native Squirrel.Mac verifies the signed app and performs the actual replacement.
  * Call only AFTER coordinated cleanup: native staging can also install on a later quit.
  * No network feed or service credentials are exposed to the native updater.

@@ -1,19 +1,27 @@
-/** Desktop update feed v1. URLs and local paths stay in main. */
+/** Desktop update feed v2. URLs and local paths stay in main. */
 export interface DesktopUpdateConfig {
   enabled: boolean;
   feedUrl: string;
 }
 export interface DesktopUpdateArtifact { url: string; size: number; sha256: string }
 export interface DesktopUpdateManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  keyId: string;
+  channel: string;
+  releaseSequence: number;
+  expiresAt: string;
   productId: string;
   version: string;
   publishedAt: string;
   releaseNotes: Record<string, string[]>;
   artifacts: Record<string, DesktopUpdateArtifact>;
 }
+/** Existing macOS feed; authenticity is enforced by the native Apple updater. */
+export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion" | "keyId" | "channel" | "releaseSequence" | "expiresAt"> & { schemaVersion: 1 };
+export type DesktopPlatformUpdateManifest = DesktopUpdateManifest | DesktopNativeUpdateManifest;
 export type DesktopUpdatePhase = "disabled" | "not-configured" | "idle" | "checking" | "current" | "unavailable" | "available" | "downloading" | "verifying" | "ready" | "installing" | "error";
-export type DesktopTestUpdateInput = { manifest: unknown } | { version: string; url: string; size: number; sha256: string };
+/** Exact UTF-8 manifest text; never parse/reserialize before verification. */
+export type DesktopTestUpdateInput = { manifest: string; signature: string };
 export interface DesktopUpdateState {
   source?: "official" | "test";
   phase: DesktopUpdatePhase;
@@ -28,7 +36,7 @@ export interface DesktopUpdateState {
   /** Cleanup/native install may have stopped services; restart before another attempt. */
   restartRequired?: boolean;
   checkedAt?: string;
-  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy";
+  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy" | "signatureInvalid" | "manifestExpired" | "clockInvalid" | "manifestReplay" | "securityStateInvalid";
 }
 export interface DesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>;
@@ -42,6 +50,11 @@ export interface DesktopUpdatesApi {
 }
 
 /** Shared action policy keeps sidebar and About recovery consistent. */
+export function desktopUpdateSidebarVisible(state: DesktopUpdateState): boolean {
+  return state.phase === "error" || Boolean(state.version &&
+    (state.error || ["available", "downloading", "verifying", "ready", "installing"].includes(state.phase)));
+}
+
 export function desktopUpdateAction(state: DesktopUpdateState): "install" | "download" | "check" | "restart" | undefined {
   if (["checking", "downloading", "verifying", "installing", "disabled"].includes(state.phase)) return undefined;
   if (state.restartRequired) return "restart";

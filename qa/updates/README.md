@@ -1,33 +1,151 @@
-# Desktop 更新联调
+# Desktop 签名更新发布与回归
 
-当前仅实现 Desktop 与本地发布辅助脚本，不部署服务器、不修改外部 env 仓库。
+Windows 使用 v2：Ed25519 签名原始清单，安装包校验大小和 SHA-256，不强制 Authenticode。macOS 保持既有 v1 清单、Apple App 签名、公证和 Squirrel.Mac 验证，不需要 Ed25519 公私钥、口令或 .sig。以下密钥和 v2 发布步骤仅面向 Windows。所有命令从 Desktop 仓库根执行。
 
-1. 将 `desktop-init.example.json` 的 `updates` 段合并到实际 env 的 `desktop-init.json`，替换 HTTPS 地址；不要用本示例覆盖完整初始化文件。首次安装、版本升级、手动 env 导入会将其写入运行根 `.desktop/config/desktop/updates.json`。普通启动只读取该 canonical 文件。缺失配置表示禁用。
-2. macOS 的 `dist:mac` 继续产出 DMG，并从已签名应用额外生成 arm64 ZIP。正式发布需要签名、公证；现有脚本尚未扩展 x64 构建。Windows 消费现有已签名 NSIS EXE，签名发布者须与当前已安装 EXE 一致。
-3. 按实际安装包编辑 `release-input.example.json` 的副本，再运行：
+### macOS 既有流程（不迁移）
 
-```sh
-node scripts/create-update-manifest.mjs /path/to/release-input.json /path/to/latest.json
+2026-09-22 平台隔离回归：57 项更新测试通过，包含 Mac v1 清单、无 .sig 请求、无 Ed25519 配置、原生签名拒绝、旧清单生成命令，以及 Windows 继续强制验签。主进程/渲染进程类型检查、国际化键检查和架构检查通过；本机为 Windows，未执行 Mac 真机打包、公证或安装。
+
+继续使用原品牌、Apple 开发者签名/公证环境和 `npm run dist:mac`。该入口不检查 Ed25519 配置、不签署 Windows v2 清单，bundle 构建也不加载 Windows 更新公钥配置。现有 Mac 更新源无需改成 v2；ZIP 的大小与 SHA-256、宿主 App 签名和原生更新器检查保留。
+
+仅包含 `darwin-*` artifacts 的发布输入继续使用原命令 `node scripts/create-update-manifest.mjs <input.json> <latest.json>`，输出 v1 JSON，不需要任何 `DESKTOP_UPDATE_*` 变量。Windows 输入仍生成签名目录。不要把 Windows 的 v2 更新入口直接替换到旧 Mac 客户端。
+
+## 1. 准备密钥与构建信任
+
+生产和测试分别生成密钥；私钥存放于仓库、`dist` 和构建管理器归档目录之外的受限发布目录。Windows 上应限制该目录 ACL，仅发布账户可访问。工具创建的私钥使用口令加密；POSIX 同时设置私有文件权限。不要将私钥提交 Git、传入命令行参数或打印到日志。
+
+在安全终端设置 `DESKTOP_UPDATE_KEY_PASSPHRASE`（至少 12 字符）后，执行：
+
+```powershell
+node scripts/update-signing.mjs keygen C:/SigningKeys/CuteJProduction cutej production cutej-production-2026-01
 ```
 
-脚本只在本地生成 JSON 和文件大小/SHA-256，不上传发布。只写实际构建的平台。先上传不可变的版本安装包，最后发布清单，清单采用短缓存。服务端不需要业务接口。
+目标必须为不存在的新目录。输出 `private-key.pem` 与 `public-trust.json`。私钥需加密离线备份；生产私钥不会由开发测试自动生成。
 
-开发模式可以检查/下载，但安装按钮禁用。生产更新源及其所有重定向必须 HTTPS，不为本地演示放宽信任规则。自动化单测注入下载与安装适配器覆盖状态流程，不执行真实安装。
+打包时指定公钥文件：
 
-## 平台回归
+```powershell
+$env:BRAND = 'cutej'
+$env:DESKTOP_UPDATE_TRUST_FILE = 'C:/SigningKeys/CuteJProduction/public-trust.json'
+npm run dist:win
+```
+
+Windows 也可把仅含公钥的配置放到 `brands/<brand>/update-trust.json`，作为版本管理的信任输入。文件格式由生成工具提供：单一 `channel`，最多八个具有唯一 `keyId` 的 Ed25519 公钥，全部归属当前品牌和该渠道。
+
+正式 `dist:win` 缺少有效公钥会在打包入口失败；`dist:mac` 不要求该公钥。普通 Windows 开发构建可不配置公钥，但更新验签会失败。生产 Windows 公钥由构建常量内嵌，不能通过修改更新 URL 增加密钥。
+
+## 2. 打包并生成签名清单
+
+复制 `release-input.example.json`，填写实际品牌、版本、密钥标识、渠道、递增的发布序号、更新说明、最终文件路径与 HTTPS URL。`publishedAt` 默认当前时间，`expiresAt` 默认其后 30 天；可显式指定。产物目录不能包含私钥。
+
+集成打包（当前平台一份 artifact，文件必须位于本品牌 `dist` 内）：
+
+```powershell
+$env:DESKTOP_UPDATE_PRIVATE_KEY_FILE = 'C:/SigningKeys/CuteJProduction/private-key.pem'
+$env:DESKTOP_UPDATE_TRUST_FILE = 'C:/SigningKeys/CuteJProduction/public-trust.json'
+$env:DESKTOP_UPDATE_RELEASE_INPUT = 'C:/ReleaseInputs/cutej-production.json'
+# 在安全环境中提供 DESKTOP_UPDATE_KEY_PASSPHRASE
+npm run dist:win
+```
+
+`dist:win` 在安装器与 Windows 验证完成后签署。签名配置必须与本次 bundle 内嵌公钥一致，清单品牌/版本必须匹配当前构建。输出位于 `dist/<brand>/updates/<channel>/<sequence>/`。Mac 不执行此签署步骤。
+
+不设置 `DESKTOP_UPDATE_RELEASE_INPUT` 时，仅生成手动安装/过渡基线包，不产生在线更新清单。在线发布流水线必须要求签名清单存在，不能把“手动安装包已构建”视为“在线发布成功”。
+
+本地 Desktop Build Manager 调用同一 `npm run dist:win`，子进程继承其启动环境，因此上述变量在启动 Build Manager 的受限账户环境中配置即可，无需通过 Web 页面输入私钥。它会归档 `dist/<brand>` 下的清单和签名；它目前不负责远程上传或切换服务器更新入口。
+
+已有最终安装包、或需要组合多个平台产物时，可以独立签署：
+
+```powershell
+node scripts/update-signing.mjs sign C:/ReleaseInputs/cutej-production.json C:/ReleaseOutput/production/42
+node scripts/update-signing.mjs verify C:/ReleaseOutput/production/42 C:/SigningKeys/CuteJProduction/public-trust.json C:/ReleaseInputs/cutej-production.json
+```
+
+原 `create-update-manifest.mjs` CLI 也会调用签名流程；第二参数现为新发布目录，不再生成无签名单文件。已有输出目录拒绝覆盖。独立签署时须人工确认每个平台基线包内嵌的公钥与签名公钥一致；集成打包路径额外自动检查本次构建公钥。
+
+最终安装包若增加 Authenticode 或发生任何改动，必须重新计算哈希并签署更高序号的清单。签名后的 JSON 不得格式化、换行转换或再加工。
+
+## 3. 发布服务器约定与公开验证
+
+推荐目录与入口：
+
+```text
+/releases/<version>/<installer>             不可变安装包
+/updates/production/<sequence>/desktop-latest.json
+/updates/production/<sequence>/desktop-latest.json.sig
+/api/updates/v2/desktop-latest.json         HTTPS 重定向到上述不可变清单
+```
+
+客户端从最终重定向 URL 的 pathname 末尾追加 `.sig`，保留查询参数。例如 `/42/latest.json?x=1` 对应 `/42/latest.json.sig?x=1`。清单和签名请求及其所有重定向均必须 HTTPS，无凭据及 fragment。清单上限 256 KiB；Base64 签名解码后必须恰好 64 字节，可有一个末尾 LF/CRLF，不能有其他空白。
+
+按顺序上传最终安装包，再上传不可变清单和签名。使用当前源码编译后的客户端同款校验器验证公开入口：
+
+```powershell
+npm run updates:verify-feed -- https://updates.example.com/updates/production/42/desktop-latest.json C:/SigningKeys/CuteJProduction/public-trust.json cutej
+```
+
+该命令实际下载所有平台安装包并核验，不只检查 HTTP 状态。公开验证成功后，服务端原子切换稳定入口；随后再次验证稳定入口。稳定入口短缓存，不可变资源可长缓存。不要覆盖同一序号目录；不要以依次覆盖两个 latest 文件声称原子发布。服务器具体部署配置由发布环境管理，本仓库工具不自动修改远程服务器。
+
+生产已启用渠道出现清单 404 会显示“暂无更新信息”；签名 404、安装包 404、清单 503、签名无效或协议错误都是错误，不视为已是最新版本。
+
+## 4. 旧客户端过渡
+
+0.4.10 的旧门禁不能接受未签名 Windows 更新，必须手动覆盖安装一次新基线。过渡版本 B 与后续验收版本 N 在发布前分配，不能默认复用已经发布过的版本号。
+
+通过官方渠道提供 B，B 内嵌生产公钥并使用 v2 更新入口。将实际 env 的 `desktop-init.json` 中 `updates.feedUrl` 指向 v2 地址，沿既有首次安装、版本升级或手动 env 导入流程写入 canonical 配置；普通启动仅读取 canonical 文件。回归时确认覆盖安装后地址确实迁移，不能只检查安装包中存在新配置。
+
+旧 v1 入口不要直接输出 v2 清单；通过旧用户可访问的官方页面说明手动安装。验证 B → N 在线更新成功后再开放。恢复需保留用户数据，服务 deploy 与健康事务仍由现有生命周期负责。
+
+## 5. 有效期、续签与轮换
+
+- 发布序号是每个产品/渠道内的安全序号，不是应用版本号。客户端拒绝低序号和同序号不同内容；重复获取同一字节清单允许。
+- 发布时间最多允许领先本机时间 5 分钟；到期无宽限。检查、下载就绪、安装前与清理后重新检查。
+- 无新版本也应在到期前使用更高序号续签同一应用版本，并部署清单。建议发布流程安排到期前 7 天提醒；本改造不创建自动续签服务或定时任务。
+- 最高可信序号与摘要存放在 Desktop state 的 `update-security` 下，不能随普通缓存清理删除。文件损坏或无法写入时停止更新，不自动重建以绕过防重放。
+- 使用旧密钥签署内置新公钥的过渡版本，再切换新密钥。停留旧客户端仍需可信旧密钥过渡或手动安装。丢失/泄露密钥时不能仅在服务器删除公钥就撤销所有旧客户端信任。
+- 线上坏版本以更高应用版本和更高序号修复；普通更新不执行降级或用户数据自动回滚。
+
+## 6. Debug 与回归
+
+Debug 页粘贴原始清单及签名，保留所有换行；不支持裸 URL、大小和哈希进入安装。主进程执行与正式源相同的公钥、渠道、签名和防重放校验。正式客户端不接受测试密钥；测试包使用独立渠道和公钥。
+
+加载仅切换本次选择，不下载、不改 canonical 配置和自动下载偏好；但有效清单会推进该产品/渠道的安全序号。退出测试恢复官网检查，重启不恢复选择。开发实例禁止真实安装。下载/安装期间禁止切换源；只有主窗口顶层 frame 可以调用。
+
+自动化入口：
+
+```powershell
+npm run build:main:types
+node --test --test-concurrency=1 test/desktop-updates.test.mjs test/desktop-update-security.test.mjs test/desktop-update-installers.test.mjs test/desktop-update-release.test.mjs
+```
+
+上线前真机检查：
+
+- Windows：未做 Authenticode 签名的有效签名更新可完成 B → N；每用户/每机器安装、UAC 取消、文件锁、中文与空格路径、自定义数据根及升级重启正常。
+- macOS：原生签名无效仍被拒绝，挂载 DMG 中运行或原生安装失败不能视为升级成功；普通退出不能提前安装缓存包。
+- 篡改 JSON/签名/安装包、换密钥、错误品牌/渠道、过期、序号重放、损坏安全状态均拒绝。
+- 下载中断、重复操作、缓存复验、过期清单刷新与重新下载正常。
+- 正在运行任务、草稿确认、退出清理失败继续保护用户；服务未健康不视为升级完整成功。
+- 正式包内嵌正确生产公钥，不含私钥、测试信任配置或绕过开关。
+
+单测不替代两平台实际安装回归。本次代码验证与尚未执行的生产验收应分开记录。
+
+### 本次实现验证记录（2026-09-21）
+
+- 按 TDD 分批执行失败用例 → 实现 → 回归；更新协议、运行时、安装平台分支与发布工具专项测试 51/51 通过，使用临时真实 Ed25519 密钥。
+- `npm run build`、主进程与渲染进程类型检查、`npm run i18n:keys`、`npm run architecture:check` 通过。
+- 扩展回归当次 136 项中 128 通过、8 失败；8 项均在未修改的 HEAD 快照中复现，涉及品牌图标/路径断言与 Windows desktop-init 测试，不作为本次更新签名通过项。
+- `npm run i18n:check` 的全量硬编码扫描未通过，同样在 HEAD 快照中复现；不宣称完整 `npm test` 通过。
+- 尚未生成或配置生产密钥、上传或切换远程更新入口、执行实际 Windows/macOS 安装。上述生产验收仍为发布阻断项。
+
+### 上游升级交互与恢复回归
+
+测试与生产使用不同域名的 feedUrl。验证预发布版本和正式版本均可读取，预发布版本按 SemVer 判断是否更新，切换 URL 后旧源的待安装状态失效。生产发布流程自行保证清单指向预期正式版本。
+
+- 模拟清理前 updateBusy，设置旁及 About 均保留重试升级入口，不重新检查或下载；清理/原生安装失败保留安装包并提示重启恢复。重启后检查同一清单直接校验缓存恢复就绪。篡改缓存后必须转为下载重试，不能启动安装器。
 
 - 使用旧版签名安装包 + 更高版本签名更新包，验证未登录时可检查，后台下载完成后齿轮显示提示，菜单和关于页同步；重启后重新校验缓存再显示就绪。
 - 自动下载关闭时仅显示可下载；检查/下载重复点击只运行一个操作；断网、超时、坏 JSON、错误产品、低版本、缺失当前架构、长度/hash 错误均不能安装。
 - 有任务运行时，设置旁与 About 的升级入口均提示退出及对话可能中断，确认后直接清理并升级；取消保留已下载。已识别的原生图片/HTML/WebClient 文档草稿在同一次弹窗中提醒。其他远端网页的未提交表单不在 Desktop 草稿检测范围内。
 - macOS: Squirrel.Mac 在用户点击且服务清理成功后才接收本地 ZIP，并在原生阶段验证签名、替换并重启。普通退出不会预先把已下载包交给原生更新器；原生阶段失败后应重启应用恢复服务。验证不合法签名、不同产品签名、只读安装位置、在 DMG 中运行，以及原生安装失败。
-- Windows: 验证签名不同、无签名、用户取消 UAC、每用户/每机器安装、自定义数据根、路径带空格和非 ASCII 字符。NSIS 必须复验退出与文件锁，成功安装后自动启动。失败不能删除用户数据。
 - 退出清理失败不能启动平台安装器。更新失败解除退出遮罩，保留错误和诊断入口。
 - 新应用按现有启动升级事务部署服务；服务未就绪不能作为升级成功。验证升级后用户配置、账号与业务数据保留。
-
-正式上线前必须执行两平台真机安装回归；单测及 UI 模拟不能替代签名/权限/安装器验证。
-
-Desktop 向 `desktop-init.json` 中 `updates.feedUrl` 初始化的 canonical 地址发送 GET 请求；示例使用 `/api/updates/desktop-latest.json` 路径，实际域名和路径均由配置决定。清单请求 404 显示“暂无更新信息”，并清除先前查询结果；安装包请求 404、清单 503 和非法 JSON 仍显示错误。接口不包裹 `data`。示例配置里的官网域名需与实际部署及产品身份匹配。
-
-测试与生产使用不同域名的 feedUrl。验证预发布版本和正式版本均可读取，预发布版本按 SemVer 判断是否更新，切换 URL 后旧源的待安装状态失效。生产发布流程自行保证清单指向预期正式版本。
-
-- 模拟清理前 updateBusy，设置旁及 About 均保留重试升级入口，不重新检查或下载；清理/原生安装失败保留安装包并提示重启恢复。重启后检查同一清单直接校验缓存恢复就绪。篡改缓存后必须转为下载重试，不能启动安装器。

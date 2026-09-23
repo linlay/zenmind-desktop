@@ -12,19 +12,37 @@ export function updateUrl(value: unknown): string {
   }
   return url.href;
 }
-export function normalizeUpdateConfig(value: unknown): DesktopUpdateConfig {
+export function normalizeUpdateConfig(value: unknown, platform: NodeJS.Platform = process.platform): DesktopUpdateConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid updates configuration");
   const input = value as Record<string, unknown>;
   if (typeof input.enabled !== "boolean") throw new Error("updates.enabled must be boolean");
-  const feedUrl = input.feedUrl ? updateUrl(input.feedUrl) : "";
-  if (input.enabled && !feedUrl) throw new Error("updates.feedUrl is required when enabled");
+  if (input.feedUrl !== undefined && input.feedUrls !== undefined) {
+    throw new Error("updates.feedUrl and updates.feedUrls cannot be combined");
+  }
+  let feedUrl = input.feedUrl ? updateUrl(input.feedUrl) : "";
+  if (input.feedUrls !== undefined) {
+    if (!input.feedUrls || typeof input.feedUrls !== "object" || Array.isArray(input.feedUrls)) throw new Error("updates.feedUrls must be an object");
+    const feeds = input.feedUrls as Record<string, unknown>;
+    for (const [target, url] of Object.entries(feeds)) {
+      if (!["win32", "darwin", "linux"].includes(target)) throw new Error("Unsupported updates.feedUrls platform");
+      updateUrl(url);
+    }
+    // A platform map has no implicit fallback. Legacy single-feed inputs still work.
+    if (platform === "win32" && feeds.win32 !== undefined) feedUrl = updateUrl(feeds.win32);
+    else if (platform === "darwin" && feeds.darwin !== undefined) feedUrl = updateUrl(feeds.darwin);
+    else if (platform === "linux" && feeds.linux !== undefined) feedUrl = updateUrl(feeds.linux);
+  }
+  if (input.enabled && !feedUrl) {
+    const field = input.feedUrls === undefined ? "updates.feedUrl" : `updates.feedUrls.${platform}`;
+    throw new Error(`${field} is required when enabled`);
+  }
   return { enabled: input.enabled, feedUrl };
 }
 export function getUpdateConfigPath(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDesktopConfigRoot(app, platform), "updates.json");
 }
 export function writeUpdateConfig(app: App, value: unknown, platform: NodeJS.Platform = process.platform) {
-  const config = normalizeUpdateConfig(value);
+  const config = normalizeUpdateConfig(value, platform);
   const target = getUpdateConfigPath(app, platform);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, JSON.stringify(config, null, 2) + "\n");
