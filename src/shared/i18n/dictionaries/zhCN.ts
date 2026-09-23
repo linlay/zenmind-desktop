@@ -881,7 +881,7 @@ export const zhCNMessages = {
   "sidebar.chats.defaultAgentMenuLabel": "设置对话的默认智能体",
   "sidebar.chats.defaultAgentUnavailable": "请先在助理设置中选择可用的 Chat 默认智能体。",
   "sidebar.chats.defaultAgentSaveFailed": "保存 Chat 默认智能体失败。",
-  "sidebar.chats.sortRecent": "最近更新优先",
+  "sidebar.chats.sortRecent": "更新优先",
   "sidebar.chats.sortManual": "手动排序",
   "sidebar.chats.sortMenu": "对话排序",
   "sidebar.chats.sortUnavailable": "对话排序暂不可用",
