@@ -111,6 +111,16 @@ export function transitionWindowFullScreen(
       }
     };
     function handleTransition() {
+      // Windows emits the native event before isFullScreen() reflects it.
+      // Read after setFullScreen returns, including asynchronously emitted events.
+      if (platform === "win32") {
+        queueMicrotask(confirmTransition);
+        return;
+      }
+      confirmTransition();
+    }
+    function confirmTransition() {
+      if (settled) return;
       const isFullScreen = readActualState();
       finish({
         ok: isFullScreen === enabled,

@@ -44,7 +44,7 @@ import { beginStartupCheckpoints } from "../../../support/logging/startup-checkp
 import { getServiceState } from "./service-state";
 import { fixShellScriptPermissions } from "./program-layout";
 import { buildDesktopServiceCommandEnv } from "./command-environment";
-import { runExecFile } from "./command-runner";
+import { runExecFile, SERVICE_DEPLOY_TIMEOUT_MS } from "./command-runner";
 import { writeInitializationState } from "./state-files";
 import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 import { applyEnvBindings, getServicePortForEnvSync } from "./environment-bindings";
@@ -352,7 +352,10 @@ export async function initializeServiceInternal(
         checkpoints.next("build-deploy-env");
         const env = buildDesktopServiceCommandEnv(app, service, layout, undefined, options.integrationPorts);
         checkpoints.next("execute-deploy");
-        await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, { env });
+        await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
+          env,
+          timeoutMs: SERVICE_DEPLOY_TIMEOUT_MS
+        });
       }
       checkpoints.next("check-initialization-requirements");
       await ensureInitializationRequirements(app, service, layout, options.integrationPorts);
