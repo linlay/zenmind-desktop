@@ -642,7 +642,8 @@ FunctionEnd
         Goto shutdownAckFinished
       \${endif}
       IntOp $R1 $R1 + 1
-      \${if} $R1 < 24
+      ; Allow the Windows 55s cleanup budget plus acknowledgement overhead.
+      \${if} $R1 < 120
         Sleep 500
         Goto waitShutdownAck
       \${endif}

@@ -1021,7 +1021,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   );
   assert.match(installerInclude, /\$\$path\.Equals\(\$\$appExecutable/u);
   assert.match(installerInclude, /--desktop-shutdown-ack=\$DesktopShutdownAckPath/u);
-  assert.match(installerInclude, /\$R1 < 24/u);
+  assert.match(installerInclude, /\$R1 < 120/u);
   assert.match(installerInclude, /Get-CimInstance Win32_Process -ErrorAction Stop/u);
   assert.match(installerInclude, /DesktopProcessCleanupDone/u);
   assert.match(
