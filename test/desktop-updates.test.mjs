@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { createUpdateManifest } from "../scripts/create-update-manifest.mjs";
 const require = createRequire(import.meta.url);
-const { normalizeUpdateConfig, getUpdateConfigPath } = require("../dist-electron/main/modules/updates/config.js");
+const { normalizeUpdateConfig, getUpdateConfigPath, readUpdateConfig } = require("../dist-electron/main/modules/updates/config.js");
 const { compareUpdateVersions, parseUpdateManifest } = require("../dist-electron/main/modules/updates/manifest.js");
 const { createUpdateRuntime } = require("../dist-electron/main/modules/updates/runtime.js");
 const { downloadUpdateFile, fetchUpdateManifest } = require("../dist-electron/main/modules/updates/download.js");
@@ -28,10 +28,22 @@ function fixture(t, extra = {}) {
   return { root, runtime, events, installs };
 }
 
-test("configuration requires explicit enablement and HTTPS without credentials", () => {
-  assert.deepEqual(normalizeUpdateConfig(config), config);
-  assert.equal(normalizeUpdateConfig({ enabled: false }).feedUrl, "");
-  for (const input of [{}, { enabled: true }, { ...config, feedUrl: "http://localhost/latest.json" }, { ...config, feedUrl: "https://user:secret@example.com/latest.json" }]) assert.throws(() => normalizeUpdateConfig(input));
+test("initialization requires platform feeds and rejects legacy or unsafe inputs", () => {
+  const feeds = { win32: "https://updates.example.com/windows.json", darwin: "https://updates.example.com/macos.json" };
+  for (const platform of ["win32", "darwin"]) {
+    assert.deepEqual(normalizeUpdateConfig({ enabled: true, feedUrls: feeds }, platform), { enabled: true, feedUrl: feeds[platform] });
+    assert.equal(normalizeUpdateConfig({ enabled: false }, platform).feedUrl, "");
+    for (const input of [
+      {}, { enabled: true }, config, { ...config, feedUrls: feeds },
+      { enabled: false, feedUrl: "" },
+      ...[null, [], "invalid", { windows: feeds.win32 }, { [platform]: "http://localhost/latest.json" },
+        { [platform]: "https://user:secret@example.com/latest.json" },
+        { [platform]: "https://example.com/latest.json#fragment" },
+        { ...feeds, linux: "invalid" }].map(feedUrls => ({ enabled: true, feedUrls }))
+    ]) assert.throws(() => normalizeUpdateConfig(input, platform));
+    const other = platform === "win32" ? "darwin" : "win32";
+    assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { [other]: feeds[other] } }, platform), /required/);
+  }
 });
 test("SemVer precedence rejects downgrade and numeric prerelease traps", () => {
   assert.equal(compareUpdateVersions("0.10.0", "0.9.0"), 1);
@@ -50,17 +62,20 @@ for (const platform of ["darwin", "win32"]) test(`${platform} init consumes upda
   const app = { getPath: (name) => name === "home" ? root : path.join(root, "app-data") };
   const init = resolveDesktopInitPath(app, platform);
   fs.mkdirSync(path.dirname(init), { recursive: true });
-  fs.writeFileSync(init, JSON.stringify({ updates: config }));
+  fs.writeFileSync(init, JSON.stringify({ updates: { enabled: true, feedUrls: { [platform]: config.feedUrl } } }));
   assert.equal(applyDesktopInitBootstrap(app, platform).ok, true);
   const target = getUpdateConfigPath(app, platform);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), config);
+  assert.deepEqual(readUpdateConfig(app, platform), config);
   assert.equal(fs.existsSync(init), false);
   const backup = path.join(root, "backup");
   const changed = { ...config, feedUrl: "https://test.example.com/latest.json" };
-  applyDesktopInitVersionUpgrade(app, { updates: changed }, backup, platform);
+  applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrls: { [platform]: changed.feedUrl } } }, backup, platform);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), changed);
+  assert.deepEqual(readUpdateConfig(app, platform), changed);
   assert.ok(fs.readdirSync(backup).some((name) => name.endsWith("updates.json")));
-  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: { ...config, feedUrl: "file:///tmp/payload" } }, path.join(root, "bad-backup"), platform));
+  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: config }, path.join(root, "legacy-backup"), platform), /feedUrls/);
+  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrls: { [platform]: "file:///tmp/payload" } } }, path.join(root, "bad-backup"), platform));
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), changed);
 });
 test("disabled source never checks or downloads", async (t) => {

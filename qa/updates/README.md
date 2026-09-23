@@ -26,8 +26,10 @@ node scripts/create-update-manifest.mjs /path/to/release-input.json /path/to/lat
 
 正式上线前必须执行两平台真机安装回归；单测及 UI 模拟不能替代签名/权限/安装器验证。
 
-Desktop 向 `desktop-init.json` 中 `updates.feedUrl` 初始化的 canonical 地址发送 GET 请求；示例使用 `/api/updates/desktop-latest.json` 路径，实际域名和路径均由配置决定。清单请求 404 显示“暂无更新信息”，并清除先前查询结果；安装包请求 404、清单 503 和非法 JSON 仍显示错误。接口不包裹 `data`。示例配置里的官网域名需与实际部署及产品身份匹配。
+Desktop 向 `desktop-init.json` 中 `updates.feedUrls` 按目标操作系统选择后写入的 canonical 地址发送 GET 请求；示例分别使用 `/api/updates/windows/desktop-latest.json` 与 `/api/updates/macos/desktop-latest.json` 路径，实际域名和路径均由配置决定。清单请求 404 显示“暂无更新信息”，并清除先前查询结果；安装包请求 404、清单 503 和非法 JSON 仍显示错误。接口不包裹 `data`。示例配置里的官网域名需与实际部署及产品身份匹配。
 
 测试与生产使用不同域名的 feedUrl。验证预发布版本和正式版本均可读取，预发布版本按 SemVer 判断是否更新，切换 URL 后旧源的待安装状态失效。生产发布流程自行保证清单指向预期正式版本。
 
 - 模拟清理前 updateBusy，设置旁及 About 均保留重试升级入口，不重新检查或下载；清理/原生安装失败保留安装包并提示重启恢复。重启后检查同一清单直接校验缓存恢复就绪。篡改缓存后必须转为下载重试，不能启动安装器。
+
+Desktop 初始化更新源只接受 `feedUrls` 平台映射，不接受旧的单地址 `feedUrl` 输入，也不跨平台回退。启用时必须提供当前目标平台的 HTTPS 地址。初始化与版本升级将选中的单一地址写入 canonical `updates.json`；普通运行读取该文件，不重新解释初始化映射。实际 env 包应从源配置更新后重新生成、同步，不直接修改生成的归档。
