@@ -330,7 +330,7 @@
 
 ## WebApp 单一展示所有权
 
-- macOS / Windows 分别在侧栏 WebApp 右键菜单选择“在系统浏览器打开”：已运行应用复用当前本地地址，未运行应用先启动再打开；不要求 Tunnel 发布，不切换原有展示模式。启动失败或系统浏览器打开失败时显示错误。
+- macOS / Windows 分别在侧栏 WebApp 右键菜单选择“在外部浏览器打开”：已运行应用复用当前本地地址，未运行应用先启动再打开；不要求 Tunnel 发布，不切换原有展示模式。启动失败或系统浏览器打开失败时显示错误。
 
 
 - macOS 与 Windows 分别使用有图片的浅色/深色皮肤打开透明 WebApp，确认主区、WorkPanel 和 WorkPanel 全屏透出同一背景，图片不重新裁切或随 guest 滚动。切换皮肤和主区/WorkPanel 转移时输入、滚动与 guest identity 保留；隐藏面板或切到非 WebApp tab 后宿主表面恢复。
@@ -908,7 +908,7 @@
 
 - 主设置菜单打开“本机服务”，服务状态事件与重新聚焦能更新 WebClient、Platform 状态；无刷新按钮，读取失败时显示错误。
 - 地址持续显示，Platform 使用服务状态提供的配置或实际端口；浏览器版未启动显示首选端口，运行后显示实际端口；复制地址仅显示图标。
-- WebClient 显示独立浏览器地址；点击“启动服务”只启动监听器，按钮变为“停止”；另点“在系统浏览器打开”后默认浏览器进入 standalone 界面，不再出现 DESKTOP_BRIDGE_UNAVAILABLE。
+- WebClient 显示独立浏览器地址；点击“启动服务”只启动监听器，按钮变为“停止”；另点“在外部浏览器打开”后默认浏览器进入 standalone 界面，不再出现 DESKTOP_BRIDGE_UNAVAILABLE。
 - Platform 展开调用方式，HTTP 与 WS 地址一致；macOS 示例使用 curl，Windows 使用 curl.exe；页面示例显示 YOUR_ACCESS_TOKEN 占位符，点击“复制含令牌示例”后剪贴板包含有效 Platform token，并反馈到期时间；页面不展示或保存该 token。
 - 粘贴复制的 HTTP 示例读取智能体列表；WS 示例等待 v2 connected 后读取列表并关闭连接。签发失败、token 已过期或缺失到期时间时不得复制成功；到期后重新复制获取可用 token。
 - 标题行显示服务名、单一状态及操作按钮，窄窗口允许换行；两张卡片的管理图标定位控制中心对应服务；图标具有悬浮提示及可访问名称。检查中英文、浅深色、复制反馈及键盘展开默认折叠的调用示例。
