@@ -15,7 +15,7 @@ function readSource(...segments) {
   const sourceDirectory = path.dirname(sourcePath);
   const sourceStem = path.basename(sourcePath, ".ts");
   const splitSources = fs.readdirSync(sourceDirectory)
-    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .filter((name) => name.endsWith(".ts") && (sourceDirectory.endsWith(`${path.sep}enterprise-chat`) || name.startsWith(`${sourceStem}.`)))
     .sort()
     .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
   return [source, ...splitSources].join("\n");

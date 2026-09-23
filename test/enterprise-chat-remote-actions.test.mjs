@@ -16,11 +16,11 @@ test("enterprise chat uses structured device-targeted remote actions and flat si
   const [runtime, actions, desktopActions, bridge, appShell, marketPage, storefront, zhCN, enUS] = await Promise.all([
     readSources([
       "src/main/modules/enterprise-chat/runtime.ts",
-      "src/main/modules/enterprise-chat/runtime.shared.ts",
-      "src/main/modules/enterprise-chat/runtime.methods-1.ts",
-      "src/main/modules/enterprise-chat/runtime.methods-2.ts",
-      "src/main/modules/enterprise-chat/runtime.methods-3.ts",
-      "src/main/modules/enterprise-chat/runtime.methods-4.ts",
+      "src/main/modules/enterprise-chat/message-projection.ts",
+      "src/main/modules/enterprise-chat/desktop-action-controller.ts",
+      "src/main/modules/enterprise-chat/attachment-service.ts",
+      "src/main/modules/enterprise-chat/action-receipts.ts",
+      "src/main/modules/enterprise-chat/realtime-connection.ts",
     ]),
     readFile(new URL("src/shared/enterprise-chat-actions.ts", root), "utf8"),
     readFile(new URL("src/shared/desktop-actions.ts", root), "utf8"),
@@ -36,7 +36,7 @@ test("enterprise chat uses structured device-targeted remote actions and flat si
 
   assert.match(runtime, /device\.capabilities\.publish/);
   assert.match(runtime, /kind: "desktop_action_result"/);
-  assert.match(runtime, /targetDeviceId !== (?:this|self)\.getDeviceInfo\(\)\.deviceId/);
+  assert.match(runtime, /targetDeviceId !== (?:this|dependencies)\.getDeviceInfo\(\)\.deviceId/);
   assert.match(runtime, /localizedDesktopActionSummary\(action, args, fallbackSummary\)/);
   assert.match(runtime, /enterpriseChat\.desktopActionTargetSuffix/);
   assert.match(actions, /desktop\.support\.requestScreenshot/);

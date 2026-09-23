@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { EnterpriseChatRuntime_downloadAttachment_9 as download } from '../dist-electron/main/modules/enterprise-chat/runtime.methods-2.js';
+import { downloadAttachment as download } from '../dist-electron/main/modules/enterprise-chat/attachment-service.js';
 
 for (const platform of ['darwin', 'win32']) {
   test(`${platform}: attachment download reports the chosen file only after writing its bytes`, async (t) => {
