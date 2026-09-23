@@ -21,7 +21,7 @@ const ready = [], validation = [];
 for (const key of fs.readdirSync(path.join(root, 'sources')).filter(key => fs.existsSync(path.join(root, 'sources', key, 'skin.json')))) {
   const source = path.join(root, 'sources', key);
   const original = JSON.parse(fs.readFileSync(path.join(source, 'skin.json'), 'utf8'));
-  const { manifest, files } = ['tahiti', 'gold-saints', 'wanyao-tulu-zhuan', 'xiaozhan', 'kenan', 'wangzhe-rongyao'].includes(key)
+  const { manifest, files } = ['tahiti', 'gold-saints', 'wanyao-tulu-zhuan', 'xiaozhan', 'kenan', 'wangzhe-rongyao', 'world-of-warcraft', 'dunhuang', 'zhangjiajie'].includes(key)
     ? { manifest: original, files: new Map(Object.values(original.variants).flatMap(v => Object.values(v.visuals.images)).map(name => [name, fs.readFileSync(path.join(source, name))])) }
     : await createCollectionArtwork(original, key);
   for (const variant of Object.values(manifest.variants)) delete variant.visuals?.images['chat.screenshot'];
@@ -55,7 +55,7 @@ for (const key of fs.readdirSync(path.join(root, 'sources')).filter(key => fs.ex
     assert.deepEqual(manifest.variants[mode].tokens, original.variants[mode].tokens);
     assert.deepEqual(manifest.variants[mode].background, original.variants[mode].background);
     const defaults = ['tahiti','gold-saints'].includes(key) ? ['chat.attach'] : key === 'pink-kitty' ? ['chat.attach', 'navigation.refresh', 'entry.new_project'] : [];
-    assert.deepEqual(Object.keys(manifest.variants[mode].visuals.images).sort(), api.SKIN_VISUAL_SLOTS.filter(slot => ['xiaozhan', 'wangzhe-rongyao', 'kenan'].includes(key) ? (slot.startsWith('heading.') || slot === 'chat.send') : !defaults.includes(slot)).sort());
+    assert.deepEqual(Object.keys(manifest.variants[mode].visuals.images).sort(), api.SKIN_VISUAL_SLOTS.filter(slot => ['xiaozhan', 'wangzhe-rongyao', 'kenan', 'world-of-warcraft', 'dunhuang', 'zhangjiajie'].includes(key) ? (slot.startsWith('heading.') || slot === 'chat.send') : !defaults.includes(slot)).sort());
   }
   assert.equal(hash(parsed.images.get(manifest.variants.light.background.path)), backgroundBefore);
   ready.push({ key, source, manifest, allFiles, bytes });
