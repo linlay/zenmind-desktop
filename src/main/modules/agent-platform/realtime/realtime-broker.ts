@@ -1,11 +1,10 @@
-import { RunSiteControlGrants } from "./run-site-control-grants";
-import type { SiteControlScope } from "../../web-surfaces";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
   AgentWebclientConnectionPhase,
   AgentWebclientRunOwner,
 } from "../../../../shared/contracts";
+import type { SiteControlScope } from "../../web-surfaces";
 import {
   AgentPlatformRealtimeClient,
   type AgentPlatformRealtimeConnectionState,
@@ -13,14 +12,32 @@ import {
   type AgentPlatformRealtimeSocketFactory,
   type RealtimeIdentityRotationReason,
 } from "./agent-platform-realtime-client";
+import { createConnection } from "./connection";
+import { createDesktopRequests } from "./desktop-requests";
+import { createDiagnostics } from "./diagnostics";
+import { createQuery } from "./query";
+import {
+  BrokerRun,
+  ConnectionSubscription,
+  DesktopBridgeRequestProvider,
+  PendingClone,
+  PendingRequest,
+  PushSubscription,
+  QueryTransaction,
+  RealtimeLane,
+  RealtimeQueryCompleted,
+  RealtimeQueryHandle,
+  RootObserverIdentity,
+  RootObserverState,
+  RunActionGrant,
+  RunSubscription,
+} from "./realtime-broker.shared";
 import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
-import { BrokerRun, ConnectionSubscription, DesktopBridgeRequestProvider, PendingClone, PendingRequest, PushSubscription, QueryTransaction, RealtimeLane, RealtimeQueryCompleted, RealtimeQueryHandle, RootObserverIdentity, RootObserverState, RunActionGrant, RunSubscription } from "./realtime-broker.shared";
-import { RealtimeBroker_getConnectionPhase_1, RealtimeBroker_getConnectionState_2, RealtimeBroker_getConnectionStates_3, RealtimeBroker_setDesktopBridgeProvider_4, RealtimeBroker_getRunChannel_5, RealtimeBroker_setRunChannel_6, RealtimeBroker_deleteRunChannel_7, RealtimeBroker_findRootObserver_8, RealtimeBroker_snapshotRootObserver_9, RealtimeBroker_ensureConnected_10, RealtimeBroker_query_11, RealtimeBroker_forwardRequest_12, RealtimeBroker_activateRootObserver_13, RealtimeBroker_getActiveRootObserver_14, RealtimeBroker_getMainChatRootObserver_15, RealtimeBroker_promoteMainChatRootObserver_16, RealtimeBroker_releaseRootObserver_17, RealtimeBroker_retireRootObserver_18, RealtimeBroker_releaseObservedRun_19 } from "./realtime-broker.methods-1";
-import { RealtimeBroker_subscribeClone_1, RealtimeBroker_subscribePush_2, RealtimeBroker_subscribeConnection_3, RealtimeBroker_subscribeRun_4, RealtimeBroker_unsubscribe_5, RealtimeBroker_registerRunActionGrant_6, RealtimeBroker_revokeRunActionGrant_7, RealtimeBroker_clearRunActionGrants_8, RealtimeBroker_cleanupConsumer_9 } from "./realtime-broker.methods-2";
-import { RealtimeBroker_getDiagnostics_1, RealtimeBroker_appendDebugTrace_2, RealtimeBroker_getDebugTraceEntries_3, RealtimeBroker_clearDebugTrace_4, RealtimeBroker_rotateIdentity_5, RealtimeBroker_beginShutdown_6, RealtimeBroker_dispose_7, RealtimeBroker_handleConnectionState_8, RealtimeBroker_handleFrame_9, RealtimeBroker_handleQueryStream_10, RealtimeBroker_bufferProvisionalQueryEvent_11, RealtimeBroker_commitProvisionalQueryEvents_12 } from "./realtime-broker.methods-3";
-import { RealtimeBroker_registerProvisionalRun_1, RealtimeBroker_bindQuerySubscription_2, RealtimeBroker_handleRunStream_3, RealtimeBroker_releaseRunObserver_4, RealtimeBroker_consumeRunEvent_5, RealtimeBroker_appendReplay_6, RealtimeBroker_replayToSubscriber_7, RealtimeBroker_completeRun_8, RealtimeBroker_failQuery_9, RealtimeBroker_startAttach_10, RealtimeBroker_restoreRun_11 } from "./realtime-broker.methods-4";
-import { RealtimeBroker_handlePush_1, RealtimeBroker_handleInboundRequest_2, RealtimeBroker_handleDesktopBridgeRequest_3, RealtimeBroker_awaitRunActionReadiness_4, RealtimeBroker_sendDesktopBridgeSuccess_5, RealtimeBroker_sendDesktopBridgeChunk_6, RealtimeBroker_sendDesktopBridgeError_7 } from "./realtime-broker.methods-5";
-import { RealtimeBroker_waitForCloneRun_1, RealtimeBroker_notifyPendingClones_2, RealtimeBroker_rejectPendingClones_3, RealtimeBroker_detachPendingClones_4, RealtimeBroker_pruneRetainedTerminalRuns_5, RealtimeBroker_hasSystemRunLease_6, RealtimeBroker_detachRunIfUnobserved_7, RealtimeBroker_cleanupPending_8, RealtimeBroker_prepareConnectionIdentity_9 } from "./realtime-broker.methods-6";
+import { createRootObservers } from "./root-observers";
+import { createRunAttachment } from "./run-attachment";
+import { createRunChannels } from "./run-channels";
+import { RunSiteControlGrants } from "./run-site-control-grants";
+import { createSubscriptions } from "./subscriptions";
 
 export class RealtimeBroker {
   private readonly clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
@@ -62,6 +79,15 @@ export class RealtimeBroker {
     laneRotationCount: 0,
   };
 
+  private readonly connectionController: ReturnType<typeof createConnection>;
+  private readonly rootObserversController: ReturnType<typeof createRootObservers>;
+  private readonly queryController: ReturnType<typeof createQuery>;
+  private readonly runChannelsController: ReturnType<typeof createRunChannels>;
+  private readonly runAttachmentController: ReturnType<typeof createRunAttachment>;
+  private readonly subscriptionsController: ReturnType<typeof createSubscriptions>;
+  private readonly desktopRequestsController: ReturnType<typeof createDesktopRequests>;
+  private readonly diagnosticsController: ReturnType<typeof createDiagnostics>;
+
   constructor(private readonly options: {
     app: App;
     issueAccessToken: (
@@ -91,26 +117,26 @@ export class RealtimeBroker {
       "selection-explain": "desktop-explain",
     } as const;
     const createClient = (lane: RealtimeLane) => new AgentPlatformRealtimeClient({
-        app: options.app,
-        issueAccessToken: options.issueAccessToken,
-        getDesktopDeviceId: options.getDesktopDeviceId,
-        createWebSocket: options.createWebSocket,
-        connectTimeoutMs: options.connectTimeoutMs,
-        heartbeatTimeoutMs: options.heartbeatTimeoutMs,
-        source: laneSources[lane],
-        surfaceId: lane === "primary" ? undefined : laneSources[lane],
-        onFrame: (frame, generation) => this.handleFrame(lane, frame, generation),
-        onStaleFrame: () => {
-          this.diagnostics.staleFrameCount += 1;
-        },
-        onState: (state) => this.handleConnectionState(lane, state),
-        onDiagnostic: (message) => options.onDiagnostic?.(`${lane}:${message}`),
-        onTrace: (direction, frame) => this.debugTrace.append({
-          layer: "platform-ws",
-          direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
-          data: { lane, ...frame },
-        }),
-      });
+      app: options.app,
+      issueAccessToken: options.issueAccessToken,
+      getDesktopDeviceId: options.getDesktopDeviceId,
+      createWebSocket: options.createWebSocket,
+      connectTimeoutMs: options.connectTimeoutMs,
+      heartbeatTimeoutMs: options.heartbeatTimeoutMs,
+      source: laneSources[lane],
+      surfaceId: lane === "primary" ? undefined : laneSources[lane],
+      onFrame: (frame, generation) => this.handleFrame(lane, frame, generation),
+      onStaleFrame: () => {
+        this.diagnostics.staleFrameCount += 1;
+      },
+      onState: (state) => this.handleConnectionState(lane, state),
+      onDiagnostic: (message) => options.onDiagnostic?.(`${lane}:${message}`),
+      onTrace: (direction, frame) => this.debugTrace.append({
+        layer: "platform-ws",
+        direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
+        data: { lane, ...frame },
+      }),
+    });
     // Constructing a client does not open a socket. All Desktop platforms open
     // the explanation connection only when its first consumer requests it.
     this.clients = {
@@ -118,27 +144,185 @@ export class RealtimeBroker {
       btw: createClient("btw"),
       "selection-explain": createClient("selection-explain"),
     };
+    const broker = this;
+    this.connectionController = createConnection({
+      get connectionStates() { return broker.connectionStates; },
+      get clients() { return broker.clients; },
+      get disposed() { return broker.disposed; },
+      set disposed(value) { broker.disposed = value; },
+      get acceptingDelivery() { return broker.acceptingDelivery; },
+      set acceptingDelivery(value) { broker.acceptingDelivery = value; },
+      getRunChannel: (...args) => this.getRunChannel(...args),
+      get pendingRequests() { return broker.pendingRequests; },
+      get options() { return broker.options; },
+      get diagnostics() { return broker.diagnostics; },
+      get runChannels() { return broker.runChannels; },
+      get queriesByRequestId() { return broker.queriesByRequestId; },
+      failQuery: (...args) => this.failQuery(...args),
+      get runSubscriptions() { return broker.runSubscriptions; },
+      get pendingClones() { return broker.pendingClones; },
+      get activeRootObserver() { return broker.activeRootObserver; },
+      set activeRootObserver(value) { broker.activeRootObserver = value; },
+      get mainChatRootObserver() { return broker.mainChatRootObserver; },
+      set mainChatRootObserver(value) { broker.mainChatRootObserver = value; },
+      get auxiliaryRootObservers() { return broker.auxiliaryRootObservers; },
+      get terminalRequestIds() { return broker.terminalRequestIds; },
+      clearRunActionGrants: (...args) => this.clearRunActionGrants(...args),
+      get inboundDesktopRequests() { return broker.inboundDesktopRequests; },
+      get seenInboundDesktopRequestIds() { return broker.seenInboundDesktopRequestIds; },
+      get pushSubscriptions() { return broker.pushSubscriptions; },
+      get connectionSubscriptions() { return broker.connectionSubscriptions; },
+      get desktopBridgeProvider() { return broker.desktopBridgeProvider; },
+      set desktopBridgeProvider(value) { broker.desktopBridgeProvider = value; },
+      hasSystemRunLease: (...args) => this.hasSystemRunLease(...args),
+      restoreRun: (...args) => this.restoreRun(...args),
+      handlePush: (...args) => this.handlePush(...args),
+      handleInboundRequest: (...args) => this.handleInboundRequest(...args),
+      handleQueryStream: (...args) => this.handleQueryStream(...args),
+      handleRunStream: (...args) => this.handleRunStream(...args),
+      completeRun: (...args) => this.completeRun(...args),
+    });
+    this.rootObserversController = createRootObservers({
+      get mainChatRootObserver() { return broker.mainChatRootObserver; },
+      set mainChatRootObserver(value) { broker.mainChatRootObserver = value; },
+      get activeRootObserver() { return broker.activeRootObserver; },
+      set activeRootObserver(value) { broker.activeRootObserver = value; },
+      get auxiliaryRootObservers() { return broker.auxiliaryRootObservers; },
+      detachPendingClones: (...args) => this.detachPendingClones(...args),
+      get runSubscriptions() { return broker.runSubscriptions; },
+      unsubscribe: (...args) => this.unsubscribe(...args),
+      getRunChannel: (...args) => this.getRunChannel(...args),
+      get runChannels() { return broker.runChannels; },
+      detachRunIfUnobserved: (...args) => this.detachRunIfUnobserved(...args),
+      pruneRetainedTerminalRuns: (...args) => this.pruneRetainedTerminalRuns(...args),
+    });
+    this.queryController = createQuery({
+      get acceptingDelivery() { return broker.acceptingDelivery; },
+      set acceptingDelivery(value) { broker.acceptingDelivery = value; },
+      prepareConnectionIdentity: (...args) => this.prepareConnectionIdentity(...args),
+      getRunChannel: (...args) => this.getRunChannel(...args),
+      findRootObserver: (...args) => this.findRootObserver(...args),
+      get queriesByRequestId() { return broker.queriesByRequestId; },
+      ensureConnected: (...args) => this.ensureConnected(...args),
+      get runChannels() { return broker.runChannels; },
+      get options() { return broker.options; },
+      get clients() { return broker.clients; },
+      consumeRunEvent: (...args) => this.consumeRunEvent(...args),
+      releaseRunObserver: (...args) => this.releaseRunObserver(...args),
+      completeRun: (...args) => this.completeRun(...args),
+      get diagnostics() { return broker.diagnostics; },
+      appendReplay: (...args) => this.appendReplay(...args),
+      setRunChannel: (...args) => this.setRunChannel(...args),
+      notifyPendingClones: (...args) => this.notifyPendingClones(...args),
+      detachRunIfUnobserved: (...args) => this.detachRunIfUnobserved(...args),
+      get runSubscriptions() { return broker.runSubscriptions; },
+      replayToSubscriber: (...args) => this.replayToSubscriber(...args),
+      get siteControlGrants() { return broker.siteControlGrants; },
+      deleteRunChannel: (...args) => this.deleteRunChannel(...args),
+      unsubscribe: (...args) => this.unsubscribe(...args),
+      get pendingClones() { return broker.pendingClones; },
+    });
+    this.runChannelsController = createRunChannels({
+      get runChannels() { return broker.runChannels; },
+      get runSubscriptions() { return broker.runSubscriptions; },
+      releaseRunObserver: (...args) => this.releaseRunObserver(...args),
+      get diagnostics() { return broker.diagnostics; },
+      get siteControlGrants() { return broker.siteControlGrants; },
+      get options() { return broker.options; },
+      revokeRunActionGrant: (...args) => this.revokeRunActionGrant(...args),
+      get terminalRequestIds() { return broker.terminalRequestIds; },
+      get queriesByRequestId() { return broker.queriesByRequestId; },
+      get inboundDesktopRequests() { return broker.inboundDesktopRequests; },
+      get pushSubscriptions() { return broker.pushSubscriptions; },
+    });
+    this.runAttachmentController = createRunAttachment({
+      get queriesByRequestId() { return broker.queriesByRequestId; },
+      get terminalRequestIds() { return broker.terminalRequestIds; },
+      unsubscribe: (...args) => this.unsubscribe(...args),
+      get diagnostics() { return broker.diagnostics; },
+      getRunChannel: (...args) => this.getRunChannel(...args),
+      ensureConnected: (...args) => this.ensureConnected(...args),
+      get runChannels() { return broker.runChannels; },
+      hasSystemRunLease: (...args) => this.hasSystemRunLease(...args),
+      get clients() { return broker.clients; },
+      forwardRequest: (...args) => this.forwardRequest(...args),
+    });
+    this.subscriptionsController = createSubscriptions({
+      findRootObserver: (...args) => this.findRootObserver(...args),
+      get runSubscriptions() { return broker.runSubscriptions; },
+      get pendingClones() { return broker.pendingClones; },
+      get queriesByRequestId() { return broker.queriesByRequestId; },
+      get mainChatRootObserver() { return broker.mainChatRootObserver; },
+      set mainChatRootObserver(value) { broker.mainChatRootObserver = value; },
+      getRunChannel: (...args) => this.getRunChannel(...args),
+      replayToSubscriber: (...args) => this.replayToSubscriber(...args),
+      get diagnostics() { return broker.diagnostics; },
+      get acceptingDelivery() { return broker.acceptingDelivery; },
+      set acceptingDelivery(value) { broker.acceptingDelivery = value; },
+      get pushSubscriptions() { return broker.pushSubscriptions; },
+      get connectionSubscriptions() { return broker.connectionSubscriptions; },
+      get clients() { return broker.clients; },
+      prepareConnectionIdentity: (...args) => this.prepareConnectionIdentity(...args),
+      setRunChannel: (...args) => this.setRunChannel(...args),
+      startAttach: (...args) => this.startAttach(...args),
+      detachRunIfUnobserved: (...args) => this.detachRunIfUnobserved(...args),
+      get pendingRequests() { return broker.pendingRequests; },
+      cleanupPending: (...args) => this.cleanupPending(...args),
+      get lastCloneCancellationReason() { return broker.lastCloneCancellationReason; },
+      set lastCloneCancellationReason(value) { broker.lastCloneCancellationReason = value; },
+    });
+    this.desktopRequestsController = createDesktopRequests({
+      get desktopBridgeProvider() { return broker.desktopBridgeProvider; },
+      set desktopBridgeProvider(value) { broker.desktopBridgeProvider = value; },
+      get runActionGrants() { return broker.runActionGrants; },
+      get siteControlGrants() { return broker.siteControlGrants; },
+      get clients() { return broker.clients; },
+      get inboundDesktopRequests() { return broker.inboundDesktopRequests; },
+      get seenInboundDesktopRequestIds() { return broker.seenInboundDesktopRequestIds; },
+      getRunChannel: (...args) => this.getRunChannel(...args),
+    });
+    this.diagnosticsController = createDiagnostics({
+      get clients() { return broker.clients; },
+      getConnectionStates: (...args) => this.getConnectionStates(...args),
+      get pendingRequests() { return broker.pendingRequests; },
+      get queriesByRequestId() { return broker.queriesByRequestId; },
+      get runChannels() { return broker.runChannels; },
+      get runSubscriptions() { return broker.runSubscriptions; },
+      get pushSubscriptions() { return broker.pushSubscriptions; },
+      get connectionSubscriptions() { return broker.connectionSubscriptions; },
+      getActiveRootObserver: (...args) => this.getActiveRootObserver(...args),
+      get auxiliaryRootObservers() { return broker.auxiliaryRootObservers; },
+      snapshotRootObserver: (...args) => this.snapshotRootObserver(...args),
+      get mainChatRootObserver() { return broker.mainChatRootObserver; },
+      set mainChatRootObserver(value) { broker.mainChatRootObserver = value; },
+      get pendingClones() { return broker.pendingClones; },
+      get lastCloneCancellationReason() { return broker.lastCloneCancellationReason; },
+      set lastCloneCancellationReason(value) { broker.lastCloneCancellationReason = value; },
+      hasSystemRunLease: (...args) => this.hasSystemRunLease(...args),
+      get diagnostics() { return broker.diagnostics; },
+      get debugTrace() { return broker.debugTrace; },
+    });
   }
 
-  getConnectionPhase(): AgentWebclientConnectionPhase { return RealtimeBroker_getConnectionPhase_1(this as any); }
+  getConnectionPhase(): AgentWebclientConnectionPhase { return this.connectionController.getConnectionPhase(); }
 
-  getConnectionState(lane: RealtimeLane = "primary") { return RealtimeBroker_getConnectionState_2(this as any, lane); }
+  getConnectionState(lane: RealtimeLane = "primary") { return this.connectionController.getConnectionState(lane); }
 
-  getConnectionStates() { return RealtimeBroker_getConnectionStates_3(this as any); }
+  getConnectionStates() { return this.connectionController.getConnectionStates(); }
 
-  setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null) { return RealtimeBroker_setDesktopBridgeProvider_4(this as any, provider); }
+  setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null) { return this.desktopRequestsController.setDesktopBridgeProvider(provider); }
 
-  private getRunChannel(runIdValue: string, lane?: RealtimeLane) { return RealtimeBroker_getRunChannel_5(this as any, runIdValue, lane); }
+  private getRunChannel(runIdValue: string, lane?: RealtimeLane) { return this.runChannelsController.getRunChannel(runIdValue, lane); }
 
-  private setRunChannel(run: BrokerRun) { return RealtimeBroker_setRunChannel_6(this as any, run); }
+  private setRunChannel(run: BrokerRun) { return this.runChannelsController.setRunChannel(run); }
 
-  private deleteRunChannel(run: BrokerRun) { return RealtimeBroker_deleteRunChannel_7(this as any, run); }
+  private deleteRunChannel(run: BrokerRun) { return this.runChannelsController.deleteRunChannel(run); }
 
-  private findRootObserver(tokenValue: string) { return RealtimeBroker_findRootObserver_8(this as any, tokenValue); }
+  private findRootObserver(tokenValue: string) { return this.rootObserversController.findRootObserver(tokenValue); }
 
-  private snapshotRootObserver(observer: RootObserverState | null) { return RealtimeBroker_snapshotRootObserver_9(this as any, observer); }
+  private snapshotRootObserver(observer: RootObserverState | null) { return this.rootObserversController.snapshotRootObserver(observer); }
 
-  async ensureConnected(baseUrl: string, token: string, lane: RealtimeLane = "primary") { return RealtimeBroker_ensureConnected_10(this as any, baseUrl, token, lane); }
+  async ensureConnected(baseUrl: string, token: string, lane: RealtimeLane = "primary") { return this.connectionController.ensureConnected(baseUrl, token, lane); }
 
   query(options: {
     baseUrl: string;
@@ -155,7 +339,7 @@ export class RealtimeBroker {
     requestType?: "/api/query" | "/api/btw";
     observerToken?: string;
     siteControlScope?: SiteControlScope;
-  }): RealtimeQueryHandle { return RealtimeBroker_query_11(this as any, options); }
+  }): RealtimeQueryHandle { return this.queryController.query(options); }
 
   async forwardRequest(options: {
     baseUrl: string;
@@ -168,21 +352,21 @@ export class RealtimeBroker {
     onFrame(frame: AgentPlatformRealtimeFrame): void;
     onError(error: Error): void;
     lane?: RealtimeLane;
-  }) { return RealtimeBroker_forwardRequest_12(this as any, options); }
+  }) { return this.connectionController.forwardRequest(options); }
 
-  activateRootObserver(input: RootObserverIdentity) { return RealtimeBroker_activateRootObserver_13(this as any, input); }
+  activateRootObserver(input: RootObserverIdentity) { return this.rootObserversController.activateRootObserver(input); }
 
-  getActiveRootObserver() { return RealtimeBroker_getActiveRootObserver_14(this as any); }
+  getActiveRootObserver() { return this.rootObserversController.getActiveRootObserver(); }
 
-  getMainChatRootObserver() { return RealtimeBroker_getMainChatRootObserver_15(this as any); }
+  getMainChatRootObserver() { return this.rootObserversController.getMainChatRootObserver(); }
 
-  promoteMainChatRootObserver(tokenValue: string, chatIdValue: string) { return RealtimeBroker_promoteMainChatRootObserver_16(this as any, tokenValue, chatIdValue); }
+  promoteMainChatRootObserver(tokenValue: string, chatIdValue: string) { return this.rootObserversController.promoteMainChatRootObserver(tokenValue, chatIdValue); }
 
-  releaseRootObserver(tokenValue: string, reason = "parent_observer_closed") { return RealtimeBroker_releaseRootObserver_17(this as any, tokenValue, reason); }
+  releaseRootObserver(tokenValue: string, reason = "parent_observer_closed") { return this.rootObserversController.releaseRootObserver(tokenValue, reason); }
 
-  private retireRootObserver(observer: RootObserverState, reason: string) { return RealtimeBroker_retireRootObserver_18(this as any, observer, reason); }
+  private retireRootObserver(observer: RootObserverState, reason: string) { return this.rootObserversController.retireRootObserver(observer, reason); }
 
-  releaseObservedRun(observerTokenValue: string, runIdValue: string, reason = "surface_inactive") { return RealtimeBroker_releaseObservedRun_19(this as any, observerTokenValue, runIdValue, reason); }
+  releaseObservedRun(observerTokenValue: string, runIdValue: string, reason = "surface_inactive") { return this.rootObserversController.releaseObservedRun(observerTokenValue, runIdValue, reason); }
 
   async subscribeClone(options: {
     kind?: "overview" | "debug";
@@ -194,7 +378,7 @@ export class RealtimeBroker {
     onEvent(event: Record<string, unknown>): void;
     onComplete?(result: RealtimeQueryCompleted): void;
     onError?(error: Error): void;
-  }) { return RealtimeBroker_subscribeClone_1(this as any, options); }
+  }) { return this.subscriptionsController.subscribeClone(options); }
 
   subscribePush(options: {
     types: string[];
@@ -202,13 +386,13 @@ export class RealtimeBroker {
     kind: "surface" | "internal" | "desktop-ws";
     consumerId: string;
     onPush(frame: AgentPlatformRealtimeFrame): void;
-  }) { return RealtimeBroker_subscribePush_2(this as any, options); }
+  }) { return this.subscriptionsController.subscribePush(options); }
 
   subscribeConnection(options: {
     consumerId: string;
     onState(state: AgentPlatformRealtimeConnectionState): void;
     lane?: RealtimeLane;
-  }) { return RealtimeBroker_subscribeConnection_3(this as any, options); }
+  }) { return this.subscriptionsController.subscribeConnection(options); }
 
   subscribeRun(options: {
     baseUrl: string;
@@ -226,9 +410,9 @@ export class RealtimeBroker {
     lane?: RealtimeLane;
     role?: "root_observer" | "clone" | "internal";
     observerToken?: string;
-  }) { return RealtimeBroker_subscribeRun_4(this as any, options); }
+  }) { return this.subscriptionsController.subscribeRun(options); }
 
-  unsubscribe(subscriptionId: string) { return RealtimeBroker_unsubscribe_5(this as any, subscriptionId); }
+  unsubscribe(subscriptionId: string) { return this.subscriptionsController.unsubscribe(subscriptionId); }
 
   registerRunActionGrant(input: {
     sourceId: string;
@@ -237,110 +421,110 @@ export class RealtimeBroker {
     owner: AgentWebclientRunOwner;
     ready: Promise<void>;
     replaceExisting?: boolean;
-  }) { return RealtimeBroker_registerRunActionGrant_6(this as any, input); }
+  }) { return this.desktopRequestsController.registerRunActionGrant(input); }
 
-  revokeRunActionGrant(runIdValue: string) { return RealtimeBroker_revokeRunActionGrant_7(this as any, runIdValue); }
+  revokeRunActionGrant(runIdValue: string) { return this.desktopRequestsController.revokeRunActionGrant(runIdValue); }
 
-  private clearRunActionGrants() { return RealtimeBroker_clearRunActionGrants_8(this as any); }
+  private clearRunActionGrants() { return this.desktopRequestsController.clearRunActionGrants(); }
 
-  cleanupConsumer(consumerId: string) { return RealtimeBroker_cleanupConsumer_9(this as any, consumerId); }
+  cleanupConsumer(consumerId: string) { return this.subscriptionsController.cleanupConsumer(consumerId); }
 
-  getDiagnostics() { return RealtimeBroker_getDiagnostics_1(this as any); }
+  getDiagnostics() { return this.diagnosticsController.getDiagnostics(); }
 
-  appendDebugTrace(input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]) { return RealtimeBroker_appendDebugTrace_2(this as any, input); }
+  appendDebugTrace(input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]) { return this.diagnosticsController.appendDebugTrace(input); }
 
-  getDebugTraceEntries() { return RealtimeBroker_getDebugTraceEntries_3(this as any); }
+  getDebugTraceEntries() { return this.diagnosticsController.getDebugTraceEntries(); }
 
-  clearDebugTrace() { return RealtimeBroker_clearDebugTrace_4(this as any); }
+  clearDebugTrace() { return this.diagnosticsController.clearDebugTrace(); }
 
-  rotateIdentity(reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") { return RealtimeBroker_rotateIdentity_5(this as any, reason); }
+  rotateIdentity(reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") { return this.connectionController.rotateIdentity(reason); }
 
-  beginShutdown() { return RealtimeBroker_beginShutdown_6(this as any); }
+  beginShutdown() { return this.connectionController.beginShutdown(); }
 
-  dispose() { return RealtimeBroker_dispose_7(this as any); }
+  dispose() { return this.connectionController.dispose(); }
 
-  private handleConnectionState(lane: RealtimeLane, state: AgentPlatformRealtimeConnectionState) { return RealtimeBroker_handleConnectionState_8(this as any, lane, state); }
+  private handleConnectionState(lane: RealtimeLane, state: AgentPlatformRealtimeConnectionState) { return this.connectionController.handleConnectionState(lane, state); }
 
-  private handleFrame(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame, generation: number) { return RealtimeBroker_handleFrame_9(this as any, lane, frame, generation); }
+  private handleFrame(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame, generation: number) { return this.connectionController.handleFrame(lane, frame, generation); }
 
-  private handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame) { return RealtimeBroker_handleQueryStream_10(this as any, transaction, frame); }
+  private handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame) { return this.queryController.handleQueryStream(transaction, frame); }
 
   private bufferProvisionalQueryEvent(
     transaction: QueryTransaction,
     event: Record<string, unknown>,
-  ) { return RealtimeBroker_bufferProvisionalQueryEvent_11(this as any, transaction, event); }
+  ) { return this.queryController.bufferProvisionalQueryEvent(transaction, event); }
 
-  private commitProvisionalQueryEvents(run: BrokerRun, transaction: QueryTransaction) { return RealtimeBroker_commitProvisionalQueryEvents_12(this as any, run, transaction); }
+  private commitProvisionalQueryEvents(run: BrokerRun, transaction: QueryTransaction) { return this.queryController.commitProvisionalQueryEvents(run, transaction); }
 
   private registerProvisionalRun(
     transaction: QueryTransaction,
     event: Record<string, unknown>,
-  ) { return RealtimeBroker_registerProvisionalRun_1(this as any, transaction, event); }
+  ) { return this.queryController.registerProvisionalRun(transaction, event); }
 
-  private bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction) { return RealtimeBroker_bindQuerySubscription_2(this as any, run, transaction); }
+  private bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction) { return this.queryController.bindQuerySubscription(run, transaction); }
 
-  private handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame) { return RealtimeBroker_handleRunStream_3(this as any, run, frame); }
+  private handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame) { return this.runChannelsController.handleRunStream(run, frame); }
 
   private releaseRunObserver(
     run: BrokerRun,
     requestId: string,
     reason: string,
     lastSeq: unknown,
-  ) { return RealtimeBroker_releaseRunObserver_4(this as any, run, requestId, reason, lastSeq); }
+  ) { return this.runAttachmentController.releaseRunObserver(run, requestId, reason, lastSeq); }
 
   private consumeRunEvent(
     run: BrokerRun,
     event: Record<string, unknown>,
     transaction: QueryTransaction | null,
-  ) { return RealtimeBroker_consumeRunEvent_5(this as any, run, event, transaction); }
+  ) { return this.runChannelsController.consumeRunEvent(run, event, transaction); }
 
   private appendReplay(
     run: BrokerRun,
     event: Record<string, unknown>,
     seq: number | null,
     path?: string,
-  ) { return RealtimeBroker_appendReplay_6(this as any, run, event, seq, path); }
+  ) { return this.runChannelsController.appendReplay(run, event, seq, path); }
 
-  private replayToSubscriber(run: BrokerRun, subscription: RunSubscription) { return RealtimeBroker_replayToSubscriber_7(this as any, run, subscription); }
+  private replayToSubscriber(run: BrokerRun, subscription: RunSubscription) { return this.runChannelsController.replayToSubscriber(run, subscription); }
 
   private completeRun(
     run: BrokerRun,
     result: RealtimeQueryCompleted,
     source: NonNullable<BrokerRun["terminalSource"]>,
-  ) { return RealtimeBroker_completeRun_8(this as any, run, result, source); }
+  ) { return this.runChannelsController.completeRun(run, result, source); }
 
-  private failQuery(transaction: QueryTransaction, error: unknown) { return RealtimeBroker_failQuery_9(this as any, transaction, error); }
+  private failQuery(transaction: QueryTransaction, error: unknown) { return this.queryController.failQuery(transaction, error); }
 
-  private async startAttach(run: BrokerRun, baseUrl: string, token: string) { return RealtimeBroker_startAttach_10(this as any, run, baseUrl, token); }
+  private async startAttach(run: BrokerRun, baseUrl: string, token: string) { return this.runAttachmentController.startAttach(run, baseUrl, token); }
 
-  private async restoreRun(run: BrokerRun) { return RealtimeBroker_restoreRun_11(this as any, run); }
+  private async restoreRun(run: BrokerRun) { return this.runAttachmentController.restoreRun(run); }
 
-  private handlePush(frame: AgentPlatformRealtimeFrame) { return RealtimeBroker_handlePush_1(this as any, frame); }
+  private handlePush(frame: AgentPlatformRealtimeFrame) { return this.runChannelsController.handlePush(frame); }
 
-  private handleInboundRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame) { return RealtimeBroker_handleInboundRequest_2(this as any, lane, frame); }
+  private handleInboundRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame) { return this.desktopRequestsController.handleInboundRequest(lane, frame); }
 
   private async handleDesktopBridgeRequest(
     id: string,
     type: string,
     frame: AgentPlatformRealtimeFrame,
-  ) { return RealtimeBroker_handleDesktopBridgeRequest_3(this as any, id, type, frame); }
+  ) { return this.desktopRequestsController.handleDesktopBridgeRequest(id, type, frame); }
 
   private async awaitRunActionReadiness(
     action: string,
     source: Record<string, unknown>,
     signal: AbortSignal,
-  ) { return RealtimeBroker_awaitRunActionReadiness_4(this as any, action, source, signal); }
+  ) { return this.desktopRequestsController.awaitRunActionReadiness(action, source, signal); }
 
   private async sendDesktopBridgeSuccess(
     id: string,
     type: string,
     result: Record<string, unknown>,
     signal: AbortSignal,
-  ) { return RealtimeBroker_sendDesktopBridgeSuccess_5(this as any, id, type, result, signal); }
+  ) { return this.desktopRequestsController.sendDesktopBridgeSuccess(id, type, result, signal); }
 
-  private sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string) { return RealtimeBroker_sendDesktopBridgeChunk_6(this as any, id, streamId, seq, type, chunk); }
+  private sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string) { return this.desktopRequestsController.sendDesktopBridgeChunk(id, streamId, seq, type, chunk); }
 
-  private sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown) { return RealtimeBroker_sendDesktopBridgeError_7(this as any, id, type, code, msg, data); }
+  private sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown) { return this.desktopRequestsController.sendDesktopBridgeError(id, type, code, msg, data); }
 
   private waitForCloneRun(
     kind: "overview" | "debug",
@@ -349,23 +533,23 @@ export class RealtimeBroker {
     chatIdValue: string,
     owner: AgentWebclientRunOwner,
     consumerId: string,
-  ) { return RealtimeBroker_waitForCloneRun_1(this as any, kind, observerToken, runIdValue, chatIdValue, owner, consumerId); }
+  ) { return this.subscriptionsController.waitForCloneRun(kind, observerToken, runIdValue, chatIdValue, owner, consumerId); }
 
-  private notifyPendingClones(run: BrokerRun) { return RealtimeBroker_notifyPendingClones_2(this as any, run); }
+  private notifyPendingClones(run: BrokerRun) { return this.subscriptionsController.notifyPendingClones(run); }
 
-  private rejectPendingClones(observerToken: string, error: Error) { return RealtimeBroker_rejectPendingClones_3(this as any, observerToken, error); }
+  private rejectPendingClones(observerToken: string, error: Error) { return this.subscriptionsController.rejectPendingClones(observerToken, error); }
 
-  private detachPendingClones(observerToken: string) { return RealtimeBroker_detachPendingClones_4(this as any, observerToken); }
+  private detachPendingClones(observerToken: string) { return this.subscriptionsController.detachPendingClones(observerToken); }
 
-  private pruneRetainedTerminalRuns() { return RealtimeBroker_pruneRetainedTerminalRuns_5(this as any); }
+  private pruneRetainedTerminalRuns() { return this.runChannelsController.pruneRetainedTerminalRuns(); }
 
-  private hasSystemRunLease(run: BrokerRun) { return RealtimeBroker_hasSystemRunLease_6(this as any, run); }
+  private hasSystemRunLease(run: BrokerRun) { return this.rootObserversController.hasSystemRunLease(run); }
 
-  private detachRunIfUnobserved(run: BrokerRun, reason: string) { return RealtimeBroker_detachRunIfUnobserved_7(this as any, run, reason); }
+  private detachRunIfUnobserved(run: BrokerRun, reason: string) { return this.runAttachmentController.detachRunIfUnobserved(run, reason); }
 
-  private cleanupPending(upstreamId: string) { return RealtimeBroker_cleanupPending_8(this as any, upstreamId); }
+  private cleanupPending(upstreamId: string) { return this.connectionController.cleanupPending(upstreamId); }
 
-  private prepareConnectionIdentity(baseUrl: string, token: string) { return RealtimeBroker_prepareConnectionIdentity_9(this as any, baseUrl, token); }
+  private prepareConnectionIdentity(baseUrl: string, token: string) { return this.connectionController.prepareConnectionIdentity(baseUrl, token); }
 }
 
 export * from "./realtime-broker.shared";
