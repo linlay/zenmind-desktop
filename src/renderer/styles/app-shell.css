@@ -999,7 +999,7 @@
 }
 
 .app-shell.is-windows-platform .main-chat-header-actions {
-  top: calc(var(--windows-titlebar-overlay-height) + 8px);
+  top: calc(var(--windows-titlebar-content-inset) + 8px);
   right: 14px;
 }
 

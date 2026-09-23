@@ -8045,6 +8045,28 @@ test("runExecFile resolves when a daemon child keeps stdout open", async () => {
   fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
+test("runExecFile preserves the timeout cause alongside command output", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-exec-timeout-"));
+  const isWindows = process.platform === "win32";
+  const scriptName = isWindows ? "deploy.ps1" : "deploy.sh";
+  fs.writeFileSync(path.join(tempRoot, scriptName), isWindows
+    ? "[Console]::Error.WriteLine('sync-in-progress')\r\nStart-Sleep -Seconds 30\r\n"
+    : "#!/bin/sh\nprintf 'sync-in-progress\\n' >&2\nexec sleep 30\n");
+  if (!isWindows) fs.chmodSync(path.join(tempRoot, scriptName), 0o755);
+  try {
+    await assert.rejects(
+      __testInternals.runExecFile(`./${scriptName}`, [], tempRoot, { timeoutMs: 3000 }),
+      (error) => {
+        assert.match(error.message, /timed out after 3000ms/);
+        assert.match(error.message, /sync-in-progress/);
+        return true;
+      }
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runExecFile preserves non-ASCII Windows PowerShell script paths", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows PowerShell path decoding is only used on Windows.");
