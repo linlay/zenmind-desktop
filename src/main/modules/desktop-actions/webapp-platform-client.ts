@@ -11,8 +11,8 @@ export async function platform(options: DesktopActionBridgeOptions) {
   if (!baseUrl || !issued.ok || !issued.token) throw new ConnectorError("desktop_identity_required");
   let subject = "";
   try { subject = JSON.parse(Buffer.from(issued.token.split(".")[1], "base64url").toString()).sub; } catch { /* fail closed */ }
-  if (!/^desktop-user:[0-9a-f]{64}$/u.test(subject)) throw new ConnectorError("desktop_identity_required");
-  // The token is supplied by Desktop's validated identity provider. Decoding
+  if (typeof subject !== "string" || !subject.trim()) throw new ConnectorError("desktop_identity_required");
+  // The token is supplied by Desktop's local service identity provider. Decoding
   // here only detects identity changes; it does not authenticate a page token.
   return { baseUrl, token: issued.token, subject };
 }
