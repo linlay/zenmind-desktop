@@ -1,11 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { DesktopUpdateArtifact, DesktopUpdateConfig, DesktopUpdateManifest, DesktopUpdateState, DesktopTestUpdateInput } from "../../../shared/desktop-updates";
+import type { DesktopUpdateArtifact, DesktopUpdateConfig, DesktopPlatformUpdateManifest, DesktopUpdateState, DesktopTestUpdateInput } from "../../../shared/desktop-updates";
 import { compareUpdateVersions, parseUpdateManifest } from "./manifest";
-import { downloadUpdateFile, fetchUpdateManifest, verifyUpdateFile } from "./download";
+import { downloadUpdateFile, fetchUpdateManifest, verifyUpdateFile, UpdateHttpError } from "./download";
+import { verifySignedManifest, type UpdateTrust } from "./signing";
+import { UPDATE_TRUST } from "./trust";
+import { verifyUpdateTime, acceptUpdateSequence } from "./security";
 
 const CHECK_INTERVAL = 4 * 60 * 60_000;
+const CHECK_RETRY_DELAYS = [5_000, 15_000, 30_000];
+function isTransientCheckError(error: unknown) {
+  if (error instanceof UpdateHttpError) return error.status === 408 || error.status === 429 || error.status >= 500;
+  return ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "ABORT_ERR"].includes((error as NodeJS.ErrnoException)?.code ?? "");
+}
 export interface UpdateRuntimeOptions {
+  trust?: UpdateTrust;
+  now?(): number;
+  securityStateRoot?: string;
   currentVersion: string;
   productId: string;
   platform: NodeJS.Platform;
@@ -26,7 +37,8 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
   const currentVersion = options.currentVersion.replace(/^v(?=\d)/, "");
   let state: DesktopUpdateState = { phase: "disabled", currentVersion, progress: 0, autoDownload: false, canInstall: options.packaged && ["darwin", "win32"].includes(options.platform) };
   let testConfig: DesktopUpdateConfig | undefined;
-  let release: DesktopUpdateManifest | undefined;
+  let release: DesktopPlatformUpdateManifest | undefined;
+  let releaseDigest = "";
   let artifact: DesktopUpdateArtifact | undefined;
   let file = "";
   let configKey = "";
@@ -34,6 +46,9 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let startupTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryAttempt = 0;
+  let mainReadyHandled = false;
   let disposed = false;
   let lastCheck = 0;
   try { state.autoDownload = JSON.parse(fs.readFileSync(options.preferencesPath, "utf8")).autoDownload === true; } catch { /* Default preference. */ }
@@ -42,6 +57,20 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     state = { ...state, ...change };
     if (!disposed) options.emit(snapshot());
   };
+  function acceptRelease(candidate: DesktopPlatformUpdateManifest, digest: string) {
+    if (options.platform === "darwin") return; // Native Apple verification remains mandatory below.
+    if (candidate.schemaVersion !== 2) throw new Error("signatureInvalid");
+    verifyUpdateTime(candidate, (options.now ?? Date.now)());
+    acceptUpdateSequence(options.securityStateRoot ?? path.join(path.dirname(options.preferencesPath), "update-security"), candidate, digest);
+  }
+  function verifyManifest(input: DesktopTestUpdateInput) {
+    if (options.platform === "darwin") {
+      if (typeof input?.manifest !== "string" || Buffer.byteLength(input.manifest, "utf8") > 256 * 1024) throw new Error("Invalid update manifest");
+      return { candidate: parseUpdateManifest(JSON.parse(input.manifest), options.productId, "darwin"), digest: "" };
+    }
+    const verified = verifySignedManifest(input, options.trust ?? UPDATE_TRUST, options.productId);
+    return { candidate: parseUpdateManifest(verified.value, options.productId), digest: verified.digest };
+  }
   function refreshConfig() {
     if (testConfig) return testConfig;
     const config = options.readConfig();
@@ -62,7 +91,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
         : state.phase === "downloading" ? "downloadFailed"
         : state.phase === "verifying" ? "verificationFailed"
         : state.phase === "installing" ? "installFailed" : "operationFailed";
-      publish({ phase: state.packageReady && !state.restartRequired ? "ready" : "error", error: error instanceof Error && ["cleanupFailed", "updateBusy"].includes(error.message) ? error.message as DesktopUpdateState["error"] : failure });
+      publish({ phase: state.packageReady && !state.restartRequired ? "ready" : "error", error: error instanceof Error && ["cleanupFailed", "updateBusy", "signatureInvalid", "manifestExpired", "clockInvalid", "manifestReplay", "securityStateInvalid"].includes(error.message) ? error.message as DesktopUpdateState["error"] : failure });
     }).then(snapshot).finally(() => { busy = undefined; });
     return busy;
   }
@@ -71,6 +100,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
   }
   async function download() {
     if (!release || !artifact || compareUpdateVersions(release.version, currentVersion) <= 0) return;
+    acceptRelease(release, releaseDigest);
     controller = new AbortController();
     const deadline = setTimeout(() => controller?.abort(), 60 * 60_000);
     try {
@@ -83,6 +113,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       publish({ phase: "verifying", progress: 100 });
       await verifyUpdateFile(file, artifact);
       await options.verifyPublisher(file);
+      acceptRelease(release, releaseDigest);
       publish({ phase: "ready", progress: 100, packageReady: true });
     } finally { clearTimeout(deadline); controller = undefined; }
   }
@@ -93,24 +124,47 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       }
       return snapshot();
     },
-    check() {
+    check(isRetry = false) {
       if (testConfig) return Promise.resolve(snapshot());
+      if (busy || disposed) return busy ?? Promise.resolve(snapshot());
+      clearTimeout(retryTimer);
+      clearTimeout(startupTimer);
+      if (!isRetry) retryAttempt = 0;
       return action(async () => {
       if (state.restartRequired) return;
       const config = refreshConfig();
-      if (!config.enabled || state.packageReady || state.restartRequired || state.phase === "installing") return;
+      if (!config.enabled || state.restartRequired || state.phase === "installing") return;
+      if (state.packageReady && release) {
+        try { acceptRelease(release, releaseDigest); return; }
+        catch { /* Invalid/expired ready metadata must be refreshed, not retained. */ }
+      }
+      publish({ packageReady: false });
       publish({ phase: "checking", error: undefined });
+      release = undefined; artifact = undefined; file = ""; releaseDigest = "";
       controller = new AbortController();
       const deadline = setTimeout(() => controller?.abort(), 30_000);
       try {
-        const raw = await (options.fetchManifest ?? fetchUpdateManifest)(config.feedUrl, controller.signal);
+        let raw: DesktopTestUpdateInput | undefined;
+        try {
+          raw = await (options.fetchManifest ?? fetchUpdateManifest)(config.feedUrl, controller.signal, options.platform);
+        } catch (error) {
+          if (!disposed && isTransientCheckError(error) && retryAttempt < CHECK_RETRY_DELAYS.length) {
+            retryTimer = setTimeout(() => { void api.check(true); }, CHECK_RETRY_DELAYS[retryAttempt++]);
+            retryTimer.unref?.();
+          }
+          throw error;
+        }
+        retryAttempt = 0;
         if (raw === undefined) {
           release = undefined; artifact = undefined; file = "";
           lastCheck = Date.now();
           publish({ phase: "not-configured", checkedAt: new Date(lastCheck).toISOString(), version: undefined, releaseNotes: undefined, progress: 0, error: undefined, packageReady: false });
           return;
         }
-        release = parseUpdateManifest(raw, options.productId);
+        const verified = verifyManifest(raw);
+        const candidate = verified.candidate;
+        acceptRelease(candidate, verified.digest);
+        release = candidate; releaseDigest = verified.digest;
       } finally { clearTimeout(deadline); controller = undefined; }
       lastCheck = Date.now();
       artifact = release.artifacts[`${options.platform}-${options.arch}`];
@@ -122,6 +176,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
         try {
           await verifyUpdateFile(file, artifact);
           await options.verifyPublisher(file);
+          acceptRelease(release, releaseDigest);
           publish({ phase: "ready", progress: 100, packageReady: true });
           return;
         } catch { /* Missing or invalid cache still requires a download. */ }
@@ -130,18 +185,15 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
     }); },
     async loadTest(input: DesktopTestUpdateInput) {
       if (busy || disposed || state.restartRequired || state.phase === "installing") throw new Error("updateBusy");
-      if (!input || typeof input !== "object" || JSON.stringify(input).length > 256 * 1024) throw new Error("Invalid test update");
-      const raw = "manifest" in input ? input.manifest : {
-        schemaVersion: 1, productId: options.productId, version: input.version,
-        publishedAt: new Date().toISOString(), releaseNotes: {},
-        artifacts: { [`${options.platform}-${options.arch}`]: { url: input.url, size: input.size, sha256: input.sha256 } }
-      };
-      const candidate = parseUpdateManifest(raw, options.productId);
+      const verified = verifyManifest(input);
+      const candidate = verified.candidate;
       const target = candidate.artifacts[`${options.platform}-${options.arch}`];
       if (!target || compareUpdateVersions(candidate.version, currentVersion) <= 0) throw new Error("Test update requires a newer version for this platform");
+      acceptRelease(candidate, verified.digest);
+      clearTimeout(retryTimer);
       // Validate everything before replacing the current selection. Never persist the test feed.
       testConfig = { enabled: true, feedUrl: "" };
-      release = candidate; artifact = target; file = "";
+      release = candidate; releaseDigest = verified.digest; artifact = target; file = "";
       publish({ source: "test", phase: "available", version: candidate.version, releaseNotes: candidate.releaseNotes,
         progress: 0, checkedAt: undefined, error: undefined, packageReady: false, restartRequired: false });
       return snapshot();
@@ -160,6 +212,7 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       if (!state.canInstall || !state.packageReady || state.restartRequired || !artifact || !release) return;
       publish({ phase: "installing", error: undefined });
       try {
+        acceptRelease(release, releaseDigest);
         await verifyUpdateFile(file, artifact);
         await options.verifyPublisher(file);
       } catch (error) {
@@ -173,8 +226,17 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
         if (!(error instanceof Error && error.message === "updateBusy")) publish({ restartRequired: true });
         throw error;
       }
-      try { await options.install(file, release.version); }
-      catch (error) { publish({ restartRequired: true }); throw error; }
+      try {
+        // Cleanup can take time: recheck expiry/replay and file bytes before execution.
+        try {
+          acceptRelease(release, releaseDigest);
+          await verifyUpdateFile(file, artifact);
+        } catch (error) {
+          publish({ phase: "verifying", packageReady: false });
+          throw error;
+        }
+        await options.install(file, release.version);
+      } catch (error) { publish({ restartRequired: true }); throw error; }
     }); },
     setAutoDownload(enabled: boolean) {
       if (typeof enabled !== "boolean") throw new Error("Invalid update preference");
@@ -185,13 +247,19 @@ export function createUpdateRuntime(options: UpdateRuntimeOptions) {
       return snapshot();
     },
     start() {
+      if (timer || disposed) return;
       api.getState();
       startupTimer = setTimeout(() => { void api.check(); }, 15_000);
       timer = setInterval(() => { void api.check(); }, CHECK_INTERVAL);
       startupTimer.unref(); timer.unref();
     },
+    mainReady() {
+      if (mainReadyHandled) return busy ?? Promise.resolve(snapshot());
+      mainReadyHandled = true;
+      return state.phase === "error" && state.error === "checkFailed" ? api.check() : busy ?? Promise.resolve(snapshot());
+    },
     resume() { if (Date.now() - lastCheck >= CHECK_INTERVAL) void api.check(); },
-    dispose() { disposed = true; clearTimeout(startupTimer); clearInterval(timer); controller?.abort(); }
+    dispose() { disposed = true; clearTimeout(retryTimer); clearTimeout(startupTimer); clearInterval(timer); controller?.abort(); }
   };
   return api;
 }

@@ -152,6 +152,7 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
         notifyServicesChanged: factoryContext.notifyServicesChanged,
         onStartupPreparationSucceeded: () => {
             factoryContext.setStartupPhase("core-ready");
+            void updatesRuntime?.mainReady();
             factoryContext.startNonCoreDesktopRuntime();
         },
         onStartupPreparationBlocked: () => factoryContext.setStartupPhase("degraded"),
@@ -199,7 +200,9 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     });
     factoryContext.setStartupPhase("shell-ready");
     factoryContext.startResourceDirectoryWatcher();
-    void factoryContext.startupPipeline.run();
+    void factoryContext.startupPipeline.run().then(() => {
+        if (["core-ready", "non-core-ready"].includes(factoryContext.appState.startupPhase)) void updatesRuntime?.mainReady();
+    });
 }
 
 export function createMainProcessRuntime_start_2(factoryContext: CreateMainProcessRuntimeContext) {

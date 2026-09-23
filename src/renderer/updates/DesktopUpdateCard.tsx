@@ -12,14 +12,13 @@ export function DesktopUpdateCard({ compact = false, onViewAbout, onDownload }: 
   onDownload?: () => void;
 }) {
   const state = useDesktopUpdates();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [requestFailed, setRequestFailed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, setPending] = useState(false);
   if (!state || (compact && !state.version)) return null;
   const action = desktopUpdateAction(state);
   const busy = ["checking", "downloading", "verifying", "installing"].includes(state.phase);
-  const notes = state.releaseNotes?.[locale] ?? state.releaseNotes?.["en-US"] ?? state.releaseNotes?.["zh-CN"] ?? [];
   async function run(action: () => Promise<unknown>) {
     setRequestFailed(false);
     try { await action(); } catch { setRequestFailed(true); }
@@ -59,7 +58,6 @@ export function DesktopUpdateCard({ compact = false, onViewAbout, onDownload }: 
     {error}
     {state.restartRequired ? <p>{t("updates.restartRequired")}</p> : null}
     {confirm}
-    {notes.length ? <details><summary>{t("updates.releaseNotes")}</summary><ul>{notes.map((note, i) => <li key={i}>{note}</li>)}</ul></details> : null}
     <div className="desktop-update-actions">
       {installButton}
       {action === "download" ? <Button type="primary" onClick={() => void run(() => window.electronAPI.updates.download())}>{t("updates.download")}</Button> : null}

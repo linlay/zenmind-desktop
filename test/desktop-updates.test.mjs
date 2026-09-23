@@ -6,7 +6,7 @@ import path from "node:path";
 import https from "node:https";
 import { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { createRequire } from "node:module";
 import { createUpdateManifest } from "../scripts/create-update-manifest.mjs";
 const require = createRequire(import.meta.url);
@@ -19,11 +19,14 @@ const content = Buffer.from("test update bytes");
 const hash = createHash("sha256").update(content).digest("hex");
 const config = { enabled: true, feedUrl: "https://updates.example.com/latest.json" };
 const artifact = { url: "https://updates.example.com/app.zip", size: content.length, sha256: hash };
-const manifest = () => ({ schemaVersion: 1, productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
+const pair = generateKeyPairSync("ed25519");
+const trust = { channel: "production", keys: [{ keyId: "fixture", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ format: "pem", type: "spki" }) }] };
+const manifest = () => ({ schemaVersion: 2, keyId: "fixture", channel: "production", releaseSequence: 1, expiresAt: "2026-10-12T08:00:00Z", productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
+function signed(value = manifest()) { const payload = JSON.stringify(value); return { manifest: payload, signature: sign(null, Buffer.from(payload), pair.privateKey).toString("base64") }; }
 function temp(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-update-test-")); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; }
 function fixture(t, extra = {}) {
   const root = temp(t), events = [], installs = [];
-  const runtime = createUpdateRuntime({ currentVersion: "0.4.1", productId: "cutej", platform: "darwin", arch: "arm64", packaged: true, cacheRoot: root, preferencesPath: path.join(root, "preferences.json"), readConfig: () => config, emit: (s) => events.push(s), fetchManifest: async () => manifest(), downloadFile: async (_artifact, file) => fs.promises.writeFile(file, content), verifyPublisher: async () => {}, prepareInstall: async () => true, install: async (...args) => { installs.push(args); }, ...extra });
+  const runtime = createUpdateRuntime({ trust, now: () => Date.parse("2026-09-21T08:00:00Z"), currentVersion: "0.4.1", productId: "cutej", platform: "darwin", arch: "arm64", packaged: true, cacheRoot: root, preferencesPath: path.join(root, "preferences.json"), readConfig: () => config, emit: (s) => events.push(s), fetchManifest: async () => signed(), downloadFile: async (_artifact, file) => fs.promises.writeFile(file, content), verifyPublisher: async () => {}, prepareInstall: async () => true, install: async (...args) => { installs.push(args); }, ...extra });
   t.after(() => runtime.dispose());
   return { root, runtime, events, installs };
 }
@@ -45,6 +48,110 @@ test("initialization requires platform feeds and rejects legacy or unsafe inputs
     assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { [other]: feeds[other] } }, platform), /required/);
   }
 });
+
+test("transient checks retry at 5/15/30 seconds and stop after recovery", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let attempts = 0;
+  const { runtime } = fixture(t, { fetchManifest: async () => {
+    if (++attempts < 4) throw Object.assign(new Error('network timeout'), { code: 'ETIMEDOUT' });
+    return signed();
+  } });
+  await runtime.check();
+  for (const delay of [5000, 15000, 30000]) {
+    t.mock.timers.tick(delay);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(runtime.getState().phase, 'available');
+  assert.equal(attempts, 4);
+  t.mock.timers.tick(60000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 4);
+});
+
+test("main readiness recovers a failed initial check once and joins in-flight checks", async t => {
+  let attempts = 0;
+  const { runtime } = fixture(t, { fetchManifest: async () => {
+    if (++attempts === 1) throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+    return signed();
+  } });
+  await runtime.check();
+  await Promise.all([runtime.mainReady(), runtime.mainReady(), runtime.check()]);
+  assert.equal(runtime.getState().phase, 'available');
+  assert.equal(attempts, 2);
+  await runtime.mainReady();
+  assert.equal(attempts, 2);
+});
+
+test("sidebar exposes retry even when the first failed check has no version", () => {
+  const { desktopUpdateSidebarVisible, desktopUpdateAction } = require('../dist-electron/shared/desktop-updates.js');
+  const state = { phase: 'error', error: 'checkFailed', currentVersion: '0.4.13', progress: 0, autoDownload: false, canInstall: true };
+  assert.equal(desktopUpdateSidebarVisible(state), true);
+  assert.equal(desktopUpdateAction(state), 'check');
+  assert.equal(desktopUpdateSidebarVisible({ ...state, phase: 'current', error: undefined }), false);
+});
+
+test("persistent network failure exhausts retries; disposal cancels pending retry", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let attempts = 0;
+  const { runtime } = fixture(t, { fetchManifest: async () => {
+    attempts++; throw Object.assign(new Error('offline'), { code: 'ENETUNREACH' });
+  } });
+  await runtime.check();
+  for (const delay of [5000, 15000, 30000, 60000]) {
+    t.mock.timers.tick(delay); await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(attempts, 4);
+  assert.equal(runtime.getState().error, 'checkFailed');
+  await runtime.check();
+  runtime.dispose();
+  t.mock.timers.tick(60000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 5);
+});
+
+test("invalid signatures never trigger network retries or readiness recovery", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let attempts = 0;
+  const { runtime } = fixture(t, { platform: 'win32', arch: 'x64', fetchManifest: async () => {
+    attempts++; return { ...signed(), signature: 'invalid' };
+  } });
+  await runtime.check();
+  await runtime.mainReady();
+  t.mock.timers.tick(60000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 1);
+  assert.equal(runtime.getState().error, 'signatureInvalid');
+});
+
+test("startup completion waits for core readiness before update recovery", async () => {
+  const { createStartupPipeline } = require('../dist-electron/main/app/lifecycle/startup.js');
+  let release, finished = false;
+  const phases = [];
+  const pipeline = createStartupPipeline({
+    app: {}, getEnvImportFailureMessage: () => null,
+    startShellRuntime() {}, loadBuiltinServices() {}, loadInstalledPlugins() {}, notifyCoreServicesChanged() {},
+    startupRestoreController: { finishSession() {} }, startNonCoreRuntime() {},
+    setStartupPhase: phase => phases.push(phase), runServiceMutation: task => task(),
+    runStartupPreparation: () => new Promise(resolve => { release = resolve; }),
+  });
+  const completion = pipeline.run().then(() => { finished = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(finished, false);
+  release({ mode: 'normal', failures: [] });
+  await completion;
+  assert.equal(phases.at(-1), 'core-ready');
+});
+
+
+test("platform-specific update feeds resolve one explicit address per platform", () => {
+  const input = { enabled: true, feedUrls: { win32: "https://updates.example.com/windows/desktop-latest.json", darwin: config.feedUrl } };
+  assert.equal(normalizeUpdateConfig(input, "win32").feedUrl, input.feedUrls.win32);
+  assert.deepEqual(normalizeUpdateConfig(input, "darwin"), config);
+  assert.throws(() => normalizeUpdateConfig(config, "win32"), /feedUrls/);
+  for (const feedUrls of [[], "invalid", { win32: "http://unsafe.example.com/feed" }, { win32: "" }, { windows: config.feedUrl }, { darwin: config.feedUrl }]) {
+    assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls }, "win32"));
+  }
+  assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { darwin: config.feedUrl } }, "win32"), /updates\.feedUrls\.win32/);
+  assert.throws(() => normalizeUpdateConfig({ ...config, feedUrls: input.feedUrls }, "win32"), /feedUrls/);
+});
 test("SemVer precedence rejects downgrade and numeric prerelease traps", () => {
   assert.equal(compareUpdateVersions("0.10.0", "0.9.0"), 1);
   assert.equal(compareUpdateVersions("1.0.0-beta.10", "1.0.0-beta.2"), 1);
@@ -54,7 +161,7 @@ test("SemVer precedence rejects downgrade and numeric prerelease traps", () => {
 });
 test("manifest rejects identity, version, URL, size and hash mismatches", () => {
   assert.equal(parseUpdateManifest(manifest(), "cutej").version, "0.5.0");
-  for (const patch of [{ schemaVersion: 2 }, { productId: "zenmind" }, { version: "0.5.0-beta.01" }, { publishedAt: "yesterday" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), ...patch }, "cutej"));
+  for (const patch of [{ schemaVersion: 1 }, { productId: "zenmind" }, { version: "0.5.0-beta.01" }, { publishedAt: "yesterday" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), ...patch }, "cutej"));
   for (const patch of [{ url: "http://example.com/app.zip" }, { url: "https://example.com/app.exe" }, { size: -1 }, { sha256: "bad" }]) assert.throws(() => parseUpdateManifest({ ...manifest(), artifacts: { "darwin-arm64": { ...artifact, ...patch } } }, "cutej"));
 });
 for (const platform of ["darwin", "win32"]) test(`${platform} init consumes updates into canonical config and upgrade backs it up`, (t) => {
@@ -78,6 +185,23 @@ for (const platform of ["darwin", "win32"]) test(`${platform} init consumes upda
   assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrls: { [platform]: "file:///tmp/payload" } } }, path.join(root, "bad-backup"), platform));
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), changed);
 });
+for (const platform of ["win32", "darwin"]) test(`${platform} bootstrap and version upgrade persist only their selected feed`, (t) => {
+  const root = temp(t);
+  const app = { getPath: (name) => name === "home" ? root : path.join(root, "app-data") };
+  const input = { enabled: true, feedUrls: { win32: "https://updates.example.com/windows/desktop-latest.json", darwin: config.feedUrl } };
+  const expected = { ...config, feedUrl: platform === "win32" ? input.feedUrls.win32 : config.feedUrl };
+  const init = resolveDesktopInitPath(app, platform);
+  fs.mkdirSync(path.dirname(init), { recursive: true });
+  fs.writeFileSync(init, JSON.stringify({ updates: input }));
+  assert.equal(applyDesktopInitBootstrap(app, platform).ok, true);
+  const target = getUpdateConfigPath(app, platform);
+  assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), expected);
+  applyDesktopInitVersionUpgrade(app, { updates: input }, path.join(root, "backup"), platform);
+  assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), expected);
+  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: { ...input, feedUrls: { win32: "http://unsafe.example.com", darwin: config.feedUrl } } }, path.join(root, "bad-backup"), platform));
+  assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), expected);
+});
+
 test("disabled source never checks or downloads", async (t) => {
   const { runtime } = fixture(t, { readConfig: () => ({ ...config, enabled: false }), fetchManifest: () => assert.fail("must not fetch") });
   assert.equal((await runtime.check()).phase, "disabled");
@@ -87,7 +211,7 @@ test("official checks use the configured feed URL and follow configuration chang
   const requested = [];
   const { runtime } = fixture(t, {
     readConfig: () => currentConfig,
-    fetchManifest: async (url) => { requested.push(url); return manifest(); }
+    fetchManifest: async (url) => { requested.push(url); return signed(); }
   });
   await runtime.check();
   currentConfig = { ...currentConfig, feedUrl: "https://cdn.example.org/releases/desktop.json" };
@@ -157,7 +281,7 @@ test("unsupported architectures, older versions and development mode cannot inst
 });
 test("parallel checks are coalesced and changed config invalidates ready cache", async (t) => {
   let calls = 0, current = config;
-  const { runtime, installs } = fixture(t, { readConfig: () => current, fetchManifest: async () => { calls++; return manifest(); } });
+  const { runtime, installs } = fixture(t, { readConfig: () => current, fetchManifest: async () => { calls++; return signed(); } });
   await Promise.all([runtime.check(), runtime.check(), runtime.download()]);
   assert.equal(calls, 1);
   current = { ...config, enabled: false };
@@ -194,7 +318,7 @@ test("local release helper generates exact size and hash", async (t) => {
 
 test("missing manifest is normal but missing artifacts and server errors still fail", async (t) => {
   const root = temp(t);
-  fakeHttps(t, [{ status: 404 }, { status: 503 }, { status: 404 }, { body: Buffer.from("null") }]);
+  fakeHttps(t, [{ status: 404 }, { status: 503 }, { status: 404 }, { body: Buffer.from("null") }, { body: Buffer.from("invalid-signature") }]);
   assert.equal(await fetchUpdateManifest(config.feedUrl, new AbortController().signal), undefined);
   await assert.rejects(fetchUpdateManifest(config.feedUrl, new AbortController().signal), /503/);
   await assert.rejects(downloadUpdateFile(artifact, path.join(root, "app.zip"), new AbortController().signal, () => {}), /404/);
@@ -203,7 +327,7 @@ test("missing manifest is normal but missing artifacts and server errors still f
 });
 test("unconfigured manifest clears stale metadata without an error or download", async (t) => {
   let found = true;
-  const { runtime, installs } = fixture(t, { fetchManifest: async () => found ? manifest() : undefined, downloadFile: () => assert.fail("must not download") });
+  const { runtime, installs } = fixture(t, { fetchManifest: async () => found ? signed() : undefined, downloadFile: () => assert.fail("must not download") });
   runtime.setAutoDownload(false);
   assert.equal((await runtime.check()).phase, "available");
   found = false;
@@ -251,7 +375,7 @@ for (const platform of ["darwin", "win32"]) test(`${platform} test update bypass
     downloadFile: async (_artifact, file) => { downloads++; fs.writeFileSync(file, content); }
   });
   runtime.setAutoDownload(true);
-  const input = { version: "0.6.0", url: `https://updates.example.com/app.${platform === "darwin" ? "zip" : "exe"}`, size: content.length, sha256: hash };
+  const input = signed({ ...manifest(), version: "0.6.0" });
   const loaded = await runtime.loadTest(input);
   assert.equal(loaded.source, "test");
   assert.equal(loaded.phase, "available");
@@ -268,7 +392,7 @@ for (const platform of ["darwin", "win32"]) test(`${platform} test update bypass
 
 test("test update validation preserves existing selection and rejects wrong identity, downgrade and platform", async (t) => {
   const { runtime } = fixture(t);
-  await runtime.loadTest({ manifest: manifest() });
+  await runtime.loadTest(signed());
   const original = runtime.getState();
   for (const value of [
     { ...manifest(), productId: "other" }, { ...manifest(), version: "0.4.1" },
@@ -276,7 +400,7 @@ test("test update validation preserves existing selection and rejects wrong iden
     { ...manifest(), artifacts: { "darwin-arm64": { ...artifact, url: "http://example.com/app.zip" } } },
     { ...manifest(), artifacts: { "darwin-arm64": { ...artifact, sha256: "bad" } } },
   ]) {
-    await assert.rejects(runtime.loadTest({ manifest: value }));
+    await assert.rejects(runtime.loadTest(signed(value)));
     assert.deepEqual(runtime.getState(), original);
   }
   const result = await runtime.clearTest();
@@ -290,10 +414,10 @@ test("test selection cannot race downloads and development mode cannot install",
   const { runtime, installs } = fixture(t, { packaged: false, downloadFile: async (_a, file) => {
     await new Promise(resolve => { finish = resolve; }); fs.writeFileSync(file, content);
   } });
-  await runtime.loadTest({ manifest: manifest() });
+  await runtime.loadTest(signed());
   const download = runtime.download();
   await assert.rejects(runtime.clearTest(), /updateBusy/);
-  await assert.rejects(runtime.loadTest({ manifest: manifest() }), /updateBusy/);
+  await assert.rejects(runtime.loadTest(signed()), /updateBusy/);
   while (!finish) await new Promise(resolve => setTimeout(resolve, 1));
   finish(); await download;
   assert.equal(runtime.getState().canInstall, false);
@@ -309,11 +433,11 @@ for (const platform of ["darwin", "win32"]) test(`${platform} URL-selected feed 
     ["0.4.10", "0.4.10-dev.3", "current"]
   ]) {
     const { runtime } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64", currentVersion,
-      fetchManifest: async () => ({ ...manifest(), version }) });
+      fetchManifest: async () => signed({ ...manifest(), version }) });
     assert.equal((await runtime.check()).phase, phase);
   }
   const { runtime } = fixture(t, { platform, arch: platform === "darwin" ? "arm64" : "x64" });
-  assert.equal((await runtime.loadTest({ manifest: { ...manifest(), version: "0.6.0-dev.1" } })).phase, "available");
+  assert.equal((await runtime.loadTest(signed({ ...manifest(), version: "0.6.0-dev.1" }))).phase, "available");
 });
 
 for (const platform of ["darwin", "win32"]) test(`${platform} pre-cleanup refusal retains package and retries install directly`, async (t) => {
