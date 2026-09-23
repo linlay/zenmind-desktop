@@ -70,7 +70,7 @@ export function applyDesktopInitBootstrap(
     };
 
     // Validate the update source before writing any initialization section.
-    if (Object.prototype.hasOwnProperty.call(defaults, "updates")) normalizeUpdateConfig(defaults.updates);
+    if (Object.prototype.hasOwnProperty.call(defaults, "updates")) normalizeUpdateConfig(defaults.updates, platform);
     const applied: BootstrapApplyResult = {
       updates: runBootstrapSection("updates", errors, () => {
         if (defaults.updates === undefined) return "absent";
