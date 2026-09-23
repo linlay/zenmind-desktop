@@ -76,17 +76,18 @@ export async function installMacUpdate(file: string, version: string) {
 
 export async function launchWindowsUpdate(file: string) {
   // Existing NSIS hooks verify the app/managed process exit and preserve its data root.
-  const args = ["--updated", "/S", "--force-run"];
+  // The installer owns visible progress and automatic restart after this app exits.
+  const args = ["--updated", "--force-run"];
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(file, args, { detached: true, stdio: "ignore", windowsHide: true });
+      const child = spawn(file, args, { detached: true, stdio: "ignore", windowsHide: false });
       child.once("error", reject);
       child.once("spawn", () => { child.unref(); resolve(); });
     });
   } catch (error) {
     if (!["EACCES", "EPERM", "UNKNOWN"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
     // Per-machine NSIS installations require an explicit Windows elevation prompt.
-    const script = `$ErrorActionPreference='Stop'; Start-Process -FilePath ${psString(path.resolve(file))} -ArgumentList '--updated','/S','--force-run' -Verb RunAs`;
+    const script = `$ErrorActionPreference='Stop'; Start-Process -FilePath ${psString(path.resolve(file))} -ArgumentList '--updated','--force-run' -Verb RunAs`;
     await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { windowsHide: true, timeout: 120_000 });
   }
 }
