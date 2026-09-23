@@ -1,7 +1,7 @@
+import type { App } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { App } from "electron";
 import type { EnterpriseChatSelfProfile } from "../../../shared/contracts";
 import { getDesktopConfigRoot, getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
 
@@ -223,3 +223,53 @@ export const enterpriseChatLocalProfileInternals = {
   detectAvatar,
   scopeKey
 };
+
+import type {
+  EnterpriseChatSaveSelfProfileInput,
+  EnterpriseChatSnapshot
+} from "../../../shared/contracts";
+
+
+export interface ProfileControllerDependencies {
+  readonly snapshot: EnterpriseChatSnapshot;
+  readonly app: Electron.App;
+  readonly platform: NodeJS.Platform;
+  readonly serverUrl: string;
+  updateSnapshot(patch: Partial<EnterpriseChatSnapshot>): void;
+  getState(): EnterpriseChatSnapshot;
+  readonly selectAvatar: () => Promise<string[]>;
+}
+
+export async function saveSelfProfile(dependencies: ProfileControllerDependencies, input: EnterpriseChatSaveSelfProfileInput) {
+  const userId = dependencies.snapshot.currentUser?.id ?? "";
+  if (!userId) {
+    throw new Error("Enterprise chat profile requires a signed-in user.");
+  }
+  const selfProfile = await saveEnterpriseChatMotto(dependencies.app, dependencies.platform, dependencies.serverUrl, userId, typeof input?.motto === "string" ? input.motto : "");
+  dependencies.updateSnapshot({ selfProfile });
+  return dependencies.getState();
+}
+
+export async function selectSelfAvatar(dependencies: ProfileControllerDependencies) {
+  const userId = dependencies.snapshot.currentUser?.id ?? "";
+  if (!userId) {
+    throw new Error("Enterprise chat profile requires a signed-in user.");
+  }
+  const selected = (await dependencies.selectAvatar()).map((value) => value.trim()).filter(Boolean);
+  if (selected.length === 0) {
+    return dependencies.getState();
+  }
+  const selfProfile = await saveEnterpriseChatAvatar(dependencies.app, dependencies.platform, dependencies.serverUrl, userId, selected[0]);
+  dependencies.updateSnapshot({ selfProfile });
+  return dependencies.getState();
+}
+
+export async function clearSelfAvatar(dependencies: ProfileControllerDependencies) {
+  const userId = dependencies.snapshot.currentUser?.id ?? "";
+  if (!userId) {
+    throw new Error("Enterprise chat profile requires a signed-in user.");
+  }
+  const selfProfile = await clearEnterpriseChatAvatar(dependencies.app, dependencies.platform, dependencies.serverUrl, userId);
+  dependencies.updateSnapshot({ selfProfile });
+  return dependencies.getState();
+}
