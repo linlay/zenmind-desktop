@@ -114,12 +114,13 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
   const handlers = readSource("src", "main", "modules", "enterprise-chat", "ipc.ts");
   const bridge = readSource("src", "main", "modules", "agent-platform", "bridge.ts");
-  const bridgeMethods = readSource("src", "main", "modules", "agent-platform", "bridge.methods-2.ts");
-  const rawMethodStart = bridgeMethods.indexOf("export async function AgentPlatformAssistantBridge_downloadRawChatJSONL");
-  const nextMethodStart = bridgeMethods.indexOf("\nexport ", rawMethodStart + 1);
-  const rawMethod = bridgeMethods.slice(
+  const chatExport = readSource("src", "main", "modules", "agent-platform", "chat-export.ts");
+  const rawMethodStart = chatExport.indexOf("async downloadRawChatJSONL(");
+  assert.notEqual(rawMethodStart, -1);
+  const nextMethodStart = chatExport.indexOf("\n  async ", rawMethodStart + 1);
+  const rawMethod = chatExport.slice(
     rawMethodStart,
-    nextMethodStart === -1 ? bridgeMethods.length : nextMethodStart
+    nextMethodStart === -1 ? chatExport.length : nextMethodStart
   );
 
   assert.match(panel, /enterpriseChat\.sendAgentChat/);
@@ -141,7 +142,9 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   assert.match(rawMethod, /readResponseBytesWithLimit/);
   assert.doesNotMatch(rawMethod, /JSON\.parse|JSON\.stringify/);
   assert.doesNotMatch(bridge, /downloadChatShareEventStream|format=sse/);
-  assert.match(bridge, /snapshotURL\.searchParams\.set\("format", "snapshot"\)/);
+  assert.doesNotMatch(chatExport, /downloadChatShareEventStream|format=sse/);
+  assert.match(bridge, /this\.exports\.createChatSnapshotRequest\(chatId\)/);
+  assert.match(chatExport, /snapshotURL\.searchParams\.set\("format", "snapshot"\)/);
 });
 
 test("enterprise chat deletion remains a renderer-only sequence-aware hide", () => {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { hasNumberedSourceSplitName } from "./lib/source-split-names.mjs";
 
 const projectRoot = process.cwd();
 const mainRoot = path.join(projectRoot, "src", "main");
@@ -113,6 +114,9 @@ const fileEdges = new Map(files.map((file) => [file, new Set()]));
 const areaEdges = new Map();
 for (const file of files) {
   const sourceText = fs.readFileSync(file, "utf8");
+  if (hasNumberedSourceSplitName(file)) {
+    errors.push(`${relative(file)} uses a numbered source split; group and name implementations by responsibility`);
+  }
   const lineCount = sourceText.split(/\r?\n/u).length;
   if (lineCount > RECOMMENDED_IMPLEMENTATION_LINES) {
     warnings.push(`${relative(file)} has ${lineCount} lines (recommended ${RECOMMENDED_IMPLEMENTATION_LINES}; non-blocking)`);
