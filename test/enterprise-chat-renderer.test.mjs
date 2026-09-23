@@ -1,3 +1,4 @@
+import { readAppRuntimeSource } from "./helpers/app-runtime-source.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +10,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 function readSource(...segments) {
   const sourcePath = path.join(projectRoot, ...segments);
   const source = fs.readFileSync(sourcePath, "utf8");
+  if (sourcePath.endsWith(`${path.sep}app${path.sep}runtime.ts`)) return readAppRuntimeSource(projectRoot);
   if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
     return source;
   }
@@ -29,9 +31,9 @@ test("enterprise IM configuration is independent from the enterprise chat busine
   const settingsHandlers = readSource("src", "main", "modules", "settings", "ipc.ts");
   const preload = readSource("src", "preload", "index.ts");
 
-  assert.match(appRuntime, /readEnterpriseImSettings\(app, factoryContext\.startupPlatform\)\.baseUrl/);
+  assert.match(appRuntime, /readEnterpriseImSettings\(app, dependencies\.startupPlatform\)\.baseUrl/);
   assert.match(appRuntime, /initialEnabled:\s*readEnterpriseImSettings\([\s\S]*?\)\.enabled/);
-  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, factoryContext\.startupPlatform\)\.enabled/);
+  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, dependencies\.startupPlatform\)\.enabled/);
   assert.match(bootstrap, /defaults\.enterpriseIm/);
   assert.doesNotMatch(bootstrap, /defaults\.imServer/);
   assert.doesNotMatch(profile, /enterpriseChatEnabled/);

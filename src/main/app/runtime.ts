@@ -1,171 +1,54 @@
-import { createArtifactRuntime } from "../modules/artifacts";
-import { app, clipboard, globalShortcut, protocol, ipcMain } from "electron";
-import { getDesktopDeviceId, issueAgentAccessToken } from "../modules/identity";
-import { getDesktopSsoAccessToken } from "../modules/identity";
-import { createWebsFacade, type WebsFacade } from "../modules/webs";
-import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
-import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
-import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
-import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
-import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE } from "../../shared/brand";
-import { desktopDataRootExists, getDesktopConfigRoot } from "../infrastructure/filesystem/user-paths";
-import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
-import { bundledEnvZipExists, configureRuntimeEnvironmentTranslator, resolveRuntimeRoot, runtimeEnvExists, runtimeEnvNeedsBundledSeedRefresh, runtimeRootExists, shouldPromptEnvRootConflict, shouldRequireEnvZipImport, type EnvRootConflictDecision } from "../infrastructure/filesystem/runtime-environment";
-import { callAgentPlatform } from "../modules/desktop-actions";
+import { app, clipboard, globalShortcut, ipcMain, protocol } from "electron";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
-import { registerDesktopPetAssetProtocolScheme } from "../modules/pet";
-import { registerWebsiteFaviconProtocolScheme } from "../modules/webs";
-import { registerDesktopSsoAvatarProtocolScheme } from "../modules/identity";
-import { registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
-import { type DesktopPetRuntime } from "../modules/pet";
-import { t } from "../support/i18n/main-i18n";
-import { getFocusedWebviewDevToolsShortcut } from "../infrastructure/electron/platform-adapter";
-import { type DesktopSsoRestoreResult } from "../modules/identity";
-import { createMainAppState } from "./state";
-import { initializeElectronProfile } from "./bootstrap/electron-profile";
+import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE } from "../../shared/brand";
+import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
 import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../infrastructure/electron/bundle-paths";
-import { type AssistantBridgeRuntime } from "../modules/assistant";
-import { createAssistantRunWakeLock } from "../modules/assistant";
-import { createFirstInstallBootstrapNavigation } from "../modules/assistant";
+import { getFocusedWebviewDevToolsShortcut } from "../infrastructure/electron/platform-adapter";
+import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
+import { bundledEnvZipExists, configureRuntimeEnvironmentTranslator, resolveRuntimeRoot, runtimeEnvExists, runtimeEnvNeedsBundledSeedRefresh, runtimeRootExists, shouldPromptEnvRootConflict, shouldRequireEnvZipImport, type EnvRootConflictDecision } from "../infrastructure/filesystem/runtime-environment";
+import { desktopDataRootExists, getDesktopConfigRoot } from "../infrastructure/filesystem/user-paths";
 import { RealtimeBroker } from "../modules/agent-platform";
-import { createPluginClipboardBridge } from "../modules/plugins";
-import { type PluginBridgeRuntime } from "../modules/plugins";
-import { createInstallerShutdownArgs, requestMainSingleInstanceLock } from "./lifecycle/single-instance";
-import { type StartupPhase } from "./lifecycle/startup-phases";
+import { createArtifactRuntime } from "../modules/artifacts";
+import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, type AssistantBridgeRuntime } from "../modules/assistant";
+import { callAgentPlatform } from "../modules/desktop-actions";
+import { getDesktopDeviceId, getDesktopSsoAccessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
+import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
+import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
+import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
+import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
+import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
+import { createWebsFacade, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
+import { registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
+import { t } from "../support/i18n/main-i18n";
+import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
+import * as assistant from "./assembly/assistant";
+import * as enterpriseChat from "./assembly/enterprise-chat";
+import * as extensions from "./assembly/extensions";
+import * as identity from "./assembly/identity";
+import * as readyIpc from "./assembly/ready-ipc";
+import * as services from "./assembly/services";
+import * as settings from "./assembly/settings";
+import * as shell from "./assembly/shell";
+import * as webSurfaces from "./assembly/web-surfaces";
+import { initializeElectronProfile } from "./bootstrap/electron-profile";
+import * as appReady from "./lifecycle/app-ready";
+import * as runtimeEvents from "./lifecycle/runtime-events";
 import { createNoPrimaryShutdownReport, parseInstallerShutdownRequest, writeShutdownAck } from "./lifecycle/shutdown-ack";
+import * as shutdownAssembly from "./lifecycle/shutdown-assembly";
+import { createInstallerShutdownArgs, requestMainSingleInstanceLock } from "./lifecycle/single-instance";
+import * as startupAssembly from "./lifecycle/startup-assembly";
+import { type StartupPhase } from "./lifecycle/startup-phases";
+import * as rendererDiagnostics from "./renderer-diagnostics";
+import * as resourceWatching from "./resource-directory-watcher";
 import { type ResourceDirectoryWatcher } from "./resource-directory-watcher";
-import { configureAgentMarketPlatformCaller } from "../modules/marketplace";
-import { configureSkillMarketPlatformCaller, configureConnectorMarketPlatformCaller } from "../modules/marketplace";
-import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
-import { createMainProcessRuntime_block14_2, createMainProcessRuntime_block17_3, createMainProcessRuntime_block18_4, createMainProcessRuntime_startupRestoreController_5, createMainProcessRuntime_webSurfaceRuntime_6, createMainProcessRuntime_webviewContextMenuController_7, createMainProcessRuntime_enterpriseChatRuntime_8, createMainProcessRuntime_cdpIntegration_9, createMainProcessRuntime_systemIdentityRuntime_10, createMainProcessRuntime_setStartupPhase_11, createMainProcessRuntime_initializeUserDataRootsAndSettings_12, createMainProcessRuntime_delay_13, createMainProcessRuntime_selectionExplainWindowController_14 } from "./runtime.operations-1";
-import { createMainProcessRuntime_logsRuntime_1, createMainProcessRuntime_block68_2, createMainProcessRuntime_startupEnvironmentRuntime_3, createMainProcessRuntime_block71_4, createMainProcessRuntime_block72_5, createMainProcessRuntime_desktopSsoController_6, createMainProcessRuntime_block74_7, createMainProcessRuntime_block75_8, createMainProcessRuntime_settingsRuntime_9, createMainProcessRuntime_block77_10, createMainProcessRuntime_startupPipeline_11 } from "./runtime.operations-2";
-import { createMainProcessRuntime_runShutdownCleanup_1, createMainProcessRuntime_handleDesktopSsoWebviewNavigation_2, createMainProcessRuntime_clearDesktopPetIdleResetTimer_3, createMainProcessRuntime_refreshDesktopPetState_4, createMainProcessRuntime_hideDesktopPetWindow_5, createMainProcessRuntime_showAssistantTargetWindow_6, createMainProcessRuntime_showDesktopPetWindow_7, createMainProcessRuntime_restoreDesktopPetWindowLayering_8, createMainProcessRuntime_openLogViewerWindow_9, createMainProcessRuntime_openAgentPlatformMonitorWindow_10, createMainProcessRuntime_openDesktopActionWorkbenchWindow_11, createMainProcessRuntime_openAgentRealtimeInspectorWindow_12, createMainProcessRuntime_closeDesktopActionWorkbenchWindow_13, createMainProcessRuntime_closeLogViewerWindow_14, createMainProcessRuntime_getServiceWebviewPreloadPath_15, createMainProcessRuntime_getServiceWebviewPreloadUrl_16, createMainProcessRuntime_minimizeLogViewerWindow_17, createMainProcessRuntime_maximizeLogViewerWindow_18, createMainProcessRuntime_captureAssistantScreenshot_19, createMainProcessRuntime_captureDesktopScreenshotForWebview_20, createMainProcessRuntime_captureEnterpriseChatScreenshot_21, createMainProcessRuntime_refreshPluginDesktopGlobalShortcuts_22, createMainProcessRuntime_registerFocusedWebviewDevToolsShortcut_23, createMainProcessRuntime_collectWebviewLoadDiagnostics_24, createMainProcessRuntime_reportRendererDiagnostic_25, createMainProcessRuntime_createWindow_26, createMainProcessRuntime_configureAppMediaPermissions_27, createMainProcessRuntime_showMainWindow_28, createMainProcessRuntime_notifyServicesChanged_29 } from "./runtime.operations-3";
-import { createMainProcessRuntime_notifyCoreServicesChanged_1, createMainProcessRuntime_notifyDesktopDecorationsChanged_2, createMainProcessRuntime_emitWebsChanged_3, createMainProcessRuntime_startResourceDirectoryWatcher_4, createMainProcessRuntime_stopResourceDirectoryWatcher_5, createMainProcessRuntime_emitKanbanChanged_6, createMainProcessRuntime_emitAssistantNavigationAgentsChanged_7, createMainProcessRuntime_emitAssistantNavigationPushEvent_8, createMainProcessRuntime_navigateMainWindow_9, createMainProcessRuntime_openAssistantWorker_10, createMainProcessRuntime_createAppTray_11, createMainProcessRuntime_runNonCoreStartupTask_12, createMainProcessRuntime_startSsoCredentialDependentRuntimes_13, createMainProcessRuntime_applyDesktopSsoRestoreResult_14, createMainProcessRuntime_startNonCoreDesktopRuntime_15, createMainProcessRuntime_showFileDialog_16, createMainProcessRuntime_showSaveDialog_17, createMainProcessRuntime_showMessageBox_18, createMainProcessRuntime_emitAssistantAttachmentProgress_19, createMainProcessRuntime_buildApplicationMenu_20, createMainProcessRuntime_showArchiveDialog_21 } from "./runtime.operations-4";
-import { createMainProcessRuntime_handleAppReady_1, createMainProcessRuntime_start_2, createMainProcessRuntime_prepareQuitUi_3, createMainProcessRuntime_beginAppQuitWithoutConfirmation_4, createMainProcessRuntime_beginInstallerShutdown_5, createMainProcessRuntime_writeInstallerShutdownAck_6, createMainProcessRuntime_writeInstallerShutdownAcks_7, createMainProcessRuntime_requestAppQuit_8 } from "./runtime.operations-5";
+import * as runtimeNotifications from "./runtime-notifications";
+import { createMainAppState } from "./state";
 
 export function createMainProcessRuntime() {
+  // Assembly ports intentionally read live bindings: several callbacks run only after
+  // the receiving runtime has been constructed. Do not eagerly snapshot these getters.
   let servicesFacade!: ServicesFacade;
   let websFacade!: WebsFacade;
-  const factoryContext: CreateMainProcessRuntimeContext = {
-    get startupPlatform() { return startupPlatform; },
-    get isFirstDesktopInstall() { return isFirstDesktopInstall; },
-    get runtimeRootAtProcessStart() { return runtimeRootAtProcessStart; },
-    get runtimeRootExistedAtStartup() { return runtimeRootExistedAtStartup; },
-    get runtimeEnvExistedAtStartup() { return runtimeEnvExistedAtStartup; },
-    get firstInstallBootstrapNavigation() { return firstInstallBootstrapNavigation; },
-    get assistantIntegrationPorts() { return assistantIntegrationPorts; },
-    get issueAgentAccessToken() { return identityTokenProvider; },
-    get servicesFacade() { return servicesFacade; },
-    get websFacade() { return websFacade; },
-    get appState() { return appState; },
-    get ASSISTANT_TARGET_PATH() { return ASSISTANT_TARGET_PATH; },
-    get LOG_VIEWER_ROUTE() { return LOG_VIEWER_ROUTE; },
-    get AGENT_REALTIME_INSPECTOR_ROUTE() { return AGENT_REALTIME_INSPECTOR_ROUTE; },
-    get DESKTOP_ACTION_WORKBENCH_ROUTE() { return DESKTOP_ACTION_WORKBENCH_ROUTE; },
-    get SELECTION_EXPLAIN_WINDOW_ROUTE() { return SELECTION_EXPLAIN_WINDOW_ROUTE; },
-    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; },
-    get MAIN_PRELOAD_PATH() { return MAIN_PRELOAD_PATH; },
-    get FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT() { return FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT; },
-    get INSTALLER_SHUTDOWN_ARGS() { return INSTALLER_SHUTDOWN_ARGS; },
-    get ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS() { return ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS; },
-    get assistantRunWakeLock() { return assistantRunWakeLock; },
-    get realtimeBroker() { return realtimeBroker; },
-    get pluginClipboardBridge() { return pluginClipboardBridge; },
-    get petRuntime() { return petRuntime; }, set petRuntime(value) { petRuntime = value; },
-    get assistantBridgeRuntime() { return assistantBridgeRuntime; }, set assistantBridgeRuntime(value) { assistantBridgeRuntime = value; },
-    get pluginBridgeRuntime() { return pluginBridgeRuntime; }, set pluginBridgeRuntime(value) { pluginBridgeRuntime = value; },
-    get appShellRuntime() { return appShellRuntime; }, set appShellRuntime(value) { appShellRuntime = value; },
-    get getMainWindow() { return getMainWindow; },
-    get resourceDirectoryWatcher() { return resourceDirectoryWatcher; }, set resourceDirectoryWatcher(value) { resourceDirectoryWatcher = value; },
-    get startupRestoreController() { return startupRestoreController; },
-    get servicesRuntime() { return servicesRuntime; },
-    get webSurfaceRuntime() { return webSurfaceRuntime; },
-    get webviewContextMenuController() { return webviewContextMenuController; },
-    get selectionExplainWindowController() { return selectionExplainWindowController; },
-    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; }, set refreshDesktopSsoIdentityToken(value) { refreshDesktopSsoIdentityToken = value; },
-    get enterpriseChatRuntime() { return enterpriseChatRuntime; },
-    get cdpIntegration() { return cdpIntegration; },
-    get systemIdentityRuntime() { return systemIdentityRuntime; },
-    get desktopAppInfo() { return desktopAppInfo; },
-    get bundledEnvZipExistsAtStartup() { return bundledEnvZipExistsAtStartup; },
-    get bundledSeedRefreshNeededAtStartup() { return bundledSeedRefreshNeededAtStartup; },
-    get requireEnvZipImportAtStartup() { return requireEnvZipImportAtStartup; },
-    get envZipConflictNeedsDecision() { return envZipConflictNeedsDecision; },
-    get oldRootDecisionRef() { return oldRootDecisionRef; },
-    get startupEnvImportFailureMessage() { return startupEnvImportFailureMessage; }, set startupEnvImportFailureMessage(value) { startupEnvImportFailureMessage = value; },
-    get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; }, set nonCoreDesktopRuntimeStarted(value) { nonCoreDesktopRuntimeStarted = value; },
-    get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; }, set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
-    get desktopSsoRestoreState() { return desktopSsoRestoreState; }, set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
-    get focusedWebviewDevToolsShortcutRegistered() { return focusedWebviewDevToolsShortcutRegistered; }, set focusedWebviewDevToolsShortcutRegistered(value) { focusedWebviewDevToolsShortcutRegistered = value; },
-    get setStartupPhase() { return setStartupPhase; },
-    get initializeUserDataRootsAndSettings() { return initializeUserDataRootsAndSettings; },
-    get gotSingleInstanceLock() { return gotSingleInstanceLock; },
-    get startupInstallerShutdownRequest() { return startupInstallerShutdownRequest; },
-    get delay() { return delay; },
-    get logsRuntime() { return logsRuntime; },
-    get startupEnvironmentRuntime() { return startupEnvironmentRuntime; },
-    get desktopSsoController() { return desktopSsoController; },
-    get settingsRuntime() { return settingsRuntime; },
-    get startupPipeline() { return startupPipeline; },
-    get runShutdownCleanup() { return runShutdownCleanup; },
-    get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
-    get clearDesktopPetIdleResetTimer() { return clearDesktopPetIdleResetTimer; },
-    get refreshDesktopPetState() { return refreshDesktopPetState; },
-    get hideDesktopPetWindow() { return hideDesktopPetWindow; },
-    get showAssistantTargetWindow() { return showAssistantTargetWindow; },
-    get showDesktopPetWindow() { return showDesktopPetWindow; },
-    get restoreDesktopPetWindowLayering() { return restoreDesktopPetWindowLayering; },
-    get openLogViewerWindow() { return openLogViewerWindow; },
-    get openAgentPlatformMonitorWindow() { return openAgentPlatformMonitorWindow; },
-    get openDesktopActionWorkbenchWindow() { return openDesktopActionWorkbenchWindow; },
-    get openAgentRealtimeInspectorWindow() { return openAgentRealtimeInspectorWindow; },
-    get closeDesktopActionWorkbenchWindow() { return closeDesktopActionWorkbenchWindow; },
-    get closeLogViewerWindow() { return closeLogViewerWindow; },
-    get getServiceWebviewPreloadPath() { return getServiceWebviewPreloadPath; },
-    get getServiceWebviewPreloadUrl() { return getServiceWebviewPreloadUrl; },
-    get minimizeLogViewerWindow() { return minimizeLogViewerWindow; },
-    get maximizeLogViewerWindow() { return maximizeLogViewerWindow; },
-    get captureAssistantScreenshot() { return captureAssistantScreenshot; },
-    get captureDesktopScreenshotForWebview() { return captureDesktopScreenshotForWebview; },
-    get captureEnterpriseChatScreenshot() { return captureEnterpriseChatScreenshot; },
-    get refreshPluginDesktopGlobalShortcuts() { return refreshPluginDesktopGlobalShortcuts; },
-    get registerFocusedWebviewDevToolsShortcut() { return registerFocusedWebviewDevToolsShortcut; },
-    get collectWebviewLoadDiagnostics() { return collectWebviewLoadDiagnostics; },
-    get reportRendererDiagnostic() { return reportRendererDiagnostic; },
-    get createWindow() { return createWindow; },
-    get configureAppMediaPermissions() { return configureAppMediaPermissions; },
-    get showMainWindow() { return showMainWindow; },
-    get notifyServicesChanged() { return notifyServicesChanged; },
-    get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
-    get notifyDesktopDecorationsChanged() { return notifyDesktopDecorationsChanged; },
-    get emitWebsChanged() { return emitWebsChanged; },
-    get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
-    get stopResourceDirectoryWatcher() { return stopResourceDirectoryWatcher; },
-    get emitKanbanChanged() { return emitKanbanChanged; },
-    get emitAssistantNavigationAgentsChanged() { return emitAssistantNavigationAgentsChanged; },
-    get emitAssistantNavigationPushEvent() { return emitAssistantNavigationPushEvent; },
-    get navigateMainWindow() { return navigateMainWindow; },
-    get openAssistantWorker() { return openAssistantWorker; },
-    get createAppTray() { return createAppTray; },
-    get runNonCoreStartupTask() { return runNonCoreStartupTask; },
-    get startSsoCredentialDependentRuntimes() { return startSsoCredentialDependentRuntimes; },
-    get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
-    get startNonCoreDesktopRuntime() { return startNonCoreDesktopRuntime; },
-    get showFileDialog() { return showFileDialog; },
-    get showSaveDialog() { return showSaveDialog; },
-    get showMessageBox() { return showMessageBox; },
-    get emitAssistantAttachmentProgress() { return emitAssistantAttachmentProgress; },
-    get buildApplicationMenu() { return buildApplicationMenu; },
-    get showArchiveDialog() { return showArchiveDialog; },
-    get handleAppReady() { return handleAppReady; },
-    get start() { return start; },
-    get prepareQuitUi() { return prepareQuitUi; },
-    get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
-    get beginInstallerShutdown() { return beginInstallerShutdown; },
-    get writeInstallerShutdownAck() { return writeInstallerShutdownAck; },
-    get writeInstallerShutdownAcks() { return writeInstallerShutdownAcks; },
-    get requestAppQuit() { return requestAppQuit; }
-  };
   configureRuntimeEnvironmentTranslator(t);
   setDeprecatedCompatibilityDesktopVersion(app.getVersion());
   const startupPlatform = process.platform;
@@ -179,7 +62,13 @@ export function createMainProcessRuntime() {
   const identityTokenProvider = (targetApp: typeof app, reason: Parameters<typeof issueAgentAccessToken>[1]) =>
     issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId) =>
       servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId));
-  const servicesIntegrationPorts = createMainProcessRuntime_block18_4(factoryContext);
+  const servicesIntegrationPorts = services.assembleServicesIntegration({
+    get issueAgentAccessToken() { return identityTokenProvider; },
+    get servicesFacade() { return servicesFacade; },
+    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
+    get startupRestoreController() { return startupRestoreController; },
+    get websFacade() { return websFacade; }
+  });
   servicesFacade = createServicesFacade(servicesIntegrationPorts);
   configureAgentMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
@@ -190,9 +79,15 @@ export function createMainProcessRuntime() {
   configureConnectorMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
-  const websIntegrationPorts = createMainProcessRuntime_block14_2(factoryContext);
+  const websIntegrationPorts = webSurfaces.assembleWebsIntegration({
+    get websFacade() { return websFacade; }
+  });
   websFacade = createWebsFacade(websIntegrationPorts);
-  const assistantIntegrationPorts = createMainProcessRuntime_block17_3(factoryContext);
+  const assistantIntegrationPorts = assistant.assembleAssistantIntegration({
+    get servicesFacade() { return servicesFacade; },
+    get issueAgentAccessToken() { return identityTokenProvider; },
+    get websFacade() { return websFacade; }
+  });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
   const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
@@ -204,7 +99,7 @@ export function createMainProcessRuntime() {
   const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
   const ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS =
     ".enterprise-chat-floating { visibility: hidden !important; }";
-  
+
   const assistantRunWakeLock = createAssistantRunWakeLock(startupPlatform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
   });
@@ -232,7 +127,9 @@ export function createMainProcessRuntime() {
   });
   app.once("will-quit", () => artifactRuntime?.dispose());
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
-  const startupRestoreController = createMainProcessRuntime_startupRestoreController_5(factoryContext);
+  const startupRestoreController = startupAssembly.assembleStartupRestore({
+    get getMainWindow() { return getMainWindow; }
+  });
   const servicesRuntime = createServicesRuntime({
     app,
     getMainWindow: () => getMainWindow(),
@@ -241,22 +138,62 @@ export function createMainProcessRuntime() {
     getServiceState: servicesFacade.getServiceState,
     startService: servicesFacade.startService
   });
-  
+
   registerDesktopPetAssetProtocolScheme(protocol);
   registerWebsiteFaviconProtocolScheme(protocol);
   registerDesktopSsoAvatarProtocolScheme(protocol);
   registerChatWorkPanelLocalFileProtocolScheme(protocol);
-  
-  const webSurfaceRuntime = createMainProcessRuntime_webSurfaceRuntime_6(factoryContext);
+
+  const webSurfaceRuntime = webSurfaces.assembleWebSurfaceRuntime({
+    get websFacade() { return websFacade; },
+    get getMainWindow() { return getMainWindow; },
+    get navigateMainWindow() { return navigateMainWindow; },
+    get delay() { return delay; }
+  });
   let selectionExplainWindowController: SelectionExplainWindowController | null = null;
-  const webviewContextMenuController = createMainProcessRuntime_webviewContextMenuController_7(factoryContext);
-  selectionExplainWindowController = createMainProcessRuntime_selectionExplainWindowController_14(factoryContext);
+  const webviewContextMenuController = webSurfaces.assembleWebviewContextMenus({
+    get startupPlatform() { return startupPlatform; },
+    get webSurfaceRuntime() { return webSurfaceRuntime; },
+    get getMainWindow() { return getMainWindow; },
+    get servicesFacade() { return servicesFacade; },
+    get reportRendererDiagnostic() { return reportRendererDiagnostic; },
+    get selectionExplainWindowController() { return selectionExplainWindowController; }
+  });
+  selectionExplainWindowController = webSurfaces.assembleSelectionExplainWindow({
+    get startupPlatform() { return startupPlatform; },
+    get MAIN_PRELOAD_PATH() { return MAIN_PRELOAD_PATH; },
+    get SELECTION_EXPLAIN_WINDOW_ROUTE() { return SELECTION_EXPLAIN_WINDOW_ROUTE; },
+    get getMainWindow() { return getMainWindow; },
+    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; },
+    get collectWebviewLoadDiagnostics() { return collectWebviewLoadDiagnostics; },
+    get reportRendererDiagnostic() { return reportRendererDiagnostic; },
+    get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
+    get webviewContextMenuController() { return webviewContextMenuController; }
+  });
   let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
-  const enterpriseChatRuntime = createMainProcessRuntime_enterpriseChatRuntime_8(factoryContext);
-  const cdpIntegration = createMainProcessRuntime_cdpIntegration_9(factoryContext);
-  
+  const enterpriseChatRuntime = enterpriseChat.assembleEnterpriseChat({
+    get startupPlatform() { return startupPlatform; },
+    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
+    get showFileDialog() { return showFileDialog; },
+    get showSaveDialog() { return showSaveDialog; },
+    get captureEnterpriseChatScreenshot() { return captureEnterpriseChatScreenshot; },
+    get servicesFacade() { return servicesFacade; },
+    get websFacade() { return websFacade; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+    get getMainWindow() { return getMainWindow; }
+  });
+  const cdpIntegration = webSurfaces.assembleCdpIntegration({
+    get webSurfaceRuntime() { return webSurfaceRuntime; },
+    get servicesFacade() { return servicesFacade; },
+    get getMainWindow() { return getMainWindow; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; }
+  });
+
   // Keep dev Electron runs on the same data root as packaged builds.
-  const systemIdentityRuntime = createMainProcessRuntime_systemIdentityRuntime_10(factoryContext);
+  const systemIdentityRuntime = identity.assembleSystemIdentity({
+    get startupPlatform() { return startupPlatform; },
+    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; }
+  });
   const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
   const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, startupPlatform);
   const bundledSeedRefreshNeededAtStartup =
@@ -278,12 +215,23 @@ export function createMainProcessRuntime() {
   let ssoCredentialDependentRuntimesStarted = false;
   let desktopSsoRestoreState: DesktopSsoRestoreResult["state"] = "signed_out";
   let focusedWebviewDevToolsShortcutRegistered = false;
-  function setStartupPhase(phase: StartupPhase) { return createMainProcessRuntime_setStartupPhase_11(factoryContext, phase); }
+  function setStartupPhase(phase: StartupPhase) {
+    return startupAssembly.setStartupPhase({
+      get appState() { return appState; }
+    }, phase);
+  }
 
-  function initializeUserDataRootsAndSettings() { return createMainProcessRuntime_initializeUserDataRootsAndSettings_12(factoryContext); }
-  
+  function initializeUserDataRootsAndSettings() {
+    return startupAssembly.initializeUserDataRootsAndSettings({
+      get startupPlatform() { return startupPlatform; },
+      get isFirstDesktopInstall() { return isFirstDesktopInstall; },
+      get desktopAppInfo() { return desktopAppInfo; },
+      get petRuntime() { return petRuntime; }
+    });
+  }
+
   const gotSingleInstanceLock = requestMainSingleInstanceLock(app);
-  
+
   const startupInstallerShutdownRequest = parseInstallerShutdownRequest(
     process.argv,
     INSTALLER_SHUTDOWN_ARGS,
@@ -302,163 +250,595 @@ export function createMainProcessRuntime() {
       }
     }
     app.exit(0);
-    return { start() {} };
+    return { start() { } };
   }
   if (!gotSingleInstanceLock) {
-    return { start() {} };
+    return { start() { } };
   }
 
   // Keep startup snapshots and the existing single-instance lock ahead of profile
   // creation, but configure Chromium storage before ready or any Session access.
   initializeElectronProfile(app, startupPlatform);
-  
-  function delay(ms: number) { return createMainProcessRuntime_delay_13(factoryContext, ms); }
-  
-  const logsRuntime = createMainProcessRuntime_logsRuntime_1(factoryContext);
-  createMainProcessRuntime_block68_2(factoryContext);
+
+  function delay(ms: number) {
+    return new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  const logsRuntime = shell.assembleLogsRuntime({
+    get MAIN_PRELOAD_PATH() { return MAIN_PRELOAD_PATH; },
+    get LOG_VIEWER_ROUTE() { return LOG_VIEWER_ROUTE; },
+    get startupPlatform() { return startupPlatform; },
+    get getMainWindow() { return getMainWindow; }
+  });
+  appShellRuntime = shell.assembleAppShell({
+    get startupPlatform() { return startupPlatform; },
+    get systemIdentityRuntime() { return systemIdentityRuntime; },
+    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; },
+    get logsRuntime() { return logsRuntime; },
+    get AGENT_REALTIME_INSPECTOR_ROUTE() { return AGENT_REALTIME_INSPECTOR_ROUTE; },
+    get DESKTOP_ACTION_WORKBENCH_ROUTE() { return DESKTOP_ACTION_WORKBENCH_ROUTE; },
+    get webSurfaceRuntime() { return webSurfaceRuntime; },
+    get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
+    get webviewContextMenuController() { return webviewContextMenuController; },
+    get collectWebviewLoadDiagnostics() { return collectWebviewLoadDiagnostics; },
+    get reportRendererDiagnostic() { return reportRendererDiagnostic; },
+    get appState() { return appState; },
+    get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
+    get requestAppQuit() { return requestAppQuit; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+    get petRuntime() { return petRuntime; },
+    get showDesktopPetWindow() { return showDesktopPetWindow; },
+    get hideDesktopPetWindow() { return hideDesktopPetWindow; },
+    get restoreDesktopPetWindowLayering() { return restoreDesktopPetWindowLayering; },
+    get websFacade() { return websFacade; }
+  });
   websFacade.webappWindowManager.setDisposalListener((webappId) => {
     emitWebsChanged({
       phase: "disposing",
       webappId
     });
   });
-  const startupEnvironmentRuntime = createMainProcessRuntime_startupEnvironmentRuntime_3(factoryContext);
-  createMainProcessRuntime_block71_4(factoryContext);
-  createMainProcessRuntime_block72_5(factoryContext);
-  const desktopSsoController = createMainProcessRuntime_desktopSsoController_6(factoryContext);
-  createMainProcessRuntime_block74_7(factoryContext);
-  createMainProcessRuntime_block75_8(factoryContext);
+  const startupEnvironmentRuntime = startupAssembly.assembleStartupEnvironment({
+    get startupPlatform() { return startupPlatform; },
+    get envZipConflictNeedsDecision() { return envZipConflictNeedsDecision; },
+    get requireEnvZipImportAtStartup() { return requireEnvZipImportAtStartup; },
+    get runtimeRootAtProcessStart() { return runtimeRootAtProcessStart; },
+    get oldRootDecisionRef() { return oldRootDecisionRef; },
+    get startupRestoreController() { return startupRestoreController; },
+    get appShellRuntime() { return appShellRuntime; }
+  });
+  petRuntime = extensions.assembleDesktopPet({
+    get startupPlatform() { return startupPlatform; },
+    get getMainWindow() { return getMainWindow; },
+    get appState() { return appState; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+    get MAIN_PRELOAD_PATH() { return MAIN_PRELOAD_PATH; },
+    get showMainWindow() { return showMainWindow; },
+    get openAssistantWorker() { return openAssistantWorker; },
+    get pluginBridgeRuntime() { return pluginBridgeRuntime; },
+    get appShellRuntime() { return appShellRuntime; }
+  });
+  pluginBridgeRuntime = extensions.assemblePluginBridge({
+    get pluginClipboardBridge() { return pluginClipboardBridge; },
+    get servicesFacade() { return servicesFacade; },
+    get notifyServicesChanged() { return notifyServicesChanged; },
+    get petRuntime() { return petRuntime; },
+    get issueAgentAccessToken() { return identityTokenProvider; }
+  });
+  const desktopSsoController = identity.assembleDesktopSsoController({
+    get startupPlatform() { return startupPlatform; },
+    get getMainWindow() { return getMainWindow; },
+    get webSurfaceRuntime() { return webSurfaceRuntime; },
+    get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; }
+  });
+  identity.configureMarketTokenIssuer({
+    get desktopSsoController() { return desktopSsoController; }
+  });
+  refreshDesktopSsoIdentityToken = identity.createDesktopSsoTokenRefresher({
+    get desktopSsoController() { return desktopSsoController; },
+    get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
+    get desktopSsoRestoreState() { return desktopSsoRestoreState; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+    get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+  });
 
-  const settingsRuntime = createMainProcessRuntime_settingsRuntime_9(factoryContext);
-  createMainProcessRuntime_block77_10(factoryContext);
-  const startupPipeline = createMainProcessRuntime_startupPipeline_11(factoryContext);
-  const runShutdownCleanup = createMainProcessRuntime_runShutdownCleanup_1(factoryContext);
-  
-  async function handleDesktopSsoWebviewNavigation(url: string) { return createMainProcessRuntime_handleDesktopSsoWebviewNavigation_2(factoryContext, url); }
-  
-  function clearDesktopPetIdleResetTimer() { return createMainProcessRuntime_clearDesktopPetIdleResetTimer_3(factoryContext); }
-  
-  function refreshDesktopPetState(patch: any = {}) { return createMainProcessRuntime_refreshDesktopPetState_4(factoryContext, patch); }
-  
-  function hideDesktopPetWindow() { return createMainProcessRuntime_hideDesktopPetWindow_5(factoryContext); }
-  
-  async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) { return createMainProcessRuntime_showAssistantTargetWindow_6(factoryContext, source, targetPath); }
-  
-  function showDesktopPetWindow() { return createMainProcessRuntime_showDesktopPetWindow_7(factoryContext); }
+  const settingsRuntime = settings.assembleSettingsRuntime({
+    get startupPlatform() { return startupPlatform; },
+    get getMainWindow() { return getMainWindow; },
+    get petRuntime() { return petRuntime; },
+    get logsRuntime() { return logsRuntime; },
+    get buildApplicationMenu() { return buildApplicationMenu; },
+    get appShellRuntime() { return appShellRuntime; },
+    get showDesktopPetWindow() { return showDesktopPetWindow; },
+    get hideDesktopPetWindow() { return hideDesktopPetWindow; },
+    get desktopSsoController() { return desktopSsoController; },
+    get notifyServicesChanged() { return notifyServicesChanged; },
+    get emitKanbanChanged() { return emitKanbanChanged; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+    get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+  });
+  assistantBridgeRuntime = assistant.assembleAssistantRuntime({
+    get assistantIntegrationPorts() { return assistantIntegrationPorts; },
+    get desktopAppInfo() { return desktopAppInfo; },
+    get startupPlatform() { return startupPlatform; },
+    get getMainWindow() { return getMainWindow; },
+    get webSurfaceRuntime() { return webSurfaceRuntime; },
+    get assistantRunWakeLock() { return assistantRunWakeLock; },
+    get cdpIntegration() { return cdpIntegration; },
+    get issueAgentAccessToken() { return identityTokenProvider; },
+    get realtimeBroker() { return realtimeBroker; },
+    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
+    get showMainWindow() { return showMainWindow; },
+    get showFileDialog() { return showFileDialog; },
+    get showSaveDialog() { return showSaveDialog; },
+    get openLogViewerWindow() { return openLogViewerWindow; },
+    get petRuntime() { return petRuntime; },
+    get emitKanbanChanged() { return emitKanbanChanged; },
+    get emitAssistantNavigationAgentsChanged() { return emitAssistantNavigationAgentsChanged; },
+    get emitAssistantNavigationPushEvent() { return emitAssistantNavigationPushEvent; },
+    get websFacade() { return websFacade; }
+  });
+  const startupPipeline = startupAssembly.assembleStartupPipeline({
+    get desktopAppInfo() { return desktopAppInfo; },
+    get isFirstDesktopInstall() { return isFirstDesktopInstall; },
+    get startupEnvImportFailureMessage() { return startupEnvImportFailureMessage; },
+    get startupRestoreController() { return startupRestoreController; },
+    get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
+    get runNonCoreStartupTask() { return runNonCoreStartupTask; },
+    get createAppTray() { return createAppTray; },
+    get startNonCoreDesktopRuntime() { return startNonCoreDesktopRuntime; },
+    get setStartupPhase() { return setStartupPhase; },
+    get servicesRuntime() { return servicesRuntime; },
+    get servicesFacade() { return servicesFacade; }
+  });
+  const runShutdownCleanup = shutdownAssembly.assembleShutdownCleanup({
+    get appState() { return appState; },
+    get getMainWindow() { return getMainWindow; },
+    get websFacade() { return websFacade; },
+    get servicesFacade() { return servicesFacade; }
+  });
 
-  function restoreDesktopPetWindowLayering() { return createMainProcessRuntime_restoreDesktopPetWindowLayering_8(factoryContext); }
-  
-  async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) { return createMainProcessRuntime_openLogViewerWindow_9(factoryContext, request); }
-  
-  async function openAgentPlatformMonitorWindow(url: string) { return createMainProcessRuntime_openAgentPlatformMonitorWindow_10(factoryContext, url); }
+  async function handleDesktopSsoWebviewNavigation(url: string) {
+    return identity.handleDesktopSsoWebviewNavigation({
+      get appState() { return appState; },
+      get desktopSsoController() { return desktopSsoController; }
+    }, url);
+  }
 
-  async function openDesktopActionWorkbenchWindow() { return createMainProcessRuntime_openDesktopActionWorkbenchWindow_11(factoryContext); }
+  function clearDesktopPetIdleResetTimer() {
+    return petRuntime.clearIdleResetTimer();
+  }
 
-  async function openAgentRealtimeInspectorWindow() { return createMainProcessRuntime_openAgentRealtimeInspectorWindow_12(factoryContext); }
+  function refreshDesktopPetState(patch: Parameters<DesktopPetRuntime["refreshState"]>[0] = {}) {
+    return petRuntime.refreshState(patch);
+  }
 
-  function closeDesktopActionWorkbenchWindow() { return createMainProcessRuntime_closeDesktopActionWorkbenchWindow_13(factoryContext); }
+  function hideDesktopPetWindow() {
+    return petRuntime.hideWindow();
+  }
 
-  function closeLogViewerWindow() { return createMainProcessRuntime_closeLogViewerWindow_14(factoryContext); }
-  
-  function getServiceWebviewPreloadPath() { return createMainProcessRuntime_getServiceWebviewPreloadPath_15(factoryContext); }
-  
-  function getServiceWebviewPreloadUrl() { return createMainProcessRuntime_getServiceWebviewPreloadUrl_16(factoryContext); }
-  
-  function minimizeLogViewerWindow() { return createMainProcessRuntime_minimizeLogViewerWindow_17(factoryContext); }
-  
-  function maximizeLogViewerWindow() { return createMainProcessRuntime_maximizeLogViewerWindow_18(factoryContext); }
-  
-  async function captureAssistantScreenshot(chatId: string | null | undefined) { return createMainProcessRuntime_captureAssistantScreenshot_19(factoryContext, chatId); }
-  
+  async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) {
+    return assistant.showAssistantTargetWindow({
+      get showMainWindow() { return showMainWindow; },
+      get servicesRuntime() { return servicesRuntime; },
+      get getMainWindow() { return getMainWindow; }
+    }, source, targetPath);
+  }
+
+  function showDesktopPetWindow() {
+    return petRuntime.showWindow();
+  }
+
+  function restoreDesktopPetWindowLayering() {
+    return petRuntime.restoreWindowLayering();
+  }
+
+  async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
+    return logsRuntime.openLogViewerWindow(request);
+  }
+
+  async function openAgentPlatformMonitorWindow(url: string) {
+    return appShellRuntime.openAgentPlatformMonitorWindow(url);
+  }
+
+  async function openDesktopActionWorkbenchWindow() {
+    return appShellRuntime.openDesktopActionWorkbenchWindow();
+  }
+
+  async function openAgentRealtimeInspectorWindow() {
+    return appShellRuntime.openAgentRealtimeInspectorWindow();
+  }
+
+  function closeDesktopActionWorkbenchWindow() {
+    return appShellRuntime.closeDesktopActionWorkbenchWindow();
+  }
+
+  function closeLogViewerWindow() {
+    return logsRuntime.closeLogViewerWindow();
+  }
+
+  function getServiceWebviewPreloadPath() {
+    return appShellRuntime.getServiceWebviewPreloadPath();
+  }
+
+  function getServiceWebviewPreloadUrl() {
+    return appShellRuntime.getServiceWebviewPreloadUrl();
+  }
+
+  function minimizeLogViewerWindow() {
+    return logsRuntime.minimizeLogViewerWindow();
+  }
+
+  function maximizeLogViewerWindow() {
+    return logsRuntime.maximizeLogViewerWindow();
+  }
+
+  async function captureAssistantScreenshot(chatId: string | null | undefined) {
+    return assistant.captureAssistantScreenshot({
+      get startupPlatform() { return startupPlatform; },
+      get getMainWindow() { return getMainWindow; },
+      get delay() { return delay; }
+    }, chatId);
+  }
+
   async function captureDesktopScreenshotForWebview(
     mode: EnterpriseChatScreenshotMode = "region"
-  ) { return createMainProcessRuntime_captureDesktopScreenshotForWebview_20(factoryContext, mode); }
+  ) {
+    return shell.captureDesktopScreenshotForWebview({
+      get startupPlatform() { return startupPlatform; },
+      get getMainWindow() { return getMainWindow; },
+      get delay() { return delay; }
+    }, mode);
+  }
 
-  async function captureEnterpriseChatScreenshot(mode: EnterpriseChatScreenshotMode) { return createMainProcessRuntime_captureEnterpriseChatScreenshot_21(factoryContext, mode); }
-  
-  function refreshPluginDesktopGlobalShortcuts() { return createMainProcessRuntime_refreshPluginDesktopGlobalShortcuts_22(factoryContext); }
-  
-  function registerFocusedWebviewDevToolsShortcut() { return createMainProcessRuntime_registerFocusedWebviewDevToolsShortcut_23(factoryContext); }
-  
+  async function captureEnterpriseChatScreenshot(mode: EnterpriseChatScreenshotMode) {
+    return enterpriseChat.captureEnterpriseChatScreenshot({
+      get captureDesktopScreenshotForWebview() { return captureDesktopScreenshotForWebview; },
+      get getMainWindow() { return getMainWindow; },
+      get ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS() { return ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS; }
+    }, mode);
+  }
+
+  function refreshPluginDesktopGlobalShortcuts() {
+    return extensions.refreshPluginDesktopGlobalShortcuts({
+      get startupPlatform() { return startupPlatform; },
+      get servicesRuntime() { return servicesRuntime; }
+    });
+  }
+
+  function registerFocusedWebviewDevToolsShortcut() {
+    return webSurfaces.registerFocusedWebviewDevToolsShortcut({
+      get focusedWebviewDevToolsShortcutRegistered() { return focusedWebviewDevToolsShortcutRegistered; },
+      set focusedWebviewDevToolsShortcutRegistered(value) { focusedWebviewDevToolsShortcutRegistered = value; },
+      get FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT() { return FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT; },
+      get appShellRuntime() { return appShellRuntime; },
+      get webSurfaceRuntime() { return webSurfaceRuntime; }
+    });
+  }
+
   async function collectWebviewLoadDiagnostics(
     contents: Electron.WebContents,
     validatedUrl: string
-  ): Promise<Record<string, unknown>> { return createMainProcessRuntime_collectWebviewLoadDiagnostics_24(factoryContext, contents, validatedUrl); }
-  
-  function reportRendererDiagnostic(source: string, details: Record<string, unknown>) { return createMainProcessRuntime_reportRendererDiagnostic_25(factoryContext, source, details); }
-  
-  function createWindow() { return createMainProcessRuntime_createWindow_26(factoryContext); }
-  
-  function configureAppMediaPermissions() { return createMainProcessRuntime_configureAppMediaPermissions_27(factoryContext); }
-  
-  function showMainWindow(targetPath?: string) { return createMainProcessRuntime_showMainWindow_28(factoryContext, targetPath); }
-  
-  function notifyServicesChanged() { return createMainProcessRuntime_notifyServicesChanged_29(factoryContext); }
+  ): Promise<Record<string, unknown>> { return rendererDiagnostics.collectWebviewLoadDiagnostics(contents, validatedUrl); }
 
-  function notifyCoreServicesChanged() { return createMainProcessRuntime_notifyCoreServicesChanged_1(factoryContext); }
+  function reportRendererDiagnostic(source: string, details: Record<string, unknown>) { return rendererDiagnostics.reportRendererDiagnostic(source, details); }
 
-  function notifyDesktopDecorationsChanged() { return createMainProcessRuntime_notifyDesktopDecorationsChanged_2(factoryContext); }
+  function createWindow() {
+    return appShellRuntime.createWindow();
+  }
+
+  function configureAppMediaPermissions() {
+    return appShellRuntime.configureAppMediaPermissions();
+  }
+
+  function showMainWindow(targetPath?: string) {
+    return appShellRuntime.showMainWindow(targetPath);
+  }
+
+  function notifyServicesChanged() {
+    return runtimeNotifications.notifyServicesChanged({
+      get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
+      get notifyDesktopDecorationsChanged() { return notifyDesktopDecorationsChanged; }
+    });
+  }
+
+  function notifyCoreServicesChanged() {
+    return runtimeNotifications.notifyCoreServicesChanged({
+      get appState() { return appState; },
+      get pluginBridgeRuntime() { return pluginBridgeRuntime; },
+      get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+      get getMainWindow() { return getMainWindow; }
+    });
+  }
+
+  function notifyDesktopDecorationsChanged() {
+    return runtimeNotifications.notifyDesktopDecorationsChanged({
+      get appState() { return appState; },
+      get refreshPluginDesktopGlobalShortcuts() { return refreshPluginDesktopGlobalShortcuts; }
+    });
+  }
 
   function emitWebsChanged(
     details: Partial<Omit<WebsChangedEvent, "changedAt">> = {}
-  ) { return createMainProcessRuntime_emitWebsChanged_3(factoryContext, details); }
+  ) {
+    return runtimeNotifications.emitWebsChanged({
+      get getMainWindow() { return getMainWindow; }
+    }, details);
+  }
 
-  function startResourceDirectoryWatcher() { return createMainProcessRuntime_startResourceDirectoryWatcher_4(factoryContext); }
+  function startResourceDirectoryWatcher() {
+    return resourceWatching.startResourceDirectoryWatcher({
+      get resourceDirectoryWatcher() { return resourceDirectoryWatcher; },
+      set resourceDirectoryWatcher(value) { resourceDirectoryWatcher = value; },
+      get startupPlatform() { return startupPlatform; },
+      get emitWebsChanged() { return emitWebsChanged; },
+      get petRuntime() { return petRuntime; },
+      get notifyServicesChanged() { return notifyServicesChanged; }
+    });
+  }
 
-  function stopResourceDirectoryWatcher() { return createMainProcessRuntime_stopResourceDirectoryWatcher_5(factoryContext); }
-  
-  function emitKanbanChanged() { return createMainProcessRuntime_emitKanbanChanged_6(factoryContext); }
-  
-  function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) { return createMainProcessRuntime_emitAssistantNavigationAgentsChanged_7(factoryContext, result); }
+  function stopResourceDirectoryWatcher() {
+    return resourceWatching.stopResourceDirectoryWatcher({
+      get resourceDirectoryWatcher() { return resourceDirectoryWatcher; },
+      set resourceDirectoryWatcher(value) { resourceDirectoryWatcher = value; }
+    });
+  }
 
-  function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) { return createMainProcessRuntime_emitAssistantNavigationPushEvent_8(factoryContext, event); }
-  
-  function navigateMainWindow(targetPath: string) { return createMainProcessRuntime_navigateMainWindow_9(factoryContext, targetPath); }
-  
-  async function openAssistantWorker(request: AssistantWorkerOpenRequest) { return createMainProcessRuntime_openAssistantWorker_10(factoryContext, request); }
-  
-  function createAppTray() { return createMainProcessRuntime_createAppTray_11(factoryContext); }
+  function emitKanbanChanged() {
+    return runtimeNotifications.emitKanbanChanged({
+      get getMainWindow() { return getMainWindow; }
+    });
+  }
 
-  function runNonCoreStartupTask(label: string, task: () => void) { return createMainProcessRuntime_runNonCoreStartupTask_12(factoryContext, label, task); }
+  function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) {
+    return runtimeNotifications.emitAssistantNavigationAgentsChanged({
+      get appShellRuntime() { return appShellRuntime; },
+      get getMainWindow() { return getMainWindow; },
+      get petRuntime() { return petRuntime; },
+      get refreshDesktopPetState() { return refreshDesktopPetState; }
+    }, result);
+  }
 
-  function startSsoCredentialDependentRuntimes() { return createMainProcessRuntime_startSsoCredentialDependentRuntimes_13(factoryContext); }
+  function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) {
+    return runtimeNotifications.emitAssistantNavigationPushEvent({
+      get getMainWindow() { return getMainWindow; }
+    }, event);
+  }
 
-  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) { return createMainProcessRuntime_applyDesktopSsoRestoreResult_14(factoryContext, result); }
+  function navigateMainWindow(targetPath: string) {
+    return appShellRuntime.navigateMainWindow(targetPath);
+  }
 
-  function startNonCoreDesktopRuntime() { return createMainProcessRuntime_startNonCoreDesktopRuntime_15(factoryContext); }
-  
-  async function showFileDialog(options: any, ownerWindow = getMainWindow()) { return createMainProcessRuntime_showFileDialog_16(factoryContext, options, ownerWindow); }
-  
-  async function showSaveDialog(options: any, ownerWindow = getMainWindow()) { return createMainProcessRuntime_showSaveDialog_17(factoryContext, options, ownerWindow); }
-  
-  async function showMessageBox(options: any, ownerWindow = getMainWindow()) { return createMainProcessRuntime_showMessageBox_18(factoryContext, options, ownerWindow); }
-  
-  function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) { return createMainProcessRuntime_emitAssistantAttachmentProgress_19(factoryContext, progress); }
-  
-  function buildApplicationMenu() { return createMainProcessRuntime_buildApplicationMenu_20(factoryContext); }
-  
-  function showArchiveDialog(title: string, extensions?: string[]) { return createMainProcessRuntime_showArchiveDialog_21(factoryContext, title, extensions); }
-  
-  async function handleAppReady() { return createMainProcessRuntime_handleAppReady_1(factoryContext); }
-  
-  function start() { return createMainProcessRuntime_start_2(factoryContext); }
-  
-  function prepareQuitUi() { return createMainProcessRuntime_prepareQuitUi_3(factoryContext); }
-  
-  function beginAppQuitWithoutConfirmation() { return createMainProcessRuntime_beginAppQuitWithoutConfirmation_4(factoryContext); }
+  async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
+    return assistant.openAssistantWorker({
+      get showAssistantTargetWindow() { return showAssistantTargetWindow; }
+    }, request);
+  }
 
-  function beginInstallerShutdown(commandLine: string[]) { return createMainProcessRuntime_beginInstallerShutdown_5(factoryContext, commandLine); }
+  function createAppTray() {
+    return appShellRuntime.createAppTray();
+  }
+
+  function runNonCoreStartupTask(label: string, task: () => void) { return startupAssembly.runNonCoreStartupTask(label, task); }
+
+  function startSsoCredentialDependentRuntimes() {
+    return startupAssembly.startSsoCredentialDependentRuntimes({
+      get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
+      get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
+      set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
+      get runNonCoreStartupTask() { return runNonCoreStartupTask; },
+      get enterpriseChatRuntime() { return enterpriseChatRuntime; },
+      get startupPlatform() { return startupPlatform; }
+    });
+  }
+
+  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
+    return identity.applyDesktopSsoRestoreResult({
+      get desktopSsoRestoreState() { return desktopSsoRestoreState; },
+      set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
+      get appState() { return appState; },
+      get startupPlatform() { return startupPlatform; },
+      get startupRestoreController() { return startupRestoreController; },
+      get servicesRuntime() { return servicesRuntime; },
+      get servicesFacade() { return servicesFacade; },
+      get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
+      get startupPipeline() { return startupPipeline; },
+      get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
+      set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
+      get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
+      get startSsoCredentialDependentRuntimes() { return startSsoCredentialDependentRuntimes; },
+      get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+      get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+    }, result);
+  }
+
+  function startNonCoreDesktopRuntime() {
+    return startupAssembly.startNonCoreDesktopRuntime({
+      get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
+      set nonCoreDesktopRuntimeStarted(value) { nonCoreDesktopRuntimeStarted = value; },
+      get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
+      get runNonCoreStartupTask() { return runNonCoreStartupTask; },
+      get petRuntime() { return petRuntime; },
+      get startupPlatform() { return startupPlatform; },
+      get showDesktopPetWindow() { return showDesktopPetWindow; },
+      get refreshDesktopPetState() { return refreshDesktopPetState; },
+      get buildApplicationMenu() { return buildApplicationMenu; },
+      get pluginBridgeRuntime() { return pluginBridgeRuntime; },
+      get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+      get startSsoCredentialDependentRuntimes() { return startSsoCredentialDependentRuntimes; },
+      get setStartupPhase() { return setStartupPhase; },
+      get notifyDesktopDecorationsChanged() { return notifyDesktopDecorationsChanged; }
+    });
+  }
+
+  async function showFileDialog(options: Electron.OpenDialogOptions, ownerWindow = getMainWindow()) {
+    return appShellRuntime.showFileDialog(options, ownerWindow);
+  }
+
+  async function showSaveDialog(options: Electron.SaveDialogOptions, ownerWindow = getMainWindow()) {
+    return appShellRuntime.showSaveDialog(options, ownerWindow);
+  }
+
+  async function showMessageBox(options: Electron.MessageBoxOptions, ownerWindow = getMainWindow()) {
+    return appShellRuntime.showMessageBox(options, ownerWindow);
+  }
+
+  function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
+    return runtimeNotifications.emitAssistantAttachmentProgress({
+      get getMainWindow() { return getMainWindow; }
+    }, progress);
+  }
+
+  function buildApplicationMenu() {
+    return appShellRuntime.buildApplicationMenu();
+  }
+
+  function showArchiveDialog(title: string, extensions?: string[]) {
+    return appShellRuntime.showArchiveDialog(title, extensions);
+  }
+
+  async function handleAppReady() {
+    return appReady.handleAppReady({
+      get setStartupPhase() { return setStartupPhase; },
+      get systemIdentityRuntime() { return systemIdentityRuntime; },
+      get startupEnvironmentRuntime() { return startupEnvironmentRuntime; },
+      get startupEnvImportFailureMessage() { return startupEnvImportFailureMessage; },
+      set startupEnvImportFailureMessage(value) { startupEnvImportFailureMessage = value; },
+      get startupRestoreController() { return startupRestoreController; },
+      get initializeUserDataRootsAndSettings() { return initializeUserDataRootsAndSettings; },
+      get startupPlatform() { return startupPlatform; },
+      get logsRuntime() { return logsRuntime; },
+      get webSurfaceRuntime() { return webSurfaceRuntime; },
+      get desktopSsoController() { return desktopSsoController; },
+      get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
+      get pluginBridgeRuntime() { return pluginBridgeRuntime; },
+      get issueAgentAccessToken() { return identityTokenProvider; },
+      get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+      get getMainWindow() { return getMainWindow; },
+      get desktopAppInfo() { return desktopAppInfo; },
+      get configureAppMediaPermissions() { return configureAppMediaPermissions; },
+      get registerFocusedWebviewDevToolsShortcut() { return registerFocusedWebviewDevToolsShortcut; },
+      get createWindow() { return createWindow; },
+      get appState() { return appState; },
+      get realtimeBroker() { return realtimeBroker; },
+      get runShutdownCleanup() { return runShutdownCleanup; },
+      get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
+      get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
+      get startupPipeline() { return startupPipeline; },
+      registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+        get setStartupPhase() { return setStartupPhase; },
+        get startupRestoreController() { return startupRestoreController; },
+        get startupPlatform() { return startupPlatform; },
+        get logsRuntime() { return logsRuntime; },
+        get webSurfaceRuntime() { return webSurfaceRuntime; },
+        get desktopSsoController() { return desktopSsoController; },
+        get issueAgentAccessToken() { return identityTokenProvider; },
+        get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+        get servicesFacade() { return servicesFacade; },
+        get websFacade() { return websFacade; },
+        get getMainWindow() { return getMainWindow; },
+        get appShellRuntime() { return appShellRuntime; },
+        get assistantRunWakeLock() { return assistantRunWakeLock; },
+        get petRuntime() { return petRuntime; },
+        get enterpriseChatRuntime() { return enterpriseChatRuntime; },
+        get desktopAppInfo() { return desktopAppInfo; },
+        get oldRootDecisionRef() { return oldRootDecisionRef; },
+        get isFirstDesktopInstall() { return isFirstDesktopInstall; },
+        get bundledEnvZipExistsAtStartup() { return bundledEnvZipExistsAtStartup; },
+        get runtimeRootExistedAtStartup() { return runtimeRootExistedAtStartup; },
+        get runtimeRootAtProcessStart() { return runtimeRootAtProcessStart; },
+        get firstInstallBootstrapNavigation() { return firstInstallBootstrapNavigation; },
+        get showFileDialog() { return showFileDialog; },
+        get showSaveDialog() { return showSaveDialog; },
+        get showMessageBox() { return showMessageBox; },
+        get showArchiveDialog() { return showArchiveDialog; },
+        get openLogViewerWindow() { return openLogViewerWindow; },
+        get closeLogViewerWindow() { return closeLogViewerWindow; },
+        get minimizeLogViewerWindow() { return minimizeLogViewerWindow; },
+        get maximizeLogViewerWindow() { return maximizeLogViewerWindow; },
+        get openAgentPlatformMonitorWindow() { return openAgentPlatformMonitorWindow; },
+        get openAgentRealtimeInspectorWindow() { return openAgentRealtimeInspectorWindow; },
+        get openDesktopActionWorkbenchWindow() { return openDesktopActionWorkbenchWindow; },
+        get closeDesktopActionWorkbenchWindow() { return closeDesktopActionWorkbenchWindow; },
+        get getServiceWebviewPreloadPath() { return getServiceWebviewPreloadPath; },
+        get getServiceWebviewPreloadUrl() { return getServiceWebviewPreloadUrl; },
+        get servicesRuntime() { return servicesRuntime; },
+        get refreshPluginDesktopGlobalShortcuts() { return refreshPluginDesktopGlobalShortcuts; },
+        get notifyServicesChanged() { return notifyServicesChanged; },
+        get startNonCoreDesktopRuntime() { return startNonCoreDesktopRuntime; },
+        get settingsRuntime() { return settingsRuntime; },
+        get buildApplicationMenu() { return buildApplicationMenu; },
+        get captureDesktopScreenshotForWebview() { return captureDesktopScreenshotForWebview; },
+        get reportRendererDiagnostic() { return reportRendererDiagnostic; },
+        get emitAssistantAttachmentProgress() { return emitAssistantAttachmentProgress; },
+        get captureAssistantScreenshot() { return captureAssistantScreenshot; }
+      }, conversationShareFacade, getUpdatesRuntime)
+    });
+  }
+
+  function start() {
+    return runtimeEvents.startRuntimeEvents({
+      get startupPlatform() { return startupPlatform; },
+      get appState() { return appState; },
+      get gotSingleInstanceLock() { return gotSingleInstanceLock; },
+      get INSTALLER_SHUTDOWN_ARGS() { return INSTALLER_SHUTDOWN_ARGS; },
+      get FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT() { return FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT; },
+      get handleAppReady() { return handleAppReady; },
+      get showMainWindow() { return showMainWindow; },
+      get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
+      get beginInstallerShutdown() { return beginInstallerShutdown; },
+      get appShellRuntime() { return appShellRuntime; },
+      get pluginBridgeRuntime() { return pluginBridgeRuntime; },
+      get prepareQuitUi() { return prepareQuitUi; },
+      get realtimeBroker() { return realtimeBroker; },
+      get runShutdownCleanup() { return runShutdownCleanup; },
+      get logsRuntime() { return logsRuntime; },
+      get writeInstallerShutdownAcks() { return writeInstallerShutdownAcks; },
+      get assistantRunWakeLock() { return assistantRunWakeLock; },
+      get clearDesktopPetIdleResetTimer() { return clearDesktopPetIdleResetTimer; },
+      get assistantBridgeRuntime() { return assistantBridgeRuntime; },
+      get stopResourceDirectoryWatcher() { return stopResourceDirectoryWatcher; },
+      get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+    });
+  }
+
+  function prepareQuitUi() {
+    appShellRuntime.prepareQuitUi();
+  }
+
+  function beginAppQuitWithoutConfirmation() {
+    return shutdownAssembly.beginAppQuitWithoutConfirmation({
+      get appState() { return appState; },
+      get prepareQuitUi() { return prepareQuitUi; }
+    });
+  }
+
+  function beginInstallerShutdown(commandLine: string[]) {
+    return shutdownAssembly.beginInstallerShutdown({
+      get INSTALLER_SHUTDOWN_ARGS() { return INSTALLER_SHUTDOWN_ARGS; },
+      get appState() { return appState; },
+      get writeInstallerShutdownAck() { return writeInstallerShutdownAck; },
+      get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; }
+    }, commandLine);
+  }
 
   function writeInstallerShutdownAck(
     ackPath: string,
     report: import("../../shared/shutdown").ShutdownReport
-  ) { return createMainProcessRuntime_writeInstallerShutdownAck_6(factoryContext, ackPath, report); }
+  ) { return shutdownAssembly.writeInstallerShutdownAck(ackPath, report); }
 
-  function writeInstallerShutdownAcks(report: import("../../shared/shutdown").ShutdownReport) { return createMainProcessRuntime_writeInstallerShutdownAcks_7(factoryContext, report); }
-  
-  function requestAppQuit() { return createMainProcessRuntime_requestAppQuit_8(factoryContext); }
-  
+  function writeInstallerShutdownAcks(report: import("../../shared/shutdown").ShutdownReport) {
+    return shutdownAssembly.writeInstallerShutdownAcks({
+      get appState() { return appState; },
+      get writeInstallerShutdownAck() { return writeInstallerShutdownAck; }
+    }, report);
+  }
+
+  function requestAppQuit() {
+    void appShellRuntime.confirmAndRequestAppQuit();
+  }
+
   return { start };
 }
-
-export * from "./runtime.shared";
