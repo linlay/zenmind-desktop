@@ -114,6 +114,7 @@ export function createMainProcessRuntime_emitKanbanChanged_6(factoryContext: Cre
 }
 
 export function createMainProcessRuntime_emitAssistantNavigationAgentsChanged_7(factoryContext: CreateMainProcessRuntimeContext, result: AssistantNavAgentItemsResult) {
+    factoryContext.appShellRuntime.refreshTaskbarUnread(result);
     factoryContext.appShellRuntime.refreshTrayContextMenu();
     const targetWindow = factoryContext.getMainWindow();
     if (targetWindow && !targetWindow.isDestroyed()) {
