@@ -84,24 +84,25 @@ test("main Push subscription records while the page is closed, restricts IPC and
 test("primary artifact.publish records every valid item without a gateway upload", (t) => {
   const { home } = setup(t);
   const store = new ArtifactStore(() => path.join(home, 'artifacts.db'));
-  const { RealtimeBroker_consumeRunEvent_5: consume } = require('../dist-electron/main/modules/agent-platform/realtime/realtime-broker.methods-4.js');
+  const { createRunChannels } = require('../dist-electron/main/modules/agent-platform/realtime/run-channels.js');
   const published = { type: 'artifact.publish', seq: 1, chatId: 'chat-1', runId: 'run-1', timestamp: 1_800_000_000_000,
     artifacts: [event().data, { ...event().data, artifactId: 'artifact-2', name: 'second.md' }, { artifactId: 'invalid' }] };
   const errors = [];
   const broker = { options: { onArtifactPublished: value => store.ingestPublished(value), onDiagnostic: value => errors.push(value) },
-    diagnostics: { seqRegressionCount: 0, seqGapCount: 0 }, appendReplay() {}, runSubscriptions: new Map() };
-  const run = { lane: 'primary', chatId: 'chat-1', runId: 'run-1', lastSeq: 0, subscribers: new Set() };
-  consume(broker, run, published, null);
+    diagnostics: { seqRegressionCount: 0, seqGapCount: 0 }, runSubscriptions: new Map() };
+  const channels = createRunChannels(broker);
+  const run = { lane: 'primary', chatId: 'chat-1', runId: 'run-1', lastSeq: 0, subscribers: new Set(), replay: [], replayBytes: 0 };
+  channels.consumeRunEvent(run, published, null);
   assert.equal(store.list().total, 2);
-  consume(broker, run, published, null);
+  channels.consumeRunEvent(run, published, null);
   assert.equal(store.list().total, 2);
   assert.equal(store.ingest(event()), false);
-  consume(broker, { ...run, lane: 'btw', lastSeq: 0 }, { ...published, artifacts: [{ ...event().data, artifactId: 'btw' }] }, null);
+  channels.consumeRunEvent({ ...run, lane: 'btw', lastSeq: 0 }, { ...published, artifacts: [{ ...event().data, artifactId: 'btw' }] }, null);
   assert.equal(store.list().total, 2);
-  assert.throws(() => consume(broker, run, { ...published, seq: 2, chatId: 'wrong' }, null), /chatId conflicts/);
-  assert.throws(() => consume(broker, run, { ...published, seq: 2, timestamp: 1_800_000_000 }, null));
+  assert.throws(() => channels.consumeRunEvent(run, { ...published, seq: 2, chatId: 'wrong' }, null), /chatId conflicts/);
+  assert.throws(() => channels.consumeRunEvent(run, { ...published, seq: 2, timestamp: 1_800_000_000 }, null));
   broker.options.onArtifactPublished = () => { throw new Error('database unavailable'); };
-  assert.doesNotThrow(() => consume(broker, run, { ...published, seq: 2 }, null));
+  assert.doesNotThrow(() => channels.consumeRunEvent(run, { ...published, seq: 2 }, null));
   assert.deepEqual(errors, ['artifact_index_delivery_failed']);
 });
 
@@ -122,7 +123,7 @@ test("publication push uses publishedAt and validates identity independently of 
 
 test("Main publication push reaches the index with no Run channel or mounted page", (t) => {
   const { app } = setup(t);
-  const { RealtimeBroker_handlePush_1: handlePush } = require('../dist-electron/main/modules/agent-platform/realtime/realtime-broker.methods-5.js');
+  const { createRunChannels } = require('../dist-electron/main/modules/agent-platform/realtime/run-channels.js');
   const subscriptions = new Map();
   const diagnostics = [];
   // Deliberately no runChannels or active surface: delivery must be global.
@@ -134,15 +135,16 @@ test("Main publication push reaches the index with no Run channel or mounted pag
   });
   t.after(() => runtime.dispose());
   const store = new ArtifactStore(() => getArtifactDatabasePath(app, "darwin"));
+  const channels = createRunChannels(broker);
   const png = publication({ name: "image.png", mimeType: "image/png", sizeBytes: 1523175 });
-  handlePush(broker, png);
-  handlePush(broker, png);
-  handlePush(broker, event({ name: "image.png", mimeType: "image/png", sizeBytes: 1523175 }));
+  channels.handlePush(png);
+  channels.handlePush(png);
+  channels.handlePush(event({ name: "image.png", mimeType: "image/png", sizeBytes: 1523175 }));
   assert.equal(store.list().total, 1);
   assert.equal(store.list().records[0].name, "image.png");
-  handlePush(broker, publication({ publishedAt: 1_799_999_999_999, name: "stale.png" }));
+  channels.handlePush(publication({ publishedAt: 1_799_999_999_999, name: "stale.png" }));
   assert.equal(store.list().records[0].name, "image.png");
-  handlePush(broker, publication({ artifactId: "bad", publishedAt: 1_800_000_000 }));
+  channels.handlePush(publication({ artifactId: "bad", publishedAt: 1_800_000_000 }));
   assert.equal(store.list().total, 1);
   assert.equal(broker.diagnostics.unknownFrameCount, 0);
   assert.equal(diagnostics.length, 1);

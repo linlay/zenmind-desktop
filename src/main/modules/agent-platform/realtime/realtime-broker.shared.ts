@@ -1,24 +1,11 @@
-import type { RunSiteControlGrants } from "./run-site-control-grants";
-import type { SiteControlScope } from "../../web-surfaces";
-import type { App } from "electron";
 import type {
-  AgentAuthIssueResult,
-  AgentRealtimeDebugTraceDirection,
-  AgentRealtimeDebugTraceEntry,
-  AgentRealtimeDebugTraceLayer,
-  AgentWebclientConnectionPhase,
-  AgentWebclientRunOwner,
+  AgentWebclientRunOwner
 } from "../../../../shared/contracts";
-import type { EpochMilliseconds } from "../../../../shared/time-contract";
-import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../../../../shared/surface-identity";
+import type { SiteControlScope } from "../../web-surfaces";
 import {
-  AgentPlatformRealtimeClient,
   type AgentPlatformRealtimeConnectionState,
-  type AgentPlatformRealtimeFrame,
-  type AgentPlatformRealtimeSocketFactory,
-  type RealtimeIdentityRotationReason,
+  type AgentPlatformRealtimeFrame
 } from "./agent-platform-realtime-client";
-import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 
 export const MAX_REPLAY_EVENTS = 2_000;
 
@@ -378,165 +365,22 @@ export function runChannelMapKey({ lane, runId }: RunChannelKey) {
   return `${lane}\u0000${runId}`;
 }
 
-export interface RealtimeBrokerMethodContext {
-  clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
-  connectionStates: Record<RealtimeLane, AgentPlatformRealtimeConnectionState>;
-  pendingRequests: Map<string, PendingRequest>;
-  queriesByRequestId: Map<string, QueryTransaction>;
-  runChannels: Map<string, BrokerRun>;
-  runSubscriptions: Map<string, RunSubscription>;
-  pushSubscriptions: Map<string, PushSubscription>;
-  connectionSubscriptions: Map<string, ConnectionSubscription>;
-  terminalRequestIds: Set<string>;
-  inboundDesktopRequests: Map<string, AbortController>;
-  seenInboundDesktopRequestIds: Set<string>;
-  runActionGrants: Map<string, RunActionGrant>;
-  siteControlGrants: RunSiteControlGrants;
-  activeRootObserver: RootObserverState | null;
-  mainChatRootObserver: RootObserverState | null;
-  auxiliaryRootObservers: Map<string, RootObserverState>;
-  pendingClones: Map<string, PendingClone>;
-  lastCloneCancellationReason: string;
-  desktopBridgeProvider: DesktopBridgeRequestProvider | null;
-  disposed: boolean;
-  acceptingDelivery: boolean;
-  debugTrace: RealtimeDebugTraceBuffer;
-  diagnostics: { unknownFrameCount: number; unknownRequestIdCount: number; seqGapCount: number; staleFrameCount: number; seqRegressionCount: number; duplicateTerminalCount: number; observerReleaseCount: number; replayEvictionCount: number; seqExpiredCount: number; upstreamAttachCount: number; upstreamDetachCount: number; cloneCreatedCount: number; cloneRevokedCount: number; laneRotationCount: number; };
-  options: { app: App; issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>; getDesktopDeviceId: (app: App) => string; createWebSocket?: AgentPlatformRealtimeSocketFactory; connectTimeoutMs?: number; heartbeatTimeoutMs?: number; acceptanceTimeoutMs?: number; onArtifactPublished?(event: Record<string, unknown>): void; onDiagnostic?(message: string): void; onConnectionState?(state: AgentPlatformRealtimeConnectionState): void; };
-  getConnectionPhase(): AgentWebclientConnectionPhase;
-  getConnectionState(lane?: RealtimeLane): { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; };
-  getConnectionStates(): RealtimeConnectionStates;
-  setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null): void;
-  getRunChannel(runIdValue: string, lane?: RealtimeLane): BrokerRun | undefined;
-  setRunChannel(run: BrokerRun): void;
-  deleteRunChannel(run: BrokerRun): boolean;
-  findRootObserver(tokenValue: string): RootObserverState | null;
-  snapshotRootObserver(observer: RootObserverState | null): { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null;
-  ensureConnected(baseUrl: string, token: string, lane?: RealtimeLane): Promise<void>;
-  query(options: {
-    baseUrl: string;
-    token: string;
-    id: string;
-    payload: Record<string, unknown>;
-    runId?: string;
-    chatId?: string;
-    owner?: AgentWebclientRunOwner;
-    signal?: AbortSignal;
-    onEvent(event: Record<string, unknown>, path: string): Promise<void> | void;
-    consumerId?: string;
-    lane?: RealtimeLane;
-    requestType?: "/api/query" | "/api/btw";
-    observerToken?: string;
-    siteControlScope?: SiteControlScope;
-  }): RealtimeQueryHandle;
-  forwardRequest(options: {
-    baseUrl: string;
-    token: string;
-    localId: string;
-    consumerId: string;
-    type: string;
-    payload?: Record<string, unknown>;
-    stream?: boolean;
-    onFrame(frame: AgentPlatformRealtimeFrame): void;
-    onError(error: Error): void;
-    lane?: RealtimeLane;
-  }): Promise<string>;
-  activateRootObserver(input: RootObserverIdentity): { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null;
-  getActiveRootObserver(): { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null;
-  getMainChatRootObserver(): { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null;
-  promoteMainChatRootObserver(tokenValue: string, chatIdValue: string): { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null;
-  releaseRootObserver(tokenValue: string, reason?: string): boolean;
-  retireRootObserver(observer: RootObserverState, reason: string): void;
-  releaseObservedRun(observerTokenValue: string, runIdValue: string, reason?: string): boolean;
-  subscribeClone(options: {
-    kind?: "overview" | "debug";
-    runId: string;
-    chatId: string;
-    lastSeq?: number;
-    owner: AgentWebclientRunOwner;
-    consumerId: string;
-    onEvent(event: Record<string, unknown>): void;
-    onComplete?(result: RealtimeQueryCompleted): void;
-    onError?(error: Error): void;
-  }): Promise<{ subscriptionId: string; unsubscribe: () => boolean; ready: Promise<void>; }>;
-  subscribePush(options: {
-    types: string[];
-    filter?: { chatId?: string; runId?: string; resourceId?: string };
-    kind: "surface" | "internal" | "desktop-ws";
-    consumerId: string;
-    onPush(frame: AgentPlatformRealtimeFrame): void;
-  }): () => boolean;
-  subscribeConnection(options: {
-    consumerId: string;
-    onState(state: AgentPlatformRealtimeConnectionState): void;
-    lane?: RealtimeLane;
-  }): () => boolean;
-  subscribeRun(options: {
-    baseUrl: string;
-    token: string;
-    runId: string;
-    chatId: string;
-    lastSeq?: number;
-    agentKey?: string;
-    owner?: AgentWebclientRunOwner;
-    kind: "surface" | "internal";
-    consumerId: string;
-    onEvent(event: Record<string, unknown>): void;
-    onComplete?(result: RealtimeQueryCompleted): void;
-    onError?(error: Error): void;
-    lane?: RealtimeLane;
-    role?: "root_observer" | "clone" | "internal";
-    observerToken?: string;
-  }): { subscriptionId: string; unsubscribe: () => boolean; ready: Promise<void>; };
-  unsubscribe(subscriptionId: string): boolean;
-  registerRunActionGrant(input: {
-    sourceId: string;
-    chatId: string;
-    runId: string;
-    owner: AgentWebclientRunOwner;
-    ready: Promise<void>;
-    replaceExisting?: boolean;
-  }): void;
-  revokeRunActionGrant(runIdValue: string): boolean;
-  clearRunActionGrants(): void;
-  cleanupConsumer(consumerId: string): void;
-  getDiagnostics(): { unknownFrameCount: number; unknownRequestIdCount: number; seqGapCount: number; staleFrameCount: number; seqRegressionCount: number; duplicateTerminalCount: number; observerReleaseCount: number; replayEvictionCount: number; seqExpiredCount: number; upstreamAttachCount: number; upstreamDetachCount: number; cloneCreatedCount: number; cloneRevokedCount: number; laneRotationCount: number; connection: { key: { endpoint: string; identitySessionId: string; } | null; phase: AgentWebclientConnectionPhase; generation: number; physicalConnectionCount: 0 | 1; reconnectCount: number; physicalSessionId?: string; lastInboundAt?: number; lastHeartbeatAt?: number; closeReason?: string; lastError?: string; }; connections: RealtimeConnectionStates; pendingRequestCount: number; pendingQueryCount: number; activeStreamCount: number; runCount: number; localRunSubscriberCount: number; pushSubscriberCount: number; connectionSubscriberCount: number; rootObserver: { token: string; kind: RootObserverKind; surfaceId: string; generation: string; contextId: string; newChatSourceKey?: string; contextEpoch: string; webContentsId: number; runIds: Set<string>; } | null; auxiliaryRootObservers: ReturnType<RealtimeBrokerMethodContext["snapshotRootObserver"]>[]; overviewLease: { state: "pending_chat_identity" | "ready"; parentGeneration: string; contextEpoch: string; chatId: string | undefined; runCount: number; runIds: string[]; pendingSubscriberCount: number; uiSubscriberCount: number; subscribers: { runId: string; chatId: string; lastSeq: number; }[]; } | null; pendingClones: { observerToken: string; parentGeneration: string; runId: string; chatId: string; waitReason: "awaiting_run_start"; }[]; lastCloneCancellationReason: string | undefined; replay: { lane: RealtimeLane; runId: string; chatId: string; eventCount: number; bytes: number; lastSeq: number; lastEventType: string | undefined; lastEventSeq: number | undefined; lastPlanTaskEventType: string | undefined; lastPlanTaskEventSeq: number | undefined; state: string; terminalReason: string | undefined; terminalSource: "query_stream" | "attach_stream" | "push" | undefined; rootObserverCount: number; cloneCount: number; upstreamState: string; restoreCount: number; lastRestoreResult: string; }[]; };
-  appendDebugTrace(input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]): AgentRealtimeDebugTraceEntry;
-  getDebugTraceEntries(): { sequence: number; recordedAt: EpochMilliseconds; layer: AgentRealtimeDebugTraceLayer; direction: AgentRealtimeDebugTraceDirection; data: unknown; surfaceId?: string; webContentsId?: number; surfaceKind?: string; surfaceRole?: SurfaceRole; surfaceLevel?: SurfaceLevel; parentSurfaceId?: string; interaction?: SurfaceInteraction; route?: string; }[];
-  clearDebugTrace(): void;
-  rotateIdentity(reason?: RealtimeIdentityRotationReason): void;
-  beginShutdown(): void;
-  dispose(): void;
-  handleConnectionState(lane: RealtimeLane, state: AgentPlatformRealtimeConnectionState): void;
-  handleFrame(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame, generation: number): void;
-  handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame): void;
-  bufferProvisionalQueryEvent(transaction: QueryTransaction, event: Record<string, unknown>): void;
-  commitProvisionalQueryEvents(run: BrokerRun, transaction: QueryTransaction): void;
-  registerProvisionalRun(transaction: QueryTransaction, event: Record<string, unknown>): BrokerRun;
-  bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction): void;
-  handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame): void;
-  releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
-  consumeRunEvent(run: BrokerRun, event: Record<string, unknown>, transaction: QueryTransaction | null): void;
-  appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null, path?: string): void;
-  replayToSubscriber(run: BrokerRun, subscription: RunSubscription): void;
-  completeRun(run: BrokerRun, result: RealtimeQueryCompleted, source: NonNullable<BrokerRun["terminalSource"]>): void;
-  failQuery(transaction: QueryTransaction, error: unknown): void;
-  startAttach(run: BrokerRun, baseUrl: string, token: string): Promise<void>;
-  restoreRun(run: BrokerRun): Promise<void>;
-  handlePush(frame: AgentPlatformRealtimeFrame): void;
-  handleInboundRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame): void;
-  handleDesktopBridgeRequest(id: string, type: string, frame: AgentPlatformRealtimeFrame): Promise<void>;
-  awaitRunActionReadiness(action: string, source: Record<string, unknown>, signal: AbortSignal): Promise<void>;
-  sendDesktopBridgeSuccess(id: string, type: string, result: Record<string, unknown>, signal: AbortSignal): Promise<void>;
-  sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string): void;
-  sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown): void;
-  waitForCloneRun(kind: "overview" | "debug", observerToken: string, runIdValue: string, chatIdValue: string, owner: AgentWebclientRunOwner, consumerId: string): Promise<"ready" | "detached">;
-  notifyPendingClones(run: BrokerRun): void;
-  rejectPendingClones(observerToken: string, error: Error): void;
-  detachPendingClones(observerToken: string): void;
-  pruneRetainedTerminalRuns(): void;
-  hasSystemRunLease(run: BrokerRun): boolean;
-  detachRunIfUnobserved(run: BrokerRun, reason: string): Promise<void>;
-  cleanupPending(upstreamId: string): void;
-  prepareConnectionIdentity(baseUrl: string, token: string): void;
-}
+/** Stable observer projection; callers never receive mutable lease internals. */
+export type RootObserverSnapshot = RootObserverIdentity & Pick<RootObserverState, "contextEpoch" | "runIds">;
+
+export type BrokerDiagnosticsCounters = {
+  unknownFrameCount: number;
+  unknownRequestIdCount: number;
+  seqGapCount: number;
+  staleFrameCount: number;
+  seqRegressionCount: number;
+  duplicateTerminalCount: number;
+  observerReleaseCount: number;
+  replayEvictionCount: number;
+  seqExpiredCount: number;
+  upstreamAttachCount: number;
+  upstreamDetachCount: number;
+  cloneCreatedCount: number;
+  cloneRevokedCount: number;
+  laneRotationCount: number;
+};
