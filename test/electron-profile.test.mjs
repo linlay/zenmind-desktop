@@ -96,7 +96,7 @@ test("runtime configures the profile after snapshots and single-instance handlin
     assert.ok(index >= 0 && index < initializeIndex, statement);
   }
   assert.ok(initializeIndex < source.indexOf("const desktopSsoController ="));
-  const ready = fs.readFileSync(new URL("../src/main/app/runtime.operations-5.ts", import.meta.url), "utf8");
-  assert.ok(ready.indexOf("await factoryContext.startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()") <
+  const ready = fs.readFileSync(new URL("../src/main/app/lifecycle/app-ready.ts", import.meta.url), "utf8");
+  assert.ok(ready.indexOf("await dependencies.startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()") <
     ready.indexOf("registerDesktopSsoAvatarProtocol(app,"));
 });

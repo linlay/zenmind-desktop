@@ -1,3 +1,4 @@
+import { readAppRuntimeSource } from "./helpers/app-runtime-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -12,6 +13,7 @@ const typescript = require("typescript");
 function readSourceFile(...segments) {
   const target = path.join(projectRoot, ...segments);
   const source = fs.readFileSync(target, "utf8");
+  if (target.endsWith(`${path.sep}app${path.sep}runtime.ts`)) return readAppRuntimeSource(projectRoot);
   if (!target.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(target) !== ".ts") {
     return source;
   }
@@ -6440,9 +6442,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?options\.restoreFloatingWindowsForFullscreen\?\.\(\);[\s\S]*?\}\);/);
   assert.match(appShellRuntime, /restoreDesktopPetWindowLayering: \(\) => void;/);
   assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
-  assert.match(appRuntime, /restoreDesktopPetWindowLayering:\s*factoryContext\.restoreDesktopPetWindowLayering/);
-  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,180}createMainProcessRuntime_restoreDesktopPetWindowLayering/);
-  assert.match(appRuntime, /return factoryContext\.petRuntime\.restoreWindowLayering\(\)/);
+  assert.match(appRuntime, /restoreDesktopPetWindowLayering:\s*dependencies\.restoreDesktopPetWindowLayering/);
+  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,180}return petRuntime\.restoreWindowLayering\(\)/);
+  assert.match(appRuntime, /return petRuntime\.restoreWindowLayering\(\)/);
   assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
   assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/);
   assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/);
@@ -6496,7 +6498,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const platformAdapter = readSourceFile("src", "main", "infrastructure", "electron", "platform-adapter.ts");
 
-  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
+  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
   assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
   assert.match(mainProcess, /resolveEffectiveAppId\([\s\S]*?options\.appId,[\s\S]*?isDesktopDevelopmentRuntime\(options\.app, \{ platform: options\.platform \}\)[\s\S]*?\);/);
@@ -6520,7 +6522,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /options\.app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)/);
   assert.match(mainProcess, /then\(\(\) => \{[\s\S]*?applyDarwinDockIcon\(dock\);[\s\S]*?\}\)/);
-  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => factoryContext\.systemIdentityRuntime\.ensureDockIdentity\(\)/);
+  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => dependencies\.systemIdentityRuntime\.ensureDockIdentity\(\)/);
   assert.match(mainProcess, /showMainWindow\(\);/);
   assert.match(readSourceFile("src", "main", "modules", "shell", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
 });
@@ -7167,11 +7169,11 @@ test("assistant entrypoints restore core services before opening embedded webcli
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
-  assert.match(mainProcess, /await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,160}factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
+  assert.match(mainProcess, /await dependencies\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,160}dependencies\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
   assert.match(
     mainProcess,
-    /async function showAssistantTargetWindow[\s\S]*?factoryContext\.showMainWindow\(targetPath\);[\s\S]*?await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
+    /async function showAssistantTargetWindow[\s\S]*?dependencies\.showMainWindow\(targetPath\);[\s\S]*?await dependencies\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?dependencies\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
   );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
@@ -7290,7 +7292,7 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
-  assert.match(mainProcess, /effectiveAppId:\s*factoryContext\.systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /effectiveAppId:\s*dependencies\.systemIdentityRuntime\.effectiveAppId/u);
   assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
   assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
@@ -7696,7 +7698,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
   assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(focusedWebviewDevToolsTargetId\)/);
-  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*factoryContext\.webSurfaceRuntime\.getCopilotDevToolsTarget\(\)/);
+  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*dependencies\.webSurfaceRuntime\.getCopilotDevToolsTarget\(\)/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
 });

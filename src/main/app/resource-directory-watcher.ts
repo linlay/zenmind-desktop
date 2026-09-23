@@ -1,11 +1,11 @@
+import type { App } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import type { App } from "electron";
 import {
   getDesktopPetsDataRoot,
   getDesktopWebappsDataRoot,
-  getDesktopWebsitesDataRoot,
   getDesktopWebsConfigRoot,
+  getDesktopWebsitesDataRoot,
   getPluginsRoot
 } from "../infrastructure/filesystem/user-paths";
 
@@ -275,3 +275,50 @@ export const __testInternals = {
   createWatchDefinitions,
   listWatchDirectories
 };
+
+import {
+  app
+} from "electron";
+import type {
+  WebsChangedEvent
+} from "../../shared/contracts";
+import { type DesktopPetRuntime } from "../modules/pet";
+import { loadInstalledPlugins } from "../modules/plugins";
+import { safeConsoleError } from "../support/logging/safe-console";
+
+export interface StartResourceDirectoryWatcherDependencies {
+  resourceDirectoryWatcher: ResourceDirectoryWatcher | null;
+  readonly startupPlatform: NodeJS.Platform;
+  readonly emitWebsChanged: (details?: Partial<Omit<WebsChangedEvent, "changedAt">>) => void;
+  readonly petRuntime: Pick<DesktopPetRuntime, "refreshState">;
+  readonly notifyServicesChanged: () => void;
+}
+
+export function startResourceDirectoryWatcher(dependencies: StartResourceDirectoryWatcherDependencies) {
+  if (dependencies.resourceDirectoryWatcher) {
+    return;
+  }
+  dependencies.resourceDirectoryWatcher = createResourceDirectoryWatcher({
+    app,
+    platform: dependencies.startupPlatform,
+    onWebsChanged: dependencies.emitWebsChanged,
+    onPetsChanged: () => {
+      dependencies.petRuntime.refreshState();
+    },
+    onPluginsChanged: () => {
+      loadInstalledPlugins(app);
+      dependencies.notifyServicesChanged();
+    },
+    onError: (message, error) => safeConsoleError(message, error)
+  });
+  dependencies.resourceDirectoryWatcher.start();
+}
+
+export interface StopResourceDirectoryWatcherDependencies {
+  resourceDirectoryWatcher: ResourceDirectoryWatcher | null;
+}
+
+export function stopResourceDirectoryWatcher(dependencies: StopResourceDirectoryWatcherDependencies) {
+  dependencies.resourceDirectoryWatcher?.stop();
+  dependencies.resourceDirectoryWatcher = null;
+}
