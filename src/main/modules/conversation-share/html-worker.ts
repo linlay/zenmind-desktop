@@ -377,15 +377,18 @@ async function readConversationSnapshot(
     }
     const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
     const chatId = snapshotURL.searchParams.get("chatId") || "";
-    const attachments: Array<{ id: string; name: string; bytes: ArrayBuffer }> = [];
+    const attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }> = [];
     let totalBytes = 0;
     const seen = new Set<string>();
     for (const descriptor of parsed.attachments) {
-      const { id, name, sourceRef } = descriptor;
+      const { id, name, sourceRef, mimeType } = descriptor;
       if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
-        typeof name !== "string" || !name || typeof sourceRef !== "string" ||
-        !/^artifacts\/(?!.*(?:^|\/)\.\.?\/)[^?#\\]+\.html?$/iu.test(sourceRef) ||
-        descriptor.mimeType !== "text/html") {
+        typeof name !== "string" || !name || Buffer.byteLength(name, "utf8") > 255 ||
+        /[\\/\u0000-\u001f\u007f]/u.test(name) || typeof sourceRef !== "string" ||
+        !isCanonicalArtifactRef(sourceRef) || typeof mimeType !== "string" ||
+        !isValidMediaType(mimeType) || !Number.isSafeInteger(descriptor.size) ||
+        (descriptor.size ?? -1) < 0 || typeof descriptor.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/u.test(descriptor.sha256)) {
         throw new ConversationHtmlRenderFailure("snapshot_invalid");
       }
       seen.add(id);
@@ -393,34 +396,27 @@ async function readConversationSnapshot(
       resourceURL.searchParams.set("file", chatId + "/" + sourceRef);
       const { bytes } = await fetchLimitedResponse({
         url: resourceURL.toString(),
-        headers: { Accept: "text/html", Authorization: "Bearer " + request.bearerToken },
+        headers: { Accept: mimeType, Authorization: "Bearer " + request.bearerToken },
         timeoutMs: SNAPSHOT_TIMEOUT_MS,
         maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes,
-        expectedContentType: "text/html",
+        expectedContentType: mimeType.toLowerCase(),
         unavailableCode: "snapshot_unavailable",
         invalidCode: "snapshot_invalid"
       });
-      if (bytes.length === 0) throw new ConversationHtmlRenderFailure("snapshot_invalid");
       totalBytes += bytes.length;
       if (totalBytes > MAX_CONVERSATION_SNAPSHOT_BYTES) {
         throw new ConversationHtmlRenderFailure("too_large", totalBytes, MAX_CONVERSATION_SNAPSHOT_BYTES);
       }
       const actualHash = createHash("sha256").update(bytes).digest("hex");
-      if ((descriptor.size !== undefined && descriptor.size !== bytes.length) ||
-        (descriptor.sha256 && descriptor.sha256.toLowerCase() !== actualHash)) {
+      if (descriptor.size !== bytes.length || descriptor.sha256.toLowerCase() !== actualHash) {
         throw new ConversationHtmlRenderFailure("snapshot_invalid");
       }
-      descriptor.size = bytes.length;
-      descriptor.sha256 = actualHash;
       attachments.push({
-        id, name,
+        id, name, mimeType,
         bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
       });
     }
-    const encoded = Buffer.from(JSON.stringify(parsed));
-    if (encoded.length > MAX_CONVERSATION_SNAPSHOT_BYTES) {
-      throw new ConversationHtmlRenderFailure("too_large", encoded.length, MAX_CONVERSATION_SNAPSHOT_BYTES);
-    }
+    const encoded = snapshot.bytes;
     const transferred = encoded.buffer.slice(
       encoded.byteOffset, encoded.byteOffset + encoded.byteLength
     ) as ArrayBuffer;
@@ -433,6 +429,37 @@ async function readConversationSnapshot(
   } catch (error) {
     return failureResponse(request.requestId, error);
   }
+}
+
+export function isCanonicalArtifactRef(value: string): boolean {
+  const segments = value.split("/");
+  if (segments.length !== 3 || segments[0] !== "artifacts") return false;
+  return segments.slice(1).every((segment) => {
+    if (!segment || /[\\?#\u0000-\u001f\u007f]/u.test(segment)) return false;
+    try {
+      const decoded = decodeURIComponent(segment);
+      let securityValue = decoded;
+      for (let depth = 0; depth < 4; depth += 1) {
+        if (!securityValue || securityValue === "." || securityValue === ".." ||
+          /[\\/\u0000-\u001f\u007f]/u.test(securityValue)) return false;
+        const next = decodeURIComponent(securityValue);
+        if (next === securityValue) break;
+        securityValue = next;
+      }
+      const encoded = encodeURIComponent(decoded)
+        .replace(/[!'()*]/gu, (character) => "%" + character.charCodeAt(0).toString(16).toUpperCase())
+        .replace(/%(?:3A|40|26|3D|2B|24)/gu, (escape) =>
+          String.fromCharCode(Number.parseInt(escape.slice(1), 16)));
+      return encoded === segment;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function isValidMediaType(value: string): boolean {
+  return value === value.trim().toLowerCase() &&
+    /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(value);
 }
 
 function requireLoopbackURL(value: string, expectedPath: string): URL {

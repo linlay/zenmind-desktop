@@ -144,7 +144,8 @@ export class ConversationHtmlRenderService {
       }
       return { ok: true, bytes: Buffer.from(response.snapshot),
         attachments: response.attachments.map((attachment) => ({
-          id: attachment.id, name: attachment.name, bytes: Buffer.from(attachment.bytes)
+          id: attachment.id, name: attachment.name, mimeType: attachment.mimeType,
+          bytes: Buffer.from(attachment.bytes)
         })) };
     } catch (error) {
       if (error instanceof ConversationHtmlWorkerError && error.code === "too_large") {

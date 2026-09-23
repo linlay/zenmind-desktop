@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 const {
   TunnelConversationShareClient,
@@ -31,8 +32,28 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+function snapshot(attachments = []) {
+  return Buffer.from(JSON.stringify({
+    version: 1,
+    attachments: attachments.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.bytes.length,
+      sha256: createHash("sha256").update(attachment.bytes).digest("hex"),
+      sourceRef: `artifacts/run-1/${encodeURIComponent(attachment.name)}`
+    }))
+  }));
+}
+
 test("Tunnel client submits the V1 snapshot and attachments in one multipart request", async () => {
-  const snapshot = Buffer.from('{"version":2,"title":"opaque"}');
+  const resource = {
+    id: "0123456789abcdef01234567",
+    name: "report.pdf",
+    mimeType: "application/pdf",
+    bytes: Buffer.from("%PDF-resource")
+  };
+  const snapshotBytes = snapshot([resource]);
   const requests = [];
   const client = new TunnelConversationShareClient(async (url, init) => {
     requests.push({ url: String(url), init });
@@ -43,8 +64,8 @@ test("Tunnel client submits the V1 snapshot and attachments in one multipart req
     target,
     conversationId: "chat_1",
     expiration: "30d",
-    snapshot,
-    attachments: []
+    snapshot: snapshotBytes,
+    attachments: [resource]
   });
 
   assert.equal(result.shareId, "share_abc");
@@ -54,13 +75,74 @@ test("Tunnel client submits the V1 snapshot and attachments in one multipart req
   assert.equal(requests[0].init.method, "POST");
   assert.equal(requests[0].init.redirect, "manual");
   assert.ok(requests[0].init.body instanceof FormData);
-  assert.equal(await requests[0].init.body.get("snapshot").text(), snapshot.toString());
+  assert.equal(await requests[0].init.body.get("snapshot").text(), snapshotBytes.toString());
+  assert.equal(requests[0].init.body.get("attachment:0123456789abcdef01234567").type, "application/pdf");
+  assert.equal(await requests[0].init.body.get("attachment:0123456789abcdef01234567").text(), "%PDF-resource");
   assert.equal(requests[0].init.headers.Authorization, "Bearer secret-site-token");
   assert.equal(requests[0].init.headers["Content-Type"], undefined);
   assert.equal(requests[0].init.headers["X-Conversation-Snapshot-Version"], "1");
   assert.equal(requests[0].init.headers["X-Conversation-ID"], "chat_1");
   assert.equal(requests[0].init.headers["X-Conversation-Share-Expiration"], "30d");
   assert.ok(requests[0].init.signal instanceof AbortSignal);
+});
+
+test("Tunnel client rejects duplicate or malformed resources before upload", async () => {
+  let requests = 0;
+  const client = new TunnelConversationShareClient(async () => {
+    requests += 1;
+    return jsonResponse(record(), 201);
+  });
+  const resource = {
+    id: "0123456789abcdef01234567",
+    name: "report.pdf",
+    mimeType: "application/pdf",
+    bytes: Buffer.from("%PDF-resource")
+  };
+  for (const attachments of [
+    [resource, { ...resource, name: "other.pdf" }],
+    [{ ...resource, name: "../report.pdf" }],
+    [{ ...resource, mimeType: "Application/PDF" }]
+  ]) {
+    await assert.rejects(() => client.create({
+      target,
+      conversationId: "chat_1",
+      expiration: "30d",
+      snapshot: snapshot(attachments),
+      attachments
+    }), (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_request");
+  }
+  assert.equal(requests, 0);
+});
+
+test("Tunnel client rejects extra, missing or changed resources before upload", async () => {
+  let requests = 0;
+  const client = new TunnelConversationShareClient(async () => {
+    requests += 1;
+    return jsonResponse(record(), 201);
+  });
+  const resource = {
+    id: "0123456789abcdef01234567",
+    name: "report.pdf",
+    mimeType: "application/pdf",
+    bytes: Buffer.from("%PDF-resource")
+  };
+  const declared = snapshot([resource]);
+  for (const attachments of [
+    [],
+    [resource, { ...resource, id: "fedcba9876543210fedcba98" }],
+    [{ ...resource, bytes: Buffer.from("changed") }],
+    [{ ...resource, mimeType: "image/png" }],
+    [{ ...resource, name: "other.pdf" }]
+  ]) {
+    await assert.rejects(() => client.create({
+      target,
+      conversationId: "chat_1",
+      expiration: "30d",
+      snapshot: declared,
+      attachments
+    }), (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_request");
+  }
+  assert.equal(requests, 0);
 });
 
 test("Tunnel client requires explicit null metadata for permanent shares", async () => {
@@ -71,7 +153,7 @@ test("Tunnel client requires explicit null metadata for permanent shares", async
     target,
     conversationId: "chat_1",
     expiration: "permanent",
-    snapshot: Buffer.from('{"version":2}'),
+    snapshot: snapshot(),
     attachments: []
   });
 
@@ -89,7 +171,7 @@ test("Tunnel client rejects a create response for a different conversation", asy
       target,
       conversationId: "chat_1",
       expiration: "30d",
-      snapshot: Buffer.from('{"version":2}'),
+      snapshot: snapshot(),
       attachments: []
     }),
     (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_response"
@@ -104,7 +186,7 @@ test("Tunnel client requires explicit single-use metadata for once shares", asyn
     target,
     conversationId: "chat_1",
     expiration: "once",
-    snapshot: Buffer.from('{"version":2}'),
+    snapshot: snapshot(),
     attachments: []
   });
 
@@ -222,7 +304,7 @@ test("Tunnel client rejects redirects, invalid JSON, oversized JSON, URLs, RFC33
         target,
         conversationId: "chat_1",
         expiration: "30d",
-        snapshot: Buffer.from('{"version":2}'),
+        snapshot: snapshot(),
         attachments: []
       }),
       (error) => error instanceof TunnelConversationShareError,
@@ -257,7 +339,7 @@ test("Tunnel client classifies timeout and network failures without leaking deta
   );
 });
 
-test("Tunnel client enforces the local 20 MiB Snapshot boundary without fetching", async () => {
+test("Tunnel client enforces the local 20 MiB Snapshot and resource boundaries without fetching", async () => {
   let called = false;
   const client = new TunnelConversationShareClient(async () => {
     called = true;
@@ -271,6 +353,22 @@ test("Tunnel client enforces the local 20 MiB Snapshot boundary without fetching
       expiration: "30d",
       snapshot: Buffer.alloc(20 * 1024 * 1024 + 1),
       attachments: []
+    }),
+    (error) => error instanceof TunnelConversationShareError && error.status === 413
+  );
+  const oversizedResource = {
+    id: "0123456789abcdef01234567",
+    name: "large.bin",
+    mimeType: "application/octet-stream",
+    bytes: Buffer.alloc(20 * 1024 * 1024 + 1)
+  };
+  await assert.rejects(
+    () => client.create({
+      target,
+      conversationId: "chat_1",
+      expiration: "30d",
+      snapshot: snapshot([oversizedResource]),
+      attachments: [oversizedResource]
     }),
     (error) => error instanceof TunnelConversationShareError && error.status === 413
   );
