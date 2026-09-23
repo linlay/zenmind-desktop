@@ -9080,7 +9080,8 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
   assert.match(appShell, /reportDeprecatedRendererCompatibilityUse\("route\.service-agent-webclient"/u);
   assert.match(compatibility, /"\[deprecated-compatibility\]"/u);
   assert.match(compatibility, /desktopVersion: currentDesktopVersion/u);
-  assert.match(appRuntime, /source === "deprecated-compatibility" \? \{ desktopVersion: app\.getVersion\(\) \}/u);
+  assert.match(appRuntime, /return rendererDiagnostics\.reportRendererDiagnostic\(source, details\)/u);
+  assert.match(readSourceFile("src", "main", "app", "renderer-diagnostics.ts"), /source === "deprecated-compatibility" \? \{ desktopVersion: app\.getVersion\(\) \}/u);
   assert.match(builtinLoader, /MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION = "v0\.3\.60"/u);
   assert.doesNotMatch(
     shellHandlers,
