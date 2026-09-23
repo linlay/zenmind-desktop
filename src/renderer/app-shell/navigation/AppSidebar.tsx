@@ -1,7 +1,7 @@
 import { SkinHeading } from "../../appearance/SkinVisual";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
-import { desktopUpdateAction } from "../../../shared/desktop-updates";
+import { desktopUpdateAction, desktopUpdateSidebarVisible } from "../../../shared/desktop-updates";
 import { DesktopUpdateConfirm } from "../../updates/DesktopUpdateConfirm";
 import type { DesktopUpdateState } from "../../../shared/desktop-updates";
 import { SortableNavEntries } from "./SortableNavEntries";
@@ -1240,8 +1240,7 @@ export function AppSidebar({
   const updateDownloadPercent = desktopUpdate?.phase === "downloading"
     ? Math.max(0, Math.min(100, Math.round(desktopUpdate.progress))) : null;
   const canDownloadUpdate = updateAction === "download";
-  const hasDesktopUpdate = Boolean(desktopUpdate?.version &&
-    (desktopUpdate.error || ["available", "downloading", "verifying", "ready", "installing"].includes(desktopUpdate.phase)));
+  const hasDesktopUpdate = Boolean(desktopUpdate && desktopUpdateSidebarVisible(desktopUpdate));
 
   async function installSidebarUpdate() {
     if (updateInstallPending || updateAction !== "install" || !desktopUpdate?.canInstall) return;
@@ -7193,9 +7192,10 @@ export function AppSidebar({
                   type="button"
                   className={`sidebar-update-trigger${updateDownloadPercent !== null ? " is-downloading" : ""}${desktopUpdate?.phase === "ready" ? " is-ready" : ""}`}
                   aria-label={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
-                  title={updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
+                  title={updateAction === "check" ? `${t(`updates.error.${desktopUpdate?.error ?? "checkFailed"}`)} ${t("updates.retry")}` : updateDownloadPercent !== null ? `${t("updates.phase.downloading")} ${updateDownloadPercent}%` : t(desktopUpdate?.phase === "ready" ? "updates.action" : canDownloadUpdate ? "updates.download" : `updates.phase.${desktopUpdate!.phase}`)}
                   disabled={updateInstallPending || updateDownloadPending || ["downloading", "verifying", "installing"].includes(desktopUpdate!.phase)}
                   onClick={() => {
+                    if (updateAction === "check") { void window.electronAPI.updates.check().catch(() => setUpdateFailure("checkFailed")); return; }
                     if (canDownloadUpdate) void downloadSidebarUpdate();
                     else if (updateAction === "install") setUpdateConfirmOpen(true);
                     else if (desktopUpdate?.error) setUpdateFailure(desktopUpdate.error);

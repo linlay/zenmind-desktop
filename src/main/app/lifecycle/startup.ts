@@ -45,7 +45,7 @@ export function createStartupPipeline(options: StartupPipelineOptions) {
       options.loadInstalledPlugins(options.app);
       options.notifyCoreServicesChanged();
 
-      void options.runServiceMutation(() => options.runStartupPreparation(options.app, {
+      await options.runServiceMutation(() => options.runStartupPreparation(options.app, {
         desktopVersion: options.desktopVersion,
         isFirstDesktopInstall: options.isFirstDesktopInstall,
         onModeResolved: (mode) => {

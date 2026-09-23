@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
@@ -703,6 +704,208 @@ test("brand consistency guard accepts active dist-renderer desktop pet output", 
   assert.doesNotThrow(() => assertBrandArtifactsConsistent({ rootDir: root, brand }));
 });
 
+test("generated Windows installer preserves itself when launched from the managed update cache", (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+
+  assert.match(installerInclude, /\$\$installerPid = \[int\].*ParentProcessId/u);
+  assert.match(installerInclude, /function Add-DesktopTree.*\$\$protected\.Contains\(\$\$processId\)/u);
+  assert.doesNotMatch(installerInclude, /taskkill\.exe \/PID \$\$root\.ProcessId \/T \/F/u);
+  assert.doesNotMatch(installerInclude, /(?<!\$)\$root\.ProcessId/u);
+  assert.doesNotMatch(installerInclude, /2>\$null/u);
+  assert.match(installerInclude, /Get-Process -Id \$\$root\.ProcessId/u);
+  assert.match(installerInclude, /taskkill\.exe \/PID \$\$root\.ProcessId \/F 2>\$\$null/u);
+});
+
+test("Windows installer cleanup stops managed processes without stopping its own process tree", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$");
+  const dataRoot = path.join(root, "data");
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  fs.mkdirSync(path.dirname(appExecutable), { recursive: true });
+  fs.writeFileSync(appExecutable, "fixture");
+  const quote = (value) => `'${value.replace(/'/gu, "''")}'`;
+  const installerExecutable = path.join(dataRoot, "cache", "updates", "release.exe");
+  const serviceExecutable = path.join(dataRoot, "services", "agent-platform.exe");
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    [pscustomobject]@{ ProcessId = 4101; ParentProcessId = 1; ExecutablePath = ${quote(appExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4102; ParentProcessId = 4101; ExecutablePath = ${quote(installerExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4103; ParentProcessId = 4101; ExecutablePath = ${quote(serviceExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 4102; ExecutablePath = 'powershell.exe'; CommandLine = '' }
+  )
+}
+function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) Write-Output "STOP:$Id" }
+function Get-Process { [CmdletBinding()] param([int]$Id) return $null }
+${cleanup}`;
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+    encoding: "utf8",
+    env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: dataRoot, DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /STOP:4101/u);
+  assert.match(result.stdout, /STOP:4103/u);
+  assert.doesNotMatch(result.stdout, /STOP:4102/u);
+});
+
+test("Windows update keeps the cached parent installer alive while the old uninstaller cleans services", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$");
+  const dataRoot = path.join(root, "data");
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  fs.mkdirSync(path.dirname(appExecutable), { recursive: true });
+  fs.writeFileSync(appExecutable, "fixture");
+  const quote = (value) => `'${value.replace(/'/gu, "''")}'`;
+  const installerExecutable = path.join(dataRoot, "cache", "updates", "release.exe");
+  const serviceExecutable = path.join(dataRoot, "services", "agent-platform.exe");
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    [pscustomobject]@{ ProcessId = 4101; ParentProcessId = 1; ExecutablePath = ${quote(installerExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4102; ParentProcessId = 4101; ExecutablePath = 'C:\\Temp\\old-uninstaller.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4103; ParentProcessId = 4101; ExecutablePath = 'C:\\Temp\\helper.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4104; ParentProcessId = 1; ExecutablePath = ${quote(serviceExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 4102; ExecutablePath = 'powershell.exe'; CommandLine = '' }
+  )
+}
+function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) Write-Output "STOP:$Id" }
+function Get-Process { [CmdletBinding()] param([int]$Id) return $null }
+${cleanup}`;
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+    encoding: "utf8",
+    env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: dataRoot, DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /STOP:4104/u);
+  assert.doesNotMatch(result.stdout, /STOP:4101|STOP:4102|STOP:4103/u);
+});
+
+test("standalone old uninstaller does not exempt an unrelated shell-owned service", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$");
+  const dataRoot = path.join(root, "data");
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  fs.mkdirSync(path.dirname(appExecutable), { recursive: true });
+  fs.writeFileSync(appExecutable, "fixture");
+  const serviceExecutable = path.join(dataRoot, "services", "agent-platform.exe");
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    [pscustomobject]@{ ProcessId = 4101; ParentProcessId = 1; ExecutablePath = 'C:\\Windows\\explorer.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4102; ParentProcessId = 4101; ExecutablePath = 'C:\\Temp\\old-uninstaller.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4103; ParentProcessId = 4101; ExecutablePath = '${serviceExecutable.replace(/'/gu, "''")}'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 4102; ExecutablePath = 'powershell.exe'; CommandLine = '' }
+  )
+}
+function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) Write-Output "STOP:$Id" }
+function Get-Process { [CmdletBinding()] param([int]$Id) return $null }
+${cleanup}`;
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+    encoding: "utf8",
+    env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: dataRoot, DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /STOP:4103/u);
+  assert.doesNotMatch(result.stdout, /STOP:4101|STOP:4102/u);
+});
+
+test("Windows installer cleanup tolerates a managed process exiting before taskkill", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$");
+  const dataRoot = path.join(root, "data");
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  fs.mkdirSync(path.dirname(appExecutable), { recursive: true });
+  fs.writeFileSync(appExecutable, "fixture");
+  const quote = (value) => `'${value.replace(/'/gu, "''")}'`;
+  const serviceExecutable = path.join(dataRoot, "services", "agent-platform.exe");
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    [pscustomobject]@{ ProcessId = 4101; ParentProcessId = 1; ExecutablePath = ${quote(appExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 4102; ParentProcessId = 4101; ExecutablePath = ${quote(serviceExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 9001; ExecutablePath = 'powershell.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 9001; ParentProcessId = 1; ExecutablePath = 'installer.exe'; CommandLine = '' }
+  )
+}
+function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) }
+$script:probeCount = @{}
+function Get-Process { [CmdletBinding()] param([int]$Id)
+  $script:probeCount[$Id] = 1 + [int]$script:probeCount[$Id]
+  if ($script:probeCount[$Id] -eq 1) { return [pscustomobject]@{ Id = $Id } }
+  return $null
+}
+function taskkill.exe {
+  Write-Error 'ERROR: The process was not found.'
+}
+${cleanup}`;
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+    encoding: "utf8",
+    env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: dataRoot, DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("Windows installer cleanup still refuses a surviving managed process", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$").replace("AddSeconds(5)", "AddMilliseconds(50)");
+  const dataRoot = path.join(root, "data");
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  fs.mkdirSync(path.dirname(appExecutable), { recursive: true });
+  fs.writeFileSync(appExecutable, "fixture");
+  const quote = (value) => `'${value.replace(/'/gu, "''")}'`;
+  const serviceExecutable = path.join(dataRoot, "services", "agent-platform.exe");
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    [pscustomobject]@{ ProcessId = 4103; ParentProcessId = 1; ExecutablePath = ${quote(serviceExecutable)}; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 9001; ExecutablePath = 'powershell.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 9001; ParentProcessId = 1; ExecutablePath = 'installer.exe'; CommandLine = '' }
+  )
+}
+function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) }
+function Get-Process { [CmdletBinding()] param([int]$Id) return [pscustomobject]@{ Id = $Id } }
+function taskkill.exe { Write-Error 'ERROR: Access denied.' }
+${cleanup}`;
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+    encoding: "utf8",
+    env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: dataRoot, DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+  });
+  assert.equal(result.status, 20, result.stderr || result.stdout);
+  assert.match(result.stdout, /SURVIVORS=4103/u);
+});
+
 test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {
   const root = createBrandFixture(t);
   const sourcePackageBefore = fs.readFileSync(path.join(root, "package.json"), "utf8");
@@ -797,7 +1000,8 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.doesNotMatch(installerInclude, /CuteJInstallDirectoryPage/u);
   assert.doesNotMatch(installerInclude, /CuteJBrowseInstallDirectory/u);
   assert.match(installerInclude, /CuteJDataDirectoryPage/u);
-  assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
+  const customPages = installerInclude.match(/!macro customPageAfterChangeDir\s+([\s\S]*?)!macroend/u)?.[1] ?? "";
+  assert.match(customPages, /Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave/u);
   assert.match(installerInclude, /StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
   assert.match(installerInclude, /\$INSTDIR != \$DesktopDefaultInstallDir/u);
   assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
@@ -818,7 +1022,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   );
   assert.match(installerInclude, /\$\$path\.Equals\(\$\$appExecutable/u);
   assert.match(installerInclude, /--desktop-shutdown-ack=\$DesktopShutdownAckPath/u);
-  assert.match(installerInclude, /\$R1 < 24/u);
+  assert.match(installerInclude, /\$R1 < 120/u);
   assert.match(installerInclude, /Get-CimInstance Win32_Process -ErrorAction Stop/u);
   assert.match(installerInclude, /DesktopProcessCleanupDone/u);
   assert.match(
@@ -1314,7 +1518,8 @@ test("Windows installer keeps the program root fixed while the data root remains
   const dataDirectoryPage = installerInclude.match(/Function CuteJDataDirectoryPage\s+([\s\S]*?)FunctionEnd/u)?.[1] ?? "";
 
   assert.doesNotMatch(installerInclude, /InstallDirectoryPage|BrowseInstallDirectory|DesktopInstallParent/u);
-  assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
+  const customPages = installerInclude.match(/!macro customPageAfterChangeDir\s+([\s\S]*?)!macroend/u)?.[1] ?? "";
+  assert.match(customPages, /Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave/u);
   assert.match(dataDirectoryPage, /Call CuteJEnsureDataRootDefault/u);
   assert.doesNotMatch(dataDirectoryPage, /DesktopDataRootStored[\s\S]*?Abort/u);
   assert.match(dataDirectoryPage, /StrCpy \$DesktopDataParent "\$DesktopDataRoot"/u);
