@@ -8,6 +8,40 @@ import { npmCmd, runAndWait, withBrandEnv } from "./spawn.mjs";
 
 const projectRoot = process.cwd();
 
+async function timedBuildPhase(name, action) {
+  const started = process.hrtime.bigint();
+  let status = "failed";
+  try {
+    const result = await action();
+    status = "succeeded";
+    return result;
+  } finally {
+    console.log(`[build-perf] phase=${name} elapsedMs=${Number((process.hrtime.bigint() - started) / 1_000_000n)} status=${status}`);
+  }
+}
+
+export function createElectronBuildPhaseObserver(now = () => process.hrtime.bigint(), log = console.log) {
+  let phase = "";
+  let started = 0n;
+  const finish = (status = "succeeded") => {
+    if (!phase) return;
+    log(`[build-perf] phase=${phase} elapsedMs=${Number((now() - started) / 1_000_000n)} status=${status}`);
+    phase = "";
+  };
+  return {
+    onOutputLine(_stream, line) {
+      const next = line.includes("• packaging ") ? "electron-packaging"
+        : line.includes("• building ") && line.includes("target=nsis") ? "nsis"
+          : line.includes("• building block map ") ? "blockmap" : "";
+      if (!next) return;
+      finish();
+      phase = next;
+      started = now();
+    },
+    finish
+  };
+}
+
 async function syncWindowsBuiltinAssets(brand) {
   await runAndWait(process.execPath, ["./scripts/sync-builtin-assets.mjs", "--use-existing", "--os=windows", "--arch=amd64"], withBrandEnv(brand, {
     cwd: projectRoot
@@ -118,31 +152,39 @@ export async function buildOnWindowsHost(brand = syncBrandArtifacts({ brandId: r
   const target = { os: "win32", arch: "x64" };
   const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
-  await runAndWait(npmCmd, ["run", "sync:env", "--", "--required"], brandProcessOptions({ cwd: projectRoot }));
+  await timedBuildPhase("sync-env", () => runAndWait(npmCmd, ["run", "sync:env", "--", "--required"], brandProcessOptions({ cwd: projectRoot })));
   syncBrandArtifacts({ brandId: brand.id, target });
-  await syncWindowsBuiltinAssets(brand);
-  await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
-  await runAndWait(npmCmd, ["run", "stage:app", "--", "--os=win32", "--arch=x64"], brandProcessOptions({
+  await timedBuildPhase("sync-builtins", () => syncWindowsBuiltinAssets(brand));
+  await timedBuildPhase("desktop-build", () => runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot })));
+  await timedBuildPhase("stage-app", () => runAndWait(npmCmd, ["run", "stage:app", "--", "--os=win32", "--arch=x64"], brandProcessOptions({
     cwd: projectRoot
-  }));
-  await runAndWait(npmCmd, [
-    "exec",
-    "electron-builder",
-    "--",
-    "--config",
-    electronBuilderConfigPath(projectRoot, brand.id),
-    "--win",
-    "--x64"
-  ], brandProcessOptions({
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-    }
-  }));
-  ensureWindowsLatestAliases(brand);
-  buildSafeRepair({ brand });
-  await runAndWait(nodeBin(), ["./scripts/verify-win-package.mjs"], brandProcessOptions({ cwd: projectRoot }));
+  })));
+  const observer = createElectronBuildPhaseObserver();
+  let builderStatus = "failed";
+  try {
+    await timedBuildPhase("electron-builder", () => runAndWait(npmCmd, [
+      "exec",
+      "electron-builder",
+      "--",
+      "--config",
+      electronBuilderConfigPath(projectRoot, brand.id),
+      "--win",
+      "--x64"
+    ], brandProcessOptions({
+      cwd: projectRoot,
+      onOutputLine: observer.onOutputLine,
+      env: {
+        ...process.env,
+        CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      }
+    })));
+    builderStatus = "succeeded";
+  } finally {
+    observer.finish(builderStatus);
+  }
+  await timedBuildPhase("latest-aliases", async () => ensureWindowsLatestAliases(brand));
+  await timedBuildPhase("safe-repair", async () => buildSafeRepair({ brand }));
+  await timedBuildPhase("verify-package", () => runAndWait(nodeBin(), ["./scripts/verify-win-package.mjs"], brandProcessOptions({ cwd: projectRoot })));
 }
 
 function nodeBin() {

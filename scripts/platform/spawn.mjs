@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { isWindows } from "./detect.mjs";
 
 export const npmCmd = isWindows() ? "npm.cmd" : "npm";
@@ -46,7 +47,26 @@ export function run(cmd, args, options = {}) {
 
 export function runAndWait(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = run(cmd, args, options);
+    const { onOutputLine, ...runOptions } = options;
+    const child = run(cmd, args, onOutputLine
+      ? { ...runOptions, stdio: ["inherit", "pipe", "pipe"] }
+      : runOptions);
+    if (onOutputLine) {
+      let observerEnabled = true;
+      for (const [stream, output] of [["stdout", child.stdout], ["stderr", child.stderr]]) {
+        output.pipe(stream === "stdout" ? process.stdout : process.stderr, { end: false });
+        const lines = createInterface({ input: output, crlfDelay: Infinity });
+        lines.on("line", (line) => {
+          if (!observerEnabled) return;
+          try {
+            onOutputLine(stream, line);
+          } catch (error) {
+            observerEnabled = false;
+            console.warn(`[build-perf] output observer unavailable: ${error.message}`);
+          }
+        });
+      }
+    }
     let settled = false;
     const finish = (code) => {
       if (settled) {
@@ -59,7 +79,7 @@ export function runAndWait(cmd, args, options = {}) {
       }
       reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code ?? -1}`));
     };
-    child.once("exit", finish);
+    if (!onOutputLine) child.once("exit", finish);
     child.once("close", finish);
     child.once("error", (error) => {
       if (settled) {
