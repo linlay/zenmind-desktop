@@ -67,8 +67,8 @@ test("navigation notifications retain taskbar, tray, renderer and visible pet or
   assert.deepEqual(events, ["taskbar", "tray", "renderer"]);
 });
 
-for (const platform of ["darwin", "win32"]) {
-  test(`${platform}: ready waits for environment and SSO, wires live updates after window creation`, async () => {
+for (const platform of ["darwin", "win32"]) for (const updateFailure of ["none", "registration", "check", "pending"]) {
+  test(`${platform}: startup continues independently of updates (${updateFailure})`, async () => {
     const events = [];
     const listeners = new Map();
     const state = { startupPhase: "booting" };
@@ -78,7 +78,11 @@ for (const platform of ["darwin", "win32"]) {
     const pipeline = new Promise(resolve => { finishPipeline = resolve; });
     let updatesLookup;
     let updateOptions;
-    const updates = { mainReady: () => events.push("updates-ready") };
+    const updates = { mainReady: () => {
+      events.push("updates-ready");
+      if (updateFailure === "check") return Promise.reject(new Error("update failed"));
+      if (updateFailure === "pending") return new Promise(() => {});
+    } };
     const share = { start: () => events.push("share"), dispose: () => events.push("share-dispose") };
     const protocol = name => (_app, _protocol, _net, ...args) => { assert.equal(args.at(-1), platform); events.push(name); };
     const { handleAppReady } = loadUnit("lifecycle/app-ready", {
@@ -88,7 +92,11 @@ for (const platform of ["darwin", "win32"]) {
       "../../modules/identity": { registerDesktopSsoAvatarProtocol: protocol("avatar-protocol") },
       "../../modules/plugins": { configurePluginResources: () => events.push("plugin-resources") },
       "../../modules/conversation-share": { createConversationShareFacade: () => share },
-      "../../modules/updates": { registerDesktopUpdates: options => { events.push("updates-register"); updateOptions = options; return updates; } },
+      "../../modules/updates": { registerDesktopUpdates: options => {
+        events.push("updates-register"); updateOptions = options;
+        if (updateFailure === "registration") throw new Error("updates unavailable");
+        return updates;
+      } },
       "../performance-diagnostics": { startPerformanceDiagnostics: () => events.push("diagnostics") }
     });
     const ready = handleAppReady({
@@ -126,12 +134,12 @@ for (const platform of ["darwin", "win32"]) {
     finishEnvironment({ ok: true });
     await ready;
     assert.deepEqual(events, ["platform-preflight", "identity", "runtime-env", "runtime-env-ready", "roots", "pet-protocol", "website-protocol", "avatar-protocol", "desktop-state-ready", "logs", "diagnostics", "sso", "sso-applied", "plugin-bridge", "plugin-resources", "assistant", "share", "ipc", "permissions", "shortcut", "window", "updates-register", "shell-ready", "watcher", "pipeline"]);
-    assert.equal(updatesLookup(), updates);
+    assert.equal(updatesLookup(), updateFailure === "registration" ? undefined : updates);
     assert.equal(updateOptions.currentVersion, "1.0.0");
     state.startupPhase = "non-core-ready";
     finishPipeline();
-    await Promise.resolve();
-    assert.equal(events.at(-1), "updates-ready");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(events.at(-1), updateFailure === "registration" ? "pipeline" : "updates-ready");
     listeners.get("will-quit")();
     assert.equal(events.at(-1), "share-dispose");
   });
@@ -152,4 +160,23 @@ test("ready IPC recovery signals the current update runtime before non-core star
   updates = { mainReady: () => events.push("ready") };
   handlers.onStartupPreparationSucceeded();
   assert.deepEqual(events, ["core-ready", "ready", "non-core"]);
+});
+
+for (const failure of ['throw', 'reject']) test(`ready IPC continues non-core startup when updates ${failure}`, async () => {
+  let handlers;
+  const events = [];
+  const { registerReadyIpc } = loadUnit('assembly/ready-ipc', {
+    '../module-registry': { registerMainIpcHandlers: options => { handlers = options; } }
+  });
+  registerReadyIpc({
+    webSurfaceRuntime: {}, appShellRuntime: {}, servicesRuntime: {}, settingsRuntime: {},
+    setStartupPhase: phase => events.push(phase),
+    startNonCoreDesktopRuntime: () => events.push('non-core')
+  }, {}, () => ({ mainReady() {
+    if (failure === 'throw') throw new Error('update notification failed');
+    return Promise.reject(new Error('update request failed'));
+  } }));
+  assert.doesNotThrow(() => handlers.onStartupPreparationSucceeded());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, ['core-ready', 'non-core']);
 });

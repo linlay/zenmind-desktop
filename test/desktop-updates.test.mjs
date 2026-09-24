@@ -124,6 +124,25 @@ test("persistent network failure exhausts retries; disposal cancels pending retr
   assert.equal(attempts, 5);
 });
 
+test("update configuration and renderer notification failures stay inside the background runtime", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let broken = true, attempts = 0;
+  const { runtime } = fixture(t, {
+    readConfig: () => { if (broken) throw new Error('invalid config'); return config; },
+    emit: () => { throw new Error('renderer destroyed'); },
+    fetchManifest: async () => { attempts++; throw Object.assign(new Error('offline'), { code: 'ENETUNREACH' }); }
+  });
+  assert.doesNotThrow(() => runtime.start());
+  assert.equal((await runtime.check()).error, 'configInvalid');
+  assert.equal(attempts, 0);
+  broken = false;
+  assert.equal((await runtime.check()).error, 'checkFailed');
+  t.mock.timers.tick(5000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 2);
+  runtime.dispose();
+});
+
 test("invalid signatures never trigger network retries or readiness recovery", async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   let attempts = 0;
