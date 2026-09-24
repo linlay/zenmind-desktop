@@ -153,7 +153,9 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     notifyServicesChanged: dependencies.notifyServicesChanged,
     onStartupPreparationSucceeded: () => {
       dependencies.setStartupPhase("core-ready");
-      void getUpdatesRuntime()?.mainReady();
+        try {
+          void Promise.resolve(getUpdatesRuntime()?.mainReady()).catch(error => console.warn("[updates] readiness check failed", error));
+        } catch (error) { console.warn("[updates] readiness check failed", error); }
       dependencies.startNonCoreDesktopRuntime();
     },
     onStartupPreparationBlocked: () => dependencies.setStartupPhase("degraded"),

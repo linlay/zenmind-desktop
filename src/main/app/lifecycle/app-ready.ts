@@ -126,33 +126,41 @@ export async function handleAppReady(dependencies: HandleAppReadyDependencies) {
   dependencies.configureAppMediaPermissions();
   dependencies.registerFocusedWebviewDevToolsShortcut();
   dependencies.createWindow();
-  updatesRuntime = registerDesktopUpdates({
-    app,
-    currentVersion: dependencies.desktopAppInfo.version,
-    getMainWindow: dependencies.getMainWindow,
-    prepareInstall: async () => {
-      if (dependencies.appState.isHandlingQuit || !isStartupPhaseAtLeast(dependencies.appState.startupPhase, "core-ready")) throw new Error("updateBusy");
-      dependencies.appState.isHandlingQuit = true;
-      dependencies.realtimeBroker.beginShutdown();
-      dependencies.appState.shutdownMode = "installer";
-      const report = await dependencies.runShutdownCleanup();
-      if (!report.ok) {
-        dependencies.appState.isHandlingQuit = false;
-        dependencies.appState.shutdownCleanupPromise = null;
-        dependencies.appState.shutdownCleanupComplete = false;
-        dependencies.appState.shutdownReport = null;
-        throw new Error("cleanupFailed");
-      }
-      dependencies.pluginBridgeRuntime.emitBeforeQuit();
-      await dependencies.logsRuntime.flush(500);
-      return true;
-    },
-    quit: dependencies.beginAppQuitWithoutConfirmation
-  });
+  try {
+    updatesRuntime = registerDesktopUpdates({
+      app,
+      currentVersion: dependencies.desktopAppInfo.version,
+      getMainWindow: dependencies.getMainWindow,
+      prepareInstall: async () => {
+        if (dependencies.appState.isHandlingQuit || !isStartupPhaseAtLeast(dependencies.appState.startupPhase, "core-ready")) throw new Error("updateBusy");
+        dependencies.appState.isHandlingQuit = true;
+        dependencies.realtimeBroker.beginShutdown();
+        dependencies.appState.shutdownMode = "installer";
+        const report = await dependencies.runShutdownCleanup();
+        if (!report.ok) {
+          dependencies.appState.isHandlingQuit = false;
+          dependencies.appState.shutdownCleanupPromise = null;
+          dependencies.appState.shutdownCleanupComplete = false;
+          dependencies.appState.shutdownReport = null;
+          throw new Error("cleanupFailed");
+        }
+        dependencies.pluginBridgeRuntime.emitBeforeQuit();
+        await dependencies.logsRuntime.flush(500);
+        return true;
+      },
+      quit: dependencies.beginAppQuitWithoutConfirmation
+    });
+  } catch (error) {
+    console.warn("[updates] registration failed; continuing startup", error);
+  }
   dependencies.setStartupPhase("shell-ready");
   dependencies.startResourceDirectoryWatcher();
   void dependencies.startupPipeline.run().then(() => {
-    if (["core-ready", "non-core-ready"].includes(dependencies.appState.startupPhase)) void updatesRuntime?.mainReady();
+    if (["core-ready", "non-core-ready"].includes(dependencies.appState.startupPhase)) {
+      try {
+        void Promise.resolve(updatesRuntime?.mainReady()).catch(error => console.warn("[updates] readiness check failed", error));
+      } catch (error) { console.warn("[updates] readiness check failed", error); }
+    }
   });
 }
 
