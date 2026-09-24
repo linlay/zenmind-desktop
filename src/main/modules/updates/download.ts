@@ -12,17 +12,16 @@ export class UpdateHttpError extends Error {
   constructor(readonly status: number) { super(`Update server returned HTTP ${status}`); }
 }
 
-async function response(url: string, signal: AbortSignal, redirects = 0, platform?: NodeJS.Platform): Promise<{ stream: IncomingMessage; url: string }> {
+async function response(url: string, signal: AbortSignal, redirects = 0): Promise<{ stream: IncomingMessage; url: string }> {
   updateUrl(url);
   return new Promise((resolve, reject) => {
     const request = https.get(url, { signal, headers: {
       "Cache-Control": "no-cache", "Accept-Encoding": "identity",
-      ...(platform ? { "X-Desktop-Platform": platform } : {}),
     } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode ?? 0)) {
         res.resume();
         if (redirects >= 5 || !res.headers.location) return reject(new Error("Invalid update redirect"));
-        try { resolve(response(updateUrl(new URL(res.headers.location, url).href), signal, redirects + 1, platform)); }
+        try { resolve(response(updateUrl(new URL(res.headers.location, url).href), signal, redirects + 1)); }
         catch (error) { reject(error); }
       } else if (res.statusCode === 200) resolve({ stream: res, url });
       else { res.resume(); reject(new UpdateHttpError(res.statusCode ?? 0)); }
@@ -33,9 +32,12 @@ async function response(url: string, signal: AbortSignal, redirects = 0, platfor
 }
 export async function fetchUpdateManifest(url: string, signal: AbortSignal, platform: NodeJS.Platform = "win32"): Promise<DesktopTestUpdateInput | undefined> {
   let result: Awaited<ReturnType<typeof response>>;
-  const feed = new URL(updateUrl(url));
-  feed.searchParams.set("platform", platform);
-  try { result = await response(feed.href, signal, 0, platform); }
+  // One configured entry routes to independently published platform feeds.
+  const feedUrl = new URL(updateUrl(url));
+  if (platform === "win32") feedUrl.searchParams.set("platform", "win32");
+  else if (platform === "darwin") feedUrl.searchParams.set("platform", "darwin");
+  else throw new Error("Unsupported update platform");
+  try { result = await response(feedUrl.href, signal); }
   catch (error) {
     // Only a missing manifest is normal; an artifact 404 remains a download error.
     if (error instanceof UpdateHttpError && error.status === 404) return undefined;
@@ -46,7 +48,7 @@ export async function fetchUpdateManifest(url: string, signal: AbortSignal, plat
   if (platform === "darwin") return { manifest, signature: "" };
   const signatureUrl = new URL(result.url);
   signatureUrl.pathname += ".sig";
-  const signatureResponse = await response(signatureUrl.href, signal, 0, platform);
+  const signatureResponse = await response(signatureUrl.href, signal);
   const signature = await boundedText(signatureResponse.stream, 128);
   return { manifest, signature };
 }

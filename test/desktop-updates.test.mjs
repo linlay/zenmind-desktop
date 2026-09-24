@@ -8,8 +8,13 @@ import { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { createRequire } from "node:module";
+import childProcess from "node:child_process";
 import { createUpdateManifest } from "../scripts/create-update-manifest.mjs";
 const require = createRequire(import.meta.url);
+// The host registry must not redirect Windows fixtures into an installed user's data.
+const registryRead = test.mock.method(childProcess, "execFileSync", () => Buffer.from(""));
+require("../dist-electron/main/infrastructure/filesystem/runtime-root.js").readWindowsRuntimeRootFromRegistry("win32");
+registryRead.mock.restore();
 const { normalizeUpdateConfig, getUpdateConfigPath, readUpdateConfig } = require("../dist-electron/main/modules/updates/config.js");
 const { compareUpdateVersions, parseUpdateManifest } = require("../dist-electron/main/modules/updates/manifest.js");
 const { createUpdateRuntime } = require("../dist-electron/main/modules/updates/runtime.js");
@@ -31,21 +36,32 @@ function fixture(t, extra = {}) {
   return { root, runtime, events, installs };
 }
 
-test("initialization requires platform feeds and rejects legacy or unsafe inputs", () => {
+test("initialization accepts one shared feed URL on both platforms", () => {
+  for (const platform of ["win32", "darwin"]) {
+    assert.deepEqual(normalizeUpdateConfig(config, platform), config);
+    assert.deepEqual(normalizeUpdateConfig({ enabled: false }, platform), { enabled: false, feedUrl: "" });
+    for (const input of [
+      {}, { enabled: true }, { ...config, feedUrls: { win32: config.feedUrl } },
+      ...[null, [], "", "http://example.com/feed", "https://user:secret@example.com/feed", "https://example.com/feed#fragment"].map(feedUrl => ({ enabled: true, feedUrl }))
+    ]) assert.throws(() => normalizeUpdateConfig(input, platform));
+  }
+});
+
+test("initialization rejects split feeds even when disabled", () => {
   const feeds = { win32: "https://updates.example.com/windows.json", darwin: "https://updates.example.com/macos.json" };
   for (const platform of ["win32", "darwin"]) {
-    assert.deepEqual(normalizeUpdateConfig({ enabled: true, feedUrls: feeds }, platform), { enabled: true, feedUrl: feeds[platform] });
+    assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: feeds }, platform), /feedUrl/);
     assert.equal(normalizeUpdateConfig({ enabled: false }, platform).feedUrl, "");
     for (const input of [
-      {}, { enabled: true }, config, { ...config, feedUrls: feeds },
-      { enabled: false, feedUrl: "" },
+      {}, { enabled: true }, { ...config, feedUrls: feeds },
+      { enabled: false, feedUrls: feeds },
       ...[null, [], "invalid", { windows: feeds.win32 }, { [platform]: "http://localhost/latest.json" },
         { [platform]: "https://user:secret@example.com/latest.json" },
         { [platform]: "https://example.com/latest.json#fragment" },
         { ...feeds, linux: "invalid" }].map(feedUrls => ({ enabled: true, feedUrls }))
     ]) assert.throws(() => normalizeUpdateConfig(input, platform));
     const other = platform === "win32" ? "darwin" : "win32";
-    assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { [other]: feeds[other] } }, platform), /required/);
+    assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { [other]: feeds[other] } }, platform), /feedUrl/);
   }
 });
 
@@ -141,15 +157,15 @@ test("startup completion waits for core readiness before update recovery", async
 });
 
 
-test("platform-specific update feeds resolve one explicit address per platform", () => {
+test("one configured address is independent of the initialization platform", () => {
   const input = { enabled: true, feedUrls: { win32: "https://updates.example.com/windows/desktop-latest.json", darwin: config.feedUrl } };
-  assert.equal(normalizeUpdateConfig(input, "win32").feedUrl, input.feedUrls.win32);
-  assert.deepEqual(normalizeUpdateConfig(input, "darwin"), config);
-  assert.throws(() => normalizeUpdateConfig(config, "win32"), /feedUrls/);
+  assert.deepEqual(normalizeUpdateConfig(config, "win32"), config);
+  assert.deepEqual(normalizeUpdateConfig(config, "darwin"), config);
+  assert.throws(() => normalizeUpdateConfig(input, "win32"), /feedUrl/);
   for (const feedUrls of [[], "invalid", { win32: "http://unsafe.example.com/feed" }, { win32: "" }, { windows: config.feedUrl }, { darwin: config.feedUrl }]) {
     assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls }, "win32"));
   }
-  assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { darwin: config.feedUrl } }, "win32"), /updates\.feedUrls\.win32/);
+  assert.throws(() => normalizeUpdateConfig({ enabled: true, feedUrls: { darwin: config.feedUrl } }, "win32"), /feedUrl/);
   assert.throws(() => normalizeUpdateConfig({ ...config, feedUrls: input.feedUrls }, "win32"), /feedUrls/);
 });
 test("SemVer precedence rejects downgrade and numeric prerelease traps", () => {
@@ -169,7 +185,7 @@ for (const platform of ["darwin", "win32"]) test(`${platform} init consumes upda
   const app = { getPath: (name) => name === "home" ? root : path.join(root, "app-data") };
   const init = resolveDesktopInitPath(app, platform);
   fs.mkdirSync(path.dirname(init), { recursive: true });
-  fs.writeFileSync(init, JSON.stringify({ updates: { enabled: true, feedUrls: { [platform]: config.feedUrl } } }));
+  fs.writeFileSync(init, JSON.stringify({ updates: config }));
   assert.equal(applyDesktopInitBootstrap(app, platform).ok, true);
   const target = getUpdateConfigPath(app, platform);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), config);
@@ -177,19 +193,19 @@ for (const platform of ["darwin", "win32"]) test(`${platform} init consumes upda
   assert.equal(fs.existsSync(init), false);
   const backup = path.join(root, "backup");
   const changed = { ...config, feedUrl: "https://test.example.com/latest.json" };
-  applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrls: { [platform]: changed.feedUrl } } }, backup, platform);
+  applyDesktopInitVersionUpgrade(app, { updates: changed }, backup, platform);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), changed);
   assert.deepEqual(readUpdateConfig(app, platform), changed);
   assert.ok(fs.readdirSync(backup).some((name) => name.endsWith("updates.json")));
-  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: config }, path.join(root, "legacy-backup"), platform), /feedUrls/);
-  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrls: { [platform]: "file:///tmp/payload" } } }, path.join(root, "bad-backup"), platform));
+  assert.equal(applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrls: { [platform]: config.feedUrl } } }, path.join(root, "legacy-backup"), platform).applied, true);
+  assert.equal(applyDesktopInitVersionUpgrade(app, { updates: { enabled: true, feedUrl: "file:///tmp/payload" } }, path.join(root, "bad-backup"), platform).applied, true);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), changed);
 });
-for (const platform of ["win32", "darwin"]) test(`${platform} bootstrap and version upgrade persist only their selected feed`, (t) => {
+for (const platform of ["win32", "darwin"]) test(`${platform} bootstrap and version upgrade preserve the shared entry without platform parameters`, (t) => {
   const root = temp(t);
   const app = { getPath: (name) => name === "home" ? root : path.join(root, "app-data") };
-  const input = { enabled: true, feedUrls: { win32: "https://updates.example.com/windows/desktop-latest.json", darwin: config.feedUrl } };
-  const expected = { ...config, feedUrl: platform === "win32" ? input.feedUrls.win32 : config.feedUrl };
+  const input = { enabled: true, feedUrl: "https://updates.example.com/api/updates/desktop-latest.json?channel=dev" };
+  const expected = input;
   const init = resolveDesktopInitPath(app, platform);
   fs.mkdirSync(path.dirname(init), { recursive: true });
   fs.writeFileSync(init, JSON.stringify({ updates: input }));
@@ -198,13 +214,28 @@ for (const platform of ["win32", "darwin"]) test(`${platform} bootstrap and vers
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), expected);
   applyDesktopInitVersionUpgrade(app, { updates: input }, path.join(root, "backup"), platform);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), expected);
-  assert.throws(() => applyDesktopInitVersionUpgrade(app, { updates: { ...input, feedUrls: { win32: "http://unsafe.example.com", darwin: config.feedUrl } } }, path.join(root, "bad-backup"), platform));
+  assert.equal(applyDesktopInitVersionUpgrade(app, { updates: { ...input, feedUrl: "http://unsafe.example.com" } }, path.join(root, "bad-backup"), platform).applied, true);
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), expected);
 });
 
 test("disabled source never checks or downloads", async (t) => {
   const { runtime } = fixture(t, { readConfig: () => ({ ...config, enabled: false }), fetchManifest: () => assert.fail("must not fetch") });
   assert.equal((await runtime.check()).phase, "disabled");
+});
+
+for (const platform of ['win32', 'darwin']) test(`${platform} invalid optional updates do not block other bootstrap settings`, t => {
+  const root = temp(t);
+  const app = { getPath: name => name === 'home' ? root : path.join(root, 'app-data') };
+  const init = resolveDesktopInitPath(app, platform);
+  fs.mkdirSync(path.dirname(init), { recursive: true });
+  fs.writeFileSync(init, JSON.stringify({ updates: 'invalid', assistant: { defaultChatAgentKey: 'test-agent' } }));
+  const result = applyDesktopInitBootstrap(app, platform);
+  assert.equal(result.ok, true);
+  assert.equal(result.appliedResult.updates, 'failed');
+  assert.equal(result.appliedResult.assistant, 'recorded');
+  assert.ok(result.errors.updates);
+  assert.equal(fs.existsSync(getUpdateConfigPath(app, platform)), false);
+  assert.equal(applyDesktopInitVersionUpgrade(app, { updates: null }, path.join(root, 'upgrade'), platform).applied, true);
 });
 test("official checks use the configured feed URL and follow configuration changes", async (t) => {
   let currentConfig = { ...config, feedUrl: "https://releases.example.org/custom/stable.json" };

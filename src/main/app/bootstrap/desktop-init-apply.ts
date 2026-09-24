@@ -31,7 +31,7 @@ import {
   applyHelpDefaults,
   applyServiceDefaults
 } from "./desktop-init-settings";
-import { normalizeUpdateConfig, writeUpdateConfig } from "../../modules/updates";
+import { writeUpdateConfig } from "../../modules/updates";
 import { applyWebsiteDefaults } from "./desktop-init-sites";
 
 export function applyDesktopInitBootstrap(
@@ -69,8 +69,7 @@ export function applyDesktopInitBootstrap(
       warnings: []
     };
 
-    // Validate the update source before writing any initialization section.
-    if (Object.prototype.hasOwnProperty.call(defaults, "updates")) normalizeUpdateConfig(defaults.updates, platform);
+    // Updates are optional: their validation failure must not block core settings.
     const applied: BootstrapApplyResult = {
       updates: runBootstrapSection("updates", errors, () => {
         if (defaults.updates === undefined) return "absent";

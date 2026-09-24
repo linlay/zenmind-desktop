@@ -11,7 +11,7 @@ test('macOS manifests no longer require release notes', () => {
   const manifest = { schemaVersion: 1, productId: 'cutej', version: '0.4.14', publishedAt: new Date().toISOString(), artifacts: {} };
   assert.deepEqual(parseUpdateManifest(manifest, 'cutej', 'darwin').releaseNotes, {});
 });
-for (const platform of ['win32', 'darwin']) test(`shared feed routes ${platform} and pins signatures to the redirected release`, async t => {
+for (const platform of ['win32', 'darwin']) for (const query of ['channel=dev', 'channel=dev&platform=wrong&platform=other']) test(`shared feed routes ${platform} (${query}) and pins signatures to the redirected release`, async t => {
   const original = https.get, requests = [], headers = [];
   t.after(() => { https.get = original; });
   https.get = (url, options, callback) => {
@@ -27,11 +27,33 @@ for (const platform of ['win32', 'darwin']) test(`shared feed routes ${platform}
     });
     return req;
   };
-  await fetchUpdateManifest('https://example.com/desktop-latest.json?channel=dev&platform=wrong', new AbortController().signal, platform);
-  assert.equal(requests[0], `https://example.com/desktop-latest.json?channel=dev&platform=${platform}`);
+  await fetchUpdateManifest(`https://example.com/api/updates/desktop-latest.json?${query}`, new AbortController().signal, platform);
+  assert.equal(requests[0], `https://example.com/api/updates/desktop-latest.json?channel=dev&platform=${platform}`);
   assert.deepEqual(requests.slice(1), [
     `https://example.com/releases/${platform}/12/desktop-latest.json`,
     ...(platform === 'win32' ? ['https://example.com/releases/win32/12/desktop-latest.json.sig'] : [])
   ]);
-  for (const header of headers) assert.equal(header['X-Desktop-Platform'], platform);
+  for (const header of headers) assert.equal(header['X-Desktop-Platform'], undefined);
+});
+
+test('Windows signature request preserves platform when the shared entry returns a manifest directly', async t => {
+  const original = https.get, requests = [];
+  t.after(() => { https.get = original; });
+  https.get = (url, options, callback) => {
+    requests.push(String(url));
+    const req = new EventEmitter(); req.setTimeout = () => {};
+    queueMicrotask(() => {
+      const res = Readable.from(['fixture']);
+      res.statusCode = 200; res.headers = {};
+      callback(res);
+    });
+    return req;
+  };
+  await fetchUpdateManifest('https://example.com/desktop-latest.json?channel=dev', new AbortController().signal, 'win32');
+  assert.deepEqual(requests, [
+    'https://example.com/desktop-latest.json?channel=dev&platform=win32',
+    'https://example.com/desktop-latest.json.sig?channel=dev&platform=win32'
+  ]);
+  await assert.rejects(fetchUpdateManifest('https://example.com/desktop-latest.json', new AbortController().signal, 'linux'), /Unsupported update platform/);
+  assert.equal(requests.length, 2);
 });

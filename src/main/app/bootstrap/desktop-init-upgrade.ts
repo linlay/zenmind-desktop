@@ -21,7 +21,7 @@ import {
   errorMessage
 } from "./desktop-init-state";
 import { resolveDesktopSsoConfigPath } from "../../modules/identity";
-import { getUpdateConfigPath, normalizeUpdateConfig, writeUpdateConfig } from "../../modules/updates";
+import { getUpdateConfigPath, writeUpdateConfig } from "../../modules/updates";
 import {
   getDesktopActionBridgeSettingsConfigPath,
   normalizeDesktopActionBridgeSettingsConfig,
@@ -81,7 +81,6 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     "sso",
     "kanban",
     "market",
-    "updates",
     "tunnelHub",
     "desktopActionBridge",
     "enterpriseIm",
@@ -90,7 +89,6 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     requireObjectWhenPresent(key);
   }
 
-  if (present("updates")) normalizeUpdateConfig(defaults.updates, platform);
   const services = isRecord(defaults.services) ? defaults.services : {};
   const lifecycleArgs = normalizeServiceLifecycleArgsConfig({ services }, platform);
   const portDefaults = normalizeServicePortDefaultsConfig({ services }, platform);
@@ -235,8 +233,11 @@ export function applyDesktopInitVersionUpgrade(
   const prepared = validateDesktopInitUpgradeDefaults(defaultsValue, platform);
   const targets = desktopInitUpgradeCanonicalPaths(app, platform);
   const backup = prepareDesktopInitUpgradeBackup(targets, backupDir, platform);
+  const updateConfigPath = getUpdateConfigPath(app, platform);
   try {
     for (const targetPath of targets) {
+      // Keep the last valid update source until its replacement is validated.
+      if (targetPath === updateConfigPath) continue;
       fs.rmSync(targetPath, { force: true });
     }
     if (prepared.lifecycleArgs) {
@@ -252,7 +253,12 @@ export function applyDesktopInitVersionUpgrade(
     if (prepared.present("kanban")) {
       applyKanbanDefaults(app, defaultsValue.kanban, platform);
     }
-    if (prepared.present("updates")) writeUpdateConfig(app, defaultsValue.updates, platform);
+    try {
+      if (prepared.present("updates")) writeUpdateConfig(app, defaultsValue.updates, platform);
+      else fs.rmSync(updateConfigPath, { force: true });
+    } catch (error) {
+      console.warn("[updates] optional configuration upgrade failed; continuing startup", error);
+    }
     if (prepared.present("market")) {
       applyMarketDefaults(app, defaultsValue.market, platform);
     }
