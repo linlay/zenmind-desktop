@@ -15,7 +15,7 @@ const pair = generateKeyPairSync("ed25519");
 const trust = { channel: "production", keys: [{ keyId: "test-generated", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ type: "spki", format: "pem" }) }] };
 const bytes = Buffer.from("unsigned executable fixture");
 const now = Date.parse("2026-09-21T08:00:00Z");
-const manifest = (patch = {}) => ({ schemaVersion: 2, keyId: "test-generated", productId: "cutej", channel: "production", releaseSequence: 1, version: "0.5.0", publishedAt: new Date(now).toISOString(), expiresAt: new Date(now + 86400000).toISOString(), releaseNotes: {}, artifacts: { "win32-x64": { url: "https://example.com/app.exe", size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") } }, ...patch });
+const manifest = (patch = {}) => ({ schemaVersion: 2, keyId: "test-generated", productId: "cutej", channel: "production", version: "0.5.0", publishedAt: new Date(now).toISOString(), releaseNotes: {}, artifacts: { "win32-x64": { url: "https://example.com/app.exe", size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") } }, ...patch });
 const signed = (value = manifest()) => { const payload = JSON.stringify(value); return { manifest: payload, signature: sign(null, Buffer.from(payload), pair.privateKey).toString("base64") }; };
 function fixture(t, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "update-security-"));
@@ -40,30 +40,45 @@ test("a genuinely signed release can install a Windows executable without Authen
   await runtime.install();
   assert.equal(installs.length, 1);
 });
-test("an expired signed release is rejected before download", async t => {
-  const { runtime } = fixture(t, { fetchManifest: async () => signed(manifest({ publishedAt: new Date(now - 86400000).toISOString(), expiresAt: new Date(now - 1).toISOString() })) });
-  assert.equal((await runtime.check()).error, "manifestExpired");
+test("a signed Windows release without a publication sequence is available", async t => {
+  const { runtime } = fixture(t, { fetchManifest: async () => signed(manifest()) });
+  assert.equal((await runtime.check()).phase, "available");
 });
-test("expiry while ready prevents installation and permits a fresh check", async t => {
+
+test("a ready package does not hide a newer signed release", async t => {
+  let release = manifest();
+  const { runtime } = fixture(t, { fetchManifest: async () => signed(release) });
+  await runtime.check();
+  await runtime.download();
+  release = manifest({ version: "0.6.0" });
+  const next = await runtime.check();
+  assert.equal(next.version, "0.6.0");
+  assert.equal(next.phase, "ready"); // The new release references the same verified installer bytes.
+});
+test("obsolete expiry metadata is rejected by the Windows protocol", async t => {
+  const { runtime } = fixture(t, { fetchManifest: async () => signed(manifest({ expiresAt: new Date(now + 86400000).toISOString() })) });
+  assert.equal((await runtime.check()).phase, "error");
+});
+test("obsolete publication sequence metadata is rejected by the Windows protocol", async t => {
+  const { runtime } = fixture(t, { fetchManifest: async () => signed(manifest({ releaseSequence: 1 })) });
+  assert.equal((await runtime.check()).phase, "error");
+});
+test("a signed release remains installable after a long idle period", async t => {
   let clock = now;
   const { runtime, installs } = fixture(t, { now: () => clock });
   await runtime.check(); await runtime.download();
-  clock += 86400001;
-  assert.equal((await runtime.install()).error, "manifestExpired");
-  assert.equal(installs.length, 0);
+  clock += 90 * 86400000;
+  await runtime.install();
+  assert.equal(installs.length, 1);
 });
 
-test("expiry during cleanup blocks execution and requires service recovery", async t => {
+test("elapsed time during cleanup does not invalidate a signed release", async t => {
   let clock = now;
   const { runtime, installs } = fixture(t, { now: () => clock,
-    prepareInstall: async () => { clock += 86400001; return true; } });
+    prepareInstall: async () => { clock += 90 * 86400000; return true; } });
   await runtime.check(); await runtime.download();
-  const failed = await runtime.install();
-  assert.equal(failed.error, "manifestExpired");
-  assert.equal(failed.packageReady, false);
-  assert.equal(failed.restartRequired, true);
-  assert.equal(installs.length, 0);
-  await assert.rejects(runtime.loadTest(signed()), /updateBusy/);
+  await runtime.install();
+  assert.equal(installs.length, 1);
 });
 
 test("package tampering during cleanup invalidates readiness and requires restart", async t => {
@@ -78,15 +93,18 @@ test("package tampering during cleanup invalidates readiness and requires restar
   assert.equal(failed.restartRequired, true);
   assert.equal(installs.length, 0);
 });
-test("a restarted client rejects older signed metadata and conflicting sequence reuse", async t => {
-  const { runtime, options } = fixture(t, { fetchManifest: async () => signed(manifest({ releaseSequence: 4 })) });
+test("manual reinstall can repeat an upgrade after the target version is re-signed", async t => {
+  const firstRelease = manifest({ version: "0.4.14" });
+  const { runtime, options } = fixture(t, { currentVersion: "0.4.13", fetchManifest: async () => signed(firstRelease) });
   assert.equal((await runtime.check()).phase, "available");
   runtime.dispose();
-  for (const release of [manifest(), manifest({ releaseSequence: 4, version: "0.6.0" })]) {
-    const next = createUpdateRuntime({ ...options, fetchManifest: async () => signed(release) });
-    assert.equal((await next.check()).error, "manifestReplay");
-    next.dispose();
-  }
+  const securityRoot = path.join(path.dirname(options.preferencesPath), "update-security");
+  fs.mkdirSync(securityRoot);
+  fs.writeFileSync(path.join(securityRoot, "old-state.json"), "obsolete sequence state");
+  const reissued = { ...firstRelease, releaseNotes: { "zh-CN": ["test reissue"] } };
+  const reinstalled = createUpdateRuntime({ ...options, fetchManifest: async () => signed(reissued) });
+  assert.equal((await reinstalled.check()).phase, "available");
+  reinstalled.dispose();
 });
 test("Debug rejects naked metadata but accepts the same signed release as the official path", async t => {
   const { runtime } = fixture(t);
@@ -108,18 +126,6 @@ test("network retrieval preserves signed bytes and resolves signature next to th
   };
   assert.deepEqual(await fetchUpdateManifest("https://example.com/latest.json", new AbortController().signal), envelope);
   assert.equal(requested[2], "https://example.com/releases/1/latest.json.sig?channel=prod");
-});
-test("checking again refreshes a ready release whose signed metadata expired", async t => {
-  let clock = now, release = manifest();
-  const { runtime } = fixture(t, { now: () => clock, fetchManifest: async () => signed(release) });
-  await runtime.check(); await runtime.download();
-  clock += 86400001;
-  release = manifest({ releaseSequence: 2, publishedAt: new Date(clock).toISOString(), expiresAt: new Date(clock + 86400000).toISOString() });
-  // Renewed metadata can reuse the already verified installer without redownloading.
-  const refreshed = await runtime.check();
-  assert.equal(refreshed.phase, "ready");
-  assert.equal(refreshed.packageReady, true);
-  assert.equal((await runtime.download()).phase, "ready");
 });
 test("tampering, substituted keys, wrong scope and future publication cannot enable installation", async t => {
   const original = signed();
@@ -148,20 +154,8 @@ test("failed checks cannot leave a previously valid update available for downloa
   await runtime.download(); await runtime.install();
   assert.equal(installs.length, 0);
 });
-test("corrupted or unwritable sequence state blocks updates instead of resetting trust history", async t => {
-  const { runtime, options } = fixture(t);
-  await runtime.check(); runtime.dispose();
-  const directory = path.join(path.dirname(options.preferencesPath), "update-security");
-  const file = path.join(directory, fs.readdirSync(directory)[0]);
-  fs.writeFileSync(file, "broken");
-  const again = createUpdateRuntime(options);
-  assert.equal((await again.check()).error, "securityStateInvalid"); again.dispose();
-  const blocked = fixture(t, { securityStateRoot: options.preferencesPath });
-  fs.writeFileSync(options.preferencesPath, "not-a-directory");
-  assert.equal((await blocked.runtime.check()).error, "securityStateInvalid");
-});
-test("a renewed manifest for the installed version updates trust history without reinstalling", async t => {
-  const { runtime, installs } = fixture(t, { currentVersion: "0.5.0", fetchManifest: async () => signed(manifest({ releaseSequence: 10 })) });
+test("a signed manifest for the installed version does not reinstall", async t => {
+  const { runtime, installs } = fixture(t, { currentVersion: "0.5.0", fetchManifest: async () => signed(manifest()) });
   assert.equal((await runtime.check()).phase, "current");
   await runtime.download(); await runtime.install(); assert.equal(installs.length, 0);
 });

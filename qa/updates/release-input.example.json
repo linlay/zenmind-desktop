@@ -2,7 +2,6 @@
   "productId": "cutej",
   "keyId": "cutej-production-2026-01",
   "channel": "production",
-  "releaseSequence": 1,
   "version": "0.5.0",
   "releaseNotes": {
     "zh-CN": [
@@ -13,9 +12,9 @@
     ]
   },
   "artifacts": {
-    "darwin-arm64": {
-      "file": "dist/cutej/CuteJ-0.5.0-arm64.zip",
-      "url": "https://downloads.example.com/desktop/cutej/0.5.0/CuteJ-0.5.0-arm64.zip"
+    "win32-x64": {
+      "file": "dist/cutej/CuteJ Setup 0.5.0.exe",
+      "url": "https://downloads.example.com/desktop/cutej/0.5.0/CuteJ%20Setup%200.5.0-0123456789abcdef.exe"
     }
   }
 }
