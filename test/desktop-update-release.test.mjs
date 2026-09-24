@@ -19,10 +19,12 @@ test("release signing produces exact-byte signatures accepted by the client and 
   const pair = generateKeyPairSync("ed25519");
   const trust = { channel: "production", keys: [{ keyId: "release", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ type: "spki", format: "pem" }) }] };
   const file = path.join(root, "app.exe"); fs.writeFileSync(file, "installer");
-  const input = { productId: "cutej", version: "0.5.0", keyId: "release", channel: "production", releaseSequence: 1, artifacts: { "win32-x64": { file, url: "https://example.com/app.exe" } } };
+  const input = { productId: "cutej", version: "0.5.0", keyId: "release", channel: "production", artifacts: { "win32-x64": { file, url: "https://example.com/app.exe" } } };
   const directory = path.join(root, "release");
   await createSignedRelease(input, directory, { privateKey: pair.privateKey, trust });
   const envelope = { manifest: fs.readFileSync(path.join(directory, "desktop-latest.json"), "utf8"), signature: fs.readFileSync(path.join(directory, "desktop-latest.json.sig"), "utf8") };
+  assert.equal(Object.hasOwn(JSON.parse(envelope.manifest), "expiresAt"), false);
+  assert.equal(Object.hasOwn(JSON.parse(envelope.manifest), "releaseSequence"), false);
   assert.equal(verifySignedManifest(envelope, trust, "cutej").value.version, "0.5.0");
   await verifyRelease(directory, trust, "cutej", input.artifacts);
   fs.writeFileSync(file, "tampered");
@@ -49,14 +51,15 @@ test("packaging signs only a final artifact for the built version and embedded t
   fs.writeFileSync(path.join(bundled, "update-trust.json"), JSON.stringify(trust));
   fs.writeFileSync(path.join(root, "VERSION"), "0.5.0");
   const file = path.join(root, "dist/cutej/app.exe"); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "final executable");
-  const input = { productId: "cutej", version: "0.5.0", keyId: "main", channel: "production", releaseSequence: 3, releaseNotes: {}, artifacts: { "win32-x64": { file, url: "https://example.com/app.exe" } } };
+  const input = { productId: "cutej", version: "0.5.0", keyId: "main", channel: "production", releaseNotes: {}, artifacts: { "win32-x64": { file, url: "https://example.com/app.exe" } } };
   const inputFile = path.join(root, "release-input.json"); fs.writeFileSync(inputFile, JSON.stringify(input));
   const privateFile = path.join(root, "key.pem"); fs.writeFileSync(privateFile, pair.privateKey.export({ format: "pem", type: "pkcs8" }));
   const trustFile = path.join(root, "trust.json"); fs.writeFileSync(trustFile, JSON.stringify(trust));
   const env = { DESKTOP_UPDATE_RELEASE_INPUT: inputFile, DESKTOP_UPDATE_PRIVATE_KEY_FILE: privateFile, DESKTOP_UPDATE_TRUST_FILE: trustFile };
   const output = await finalizeUpdateRelease(root, "cutej", "win32-x64", env);
   assert.ok(fs.existsSync(path.join(output, "desktop-latest.json.sig")));
-  fs.writeFileSync(inputFile, JSON.stringify({ ...input, version: "0.6.0", releaseSequence: 4 }));
+  assert.ok(output.includes(path.join("updates", "production", "0.5.0")));
+  fs.writeFileSync(inputFile, JSON.stringify({ ...input, version: "0.6.0" }));
   await assert.rejects(finalizeUpdateRelease(root, "cutej", "win32-x64", env), /version/i);
 });
 test("public release verification downloads and verifies the bytes actually served", async t => {
@@ -66,7 +69,7 @@ test("public release verification downloads and verifies the bytes actually serv
   const trust = { channel: "production", keys: [{ keyId: "main", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ type: "spki", format: "pem" }) }] };
   const file = path.join(root, "app.exe"); fs.writeFileSync(file, "final executable");
   const directory = path.join(root, "release");
-  await createSignedRelease({ productId: "cutej", version: "0.5.0", keyId: "main", channel: "production", releaseSequence: 2, releaseNotes: {}, artifacts: { "win32-x64": { file, url: "https://example.com/app.exe" } } }, directory, { privateKey: pair.privateKey, trust });
+  await createSignedRelease({ productId: "cutej", version: "0.5.0", keyId: "main", channel: "production", releaseNotes: {}, artifacts: { "win32-x64": { file, url: "https://example.com/app.exe" } } }, directory, { privateKey: pair.privateKey, trust });
   const metadata = fs.readFileSync(path.join(directory, "desktop-latest.json"));
   const signature = fs.readFileSync(path.join(directory, "desktop-latest.json.sig"));
   const replies = [metadata, signature, fs.readFileSync(file), metadata, signature, Buffer.from("corrupted")];

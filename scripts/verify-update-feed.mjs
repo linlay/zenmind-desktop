@@ -32,6 +32,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     const [url, trustFile, productId] = process.argv.slice(2);
     if (!url || !trustFile || !productId) throw new Error("Usage: verify-update-feed.mjs <HTTPS-feed> <public-trust.json> <product-id>");
     const release = await verifyPublicFeed(url, JSON.parse(fs.readFileSync(trustFile, "utf8")), productId);
-    console.log(`Verified release ${release.version}, sequence ${release.releaseSequence}`);
+    console.log(`Verified release ${release.version}`);
   } catch (error) { console.error(error instanceof Error ? error.message : "Public release verification failed"); process.exitCode = 1; }
 }

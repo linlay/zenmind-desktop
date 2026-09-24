@@ -8,8 +8,6 @@ export interface DesktopUpdateManifest {
   schemaVersion: 2;
   keyId: string;
   channel: string;
-  releaseSequence: number;
-  expiresAt: string;
   productId: string;
   version: string;
   publishedAt: string;
@@ -17,7 +15,7 @@ export interface DesktopUpdateManifest {
   artifacts: Record<string, DesktopUpdateArtifact>;
 }
 /** Existing macOS feed; authenticity is enforced by the native Apple updater. */
-export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion" | "keyId" | "channel" | "releaseSequence" | "expiresAt"> & { schemaVersion: 1 };
+export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion" | "keyId" | "channel"> & { schemaVersion: 1 };
 export type DesktopPlatformUpdateManifest = DesktopUpdateManifest | DesktopNativeUpdateManifest;
 export type DesktopUpdatePhase = "disabled" | "not-configured" | "idle" | "checking" | "current" | "unavailable" | "available" | "downloading" | "verifying" | "ready" | "installing" | "error";
 /** Exact UTF-8 manifest text; never parse/reserialize before verification. */
@@ -36,7 +34,7 @@ export interface DesktopUpdateState {
   /** Cleanup/native install may have stopped services; restart before another attempt. */
   restartRequired?: boolean;
   checkedAt?: string;
-  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy" | "signatureInvalid" | "manifestExpired" | "clockInvalid" | "manifestReplay" | "securityStateInvalid";
+  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy" | "signatureInvalid" | "clockInvalid";
 }
 export interface DesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>;
@@ -49,10 +47,12 @@ export interface DesktopUpdatesApi {
   onChanged(listener: (state: DesktopUpdateState) => void): () => void;
 }
 
-/** Shared action policy keeps sidebar and About recovery consistent. */
+/** The sidebar surfaces confirmed updates; check diagnostics stay in About. */
 export function desktopUpdateSidebarVisible(state: DesktopUpdateState): boolean {
-  return state.phase === "error" || Boolean(state.version &&
-    (state.error || ["available", "downloading", "verifying", "ready", "installing"].includes(state.phase)));
+  if (!state.version) return false;
+  if (["available", "downloading", "verifying", "ready", "installing"].includes(state.phase)) return true;
+  return state.phase === "error" && Boolean(state.packageReady || state.restartRequired ||
+    ["downloadFailed", "verificationFailed", "installFailed", "cleanupFailed", "updateBusy"].includes(state.error ?? ""));
 }
 
 export function desktopUpdateAction(state: DesktopUpdateState): "install" | "download" | "check" | "restart" | undefined {

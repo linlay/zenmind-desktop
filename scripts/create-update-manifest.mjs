@@ -4,17 +4,18 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 /** Release-side helper only: writes a local feed; does not upload or publish. */
-export async function createUpdateManifest({ productId, version, keyId, channel, releaseSequence, expiresAt, releaseNotes = {}, artifacts, publishedAt = new Date().toISOString(), schemaVersion = 2 }) {
+export async function createUpdateManifest(input) {
+  if (Object.hasOwn(input, "expiresAt")) throw new Error("Obsolete update expiry field");
+  if (Object.hasOwn(input, "releaseSequence")) throw new Error("Obsolete update sequence field");
+  const { productId, version, keyId, channel, releaseNotes = {}, artifacts, publishedAt = new Date().toISOString(), schemaVersion = 2 } = input;
   const native = schemaVersion === 1;
   if (schemaVersion !== 1 && schemaVersion !== 2) throw new Error("Invalid schema version");
   if (native && Object.keys(artifacts ?? {}).some(key => !key.startsWith("darwin-"))) throw new Error("Unsigned manifests are only supported for macOS native updates");
   if (!/^[a-z][a-z0-9-]*$/.test(productId ?? "")) throw new Error("Invalid product id");
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(version ?? "");
   if (!match || version.length > 128 || match[4]?.split(".").some(id => /^0\d+$/.test(id))) throw new Error("Invalid version");
-  if (!native && (!/^[a-zA-Z0-9_-]{1,64}$/.test(keyId ?? "") || !/^[a-z][a-z0-9-]{0,63}$/.test(channel ?? "") || !Number.isSafeInteger(releaseSequence) || releaseSequence < 1)) throw new Error("Invalid signing metadata");
-  expiresAt ??= new Date(Date.parse(publishedAt) + 30 * 86400000).toISOString();
-  for (const value of [publishedAt, expiresAt]) if (typeof value !== "string" || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) || !Number.isFinite(Date.parse(value))) throw new Error("Invalid release time");
-  if (Date.parse(expiresAt) <= Date.parse(publishedAt)) throw new Error("Invalid release validity");
+  if (!native && (!/^[a-zA-Z0-9_-]{1,64}$/.test(keyId ?? "") || !/^[a-z][a-z0-9-]{0,63}$/.test(channel ?? ""))) throw new Error("Invalid signing metadata");
+  if (typeof publishedAt !== "string" || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(publishedAt) || !Number.isFinite(Date.parse(publishedAt))) throw new Error("Invalid release time");
   if (!releaseNotes || typeof releaseNotes !== "object" || Array.isArray(releaseNotes)) throw new Error("Invalid release notes");
   for (const [locale, lines] of Object.entries(releaseNotes)) if (!/^[a-z]{2}(?:-[A-Za-z]{2,8})?$/.test(locale) || !Array.isArray(lines) || lines.length > 100 || lines.some(line => typeof line !== "string" || line.length > 2000)) throw new Error("Invalid release notes");
   const output = {};
@@ -32,7 +33,7 @@ export async function createUpdateManifest({ productId, version, keyId, channel,
   }
   if (!Object.keys(output).length) throw new Error("At least one artifact is required");
   if (native) return { schemaVersion: 1, productId, version, publishedAt, releaseNotes, artifacts: output };
-  return { schemaVersion: 2, keyId, channel, releaseSequence, expiresAt, productId, version, publishedAt, releaseNotes, artifacts: output };
+  return { schemaVersion: 2, keyId, channel, productId, version, publishedAt, releaseNotes, artifacts: output };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const [input, output] = process.argv.slice(2);

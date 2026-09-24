@@ -32,8 +32,12 @@ async function response(url: string, signal: AbortSignal, redirects = 0): Promis
 }
 export async function fetchUpdateManifest(url: string, signal: AbortSignal, platform: NodeJS.Platform = "win32"): Promise<DesktopTestUpdateInput | undefined> {
   let result: Awaited<ReturnType<typeof response>>;
-  // Initialization already selected the target OS feed; preserve its URL exactly.
-  try { result = await response(updateUrl(url), signal); }
+  // One configured entry routes to independently published platform feeds.
+  const feedUrl = new URL(updateUrl(url));
+  if (platform === "win32") feedUrl.searchParams.set("platform", "win32");
+  else if (platform === "darwin") feedUrl.searchParams.set("platform", "darwin");
+  else throw new Error("Unsupported update platform");
+  try { result = await response(feedUrl.href, signal); }
   catch (error) {
     // Only a missing manifest is normal; an artifact 404 remains a download error.
     if (error instanceof UpdateHttpError && error.status === 404) return undefined;

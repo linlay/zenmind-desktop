@@ -36,7 +36,9 @@ Windows 也可把仅含公钥的配置放到 `brands/<brand>/update-trust.json`�
 
 ## 2. 打包并生成签名清单
 
-复制 `release-input.example.json`，填写实际品牌、版本、密钥标识、渠道、递增的发布序号、更新说明、最终文件路径与 HTTPS URL。`publishedAt` 默认当前时间，`expiresAt` 默认其后 30 天；可显式指定。产物目录不能包含私钥。
+复制 `release-input.example.json`，填写实际品牌、版本、密钥标识、渠道、最终文件路径与 HTTPS URL。`publishedAt` 默认当前时间；清单不包含 `expiresAt` 或 `releaseSequence`。产物目录不能包含私钥。
+
+当前 Windows 服务器要求下载 URL 的文件名为 `原安装包名去掉 .exe-安装包SHA256前16位.exe`；示例中的摘要只是占位，正式签名前必须按最终 EXE 字节计算。输入中的 `file` 仍指向原文件名，发布器会以带摘要的文件名公开存储。
 
 集成打包（当前平台一份 artifact，文件必须位于本品牌 `dist` 内）：
 
@@ -48,7 +50,7 @@ $env:DESKTOP_UPDATE_RELEASE_INPUT = 'C:/ReleaseInputs/cutej-production.json'
 npm run dist:win
 ```
 
-`dist:win` 在安装器与 Windows 验证完成后签署。签名配置必须与本次 bundle 内嵌公钥一致，清单品牌/版本必须匹配当前构建。输出位于 `dist/<brand>/updates/<channel>/<sequence>/`。Mac 不执行此签署步骤。
+`dist:win` 在安装器与 Windows 验证完成后签署。签名配置必须与本次 bundle 内嵌公钥一致，清单品牌/版本必须匹配当前构建。输出位于 `dist/<brand>/updates/<channel>/<version>/<unique-id>/`。Mac 不执行此签署步骤。
 
 不设置 `DESKTOP_UPDATE_RELEASE_INPUT` 时，仅生成手动安装/首发基线包，不产生在线更新清单。在线发布流水线必须要求签名清单存在，不能把“手动安装包已构建”视为“在线发布成功”。
 
@@ -57,13 +59,13 @@ npm run dist:win
 已有最终安装包、或需要组合多个平台产物时，可以独立签署：
 
 ```powershell
-node scripts/update-signing.mjs sign C:/ReleaseInputs/cutej-production.json C:/ReleaseOutput/production/42
-node scripts/update-signing.mjs verify C:/ReleaseOutput/production/42 C:/SigningKeys/CuteJProduction/public-trust.json C:/ReleaseInputs/cutej-production.json
+node scripts/update-signing.mjs sign C:/ReleaseInputs/cutej-production.json C:/ReleaseOutput/production/0.5.0
+node scripts/update-signing.mjs verify C:/ReleaseOutput/production/0.5.0 C:/SigningKeys/CuteJProduction/public-trust.json C:/ReleaseInputs/cutej-production.json
 ```
 
 原 `create-update-manifest.mjs` CLI 也会调用签名流程；第二参数现为新发布目录，不再生成无签名单文件。已有输出目录拒绝覆盖。独立签署时须人工确认每个平台基线包内嵌的公钥与签名公钥一致；集成打包路径额外自动检查本次构建公钥。
 
-最终安装包若增加 Authenticode 或发生任何改动，必须重新计算哈希并签署更高序号的清单。签名后的 JSON 不得格式化、换行转换或再加工。
+最终安装包若增加 Authenticode 或发生任何改动，必须重新计算哈希并重新签署清单；发布到新的内容指纹安装包 URL。生产渠道必须提高应用版本，开发渠道可同版本重新签发。签名后的 JSON 不得格式化、换行转换或再加工。
 
 ## 3. 发布服务器约定与公开验证
 
@@ -71,8 +73,8 @@ node scripts/update-signing.mjs verify C:/ReleaseOutput/production/42 C:/Signing
 
 ```text
 /releases/<version>/<installer>             不可变安装包
-/updates/production/<sequence>/desktop-latest.json
-/updates/production/<sequence>/desktop-latest.json.sig
+/updates/production/<version>/<unique-id>/desktop-latest.json
+/updates/production/<version>/<unique-id>/desktop-latest.json.sig
 /api/updates/windows/desktop-latest.json    HTTPS 重定向到上述 Windows 清单
 /api/updates/macos/desktop-latest.json      独立 macOS v1 清单入口
 ```
@@ -82,10 +84,10 @@ node scripts/update-signing.mjs verify C:/ReleaseOutput/production/42 C:/Signing
 按顺序上传最终安装包，再上传不可变清单和签名。使用当前源码编译后的客户端同款校验器验证公开入口：
 
 ```powershell
-npm run updates:verify-feed -- https://updates.example.com/updates/production/42/desktop-latest.json C:/SigningKeys/CuteJProduction/public-trust.json cutej
+npm run updates:verify-feed -- https://updates.example.com/updates/production/0.5.0/<unique-id>/desktop-latest.json C:/SigningKeys/CuteJProduction/public-trust.json cutej
 ```
 
-该命令实际下载所有平台安装包并核验，不只检查 HTTP 状态。公开验证成功后，服务端原子切换稳定入口；随后再次验证稳定入口。稳定入口短缓存，不可变资源可长缓存。不要覆盖同一序号目录；不要以依次覆盖两个 latest 文件声称原子发布。服务器具体部署配置由发布环境管理，本仓库工具不自动修改远程服务器。
+该命令实际下载所有平台安装包并核验，不只检查 HTTP 状态。公开验证成功后，服务端切换稳定入口；随后再次验证稳定入口。稳定入口短缓存，不可变资源可长缓存。不要改写已公开的内容指纹安装包；JSON 与签名两次 HTTP 请求不是事务，切换瞬间混读应验签失败并允许重试。服务器具体部署配置由发布环境管理，本仓库工具不自动修改远程服务器。
 
 生产已启用渠道出现清单 404 会显示“暂无更新信息”；签名 404、安装包 404、清单 503、签名无效或协议错误都是错误，不视为已是最新版本。
 
@@ -93,35 +95,34 @@ npm run updates:verify-feed -- https://updates.example.com/updates/production/42
 
 自动升级尚未正式上线，本次版本直接作为首个正式基线 B，不维护旧 Windows v1 入口或旧客户端过渡流程。验收使用更高版本 N，发布前分配未使用的版本号。
 
-将 `desktop-init.example.json` 的 `updates` 段合并到实际 env 源配置并填写两平台 HTTPS 地址，再重新生成和同步 env 包；不要覆盖其他初始化段，也不要手改已生成归档。只接受 `feedUrls.win32` 与 `feedUrls.darwin` 等目标平台键，不接受初始化单地址 `feedUrl`，启用时缺少当前平台地址会失败。
+将 `desktop-init.example.json` 的 `updates` 段合并到实际 env 源配置并填写唯一 HTTPS 入口，再重新生成和同步 env 包；不要覆盖其他初始化段，也不要手改已生成归档。只接受单一 `updates.feedUrl`，不使用 `feedUrls` 平台映射，启用时缺少地址会失败。
 
-首次安装、版本升级或手动 env 导入按当前平台选出地址，并写入 `.desktop/config/desktop/updates.json`：
+首次安装、版本升级或手动 env 导入将统一入口写入 `.desktop/config/desktop/updates.json`：
 
 ```json
 {
   "enabled": true,
-  "feedUrl": "https://updates.example.com/windows/desktop-latest.json"
+  "feedUrl": "https://updates.example.com/api/updates/desktop-latest.json"
 }
 ```
 
-上例是 Windows 的运行时 canonical 配置；macOS 保存 `feedUrls.darwin` 对应地址。普通启动只读 canonical 文件，不重新应用初始化输入。请求地址保持原样，不追加平台参数或平台请求头，不依赖服务端平台推断。检查接口返回清单本体，不包裹 `data`。
+上例是两平台共用的运行时 canonical 配置。普通启动只读 canonical 文件，不重新应用初始化输入。检查更新时自动设置 `platform=win32` 或 `platform=darwin`，服务端重定向到对应平台清单；不把参数写回配置。Windows 从最终清单地址获取相邻 `.sig`，macOS 保留 Apple 原生验签。检查接口返回清单本体，不包裹 `data`。
 
 验证 B → N 在线更新、用户数据保留、配置落盘与服务健康后再开放。Windows 基线内嵌生产公钥并使用 v2 源，macOS 使用 v1 源及 Apple 签名。已有测试安装通过新版本覆盖或显式 env 导入应用配置。
 
-## 5. 有效期、续签与轮换
+## 5. 版本规则与密钥轮换
 
-- 发布序号是每个产品/渠道内的安全序号，不是应用版本号。客户端拒绝低序号和同序号不同内容；重复获取同一字节清单允许。
-- 发布时间最多允许领先本机时间 5 分钟；到期无宽限。检查、下载就绪、安装前与清理后重新检查。
-- 无新版本也应在到期前使用更高序号续签同一应用版本，并部署清单。建议发布流程安排到期前 7 天提醒；本改造不创建自动续签服务或定时任务。
-- 最高可信序号与摘要存放在 Desktop state 的 `update-security` 下，不能随普通缓存清理删除。文件损坏或无法写入时停止更新，不自动重建以绕过防重放。
+- 客户端只向高于当前安装版本的 SemVer 更新；手动重装旧版后可以重复验证同一目标版本，在线更新不支持降级。
+- 生产服务器只激活严格更高的版本；开发服务器允许重签同一版本，但安装包 URL 使用内容摘要区分并保留旧文件。
+- 发布时间最多允许领先本机时间 5 分钟；清单无到期时间。检查、下载就绪、安装前与清理后继续验证签名及安装包字节。
 - 使用旧密钥签署内置新公钥的过渡版本，再切换新密钥。停留旧客户端仍需可信旧密钥过渡或手动安装。丢失/泄露密钥时不能仅在服务器删除公钥就撤销所有旧客户端信任。
-- 线上坏版本以更高应用版本和更高序号修复；普通更新不执行降级或用户数据自动回滚。
+- 线上坏版本以更高应用版本修复；普通更新不执行降级或用户数据自动回滚。
 
 ## 6. Debug 与回归
 
-Debug 页粘贴原始清单及签名，保留所有换行；不支持裸 URL、大小和哈希进入安装。主进程执行与正式源相同的公钥、渠道、签名和防重放校验。正式客户端不接受测试密钥；测试包使用独立渠道和公钥。
+Debug 页粘贴原始清单及签名，保留所有换行；不支持裸 URL、大小和哈希进入安装。主进程执行与正式源相同的公钥、渠道、签名和版本校验。正式客户端不接受测试密钥；测试包使用独立渠道和公钥。
 
-加载仅切换本次选择，不下载、不改 canonical 配置和自动下载偏好；但有效清单会推进该产品/渠道的安全序号。退出测试恢复官网检查，重启不恢复选择。开发实例禁止真实安装。下载/安装期间禁止切换源；只有主窗口顶层 frame 可以调用。
+加载仅切换本次选择，不下载、不改 canonical 配置和自动下载偏好。退出测试恢复官网检查，重启不恢复选择。开发实例禁止真实安装。下载/安装期间禁止切换源；只有主窗口顶层 frame 可以调用。
 
 自动化入口：
 
@@ -134,8 +135,8 @@ node --test --test-concurrency=1 test/desktop-updates.test.mjs test/desktop-upda
 
 - Windows：未做 Authenticode 签名的有效签名更新可完成 B → N；每用户/每机器安装、UAC 取消、文件锁、中文与空格路径、自定义数据根及升级重启正常。
 - macOS：原生签名无效仍被拒绝，挂载 DMG 中运行或原生安装失败不能视为升级成功；普通退出不能提前安装缓存包。
-- 篡改 JSON/签名/安装包、换密钥、错误品牌/渠道、过期、序号重放、损坏安全状态均拒绝。
-- 下载中断、重复操作、缓存复验、过期清单刷新与重新下载正常。
+- 篡改 JSON/签名/安装包、换密钥、错误品牌/渠道、旧格式有效期或发布序号字段均拒绝。
+- 下载中断、重复操作、缓存复验、已就绪状态继续发现新版与重新下载正常。
 - 正在运行任务、草稿确认、退出清理失败继续保护用户；服务未健康不视为升级完整成功。
 - 正式包内嵌正确生产公钥，不含私钥、测试信任配置或绕过开关。
 
@@ -164,6 +165,6 @@ node --test --test-concurrency=1 test/desktop-updates.test.mjs test/desktop-upda
 
 ### 合并与平台配置验证（2026-09-24）
 
-- PR #163 合入后，初始化只接受 `feedUrls`，canonical 保留单地址格式；移除请求时的平台参数与请求头注入。
+- 初始化与 canonical 统一使用单一 `feedUrl`；请求时携带实际平台查询参数，服务器按平台独立发布清单。
 - macOS 开发机执行 `npm run build`、主进程/渲染进程类型检查、架构和国际化键检查通过。更新、签名、发布、安装器、退出、构建及初始化专项回归合计 137 项通过，2 项需要 Windows 原生环境的 NSIS 测试跳过。
 - 尚未生成正式安装包、配置生产密钥或执行两平台真实在线安装；发布 env 源配置需按示例更新并重新生成。
