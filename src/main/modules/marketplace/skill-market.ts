@@ -1,5 +1,3 @@
-import { readMarketViewer } from "./market-http";
-import { clearSkillPackageAdoptionArchive, getSkillPackageAdoptionArchive, retainSkillPackageAdoptionArchive, normalizeMarketInstallOptions, readSkillPackageAdoption } from "./skill-package-adoption";
 import fs from "node:fs";
 import { configureSkillInstallerPlatformCaller } from "./skill-platform-installer";
 import type { MarketSkillPins } from "../../../shared/contracts/market-skill-pins";
@@ -268,38 +266,18 @@ async function installSkillPackageMarketItem(
     ...item,
     minDesktopVersion: asString(resolvedPlatformSpec.minDesktopVersion).trim() || item.minDesktopVersion
   });
-  const confirmation = normalizeMarketInstallOptions(options).skillPackageAdoption;
-  const scope = JSON.stringify([apiBaseUrl, item.id, item.version, resolvedPlatform, readMarketViewer(app, options)]);
-  let bytes: Uint8Array;
-  if (confirmation) {
-    const retained = getSkillPackageAdoptionArchive(scope, confirmation.archiveSha256);
-    if (!retained) throw new Error(t("market.skillPackage.adoptionExpired"));
-    bytes = retained;
-  } else {
-    clearSkillPackageAdoptionArchive();
-    const response = await requestMarket(
-      app,
-      `${apiBaseUrl}/skills/${encodeURIComponent(item.id)}/package/download?${new URLSearchParams({ platform: resolvedPlatform }).toString()}`,
-      {}, options, "skill package download"
-    );
-    bytes = await readResponseBytesWithLimit(response, MAX_SKILL_PACKAGE_BYTES);
-  }
-  const importQuery = new URLSearchParams({ key: item.id, version: item.version });
-  if (confirmation) importQuery.set("adopt", JSON.stringify(confirmation));
-  let installed: PlatformSkillPackageResponse;
-  try {
-    installed = await skillMarketPlatformCall(
-      `/api/admin/skill-packages/import?${importQuery.toString()}`,
-      { method: "POST", rawBody: bytes, contentType: "application/zip" }
-    ) as PlatformSkillPackageResponse;
-  } catch (cause) {
-    const skillPackageAdoption = readSkillPackageAdoption(cause);
-    if (!skillPackageAdoption) throw cause;
-    retainSkillPackageAdoptionArchive(scope, skillPackageAdoption.archiveSha256, bytes);
-    return { ok: false, itemId: item.id, type: "skill", state: "not-installed",
-      message: t("market.skillPackage.adoptionRequired"), skillPackageAdoption };
-  }
-  clearSkillPackageAdoptionArchive();
+  const response = await requestMarket(
+    app,
+    `${apiBaseUrl}/skills/${encodeURIComponent(item.id)}/package/download?${new URLSearchParams({ platform: resolvedPlatform }).toString()}`,
+    {},
+    options,
+    "skill package download"
+  );
+  const bytes = await readResponseBytesWithLimit(response, MAX_SKILL_PACKAGE_BYTES);
+  const installed = await skillMarketPlatformCall(
+    `/api/admin/skill-packages/import?${new URLSearchParams({ key: item.id, version: item.version }).toString()}`,
+    { method: "POST", rawBody: bytes, contentType: "application/zip" }
+  ) as PlatformSkillPackageResponse;
   if (installed.id?.trim() !== item.id || installed.version?.trim() !== item.version) {
     throw new Error(t("market.main.resolveIdentityMismatch"));
   }

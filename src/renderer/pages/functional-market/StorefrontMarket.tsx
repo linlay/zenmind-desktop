@@ -29,7 +29,7 @@ import {
 import { Alert, Button, Card, Dropdown, Empty, Input, Modal, Popover, Tag } from "antd";
 import type { MenuProps } from "antd";
 import { PRODUCT_NAME } from "../../../shared/brand";
-import type { MarketCommandResult, MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
+import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { createAgentWebclientAgentPath } from "../../../shared/agent-webclient-routes";
 import { useNavigate } from "react-router-dom";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
@@ -609,11 +609,6 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
   const [isOpeningSkillAssistant, setIsOpeningSkillAssistant] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
   const [pendingSkillUninstall, setPendingSkillUninstall] = useState<MarketItem | null>(null);
-  const [pendingSkillAdoption, setPendingSkillAdoption] = useState<{
-    item: MarketItem;
-    proposal: NonNullable<MarketCommandResult["skillPackageAdoption"]>;
-  } | null>(null);
-  const [skillAdoptionError, setSkillAdoptionError] = useState("");
   const searchFilterRef = useRef<HTMLDivElement | null>(null);
   const marketLoadGeneration = useRef(0);
   const marketMounted = useRef(true);
@@ -820,8 +815,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
 
   async function executeMarketAction(
     item: MarketItem,
-    actionName: "install" | "update" | "uninstall",
-    adoption?: NonNullable<MarketCommandResult["skillPackageAdoption"]>
+    actionName: "install" | "update" | "uninstall"
   ) {
     if (marketActionInFlight.current) return false;
     marketActionInFlight.current = true;
@@ -856,19 +850,8 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
         : await (() => {
           const action = getMarketMethod(actionName);
           if (!action) throw createMissingMarketApiError(actionName, t);
-          return adoption
-            ? action(item.id, { skillPackageAdoption: {
-              archiveSha256: adoption.archiveSha256,
-              expectedRevisions: Object.fromEntries(adoption.skills.map((skill) => [skill.id, skill.revision]))
-            } })
-            : action(item.id);
+          return action(item.id);
         })();
-      if (result.skillPackageAdoption) {
-        setPendingSkillAdoption({ item, proposal: result.skillPackageAdoption });
-        setSkillAdoptionError("");
-        setFeedback("");
-        return false;
-      }
       if (!result.ok) throw new Error(result.message);
       // The completed command is authoritative; do not wait for remote catalog refresh
       // before reflecting its state in every occurrence of this resource.
@@ -879,7 +862,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       setMarketResult((current) => ({ ...current, items: current.items.map(applyCompletedState) }));
       setSelectedDetailItem((current) => current ? applyCompletedState(current) : current);
       setFeedback(result.skillPackageBackupPath
-        ? `${result.message} ${t("market.skill.adoption.backupSaved", { path: result.skillPackageBackupPath })}`
+        ? `${result.message} ${t("market.skill.packageBackupSaved", { path: result.skillPackageBackupPath })}`
         : item.type === "website-app" && result.type === "website-app" && actionName === "uninstall"
         ? t("market.websiteApp.uninstalled", { name: item.name })
         : item.type === "mcp" && actionName !== "uninstall"
@@ -903,7 +886,6 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       return true;
     } catch (reason) {
       console.warn(`[market-storefront] ${actionName} failed for ${item.id}`, reason);
-      if (adoption) setSkillAdoptionError(normalizeError(reason));
       setFeedback(normalizeError(reason));
       setFeedbackType("error");
       return false;
@@ -915,40 +897,6 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
 
   async function runMarketAction(item: MarketItem, actionName: "install" | "update" | "uninstall") {
     return executeMarketAction(item, actionName);
-  }
-
-  async function confirmSkillAdoption() {
-    if (!pendingSkillAdoption) return;
-    setSkillAdoptionError("");
-    const completed = await executeMarketAction(pendingSkillAdoption.item, "install", pendingSkillAdoption.proposal);
-    if (completed) setPendingSkillAdoption(null);
-  }
-
-  function renderSkillAdoptionDialog() {
-    const busy = Boolean(pendingSkillAdoption && busyItemId === pendingSkillAdoption.item.id);
-    return <Modal
-      open={Boolean(pendingSkillAdoption)}
-      title={t("market.skill.adoption.title")}
-      okText={t("market.skill.adoption.confirm")}
-      cancelText={t("common.cancel")}
-      confirmLoading={busy}
-      closable={!busy}
-      maskClosable={!busy}
-      keyboard={!busy}
-      cancelButtonProps={{ disabled: busy }}
-      onCancel={() => { if (!busy) { setPendingSkillAdoption(null); setSkillAdoptionError(""); } }}
-      onOk={() => void confirmSkillAdoption()}
-    >
-      <p>{t("market.skill.adoption.description", { name: pendingSkillAdoption?.item.name ?? "" })}</p>
-      <p>{t("market.skill.adoption.backup")}</p>
-      <div style={{ maxHeight: 320, overflowY: "auto", overflowWrap: "anywhere" }}>
-        {pendingSkillAdoption?.proposal.skills.map((skill) => <section key={skill.id}>
-          <strong>{skill.id}</strong>
-          <ul>{skill.changedPaths.map((path) => <li key={path}>{path}</li>)}</ul>
-        </section>)}
-      </div>
-      {skillAdoptionError ? <Alert type="error" showIcon message={skillAdoptionError} /> : null}
-    </Modal>;
   }
 
   async function confirmSkillUninstall() {
@@ -1793,7 +1741,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       onUninstall={(item) => runMarketAction(item, "uninstall")}
       onDetail={(item) => void openDetail(item)}
       onUse={(item) => void useMarketSkill(item)}
-      detail={<>{renderDetailDialog()}{renderSkillAdoptionDialog()}</>}
+      detail={renderDetailDialog()}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
         <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
         <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"

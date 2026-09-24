@@ -1,4 +1,3 @@
-import type { MarketInstallOptions } from "../shared/contracts/marketplace";
 import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { CONNECTOR_AUTH_BROWSER_EVENT, CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
@@ -491,8 +490,8 @@ const api: DesktopApi = {
     list: (options) => ipcRenderer.invoke("market.list", options),
     refresh: (options) => ipcRenderer.invoke("market.refresh", options),
     toggleFavorite: (input) => ipcRenderer.invoke("market.toggleFavorite", input),
-    install: (itemId: string, options?: MarketInstallOptions) => ipcRenderer.invoke("market.install", itemId, options),
-    update: (itemId: string, options?: MarketInstallOptions) => ipcRenderer.invoke("market.update", itemId, options),
+    install: (itemId: string) => ipcRenderer.invoke("market.install", itemId),
+    update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
     uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),
     importSkill: () => ipcRenderer.invoke("market.importSkill"),
     importSkillFromCommand: (commandText: string) => ipcRenderer.invoke("market.importSkillFromCommand", commandText),

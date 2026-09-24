@@ -47,3 +47,29 @@ test('Platform builtin skills are excluded without deleting their files or hidin
  assert.ok(items.some(x=>x.id==='builtin-personal-helper'));
  for(const id of ['builtin-dbx','builtin-httpx']) assert.ok(fs.existsSync(path.join(getSkillInstallDir(s.app,id),'SKILL.md')));
 });
+
+test('package installation uses the original API and reports the replacement backup', async t => {
+ const { installSkillMarketItem } = require('../dist-electron/main/modules/marketplace/skill-market.js');
+ const s = setup(t, 'package');
+ let imports = 0;
+ configureSkillMarketPlatformCaller(async (url, request) => {
+  assert.equal(new URL(url, 'http://platform').searchParams.has('adopt'), false);
+  assert.equal(request.method, 'POST');
+  imports++;
+  return { id: 'test-skill', version: '2.0.0', skills: [{ id: 'child' }], backupPath: '/runtime/.skill-package-backup-test' };
+ });
+ const result = await installSkillMarketItem(s.app, 'test-skill', {
+  ...s.options, apiBaseUrl: 'https://market.test/api/v1', issueMarketAccessToken: async () => 'test-token',
+  fetchImpl: async input => {
+   const url = String(input);
+   if (url.includes('/auth/me')) return new Response(JSON.stringify({ user: { id: 'test' } }));
+   if (url.includes('/resolve')) return new Response(JSON.stringify({ item: { id: 'test-skill', type: 'skill' }, version: '2.0.0', platform: 'universal' }));
+   if (url.includes('/package/download')) return new Response('test archive');
+   throw new Error('Unexpected request');
+  }
+ });
+ assert.equal(imports, 1);
+ assert.equal(result.ok, true);
+ assert.equal(result.skillPackageBackupPath, '/runtime/.skill-package-backup-test');
+ assert.equal(readInstalledRecords(s.app)[0].version, '2.0.0');
+});

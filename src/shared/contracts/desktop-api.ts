@@ -12,7 +12,7 @@ import type { MarketConnectorConnection, MarketConnectorAuthSession, MarketConne
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
-import type { MarketInstallOptions, MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
+import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type {
@@ -1135,8 +1135,8 @@ export interface DesktopApi {
     list: (options?: MarketListOptions) => Promise<MarketListResult>;
     refresh: (options?: MarketListOptions) => Promise<MarketListResult>;
     toggleFavorite: (input: MarketFavoriteInput) => Promise<MarketFavoriteResult>;
-    install: (itemId: string, options?: MarketInstallOptions) => Promise<MarketCommandResult>;
-    update: (itemId: string, options?: MarketInstallOptions) => Promise<MarketCommandResult>;
+    install: (itemId: string) => Promise<MarketCommandResult>;
+    update: (itemId: string) => Promise<MarketCommandResult>;
     uninstall: (itemId: string) => Promise<MarketCommandResult>;
     importSkill: () => Promise<MarketCommandResult>;
     importSkillFromCommand: (commandText: string) => Promise<MarketCommandResult>;

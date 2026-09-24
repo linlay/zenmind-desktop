@@ -1,4 +1,4 @@
-import type { MarketInstallOptions, MarketCatalogItem, MarketItemType, MarketListOptions, MarketItem } from "../../../shared/contracts";
+import type { MarketCatalogItem, MarketItemType, MarketListOptions, MarketItem } from "../../../shared/contracts";
 import type { PluginLifecycle } from "../plugins";
 import type { WebsFacade } from "../webs";
 import type { App } from "electron";
@@ -36,7 +36,7 @@ export type InstalledRecord = {
   installedAt: string;
 };
 
-export type MarketplaceOptions = MarketListOptions & MarketInstallOptions & {
+export type MarketplaceOptions = MarketListOptions & {
   plugins?: PluginLifecycle;
   catalogSnapshot?: unknown;
   catalogUrl?: string;
