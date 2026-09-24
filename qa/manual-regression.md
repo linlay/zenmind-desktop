@@ -530,7 +530,7 @@
 
 ## Desktop 在线更新
 
-- 使用同一份含 `updates.feedUrls.win32/darwin` 的 env 分别初始化 Windows/macOS，确认 canonical `updates.json` 只保存本平台的 `feedUrl`，请求不追加平台参数或请求头。旧初始化 `feedUrl`、缺少本平台地址、非法 HTTPS 地址必须在写入前拒绝；版本升级失败保留原配置。
+- 使用同一份含单一 `updates.feedUrl` 的 env 分别初始化 Windows/macOS，确认 canonical `updates.json` 保存同一入口，请求分别携带 `platform=win32/darwin`，已有其他查询参数保留且不写回配置。`feedUrls` 映射、启用时缺少地址、非法 HTTPS 地址在更新配置写入前拒绝并记录局部失败；其他初始化继续、原更新配置保留。断网、重试耗尽、更新通知失败不能阻塞主窗口与核心服务启动。Windows 跟随重定向后获取相邻 `.sig`，macOS 不请求 `.sig`。
 
 - 下载时底部按钮显示实时百分比；下载与校验完成后显示“更新 / Update”。点击弹出重启说明，取消不执行安装；确认后走正式安装流程，在同一次确认中提醒运行对话可能中断及未保存编辑，确认后不等待运行任务结束。开发实例确认按钮禁用并说明原因，安装报错弹窗提示。
 

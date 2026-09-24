@@ -1,9 +1,6 @@
 {
   "updates": {
     "enabled": true,
-    "feedUrls": {
-      "win32": "https://www.zenmind.cc/api/updates/windows/desktop-latest.json",
-      "darwin": "https://www.zenmind.cc/api/updates/macos/desktop-latest.json"
-    }
+    "feedUrl": "https://www.zenmind.cc/api/updates/desktop-latest.json"
   }
 }
