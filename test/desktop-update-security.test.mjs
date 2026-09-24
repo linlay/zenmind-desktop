@@ -12,10 +12,10 @@ const require = createRequire(import.meta.url);
 const { createUpdateRuntime } = require("../dist-electron/main/modules/updates/runtime.js");
 const { fetchUpdateManifest } = require("../dist-electron/main/modules/updates/download.js");
 const pair = generateKeyPairSync("ed25519");
-const trust = { channel: "production", keys: [{ keyId: "test-generated", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ type: "spki", format: "pem" }) }] };
+const trust = { keys: [{ productId: "cutej", publicKey: pair.publicKey.export({ type: "spki", format: "pem" }) }] };
 const bytes = Buffer.from("unsigned executable fixture");
 const now = Date.parse("2026-09-21T08:00:00Z");
-const manifest = (patch = {}) => ({ schemaVersion: 2, keyId: "test-generated", productId: "cutej", channel: "production", version: "0.5.0", publishedAt: new Date(now).toISOString(), releaseNotes: {}, artifacts: { "win32-x64": { url: "https://example.com/app.exe", size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") } }, ...patch });
+const manifest = (patch = {}) => ({ schemaVersion: 2, productId: "cutej", version: "0.5.0", publishedAt: new Date(now).toISOString(), releaseNotes: {}, artifacts: { "win32-x64": { url: "https://example.com/app.exe", size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") } }, ...patch });
 const signed = (value = manifest()) => { const payload = JSON.stringify(value); return { manifest: payload, signature: sign(null, Buffer.from(payload), pair.privateKey).toString("base64") }; };
 function fixture(t, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "update-security-"));
@@ -34,6 +34,8 @@ test("unsigned update metadata cannot enter the installable update path", async 
   assert.equal(installs.length, 0);
 });
 test("a genuinely signed release can install a Windows executable without Authenticode", async t => {
+
+
   const { runtime, installs } = fixture(t);
   assert.equal((await runtime.check()).phase, "available");
   assert.equal((await runtime.download()).phase, "ready");
@@ -115,7 +117,7 @@ test("Debug rejects naked metadata but accepts the same signed release as the of
 test("network retrieval preserves signed bytes and resolves signature next to the final manifest URL", async t => {
   const envelope = signed();
   const requested = [];
-  const replies = [{ status: 302, headers: { location: "/releases/1/latest.json?channel=prod" } }, { body: envelope.manifest }, { body: envelope.signature }];
+  const replies = [{ status: 302, headers: { location: "/releases/1/latest.json?source=prod" } }, { body: envelope.manifest }, { body: envelope.signature }];
   const original = https.get;
   t.after(() => { https.get = original; });
   https.get = (url, _options, cb) => {
@@ -125,7 +127,7 @@ test("network retrieval preserves signed bytes and resolves signature next to th
     return request;
   };
   assert.deepEqual(await fetchUpdateManifest("https://example.com/latest.json", new AbortController().signal), envelope);
-  assert.equal(requested[2], "https://example.com/releases/1/latest.json.sig?channel=prod");
+  assert.equal(requested[2], "https://example.com/releases/1/latest.json.sig?source=prod");
 });
 test("tampering, substituted keys, wrong scope and future publication cannot enable installation", async t => {
   const original = signed();
@@ -134,7 +136,7 @@ test("tampering, substituted keys, wrong scope and future publication cannot ena
     { ...original, manifest: original.manifest + "\n" },
     { ...original, manifest: original.manifest.replace("0.5.0", "0.6.0") },
     { ...original, signature: sign(null, Buffer.from(original.manifest), otherPair.privateKey).toString("base64") },
-    signed(manifest({ keyId: "unknown" })), signed(manifest({ channel: "test" })),
+
     signed(manifest({ productId: "other" })),
     signed(manifest({ publishedAt: new Date(now + 600000).toISOString() })),
     { ...original, signature: "not-base64" },
@@ -161,11 +163,11 @@ test("a signed manifest for the installed version does not reinstall", async t =
 });
 test("a new signing key works only when explicitly included in client trust", async t => {
   const next = generateKeyPairSync("ed25519");
-  const value = manifest({ keyId: "next" });
+  const value = manifest();
   const payload = JSON.stringify(value);
   const envelope = { manifest: payload, signature: sign(null, Buffer.from(payload), next.privateKey).toString("base64") };
   const old = fixture(t, { fetchManifest: async () => envelope });
   assert.equal((await old.runtime.check()).error, "signatureInvalid");
-  const upgraded = fixture(t, { trust: { ...trust, keys: [...trust.keys, { ...trust.keys[0], keyId: "next", publicKey: next.publicKey.export({ type: "spki", format: "pem" }) }] }, fetchManifest: async () => envelope });
+  const upgraded = fixture(t, { trust: { ...trust, keys: [...trust.keys, { ...trust.keys[0], publicKey: next.publicKey.export({ type: "spki", format: "pem" }) }] }, fetchManifest: async () => envelope });
   assert.equal((await upgraded.runtime.check()).phase, "available");
 });

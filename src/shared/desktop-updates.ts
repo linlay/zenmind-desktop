@@ -6,8 +6,7 @@ export interface DesktopUpdateConfig {
 export interface DesktopUpdateArtifact { url: string; size: number; sha256: string }
 export interface DesktopUpdateManifest {
   schemaVersion: 2;
-  keyId: string;
-  channel: string;
+
   productId: string;
   version: string;
   publishedAt: string;
@@ -15,7 +14,7 @@ export interface DesktopUpdateManifest {
   artifacts: Record<string, DesktopUpdateArtifact>;
 }
 /** Existing macOS feed; authenticity is enforced by the native Apple updater. */
-export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion" | "keyId" | "channel"> & { schemaVersion: 1 };
+export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion"> & { schemaVersion: 1 };
 export type DesktopPlatformUpdateManifest = DesktopUpdateManifest | DesktopNativeUpdateManifest;
 export type DesktopUpdatePhase = "disabled" | "not-configured" | "idle" | "checking" | "current" | "unavailable" | "available" | "downloading" | "verifying" | "ready" | "installing" | "error";
 /** Exact UTF-8 manifest text; never parse/reserialize before verification. */

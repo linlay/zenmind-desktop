@@ -18,13 +18,13 @@ const bytes=Buffer.from('signed app zip fixture');
 const legacy={schemaVersion:1,productId:'other-brand',version:'0.5.0',publishedAt:'2025-01-01T00:00:00Z',releaseNotes:{},artifacts:{'darwin-arm64':{url:'https://example.com/app.zip',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}}};
 test('Mac builds ignore Windows Ed25519 environment; Windows targets still validate it on any host',()=>{
  const env={DESKTOP_UPDATE_TRUST_FILE:'missing-update-trust.json'};
- assert.deepEqual(loadPlatformUpdateTrust(process.cwd(),'other-brand','darwin',env),{channel:'production',keys:[]});
+ assert.deepEqual(loadPlatformUpdateTrust(process.cwd(),'other-brand','darwin',env),{keys:[]});
  assert.throws(()=>loadPlatformUpdateTrust(process.cwd(),'other-brand','win32',env));
 });
 function setup(t, overrides={}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'mac-update-compat-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  const calls=[];
- const runtime=createUpdateRuntime({platform:'darwin',arch:'arm64',productId:'other-brand',currentVersion:'0.4.10',packaged:true,trust:{channel:'production',keys:[]},cacheRoot:path.join(root,'cache'),preferencesPath:path.join(root,'preferences.json'),securityStateRoot:path.join(root,'security'),readConfig:()=>({enabled:true,feedUrl:'https://example.com/latest.json'}),emit(){},fetchManifest:async()=>({manifest:JSON.stringify(legacy),signature:''}),downloadFile:async(_a,file)=>fs.promises.writeFile(file,bytes),verifyPublisher:async()=>{calls.push('Apple host check')},prepareInstall:async()=>true,install:async()=>{calls.push('native install')},...overrides});
+ const runtime=createUpdateRuntime({platform:'darwin',arch:'arm64',productId:'other-brand',currentVersion:'0.4.10',packaged:true,trust:{keys:[]},cacheRoot:path.join(root,'cache'),preferencesPath:path.join(root,'preferences.json'),securityStateRoot:path.join(root,'security'),readConfig:()=>({enabled:true,feedUrl:'https://example.com/latest.json'}),emit(){},fetchManifest:async()=>({manifest:JSON.stringify(legacy),signature:''}),downloadFile:async(_a,file)=>fs.promises.writeFile(file,bytes),verifyPublisher:async()=>{calls.push('Apple host check')},prepareInstall:async()=>true,install:async()=>{calls.push('native install')},...overrides});
  t.after(()=>runtime.dispose());return {root,runtime,calls};
 }
 test('macOS accepts existing v1 feed without Ed25519 keys and retains native checks',async t=>{

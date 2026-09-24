@@ -36,7 +36,6 @@ export function parseUpdateManifest(value: unknown, productId: string, platform:
   const native = platform === "darwin" && input.schemaVersion === 1;
   if ((!native && input.schemaVersion !== 2) || input.productId !== productId) throw new Error("Update manifest identity mismatch");
   if (!native) {
-  if (typeof input.keyId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(input.keyId) || typeof input.channel !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(input.channel)) throw new Error("Invalid update signing metadata");
   if (Object.hasOwn(input, "releaseSequence")) throw new Error("Obsolete update sequence field");
   if (Object.hasOwn(input, "expiresAt")) throw new Error("Obsolete update expiry field");
   }
@@ -59,5 +58,5 @@ export function parseUpdateManifest(value: unknown, productId: string, platform:
   }
   const common = { productId, version: input.version as string, publishedAt: input.publishedAt, releaseNotes: notes, artifacts };
   if (native) return { schemaVersion: 1, ...common };
-  return { schemaVersion: 2, keyId: input.keyId as string, channel: input.channel as string, ...common };
+  return { schemaVersion: 2, ...common };
 }
