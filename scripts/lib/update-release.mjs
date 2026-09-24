@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { validateTrust } from "../../src/main/modules/updates/signing.js";
 
 export function loadPlatformUpdateTrust(root, brandId, platform, env = process.env) {
@@ -36,8 +37,7 @@ export async function finalizeUpdateRelease(root, brandId, target, env = process
   const embedded = validateTrust(JSON.parse(fs.readFileSync(path.join(root, "build", "brands", brandId, "bundle", "dist-electron", "update-trust.json"), "utf8")));
   if (JSON.stringify(trust) !== JSON.stringify(embedded)) throw new Error("Signing trust differs from the public keys embedded in this build");
   const options = signingOptionsFromEnvironment({ ...env, DESKTOP_UPDATE_TRUST_FILE: env.DESKTOP_UPDATE_TRUST_FILE || path.join(root, "brands", brandId, "update-trust.json") });
-  if (!Number.isSafeInteger(input.releaseSequence) || input.releaseSequence < 1) throw new Error("Invalid release sequence");
-  const directory = path.join(outputRoot, "updates", trust.channel, String(input.releaseSequence));
+  const directory = path.join(outputRoot, "updates", trust.channel, version, randomUUID());
   await createSignedRelease(input, directory, options);
   return directory;
 }

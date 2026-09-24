@@ -8,8 +8,6 @@ export interface DesktopUpdateManifest {
   schemaVersion: 2;
   keyId: string;
   channel: string;
-  releaseSequence: number;
-  expiresAt: string;
   productId: string;
   version: string;
   publishedAt: string;
@@ -17,7 +15,7 @@ export interface DesktopUpdateManifest {
   artifacts: Record<string, DesktopUpdateArtifact>;
 }
 /** Existing macOS feed; authenticity is enforced by the native Apple updater. */
-export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion" | "keyId" | "channel" | "releaseSequence" | "expiresAt"> & { schemaVersion: 1 };
+export type DesktopNativeUpdateManifest = Omit<DesktopUpdateManifest, "schemaVersion" | "keyId" | "channel"> & { schemaVersion: 1 };
 export type DesktopPlatformUpdateManifest = DesktopUpdateManifest | DesktopNativeUpdateManifest;
 export type DesktopUpdatePhase = "disabled" | "not-configured" | "idle" | "checking" | "current" | "unavailable" | "available" | "downloading" | "verifying" | "ready" | "installing" | "error";
 /** Exact UTF-8 manifest text; never parse/reserialize before verification. */
@@ -36,7 +34,7 @@ export interface DesktopUpdateState {
   /** Cleanup/native install may have stopped services; restart before another attempt. */
   restartRequired?: boolean;
   checkedAt?: string;
-  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy" | "signatureInvalid" | "manifestExpired" | "clockInvalid" | "manifestReplay" | "securityStateInvalid";
+  error?: "checkFailed" | "downloadFailed" | "verificationFailed" | "installFailed" | "operationFailed" | "configInvalid" | "cleanupFailed" | "updateBusy" | "signatureInvalid" | "clockInvalid";
 }
 export interface DesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>;

@@ -21,7 +21,7 @@ const config = { enabled: true, feedUrl: "https://updates.example.com/latest.jso
 const artifact = { url: "https://updates.example.com/app.zip", size: content.length, sha256: hash };
 const pair = generateKeyPairSync("ed25519");
 const trust = { channel: "production", keys: [{ keyId: "fixture", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ format: "pem", type: "spki" }) }] };
-const manifest = () => ({ schemaVersion: 2, keyId: "fixture", channel: "production", releaseSequence: 1, expiresAt: "2026-10-12T08:00:00Z", productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
+const manifest = () => ({ schemaVersion: 2, keyId: "fixture", channel: "production", productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
 function signed(value = manifest()) { const payload = JSON.stringify(value); return { manifest: payload, signature: sign(null, Buffer.from(payload), pair.privateKey).toString("base64") }; }
 function temp(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-update-test-")); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; }
 function fixture(t, extra = {}) {

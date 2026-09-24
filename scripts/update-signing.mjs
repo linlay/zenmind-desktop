@@ -12,10 +12,10 @@ export function signingOptionsFromEnvironment(env = process.env) {
   return { privateKey, trust: validateTrust(JSON.parse(fs.readFileSync(env.DESKTOP_UPDATE_TRUST_FILE, "utf8"))) };
 }
 function checkTime(value) {
-  if (Date.parse(value.expiresAt) <= Date.now() || Date.parse(value.publishedAt) > Date.now() + 300000) throw new Error("Release expired or device clock invalid");
+  if (Date.parse(value.publishedAt) > Date.now() + 300000) throw new Error("Release date is ahead of device clock");
 }
 export async function createSignedRelease(input, outputDirectory, { privateKey, trust }) {
-  if (fs.existsSync(outputDirectory)) throw new Error("Release directory already exists; use a new sequence directory");
+  if (fs.existsSync(outputDirectory)) throw new Error("Release directory already exists; use a new output directory");
   if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("Ed25519 private key required");
   const manifest = await createUpdateManifest(input);
   checkTime(manifest);
