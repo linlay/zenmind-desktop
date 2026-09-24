@@ -1,3 +1,5 @@
+import type { MarketInstallOptions } from "../../../shared/contracts/marketplace";
+import { normalizeMarketInstallOptions } from "./skill-package-adoption";
 import { getCustomMcpConfig, saveCustomMcpConfig } from "./custom-mcp-config";
 import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesystem/download-paths";
 import { readMarketSkillContent } from "./skill-detail";
@@ -23,9 +25,9 @@ export interface MarketplaceIpcHandlerOptions {
   listMarketItems: (app: any, options?: any) => any;
   refreshMarketCatalog: (app: any, options?: any) => Promise<any>;
   toggleMarketFavorite: (app: any, input: any) => Promise<any>;
-  installMarketItem: (app: any, itemId: string) => Promise<any>;
-  updateMarketItem: (app: any, itemId: string) => Promise<any>;
-  uninstallMarketItem: (app: any, itemId: string) => Promise<any>;
+  installMarketItem: (app: any, itemId: string, options?: MarketInstallOptions) => Promise<any>;
+  updateMarketItem: (app: any, itemId: string, options?: MarketInstallOptions) => Promise<any>;
+  uninstallMarketItem: (app: any, itemId: string, options?: MarketInstallOptions) => Promise<any>;
   buildSandboxImage: (app: any, itemId: string) => Promise<any>;
   deleteSandboxImage: (app: any, itemId: string) => Promise<any>;
   exportSandboxImageToPath: (app: any, imageRef: string, exportPath: string) => Promise<any>;
@@ -137,8 +139,8 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
   ipcMain.handle("market.refresh", async (_event: any, listOptions: any) => refreshMarketCatalog(app, listOptions));
   ipcMain.handle("market.toggleFavorite", async (_event: any, input: any) => toggleMarketFavorite(app, input));
 
-  ipcMain.handle("market.install", async (_event: any, itemId: string) => runServiceMutation(async () => {
-    const result = await installMarketItem(app, itemId);
+  ipcMain.handle("market.install", async (_event: any, itemId: string, options?: unknown) => runServiceMutation(async () => {
+    const result = await installMarketItem(app, itemId, normalizeMarketInstallOptions(options));
     if (result.ok) {
       await clearSessionCache();
       onMarketCommandResult?.(result);
@@ -146,8 +148,8 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     return result;
   }));
 
-  ipcMain.handle("market.update", async (_event: any, itemId: string) => runServiceMutation(async () => {
-    const result = await updateMarketItem(app, itemId);
+  ipcMain.handle("market.update", async (_event: any, itemId: string, options?: unknown) => runServiceMutation(async () => {
+    const result = await updateMarketItem(app, itemId, normalizeMarketInstallOptions(options));
     if (result.ok) {
       await clearSessionCache();
       onMarketCommandResult?.(result);

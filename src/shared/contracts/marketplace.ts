@@ -229,7 +229,18 @@ export interface MarketFavoriteResult {
   message: string;
 }
 
+export interface SkillPackageAdoptionRequest {
+  archiveSha256: string;
+  skills: Array<{ id: string; revision: string; changedPaths: string[] }>;
+}
+
+export interface MarketInstallOptions {
+  skillPackageAdoption?: { archiveSha256: string; expectedRevisions: Record<string, string> };
+}
+
 export interface MarketCommandResult {
+  skillPackageAdoption?: SkillPackageAdoptionRequest;
+  skillPackageBackupPath?: string;
   canceled?: boolean;
   connectorId?: string;
   ok: boolean;
