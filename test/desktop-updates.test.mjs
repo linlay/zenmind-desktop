@@ -25,8 +25,8 @@ const hash = createHash("sha256").update(content).digest("hex");
 const config = { enabled: true, feedUrl: "https://updates.example.com/latest.json" };
 const artifact = { url: "https://updates.example.com/app.zip", size: content.length, sha256: hash };
 const pair = generateKeyPairSync("ed25519");
-const trust = { channel: "production", keys: [{ keyId: "fixture", productId: "cutej", channel: "production", publicKey: pair.publicKey.export({ format: "pem", type: "spki" }) }] };
-const manifest = () => ({ schemaVersion: 2, keyId: "fixture", channel: "production", productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
+const trust = { keys: [{ productId: "cutej", publicKey: pair.publicKey.export({ format: "pem", type: "spki" }) }] };
+const manifest = () => ({ schemaVersion: 2, productId: "cutej", version: "0.5.0", publishedAt: "2026-09-12T08:00:00Z", releaseNotes: { "zh-CN": ["test"] }, artifacts: { "darwin-arm64": { ...artifact }, "win32-x64": { ...artifact, url: "https://updates.example.com/app.exe" } } });
 function signed(value = manifest()) { const payload = JSON.stringify(value); return { manifest: payload, signature: sign(null, Buffer.from(payload), pair.privateKey).toString("base64") }; }
 function temp(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-update-test-")); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; }
 function fixture(t, extra = {}) {
@@ -247,7 +247,7 @@ for (const platform of ["darwin", "win32"]) test(`${platform} init consumes upda
 for (const platform of ["win32", "darwin"]) test(`${platform} bootstrap and version upgrade preserve the shared entry without platform parameters`, (t) => {
   const root = temp(t);
   const app = { getPath: (name) => name === "home" ? root : path.join(root, "app-data") };
-  const input = { enabled: true, feedUrl: "https://updates.example.com/api/updates/desktop-latest.json?channel=dev" };
+  const input = { enabled: true, feedUrl: "https://updates.example.com/api/updates/desktop-latest.json?source=dev" };
   const expected = input;
   const init = resolveDesktopInitPath(app, platform);
   fs.mkdirSync(path.dirname(init), { recursive: true });

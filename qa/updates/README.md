@@ -1,5 +1,7 @@
 # Desktop 签名更新发布与回归
 
+当前协议已移除 keyId/channel，发布目录不含渠道层。旧客户端无法消费新清单，需手动安装新版基线再验证向上升级；开发/生产使用独立密钥。服务器递增策略由其本地 release-policy.json 决定，缺省严格递增。本页后部带日期的验证记录是历史记录。
+
 Windows 使用 v2：Ed25519 签名原始清单，安装包校验大小和 SHA-256，不强制 Authenticode。macOS 保持既有 v1 清单、Apple App 签名、公证和 Squirrel.Mac 验证，不需要 Ed25519 公私钥、口令或 .sig。以下密钥和 v2 发布步骤仅面向 Windows。所有命令从 Desktop 仓库根执行。
 
 ### macOS 既有流程（不迁移）
@@ -17,7 +19,7 @@ Windows 使用 v2：Ed25519 签名原始清单，安装包校验大小和 SHA-25
 在安全终端设置 `DESKTOP_UPDATE_KEY_PASSPHRASE`（至少 12 字符）后，执行：
 
 ```powershell
-node scripts/update-signing.mjs keygen C:/SigningKeys/CuteJProduction cutej production cutej-production-2026-01
+node scripts/update-signing.mjs keygen C:/SigningKeys/CuteJProduction cutej
 ```
 
 目标必须为不存在的新目录。输出 `private-key.pem` 与 `public-trust.json`。私钥需加密离线备份；生产私钥不会由开发测试自动生成。
@@ -30,7 +32,7 @@ $env:DESKTOP_UPDATE_TRUST_FILE = 'C:/SigningKeys/CuteJProduction/public-trust.js
 npm run dist:win
 ```
 
-Windows 也可把仅含公钥的配置放到 `brands/<brand>/update-trust.json`，作为版本管理的信任输入。文件格式由生成工具提供：单一 `channel`，最多八个具有唯一 `keyId` 的 Ed25519 公钥，全部归属当前品牌和该渠道。
+Windows 也可把仅含公钥的配置放到 `brands/<brand>/update-trust.json`，作为版本管理的信任输入。文件格式由生成工具提供：最多八个不重复的 Ed25519 公钥，全部归属当前品牌；不使用 channel 或 keyId，生产与测试用独立密钥隔离。
 
 正式 `dist:win` 缺少有效公钥会在打包入口失败；`dist:mac` 不要求该公钥。普通 Windows 开发构建可不配置公钥，但更新验签会失败。生产 Windows 公钥由构建常量内嵌，不能通过修改更新 URL 增加密钥。
 
@@ -50,7 +52,7 @@ $env:DESKTOP_UPDATE_RELEASE_INPUT = 'C:/ReleaseInputs/cutej-production.json'
 npm run dist:win
 ```
 
-`dist:win` 在安装器与 Windows 验证完成后签署。签名配置必须与本次 bundle 内嵌公钥一致，清单品牌/版本必须匹配当前构建。输出位于 `dist/<brand>/updates/<channel>/<version>/<unique-id>/`。Mac 不执行此签署步骤。
+`dist:win` 在安装器与 Windows 验证完成后签署。签名配置必须与本次 bundle 内嵌公钥一致，清单品牌/版本必须匹配当前构建。输出位于 `dist/<brand>/updates/<version>/<unique-id>/`。Mac 不执行此签署步骤。
 
 不设置 `DESKTOP_UPDATE_RELEASE_INPUT` 时，仅生成手动安装/首发基线包，不产生在线更新清单。在线发布流水线必须要求签名清单存在，不能把“手动安装包已构建”视为“在线发布成功”。
 
@@ -106,7 +108,7 @@ npm run updates:verify-feed -- https://updates.example.com/updates/production/0.
 }
 ```
 
-上例是两平台共用的运行时 canonical 配置。普通启动只读 canonical 文件，不重新应用初始化输入。检查更新时自动设置 `platform=win32` 或 `platform=darwin`，服务端重定向到对应平台清单；不把参数写回配置。Windows 从最终清单地址获取相邻 `.sig`，macOS 保留 Apple 原生验签。检查接口返回清单本体，不包裹 `data`。
+上例是两平台共用的运行时 canonical 配置。普通启动只读 canonical 文件，不重新应用初始化输入。检查更新时自动设置 `platform=win32` 或 `platform=darwin`，服务端内部 rewrite 到对应平台清单，统一入口及相邻 .sig 不发生外部跳转；不把参数写回配置。Windows 从最终清单地址获取相邻 `.sig`，macOS 保留 Apple 原生验签。检查接口返回清单本体，不包裹 `data`。
 
 验证 B → N 在线更新、用户数据保留、配置落盘与服务健康后再开放。Windows 基线内嵌生产公钥并使用 v2 源，macOS 使用 v1 源及 Apple 签名。已有测试安装通过新版本覆盖或显式 env 导入应用配置。
 
@@ -120,7 +122,7 @@ npm run updates:verify-feed -- https://updates.example.com/updates/production/0.
 
 ## 6. Debug 与回归
 
-Debug 页粘贴原始清单及签名，保留所有换行；不支持裸 URL、大小和哈希进入安装。主进程执行与正式源相同的公钥、渠道、签名和版本校验。正式客户端不接受测试密钥；测试包使用独立渠道和公钥。
+Debug 页粘贴原始清单及签名，保留所有换行；不支持裸 URL、大小和哈希进入安装。主进程执行与正式源相同的公钥、品牌、签名和版本校验。正式客户端不接受测试密钥；测试包使用独立更新源和公钥。
 
 加载仅切换本次选择，不下载、不改 canonical 配置和自动下载偏好。退出测试恢复官网检查，重启不恢复选择。开发实例禁止真实安装。下载/安装期间禁止切换源；只有主窗口顶层 frame 可以调用。
 
@@ -135,7 +137,7 @@ node --test --test-concurrency=1 test/desktop-updates.test.mjs test/desktop-upda
 
 - Windows：未做 Authenticode 签名的有效签名更新可完成 B → N；每用户/每机器安装、UAC 取消、文件锁、中文与空格路径、自定义数据根及升级重启正常。
 - macOS：原生签名无效仍被拒绝，挂载 DMG 中运行或原生安装失败不能视为升级成功；普通退出不能提前安装缓存包。
-- 篡改 JSON/签名/安装包、换密钥、错误品牌/渠道、旧格式有效期或发布序号字段均拒绝。
+- 篡改 JSON/签名/安装包、换密钥、错误品牌、旧格式有效期或发布序号字段均拒绝。
 - 下载中断、重复操作、缓存复验、已就绪状态继续发现新版与重新下载正常。
 - 正在运行任务、草稿确认、退出清理失败继续保护用户；服务未健康不视为升级完整成功。
 - 正式包内嵌正确生产公钥，不含私钥、测试信任配置或绕过开关。

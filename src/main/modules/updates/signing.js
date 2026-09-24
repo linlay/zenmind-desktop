@@ -1,17 +1,19 @@
 const { createPublicKey, verify, createHash } = require("node:crypto");
 
-/** @typedef {{keyId: string, productId: string, channel: string, publicKey: string}} UpdateKey */
-/** @typedef {{channel: string, keys: UpdateKey[]}} UpdateTrust */
+/** @typedef {{productId: string, publicKey: string}} UpdateKey */
+/** @typedef {{keys: UpdateKey[]}} UpdateTrust */
 /** @param {unknown} value @returns {UpdateTrust} */
 function validateTrust(value) {
   const input = /** @type {UpdateTrust} */ (value);
-  if (!input || typeof input.channel !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(input.channel) || !Array.isArray(input.keys) || input.keys.length > 8) throw new Error("Invalid update trust configuration");
-  const ids = new Set();
+  if (!input || !Array.isArray(input.keys) || input.keys.length > 8) throw new Error("Invalid update trust configuration");
+  const publicKeys = new Set();
   for (const key of input.keys) {
-    if (!key || typeof key.keyId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(key.keyId) || ids.has(key.keyId) || typeof key.productId !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(key.productId) || key.channel !== input.channel || typeof key.publicKey !== "string" || !key.publicKey.startsWith("-----BEGIN PUBLIC KEY-----") || key.publicKey.length > 1024 || createPublicKey(key.publicKey).asymmetricKeyType !== "ed25519") throw new Error("Invalid update public key");
-    ids.add(key.keyId);
+    if (!key || typeof key.productId !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(key.productId) || typeof key.publicKey !== "string" || !key.publicKey.startsWith("-----BEGIN PUBLIC KEY-----") || key.publicKey.length > 1024 || createPublicKey(key.publicKey).asymmetricKeyType !== "ed25519") throw new Error("Invalid update public key");
+    const identity = createPublicKey(key.publicKey).export({ type: "spki", format: "der" }).toString("base64");
+    if (publicKeys.has(identity)) throw new Error("Duplicate update public key");
+    publicKeys.add(identity);
   }
-  return { channel: input.channel, keys: input.keys.map(key => ({ keyId: key.keyId, productId: key.productId, channel: key.channel, publicKey: String(createPublicKey(key.publicKey).export({ type: "spki", format: "pem" })) })) };
+  return { keys: input.keys.map(key => ({ productId: key.productId, publicKey: String(createPublicKey(key.publicKey).export({ type: "spki", format: "pem" })) })) };
 }
 
 /** Verify exact UTF-8 bytes before parsing any fields.
@@ -29,7 +31,7 @@ function verifySignedManifest(input, trust, productId) {
   const key = keys.find(key => verify(null, bytes, key.publicKey, signature));
   if (!key) throw new Error("signatureInvalid");
   const value = JSON.parse(envelope.manifest);
-  if (!value || typeof value !== "object" || Array.isArray(value) || value.keyId !== key.keyId || value.productId !== productId || value.channel !== key.channel) throw new Error("signatureInvalid");
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.productId !== productId) throw new Error("signatureInvalid");
   return { value, digest: createHash("sha256").update(bytes).digest("hex") };
 }
 exports.validateTrust = validateTrust;

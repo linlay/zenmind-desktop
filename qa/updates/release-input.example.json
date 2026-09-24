@@ -1,7 +1,5 @@
 {
   "productId": "cutej",
-  "keyId": "cutej-production-2026-01",
-  "channel": "production",
   "version": "0.5.0",
   "releaseNotes": {
     "zh-CN": [

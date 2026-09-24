@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { validateTrust } from "../../src/main/modules/updates/signing.js";
 
 export function loadPlatformUpdateTrust(root, brandId, platform, env = process.env) {
-  if (platform === "darwin") return { channel: "production", keys: [] };
+  if (platform === "darwin") return { keys: [] };
   return loadBuildUpdateTrust(root, brandId, env);
 }
 
@@ -13,7 +13,7 @@ export function loadBuildUpdateTrust(root, brandId, env = process.env, required 
   const file = env.DESKTOP_UPDATE_TRUST_FILE || path.join(root, "brands", brandId, "update-trust.json");
   if (!fs.existsSync(file)) {
     if (required || env.DESKTOP_UPDATE_TRUST_FILE) throw new Error("Update public trust file is required for release packaging");
-    return { channel: "production", keys: [] };
+    return { keys: [] };
   }
   const trust = validateTrust(JSON.parse(fs.readFileSync(file, "utf8")));
   if (trust.keys.some(key => key.productId !== brandId) || (required && !trust.keys.length)) throw new Error("Update public trust must contain keys for the packaged product");
@@ -37,7 +37,7 @@ export async function finalizeUpdateRelease(root, brandId, target, env = process
   const embedded = validateTrust(JSON.parse(fs.readFileSync(path.join(root, "build", "brands", brandId, "bundle", "dist-electron", "update-trust.json"), "utf8")));
   if (JSON.stringify(trust) !== JSON.stringify(embedded)) throw new Error("Signing trust differs from the public keys embedded in this build");
   const options = signingOptionsFromEnvironment({ ...env, DESKTOP_UPDATE_TRUST_FILE: env.DESKTOP_UPDATE_TRUST_FILE || path.join(root, "brands", brandId, "update-trust.json") });
-  const directory = path.join(outputRoot, "updates", trust.channel, version, randomUUID());
+  const directory = path.join(outputRoot, "updates", version, randomUUID());
   await createSignedRelease(input, directory, options);
   return directory;
 }
