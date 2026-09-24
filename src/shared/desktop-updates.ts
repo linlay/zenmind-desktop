@@ -47,10 +47,12 @@ export interface DesktopUpdatesApi {
   onChanged(listener: (state: DesktopUpdateState) => void): () => void;
 }
 
-/** Shared action policy keeps sidebar and About recovery consistent. */
+/** The sidebar surfaces confirmed updates; check diagnostics stay in About. */
 export function desktopUpdateSidebarVisible(state: DesktopUpdateState): boolean {
-  return state.phase === "error" || Boolean(state.version &&
-    (state.error || ["available", "downloading", "verifying", "ready", "installing"].includes(state.phase)));
+  if (!state.version) return false;
+  if (["available", "downloading", "verifying", "ready", "installing"].includes(state.phase)) return true;
+  return state.phase === "error" && Boolean(state.packageReady || state.restartRequired ||
+    ["downloadFailed", "verificationFailed", "installFailed", "cleanupFailed", "updateBusy"].includes(state.error ?? ""));
 }
 
 export function desktopUpdateAction(state: DesktopUpdateState): "install" | "download" | "check" | "restart" | undefined {

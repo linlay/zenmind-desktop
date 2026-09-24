@@ -98,11 +98,16 @@ test("main readiness recovers a failed initial check once and joins in-flight ch
   assert.equal(attempts, 2);
 });
 
-test("sidebar exposes retry even when the first failed check has no version", () => {
+test("check failures stay in About without a sidebar retry, including stale version metadata", () => {
   const { desktopUpdateSidebarVisible, desktopUpdateAction } = require('../dist-electron/shared/desktop-updates.js');
   const state = { phase: 'error', error: 'checkFailed', currentVersion: '0.4.13', progress: 0, autoDownload: false, canInstall: true };
-  assert.equal(desktopUpdateSidebarVisible(state), true);
-  assert.equal(desktopUpdateAction(state), 'check');
+  for (const error of ['checkFailed', 'configInvalid', 'signatureInvalid', 'clockInvalid', 'operationFailed']) {
+    for (const version of [undefined, '0.4.14']) {
+      const failed = { ...state, error, version };
+      assert.equal(desktopUpdateSidebarVisible(failed), false, `${error}: ${version}`);
+      assert.equal(desktopUpdateAction(failed), 'check');
+    }
+  }
   assert.equal(desktopUpdateSidebarVisible({ ...state, phase: 'current', error: undefined }), false);
 });
 
@@ -122,6 +127,25 @@ test("persistent network failure exhausts retries; disposal cancels pending retr
   runtime.dispose();
   t.mock.timers.tick(60000); await new Promise(resolve => setImmediate(resolve));
   assert.equal(attempts, 5);
+});
+
+test("sidebar retains confirmed update progress and download or installation recovery", () => {
+  const { desktopUpdateSidebarVisible, desktopUpdateAction } = require('../dist-electron/shared/desktop-updates.js');
+  const base = { currentVersion: '0.4.13', version: '0.4.14', progress: 0, autoDownload: false, canInstall: true };
+  for (const phase of ['available', 'downloading', 'verifying', 'ready', 'installing']) {
+    assert.equal(desktopUpdateSidebarVisible({ ...base, phase }), true, phase);
+    assert.equal(desktopUpdateSidebarVisible({ ...base, version: undefined, phase }), false, phase);
+  }
+  for (const error of ['downloadFailed', 'verificationFailed', 'installFailed', 'cleanupFailed', 'updateBusy']) {
+    assert.equal(desktopUpdateSidebarVisible({ ...base, phase: 'error', error }), true, error);
+  }
+  assert.equal(desktopUpdateAction({ ...base, phase: 'error', error: 'downloadFailed' }), 'download');
+  assert.equal(desktopUpdateAction({ ...base, phase: 'ready', packageReady: true }), 'install');
+  assert.equal(desktopUpdateSidebarVisible({ ...base, phase: 'error', error: 'checkFailed', packageReady: true }), true);
+  assert.equal(desktopUpdateSidebarVisible({ ...base, phase: 'error', error: 'clockInvalid', restartRequired: true }), true);
+  for (const phase of ['disabled', 'not-configured', 'idle', 'checking', 'current', 'unavailable']) {
+    assert.equal(desktopUpdateSidebarVisible({ ...base, phase }), false, phase);
+  }
 });
 
 test("update configuration and renderer notification failures stay inside the background runtime", async t => {
