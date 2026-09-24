@@ -25,6 +25,48 @@ alpine-lake.skin.zip
 导入会复制并优化资源，因此原 ZIP 或解压目录移动、删除后仍可使用。内置皮肤与已导入皮肤共用主窗口外观层；本格式不改变 WebView 或 Agent WebClient 的背景协议。
 
 
+## 颜色 token 的透明度
+
+同一个变量的 alpha 是它语义的一部分：切换浅色 / 深色只应改变 RGB，不应改变透明度。否则同一个 `--line` 在浅色下浓度 0.18、深色下 0.07，同一个 `--surface` 在浅色下近乎全透、深色下完全不透，图层关系就失去稳定含义，皮肤看起来也不再和默认色板是同一套设计。
+
+皮肤包的值必须是字面颜色（HEX、`rgb()`、`rgba()`、`transparent`），不接受 `var()` 与 `color-mix()`，因此 alpha 需要显式写出。下表是白名单中全部半透明变量在两套明暗下的取值；未列出的白名单变量是实色或非颜色 token（含 `--control-radius*`、`--overlay-radius`、各类 `--*-text` / `--*-color`），没有透明度约束。
+
+| 变量 | 浅色 alpha | 深色 alpha |
+| --- | --- | --- |
+| `--accent-glow` | 0.12 | 0.20 |
+| `--accent-soft` | 0.16 | 0.16 |
+| `--control-active-bg` | 0.16 | 0.22 |
+| `--control-border` | 0.25 | 0.25 |
+| `--control-button-bg` | 0.85 | 0.20 |
+| `--control-disabled-bg` | 0.07 | 0.09 |
+| `--control-disabled-opacity` | 0.68 | 0.68 |
+| `--control-hover-bg` | 0.09 | 0.13 |
+| `--control-input-bg` | 0.92 | 0.92 |
+| `--control-popover-bg` | 0.96 | 0.96 |
+| `--control-select-bg` | 0.92 | 0.92 |
+| `--control-tab-hover-bg` | 0.60 | 0.12 |
+| `--line` | 0.13 | 0.13 |
+| `--line-strong` | 0.25 | 0.25 |
+| `--modal-mask-bg` | 0.18 | 0.18 |
+| `--nav-accent-selected-bg` | 0.13 | 0.13 |
+| `--nav-hover-bg` | 0.09 | 0.13 |
+| `--nav-selected-bg` | 0.14 | 0.18 |
+| `--shell-content-bg` | 0.58 | 0.70 |
+| `--shell-sidebar-bg` | 0.87 | 0.87 |
+| `--shell-titlebar-bg` | 0.90 | 0.90 |
+| `--sidebar-operation-menu-bg` | 0.96 | 0.96 |
+| `--sidebar-operation-menu-border` | 0.19 | 0.22 |
+| `--surface` | 0.72 | 0.72 |
+| `--surface-sidebar` | 0.90 | 0.90 |
+| `--surface-soft` | 0.90 | 0.90 |
+| `--surface-strong` | 0.96 | 0.96 |
+
+两列数值不同的 10 个变量是有意的不对称，不要把它们「对齐」：`--control-active-bg`、`--control-button-bg`、`--control-disabled-bg`、`--control-hover-bg`、`--control-tab-hover-bg`、`--nav-hover-bg`、`--nav-selected-bg` 是控件层级的中性提亮量——浅色下以深色墨色叠加、深色下以白色叠加，数值必然不同；`--shell-content-bg` 在深色下需要更多衬底才能保障浅色文字可读；`--sidebar-operation-menu-border` 在深色下需要更高描边浓度才与浅色等距可见；`--accent-glow` 是光学量，同一 alpha 在黑底与白底上的视觉重量本就不同。除此之外，同一变量在皮肤之间也必须一致：`--control-input-bg` 跟随 `--control-select-bg`，`--control-border` 跟随 `--line-strong`，`--control-popover-bg` 跟随 `--sidebar-operation-menu-bg`，`--nav-hover-bg` 跟随 `--control-hover-bg`，`--control-panel-bg` 跟随 `--accent-soft`——只写前者即可，透明度会一起跟随。
+
+`--shell-sidebar-bg`、`--shell-content-bg`、`--shell-titlebar-bg` 只在有图片背景时被消费；没有图片时外壳使用实色回退，改这三个值不影响无壁纸外观。`--new-chat-surface` 与 `--main-chat-surface` 不在此表，见下面的「聊天页面遮罩」。
+
+校验：`npm run test:skin-visuals` 会解析所有可发现的包并逐变量比对生效 alpha。`qa/skin-packages/alpine-lake` 是本表的参考实现，两态零偏差；`output/skin-collection/sources` 下由脚本生成的主题集合尚未迁移，脚本只对它们报告、不阻断。alpha 之外的颜色仍可按设计自由选择。
+
 ## 1.1 图标、艺术字与未读样式
 
 运行 `npm run build:skin-bow-example` 生成 `build/qa/bow-1.1.skin.zip`。这是可直接导入的蝴蝶结风格示例，两套明暗包含功能图标、栏目艺术字和未读心形/数字徽章。
@@ -73,6 +115,8 @@ node qa/skin-packages/build-bow-example.mjs --base /absolute/path/hello-kitty.sk
 ## 聊天页面遮罩
 
 在 `variants.light.tokens` / `variants.dark.tokens` 中分别设置 `--new-chat-surface`（新建对话）和 `--main-chat-surface`（已有对话）。可直接填写 `rgba(r, g, b, a)`，alpha 是不透明度：0 完全透明，1 完全不透明；也接受其他受控颜色格式。每项独立可选，仅在有图片背景时使用。
+
+这两项不在上表的透明度契约内：它们没有 `theme.css` 缺省值，只在图片背景下生效，属于和 `--shell-content-bg` 同一类的壁纸衬底，因此浅深两态取值不同是正常的——深色需要更多衬底才能保住浅色文字。但同样的原则适用：它们是让正文可读的半透明衬底，不是不透明底板，不要写成 alpha 为 1 的实色；`--new-chat-surface` 通常比 `--main-chat-surface` 更透，浅色 New Chat 的缺省值就是 `transparent`。
 
 ```json
 {

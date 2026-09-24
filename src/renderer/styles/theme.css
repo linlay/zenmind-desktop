@@ -2,24 +2,65 @@
    Desktop Shell — Feishu / Lark Design System
    ══════════════════════════════════════════════ */
 
+/* 透明度契约
+   ─────────────────────────────────────────────
+   变量名承载语义，因此透明度是 token 契约的一部分，不是可以随主题调整的细节：
+   换明暗或换皮肤只能改颜色的 RGB 通道，不能改同一变量的 alpha。
+
+   下面的 --alpha-* 是全部 alpha 的唯一来源。默认色板与内置皮肤一律写成
+   rgba(<自己的 rgb>, var(--alpha-<token>))，皮肤只提供 RGB，因此不可能写歪。
+   外部皮肤包的值必须落在字面颜色格式内（解析器不接受 var()），其 alpha 由
+   qa/skin-packages/README.md 的取值表约束，并接受 qa/theme-token-alpha.mjs 的检查。
+
+   允许例外的只有两类，均在本文件内标注：
+     1. 阴影与辉光：同一 alpha 在浅色与深色底上不等距可见，属光学量；
+     2. --embedded-surface-*：刻意保留极小实色差以防路由切换闪动。
+   明暗不对称的 token 由 qa/theme-token-alpha.mjs 的 DECLARED_ASYMMETRY 逐条登记。 */
 :root {
   color-scheme: light;
   --window-radius: 18px;
   --mac-traffic-light-safe-area: 88px;
   --bg-base: #FFFFFF;
   --bg-canvas: transparent;
-  --surface: rgba(255, 255, 255, 0.18);
-  --surface-strong: rgba(255, 255, 255, 0.9);
-  --surface-soft: rgba(255, 255, 255, 0.9);
-  --surface-sidebar: rgba(247, 250, 252, 0.78);
+
+  /* ── alpha 模板（浅色）── */
+  --alpha-surface: 0.72;
+  --alpha-surface-strong: 0.96;
+  --alpha-surface-soft: 0.9;
+  --alpha-surface-sidebar: 0.9;
+  --alpha-line: 0.13;
+  --alpha-line-strong: 0.25;
+  --alpha-accent-soft: 0.16;
+  --alpha-shell-sidebar-bg: 0.87;
+  --alpha-shell-content-bg: 0.58;
+  --alpha-shell-titlebar-bg: 0.9;
+  --alpha-control-button-bg: 0.85;
+  --alpha-control-hover-bg: 0.09;
+  --alpha-control-active-bg: 0.16;
+  --alpha-control-disabled-bg: 0.07;
+  --alpha-control-select-bg: 0.92;
+  --alpha-control-tab-hover-bg: 0.6;
+  --alpha-nav-selected-bg: 0.14;
+  --alpha-sidebar-operation-menu-bg: 0.96;
+  --alpha-sidebar-operation-menu-border: 0.19;
+  --alpha-sidebar-operation-menu-hover: 0.07;
+  --alpha-sidebar-operation-menu-avatar-bg: 0.76;
+  --alpha-modal-mask-bg: 0.18;
+
+  --surface: rgba(255, 255, 255, var(--alpha-surface));
+  --surface-strong: rgba(255, 255, 255, var(--alpha-surface-strong));
+  --surface-soft: rgba(255, 255, 255, var(--alpha-surface-soft));
+  --surface-sidebar: rgba(247, 250, 252, var(--alpha-surface-sidebar));
   --ink: #1D2129;
   --ink-soft: #4E5969;
   --ink-muted: #86909C;
-  --line: rgba(148, 163, 184, 0.18);
-  --line-strong: rgba(148, 163, 184, 0.28);
+  --line: rgba(148, 163, 184, var(--alpha-line));
+  --line-strong: rgba(148, 163, 184, var(--alpha-line-strong));
   --accent: #2663EB;
   --accent-strong: #1D4ED8;
-  --accent-soft: #E8F0FF;
+  /* A soft accent tint, never an opaque plate: the same layer has to composite
+     identically in both modes and in every skin. */
+  --accent-soft: rgba(var(--accent-rgb), var(--alpha-accent-soft));
   --accent-glow: rgba(var(--accent-rgb), 0.12);
   --accent-rgb: 38, 99, 235;
   --accent-on: #ffffff;
@@ -42,7 +83,7 @@
   --control-focus-ring: 0 0 0 3px var(--accent-glow);
   --control-selected-inset: rgba(255, 255, 255, 0.14);
   --control-disabled-opacity: 0.68;
-  --control-select-bg: rgba(255, 255, 255, 0.72);
+  --control-select-bg: rgba(255, 255, 255, var(--alpha-control-select-bg));
   --control-panel-bg: var(--accent-soft);
   --control-switch-width: 40px;
   --control-switch-height: 22px;
@@ -52,12 +93,13 @@
   --control-radius: 8px;
   --control-radius-sm: 6px;
   --control-radius-lg: 12px;
-  --control-button-bg: #fff;
+  --control-button-bg: rgba(255, 255, 255, var(--alpha-control-button-bg));
   --control-input-bg: var(--control-select-bg);
+  /* Stays coupled to --line-strong so a skin's stroke colour keeps applying. */
   --control-border: var(--line-strong);
-  --control-hover-bg: rgba(136, 151, 172, 0.1);
-  --control-active-bg: rgba(136, 151, 172, 0.16);
-  --control-disabled-bg: rgba(148, 163, 184, 0.08);
+  --control-hover-bg: rgba(136, 151, 172, var(--alpha-control-hover-bg));
+  --control-active-bg: rgba(136, 151, 172, var(--alpha-control-active-bg));
+  --control-disabled-bg: rgba(148, 163, 184, var(--alpha-control-disabled-bg));
   --control-icon-color: var(--ink-muted);
   --control-icon-hover-color: var(--ink);
   --control-primary-bg: var(--accent);
@@ -67,34 +109,34 @@
   --control-popover-bg: var(--sidebar-operation-menu-bg);
   --control-tab-strip-bg: #FFFFFF;
   --control-tab-active-bg: #EEEEEE;
-  --control-tab-hover-bg: #F5F5F5;
+  --control-tab-hover-bg: rgba(136, 151, 172, var(--alpha-control-tab-hover-bg));
   --nav-hover-bg: var(--control-hover-bg);
-  --nav-selected-bg: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  --nav-selected-bg: rgba(134, 144, 156, var(--alpha-nav-selected-bg));
   --nav-selected-text: var(--ink);
   --nav-accent-selected-bg: rgba(var(--accent-rgb), 0.13);
   --overlay-radius: 12px;
-  --shell-sidebar-bg: color-mix(in srgb, var(--surface-sidebar) 88%, transparent);
-  --shell-content-bg: color-mix(in srgb, var(--surface-strong) 72%, transparent);
-  --shell-titlebar-bg: color-mix(in srgb, var(--bg-base) 94%, transparent);
+  --shell-sidebar-bg: rgba(247, 250, 252, var(--alpha-shell-sidebar-bg));
+  --shell-content-bg: rgba(255, 255, 255, var(--alpha-shell-content-bg));
+  --shell-titlebar-bg: rgba(255, 255, 255, var(--alpha-shell-titlebar-bg));
   --success: #00B42A;
   --warning: #FF7D00;
   --danger: #F53F3F;
   --info: #722ED1;
   --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
-  --sidebar-operation-menu-bg: rgba(255, 255, 255, 0.9);
+  --sidebar-operation-menu-bg: rgba(255, 255, 255, var(--alpha-sidebar-operation-menu-bg));
   --sidebar-operation-menu-text: #1d2129;
   --sidebar-operation-menu-text-soft: #4e5969;
   --sidebar-operation-menu-text-muted: #64748b;
-  --sidebar-operation-menu-border: rgba(15, 23, 42, 0.12);
-  --sidebar-operation-menu-hover: rgba(15, 23, 42, 0.07);
+  --sidebar-operation-menu-border: rgba(15, 23, 42, var(--alpha-sidebar-operation-menu-border));
+  --sidebar-operation-menu-hover: rgba(15, 23, 42, var(--alpha-sidebar-operation-menu-hover));
   --sidebar-operation-menu-divider: rgba(15, 23, 42, 0.1);
-  --sidebar-operation-menu-avatar-bg: rgba(255, 255, 255, 0.76);
+  --sidebar-operation-menu-avatar-bg: rgba(255, 255, 255, var(--alpha-sidebar-operation-menu-avatar-bg));
   --sidebar-operation-menu-shadow:
     0 18px 44px rgba(15, 23, 42, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  --modal-mask-bg: rgba(15, 23, 42, 0.18);
-  --desktop-overlay-panel-bg: rgba(255, 255, 255, 0.94);
+  --modal-mask-bg: rgba(15, 23, 42, var(--alpha-modal-mask-bg));
+  --desktop-overlay-panel-bg: #ffffff;
   --desktop-ui-bg: #ffffff;
   --desktop-ui-card: #ffffff;
   --desktop-ui-card-soft: #f4f7ff;
@@ -131,49 +173,66 @@
   color-scheme: dark;
   --bg-base: #181818;
   --bg-canvas: linear-gradient(180deg, #2c2d30 0%, #26272a 100%);
-  --surface: rgba(42, 43, 47, 0.9);
-  --surface-strong: rgba(48, 50, 54, 0.9);
-  --surface-soft: rgba(54, 56, 61, 0.9);
-  --surface-sidebar: rgba(35, 37, 40, 0.92);
+
+  /* ── alpha 模板（深色）──
+     只登记与浅色有意不同的项，其余沿用浅色模板。 */
+  --alpha-shell-content-bg: 0.7;
+  --alpha-control-button-bg: 0.2;
+  --alpha-control-hover-bg: 0.13;
+  --alpha-control-active-bg: 0.22;
+  --alpha-control-disabled-bg: 0.09;
+  --alpha-control-tab-hover-bg: 0.12;
+  --alpha-nav-selected-bg: 0.18;
+  --alpha-sidebar-operation-menu-border: 0.22;
+  --alpha-sidebar-operation-menu-hover: 0.09;
+  --alpha-sidebar-operation-menu-avatar-bg: 0.1;
+
+  --surface: rgba(42, 43, 47, var(--alpha-surface));
+  --surface-strong: rgba(48, 50, 54, var(--alpha-surface-strong));
+  --surface-soft: rgba(54, 56, 61, var(--alpha-surface-soft));
+  --surface-sidebar: rgba(35, 37, 40, var(--alpha-surface-sidebar));
   --ink: #F2F3F5;
   --ink-soft: #C8CDD5;
   --ink-muted: #959BA6;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-strong: rgba(255, 255, 255, 0.12);
+  --line: rgba(255, 255, 255, var(--alpha-line));
+  --line-strong: rgba(255, 255, 255, var(--alpha-line-strong));
   --accent: #4F88FF;
   --accent-strong: #75A5FF;
-  --accent-soft: rgba(79, 136, 255, 0.16);
   --accent-glow: rgba(var(--accent-rgb), 0.2);
   --accent-rgb: 79, 136, 255;
   --accent-on: #ffffff;
   --control-thumb-shadow: rgba(0, 0, 0, 0.24);
-  --control-select-bg: var(--surface-soft);
+  --control-select-bg: rgba(54, 56, 61, var(--alpha-control-select-bg));
   --control-panel-bg: var(--accent-soft);
-  --control-button-bg: rgba(255, 255, 255, 0.065);
-  --control-hover-bg: rgba(255, 255, 255, 0.08);
-  --control-active-bg: rgba(255, 255, 255, 0.12);
-  --control-disabled-bg: rgba(255, 255, 255, 0.04);
+  --control-button-bg: rgba(255, 255, 255, var(--alpha-control-button-bg));
+  --control-hover-bg: rgba(255, 255, 255, var(--alpha-control-hover-bg));
+  --control-active-bg: rgba(255, 255, 255, var(--alpha-control-active-bg));
+  --control-disabled-bg: rgba(255, 255, 255, var(--alpha-control-disabled-bg));
   --control-tab-strip-bg: #181818;
   --control-tab-active-bg: #303030;
-  --control-tab-hover-bg: #242424;
+  --control-tab-hover-bg: rgba(255, 255, 255, var(--alpha-control-tab-hover-bg));
+  --nav-selected-bg: rgba(149, 155, 166, var(--alpha-nav-selected-bg));
+  --shell-sidebar-bg: rgba(35, 37, 40, var(--alpha-shell-sidebar-bg));
+  --shell-content-bg: rgba(48, 50, 54, var(--alpha-shell-content-bg));
+  --shell-titlebar-bg: rgba(24, 24, 24, var(--alpha-shell-titlebar-bg));
   --success: #27C346;
   --warning: #FF9A2E;
   --danger: #F76560;
   --info: #A55EEA;
   --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   --panel-shadow-hover: 0 12px 30px rgba(0, 0, 0, 0.24);
-  --sidebar-operation-menu-bg: rgba(31, 35, 42, 0.9);
+  --sidebar-operation-menu-bg: rgba(31, 35, 42, var(--alpha-sidebar-operation-menu-bg));
   --sidebar-operation-menu-text: #f2f3f5;
   --sidebar-operation-menu-text-soft: #c8cdd5;
   --sidebar-operation-menu-text-muted: #9aa4b2;
-  --sidebar-operation-menu-border: rgba(255, 255, 255, 0.11);
-  --sidebar-operation-menu-hover: rgba(255, 255, 255, 0.09);
+  --sidebar-operation-menu-border: rgba(255, 255, 255, var(--alpha-sidebar-operation-menu-border));
+  --sidebar-operation-menu-hover: rgba(255, 255, 255, var(--alpha-sidebar-operation-menu-hover));
   --sidebar-operation-menu-divider: rgba(255, 255, 255, 0.1);
-  --sidebar-operation-menu-avatar-bg: rgba(255, 255, 255, 0.1);
+  --sidebar-operation-menu-avatar-bg: rgba(255, 255, 255, var(--alpha-sidebar-operation-menu-avatar-bg));
   --sidebar-operation-menu-shadow:
     0 20px 44px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --modal-mask-bg: rgba(0, 0, 0, 0.18);
+  --modal-mask-bg: rgba(0, 0, 0, var(--alpha-modal-mask-bg));
   --desktop-overlay-panel-bg: #2D2D2D;
   --desktop-ui-bg: #181818;
   --desktop-ui-card: #181818;
