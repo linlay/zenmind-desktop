@@ -4,6 +4,7 @@ import { getDesktopConfigRoot, getRuntimeDataRoot } from "../../infrastructure/f
 import type { DesktopSkinResult, DesktopSkinView, DesktopSkinSelectionOptions, InstalledDesktopSkinId } from "../../../shared/desktop-appearance";
 import { BackgroundImageError, normalizeBackgroundImage } from "./appearance-images";
 import { createDesktopSkinStore } from "./appearance-store";
+import { createAppearanceRuntime, type AppearanceRuntime } from "./appearance-runtime";
 
 import { SkinPackageError } from "../../../shared/desktop-skin-package";
 
@@ -20,57 +21,59 @@ export function registerAppearanceIpcHandlers(ipcMain: IpcMain, options: {
   app: App;
   platform?: NodeJS.Platform;
   getMainWindow: () => BrowserWindow | null;
+  runtime?: AppearanceRuntime;
 }) {
   const platform = options.platform ?? process.platform;
   // Paths inherit the explicit macOS/Windows data-root policy. This module owns
   // only its leaf directory; service config and original images are untouched.
-  const store = createDesktopSkinStore({
-    configRoot: getDesktopConfigRoot(options.app, platform),
-    assetsRoot: path.join(getRuntimeDataRoot(options.app, platform), "desktop", "appearance"),
-    normalizeImage: (data) => normalizeBackgroundImage(data, (buffer) => nativeImage.createFromBuffer(buffer)),
-    makePreview: (data) => nativeImage.createFromBuffer(data).resize({ width: 192, height: 120, quality: "good" }).toPNG()
-  });
-  let operations: Promise<unknown> = Promise.resolve();
+  const runtime = options.runtime ?? createDesktopAppearanceRuntime(options.app, platform);
   function assertOwner(event: IpcMainInvokeEvent) {
     const owner = options.getMainWindow();
     if (!owner || owner.isDestroyed() || owner.webContents.isDestroyed() || event.sender !== owner.webContents ||
       event.senderFrame !== owner.webContents.mainFrame) throw new Error("Desktop appearance requires the main window.");
     return owner;
   }
-  function register(channel: string, operation: (event: IpcMainInvokeEvent, input: unknown) => Promise<{ settings: DesktopSkinView; cancelled?: boolean; importedSkinId?: InstalledDesktopSkinId }> | { settings: DesktopSkinView; cancelled?: boolean; importedSkinId?: InstalledDesktopSkinId }) {
+  function register(channel: string, operation: (event: IpcMainInvokeEvent, input: unknown, store: ReturnType<typeof createDesktopSkinStore>) => Promise<{ settings: DesktopSkinView; cancelled?: boolean; importedSkinId?: InstalledDesktopSkinId }> | { settings: DesktopSkinView; cancelled?: boolean; importedSkinId?: InstalledDesktopSkinId }) {
     ipcMain.handle(channel, (event, input): Promise<DesktopSkinResult> => {
       assertOwner(event);
-      const result = operations.then(async (): Promise<DesktopSkinResult> => {
+      return runtime.run(async (store): Promise<DesktopSkinResult> => {
         assertOwner(event);
-        try { return { ok: true, ...await operation(event, input) }; }
+        try { return { ok: true, ...await operation(event, input, store) }; }
         catch (error) {
           return { ok: false, error: error instanceof BackgroundImageError || error instanceof SkinPackageError ? error.code : "storageFailed" };
         }
-      });
-      operations = result.catch(() => undefined);
-      return result;
+      }, result => channel !== "settings.getDesktopSkin" && result.ok && !result.cancelled);
     });
   }
-  register("settings.getDesktopSkin", () => ({ settings: store.read() }));
-  register("settings.setDesktopSkin", (_event, input) => {
+  register("settings.getDesktopSkin", (_event, _input, store) => ({ settings: store.read() }));
+  register("settings.setDesktopSkin", (_event, input, store) => {
     const request = typeof input === "object" && input ? input as { id?: unknown; options?: DesktopSkinSelectionOptions } : { id: input };
     const selection = request.options;
     if (selection !== undefined && (!selection || typeof selection !== "object" || Array.isArray(selection) ||
       (selection.keepBackground !== undefined && typeof selection.keepBackground !== "boolean"))) throw new Error("Invalid skin selection.");
     return { settings: store.setSkin(request.id, selection) };
   });
-  register("settings.removeDesktopSkinPackage", (_event, id) => ({ settings: store.removePackage(id) }));
-  register("settings.importDesktopSkinPackage", async (event) => {
+  register("settings.removeDesktopSkinPackage", (_event, id, store) => ({ settings: store.removePackage(id) }));
+  register("settings.importDesktopSkinPackage", async (event, _input, store) => {
     const selected = await dialog.showOpenDialog(assertOwner(event), getBackgroundDialogOptions(platform, true));
     assertOwner(event);
     if (selected.canceled || !selected.filePaths[0]) return { settings: store.read(), cancelled: true };
     return store.importPackage(selected.filePaths[0], () => { assertOwner(event); });
   });
-  register("settings.resetDesktopBackground", () => ({ settings: store.resetBackground() }));
-  register("settings.importDesktopBackground", async (event) => {
+  register("settings.resetDesktopBackground", (_event, _input, store) => ({ settings: store.resetBackground() }));
+  register("settings.importDesktopBackground", async (event, _input, store) => {
     const selected = await dialog.showOpenDialog(assertOwner(event), getBackgroundDialogOptions(platform));
     assertOwner(event);
     if (selected.canceled || !selected.filePaths[0]) return { settings: store.read(), cancelled: true };
     return { settings: store.importFile(selected.filePaths[0]) };
   });
+}
+
+export function createDesktopAppearanceRuntime(app: App, platform: NodeJS.Platform, onChanged?: () => void) {
+  return createAppearanceRuntime(() => createDesktopSkinStore({
+    configRoot: getDesktopConfigRoot(app, platform),
+    assetsRoot: path.join(getRuntimeDataRoot(app, platform), "desktop", "appearance"),
+    normalizeImage: (data) => normalizeBackgroundImage(data, (buffer) => nativeImage.createFromBuffer(buffer)),
+    makePreview: (data) => nativeImage.createFromBuffer(data).resize({ width: 192, height: 120, quality: "good" }).toPNG()
+  }), onChanged);
 }

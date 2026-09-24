@@ -1,3 +1,4 @@
+import type { DesktopAppearancePort } from "./appearance-port";
 import type { SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type { DesktopAppInfo, DesktopPageContextSnapshot } from "../../../shared/contracts";
@@ -17,6 +18,7 @@ export interface DesktopActionRuntimeContext {
 }
 
 export interface DesktopActionContextDependencies {
+  appearanceRuntime?: DesktopAppearancePort;
   assistantBridge: unknown;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
   getAssistantSettings: (app: App) => { desktopHelperAgentKey: string };
@@ -54,6 +56,7 @@ export function createDesktopActionOptions(
 ): any {
   return {
     app: context.app,
+    appearanceRuntime: dependencies.appearanceRuntime,
     platform: context.platform,
     assistantBridge: dependencies.assistantBridge as any,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,

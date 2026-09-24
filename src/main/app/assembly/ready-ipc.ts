@@ -1,3 +1,4 @@
+import type { AppearanceRuntime } from "../../modules/settings";
 import type { BrowserWindow } from "electron";
 import {
   app,
@@ -47,6 +48,7 @@ import {
 import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { registerMainIpcHandlers } from "../module-registry";
 export interface ReadyIpcDependencies {
+  appearanceRuntime: AppearanceRuntime;
   readonly setStartupPhase: (phase: StartupPhase) => void;
   readonly startupRestoreController: ReturnType<typeof createStartupRestoreController>;
   readonly startupPlatform: NodeJS.Platform;
@@ -99,6 +101,7 @@ export interface ReadyIpcDependencies {
 }
 export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
   registerMainIpcHandlers({
+    appearanceRuntime: dependencies.appearanceRuntime,
     app,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
     servicesFacade: dependencies.servicesFacade,

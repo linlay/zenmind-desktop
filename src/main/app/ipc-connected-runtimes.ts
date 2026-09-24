@@ -180,7 +180,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     dismissMessage: (input: any) => petRuntime.dismissMessage(assistantBridge, input)
   });
 
-  registerAppearanceIpcHandlers(ipcMain, { app, platform: options.platform, getMainWindow: options.getMainWindow });
+  registerAppearanceIpcHandlers(ipcMain, { runtime: options.appearanceRuntime, app, platform: options.platform, getMainWindow: options.getMainWindow });
 
   registerSettingsIpcHandlers(ipcMain, {
     app,

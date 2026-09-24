@@ -1,3 +1,4 @@
+import type { DesktopAppearancePort } from "./appearance-port";
 import { type App, type BrowserWindow, type WebContents, type OpenDialogOptions, type SaveDialogOptions } from "electron";
 import {
   type AgentAuthIssueResult,
@@ -20,6 +21,7 @@ import { type KanbanRuntime } from "../kanban";
 import { type DesktopActionSource, type DesktopActionError } from "../../../shared/desktop-actions";
 
 export type DesktopActionBridgeOptions = {
+  appearanceRuntime?: DesktopAppearancePort;
   app: App;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
   getAssistantSettings: (app: App) => { desktopHelperAgentKey: string };

@@ -44,7 +44,7 @@ import {
   getResponsiveServiceState,
   type ServicesFacade
 } from "../../modules/services";
-import { readHelpSettings } from "../../modules/settings";
+import { type AppearanceRuntime, readHelpSettings } from "../../modules/settings";
 import { type AppShellRuntime } from "../../modules/shell";
 import {
   configureTunnelHubRegistrationController,
@@ -59,6 +59,7 @@ import { t } from "../../support/i18n/main-i18n";
 import { createLogsRuntime } from "../../support/logging/runtime";
 import { safeConsoleError } from "../../support/logging/safe-console";
 export interface AssembleAssistantIntegrationDependencies {
+  readonly appearanceRuntime: AppearanceRuntime;
   readonly servicesFacade: ServicesFacade;
   readonly issueAgentAccessToken: (
     app: Parameters<typeof issueAgentAccessToken>[0],
@@ -85,8 +86,9 @@ export function assembleAssistantIntegration(dependencies: AssembleAssistantInte
       )
     }),
     stopDesktopWsServer,
-    createDesktopActionOptions: (context, dependencies) => createDesktopActionOptions(context, {
-      ...dependencies,
+    createDesktopActionOptions: (context, actionDependencies) => createDesktopActionOptions(context, {
+      ...actionDependencies,
+      appearanceRuntime: dependencies.appearanceRuntime,
       getHelpUrl: () => readHelpSettings(context.app, context.platform).url,
       issueAgentAccessToken: dependencies.issueAgentAccessToken,
       getAssistantSettings,

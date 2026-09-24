@@ -8,6 +8,7 @@ import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile
 import { bundledEnvZipExists, configureRuntimeEnvironmentTranslator, resolveRuntimeRoot, runtimeEnvExists, runtimeEnvNeedsBundledSeedRefresh, runtimeRootExists, shouldPromptEnvRootConflict, shouldRequireEnvZipImport, type EnvRootConflictDecision } from "../infrastructure/filesystem/runtime-environment";
 import { desktopDataRootExists, getDesktopConfigRoot } from "../infrastructure/filesystem/user-paths";
 import { RealtimeBroker } from "../modules/agent-platform";
+import { createDesktopAppearanceRuntime } from "../modules/settings";
 import { createArtifactRuntime } from "../modules/artifacts";
 import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
@@ -83,7 +84,9 @@ export function createMainProcessRuntime() {
     get websFacade() { return websFacade; }
   });
   websFacade = createWebsFacade(websIntegrationPorts);
+  const appearanceRuntime = createDesktopAppearanceRuntime(app, startupPlatform, () => settingsRuntime.emitDesktopConfigChanged("skin"));
   const assistantIntegrationPorts = assistant.assembleAssistantIntegration({
+    appearanceRuntime,
     get servicesFacade() { return servicesFacade; },
     get issueAgentAccessToken() { return identityTokenProvider; },
     get websFacade() { return websFacade; }
@@ -769,6 +772,7 @@ export function createMainProcessRuntime() {
         get notifyServicesChanged() { return notifyServicesChanged; },
         get startNonCoreDesktopRuntime() { return startNonCoreDesktopRuntime; },
         get settingsRuntime() { return settingsRuntime; },
+        appearanceRuntime,
         get buildApplicationMenu() { return buildApplicationMenu; },
         get captureDesktopScreenshotForWebview() { return captureDesktopScreenshotForWebview; },
         get reportRendererDiagnostic() { return reportRendererDiagnostic; },
