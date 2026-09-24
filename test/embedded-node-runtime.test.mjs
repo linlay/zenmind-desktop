@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
-const {prepareEmbeddedNodeRuntime,embeddedNodeLaunchers}=require('../dist-electron/main/modules/services/manager/embedded-node-runtime.js');
+const {prepareEmbeddedNodeRuntime,embeddedNodeLaunchers,embeddedNodeExecutable}=require('../dist-electron/main/modules/services/manager/embedded-node-runtime.js');
 
 function fixture(t){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"desktop-node 中文 space's-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -199,6 +199,12 @@ test('Desktop prepares once, command assembly only reads, and failed preparation
  const electronDescriptor=Object.getOwnPropertyDescriptor(process.versions,'electron');
  Object.defineProperty(process.versions,'electron',{value:'test',configurable:true});
  t.after(()=>{if(electronDescriptor)Object.defineProperty(process.versions,'electron',electronDescriptor);else delete process.versions.electron;});
+ if(process.platform==='darwin'){
+  const bundle=macHelperFixture(root);
+  const original=process.execPath;
+  Object.defineProperty(process,'execPath',{value:bundle.main,configurable:true});
+  t.after(()=>Object.defineProperty(process,'execPath',{value:original,configurable:true}));
+ }
  const app={isPackaged:false,getAppPath:()=>root,getPath:name=>path.join(root,name)};
  const resources=path.join(root,'build/resources/node-runtime');
  fs.mkdirSync(path.dirname(resources),{recursive:true});
@@ -222,4 +228,52 @@ test('Desktop prepares once, command assembly only reads, and failed preparation
  await runtimeModule.ensureEmbeddedNodeRuntime(app);
  assert.deepEqual(runtimeModule.getPreparedEmbeddedNodeStartEnv(app),env);
  assert.equal(copies,1);
+});
+
+function macHelperFixture(root, helperName='Electron Helper') {
+ const contents=path.join(root,"品牌 App's.app/Contents");
+ const main=path.join(contents,'MacOS/品牌 Desktop');
+ const helperContents=path.join(contents,'Frameworks',helperName+'.app/Contents');
+ const helper=path.join(helperContents,'MacOS',helperName);
+ fs.mkdirSync(path.dirname(main),{recursive:true});fs.writeFileSync(main,'main');
+ fs.mkdirSync(path.dirname(helper),{recursive:true});
+ const quoted="'"+process.execPath.replaceAll("'", "'\"'\"'")+"'";
+ fs.writeFileSync(helper,'#!/bin/sh\nexec '+quoted+' "$@"\n',{mode:0o755});
+ const plist=path.join(helperContents,'Info.plist');
+ fs.writeFileSync(plist,JSON.stringify({CFBundleExecutable:helperName,LSUIElement:true}));
+ fs.mkdirSync(path.join(contents,'Frameworks',helperName+' (Renderer).app'),{recursive:true});
+ return {main,helper,plist};
+}
+
+test('macOS resolves branded and unrenamed development Helpers and rejects foreground or missing helpers', {skip:process.platform!=='darwin'}, async t=>{
+ for(const name of ['Electron Helper','CuteJ Helper','中文 Helper']){
+  const {root}=fixture(t);const bundle=macHelperFixture(root,name);
+  assert.equal(await embeddedNodeExecutable(bundle.main,'darwin'),bundle.helper);
+  fs.writeFileSync(bundle.plist,JSON.stringify({CFBundleExecutable:name,LSUIElement:false}));
+  await assert.rejects(embeddedNodeExecutable(bundle.main,'darwin'),/LSUIElement/);
+  fs.writeFileSync(bundle.plist,JSON.stringify({CFBundleExecutable:name,LSUIElement:true}));
+  fs.unlinkSync(bundle.helper);
+  await assert.rejects(embeddedNodeExecutable(bundle.main,'darwin'),/ENOENT/);
+ }
+ await assert.rejects(embeddedNodeExecutable('/usr/bin/node','darwin'),/app bundle/);
+});
+
+test('Windows and Linux keep their existing Electron executable', async()=>{
+ for(const [platform,exe] of [['win32','C:\\Program Files\\CuteJ\\CuteJ.exe'],['linux','/opt/CuteJ/cutej']]){
+  assert.equal(await embeddedNodeExecutable(exe,platform),exe);
+ }
+});
+
+test('switching from main to Helper replaces the stable launcher and preserves the retired runtime', {skip:process.platform!=='darwin'}, async t=>{
+ const {root,options}=fixture(t);
+ await prepareEmbeddedNodeRuntime(options);
+ const bundle=macHelperFixture(root,'CuteJ Helper');
+ const executable=await embeddedNodeExecutable(bundle.main,'darwin');
+ const runtime=await prepareEmbeddedNodeRuntime({...options,executable});
+ assert.equal(JSON.parse(fs.readFileSync(path.join(runtime.binDir,'runtime.json'))).executable,executable);
+ const output=spawnSync(runtime.node,['-p','process.env.ELECTRON_RUN_AS_NODE'],{encoding:'utf8'});
+ assert.equal(output.status,0,output.stderr);assert.equal(output.stdout.trim(),'1');
+ const retired=fs.readdirSync(options.stateRoot).filter(n=>n.startsWith('.node-retired-'));
+ assert.equal(retired.length,1);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(options.stateRoot,retired[0],'bin/runtime.json'))).executable,options.executable);
 });

@@ -23,6 +23,35 @@ export interface EmbeddedNodeRuntimeOptions {
 function quoteShell(value: string) { return `'${value.replace(/'/g, `'"'"'`)}'`; }
 
 const execFileAsync = promisify(execFile);
+
+/** macOS Node children must not inherit the main app's foreground Dock identity. */
+export async function embeddedNodeExecutable(executable: string, platform: NodeJS.Platform): Promise<string> {
+  if (platform === "win32") return executable;
+  if (platform !== "darwin") return executable;
+  const contents = path.dirname(path.dirname(executable));
+  if (path.basename(path.dirname(executable)) !== "MacOS" || path.basename(contents) !== "Contents") {
+    throw new Error("Desktop embedded Node requires a macOS Electron app bundle");
+  }
+  const frameworks = path.join(contents, "Frameworks");
+  // Branded dev shells rename only the main executable; their helper keeps the
+  // Electron name. Select the generic helper, excluding Renderer/GPU variants.
+  const helpers = (await fs.promises.readdir(frameworks, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory() && entry.name.endsWith(" Helper.app"));
+  if (helpers.length !== 1) throw new Error("Desktop embedded Node requires one generic Electron Helper");
+  const helperContents = path.join(frameworks, helpers[0].name, "Contents");
+  const result = await execFileAsync("/usr/bin/plutil", ["-convert", "json", "-o", "-", path.join(helperContents, "Info.plist")], {
+    encoding: "utf8", timeout: 10000
+  });
+  const info = JSON.parse(result.stdout);
+  const name = info.CFBundleExecutable;
+  if (info.LSUIElement !== true || typeof name !== "string" || !name || name === "." || name === ".." || path.basename(name) !== name) {
+    throw new Error("Desktop embedded Node requires an LSUIElement Electron Helper executable");
+  }
+  const helper = path.join(helperContents, "MacOS", name);
+  await fs.promises.access(helper, fs.constants.X_OK);
+  return helper;
+}
+
 async function probeNode(executable: string) {
   const result = await execFileAsync(executable, ["-p", "JSON.stringify({node:process.versions.node,arch:process.arch})"], {
     encoding: "utf8", timeout: 10000, windowsHide: true
@@ -193,11 +222,11 @@ export function ensureEmbeddedNodeRuntime(app: App): Promise<void> {
   if (!process.versions.electron) return Promise.resolve();
   const pending = appPreparations.get(app);
   if (pending) return pending;
-  const task = prepareEmbeddedNodeRuntime({
+  const task = embeddedNodeExecutable(process.execPath, process.platform).then(executable => prepareEmbeddedNodeRuntime({
     stateRoot: path.join(getDesktopStateRoot(app), "node-runtime"), binDir: path.join(getDesktopRoot(app), "bin"),
-    resourcesRoot: embeddedNodeResourcesRoot(app), executable: process.execPath,
+    resourcesRoot: embeddedNodeResourcesRoot(app), executable,
     nodeVersion: process.versions.node, platform: process.platform, arch: process.arch
-  }).then(runtime => { appRuntimes.set(app, runtime); }).catch(error => {
+  })).then(runtime => { appRuntimes.set(app, runtime); }).catch(error => {
     appPreparations.delete(app);
     throw error;
   });
