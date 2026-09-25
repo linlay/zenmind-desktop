@@ -3540,6 +3540,7 @@ export const enUSMessages = {
   "skillInstaller.packageRequiredSkillMissing": "Skill package is missing required skills: {ids}",
   "skillInstaller.packageSkillIdentityMismatch": "Packaged skill {id} has a mismatched id or version.",
   "skillInstaller.packageEmpty": "Skill package does not contain any skills.",
+  "market.skill.packageBackupSaved": "Previous skills were backed up to: {path}",
   "skillInstaller.packageInstalled": "Installed {count} skills from the package. You can select them in a new conversation.",
   "skillInstaller.packageUninstalled": "Uninstalled {count} skills from the package.",
   "skillInstaller.unsupportedPackageType": "Skill packages only support .zip files or SKILL.md.",

@@ -3540,6 +3540,7 @@ export const zhCNMessages = {
   "skillInstaller.packageRequiredSkillMissing": "Skill 包缺少必选技能：{ids}",
   "skillInstaller.packageSkillIdentityMismatch": "Skill 包中的技能 {id} 标识或版本不匹配。",
   "skillInstaller.packageEmpty": "Skill 包不包含任何技能。",
+  "market.skill.packageBackupSaved": "原技能已备份至：{path}",
   "skillInstaller.packageInstalled": "已从 Skill 包安装 {count} 个技能，可在新对话中选择使用。",
   "skillInstaller.packageUninstalled": "已卸载 Skill 包中的 {count} 个技能。",
   "skillInstaller.unsupportedPackageType": "Skill 包仅支持 .zip 或 SKILL.md 文件。",

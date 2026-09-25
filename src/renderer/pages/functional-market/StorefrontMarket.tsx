@@ -861,7 +861,9 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
         : entry;
       setMarketResult((current) => ({ ...current, items: current.items.map(applyCompletedState) }));
       setSelectedDetailItem((current) => current ? applyCompletedState(current) : current);
-      setFeedback(item.type === "website-app" && result.type === "website-app" && actionName === "uninstall"
+      setFeedback(result.skillPackageBackupPath
+        ? `${result.message} ${t("market.skill.packageBackupSaved", { path: result.skillPackageBackupPath })}`
+        : item.type === "website-app" && result.type === "website-app" && actionName === "uninstall"
         ? t("market.websiteApp.uninstalled", { name: item.name })
         : item.type === "mcp" && actionName !== "uninstall"
         ? `${result.message} ${t("market.mcp.configureInAgentNotice")}`

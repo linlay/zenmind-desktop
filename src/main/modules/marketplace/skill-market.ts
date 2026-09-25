@@ -43,6 +43,7 @@ type SkillMarketPlatformCall = (
 ) => Promise<unknown>;
 
 type PlatformSkillPackageResponse = {
+  backupPath?: string;
   id?: string;
   version?: string;
   skills?: Array<{ id?: string; version?: string }>;
@@ -294,7 +295,8 @@ async function installSkillPackageMarketItem(
     itemId: item.id,
     type: "skill",
     state: "installed",
-    message: t("skillInstaller.packageInstalled", { count: installed.skills?.length ?? 0 })
+    message: t("skillInstaller.packageInstalled", { count: installed.skills?.length ?? 0 }),
+    skillPackageBackupPath: installed.backupPath
   };
 }
 

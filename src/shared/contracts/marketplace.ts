@@ -230,6 +230,7 @@ export interface MarketFavoriteResult {
 }
 
 export interface MarketCommandResult {
+  skillPackageBackupPath?: string;
   canceled?: boolean;
   connectorId?: string;
   ok: boolean;
