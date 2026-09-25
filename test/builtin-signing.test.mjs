@@ -5,12 +5,51 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { signDarwinServiceDirectory, computeAssetSignature } from "../scripts/lib/builtin-assets.mjs";
+import { signDarwinServiceDirectory, signMachOFile, computeAssetSignature } from "../scripts/lib/builtin-assets.mjs";
 
 const require = createRequire(import.meta.url);
 const { sign, prepareDarwinAppServices } = require("../scripts/sign-mac-app.js");
 const { runPlatformBuiltinsManifest } = require("../scripts/lib/platform-builtins.js");
 const { copyDarwinServiceResources } = require("../scripts/lib/mac-service-resources.js");
+
+test("timestamp errors retry with a bound; other signing and verification errors fail immediately", (t) => {
+  const saved = [process.env.SKIP_NOTARIZE, process.env.DESKTOP_SKIP_MAC_TIMESTAMP];
+  process.env.SKIP_NOTARIZE = "false";
+  process.env.DESKTOP_SKIP_MAC_TIMESTAMP = "false";
+  t.after(() => {
+    for (const [index, key] of ["SKIP_NOTARIZE", "DESKTOP_SKIP_MAC_TIMESTAMP"].entries()) {
+      if (saved[index] === undefined) delete process.env[key];
+      else process.env[key] = saved[index];
+    }
+  });
+  for (const scenario of ["recover", "exhaust", "certificate", "verify"]) {
+    let attempts = 0;
+    let verified = 0;
+    const waits = [];
+    const invoke = () => signMachOFile("binary", "identity", {
+      wait: (ms) => waits.push(ms),
+      run: (_cmd, args) => {
+        if (args.includes("--verify")) {
+          verified++;
+          if (scenario === "verify") throw new Error("verification failed");
+          return "";
+        }
+        assert.ok(args.includes("--timestamp"));
+        attempts++;
+        if (scenario === "certificate") throw new Error("invalid certificate");
+        if (scenario === "exhaust" || (scenario === "recover" && attempts < 3)) {
+          throw new Error("A timestamp was expected but was not found.");
+        }
+        return "";
+      }
+    });
+    if (scenario === "recover") invoke();
+    else assert.throws(invoke, /timestamp|certificate|verification/);
+    assert.equal(attempts, ["recover", "exhaust"].includes(scenario) ? 3 : 1);
+    assert.equal(verified, ["recover", "verify"].includes(scenario) ? 1 : 0);
+    assert.deepEqual(waits, attempts === 3 ? [1000, 2000] : []);
+  }
+});
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-builtin-signing-"));
@@ -48,10 +87,15 @@ test("Darwin packaging preserves empty directories and modes before signing", (t
 test("service signing verifies input, signs every Mach-O, then delegates refresh and verification", (t) => {
   const root = fixture(t);
   const events = [];
+  let signingRoot;
   signDarwinServiceDirectory(root, { id: "agent-platform" }, "identity", {
     keychain: "keychain",
     runManifest: (dir, action, expected) => {
-      assert.equal(dir, root);
+      if (events.length === 0) assert.equal(dir, root);
+      else {
+        assert.notEqual(dir, root);
+        signingRoot = dir;
+      }
       events.push(action);
       if (action === "refresh-after-signing") assert.equal(expected, "receipt");
       return { manifestSha256: "receipt" };
@@ -59,11 +103,12 @@ test("service signing verifies input, signs every Mach-O, then delegates refresh
     signFile: (file, identity, options) => {
       assert.equal(identity, "identity");
       assert.equal(options.keychain, "keychain");
-      events.push(`sign:${path.relative(root, file).split(path.sep).join("/")}`);
+      events.push(`sign:${path.relative(signingRoot, file).split(path.sep).join("/")}`);
     }
   });
   assert.equal(events[0], "verify");
-  assert.deepEqual(events.slice(1, -2).sort(), ["sign:bin/rg", "sign:connectors/builtin.dbx/bin/dbx"]);
+  assert.equal(events[1], "verify");
+  assert.deepEqual(events.slice(2, -2).sort(), ["sign:bin/rg", "sign:connectors/builtin.dbx/bin/dbx"]);
   assert.deepEqual(events.slice(-2), ["refresh-after-signing", "verify"]);
 });
 
@@ -78,7 +123,45 @@ test("invalid input or signing failure never gets a refreshed manifest", (t) => 
       },
       signFile: () => { events.push("sign"); throw new Error("codesign failed"); }
     }), /corrupt original|codesign failed/u);
-    assert.deepEqual(events, failure === "verify" ? ["verify"] : ["verify", "sign"]);
+    assert.deepEqual(events, failure === "verify" ? ["verify"] : ["verify", "verify", "sign"]);
+  }
+});
+
+test("failed signing, manifest refresh or final verification preserves original bytes for retry", (t) => {
+  for (const failure of ["sign", "refresh-after-signing", "final-verify"]) {
+    const root = fixture(t);
+    fs.writeFileSync(path.join(root, "builtins.manifest.json"), "original");
+    fs.mkdirSync(path.join(root, "empty"));
+    fs.symlinkSync("bin/rg", path.join(root, "rg-link"));
+    fs.chmodSync(path.join(root, "bin/rg"), 0o755);
+    const before = computeAssetSignature(root);
+    let refreshed = false;
+    const runManifest = (dir, action) => {
+      if (action === "refresh-after-signing") {
+        refreshed = true;
+        fs.writeFileSync(path.join(dir, "builtins.manifest.json"), "signed");
+      }
+      if (action === failure || (failure === "final-verify" && refreshed && action === "verify")) {
+        throw new Error("injected failure");
+      }
+      return { manifestSha256: "receipt" };
+    };
+    assert.throws(() => signDarwinServiceDirectory(root, { id: "agent-platform" }, "identity", {
+      runManifest,
+      signFile: (file) => {
+        fs.appendFileSync(file, "changed before failure");
+        if (failure === "sign") throw new Error("injected failure");
+      }
+    }), /injected failure/u);
+    assert.equal(computeAssetSignature(root), before);
+    signDarwinServiceDirectory(root, { id: "agent-platform" }, "identity", {
+      runManifest: () => ({ manifestSha256: "receipt" }),
+      signFile: (file) => fs.appendFileSync(file, "signed")
+    });
+    assert.notEqual(computeAssetSignature(root), before);
+    assert.equal(fs.readlinkSync(path.join(root, "rg-link")), "bin/rg");
+    assert.equal(fs.statSync(path.join(root, "empty")).isDirectory(), true);
+    assert.equal(fs.statSync(path.join(root, "bin/rg")).mode & 0o777, 0o755);
   }
 });
 

@@ -337,8 +337,12 @@ function listMachOFiles(rootDir) {
   });
 }
 
-function signMachOFile(filePath, identity, { keychain } = {}) {
-  execFileSync("codesign", [
+export function signMachOFile(filePath, identity, {
+  keychain,
+  run = execFileSync,
+  wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+} = {}) {
+  const args = [
     "--force",
     ...(shouldSkipMacTimestamp() ? [] : ["--timestamp"]),
     "--options",
@@ -347,8 +351,23 @@ function signMachOFile(filePath, identity, { keychain } = {}) {
     identity,
     ...(keychain ? ["--keychain", keychain] : []),
     filePath
-  ], { stdio: "inherit" });
-  execFileSync("codesign", ["--verify", "--strict", "--verbose=2", filePath], { stdio: "inherit" });
+  ];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const output = run("codesign", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      if (output) process.stdout.write(output);
+      break;
+    } catch (error) {
+      const detail = String(error.stderr || error.message || error);
+      if (error.stderr) process.stderr.write(String(error.stderr));
+      const timestampFailure = /timestamp/i.test(detail) &&
+        /expected but was not found|not available|unavailable|could not|unable|timed out|timeout|failed/i.test(detail);
+      if (!args.includes("--timestamp") || !timestampFailure || attempt === 3) throw error;
+      console.warn(`[mac-service-sign] Timestamp failed; retry ${attempt}/2: ${filePath}`);
+      wait(attempt * 1000);
+    }
+  }
+  run("codesign", ["--verify", "--strict", "--verbose=2", filePath], { stdio: "inherit" });
 }
 
 function extractArchiveToBundleDirectory(archivePath, targetDir, service) {
@@ -399,18 +418,40 @@ export function signDarwinServiceDirectory(directoryPath, service, identity, {
   const receipt = service.id === "agent-platform"
     ? runManifest(directoryPath, "verify")
     : null;
-  const machOFiles = listMachOFiles(directoryPath);
-  if (machOFiles.length === 0) {
+  if (listMachOFiles(directoryPath).length === 0) {
     return;
   }
 
-  console.log(`[mac-service-sign] Signing ${machOFiles.length} Mach-O file(s) in ${service.id}...`);
-  for (const filePath of machOFiles) {
-    signFile(filePath, identity, { keychain });
-  }
-  if (receipt) {
-    runManifest(directoryPath, "refresh-after-signing", receipt.manifestSha256);
-    runManifest(directoryPath, "verify");
+  // codesign can change bytes before failing (for example, when its timestamp
+  // request fails). Work on a sibling copy so a retry still has verified input.
+  const transaction = fs.mkdtempSync(path.join(path.dirname(directoryPath), ".service-sign-"));
+  const staged = path.join(transaction, "staged");
+  const backup = path.join(transaction, "original");
+  let keepBackup = false;
+  try {
+    fs.cpSync(directoryPath, staged, { recursive: true, verbatimSymlinks: true });
+    if (receipt) runManifest(staged, "verify");
+    const machOFiles = listMachOFiles(staged);
+    console.log(`[mac-service-sign] Signing ${machOFiles.length} Mach-O file(s) in ${service.id}...`);
+    for (const filePath of machOFiles) {
+      signFile(filePath, identity, { keychain });
+    }
+    if (receipt) {
+      runManifest(staged, "refresh-after-signing", receipt.manifestSha256);
+      runManifest(staged, "verify");
+    }
+    fs.renameSync(directoryPath, backup);
+    try {
+      fs.renameSync(staged, directoryPath);
+    } catch (error) {
+      keepBackup = true;
+      fs.renameSync(backup, directoryPath);
+      keepBackup = false;
+      throw error;
+    }
+  } finally {
+    // If rollback itself fails, retain the original bytes for recovery.
+    if (!keepBackup) fs.rmSync(transaction, { recursive: true, force: true });
   }
 }
 
