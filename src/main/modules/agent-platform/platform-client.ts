@@ -1,6 +1,6 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, ServiceId, ServiceState } from "../../../shared/contracts";
-import { t } from "../../support/i18n/main-i18n";
+import { getMainLocale, t } from "../../support/i18n/main-i18n";
 import { AGENT_PLATFORM_SERVICE_ID } from "./bridge-contracts";
 import { createApiUrl } from "./bridge-values";
 import { readErrorText, unwrapApiResponse } from "./platform-http-response";
@@ -70,6 +70,7 @@ export class PlatformClient {
   jsonHeaders(token: string, extra: Record<string, string> = {}) {
     return {
       Accept: "application/json",
+      "X-Locale": getMainLocale(),
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
       ...extra

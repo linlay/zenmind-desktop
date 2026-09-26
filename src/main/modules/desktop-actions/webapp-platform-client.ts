@@ -1,3 +1,4 @@
+import { getMainLocale } from "../../support/i18n/main-i18n";
 import { net } from "electron";
 import { type DesktopActionBridgeOptions } from "./action-contracts";
 
@@ -18,7 +19,7 @@ export async function platform(options: DesktopActionBridgeOptions) {
 }
 export async function request(baseUrl: string, token: string, path: string, method: string, body?: unknown, binary = false, signal?: AbortSignal): Promise<any> {
   const response = await net.fetch(new URL(path, baseUrl).href, {
-    method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    method, headers: { "X-Locale": getMainLocale(), Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     credentials: "omit", redirect: "error", cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(35_000)]) : AbortSignal.timeout(35_000)
   });

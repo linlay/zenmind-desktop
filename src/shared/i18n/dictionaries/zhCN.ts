@@ -2045,6 +2045,7 @@ export const zhCNMessages = {
   "market.storefront.detail.id": "组件 ID",
   "market.storefront.detail.type": "类型",
   "market.storefront.detail.version": "版本",
+  "market.storefront.detail.revision": "修订号",
   "market.storefront.detail.status": "状态",
   "market.storefront.detail.source": "来源",
   "market.storefront.detail.author": "作者",

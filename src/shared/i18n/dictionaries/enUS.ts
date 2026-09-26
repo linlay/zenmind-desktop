@@ -2045,6 +2045,7 @@ export const enUSMessages = {
   "market.storefront.detail.id": "Component ID",
   "market.storefront.detail.type": "Type",
   "market.storefront.detail.version": "Version",
+  "market.storefront.detail.revision": "Revision",
   "market.storefront.detail.status": "Status",
   "market.storefront.detail.source": "Source",
   "market.storefront.detail.author": "Author",

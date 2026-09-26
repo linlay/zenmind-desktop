@@ -663,6 +663,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       const next = await command({ includeFavorites });
       if (generation !== marketLoadGeneration.current) return null;
       setMarketResult(next);
+      setSelectedDetailItem(current => current ? next.items.find(item => item.type === current.type && item.id === current.id) ?? null : null);
       const initialItem = initialItemId
         ? next.items.find((item) => item.id === initialItemId) ?? null
         : null;
@@ -696,7 +697,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       marketMounted.current = false;
       marketLoadGeneration.current++;
     };
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     // Skill Center can delete resources without touching Desktop's market records.

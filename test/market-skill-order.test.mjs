@@ -7,12 +7,12 @@ const { registerMarketplaceIpcHandlers } = require("../dist-electron/main/module
 
 test("Desktop reads and updates the official single-key skill order API", async (t) => {
   const calls = [];
-  configureSkillMarketPlatformCaller(async (url, options) => { calls.push({ url, options }); return { version: 1, order: ["B", "a"], updatedAt: 1780000000000 }; });
+  configureSkillMarketPlatformCaller(async (url, options) => { calls.push({ url, options }); return { pinned: ["B", "a"], updatedAt: 1780000000000 }; });
   t.after(() => configureSkillMarketPlatformCaller(null));
   assert.deepEqual((await readMarketSkillPins()).order, ["b", "a"]);
-  assert.equal(calls[0].url, "/api/skills/order");
+  assert.equal(calls[0].url, "/api/skills");
   await saveMarketSkillPins({ key: " A ", pinned: false, user: "must-not-forward" });
-  assert.deepEqual(calls[1], { url: "/api/skills/order", options: { method: "PUT", body: { key: "a", pinned: false } } });
+  assert.deepEqual(calls[1], { url: "/api/skills", options: { method: "PUT", body: { key: "a", pinned: false } } });
 });
 test("malformed pin mutations are rejected before calling Platform", async (t) => {
   let calls = 0;
@@ -26,7 +26,7 @@ test("malformed pin mutations are rejected before calling Platform", async (t) =
 
 test("malformed server order and unavailable service fail instead of fabricating local pins", async (t) => {
   t.after(() => configureSkillMarketPlatformCaller(null));
-  for (const result of [null, { version: 2, order: [] }, { version: 1, order: [null] }, { version: 1, order: [" "] }, { version: 1, order: Array(4097).fill("a") }]) {
+  for (const result of [null, { pinned: null }, { pinned: [null] }, { pinned: [" "] }, { pinned: Array(4097).fill("a") }]) {
     configureSkillMarketPlatformCaller(async () => result);
     await assert.rejects(readMarketSkillPins(), /market_skill_pins_invalid/);
   }
@@ -41,7 +41,7 @@ test("pin IPC accepts only the current main window top frame", async (t) => {
   const webContents = { mainFrame: frame, isDestroyed: () => false };
   let window = { webContents, isDestroyed: () => false };
   let calls = 0;
-  configureSkillMarketPlatformCaller(async () => { calls++; return { version: 1, order: ["a"] }; });
+  configureSkillMarketPlatformCaller(async () => { calls++; return { pinned: ["a"] }; });
   t.after(() => configureSkillMarketPlatformCaller(null));
   registerMarketplaceIpcHandlers({ handle: (name, fn) => handlers.set(name, fn) }, { app: {}, getMainWindow: () => window });
   for (const channel of ["market.getSkillPins", "market.saveSkillPins"]) {
