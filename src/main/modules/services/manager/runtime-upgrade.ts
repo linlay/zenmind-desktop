@@ -200,7 +200,6 @@ export async function runDesktopServiceConfigUpgradePreparation(
     },
     resetServiceConfig: async (serviceId, context) => {
       const result = await initializeServiceInternal(app, serviceId, {
-        skipInstallRefresh: true,
         desktopConfigReset: context,
         integrationPorts: options.integrationPorts
       });
@@ -259,7 +258,6 @@ export async function importEnvZipIntoExistingRuntime(
     skipInitialize: true
   });
   const result = await initializeServiceInternal(app, "agent-platform", {
-    skipInstallRefresh: true,
     desktopConfigReset: {
       desktopConfigReset: false,
       backupDir: "",

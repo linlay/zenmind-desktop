@@ -8,17 +8,14 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
-  agentPlatformInstallNeedsRefresh,
-  agentWebclientInstallNeedsRefresh,
-  serviceInstallNeedsRefresh,
-  identityCenterInstallNeedsRefresh
-} = require("../dist-electron/main/modules/services/manager/install-refresh.js");
-const {
+  computeAssetSignature,
   isInstallHealthy,
   listMissingBundleDirectoryEntries,
   listMissingRuntimeFiles
 } = require("../dist-electron/main/modules/services/manager/bundle-assets.js");
 const envNormalization = require("../dist-electron/main/modules/services/manager/env-normalization.js");
+const { isAssetNewerThanInstall } = require("../dist-electron/main/modules/services/manager/execution-layout.js");
+const { writeInitializationState } = require("../dist-electron/main/modules/services/manager/state-files.js");
 
 function createTempDir(t, prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -31,63 +28,22 @@ function writeText(filePath, content) {
   fs.writeFileSync(filePath, content, "utf8");
 }
 
-function writeJson(filePath, value) {
-  writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-test("agent-platform refresh ignores optional config key names", (t) => {
-  const installDir = createTempDir(t, "zenmind-platform-refresh-");
-  writeJson(path.join(installDir, "manifest.json"), {
-    id: "agent-platform",
-    runtime: {
-      pidRelativePath: "run/agent-platform.pid",
-      logRelativePath: "run/agent-platform.log"
-    },
-    configFiles: [
-      { key: "env", relativePath: ".env" },
-      { key: "runtime", relativePath: "configs/runtime.yml" },
-      { key: "tools", relativePath: "configs/tools.yml" },
-      { key: "ai-tools", relativePath: "configs/ai-tools.yml" }
-    ]
+test("asset refresh follows initialization and bundle signatures, not service-owned config", (t) => {
+  const root = createTempDir(t, "zenmind-asset-refresh-");
+  const assetPath = path.join(root, "bundle.zip");
+  const installDir = path.join(root, "installed");
+  writeText(assetPath, "bundle-v1");
+  assert.equal(isAssetNewerThanInstall(assetPath, installDir), true);
+  writeInitializationState(installDir, {
+    version: "1.0.0", status: "succeeded", updatedAt: new Date().toISOString(),
+    assetSignature: computeAssetSignature(assetPath)
   });
-
-  assert.equal(agentPlatformInstallNeedsRefresh(installDir), false);
-  assert.equal(serviceInstallNeedsRefresh({ id: "agent-platform" }, installDir), false);
-});
-
-test("agent-webclient refresh ignores stale backend marker files", (t) => {
-  const installDir = createTempDir(t, "zenmind-webclient-refresh-");
-  writeJson(path.join(installDir, "manifest.json"), {
-    id: "agent-webclient",
-    frontend: { hostManaged: false },
-    backend: { entry: "backend/server.cjs" },
-    runtime: { requiredPaths: ["backend/server.cjs", "backend/package.json"] }
-  });
-  writeText(path.join(installDir, "backend", "server.cjs"), "console.log('legacy');\n");
-  writeText(path.join(installDir, "backend", "package.json"), "{}\n");
-  writeText(
-    path.join(installDir, "scripts", "program-common.sh"),
-    "BACKEND_ENTRY=backend/server.cjs\nBACKEND_NODE_MODULES_DIR=backend/node_modules\n"
-  );
-
-  assert.equal(agentWebclientInstallNeedsRefresh(installDir), false);
-  assert.equal(serviceInstallNeedsRefresh({ id: "agent-webclient" }, installDir), false);
-});
-
-test("identity-center refresh ignores frontend route and launcher internals", (t) => {
-  const installDir = createTempDir(t, "identity-center-refresh-");
-  writeJson(path.join(installDir, "manifest.json"), {
-    id: "identity-center",
-    frontend: { entry: "/" },
-    web: { routePath: "/" }
-  });
-  writeText(path.join(installDir, ".env.example"), "SERVER_PORT=9000\n");
-  writeText(path.join(installDir, ".env"), "SERVER_PORT=9000\n");
-  writeText(path.join(installDir, "frontend", "dist", "index.html"), "<script src=\"/assets/main.js\"></script>\n");
-  writeText(path.join(installDir, "scripts", "program-common.sh"), "nohup \"$NODE_CMD\" server.js\n");
-
-  assert.equal(identityCenterInstallNeedsRefresh(installDir), false);
-  assert.equal(serviceInstallNeedsRefresh({ id: "identity-center" }, installDir), false);
+  assert.equal(isAssetNewerThanInstall(assetPath, installDir), false);
+  writeText(path.join(installDir, ".env"), "SERVICE_PRIVATE_SETTING=custom\n");
+  writeText(path.join(installDir, "configs", "runtime.yml"), "privateKey: custom\n");
+  assert.equal(isAssetNewerThanInstall(assetPath, installDir), false);
+  writeText(assetPath, "bundle-v2-updated");
+  assert.equal(isAssetNewerThanInstall(assetPath, installDir), true);
 });
 
 test("runtime.requiredPaths still drives generic install health", (t) => {

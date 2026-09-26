@@ -68,7 +68,6 @@ import {
 } from "./state-files";
 import { getResourcePluginServiceIdsToRestore } from "./restore-policy";
 import { needsBundledAssetRefresh } from "./execution-layout";
-import { identityCenterInstallNeedsRefresh } from "./install-refresh";
 import { watchServiceLog } from "./log-stream";
 
 export const __testInternals = {
@@ -136,7 +135,6 @@ export const __testInternals = {
   getResourcePluginServiceIdsToRestore,
   orderServiceIdsForRestore,
   needsBundledAssetRefresh,
-  identityCenterInstallNeedsRefresh,
   resolveStartupPreparationMode,
   prepareStartupService,
   startPreparedStartupService,

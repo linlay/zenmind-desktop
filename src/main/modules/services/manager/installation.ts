@@ -28,7 +28,6 @@ import {
   moveExtractedBuiltinRoot,
   readBuiltinAssetSignature
 } from "./bundle-assets";
-import { serviceInstallNeedsRefresh } from "./install-refresh";
 import {
   isAssetNewerThanInstall,
   ensureDir,
@@ -196,7 +195,6 @@ export async function installBuiltinServiceInternal(
       options.force ||
       !fs.existsSync(finalInstallDir) ||
       !isInstallHealthy(service, finalInstallDir) ||
-      serviceInstallNeedsRefresh(service, finalInstallDir) ||
       isAssetNewerThanInstall(assetPath, layout, options.archivePath ? undefined : app, service);
 
     await reconcileBuiltinSiblingInstallDirs(app, service, finalInstallDir);
@@ -206,7 +204,6 @@ export async function installBuiltinServiceInternal(
         return finalInstallDir;
       }
       const initialization = await initializeServiceInternal(app, serviceId, {
-        skipInstallRefresh: true,
         assetSignatureOverride: initializationAssetSignature,
         integrationPorts: options.integrationPorts
       });
@@ -242,7 +239,6 @@ export async function installBuiltinServiceInternal(
         return finalInstallDir;
       }
       const initialization = await initializeServiceInternal(app, serviceId, {
-        skipInstallRefresh: true,
         assetSignatureOverride: initializationAssetSignature,
         integrationPorts: options.integrationPorts
       });
@@ -262,15 +258,13 @@ export async function initializeServiceInternal(
   app: App,
   serviceId: ServiceId,
   options: {
-    skipInstallRefresh?: boolean;
     assetSignatureOverride?: string;
     desktopConfigReset?: DesktopServiceConfigResetContext;
     integrationPorts?: ServicesIntegrationPorts;
   } = {}
 ): Promise<ServiceCommandResult> {
   const timing = beginStartupTiming("initializeServiceInternal", {
-    serviceId,
-    skipInstallRefresh: Boolean(options.skipInstallRefresh)
+    serviceId
   });
   const checkpoints = beginStartupCheckpoints(serviceId, "initialize");
   const service = getService(serviceId);
@@ -300,34 +294,6 @@ export async function initializeServiceInternal(
         ok: false,
         message: currentState.message,
         service: currentState
-      };
-    }
-
-    if (!options.skipInstallRefresh && service.kind === "builtin" && serviceInstallNeedsRefresh(service, installDir)) {
-      try {
-        checkpoints.next("refresh-install");
-        await installBuiltinService(app, service.id, {
-          force: true,
-          source: "initializeServiceInternal:refresh",
-          integrationPorts: options.integrationPorts
-        });
-      } catch (error) {
-        checkpoints.end("failed");
-        const nextState = await getServiceState(app, serviceId, { integrationPorts: options.integrationPorts });
-        return {
-          ok: false,
-          message: error instanceof Error ? error.message : String(error),
-          service: nextState
-        };
-      }
-
-      checkpoints.next("read-final-state");
-      const nextState = await getServiceState(app, serviceId, { integrationPorts: options.integrationPorts });
-      checkpoints.end();
-      return {
-        ok: true,
-        message: t("service.reinstalledAndInitialized", { name: service.name }),
-        service: nextState
       };
     }
 

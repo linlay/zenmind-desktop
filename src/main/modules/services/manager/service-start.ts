@@ -97,7 +97,6 @@ export async function startServiceInternal(
 
   if (shouldReinitializeMissingCoreServiceConfig(service, preparedState)) {
     const initialization = await initializeServiceInternal(app, serviceId, {
-      skipInstallRefresh: true,
       integrationPorts: options.integrationPorts
     });
     if (!initialization.ok) {

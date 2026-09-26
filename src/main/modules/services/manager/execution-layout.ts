@@ -12,7 +12,6 @@ import {
 import { type App } from "electron";
 import { readInitializationState } from "./state-files";
 import { readBuiltinAssetSignature, computeAssetSignature, ensureBundleAssetHealthy } from "./bundle-assets";
-import { serviceInstallNeedsRefresh } from "./install-refresh";
 
 export function ensureDir(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
@@ -79,9 +78,6 @@ export function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
   }
 
   try {
-    if (serviceInstallNeedsRefresh(service, installDir)) {
-      return true;
-    }
     return isAssetNewerThanInstall(assetPath, layout, app, service);
   } catch {
     return false;

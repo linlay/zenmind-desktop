@@ -506,8 +506,6 @@ export function createSessionController(options: FramePortOptions) {
   const resolveSession = (sender: WebContents, sessionId: string) =>
     sessions.get(sessionKey(sender.id, sessionId)) ?? null;
 
-  const establishCanonicalChatIdentity = queryBinding.establishCanonicalChatIdentity;
-
   const processQueryBootstrapFrame = queryBinding.processQueryBootstrapFrame;
 
   const resolveMainChatQueryAuthorization = async (input: {

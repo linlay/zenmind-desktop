@@ -364,8 +364,6 @@ export class RealtimeBroker {
 
   releaseRootObserver(tokenValue: string, reason = "parent_observer_closed") { return this.rootObserversController.releaseRootObserver(tokenValue, reason); }
 
-  private retireRootObserver(observer: RootObserverState, reason: string) { return this.rootObserversController.retireRootObserver(observer, reason); }
-
   releaseObservedRun(observerTokenValue: string, runIdValue: string, reason = "surface_inactive") { return this.rootObserversController.releaseObservedRun(observerTokenValue, runIdValue, reason); }
 
   async subscribeClone(options: {
@@ -449,20 +447,6 @@ export class RealtimeBroker {
 
   private handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame) { return this.queryController.handleQueryStream(transaction, frame); }
 
-  private bufferProvisionalQueryEvent(
-    transaction: QueryTransaction,
-    event: Record<string, unknown>,
-  ) { return this.queryController.bufferProvisionalQueryEvent(transaction, event); }
-
-  private commitProvisionalQueryEvents(run: BrokerRun, transaction: QueryTransaction) { return this.queryController.commitProvisionalQueryEvents(run, transaction); }
-
-  private registerProvisionalRun(
-    transaction: QueryTransaction,
-    event: Record<string, unknown>,
-  ) { return this.queryController.registerProvisionalRun(transaction, event); }
-
-  private bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction) { return this.queryController.bindQuerySubscription(run, transaction); }
-
   private handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame) { return this.runChannelsController.handleRunStream(run, frame); }
 
   private releaseRunObserver(
@@ -503,41 +487,7 @@ export class RealtimeBroker {
 
   private handleInboundRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame) { return this.desktopRequestsController.handleInboundRequest(lane, frame); }
 
-  private async handleDesktopBridgeRequest(
-    id: string,
-    type: string,
-    frame: AgentPlatformRealtimeFrame,
-  ) { return this.desktopRequestsController.handleDesktopBridgeRequest(id, type, frame); }
-
-  private async awaitRunActionReadiness(
-    action: string,
-    source: Record<string, unknown>,
-    signal: AbortSignal,
-  ) { return this.desktopRequestsController.awaitRunActionReadiness(action, source, signal); }
-
-  private async sendDesktopBridgeSuccess(
-    id: string,
-    type: string,
-    result: Record<string, unknown>,
-    signal: AbortSignal,
-  ) { return this.desktopRequestsController.sendDesktopBridgeSuccess(id, type, result, signal); }
-
-  private sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string) { return this.desktopRequestsController.sendDesktopBridgeChunk(id, streamId, seq, type, chunk); }
-
-  private sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown) { return this.desktopRequestsController.sendDesktopBridgeError(id, type, code, msg, data); }
-
-  private waitForCloneRun(
-    kind: "overview" | "debug",
-    observerToken: string,
-    runIdValue: string,
-    chatIdValue: string,
-    owner: AgentWebclientRunOwner,
-    consumerId: string,
-  ) { return this.subscriptionsController.waitForCloneRun(kind, observerToken, runIdValue, chatIdValue, owner, consumerId); }
-
   private notifyPendingClones(run: BrokerRun) { return this.subscriptionsController.notifyPendingClones(run); }
-
-  private rejectPendingClones(observerToken: string, error: Error) { return this.subscriptionsController.rejectPendingClones(observerToken, error); }
 
   private detachPendingClones(observerToken: string) { return this.subscriptionsController.detachPendingClones(observerToken); }
 

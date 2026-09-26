@@ -362,7 +362,3 @@ export function checkWebappBackendPrerequisites(context: WebappLauncherContext) 
   }
   return getWebappBackendLauncher(backend).validatePrerequisites(context);
 }
-
-export function resetWebappRuntimeProbeCaches() {
-  // Runtimes are intentionally resolved on every check so local bindings take effect immediately.
-}
