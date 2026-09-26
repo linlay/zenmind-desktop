@@ -696,6 +696,7 @@
 - 升级和移动应用后入口路径不变。准备失败保留旧 bin，发布失败回滚；Windows 占用阻止目录移动时明确报错，不覆盖旧 exe。旧哈希目录及退役目录保留给已有子进程。
 
 - macOS 开发版（品牌主程序、Electron Helper）和正式包均确认 `node -p process.execPath` 指向当前包的通用 Helper；运行设置 `process.title` 并等待的脚本、npm run、npx 本地命令及 spawn/fork 子进程，确认无额外 Dock 图标，Node 版本/架构保持一致。Helper 缺失或 LSUIElement 不为 true 时准备失败，不回退主程序。
+- macOS 原始 Electron Helper plist 缺少 `CFBundleExecutable` 时，开发包生成应在验证实际可执行文件后为副本补齐字段，保留 `LSUIElement=true`，不修改 node_modules；重复开发启动仍能通过 Node/npm 准备。缺少字段与后台标记异常应分别给出明确错误。
 - macOS 从旧主程序入口升级后，固定 bin 自动改用 Helper，旧运行时保留；移动应用后重新准备，入口指向新包，包含空格/中文/单引号的路径正常。
 - macOS 将 nvm Node 16 或 x64 Node 放在用户 PATH 最前；Desktop 启动 Platform 后，经其环境运行 node/npm/企微 CLI，确认 Node 版本与架构跟随当前 Electron，用户终端的默认 Node 保持原样。
 - 从 Finder、终端分别启动；连接器的安装、版本检查、登录和业务执行均使用同一 runtime。退出或升级 Desktop 后重新生成当前程序路径对应的入口。

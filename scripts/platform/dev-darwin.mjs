@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -102,6 +102,35 @@ function buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot) 
   };
 }
 
+function prepareDarwinDevHelper(contentsDir) {
+  const frameworks = path.join(contentsDir, "Frameworks");
+  const helpers = fs.readdirSync(frameworks, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name.endsWith(" Helper.app"));
+  if (helpers.length !== 1) throw new Error("macOS dev app requires one generic Electron Helper");
+  const helperContents = path.join(frameworks, helpers[0].name, "Contents");
+  const plistPath = path.join(helperContents, "Info.plist");
+  const info = JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", plistPath], {
+    encoding: "utf8", timeout: 10000
+  }));
+  if (info.LSUIElement !== true) throw new Error(`macOS dev Helper requires LSUIElement=true: ${plistPath}`);
+  // Stock Electron can omit CFBundleExecutable. Declare the existing binary in
+  // the copied dev bundle so the runtime can keep its strict background-Helper contract.
+  const name = info.CFBundleExecutable === undefined
+    ? helpers[0].name.slice(0, -".app".length)
+    : info.CFBundleExecutable;
+  if (typeof name !== "string" || !name || name === "." || name === ".." || path.basename(name) !== name) {
+    throw new Error(`invalid macOS dev Helper CFBundleExecutable: ${plistPath}`);
+  }
+  const executable = path.join(helperContents, "MacOS", name);
+  if (!fs.statSync(executable).isFile()) throw new Error(`macOS dev Helper executable is not a file: ${executable}`);
+  fs.accessSync(executable, fs.constants.X_OK);
+  if (info.CFBundleExecutable === undefined) {
+    execFileSync("/usr/bin/plutil", ["-insert", "CFBundleExecutable", "-string", name, plistPath], {
+      timeout: 10000
+    });
+  }
+}
+
 export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
   const devAppName = brand.productName;
   const devAppId = `${brand.appId}.dev`;
@@ -127,6 +156,7 @@ export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand =
   fs.rmSync(targetAppRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetAppRoot), { recursive: true });
   fs.cpSync(sourceAppRoot, targetAppRoot, { recursive: true, verbatimSymlinks: true });
+  prepareDarwinDevHelper(targetContentsDir);
   fs.renameSync(targetOriginalBinary, targetBinary);
   if (!fs.existsSync(sourceIconPath)) {
     throw new Error(`missing macOS app icon: ${sourceIconPath}`);

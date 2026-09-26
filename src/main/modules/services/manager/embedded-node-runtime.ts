@@ -44,8 +44,11 @@ export async function embeddedNodeExecutable(executable: string, platform: NodeJ
   });
   const info = JSON.parse(result.stdout);
   const name = info.CFBundleExecutable;
-  if (info.LSUIElement !== true || typeof name !== "string" || !name || name === "." || name === ".." || path.basename(name) !== name) {
-    throw new Error("Desktop embedded Node requires an LSUIElement Electron Helper executable");
+  if (info.LSUIElement !== true) {
+    throw new Error("Desktop embedded Node requires LSUIElement=true in Electron Helper Info.plist");
+  }
+  if (typeof name !== "string" || !name || name === "." || name === ".." || path.basename(name) !== name) {
+    throw new Error("Desktop embedded Node requires a valid CFBundleExecutable in Electron Helper Info.plist");
   }
   const helper = path.join(helperContents, "MacOS", name);
   await fs.promises.access(helper, fs.constants.X_OK);

@@ -251,6 +251,8 @@ test('macOS resolves branded and unrenamed development Helpers and rejects foreg
   assert.equal(await embeddedNodeExecutable(bundle.main,'darwin'),bundle.helper);
   fs.writeFileSync(bundle.plist,JSON.stringify({CFBundleExecutable:name,LSUIElement:false}));
   await assert.rejects(embeddedNodeExecutable(bundle.main,'darwin'),/LSUIElement/);
+  fs.writeFileSync(bundle.plist,JSON.stringify({LSUIElement:true}));
+  await assert.rejects(embeddedNodeExecutable(bundle.main,'darwin'),/CFBundleExecutable/);
   fs.writeFileSync(bundle.plist,JSON.stringify({CFBundleExecutable:name,LSUIElement:true}));
   fs.unlinkSync(bundle.helper);
   await assert.rejects(embeddedNodeExecutable(bundle.main,'darwin'),/ENOENT/);
