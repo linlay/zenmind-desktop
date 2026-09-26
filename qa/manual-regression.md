@@ -963,3 +963,9 @@
 - 保持详情打开切换中文/英文，确认列表与详情重新加载；快速切换时旧响应不覆盖当前语言。
 - 无翻译字段的旧技能回退原名称；未声明版本的本地技能显示空值占位，不显示伪造的 `0.0.0`。
 - 验证置顶、取消置顶、使用技能提问仍传稳定 ID；Platform 删除技能后刷新，不继续用残留本地目录判断已安装。
+
+## Agent 不可用时打开配置
+
+- macOS / Windows：在 Main Chat 打开 Agent 已不可用的历史对话，点击“查看配置”，宿主切换至对应 Agent 管理页，不出现 guest 加载管理页后被拉回 Chat；返回原 Chat 后历史仍可读。
+- 请求携带其他 Agent、来自非活动 Main Chat 或其他 Surface 时拒绝；WebClient 显示失败提示且支持重试，不跳转外部 URL。
+- WebClient standalone：同一入口仍为编码后的 `/agents/:agentKey` 链接，不调用 Desktop bridge。
