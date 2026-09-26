@@ -164,7 +164,3 @@ export async function matchProcessInstallDirAsync(
     ? "matched"
     : "mismatched";
 }
-
-export async function pidMatchesInstallDirAsync(pid: number, installDir: string) {
-  return await matchProcessInstallDirAsync(pid, installDir) === "matched";
-}

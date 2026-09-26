@@ -233,16 +233,6 @@ export function bridgeErrorCode(error: unknown): AgentWebclientBridgeErrorCode {
   ].includes(candidate) ? candidate as AgentWebclientBridgeErrorCode : "protocol_error";
 }
 
-export function bridgeErrorWithMetadata(
-  code: AgentWebclientBridgeErrorCode,
-  message: string,
-  options: FrameErrorOptions,
-) {
-  const error = new Error(message);
-  error.name = code;
-  return Object.assign(error, options);
-}
-
 export function parseRequestFrame(value: unknown): AgentPlatformRequestFrame | null {
   if (!isPlainBridgeRecord(value)) return null;
   try {
