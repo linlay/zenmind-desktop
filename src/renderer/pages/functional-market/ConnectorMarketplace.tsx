@@ -22,8 +22,6 @@ import "./ConnectorLifecycle.css";
 
 interface ConnectorMarketplaceProps {
   items: MarketItem[]; loading: boolean; feedback: ReactNode;
-  /** Legacy generic detail props are accepted while the parent migrates this branch. */
-  detail?: ReactNode; onDetail?: (item: MarketItem) => void;
   onTabChange: (tab: MarketTab) => void; onManage: () => void; onChanged?: () => void;
 }
 export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {

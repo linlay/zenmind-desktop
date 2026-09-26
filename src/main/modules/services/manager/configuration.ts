@@ -75,7 +75,7 @@ export async function writeServiceConfig(
   if (!configFile) {
     throw new Error(`unknown config key: ${key}`);
   }
-  const installDir = await ensureMutableInstallDir(app, service, ports);
+  await ensureMutableInstallDir(app, service, ports);
   const layout = getServiceLayout(app, service);
 
   const filePath = resolveConfigPath(layout, configFile.relativePath);
