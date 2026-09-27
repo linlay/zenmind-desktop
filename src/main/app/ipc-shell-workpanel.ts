@@ -1,4 +1,5 @@
 import { registerArtifactActionIpc } from "../modules/artifacts";
+import { shell } from "electron";
 import { callAgentPlatform } from "../modules/desktop-actions";
 import { getTunnelHubRuntimeStatus } from "../modules/tunnel";
 import { registerShellIpcHandlers } from "../modules/shell";
@@ -82,6 +83,9 @@ export function registerShellWorkPanelIpc(options: MainIpcRegistrationOptions) {
   };
 
   registerArtifactActionIpc(ipcMain, {
+    app,
+    fileShell: shell,
+    platform: options.platform,
     getMainWindow: options.getMainWindow,
     getChatInfo: (chatId) => assistantBridge.getChatInfo(chatId),
     fetchResource: ({ chatId, relativePath }) => fetchDocumentResource({

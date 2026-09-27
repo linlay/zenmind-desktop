@@ -51,3 +51,50 @@ test('unavailable resources and service failures report failure', async () => {
   assert.deepEqual(await fixture({ getChatInfo: async () => { throw new Error('offline'); } }).call(), { ok: false });
   assert.deepEqual(await fixture({ getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'other', artifact: { items: [{ artifactId: 'art', url: 'artifacts/a' }] } }) }) }).call(), { ok: false });
 });
+
+test('file manager reveal uses a saved copy on macOS and Windows', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-reveal-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  for (const platform of ['darwin', 'win32']) {
+    const filePath = path.join(dir, `${platform}.txt`);
+    const revealed = [];
+    const { call } = fixture({
+      platform,
+      fileShell: { showItemInFolder: (target) => revealed.push(target), openPath: async () => '' },
+      showSaveDialog: async () => ({ canceled: false, filePath }),
+    });
+    assert.equal((await call({ action: 'reveal' })).ok, true);
+    assert.deepEqual(revealed, [filePath]);
+    assert.equal(await fs.readFile(filePath, 'utf8'), 'hello');
+  }
+});
+
+test('external opening requires an HTML or image source and launches the selected file', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-external-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'page.html');
+  const calls = [];
+  const ports = {
+    getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({
+      chatId: 'chat', artifact: { items: [{ artifactId: 'art', url: 'artifacts/run/page.html' }] },
+    }) }),
+    showSaveDialog: async () => ({ canceled: false, filePath }),
+    fileShell: { showItemInFolder: () => {}, openPath: async (target) => { calls.push(['default', target]); return ''; } },
+    app: { getApplicationInfoForProtocol: async () => ({ path: '/browser' }) },
+    launchBrowser: async (command, args) => { calls.push(['browser', command, args]); },
+  };
+  const mac = fixture({ ...ports, platform: 'darwin' });
+  assert.equal((await mac.call({ action: 'open-default' })).ok, true);
+  assert.equal((await mac.call({ action: 'open-browser' })).ok, true);
+  assert.deepEqual(calls, [['default', filePath], ['browser', '/usr/bin/open', ['-a', '/browser', filePath]]]);
+  calls.length = 0;
+  const win = fixture({ ...ports, platform: 'win32' });
+  assert.equal((await win.call({ action: 'open-browser' })).ok, true);
+  assert.deepEqual(calls, [['browser', '/browser', [new URL(`file://${filePath}`).href]]]);
+  assert.equal((await fixture({ ...ports, platform: 'darwin' }).call({ action: 'open-browser', artifactId: 'missing' })).ok, false);
+  assert.equal((await fixture({ ...ports, platform: 'darwin', getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [{ artifactId: 'art', url: 'artifacts/run/tool.exe' }] } }) }) }).call({ action: 'open-default' })).ok, false);
+  const mimeOnly = fixture({ ...ports, platform: 'darwin', getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [{ artifactId: 'art', url: 'artifacts/run/page.bin', mimeType: 'text/html' }] } }) }) });
+  assert.equal((await mimeOnly.call({ action: 'open-default' })).ok, true);
+  const unsafeSave = fixture({ ...ports, platform: 'darwin', showSaveDialog: async () => ({ canceled: false, filePath: path.join(dir, 'page.exe') }) });
+  assert.deepEqual(await unsafeSave.call({ action: 'open-default' }), { ok: false });
+});
