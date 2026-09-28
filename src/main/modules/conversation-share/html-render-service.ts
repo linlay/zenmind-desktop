@@ -151,6 +151,9 @@ export class ConversationHtmlRenderService {
       if (error instanceof ConversationHtmlWorkerError && error.code === "too_large") {
         return { ok: false, message: t("assistant.chatShareSnapshotTooLarge") };
       }
+      if (error instanceof ConversationHtmlWorkerError && error.code === "snapshot_unauthorized") {
+        return { ok: false, message: t("assistant.chatShareSourceUnauthorized") };
+      }
       return { ok: false, message: t("assistant.chatShareRequestFailed") };
     }
   }

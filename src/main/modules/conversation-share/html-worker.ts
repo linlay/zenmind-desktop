@@ -442,7 +442,13 @@ export function isCanonicalArtifactRef(value: string): boolean {
       for (let depth = 0; depth < 4; depth += 1) {
         if (!securityValue || securityValue === "." || securityValue === ".." ||
           /[\\/\u0000-\u001f\u007f]/u.test(securityValue)) return false;
-        const next = decodeURIComponent(securityValue);
+        if (!/%[0-9a-f]{2}/iu.test(securityValue)) break;
+        let next: string;
+        try {
+          next = decodeURIComponent(securityValue);
+        } catch {
+          return false;
+        }
         if (next === securityValue) break;
         securityValue = next;
       }

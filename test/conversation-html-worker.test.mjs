@@ -15,6 +15,9 @@ const {
 test("conversation resource references use canonical Platform path encoding", () => {
   assert.equal(isCanonicalArtifactRef("artifacts/run-1/%E6%8A%A5%E5%91%8A.html"), true);
   assert.equal(isCanonicalArtifactRef("artifacts/run-1/report+v1.pdf"), true);
+  assert.equal(isCanonicalArtifactRef(
+    "artifacts/run-1/%E5%A4%8F%E6%97%A5%20%E6%B5%B7%E6%8A%A5%20%231%25.png"
+  ), true);
   for (const value of [
     "artifacts/run-1/报告.html",
     "artifacts/run-1/%e6%8a%a5%e5%91%8a.html",
@@ -338,6 +341,61 @@ test("conversation snapshot freezes every manifest resource and rejects a change
   served = changed;
   const invalid = await renderer.readChatSnapshot("chat_1");
   assert.equal(invalid.ok, false);
+});
+
+test("conversation snapshot reports a local attachment authorization failure", async (t) => {
+  const body = Buffer.from("private attachment");
+  const snapshot = Buffer.from(JSON.stringify({
+    version: 1,
+    turns: [],
+    attachments: [{
+      id: "0123456789abcdef01234567",
+      name: "report.txt",
+      mimeType: "text/plain",
+      sourceRef: "artifacts/run-1/report.txt",
+      size: body.length,
+      sha256: createHash("sha256").update(body).digest("hex")
+    }]
+  }));
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url || "/", "http://127.0.0.1");
+    if (url.pathname === "/api/chat/export") {
+      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
+      res.end(snapshot);
+      return;
+    }
+    if (url.pathname === "/api/resource") {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end('{"error":"resource access denied"}');
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const renderer = new ConversationHtmlRenderService({ snapshotProvider: {
+    async createChatSnapshotRequest() {
+      return {
+        ok: true,
+        snapshotUrl: `http://127.0.0.1:${address.port}/api/chat/export?chatId=chat_1&format=snapshot`,
+        bearerToken: "desktop-token"
+      };
+    }
+  } });
+  renderer.start();
+  t.after(() => renderer.dispose());
+
+  const result = await renderer.readChatSnapshot("chat_1");
+  assert.deepEqual(result, {
+    ok: false,
+    message: "无法读取当前对话附件，请检查本地服务身份后重试。"
+  });
 });
 
 test("conversation snapshot rejects MIME, length, hash, duplicate, missing and aggregate-limit mismatches", async (t) => {
