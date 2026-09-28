@@ -151,7 +151,7 @@ function parseClientWsFrames(buffer) {
         payload[index] ^= mask[index % 4];
       }
     }
-    frames.push({ opcode, payload });
+    frames.push({ opcode, masked, payload });
     offset += frameLength;
   }
   return { frames, rest: buffer.subarray(offset) };
@@ -308,6 +308,8 @@ function createFakeRelay(runScenario) {
   let tunnelBuffer = Buffer.alloc(0);
   let authorization = "";
   let tunnelOpenRequest = null;
+  const pongFrames = [];
+  const pongWaiters = [];
   let upgradedResolve;
   const upgraded = new Promise((resolve) => {
     upgradedResolve = resolve;
@@ -323,6 +325,26 @@ function createFakeRelay(runScenario) {
 
   function sendWsText(value) {
     socket.write(encodeServerWsFrame(0x1, Buffer.from(JSON.stringify(value), "utf8")));
+  }
+
+  function sendWsPing(payload) {
+    socket.write(encodeServerWsFrame(0x9, payload));
+  }
+
+  function readPong() {
+    if (pongFrames.length > 0) {
+      return Promise.resolve(pongFrames.shift());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        resolve,
+        timer: setTimeout(() => {
+          pongWaiters.splice(pongWaiters.indexOf(waiter), 1);
+          reject(new Error("websocket pong timed out"));
+        }, 2000)
+      };
+      pongWaiters.push(waiter);
+    });
   }
 
   function sendTunnelFrame(type, id, payload = Buffer.alloc(0)) {
@@ -369,6 +391,16 @@ function createFakeRelay(runScenario) {
           tunnelOpenedResolve();
           continue;
         }
+        if (frame.opcode === 0xa) {
+          const waiter = pongWaiters.shift();
+          if (waiter) {
+            clearTimeout(waiter.timer);
+            waiter.resolve(frame);
+          } else {
+            pongFrames.push(frame);
+          }
+          continue;
+        }
         if (frame.opcode !== 0x2) {
           continue;
         }
@@ -402,8 +434,10 @@ function createFakeRelay(runScenario) {
       sendTunnelFrame(FRAME_OPEN, streamId);
       return runScenario({
         streamReader,
+        readPong,
         sendStreamData,
         sendTunnelFrame,
+        sendWsPing,
         streamId
       });
     },
@@ -631,11 +665,16 @@ test("Tunnel Hub runtime reconnects tunnel when network signature changes", asyn
   await runtime.stop();
 });
 
-test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol through function-level session", async (t) => {
+test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-protocol-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+  const fakeRelay = createFakeRelay(async ({ streamReader, readPong, sendStreamData, sendWsPing }) => {
+    const heartbeatPayload = Buffer.from("relay-heartbeat", "utf8");
+    sendWsPing(heartbeatPayload);
+    const pong = await readPong();
+    assert.equal(pong.masked, true);
+    assert.deepEqual(pong.payload, heartbeatPayload);
     sendStreamData(encodeTunnelJson({
       v: 1,
       ns: "d",
