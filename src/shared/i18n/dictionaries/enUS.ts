@@ -619,6 +619,7 @@ export const enUSMessages = {
   "assistant.chatShareTunnelRequired": "Go to Settings > Tunnel and enable it to share chats.",
   "assistant.chatShareTunnelUrlInvalid": "The Tunnel service URL is invalid: {message}",
   "assistant.chatShareTunnelConfigInvalid": "The Tunnel share service configuration is invalid.",
+  "assistant.chatShareSourceUnauthorized": "Unable to read this conversation's attachments. Check the local service identity and try again.",
   "assistant.chatShareUnauthorized": "Your sign-in credential is invalid or lacks Tunnel sharing permission. Sign in again.",
   "assistant.chatShareMissing": "The share link no longer exists or has been revoked.",
   "assistant.chatShareTunnelUnavailable": "The Tunnel share service is unavailable. Try again later.",

@@ -619,6 +619,7 @@ export const zhCNMessages = {
   "assistant.chatShareTunnelRequired": "请前往设置 > 隧道开启，开启后即可分享对话。",
   "assistant.chatShareTunnelUrlInvalid": "Tunnel 服务地址无效：{message}",
   "assistant.chatShareTunnelConfigInvalid": "Tunnel 分享服务配置无效。",
+  "assistant.chatShareSourceUnauthorized": "无法读取当前对话附件，请检查本地服务身份后重试。",
   "assistant.chatShareUnauthorized": "登录凭证无效或没有 Tunnel 分享权限，请重新登录。",
   "assistant.chatShareMissing": "分享链接已不存在或已销毁。",
   "assistant.chatShareTunnelUnavailable": "Tunnel 分享服务暂不可用，请稍后重试。",
