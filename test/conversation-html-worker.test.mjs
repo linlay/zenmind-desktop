@@ -41,6 +41,12 @@ function templateBytes() {
   );
 }
 
+async function readRequestJson(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(Buffer.from(chunk));
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
 test("conversation HTML byte assembler escapes script-sensitive snapshot bytes", () => {
   const template = parseConversationHtmlTemplate(templateBytes());
   const snapshot = Buffer.from('{"text":"</script>&\u2028\u2029"}');
@@ -283,7 +289,7 @@ test("conversation snapshot freezes every manifest resource and rejects a change
   const expectedHash = createHash("sha256").update(published).digest("hex");
   const pdfHash = createHash("sha256").update(pdf).digest("hex");
   let served = published;
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     assert.equal(req.headers.authorization, "Bearer desktop-token");
     if (url.pathname === "/api/chat/export") {
@@ -297,14 +303,17 @@ test("conversation snapshot freezes every manifest resource and rejects a change
       res.end(snapshot);
       return;
     }
-    if (url.pathname === "/api/resource") {
-      const file = url.searchParams.get("file");
-      if (file === "chat_1/artifacts/run-1/report.html") {
+    if (url.pathname === "/api/chat/artifacts/read") {
+      assert.equal(req.method, "POST");
+      assert.equal(req.headers["content-type"], "application/json");
+      const body = await readRequestJson(req);
+      assert.equal(body.chatId, "chat_1");
+      if (body.sourceRef === "artifacts/run-1/report.html") {
         assert.equal(req.headers.accept, "text/html");
         res.writeHead(200, { "Content-Type": "text/html", "Content-Length": served.length });
         res.end(served);
       } else {
-        assert.equal(file, "chat_1/artifacts/run-1/report.pdf");
+        assert.equal(body.sourceRef, "artifacts/run-1/report.pdf");
         assert.equal(req.headers.accept, "application/pdf");
         res.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": pdf.length });
         res.end(pdf);
@@ -357,14 +366,19 @@ test("conversation snapshot reports a local attachment authorization failure", a
       sha256: createHash("sha256").update(body).digest("hex")
     }]
   }));
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     if (url.pathname === "/api/chat/export") {
       res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
       res.end(snapshot);
       return;
     }
-    if (url.pathname === "/api/resource") {
+    if (url.pathname === "/api/chat/artifacts/read") {
+      assert.equal(req.method, "POST");
+      assert.deepEqual(await readRequestJson(req), {
+        chatId: "chat_1",
+        sourceRef: "artifacts/run-1/report.txt"
+      });
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end('{"error":"resource access denied"}');
       return;
@@ -403,7 +417,7 @@ test("conversation snapshot rejects MIME, length, hash, duplicate, missing and a
   const hash = createHash("sha256").update(body).digest("hex");
   const otherHash = createHash("sha256").update(Buffer.from("xxxx")).digest("hex");
   let scenario = "mime";
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     if (url.pathname === "/api/chat/export") {
       const descriptor = {
@@ -428,8 +442,11 @@ test("conversation snapshot rejects MIME, length, hash, duplicate, missing and a
       res.end(snapshot);
       return;
     }
-    if (url.pathname === "/api/resource") {
-      if (url.searchParams.get("file")?.endsWith("/missing.html")) {
+    if (url.pathname === "/api/chat/artifacts/read") {
+      assert.equal(req.method, "POST");
+      const requestBody = await readRequestJson(req);
+      assert.equal(requestBody.chatId, "chat_1");
+      if (requestBody.sourceRef === "artifacts/run-1/missing.html") {
         res.writeHead(404);
         res.end();
         return;

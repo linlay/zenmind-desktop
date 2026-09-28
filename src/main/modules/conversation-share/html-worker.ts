@@ -175,6 +175,8 @@ export function assembleConversationHtml(
 
 export async function fetchLimitedResponse(input: {
   url: string;
+  method?: "GET" | "POST";
+  body?: string;
   headers: Record<string, string>;
   timeoutMs: number;
   maxBytes: number;
@@ -188,7 +190,8 @@ export async function fetchLimitedResponse(input: {
   let response: Response;
   try {
     response = await fetch(input.url, {
-      method: "GET",
+      method: input.method ?? "GET",
+      body: input.body,
       headers: input.headers,
       redirect: "error",
       signal: controller.signal
@@ -392,11 +395,22 @@ async function readConversationSnapshot(
         throw new ConversationHtmlRenderFailure("snapshot_invalid");
       }
       seen.add(id);
-      const resourceURL = new URL("/api/resource", snapshotURL);
-      resourceURL.searchParams.set("file", chatId + "/" + sourceRef);
+      if (totalBytes + (descriptor.size ?? 0) > MAX_CONVERSATION_SNAPSHOT_BYTES) {
+        throw new ConversationHtmlRenderFailure(
+          "too_large",
+          totalBytes + (descriptor.size ?? 0),
+          MAX_CONVERSATION_SNAPSHOT_BYTES
+        );
+      }
       const { bytes } = await fetchLimitedResponse({
-        url: resourceURL.toString(),
-        headers: { Accept: mimeType, Authorization: "Bearer " + request.bearerToken },
+        url: new URL("/api/chat/artifacts/read", snapshotURL).toString(),
+        method: "POST",
+        body: JSON.stringify({ chatId, sourceRef }),
+        headers: {
+          Accept: mimeType,
+          Authorization: "Bearer " + request.bearerToken,
+          "Content-Type": "application/json"
+        },
         timeoutMs: SNAPSHOT_TIMEOUT_MS,
         maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes,
         expectedContentType: mimeType.toLowerCase(),
