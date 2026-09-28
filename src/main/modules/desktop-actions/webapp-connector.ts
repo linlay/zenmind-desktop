@@ -195,7 +195,7 @@ async function executeWebappRead(options: DesktopActionBridgeOptions, action: st
     const raw = await request(identity.baseUrl, identity.token, `/api/skills?agentKey=${encodeURIComponent(agentKey)}`, "GET");
     const items = (Array.isArray(raw) ? raw : raw?.skills);
     if (!Array.isArray(items)) throw new ConnectorError("invalid_platform_response");
-    const skills = items.filter(value => (item.copilot?.mustUseSkills ?? []).includes(value.key)).map(value => ({ skillId: value.key, name: value.name, description: value.description, agentHasSkill: value.agentHasSkill === true }));
+    const skills = items.filter(value => (item.copilot?.mustUseSkills ?? []).includes(value.key)).map(value => ({ skillId: value.key, name: value.displayName || value.name || value.key, description: value.description, agentHasSkill: value.configured === true }));
     if ((await platform(options)).subject !== identity.subject) throw new ConnectorError("app_grant_required");
     const result = action === "skill.list" ? { items: skills } : skills.find(value => value.skillId === args.skillId);
     if (!result) throw new ConnectorError("skill_not_found");

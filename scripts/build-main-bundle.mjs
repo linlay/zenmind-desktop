@@ -5,6 +5,7 @@ import path from "node:path";
 import { builtinModules } from "node:module";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { loadPlatformUpdateTrust } from "./lib/update-release.mjs";
 import {
   brandBundleElectronDir,
   loadBrandConfig,
@@ -33,6 +34,8 @@ export async function buildMainBundle(rootDir = projectRoot) {
   await stageNpmRuntime(rootDir);
   await buildNodeLauncher(rootDir, { os: process.platform, arch: process.arch });
   const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
+  // Apple signing is independent of Windows Ed25519 configuration, including stale env vars.
+  const updateTrust = loadPlatformUpdateTrust(rootDir, activeBrand.id, process.env.DESKTOP_UPDATE_TARGET_PLATFORM ?? process.platform);
   const outdir = brandBundleElectronDir(rootDir, activeBrand);
   const rootSrc = path.join(rootDir, "src");
 
@@ -60,13 +63,16 @@ export async function buildMainBundle(rootDir = projectRoot) {
     sourcemap: false,
     legalComments: "none",
     define: {
-      __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(activeBrand))
+      __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(activeBrand)),
+      __DESKTOP_UPDATE_TRUST__: JSON.stringify(updateTrust)
     },
     external: getExternalModules(),
     loader: {
       ".node": "file"
     }
   });
+  // Public-only build evidence used when signing the final installer manifest.
+  fs.writeFileSync(path.join(outdir, "update-trust.json"), JSON.stringify(updateTrust) + "\n");
 
   // Development launches package.json's dist-electron Main, while packaged
   // apps use the brand bundle. Sandboxed preloads cannot require adjacent

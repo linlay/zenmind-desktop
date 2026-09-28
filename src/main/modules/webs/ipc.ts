@@ -24,7 +24,6 @@ import {
 import { applyWebOrder } from "./order-store";
 import { readWebItems } from "./store";
 import { webappWindowManager } from "./webapps/window-manager";
-import { resetWebappRuntimeProbeCaches } from "./webapps/launchers";
 import {
   readWebappPublishState
 } from "./webapps/publisher";
@@ -369,7 +368,6 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   }));
   ipcMain.handle("webs.webapps.saveRuntimeSettings", async (_event: any, input: any) => {
     const settings = webappManager.saveRuntimeSettings(app, input && typeof input === "object" ? input : {});
-    resetWebappRuntimeProbeCaches();
     return {
       ok: true,
       settings,

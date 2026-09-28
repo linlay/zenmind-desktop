@@ -35,6 +35,36 @@ function finish(runtime, call, status = "completed", finishReason = "complete") 
     chatId: call.chatId, status, finishReason, finishedAt: Date.now() });
 }
 
+for (const scenario of [
+  { name: "prefers the existing Chat over the attachment Chat", chatId: " chat-existing ", attachmentChatId: "chat-attachments", hasAttachments: true, expected: "chat-existing" },
+  { name: "uses the attachment Chat when attachments exist", chatId: null, attachmentChatId: " chat-attachments ", hasAttachments: true, expected: "chat-attachments" },
+  { name: "creates a Chat when the attachment list is empty", chatId: null, attachmentChatId: "chat-attachments", hasAttachments: false },
+  { name: "creates a Chat when neither Chat is available", chatId: null, attachmentChatId: null, hasAttachments: false }
+]) {
+  test(`Main local scheduling ${scenario.name}`, async t => {
+    const { runtime, calls } = setup(t, (request, currentRuntime) => {
+      const reserved = currentRuntime.listIssues().issues[0];
+      assert.equal(reserved.chatId, request.chatId);
+      assert.equal(reserved.runId, request.runId);
+      return { ok: true, ...request };
+    });
+    const attachments = scenario.hasAttachments
+      ? [{ id: "attachment-1", name: "notes.txt", mimeType: "text/plain", sizeBytes: 5, text: "notes" }]
+      : [];
+    const { issue } = await runtime.createIssue({ status: "todo", title: scenario.name,
+      assigneeAgentKey: "a", attachmentChatId: scenario.attachmentChatId, attachments });
+    await runtime.updateIssue(issue.id, { chatId: scenario.chatId });
+    runtime.start();
+    await until(() => calls.length === 1 && runtime.listIssues().issues[0].status === "in_progress");
+    if (scenario.expected) assert.equal(calls[0].chatId, scenario.expected);
+    else {
+      assert.ok(calls[0].chatId);
+      assert.notEqual(calls[0].chatId, "chat-attachments");
+    }
+    assert.deepEqual(calls[0].attachments, attachments);
+  });
+}
+
 test("eligibility excludes cloud, no executor, automation and active/terminal failures", () => {
   const ready = { syncMode: "local", status: "todo", assigneeAgentKey: "agent" };
   assert.equal(isLocalIssueRunnable(ready), true);

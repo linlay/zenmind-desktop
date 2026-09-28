@@ -190,13 +190,13 @@ function formatTaskStatus(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n
   }
   switch (task.awaitingMode) {
     case "planning":
-      return t("desktopPet.task.awaitingPlanning");
+      return t("sidebar.assistants.awaitingStatus.planning");
     case "question":
-      return t("desktopPet.task.awaitingQuestion");
+      return t("sidebar.assistants.awaitingStatus.question");
     case "approval":
-      return t("desktopPet.task.awaitingApproval");
+      return t("sidebar.assistants.awaitingStatus.approval");
     case "form":
-      return t("desktopPet.task.awaitingForm");
+      return t("sidebar.assistants.awaitingStatus.form");
     default:
       return t("desktopPet.task.awaitingConfirm");
   }

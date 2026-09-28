@@ -7,6 +7,8 @@ import { t } from "../../../support/i18n/main-i18n";
 
 export const IS_WINDOWS = process.platform === "win32";
 export const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
+// Deployment can migrate runtime resources and secure their backups before startup.
+export const SERVICE_DEPLOY_TIMEOUT_MS = 5 * 60_000;
 
 export type ExecResult = {
   stdout: string;
@@ -170,7 +172,7 @@ if ($hadError -or $nativeExitCode -ne 0) {
 
 function formatExecErrorMessage(errorMessage: string, result: ExecResult) {
   const details = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
-  return details || errorMessage;
+  return [errorMessage, details].filter(Boolean).join("\n");
 }
 
 function getCommandTimeoutMs(timeoutMs: number | undefined) {

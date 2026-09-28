@@ -5,7 +5,7 @@ import { APP_BRAND } from "../../../shared/brand";
 import { getDataRoot, getDesktopStateRoot } from "../../infrastructure/filesystem/user-paths";
 import { readUpdateConfig } from "./config";
 import { createUpdateRuntime } from "./runtime";
-import { installMacUpdate, launchWindowsUpdate, verifyWindowsPublisher, verifyMacUpdateHost } from "./installer";
+import { installMacUpdate, launchWindowsUpdate, verifyMacUpdateHost } from "./installer";
 
 export function registerDesktopUpdates(options: {
   app: App;
@@ -21,8 +21,9 @@ export function registerDesktopUpdates(options: {
     preferencesPath: path.join(getDesktopStateRoot(options.app), "update-preferences.json"),
     readConfig: () => readUpdateConfig(options.app),
     emit: (state) => { const window = options.getMainWindow(); if (window && !window.isDestroyed()) window.webContents.send("updates.changed", state); },
-    verifyPublisher: async (file) => {
-      if (process.platform === "win32" && options.app.isPackaged) await verifyWindowsPublisher(file, process.execPath);
+    verifyPublisher: async () => {
+      // Windows trust is enforced by signed metadata + SHA-256 in the runtime.
+      if (process.platform === "win32") return;
       if (process.platform === "darwin" && options.app.isPackaged) await verifyMacUpdateHost(process.execPath);
       // macOS signature verification is owned by Squirrel.Mac when staging at install time.
     },

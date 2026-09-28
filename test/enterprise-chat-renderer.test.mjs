@@ -1,3 +1,4 @@
+import { readAppRuntimeSource } from "./helpers/app-runtime-source.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,13 +10,14 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 function readSource(...segments) {
   const sourcePath = path.join(projectRoot, ...segments);
   const source = fs.readFileSync(sourcePath, "utf8");
+  if (sourcePath.endsWith(`${path.sep}app${path.sep}runtime.ts`)) return readAppRuntimeSource(projectRoot);
   if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
     return source;
   }
   const sourceDirectory = path.dirname(sourcePath);
   const sourceStem = path.basename(sourcePath, ".ts");
   const splitSources = fs.readdirSync(sourceDirectory)
-    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .filter((name) => name.endsWith(".ts") && (sourceDirectory.endsWith(`${path.sep}enterprise-chat`) || name.startsWith(`${sourceStem}.`)))
     .sort()
     .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
   return [source, ...splitSources].join("\n");
@@ -29,9 +31,9 @@ test("enterprise IM configuration is independent from the enterprise chat busine
   const settingsHandlers = readSource("src", "main", "modules", "settings", "ipc.ts");
   const preload = readSource("src", "preload", "index.ts");
 
-  assert.match(appRuntime, /readEnterpriseImSettings\(app, factoryContext\.startupPlatform\)\.baseUrl/);
+  assert.match(appRuntime, /readEnterpriseImSettings\(app, dependencies\.startupPlatform\)\.baseUrl/);
   assert.match(appRuntime, /initialEnabled:\s*readEnterpriseImSettings\([\s\S]*?\)\.enabled/);
-  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, factoryContext\.startupPlatform\)\.enabled/);
+  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, dependencies\.startupPlatform\)\.enabled/);
   assert.match(bootstrap, /defaults\.enterpriseIm/);
   assert.doesNotMatch(bootstrap, /defaults\.imServer/);
   assert.doesNotMatch(profile, /enterpriseChatEnabled/);
@@ -114,12 +116,13 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
   const handlers = readSource("src", "main", "modules", "enterprise-chat", "ipc.ts");
   const bridge = readSource("src", "main", "modules", "agent-platform", "bridge.ts");
-  const bridgeMethods = readSource("src", "main", "modules", "agent-platform", "bridge.methods-2.ts");
-  const rawMethodStart = bridgeMethods.indexOf("export async function AgentPlatformAssistantBridge_downloadRawChatJSONL");
-  const nextMethodStart = bridgeMethods.indexOf("\nexport ", rawMethodStart + 1);
-  const rawMethod = bridgeMethods.slice(
+  const chatExport = readSource("src", "main", "modules", "agent-platform", "chat-export.ts");
+  const rawMethodStart = chatExport.indexOf("async downloadRawChatJSONL(");
+  assert.notEqual(rawMethodStart, -1);
+  const nextMethodStart = chatExport.indexOf("\n  async ", rawMethodStart + 1);
+  const rawMethod = chatExport.slice(
     rawMethodStart,
-    nextMethodStart === -1 ? bridgeMethods.length : nextMethodStart
+    nextMethodStart === -1 ? chatExport.length : nextMethodStart
   );
 
   assert.match(panel, /enterpriseChat\.sendAgentChat/);
@@ -141,7 +144,9 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   assert.match(rawMethod, /readResponseBytesWithLimit/);
   assert.doesNotMatch(rawMethod, /JSON\.parse|JSON\.stringify/);
   assert.doesNotMatch(bridge, /downloadChatShareEventStream|format=sse/);
-  assert.match(bridge, /snapshotURL\.searchParams\.set\("format", "snapshot"\)/);
+  assert.doesNotMatch(chatExport, /downloadChatShareEventStream|format=sse/);
+  assert.match(bridge, /this\.exports\.createChatSnapshotRequest\(chatId\)/);
+  assert.match(chatExport, /snapshotURL\.searchParams\.set\("format", "snapshot"\)/);
 });
 
 test("enterprise chat deletion remains a renderer-only sequence-aware hide", () => {

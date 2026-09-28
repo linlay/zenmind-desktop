@@ -1,3 +1,4 @@
+import type { AppearanceRuntime } from "../modules/settings";
 import { type App, type BrowserWindow, type WebContents } from "electron";
 import { type ServicesFacade } from "../modules/services";
 import { type WebsFacade } from "../modules/webs";
@@ -12,6 +13,7 @@ import { type EnterpriseChatRuntime } from "../modules/enterprise-chat";
 export const PLATFORM_DOCUMENT_REVISION_HEADER = "X-Document-Revision";
 
 export type MainIpcRegistrationOptions = {
+  appearanceRuntime: AppearanceRuntime;
   app: App;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<any>;
   servicesFacade: ServicesFacade;

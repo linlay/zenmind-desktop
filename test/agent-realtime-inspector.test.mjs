@@ -24,7 +24,7 @@ test("Agent Realtime Inspector opens as one independent resizable window", () =>
   const controller = read("src", "main", "modules", "shell", "agent-realtime-inspector-window.ts");
   const runtime = read("src", "main", "app", "runtime.ts");
   const register = readTypeScriptFamily("src", "main", "app", "module-registry.ts");
-  const bridge = read("src", "main", "modules", "agent-platform", "ipc.ts");
+  const bridge = read("src", "main", "modules", "agent-platform", "frame-port", "session-controller.ts");
   const page = read("src", "renderer", "pages", "AgentRealtimeInspectorPage.tsx");
   const preload = read("src", "preload", "index.ts");
 

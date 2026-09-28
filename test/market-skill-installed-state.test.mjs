@@ -47,3 +47,31 @@ test('Platform builtin skills are excluded without deleting their files or hidin
  assert.ok(items.some(x=>x.id==='builtin-personal-helper'));
  for(const id of ['builtin-dbx','builtin-httpx']) assert.ok(fs.existsSync(path.join(getSkillInstallDir(s.app,id),'SKILL.md')));
 });
+
+
+test('Platform localized skill metadata overrides legacy files without changing IDs or inventing versions', async t => {
+ const s = setup(t);
+ fs.mkdirSync(s.dir, {recursive:true});
+ fs.writeFileSync(path.join(s.dir,'SKILL.md'),'---\nname: test-skill\n---\nBody');
+ fs.writeFileSync(path.join(s.dir,'skill.json'),JSON.stringify({id:'test-skill',name:'Legacy',version:'9.0.0'}));
+ let name = '国泰君安期货工作流';
+ configureSkillMarketPlatformCaller(async route => route === '/api/skills'
+  ? {pinned:[],skills:[{key:'test-skill',name:'test-skill',displayName:name,description:'Localized description',revision:'r18'}]}
+  : []);
+ let item = await s.read();
+ assert.equal(item.id,'test-skill');assert.equal(item.name,name);assert.equal(item.description,'Localized description');
+ assert.equal(item.installedVersion,'');assert.equal(item.metadata.revision,'r18');
+ name = 'GTJA Futures Workflow';
+ item = await s.read();assert.equal(item.name,name);assert.equal(item.id,'test-skill');
+ configureSkillMarketPlatformCaller(async route => route === '/api/skills' ? {pinned:[],skills:[]} : []);
+ assert.equal((await s.read()).state,'not-installed','a fresh Platform catalog supersedes stale local files');
+});
+
+test('Platform discovers skills outside Desktop guessed runtime and keeps undeclared version empty', async t => {
+ const s = setup(t);
+ configureSkillMarketPlatformCaller(async route => route === '/api/skills'
+  ? {pinned:[],skills:[{key:'gtjaqh-flow',name:'gtjaqh-flow',displayName:'国泰君安期货工作流',revision:'r18'}]} : []);
+ const item=(await listSkillMarketItems(s.app,s.options)).items.find(item=>item.id==='gtjaqh-flow');
+ assert.ok(item);assert.equal(item.name,'国泰君安期货工作流');assert.equal(item.version,'');assert.equal(item.metadata.revision,'r18');
+ assert.equal(item.installPath,undefined);
+});

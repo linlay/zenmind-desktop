@@ -28,8 +28,6 @@ import {
 } from "./sso-authorization";
 import { buildDesktopSsoProxyUrl } from "./sso-proxy-urls";
 
-export const failDesktopSsoLogin = failDesktopSsoFlow;
-
 export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): DesktopSsoStatus {
   closeCallbackServer(undefined, true);
   desktopSsoRuntimeState.pendingLogin = null;

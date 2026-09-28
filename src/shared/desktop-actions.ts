@@ -299,6 +299,12 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.theme.get", kind: "read", category: "theme", description: "Read the Desktop theme. Args: none. Returns: { themeMode, resolvedTheme }." },
   { name: "desktop.theme.set", kind: "execute", category: "theme", description: "Set and persist the Desktop theme. Args: { themeMode: light|dark|system }. Returns: { themeMode, resolvedTheme }." },
 
+  { name: "desktop.skin.get", kind: "read", category: "skin", description: "Read selected and effective Desktop skin and custom background availability. Args: none. Returns: { skinId, activeSkinId, available, customBackground: { configured, available } }." },
+  { name: "desktop.skin.list", kind: "read", category: "skin", description: "List built-in and installed skin summaries without image bytes or paths. Args: none. Returns: { skins: [{ skinId, name, source, version?, available }] }." },
+  { name: "desktop.skin.import", kind: "execute", category: "skin", description: "Import a skin ZIP from an absolute local Desktop-host filePath. Args: { filePath }. Does not apply or replace existing packages. Returns: { skinId, name, source, version, available }." },
+  { name: "desktop.skin.set", kind: "execute", category: "skin", description: "Apply a Desktop skin. Args: { skinId, keepBackground?: boolean }. Installed skins clear custom background unless keepBackground is true. Returns selected/effective skin and background state." },
+  { name: "desktop.skin.remove", kind: "execute", category: "skin", description: "Remove an installed skin; built-in skins cannot be removed. The active skin falls back to default. Args: { skinId }. Returns: { skinId, activeSkinId }." },
+
   { name: "desktop.locale.get", kind: "read", category: "locale", description: "Read the Desktop locale settings. Args: none. Returns LocaleSettings." },
   { name: "desktop.locale.set", kind: "execute", category: "locale", description: "Set and persist the Desktop locale, then broadcast the change. Args: { locale: zh-CN|en-US }. Returns LocaleSettings." },
 

@@ -51,13 +51,17 @@ Electron 默认 session 完成登录
 
 首次启动后导入 SSO 配置，只能把状态变为“可登录”，不能绕过启动恢复重新发布旧凭据。账号切换必须先完成退出清理，再发起新登录。
 
-Desktop 设备身份与账号会话分开管理，但共同参与 Realtime generation 的身份键。Main 每个进程只在首次读取设备身份时探测一次 macOS IOPlatformUUID 或 Windows MachineGuid，确认后必须在该进程内保持同一 deviceId；若探测暂时不可用且磁盘已有有效机器绑定，必须保留原绑定且不得更新时间戳或改写身份文件。只有新进程首次读取到不同的有效机器标识时才重新绑定。账号、session、endpoint 或确认后的 deviceId 真实变化仍必须失效旧 generation，且不得恢复或自动重放未完成请求。
+Desktop 设备身份与账号会话分开管理，但共同参与 Realtime generation 的身份键。Main 每个进程只在首次读取设备身份时探测一次 macOS IOPlatformUUID 或 Windows MachineGuid，确认后必须在该进程内保持同一 deviceId；若探测暂时不可用且磁盘已有有效机器绑定，必须保留原绑定且不得更新时间戳或改写身份文件。只有新进程首次读取到不同的有效机器标识时才重新绑定。本地服务主体、session、endpoint 或确认后的 deviceId 真实变化仍必须失效旧聊天 generation，且不得恢复或自动重放未完成请求。
 
 ## 凭据分发
 
-Desktop 为 Agent Platform 签发 app token 时，从已经完成 SSO 验证的内存 canonical token 的 issuer 与 subject 派生稳定个人主体；不同账号或 issuer 必须得到不同主体，同一账号刷新 token 不改变主体。派生函数只做映射，不替代 SSO 签名和会话校验。Identity Center 继续通过既有 username 参数签发，保留 app scope 与 device claim，不改写服务配置或削弱应用 grant 的主体校验。连接器认证仍复用当前部署的一套凭据，subject 不用于选择连接器凭据目录。
+Desktop 为 Agent Platform 签发 app token 时始终使用本地 Identity Center 配置的应用主体，不从官网登录状态、canonical token 或官网账号派生主体。主聊天、旁聊、详细解释、HTTP 数据/资源请求、WebApp Assistant、连接器宿主认证与应用 grant 共用这一本地身份。token 缓存和 capability 单飞按应用运行目录隔离，不按官网账号拆分。
 
-token 缓存和 capability 并发签发按个人主体隔离；返回 token 的主体必须与请求相同，异步签发结束后还需确认 Desktop 当前身份未改变。Main、WorkPanel BTW 和 Selection Explain 使用同一身份 provider，不能让普通聊天和辅助流获得不同的身份边界。未登录时保留既有应用身份行为，但不能据此访问需要个人身份的连接器。
+官网登录、退出、恢复、切换账号不轮换本地聊天连接，也不清空 Root Observer、运行订阅、页面操作授权或 WebApp grant。本地 endpoint、设备或服务凭据身份真正改变时，原有连接失效与授权校验仍生效。WebApp 的本地应用身份与页面/runtime 归属校验保留；未登录官网不妨碍本地 WebApp 调用。
+
+Tunnel Hub、企业聊天、云看板和市场的用户态业务继续使用 canonical SSO token。显式 oneid-token 连接器按自己的外部凭据规则工作；Provider 登录领取 Key 的启动/停止门禁保持原有策略。这些功能不能改变本地 Platform 调用主体。
+
+Desktop 与 Platform 应一起发布：Platform 的宿主入口验证已签名的 app token、设备和非空本地主体，不再要求官网个人主体前缀。已有持久 Run 的控制身份不在 Desktop 中改写，服务端不因本变更放宽不同运行身份间的控制权限。
 
 ### Agent WebClient Host 与可信 Bridge
 

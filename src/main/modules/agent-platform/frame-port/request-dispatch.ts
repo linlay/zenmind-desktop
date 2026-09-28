@@ -1,0 +1,610 @@
+import { type WebContents } from "electron";
+import { isPlainBridgeRecord, type AgentWebclientPlatformFramePortSendInput } from "../../../../shared/contracts";
+import { MAIN_CHAT_SURFACE_ID, SELECTION_EXPLAIN_SURFACE_ID } from "../../../../shared/surface-identity";
+import { captureCopilotSiteControlScope } from "../../web-surfaces";
+import type { FramePortOptions } from "../ipc.shared";
+import {
+  LIVE_CHAT_SURFACE_IDS,
+  LIVE_REQUEST_TYPES,
+  LogicalSession,
+  PlatformFrameRecord,
+  StreamBinding,
+  SurfaceContext,
+  bridgeErrorCode,
+  frameError,
+  frameErrorOptions,
+  parseRequestFrame,
+  protocolError,
+  readOwner,
+  readText,
+  redactSelectionReferencesForTrace,
+} from "../ipc.shared";
+import { beginPlatformLoadDiagnostic } from "../load-diagnostic";
+import { resolveSelectionExplainTransport } from "../selection-explain-transport";
+import { updateBindingFromFrame } from "./query-binding";
+import {
+  authorizeSurface,
+  createRootObserverToken,
+  resolveAttachChatId,
+  rootObserverContextId,
+  rootObserverKind,
+  rootObserverNewChatSourceKey,
+} from "./surface-authorization";
+
+export interface RequestDispatchPort {
+  resolveSession: (sender: WebContents, sessionId: string) => LogicalSession | null;
+  sendFrame: (session: LogicalSession, frame: PlatformFrameRecord) => void;
+  readonly options: {
+    browserSurfaces: FramePortOptions["browserSurfaces"];
+    isTrustedAgentWebclientSession: FramePortOptions["isTrustedAgentWebclientSession"];
+    realtimeBroker: Pick<FramePortOptions["realtimeBroker"], "getConnectionState" | "getMainChatRootObserver" | "appendDebugTrace" | "releaseRootObserver" | "activateRootObserver" | "releaseObservedRun" | "subscribeClone" | "registerRunActionGrant" | "subscribeRun" | "query" | "forwardRequest">;
+  };
+  reportChatLoadDiagnostic: (stage: "request" | "response", session: LogicalSession, details: Record<string, unknown>) => void;
+  resolveMainChatQueryAuthorization: (input: { session: LogicalSession; context: SurfaceContext; payload: Record<string, unknown>; }) => Promise<{ context: SurfaceContext; newChatSource: { registrationId: string; ownerWebContentsId: number; guestWebContentsId: number; agentKey: string; newChat: string; } | null; }>;
+  developmentDiagnosticsEnabled: boolean;
+  availability: () => Promise<{ baseUrl: string; token: string; }>;
+  sendRunEvent: (session: LogicalSession, binding: StreamBinding, runEvent: Record<string, unknown>) => void;
+  processQueryBootstrapFrame: (binding: StreamBinding, upstreamFrame: PlatformFrameRecord) => void;
+  finishRetiringSession: (session: LogicalSession) => void;
+}
+
+
+
+export function createRequestDispatch(deps: RequestDispatchPort) {
+  async function handleSend(event: { sender: WebContents }, input: AgentWebclientPlatformFramePortSendInput): Promise<void> {
+    const session = deps.resolveSession(event.sender, readText(input?.sessionId));
+    if (!session || session.closed)
+      return;
+    const frame = parseRequestFrame(input?.frame);
+    const fallbackId = isPlainBridgeRecord(input?.frame) ? readText(input.frame.id) : "";
+    if (!frame) {
+      deps.sendFrame(session, frameError(fallbackId, "invalid_request", "Platform request frame is invalid"));
+      return;
+    }
+    if (session.requestIds.has(frame.id)) {
+      deps.sendFrame(session, frameError(frame.id, "duplicate_id", "request id is already active on this logical session"));
+      return;
+    }
+    let context = authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
+    if ("ok" in context) {
+      deps.sendFrame(session, frameError(frame.id, "surface_unavailable", context.error.message));
+      return;
+    }
+    const isKanbanPreview = context.target.surfaceRole === "kanban-chat" &&
+      Boolean(context.target.pageRoute?.startsWith("/chat-preview/"));
+    if (isKanbanPreview) {
+      const ownerChatId = context.target.ownerChatId?.trim() || "";
+      const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+      const routeMatches = ownerChatId && new URL(event.sender.getURL()).pathname ===
+        `/chat-preview/${encodeURIComponent(ownerChatId)}`;
+      // WebClient attach identifies the Run only; resolveAttachChatId below
+      // supplies the trusted registered Chat before the Broker subscribes.
+      const requestedChatId = readText(payload.chatId);
+      const allowed = frame.type === "/api/chat"
+        ? requestedChatId === ownerChatId
+        : frame.type === "/api/attach"
+          ? !requestedChatId || requestedChatId === ownerChatId
+          : frame.type === "/api/detach" && Boolean(session.rootObserverToken) &&
+          [...session.streams.values()].some((binding) => binding.runId === readText(payload.runId));
+      if (!routeMatches || !allowed) {
+        deps.sendFrame(session, frameError(frame.id, "capability_denied", "Kanban preview only observes its registered Chat"));
+        return;
+      }
+    }
+    if (frame.type === "/api/chat" || frame.type === "/api/agents") {
+      session.loadDiagnostics.get(frame.id)?.end("cancelled");
+      const diagnostic = beginPlatformLoadDiagnostic(frame.type,
+        () => deps.options.realtimeBroker.getConnectionState());
+      diagnostic.next("availability");
+      session.loadDiagnostics.set(frame.id, diagnostic);
+    }
+    if (frame.type === "/api/chat") {
+      const chatId = readText(isPlainBridgeRecord(frame.payload) ? frame.payload.chatId : "");
+      session.chatLoadRequests.set(frame.id, { chatId, startedAt: Date.now() });
+      deps.reportChatLoadDiagnostic("request", session, {
+        requestId: frame.id,
+        requestedChatId: chatId,
+        registeredOwnerChatId: context.target.ownerChatId?.trim() || "",
+        registeredRoute: context.target.pageRouteIdentity || context.target.pageRoute,
+        guestUrl: event.sender.getURL(),
+        active: context.target.active,
+      });
+    }
+    // Trusted one-shot Platform requests share the broker without acquiring the live Run lease.
+    // Only query/attach/BTW streams require the additional active-surface authorization below.
+    const isLive = LIVE_REQUEST_TYPES.has(frame.type);
+    let payload: Record<string, unknown> = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    let explanationLane: "selection-explain" | undefined;
+    try {
+      const transport = resolveSelectionExplainTransport(context, frame.type, payload);
+      payload = transport.payload;
+      explanationLane = transport.lane;
+    } catch (error) {
+      deps.sendFrame(session, frameError(frame.id, "protocol_error", error instanceof Error ? error.message : String(error)));
+      return;
+    }
+    let newChatSource: StreamBinding["newChatSource"] = null;
+    if (frame.type === "/api/query") {
+      try {
+        const authorization = await deps.resolveMainChatQueryAuthorization({
+          session,
+          context,
+          payload,
+        });
+        context = authorization.context;
+        newChatSource = authorization.newChatSource;
+        const committedChatId = context.target.ownerChatId?.trim() || "";
+        if (committedChatId) {
+          payload = { ...payload, chatId: committedChatId };
+        }
+      }
+      catch (error) {
+        deps.sendFrame(session, frameError(frame.id, "protocol_error", error instanceof Error ? error.message : String(error)));
+        return;
+      }
+    }
+    const ownerChatId = context.target.ownerChatId?.trim() || "";
+    const isReadonlyVirtualAttach = frame.type === "/api/attach" &&
+      (context.kind === "agent-overview" || context.kind === "agent-debug") &&
+      context.target.surfaceRole === (context.kind === "agent-overview" ? "overview" : "debug") &&
+      context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+      Boolean(ownerChatId);
+    let observerToken: string | null = null;
+    if (isLive) {
+      const isLiveChat = LIVE_CHAT_SURFACE_IDS.has(context.target.surfaceId);
+      const isBTW = context.kind === "agent-btw" &&
+        context.target.surfaceRole === "btw" &&
+        context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+        Boolean(context.target.ownerChatId);
+      const isSelectionExplain = context.kind === "agent-selection-explain" &&
+        context.target.surfaceRole === "selection-explain" &&
+        context.target.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+        Boolean(context.target.ownerChatId);
+      const allowedSurface = frame.type === "/api/query"
+        ? isLiveChat
+        : frame.type === "/api/btw" || frame.type === "/api/attach"
+          ? isLiveChat || isBTW || isSelectionExplain || isReadonlyVirtualAttach
+          : false;
+      if (!allowedSurface || !context.target.active) {
+        deps.sendFrame(session, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
+        return;
+      }
+      if (frame.type === "/api/attach") {
+        try {
+          payload = { ...payload, chatId: resolveAttachChatId(context, payload) };
+          if (!readText(payload.chatId) || !readText(payload.runId) || !readOwner(payload)) {
+            throw protocolError("attach Run identity is incomplete");
+          }
+        } catch (error) {
+          deps.sendFrame(session, frameError(frame.id, "protocol_error", error instanceof Error ? error.message : String(error)));
+          return;
+        }
+      }
+      const rootKind = rootObserverKind(context.target);
+      if (rootKind) {
+        const contextId = rootObserverContextId(context.target, readText(payload.chatId));
+        if (rootKind === "main_chat") {
+          const activeMain = deps.options.realtimeBroker.getMainChatRootObserver();
+          const contextMatches = activeMain && (activeMain.contextId === contextId ||
+            activeMain.contextId === `${context.target.surfaceId}:${context.target.registrationId}`);
+          const sourceMatches = !newChatSource ||
+            activeMain?.newChatSourceKey === rootObserverNewChatSourceKey(context.target);
+          if (!activeMain ||
+            activeMain.surfaceId !== context.target.surfaceId ||
+            activeMain.generation !== context.target.registrationId ||
+            activeMain.webContentsId !== event.sender.id ||
+            !contextMatches || !sourceMatches) {
+            const diagnostic = {
+              event: "main-chat-query-bundle-rejected",
+              requestId: frame.id,
+              observerPresent: Boolean(activeMain),
+              generationMatches: activeMain?.generation === context.target.registrationId,
+              guestMatches: activeMain?.webContentsId === event.sender.id,
+              contextMatches: Boolean(contextMatches),
+              sourceMatches,
+            };
+            deps.options.realtimeBroker.appendDebugTrace({
+              layer: "surface-bridge",
+              direction: "surface-to-desktop",
+              surfaceId: context.target.surfaceId,
+              webContentsId: event.sender.id,
+              data: diagnostic,
+            });
+            if (deps.developmentDiagnosticsEnabled) {
+              console.warn("[agent-webclient-query]", diagnostic);
+            }
+            deps.sendFrame(session, frameError(frame.id, "target_unavailable", "active Main Chat Broker bundle is unavailable", { retryable: false, details: { reason: "surface_generation_superseded" } }));
+            return;
+          }
+          observerToken = activeMain.token;
+        }
+        else {
+          observerToken = createRootObserverToken(context.target, contextId);
+          if (session.rootObserverToken && session.rootObserverToken !== observerToken) {
+            deps.options.realtimeBroker.releaseRootObserver(session.rootObserverToken, "surface_generation_superseded");
+          }
+          deps.options.realtimeBroker.activateRootObserver({
+            token: observerToken,
+            kind: rootKind,
+            surfaceId: context.target.surfaceId,
+            generation: context.target.registrationId,
+            contextId,
+            webContentsId: event.sender.id,
+          });
+        }
+        session.rootObserverToken = observerToken;
+      }
+      else if (isBTW || isReadonlyVirtualAttach) {
+        const activeRoot = deps.options.realtimeBroker.getMainChatRootObserver();
+        if (!activeRoot || activeRoot.kind !== "main_chat" ||
+          activeRoot.contextId !== ownerChatId) {
+          deps.sendFrame(session, frameError(frame.id, "target_unavailable", "parent_observer_closed: active Main Chat observer is unavailable", { retryable: false, details: { reason: "parent_observer_closed" } }));
+          return;
+        }
+        observerToken = activeRoot.token;
+      }
+    }
+    if (frame.type === "/api/detach" && (context.kind === "agent-overview" || context.kind === "agent-debug")) {
+      const runId = readText(payload.runId);
+      const virtualBindings = [...session.streams.values()].filter((candidate) => candidate.virtual && candidate.runId === runId);
+      for (const candidate of virtualBindings) {
+        candidate.detachSent = true;
+        candidate.unsubscribe?.();
+        candidate.unsubscribe = null;
+        session.requestIds.delete(candidate.localId);
+        session.streams.delete(candidate.localId);
+      }
+      deps.sendFrame(session, {
+        frame: "response",
+        id: frame.id,
+        type: frame.type,
+        code: 0,
+        data: {},
+      });
+      return;
+    }
+    if (frame.type === "/api/detach") {
+      const runId = readText(payload.runId);
+      const rootToken = session.rootObserverToken || (context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID
+        ? deps.options.realtimeBroker.getMainChatRootObserver()?.token || null
+        : null);
+      if (rootToken && runId) {
+        deps.options.realtimeBroker.releaseObservedRun(rootToken, runId, "surface_inactive");
+        for (const candidate of [...session.streams.values()]) {
+          if (candidate.runId !== runId)
+            continue;
+          candidate.detachSent = true;
+          candidate.unsubscribe?.();
+          session.requestIds.delete(candidate.localId);
+          session.streams.delete(candidate.localId);
+        }
+        deps.sendFrame(session, {
+          frame: "response",
+          id: frame.id,
+          type: frame.type,
+          code: 0,
+          data: { accepted: true, status: "detached", runId },
+        });
+        return;
+      }
+    }
+    const explicitDetachBindings = frame.type === "/api/detach"
+      ? [...session.streams.values()].filter((candidate) => !candidate.detachSent &&
+        Boolean(readText(payload.runId)) &&
+        candidate.runId === readText(payload.runId))
+      : [];
+    let releaseDetachBarrier: (() => void) | null = null;
+    if (explicitDetachBindings.length > 0) {
+      const pendingWrite = new Promise<void>((resolve) => {
+        releaseDetachBarrier = resolve;
+      });
+      session.detachBarrier = session.detachBarrier.then(() => pendingWrite);
+      for (const candidate of explicitDetachBindings) {
+        candidate.suppressed = true;
+        candidate.detachSent = true;
+      }
+    }
+    const finishExplicitDetachWrite = (written: boolean) => {
+      if (!written) {
+        for (const candidate of explicitDetachBindings) {
+          candidate.detachSent = false;
+        }
+      }
+      releaseDetachBarrier?.();
+      releaseDetachBarrier = null;
+    };
+    let siteControlScope: ReturnType<typeof captureCopilotSiteControlScope>;
+    try {
+      siteControlScope = frame.type === "/api/query"
+        ? captureCopilotSiteControlScope(deps.options.browserSurfaces, context.target)
+        : undefined;
+    } catch (error) {
+      deps.sendFrame(session, frameError(frame.id, "capability_denied", error instanceof Error ? error.message : String(error)));
+      return;
+    }
+    const authorizedSurface = {
+      registrationId: context.target.registrationId,
+      surfaceId: context.target.surfaceId,
+      ownerChatId: context.target.ownerChatId,
+      route: context.target.pageRouteIdentity || context.target.pageRoute,
+    };
+    let connection: {
+      baseUrl: string;
+      token: string;
+    };
+    try {
+      connection = await deps.availability();
+    }
+    catch (error) {
+      siteControlScope?.release("Platform is unavailable.");
+      finishExplicitDetachWrite(false);
+      deps.sendFrame(session, frameError(frame.id, "connection_unavailable", error instanceof Error ? error.message : String(error)));
+      return;
+    }
+    const { baseUrl, token } = connection;
+    session.loadDiagnostics.get(frame.id)?.next("broker-response");
+    // Availability may perform an asynchronous cold identity probe. Recheck the
+    // real sender and live surface after that wait, before forwarding any frame.
+    const refreshedContext = session.closed || event.sender.isDestroyed()
+      ? null
+      : authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
+    if (!refreshedContext || "ok" in refreshedContext || ((isLive || isKanbanPreview) && (
+      refreshedContext.target.registrationId !== authorizedSurface.registrationId ||
+      refreshedContext.target.surfaceId !== authorizedSurface.surfaceId ||
+      refreshedContext.target.ownerChatId !== authorizedSurface.ownerChatId ||
+      (refreshedContext.target.pageRouteIdentity || refreshedContext.target.pageRoute) !==
+      authorizedSurface.route ||
+      !refreshedContext.target.active
+    ))) {
+      siteControlScope?.release("Surface changed while checking Platform availability.");
+      finishExplicitDetachWrite(false);
+      deps.sendFrame(session, frameError(frame.id, "surface_unavailable", "Surface changed while checking Platform availability"));
+      return;
+    }
+    session.requestIds.add(frame.id);
+    const binding: StreamBinding | null = isLive
+      ? {
+        localId: frame.id,
+        type: frame.type as "/api/query" | "/api/attach" | "/api/btw",
+        chatId: readText(payload.chatId) || ownerChatId,
+        runId: readText(payload.runId),
+        owner: readOwner(payload),
+        lastSeq: Math.max(0, Number(payload.lastSeq) || 0),
+        suppressed: false,
+        detachSent: false,
+        virtual: isReadonlyVirtualAttach,
+        sourceId: `${session.key}:${frame.id}`,
+        unsubscribe: null,
+        expectedOwner: readOwner(payload),
+        newChatSource,
+        canonicalChatId: "",
+        expectedQueryRequestId: readText(payload.requestId),
+        preboundChatId: frame.type === "/api/query" ? readText(payload.chatId) : "",
+        canonicalChatReady: frame.type === "/api/query" && !newChatSource
+          ? Promise.resolve()
+          : null,
+        runStarted: frame.type !== "/api/query",
+        observerToken,
+      }
+      : null;
+    if (binding)
+      session.streams.set(frame.id, binding);
+    deps.options.realtimeBroker.appendDebugTrace({
+      layer: "surface-bridge",
+      direction: "surface-to-desktop",
+      data: redactSelectionReferencesForTrace(frame),
+      surfaceId: context.target.surfaceId,
+      webContentsId: event.sender.id,
+      surfaceKind: context.kind,
+      surfaceRole: context.target.surfaceRole,
+      surfaceLevel: context.target.surfaceLevel,
+      parentSurfaceId: context.target.parentSurfaceId,
+      interaction: context.target.interaction,
+      route: context.target.pageRoute || event.sender.getURL(),
+    });
+    if (binding?.virtual) {
+      try {
+        if (!binding.runId || !binding.chatId || !binding.owner) {
+          throw Object.assign(new Error("visible Run identity is incomplete"), { name: "invalid_request" });
+        }
+        const subscription = await deps.options.realtimeBroker.subscribeClone({
+          kind: context.kind === "agent-overview" ? "overview" : "debug",
+          runId: binding.runId,
+          chatId: binding.chatId,
+          lastSeq: binding.lastSeq,
+          owner: binding.owner,
+          consumerId: session.consumerId,
+          onEvent: (runEvent) => deps.sendRunEvent(session, binding, runEvent),
+          onComplete: (completed) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            deps.sendFrame(session, {
+              frame: "stream",
+              id: binding.localId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+            session.requestIds.delete(binding.localId);
+            session.streams.delete(binding.localId);
+          },
+          onError: (error) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            deps.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error.message, frameErrorOptions(error)));
+            session.requestIds.delete(binding.localId);
+            session.streams.delete(binding.localId);
+          },
+        });
+        binding.unsubscribe = subscription.unsubscribe;
+        await subscription.ready;
+      }
+      catch (error) {
+        if (session.closed ||
+          binding.detachSent ||
+          session.streams.get(binding.localId) !== binding) {
+          return;
+        }
+        session.requestIds.delete(frame.id);
+        session.streams.delete(frame.id);
+        deps.sendFrame(session, frameError(frame.id, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
+      }
+      return;
+    }
+    if (binding?.type === "/api/attach") {
+      try {
+        // Live attach must never fall through to one-shot forwarding, which
+        // discards the remaining stream after its first response.
+        if (!observerToken || !binding.chatId || !binding.runId || !binding.owner) {
+          throw protocolError("attach requires a complete Run identity and active observer");
+        }
+        if (context.target.surfaceId === MAIN_CHAT_SURFACE_ID) {
+          deps.options.realtimeBroker.registerRunActionGrant({
+            sourceId: observerToken,
+            chatId: binding.chatId,
+            runId: binding.runId,
+            owner: binding.owner,
+            ready: Promise.resolve(),
+          });
+        }
+        const subscription = deps.options.realtimeBroker.subscribeRun({
+          baseUrl,
+          token,
+          lane: explanationLane ?? (context.kind === "agent-btw" ? "btw" : "primary"),
+          runId: binding.runId,
+          chatId: binding.chatId,
+          lastSeq: binding.lastSeq,
+          owner: binding.owner,
+          kind: "surface",
+          role: "root_observer",
+          observerToken,
+          consumerId: session.consumerId,
+          onEvent: (runEvent) => deps.sendRunEvent(session, binding, runEvent),
+          onComplete: (completed) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            deps.sendFrame(session, {
+              frame: "stream",
+              id: binding.localId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+            session.requestIds.delete(binding.localId);
+            session.streams.delete(binding.localId);
+          },
+          onError: (error) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            deps.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error.message, frameErrorOptions(error)));
+            session.requestIds.delete(binding.localId);
+            session.streams.delete(binding.localId);
+          },
+        });
+        binding.unsubscribe = subscription.unsubscribe;
+        await subscription.ready;
+      }
+      catch (error) {
+        session.requestIds.delete(binding.localId);
+        session.streams.delete(binding.localId);
+        deps.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
+      }
+      return;
+    }
+    if (binding && (binding.type === "/api/query" || binding.type === "/api/btw")) {
+      try {
+        const handle = deps.options.realtimeBroker.query({
+          siteControlScope,
+          baseUrl,
+          token,
+          lane: explanationLane ?? (binding.type === "/api/btw" ? "btw" : "primary"),
+          requestType: binding.type,
+          id: frame.id,
+          payload,
+          runId: binding.runId || undefined,
+          chatId: binding.chatId || undefined,
+          owner: binding.expectedOwner || undefined,
+          observerToken: observerToken || undefined,
+          consumerId: session.consumerId,
+          onEvent: async (runEvent) => {
+            // Run page authority is committed by the Broker, independently of Dock delivery.
+            if (siteControlScope && (binding.suppressed || binding.detachSent || session.closed)) return;
+            const upstreamFrame: PlatformFrameRecord = {
+              frame: "stream",
+              id: binding.localId,
+              event: runEvent,
+            };
+            if (!siteControlScope) deps.processQueryBootstrapFrame(binding, upstreamFrame);
+            updateBindingFromFrame(binding, upstreamFrame);
+            if (binding.canonicalChatReady)
+              await binding.canonicalChatReady;
+            if (!binding.suppressed)
+              deps.sendFrame(session, upstreamFrame);
+          },
+        });
+        void handle.accepted.then((accepted) => {
+          binding.chatId = accepted.chatId;
+          binding.runId = accepted.runId;
+          binding.owner = accepted.owner;
+          binding.runStarted = true;
+        }).catch(() => undefined);
+        void handle.completed.then((completed) => {
+          if (!binding.suppressed || completed.reason !== "detached") {
+            deps.sendFrame(session, {
+              frame: "stream",
+              id: binding.localId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+          }
+          session.requestIds.delete(binding.localId);
+          session.streams.delete(binding.localId);
+          deps.finishRetiringSession(session);
+        }).catch((error) => {
+          session.requestIds.delete(binding.localId);
+          session.streams.delete(binding.localId);
+          if (!binding.suppressed && !binding.detachSent) {
+            deps.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
+          }
+          deps.finishRetiringSession(session);
+        });
+      }
+      catch (error) {
+        siteControlScope?.release("The query could not be submitted.");
+        session.requestIds.delete(binding.localId);
+        session.streams.delete(binding.localId);
+        deps.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
+      }
+      return;
+    }
+    try {
+      await deps.options.realtimeBroker.forwardRequest({
+        baseUrl,
+        token,
+        ...(explanationLane ? { lane: explanationLane } : {}),
+        localId: frame.id,
+        consumerId: session.consumerId,
+        type: frame.type,
+        payload,
+        stream: false,
+        onFrame: (upstreamFrame) => {
+          deps.sendFrame(session, upstreamFrame);
+          session.requestIds.delete(frame.id);
+          deps.finishRetiringSession(session);
+        },
+        onError: (error) => {
+          session.requestIds.delete(frame.id);
+          deps.sendFrame(session, frameError(frame.id, "connection_unavailable", error.message));
+          deps.finishRetiringSession(session);
+        },
+      });
+      finishExplicitDetachWrite(true);
+    }
+    catch (error) {
+      finishExplicitDetachWrite(false);
+      session.requestIds.delete(frame.id);
+      session.streams.delete(frame.id);
+      deps.sendFrame(session, frameError(frame.id, "connection_unavailable", error instanceof Error ? error.message : String(error)));
+      deps.finishRetiringSession(session);
+    }
+  }
+  return { handleSend };
+}

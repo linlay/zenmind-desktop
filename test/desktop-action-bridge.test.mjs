@@ -1220,7 +1220,7 @@ test("desktop.display routes to the Main renderer without confirmation", async (
 
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
-  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-user:'+'a'.repeat(64)})).toString('base64url')+'.s'});
+  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-app'})).toString('base64url')+'.s'});
   options.services.getResponsiveServiceState = async () => ({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}});
   options.webs = {...options.webs, webappRuntime:{...options.webs.webappRuntime,getStatus:()=>({status:'running',startedAt:123})}};
   const id = webappId("assistant-app");
@@ -2225,7 +2225,7 @@ test("desktop action bridge listens on configured port and refreshes when config
 
 test("Desktop Action Bridge keeps WebApp page and backend token scopes separate", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
-  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-user:'+'a'.repeat(64)})).toString('base64url')+'.s'});
+  options.issueAgentAccessToken = async () => ({ok: true, token: 'h.' + Buffer.from(JSON.stringify({sub:'desktop-app'})).toString('base64url')+'.s'});
   options.services.getResponsiveServiceState = async () => ({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}});
   options.webs = {...options.webs, webappRuntime:{...options.webs.webappRuntime,getStatus:()=>({status:'running',startedAt:123})}};
   const port = await getFreeLoopbackPort();

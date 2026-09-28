@@ -35,6 +35,9 @@ export function writeInstallerInclude(rootDir, brand) {
   const content = `!include nsDialogs.nsh
 !include FileFunc.nsh
 
+!define DESKTOP_UPDATE_LOG_NAMESPACE "${storageNamespace}"
+${fs.readFileSync(new URL("./windows-update-progress.nsh", import.meta.url), "utf8")}
+
 !ifdef DELETE_APP_DATA_ON_UNINSTALL
   !error "Windows data cleanup must remain owned by the validated custom uninstaller"
 !endif
@@ -359,6 +362,10 @@ FunctionEnd
 
 !ifndef BUILD_UNINSTALLER
 Function ${nsisPrefix}DataDirectoryPage
+  ; Do not expand StdUtils here: electron-builder may register its plugins after this include.
+  \${if} $DesktopUpdateMode == "1"
+    Abort
+  \${endif}
   \${if} \${Silent}
     Abort
   \${endif}
@@ -478,6 +485,7 @@ FunctionEnd
 !macroend
 
 !macro stopManagedServiceProcesses
+  ; A process can exit between the taskkill probe and execution; the final survivor and file-lock checks decide success.
   \${if} $DesktopProcessCleanupDone != "1"
     DetailPrint "Stopping ${productName} app and managed service processes..."
     System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_APP_EXE", "$INSTDIR\\\${APP_EXECUTABLE_FILENAME}").r0'
@@ -496,7 +504,8 @@ FunctionEnd
     \${else}
       System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_DATA_ROOT", "").r0'
     \${endif}
-    nsExec::ExecToStack \`"$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'Stop'; try { $$appExecutable = [System.IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_APP_EXE')); $$programRootValue = [Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_PROGRAM_ROOT'); $$programRoot = if ([string]::IsNullOrWhiteSpace($$programRootValue)) { '' } else { [System.IO.Path]::GetFullPath($$programRootValue).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar }; $$dataRootValue = [Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_DATA_ROOT'); $$dataRoot = if ([string]::IsNullOrWhiteSpace($$dataRootValue)) { '' } else { [System.IO.Path]::GetFullPath($$dataRootValue).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar }; $$snapshot = @(Get-CimInstance Win32_Process -ErrorAction Stop) } catch { Write-Output 'PROBE_FAILED'; exit 21 }; function Test-DesktopExecutableUnlocked { if (-not (Test-Path -LiteralPath $$appExecutable)) { return $$true }; try { $$stream = [System.IO.File]::Open($$appExecutable, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None); $$stream.Dispose(); return $$true } catch { return $$false } }; $$roots = @($$snapshot | Where-Object { $$path = [string]$$_.ExecutablePath; $$command = [string]$$_.CommandLine; ($$path -and ($$path.Equals($$appExecutable, [StringComparison]::OrdinalIgnoreCase) -or ($$programRoot -and $$path.StartsWith($$programRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$dataRoot -and $$path.StartsWith($$dataRoot, [StringComparison]::OrdinalIgnoreCase)))) -or ($$command -and (($$programRoot -and $$command.IndexOf($$programRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -ge 0) -or ($$dataRoot -and $$command.IndexOf($$dataRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -ge 0))) }); $$children = @{}; foreach ($$entry in $$snapshot) { $$parent = [int]$$entry.ParentProcessId; if (-not $$children.ContainsKey($$parent)) { $$children[$$parent] = [System.Collections.Generic.List[int]]::new() }; $$children[$$parent].Add([int]$$entry.ProcessId) }; $$ids = [System.Collections.Generic.HashSet[int]]::new(); $$depth = @{}; function Add-DesktopTree([int]$$processId, [int]$$level) { if (-not $$ids.Add($$processId)) { return }; $$depth[$$processId] = $$level; if ($$children.ContainsKey($$processId)) { foreach ($$child in $$children[$$processId]) { Add-DesktopTree $$child ($$level + 1) } } }; foreach ($$root in $$roots) { Add-DesktopTree ([int]$$root.ProcessId) 0 }; if ($$ids.Count -eq 0) { if (Test-DesktopExecutableUnlocked) { exit 0 }; Write-Output 'FILE_LOCKED'; exit 22 }; $$ordered = @($$ids | Sort-Object { -[int]$$depth[$$_] }); foreach ($$processId in $$ordered) { Stop-Process -Id $$processId -Force -ErrorAction SilentlyContinue }; foreach ($$root in $$roots) { if (Get-Process -Id $$root.ProcessId -ErrorAction SilentlyContinue) { & taskkill.exe /PID $$root.ProcessId /T /F 2>$$null | Out-Null } }; $$deadline = [DateTime]::UtcNow.AddSeconds(5); do { $$remaining = @($$ids | Where-Object { Get-Process -Id $$_ -ErrorAction SilentlyContinue }); if ($$remaining.Count -eq 0) { if (Test-DesktopExecutableUnlocked) { exit 0 }; Write-Output 'FILE_LOCKED'; exit 22 }; Start-Sleep -Milliseconds 200 } while ([DateTime]::UtcNow -lt $$deadline); Write-Output ('SURVIVORS=' + ($$remaining -join ',')); exit 20"\`
+    ; ExecWait nests old-uninstaller.exe under the main setup, which may itself live in the managed update cache.
+    nsExec::ExecToStack \`"$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'Stop'; try { $$appExecutable = [System.IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_APP_EXE')); $$programRootValue = [Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_PROGRAM_ROOT'); $$programRoot = if ([string]::IsNullOrWhiteSpace($$programRootValue)) { '' } else { [System.IO.Path]::GetFullPath($$programRootValue).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar }; $$dataRootValue = [Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_DATA_ROOT'); $$dataRoot = if ([string]::IsNullOrWhiteSpace($$dataRootValue)) { '' } else { [System.IO.Path]::GetFullPath($$dataRootValue).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar }; $$snapshot = @(Get-CimInstance Win32_Process -ErrorAction Stop); $$self = @($$snapshot | Where-Object { [int]$$_.ProcessId -eq $$PID }); if ($$self.Count -ne 1) { throw 'Cleanup process missing' }; $$installerPid = [int]$$self[0].ParentProcessId; $$installerProcess = @($$snapshot | Where-Object { [int]$$_.ProcessId -eq $$installerPid }); if ($$installerProcess.Count -ne 1) { throw 'Installer process missing' }; $$coordinatorPid = $$installerPid; if ([System.IO.Path]::GetFileName([string]$$installerProcess[0].ExecutablePath).Equals('old-uninstaller.exe', [StringComparison]::OrdinalIgnoreCase)) { $$outer = @($$snapshot | Where-Object { [int]$$_.ProcessId -eq [int]$$installerProcess[0].ParentProcessId }); if ($$outer.Count -ne 1) { throw 'Parent installer process missing' }; $$outerPath = [string]$$outer[0].ExecutablePath; $$outerName = [System.IO.Path]::GetFileName($$outerPath); if (($$dataRoot -and $$outerPath.StartsWith($$dataRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$outerName.IndexOf(' Setup ', [StringComparison]::OrdinalIgnoreCase) -ge 0 -and $$outerName.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase))) { $$coordinatorPid = [int]$$outer[0].ProcessId } } } catch { Write-Output 'PROBE_FAILED'; exit 21 }; function Test-DesktopExecutableUnlocked { if (-not (Test-Path -LiteralPath $$appExecutable)) { return $$true }; try { $$stream = [System.IO.File]::Open($$appExecutable, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None); $$stream.Dispose(); return $$true } catch { return $$false } }; $$children = @{}; foreach ($$entry in $$snapshot) { $$parent = [int]$$entry.ParentProcessId; if (-not $$children.ContainsKey($$parent)) { $$children[$$parent] = [System.Collections.Generic.List[int]]::new() }; $$children[$$parent].Add([int]$$entry.ProcessId) }; $$protected = [System.Collections.Generic.HashSet[int]]::new(); function Add-InstallerTree([int]$$processId) { if (-not $$protected.Add($$processId)) { return }; if ($$children.ContainsKey($$processId)) { foreach ($$child in $$children[$$processId]) { Add-InstallerTree $$child } } }; Add-InstallerTree $$coordinatorPid; $$roots = @($$snapshot | Where-Object { if ($$protected.Contains([int]$$_.ProcessId)) { return $$false }; $$path = [string]$$_.ExecutablePath; $$command = [string]$$_.CommandLine; ($$path -and ($$path.Equals($$appExecutable, [StringComparison]::OrdinalIgnoreCase) -or ($$programRoot -and $$path.StartsWith($$programRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$dataRoot -and $$path.StartsWith($$dataRoot, [StringComparison]::OrdinalIgnoreCase)))) -or ($$command -and (($$programRoot -and $$command.IndexOf($$programRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -ge 0) -or ($$dataRoot -and $$command.IndexOf($$dataRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -ge 0))) }); $$ids = [System.Collections.Generic.HashSet[int]]::new(); $$depth = @{}; function Add-DesktopTree([int]$$processId, [int]$$level) { if ($$protected.Contains($$processId)) { return }; if (-not $$ids.Add($$processId)) { return }; $$depth[$$processId] = $$level; if ($$children.ContainsKey($$processId)) { foreach ($$child in $$children[$$processId]) { Add-DesktopTree $$child ($$level + 1) } } }; foreach ($$root in $$roots) { Add-DesktopTree ([int]$$root.ProcessId) 0 }; if ($$ids.Count -eq 0) { if (Test-DesktopExecutableUnlocked) { exit 0 }; Write-Output 'FILE_LOCKED'; exit 22 }; $$ordered = @($$ids | Sort-Object { -[int]$$depth[$$_] }); foreach ($$processId in $$ordered) { Stop-Process -Id $$processId -Force -ErrorAction SilentlyContinue }; foreach ($$root in $$roots) { if (Get-Process -Id $$root.ProcessId -ErrorAction SilentlyContinue) { try { & taskkill.exe /PID $$root.ProcessId /F 2>$$null | Out-Null } catch { } } }; $$deadline = [DateTime]::UtcNow.AddSeconds(5); do { $$remaining = @($$ids | Where-Object { Get-Process -Id $$_ -ErrorAction SilentlyContinue }); if ($$remaining.Count -eq 0) { if (Test-DesktopExecutableUnlocked) { exit 0 }; Write-Output 'FILE_LOCKED'; exit 22 }; Start-Sleep -Milliseconds 200 } while ([DateTime]::UtcNow -lt $$deadline); Write-Output ('SURVIVORS=' + ($$remaining -join ',')); exit 20"\`
     Pop $DesktopProcessCleanupStatus
     Pop $DesktopProcessSurvivors
     StrCpy $DesktopProcessCleanupDone "1"
@@ -505,6 +514,7 @@ FunctionEnd
 
 !ifndef BUILD_UNINSTALLER
 !macro customInit
+  !insertmacro DesktopUpdateProgressInit
   !insertmacro setInstallModePerUser
   !insertmacro DesktopResolveDefaultInstallDir
   ReadRegStr $DesktopPreviousInstallDir HKCU "\${INSTALL_REGISTRY_KEY}" "InstallLocation"
@@ -550,6 +560,7 @@ FunctionEnd
 !ifndef BUILD_UNINSTALLER
 !macro customPageAfterChangeDir
   Page custom ${nsisPrefix}DataDirectoryPage ${nsisPrefix}DataDirectoryPageLeave
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW DesktopUpdateProgressShow
 !macroend
 !endif
 
@@ -565,6 +576,7 @@ FunctionEnd
   \${endif}
   !insertmacro DesktopResolveDefaultInstallDir
   StrCpy $INSTDIR "$DesktopDefaultInstallDir"
+  !insertmacro DesktopUpdateStage "old-uninstall-handled"
 !macroend
 
 !macro customUnInstallCheck
@@ -577,6 +589,9 @@ FunctionEnd
 !endif
 
 !macro customCheckAppRunning
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro DesktopUpdateStage "cleanup-start"
+  !endif
   !ifdef BUILD_UNINSTALLER
     Call un.${nsisPrefix}EnsureDataRootDefault
   !else
@@ -640,7 +655,8 @@ FunctionEnd
         Goto shutdownAckFinished
       \${endif}
       IntOp $R1 $R1 + 1
-      \${if} $R1 < 24
+      ; Allow the Windows 55s cleanup budget plus acknowledgement overhead.
+      \${if} $R1 < 120
         Sleep 500
         Goto waitShutdownAck
       \${endif}
@@ -653,10 +669,15 @@ FunctionEnd
     SetErrorLevel 20
     Abort
   \${endif}
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro DesktopUpdateStage "cleanup-complete"
+    DetailPrint "正在替换旧版本并解压程序文件，请稍候..."
+  !endif
 !macroend
 
 !ifndef BUILD_UNINSTALLER
 !macro customInstall
+  !insertmacro DesktopUpdateStage "files-installed"
   Call ${nsisPrefix}EnsureDataRootDefault
   !insertmacro DesktopResolveDefaultInstallDir
   \${if} $INSTDIR != $DesktopDefaultInstallDir

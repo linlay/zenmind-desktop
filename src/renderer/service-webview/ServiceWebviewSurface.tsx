@@ -19,6 +19,7 @@ import {
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
   createAgentWebclientAgentPath,
+  createAgentWebclientManagementPath,
   isAgentWebclientMainChatRouteAligned,
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
@@ -2954,6 +2955,10 @@ export function ServiceWebviewSurface({
 
     handleServiceWebviewBridgeMessage(payload, {
       serviceId: service?.id ?? serviceId,
+      activeAgentConfigurationKey: ownsActiveSurface && surfaceId === MAIN_CHAT_SURFACE_ID
+        ? readAgentWebclientAgentRouteKey(currentRoute)
+        : undefined,
+      openAgentConfiguration: (agentKey) => navigate(createAgentWebclientManagementPath(agentKey)),
       bridgeProtocol,
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,

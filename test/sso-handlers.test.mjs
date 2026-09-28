@@ -115,7 +115,6 @@ function createHarness(startResult, options = {}) {
     broadcasts: [],
     kanbanRefreshes: 0,
     tunnelHubStops: 0,
-    realtimeIdentityInvalidations: 0
   };
   registerSsoIpcHandlers({
     handle(name, handler) {
@@ -166,7 +165,7 @@ function createHarness(startResult, options = {}) {
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
     refreshKanbanConnection: () => { calls.kanbanRefreshes += 1; },
     stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; },
-    invalidateRealtimeIdentity: () => { calls.realtimeIdentityInvalidations += 1; }
+
   });
   return { handlers, calls };
 }
@@ -249,7 +248,6 @@ test("desktop sso logout stops Tunnel Hub runtime", async () => {
 
   assert.equal(result.ok, true);
   assert.equal(calls.tunnelHubStops, 1);
-  assert.equal(calls.realtimeIdentityInvalidations, 1);
   assert.deepEqual(calls.clearBrowserCookies, [true]);
   assert.equal(calls.openSystemBrowserUrl.length, 0);
   assert.equal(calls.openBrowserUrl.length, 0);

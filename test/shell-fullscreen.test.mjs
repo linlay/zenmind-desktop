@@ -55,6 +55,11 @@ class FakeFullscreenWindow extends EventEmitter {
     }
     if (this.mode === "stalled") return;
     const complete = () => {
+      if (this.mode === "windows-event-before-state") {
+        this.emit(enabled ? "enter-full-screen" : "leave-full-screen");
+        this.fullscreen = enabled;
+        return;
+      }
       this.fullscreen = enabled;
       this.emit(enabled ? "enter-full-screen" : "leave-full-screen");
     };
@@ -102,6 +107,16 @@ test("window fullscreen transition confirms synchronous Windows state", async ()
 
   assert.deepEqual(result, { ok: true, isFullScreen: true });
   assert.deepEqual(target.requests, [true]);
+});
+
+test("Windows fullscreen confirms the updated state when native events arrive first", async () => {
+  const target = new FakeFullscreenWindow({ mode: "windows-event-before-state" });
+  for (const enabled of [true, false, true, false]) {
+    assert.deepEqual(await transitionWindowFullScreen(target, enabled, {
+      platform: "win32", timeoutMs: 50
+    }), { ok: true, isFullScreen: enabled });
+    assert.equal(target.isFullScreen(), enabled);
+  }
 });
 
 test("window fullscreen transition waits for the macOS native event", async () => {

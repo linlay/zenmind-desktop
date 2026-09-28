@@ -44,17 +44,23 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     sendWindowState();
   });
 
-  targetWindow.on("enter-full-screen", () => {
-    options.lifecycle.applyAppearance(targetWindow);
-    options.restoreFloatingWindowsForFullscreen?.();
-    sendWindowState();
-  });
-
-  targetWindow.on("leave-full-screen", () => {
-    options.lifecycle.applyAppearance(targetWindow);
-    options.restoreFloatingWindowsForFullscreen?.();
-    sendWindowState();
-  });
+  function handleFullScreenChange() {
+    const syncState = () => {
+      if (targetWindow.isDestroyed()) return;
+      options.lifecycle.applyAppearance(targetWindow);
+      options.restoreFloatingWindowsForFullscreen?.();
+      sendWindowState();
+    };
+    if (options.platform === "win32") {
+      // Windows emits enter/leave before updating the native fullscreen flag.
+      queueMicrotask(syncState);
+    } else {
+      // macOS applies appearance at the completed native transition event.
+      syncState();
+    }
+  }
+  targetWindow.on("enter-full-screen", handleFullScreenChange);
+  targetWindow.on("leave-full-screen", handleFullScreenChange);
 
   targetWindow.on("maximize", sendWindowState);
   targetWindow.on("unmaximize", sendWindowState);

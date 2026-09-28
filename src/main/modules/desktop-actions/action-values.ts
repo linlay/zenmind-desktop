@@ -75,12 +75,6 @@ export function readItemId(args: Record<string, unknown>) {
   return itemId;
 }
 
-export function readActionInput(args: Record<string, unknown>) {
-  const input = asRecord(args.input);
-  const patch = asRecord(args.patch);
-  return hasObjectKeys(input) ? input : hasObjectKeys(patch) ? patch : args;
-}
-
 export function firstRecordItem(value: unknown) {
   return Array.isArray(value) ? asRecord(value[0]) : {};
 }

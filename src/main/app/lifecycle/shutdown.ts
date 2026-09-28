@@ -26,6 +26,14 @@ import { t } from "../../support/i18n/main-i18n";
 
 const USER_SHUTDOWN_BUDGET_MS = 8_000;
 const INSTALLER_SHUTDOWN_BUDGET_MS = 10_000;
+// Windows service scripts may wait 30s for exit. Include PowerShell startup,
+// inventory, force cleanup and verification without weakening their checks.
+const WINDOWS_INSTALLER_SHUTDOWN_BUDGET_MS = 55_000;
+
+function shutdownBudget(mode: ShutdownMode, platform: NodeJS.Platform) {
+  if (mode !== "installer") return USER_SHUTDOWN_BUDGET_MS;
+  return platform === "win32" ? WINDOWS_INSTALLER_SHUTDOWN_BUDGET_MS : INSTALLER_SHUTDOWN_BUDGET_MS;
+}
 
 type ManagedProcessSnapshot = Awaited<
   ReturnType<typeof captureManagedProcessCleanupSnapshotAsync>
@@ -59,6 +67,7 @@ export type ShutdownCleanupDependencies = {
 
 export type ShutdownCleanupRunnerOptions = {
   app: App;
+  platform?: NodeJS.Platform;
   getMode: () => ShutdownMode;
   getExistingPromise: () => Promise<ShutdownReport> | null;
   setPromise: (promise: Promise<ShutdownReport>) => void;
@@ -76,6 +85,10 @@ function appendFailure(
   failures: ShutdownFailure[],
   failure: ShutdownFailure
 ) {
+  console.warn(
+    `[main] shutdown check failed kind=${failure.kind} id=${failure.id} ` +
+    `phase=${failure.phase}: ${failure.message}`
+  );
   failures.push({
     ...failure,
     ...(failure.pids?.length
@@ -110,6 +123,7 @@ function isLoopbackPortListening(port: number) {
 }
 
 export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOptions) {
+  const platform = options.platform ?? process.platform;
   const dependencies: ShutdownCleanupDependencies = {
     closeWebappWindows: () => webappWindowManager.closeAll(),
     listOpenWebappWindowIds: () => webappWindowManager.openIds(),
@@ -126,7 +140,9 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
       }))
     ],
     captureManagedProcessSnapshot: (app) =>
-      captureManagedProcessCleanupSnapshotAsync(app),
+      captureManagedProcessCleanupSnapshotAsync(app, platform, {
+        timeoutMs: platform === "win32" && options.getMode() === "installer" ? 10_000 : (platform === "win32" ? 3500 : 3000)
+      }),
     stopStaticSites: () => stopAllStaticSiteHosts(),
     stopWebapps: (app) => webappManager.runtime.stopAll(app),
     stopServices: (app, serviceOptions) =>
@@ -160,9 +176,7 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
     const cleanupPromise = runCleanup().catch((error) => {
       const mode = options.getMode();
       const elapsedMs = Math.max(0, now() - fallbackStartedAt);
-      const budgetMs = mode === "installer"
-        ? INSTALLER_SHUTDOWN_BUDGET_MS
-        : USER_SHUTDOWN_BUDGET_MS;
+      const budgetMs = shutdownBudget(mode, platform);
       const report: ShutdownReport = {
         mode,
         ok: false,
@@ -217,6 +231,21 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
       });
     };
 
+    let processCleanupSnapshot: ManagedProcessSnapshot = [];
+    const preflightSnapshot = platform === "win32" && mode === "installer";
+    if (preflightSnapshot) {
+      try {
+        processCleanupSnapshot = await dependencies.captureManagedProcessSnapshot(options.app);
+      } catch (error) {
+        appendFailure(failures, { kind: "service", id: "managed-process-snapshot", phase: "verify", message: errorMessage(error) });
+        const elapsedMs = Math.max(0, now() - startedAt);
+        const report: ShutdownReport = { mode, ok: false, timedOut: elapsedMs > shutdownBudget(mode, platform), elapsedMs, failures, survivors: [] };
+        emitProgress("failed", 100, "");
+        options.markComplete(report);
+        return report;
+      }
+    }
+
     emitProgress("preparing", 5, "");
 
     try {
@@ -240,9 +269,8 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
       });
     }
 
-    let processCleanupSnapshot: ManagedProcessSnapshot = [];
     try {
-      processCleanupSnapshot = await dependencies.captureManagedProcessSnapshot(options.app);
+      if (!preflightSnapshot) processCleanupSnapshot = await dependencies.captureManagedProcessSnapshot(options.app);
     } catch (error) {
       appendFailure(failures, {
         kind: "service",
@@ -253,7 +281,9 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
     }
 
     emitProgress("stopping", 20, "");
-    const gracefulStopTimeoutMs = mode === "installer" ? 4_500 : 3_500;
+    const gracefulStopTimeoutMs = mode === "installer"
+      ? (platform === "win32" ? 35_000 : 4_500)
+      : 3_500;
     const [staticSitesResult, webappsResult, servicesResult, tunnelResult] = await Promise.allSettled([
       dependencies.stopStaticSites(),
       dependencies.stopWebapps(options.app),
@@ -419,9 +449,7 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
 
     const elapsedMs = Math.max(0, now() - startedAt);
     const reportMode = options.getMode();
-    const budgetMs = reportMode === "installer"
-      ? INSTALLER_SHUTDOWN_BUDGET_MS
-      : USER_SHUTDOWN_BUDGET_MS;
+    const budgetMs = shutdownBudget(reportMode, platform);
     const survivorList = [...survivors]
       .filter((pid) => dependencies.isProcessRunning(pid))
       .sort((left, right) => left - right);
@@ -455,7 +483,8 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
     options.markComplete(report);
     console.log(
       `[main] app shutdown cleanup finished mode=${report.mode} ok=${ok} timedOut=${timedOut} ` +
-      `elapsedMs=${elapsedMs} survivors=${survivorList.join(",") || "none"}`
+      `elapsedMs=${elapsedMs} budgetMs=${budgetMs} failures=${failures.length} ` +
+      `survivors=${survivorList.join(",") || "none"}`
     );
     return report;
   }

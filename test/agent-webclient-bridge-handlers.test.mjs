@@ -249,7 +249,7 @@ function createRuntime(targets, overrides = {}) {
     isTrustedAgentWebclientSession: () => true,
     realtimeBroker: broker,
     getServiceState: overrides.getServiceState || (async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } })),
-    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
+    issueAccessToken: overrides.issueAccessToken || (async () => ({ ok: true, token: "token", message: "" })),
     syncCanonicalChat: overrides.syncCanonicalChat
       || (async () => ({ requestId: "sync-1", ok: true })),
     dispatchWorkPanel: overrides.dispatchWorkPanel
@@ -1543,3 +1543,38 @@ test("document opening requires a registered child and owner Chat", async () => 
     assert.equal(dispatched, false);
   }
 });
+
+
+for (const boundary of ["retirement", "service-state", "access-token"]) {
+  test(`FramePort revalidates its surface after ${boundary} before advancing authorization`, async () => {
+    const target = mainTarget();
+    const targets = new Map([[target.webContentsId, target]]);
+    let completeWait;
+    let tokenCalls = 0;
+    const runtime = createRuntime(targets, {
+      realtimeBroker: {
+        getConnectionState: () => ({ phase: "idle", generation: 0, physicalConnectionCount: 0, reconnectCount: 0 }),
+      },
+      getServiceState: boundary === "service-state"
+        ? () => new Promise((resolve) => { completeWait = resolve; })
+        : async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
+      issueAccessToken: () => {
+        tokenCalls += 1;
+        return boundary === "access-token"
+          ? new Promise((resolve) => { completeWait = resolve; })
+          : Promise.resolve({ ok: true, token: "token", message: "" });
+      },
+    });
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "authorization-boundary" });
+    if (boundary !== "retirement") await flush();
+    targets.set(target.webContentsId, { ...target, registrationId: "replacement-generation" });
+    if (boundary === "service-state") completeWait({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } });
+    if (boundary === "access-token") completeWait({ ok: true, token: "token", message: "" });
+    await flush();
+    assert.equal(tokenCalls, boundary === "access-token" ? 1 : 0);
+    assert.equal(runtime.calls.connections.length, 0);
+    assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+    assert.ok(sender.messages.some(({ message }) => message.type === "close" && message.event.reason === "surface_inactive"));
+  });
+}

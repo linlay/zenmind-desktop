@@ -4,11 +4,11 @@ import type {
   KanbanCurrentUser,
   KanbanProject
 } from "../../../shared/contracts";
+import { t } from "../../support/i18n/main-i18n";
 import {
   listDesktopKanbanIssues,
   withDesktopKanbanDatabase
 } from "./local-store";
-import { t } from "../../support/i18n/main-i18n";
 
 type AppPathProvider = {
   getPath: (name: "userData") => string;
@@ -161,4 +161,109 @@ export function convertLocalProjectIssuesToLocal(
     }
     return rows.length;
   });
+}
+
+import type {
+  KanbanListResult
+} from "../../../shared/contracts";
+import { getDesktopDeviceId } from "../identity";
+
+import {
+  ensureDesktopKanbanDefaultBinding
+} from "./local-store";
+import { isRecord, readStringList, readText } from "./protocol-values";
+import { DEFAULT_SELECTED_PROJECT_ID, readKanbanCloudConfig } from "./runtime-config";
+import { KanbanRuntimeOptions } from "./runtime-options";
+import {
+  type KanbanDesktopSyncLocalProject
+} from "./ws-client";
+
+export interface ProjectActionsDependencies {
+  listIssues(): KanbanListResult;
+  readonly options: Pick<KanbanRuntimeOptions, "app">;
+  currentUser(): KanbanCurrentUser;
+  notifyChanged(): void;
+}
+
+export async function listLocalProjects(dependencies: ProjectActionsDependencies): Promise<{ ok: boolean; projects: KanbanProject[]; message: string }> {
+  const result = dependencies.listIssues();
+  return {
+    ok: true,
+    projects: result.projects ?? [],
+    message: t("kanban.runtime.localProjectsLoaded")
+  };
+}
+
+export async function listSyncLocalProjects(dependencies: ProjectActionsDependencies): Promise<KanbanDesktopSyncLocalProject[]> {
+  const deviceId = getDesktopDeviceId(dependencies.options.app);
+  let result = dependencies.listIssues();
+  let bindings = (result.projectBindings ?? []).filter((binding) => binding.deviceId === deviceId &&
+    binding.status === "active");
+  if (bindings.length === 0) {
+    const cloud = readKanbanCloudConfig(dependencies.options.app);
+    if (cloud.remoteControlEnabled) {
+      ensureDesktopKanbanDefaultBinding(dependencies.options.app, dependencies.currentUser(), deviceId, readText(process.env.DESKTOP_KANBAN_PROJECT_ID) || DEFAULT_SELECTED_PROJECT_ID);
+      result = dependencies.listIssues();
+      bindings = (result.projectBindings ?? []).filter((binding) => binding.deviceId === deviceId && binding.status === "active");
+    }
+  }
+  if (bindings.length > 0) {
+    return bindings.map((binding) => ({
+      projectId: binding.projectId,
+      localProjectId: binding.localProjectId,
+      localDisplayName: binding.localDisplayName || binding.localProjectId,
+      controlMode: binding.controlMode === "disabled"
+        ? "disabled"
+        : binding.controlMode === "observe" ? "readonly" : "execute"
+    }));
+  }
+  return [];
+}
+
+export function createLocalProject(dependencies: ProjectActionsDependencies, payload: unknown) {
+  const record = isRecord(payload) ? payload : {};
+  const result = createLocalDesktopProject(dependencies.options.app, dependencies.currentUser(), {
+    id: readText(record.localProjectId),
+    name: readText(record.name),
+    versions: readStringList(record.versions),
+    components: readStringList(record.components)
+  });
+  if (result.ok) {
+    dependencies.notifyChanged();
+  }
+  return result;
+}
+
+export function bindLocalProject(dependencies: ProjectActionsDependencies, payload: unknown) {
+  const record = isRecord(payload) ? payload : {};
+  const localProjectId = readText(record.localProjectId);
+  if (!localProjectId) {
+    return { ok: false, message: t("kanban.localProject.idRequired") };
+  }
+  const project = findLocalDesktopProject(dependencies.options.app, dependencies.currentUser(), localProjectId);
+  if (!project) {
+    return { ok: false, message: t("kanban.localProject.notFound") };
+  }
+  return {
+    ok: true,
+    message: t("kanban.localProject.bindConfirmed"),
+    project: { id: project.id, name: project.name, slug: project.slug, path: project.path }
+  };
+}
+
+export function unbindLocalProject(dependencies: ProjectActionsDependencies, payload: unknown) {
+  const record = isRecord(payload) ? payload : {};
+  const localProjectId = readText(record.localProjectId);
+  const converted = localProjectId
+    ? convertLocalProjectIssuesToLocal(dependencies.options.app, dependencies.currentUser(), localProjectId)
+    : 0;
+  if (converted > 0) {
+    dependencies.notifyChanged();
+  }
+  return {
+    ok: true,
+    message: converted > 0
+      ? t("kanban.localProject.unboundWithConverted", { count: converted })
+      : t("kanban.localProject.unboundConfirmed")
+  };
 }

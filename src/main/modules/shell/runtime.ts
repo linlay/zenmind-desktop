@@ -41,6 +41,7 @@ import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
 import { AppTrayController, getWindowsDevelopmentAppIconPath } from "./tray";
 import { createAppTrayNewChatRoute, getAppTrayRecentChats } from "./tray-chats";
+import { createTaskbarUnreadController } from "./taskbar-unread";
 import { workPanelLocalFileRegistry, workPanelDocumentHtmlRegistry } from "../work-panel";
 
 export type AppShellRuntimeOptions = {
@@ -102,6 +103,11 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     workPanelFullscreenActive: false,
     focusedWebviewDevToolsTargetId: null as number | null
   };
+  const taskbarUnreadController = createTaskbarUnreadController({
+    platform: options.platform,
+    getWindow: () => state.mainWindow,
+    onError: options.safeConsoleError
+  });
   const mainWindowLifecycle = createMainWindowLifecycleController({
     platform: options.platform,
     getWindow: () => state.mainWindow,
@@ -243,6 +249,12 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       iconPath: windowsDevelopmentAppIconPath
     }));
     const targetWindow = state.mainWindow;
+    if (options.platform === "win32") {
+      const refreshUnread = () => taskbarUnreadController.refresh(options.getAssistantNavigationSnapshot(), true);
+      targetWindow.on("show", refreshUnread);
+      targetWindow.on("restore", refreshUnread);
+      targetWindow.once("ready-to-show", refreshUnread);
+    }
     applyWindowsDevelopmentAppDetails(targetWindow, {
       platform: options.platform,
       appId: options.effectiveAppId,
@@ -441,6 +453,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     createAppTray,
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),
+    refreshTaskbarUnread: (snapshot: AssistantNavAgentItemsResult) => taskbarUnreadController.refresh(snapshot),
     isNativeDialogOpen: () => nativeDialogController.isOpen(),
     prepareQuitUi,
     confirmAndRequestAppQuit: () => quitConfirmationController.confirmAndRequestAppQuit(),

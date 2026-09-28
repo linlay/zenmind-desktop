@@ -1,4 +1,4 @@
-import type { DesktopUpdateManifest, DesktopUpdateArtifact } from "../../../shared/desktop-updates";
+import type { DesktopUpdateManifest, DesktopUpdateArtifact, DesktopPlatformUpdateManifest } from "../../../shared/desktop-updates";
 import { updateUrl } from "./config";
 
 function record(value: unknown): Record<string, unknown> {
@@ -29,13 +29,20 @@ export function compareUpdateVersions(left: string, right: string): number {
   }
   return 0;
 }
-export function parseUpdateManifest(value: unknown, productId: string): DesktopUpdateManifest {
+export function parseUpdateManifest(value: unknown, productId: string): DesktopUpdateManifest;
+export function parseUpdateManifest(value: unknown, productId: string, platform: NodeJS.Platform): DesktopPlatformUpdateManifest;
+export function parseUpdateManifest(value: unknown, productId: string, platform: NodeJS.Platform = "win32"): DesktopPlatformUpdateManifest {
   const input = record(value);
-  if (input.schemaVersion !== 1 || input.productId !== productId) throw new Error("Update manifest identity mismatch");
+  const native = platform === "darwin" && input.schemaVersion === 1;
+  if ((!native && input.schemaVersion !== 2) || input.productId !== productId) throw new Error("Update manifest identity mismatch");
+  if (!native) {
+  if (Object.hasOwn(input, "releaseSequence")) throw new Error("Obsolete update sequence field");
+  if (Object.hasOwn(input, "expiresAt")) throw new Error("Obsolete update expiry field");
+  }
   semver(input.version);
-  if (typeof input.publishedAt !== "string" || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.publishedAt) || !Number.isFinite(Date.parse(input.publishedAt))) throw new Error("Invalid update publication time");
+  if (typeof input.publishedAt !== "string" || (!native && !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.publishedAt)) || !Number.isFinite(Date.parse(input.publishedAt))) throw new Error("Invalid update publication time");
   const notes: Record<string, string[]> = {};
-  for (const [locale, lines] of Object.entries(record(input.releaseNotes))) {
+  for (const [locale, lines] of Object.entries(record(input.releaseNotes === undefined ? {} : input.releaseNotes))) {
     if (!/^[a-z]{2}(?:-[A-Za-z]{2,8})?$/.test(locale) || !Array.isArray(lines) || lines.length > 100 || lines.some((line) => typeof line !== "string" || line.length > 2000)) throw new Error("Invalid update release notes");
     notes[locale] = lines;
   }
@@ -49,5 +56,7 @@ export function parseUpdateManifest(value: unknown, productId: string): DesktopU
     if (typeof item.sha256 !== "string" || !/^[a-fA-F0-9]{64}$/.test(item.sha256)) throw new Error("Invalid update artifact checksum");
     artifacts[key] = { url, size: item.size as number, sha256: item.sha256.toLowerCase() };
   }
-  return { schemaVersion: 1, productId, version: input.version as string, publishedAt: input.publishedAt, releaseNotes: notes, artifacts };
+  const common = { productId, version: input.version as string, publishedAt: input.publishedAt, releaseNotes: notes, artifacts };
+  if (native) return { schemaVersion: 1, ...common };
+  return { schemaVersion: 2, ...common };
 }

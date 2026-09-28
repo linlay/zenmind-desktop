@@ -66,16 +66,16 @@ test("macOS host preflight rejects mounted media and unsigned layout", async () 
   await installer.verifyMacUpdateHost("/Applications/CuteJ.app/Contents/MacOS/CuteJ");
   assert.deepEqual(calls[0].slice(1), ["/usr/bin/codesign", ["--verify", "--deep", "--strict", "/Applications/CuteJ.app"]]);
 });
-test("Windows validates publisher and launches the existing NSIS update path", async () => {
+test("Windows launches the existing NSIS update path without requiring Authenticode", async () => {
   calls.length = 0;
-  await installer.verifyWindowsPublisher("C:\\Cache\\user's app.exe", "C:\\Apps\\CuteJ.exe");
-  const signatureScript = Buffer.from(calls[0][2].at(-1), "base64").toString("utf16le");
-  assert.match(signatureScript, /Get-AuthenticodeSignature/); assert.match(signatureScript, /SignerCertificate.Subject/); assert.match(signatureScript, /user''s app/);
   await installer.launchWindowsUpdate("C:\\Cache\\update.exe");
-  assert.deepEqual(calls.find(([name]) => name === "spawn")[2], ["--updated", "/S", "--force-run"]);
+  assert.equal(calls.some(([name]) => name === "exec"), false);
+  assert.deepEqual(calls.find(([name]) => name === "spawn")[2], ["--updated", "--force-run"]);
+  assert.equal(calls.find(([name]) => name === "spawn")[3].windowsHide, false);
   spawnFailure = true; calls.length = 0;
   await installer.launchWindowsUpdate("C:\\Cache\\update.exe");
   assert.match(Buffer.from(calls.find(([name]) => name === "exec")[2].at(-1), "base64").toString("utf16le"), /-Verb RunAs/);
+  assert.doesNotMatch(Buffer.from(calls.find(([name]) => name === "exec")[2].at(-1), "base64").toString("utf16le"), /'\/S'/);
 });
 test("update IPC rejects guest frames and other windows, cleans up handlers", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "update-ipc-test-")); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -92,10 +92,10 @@ test("update IPC rejects guest frames and other windows, cleans up handlers", as
 test("update startup gate accepts fully started apps and rejects startup/quit", () => {
   const { STARTUP_PHASES, isStartupPhaseAtLeast } = require("../dist-electron/main/app/lifecycle/startup-phases.js");
   // Exercise the production guard expression so a readiness whitelist cannot omit the final phase.
-  const source = fs.readFileSync(new URL("../src/main/app/runtime.operations-5.ts", import.meta.url), "utf8");
+  const source = fs.readFileSync(new URL("../src/main/app/lifecycle/app-ready.ts", import.meta.url), "utf8");
   const guard = source.match(/if \(([^\n]+)\) throw new Error\("updateBusy"\);/);
   assert.ok(guard);
-  const isBlocked = new Function("factoryContext", "isStartupPhaseAtLeast", `return (${guard[1]});`);
+  const isBlocked = new Function("dependencies", "isStartupPhaseAtLeast", `return (${guard[1]});`);
   for (const startupPhase of STARTUP_PHASES) {
     for (const isHandlingQuit of [false, true]) {
       const expected = isHandlingQuit || !["core-ready", "non-core-ready", "degraded"].includes(startupPhase);
@@ -105,10 +105,10 @@ test("update startup gate accepts fully started apps and rejects startup/quit", 
 });
 
 test("confirmed upgrade cleans up without waiting for running chats", async () => {
-  const source = fs.readFileSync(new URL("../src/main/app/runtime.operations-5.ts", import.meta.url), "utf8");
-  const body = source.match(/prepareInstall: async \(\) => \{([\s\S]*?)\n        \},\n        quit:/)?.[1];
+  const source = fs.readFileSync(new URL("../src/main/app/lifecycle/app-ready.ts", import.meta.url), "utf8");
+  const body = source.match(/prepareInstall: async \(\) => \{([\s\S]*?)\r?\n\s*\},\r?\n\s*quit:/)?.[1];
   assert.ok(body);
-  const prepare = new Function("factoryContext", "isStartupPhaseAtLeast", `return (async () => {${body}})();`);
+  const prepare = new Function("dependencies", "isStartupPhaseAtLeast", `return (async () => {${body}})();`);
   const events = [];
   const context = {
     appState: { isHandlingQuit: false, startupPhase: "core-ready" },

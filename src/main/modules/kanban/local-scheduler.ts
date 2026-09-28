@@ -1,12 +1,11 @@
-import type { KanbanIssue, KanbanCurrentUser } from "../../../shared/contracts";
+import type { KanbanCurrentUser, KanbanIssue } from "../../../shared/contracts";
+import { t } from "../../support/i18n/main-i18n";
 import {
   getDesktopKanbanIssue, listDesktopKanbanIssues, updateDesktopKanbanIssueByPredicate
 } from "./local-store";
-import {
-  type KanbanRuntimeOptions, createKanbanRemoteChatId, createKanbanRemoteRunId,
-  readKanbanSettings, buildDesktopKanbanRunPrompt
-} from "./runtime.shared";
-import { t } from "../../support/i18n/main-i18n";
+import { buildDesktopKanbanRunPrompt, createKanbanRemoteChatId, createKanbanRemoteRunId } from "./run-policy";
+import { readKanbanSettings } from "./runtime-config";
+import { type KanbanRuntimeOptions } from "./runtime-options";
 
 const LOCAL_TODO_START_DELAY_MS = 2_000;
 

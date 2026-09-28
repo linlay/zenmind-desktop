@@ -130,11 +130,13 @@
   justify-content: center;
   flex: none;
   color: currentColor;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .market-tab-icon svg {
+  width: 16px;
+  height: 16px;
   display: block;
 }
 

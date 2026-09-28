@@ -1,4 +1,4 @@
-import { t } from "../../support/i18n/main-i18n";
+import { getMainLocale, t } from "../../support/i18n/main-i18n";
 import { type PlatformResponse, type AgentPlatformFetchOptions, type DesktopActionBridgeOptions } from "./action-contracts";
 import { type App } from "electron";
 import { getResponsiveServiceState } from "../services";
@@ -71,6 +71,7 @@ export async function fetchAgentPlatformWithAuth<T>(
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
+        "X-Locale": getMainLocale(),
         Authorization: `Bearer ${token.token.trim()}`,
         ...(requestBody === undefined ? {} : { "Content-Type": contentType })
       },

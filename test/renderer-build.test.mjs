@@ -1,3 +1,4 @@
+import { readAppRuntimeSource } from "./helpers/app-runtime-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -12,6 +13,7 @@ const typescript = require("typescript");
 function readSourceFile(...segments) {
   const target = path.join(projectRoot, ...segments);
   const source = fs.readFileSync(target, "utf8");
+  if (target.endsWith(`${path.sep}app${path.sep}runtime.ts`)) return readAppRuntimeSource(projectRoot);
   if (!target.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(target) !== ".ts") {
     return source;
   }
@@ -52,6 +54,11 @@ function readSourceFile(...segments) {
       ? readSourceFile(path.relative(projectRoot, path.join(directory, name)))
       : fs.readFileSync(path.join(directory, name), "utf8"));
   return [source, ...implementationParts].join("\n");
+}
+
+// Responsibility checks read exact files so neighboring implementations cannot satisfy a missing invariant.
+function readExactSourceFile(...segments) {
+  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
 function readJsonFile(...segments) {
@@ -3205,14 +3212,16 @@ test("WebApp agent choices merge Copilot and general agents", () => {
 });
 
 test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
-  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
-  const settingsSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
-  const settingsRoutes = readSourceFile("src", "shared", "settings-routes.ts");
-  const sharedSettingsSections = readSourceFile("src", "shared", "settings-sections.ts");
-  const kanbanContracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
-  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
-  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const settingsPage = readExactSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const settingsSections = readExactSourceFile("src", "renderer", "settingsPageSections.ts");
+  const settingsRoutes = readExactSourceFile("src", "shared", "settings-routes.ts");
+  const sharedSettingsSections = readExactSourceFile("src", "shared", "settings-sections.ts");
+  const kanbanContracts = readExactSourceFile("src", "shared", "contracts", "kanban.ts");
+  const kanbanRuntime = readExactSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const runtimeSettings = readExactSourceFile("src", "main", "modules", "kanban", "runtime-settings.ts");
+  const runtimeConfig = readExactSourceFile("src", "main", "modules", "kanban", "runtime-config.ts");
+  const zhCN = readExactSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readExactSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
   assert.match(sharedSettingsSections, /"kanban"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
@@ -3273,10 +3282,14 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.match(kanbanContracts, /connectionState\?:[^;]*"auth_required"/);
   assert.doesNotMatch(kanbanContracts, /selectedProjectId:\s*string/);
   assert.match(kanbanContracts, /remoteControlEnabled:\s*boolean/);
-  assert.match(kanbanRuntime, /remoteControlEnabled/);
-  assert.match(kanbanRuntime, /config\.remoteControlEnabled/);
-  assert.match(kanbanRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
-  assert.match(kanbanRuntime, /fallbackState:\s*"auth_required"/);
+  assert.match(kanbanRuntime, /getSettings\(\): KanbanSettingsResult \{ return runtimeSettings\.getSettings\(this\.runtimeSettingsDependencies\); \}/);
+  assert.match(kanbanRuntime, /runtimeSettings\.refreshConnection\(this\.runtimeSettingsDependencies, options\)/);
+  assert.match(runtimeSettings, /settings: readKanbanSettings\(dependencies\.options\.app\)/);
+  assert.match(runtimeSettings, /resolveKanbanWsConnection\(dependencies\.options\.app, dependencies\.options\.canUseDesktopSsoCredentials\?\.\(\) !== false\)/);
+  assert.match(runtimeConfig, /remoteControlEnabled/);
+  assert.match(runtimeConfig, /config\.remoteControlEnabled/);
+  assert.match(runtimeConfig, /KANBAN_CONFIG_FILE = "kanban\.json"/);
+  assert.match(runtimeConfig, /fallbackState:\s*"auth_required"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制中心"/);
   assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
   assert.match(zhCN, /"settings\.control\.description":\s*"管理服务和桌面端配对。"/);
@@ -4359,10 +4372,12 @@ test("Kanban runtime keeps only the canonical local-store implementation", () =>
 
 test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () => {
   const contracts = readSharedContractsSource();
-  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
-  const navigationClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
-  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const assistantRuntime = readExactSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const navigationClient = readExactSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
+  const kanbanRuntime = readExactSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const runPolicy = readExactSourceFile("src", "main", "modules", "kanban", "run-policy.ts");
+  const runEventOutbox = readExactSourceFile("src", "main", "modules", "kanban", "run-event-outbox.ts");
+  const kanbanPage = readExactSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
 
   assert.match(contracts, /interface AssistantNavigationPushEvent[\s\S]{0,100}frame: "push"/);
   assert.match(contracts, /finishReason: string \| null/);
@@ -4373,11 +4388,14 @@ test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () =
   assert.match(assistantRuntime, /sendNavigationPushEvent\(event\)/);
   assert.match(navigationClient, /runId: toText\(event\.runId\) \|\| null/);
   assert.doesNotMatch(navigationClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
-  assert.match(kanbanRuntime, /status === "completed" && finishReason === "complete"/);
-  assert.match(kanbanRuntime, /status === "failed" && finishReason === "error"/);
-  assert.match(kanbanRuntime, /status === "interrupted" && finishReason === "cancel"/);
-  assert.match(kanbanRuntime, /issue\.runId === runId \|\| issue\.activeRunId === runId/);
-  assert.doesNotMatch(kanbanRuntime, /sendAssistantEvent/);
+  assert.match(runPolicy, /status === "completed" && finishReason === "complete"/);
+  assert.match(runPolicy, /status === "failed" && finishReason === "error"/);
+  assert.match(runPolicy, /status === "interrupted" && finishReason === "cancel"/);
+  assert.match(runEventOutbox, /issue\.runId === runId \|\| issue\.activeRunId === runId/);
+  assert.match(kanbanRuntime, /sendNavigationPushEvent\(event: AssistantNavigationPushEvent\)\s*\{\s*runEventOutbox\.sendNavigationPushEvent\(this\.runEventOutboxDependencies, event\)/);
+  assert.match(runEventOutbox, /event\.frame !== "push"[\s\S]*?!isAgentPlatformEpochMilliseconds\(semanticTime\)/);
+  assert.match(runEventOutbox, /const terminal = resolveKanbanRunFinishedPush\(event\)/);
+  assert.doesNotMatch([kanbanRuntime, runEventOutbox, runPolicy].join("\n"), /sendAssistantEvent/);
   assert.doesNotMatch(kanbanPage, /assistant\.onAssistantEvent/);
   assert.match(kanbanPage, /kanbanApi\.onChanged\(\(\) => \{/);
 });
@@ -6440,9 +6458,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?options\.restoreFloatingWindowsForFullscreen\?\.\(\);[\s\S]*?\}\);/);
   assert.match(appShellRuntime, /restoreDesktopPetWindowLayering: \(\) => void;/);
   assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
-  assert.match(appRuntime, /restoreDesktopPetWindowLayering:\s*factoryContext\.restoreDesktopPetWindowLayering/);
-  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,180}createMainProcessRuntime_restoreDesktopPetWindowLayering/);
-  assert.match(appRuntime, /return factoryContext\.petRuntime\.restoreWindowLayering\(\)/);
+  assert.match(appRuntime, /restoreDesktopPetWindowLayering:\s*dependencies\.restoreDesktopPetWindowLayering/);
+  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,180}return petRuntime\.restoreWindowLayering\(\)/);
+  assert.match(appRuntime, /return petRuntime\.restoreWindowLayering\(\)/);
   assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
   assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/);
   assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/);
@@ -6496,7 +6514,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const platformAdapter = readSourceFile("src", "main", "infrastructure", "electron", "platform-adapter.ts");
 
-  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
+  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
   assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
   assert.match(mainProcess, /resolveEffectiveAppId\([\s\S]*?options\.appId,[\s\S]*?isDesktopDevelopmentRuntime\(options\.app, \{ platform: options\.platform \}\)[\s\S]*?\);/);
@@ -6520,7 +6538,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /options\.app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)/);
   assert.match(mainProcess, /then\(\(\) => \{[\s\S]*?applyDarwinDockIcon\(dock\);[\s\S]*?\}\)/);
-  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => factoryContext\.systemIdentityRuntime\.ensureDockIdentity\(\)/);
+  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => dependencies\.systemIdentityRuntime\.ensureDockIdentity\(\)/);
   assert.match(mainProcess, /showMainWindow\(\);/);
   assert.match(readSourceFile("src", "main", "modules", "shell", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
 });
@@ -6946,10 +6964,12 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
 });
 
 test("webview surfaces publish complete tab registrations for embedded cdp", () => {
-  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
-  const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
-  const browserRegistry = readSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
-  const preload = readSourceFile("src", "preload", "index.ts");
+  const externalWebview = readExactSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
+  const surfaceHosts = readExactSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
+  const browserRegistry = readExactSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
+  const registrationStore = readExactSourceFile("src", "main", "modules", "web-surfaces", "registration-store.ts");
+  const guestResolution = readExactSourceFile("src", "main", "modules", "web-surfaces", "guest-resolution.ts");
+  const preload = readExactSourceFile("src", "preload", "index.ts");
 
   assert.match(surfaceHosts, /surfaceKind=\{item\.kind\}/u);
   assert.match(externalWebview, /function getEmbeddedCdpSurfaceApi\(\)/u);
@@ -6958,8 +6978,12 @@ test("webview surfaces publish complete tab registrations for embedded cdp", () 
   assert.match(externalWebview, /activeTabId:\s*registeredActiveTabId/u);
   assert.match(externalWebview, /embeddedCdp\.unregisterSurface\(\{/u);
   assert.match(preload, /embeddedCdp\.registerSurface/u);
-  assert.match(browserRegistry, /findRegisteredSurfaceWebContents/u);
-  assert.match(browserRegistry, /contents\.getType\(\) !== "webview"/u);
+  assert.match(browserRegistry, /const store = createRegistrationStore\(options\)/u);
+  assert.match(browserRegistry, /findRegisteredSurfaceWebContents: store\.guest\.findRegisteredSurfaceWebContents/u);
+  assert.match(registrationStore, /const guest = createGuestResolution\(options, \{ resolveRegisteredSurface \}\)/u);
+  assert.match(guestResolution, /function findRegisteredSurfaceWebContents[\s\S]*?dependencies\.resolveRegisteredSurface\(surfaceId\)/u);
+  assert.match(registrationStore, /contents\.getType\(\) === "webview"/u);
+  assert.match(guestResolution, /contents\.getType\(\) !== "webview"/u);
 });
 
 test("website tab lifecycle, surface refresh, active styling, and copilot restore stay integrated", () => {
@@ -7031,8 +7055,10 @@ test("desktop web surface state reads one exact surface without an active-surfac
 });
 
 test("assistant chat export writes directly to the download location", () => {
-  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
-  const downloadPaths = readSourceFile("src", "main", "infrastructure", "filesystem", "download-paths.ts");
+  const assistantHandlers = readExactSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const assistantBridge = readExactSourceFile("src", "main", "modules", "agent-platform", "bridge.ts");
+  const chatExport = readExactSourceFile("src", "main", "modules", "agent-platform", "chat-export.ts");
+  const downloadPaths = readExactSourceFile("src", "main", "infrastructure", "filesystem", "download-paths.ts");
   const exportPathBlock =
     downloadPaths.match(/export function getAssistantExportDefaultPath[\s\S]*?export function getDesktopDownloadDefaultPath/u)?.[0] ?? "";
   const saveExportBlock =
@@ -7042,8 +7068,11 @@ test("assistant chat export writes directly to the download location", () => {
   assert.match(downloadPaths, /export async function getAvailableFilePath/u);
   assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\), \{/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
-  assert.match(readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"), /\/api\/chat\/export\?chatId=/u);
-  assert.doesNotMatch(readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"), /\/api\/chat-export/u);
+  assert.match(assistantHandlers, /assistantBridge\.downloadChatExport\(chatId\)/u);
+  assert.match(assistantBridge, /this\.exports = new ChatExportClient\(this\.platform\)/u);
+  assert.match(assistantBridge, /downloadChatExport\(chatId: string\): Promise<AgentPlatformChatExportResult>\s*\{ return this\.exports\.downloadChatExport\(chatId\); \}/u);
+  assert.match(chatExport, /\/api\/chat\/export\?chatId=/u);
+  assert.doesNotMatch([assistantBridge, chatExport].join("\n"), /\/api\/chat-export/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
@@ -7167,11 +7196,11 @@ test("assistant entrypoints restore core services before opening embedded webcli
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
-  assert.match(mainProcess, /await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,160}factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
+  assert.match(mainProcess, /await dependencies\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,160}dependencies\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
   assert.match(
     mainProcess,
-    /async function showAssistantTargetWindow[\s\S]*?factoryContext\.showMainWindow\(targetPath\);[\s\S]*?await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
+    /async function showAssistantTargetWindow[\s\S]*?dependencies\.showMainWindow\(targetPath\);[\s\S]*?await dependencies\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?dependencies\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
   );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
@@ -7290,7 +7319,7 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
-  assert.match(mainProcess, /effectiveAppId:\s*factoryContext\.systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /effectiveAppId:\s*dependencies\.systemIdentityRuntime\.effectiveAppId/u);
   assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
   assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
@@ -7696,7 +7725,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
   assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(focusedWebviewDevToolsTargetId\)/);
-  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*factoryContext\.webSurfaceRuntime\.getCopilotDevToolsTarget\(\)/);
+  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*dependencies\.webSurfaceRuntime\.getCopilotDevToolsTarget\(\)/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
 });
@@ -8903,11 +8932,25 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
   }
 
   const desktopAssistantBoundary = [
-    readSourceFile("src", "shared", "contracts", "copilot.ts"),
-    readSourceFile("src", "shared", "contracts", "desktop-api.ts"),
-    readSourceFile("src", "preload", "index.ts"),
-    readSourceFile("src", "main", "modules", "assistant", "ipc.ts"),
-    readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"),
+    readExactSourceFile("src", "shared", "contracts", "copilot.ts"),
+    readExactSourceFile("src", "shared", "contracts", "desktop-api.ts"),
+    readExactSourceFile("src", "preload", "index.ts"),
+    readExactSourceFile("src", "main", "modules", "assistant", "ipc.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "run-controller.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "completion.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "agent-directory.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "chat-client.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "chat-export.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "attachment-upload.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "platform-client.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "bridge-contracts.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "bridge-values.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "platform-event-normalizer.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "image-generation-events.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "platform-http-response.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "assistant-output-text.ts"),
+    readExactSourceFile("src", "main", "modules", "agent-platform", "chat-projections.ts"),
   ].join("\n");
   for (const removedName of [
     "getMemorySettings",
@@ -8929,21 +8972,21 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
   }
   assert.doesNotMatch(
     [
-      readSourceFile("src", "shared", "contracts", "copilot.ts"),
-      readSourceFile("src", "main", "modules", "assistant", "settings-store.ts"),
-      readSourceFile("src", "main", "infrastructure", "filesystem", "profile-store.ts"),
+      readExactSourceFile("src", "shared", "contracts", "copilot.ts"),
+      readExactSourceFile("src", "main", "modules", "assistant", "settings-store.ts"),
+      readExactSourceFile("src", "main", "infrastructure", "filesystem", "profile-store.ts"),
       readSourceFile("src", "main", "app", "bootstrap", "desktop-init.ts"),
     ].join("\n"),
     /\bvoiceCorrectionEnabled\b/u,
   );
 
-  const identityAuth = readSourceFile("src", "main", "modules", "identity", "identity-center-auth.ts");
+  const identityAuth = readExactSourceFile("src", "main", "modules", "identity", "identity-center-auth.ts");
   assert.match(identityAuth, /resolveDesktopCapability\(app, "auth\.publicKey"\)/u);
   assert.match(identityAuth, /capability\.filePath \|\| getIdentityCenterPublicKeyExportPath\(app\)/u);
   assert.doesNotMatch(identityAuth, /readEnvFile|runExecFile|issueIdentityCenterAccessToken|__testInternals|validateJwt|accessToken/u);
 
-  const attachmentStore = readSourceFile("src", "main", "modules", "assistant", "attachments", "attachment-store.ts");
-  const agentPlatformConfig = readSourceFile("src", "main", "modules", "agent-platform", "config.ts");
+  const attachmentStore = readExactSourceFile("src", "main", "modules", "assistant", "attachments", "attachment-store.ts");
+  const agentPlatformConfig = readExactSourceFile("src", "main", "modules", "agent-platform", "config.ts");
   for (const removedName of [
     "hydrateAssistantAttachmentsForChat",
     "refreshAssistantAttachmentsForRun",
@@ -8957,10 +9000,27 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
   assert.doesNotMatch(agentPlatformConfig, /\btryLoadAgentPlatformMinimaxSettings\b|\btryLoadAgentPlatformVoiceAsrSettings\b/u);
 
   const kanbanBoundary = [
-    readSourceFile("src", "shared", "contracts", "kanban.ts"),
-    readSourceFile("src", "main", "modules", "kanban", "local-projects.ts"),
-    readSourceFile("src", "main", "modules", "kanban", "local-store.ts"),
-    readSourceFile("src", "main", "modules", "kanban", "runtime.ts"),
+    readExactSourceFile("src", "shared", "contracts", "kanban.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "local-projects.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "local-store.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "runtime.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "run-policy.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "run-event-outbox.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "automation-model.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "automation-sync.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "runtime-config.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "runtime-options.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "runtime-settings.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "local-issue-actions.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "cloud-issue-actions.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "cloud-projection.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "command-delivery.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "command-recovery.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "manual-run-controller.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "agent-directory.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "cloud-event-model.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "protocol-values.ts"),
+    readExactSourceFile("src", "main", "modules", "kanban", "local-scheduler.ts"),
   ].join("\n");
   for (const removedName of [
     "KanbanIssueSyncResult",
@@ -8993,32 +9053,43 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
     assert.doesNotMatch(appRuntime, new RegExp(`function ${removedName}\\b`, "u"), removedName);
   }
 
-  const pluginLoader = readSourceFile("src", "main", "modules", "plugins", "loader.ts");
-  const pluginMarket = readSourceFile("src", "main", "modules", "marketplace", "plugin-market.ts");
+  const pluginLoader = readExactSourceFile("src", "main", "modules", "plugins", "loader.ts");
+  const pluginMarket = readExactSourceFile("src", "main", "modules", "marketplace", "plugin-market.ts");
   assert.doesNotMatch(`${appRuntime}\n${pluginLoader}\n${pluginMarket}`, /retired-plugins|isRetiredPlugin|cleanupRetiredPluginUserData/u);
 
-  const compatibility = readSourceFile("src", "main", "support", "logging", "deprecated-compatibility.ts");
-  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
-  const webclientBridge = readSourceFile("src", "main", "modules", "agent-platform", "ipc.ts");
-  const browserRegistry = readSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
-  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
-  const builtinLoader = readSourceFile("src", "main", "modules", "services", "builtin-loader.ts");
-  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const compatibility = readExactSourceFile("src", "main", "support", "logging", "deprecated-compatibility.ts");
+  const assistantHandlers = readExactSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const webclientBridge = readExactSourceFile("src", "main", "modules", "agent-platform", "ipc.ts");
+  const framePortController = readExactSourceFile("src", "main", "modules", "agent-platform", "frame-port", "session-controller.ts");
+  const workPanelInvoke = readExactSourceFile("src", "main", "modules", "agent-platform", "frame-port", "workpanel-invoke.ts");
+  const registrationStore = readExactSourceFile("src", "main", "modules", "web-surfaces", "registration-store.ts");
+  const browserRegistry = readExactSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
+  const shellHandlers = readExactSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const builtinLoader = readExactSourceFile("src", "main", "modules", "services", "builtin-loader.ts");
+  const appShell = readExactSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   assert.match(assistantHandlers, /reportDeprecatedCompatibilityUse\("assistant\.createCoderProject"\)/u);
-  assert.match(webclientBridge, /"agent-webclient\.bridge-v4"[\s\S]{0,100}"agent-webclient\.bridge-v5"/u);
-  assert.match(browserRegistry, /category: LEGACY_FIXED_SURFACE_ID_ALIASES\[normalized\] \? "fixed" : "derived"/u);
+  assert.match(webclientBridge, /const controller = createSessionController\(options\)/u);
+  assert.match(webclientBridge, /ipcMain\.handle\(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL, controller\.handleWorkPanelInvoke\)/u);
+  assert.match(framePortController, /const workpanelInvoke = createWorkpanelInvoke\(/u);
+  assert.match(framePortController, /const handleWorkPanelInvoke = workpanelInvoke\.handleWorkPanelInvoke/u);
+  assert.match(browserRegistry, /resolveCanonicalSurfaceId: store\.resolveCanonicalSurfaceId/u);
+  assert.match(workPanelInvoke, /"agent-webclient\.bridge-v4"[\s\S]{0,100}"agent-webclient\.bridge-v5"/u);
+  assert.match(registrationStore, /category: LEGACY_FIXED_SURFACE_ID_ALIASES\[normalized\] \? "fixed" : "derived"/u);
   assert.match(appShell, /const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "\/service\/agent-webclient"/u);
   assert.match(appShell, /path=\{LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\}[\s\S]{0,120}LegacyAgentWebclientServiceRouteRedirect/u);
   assert.match(appShell, /reportDeprecatedRendererCompatibilityUse\("route\.service-agent-webclient"/u);
   assert.match(compatibility, /"\[deprecated-compatibility\]"/u);
   assert.match(compatibility, /desktopVersion: currentDesktopVersion/u);
-  assert.match(appRuntime, /source === "deprecated-compatibility" \? \{ desktopVersion: app\.getVersion\(\) \}/u);
+  assert.match(appRuntime, /return rendererDiagnostics\.reportRendererDiagnostic\(source, details\)/u);
+  assert.match(readSourceFile("src", "main", "app", "renderer-diagnostics.ts"), /source === "deprecated-compatibility" \? \{ desktopVersion: app\.getVersion\(\) \}/u);
   assert.match(builtinLoader, /MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION = "v0\.3\.60"/u);
   assert.doesNotMatch(
     shellHandlers,
     /source === "deprecated-compatibility"[\s\S]{0,260}route: event\.sender\.getURL\(\)/u,
   );
 
-  const webclientHost = readSourceFile("src", "main", "modules", "services", "agent-webclient-host.ts");
-  assert.match(webclientHost, /requestPath\.startsWith\("\/api\/voice"\)/u);
+  const webclientHost = readExactSourceFile("src", "main", "modules", "services", "agent-webclient-host.ts");
+  const webclientRequests = readExactSourceFile("src", "main", "modules", "services", "webclient-request-handler.ts");
+  assert.match(webclientHost, /export \* from "\.\/webclient-request-handler"/u);
+  assert.match(webclientRequests, /requestPath\.startsWith\("\/api\/voice"\)/u);
 });

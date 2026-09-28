@@ -61,16 +61,16 @@ export function configureSkillMarketPlatformCaller(call: SkillMarketPlatformCall
 
 export function normalizeMarketSkillPins(value: unknown): MarketSkillPins {
   const input = asObject(value);
-  if (input.version !== 1 || !Array.isArray(input.order) || input.order.length > 4096 || input.order.some((key) => typeof key !== "string" || !key.trim() || key.length > 256)) {
+  if (!Array.isArray(input.pinned) || input.pinned.length > 4096 || input.pinned.some((key) => typeof key !== "string" || !key.trim() || key.length > 256)) {
     throw new Error("market_skill_pins_invalid");
   }
-  return { version: 1, order: [...new Set(input.order.map((key: string) => key.trim().toLowerCase()))],
+  return { version: 1, order: [...new Set(input.pinned.map((key: string) => key.trim().toLowerCase()))],
     ...(typeof input.updatedAt === "number" && Number.isSafeInteger(input.updatedAt) ? { updatedAt: input.updatedAt } : {}) };
 }
 
 export async function readMarketSkillPins(): Promise<MarketSkillPins> {
   if (!skillMarketPlatformCall) throw new Error("market_skill_pins_unavailable");
-  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills/order"));
+  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills"));
 }
 
 export async function saveMarketSkillPins(input: unknown): Promise<MarketSkillPins> {
@@ -78,7 +78,49 @@ export async function saveMarketSkillPins(input: unknown): Promise<MarketSkillPi
   const key = asString(value.key).trim().toLowerCase();
   if (!key || Buffer.byteLength(key, "utf8") > 256 || /[\/\\\x00-\x1f]/.test(key) || typeof value.pinned !== "boolean") throw new Error("market_skill_pins_invalid");
   if (!skillMarketPlatformCall) throw new Error("market_skill_pins_unavailable");
-  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills/order", { method: "PUT", body: { key, pinned: value.pinned } }));
+  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills", { method: "PUT", body: { key, pinned: value.pinned } }));
+}
+
+type PlatformSkill = { key: string; name?: string; displayName?: string; description?: string; version?: string; revision?: string };
+
+async function listPlatformSkills(): Promise<PlatformSkill[] | null> {
+  if (!skillMarketPlatformCall) return null;
+  try {
+    const value = asObject(await skillMarketPlatformCall("/api/skills"));
+    if (!Array.isArray(value.skills)) return null;
+    return value.skills.map(raw => {
+      const skill = asObject(raw);
+      const key = asString(skill.key).trim();
+      if (!key) throw new Error("invalid_platform_skill");
+      return { key, name: asString(skill.name), displayName: asString(skill.displayName),
+        description: asString(skill.description), version: asString(skill.version), revision: asString(skill.revision) };
+    });
+  } catch { return null; }
+}
+
+// Platform owns installed skill metadata and locale selection. Do not parse a
+// second translation table or use package versions as skill display versions.
+function mergePlatformSkillPresentation(localItems: ReturnType<typeof listInstalledSkills>, skills: PlatformSkill[] | null) {
+  if (skills === null) return localItems;
+  const localById = new Map(localItems.map(item => [item.id, item]));
+  return skills.map((skill): ReturnType<typeof listInstalledSkills>[number] => ({
+    ...localById.get(skill.key),
+    id: skill.key, type: "skill", name: skill.displayName?.trim() || skill.name?.trim() || skill.key,
+    description: skill.description || "", version: skill.version || "", installedVersion: skill.version || "",
+    tags: localById.get(skill.key)?.tags || [], state: "local-imported", source: "local",
+    metadata: { ...localById.get(skill.key)?.metadata, ...(skill.revision ? { revision: skill.revision } : {}) }
+  }));
+}
+
+function applyPlatformSkillPresentation(items: ReturnType<typeof mergeCatalogItems>, skills: PlatformSkill[] | null) {
+  const byId = new Map((skills || []).map(skill => [skill.key, skill]));
+  return items.map(item => {
+    const skill = item.type === "skill" && item.skill?.kind !== "package" ? byId.get(item.id) : undefined;
+    if (!skill) return item;
+    return { ...item, name: skill.displayName?.trim() || skill.name?.trim() || item.name,
+      description: skill.description ?? item.description,
+      metadata: { ...item.metadata, ...(skill.revision ? { revision: skill.revision } : {}) } };
+  });
 }
 
 async function listPlatformSkillPackages(suppressErrors = true) {
@@ -156,11 +198,12 @@ async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Pro
 }
 
 export async function listSkillMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketSectionResult> {
-  const [result, packages] = await Promise.all([
+  const [result, packages, platformSkills] = await Promise.all([
     loadSkillCatalog(app, options),
-    skillMarketPlatformCall ? listPlatformSkillPackages(false).catch(() => null) : Promise.resolve(null)
+    skillMarketPlatformCall ? listPlatformSkillPackages(false).catch(() => null) : Promise.resolve(null),
+    listPlatformSkills()
   ]);
-  const localSkills = listInstalledSkills(app);
+  const localSkills = mergePlatformSkillPresentation(listInstalledSkills(app), platformSkills);
   const localById = new Map(localSkills.map(skill => [skill.id, skill]));
   // Market records describe provenance, not proof that a resource still exists.
   // Do not delete them during reads; skill-package lookup outages must not look like deletion.
@@ -175,11 +218,11 @@ export async function listSkillMarketItems(app: App, options: MarketplaceOptions
     return current ? [{ ...record, version: current.installedVersion || current.version, installPath: current.installPath }] : [];
   });
   return {
-    items: mergePlatformSkillPackageState(
+    items: applyPlatformSkillPresentation(mergePlatformSkillPackageState(
       mergeCatalogItems(app, result.catalog.items, localSkills, records),
       packages ?? [],
       localSkills
-    ),
+    ), platformSkills),
     offline: result.offline,
     message: result.message,
     sourceUrl: result.sourceUrl

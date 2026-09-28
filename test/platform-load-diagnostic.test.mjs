@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { beginPlatformLoadDiagnostic } = require("../dist-electron/main/modules/agent-platform/load-diagnostic.js");
-const { registerAgentWebclientBridgeIpcHandlers_availability_2: availability } = require("../dist-electron/main/modules/agent-platform/ipc.operations-1.js");
+const { createSessionController } = require("../dist-electron/main/modules/agent-platform/frame-port/session-controller.js");
 
 for (const platform of ["win32", "darwin"]) {
   test(`${platform}: slow load logs current stage and recovery once, without connection secrets`, (t) => {
@@ -48,15 +48,16 @@ test("availability logs the failing stage without changing errors or exposing cr
   t.mock.method(console, "warn", (...args) => logs.push(args));
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const error = new Error("SECRET token and path");
-  const context = { options: {
+  const options = {
     app: {},
+    browserSurfaces: {},
     realtimeBroker: {
       getConnectionState: () => ({ phase: "closed", key: null }),
     },
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
     issueAccessToken: async () => { throw error; },
-  } };
-  await assert.rejects(availability(context), (actual) => actual === error);
+  };
+  await assert.rejects(createSessionController(options).availability(), (actual) => actual === error);
   assert.equal(logs[0][1].stage, "access-token");
   assert.equal(logs[0][1].serviceStatus, "running");
   assert.ok(!JSON.stringify(logs).includes("SECRET"));

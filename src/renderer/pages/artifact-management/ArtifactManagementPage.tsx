@@ -1,11 +1,23 @@
-import { FileOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Modal } from "antd";
+import { EllipsisOutlined, FileOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { Dropdown, Modal } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DesktopArtifactListResult, DesktopArtifactRecord } from "../../../shared/artifacts";
+import { artifactExternalExtension, type DesktopArtifactActionInput, type DesktopArtifactListResult, type DesktopArtifactRecord } from "../../../shared/artifacts";
 import { formatEpochMillis } from "../../../shared/time-contract";
 import { useI18n } from "../../i18n/useI18n";
 
 const PAGE_SIZE = 50;
+type ArtifactUiAction = DesktopArtifactActionInput["action"] | "details";
+
+function orderedActions(item: DesktopArtifactRecord): ArtifactUiAction[] {
+  const extension = artifactExternalExtension(item.name, item.mimeType);
+  if (extension === ".html" || extension === ".htm" || extension === ".xhtml") {
+    return ["view", "open-browser", "download", "details", "reveal", "open-default"];
+  }
+  if (extension) {
+    return ["view", "open-default", "download", "details", "reveal", "open-browser"];
+  }
+  return ["view", "download", "details", "reveal"];
+}
 
 export function ArtifactManagementPage({ onOpenChat, onView }: {
   onView: (request: { agentKey: string; chatId: string; artifactId: string; relativePath: string; name: string }) => boolean;
@@ -22,7 +34,8 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
   const [selected, setSelected] = useState<DesktopArtifactRecord | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<"failed" | "restart" | null>(null);
-  async function act(item: DesktopArtifactRecord, action: "view" | "download") {
+  const [platform, setPlatform] = useState<string>("");
+  async function act(item: DesktopArtifactRecord, action: DesktopArtifactActionInput["action"]) {
     setActionBusy(true);
     setActionError(null);
     try {
@@ -35,6 +48,10 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
       if (action === "view" && !onView({ ...response, chatId: item.chatId, artifactId: item.artifactId, name: item.name })) setActionError("failed");
     } catch { setActionError("failed"); }
     finally { setActionBusy(false); }
+  }
+  function runAction(item: DesktopArtifactRecord, action: ArtifactUiAction) {
+    if (action === "details") { setSelected(item); return; }
+    void act(item, action);
   }
   async function openChat(chatId: string) {
     setActionError(null);
@@ -59,6 +76,9 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
     }
   }, [query, offset]);
 
+  useEffect(() => {
+    void window.electronAPI.settings.getPlatform().then(setPlatform).catch(() => undefined);
+  }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => { setQuery(search.trim()); setOffset(0); }, 200);
     return () => window.clearTimeout(timer);
@@ -110,8 +130,17 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
           </tr></thead>
           <tbody>{result.records.map((item) => {
             const chat = chats[item.chatId];
+            const labels: Record<ArtifactUiAction, string> = {
+              download: t("artifactManagement.download"),
+              view: t("artifactManagement.view"),
+              details: t("artifactManagement.details"),
+              reveal: t(platform === "win32" ? "artifactManagement.revealExplorer" : "artifactManagement.revealFinder"),
+              "open-default": t("artifactManagement.openDefault"),
+              "open-browser": t("artifactManagement.openBrowser"),
+            };
+            const actions = orderedActions(item).map((key) => ({ key, label: labels[key] }));
             return <tr key={JSON.stringify([item.chatId, item.artifactId])}>
-              <td><strong className="artifact-management-clamp" title={item.name}>{item.name}</strong></td>
+              <td><button type="button" className="artifact-management-name artifact-management-clamp" title={item.name} onClick={() => setSelected(item)}>{item.name}</button></td>
               <td><span className="artifact-management-clamp" title={item.mimeType}>{item.mimeType || t("artifactManagement.unknownType")}</span></td>
               <td><button type="button" title={chat?.chatName || item.chatId} className="artifact-management-chat artifact-management-clamp" onClick={() => void openChat(item.chatId)}>
                 {chat?.chatName || item.chatId}
@@ -119,9 +148,10 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
               <td className="artifact-management-size">{formatSize(item.sizeBytes)}</td>
               <td><time className="artifact-management-clamp">{formatEpochMillis(item.pushedAt)}</time></td>
               <td><div className="artifact-management-actions">
-                <button type="button" disabled={actionBusy} onClick={() => void act(item, "download")}>{t("artifactManagement.download")}</button>
-                <button type="button" disabled={actionBusy} onClick={() => void act(item, "view")}>{t("artifactManagement.view")}</button>
-                <button type="button" onClick={() => setSelected(item)}>{t("artifactManagement.details")}</button>
+                {actions.slice(0, 2).map((action) => <button key={action.key} type="button" disabled={actionBusy} onClick={() => runAction(item, action.key)}>{action.label}</button>)}
+                <Dropdown trigger={["click"]} placement="bottomRight" menu={{ items: actions.slice(2), onClick: ({ key }) => runAction(item, key as ArtifactUiAction) }}>
+                  <button type="button" disabled={actionBusy} className="artifact-management-extra-menu" aria-label={t("artifactManagement.extraMenuButton")} title={t("artifactManagement.extraMenuButton")}><EllipsisOutlined /></button>
+                </Dropdown>
               </div></td>
             </tr>;
           })}</tbody>

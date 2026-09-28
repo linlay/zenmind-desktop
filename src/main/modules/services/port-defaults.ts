@@ -145,11 +145,3 @@ export function rewriteServicePortDefaultsForDesktopConfigUpgrade(
   writeServicePortDefaultsConfig(app, config, platform);
   return config;
 }
-
-export function getConfiguredServiceDefaultPort(
-  app: App,
-  serviceId: ServiceId,
-  platform: NodeJS.Platform = process.platform
-) {
-  return readServicePortDefaultsConfig(app, platform)?.services[serviceId]?.defaultPort ?? null;
-}

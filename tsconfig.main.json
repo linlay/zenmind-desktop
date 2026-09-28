@@ -4,6 +4,8 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "outDir": "dist-electron",
+    "incremental": true,
+    "tsBuildInfoFile": ".cache/typescript/main.tsbuildinfo",
     "rootDir": "src",
     "strict": true,
     "allowJs": true,

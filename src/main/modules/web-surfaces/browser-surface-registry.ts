@@ -1,253 +1,37 @@
-import type { WebContents } from "electron";
-import type {
-  EmbeddedCdpSurfaceRegistration,
-  EmbeddedCdpSurfaceRegistrationResult,
-  EmbeddedCdpSurfaceRemoval,
-  EmbeddedCdpSurfaceTabRegistration,
-  EmbeddedCdpSurfaceKind
-} from "../../../shared/embedded-cdp";
-import {
-  BUILTIN_BROWSER_DEFAULT_URL
-} from "../../../shared/browser-surfaces";
-import {
-  LEGACY_FIXED_SURFACE_ID_ALIASES,
-  type SurfaceRole
-} from "../../../shared/surface-identity";
-import type { CreateBrowserSurfaceRegistryContext } from "./browser-surface-registry.shared";
-import { BrowserContainer, BrowserSurfaceDiagnosticSnapshot, BrowserSurfaceLifecycleEvent, BrowserSurfaceRegistryOptions, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, PendingSurfaceRegistrationDiagnostic, RegisteredSurface, RegisteredWebviewSurfaceTarget, SurfaceRegistrationDiagnostic, SurfaceRegistrationRejectionReason, SurfaceRegistrationValidation, webEntryMatchesSurfaceTarget } from "./browser-surface-registry.shared";
-import { createBrowserSurfaceRegistry_emitLifecycle_1, createBrowserSurfaceRegistry_subscribeLifecycle_2, createBrowserSurfaceRegistry_reportRegistrationDiagnostic_3, createBrowserSurfaceRegistry_summarizeRegisteredSurface_4, createBrowserSurfaceRegistry_createRegistrationDiagnostic_5, createBrowserSurfaceRegistry_flushRegistrationDiagnostic_6, createBrowserSurfaceRegistry_scheduleRegistrationDiagnosticFlush_7, createBrowserSurfaceRegistry_rejectSurfaceRegistration_8, createBrowserSurfaceRegistry_settleRegistrationDiagnostics_9, createBrowserSurfaceRegistry_resolveCanonicalSurfaceId_10, createBrowserSurfaceRegistry_removeAliasesForSurface_11, createBrowserSurfaceRegistry_addDerivedAliases_12, createBrowserSurfaceRegistry_fallbackSurfaceType_13, createBrowserSurfaceRegistry_settleGuestTargetWaiters_14, createBrowserSurfaceRegistry_removeGuestTargetsForSurface_15, createBrowserSurfaceRegistry_indexRegisteredSurface_16, createBrowserSurfaceRegistry_expectedRolesForRegistration_17, createBrowserSurfaceRegistry_validateRegistrationIdentity_18, createBrowserSurfaceRegistry_isValidSurfaceTab_19 } from "./browser-surface-registry.operations-1";
-import { createBrowserSurfaceRegistry_validateSurfaceRegistration_1, createBrowserSurfaceRegistry_registerSurfaceResult_2, createBrowserSurfaceRegistry_registerSurface_3, createBrowserSurfaceRegistry_unregisterSurface_4, createBrowserSurfaceRegistry_unregisterSurfacesForOwner_5, createBrowserSurfaceRegistry_resolveRegisteredSurface_6, createBrowserSurfaceRegistry_removeChildSurfaces_7, createBrowserSurfaceRegistry_findRegisteredSurfaceWebContents_8, createBrowserSurfaceRegistry_findWebContentsById_9, createBrowserSurfaceRegistry_resolveWebviewSurfaceTarget_10, createBrowserSurfaceRegistry_waitForWebviewSurfaceTarget_11 } from "./browser-surface-registry.operations-2";
-import { createBrowserSurfaceRegistry_waitForWebviewSurfaceTargetMatching_1, createBrowserSurfaceRegistry_currentPageSnapshotMatchesSurface_2, createBrowserSurfaceRegistry_findWebContentsForSurfaceUrl_3, createBrowserSurfaceRegistry_builtinBrowserSurface_4, createBrowserSurfaceRegistry_listBrowserContainers_5, createBrowserSurfaceRegistry_listWorkPanelContainers_6, createBrowserSurfaceRegistry_listRegisteredSurfaces_7, createBrowserSurfaceRegistry_listDiagnosticSurfaces_8, createBrowserSurfaceRegistry_listWebContentsDiagnostics_9, createBrowserSurfaceRegistry_getRegisteredSurfaceSnapshot_10 } from "./browser-surface-registry.operations-3";
+import { createContainerProjection, webEntryMatchesSurfaceTarget } from "./container-projection";
+import { createRegistrationStore } from "./registration-store";
+import type { BrowserSurfaceRegistryOptions } from "./registry-contracts";
 
 export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOptions) {
-  const factoryContext: CreateBrowserSurfaceRegistryContext = {
-    get options() { return options; },
-    get registeredSurfaces() { return registeredSurfaces; },
-    get workPanelDialogRegistrations() { return workPanelDialogRegistrations; },
-    get registeredGuestTargets() { return registeredGuestTargets; },
-    get pendingGuestTargetWaiters() { return pendingGuestTargetWaiters; },
-    get surfaceAliases() { return surfaceAliases; },
-    get pendingRegistrationDiagnostics() { return pendingRegistrationDiagnostics; },
-    get lifecycleListeners() { return lifecycleListeners; },
-    get registrationDiagnosticDedupWindowMs() { return registrationDiagnosticDedupWindowMs; },
-    get emitLifecycle() { return emitLifecycle; },
-    get subscribeLifecycle() { return subscribeLifecycle; },
-    get reportRegistrationDiagnostic() { return reportRegistrationDiagnostic; },
-    get summarizeRegisteredSurface() { return summarizeRegisteredSurface; },
-    get createRegistrationDiagnostic() { return createRegistrationDiagnostic; },
-    get flushRegistrationDiagnostic() { return flushRegistrationDiagnostic; },
-    get scheduleRegistrationDiagnosticFlush() { return scheduleRegistrationDiagnosticFlush; },
-    get rejectSurfaceRegistration() { return rejectSurfaceRegistration; },
-    get settleRegistrationDiagnostics() { return settleRegistrationDiagnostics; },
-    get resolveCanonicalSurfaceId() { return resolveCanonicalSurfaceId; },
-    get removeAliasesForSurface() { return removeAliasesForSurface; },
-    get addDerivedAliases() { return addDerivedAliases; },
-    get fallbackSurfaceType() { return fallbackSurfaceType; },
-    get settleGuestTargetWaiters() { return settleGuestTargetWaiters; },
-    get removeGuestTargetsForSurface() { return removeGuestTargetsForSurface; },
-    get indexRegisteredSurface() { return indexRegisteredSurface; },
-    get expectedRolesForRegistration() { return expectedRolesForRegistration; },
-    get validateRegistrationIdentity() { return validateRegistrationIdentity; },
-    get isValidSurfaceTab() { return isValidSurfaceTab; },
-    get validateSurfaceRegistration() { return validateSurfaceRegistration; },
-    get registerSurfaceResult() { return registerSurfaceResult; },
-    get registerSurface() { return registerSurface; },
-    get unregisterSurface() { return unregisterSurface; },
-    get unregisterSurfacesForOwner() { return unregisterSurfacesForOwner; },
-    get resolveRegisteredSurface() { return resolveRegisteredSurface; },
-    get removeChildSurfaces() { return removeChildSurfaces; },
-    get findRegisteredSurfaceWebContents() { return findRegisteredSurfaceWebContents; },
-    get findWebContentsById() { return findWebContentsById; },
-    get resolveWebviewSurfaceTarget() { return resolveWebviewSurfaceTarget; },
-    get waitForWebviewSurfaceTarget() { return waitForWebviewSurfaceTarget; },
-    get waitForWebviewSurfaceTargetMatching() { return waitForWebviewSurfaceTargetMatching; },
-    get currentPageSnapshotMatchesSurface() { return currentPageSnapshotMatchesSurface; },
-    get findWebContentsForSurfaceUrl() { return findWebContentsForSurfaceUrl; },
-    get builtinBrowserSurface() { return builtinBrowserSurface; },
-    get listBrowserContainers() { return listBrowserContainers; },
-    get listWorkPanelContainers() { return listWorkPanelContainers; },
-    get listRegisteredSurfaces() { return listRegisteredSurfaces; },
-    get listDiagnosticSurfaces() { return listDiagnosticSurfaces; },
-    get listWebContentsDiagnostics() { return listWebContentsDiagnostics; },
-    get getRegisteredSurfaceSnapshot() { return getRegisteredSurfaceSnapshot; }
-  };
-  const registeredSurfaces = new Map<string, RegisteredSurface>();
-  const registeredGuestTargets = new Map<number, RegisteredWebviewSurfaceTarget>();
-  const pendingGuestTargetWaiters = new Map<
-    number,
-    Set<PendingGuestTargetWaiter>
-  >();
-  const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
-  const pendingRegistrationDiagnostics = new Map<string, PendingSurfaceRegistrationDiagnostic>();
-  const workPanelDialogRegistrations: CreateBrowserSurfaceRegistryContext["workPanelDialogRegistrations"] = new Map();
-  const lifecycleListeners = new Set<(event: BrowserSurfaceLifecycleEvent) => void>();
-  const registrationDiagnosticDedupWindowMs = Math.max(
-    10,
-    Math.min(options.registrationDiagnosticDedupWindowMs ?? 1_000, 10_000),
-  );
-
-  function emitLifecycle(type: BrowserSurfaceLifecycleEvent["type"], surface: RegisteredSurface) { return createBrowserSurfaceRegistry_emitLifecycle_1(factoryContext, type, surface); }
-
-  function subscribeLifecycle(listener: (event: BrowserSurfaceLifecycleEvent) => void) { return createBrowserSurfaceRegistry_subscribeLifecycle_2(factoryContext, listener); }
-
-  function reportRegistrationDiagnostic(diagnostic: SurfaceRegistrationDiagnostic) { return createBrowserSurfaceRegistry_reportRegistrationDiagnostic_3(factoryContext, diagnostic); }
-
-  function summarizeRegisteredSurface(surface: RegisteredSurface) { return createBrowserSurfaceRegistry_summarizeRegisteredSurface_4(factoryContext, surface); }
-
-  function createRegistrationDiagnostic(
-    input: EmbeddedCdpSurfaceRegistration,
-    ownerWebContentsId: number,
-    reason: SurfaceRegistrationRejectionReason,
-    details: Pick<SurfaceRegistrationDiagnostic, "invalidCheck" | "existing" | "conflict"> = {},
-  ): SurfaceRegistrationDiagnostic { return createBrowserSurfaceRegistry_createRegistrationDiagnostic_5(factoryContext, input, ownerWebContentsId, reason, details); }
-
-  function flushRegistrationDiagnostic(
-    key: string,
-    resolution: NonNullable<SurfaceRegistrationDiagnostic["resolution"]>,
-  ) { return createBrowserSurfaceRegistry_flushRegistrationDiagnostic_6(factoryContext, key, resolution); }
-
-  function scheduleRegistrationDiagnosticFlush(key: string) { return createBrowserSurfaceRegistry_scheduleRegistrationDiagnosticFlush_7(factoryContext, key); }
-
-  function rejectSurfaceRegistration(
-    input: EmbeddedCdpSurfaceRegistration,
-    ownerWebContentsId: number,
-    reason: SurfaceRegistrationRejectionReason,
-    details: Pick<SurfaceRegistrationDiagnostic, "invalidCheck" | "existing" | "conflict"> = {},
-  ): EmbeddedCdpSurfaceRegistrationResult { return createBrowserSurfaceRegistry_rejectSurfaceRegistration_8(factoryContext, input, ownerWebContentsId, reason, details); }
-
-  function settleRegistrationDiagnostics(input: EmbeddedCdpSurfaceRegistration) { return createBrowserSurfaceRegistry_settleRegistrationDiagnostics_9(factoryContext, input); }
-
-  function resolveCanonicalSurfaceId(surfaceId: string) { return createBrowserSurfaceRegistry_resolveCanonicalSurfaceId_10(factoryContext, surfaceId); }
-
-  function removeAliasesForSurface(surfaceId: string) { return createBrowserSurfaceRegistry_removeAliasesForSurface_11(factoryContext, surfaceId); }
-
-  function addDerivedAliases(surface: RegisteredSurface) { return createBrowserSurfaceRegistry_addDerivedAliases_12(factoryContext, surface); }
-
-  function fallbackSurfaceType(surfaceKind: EmbeddedCdpSurfaceKind) { return createBrowserSurfaceRegistry_fallbackSurfaceType_13(factoryContext, surfaceKind); }
-
-  function settleGuestTargetWaiters(
-    webContentsId: number,
-    target: RegisteredWebviewSurfaceTarget | null,
-  ) { return createBrowserSurfaceRegistry_settleGuestTargetWaiters_14(factoryContext, webContentsId, target); }
-
-  function removeGuestTargetsForSurface(surfaceId: string, settleWaiters = true) { return createBrowserSurfaceRegistry_removeGuestTargetsForSurface_15(factoryContext, surfaceId, settleWaiters); }
-
-  function indexRegisteredSurface(surface: RegisteredSurface) { return createBrowserSurfaceRegistry_indexRegisteredSurface_16(factoryContext, surface); }
-
-  function expectedRolesForRegistration(input: EmbeddedCdpSurfaceRegistration): SurfaceRole[] { return createBrowserSurfaceRegistry_expectedRolesForRegistration_17(factoryContext, input); }
-
-  function validateRegistrationIdentity(input: EmbeddedCdpSurfaceRegistration): SurfaceRegistrationValidation { return createBrowserSurfaceRegistry_validateRegistrationIdentity_18(factoryContext, input); }
-
-  function isValidSurfaceTab(input: EmbeddedCdpSurfaceTabRegistration) { return createBrowserSurfaceRegistry_isValidSurfaceTab_19(factoryContext, input); }
-
-  function validateSurfaceRegistration(input: EmbeddedCdpSurfaceRegistration): SurfaceRegistrationValidation { return createBrowserSurfaceRegistry_validateSurfaceRegistration_1(factoryContext, input); }
-
-  function registerSurfaceResult(
-    input: EmbeddedCdpSurfaceRegistration,
-    ownerWebContentsId: number,
-  ): EmbeddedCdpSurfaceRegistrationResult { return createBrowserSurfaceRegistry_registerSurfaceResult_2(factoryContext, input, ownerWebContentsId); }
-
-  function registerSurface(input: EmbeddedCdpSurfaceRegistration, ownerWebContentsId: number) { return createBrowserSurfaceRegistry_registerSurface_3(factoryContext, input, ownerWebContentsId); }
-
-  function unregisterSurface(input: EmbeddedCdpSurfaceRemoval, ownerWebContentsId: number) { return createBrowserSurfaceRegistry_unregisterSurface_4(factoryContext, input, ownerWebContentsId); }
-
-  function unregisterSurfacesForOwner(ownerWebContentsId: number) { return createBrowserSurfaceRegistry_unregisterSurfacesForOwner_5(factoryContext, ownerWebContentsId); }
-
-  function resolveRegisteredSurface(surfaceId: string) { return createBrowserSurfaceRegistry_resolveRegisteredSurface_6(factoryContext, surfaceId); }
-
-  function removeChildSurfaces(parentSurfaceId: string) { return createBrowserSurfaceRegistry_removeChildSurfaces_7(factoryContext, parentSurfaceId); }
-
-  function findRegisteredSurfaceWebContents(surfaceId: string, tabId?: string) { return createBrowserSurfaceRegistry_findRegisteredSurfaceWebContents_8(factoryContext, surfaceId, tabId); }
-
-  function findWebContentsById(webContentsId: number) { return createBrowserSurfaceRegistry_findWebContentsById_9(factoryContext, webContentsId); }
-
-  function resolveWebviewSurfaceTarget(webContentsId: number) { return createBrowserSurfaceRegistry_resolveWebviewSurfaceTarget_10(factoryContext, webContentsId); }
-
-  function waitForWebviewSurfaceTarget(
-    webContentsId: number,
-    timeoutMs: number,
-    signal?: AbortSignal,
-  ): Promise<RegisteredWebviewSurfaceTarget | null> { return createBrowserSurfaceRegistry_waitForWebviewSurfaceTarget_11(factoryContext, webContentsId, timeoutMs, signal); }
-
-  function waitForWebviewSurfaceTargetMatching(
-    webContentsId: number,
-    predicate: (target: RegisteredWebviewSurfaceTarget) => boolean,
-    timeoutMs: number,
-    signal?: AbortSignal,
-  ): Promise<RegisteredWebviewSurfaceTarget | null> { return createBrowserSurfaceRegistry_waitForWebviewSurfaceTargetMatching_1(factoryContext, webContentsId, predicate, timeoutMs, signal); }
-
-  function currentPageSnapshotMatchesSurface(surfaceId: string, contents?: WebContents | null) { return createBrowserSurfaceRegistry_currentPageSnapshotMatchesSurface_2(factoryContext, surfaceId, contents); }
-
-  function findWebContentsForSurfaceUrl(surfaceUrl: string) { return createBrowserSurfaceRegistry_findWebContentsForSurfaceUrl_3(factoryContext, surfaceUrl); }
-
-  function builtinBrowserSurface(contents: WebContents | null, url = BUILTIN_BROWSER_DEFAULT_URL): BrowserContainer { return createBrowserSurfaceRegistry_builtinBrowserSurface_4(factoryContext, contents, url); }
-
-  function listBrowserContainers(): BrowserContainer[] { return createBrowserSurfaceRegistry_listBrowserContainers_5(factoryContext); }
-
-  function listWorkPanelContainers(): BrowserContainer[] { return createBrowserSurfaceRegistry_listWorkPanelContainers_6(factoryContext); }
-
-  function listRegisteredSurfaces(): BrowserContainer[] { return createBrowserSurfaceRegistry_listRegisteredSurfaces_7(factoryContext); }
-
-  function listDiagnosticSurfaces(): BrowserSurfaceDiagnosticSnapshot[] { return createBrowserSurfaceRegistry_listDiagnosticSurfaces_8(factoryContext); }
-
-  function listWebContentsDiagnostics(): BrowserWebContentsDiagnosticSnapshot[] { return createBrowserSurfaceRegistry_listWebContentsDiagnostics_9(factoryContext); }
-
-  function getRegisteredSurfaceSnapshot(
-    surfaceId: string,
-    registrationId: string,
-    ownerWebContentsId: number
-  ) { return createBrowserSurfaceRegistry_getRegisteredSurfaceSnapshot_10(factoryContext, surfaceId, registrationId, ownerWebContentsId); }
-
-  // Main-only reservation captured from an already-authorized live WorkPanel
-  // surface. It survives Main Chat remounts without granting a different Chat.
-  function retainWorkPanelDialogSurface(surfaceId: string, registrationId: string, ownerWebContentsId: number, nextRegistrationId: string) {
-    const snapshot = getRegisteredSurfaceSnapshot(surfaceId, registrationId, ownerWebContentsId);
-    if (!snapshot || snapshot.registered.surfaceKind !== "chat-work-panel" || snapshot.registered.surfaceRole !== "workpanel-web" ||
-        !snapshot.registered.ownerChatId || workPanelDialogRegistrations.has(surfaceId)) return false;
-    workPanelDialogRegistrations.set(surfaceId, { registrationId: nextRegistrationId, ownerChatId: snapshot.registered.ownerChatId, ownerWebContentsId, parentSurfaceId: snapshot.registered.parentSurfaceId });
-    return true;
-  }
-  // Only Main can extend an existing dialog reservation. The caller derives
-  // the sibling identity from the original Chat and the reducer's stable key.
-  function retainWorkPanelDialogSibling(sourceId: string, sourceRegistrationId: string, surfaceId: string, registrationId: string) {
-    const source = workPanelDialogRegistrations.get(sourceId);
-    if (!source || source.registrationId !== sourceRegistrationId ||
-        registeredSurfaces.has(surfaceId) || workPanelDialogRegistrations.has(surfaceId)) return false;
-    workPanelDialogRegistrations.set(surfaceId, { ...source, registrationId });
-    return true;
-  }
-  function releaseWorkPanelDialogSurface(surfaceId: string, registrationId: string) {
-    if (workPanelDialogRegistrations.get(surfaceId)?.registrationId === registrationId) workPanelDialogRegistrations.delete(surfaceId);
-  }
-
+  const store = createRegistrationStore(options);
+  const projection = createContainerProjection(options, { registeredSurfaces: store.registeredSurfaces, resolveRegisteredSurface: store.resolveRegisteredSurface, findWebContentsForSurfaceUrl: store.guest.findWebContentsForSurfaceUrl });
   return {
-    retainWorkPanelDialogSurface,
-    retainWorkPanelDialogSibling,
-    releaseWorkPanelDialogSurface,
-    currentPageSnapshotMatchesSurface,
-    findWebContentsById,
-    findWebContentsForSurfaceUrl,
-    findRegisteredSurfaceWebContents,
-    builtinBrowserSurface,
-    listBrowserContainers,
-    listWorkPanelContainers,
-    listDiagnosticSurfaces,
-    listRegisteredSurfaces,
-    listWebContentsDiagnostics,
-    getRegisteredSurfaceSnapshot,
-    registerSurface,
-    registerSurfaceResult,
-    resolveCanonicalSurfaceId,
-    resolveWebviewSurfaceTarget,
-    waitForWebviewSurfaceTarget,
-    waitForWebviewSurfaceTargetMatching,
-    unregisterSurface,
-    unregisterSurfacesForOwner,
-    subscribeLifecycle,
+    currentPageSnapshotMatchesSurface: projection.currentPageSnapshotMatchesSurface,
+    builtinBrowserSurface: projection.builtinBrowserSurface,
+    listBrowserContainers: projection.listBrowserContainers,
+    listWorkPanelContainers: projection.listWorkPanelContainers,
+    listDiagnosticSurfaces: projection.listDiagnosticSurfaces,
+    listRegisteredSurfaces: projection.listRegisteredSurfaces,
+    listWebContentsDiagnostics: projection.listWebContentsDiagnostics,
+    retainWorkPanelDialogSurface: store.retainWorkPanelDialogSurface,
+    retainWorkPanelDialogSibling: store.retainWorkPanelDialogSibling,
+    releaseWorkPanelDialogSurface: store.releaseWorkPanelDialogSurface,
+    findWebContentsById: store.guest.findWebContentsById,
+    findWebContentsForSurfaceUrl: store.guest.findWebContentsForSurfaceUrl,
+    findRegisteredSurfaceWebContents: store.guest.findRegisteredSurfaceWebContents,
+    getRegisteredSurfaceSnapshot: store.getRegisteredSurfaceSnapshot,
+    registerSurface: store.registerSurface,
+    registerSurfaceResult: store.registerSurfaceResult,
+    resolveCanonicalSurfaceId: store.resolveCanonicalSurfaceId,
+    resolveWebviewSurfaceTarget: store.guest.resolveWebviewSurfaceTarget,
+    waitForWebviewSurfaceTarget: store.guest.waitForWebviewSurfaceTarget,
+    waitForWebviewSurfaceTargetMatching: store.guest.waitForWebviewSurfaceTargetMatching,
+    unregisterSurface: store.unregisterSurface,
+    unregisterSurfacesForOwner: store.unregisterSurfacesForOwner,
+    subscribeLifecycle: store.subscribeLifecycle,
     webEntryMatchesSurfaceTarget
   };
 }
 
 export type BrowserSurfaceRegistry = ReturnType<typeof createBrowserSurfaceRegistry>;
-
 export * from "./browser-surface-registry.shared";

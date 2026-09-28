@@ -640,7 +640,7 @@ test("window manager reports renderer load failures and quits the app", async ()
   assert.equal(quitCount, 1);
 });
 
-test("window manager wires main window readiness, focus and fullscreen lifecycle events", () => {
+test("window manager wires main window readiness, focus and fullscreen lifecycle events", async () => {
   const target = new FakeWindow();
   const appearances = [];
   let restoredFloatingWindows = 0;
@@ -666,10 +666,12 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
   target.emit("maximize");
   target.maximized = false;
   target.emit("unmaximize");
-  target.fullscreen = true;
   target.emit("enter-full-screen");
-  target.fullscreen = false;
+  target.fullscreen = true;
+  await Promise.resolve();
   target.emit("leave-full-screen");
+  target.fullscreen = false;
+  await Promise.resolve();
 
   assert.equal(target.showCount, 1);
   assert.equal(target.focusCount, 1);
@@ -682,6 +684,26 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
     { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: true, isMaximized: false, windowControlsMasked: false } },
     { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } }
   ]);
+});
+
+test("macOS fullscreen lifecycle still applies appearance at the native event", () => {
+  const target = new FakeWindow();
+  const appearances = [];
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: {
+      applyAppearance: window => appearances.push(window.isFullScreen()),
+      hideForClose() {}, cancelPendingClose() {}
+    },
+    isDevToolsShortcut: () => false, isHandlingQuit: () => false,
+    requestAppQuit() {}, clearWindow() {}
+  });
+  for (const enabled of [true, false]) {
+    target.fullscreen = enabled;
+    target.emit(enabled ? "enter-full-screen" : "leave-full-screen");
+    assert.equal(appearances.at(-1), enabled);
+    assert.equal(target.webContents.sentMessages.at(-1).payload.isFullScreen, enabled);
+  }
 });
 
 test("window manager toggles main renderer DevTools and wires close lifecycle events", () => {

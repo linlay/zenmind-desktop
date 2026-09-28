@@ -1,3 +1,4 @@
+import { executeSkinAction } from "./skin-actions";
 import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
 import { type DesktopActionCallRequest, type DesktopActionCallResponse } from "../../../shared/desktop-actions";
 import { asRecord, fail, readString, ok, readServiceId, preview, readMarketListOptions, readItemId } from "./action-values";
@@ -47,6 +48,7 @@ export async function executeAction(
   request: DesktopActionCallRequest,
   invocation: DesktopActionInvocationContext
 ): Promise<DesktopActionCallResponse> {
+  if (request.action.startsWith("desktop.skin.")) return executeSkinAction(options, request, invocation);
   const action = request.action;
   const args = asRecord(request.args);
 

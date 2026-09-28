@@ -89,6 +89,7 @@ const projectRoot = process.cwd();
 const target = { os: "darwin", arch: "arm64" };
 const brand = syncBrandArtifacts({ brandId: resolveRequiredBrandId(process.argv.slice(2), process.env, "dist:mac"), target });
 process.env.BRAND = brand.id;
+process.env.DESKTOP_UPDATE_TARGET_PLATFORM = "darwin";
 normalizeMacSigningEnvironment();
 if (shouldSkipNotarize()) {
   disableNotarizationEnvironment();

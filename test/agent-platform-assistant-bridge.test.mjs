@@ -2012,3 +2012,58 @@ test("pet explicit mark read targets one Chat and Run and reports failure", asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+test("disposing an Assistant consumer aborts its run without disposing the shared Broker", async () => {
+  const originalFetch = globalThis.fetch;
+  const wakeLock = makeWakeLockRecorder();
+  let brokerDisposals = 0;
+  let querySignal;
+  let observation;
+  const subscription = { unsubscribe() {} };
+  const realtimeBroker = {
+    query(input) {
+      querySignal = input.signal;
+      return {
+        accepted: Promise.resolve({ owner: { kind: "agent", agentKey: "agent-shared" } }),
+        completed: new Promise((resolve, reject) => {
+          input.signal.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true });
+        }),
+      };
+    },
+    subscribeRun(input) {
+      observation = input;
+      return subscription;
+    },
+    dispose() { brokerDisposals += 1; },
+  };
+  const { bridge, events } = makeBridge({ realtimeBroker, wakeLock: wakeLock.wakeLock });
+  const otherConsumer = makeBridge({ realtimeBroker }).bridge;
+  const interrupts = [];
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "http://127.0.0.1:18888/api/interrupt");
+    interrupts.push(JSON.parse(init.body));
+    return new Response(null, { status: 204 });
+  };
+  try {
+    const started = await bridge.startRun({ message: "shared run", runId: "run-shared", chatId: "chat-shared" });
+    assert.equal(started.ok, true);
+    bridge.dispose();
+    bridge.dispose();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(querySignal.aborted, true);
+    assert.equal(brokerDisposals, 0);
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+    assert.equal(interrupts.length, 1);
+    assert.equal(interrupts[0].agentKey, "agent-shared");
+    assert.equal(events.length, 0);
+    assert.equal(await otherConsumer.observeRun({ runId: "another-run" }), subscription);
+    assert.equal(observation.kind, "internal");
+    assert.equal(observation.role, "internal");
+    assert.equal(observation.token, "desktop-token");
+    assert.equal(observation.runId, "another-run");
+  } finally {
+    bridge.dispose();
+    otherConsumer.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});

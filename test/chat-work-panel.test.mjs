@@ -1,3 +1,4 @@
+import { readAppRuntimeSource } from "./helpers/app-runtime-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -6,6 +7,7 @@ import path from "node:path";
 const read = (relativePath) => {
   const sourcePath = path.join(process.cwd(), relativePath);
   const source = fs.readFileSync(sourcePath, "utf8");
+  if (sourcePath.endsWith(`${path.sep}app${path.sep}runtime.ts`)) return readAppRuntimeSource(process.cwd());
   if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
     return source;
   }

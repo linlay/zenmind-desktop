@@ -21,21 +21,28 @@ import type {
   EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot
 } from "../../../shared/contracts";
-import { getDesktopDeviceInfo } from "../identity";
+import { getDesktopDeviceInfo, getDesktopSsoAccessToken } from "../identity";
 import {
   EnterpriseChatActionLedger,
   type EnterpriseChatActionLedgerEntry
 } from "./action-ledger";
-import { createEnterpriseChatSupportBundle } from "./support-bundle";
+import * as actionReceipts from "./action-receipts";
+import { EnterpriseChatRawAgentChatData, safeRawAgentChatFilename } from "./attachment-policy";
+import * as attachmentService from "./attachment-service";
+import { FetchLike, PendingWebSocketRequest, ServerSession, WebSocketLike, createDefaultWebSocket, normalizeServerUrl, toWebSocketUrl } from "./connection-transport";
+import * as conversationService from "./conversation-service";
+import * as desktopActionController from "./desktop-action-controller";
+import * as profileController from "./local-profile";
+import { ServerBootstrap, mergeConversationUsers, normalizeConversation, normalizeDesktopAction, normalizeMessage, normalizeUser } from "./message-projection";
+import { nowEpochMilliseconds } from "./protocol-values";
+import * as realtimeConnection from "./realtime-connection";
+import { EnterpriseChatRuntimeOptions } from "./runtime-options";
+import * as sessionController from "./session-controller";
 import {
   DEFAULT_ENTERPRISE_IM_BASE_URL
 } from "./settings";
-import { getDesktopSsoAccessToken } from "../identity";
-import { EnterpriseChatRawAgentChatData, EnterpriseChatRuntimeOptions, FetchLike, PendingWebSocketRequest, ServerBootstrap, ServerSession, WebSocketLike, createDefaultWebSocket, mergeConversationUsers, normalizeConversation, normalizeDesktopAction, normalizeMessage, normalizeServerUrl, normalizeUser, nowEpochMilliseconds, safeRawAgentChatFilename, toWebSocketUrl } from "./runtime.shared";
-import { EnterpriseChatRuntime_getState_1, EnterpriseChatRuntime_currentDesktopActionScope_2, EnterpriseChatRuntime_getDesktopActionLedger_3, EnterpriseChatRuntime_desktopActionState_4, EnterpriseChatRuntime_projectMessage_5, EnterpriseChatRuntime_setEnabled_6, EnterpriseChatRuntime_refresh_7, EnterpriseChatRuntime_reloadConfiguration_8, EnterpriseChatRuntime_performRefresh_9, EnterpriseChatRuntime_updateServerUrl_10, EnterpriseChatRuntime_openDirectConversation_11, EnterpriseChatRuntime_openConversation_12, EnterpriseChatRuntime_createGroup_13, EnterpriseChatRuntime_sendMessage_14, EnterpriseChatRuntime_sendFiles_15 } from "./runtime.methods-1";
-import { EnterpriseChatRuntime_sendSupportBundle_1, EnterpriseChatRuntime_sendRawAgentChat_2, EnterpriseChatRuntime_saveSelfProfile_3, EnterpriseChatRuntime_selectSelfAvatar_4, EnterpriseChatRuntime_clearSelfAvatar_5, EnterpriseChatRuntime_sendPastedFiles_6, EnterpriseChatRuntime_sendScreenshot_7, EnterpriseChatRuntime_loadAttachment_8, EnterpriseChatRuntime_downloadAttachment_9, EnterpriseChatRuntime_executeMessageDesktopAction_10, EnterpriseChatRuntime_handledDesktopActionResult_11, EnterpriseChatRuntime_notExecutableDesktopActionResult_12, EnterpriseChatRuntime_createRemoteSupportAttachment_13 } from "./runtime.methods-2";
-import { EnterpriseChatRuntime_deliverDesktopActionReceipt_1, EnterpriseChatRuntime_flushDesktopActionReceipts_2, EnterpriseChatRuntime_reconcileDesktopActionMessages_3, EnterpriseChatRuntime_sendMessagePayload_4, EnterpriseChatRuntime_assertMessageSendReady_5, EnterpriseChatRuntime_markRead_6, EnterpriseChatRuntime_handleSignedOut_7, EnterpriseChatRuntime_stop_8, EnterpriseChatRuntime_ensureSession_9, EnterpriseChatRuntime_uploadFilePath_10, EnterpriseChatRuntime_uploadBlob_11, EnterpriseChatRuntime_fetchAttachment_12, EnterpriseChatRuntime_exchangeSession_13, EnterpriseChatRuntime_requestBootstrap_14, EnterpriseChatRuntime_requestUsers_15, EnterpriseChatRuntime_requestJson_16 } from "./runtime.methods-3";
-import { EnterpriseChatRuntime_connectWebSocket_1, EnterpriseChatRuntime_handleWebSocketMessage_2, EnterpriseChatRuntime_applyMessage_3, EnterpriseChatRuntime_applyPresence_4, EnterpriseChatRuntime_refreshConversationSummaries_5, EnterpriseChatRuntime_refreshEmployeeDirectory_6, EnterpriseChatRuntime_sendWebSocketRequest_7, EnterpriseChatRuntime_nextRequestId_8, EnterpriseChatRuntime_updateSnapshot_9, EnterpriseChatRuntime_scheduleReconnect_10, EnterpriseChatRuntime_scheduleSessionRefresh_11, EnterpriseChatRuntime_disconnect_12, EnterpriseChatRuntime_clearSession_13, EnterpriseChatRuntime_rejectPendingRequests_14 } from "./runtime.methods-4";
+import * as snapshotProjection from "./snapshot-projection";
+import { createEnterpriseChatSupportBundle } from "./support-bundle";
 
 export class EnterpriseChatRuntime {
   private readonly app: App;
@@ -116,85 +123,85 @@ export class EnterpriseChatRuntime {
     };
   }
 
-  getState() { return EnterpriseChatRuntime_getState_1(this as any as any as any); }
+  getState() { return snapshotProjection.getState(this.snapshotProjectionDependencies); }
 
-  private currentDesktopActionScope() { return EnterpriseChatRuntime_currentDesktopActionScope_2(this as any as any as any); }
+  private currentDesktopActionScope() { return desktopActionController.currentDesktopActionScope(this.desktopActionControllerDependencies); }
 
-  private getDesktopActionLedger() { return EnterpriseChatRuntime_getDesktopActionLedger_3(this as any as any as any); }
+  private getDesktopActionLedger() { return desktopActionController.getDesktopActionLedger(this.desktopActionControllerDependencies); }
 
   private desktopActionState(
     message: EnterpriseChatMessage,
     conversation?: EnterpriseChatConversation
-  ) { return EnterpriseChatRuntime_desktopActionState_4(this as any as any as any, message, conversation); }
+  ) { return desktopActionController.desktopActionState(this.desktopActionControllerDependencies, message, conversation); }
 
   private projectMessage(
     message: EnterpriseChatMessage,
     conversation?: EnterpriseChatConversation
-  ): EnterpriseChatMessage { return EnterpriseChatRuntime_projectMessage_5(this as any as any as any, message, conversation); }
+  ): EnterpriseChatMessage { return snapshotProjection.projectMessage(this.snapshotProjectionDependencies, message, conversation); }
 
-  async setEnabled(enabled: boolean) { return EnterpriseChatRuntime_setEnabled_6(this as any as any as any, enabled); }
+  async setEnabled(enabled: boolean) { return sessionController.setEnabled(this.sessionControllerDependencies, enabled); }
 
-  async refresh() { return EnterpriseChatRuntime_refresh_7(this as any as any as any); }
+  async refresh() { return sessionController.refresh(this.sessionControllerDependencies); }
 
-  async reloadConfiguration(enabled: boolean) { return EnterpriseChatRuntime_reloadConfiguration_8(this as any as any as any, enabled); }
+  async reloadConfiguration(enabled: boolean) { return sessionController.reloadConfiguration(this.sessionControllerDependencies, enabled); }
 
-  private async performRefresh() { return EnterpriseChatRuntime_performRefresh_9(this as any as any as any); }
+  private async performRefresh() { return sessionController.performRefresh(this.sessionControllerDependencies); }
 
-  private updateServerUrl() { return EnterpriseChatRuntime_updateServerUrl_10(this as any as any as any); }
+  private updateServerUrl() { return sessionController.updateServerUrl(this.sessionControllerDependencies); }
 
-  async openDirectConversation(input: EnterpriseChatOpenDirectInput) { return EnterpriseChatRuntime_openDirectConversation_11(this as any as any as any, input); }
+  async openDirectConversation(input: EnterpriseChatOpenDirectInput) { return conversationService.openDirectConversation(this.conversationServiceDependencies, input); }
 
-  async openConversation(input: EnterpriseChatOpenConversationInput) { return EnterpriseChatRuntime_openConversation_12(this as any as any as any, input); }
+  async openConversation(input: EnterpriseChatOpenConversationInput) { return conversationService.openConversation(this.conversationServiceDependencies, input); }
 
-  async createGroup(input: EnterpriseChatCreateGroupInput) { return EnterpriseChatRuntime_createGroup_13(this as any as any as any, input); }
+  async createGroup(input: EnterpriseChatCreateGroupInput) { return conversationService.createGroup(this.conversationServiceDependencies, input); }
 
-  async sendMessage(input: EnterpriseChatSendMessageInput) { return EnterpriseChatRuntime_sendMessage_14(this as any as any as any, input); }
+  async sendMessage(input: EnterpriseChatSendMessageInput) { return conversationService.sendMessage(this.conversationServiceDependencies, input); }
 
-  async sendFiles(input: EnterpriseChatSendFilesInput) { return EnterpriseChatRuntime_sendFiles_15(this as any as any as any, input); }
+  async sendFiles(input: EnterpriseChatSendFilesInput) { return attachmentService.sendFiles(this.attachmentServiceDependencies, input); }
 
-  async sendSupportBundle(input: EnterpriseChatSendSupportBundleInput) { return EnterpriseChatRuntime_sendSupportBundle_1(this as any as any as any, input); }
+  async sendSupportBundle(input: EnterpriseChatSendSupportBundleInput) { return attachmentService.sendSupportBundle(this.attachmentServiceDependencies, input); }
 
   async sendRawAgentChat(
     input: EnterpriseChatSendRawAgentChatInput,
     rawChat: EnterpriseChatRawAgentChatData
-  ) { return EnterpriseChatRuntime_sendRawAgentChat_2(this as any as any as any, input, rawChat); }
+  ) { return attachmentService.sendRawAgentChat(this.attachmentServiceDependencies, input, rawChat); }
 
-  async saveSelfProfile(input: EnterpriseChatSaveSelfProfileInput) { return EnterpriseChatRuntime_saveSelfProfile_3(this as any as any as any, input); }
+  async saveSelfProfile(input: EnterpriseChatSaveSelfProfileInput) { return profileController.saveSelfProfile(this.profileControllerDependencies, input); }
 
-  async selectSelfAvatar() { return EnterpriseChatRuntime_selectSelfAvatar_4(this as any as any as any); }
+  async selectSelfAvatar() { return profileController.selectSelfAvatar(this.profileControllerDependencies); }
 
-  async clearSelfAvatar() { return EnterpriseChatRuntime_clearSelfAvatar_5(this as any as any as any); }
+  async clearSelfAvatar() { return profileController.clearSelfAvatar(this.profileControllerDependencies); }
 
-  async sendPastedFiles(input: EnterpriseChatSendPastedFilesInput) { return EnterpriseChatRuntime_sendPastedFiles_6(this as any as any as any, input); }
+  async sendPastedFiles(input: EnterpriseChatSendPastedFilesInput) { return attachmentService.sendPastedFiles(this.attachmentServiceDependencies, input); }
 
-  async sendScreenshot(input: EnterpriseChatSendScreenshotInput) { return EnterpriseChatRuntime_sendScreenshot_7(this as any as any as any, input); }
+  async sendScreenshot(input: EnterpriseChatSendScreenshotInput) { return attachmentService.sendScreenshot(this.attachmentServiceDependencies, input); }
 
-  async loadAttachment(input: EnterpriseChatAttachmentInput): Promise<EnterpriseChatAttachmentData> { return EnterpriseChatRuntime_loadAttachment_8(this as any as any as any, input); }
+  async loadAttachment(input: EnterpriseChatAttachmentInput): Promise<EnterpriseChatAttachmentData> { return attachmentService.loadAttachment(this.attachmentServiceDependencies, input); }
 
-  async downloadAttachment(input: EnterpriseChatAttachmentInput): Promise<EnterpriseChatDownloadResult> { return EnterpriseChatRuntime_downloadAttachment_9(this as any as any as any, input); }
+  async downloadAttachment(input: EnterpriseChatAttachmentInput): Promise<EnterpriseChatDownloadResult> { return attachmentService.downloadAttachment(this.attachmentServiceDependencies, input); }
 
   async executeMessageDesktopAction(
     input: EnterpriseChatExecuteActionInput
-  ): Promise<EnterpriseChatExecuteActionResult> { return EnterpriseChatRuntime_executeMessageDesktopAction_10(this as any as any as any, input); }
+  ): Promise<EnterpriseChatExecuteActionResult> { return desktopActionController.executeMessageDesktopAction(this.desktopActionControllerDependencies, input); }
 
   private handledDesktopActionResult(
     entry?: EnterpriseChatActionLedgerEntry
-  ): EnterpriseChatExecuteActionResult { return EnterpriseChatRuntime_handledDesktopActionResult_11(this as any as any as any, entry); }
+  ): EnterpriseChatExecuteActionResult { return desktopActionController.handledDesktopActionResult(this.desktopActionControllerDependencies, entry); }
 
   private notExecutableDesktopActionResult(
     message = "This Desktop action request is not executable."
-  ): EnterpriseChatExecuteActionResult { return EnterpriseChatRuntime_notExecutableDesktopActionResult_12(this as any as any as any, message); }
+  ): EnterpriseChatExecuteActionResult { return desktopActionController.notExecutableDesktopActionResult(this.desktopActionControllerDependencies, message); }
 
-  private async createRemoteSupportAttachment(request: EnterpriseChatDesktopAction) { return EnterpriseChatRuntime_createRemoteSupportAttachment_13(this as any as any as any, request); }
+  private async createRemoteSupportAttachment(request: EnterpriseChatDesktopAction) { return attachmentService.createRemoteSupportAttachment(this.attachmentServiceDependencies, request); }
 
-  private async deliverDesktopActionReceipt(entry: EnterpriseChatActionLedgerEntry) { return EnterpriseChatRuntime_deliverDesktopActionReceipt_1(this as any as any as any, entry); }
+  private async deliverDesktopActionReceipt(entry: EnterpriseChatActionLedgerEntry) { return actionReceipts.deliverDesktopActionReceipt(this.actionReceiptsDependencies, entry); }
 
-  private flushDesktopActionReceipts() { return EnterpriseChatRuntime_flushDesktopActionReceipts_2(this as any as any as any); }
+  private flushDesktopActionReceipts() { return actionReceipts.flushDesktopActionReceipts(this.actionReceiptsDependencies); }
 
   private reconcileDesktopActionMessages(
     messages: EnterpriseChatMessage[],
     conversation?: EnterpriseChatConversation
-  ) { return EnterpriseChatRuntime_reconcileDesktopActionMessages_3(this as any as any as any, messages, conversation); }
+  ) { return desktopActionController.reconcileDesktopActionMessages(this.desktopActionControllerDependencies, messages, conversation); }
 
   private async sendMessagePayload(input: {
     conversationId: string;
@@ -204,29 +211,29 @@ export class EnterpriseChatRuntime {
     replyToId?: string;
     kind?: string;
     desktopAction?: Record<string, unknown>;
-  }) { return EnterpriseChatRuntime_sendMessagePayload_4(this as any as any as any, input); }
+  }) { return conversationService.sendMessagePayload(this.conversationServiceDependencies, input); }
 
-  private assertMessageSendReady() { return EnterpriseChatRuntime_assertMessageSendReady_5(this as any as any as any); }
+  private assertMessageSendReady() { return conversationService.assertMessageSendReady(this.conversationServiceDependencies); }
 
-  async markRead(input: EnterpriseChatMarkReadInput) { return EnterpriseChatRuntime_markRead_6(this as any as any as any, input); }
+  async markRead(input: EnterpriseChatMarkReadInput) { return conversationService.markRead(this.conversationServiceDependencies, input); }
 
-  handleSignedOut() { return EnterpriseChatRuntime_handleSignedOut_7(this as any as any as any); }
+  handleSignedOut() { return sessionController.handleSignedOut(this.sessionControllerDependencies); }
 
-  stop() { return EnterpriseChatRuntime_stop_8(this as any as any as any); }
+  stop() { return sessionController.stop(this.sessionControllerDependencies); }
 
-  private async ensureSession() { return EnterpriseChatRuntime_ensureSession_9(this as any as any as any); }
+  private async ensureSession() { return sessionController.ensureSession(this.sessionControllerDependencies); }
 
-  private async uploadFilePath(filePath: string) { return EnterpriseChatRuntime_uploadFilePath_10(this as any as any as any, filePath); }
+  private async uploadFilePath(filePath: string) { return attachmentService.uploadFilePath(this.attachmentServiceDependencies, filePath); }
 
-  private async uploadBlob(blob: Blob, filename: string) { return EnterpriseChatRuntime_uploadBlob_11(this as any as any as any, blob, filename); }
+  private async uploadBlob(blob: Blob, filename: string) { return attachmentService.uploadBlob(this.attachmentServiceDependencies, blob, filename); }
 
-  private async fetchAttachment(fileId: string, maxBytes: number) { return EnterpriseChatRuntime_fetchAttachment_12(this as any as any as any, fileId, maxBytes); }
+  private async fetchAttachment(fileId: string, maxBytes: number) { return attachmentService.fetchAttachment(this.attachmentServiceDependencies, fileId, maxBytes); }
 
-  private async exchangeSession(identityToken: string): Promise<ServerSession> { return EnterpriseChatRuntime_exchangeSession_13(this as any as any as any, identityToken); }
+  private async exchangeSession(identityToken: string): Promise<ServerSession> { return sessionController.exchangeSession(this.sessionControllerDependencies, identityToken); }
 
-  private async requestBootstrap(): Promise<ServerBootstrap> { return EnterpriseChatRuntime_requestBootstrap_14(this as any as any as any); }
+  private async requestBootstrap(): Promise<ServerBootstrap> { return sessionController.requestBootstrap(this.sessionControllerDependencies); }
 
-  private async requestUsers() { return EnterpriseChatRuntime_requestUsers_15(this as any as any as any); }
+  private async requestUsers() { return sessionController.requestUsers(this.sessionControllerDependencies); }
 
   private async requestJson<T>(
     path: string,
@@ -236,35 +243,231 @@ export class EnterpriseChatRuntime {
       body?: unknown;
     } = {},
     useImSessionToken = true
-  ): Promise<T> { return EnterpriseChatRuntime_requestJson_16(this as any as any as any, path, init, useImSessionToken); }
+  ): Promise<T> { return sessionController.requestJson(this.sessionControllerDependencies, path, init, useImSessionToken); }
 
-  private async connectWebSocket() { return EnterpriseChatRuntime_connectWebSocket_1(this as any as any as any); }
+  private async connectWebSocket() { return realtimeConnection.connectWebSocket(this.realtimeConnectionDependencies); }
 
-  private async handleWebSocketMessage(data: unknown) { return EnterpriseChatRuntime_handleWebSocketMessage_2(this as any as any as any, data); }
+  private async handleWebSocketMessage(data: unknown) { return realtimeConnection.handleWebSocketMessage(this.realtimeConnectionDependencies, data); }
 
-  private applyMessage(message: EnterpriseChatMessage) { return EnterpriseChatRuntime_applyMessage_3(this as any as any as any, message); }
+  private applyMessage(message: EnterpriseChatMessage) { return snapshotProjection.applyMessage(this.snapshotProjectionDependencies, message); }
 
-  private applyPresence(userId: string, online: boolean) { return EnterpriseChatRuntime_applyPresence_4(this as any as any as any, userId, online); }
+  private applyPresence(userId: string, online: boolean) { return snapshotProjection.applyPresence(this.snapshotProjectionDependencies, userId, online); }
 
-  private async refreshConversationSummaries() { return EnterpriseChatRuntime_refreshConversationSummaries_5(this as any as any as any); }
+  private async refreshConversationSummaries() { return conversationService.refreshConversationSummaries(this.conversationServiceDependencies); }
 
-  private async refreshEmployeeDirectory() { return EnterpriseChatRuntime_refreshEmployeeDirectory_6(this as any as any as any); }
+  private async refreshEmployeeDirectory() { return conversationService.refreshEmployeeDirectory(this.conversationServiceDependencies); }
 
-  private sendWebSocketRequest(type: string, payload: unknown) { return EnterpriseChatRuntime_sendWebSocketRequest_7(this as any as any as any, type, payload); }
+  private sendWebSocketRequest(type: string, payload: unknown) { return realtimeConnection.sendWebSocketRequest(this.realtimeConnectionDependencies, type, payload); }
 
-  private nextRequestId(prefix: string) { return EnterpriseChatRuntime_nextRequestId_8(this as any as any as any, prefix); }
+  private nextRequestId(prefix: string) { return realtimeConnection.nextRequestId(this.realtimeConnectionDependencies, prefix); }
 
-  private updateSnapshot(patch: Partial<EnterpriseChatSnapshot>) { return EnterpriseChatRuntime_updateSnapshot_9(this as any as any as any, patch); }
+  private updateSnapshot(patch: Partial<EnterpriseChatSnapshot>) { return snapshotProjection.updateSnapshot(this.snapshotProjectionDependencies, patch); }
 
-  private scheduleReconnect() { return EnterpriseChatRuntime_scheduleReconnect_10(this as any as any as any); }
+  private scheduleReconnect() { return realtimeConnection.scheduleReconnect(this.realtimeConnectionDependencies); }
 
-  private scheduleSessionRefresh() { return EnterpriseChatRuntime_scheduleSessionRefresh_11(this as any as any as any); }
+  private scheduleSessionRefresh() { return sessionController.scheduleSessionRefresh(this.sessionControllerDependencies); }
 
-  private disconnect() { return EnterpriseChatRuntime_disconnect_12(this as any as any as any); }
+  private disconnect() { return realtimeConnection.disconnect(this.realtimeConnectionDependencies); }
 
-  private clearSession() { return EnterpriseChatRuntime_clearSession_13(this as any as any as any); }
+  private clearSession() { return sessionController.clearSession(this.sessionControllerDependencies); }
 
-  private rejectPendingRequests(error: Error) { return EnterpriseChatRuntime_rejectPendingRequests_14(this as any as any as any, error); }
+  private rejectPendingRequests(error: Error) { return realtimeConnection.rejectPendingRequests(this.realtimeConnectionDependencies, error); }
+
+  // Read live state across awaits and callbacks; each service receives only its declared port.
+  private get sessionControllerDependencies(): sessionController.SessionControllerDependencies {
+    const runtime = this;
+    return {
+      get serverUrl() { return runtime.serverUrl; },
+      set serverUrl(value) { runtime.serverUrl = value; },
+      disconnect: this.disconnect.bind(this),
+      clearSession: this.clearSession.bind(this),
+      updateSnapshot: this.updateSnapshot.bind(this),
+      getState: this.getState.bind(this),
+      get snapshot() { return runtime.snapshot; },
+      get getIdentityToken() { return runtime.getIdentityToken; },
+      get socket() { return runtime.socket; },
+      refresh: this.refresh.bind(this),
+      get refreshPromise() { return runtime.refreshPromise; },
+      set refreshPromise(value) { runtime.refreshPromise = value; },
+      performRefresh: this.performRefresh.bind(this),
+      get getServerUrl() { return runtime.getServerUrl; },
+      setEnabled: this.setEnabled.bind(this),
+      updateServerUrl: this.updateServerUrl.bind(this),
+      exchangeSession: this.exchangeSession.bind(this),
+      get refreshIdentityToken() { return runtime.refreshIdentityToken; },
+      get imSessionToken() { return runtime.imSessionToken; },
+      set imSessionToken(value) { runtime.imSessionToken = value; },
+      get imSessionTokenExpiresAt() { return runtime.imSessionTokenExpiresAt; },
+      set imSessionTokenExpiresAt(value) { runtime.imSessionTokenExpiresAt = value; },
+      scheduleSessionRefresh: this.scheduleSessionRefresh.bind(this),
+      requestBootstrap: this.requestBootstrap.bind(this),
+      requestUsers: this.requestUsers.bind(this),
+      get app() { return runtime.app; },
+      get platform() { return runtime.platform; },
+      currentDesktopActionScope: this.currentDesktopActionScope.bind(this),
+      get recoveredDesktopActionScopes() { return runtime.recoveredDesktopActionScopes; },
+      getDesktopActionLedger: this.getDesktopActionLedger.bind(this),
+      connectWebSocket: this.connectWebSocket.bind(this),
+      get getDeviceInfo() { return runtime.getDeviceInfo; },
+      requestJson: this.requestJson.bind(this),
+      get fetchImpl() { return runtime.fetchImpl; },
+      get sessionRefreshTimer() { return runtime.sessionRefreshTimer; },
+      set sessionRefreshTimer(value) { runtime.sessionRefreshTimer = value; }
+    };
+  }
+
+  private get realtimeConnectionDependencies(): realtimeConnection.RealtimeConnectionDependencies {
+    const runtime = this;
+    return {
+      get snapshot() { return runtime.snapshot; },
+      get imSessionToken() { return runtime.imSessionToken; },
+      requestJson: this.requestJson.bind(this),
+      get createWebSocket() { return runtime.createWebSocket; },
+      get serverUrl() { return runtime.serverUrl; },
+      get socket() { return runtime.socket; },
+      set socket(value) { runtime.socket = value; },
+      get socketSynced() { return runtime.socketSynced; },
+      set socketSynced(value) { runtime.socketSynced = value; },
+      get socketClosing() { return runtime.socketClosing; },
+      set socketClosing(value) { runtime.socketClosing = value; },
+      sendWebSocketRequest: this.sendWebSocketRequest.bind(this),
+      updateSnapshot: this.updateSnapshot.bind(this),
+      handleWebSocketMessage: this.handleWebSocketMessage.bind(this),
+      rejectPendingRequests: this.rejectPendingRequests.bind(this),
+      get getIdentityToken() { return runtime.getIdentityToken; },
+      scheduleReconnect: this.scheduleReconnect.bind(this),
+      get pendingRequests() { return runtime.pendingRequests; },
+      get reconnectAttempt() { return runtime.reconnectAttempt; },
+      set reconnectAttempt(value) { runtime.reconnectAttempt = value; },
+      get platform() { return runtime.platform; },
+      get app() { return runtime.app; },
+      refreshEmployeeDirectory: this.refreshEmployeeDirectory.bind(this),
+      flushDesktopActionReceipts: this.flushDesktopActionReceipts.bind(this),
+      refresh: this.refresh.bind(this),
+      applyPresence: this.applyPresence.bind(this),
+      applyMessage: this.applyMessage.bind(this),
+      refreshConversationSummaries: this.refreshConversationSummaries.bind(this),
+      nextRequestId: this.nextRequestId.bind(this),
+      get requestSequence() { return runtime.requestSequence; },
+      set requestSequence(value) { runtime.requestSequence = value; },
+      get reconnectTimer() { return runtime.reconnectTimer; },
+      set reconnectTimer(value) { runtime.reconnectTimer = value; }
+    };
+  }
+
+  private get conversationServiceDependencies(): conversationService.ConversationServiceDependencies {
+    const runtime = this;
+    return {
+      get snapshot() { return runtime.snapshot; },
+      ensureSession: this.ensureSession.bind(this),
+      requestJson: this.requestJson.bind(this),
+      openConversation: this.openConversation.bind(this),
+      reconcileDesktopActionMessages: this.reconcileDesktopActionMessages.bind(this),
+      updateSnapshot: this.updateSnapshot.bind(this),
+      flushDesktopActionReceipts: this.flushDesktopActionReceipts.bind(this),
+      markRead: this.markRead.bind(this),
+      getState: this.getState.bind(this),
+      sendMessagePayload: this.sendMessagePayload.bind(this),
+      assertMessageSendReady: this.assertMessageSendReady.bind(this),
+      sendWebSocketRequest: this.sendWebSocketRequest.bind(this),
+      applyMessage: this.applyMessage.bind(this),
+      get socket() { return runtime.socket; },
+      get socketSynced() { return runtime.socketSynced; },
+      get presenceRevision() { return runtime.presenceRevision; },
+      requestUsers: this.requestUsers.bind(this)
+    };
+  }
+
+  private get attachmentServiceDependencies(): attachmentService.AttachmentServiceDependencies {
+    const runtime = this;
+    return {
+      get selectFiles() { return runtime.selectFiles; },
+      getState: this.getState.bind(this),
+      ensureSession: this.ensureSession.bind(this),
+      assertMessageSendReady: this.assertMessageSendReady.bind(this),
+      uploadFilePath: this.uploadFilePath.bind(this),
+      sendMessagePayload: this.sendMessagePayload.bind(this),
+      get createSupportBundle() { return runtime.createSupportBundle; },
+      uploadBlob: this.uploadBlob.bind(this),
+      get platform() { return runtime.platform; },
+      get captureScreenshot() { return runtime.captureScreenshot; },
+      fetchAttachment: this.fetchAttachment.bind(this),
+      get showSaveDialog() { return runtime.showSaveDialog; },
+      get app() { return runtime.app; },
+      requestJson: this.requestJson.bind(this),
+      get fetchImpl() { return runtime.fetchImpl; },
+      get serverUrl() { return runtime.serverUrl; },
+      get imSessionToken() { return runtime.imSessionToken; },
+      get createSupportArtifact() { return runtime.createSupportArtifact; }
+    };
+  }
+
+  private get profileControllerDependencies(): profileController.ProfileControllerDependencies {
+    const runtime = this;
+    return {
+      get snapshot() { return runtime.snapshot; },
+      get app() { return runtime.app; },
+      get platform() { return runtime.platform; },
+      get serverUrl() { return runtime.serverUrl; },
+      updateSnapshot: this.updateSnapshot.bind(this),
+      getState: this.getState.bind(this),
+      get selectAvatar() { return runtime.selectAvatar; }
+    };
+  }
+
+  private get snapshotProjectionDependencies(): snapshotProjection.SnapshotProjectionDependencies {
+    const runtime = this;
+    return {
+      get snapshot() { return runtime.snapshot; },
+      set snapshot(value) { runtime.snapshot = value; },
+      projectMessage: this.projectMessage.bind(this),
+      desktopActionState: this.desktopActionState.bind(this),
+      reconcileDesktopActionMessages: this.reconcileDesktopActionMessages.bind(this),
+      updateSnapshot: this.updateSnapshot.bind(this),
+      get presenceRevision() { return runtime.presenceRevision; },
+      set presenceRevision(value) { runtime.presenceRevision = value; },
+      get onStateChanged() { return runtime.onStateChanged; },
+      getState: this.getState.bind(this)
+    };
+  }
+
+  private get desktopActionControllerDependencies(): desktopActionController.DesktopActionControllerDependencies {
+    const runtime = this;
+    return {
+      get snapshot() { return runtime.snapshot; },
+      get getDeviceInfo() { return runtime.getDeviceInfo; },
+      get serverUrl() { return runtime.serverUrl; },
+      get app() { return runtime.app; },
+      get desktopActionLedgerPath() { return runtime.desktopActionLedgerPath; },
+      set desktopActionLedgerPath(value) { runtime.desktopActionLedgerPath = value; },
+      get desktopActionLedger() { return runtime.desktopActionLedger; },
+      set desktopActionLedger(value) { runtime.desktopActionLedger = value; },
+      getDesktopActionLedger: this.getDesktopActionLedger.bind(this),
+      currentDesktopActionScope: this.currentDesktopActionScope.bind(this),
+      handledDesktopActionResult: this.handledDesktopActionResult.bind(this),
+      desktopActionState: this.desktopActionState.bind(this),
+      notExecutableDesktopActionResult: this.notExecutableDesktopActionResult.bind(this),
+      updateSnapshot: this.updateSnapshot.bind(this),
+      createRemoteSupportAttachment: this.createRemoteSupportAttachment.bind(this),
+      get executeDesktopAction() { return runtime.executeDesktopAction; },
+      deliverDesktopActionReceipt: this.deliverDesktopActionReceipt.bind(this)
+    };
+  }
+
+  private get actionReceiptsDependencies(): actionReceipts.ActionReceiptsDependencies {
+    const runtime = this;
+    return {
+      get socket() { return runtime.socket; },
+      get socketSynced() { return runtime.socketSynced; },
+      sendMessagePayload: this.sendMessagePayload.bind(this),
+      getDesktopActionLedger: this.getDesktopActionLedger.bind(this),
+      get actionReceiptFlushPromise() { return runtime.actionReceiptFlushPromise; },
+      set actionReceiptFlushPromise(value) { runtime.actionReceiptFlushPromise = value; },
+      currentDesktopActionScope: this.currentDesktopActionScope.bind(this),
+      deliverDesktopActionReceipt: this.deliverDesktopActionReceipt.bind(this),
+      updateSnapshot: this.updateSnapshot.bind(this)
+    };
+  }
 }
 
 export const __testInternals = {
@@ -278,4 +481,8 @@ export const __testInternals = {
   toWebSocketUrl
 };
 
-export * from "./runtime.shared";
+export * from "./attachment-policy";
+export * from "./connection-transport";
+export * from "./message-projection";
+export * from "./protocol-values";
+export * from "./runtime-options";

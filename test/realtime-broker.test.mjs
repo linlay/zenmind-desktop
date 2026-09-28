@@ -1758,3 +1758,57 @@ for (const lane of ["primary", "btw", "selection-explain"]) {
     await query.completed;
   });
 }
+
+for (const platform of ['darwin', 'win32']) {
+  test(`SSO transitions preserve all lanes and the existing New Chat on ${platform}`, async (t) => {
+    const { issueAgentAccessToken } = require('../dist-electron/main/modules/identity/agent-auth.js');
+    const h = createHarness(t);
+    const app = { getPath: name => `/fixture/sso-broker/${platform}/${name}` };
+    const localToken = async () => (await issueAgentAccessToken(app, 'missing',
+      async () => ({token: jwt({sub: 'app'})}))).token;
+    const observer = rootObserver({ contextId: 'main-chat:g1' });
+    h.broker.activateRootObserver(observer);
+    for (const lane of ['primary', 'btw', 'selection-explain']) {
+      await h.broker.ensureConnected('http://127.0.0.1:8080', await localToken(), lane);
+    }
+    const { registerSsoIpcHandlers } = require('../dist-electron/main/modules/identity/ipc.js');
+    const handlers = new Map();
+    let account = 'alice';
+    const noop = async () => undefined;
+    registerSsoIpcHandlers({handle: (name, handler) => handlers.set(name, handler)}, {
+      app,
+      desktopSsoController: {broadcastStatus() {}, returnToApp() {}, syncBrowserCookies: noop,
+        exchangeWebSession: noop, exchangeBrowserCookieAccessToken: noop,
+        logoutWebSession: noop, clearBrowserCookies: noop, clearWebSessionCookies: noop},
+      getDesktopSsoStatus: () => ({authenticated: !!account}),
+      startDesktopSsoLogin: async (_app, hooks) => {
+        const status = {authenticated: true, user: {sub: account}};
+        await hooks.onBeforeStatusChanged(status);
+        await hooks.onAfterStatusChanged(status);
+        hooks.onStatusChanged(status);
+        return {ok: true, status};
+      },
+      logoutDesktopSso: async (_app, hooks) => {
+        const status = {authenticated: false}; hooks.onStatusChanged(status);
+        return {ok: true, status};
+      },
+      issueAgentAccessToken: async () => ({ok: true, token: await localToken()}),
+    });
+    for (const sub of ['alice', 'bob', null]) {
+      account = sub;
+      const result = await handlers.get(sub ? 'sso.startLogin' : 'sso.logout')();
+      assert.equal(result.ok, true);
+      for (const lane of ['primary', 'btw', 'selection-explain']) {
+        await h.broker.ensureConnected('http://127.0.0.1:8080', await localToken(), lane);
+      }
+      assert.equal(h.broker.getMainChatRootObserver().token, observer.token);
+      assert.equal(h.broker.getDiagnostics().overviewLease.state, 'pending_chat_identity');
+    }
+    assert.equal(h.sockets.length, 3);
+    assert.equal(h.broker.getDiagnostics().laneRotationCount, 0);
+    // Submit using the original page binding, without re-registering the surface.
+    h.token = await localToken();
+    await acceptedRun(h, { lane: 'primary', runId: 'after-sso', observerToken: observer.token });
+    assert.equal(h.broker.getDiagnostics().laneRotationCount, 0);
+  });
+}

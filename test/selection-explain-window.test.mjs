@@ -33,10 +33,10 @@ test("selection explanation renderer hands only Chat and Run ids to the WebClien
 
 test("selection explanation surface uses an isolated BTW root role", () => {
   const identities = read("src", "shared", "surface-identity.ts");
-  const handler = ["ipc.shared.ts", "ipc.operations-3.ts"].map((filename) =>
+  const handler = ["frame-port/surface-authorization.ts", "frame-port/request-dispatch.ts"].map((filename) =>
     read("src", "main", "modules", "agent-platform", filename)
   ).join("\n");
-  const broker = ["realtime-broker.ts", "realtime-broker.methods-1.ts"].map((filename) =>
+  const broker = ["realtime-broker.ts", "root-observers.ts"].map((filename) =>
     read("src", "main", "modules", "agent-platform", "realtime", filename)
   ).join("\n");
   assert.match(identities, /"selection-explain"/u);

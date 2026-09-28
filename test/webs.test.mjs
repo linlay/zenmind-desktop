@@ -29,6 +29,7 @@ const {
   updateWebappItem: updateWebappItemRaw
 } = require("../dist-electron/main/modules/webs/webapps/actions.js");
 const { WebappRuntime: RawWebappRuntime } = require("../dist-electron/main/modules/webs/webapps/runtime.js");
+const { checkWebappBackendPrerequisites } = require("../dist-electron/main/modules/webs/webapps/launchers.js");
 const {
   authorizeWebappActionToken,
   issueWebappActionToken,
@@ -545,6 +546,31 @@ test("runtime settings store only per-WebApp runtime executable bindings", (t) =
     runtimeExecutables: { [`${javaAppId}:java`]: executable }
   });
   assert.deepEqual(readWebappRuntimeSettings(app), settings);
+});
+
+test("runtime prerequisite checks immediately resolve a newly saved executable binding", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "webapp-runtime-rebind-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const id = webappId("runtime-rebind");
+  // Use a real version-reporting executable without requiring Java/Python on the test host.
+  const replacement = path.join(root, process.platform === "win32" ? "runtime.exe" : "runtime");
+  if (process.platform === "win32") {
+    fs.copyFileSync(process.execPath, replacement);
+  } else {
+    // Preserve the binary's library resolution (for example, Homebrew's macOS Node).
+    fs.symlinkSync(process.execPath, replacement);
+  }
+  const context = { app, item: { id, backend: {
+    command: { type: "runtime", runtime: "python", entry: "app.py", minimumVersion: "1.0" }
+  } }, backendPort: null };
+  for (const executable of [process.execPath, replacement]) {
+    writeWebappRuntimeSettings(app, { runtimeExecutables: { [`${id}:python`]: executable } });
+    const check = checkWebappBackendPrerequisites(context);
+    assert.equal(check.ok, true);
+    assert.equal(check.command, executable);
+    assert.equal(check.runtimeVersion, process.versions.node);
+  }
 });
 
 test("userConfig keeps field definitions in the package and actual values in Desktop data", (t) => {

@@ -9,6 +9,8 @@ import {
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_REQUEST_TYPE,
+  AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_RESPONSE_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
@@ -36,6 +38,8 @@ import {
 
 export type ServiceWebviewBridgeHostContext = {
   serviceId?: string | null;
+  activeAgentConfigurationKey?: string;
+  openAgentConfiguration?: (agentKey: string) => void;
   bridgeProtocol?: ServiceWebviewAuthProtocol | null;
   desktopAuthContext?: string;
   sendBridgeMessageToWebview: (payload: ServiceWebviewBridgeMessage) => void;
@@ -87,6 +91,24 @@ export function handleServiceWebviewBridgeMessage(
 
   if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
+    return true;
+  }
+
+  if (payload.type === AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_REQUEST_TYPE) {
+    const agentKey = typeof payload.agentKey === "string" ? payload.agentKey : "";
+    const responseType = AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_RESPONSE_TYPE;
+    // The host supplies the active Chat identity; the guest cannot choose an arbitrary route.
+    if (context.serviceId !== "agent-webclient" || !context.openAgentConfiguration ||
+        !agentKey || agentKey !== context.activeAgentConfigurationKey) {
+      sendFailure(context, responseType, payload.requestId, "Agent configuration navigation is unavailable for this surface");
+      return true;
+    }
+    try {
+      context.openAgentConfiguration(agentKey);
+      context.sendBridgeMessageToWebview({ type: responseType, requestId: payload.requestId, ok: true });
+    } catch {
+      sendFailure(context, responseType, payload.requestId, "Agent configuration navigation failed");
+    }
     return true;
   }
 

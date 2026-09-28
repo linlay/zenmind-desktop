@@ -13,7 +13,7 @@ export function SkillDetailDialog({ item, items, busy, onClose, onInstall, onUse
   onInstall: (item: MarketItem, action: "install" | "update") => Promise<boolean>;
   onUse: (item: MarketItem) => void; onDetail: (item: MarketItem) => void;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const isPackage = item.skill?.kind === "package";
   const installed = isInstalledSkill(item);
   const [content, setContent] = useState("");
@@ -30,7 +30,7 @@ export function SkillDetailDialog({ item, items, busy, onClose, onInstall, onUse
       .catch(() => { if (current) setFailed(true); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [item.id, item.version, item.source, item.marketplaceAvailable, isPackage, retry]);
+  }, [item.id, item.version, item.source, item.marketplaceAvailable, isPackage, retry, locale]);
   const includes = item.skill?.includedSkills ?? [];
   return <Modal open centered width={820} footer={null} onCancel={onClose} title={t(isPackage ? "market.discovery.packages" : "market.discovery.recommended")}>
     <div className="skill-detail-layout">
@@ -55,7 +55,8 @@ export function SkillDetailDialog({ item, items, busy, onClose, onInstall, onUse
         </div>}
       </div>
       <aside className="skill-detail-side"><dl>
-        <dt>{t("market.storefront.detail.version")}</dt><dd>{item.version}</dd>
+        <dt>{t("market.storefront.detail.version")}</dt><dd>{item.version || "—"}</dd>
+        {item.metadata?.revision ? <><dt>{t("market.storefront.detail.revision")}</dt><dd>{item.metadata.revision}</dd></> : null}
         <dt>{t("market.storefront.detail.author")}</dt><dd>{item.author || "—"}</dd>
         <dt>{t("market.stats.downloads")}</dt><dd>{item.downloadCount ?? 0}</dd>
       </dl>

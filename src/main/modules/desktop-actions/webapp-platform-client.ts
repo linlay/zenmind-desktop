@@ -1,3 +1,4 @@
+import { getMainLocale } from "../../support/i18n/main-i18n";
 import { net } from "electron";
 import { type DesktopActionBridgeOptions } from "./action-contracts";
 
@@ -11,14 +12,14 @@ export async function platform(options: DesktopActionBridgeOptions) {
   if (!baseUrl || !issued.ok || !issued.token) throw new ConnectorError("desktop_identity_required");
   let subject = "";
   try { subject = JSON.parse(Buffer.from(issued.token.split(".")[1], "base64url").toString()).sub; } catch { /* fail closed */ }
-  if (!/^desktop-user:[0-9a-f]{64}$/u.test(subject)) throw new ConnectorError("desktop_identity_required");
-  // The token is supplied by Desktop's validated identity provider. Decoding
+  if (typeof subject !== "string" || !subject.trim()) throw new ConnectorError("desktop_identity_required");
+  // The token is supplied by Desktop's local service identity provider. Decoding
   // here only detects identity changes; it does not authenticate a page token.
   return { baseUrl, token: issued.token, subject };
 }
 export async function request(baseUrl: string, token: string, path: string, method: string, body?: unknown, binary = false, signal?: AbortSignal): Promise<any> {
   const response = await net.fetch(new URL(path, baseUrl).href, {
-    method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    method, headers: { "X-Locale": getMainLocale(), Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     credentials: "omit", redirect: "error", cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(35_000)]) : AbortSignal.timeout(35_000)
   });

@@ -260,6 +260,7 @@ type ManagedProcessInventoryRow = ProcessTreeRow & {
 };
 
 function runInventoryCommand(command: string, args: string[], timeoutMs: number) {
+  const startedAt = Date.now();
   return new Promise<string>((resolve, reject) => {
     execFile(command, args, {
       encoding: "utf8",
@@ -269,7 +270,10 @@ function runInventoryCommand(command: string, args: string[], timeoutMs: number)
       maxBuffer: 16 * 1024 * 1024
     }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(String(stderr || error.message || "process inventory failed").trim()));
+        // Never include stdout: it contains other processes' command lines.
+        reject(new Error(`Process inventory failed: elapsedMs=${Date.now() - startedAt} timeoutMs=${timeoutMs} ` +
+          `killed=${Boolean(error.killed)} signal=${error.signal ?? "none"} code=${error.code ?? "none"}; ` +
+          String(stderr || error.message || "process inventory failed").trim()));
         return;
       }
       resolve(String(stdout ?? ""));
@@ -280,17 +284,18 @@ function runInventoryCommand(command: string, args: string[], timeoutMs: number)
 function parseWindowsManagedProcessInventory(stdout: string): ManagedProcessInventoryRow[] {
   const trimmed = stdout.trim();
   if (!trimmed) {
-    return [];
+    throw new Error("Empty Windows process inventory");
   }
   const parsed = JSON.parse(trimmed) as unknown;
   const entries = Array.isArray(parsed) ? parsed : [parsed];
+  if (entries.length === 0) throw new Error("Empty Windows process inventory");
   return entries.flatMap((entry) => {
     const value = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
-    const pid = Number(value.ProcessId);
-    const ppid = Number(value.ParentProcessId);
-    if (!Number.isFinite(pid) || pid <= 0 || !Number.isFinite(ppid) || ppid < 0) {
-      return [];
-    }
+    const pid = value.ProcessId;
+    const ppid = value.ParentProcessId;
+    if (typeof pid !== "number" || !Number.isInteger(pid) || pid < 0 ||
+        typeof ppid !== "number" || !Number.isInteger(ppid) || ppid < 0) throw new Error("Invalid Windows process inventory row");
+    if (pid === 0) return []; // Windows System Idle Process is not a killable root.
     return [{
       pid,
       ppid,
@@ -329,8 +334,11 @@ function inventoryIdentityMatchesInstallDir(
 
 export async function captureManagedProcessCleanupSnapshotAsync(
   app: App,
-  platform: NodeJS.Platform | string = process.platform
+  platform: NodeJS.Platform | string = process.platform,
+  options: { timeoutMs?: number } = {}
 ) {
+  const timeoutMs = options.timeoutMs ?? (platform === "win32" ? 3500 : 3000);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 10_000) throw new Error("Invalid process inventory timeout");
   const inventory = platform === "win32"
     ? parseWindowsManagedProcessInventory(await runInventoryCommand(
         windowsPowerShellPath(),
@@ -341,12 +349,12 @@ export async function captureManagedProcessCleanupSnapshotAsync(
           "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | " +
             "Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"
         ],
-        3500
+        timeoutMs
       ))
     : parsePosixManagedProcessInventory(await runInventoryCommand(
         "ps",
         ["-axo", "pid=,ppid=,command="],
-        3000
+        timeoutMs
       ));
   const rows: ProcessTreeRow[] = inventory.map(({ pid, ppid }) => ({ pid, ppid }));
   const targets: ManagedProcessCleanupTarget[] = [];
