@@ -49,7 +49,10 @@ function runPlatformBuiltinsManifest(bundleRoot, action, expectedManifestSha256,
 
 function verifyPlatformBuiltinsInServices(servicesRoot, runManifest = runPlatformBuiltinsManifest) {
   const root = path.join(servicesRoot, "agent-platform");
-  const bundles = fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  // Interrupted Darwin signing can leave a sibling staging/backup transaction.
+  // It is not a release bundle; keep it on disk for recovery, outside validation.
+  const bundles = fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".service-sign-"));
   if (bundles.length === 0) {
     throw new Error(`No unpacked agent-platform bundle in ${root}`);
   }

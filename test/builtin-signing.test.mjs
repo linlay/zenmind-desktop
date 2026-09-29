@@ -9,7 +9,7 @@ import { signDarwinServiceDirectory, signMachOFile, computeAssetSignature } from
 
 const require = createRequire(import.meta.url);
 const { sign, prepareDarwinAppServices } = require("../scripts/sign-mac-app.js");
-const { runPlatformBuiltinsManifest } = require("../scripts/lib/platform-builtins.js");
+const { runPlatformBuiltinsManifest, verifyPlatformBuiltinsInServices } = require("../scripts/lib/platform-builtins.js");
 const { copyDarwinServiceResources } = require("../scripts/lib/mac-service-resources.js");
 
 test("timestamp errors retry with a bound; other signing and verification errors fail immediately", (t) => {
@@ -82,6 +82,37 @@ test("Darwin packaging preserves empty directories and modes before signing", (t
   assert.equal(fs.existsSync(path.join(destination, "obsolete")), false);
   assert.equal(computeAssetSignature(source), computeAssetSignature(destination));
   assert.throws(() => copyDarwinServiceResources(source, path.join(source, "nested")), /must not overlap/u);
+});
+
+test("packaging excludes abandoned signing transactions without weakening bundle validation", (t) => {
+  const root = fixture(t);
+  const source = path.join(root, "source");
+  const destination = path.join(root, "packaged");
+  const bundle = path.join(source, "agent-platform/v1");
+  fs.mkdirSync(path.join(bundle, ".service-sign-owned-content"), { recursive: true });
+  fs.writeFileSync(path.join(bundle, "manifest.json"), "{}");
+  for (const service of ["agent-platform", "identity-center"]) {
+    fs.mkdirSync(path.join(source, service, ".service-sign-leftover/staged"), { recursive: true });
+  }
+  const verified = [];
+  copyDarwinServiceResources(source, destination, (dir) => {
+    verifyPlatformBuiltinsInServices(dir, (entry, action) => {
+      assert.equal(action, "verify");
+      assert.equal(path.basename(entry), "v1");
+      assert.equal(fs.readFileSync(path.join(entry, "manifest.json"), "utf8"), "{}");
+      verified.push(entry);
+    });
+  });
+  assert.equal(verified.length, 2);
+  for (const service of ["agent-platform", "identity-center"]) {
+    assert.ok(fs.existsSync(path.join(source, service, ".service-sign-leftover/staged")));
+    assert.equal(fs.existsSync(path.join(destination, service, ".service-sign-leftover")), false);
+  }
+  assert.ok(fs.existsSync(path.join(destination, "agent-platform/v1/.service-sign-owned-content")));
+  fs.rmSync(bundle, { recursive: true });
+  assert.throws(() => verifyPlatformBuiltinsInServices(source), /No unpacked agent-platform bundle/u);
+  fs.mkdirSync(bundle);
+  assert.throws(() => verifyPlatformBuiltinsInServices(source), /ENOENT.*manifest.json/u);
 });
 
 test("service signing verifies input, signs every Mach-O, then delegates refresh and verification", (t) => {
