@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MarketItem } from "@shared/contracts";
-import { expandPinnedSkillKeys, pinnedMarketItems } from "./skillPinning";
+import { marketSkillPinKeys, pinnedMarketItems } from "./skillPinning";
 
 const LEGACY_PINS = "market.skillPins";
 const MIGRATED = "market.skillPins.orderMigrated";
@@ -37,7 +37,7 @@ export function useMarketSkillPins(items: MarketItem[], loading: boolean) {
         try { migrated = localStorage.getItem(MIGRATED) === "1"; } catch { /* No legacy storage. */ }
         const old = legacyPins();
         if (!migrated && itemsRef.current.length > 0) {
-          const keys = expandPinnedSkillKeys(itemsRef.current, old).reverse();
+          const keys = marketSkillPinKeys(itemsRef.current, old).reverse();
           for (const key of keys) {
             if (!active || request !== generation.current) return;
             if (!value.order.includes(key.toLowerCase())) value = await api.saveSkillPins({ key, pinned: true });
@@ -56,15 +56,12 @@ export function useMarketSkillPins(items: MarketItem[], loading: boolean) {
     if (!ready || inFlight.current) return;
     inFlight.current = true; generation.current++; setSaving(true); setFailed(false);
     const pinned = !pins.includes(id);
-    const keys = expandPinnedSkillKeys(itemsRef.current, [id]);
+    const [key] = marketSkillPinKeys(itemsRef.current, [id]);
     try {
-      if (!keys.length) throw new Error("no_concrete_skills");
-      // The official API inserts new pins first. Reverse package children so
-      // their declared order is preserved; never replace another client's list.
-      for (const key of pinned ? [...keys].reverse() : keys) {
-        const value = await window.electronAPI.market.saveSkillPins({ key, pinned });
-        setOrder(value.order);
-      }
+      if (!key) throw new Error("unknown_skill_item");
+      // A package is one presentation pin; member preferences remain independent.
+      const value = await window.electronAPI.market.saveSkillPins({ key, pinned });
+      setOrder(value.order);
     } catch {
       setFailed(true);
       try { setOrder((await window.electronAPI.market.getSkillPins()).order); } catch { setReady(false); }
