@@ -17,6 +17,7 @@ export type ConversationShareDialogState = {
   copied: boolean;
   actionError: string;
   notice: string;
+  warning: string;
 };
 
 export type ConversationShareDialogSession = {
@@ -37,6 +38,7 @@ export function useConversationShareDialog(
     copied: false,
     actionError: "",
     notice: "",
+    warning: "",
   }));
   const generationRef = useRef(0);
   const copyFeedbackTimerRef = useRef<number | null>(null);
@@ -61,7 +63,7 @@ export function useConversationShareDialog(
     const current = state;
     if (current.creating) return;
     const generation = generationRef.current;
-    setState({ ...current, creating: true, copied: false, actionError: "", notice: "" });
+    setState({ ...current, creating: true, copied: false, actionError: "", notice: "", warning: "" });
     try {
       const result = await window.electronAPI.assistant.shareChat({
         chatId: current.chatId,
@@ -88,6 +90,7 @@ export function useConversationShareDialog(
           copied: false,
           actionError: "",
           notice: result.message || t("sidebar.chat.shareCreated"),
+          warning: result.warning || "",
         };
       });
     } catch (error) {
@@ -109,7 +112,7 @@ export function useConversationShareDialog(
   function setExpiration(expiration: AssistantConversationShareExpiration) {
     setState((current) =>
       !current.creating
-        ? { ...current, expiration, actionError: "", notice: "" }
+        ? { ...current, expiration, actionError: "", notice: "", warning: "" }
         : current,
     );
   }

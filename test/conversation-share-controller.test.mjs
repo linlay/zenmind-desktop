@@ -63,7 +63,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   const reader = {
     async readChatSnapshot(chatId) {
       calls.push({ method: "read", chatId });
-      return { ok: true, bytes: snapshot, attachments: [] };
+      return { ok: true, bytes: snapshot, attachments: [], attachmentsOmitted: false, attachmentUnauthorized: false };
     }
   };
   const client = {
@@ -79,6 +79,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.warning, undefined);
   assert.deepEqual(calls.map((call) => call.method), ["read", "create"]);
   assert.equal(calls[0].chatId, "chat-1");
   assert.equal(calls[1].input.snapshot, snapshot);
@@ -87,6 +88,27 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   assert.equal(calls[1].input.expiration, "30d");
   assert.equal(calls[1].input.target.origin, "https://tunnel.example.test");
   assert.match(calls[1].input.target.accessToken, /^header\./u);
+});
+
+test("createConversationShare keeps the link and reports observed attachment omissions", async (t) => {
+  const app = createFixture(t);
+  const client = { async create() { return shareRecord(); } };
+  for (const unauthorized of [false, true]) {
+    const result = await createConversationShare(app, {
+      async readChatSnapshot() {
+        return {
+          ok: true,
+          bytes: Buffer.from('{"version":1,"turns":[],"attachments":[]}'),
+          attachments: [],
+          attachmentsOmitted: true,
+          attachmentUnauthorized: unauthorized
+        };
+      }
+    }, client, { chatId: "chat-1", expiration: "30d" });
+    assert.equal(result.ok, true);
+    assert.equal(result.record.url, shareRecord().url);
+    assert.match(result.warning, unauthorized ? /身份/u : /部分附件/u);
+  }
 });
 
 test("createConversationShare resolves login and Tunnel before reading Snapshot", async (t) => {

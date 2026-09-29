@@ -370,67 +370,102 @@ async function readConversationSnapshot(
       throw new ConversationHtmlRenderFailure("request_invalid");
     }
     const snapshot = await loadSnapshot(request);
-    const parsed = JSON.parse(STRICT_UTF8_DECODER.decode(snapshot.bytes)) as {
-      version?: unknown;
-      attachments?: Array<{ id?: unknown; name?: unknown; mimeType?: unknown;
-        sourceRef?: unknown; size?: number; sha256?: string }>;
-    };
-    if (parsed.version !== 1 || !Array.isArray(parsed.attachments)) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(STRICT_UTF8_DECODER.decode(snapshot.bytes)) as Record<string, unknown>;
+    } catch {
+      throw new ConversationHtmlRenderFailure("snapshot_invalid");
+    }
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.attachments)) {
       throw new ConversationHtmlRenderFailure("snapshot_invalid");
     }
     const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
     const chatId = snapshotURL.searchParams.get("chatId") || "";
     const attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }> = [];
+    const frozen: Array<{ id: string; name: string; mimeType: string; sourceRef: string;
+      size: number; sha256: string }> = [];
     let totalBytes = 0;
+    let attachmentsOmitted = false;
+    let attachmentUnauthorized = false;
     const seen = new Set<string>();
-    for (const descriptor of parsed.attachments) {
+    const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
+    for (const raw of parsed.attachments) {
+      if (Date.now() >= deadline) {
+        attachmentsOmitted = true;
+        break;
+      }
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        attachmentsOmitted = true;
+        continue;
+      }
+      const descriptor = raw as Record<string, unknown>;
       const { id, name, sourceRef, mimeType } = descriptor;
       if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
         typeof name !== "string" || !name || Buffer.byteLength(name, "utf8") > 255 ||
         /[\\/\u0000-\u001f\u007f]/u.test(name) || typeof sourceRef !== "string" ||
-        !isCanonicalArtifactRef(sourceRef) || typeof mimeType !== "string" ||
-        !isValidMediaType(mimeType) || !Number.isSafeInteger(descriptor.size) ||
-        (descriptor.size ?? -1) < 0 || typeof descriptor.sha256 !== "string" ||
-        !/^[a-f0-9]{64}$/u.test(descriptor.sha256)) {
-        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+        !sourceRef || sourceRef.length > 2_048 || typeof mimeType !== "string") {
+        attachmentsOmitted = true;
+        continue;
       }
-      seen.add(id);
-      if (totalBytes + (descriptor.size ?? 0) > MAX_CONVERSATION_SNAPSHOT_BYTES) {
-        throw new ConversationHtmlRenderFailure(
-          "too_large",
-          totalBytes + (descriptor.size ?? 0),
-          MAX_CONVERSATION_SNAPSHOT_BYTES
-        );
+      const mediaType = mimeType.split(";", 1)[0].trim().toLowerCase();
+      if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mediaType) ||
+        (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) ||
+          (descriptor.size as number) < 0)) ||
+        (descriptor.sha256 !== undefined &&
+          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(descriptor.sha256))) ||
+        (typeof descriptor.size === "number" &&
+          descriptor.size > MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes)) {
+        attachmentsOmitted = true;
+        continue;
       }
-      const { bytes } = await fetchLimitedResponse({
-        url: new URL("/api/chat/artifacts/read", snapshotURL).toString(),
-        method: "POST",
-        body: JSON.stringify({ chatId, sourceRef }),
-        headers: {
-          Accept: mimeType,
-          Authorization: "Bearer " + request.bearerToken,
-          "Content-Type": "application/json"
-        },
-        timeoutMs: SNAPSHOT_TIMEOUT_MS,
-        maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes,
-        expectedContentType: mimeType.toLowerCase(),
-        unavailableCode: "snapshot_unavailable",
-        invalidCode: "snapshot_invalid"
-      });
-      totalBytes += bytes.length;
-      if (totalBytes > MAX_CONVERSATION_SNAPSHOT_BYTES) {
-        throw new ConversationHtmlRenderFailure("too_large", totalBytes, MAX_CONVERSATION_SNAPSHOT_BYTES);
+      try {
+        const { bytes } = await fetchLimitedResponse({
+          url: new URL("/api/chat/artifacts/read", snapshotURL).toString(),
+          method: "POST",
+          body: JSON.stringify({ chatId, sourceRef }),
+          headers: {
+            Accept: mediaType,
+            Authorization: "Bearer " + request.bearerToken,
+            "Content-Type": "application/json"
+          },
+          timeoutMs: Math.max(1, deadline - Date.now()),
+          maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes,
+          expectedContentType: mediaType,
+          unavailableCode: "snapshot_unavailable",
+          invalidCode: "snapshot_invalid"
+        });
+        const sha256 = createHash("sha256").update(bytes).digest("hex");
+        if ((descriptor.size !== undefined && descriptor.size !== bytes.length) ||
+          (descriptor.sha256 !== undefined &&
+            (descriptor.sha256 as string).toLowerCase() !== sha256)) {
+          attachmentsOmitted = true;
+          continue;
+        }
+        seen.add(id);
+        totalBytes += bytes.length;
+        frozen.push({ id, name, mimeType: mediaType, sourceRef, size: bytes.length, sha256 });
+        attachments.push({
+          id, name, mimeType: mediaType,
+          bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+        });
+      } catch (error) {
+        // An optional resource may disappear or become unreadable after the snapshot was made.
+        attachmentsOmitted = true;
+        if (error instanceof ConversationHtmlRenderFailure && error.code === "snapshot_unauthorized") {
+          attachmentUnauthorized = true;
+        }
       }
-      const actualHash = createHash("sha256").update(bytes).digest("hex");
-      if (descriptor.size !== bytes.length || descriptor.sha256.toLowerCase() !== actualHash) {
-        throw new ConversationHtmlRenderFailure("snapshot_invalid");
-      }
-      attachments.push({
-        id, name, mimeType,
-        bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-      });
     }
-    const encoded = snapshot.bytes;
+    let encoded = Buffer.from(JSON.stringify({ ...parsed, attachments: frozen }));
+    while (encoded.length > MAX_CONVERSATION_SNAPSHOT_BYTES && frozen.length) {
+      frozen.pop();
+      attachments.pop();
+      attachmentsOmitted = true;
+      encoded = Buffer.from(JSON.stringify({ ...parsed, attachments: frozen }));
+    }
+    if (encoded.length > MAX_CONVERSATION_SNAPSHOT_BYTES) {
+      throw new ConversationHtmlRenderFailure("too_large", encoded.length, MAX_CONVERSATION_SNAPSHOT_BYTES);
+    }
     const transferred = encoded.buffer.slice(
       encoded.byteOffset, encoded.byteOffset + encoded.byteLength
     ) as ArrayBuffer;
@@ -438,48 +473,13 @@ async function readConversationSnapshot(
       type: "snapshot",
       requestId: request.requestId,
       snapshot: transferred,
-      attachments
+      attachments,
+      attachmentsOmitted,
+      attachmentUnauthorized
     };
   } catch (error) {
     return failureResponse(request.requestId, error);
   }
-}
-
-export function isCanonicalArtifactRef(value: string): boolean {
-  const segments = value.split("/");
-  if (segments.length !== 3 || segments[0] !== "artifacts") return false;
-  return segments.slice(1).every((segment) => {
-    if (!segment || /[\\?#\u0000-\u001f\u007f]/u.test(segment)) return false;
-    try {
-      const decoded = decodeURIComponent(segment);
-      let securityValue = decoded;
-      for (let depth = 0; depth < 4; depth += 1) {
-        if (!securityValue || securityValue === "." || securityValue === ".." ||
-          /[\\/\u0000-\u001f\u007f]/u.test(securityValue)) return false;
-        if (!/%[0-9a-f]{2}/iu.test(securityValue)) break;
-        let next: string;
-        try {
-          next = decodeURIComponent(securityValue);
-        } catch {
-          return false;
-        }
-        if (next === securityValue) break;
-        securityValue = next;
-      }
-      const encoded = encodeURIComponent(decoded)
-        .replace(/[!'()*]/gu, (character) => "%" + character.charCodeAt(0).toString(16).toUpperCase())
-        .replace(/%(?:3A|40|26|3D|2B|24)/gu, (escape) =>
-          String.fromCharCode(Number.parseInt(escape.slice(1), 16)));
-      return encoded === segment;
-    } catch {
-      return false;
-    }
-  });
-}
-
-function isValidMediaType(value: string): boolean {
-  return value === value.trim().toLowerCase() &&
-    /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(value);
 }
 
 function requireLoopbackURL(value: string, expectedPath: string): URL {
