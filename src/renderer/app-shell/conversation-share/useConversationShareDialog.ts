@@ -3,7 +3,7 @@ import type { AssistantConversationShareRecord } from "../../../shared/contracts
 import type { TranslateFunction } from "../../../shared/i18n";
 
 export type ConversationShareAction = "copy" | "qr" | "browser";
-type ConversationSharePhase = "sheet" | "qr" | "done";
+type ConversationSharePhase = "choice" | "qr" | "done";
 type ShareFeedback = { kind: "loading" | "success" | "error"; message: string };
 
 export type ConversationShareDialogState = {
@@ -20,7 +20,7 @@ export function useConversationShareDialog(
 ) {
   const [state, setState] = useState<ConversationShareDialogState>(() => ({
     createdRecord: null,
-    phase: "sheet",
+    phase: "choice",
     workingAction: null,
     feedback: null,
     warning: "",
@@ -40,7 +40,7 @@ export function useConversationShareDialog(
   }, [state.feedback]);
 
   async function run(action: ConversationShareAction) {
-    if (workingRef.current || state.phase !== "sheet") return;
+    if (workingRef.current || state.phase !== "choice") return;
     workingRef.current = true;
     const generation = generationRef.current;
     const isCurrent = () => generationRef.current === generation;

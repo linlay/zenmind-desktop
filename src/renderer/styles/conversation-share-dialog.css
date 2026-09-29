@@ -3,16 +3,12 @@
   inset: 0;
   z-index: 3200;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
+  padding: 16px;
   background: var(--modal-mask-bg);
   app-region: no-drag;
   -webkit-app-region: no-drag;
-}
-
-.conversation-share-dialog-layer[data-phase="qr"] {
-  align-items: center;
-  padding: 16px;
 }
 
 .conversation-share-dialog-layer[data-phase="done"] {
@@ -20,37 +16,44 @@
   pointer-events: none;
 }
 
-.conversation-share-dialog {
+.conversation-share-dialog,
+.conversation-share-qr-dialog {
   position: relative;
-  width: 100%;
-  max-height: min(440px, calc(100% - 32px));
+  width: min(440px, 100%);
+  max-height: 100%;
   overflow: auto;
-  border: 1px solid var(--control-border);
-  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 86%, transparent);
+  border-radius: var(--control-radius-lg);
   background: var(--desktop-overlay-panel-bg);
   color: var(--ink);
-  box-shadow: 0 -12px 44px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(3px);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.28),
+    0 2px 12px rgba(0, 0, 0, 0.16);
 }
 
-.conversation-share-dialog[data-phase="qr"] {
+.conversation-share-dialog {
+  transform: translateY(-min(6vh, 56px));
+}
+
+.conversation-share-dialog:focus {
+  outline: none;
+}
+
+.conversation-share-qr-dialog {
   width: min(420px, 100%);
-  max-height: min(640px, calc(100% - 32px));
-  border: 0;
-  border-radius: 20px;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
 }
 
 .conversation-share-warning,
 .conversation-share-qr-view p,
-.conversation-share-tunnel-gate h3,
 .conversation-share-tunnel-gate p {
   margin: 0;
 }
 
 .conversation-share-icon-button {
-  display: flex;
-  width: 30px;
-  height: 30px;
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -62,80 +65,111 @@
   cursor: pointer;
 }
 
-.conversation-share-icon-button:hover,
-.conversation-share-icon-button:focus-visible {
-  background: var(--surface-soft);
+.conversation-share-icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.conversation-share-icon-button:hover {
+  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
   color: var(--ink);
+}
+
+.conversation-share-icon-button:focus-visible {
   outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--desktop-ui-primary) 28%, transparent);
 }
 
-.conversation-share-icon-button:not(.is-corner):not(.is-qr) {
-  margin-top: 11px;
-}
-
-.conversation-share-icon-button.is-corner {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-}
-
-.conversation-share-sheet-body {
+.conversation-share-choice-body {
   display: grid;
-  width: min(832px, 100%);
-  grid-template-columns: minmax(0, 1fr) 30px;
-  gap: 0 8px;
-  margin: 0 auto;
-  padding: 18px 16px 22px;
+  gap: 12px;
+  padding: 20px 16px;
+}
+
+.conversation-share-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 14px 10px 16px;
+}
+
+.conversation-share-dialog-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
 .conversation-share-actions {
-  display: flex;
-  min-width: 0;
-  justify-content: center;
-  gap: clamp(8px, 3vw, 56px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .conversation-share-action {
-  display: grid;
-  width: 92px;
-  min-width: 0;
-  flex: 0 1 92px;
-  justify-items: center;
-  gap: 8px;
-  padding: 0;
+  display: inline-flex;
+  width: 100%;
+  min-height: 96px;
+  aspect-ratio: 1.08;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 8px;
   border: 0;
+  border-radius: var(--control-radius-lg);
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .conversation-share-action-icon {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  place-items: center;
-  border-radius: 14px;
-  background: var(--surface-soft);
-  color: var(--ink);
-  font-size: 23px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  font-size: 20px;
+}
+
+.conversation-share-action:hover:not(:disabled),
+.conversation-share-action:focus-visible {
+  background: color-mix(in srgb, var(--desktop-ui-primary) 8%, var(--surface));
 }
 
 .conversation-share-action:hover:not(:disabled) .conversation-share-action-icon,
-.conversation-share-action:focus-visible .conversation-share-action-icon {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+.conversation-share-action:focus-visible .conversation-share-action-icon,
+.conversation-share-action.is-working .conversation-share-action-icon {
+  color: var(--desktop-ui-primary);
 }
 
 .conversation-share-action:focus-visible {
-  outline: 2px solid var(--accent-border);
-  outline-offset: 4px;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--desktop-ui-primary) 24%, transparent);
 }
 
-.conversation-share-action:disabled {
+.conversation-share-action:disabled:not(.is-working) {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.conversation-share-action.is-working {
+  background: color-mix(in srgb, var(--desktop-ui-primary) 8%, var(--surface));
+  cursor: wait;
 }
 
 .conversation-share-toast {
@@ -166,51 +200,35 @@
 }
 
 .conversation-share-warning {
-  grid-column: 1 / -1;
   color: var(--danger);
   font-size: 11px;
   line-height: 1.5;
-  text-align: center;
 }
 
 .conversation-share-qr-view {
   display: grid;
-  gap: 18px;
-  padding: 24px;
-}
-
-.conversation-share-qr-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.conversation-share-qr-head h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 20px;
-  font-weight: 650;
-  line-height: 30px;
+  gap: 14px;
+  padding: 16px;
 }
 
 .conversation-share-qr-stage {
   display: grid;
-  min-height: 340px;
+  min-height: 310px;
   justify-items: center;
   align-content: center;
-  gap: 18px;
-  padding: 28px 16px;
-  border-radius: 24px;
-  background: #ececec;
+  gap: 14px;
+  padding: 20px 16px;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: var(--control-radius-lg);
+  background: var(--surface-soft);
 }
 
 .conversation-share-qr-code {
   display: grid;
   max-width: 100%;
   place-items: center;
-  padding: 18px;
-  border-radius: 24px;
+  padding: 14px;
+  border-radius: var(--control-radius-lg);
   background: #fff;
 }
 
@@ -220,46 +238,54 @@
 }
 
 .conversation-share-qr-stage p {
-  color: #222;
-  font-size: 13px;
-  font-weight: 550;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
   text-align: center;
 }
 
 .conversation-share-qr-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .conversation-share-qr-actions button {
   display: flex;
-  min-height: 42px;
+  min-height: 36px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border: 0;
-  border-radius: 999px;
-  background: #e9e9e9;
-  color: #202020;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 92%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .conversation-share-qr-actions button:last-child {
-  background: #202020;
-  color: #fff;
+  border-color: var(--desktop-ui-primary);
+  background: var(--desktop-ui-primary);
+  color: var(--accent-on);
 }
 
 .conversation-share-qr-actions button:hover:not(:disabled) {
-  filter: brightness(0.95);
+  border-color: color-mix(in srgb, var(--desktop-ui-primary) 48%, var(--desktop-ui-border));
+  background: color-mix(in srgb, var(--desktop-ui-primary) 8%, var(--surface));
+  color: var(--ink);
+}
+
+.conversation-share-qr-actions button:last-child:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--desktop-ui-primary) 88%, #fff);
+  color: var(--accent-on);
 }
 
 .conversation-share-qr-actions button:focus-visible {
-  outline: 2px solid var(--accent-border);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--desktop-ui-primary) 24%, transparent);
 }
 
 .conversation-share-qr-actions button:disabled {
@@ -269,14 +295,9 @@
 
 .conversation-share-tunnel-gate {
   display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 20px;
-  text-align: center;
-}
-
-.conversation-share-tunnel-gate h3 {
-  font-size: 12px;
+  justify-items: start;
+  gap: 12px;
+  padding: 20px 16px;
 }
 
 .conversation-share-tunnel-gate p {
@@ -285,16 +306,25 @@
 }
 
 .conversation-share-button {
-  padding: 7px 12px;
-  border: 1px solid var(--control-border);
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 92%, transparent);
   border-radius: 7px;
-  background: var(--surface-strong);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-:root[data-theme="dark"] .conversation-share-dialog {
-  box-shadow: none;
+.conversation-share-button:hover,
+.conversation-share-button:focus-visible {
+  border-color: color-mix(in srgb, var(--desktop-ui-primary) 48%, var(--desktop-ui-border));
+  background: color-mix(in srgb, var(--desktop-ui-primary) 8%, var(--surface));
+}
+
+.conversation-share-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--desktop-ui-primary) 24%, transparent);
 }

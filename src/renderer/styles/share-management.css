@@ -103,21 +103,41 @@
   margin-top: 6px;
 }
 
-.share-management-feedback {
-  padding: 8px 10px;
-  border-radius: 6px;
+.share-management-action-toast {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  width: max-content;
+  max-width: min(440px, calc(100% - 32px));
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: var(--control-radius-lg);
+  background: var(--desktop-overlay-panel-bg);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  color: var(--ink);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.4;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
-.share-management-feedback.is-error {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
+.share-management-action-toast .anticon {
+  flex: none;
+  color: var(--success);
+  font-size: 15px;
+}
+
+.share-management-action-toast[data-kind="error"] .anticon {
   color: var(--danger);
 }
 
-.share-management-feedback.is-success {
-  background: var(--accent-soft);
-  color: var(--ink);
+.share-management-action-toast span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .share-management-layout {

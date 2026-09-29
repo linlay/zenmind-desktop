@@ -1,8 +1,10 @@
 import {
   ArrowRightOutlined,
+  CheckCircleOutlined,
   CheckOutlined,
   CopyOutlined,
   DisconnectOutlined,
+  ExclamationCircleOutlined,
   LinkOutlined,
   ShareAltOutlined,
 } from "@ant-design/icons";
@@ -29,6 +31,8 @@ type ShareManagementPageProps = {
 };
 
 const COPY_FEEDBACK_DURATION_MS = 1_600;
+const ACTION_FEEDBACK_DURATION_MS = 3_200;
+type ActionFeedback = { kind: "success" | "error"; message: string };
 
 export function ShareManagementPage({
   tunnelHubEnabled,
@@ -40,13 +44,30 @@ export function ShareManagementPage({
   const [records, setRecords] = useState<AssistantConversationShareRecord[]>([]);
   const [chatDetails, setChatDetails] = useState<Record<string, ShareChatDetails>>({});
   const [loadError, setLoadError] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [copiedShareId, setCopiedShareId] = useState("");
   const [selectedChatId, setSelectedChatId] = useState("");
   const [revokingShareId, setRevokingShareId] = useState("");
   const requestIdRef = useRef(0);
   const copyFeedbackTimerRef = useRef<number | null>(null);
+  const actionFeedbackTimerRef = useRef<number | null>(null);
+
+  const clearActionFeedback = useCallback(() => {
+    if (actionFeedbackTimerRef.current !== null) {
+      window.clearTimeout(actionFeedbackTimerRef.current);
+      actionFeedbackTimerRef.current = null;
+    }
+    setActionFeedback(null);
+  }, []);
+
+  const showActionFeedback = useCallback((kind: ActionFeedback["kind"], message: string) => {
+    if (actionFeedbackTimerRef.current !== null) window.clearTimeout(actionFeedbackTimerRef.current);
+    setActionFeedback({ kind, message });
+    actionFeedbackTimerRef.current = window.setTimeout(() => {
+      actionFeedbackTimerRef.current = null;
+      setActionFeedback(null);
+    }, ACTION_FEEDBACK_DURATION_MS);
+  }, []);
 
   const load = useCallback(async () => {
     if (!tunnelHubEnabled) return;
@@ -94,19 +115,21 @@ export function ShareManagementPage({
       setRecords([]);
       setChatDetails({});
       setLoadError("");
-      setActionError("");
-      setNotice("");
+      clearActionFeedback();
       setRevokingShareId("");
       return;
     }
     void load();
-  }, [load, tunnelHubEnabled]);
+  }, [clearActionFeedback, load, tunnelHubEnabled]);
 
   useEffect(
     () => () => {
       requestIdRef.current += 1;
       if (copyFeedbackTimerRef.current !== null) {
         window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+      if (actionFeedbackTimerRef.current !== null) {
+        window.clearTimeout(actionFeedbackTimerRef.current);
       }
     },
     [],
@@ -124,36 +147,35 @@ export function ShareManagementPage({
       }
       if (!result.ok) {
         setCopiedShareId("");
-        setActionError(result.message || t("sidebar.chat.shareCopyFailed"));
+        showActionFeedback("error", result.message || t("sidebar.chat.shareCopyFailed"));
         return;
       }
       setCopiedShareId(record.shareId);
-      setActionError("");
+      clearActionFeedback();
       copyFeedbackTimerRef.current = window.setTimeout(() => {
         copyFeedbackTimerRef.current = null;
         setCopiedShareId((current) => current === record.shareId ? "" : current);
       }, COPY_FEEDBACK_DURATION_MS);
     } catch (error) {
       setCopiedShareId("");
-      setActionError(error instanceof Error ? error.message : t("sidebar.chat.shareCopyFailed"));
+      showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareCopyFailed"));
     }
   }
 
   async function revokeShare(shareId: string) {
     if (revokingShareId) return;
     setRevokingShareId(shareId);
-    setActionError("");
-    setNotice("");
+    clearActionFeedback();
     try {
       const result = await window.electronAPI.assistant.revokeChatShare(shareId);
       if (!result.ok) {
-        setActionError(result.message || t("sidebar.chat.shareRevokeFailed"));
+        showActionFeedback("error", result.message || t("sidebar.chat.shareRevokeFailed"));
         return;
       }
       setRecords((current) => current.filter((record) => record.shareId !== shareId));
-      setNotice(result.message || t("assistant.chatShareRevoked"));
+      showActionFeedback("success", result.message || t("assistant.chatShareRevoked"));
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : t("sidebar.chat.shareRevokeFailed"));
+      showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareRevokeFailed"));
     } finally {
       setRevokingShareId("");
     }
@@ -161,6 +183,12 @@ export function ShareManagementPage({
 
   return (
     <section className="share-management-page" aria-labelledby="share-management-title">
+      {actionFeedback ? (
+        <div className="share-management-action-toast" data-kind={actionFeedback.kind} role={actionFeedback.kind === "error" ? "alert" : "status"}>
+          {actionFeedback.kind === "success" ? <CheckCircleOutlined aria-hidden="true" /> : <ExclamationCircleOutlined aria-hidden="true" />}
+          <span>{actionFeedback.message}</span>
+        </div>
+      ) : null}
       <header className="share-management-page-header">
         <div>
           <h1 id="share-management-title">{t("shareManagement.title")}</h1>
@@ -184,8 +212,6 @@ export function ShareManagementPage({
         </div>
       ) : (
         <div className="share-management-content" aria-busy={status === "loading"}>
-          {actionError ? <div className="share-management-feedback is-error" role="alert">{actionError}</div> : null}
-          {notice ? <div className="share-management-feedback is-success" role="status">{notice}</div> : null}
           {status === "loading" && records.length === 0 ? (
             <div className="share-management-state-card"><p>{t("shareManagement.loading")}</p></div>
           ) : null}
