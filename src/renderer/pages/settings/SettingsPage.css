@@ -3508,6 +3508,26 @@
   pointer-events: none;
 }
 
+
+.settings-page .web-detail-label-with-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-page .web-detail-label-with-help .webapp-user-config-help {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-page .web-detail-switch-control {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
 /* Propagate available height through settings wrappers instead of using viewport offsets. */
 .settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) {
   height: 100%;
@@ -3532,4 +3552,45 @@
   height: 100%;
   max-height: 100%;
   flex: 1 1 0;
+}
+
+/* Keep the three system settings compact; access controls share a row. */
+.settings-page .web-settings-page .webapp-system-name {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.settings-page .webapp-system-access-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 32px;
+  row-gap: 12px;
+  max-width: 672px;
+  box-sizing: border-box;
+  padding: 8px 24px;
+}
+
+.settings-page .web-settings-page .webapp-system-access-row .web-detail-form-item {
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+  padding: 0;
+}
+
+.settings-page .webapp-system-access-row .web-detail-label-with-help {
+  white-space: nowrap;
+}
+
+.settings-page .webapp-system-access-row .ant-select {
+  min-width: 140px;
+}
+
+@media (max-width: 760px) {
+  .settings-page .webapp-system-access-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-page .web-settings-page .webapp-system-access-row .web-detail-form-item {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
 }

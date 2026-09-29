@@ -54,6 +54,8 @@ export interface WebsiteEntry extends WebEntryBase {
   url: string;
 }
 
+/** Saved preference only; managed authentication is not active yet. */
+export type WebappAuthMode = "passthrough" | "managed";
 
 export interface WebappEntry extends WebEntryBase {
   kind: "webapp";
@@ -64,6 +66,7 @@ export interface WebappEntry extends WebEntryBase {
   target: WebappTarget;
   openMode: WebappOpenMode;
   allowLanAccess?: boolean;
+  authMode?: WebappAuthMode;
   appConfig: WebappManifest["appConfig"];
   userConfig?: WebappUserConfig;
   frontend: WebappFrontendConfig;
@@ -188,6 +191,7 @@ export interface WebsiteTransferResult {
 
 export interface WebappUpdateInput {
   allowLanAccess?: boolean;
+  authMode?: WebappAuthMode;
   label?: string;
   openMode?: WebappOpenMode;
 }

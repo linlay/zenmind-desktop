@@ -17,6 +17,7 @@ import type {
   WebappEntry,
   WebappLogTarget,
   WebappOpenMode,
+  WebappAuthMode,
   WebappPublishInfo,
   WebappPublishState,
   WebappRuntimeCheckResult,
@@ -148,6 +149,7 @@ type WebsiteDraftSnapshot = {
 };
 
 type WebappDraftSnapshot = {
+  authMode: WebappAuthMode;
   allowLanAccess: boolean;
   id: string;
   label: string;
@@ -234,6 +236,7 @@ function createWebappDraftSnapshot(item: WebappEntry): WebappDraftSnapshot {
     id: item.id,
     label: item.label,
     openMode: item.openMode,
+    authMode: item.authMode ?? "passthrough",
     allowLanAccess: item.allowLanAccess === true
   };
 }
@@ -2482,6 +2485,7 @@ export function SettingsPage({
   const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
   const [selectedWebappId, setSelectedWebappId] = useState("");
   const [webappLabel, setWebappLabel] = useState("");
+  const [webappAuthMode, setWebappAuthMode] = useState<WebappAuthMode>("passthrough");
   const [webappAllowLanAccess, setWebappAllowLanAccess] = useState(false);
   const [webappOpenMode, setWebappOpenMode] = useState<WebappOpenMode>("workspace");
   const [webappPending, setWebappPending] = useState(false);
@@ -2619,6 +2623,7 @@ export function SettingsPage({
     setWebappLabel(snapshot.label);
     setWebappOpenMode(snapshot.openMode);
     setWebappAllowLanAccess(snapshot.allowLanAccess);
+    setWebappAuthMode(snapshot.authMode);
   }
 
   function clearWebappDraft() {
@@ -2626,6 +2631,7 @@ export function SettingsPage({
     setWebappLabel("");
     setWebappOpenMode("workspace");
     setWebappAllowLanAccess(false);
+    setWebappAuthMode("passthrough");
     setWebappUserConfigValues({});
     setWebappUserConfigIssues({});
     setWebappUserConfigLoading(false);
@@ -2719,6 +2725,7 @@ export function SettingsPage({
       const hasDraft = sameSource && (
         webappLabel !== previousSnapshot.label ||
         webappOpenMode !== previousSnapshot.openMode ||
+        webappAuthMode !== previousSnapshot.authMode ||
         webappAllowLanAccess !== previousSnapshot.allowLanAccess
       );
       if (!sameSource || !hasDraft) {
@@ -2737,6 +2744,7 @@ export function SettingsPage({
     webappLabel,
     webappOpenMode,
     webappAllowLanAccess,
+    webappAuthMode
   ]);
 
   useEffect(() => {
@@ -3624,6 +3632,7 @@ export function SettingsPage({
     setWebappLabel(item.label);
     setWebappOpenMode(item.openMode);
     setWebappAllowLanAccess(item.allowLanAccess === true);
+    setWebappAuthMode(item.authMode ?? "passthrough");
     setWebappUserConfigValues({});
     setWebappUserConfigIssues({});
     webappUserConfigRequestRef.current += 1;
@@ -3702,6 +3711,7 @@ export function SettingsPage({
       const updateResult = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
         label: webappLabel,
         openMode: webappOpenMode,
+        authMode: webappAuthMode,
         allowLanAccess: webappAllowLanAccess
       });
       if (!updateResult.ok) {
@@ -5507,7 +5517,7 @@ export function SettingsPage({
                       onSubmit={(event) => void handleSaveWebappSettings(event)}
                     >
                       <div className="webapp-user-config-heading"><h3>{t("settings.webapps.systemOptions")}</h3></div>
-                      <label className="web-detail-form-item">
+                      <label className="web-detail-form-item webapp-system-name">
                         <span>{t("settings.websites.displayName")}</span>
                         <Input
                           className="settings-control-row-control"
@@ -5519,15 +5529,54 @@ export function SettingsPage({
                           required
                         />
                       </label>
-                      <div className="web-detail-form-item">
-                        <span>{t("settings.webapps.allowLanAccess")}</span>
-                        <Switch
-                          checked={webappAllowLanAccess}
-                          onChange={setWebappAllowLanAccess}
-                          aria-label={t("settings.webapps.allowLanAccess")}
-                          disabled={webappPending}
-                        />
-                        <small>{t("settings.webapps.allowLanAccessDescription")}</small>
+                      <div className="webapp-system-access-row">
+                        <div className="web-detail-form-item">
+                          <span className="web-detail-label-with-help">
+                            {t("settings.webapps.allowLanAccess")}
+                            <Tooltip title={t("settings.webapps.allowLanAccessDescription")} trigger={["hover", "focus", "click"]}>
+                              <button
+                                type="button"
+                                className="webapp-user-config-help"
+                                aria-label={t("settings.webapps.allowLanAccessDescription")}
+                              >
+                                <QuestionCircleOutlined aria-hidden="true" />
+                              </button>
+                            </Tooltip>
+                          </span>
+                          <div className="web-detail-switch-control">
+                            <Switch
+                              checked={webappAllowLanAccess}
+                              onChange={setWebappAllowLanAccess}
+                              aria-label={t("settings.webapps.allowLanAccess")}
+                              disabled={webappPending}
+                            />
+                          </div>
+                        </div>
+                        <div className="web-detail-form-item">
+                          <span className="web-detail-label-with-help">
+                            {t("settings.webapps.authMode")}
+                            <Tooltip title={t("settings.webapps.authModeDescription")} trigger={["hover", "focus", "click"]}>
+                              <button
+                                type="button"
+                                className="webapp-user-config-help"
+                                aria-label={t("settings.webapps.authModeDescription")}
+                              >
+                                <QuestionCircleOutlined aria-hidden="true" />
+                              </button>
+                            </Tooltip>
+                          </span>
+                          <Select<WebappAuthMode>
+                            className="settings-control-row-control"
+                            value={webappAuthMode}
+                            onChange={setWebappAuthMode}
+                            aria-label={t("settings.webapps.authMode")}
+                            disabled={webappPending}
+                            options={[
+                              { value: "passthrough", label: t("settings.webapps.authModePassthrough") },
+                              { value: "managed", label: t("settings.webapps.authModeManaged") }
+                            ]}
+                          />
+                        </div>
                       </div>
                       <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
                       {webappUserConfigLoading ? (

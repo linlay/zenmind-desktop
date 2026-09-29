@@ -210,6 +210,7 @@ export function updateWebappItem(
 
   try {
     const updated = writeWebappPreferenceFields(app, target.id, {
+      ...(input.authMode === "passthrough" || input.authMode === "managed" ? { authMode: input.authMode } : {}),
       ...(typeof input.allowLanAccess === "boolean" ? { allowLanAccess: input.allowLanAccess } : {}),
       ...(typeof input.label === "string" ? { label: input.label } : {}),
       ...(input.openMode === "workspace" || input.openMode === "dialog"
