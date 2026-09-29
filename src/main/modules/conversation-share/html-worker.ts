@@ -5,7 +5,7 @@ import { isLoopbackHostname } from "../../infrastructure/network/loopback-url";
 import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname
-} from "../tunnel";
+} from "../../infrastructure/network/tunnel-url-policy";
 import {
   CONVERSATION_EXPORT_ASSET_ORIGIN_MARKER,
   CONVERSATION_EXPORT_LOCAL_BRAND_ID_MARKER,
