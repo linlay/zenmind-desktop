@@ -549,12 +549,6 @@
   gap: 16px;
 }
 
-.settings-page .web-settings-page .control-center-dashboard-metrics {
-  grid-template-columns: minmax(160px, 1fr);
-  width: min(230px, 34%);
-  min-width: 190px;
-}
-
 .settings-page .web-settings-shell {
   align-items: stretch;
   gap: 12px;
@@ -716,7 +710,8 @@
 
 .settings-page .web-settings-detail {
   min-width: 0;
-  max-height: calc(100vh - 154px);
+  min-height: 0;
+  max-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 2px;
@@ -3477,11 +3472,11 @@
 
 /* The app catalog fills the available workspace, including its empty state. */
 @media (min-width: 761px) {
-  .settings-page .is-webapps .web-settings-shell {
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
     align-items: stretch;
   }
 
-  .settings-page .is-webapps .web-settings-catalog {
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-catalog {
     min-height: 0;
     max-height: none;
     height: 100%;
@@ -3511,4 +3506,30 @@
   border: 2px dashed var(--accent);
   border-radius: inherit;
   pointer-events: none;
+}
+
+/* Propagate available height through settings wrappers instead of using viewport offsets. */
+.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) :is(
+  .settings-content-panel,
+  .settings-content-shell,
+  .settings-section-body,
+  .settings-control-center-embed
+) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.app-main .control-center-page:is(.is-control, .is-plugins, .is-websites, .is-webapps) {
+  height: 100%;
+  max-height: 100%;
+  flex: 1 1 0;
 }

@@ -4948,6 +4948,8 @@ export function AppShell() {
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     webItems={webItems}
+                    webOpenEntryKeys={webOpenEntryKeys}
+                    runningWebappCount={webItems.filter((item) => item.kind === "webapp" && webappRuntimeById[item.id]?.status === "running").length}
                     copilotAgentOptions={copilotAgentOptions}
                     onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
                     webappPublishStateById={webappPublishStateById}

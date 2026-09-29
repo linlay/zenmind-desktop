@@ -115,6 +115,8 @@ type SettingsPageProps = {
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   webItems: WebEntry[];
+  webOpenEntryKeys: string[];
+  runningWebappCount: number;
   copilotAgentOptions: AssistantNavAgentItem[];
   onRefreshCopilotAgentOptions: () => Promise<void>;
   webappPublishStateById: Record<string, WebappPublishState | null>;
@@ -2423,6 +2425,8 @@ export function SettingsPage({
   marketEnabled,
   onMarketEnabledChange,
   webItems,
+  webOpenEntryKeys,
+  runningWebappCount,
   copilotAgentOptions,
   onRefreshCopilotAgentOptions,
   webappPublishStateById,
@@ -4208,6 +4212,31 @@ export function SettingsPage({
     );
   }
 
+  function renderWebMetrics(total: number, running: number, label: string) {
+    return (
+      <div className="control-center-dashboard-metrics" aria-label={label}>
+        <div className="control-center-metric-card">
+          <span className="summary-kicker">{t("controlCenter.metrics.registeredServices")}</span>
+          <div className="control-center-metric-value">
+            <strong>{total}</strong>
+            <span className="control-center-metric-chip is-success">
+              {t(total > 0 ? "controlCenter.metrics.active" : "controlCenter.metrics.empty")}
+            </span>
+          </div>
+        </div>
+        <div className="control-center-metric-card">
+          <span className="summary-kicker">{t("controlCenter.metrics.runningInstances")}</span>
+          <div className="control-center-metric-value">
+            <strong>{running}</strong>
+            <span className="control-center-metric-chip is-warning">
+              {t(running > 0 ? "controlCenter.metrics.running" : "controlCenter.metrics.standby")}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderSectionHeaderAction() {
     switch (activeSection) {
       case "assistant":
@@ -5103,6 +5132,11 @@ export function SettingsPage({
                 <h1>{t("settings.websites.label")}</h1>
                 <p>{t("settings.websites.description")}</p>
               </div>
+              {renderWebMetrics(
+                websiteItems.length,
+                websiteItems.filter((item) => webOpenEntryKeys.includes(item.entryKey)).length,
+                t("settings.websites.label")
+              )}
             </div>
 
             <div className="control-center-shell web-settings-shell">
@@ -5305,15 +5339,11 @@ export function SettingsPage({
                 <h1>{t("settings.webapps.label")}</h1>
                 <p>{t("settings.webapps.description")}</p>
               </div>
-              <div className="control-center-dashboard-metrics" aria-label={t("settings.webapps.metricsAria")}>
-                <div className="control-center-metric-card">
-                  <span className="summary-kicker">{t("settings.webapps.metricInstalled")}</span>
-                  <div className="control-center-metric-value">
-                    <strong>{webappItems.length}</strong>
-                    <span className="control-center-metric-chip">{t("settings.webapps.metricLocal")}</span>
-                  </div>
-                </div>
-              </div>
+              {renderWebMetrics(
+                webappItems.length,
+                runningWebappCount,
+                t("settings.webapps.metricsAria")
+              )}
             </div>
 
             <div className="control-center-shell web-settings-shell">

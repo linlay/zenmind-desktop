@@ -315,6 +315,13 @@
   gap: 6px;
 }
 
+.control-center-page.is-control > .control-center-hero > .control-center-hero-copy,
+.control-center-page.is-plugins > .control-center-hero > .control-center-hero-copy,
+.control-center-page.is-websites > .control-center-hero > .control-center-hero-copy,
+.control-center-page.is-webapps > .control-center-hero > .control-center-hero-copy {
+  padding-top: 8px;
+}
+
 .control-center-hero-copy h1 {
   margin: 0;
   color: var(--control-center-text);

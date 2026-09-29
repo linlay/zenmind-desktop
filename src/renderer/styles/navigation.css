@@ -4283,6 +4283,12 @@ div.sidebar-chats-group-popover {
   -webkit-app-region: no-drag;
 }
 
+/* Management settings pages fill the main content box with a 16px bottom inset. */
+.app-main:has(.control-center-page:is(.is-control, .is-plugins, .is-websites, .is-webapps)) {
+  padding-bottom: 16px;
+  overflow: hidden;
+}
+
 .app-shell.has-standard-base-surface .app-main {
   background: var(--bg-base);
 }
