@@ -5151,6 +5151,7 @@ export function SettingsPage({
 
             <div className="control-center-shell web-settings-shell">
               <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.websites.catalogAria")}>
+                <div className="management-group-scroll">
                 <div className="service-accordion">
                   <section className="service-group is-open">
                     <div className="service-group-head">
@@ -5215,10 +5216,12 @@ export function SettingsPage({
                     </div>
                   </section>
                 </div>
+                </div>
               </aside>
 
               <article className="control-center-detail web-settings-detail">
                 <section className="service-card control-center-service-hero web-detail-card">
+                  <div className="management-group-scroll">
                   <div className="control-center-service-head">
                     <div className="control-center-service-main">
                       <div className="website-detail-icon" aria-hidden="true">{creatingWebsite ? <PlusOutlined /> : <GlobalOutlined />}</div>
@@ -5300,6 +5303,7 @@ export function SettingsPage({
                       ) : null}
                     </div>
                   </form>
+                  </div>
                 </section>
               </article>
             </div>
@@ -5358,6 +5362,7 @@ export function SettingsPage({
 
             <div className="control-center-shell web-settings-shell">
               <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.webapps.catalogAria")}>
+                <div className="webapp-group-scroll">
                 <div className="service-accordion">
                   <section className="service-group is-open">
                     <div className="service-group-head">
@@ -5422,6 +5427,7 @@ export function SettingsPage({
                     </div>
                   </section>
                 </div>
+                </div>
               </aside>
 
               {selectedWebapp ? (
@@ -5430,6 +5436,7 @@ export function SettingsPage({
                     key={`${selectedWebapp.id}:overview`}
                     className="service-card web-detail-card control-center-service-hero webapp-user-config-card"
                   >
+                    <div className="webapp-group-scroll">
                     <div className="control-center-service-head">
                       <div className="control-center-service-main">
                         <div className="webapp-detail-icon" aria-hidden="true"><AppstoreOutlined /></div>
@@ -5657,6 +5664,7 @@ export function SettingsPage({
                       </div>
                     </div>
                   ) : null}
+                    </div>
                   </section>
 
                   <Modal

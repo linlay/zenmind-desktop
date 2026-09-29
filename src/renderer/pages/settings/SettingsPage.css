@@ -3594,3 +3594,69 @@
     grid-template-columns: 112px minmax(0, 1fr);
   }
 }
+
+/* Keep scrolling inside each rounded group, inset from its outer border. */
+.settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.settings-page :is(.is-websites, .is-webapps) :is(.web-settings-catalog, .web-settings-detail) {
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.settings-page :is(.is-websites, .is-webapps) .web-settings-catalog,
+.settings-page :is(.is-websites, .is-webapps) .web-settings-detail > .web-detail-card {
+  padding: 4px;
+}
+
+.settings-page :is(.is-websites, .is-webapps) .web-settings-detail > .web-detail-card {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: auto;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar-track,
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar-corner {
+  background: transparent;
+  border: 0;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-muted) 25%, transparent);
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor):hover::-webkit-scrollbar-thumb,
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor):focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-muted) 50%, transparent);
+}
+
+@media (max-width: 760px) {
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+    grid-template-rows: minmax(0, 0.4fr) minmax(0, 1fr);
+  }
+
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-catalog {
+    height: auto;
+  }
+}

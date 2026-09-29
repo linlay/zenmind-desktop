@@ -1931,3 +1931,33 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Shared inset scrolling for the service and plugin management groups. */
+.control-center-page:is(.is-control, .is-plugins) .control-center-shell > .service-catalog {
+  padding: 4px;
+  overflow: hidden;
+}
+
+.control-center-page .management-detail-group {
+  padding: 4px;
+  border: 1px solid var(--control-center-border);
+  border-radius: var(--control-center-radius);
+  background: var(--control-center-card);
+  overflow: hidden;
+}
+
+.control-center-page .service-detail-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.control-center-page .service-detail-scroll > :is(.service-card, .config-panel) {
+  flex-shrink: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.control-center-page .service-detail-scroll > .config-panel:not(.plugin-settings-panel) {
+  min-height: 260px;
+}
