@@ -83,5 +83,10 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
   } else if (usesReviewPreload) {
     input.webPreferences.preload = reviewPreloadPath;
   }
+  // Ordinary network guests get only the page-auth transport, never service IPC.
+  if (!requestedPreload && /^https?:\/\//u.test(src)) {
+    input.webPreferences.preload = input.servicePreloadPath.replace(/service-webview\.js$/u, "webapp-auth.js");
+    input.webPreferences.sandbox = true;
+  }
   return { ok: true };
 }

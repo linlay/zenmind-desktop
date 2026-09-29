@@ -342,6 +342,58 @@
 
 /* ── Sidebar Nav ── */
 
+.app-sidebar-shell:has(.sidebar-file-drop-overlay) {
+  overflow: visible;
+  contain: layout;
+}
+
+.app-sidebar:has(.sidebar-file-drop-overlay) {
+  overflow: visible;
+}
+
+.sidebar-file-drop-overlay {
+  position: absolute;
+  inset: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-width: 180px;
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  box-shadow: var(--panel-shadow);
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-file-drop-zone {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 12px;
+  text-align: center;
+  border: 2px dashed var(--control-border);
+  border-radius: 10px;
+  color: var(--ink-soft);
+}
+
+.sidebar-file-drop-zone strong {
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.sidebar-file-drop-zone.is-hovered:not(.is-disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.sidebar-file-drop-zone.is-disabled { opacity: 0.45; }
+.sidebar-file-drop-progress { margin: auto; color: var(--ink-soft); }
+
 .sidebar-nav {
   --control-icon-color: var(--ink-soft);
   --nav-selected-text: var(--control-primary-bg);
@@ -4281,6 +4333,12 @@ div.sidebar-chats-group-popover {
   user-select: text;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+/* Management settings pages fill the main content box with a 16px bottom inset. */
+.app-main:has(.control-center-page:is(.is-control, .is-plugins, .is-websites, .is-webapps)) {
+  padding-bottom: 16px;
+  overflow: hidden;
 }
 
 .app-shell.has-standard-base-surface .app-main {

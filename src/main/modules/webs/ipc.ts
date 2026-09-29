@@ -1,5 +1,6 @@
 import path from "node:path";
-import type { App } from "electron";
+import { BrowserWindow, type App, type IpcMainInvokeEvent } from "electron";
+import fs from "node:fs/promises";
 import type {
   DesktopMobileWebappItem,
   DesktopWebappChangedReason,
@@ -201,8 +202,20 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   );
   ipcMain.handle("webs.webapps.listOpenWindows", async () => webappWindowManager.openIds());
   ipcMain.handle("webs.webapps.list", async () => webappManager.listResult(app));
-  ipcMain.handle("webs.webapps.import", async () => {
-    const result = await showFileDialog({
+  ipcMain.handle("webs.webapps.import", async (event: IpcMainInvokeEvent, droppedPath?: unknown) => {
+    if (droppedPath !== undefined) {
+      const owner = BrowserWindow.fromWebContents(event.sender);
+      if (!owner || event.sender !== owner.webContents || event.senderFrame !== event.sender.mainFrame) {
+        throw new Error(t("shell.windowUnavailable"));
+      }
+      if (typeof droppedPath !== "string" || !path.isAbsolute(droppedPath) ||
+          path.extname(droppedPath).toLowerCase() !== ".zip" || !(await fs.stat(droppedPath)).isFile()) {
+        throw new Error(t("sidebar.drop.webappHint"));
+      }
+    }
+    const result = droppedPath !== undefined
+      ? { canceled: false, filePaths: [droppedPath as string] }
+      : await showFileDialog({
       title: t("dialog.importWebapp.title"),
       properties: ["openFile"],
       filters: [{ name: t("webapp.archiveFilter"), extensions: ["zip"] }]
@@ -321,7 +334,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     return webappManager.exportArchive(app, item.id, saveResult.filePath);
   });
   ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) => {
-    const result = webappManager.update(app, id, input);
+    const result = await webappManager.update(app, id, input);
     if (result.ok) {
       if (input?.openMode === "workspace") {
         webappWindowManager.close(id);

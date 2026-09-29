@@ -84,7 +84,13 @@ export function normalizeSidebarNavOrder(
   const orderedKeys = normalizedCandidate;
   for (const item of availableItems) {
     if (!orderedKeys.includes(item.key)) {
-      orderedKeys.push(item.key);
+      // Re-enabled default entries return before their next default neighbor.
+      // Entries already present retain the user's explicit drag order.
+      const defaultIndex = STATIC_SIDEBAR_NAV_ORDER_ITEMS.findIndex((entry) => entry.key === item.key);
+      const nextDefaultKey = defaultIndex < 0 ? undefined : STATIC_SIDEBAR_NAV_ORDER_ITEMS
+        .slice(defaultIndex + 1).find((entry) => orderedKeys.includes(entry.key))?.key;
+      const insertAt = nextDefaultKey ? orderedKeys.indexOf(nextDefaultKey) : orderedKeys.length;
+      orderedKeys.splice(insertAt, 0, item.key);
     }
   }
   const fixedGroupKeys = FIXED_SIDEBAR_GROUP_ORDER.filter((key) =>

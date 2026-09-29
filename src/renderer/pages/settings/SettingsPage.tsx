@@ -1,3 +1,4 @@
+import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
@@ -16,6 +17,7 @@ import type {
   WebappEntry,
   WebappLogTarget,
   WebappOpenMode,
+  WebappAuthMode,
   WebappPublishInfo,
   WebappPublishState,
   WebappRuntimeCheckResult,
@@ -77,6 +79,7 @@ import {
   buildSettingsSectionPath,
   buildWebappSettingsPath,
   readSettingsWebappId,
+  readSettingsWebsiteId,
   resolveSettingsSectionId
 } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
@@ -113,6 +116,8 @@ type SettingsPageProps = {
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   webItems: WebEntry[];
+  webOpenEntryKeys: string[];
+  runningWebappCount: number;
   copilotAgentOptions: AssistantNavAgentItem[];
   onRefreshCopilotAgentOptions: () => Promise<void>;
   webappPublishStateById: Record<string, WebappPublishState | null>;
@@ -144,6 +149,8 @@ type WebsiteDraftSnapshot = {
 };
 
 type WebappDraftSnapshot = {
+  authMode: WebappAuthMode;
+  allowLanAccess: boolean;
   id: string;
   label: string;
   openMode: WebappOpenMode;
@@ -228,7 +235,9 @@ function createWebappDraftSnapshot(item: WebappEntry): WebappDraftSnapshot {
   return {
     id: item.id,
     label: item.label,
-    openMode: item.openMode
+    openMode: item.openMode,
+    authMode: item.authMode ?? "passthrough",
+    allowLanAccess: item.allowLanAccess === true
   };
 }
 
@@ -2419,6 +2428,8 @@ export function SettingsPage({
   marketEnabled,
   onMarketEnabledChange,
   webItems,
+  webOpenEntryKeys,
+  runningWebappCount,
   copilotAgentOptions,
   onRefreshCopilotAgentOptions,
   webappPublishStateById,
@@ -2474,6 +2485,8 @@ export function SettingsPage({
   const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
   const [selectedWebappId, setSelectedWebappId] = useState("");
   const [webappLabel, setWebappLabel] = useState("");
+  const [webappAuthMode, setWebappAuthMode] = useState<WebappAuthMode>("passthrough");
+  const [webappAllowLanAccess, setWebappAllowLanAccess] = useState(false);
   const [webappOpenMode, setWebappOpenMode] = useState<WebappOpenMode>("workspace");
   const [webappPending, setWebappPending] = useState(false);
   const [webappUserConfigValues, setWebappUserConfigValues] = useState<WebappUserConfigValues>({});
@@ -2481,6 +2494,7 @@ export function SettingsPage({
   const [webappUserConfigLoading, setWebappUserConfigLoading] = useState(false);
   const [webappUserConfigPending, setWebappUserConfigPending] = useState(false);
   const [webappImportPending, setWebappImportPending] = useState(false);
+  const webappImportBusyRef = useRef(false);
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
@@ -2608,12 +2622,16 @@ export function SettingsPage({
   function applyWebappDraftSnapshot(snapshot: WebappDraftSnapshot) {
     setWebappLabel(snapshot.label);
     setWebappOpenMode(snapshot.openMode);
+    setWebappAllowLanAccess(snapshot.allowLanAccess);
+    setWebappAuthMode(snapshot.authMode);
   }
 
   function clearWebappDraft() {
     webappDraftSourceRef.current = null;
     setWebappLabel("");
     setWebappOpenMode("workspace");
+    setWebappAllowLanAccess(false);
+    setWebappAuthMode("passthrough");
     setWebappUserConfigValues({});
     setWebappUserConfigIssues({});
     setWebappUserConfigLoading(false);
@@ -2667,6 +2685,17 @@ export function SettingsPage({
   }, [activeSection, selectedWebsite, selectedWebsiteId, websiteAgentKey, websiteItems, websiteLabel, websiteUrl]);
 
   useEffect(() => {
+    if (activeSection !== "websites") return;
+    const requestedId = readSettingsWebsiteId(location.search);
+    if (!requestedId) return;
+    const requestedWebsite = websiteItems.find((item) => item.id === requestedId);
+    if (!requestedWebsite) return;
+    handleSelectWebsiteItem(requestedWebsite);
+    // Consume the navigation request so later list updates preserve local edits and selection.
+    navigate(buildSettingsSectionPath("websites"), { replace: true });
+  }, [activeSection, location.search, navigate, websiteItems]);
+
+  useEffect(() => {
     if (activeSection !== "webapps") {
       return;
     }
@@ -2695,7 +2724,9 @@ export function SettingsPage({
       const sameSource = previousSnapshot?.id === selectedWebapp.id;
       const hasDraft = sameSource && (
         webappLabel !== previousSnapshot.label ||
-        webappOpenMode !== previousSnapshot.openMode
+        webappOpenMode !== previousSnapshot.openMode ||
+        webappAuthMode !== previousSnapshot.authMode ||
+        webappAllowLanAccess !== previousSnapshot.allowLanAccess
       );
       if (!sameSource || !hasDraft) {
         applyWebappDraftSnapshot(nextSnapshot);
@@ -2711,7 +2742,9 @@ export function SettingsPage({
     selectedWebapp,
     webappItems,
     webappLabel,
-    webappOpenMode
+    webappOpenMode,
+    webappAllowLanAccess,
+    webappAuthMode
   ]);
 
   useEffect(() => {
@@ -3480,10 +3513,12 @@ export function SettingsPage({
     }
   }
 
-  async function handleImportWebappItem() {
+  async function handleImportWebappItem(file?: File) {
+    if (webappImportBusyRef.current) return;
+    webappImportBusyRef.current = true;
     setWebappImportPending(true);
     try {
-      const result = await window.electronAPI.webs.webapps.import();
+      const result = await window.electronAPI.webs.webapps.import(file);
       const diagnosticMessage = result.diagnostic
         ? `[${result.diagnostic.stage}/${result.diagnostic.code}] ${result.diagnostic.message}${result.diagnostic.suggestion ? ` ${result.diagnostic.suggestion}` : ""}`
         : result.message;
@@ -3493,10 +3528,12 @@ export function SettingsPage({
           setSelectedWebappId(result.item.id);
         }
         await refreshWebItemsFromSettings();
+        if (result.item) navigate(buildWebappSettingsPath(result.item.id));
       }
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
+      webappImportBusyRef.current = false;
       setWebappImportPending(false);
     }
   }
@@ -3594,6 +3631,8 @@ export function SettingsPage({
     navigate(buildWebappSettingsPath(item.id), { replace: true });
     setWebappLabel(item.label);
     setWebappOpenMode(item.openMode);
+    setWebappAllowLanAccess(item.allowLanAccess === true);
+    setWebappAuthMode(item.authMode ?? "passthrough");
     setWebappUserConfigValues({});
     setWebappUserConfigIssues({});
     webappUserConfigRequestRef.current += 1;
@@ -3671,7 +3710,9 @@ export function SettingsPage({
     try {
       const updateResult = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
         label: webappLabel,
-        openMode: webappOpenMode
+        openMode: webappOpenMode,
+        authMode: webappAuthMode,
+        allowLanAccess: webappAllowLanAccess
       });
       if (!updateResult.ok) {
         showSectionResultNotice("webapps", updateResult);
@@ -4178,6 +4219,31 @@ export function SettingsPage({
         disabled={disabled}
         onChange={() => onClick()}
       />
+    );
+  }
+
+  function renderWebMetrics(total: number, running: number, label: string) {
+    return (
+      <div className="control-center-dashboard-metrics" aria-label={label}>
+        <div className="control-center-metric-card">
+          <span className="summary-kicker">{t("controlCenter.metrics.registeredServices")}</span>
+          <div className="control-center-metric-value">
+            <strong>{total}</strong>
+            <span className="control-center-metric-chip is-success">
+              {t(total > 0 ? "controlCenter.metrics.active" : "controlCenter.metrics.empty")}
+            </span>
+          </div>
+        </div>
+        <div className="control-center-metric-card">
+          <span className="summary-kicker">{t("controlCenter.metrics.runningInstances")}</span>
+          <div className="control-center-metric-value">
+            <strong>{running}</strong>
+            <span className="control-center-metric-chip is-warning">
+              {t(running > 0 ? "controlCenter.metrics.running" : "controlCenter.metrics.standby")}
+            </span>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -5076,10 +5142,16 @@ export function SettingsPage({
                 <h1>{t("settings.websites.label")}</h1>
                 <p>{t("settings.websites.description")}</p>
               </div>
+              {renderWebMetrics(
+                websiteItems.length,
+                websiteItems.filter((item) => webOpenEntryKeys.includes(item.entryKey)).length,
+                t("settings.websites.label")
+              )}
             </div>
 
             <div className="control-center-shell web-settings-shell">
               <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.websites.catalogAria")}>
+                <div className="management-group-scroll">
                 <div className="service-accordion">
                   <section className="service-group is-open">
                     <div className="service-group-head">
@@ -5144,10 +5216,12 @@ export function SettingsPage({
                     </div>
                   </section>
                 </div>
+                </div>
               </aside>
 
               <article className="control-center-detail web-settings-detail">
                 <section className="service-card control-center-service-hero web-detail-card">
+                  <div className="management-group-scroll">
                   <div className="control-center-service-head">
                     <div className="control-center-service-main">
                       <div className="website-detail-icon" aria-hidden="true">{creatingWebsite ? <PlusOutlined /> : <GlobalOutlined />}</div>
@@ -5229,6 +5303,7 @@ export function SettingsPage({
                       ) : null}
                     </div>
                   </form>
+                  </div>
                 </section>
               </article>
             </div>
@@ -5268,25 +5343,26 @@ export function SettingsPage({
           ? `${selectedWebapp.id}:${runtimeExecutableName}`
           : "";
         return (
-          <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-webapps">
+          <WebappImportDropTarget
+            pending={webappImportPending}
+            onImport={handleImportWebappItem}
+            onError={(message) => showSectionNotice("webapps", message, "error")}
+          >
             <div className="page-head control-center-hero">
               <div className="control-center-hero-copy">
                 <h1>{t("settings.webapps.label")}</h1>
                 <p>{t("settings.webapps.description")}</p>
               </div>
-              <div className="control-center-dashboard-metrics" aria-label={t("settings.webapps.metricsAria")}>
-                <div className="control-center-metric-card">
-                  <span className="summary-kicker">{t("settings.webapps.metricInstalled")}</span>
-                  <div className="control-center-metric-value">
-                    <strong>{webappItems.length}</strong>
-                    <span className="control-center-metric-chip">{t("settings.webapps.metricLocal")}</span>
-                  </div>
-                </div>
-              </div>
+              {renderWebMetrics(
+                webappItems.length,
+                runningWebappCount,
+                t("settings.webapps.metricsAria")
+              )}
             </div>
 
             <div className="control-center-shell web-settings-shell">
               <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.webapps.catalogAria")}>
+                <div className="webapp-group-scroll">
                 <div className="service-accordion">
                   <section className="service-group is-open">
                     <div className="service-group-head">
@@ -5351,6 +5427,7 @@ export function SettingsPage({
                     </div>
                   </section>
                 </div>
+                </div>
               </aside>
 
               {selectedWebapp ? (
@@ -5359,6 +5436,7 @@ export function SettingsPage({
                     key={`${selectedWebapp.id}:overview`}
                     className="service-card web-detail-card control-center-service-hero webapp-user-config-card"
                   >
+                    <div className="webapp-group-scroll">
                     <div className="control-center-service-head">
                       <div className="control-center-service-main">
                         <div className="webapp-detail-icon" aria-hidden="true"><AppstoreOutlined /></div>
@@ -5445,8 +5523,8 @@ export function SettingsPage({
                       className="web-detail-form"
                       onSubmit={(event) => void handleSaveWebappSettings(event)}
                     >
-                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
-                      <label className="web-detail-form-item">
+                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.systemOptions")}</h3></div>
+                      <label className="web-detail-form-item webapp-system-name">
                         <span>{t("settings.websites.displayName")}</span>
                         <Input
                           className="settings-control-row-control"
@@ -5458,6 +5536,56 @@ export function SettingsPage({
                           required
                         />
                       </label>
+                      <div className="webapp-system-access-row">
+                        <div className="web-detail-form-item">
+                          <span className="web-detail-label-with-help">
+                            {t("settings.webapps.allowLanAccess")}
+                            <Tooltip title={t("settings.webapps.allowLanAccessDescription")} trigger={["hover", "focus", "click"]}>
+                              <button
+                                type="button"
+                                className="webapp-user-config-help"
+                                aria-label={t("settings.webapps.allowLanAccessDescription")}
+                              >
+                                <QuestionCircleOutlined aria-hidden="true" />
+                              </button>
+                            </Tooltip>
+                          </span>
+                          <div className="web-detail-switch-control">
+                            <Switch
+                              checked={webappAllowLanAccess}
+                              onChange={setWebappAllowLanAccess}
+                              aria-label={t("settings.webapps.allowLanAccess")}
+                              disabled={webappPending}
+                            />
+                          </div>
+                        </div>
+                        <div className="web-detail-form-item">
+                          <span className="web-detail-label-with-help">
+                            {t("settings.webapps.authMode")}
+                            <Tooltip title={t("settings.webapps.authModeDescription")} trigger={["hover", "focus", "click"]}>
+                              <button
+                                type="button"
+                                className="webapp-user-config-help"
+                                aria-label={t("settings.webapps.authModeDescription")}
+                              >
+                                <QuestionCircleOutlined aria-hidden="true" />
+                              </button>
+                            </Tooltip>
+                          </span>
+                          <Select<WebappAuthMode>
+                            className="settings-control-row-control"
+                            value={webappAuthMode}
+                            onChange={setWebappAuthMode}
+                            aria-label={t("settings.webapps.authMode")}
+                            disabled={webappPending}
+                            options={[
+                              { value: "passthrough", label: t("settings.webapps.authModePassthrough") },
+                              { value: "managed", label: t("settings.webapps.authModeManaged") }
+                            ]}
+                          />
+                        </div>
+                      </div>
+                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
                       {webappUserConfigLoading ? (
                         <div className="webapp-user-config-empty">{t("settings.webapps.userConfigLoading")}</div>
                       ) : (selectedWebapp.userConfig?.fields.length ?? 0) > 0 ? (
@@ -5536,6 +5664,7 @@ export function SettingsPage({
                       </div>
                     </div>
                   ) : null}
+                    </div>
                   </section>
 
                   <Modal
@@ -5774,7 +5903,7 @@ export function SettingsPage({
                 </article>
               )}
             </div>
-          </section>
+          </WebappImportDropTarget>
         );
       }
       case "about":

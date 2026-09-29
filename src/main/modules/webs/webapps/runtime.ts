@@ -214,12 +214,25 @@ export class WebappRuntime {
     };
   }
 
+  async setLanAccess(webappId: string, enabled: boolean) {
+    const record = this.records.get(webappId.trim());
+    if (!record) return;
+    const previous = record.item.allowLanAccess;
+    record.item.allowLanAccess = enabled;
+    try {
+      if (record.gateway) await record.gateway.setLanAccess(enabled);
+    } catch (error) {
+      record.item.allowLanAccess = previous;
+      throw error;
+    }
+  }
+
   getStatus(app: App, webappId: string) {
     const id = webappId.trim();
     const record = this.records.get(id);
     if (record) {
       this.refreshRecordProcessState(app, record);
-      return record.state;
+      return { ...record.state, lanUrls: record.gateway?.lanUrls ?? [] };
     }
     const item = findWebapp(app, id, this.integrationPorts);
     if (!item) {
@@ -250,7 +263,7 @@ export class WebappRuntime {
     }
     const existing = this.records.get(id);
     if (existing?.state.status === "running") {
-      return { ok: true, item, state: existing.state, message: t("webapp.alreadyRunning", { label: item.label }) };
+      return { ok: true, item, state: { ...existing.state, lanUrls: existing.gateway?.lanUrls ?? [] }, message: t("webapp.alreadyRunning", { label: item.label }) };
     }
     if (existing) {
       await this.stop(app, id);
@@ -293,10 +306,12 @@ export class WebappRuntime {
           pageActionToken: record.pageActionToken
         });
         record.gateway = gateway;
+        await gateway.setLanAccess(record.item.allowLanAccess === true);
         record.state = {
           ...record.state,
           status: "running",
           webUrl: gateway.webUrl,
+          lanUrls: gateway.lanUrls,
           frontendPort: gateway.port,
           message: t("webapp.started", { label: item.label }),
           updatedAt: nowIso()
@@ -386,10 +401,12 @@ export class WebappRuntime {
         pageActionToken: record.pageActionToken
       });
       record.gateway = gateway;
+      await gateway.setLanAccess(record.item.allowLanAccess === true);
       record.state = {
         ...record.state,
         status: "running",
         webUrl: gateway.webUrl,
+        lanUrls: gateway.lanUrls,
         frontendPort: gateway.port,
         message: t("webapp.started", { label: item.label }),
         updatedAt: nowIso()

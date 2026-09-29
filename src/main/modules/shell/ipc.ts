@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { sanitizePerformanceEvent } from "../../../shared/performance-diagnostics";
 import { isPerformanceDiagnosticsEnabled, writePerformanceEvent } from "../../support/logging/performance";
 import { popupWindowsApplicationMenu } from "./app-menu";
@@ -345,6 +346,22 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       }
     }
     return { ok: false, error: "invalid_protocol" };
+  });
+
+  ipcMain.handle("desktopDialog.resolveDroppedDirectory", async (event: IpcMainInvokeEvent, targetPath: unknown) => {
+    const owner = getAuthorizedMainWindow(event);
+    if (!owner || event.sender !== owner.webContents || event.senderFrame !== event.sender.mainFrame) {
+      return { ok: false, message: t("shell.windowUnavailable") };
+    }
+    try {
+      if (typeof targetPath !== "string" || !path.isAbsolute(targetPath) ||
+          !(await fs.promises.stat(targetPath)).isDirectory()) {
+        return { ok: false, message: t("sidebar.drop.projectHint") };
+      }
+      return { ok: true, path: await fs.promises.realpath(targetPath) };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle("desktopDialog.selectDirectory", async (event: IpcMainInvokeEvent) => {

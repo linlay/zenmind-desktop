@@ -82,3 +82,23 @@ credentialRevision 是不含凭据的账号状态版本，可在连续业务调�
 ## 升级
 
 旧 operationId、connectorOperations、connectorWrite 契约不恢复，旧 operationId 请求返回 connector_contract_upgrade_required。现有 connectorExecution、connectorAuthentication、kanbanRead 字段仅兼容解析，新包可省略整个 desktopBridge。Bridge v1/v2 不再作为能力门控；宿主与 Platform 内部短期 grant 请求仍使用 version:2，无需应用申请或持有该凭据。
+
+## 网站认证：`auth.createSession`
+
+`auth` 是第八个顶层作用域，与 `assistant`、`connector`、`desktop` 并列。页面可先用 `auth.isAvailable()` 检测宿主认证传输是否存在，再在启动时或用户点击时调用。该检测不代表已登录或获准；Main 仍验证真实 Surface 并请求原生同源授权：
+
+```js
+import { auth } from '/__desktop/bridge.js';
+await auth.createSession({ exchangePath: '/api/auth/session' });
+const user = await fetch('/api/me').then(response => response.json());
+```
+
+只接受 `exchangePath`：以 `/` 开头的同源绝对路径，不接受 URL、查询、片段、路径回退或 `/__desktop/`。成功只返回 `{ok:true}`，失败抛 `DesktopBridgeError`。常见 code：`unavailable`、`forbidden`、`insecure_origin`、`cancelled`、`sign_in_required`、`context_changed`、`busy`、`exchange_rejected`、`invalid_cookie`、`cookie_conflict`、`exchange_failed`。
+
+Main 通过原生对话框展示精确交换地址，本次允许后才读取当前 SSO token。请求固定为 `POST`、`Authorization: Bearer`、JSON `{}`、同源 `Origin`，不带旧 Cookie，不跟随重定向；401 最多刷新一次重试。服务端必须自行验签、校验 issuer/audience/有效期/权限，再响应 2xx 和 1–4 个 `Set-Cookie`。响应正文不向页面透传。
+
+Cookie 要求：host-only（不得声明 Domain）、`Path=/`、`HttpOnly`、`SameSite=Lax` 或 `Strict`；HTTPS 必须 Secure。本地已登记 WebApp 的 HTTP loopback 允许不带 Secure；远端 Website 必须 HTTPS。Cookie 有效期不超过 token 到期及八小时，服务端可进一步缩短。请使用应用专属 Cookie 名；桥不会覆盖不属于它管理的已有 Cookie。
+
+认证通过访问者页面的专用 preload/IPC 执行，不经过发布者的 HTTP Action Bridge。`createBackendClient()` 不暴露 `auth`，公开 Desktop Action 与 WebApp backend/page HTTP token 都不能调用这个入口。页面离开、guest 销毁或身份撤销会中止在途操作；退出清理本能力登记的 Cookie，重启也清理这些会话，不清空其他站点数据。网站自己的退出、会话查询和业务权限归网站后端。
+
+发布页面可将生成的 `bridge.mjs` 作为普通静态 ES Module 随应用提供，仍调用访问者 Desktop 的 preload。它必须在 Desktop 中作为 Website 打开；普通浏览器、Help、Service、WorkPanel 和 iframe 不获得此入口。只有该认证能力可在远端使用，其他本地 SDK 能力不随发布开放。

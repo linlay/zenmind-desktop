@@ -123,7 +123,7 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     canExport: false,
     canRemove: false,
     showRemove: false
-  }), ["web.close"]);
+  }), ["web.close", "web.configure"]);
   assert.deepEqual(ids({
     kind: "web",
     webKind: "webapp",
@@ -138,6 +138,8 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     "web.close",
     "web.open-in-workspace",
     "web.open-in-browser",
+    "web.copy-access-url",
+    "web.configure",
     "web.remove"
   ]);
   assert.deepEqual(ids({
@@ -153,7 +155,9 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
   }), [
     "web.close",
     "web.open-in-window",
-    "web.open-in-browser"
+    "web.open-in-browser",
+    "web.copy-access-url",
+    "web.configure"
   ]);
 });
 

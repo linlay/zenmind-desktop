@@ -20,6 +20,8 @@ import {
   registerWebappImageUpload
 } from "./image-upload-registry";
 
+import { createLanAccess } from "./lan-access";
+
 const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
 const DESKTOP_ACTION_PATH = "/__desktop/actions/call";
@@ -33,6 +35,8 @@ export type WebappGateway = {
   sockets: Set<net.Socket>;
   port: number;
   webUrl: string;
+  readonly lanUrls: string[];
+  setLanAccess: (enabled: boolean) => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -551,6 +555,12 @@ function listen(server: http.Server) {
   });
 }
 
+function isLanRequestPathAllowed(url: string | undefined) {
+  const requestPath = getRequestPath(url);
+  return requestPath !== null && (!requestPath.startsWith(DESKTOP_RESERVED_PREFIX) ||
+    requestPath === WEBAPP_BRIDGE_MODULE_PATH || requestPath === WEBAPP_APP_CONFIG_PATH);
+}
+
 export async function startWebappGateway(options: {
   app: App;
   integrationPorts?: WebsIntegrationPorts;
@@ -659,12 +669,22 @@ export async function startWebappGateway(options: {
     proxyWebSocket(options.backendUrl, req, socket, head);
   });
   const port = await listen(server);
+  const lan = createLanAccess(server, isLanRequestPathAllowed);
+  try {
+    await lan.setEnabled(options.item.allowLanAccess === true);
+  } catch (error) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw error;
+  }
   return {
     server,
     sockets,
     port,
     webUrl: `http://${HOST}:${port}/`,
-    close() {
+    get lanUrls() { return lan.urls; },
+    setLanAccess: lan.setEnabled,
+    async close() {
+      await lan.close();
       for (const socket of sockets) {
         socket.destroy();
       }
@@ -675,6 +695,7 @@ export async function startWebappGateway(options: {
 }
 
 export const __gatewayTestInternals = {
+  isLanRequestPathAllowed,
   getRequestPath,
   resolveBackendEndpoint,
   shouldProxyRequest

@@ -2,14 +2,14 @@
 
 ## 1. 项目概览
 
-`zenmind-desktop` 是 ZenMind 的 Electron 应用壳，基于 Electron、React、Vite 和 TypeScript 构建。它负责把内置服务、插件、市场资源、网站入口、本地网站应用、智能助理和桌面协议能力组织成统一的桌面体验。
+`zenmind-desktop` 是 ZenMind 的 Electron 应用壳，基于 Electron、React、Vite 和 TypeScript 构建。它负责把内置服务、插件、市场资源、网站入口、本地网页应用、智能助理和桌面协议能力组织成统一的桌面体验。
 
 当前 Desktop 以 `manifest.json` 为服务发现和安装事实源：
 
 - 内置服务从 `build/resources/services` 或打包后的 `resources/services` 自动发现。
 - 插件统一通过 `.zip` 导入，安装到品牌隔离的平台程序数据目录。
 - 桌面运行数据按品牌隔离在 `~/.zenmind/.desktop`、`~/.cutej/.desktop` 等目录。
-- 渲染层 webview 直接访问服务或本地网站应用的 `webUrl`，需要认证的嵌入页通过 Desktop bridge 获取 token。
+- 渲染层 webview 直接访问服务或本地网页应用的 `webUrl`，需要认证的嵌入页通过 Desktop bridge 获取 token。
 
 核心内置服务：
 

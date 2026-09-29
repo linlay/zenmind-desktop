@@ -7,6 +7,10 @@ export const BOARD_ID = "default";
 
 export const PROJECT_ID = "default";
 
+// Local ownership belongs to this database, independently of Desktop SSO.
+// SYNC_MODE_, not this marker, distinguishes local tasks from cloud accounts.
+export const LOCAL_OWNER_USER_ID = "<local>";
+
 export const DATABASE_DIRECTORY = "desktop-kanban";
 
 export const DATABASE_FILENAME = "kanban.db";

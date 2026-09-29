@@ -18,7 +18,7 @@ import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from ".
 import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
 import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
 import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
-import { createWebsFacade, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
+import { createWebsFacade, registerWebappAuth, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
 import { registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
 import { t } from "../support/i18n/main-i18n";
 import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
@@ -345,6 +345,13 @@ export function createMainProcessRuntime() {
     get desktopSsoRestoreState() { return desktopSsoRestoreState; },
     get assistantBridgeRuntime() { return assistantBridgeRuntime; },
     get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+  });
+
+  websFacade.webappWindowManager.setAuthPreloadPath(MAIN_PRELOAD_PATH.replace(/index\.js$/u, "webapp-auth.js"));
+  registerWebappAuth({
+    registry: webSurfaceRuntime.browserSurfaceRegistry,
+    webs: websFacade,
+    refreshToken: (force) => refreshDesktopSsoIdentityToken(force)
   });
 
   const settingsRuntime = settings.assembleSettingsRuntime({
