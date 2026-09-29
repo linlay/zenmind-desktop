@@ -444,7 +444,7 @@ export interface AssistantConversationShareRecord {
 }
 
 export type AssistantConversationShareCreateResult =
-  | { ok: true; message: string; record: AssistantConversationShareRecord }
+  | { ok: true; message: string; record: AssistantConversationShareRecord; warning?: string }
   | { ok: false; message: string };
 
 export type AssistantConversationShareListResult =

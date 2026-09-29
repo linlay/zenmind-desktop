@@ -8,25 +8,9 @@ const require = createRequire(import.meta.url);
 const {
   assembleConversationHtml,
   fetchLimitedResponse,
-  isCanonicalArtifactRef,
   parseConversationHtmlTemplate
 } = require("../dist-electron/main/modules/conversation-share/html-worker.js");
 
-test("conversation resource references use canonical Platform path encoding", () => {
-  assert.equal(isCanonicalArtifactRef("artifacts/run-1/%E6%8A%A5%E5%91%8A.html"), true);
-  assert.equal(isCanonicalArtifactRef("artifacts/run-1/report+v1.pdf"), true);
-  assert.equal(isCanonicalArtifactRef(
-    "artifacts/run-1/%E5%A4%8F%E6%97%A5%20%E6%B5%B7%E6%8A%A5%20%231%25.png"
-  ), true);
-  for (const value of [
-    "artifacts/run-1/报告.html",
-    "artifacts/run-1/%e6%8a%a5%e5%91%8a.html",
-    "artifacts/run-1/%2e%2e",
-    "artifacts/run-1/%252e%252e",
-    "artifacts/run-1/a%2Fb.html",
-    "artifacts/run-1/nested/report.html"
-  ]) assert.equal(isCanonicalArtifactRef(value), false, value);
-});
 const {
   ConversationHtmlRenderService
 } = require("../dist-electron/main/modules/conversation-share/html-render-service.js");
@@ -254,6 +238,8 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   assert.equal(snapshotOnly.ok, true);
   assert.equal(Buffer.compare(snapshotOnly.bytes, snapshot), 0);
   assert.deepEqual(snapshotOnly.attachments, []);
+  assert.equal(snapshotOnly.attachmentsOmitted, false);
+  assert.equal(snapshotOnly.attachmentUnauthorized, false);
   assert.equal(templateRequests, 1);
 
   snapshotMode = "redirect";
@@ -282,7 +268,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   assert.equal(templateRequests, 2);
 });
 
-test("conversation snapshot freezes every manifest resource and rejects a changed artifact", async (t) => {
+test("conversation snapshot freezes available resources and omits a changed artifact", async (t) => {
   const published = Buffer.from("<h1>报告</h1>");
   const pdf = Buffer.from("%PDF-1.7\nresource");
   const changed = Buffer.from("<h1>已修改</h1>");
@@ -297,7 +283,7 @@ test("conversation snapshot freezes every manifest resource and rejects a change
         { id: "0123456789abcdef01234567", name: "报告.html", mimeType: "text/html",
           sourceRef: "artifacts/run-1/report.html", size: published.length, sha256: expectedHash },
         { id: "abcdef0123456789abcdef01", name: "报告.pdf", mimeType: "application/pdf",
-          sourceRef: "artifacts/run-1/report.pdf", size: pdf.length, sha256: pdfHash }
+          sourceRef: "artifacts/run-1/report.pdf" }
       ] }));
       res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
       res.end(snapshot);
@@ -346,73 +332,21 @@ test("conversation snapshot freezes every manifest resource and rejects a change
   ]);
   assert.equal(Buffer.compare(valid.attachments[0].bytes, published), 0);
   assert.equal(Buffer.compare(valid.attachments[1].bytes, pdf), 0);
+  assert.equal(valid.attachmentsOmitted, false);
+  assert.equal(valid.attachmentUnauthorized, false);
+  assert.equal(JSON.parse(valid.bytes.toString()).attachments[1].sha256, pdfHash);
+  assert.equal(JSON.parse(valid.bytes.toString()).attachments[1].size, pdf.length);
 
   served = changed;
-  const invalid = await renderer.readChatSnapshot("chat_1");
-  assert.equal(invalid.ok, false);
+  const partial = await renderer.readChatSnapshot("chat_1");
+  assert.equal(partial.ok, true);
+  assert.deepEqual(partial.attachments.map((item) => item.name), ["报告.pdf"]);
+  assert.equal(partial.attachmentsOmitted, true);
+  assert.equal(partial.attachmentUnauthorized, false);
+  assert.deepEqual(JSON.parse(partial.bytes.toString()).attachments.map((item) => item.name), ["报告.pdf"]);
 });
 
-test("conversation snapshot reports a local attachment authorization failure", async (t) => {
-  const body = Buffer.from("private attachment");
-  const snapshot = Buffer.from(JSON.stringify({
-    version: 1,
-    turns: [],
-    attachments: [{
-      id: "0123456789abcdef01234567",
-      name: "report.txt",
-      mimeType: "text/plain",
-      sourceRef: "artifacts/run-1/report.txt",
-      size: body.length,
-      sha256: createHash("sha256").update(body).digest("hex")
-    }]
-  }));
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url || "/", "http://127.0.0.1");
-    if (url.pathname === "/api/chat/export") {
-      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
-      res.end(snapshot);
-      return;
-    }
-    if (url.pathname === "/api/chat/artifacts/read") {
-      assert.equal(req.method, "POST");
-      assert.deepEqual(await readRequestJson(req), {
-        chatId: "chat_1",
-        sourceRef: "artifacts/run-1/report.txt"
-      });
-      res.writeHead(403, { "Content-Type": "application/json" });
-      res.end('{"error":"resource access denied"}');
-      return;
-    }
-    res.writeHead(404);
-    res.end();
-  });
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const address = server.address();
-  assert.ok(address && typeof address === "object");
-  const renderer = new ConversationHtmlRenderService({ snapshotProvider: {
-    async createChatSnapshotRequest() {
-      return {
-        ok: true,
-        snapshotUrl: `http://127.0.0.1:${address.port}/api/chat/export?chatId=chat_1&format=snapshot`,
-        bearerToken: "desktop-token"
-      };
-    }
-  } });
-  renderer.start();
-  t.after(() => renderer.dispose());
-
-  const result = await renderer.readChatSnapshot("chat_1");
-  assert.deepEqual(result, {
-    ok: false,
-    message: "无法读取当前对话附件，请检查本地服务身份后重试。"
-  });
-});
-
-test("conversation snapshot rejects MIME, length, hash, duplicate, missing and aggregate-limit mismatches", async (t) => {
+test("conversation snapshot omits unavailable and inconsistent attachments", async (t) => {
   const body = Buffer.from("data");
   const hash = createHash("sha256").update(body).digest("hex");
   const otherHash = createHash("sha256").update(Buffer.from("xxxx")).digest("hex");
@@ -436,8 +370,16 @@ test("conversation snapshot rejects MIME, length, hash, duplicate, missing and a
         name: "missing.html",
         sourceRef: "artifacts/run-1/missing.html"
       }];
-      if (scenario === "limit") attachments = [{ ...descriptor, size: 20 * 1024 * 1024 + 1 }];
-      const snapshot = Buffer.from(JSON.stringify({ version: 1, turns: [], attachments }));
+      if (scenario === "limit") attachments = [
+        { ...descriptor, size: 20 * 1024 * 1024 + 1 },
+        { ...descriptor, id: "abcdef0123456789abcdef01", sourceRef: "artifacts/run-1/small.html" }
+      ];
+      if (scenario === "near-limit") attachments = [{
+        id: descriptor.id, name: descriptor.name, mimeType: descriptor.mimeType, sourceRef: descriptor.sourceRef
+      }];
+      const value = { version: 1, turns: [], attachments };
+      if (scenario === "near-limit") value.padding = "x".repeat(20 * 1024 * 1024 - JSON.stringify(value).length - 16);
+      const snapshot = Buffer.from(JSON.stringify(value));
       res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
       res.end(snapshot);
       return;
@@ -451,9 +393,12 @@ test("conversation snapshot rejects MIME, length, hash, duplicate, missing and a
         res.end();
         return;
       }
-      if (scenario === "limit") {
-        res.writeHead(200, { "Content-Type": "text/html", "Content-Length": 20 * 1024 * 1024 + 1 });
+      if (scenario === "unauthorized") {
+        res.writeHead(403);
         res.end();
+        return;
+      }
+      if (scenario === "timeout") {
         return;
       }
       res.writeHead(200, {
@@ -485,8 +430,13 @@ test("conversation snapshot rejects MIME, length, hash, duplicate, missing and a
   renderer.start();
   t.after(() => renderer.dispose());
 
-  for (scenario of ["mime", "length", "hash", "duplicate", "missing", "limit"]) {
+  for (scenario of ["mime", "length", "hash", "duplicate", "missing", "limit", "near-limit", "unauthorized", "timeout"]) {
     const result = await renderer.readChatSnapshot("chat_1");
-    assert.equal(result.ok, false, scenario);
+    assert.equal(result.ok, true, scenario);
+    const expected = ["duplicate", "missing", "limit"].includes(scenario) ? 1 : 0;
+    assert.equal(result.attachments.length, expected, scenario);
+    assert.equal(result.attachmentsOmitted, true, scenario);
+    assert.equal(result.attachmentUnauthorized, scenario === "unauthorized", scenario);
+    assert.equal(JSON.parse(result.bytes.toString()).attachments.length, expected, scenario);
   }
 });
