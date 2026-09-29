@@ -907,6 +907,7 @@ export interface DesktopApi {
   };
   desktopDialog: {
     selectDirectory: () => Promise<{ ok: boolean; path?: string; message?: string }>;
+    resolveDroppedDirectory: (file: File) => Promise<{ ok: boolean; path?: string; message?: string }>;
   };
   sidebarContextMenu: {
     popup: (

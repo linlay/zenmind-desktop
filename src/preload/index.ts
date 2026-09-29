@@ -136,7 +136,9 @@ const api: DesktopApi = {
     openExternal: (url: string) => ipcRenderer.invoke("shell.openExternal", url)
   },
   desktopDialog: {
-    selectDirectory: () => ipcRenderer.invoke("desktopDialog.selectDirectory")
+    selectDirectory: () => ipcRenderer.invoke("desktopDialog.selectDirectory"),
+    resolveDroppedDirectory: (file: File) =>
+      ipcRenderer.invoke("desktopDialog.resolveDroppedDirectory", webUtils.getPathForFile(file))
   },
   sidebarContextMenu: {
     popup: (request: SidebarContextMenuPopupRequest) =>
@@ -858,6 +860,7 @@ const api: DesktopApi = {
     },
     webapps: {
       list: () => ipcRenderer.invoke("webs.webapps.list"),
+      // webUtils handles Finder and Windows Explorer paths without file URL parsing.
       import: (file?: File) => ipcRenderer.invoke("webs.webapps.import", file ? webUtils.getPathForFile(file) : undefined),
       export: (id: string) => ipcRenderer.invoke("webs.webapps.export", id),
       update: (id: string, input) => ipcRenderer.invoke("webs.webapps.update", id, input),

@@ -174,6 +174,12 @@
 
 ## 项目侧边栏
 
+- 运行 `node qa/sidebar-file-drop-smoke.mjs`，在隔离 Electron 中验证投放区、展开/收起态、内部拖拽排除、取消、类型分流、重复投放和多项拒绝；该模拟测试不替代 Finder / Explorer 真机拖拽。
+
+- macOS Finder / Windows Explorer 分别拖入单个 WebApp ZIP 到主导航栏，确认展开和收起态均出现“项目 / 网页应用”两个投放区（项目在上、网页应用在下），目录仅允许投放项目、ZIP 仅允许投放网页应用，不匹配区域置灰且鼠标禁止投放；拖拽阶段系统未提供类型信息时保留两个入口，放下时再严格检查，hover 高亮、移出或取消后收起；拖入现有 Chat、Project 或导航项排序时不出现文件投放区。
+- 将 ZIP 放入网页应用区，确认不再弹出文件选择器，导入校验、运行时选择、失败诊断和成功后的列表刷新及应用打开与菜单导入一致；导入期间不能再次投放。将普通文件、目录或多个项目放入网页应用区，确认有提示且不安装。
+- 将 Finder / Explorer 文件夹放入项目区，确认新建项目弹窗直接显示该目录，Coder / Knowledge Base 与 ACP 选项、提交和取消保持原行为。ZIP 放入项目区提示应投放文件夹；不存在目录、中文和空格路径均覆盖。确认拖入不会使主窗口导航到 file URL。
+
 - 将默认智能体设为配置 workspaceRoot: "@root" 的通用智能体（如小宅 zenmi），确认 Platform 列表省略 workspaceDir，重启后确认离开 Loading core components 并进入默认对话，Chats 新建对话与默认智能体选择仍可用；macOS 与 Windows 均覆盖，确认根路径不泄漏到项目列表。
 
 - macOS 与 Windows 分别验证 Projects 仅按 workspaceDir 去除空白后是否非空分类：带目录的 REACT/CHAT Agent 显示为项目，无目录的 CODER/KBASE 不显示为项目；目录已删除的 Agent 仍保留项目归属。验证普通项目及非 CODER/KBASE 项目的拖拽保存、刷新顺序与 Git 分支显示。

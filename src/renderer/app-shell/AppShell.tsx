@@ -1345,8 +1345,8 @@ export function AppShell() {
     return result;
   }
 
-  async function importWebappItem(): Promise<WebappImportResult> {
-    const result = await window.electronAPI.webs.webapps.import();
+  async function importWebappItem(file?: File): Promise<WebappImportResult> {
+    const result = await window.electronAPI.webs.webapps.import(file);
     if (result.ok) {
       updateWebItems(result.items);
     } else {

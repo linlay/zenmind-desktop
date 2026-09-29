@@ -4,6 +4,7 @@ import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
 import { desktopUpdateAction, desktopUpdateSidebarVisible } from "../../../shared/desktop-updates";
 import { DesktopUpdateConfirm } from "../../updates/DesktopUpdateConfirm";
 import type { DesktopUpdateState } from "../../../shared/desktop-updates";
+import { SidebarFileDropTarget } from "./SidebarFileDropTarget";
 import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
@@ -1081,7 +1082,7 @@ type AppSidebarProps = {
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (input: WebsiteInput) => Promise<WebsiteResult>;
-  onImportWebappItem?: () => Promise<WebappImportResult>;
+  onImportWebappItem?: (file?: File) => Promise<WebappImportResult>;
   onOpenWebappWindow?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
   onOpenWebappWorkspace?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
   webOpenEntryKeys?: WebEntryKey[];
@@ -3139,15 +3140,17 @@ export function AppSidebar({
     }
   }
 
-  async function beginCreateProject() {
+  async function beginCreateProject(file?: File) {
     if (creatingProject || createProjectDialog) {
       return;
     }
     setCreatingProject(true);
     try {
-      const selection =
-        await window.electronAPI.desktopDialog.selectDirectory();
+      const selection = file
+        ? await window.electronAPI.desktopDialog.resolveDroppedDirectory(file)
+        : await window.electronAPI.desktopDialog.selectDirectory();
       if (!selection.ok || !selection.path) {
+        if (file) throw new Error(selection.message || t("sidebar.drop.projectHint"));
         return;
       }
       let runningAcpProxies: RunningCoderAcpProxyOption[] = [];
@@ -3170,6 +3173,7 @@ export function AppSidebar({
       });
     } catch (error) {
       console.warn("[assistant] failed to prepare project", error);
+      if (file) throw error;
     } finally {
       setCreatingProject(false);
     }
@@ -3289,13 +3293,13 @@ export function AppSidebar({
     }
   }
 
-  async function handleImportWebapp() {
+  async function handleImportWebapp(file?: File) {
     if (!onImportWebappItem) {
       return;
     }
     setWebappImportFailure(null);
     try {
-      const result = await onImportWebappItem();
+      const result = await onImportWebappItem(file);
       if (!result.ok || !result.item) {
         const cancelled = !result.path && !result.diagnostic;
         if (!cancelled) {
@@ -7042,7 +7046,12 @@ export function AppSidebar({
 
   return (
     <>
-      <aside
+      <SidebarFileDropTarget
+        enabled={isPrimaryMode}
+        projectDisabled={creatingProject || Boolean(createProjectDialog)}
+        webappDisabled={!onImportWebappItem}
+        onProject={beginCreateProject}
+        onWebapp={handleImportWebapp}
         className={
           shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"
         }
@@ -7276,7 +7285,7 @@ export function AppSidebar({
             </div>
           </div>
         ) : null}
-      </aside>
+      </SidebarFileDropTarget>
       <PageFeedbackStack
         items={webappShareFeedback ? [{
           ...webappShareFeedback,
