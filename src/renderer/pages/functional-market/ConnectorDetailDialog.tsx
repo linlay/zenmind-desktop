@@ -68,7 +68,7 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect }: 
         <dl><div><dt>{t("market.storefront.detail.version")}</dt><dd>{item.version}</dd></div><div><dt>{t("market.storefront.detail.author")}</dt><dd>{item.author || "—"}</dd></div></dl>
         <div className="connector-detail-actions">
           {item.state === "update-available" && <Button disabled={blocked} onClick={() => void runtime.mutate(item, "update")}>{t("market.action.update")} · {item.installedVersion} → {item.version}</Button>}
-          {connection?.capabilities.canCheck && <Button disabled={blocked} onClick={() => void runtime.mutate(item, "check")}>{t("market.connector.flow.check")}</Button>}
+          {connection?.capabilities.canCheck && <Button className="connector-detail-check" disabled={blocked} loading={runtime.mutation?.itemId === item.id && runtime.mutation.action === "check"} onClick={() => void runtime.mutate(item, "check")}>{t("market.connector.flow.check")}</Button>}
         </div>
         </div>
         <p className="connector-detail-scope">{t("market.connector.flow.accountScope")}</p>
