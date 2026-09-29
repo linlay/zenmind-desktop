@@ -971,3 +971,11 @@
 - macOS / Windows：在 Main Chat 打开 Agent 已不可用的历史对话，点击“查看配置”，宿主切换至对应 Agent 管理页，不出现 guest 加载管理页后被拉回 Chat；返回原 Chat 后历史仍可读。
 - 请求携带其他 Agent、来自非活动 Main Chat 或其他 Surface 时拒绝；WebClient 显示失败提示且支持重试，不跳转外部 URL。
 - WebClient standalone：同一入口仍为编码后的 `/agents/:agentKey` 链接，不调用 Desktop bridge。
+## Office 与 PDF 文档的本地应用打开
+
+- 在 macOS 和 Windows 分别打开 `.ppt/.pptx`、`.doc/.docx`、`.xls/.xlsx`、`.pdf`：点击前显示系统真实默认应用名称和图标，多候选可选择，检测失败与未找到应用有不同提示；PDF 内嵌分页、缩放与搜索不受影响。
+- 从 Workspace、Artifact、Reference 各打开一份文档；另存副本后指定的应用实际打开，原文件字节不变，副本修改不会回传。
+- 保存对话框等待超过 10 秒后仍可完成；取消不报错，重复点击不产生第二个流程；关闭或切换文档后迟到结果不得启动应用。
+- 选择原文件、硬链接、符号链接或 Platform 管理目录作为目标时拒绝；含空格、中文的正常下载路径可用。
+- 默认关联改为 WPS 时主按钮显示 WPS，手动选择 Microsoft Office 时仍打开所选程序；卸载所选程序后明确失败，已经保存的副本保留。
+- 独立浏览器或不支持该能力的旧 Desktop 不展示新原生动作，现有下载和预览保持可用。

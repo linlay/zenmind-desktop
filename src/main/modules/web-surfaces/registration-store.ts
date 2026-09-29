@@ -1,6 +1,7 @@
 import { EmbeddedCdpSurfaceRegistration, EmbeddedCdpSurfaceRegistrationResult, EmbeddedCdpSurfaceRemoval, EmbeddedCdpSurfaceTabRegistration } from "../../../shared/embedded-cdp";
 import { LEGACY_FIXED_SURFACE_ID_ALIASES, createLegacySurfaceIdAliases, resolveFixedSurfaceRole, resolveLegacyFixedSurfaceId } from "../../../shared/surface-identity";
 import { selectSurvivingTabId } from "../../../shared/web-tab-lifecycle";
+import { normalizeWorkPanelDocumentSource } from "../../../shared/work-panel-document-source";
 import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
 import { createGuestResolution } from "./guest-resolution";
 import { createRegistrationDiagnostics, sanitizeSurfaceDiagnosticId } from "./registration-diagnostics";
@@ -192,6 +193,7 @@ export function createRegistrationStore(options: BrowserSurfaceRegistryOptions) 
       })),
       activeTabId: registrationInput.activeTabId?.trim() || null,
       ...(registrationInput.serviceId ? { serviceId: registrationInput.serviceId.trim() } : {}),
+      documentSource: normalizeWorkPanelDocumentSource(registrationInput.documentSource) ?? undefined,
       ...(registrationInput.pageRoute ? { pageRoute: registrationInput.pageRoute.trim() } : {}),
       ...(registrationInput.pageRouteIdentity
         ? { pageRouteIdentity: registrationInput.pageRouteIdentity.trim() }

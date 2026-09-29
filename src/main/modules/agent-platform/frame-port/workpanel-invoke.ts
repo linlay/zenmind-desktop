@@ -10,11 +10,15 @@ import {
   type WorkPanelOpenItemInput,
   type WorkPanelOpenResourceInput,
   type WorkPanelWorkspace,
+  type WorkPanelCapability,
+  type WorkPanelDocumentOpenOptionsResult,
+  type WorkPanelDocumentOpenCopyResult,
 } from "../../../../shared/contracts";
+import { normalizeWorkPanelDocumentSource, sameWorkPanelDocumentSource } from "../../../../shared/work-panel-document-source";
 import { reportDeprecatedCompatibilityUse } from "../../../support/logging/deprecated-compatibility";
 import type { FramePortOptions } from "../ipc.shared";
-import { failure, readText } from "../ipc.shared";
-import { authorizeSurface } from "./surface-authorization";
+import { failure, readText, SURFACE_REGISTRATION_WAIT_MS } from "../ipc.shared";
+import { authorizeSurface, mayAwaitSurfaceRegistration } from "./surface-authorization";
 
 export interface WorkpanelInvokePort {
   readonly options: {
@@ -23,6 +27,7 @@ export interface WorkpanelInvokePort {
     normalizeWorkPanelOpenLocalResourceRequest: FramePortOptions["normalizeWorkPanelOpenLocalResourceRequest"];
     openResource: FramePortOptions["openResource"];
     openDocument: FramePortOptions["openDocument"];
+    documentLocalOpen?: FramePortOptions["documentLocalOpen"];
     dispatchWorkPanel: FramePortOptions["dispatchWorkPanel"];
   };
 }
@@ -35,8 +40,15 @@ export function normalizeDocumentWorkspacePath(value: unknown) {
 }
 
 export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
-  async function handleWorkPanelInvoke(event: { sender: WebContents }, call: unknown): Promise<AgentWebclientBridgeFailure | { ok: true; workspaceId: string; itemId: string; renderer: "native-html" | "native-image"; } | { ok: true; workspaceId: string; item?: WorkPanelItem; state?: WorkPanelWorkspace; } | { ok: boolean; capabilities: ("workpanel.open" | "workpanel.activate" | "workpanel.close")[]; }> {
-    const context = authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
+  const openingGuests = new Set<number>();
+  async function handleWorkPanelInvoke(event: { sender: WebContents }, call: unknown): Promise<AgentWebclientBridgeFailure | WorkPanelDocumentOpenOptionsResult | WorkPanelDocumentOpenCopyResult | { ok: true; workspaceId: string; itemId: string; renderer: "native-html" | "native-image"; } | { ok: true; workspaceId: string; item?: WorkPanelItem; state?: WorkPanelWorkspace; } | { ok: boolean; capabilities: WorkPanelCapability[]; }> {
+    let context = authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
+    if ("ok" in context && isPlainBridgeRecord(call) && call.method === "getCapabilities" &&
+      !deps.options.browserSurfaces.resolveWebviewSurfaceTarget(event.sender.id) &&
+      mayAwaitSurfaceRegistration(event.sender, deps.options.isTrustedAgentWebclientSession)) {
+      await deps.options.browserSurfaces.waitForWebviewSurfaceTargetMatching(event.sender.id, () => true, SURFACE_REGISTRATION_WAIT_MS);
+      context = authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
+    }
     if ("ok" in context)
       return context;
     const ownerChatId = context.target.ownerChatId?.trim() || "";
@@ -52,7 +64,12 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
     const documentSurface = context.kind === "agent-management" &&
       context.target.surfaceLevel === "child" &&
       ["file", "artifact", "reference"].includes(context.target.surfaceRole);
-    const capabilities = [
+    const documentSource = normalizeWorkPanelDocumentSource(context.target.documentSource);
+    const localDocumentAllowed = Boolean(documentSurface && documentSource && deps.options.documentLocalOpen &&
+      context.target.surfaceRole === (documentSource.kind === "workspace-file" ? "file" : documentSource.kind) &&
+      (documentSource.kind === "workspace-file" || documentSource.chatId === ownerChatId));
+    const capabilities: WorkPanelCapability[] = [
+      ...(localDocumentAllowed ? ["workpanel.document.open-local" as const] : []),
       ...(context.kind === "agent-chat" || context.kind === "agent-copilot" || context.kind === "agent-overview"
         || documentSurface
         ? ["workpanel.open" as const]
@@ -62,6 +79,56 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
     ];
     if (method === "getCapabilities")
       return { ok: true, capabilities };
+    if (method === "getDocumentOpenOptions" || method === "openDocumentCopy") {
+      if (!localDocumentAllowed || !documentSource || !deps.options.documentLocalOpen)
+        return failure("capability_denied", "This surface cannot open local documents");
+      const input = isPlainBridgeRecord(record.input) ? record.input : {};
+      if (!isAgentWebclientBridgeVersion(input.version))
+        return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
+      const allowedKeys = method === "openDocumentCopy" ? ["version", "source", "applicationId"] : ["version", "source"];
+      if (Object.keys(input).some((key) => !allowedKeys.includes(key)) ||
+        !sameWorkPanelDocumentSource(input.source, documentSource))
+        return failure("capability_denied", "Document does not match the host-owned WorkPanel item");
+      const initial = { ...context.target };
+      const initialUrl = event.sender.getURL();
+      let documentInvalidated = false;
+      const invalidateDocument = () => { documentInvalidated = true; };
+      const onNavigation = (_event: Electron.Event, _url: string, _inPlace: boolean, isMainFrame: boolean) => {
+        if (isMainFrame) invalidateDocument();
+      };
+      const stillOwned = () => {
+        if (documentInvalidated) return false;
+        const current = authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
+        return !("ok" in current) && current.kind === "agent-management" && current.target.surfaceLevel === "child" &&
+          current.target.registrationId === initial.registrationId &&
+          current.target.ownerWebContentsId === initial.ownerWebContentsId &&
+          current.target.surfaceId === initial.surfaceId && current.target.ownerChatId === ownerChatId &&
+          current.target.surfaceRole === initial.surfaceRole &&
+          (method !== "openDocumentCopy" || current.target.active) &&
+          event.sender.getURL() === initialUrl &&
+          sameWorkPanelDocumentSource(current.target.documentSource, documentSource);
+      };
+      if (!stillOwned()) return failure("surface_unavailable", "Document surface is no longer available");
+      if (method === "openDocumentCopy" && (typeof input.applicationId !== "string" || !input.applicationId.trim() || input.applicationId.length > 256))
+        return failure("invalid_request", "Invalid local application identity");
+      if (method === "openDocumentCopy" && openingGuests.has(event.sender.id))
+        return failure("duplicate_id", "A local document open is already pending");
+      if (method === "openDocumentCopy") openingGuests.add(event.sender.id);
+      // A reload can keep both URL and host registration id unchanged. Bind
+      // in-flight native work to this document lifetime as well as its source.
+      event.sender.on("did-start-navigation", onNavigation);
+      event.sender.on("render-process-gone", invalidateDocument);
+      event.sender.on("destroyed", invalidateDocument);
+      try {
+        if (method === "getDocumentOpenOptions") return await deps.options.documentLocalOpen.getOptions(documentSource, stillOwned);
+        return await deps.options.documentLocalOpen.openCopy(documentSource, input.applicationId as string, stillOwned);
+      } finally {
+        if (method === "openDocumentCopy") openingGuests.delete(event.sender.id);
+        event.sender.removeListener("did-start-navigation", onNavigation);
+        event.sender.removeListener("render-process-gone", invalidateDocument);
+        event.sender.removeListener("destroyed", invalidateDocument);
+      }
+    }
     const capabilityAllowed = method === "openItem" || method === "openResource" || method === "openDocument"
       ? capabilities.includes("workpanel.open")
       : method === "activateItem" || method === "closeItem";

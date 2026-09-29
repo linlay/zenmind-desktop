@@ -223,6 +223,11 @@ export const AGENT_WEBCLIENT_BRIDGE_ERROR_CODES = [
   "unsupported_in_current_view",
   "unsupported_native_surface",
   "unsupported_native_type",
+  "local_app_query_failed",
+  "local_app_unavailable",
+  "unsupported_document_type",
+  "document_save_failed",
+  "application_launch_failed",
   "seq_expired",
   "replay_required",
   "protocol_error",
@@ -551,6 +556,31 @@ export type WorkPanelOpenDocumentResult =
     }
   | AgentWebclientBridgeFailure;
 
+/** Display-only projection. Application paths and launch arguments remain in Main. */
+export type WorkPanelLocalApplication = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  iconDataUrl?: string;
+};
+
+export type WorkPanelDocumentOpenOptionsInput = {
+  version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
+  source: WorkPanelDocumentSource;
+};
+
+export type WorkPanelDocumentOpenOptionsResult =
+  | { ok: true; applications: WorkPanelLocalApplication[] }
+  | AgentWebclientBridgeFailure;
+
+export type WorkPanelDocumentOpenCopyInput = WorkPanelDocumentOpenOptionsInput & {
+  applicationId: string;
+};
+
+export type WorkPanelDocumentOpenCopyResult =
+  | { ok: true; status: "cancelled" | "launch-requested" }
+  | AgentWebclientBridgeFailure;
+
 export type WorkPanelItemTargetInput = {
   version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
   itemId: string;
@@ -562,6 +592,7 @@ export type WorkPanelBridgeResult =
 
 export type WorkPanelCapability =
   | "workpanel.open"
+  | "workpanel.document.open-local"
   | "workpanel.activate"
   | "workpanel.close";
 
@@ -571,6 +602,8 @@ export type WorkPanelCapabilityResult =
 
 export type AgentWebclientWorkPanelBridge = {
   getCapabilities(): Promise<WorkPanelCapabilityResult>;
+  getDocumentOpenOptions?(input: WorkPanelDocumentOpenOptionsInput): Promise<WorkPanelDocumentOpenOptionsResult>;
+  openDocumentCopy?(input: WorkPanelDocumentOpenCopyInput): Promise<WorkPanelDocumentOpenCopyResult>;
   openDocument(input: WorkPanelOpenDocumentInput): Promise<WorkPanelOpenDocumentResult>;
   openResource(input: WorkPanelOpenResourceInput): Promise<WorkPanelOpenResourceResult>;
   openItem(input: WorkPanelOpenItemInput): Promise<WorkPanelBridgeResult>;

@@ -19,6 +19,7 @@ import {
   type WorkPanelOpenResourceInput,
   type WorkPanelOpenResourceResult
 } from "../../../shared/contracts";
+import type { WorkPanelDocumentSource, WorkPanelDocumentOpenOptionsResult, WorkPanelDocumentOpenCopyResult } from "../../../shared/contracts/agent-webclient-bridge";
 
 import type { AgentAuthIssueResult, ServiceState } from "../../../shared/contracts";
 
@@ -278,6 +279,10 @@ export function protocolError(message: string) {
 }
 
 export type FramePortOptions = {
+  documentLocalOpen?: {
+    getOptions(source: WorkPanelDocumentSource, stillOwned: () => boolean): Promise<WorkPanelDocumentOpenOptionsResult>;
+    openCopy(source: WorkPanelDocumentSource, applicationId: string, stillOwned: () => boolean): Promise<WorkPanelDocumentOpenCopyResult>;
+  };
   app: App;
   getMainWebContents?(): WebContents | null;
   browserSurfaces: BrowserSurfaceRegistry;
