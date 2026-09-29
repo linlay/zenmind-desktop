@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { Button, Checkbox } from "antd";
 import { DeleteOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useI18n } from "../i18n/useI18n";
@@ -36,10 +36,50 @@ export function SkinSettings() {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const [keepBackground, setKeepBackground] = useState(false);
   const [importedId, setImportedId] = useState<string | undefined>();
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
+  const importPending = useRef(false);
   const lastOperation = useRef<(() => Promise<unknown>) | null>(null);
   const imageUrl = appearance.background?.imageUrl;
   const imageFailed = Boolean(imageUrl && failedImageUrl === imageUrl);
   const disabled = skinSaving || skinLoadState !== "ready";
+  const importDisabled = disabled || !appearance.skinPackagesAvailable;
+  function clearDrag() { dragDepth.current = 0; setDragActive(false); }
+  useEffect(() => {
+    window.addEventListener("dragend", clearDrag);
+    window.addEventListener("drop", clearDrag);
+    window.addEventListener("blur", clearDrag);
+    return () => {
+      window.removeEventListener("dragend", clearDrag);
+      window.removeEventListener("drop", clearDrag);
+      window.removeEventListener("blur", clearDrag);
+    };
+  }, []);
+  async function importPackage(file?: File) {
+    if (importDisabled || importPending.current) return;
+    importPending.current = true;
+    try {
+      await perform(async () => {
+        const id = await appearance.importSkinPackage(file);
+        if (id) setImportedId(id);
+      });
+    } finally { importPending.current = false; }
+  }
+  function dropPackage(event: DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearDrag();
+    if (importDisabled || importPending.current) return;
+    const files = Array.from(event.dataTransfer.files);
+    const item = Array.from(event.dataTransfer.items).find((entry) => entry.kind === "file");
+    if (files.length !== 1 || !files[0].name.toLowerCase().endsWith(".zip") || item?.webkitGetAsEntry()?.isDirectory) {
+      lastOperation.current = null;
+      setError("settings.appearance.dropPackageInvalid");
+      return;
+    }
+    void importPackage(files[0]);
+  }
   async function perform(operation: () => Promise<unknown>) {
     setError(null);
     lastOperation.current = operation;
@@ -57,11 +97,32 @@ export function SkinSettings() {
             {skinSaving && <><LoadingOutlined aria-hidden="true" /><span className="desktop-skin-saving-label">{t("settings.appearance.saving")}</span></>}
           </span>
         </div>
-        <div className="desktop-skin-import">
-          <Button disabled={disabled || !appearance.skinPackagesAvailable} onClick={() => void perform(async () => {
-            const id = await appearance.importSkinPackage();
-            if (id) setImportedId(id);
-          })}>{t("settings.appearance.importPackage")}</Button>
+        <div className="desktop-skin-import-actions">
+          <Button disabled={importDisabled} onClick={() => void importPackage()}
+            onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "none"; } }}
+            onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }}>
+            {t("settings.appearance.importPackage")}
+          </Button>
+          <div className={`desktop-skin-import${dragActive ? " is-drag-active" : ""}`} aria-disabled={importDisabled}
+            onDragEnter={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault(); event.stopPropagation();
+              dragDepth.current += 1;
+              if (!importDisabled && !importPending.current) setDragActive(true);
+            }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault(); event.stopPropagation();
+              event.dataTransfer.dropEffect = importDisabled || importPending.current ? "none" : "copy";
+            }}
+            onDragLeave={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              dragDepth.current = Math.max(0, dragDepth.current - 1);
+              if (dragDepth.current === 0) clearDrag();
+            }}
+            onDrop={dropPackage}>
+            <span className="desktop-skin-import-hint">{t("settings.appearance.dropPackageHint")}</span>
+          </div>
         </div>
       </div>
       {skinLoadState === "ready" && !appearance.skinPackagesAvailable && <p className="desktop-skin-status" role="status">{t("settings.appearance.runtimeOutdated")}</p>}
@@ -137,7 +198,7 @@ export function SkinSettings() {
         {skinSettings.background && (!skinSettings.backgroundDataUrl || imageFailed) &&
           <span role="status">{t("settings.appearance.backgroundMissing")}</span>}
         {error && <div className="desktop-skin-error" role="alert">{t(error)}
-          {error !== "settings.appearance.runtimeOutdated" && <Button size="small" disabled={skinSaving} onClick={() => { if (lastOperation.current) void perform(lastOperation.current); }}>{t("settings.appearance.retry")}</Button>}
+          {error !== "settings.appearance.runtimeOutdated" && lastOperation.current && <Button size="small" disabled={skinSaving} onClick={() => { if (lastOperation.current) void perform(lastOperation.current); }}>{t("settings.appearance.retry")}</Button>}
           <Button size="small" disabled={skinSaving} onClick={() => void perform(async () => {
             await appearance.refreshAppearanceFromCanonical();
             if (appearance.getAppearanceSnapshot().skinLoadState !== "ready") throw new Error("unavailable");

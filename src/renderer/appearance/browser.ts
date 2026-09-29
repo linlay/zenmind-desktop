@@ -106,7 +106,7 @@ export function createBrowserAppearanceController() {
     },
     getDesktopSkin: () => window.electronAPI.settings.getDesktopSkin(),
     setDesktopSkin: (id, options) => window.electronAPI.settings.setDesktopSkin(id, options),
-    importDesktopSkinPackage: () => callSkinPackageApi("importDesktopSkinPackage"),
+    importDesktopSkinPackage: (file) => callSkinPackageApi("importDesktopSkinPackage", undefined, file),
     removeDesktopSkinPackage: (id) => callSkinPackageApi("removeDesktopSkinPackage", id),
     importDesktopBackground: () => window.electronAPI.settings.importDesktopBackground(),
     resetDesktopBackground: () => window.electronAPI.settings.resetDesktopBackground(),
@@ -128,11 +128,17 @@ export function skinPackageApiAvailable() {
 
 // Renderer hot updates cannot install new preload methods or Main handlers in
 // an already-running Electron process. Report that boundary explicitly.
-async function callSkinPackageApi(method: "importDesktopSkinPackage" | "removeDesktopSkinPackage", id?: DesktopSkinId) {
+async function callSkinPackageApi(method: "importDesktopSkinPackage" | "removeDesktopSkinPackage", id?: DesktopSkinId, file?: File) {
   if (!skinPackageApiAvailable()) throw new Error("runtimeOutdated");
   try {
-    return method === "importDesktopSkinPackage" ? await window.electronAPI.settings.importDesktopSkinPackage()
-      : await window.electronAPI.settings.removeDesktopSkinPackage(id!);
+    if (method === "removeDesktopSkinPackage") return await window.electronAPI.settings.removeDesktopSkinPackage(id!);
+    if (file !== undefined) {
+      // Old preloads accept no arguments and silently discard File objects.
+      // A separate capability/channel prevents drops from opening their picker.
+      if (typeof window.electronAPI.settings.importDroppedDesktopSkinPackage !== "function") throw new Error("runtimeOutdated");
+      return await window.electronAPI.settings.importDroppedDesktopSkinPackage(file);
+    }
+    return await window.electronAPI.settings.importDesktopSkinPackage();
   } catch (error) {
     if (error instanceof Error && /No handler registered/.test(error.message)) throw new Error("runtimeOutdated");
     throw error;

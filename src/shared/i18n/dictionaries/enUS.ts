@@ -1260,6 +1260,8 @@ export const enUSMessages = {
   "settings.appearance.backgroundMissing": "The saved image is unavailable. Showing the skin background; you can replace or reset the image.",
   "settings.appearance.runtimeOutdated": "Desktop has been updated. Quit and restart the app to enable skin package imports. Reloading the page does not update the window bridge.",
   "settings.appearance.reloadAppearance": "Reload appearance",
+  "settings.appearance.dropPackageHint": "Or drop a skin ZIP here",
+  "settings.appearance.dropPackageInvalid": "Drop one skin ZIP file. Folders and multiple files are not supported.",
   "settings.appearance.importPackage": "Import skin",
   "settings.appearance.packageDescription": "After importing, select its card to apply the skin.",
   "settings.appearance.installedPackages": "Imported skins",

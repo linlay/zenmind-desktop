@@ -1260,6 +1260,8 @@ export const zhCNMessages = {
   "settings.appearance.backgroundMissing": "已保存的图片不可用，暂时显示皮肤背景。可更换图片或使用默认背景。",
   "settings.appearance.runtimeOutdated": "Desktop 已更新，请完整退出并重新启动应用以启用皮肤包导入。刷新页面无法更新窗口接口。",
   "settings.appearance.reloadAppearance": "重新读取外观",
+  "settings.appearance.dropPackageHint": "或将皮肤 ZIP 拖到这里",
+  "settings.appearance.dropPackageInvalid": "请拖入一个皮肤 ZIP 文件，不支持文件夹或多个文件。",
   "settings.appearance.importPackage": "导入皮肤",
   "settings.appearance.packageDescription": "导入后点击皮肤卡片即可应用。",
   "settings.appearance.installedPackages": "已导入的皮肤",
