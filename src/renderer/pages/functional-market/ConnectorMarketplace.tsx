@@ -56,7 +56,9 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
           const statusLabel = checking ? t("market.connector.flow.checking") : connection ? t(`market.connector.flow.state.${connection.readiness}` as TranslationKey) : t(installed ? "market.connector.flow.stateUnavailable" : "market.connector.flow.notInstalled");
           const statusTone = ready ? "ready" : installed || checking ? "pending" : "idle";
           const actionLabel = t(checking ? "market.connector.flow.checking" : ready ? "market.connector.flow.try" : installed ? "market.connector.flow.installedAwaitingConnection" : "market.connector.flow.connect");
-          const disabled = runtime.busy || runtime.loading || !!runtime.stateError || (!installed && item.state === "incompatible");
+          const unavailable = runtime.loading || !!runtime.stateError || (!installed && item.state === "incompatible");
+          const disabled = runtime.busy || unavailable;
+          const busyLocked = runtime.busy && !unavailable || undefined;
           return <article className="skill-discovery-card connector-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
             onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) setDetailItem(item); }}
             onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailItem(item); } }}>
@@ -64,8 +66,8 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
               <div className="connector-card-title"><button type="button" className="skill-discovery-name" title={item.name} onClick={() => setDetailItem(item)}>{item.name}</button>
                 <span className={`connector-runtime-dot is-${statusTone}`} role="img" aria-label={statusLabel} title={statusLabel} /></div>
               <div className="connector-card-actions">
-                {item.state === "update-available" && <button type="button" className="skill-discovery-install connector-card-update" disabled={disabled} aria-label={`${item.name}: ${t("market.action.update")}`} title={t("market.action.update")} onClick={() => void runtime.mutate(item, "update")}><ReloadOutlined aria-hidden="true" /></button>}
-                {item.state !== "update-available" && <button type="button" className="skill-discovery-install" disabled={disabled} aria-label={`${item.name}: ${actionLabel}`}
+                {item.state === "update-available" && <button type="button" className="skill-discovery-install connector-card-update" disabled={disabled} data-busy-locked={busyLocked} aria-label={`${item.name}: ${t("market.action.update")}`} title={t("market.action.update")} onClick={() => void runtime.mutate(item, "update")}><ReloadOutlined aria-hidden="true" /></button>}
+                {item.state !== "update-available" && <button type="button" className="skill-discovery-install" disabled={disabled} data-busy-locked={busyLocked} aria-label={`${item.name}: ${actionLabel}`}
                   title={!installed && item.state === "incompatible" ? item.message || t("market.state.incompatible") : actionLabel} onClick={() => { if (installed && !ready) setDetailItem(item); else void runtime.start(item, true, true); }}>
                   {checking || (runtime.busy && runtime.flow?.item.id === item.id) ? <LoadingOutlined aria-hidden="true" /> : ready ? <MessageOutlined aria-hidden="true" /> : installed ? <CheckOutlined aria-hidden="true" /> : <PlusOutlined aria-hidden="true" />}
                 </button>}

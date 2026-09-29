@@ -154,6 +154,9 @@ export function ConversationShareDialog({
                   {state.notice}
                 </div>
               ) : null}
+              {state.warning ? (
+                <p className="conversation-share-warning" role="note">{state.warning}</p>
+              ) : null}
               {state.actionError ? (
                 <div className="conversation-share-feedback is-error" role="alert">
                   {state.actionError}

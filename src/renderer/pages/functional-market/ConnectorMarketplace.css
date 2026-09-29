@@ -1,3 +1,8 @@
+.skill-discovery .connector-card-actions button[data-busy-locked]:disabled {
+  /* A shared operation lock must not flash every card's action. */
+  opacity: 1;
+}
+
 .connector-discovery .connector-runtime-dot {
   display: inline-block;
   flex: 0 0 6px;
