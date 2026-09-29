@@ -7,6 +7,10 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const enUSMessages = {
+  "webAuth.title": "Website sign-in",
+  "webAuth.message": "Allow this application to use your Desktop identity to establish its own session?",
+  "webAuth.cancel": "Cancel",
+  "webAuth.allow": "Allow sign-in",
   "sidebar.drop.webappHint": "Drop a WebApp ZIP here to import",
   "sidebar.drop.singleItem": "Drop one ZIP or folder at a time.",
   "sidebar.webapp.copyAccessUrl": "Copy Access Link",

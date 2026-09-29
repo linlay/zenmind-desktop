@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBackendClient, assistant, automation, artifact, desktop, connector, skill, kanban } from '../contracts/webapp/bridge.mjs';
+import { createBackendClient, auth, assistant, automation, artifact, desktop, connector, skill, kanban } from '../contracts/webapp/bridge.mjs';
 
-test('the public SDK uses seven singular namespaces and reports reserved capabilities', async()=>{
- for(const group of [assistant,automation,artifact,desktop,connector,skill,kanban])assert.equal(Object.isFrozen(group),true);
+test('the public SDK uses eight singular namespaces and reports reserved capabilities', async()=>{
+ for(const group of [auth,assistant,automation,artifact,desktop,connector,skill,kanban])assert.equal(Object.isFrozen(group),true);
  assert.equal(desktop.native,undefined);assert.equal(desktop.assistant,undefined);
  await assert.rejects(automation.list(),{code:'not_implemented'});
  await assert.rejects(desktop.screen.capture(),{code:'not_implemented'});

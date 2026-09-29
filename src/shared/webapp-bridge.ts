@@ -1,6 +1,7 @@
 export const WEBAPP_BRIDGE_VERSION = 2 as const;
 
 export const WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES = [
+  "auth.session",
   "assistant.chat",
   "assistant.image",
   "connector.execute",
@@ -76,6 +77,7 @@ export const WEBAPP_BRIDGE_ACTIONS = Object.freeze({
 
 export const WEBAPP_BRIDGE_CAPABILITY_ACTIONS: Readonly<Record<WebappBridgeCapability, readonly string[]>> =
   Object.freeze({
+    "auth.session": Object.freeze([]),
     "kanban.read": Object.freeze(["kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]),
     "skill.read": Object.freeze(["skill.list", "skill.describe"]),
     "artifact.present": Object.freeze(["artifact.open", "artifact.saveAs"]),

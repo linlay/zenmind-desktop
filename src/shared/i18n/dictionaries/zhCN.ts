@@ -7,6 +7,10 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const zhCNMessages = {
+  "webAuth.title": "网站登录",
+  "webAuth.message": "允许此应用使用你的 Desktop 身份建立它自己的登录会话？",
+  "webAuth.cancel": "取消",
+  "webAuth.allow": "允许登录",
   "sidebar.drop.webappHint": "将 网页应用 ZIP 放到这里导入",
   "sidebar.drop.singleItem": "请一次拖入一个 ZIP 包或文件夹。",
   "sidebar.webapp.copyAccessUrl": "复制访问链接",

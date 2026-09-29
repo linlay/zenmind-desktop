@@ -259,6 +259,7 @@ export class WebappWindowManager {
     const targetWindow = new BrowserWindow(buildWindowOptions(app, item));
     const webappView = new WebContentsView({
       webPreferences: {
+        preload: this.authPreloadPath || undefined,
         partition: DESKTOP_BROWSER_WEBVIEW_PARTITION,
         contextIsolation: true,
         nodeIntegration: false,
@@ -387,6 +388,17 @@ export class WebappWindowManager {
       this.close(id);
     }
     return openIds;
+  }
+
+  private authPreloadPath = "";
+  setAuthPreloadPath(value: string) { this.authPreloadPath = value; }
+
+  resolveAuthGuest(contents: WebContents): string | null {
+    for (const [id, record] of this.windows) {
+      if (!record.window.isDestroyed() && record.webappView.webContents === contents &&
+          isAllowedWebappWindowNavigation(contents.getURL(), record.gatewayUrl)) return id;
+    }
+    return null;
   }
 
   async reload(id: string, state: WebappRuntimeState | null) {

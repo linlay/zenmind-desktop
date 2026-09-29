@@ -982,6 +982,15 @@
 - 请求携带其他 Agent、来自非活动 Main Chat 或其他 Surface 时拒绝；WebClient 显示失败提示且支持重试，不跳转外部 URL。
 - WebClient standalone：同一入口仍为编码后的 `/agents/:agentKey` 链接，不调用 Desktop bridge。
 
+## WebApp / Website SSO 会话交换
+
+- macOS / Windows 分别导入 sso-notes ZIP；未配置公钥时应用健康启动但拒绝登录。填写 RSA 公钥、issuer、audience 后重启。
+- 从本地 WebApp 主区和独立窗口点击登录，确认原生提示显示精确同源交换地址；取消不发送 token，成功后 `/api/me` 使用 HttpOnly Cookie。页面、URL、存储和日志中没有 SSO token。
+- 将发布地址设置为应用的 publicOrigin；另一位员工在自己的 Desktop 中添加 HTTPS Website，登录后只看到自己的便签。该网站不获得发布者的连接器或 Assistant 权限。
+- 关闭/导航页面、切换账号或退出 Desktop 登录期间使交换响应迟到，确认不写入旧会话。重启清理已登记 Cookie，不清空无关网站 Cookie。
+- 错误公钥、issuer、audience、过期 token、跨域交换路径、HTTP 远端网站、重定向、宽域 Cookie 均失败。普通浏览器、Help、Service、WorkPanel、iframe 和后台 SDK 无认证能力。
+- 原生 Cookie 行为自动冒烟：`node_modules/.bin/electron qa/webapp-auth-smoke.cjs`；使用临时身份和临时 profile，不读真实 SSO 凭据。
+
 ## 网页应用局域网访问
 
 - macOS / Windows 分别确认系统级选项默认关闭，保存开启后不重载当前页面；“复制访问链接”得到当前私有 IPv4 地址，用同一局域网另一设备访问静态页及业务 HTTP/WebSocket。重启 Desktop 后保留开关，导出包不携带此选项。
