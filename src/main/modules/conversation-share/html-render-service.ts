@@ -143,6 +143,8 @@ export class ConversationHtmlRenderService {
         throw new ConversationHtmlWorkerError("worker_failed");
       }
       return { ok: true, bytes: Buffer.from(response.snapshot),
+        attachmentsOmitted: response.attachmentsOmitted,
+        attachmentUnauthorized: response.attachmentUnauthorized,
         attachments: response.attachments.map((attachment) => ({
           id: attachment.id, name: attachment.name, mimeType: attachment.mimeType,
           bytes: Buffer.from(attachment.bytes)

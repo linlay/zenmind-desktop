@@ -18,10 +18,18 @@ test("malformed pin mutations are rejected before calling Platform", async (t) =
   let calls = 0;
   configureSkillMarketPlatformCaller(async () => { calls++; });
   t.after(() => configureSkillMarketPlatformCaller(null));
-  for (const value of [{ key: "../x", pinned: true }, { key: "a" }, { pinned: true }, { key: "a", pinned: "false" }, { pinnedItemIds: ["a"], pinnedSkillKeys: ["a"] }]) {
+  for (const value of [{ key: "../x", pinned: true }, { key: "p/../x", pinned: true }, { key: "p//x", pinned: true }, { key: "p\\x", pinned: true }, { key: "a" }, { pinned: true }, { key: "a", pinned: "false" }, { pinnedItemIds: ["a"], pinnedSkillKeys: ["a"] }]) {
     await assert.rejects(saveMarketSkillPins(value), /market_skill_pins_invalid/);
   }
   assert.equal(calls, 0);
+});
+
+test("package member pins preserve the qualified key", async (t) => {
+  let mutation;
+  configureSkillMarketPlatformCaller(async (_, options) => { mutation = options.body; return { pinned: ["suite/meeting"] }; });
+  t.after(() => configureSkillMarketPlatformCaller(null));
+  assert.deepEqual((await saveMarketSkillPins({ key: "suite/meeting", pinned: true })).order, ["suite/meeting"]);
+  assert.deepEqual(mutation, { key: "suite/meeting", pinned: true });
 });
 
 test("malformed server order and unavailable service fail instead of fabricating local pins", async (t) => {

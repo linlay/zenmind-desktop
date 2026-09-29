@@ -618,6 +618,7 @@ export const enUSMessages = {
   "assistant.chatShareExpirationInvalid": "The share link expiration is invalid.",
   "assistant.chatShareRequestFailed": "The share request could not be completed. Try again later.",
   "assistant.chatShareCreated": "Share link created.",
+  "assistant.chatShareAttachmentsOmitted": "Some attachments were omitted. The link still shows the conversation.",
   "assistant.chatShareInvalidId": "The share identifier is invalid.",
   "assistant.chatShareRevoked": "Share link revoked.",
   "assistant.chatShareLoginRequired": `Sign in to ${PRODUCT_NAME} before creating a share link.`,

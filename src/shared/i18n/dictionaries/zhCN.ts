@@ -618,6 +618,7 @@ export const zhCNMessages = {
   "assistant.chatShareExpirationInvalid": "分享链接有效期无效。",
   "assistant.chatShareRequestFailed": "无法完成分享请求，请稍后重试。",
   "assistant.chatShareCreated": "分享链接已创建。",
+  "assistant.chatShareAttachmentsOmitted": "部分附件未包含在分享中，链接仍可正常查看对话。",
   "assistant.chatShareInvalidId": "分享标识无效。",
   "assistant.chatShareRevoked": "分享链接已撤销。",
   "assistant.chatShareLoginRequired": `请先登录 ${PRODUCT_NAME} 账号，再创建分享链接。`,

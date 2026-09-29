@@ -21,7 +21,7 @@ export type ConversationHtmlRenderResult =
   | { ok: false; message: string };
 
 export type ConversationSnapshotReadResult =
-  | { ok: true; bytes: Buffer; attachments: Array<{ id: string; name: string; mimeType: string; bytes: Buffer }> }
+  | { ok: true; bytes: Buffer; attachments: Array<{ id: string; name: string; mimeType: string; bytes: Buffer }>; attachmentsOmitted: boolean; attachmentUnauthorized: boolean }
   | { ok: false; message: string };
 
 export type ConversationSnapshotReader = {
@@ -69,6 +69,8 @@ export type ReadConversationSnapshotSuccess = {
   requestId: string;
   snapshot: ArrayBuffer;
   attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }>;
+  attachmentsOmitted: boolean;
+  attachmentUnauthorized: boolean;
 };
 
 export type RenderConversationHtmlFailure = {
