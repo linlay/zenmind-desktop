@@ -7,6 +7,16 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const enUSMessages = {
+  "sidebar.drop.webappHint": "Drop a WebApp ZIP here to import",
+  "sidebar.drop.singleItem": "Drop one ZIP or folder at a time.",
+  "sidebar.webapp.copyAccessUrl": "Copy Access Link",
+  "sidebar.webapp.lanUrlUnavailable": "No LAN IPv4 address is available. Check your network connection.",
+  "sidebar.webapp.accessUrlCopied": "Access link copied.",
+  "sidebar.webapp.accessUrlCopyFailed": "Failed to copy access link.",
+  "sidebar.webapp.configure": "Configure",
+  "settings.webapps.systemOptions": "System options",
+  "settings.webapps.allowLanAccess": "Allow LAN access",
+  "settings.webapps.allowLanAccessDescription": "Applies when saved. Devices on the same network can access app pages and business APIs; the app manages access permissions. Turning this off immediately stops LAN access.",
   "settings.localServices.exampleCopyFailed": "Unable to copy example. Check sign-in and service status, then retry.",
   "settings.localServices.exampleCopied": "Copied. Expires: {expires}",
   "settings.localServices.browserAddress": "Browser address",

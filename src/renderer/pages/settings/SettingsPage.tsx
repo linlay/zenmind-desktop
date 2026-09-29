@@ -1,3 +1,4 @@
+import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
@@ -77,6 +78,7 @@ import {
   buildSettingsSectionPath,
   buildWebappSettingsPath,
   readSettingsWebappId,
+  readSettingsWebsiteId,
   resolveSettingsSectionId
 } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
@@ -144,6 +146,7 @@ type WebsiteDraftSnapshot = {
 };
 
 type WebappDraftSnapshot = {
+  allowLanAccess: boolean;
   id: string;
   label: string;
   openMode: WebappOpenMode;
@@ -228,7 +231,8 @@ function createWebappDraftSnapshot(item: WebappEntry): WebappDraftSnapshot {
   return {
     id: item.id,
     label: item.label,
-    openMode: item.openMode
+    openMode: item.openMode,
+    allowLanAccess: item.allowLanAccess === true
   };
 }
 
@@ -2474,6 +2478,7 @@ export function SettingsPage({
   const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
   const [selectedWebappId, setSelectedWebappId] = useState("");
   const [webappLabel, setWebappLabel] = useState("");
+  const [webappAllowLanAccess, setWebappAllowLanAccess] = useState(false);
   const [webappOpenMode, setWebappOpenMode] = useState<WebappOpenMode>("workspace");
   const [webappPending, setWebappPending] = useState(false);
   const [webappUserConfigValues, setWebappUserConfigValues] = useState<WebappUserConfigValues>({});
@@ -2481,6 +2486,7 @@ export function SettingsPage({
   const [webappUserConfigLoading, setWebappUserConfigLoading] = useState(false);
   const [webappUserConfigPending, setWebappUserConfigPending] = useState(false);
   const [webappImportPending, setWebappImportPending] = useState(false);
+  const webappImportBusyRef = useRef(false);
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
@@ -2608,12 +2614,14 @@ export function SettingsPage({
   function applyWebappDraftSnapshot(snapshot: WebappDraftSnapshot) {
     setWebappLabel(snapshot.label);
     setWebappOpenMode(snapshot.openMode);
+    setWebappAllowLanAccess(snapshot.allowLanAccess);
   }
 
   function clearWebappDraft() {
     webappDraftSourceRef.current = null;
     setWebappLabel("");
     setWebappOpenMode("workspace");
+    setWebappAllowLanAccess(false);
     setWebappUserConfigValues({});
     setWebappUserConfigIssues({});
     setWebappUserConfigLoading(false);
@@ -2667,6 +2675,17 @@ export function SettingsPage({
   }, [activeSection, selectedWebsite, selectedWebsiteId, websiteAgentKey, websiteItems, websiteLabel, websiteUrl]);
 
   useEffect(() => {
+    if (activeSection !== "websites") return;
+    const requestedId = readSettingsWebsiteId(location.search);
+    if (!requestedId) return;
+    const requestedWebsite = websiteItems.find((item) => item.id === requestedId);
+    if (!requestedWebsite) return;
+    handleSelectWebsiteItem(requestedWebsite);
+    // Consume the navigation request so later list updates preserve local edits and selection.
+    navigate(buildSettingsSectionPath("websites"), { replace: true });
+  }, [activeSection, location.search, navigate, websiteItems]);
+
+  useEffect(() => {
     if (activeSection !== "webapps") {
       return;
     }
@@ -2695,7 +2714,8 @@ export function SettingsPage({
       const sameSource = previousSnapshot?.id === selectedWebapp.id;
       const hasDraft = sameSource && (
         webappLabel !== previousSnapshot.label ||
-        webappOpenMode !== previousSnapshot.openMode
+        webappOpenMode !== previousSnapshot.openMode ||
+        webappAllowLanAccess !== previousSnapshot.allowLanAccess
       );
       if (!sameSource || !hasDraft) {
         applyWebappDraftSnapshot(nextSnapshot);
@@ -2711,7 +2731,8 @@ export function SettingsPage({
     selectedWebapp,
     webappItems,
     webappLabel,
-    webappOpenMode
+    webappOpenMode,
+    webappAllowLanAccess,
   ]);
 
   useEffect(() => {
@@ -3480,10 +3501,12 @@ export function SettingsPage({
     }
   }
 
-  async function handleImportWebappItem() {
+  async function handleImportWebappItem(file?: File) {
+    if (webappImportBusyRef.current) return;
+    webappImportBusyRef.current = true;
     setWebappImportPending(true);
     try {
-      const result = await window.electronAPI.webs.webapps.import();
+      const result = await window.electronAPI.webs.webapps.import(file);
       const diagnosticMessage = result.diagnostic
         ? `[${result.diagnostic.stage}/${result.diagnostic.code}] ${result.diagnostic.message}${result.diagnostic.suggestion ? ` ${result.diagnostic.suggestion}` : ""}`
         : result.message;
@@ -3493,10 +3516,12 @@ export function SettingsPage({
           setSelectedWebappId(result.item.id);
         }
         await refreshWebItemsFromSettings();
+        if (result.item) navigate(buildWebappSettingsPath(result.item.id));
       }
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
+      webappImportBusyRef.current = false;
       setWebappImportPending(false);
     }
   }
@@ -3594,6 +3619,7 @@ export function SettingsPage({
     navigate(buildWebappSettingsPath(item.id), { replace: true });
     setWebappLabel(item.label);
     setWebappOpenMode(item.openMode);
+    setWebappAllowLanAccess(item.allowLanAccess === true);
     setWebappUserConfigValues({});
     setWebappUserConfigIssues({});
     webappUserConfigRequestRef.current += 1;
@@ -3671,7 +3697,8 @@ export function SettingsPage({
     try {
       const updateResult = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
         label: webappLabel,
-        openMode: webappOpenMode
+        openMode: webappOpenMode,
+        allowLanAccess: webappAllowLanAccess
       });
       if (!updateResult.ok) {
         showSectionResultNotice("webapps", updateResult);
@@ -5268,7 +5295,11 @@ export function SettingsPage({
           ? `${selectedWebapp.id}:${runtimeExecutableName}`
           : "";
         return (
-          <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-webapps">
+          <WebappImportDropTarget
+            pending={webappImportPending}
+            onImport={handleImportWebappItem}
+            onError={(message) => showSectionNotice("webapps", message, "error")}
+          >
             <div className="page-head control-center-hero">
               <div className="control-center-hero-copy">
                 <h1>{t("settings.webapps.label")}</h1>
@@ -5445,7 +5476,7 @@ export function SettingsPage({
                       className="web-detail-form"
                       onSubmit={(event) => void handleSaveWebappSettings(event)}
                     >
-                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
+                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.systemOptions")}</h3></div>
                       <label className="web-detail-form-item">
                         <span>{t("settings.websites.displayName")}</span>
                         <Input
@@ -5458,6 +5489,17 @@ export function SettingsPage({
                           required
                         />
                       </label>
+                      <div className="web-detail-form-item">
+                        <span>{t("settings.webapps.allowLanAccess")}</span>
+                        <Switch
+                          checked={webappAllowLanAccess}
+                          onChange={setWebappAllowLanAccess}
+                          aria-label={t("settings.webapps.allowLanAccess")}
+                          disabled={webappPending}
+                        />
+                        <small>{t("settings.webapps.allowLanAccessDescription")}</small>
+                      </div>
+                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
                       {webappUserConfigLoading ? (
                         <div className="webapp-user-config-empty">{t("settings.webapps.userConfigLoading")}</div>
                       ) : (selectedWebapp.userConfig?.fields.length ?? 0) > 0 ? (
@@ -5774,7 +5816,7 @@ export function SettingsPage({
                 </article>
               )}
             </div>
-          </section>
+          </WebappImportDropTarget>
         );
       }
       case "about":

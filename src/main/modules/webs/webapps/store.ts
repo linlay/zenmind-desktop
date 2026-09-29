@@ -49,6 +49,7 @@ export const WEBAPP_TARGETS = [
 const WEBAPP_PREFERENCES_FILE = "webapp-preferences.json";
 
 type WebappPreference = {
+  allowLanAccess?: boolean;
   label?: string;
   openMode?: WebappOpenMode;
 };
@@ -120,6 +121,7 @@ function readPreferences(app: App): WebappPreferenceStore {
       if (candidate.openMode === "workspace" || candidate.openMode === "dialog") {
         preference.openMode = candidate.openMode;
       }
+      if (candidate.allowLanAccess === true) preference.allowLanAccess = true;
       if (Object.keys(preference).length > 0) {
         result[id] = preference;
       }
@@ -343,6 +345,7 @@ function manifestToEntry(
     ...manifest,
     label: preference.label ?? manifest.label,
     openMode: preference.openMode ?? "workspace",
+    allowLanAccess: preference.allowLanAccess === true,
     id: manifest.id,
     entryKey: createWebappEntryKey(manifest.id),
     kind: "webapp",
@@ -433,6 +436,7 @@ export function writeWebappPreferenceFields(
   input: {
     label?: string;
     openMode?: WebappOpenMode;
+    allowLanAccess?: boolean;
   },
   platform: NodeJS.Platform = process.platform,
   ports?: WebsIntegrationPorts
@@ -460,6 +464,10 @@ export function writeWebappPreferenceFields(
     } else {
       next.openMode = input.openMode;
     }
+  }
+  if (typeof input.allowLanAccess === "boolean") {
+    if (input.allowLanAccess) next.allowLanAccess = true;
+    else delete next.allowLanAccess;
   }
   if (Object.keys(next).length > 0) {
     preferences[webappId] = next;

@@ -371,7 +371,7 @@ export async function executeWebAction(
   if (action === "desktop.webapp.updatePreferences") {
     const webappId = readWebappId(args);
     const patch = asRecord(args.patch ?? args.input ?? args);
-    const result = options.webs.webappManager.update(options.app, webappId, {
+    const result = await options.webs.webappManager.update(options.app, webappId, {
       ...(typeof patch.label === "string" ? { label: patch.label } : {}),
       ...(patch.openMode === "workspace" || patch.openMode === "dialog" ? { openMode: patch.openMode } : {})
     });

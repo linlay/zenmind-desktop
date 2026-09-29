@@ -518,11 +518,14 @@ test("local display preferences do not mutate webapp.json", async (t) => {
   const before = fs.readFileSync(manifestPath, "utf8");
   const updated = updateWebappItem(app, preferenceId, {
     label: "Local Label",
-    openMode: "dialog"
+    openMode: "dialog",
+    allowLanAccess: true
   });
   assert.equal(updated.ok, true);
   assert.equal(updated.item.label, "Local Label");
   assert.equal(updated.item.openMode, "dialog");
+  assert.equal(readWebappItems(app).find((item) => item.id === preferenceId).allowLanAccess, true);
+  assert.equal(updateWebappItem(app, preferenceId, { allowLanAccess: false }).item.allowLanAccess, false);
   assert.equal(fs.readFileSync(manifestPath, "utf8"), before);
   const removed = await removeWebappItem(app, preferenceId);
   assert.equal(removed.ok, true);
@@ -921,3 +924,30 @@ test('installed WebApp page tokens allow connector operations without declaratio
   assert.doesNotThrow(()=>parseWebappManifest({...manifest('legacy'),desktopBridge:{version:1,connectorExecution:[{connectorId:'wecom',adapter:'cli'}]}}));
   assert.equal(isWebappActionAllowed(parseWebappManifest(manifest('plain')),'localPageGateway','kanban.issues.list'),true);
  });
+
+
+test("LAN preferences apply to a running app without changing its local origin and roll back on failure", async (t) => {
+  const { WebappManager } = require("../dist-electron/main/modules/webs/webapps/manager.js");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-lan-"));
+  const app = createApp(path.join(root, "home"));
+  const id = webappId("lan-settings-app");
+  writeWebapp(webappsRoot(path.join(root, "home")), "lan-settings-app");
+  const runtime = new RawWebappRuntime(websIntegrationPorts);
+  const manager = new WebappManager(websIntegrationPorts, runtime);
+  t.after(async () => { await runtime.stop(app, id); fs.rmSync(root, { recursive: true, force: true }); });
+  assert.equal(manager.listResult(app).items.find(item => item.id === id).allowLanAccess, false);
+  const started = await runtime.start(app, id);
+  assert.equal(started.ok, true);
+  const originalUrl = started.state.webUrl;
+  assert.equal((await manager.update(app, id, { allowLanAccess: true })).ok, true);
+  assert.equal(manager.listResult(app).items.find(item => item.id === id).allowLanAccess, true);
+  assert.equal(runtime.getStatus(app, id).webUrl, originalUrl);
+  assert.equal((await manager.update(app, id, { allowLanAccess: false })).ok, true);
+  assert.deepEqual(runtime.getStatus(app, id).lanUrls, []);
+  assert.equal(runtime.getStatus(app, id).webUrl, originalUrl);
+  runtime.setLanAccess = async () => { throw new Error("bind failed"); };
+  const failed = await manager.update(app, id, { allowLanAccess: true });
+  assert.equal(failed.ok, false);
+  assert.match(failed.message, /bind failed/);
+  assert.equal(manager.listResult(app).items.find(item => item.id === id).allowLanAccess, false);
+});

@@ -1334,7 +1334,7 @@ export interface DesktopApi {
     };
     webapps: {
       list: () => Promise<WebappItemsResult>;
-      import: () => Promise<WebappImportResult>;
+      import: (file?: File) => Promise<WebappImportResult>;
       export: (id: string) => Promise<WebappExportResult>;
       update: (id: string, input: WebappUpdateInput) => Promise<WebappResult>;
       uninstall: (id: string) => Promise<WebappDeleteResult>;

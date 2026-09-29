@@ -139,8 +139,27 @@ export class WebappManager {
     }
   }
 
+  private preferenceUpdates: Promise<unknown> = Promise.resolve();
+
   update(app: App, id: string, input: WebappUpdateInput) {
-    return updateWebappItem(app, id, input, this.integrationPorts);
+    const task = this.preferenceUpdates.then(async () => {
+      const previous = this.listResult(app).items.find((item) => item.id === id);
+      if (previous && typeof input.allowLanAccess === "boolean") {
+        try {
+          await this.runtime.setLanAccess(id, input.allowLanAccess);
+        } catch (error) {
+          return { ok: false, item: previous, items: this.listResult(app).items,
+            message: error instanceof Error ? error.message : String(error) };
+        }
+      }
+      const result = updateWebappItem(app, id, input, this.integrationPorts);
+      if (!result.ok && previous && typeof input.allowLanAccess === "boolean") {
+        await this.runtime.setLanAccess(id, previous.allowLanAccess === true);
+      }
+      return result;
+    });
+    this.preferenceUpdates = task.catch(() => undefined);
+    return task;
   }
 
   readUserConfig(app: App, id: string) {

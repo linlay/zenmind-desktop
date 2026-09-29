@@ -210,6 +210,7 @@ export function updateWebappItem(
 
   try {
     const updated = writeWebappPreferenceFields(app, target.id, {
+      ...(typeof input.allowLanAccess === "boolean" ? { allowLanAccess: input.allowLanAccess } : {}),
       ...(typeof input.label === "string" ? { label: input.label } : {}),
       ...(input.openMode === "workspace" || input.openMode === "dialog"
         ? { openMode: input.openMode }

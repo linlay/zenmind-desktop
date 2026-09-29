@@ -48,7 +48,7 @@ test("enterprise chat uses structured device-targeted remote actions and flat si
   assert.match(appShell, /resolveSkillManagementWebclientRoute/);
   assert.match(marketPage, /searchParams\.get\("itemId"\)/);
   assert.match(storefront, /setSelectedDetailItem\(initialItem\)/);
-  assert.match(zhCN, /"enterpriseChat\.desktopActionWebappOpen": "启动并打开网站应用"/);
+  assert.match(zhCN, /"enterpriseChat\.desktopActionWebappOpen": "启动并打开网页应用"/);
   assert.match(enUS, /"enterpriseChat\.desktopActionWebappOpen": "Start and open WebApp"/);
   assert.equal(desktopActions.includes(["desktop", "web", "website"].join(".") + "."), false);
   assert.equal(desktopActions.includes(["desktop", "web", "webapp"].join(".") + "."), false);
@@ -64,7 +64,7 @@ test("enterprise chat localizes WebApp action summaries for the current Desktop 
   };
 
   setMainLocaleForCurrentProcess("zh-CN");
-  assert.equal(__testInternals.normalizeDesktopAction(input)?.summary, "启动并打开网站应用：reports");
+  assert.equal(__testInternals.normalizeDesktopAction(input)?.summary, "启动并打开网页应用：reports");
 
   setMainLocaleForCurrentProcess("en-US");
   assert.equal(__testInternals.normalizeDesktopAction(input)?.summary, "Start and open WebApp: reports");

@@ -3474,3 +3474,41 @@
     font-size: 12px;
   }
 }
+
+/* The app catalog fills the available workspace, including its empty state. */
+@media (min-width: 761px) {
+  .settings-page .is-webapps .web-settings-shell {
+    align-items: stretch;
+  }
+
+  .settings-page .is-webapps .web-settings-catalog {
+    min-height: 0;
+    max-height: none;
+    height: 100%;
+  }
+}
+
+.settings-page .webapp-import-drop-target {
+  position: relative;
+}
+
+.settings-page .webapp-import-drop-target.is-dragging {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.settings-page .webapp-import-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--accent);
+  background: var(--surface-soft);
+  border: 2px dashed var(--accent);
+  border-radius: inherit;
+  pointer-events: none;
+}

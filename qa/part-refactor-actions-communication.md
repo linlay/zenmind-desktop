@@ -126,6 +126,6 @@
 | --- | --- |
 | shutdown：preparing 后紧邻 EMPTY_WORK_PANEL_STATE 清理 | `src/renderer/app-shell/AppShell.tsx`：false |
 | project ACP：projectType/useAcp 到 sidebar.project.acpProxy 的旧结构 | `src/renderer/app-shell/AppShell.tsx`：false |
-| 中文 sidebar.webapp.remove 值为“卸载网站应用” | `src/shared/i18n/dictionaries/zhCN.ts`：false |
+| 中文 sidebar.webapp.remove 值为“卸载网页应用” | `src/shared/i18n/dictionaries/zhCN.ts`：false |
 
 这证明上述三个具体正则不匹配并非 A 重构新增；不据此推断全部 60 个 renderer 失败都是基线问题。未改公共架构文档、package.json、生成物、其他组源码或 zenmind/ 未跟踪目录。

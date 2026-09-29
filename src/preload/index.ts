@@ -858,7 +858,7 @@ const api: DesktopApi = {
     },
     webapps: {
       list: () => ipcRenderer.invoke("webs.webapps.list"),
-      import: () => ipcRenderer.invoke("webs.webapps.import"),
+      import: (file?: File) => ipcRenderer.invoke("webs.webapps.import", file ? webUtils.getPathForFile(file) : undefined),
       export: (id: string) => ipcRenderer.invoke("webs.webapps.export", id),
       update: (id: string, input) => ipcRenderer.invoke("webs.webapps.update", id, input),
       uninstall: (id: string) => ipcRenderer.invoke("webs.webapps.uninstall", id),

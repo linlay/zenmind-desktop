@@ -129,6 +129,7 @@ import type {
 import {
   buildSettingsSectionPath,
   buildWebappSettingsPath,
+  buildWebsiteSettingsPath,
 } from "../../settings/settingsRoutes";
 import { Flex, Modal } from "antd";
 import {
@@ -2567,7 +2568,11 @@ export function AppSidebar({
         target.canOpenAlternative
       );
     }
-    if (actionId === "web.open-in-browser") {
+    if (actionId === "web.configure") return true;
+    if (
+      actionId === "web.open-in-browser" ||
+      actionId === "web.copy-access-url"
+    ) {
       return target.webKind === "webapp";
     }
     if (actionId === "web.export") {
@@ -2713,6 +2718,37 @@ export function AppSidebar({
       } catch {
         window.alert(t("sidebar.webapp.openInBrowserFailed"));
       }
+    } else if (actionId === "web.copy-access-url" && item.kind === "webapp") {
+      try {
+        const result = await window.electronAPI.webs.webapps.start(item.id);
+        if (!result.ok || result.state?.status !== "running" || !result.state.webUrl) {
+          showWebappShareFeedback(
+            "error",
+            result.message || t("sidebar.webapp.accessUrlCopyFailed"),
+          );
+          return;
+        }
+        const accessUrl = result.item?.allowLanAccess
+          ? result.state.lanUrls?.[0]
+          : result.state.webUrl;
+        if (!accessUrl) {
+          showWebappShareFeedback("error", t("sidebar.webapp.lanUrlUnavailable"));
+          return;
+        }
+        const copied = await window.electronAPI.clipboard.writeText(accessUrl);
+        showWebappShareFeedback(
+          copied.ok ? "success" : "error",
+          copied.ok
+            ? t("sidebar.webapp.accessUrlCopied")
+            : copied.message || t("sidebar.webapp.accessUrlCopyFailed"),
+        );
+      } catch {
+        showWebappShareFeedback("error", t("sidebar.webapp.accessUrlCopyFailed"));
+      }
+    } else if (actionId === "web.configure") {
+      requestNavigate(item.kind === "webapp"
+        ? buildWebappSettingsPath(item.id)
+        : buildWebsiteSettingsPath(item.id));
     } else if (actionId === "web.export" && item.kind === "webapp") {
       await exportWebappItem(item);
     } else if (

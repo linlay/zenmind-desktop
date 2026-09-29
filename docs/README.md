@@ -63,7 +63,7 @@
 - [插件系统桥接](插件系统桥接.md)：业务无关的系统窗口、平台适配与插件消息通道。
 - [市场系统](市场系统.md)：远端 catalog 与本地安装状态的分工。
 - [外部网站](外部网站.md)：Website 入口、session 和显式 capability。
-- [本地网站应用](本地网站应用.md)：WebApp v2、gateway、进程和 bridge 边界。
+- [本地网页应用](本地网站应用.md)：WebApp v2、gateway、进程和 bridge 边界。
 - [桌宠系统](桌宠系统.md)：资产、窗口、状态和 Agent 绑定。
 - [企业聊天](企业聊天.md)：IM 服务、身份、消息、文件和桌面动作边界。
 - [产物管理](产物管理.md)：Main WebSocket 产物推送的 Desktop SQLite 索引、去重与只读管理页。

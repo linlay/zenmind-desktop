@@ -28,8 +28,10 @@ export type SidebarContextMenuActionId =
   | "web.open-in-workspace"
   | "web.open-in-window"
   | "web.open-in-browser"
+  | "web.copy-access-url"
   | "web.copy-share-url"
   | "web.open-publish-settings"
+  | "web.configure"
   | "web.export"
   | "web.remove";
 
