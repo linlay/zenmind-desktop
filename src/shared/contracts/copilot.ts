@@ -163,12 +163,19 @@ export interface DesktopActionConfirmationRequest {
   cancelDecision: DesktopActionConfirmationDecision;
 }
 
+export type DesktopActionConfirmationEndReason = "timeout" | "aborted" | "unavailable";
+
+export interface DesktopActionConfirmationPresentation extends DesktopActionConfirmationRequest {
+  expiresAt: EpochMilliseconds;
+}
+
 export interface DesktopActionConfirmationResponse {
+  reason?: DesktopActionConfirmationEndReason;
   requestId: string;
   decision: DesktopActionConfirmationDecision;
 }
 
-export type DesktopActionConfirmationListener = (request: DesktopActionConfirmationRequest) => void;
+export type DesktopActionConfirmationListener = (request: DesktopActionConfirmationPresentation) => void;
 
 export interface AssistantChatMessage {
   id: string;

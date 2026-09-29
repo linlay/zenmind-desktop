@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   DesktopActionConfirmationDecision,
-  DesktopActionConfirmationRequest
+  DesktopActionConfirmationPresentation
 } from "../../shared/contracts";
 import { useI18n } from "../i18n/useI18n";
 
 type DesktopActionConfirmationDialogProps = {
-  request: DesktopActionConfirmationRequest | null;
+  request: DesktopActionConfirmationPresentation | null;
   onDecision: (decision: DesktopActionConfirmationDecision) => void;
 };
 
@@ -30,6 +30,15 @@ export function DesktopActionConfirmationDialog({
 }: DesktopActionConfirmationDialogProps) {
   const { t } = useI18n();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    setNow(Date.now());
+    if (!request) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [request?.requestId]);
+  const secondsLeft = request ? Math.max(0, Math.ceil((request.expiresAt - now) / 1000)) : 0;
+  const countdown = `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
   const dialogRef = useRef<HTMLElement | null>(null);
   const defaultButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -136,6 +145,7 @@ export function DesktopActionConfirmationDialog({
           <h2 id={titleId}>{request.title}</h2>
         </header>
         <div className="desktop-action-confirmation-body">
+          <p className="desktop-action-confirmation-countdown">{t("desktopAction.confirmationCountdown", { remaining: countdown })}</p>
           <p className="desktop-action-confirmation-summary">{request.summary}</p>
           <details
             className="desktop-action-confirmation-details"
@@ -170,6 +180,7 @@ export function DesktopActionConfirmationDialog({
               <button
                 key={button.decision}
                 ref={button.decision === defaultDecision ? defaultButtonRef : undefined}
+                disabled={secondsLeft === 0}
                 type="button"
                 data-decision={button.decision}
                 className={[

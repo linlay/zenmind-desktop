@@ -690,6 +690,11 @@ const api: DesktopApi = {
         ipcRenderer.off("desktopActions.call", handleDesktopActionCall);
       };
     },
+    onConfirmationClosed: (listener: (requestId: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, requestId: string) => listener(requestId);
+      ipcRenderer.on("desktopActions.confirmationClosed", handler);
+      return () => ipcRenderer.off("desktopActions.confirmationClosed", handler);
+    },
     onConfirm: (listener: DesktopActionConfirmationListener) => {
       const handleDesktopActionConfirmation = (
         _event: Electron.IpcRendererEvent,

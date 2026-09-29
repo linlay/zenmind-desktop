@@ -1812,3 +1812,28 @@ for (const platform of ['darwin', 'win32']) {
     assert.equal(h.broker.getDiagnostics().laneRotationCount, 0);
   });
 }
+
+test("ordinary Desktop Action receives trusted tool deadline and upstream cancellation", async t => {
+  const { broker, socket, token } = createHarness(t);
+  let invocationSignal;
+  let receivedDeadline;
+  broker.setDesktopBridgeProvider({
+    action: async (_request, _scope, signal, deadlineAt) => {
+      invocationSignal = signal;
+      receivedDeadline = deadlineAt;
+      await new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+      return { ok: false, error: { code: "request_aborted", message: "cancelled" } };
+    },
+    cdp: async () => ({ ok: true }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  const deadlineAt = Date.now() + 60_000;
+  socket("primary").emit({ frame: "request", id: "action-cancel", type: "desktop.theme.set", deadlineAt,
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }, payload: { themeMode: "dark" } });
+  await waitUntil(() => invocationSignal);
+  assert.equal(receivedDeadline, deadlineAt);
+  socket("primary").emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "action-cancel" } });
+  await waitUntil(() => invocationSignal.aborted);
+  await nextTurn();
+  assert.equal(socket("primary").sent.some(frame => frame.id === "action-cancel"), false);
+});

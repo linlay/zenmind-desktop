@@ -122,6 +122,9 @@ export function applyProfileDefaults(
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
         ? general.preventSleepWhileRunning
         : current.general.preventSleepWhileRunning,
+      desktopActionConfirmationTimeoutSeconds: typeof general.desktopActionConfirmationTimeoutSeconds === "number"
+        ? general.desktopActionConfirmationTimeoutSeconds
+        : current.general.desktopActionConfirmationTimeoutSeconds,
       desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
         ? general.desktopActionConfirmationEnabled
         : current.general.desktopActionConfirmationEnabled

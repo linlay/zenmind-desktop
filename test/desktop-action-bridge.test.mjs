@@ -3633,3 +3633,46 @@ test("WorkPanel bridge preserves close-last success and structured renderer fail
   assert.equal(failed.ok, false);
   assert.equal(failed.error.code, "target_unavailable");
 });
+
+for (const [reason, code, category] of [["timeout", "confirmation_timeout", "timeout"], ["aborted", "request_aborted", "conflict"], ["unavailable", "confirmation_unavailable", "unavailable"], [undefined, "user_cancelled", "authorization"]]) {
+  test(`confirmation ${reason ?? "user cancel"} keeps its cause and prevents execution`, async t => {
+    const { options, calls } = createDesktopActionOptions(t);
+    options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "cancel", reason });
+    const result = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+    assert.equal(result.error.code, code);
+    assert.equal(result.error.details.category, category);
+    assert.equal(result.error.details.stage, "confirmation");
+    assert.equal(result.error.details.executionState, "not_started");
+    assert.equal(calls.runtimeDiagnostics, 0);
+  });
+}
+
+test("upstream cancellation after confirmation prevents execution and passes configured deadline", async t => {
+  const { options, calls } = createDesktopActionOptions(t);
+  const controller = new AbortController();
+  options.actionSignal = controller.signal;
+  options.actionDeadlineAt = Date.now() + 90_000;
+  updateDesktopProfileInRoot(getDesktopConfigRoot(options.app), { general: { desktopActionConfirmationTimeoutSeconds: 45 } });
+  options.confirmRendererAction = async (request, context) => {
+    assert.equal(context.signal, controller.signal);
+    assert.equal(context.timeoutMs, 45_000);
+    assert.equal(context.deadlineAt, options.actionDeadlineAt);
+    controller.abort();
+    return { requestId: request.requestId, decision: "confirm" };
+  };
+  const result = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  assert.equal(result.error.code, "request_aborted");
+  assert.equal(result.error.details.executionState, "not_started");
+  assert.equal(calls.runtimeDiagnostics, 0);
+});
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform} unavailable confirmation fails closed without a native fallback`, async t => {
+    const { options, calls } = createDesktopActionOptions(t);
+    options.platform = platform;
+    delete options.confirmRendererAction;
+    const result = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+    assert.equal(result.error.code, "confirmation_unavailable");
+    assert.equal(calls.runtimeDiagnostics, 0);
+  });
+}

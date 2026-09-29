@@ -791,12 +791,14 @@ export interface DesktopGeneralSettings {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
+  desktopActionConfirmationTimeoutSeconds: number;
 }
 
 export interface DesktopGeneralSettingsInput {
   deviceName?: string;
   preventSleepWhileRunning?: boolean;
   desktopActionConfirmationEnabled?: boolean;
+  desktopActionConfirmationTimeoutSeconds?: number;
 }
 
 export interface EnterpriseImSettings {
@@ -1233,6 +1235,7 @@ export interface DesktopApi {
     list: () => Promise<{ ok: boolean; actions: DesktopActionDefinition[] }>;
     call: (request: DesktopActionCallRequest) => Promise<DesktopActionCallResponse>;
     onCall: (listener: DesktopActionCallListener) => () => void;
+    onConfirmationClosed: (listener: (requestId: string) => void) => () => void;
     onConfirm: (listener: DesktopActionConfirmationListener) => () => void;
   };
   currentPage: {

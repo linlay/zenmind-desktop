@@ -180,7 +180,7 @@ export async function confirmDesktopActionIfNeeded(
       ok: false,
       action,
       requiresConfirmation: true,
-      error: actionError("user_cancelled", t("desktopAction.userCancelled"))
+      error: actionError("user_cancelled", t("desktopAction.userCancelled"), { stage: "confirmation", executionState: "not_started", recovery: { strategy: "user_action", message: t("desktopAction.confirmationRetry") } })
     };
   }
   const snapshot = options.getCurrentPageSnapshot();
@@ -202,7 +202,7 @@ export async function confirmDesktopActionIfNeeded(
         ok: false,
         action,
         requiresConfirmation: true,
-        error: actionError("user_cancelled", t("desktopAction.userCancelledAuth"))
+        error: actionError("user_cancelled", t("desktopAction.userCancelledAuth"), { stage: "confirmation", executionState: "not_started", recovery: { strategy: "user_action", message: t("desktopAction.confirmationRetry") } })
       };
     }
   }
@@ -214,6 +214,6 @@ export async function confirmDesktopActionIfNeeded(
     ok: false,
     action,
     requiresConfirmation: true,
-    error: actionError("user_cancelled", t("desktopAction.userCancelled"))
+    error: actionError("user_cancelled", t("desktopAction.userCancelled"), { stage: "confirmation", executionState: "not_started", recovery: { strategy: "user_action", message: t("desktopAction.confirmationRetry") } })
   };
 }

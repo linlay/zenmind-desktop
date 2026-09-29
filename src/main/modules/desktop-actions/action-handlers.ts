@@ -17,6 +17,7 @@ import {
 import { fail, asRecord, readString } from "./action-values";
 import { CURRENT_PAGE_WEB_ACTIONS } from "./page-control-policy";
 import { t } from "../../support/i18n/main-i18n";
+import { ConfirmationEndedError, assertActionCanStart } from "./confirmation-dialog";
 import { confirmDesktopActionIfNeeded } from "./confirmation-policy";
 import { executeAction } from "./action-dispatch";
 import { normalizeActionBridgeTimePayload, ActionBridgeTimeContractError } from "./time-normalizer";
@@ -66,16 +67,23 @@ export async function handleActionCallRaw(
     AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action);
   const requiresConfirmation = definition.confirmation !== "none" &&
     (isDesktopActionMutating(action) || definition.confirmation === "sensitive-read");
-  if (requiresConfirmation && confirmationEligibleInvocation && !agentPlatformConfirmationExempt) {
-    const confirmationResponse = await confirmDesktopActionIfNeeded(
-      options,
-      normalizedRequest,
-      args,
-      definition.confirmation
-    );
-    if (confirmationResponse) {
-      return confirmationResponse;
+  try {
+    assertActionCanStart(options);
+    if (requiresConfirmation && confirmationEligibleInvocation && !agentPlatformConfirmationExempt) {
+      const confirmationResponse = await confirmDesktopActionIfNeeded(
+        options,
+        normalizedRequest,
+        args,
+        definition.confirmation
+      );
+      if (confirmationResponse) {
+        return confirmationResponse;
+      }
     }
+    assertActionCanStart(options);
+  } catch (error) {
+    if (error instanceof ConfirmationEndedError) return { ok: false, action, error: error.toActionError() };
+    throw error;
   }
   try {
     return await executeAction(options, normalizedRequest, invocation);

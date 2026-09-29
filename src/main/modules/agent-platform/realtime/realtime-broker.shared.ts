@@ -239,7 +239,7 @@ export type RunActionGrant = {
 
 export type DesktopBridgeRequestProvider = {
   acquireWorkPanelAwcpScope(surfaceId: string, chatId: string): SiteControlScope;
-  action(request: Record<string, unknown>, scope?: SiteControlScope): Promise<unknown>;
+  action(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal, deadlineAt?: number): Promise<unknown>;
   cdp(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal): Promise<unknown>;
   awcpManual(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;
   awcpInvoke(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;

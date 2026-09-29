@@ -194,8 +194,10 @@ test("general settings persist desktop device name and expose device info", asyn
   const saved = await ipcMain.invoke("settings.saveGeneralSettings", {
     deviceName: "  Studio Mac  ",
     preventSleepWhileRunning: false,
-    desktopActionConfirmationEnabled: false
+    desktopActionConfirmationEnabled: false,
+    desktopActionConfirmationTimeoutSeconds: 180
   });
+  assert.equal(saved.desktopActionConfirmationTimeoutSeconds, 180);
   assert.equal(saved.deviceName, "Studio Mac");
   assert.equal(saved.preventSleepWhileRunning, false);
   assert.equal(saved.desktopActionConfirmationEnabled, false);
@@ -218,6 +220,7 @@ test("general settings persist desktop device name and expose device info", asyn
   });
   assert.equal(cleared.deviceName, "");
   assert.equal(cleared.desktopActionConfirmationEnabled, false);
+  assert.equal(cleared.desktopActionConfirmationTimeoutSeconds, 180);
   const fallbackInfo = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(fallbackInfo.configuredDeviceName, "");
   assert.equal(typeof fallbackInfo.deviceName, "string");

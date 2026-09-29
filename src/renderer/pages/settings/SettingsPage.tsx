@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
@@ -529,6 +530,7 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   deviceName: "",
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
+  desktopActionConfirmationTimeoutSeconds: DEFAULT_CONFIRMATION_TIMEOUT_SECONDS,
   desktopActionConfirmationEnabled: true
 };
 
@@ -2470,6 +2472,10 @@ export function SettingsPage({
   const [usageProfileLoading, setUsageProfileLoading] = useState(false);
   const [usageHeatmapMode, setUsageHeatmapMode] = useState<UsageHeatmapMode>("day");
   const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
+  const [confirmationTimeoutDraft, setConfirmationTimeoutDraft] = useState<number | null>(DEFAULT_CONFIRMATION_TIMEOUT_SECONDS);
+  useEffect(() => {
+    setConfirmationTimeoutDraft(generalSettings.desktopActionConfirmationTimeoutSeconds);
+  }, [generalSettings.desktopActionConfirmationTimeoutSeconds]);
   const [enterpriseImSettings, setEnterpriseImSettings] = useState<EnterpriseImSettings>(defaultEnterpriseImSettings);
   const [generalDeviceNameDraft, setGeneralDeviceNameDraft] = useState(defaultGeneralSettings.deviceName);
   const [desktopDeviceInfo, setDesktopDeviceInfo] = useState<DesktopDeviceInfo | null>(null);
@@ -3326,6 +3332,20 @@ export function SettingsPage({
       );
     } catch (reason) {
       setGeneralSettings(previousSettings);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
+  async function saveConfirmationTimeout(seconds: number) {
+    setGeneralSettingsSaving(true);
+    try {
+      const saved = await window.electronAPI.settings.saveGeneralSettings({ desktopActionConfirmationTimeoutSeconds: seconds });
+      setGeneralSettings({ ...defaultGeneralSettings, ...saved });
+      showSectionNotice("general", t("settings.general.confirmationTimeoutSaved"), "success");
+    } catch (reason) {
+      setConfirmationTimeoutDraft(generalSettings.desktopActionConfirmationTimeoutSeconds);
       showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setGeneralSettingsSaving(false);
@@ -4563,6 +4583,26 @@ export function SettingsPage({
                 aria-label={t("settings.general.desktopActionConfirmation")}
                 disabled={generalSettingsSaving}
                 onChange={() => void handleToggleDesktopActionConfirmation()}
+              />
+            </div>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.confirmationTimeout")}</strong>
+                <span>{t("settings.general.confirmationTimeoutDescription")}</span>
+              </div>
+              <InputNumber
+                min={1}
+                max={MAX_CONFIRMATION_TIMEOUT_SECONDS}
+                precision={0}
+                value={confirmationTimeoutDraft}
+                onChange={setConfirmationTimeoutDraft}
+                aria-label={t("settings.general.confirmationTimeout")}
+                disabled={generalSettingsSaving || !generalSettings.desktopActionConfirmationEnabled}
+                onBlur={() => {
+                  const seconds = normalizeConfirmationTimeoutSeconds(confirmationTimeoutDraft ?? generalSettings.desktopActionConfirmationTimeoutSeconds);
+                  setConfirmationTimeoutDraft(seconds);
+                  if (seconds !== generalSettings.desktopActionConfirmationTimeoutSeconds) void saveConfirmationTimeout(seconds);
+                }}
               />
             </div>
             {enterpriseImSettings.baseUrl ? <div className="settings-appearance-row">
