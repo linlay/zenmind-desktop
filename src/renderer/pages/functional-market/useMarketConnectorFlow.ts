@@ -20,6 +20,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
   const dismissNotice = useCallback(() => setNotice(""), []);
   const [flow, setFlow] = useState<FlowState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mutation, setMutation] = useState<{ itemId: string; action: "check" | "disconnect" | "update" } | null>(null);
   const controller = useRef<AbortController | null>(null);
   const opened = useRef<{ connectorId: string; sessionId: string; authorizationUrl: string } | null>(null);
   const embeddedOpened = useRef(false);
@@ -68,7 +69,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     const previous = latest.current;
     const running = !!controller.current;
     controller.current?.abort(); controller.current = null; revision.current++;
-    setBusy(false); setFlow(null); latest.current = null; setFailure(null); setNotice("market.connector.flow.canceled");
+    setBusy(false); setMutation(null); setFlow(null); latest.current = null; setFailure(null); setNotice("market.connector.flow.canceled");
     try {
       await dismiss();
       if (!running && previous?.session && connectorSessionActive(previous.session) && previous.session.sessionId) updateConnection(await window.electronAPI.market.cancelConnectorConnection({ connectorId: previous.connectorId, sessionId: previous.session.sessionId }));
@@ -178,6 +179,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     // A mutation must not retain a different connector's failed authorization flow.
     setFlow(null); latest.current = null;
     const abort = new AbortController(); controller.current = abort; revision.current++; setBusy(true); setFailure(null); setNotice("");
+    setMutation({ itemId: item.id, action });
     try { const id = getId(item);
       if (action === "update") {
         const result = await window.electronAPI.market.update(item.id);
@@ -187,11 +189,18 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       else if (action === "check") { const result = await window.electronAPI.market.checkConnectorConnection(id); if (!abort.signal.aborted) { updateConnection(result); if (["failed", "unauthorized"].includes(result.authentication.status)) throw new Error(result.authentication.message || "market.connector.flow.notReady"); if (result.authentication.pendingVerification || result.readiness === "pending_verification") setNotice("market.connector.flow.pendingVerification"); } }
       else { const result = await window.electronAPI.market.disconnectConnector(id); if (abort.signal.aborted) return; updateConnection(await window.electronAPI.market.getConnectorConnection(id)); if (result.warnings?.length) setNotice(result.warnings.join("\n")); }
     } catch (cause) { if (mounted.current && !abort.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { if (controller.current === abort) { controller.current = null; if (mounted.current) setBusy(false); callbacks.current.onChanged?.(); void refresh(); } }
+    finally {
+      if (controller.current === abort) {
+        controller.current = null;
+        if (mounted.current) { setBusy(false); setMutation(null); }
+        // Check already returns this connector's state; it does not change the catalog.
+        if (action !== "check") { callbacks.current.onChanged?.(); void refresh(); }
+      }
+    }
   };
   return { connections, loading, stateError, error, errorItem: failure?.item, dismissError: () => setFailure(null),
     getError: (item: MarketItem) => failure && getId(failure.item) === getId(item) ? failure.message : "",
-    notice, dismissNotice, flow, busy, refresh, getConnection, isInstalled, start, cancel, mutate,
+    notice, dismissNotice, flow, busy, mutation, refresh, getConnection, isInstalled, start, cancel, mutate,
     retry: (item?: MarketItem) => { if (failure && (!item || getId(failure.item) === getId(item))) return failure.retry(); },
     submitCredentials: (credentials: Record<string, string>) => { const value = latest.current; return value ? start(value.item, value.mountAgent, value.openChat, value.draft, credentials) : Promise.resolve(); },
     openingAuth, authRedirectKey,
