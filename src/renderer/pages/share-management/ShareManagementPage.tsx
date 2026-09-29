@@ -44,7 +44,6 @@ export function ShareManagementPage({
   const [notice, setNotice] = useState("");
   const [copiedShareId, setCopiedShareId] = useState("");
   const [selectedChatId, setSelectedChatId] = useState("");
-  const [confirmingRevokeShareId, setConfirmingRevokeShareId] = useState("");
   const [revokingShareId, setRevokingShareId] = useState("");
   const requestIdRef = useRef(0);
   const copyFeedbackTimerRef = useRef<number | null>(null);
@@ -97,7 +96,6 @@ export function ShareManagementPage({
       setLoadError("");
       setActionError("");
       setNotice("");
-      setConfirmingRevokeShareId("");
       setRevokingShareId("");
       return;
     }
@@ -141,10 +139,8 @@ export function ShareManagementPage({
     }
   }
 
-  async function confirmRevoke() {
-    const shareId = confirmingRevokeShareId;
-    if (!shareId || revokingShareId) return;
-    setConfirmingRevokeShareId("");
+  async function revokeShare(shareId: string) {
+    if (revokingShareId) return;
     setRevokingShareId(shareId);
     setActionError("");
     setNotice("");
@@ -222,7 +218,6 @@ export function ShareManagementPage({
                       aria-current={group.chatId === selectedGroup.chatId ? "true" : undefined}
                       onClick={() => {
                         setSelectedChatId(group.chatId);
-                        setConfirmingRevokeShareId("");
                       }}
                     >
                       <strong>{group.chatName}</strong>
@@ -266,17 +261,10 @@ export function ShareManagementPage({
                           key={record.shareId}
                           record={record}
                           copied={copiedShareId === record.shareId}
-                          confirmingRevoke={confirmingRevokeShareId === record.shareId}
                           revoking={revokingShareId === record.shareId}
                           anotherRevokePending={Boolean(revokingShareId && revokingShareId !== record.shareId)}
                           onCopy={() => void copyShare(record)}
-                          onRequestRevoke={() => {
-                            setConfirmingRevokeShareId(record.shareId);
-                            setActionError("");
-                            setNotice("");
-                          }}
-                          onCancelRevoke={() => setConfirmingRevokeShareId("")}
-                          onConfirmRevoke={() => void confirmRevoke()}
+                          onRevoke={() => void revokeShare(record.shareId)}
                         />
                       ))}
                     </div>
@@ -294,23 +282,17 @@ export function ShareManagementPage({
 function ShareManagementRecord({
   record,
   copied,
-  confirmingRevoke,
   revoking,
   anotherRevokePending,
   onCopy,
-  onRequestRevoke,
-  onCancelRevoke,
-  onConfirmRevoke,
+  onRevoke,
 }: {
   record: AssistantConversationShareRecord;
   copied: boolean;
-  confirmingRevoke: boolean;
   revoking: boolean;
   anotherRevokePending: boolean;
   onCopy: () => void;
-  onRequestRevoke: () => void;
-  onCancelRevoke: () => void;
-  onConfirmRevoke: () => void;
+  onRevoke: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -321,23 +303,14 @@ function ShareManagementRecord({
           <span className="share-management-link-text" title={record.url}>{record.url}</span>
         </div>
         <div className="share-management-record-actions">
-          {confirmingRevoke ? (
-            <div className="share-management-revoke-confirmation" role="group" aria-label={t("sidebar.chat.shareRevokeConfirm")}>
-              <button type="button" className="share-management-button" onClick={onCancelRevoke}>{t("common.cancel")}</button>
-              <button type="button" className="share-management-button is-danger" onClick={onConfirmRevoke}>{t("sidebar.chat.shareRevoke")}</button>
-            </div>
-          ) : (
-            <>
-              <button type="button" className="share-management-button" data-copied={copied || undefined} aria-live="polite" onClick={onCopy}>
-                {copied ? <CheckOutlined aria-hidden="true" /> : <CopyOutlined aria-hidden="true" />}
-                <span>{copied ? t("sidebar.chat.shareCopied") : t("common.copy")}</span>
-              </button>
-              <button type="button" className="share-management-button is-danger" disabled={revoking || anotherRevokePending} onClick={onRequestRevoke}>
-                <DisconnectOutlined aria-hidden="true" />
-                <span>{revoking ? t("sidebar.common.processing") : t("sidebar.chat.shareRevokeAction")}</span>
-              </button>
-            </>
-          )}
+          <button type="button" className="share-management-button" data-copied={copied || undefined} aria-live="polite" onClick={onCopy}>
+            {copied ? <CheckOutlined aria-hidden="true" /> : <CopyOutlined aria-hidden="true" />}
+            <span>{copied ? t("sidebar.chat.shareCopied") : t("common.copy")}</span>
+          </button>
+          <button type="button" className="share-management-button is-danger" disabled={revoking || anotherRevokePending} onClick={onRevoke}>
+            <DisconnectOutlined aria-hidden="true" />
+            <span>{revoking ? t("sidebar.common.processing") : t("sidebar.chat.shareRevokeAction")}</span>
+          </button>
         </div>
       </div>
       <dl className="share-management-meta">

@@ -5,6 +5,7 @@ import { popupWindowsApplicationMenu } from "./app-menu";
 import {
   shell as electronShell,
   clipboard as electronClipboard,
+  nativeImage as electronNativeImage,
   BrowserWindow as ElectronBrowserWindow,
   screen as electronScreen
 } from "electron";
@@ -169,6 +170,7 @@ export function transitionWindowFullScreen(
 type ShellIpcOptions = {
   shell?: typeof electronShell;
   clipboard?: typeof electronClipboard;
+  nativeImage?: Pick<typeof electronNativeImage, "createFromBuffer">;
   BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
   screen?: {
     getCursorScreenPoint: () => { x: number; y: number };
@@ -226,6 +228,7 @@ type DesktopDownloadPayload = {
 export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">, options: ShellIpcOptions) {
   const shell = options.shell || electronShell;
   const clipboard = options.clipboard || electronClipboard;
+  const imageFactory = options.nativeImage || electronNativeImage;
   const BrowserWindow = options.BrowserWindow || ElectronBrowserWindow;
   const screen = options.screen || electronScreen;
   const runSetInterval = options.setInterval || setInterval;
@@ -638,6 +641,29 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
         ok: false as const,
         message: error instanceof Error ? error.message : String(error)
       };
+    }
+  });
+
+  ipcMain.handle("clipboard.writePng", async (_event: IpcMainInvokeEvent, dataBase64: unknown) => {
+    try {
+      if (typeof dataBase64 !== "string" || dataBase64.length > 2 * 1024 * 1024 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/u.test(dataBase64)) {
+        return { ok: false as const };
+      }
+      const bytes = Buffer.from(dataBase64, "base64");
+      if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+        return { ok: false as const };
+      }
+      const width = bytes.readUInt32BE(16);
+      const height = bytes.readUInt32BE(20);
+      if (!width || !height || width > 1024 || height > 1024) return { ok: false as const };
+      const image = imageFactory.createFromBuffer(bytes);
+      const size = image.getSize();
+      if (image.isEmpty() || size.width > 1024 || size.height > 1024) return { ok: false as const };
+      clipboard.writeImage(image);
+      return { ok: true as const };
+    } catch {
+      return { ok: false as const };
     }
   });
 

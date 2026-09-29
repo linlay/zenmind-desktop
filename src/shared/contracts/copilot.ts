@@ -407,30 +407,8 @@ export interface AssistantNavActionResult {
   filePath?: string;
 }
 
-export const ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS = [
-  "once",
-  "3h",
-  "1d",
-  "7d",
-  "30d",
-  "permanent",
-] as const;
-
-export type AssistantConversationShareExpiration =
-  (typeof ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS)[number];
-
-export const DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION: AssistantConversationShareExpiration = "30d";
-
-export function isAssistantConversationShareExpiration(
-  value: unknown,
-): value is AssistantConversationShareExpiration {
-  return typeof value === "string" &&
-    ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.some((expiration) => expiration === value);
-}
-
 export interface AssistantConversationShareRequest {
   chatId: string;
-  expiration: AssistantConversationShareExpiration;
 }
 
 export interface AssistantConversationShareRecord {

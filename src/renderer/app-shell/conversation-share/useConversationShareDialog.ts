@@ -1,172 +1,111 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION,
-  type AssistantConversationShareExpiration,
-  type AssistantConversationShareRecord,
-} from "../../../shared/contracts";
+import type { AssistantConversationShareRecord } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 
-const COPY_FEEDBACK_DURATION_MS = 1_600;
+export type ConversationShareAction = "copy" | "qr" | "browser";
+type ConversationSharePhase = "sheet" | "qr" | "done";
+type ShareFeedback = { kind: "loading" | "success" | "error"; message: string };
 
 export type ConversationShareDialogState = {
-  chatId: string;
-  chatName: string;
-  expiration: AssistantConversationShareExpiration;
   createdRecord: AssistantConversationShareRecord | null;
-  creating: boolean;
-  copied: boolean;
-  actionError: string;
-  notice: string;
+  phase: ConversationSharePhase;
+  workingAction: ConversationShareAction | null;
+  feedback: ShareFeedback | null;
   warning: string;
 };
 
-export type ConversationShareDialogSession = {
-  chatId: string;
-  chatName: string;
-};
-
 export function useConversationShareDialog(
-  session: ConversationShareDialogSession,
+  session: { chatId: string },
   t: TranslateFunction,
 ) {
   const [state, setState] = useState<ConversationShareDialogState>(() => ({
-    chatId: session.chatId,
-    chatName: session.chatName || t("sidebar.chat.current"),
-    expiration: DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION,
     createdRecord: null,
-    creating: false,
-    copied: false,
-    actionError: "",
-    notice: "",
+    phase: "sheet",
+    workingAction: null,
+    feedback: null,
     warning: "",
   }));
   const generationRef = useRef(0);
-  const copyFeedbackTimerRef = useRef<number | null>(null);
+  const workingRef = useRef(false);
+  const createdRecordRef = useRef<AssistantConversationShareRecord | null>(null);
 
-  useEffect(
-    () => () => {
-      generationRef.current += 1;
-      if (copyFeedbackTimerRef.current !== null) {
-        window.clearTimeout(copyFeedbackTimerRef.current);
-      }
-    },
-    [],
-  );
+  useEffect(() => () => { generationRef.current += 1; }, []);
 
-  function clearCopyFeedbackTimer() {
-    if (copyFeedbackTimerRef.current === null) return;
-    window.clearTimeout(copyFeedbackTimerRef.current);
-    copyFeedbackTimerRef.current = null;
-  }
+  useEffect(() => {
+    if (!state.feedback || state.feedback.kind === "loading") return;
+    const timer = window.setTimeout(() => {
+      setState((current) => ({ ...current, feedback: null }));
+    }, 3_000);
+    return () => window.clearTimeout(timer);
+  }, [state.feedback]);
 
-  async function create() {
-    const current = state;
-    if (current.creating) return;
+  async function run(action: ConversationShareAction) {
+    if (workingRef.current || state.phase !== "sheet") return;
+    workingRef.current = true;
     const generation = generationRef.current;
-    setState({ ...current, creating: true, copied: false, actionError: "", notice: "", warning: "" });
+    const isCurrent = () => generationRef.current === generation;
+    const pendingMessage = createdRecordRef.current
+      ? t(action === "copy" ? "sidebar.chat.shareCopying" : "sidebar.chat.shareOpening")
+      : t("sidebar.chat.shareGenerating");
+    setState((current) => ({
+      ...current,
+      workingAction: action,
+      feedback: { kind: "loading", message: pendingMessage },
+    }));
+
     try {
-      const result = await window.electronAPI.assistant.shareChat({
-        chatId: current.chatId,
-        expiration: current.expiration,
-      });
-      setState((latest) => {
-        if (
-          generationRef.current !== generation ||
-          latest.chatId !== current.chatId
-        ) {
-          return latest;
-        }
-        if (!result.ok) {
-          return {
-            ...latest,
-            creating: false,
-            actionError: result.message || t("sidebar.chat.shareFailed"),
-          };
-        }
-        return {
-          ...latest,
-          creating: false,
-          createdRecord: result.record,
-          copied: false,
-          actionError: "",
-          notice: result.message || t("sidebar.chat.shareCreated"),
-          warning: result.warning || "",
-        };
-      });
+      let record = createdRecordRef.current;
+      let warning = state.warning;
+      if (!record) {
+        const result = await window.electronAPI.assistant.shareChat({ chatId: session.chatId });
+        if (!result.ok) throw new Error(result.message || t("sidebar.chat.shareFailed"));
+        record = result.record;
+        warning = result.warning || "";
+        if (!isCurrent()) return;
+        createdRecordRef.current = record;
+        setState((current) => ({ ...current, createdRecord: record, warning }));
+      }
+
+      if (action === "copy") {
+        const result = await window.electronAPI.clipboard.writeText(record.url);
+        if (!result.ok) throw new Error(result.message || t("sidebar.chat.shareCopyFailed"));
+      } else if (action === "browser") {
+        const result = await window.electronAPI.shell.openExternal(record.url);
+        if (!result.ok) throw new Error(t("sidebar.chat.shareBrowserFailed"));
+      }
+      if (!isCurrent()) return;
+      const successMessage = t(action === "copy"
+        ? "sidebar.chat.shareCopied"
+        : action === "browser"
+          ? "sidebar.chat.shareBrowserOpened"
+          : "sidebar.chat.shareQrReady");
+      setState((current) => ({
+        ...current,
+        createdRecord: record,
+        warning,
+        workingAction: null,
+        phase: action === "qr" ? "qr" : "done",
+        feedback: { kind: "success", message: successMessage },
+      }));
     } catch (error) {
-      setState((latest) =>
-        generationRef.current === generation && latest.chatId === current.chatId
-          ? {
-              ...latest,
-              creating: false,
-              actionError:
-                error instanceof Error
-                  ? error.message
-                  : t("sidebar.chat.shareFailed"),
-            }
-          : latest,
-      );
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        createdRecord: createdRecordRef.current,
+        workingAction: null,
+        feedback: {
+          kind: "error",
+          message: error instanceof Error ? error.message : t("sidebar.chat.shareFailed"),
+        },
+      }));
+    } finally {
+      workingRef.current = false;
     }
   }
 
-  function setExpiration(expiration: AssistantConversationShareExpiration) {
-    setState((current) =>
-      !current.creating
-        ? { ...current, expiration, actionError: "", notice: "", warning: "" }
-        : current,
-    );
+  function notify(feedback: ShareFeedback) {
+    setState((current) => ({ ...current, feedback }));
   }
 
-  async function copyCreatedLink() {
-    const current = state;
-    const record = current.createdRecord;
-    if (!record) return;
-    const generation = generationRef.current;
-    try {
-      const result = await window.electronAPI.clipboard.writeText(record.url);
-      if (generationRef.current === generation) clearCopyFeedbackTimer();
-      setState((latest) =>
-        generationRef.current === generation
-          ? {
-              ...latest,
-              copied: result.ok,
-              actionError: result.ok
-                ? ""
-                : result.message || t("sidebar.chat.shareCopyFailed"),
-            }
-          : latest,
-      );
-      if (generationRef.current === generation && result.ok) {
-        copyFeedbackTimerRef.current = window.setTimeout(() => {
-          copyFeedbackTimerRef.current = null;
-          setState((latest) =>
-            generationRef.current === generation && latest.copied
-              ? { ...latest, copied: false }
-              : latest,
-          );
-        }, COPY_FEEDBACK_DURATION_MS);
-      }
-    } catch (error) {
-      if (generationRef.current === generation) clearCopyFeedbackTimer();
-      setState((latest) =>
-        generationRef.current === generation
-          ? {
-              ...latest,
-              copied: false,
-              actionError:
-                error instanceof Error
-                  ? error.message
-                  : t("sidebar.chat.shareCopyFailed"),
-            }
-          : latest,
-      );
-    }
-  }
-
-  return {
-    state,
-    create,
-    copyCreatedLink,
-    setExpiration,
-  };
+  return { state, run, notify };
 }

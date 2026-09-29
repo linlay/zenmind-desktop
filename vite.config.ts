@@ -188,7 +188,10 @@ export default defineConfig({
   cacheDir: path.resolve(projectRoot, ".cache/vite"),
   plugins: [brandRendererIndexPlugin(), brandRuntimeIconPlugin(), brandDesktopPetPlugin(), react()],
   define: {
-    __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(brand))
+    __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(brand)),
+    __DESKTOP_BRAND_ICON_DATA_URL__: JSON.stringify(
+      `data:image/png;base64,${fs.readFileSync(path.join(brandRuntimeAssetsRoot, "brand-icon.png")).toString("base64")}`
+    )
   },
   resolve: {
     alias: {

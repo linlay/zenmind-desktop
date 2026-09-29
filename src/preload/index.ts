@@ -231,7 +231,8 @@ const api: DesktopApi = {
     capture: () => ipcRenderer.invoke("desktopScreenshot.capture")
   },
   clipboard: {
-    writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
+    writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text),
+    writePng: (dataBase64: string) => ipcRenderer.invoke("clipboard.writePng", dataBase64)
   },
   kanban: {
     markResultRead: (input) => ipcRenderer.invoke("kanban.markResultRead", input),

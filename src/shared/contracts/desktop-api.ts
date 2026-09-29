@@ -979,6 +979,7 @@ export interface DesktopApi {
   };
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
+    writePng: (dataBase64: string) => Promise<{ ok: boolean; message?: string }>;
   };
   kanban: {
     markResultRead: (input: { issueId: string; key: string; scope: string }) => Promise<{ ok: boolean; message?: string }>;
