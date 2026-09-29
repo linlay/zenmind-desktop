@@ -143,9 +143,20 @@ export function DesktopActionConfirmationDialog({
       >
         <header className="desktop-action-confirmation-head">
           <h2 id={titleId}>{request.title}</h2>
+          <span
+            className="desktop-action-confirmation-countdown"
+            role="timer"
+            aria-live="off"
+            title={t("desktopAction.confirmationCountdown", { remaining: countdown })}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.25" />
+              <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+            </svg>
+            {t("desktopAction.confirmationTimeRemaining", { remaining: countdown })}
+          </span>
         </header>
         <div className="desktop-action-confirmation-body">
-          <p className="desktop-action-confirmation-countdown">{t("desktopAction.confirmationCountdown", { remaining: countdown })}</p>
           <p className="desktop-action-confirmation-summary">{request.summary}</p>
           <details
             className="desktop-action-confirmation-details"

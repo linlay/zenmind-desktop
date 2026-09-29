@@ -3170,6 +3170,7 @@ export const enUSMessages = {
   "desktopAction.confirmationUnavailable": "The Desktop confirmation window is unavailable. The action was not executed.",
   "desktopAction.requestTimeout": "The tool deadline expired. The Desktop action was not executed.",
   "desktopAction.confirmationRetry": "To proceed, submit a new request and confirm it in Desktop.",
+  "desktopAction.confirmationTimeRemaining": "Expires in {remaining}",
   "desktopAction.confirmationCountdown": "{remaining} remaining. The action will not execute after expiry.",
   "settings.general.confirmationTimeout": "Confirmation timeout (seconds)",
   "settings.general.confirmationTimeoutDescription": "Default: 120 seconds. Range: 1–600. Queued requests also count down, subject to the remaining tool deadline. Saved when you leave the field.",

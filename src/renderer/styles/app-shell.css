@@ -299,8 +299,29 @@
 .desktop-action-confirmation-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   min-height: 38px;
-  padding: 9px 14px 3px;
+  padding: 10px 14px 8px;
+}
+
+.desktop-action-confirmation-countdown {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.desktop-action-confirmation-countdown svg {
+  flex: none;
 }
 
 .desktop-action-confirmation-head h2 {
@@ -453,9 +474,8 @@
   background: var(--control-hover-bg);
 }
 
-.desktop-action-confirmation-button:focus {
-  background: var(--control-hover-bg);
-  outline: 2px solid var(--accent-border);
+.desktop-action-confirmation-button:focus-visible {
+  outline: 2px solid var(--control-focus-outline);
   outline-offset: 2px;
 }
 
@@ -470,8 +490,7 @@
   color: var(--accent-on);
 }
 
-.desktop-action-confirmation-button.is-primary:hover,
-.desktop-action-confirmation-button.is-primary:focus {
+.desktop-action-confirmation-button.is-primary:hover:not(:disabled) {
   border-color: var(--control-primary-hover);
   background: var(--control-primary-hover);
 }
@@ -517,6 +536,24 @@
 :root[data-theme="dark"] .desktop-action-confirmation-button:not(.is-primary):focus {
   background: var(--control-hover-bg);
   color: var(--ink);
+}
+
+/* Keep the focused primary action's foreground/background paired. Generic
+   focus treatments must not turn its fill into a translucent dark surface. */
+:root[data-theme="dark"] .desktop-action-confirmation-dialog .desktop-action-confirmation-button.is-primary:not(:disabled) {
+  background: var(--control-primary-bg);
+  border-color: var(--control-primary-bg);
+  color: var(--accent-on);
+}
+
+:root[data-theme="dark"] .desktop-action-confirmation-dialog .desktop-action-confirmation-button.is-primary:hover:not(:disabled) {
+  background: var(--control-primary-hover);
+  border-color: var(--control-primary-hover);
+}
+
+:root[data-theme="dark"] .desktop-action-confirmation-dialog .desktop-action-confirmation-button.is-primary:active:not(:disabled) {
+  background: var(--control-primary-active);
+  border-color: var(--control-primary-active);
 }
 
 :root[data-theme="dark"] .desktop-action-confirmation-button.is-secondary {

@@ -3170,6 +3170,7 @@ export const zhCNMessages = {
   "desktopAction.confirmationUnavailable": "无法显示 Desktop 确认窗口，动作未执行。",
   "desktopAction.requestTimeout": "工具调用期限已到，Desktop 动作未执行。",
   "desktopAction.confirmationRetry": "如需执行，请重新发起操作并在 Desktop 弹窗中确认。",
+  "desktopAction.confirmationTimeRemaining": "{remaining} 后超时",
   "desktopAction.confirmationCountdown": "剩余 {remaining}，超时后动作不会执行。",
   "settings.general.confirmationTimeout": "确认等待时间（秒）",
   "settings.general.confirmationTimeoutDescription": "默认 120 秒，范围 1–600 秒。排队期间也计时，且受工具剩余期限限制。离开输入框后保存。",

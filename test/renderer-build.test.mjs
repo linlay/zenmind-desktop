@@ -5696,7 +5696,7 @@ test("desktop action confirmation keeps supporting information inside details", 
     /\.desktop-action-confirmation-button\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
   const buttonFocusRule = styles.match(
-    /\.desktop-action-confirmation-button:focus\s*\{(?<body>[\s\S]*?)^\}/m
+    /\.desktop-action-confirmation-button:focus-visible\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
 
   assert.ok(detailsIndex > 0);
@@ -5734,7 +5734,7 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(titleRule, /font-weight:\s*400;/);
   assert.match(buttonRule, /min-height:\s*32px;/);
   assert.match(buttonRule, /font-weight:\s*500;/);
-  assert.match(buttonFocusRule, /outline:\s*2px solid var\(--accent-border\);/);
+  assert.match(buttonFocusRule, /outline:\s*2px solid var\(--control-focus-outline\);/);
   assert.match(buttonFocusRule, /outline-offset:\s*2px;/);
   assert.match(
     styles,
