@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import { TextDecoder } from "node:util";
 import type {
   AssistantConversationShareExpiration,
   AssistantConversationShareRecord,
@@ -9,7 +7,6 @@ import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname,
 } from "../tunnel";
-import { MAX_CONVERSATION_SNAPSHOT_BYTES } from "./export-contract";
 import type { ConversationShareTarget } from "./target";
 
 const CONVERSATION_SHARES_PATH = "/api/desktop/shares";
@@ -24,7 +21,6 @@ const MAX_CONVERSATION_ID_BYTES = 255;
 const SHARE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/u;
 const RFC3339_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/u;
 const RECORD_KEYS = ["id", "conversationId", "url", "createdAt", "expiresAt", "lastAccessedAt", "singleUse"] as const;
-const STRICT_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 export type TunnelConversationShareErrorKind =
   | "invalid_request"
@@ -71,16 +67,9 @@ export class TunnelConversationShareClient implements
 
   async create(input: ConversationShareCreateInput): Promise<AssistantConversationShareRecord> {
     requireValidTarget(input.target);
-    if (
-      !isValidConversationId(input.conversationId) ||
-      input.snapshot.byteLength === 0
-    ) {
+    if (!isValidConversationId(input.conversationId) || input.snapshot.byteLength === 0) {
       throw new TunnelConversationShareError("invalid_request");
     }
-    if (input.snapshot.byteLength > MAX_CONVERSATION_SNAPSHOT_BYTES) {
-      throw new TunnelConversationShareError("invalid_request", 413);
-    }
-    validateSnapshotAttachments(input.snapshot, input.attachments);
     const form = new FormData();
     form.append("snapshot", new Blob([Uint8Array.from(input.snapshot)], { type: "application/json" }), "snapshot.json");
     for (const attachment of input.attachments) {
@@ -184,78 +173,6 @@ export class TunnelConversationShareClient implements
       throw new TunnelConversationShareError("unavailable");
     }
   }
-}
-
-function validateSnapshotAttachments(
-  snapshot: Buffer,
-  attachments: ConversationShareCreateInput["attachments"],
-): void {
-  let value: unknown;
-  try {
-    value = JSON.parse(STRICT_UTF8_DECODER.decode(snapshot));
-  } catch {
-    throw new TunnelConversationShareError("invalid_request");
-  }
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.attachments)) {
-    throw new TunnelConversationShareError("invalid_request");
-  }
-
-  const descriptors = new Map<string, {
-    name: string;
-    mimeType: string;
-    size: number;
-    sha256: string;
-  }>();
-  for (const raw of value.attachments) {
-    if (!isRecord(raw) || typeof raw.id !== "string" ||
-      !/^[a-f0-9]{24}$/u.test(raw.id) || descriptors.has(raw.id) ||
-      typeof raw.name !== "string" || !isValidAttachmentName(raw.name) ||
-      typeof raw.mimeType !== "string" || !isValidMediaType(raw.mimeType) ||
-      typeof raw.size !== "number" || !Number.isSafeInteger(raw.size) || raw.size < 0 ||
-      typeof raw.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(raw.sha256)) {
-      throw new TunnelConversationShareError("invalid_request");
-    }
-    descriptors.set(raw.id, {
-      name: raw.name,
-      mimeType: raw.mimeType,
-      size: raw.size,
-      sha256: raw.sha256,
-    });
-  }
-  if (descriptors.size !== attachments.length) {
-    throw new TunnelConversationShareError("invalid_request");
-  }
-
-  const attachmentIds = new Set<string>();
-  let attachmentBytes = 0;
-  for (const attachment of attachments) {
-    if (!/^[a-f0-9]{24}$/u.test(attachment.id) || attachmentIds.has(attachment.id) ||
-      !isValidAttachmentName(attachment.name) || !isValidMediaType(attachment.mimeType)) {
-      throw new TunnelConversationShareError("invalid_request");
-    }
-    attachmentIds.add(attachment.id);
-    attachmentBytes += attachment.bytes.length;
-    if (attachmentBytes > MAX_CONVERSATION_SNAPSHOT_BYTES) {
-      throw new TunnelConversationShareError("invalid_request", 413);
-    }
-    const descriptor = descriptors.get(attachment.id);
-    const sha256 = createHash("sha256").update(attachment.bytes).digest("hex");
-    if (!descriptor || descriptor.name !== attachment.name ||
-      descriptor.mimeType !== attachment.mimeType || descriptor.size !== attachment.bytes.length ||
-      descriptor.sha256 !== sha256) {
-      throw new TunnelConversationShareError("invalid_request");
-    }
-  }
-}
-
-function isValidAttachmentName(value: string): boolean {
-  return value.length > 0 && Buffer.byteLength(value, "utf8") <= 255 &&
-    !/[\\/\u0000-\u001f\u007f]/u.test(value);
-}
-
-function isValidMediaType(value: string): boolean {
-  return value === value.trim().toLowerCase() &&
-    /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(value);
 }
 
 function authorizationHeaders(target: ConversationShareTarget): Record<string, string> {
