@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function setup() {
+function setup(onChanged) {
   const slots = []; let cursor = 0; const calls = []; const timers = new Map(); let nextTimer = 0;
   const react = {
     useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = typeof value === 'function' ? value(slots[i]) : value; }]; },
@@ -20,10 +20,38 @@ function setup() {
   const source = fs.readFileSync(new URL('../src/renderer/pages/functional-market/useMarketConnectorFlow.ts', import.meta.url), 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(js, { module, exports: module.exports, require: name => name === 'react' ? react : flow, window: { electronAPI: api, setTimeout(fn, ms) { timers.set(++nextTimer, { fn, ms }); return nextTimer; }, clearTimeout(id) { timers.delete(id); } }, AbortController, Error, console });
-  return { calls, api, flow, timers, render() { cursor = 0; return module.exports.useMarketConnectorFlow(); } };
+  return { calls, api, flow, timers, render() { cursor = 0; return module.exports.useMarketConnectorFlow(onChanged); } };
 }
 const wecom = { id: 'wecom', connectorId: 'wecom-cli', name: '企业微信' };
 const jira = { id: 'jira', name: 'Jira' };
+test('checking updates only the selected connector without refreshing the catalog or list', async () => {
+  let catalogRefreshes = 0, listRefreshes = 0, finish;
+  const s = setup(() => { catalogRefreshes++; });
+  const ready = { connectorId: 'wecom-cli', configured: true, readiness: 'ready', authentication: { status: 'delegated' } };
+  const other = { connectorId: 'jira', configured: true, readiness: 'ready' };
+  s.api.market.getConnectorConnections = async () => { listRefreshes++; return [ready, other]; };
+  await s.render().refresh();
+  s.api.market.checkConnectorConnection = () => new Promise(resolve => { finish = resolve; });
+  const checking = s.render().mutate(wecom, 'check');
+  assert.equal(s.render().mutation.itemId, wecom.id);
+  assert.equal(s.render().mutation.action, 'check');
+  assert.equal(s.render().getConnection(jira), other);
+  const result = { ...ready, readiness: 'authorization_required', configured: false };
+  finish(result); await checking;
+  assert.equal(s.render().getConnection(wecom), result);
+  assert.equal(s.render().getConnection(jira), other);
+  assert.equal(s.render().mutation, null);
+  assert.equal(s.render().busy, false);
+  assert.equal(catalogRefreshes, 0);
+  assert.equal(listRefreshes, 1);
+  s.api.market.checkConnectorConnection = async () => { throw new Error('check failed'); };
+  await s.render().mutate(wecom, 'check');
+  assert.equal(s.render().getError(wecom), 'check failed');
+  assert.equal(s.render().getConnection(jira), other);
+  assert.equal(s.render().mutation, null);
+  assert.equal(catalogRefreshes, 0);
+  assert.equal(listRefreshes, 1);
+});
 test('a failed WeCom connection is not shown or retried in Jira details', async () => {
   const s = setup(); await s.render().start(wecom);
   const runtime = s.render();
