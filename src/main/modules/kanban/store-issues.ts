@@ -14,7 +14,7 @@ import { withDesktopKanbanDatabase, getDesktopKanbanDatabasePath } from "./store
 import { t } from "../../support/i18n/main-i18n";
 import { selectIssues, selectProjects, selectProjectBindings } from "./store-queries";
 import { readLocalWorkflows, initializeLocalWorkflow, moveLocalWorkflow } from "./local-workflows";
-import { BOARD_ID, PROJECT_ID, normalizeDueDate, nowIso, trimText } from "./store-values";
+import { BOARD_ID, PROJECT_ID, LOCAL_OWNER_USER_ID, normalizeDueDate, nowIso, trimText } from "./store-values";
 import { selectCloudDetailData } from "./store-cloud-details";
 import { readDesktopKanbanRevision, writeDesktopKanbanSyncCursorInDb } from "./store-sync-cursor";
 import { buildLocalIssue, applyIssueUpdate } from "./store-local-issue-model";
@@ -53,7 +53,7 @@ export function createLocalDesktopKanbanIssue(
     if (input.dueDate !== undefined && normalizeDueDate(input.dueDate) === undefined) {
       return { ok: false, message: t("kanban.runtime.invalidDueDate"), issues: selectIssues(db, currentUser) };
     }
-    const issue = buildLocalIssue(db, input, currentUser);
+    const issue = buildLocalIssue(db, input);
     if (!issue) {
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
@@ -67,7 +67,7 @@ export function createLocalDesktopKanbanIssue(
       syncMode: "local",
       syncState: "local",
       origin: "desktop",
-      ownerUserId: currentUser.id
+      ownerUserId: LOCAL_OWNER_USER_ID
     });
     return {
       ok: true,

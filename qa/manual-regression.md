@@ -318,6 +318,8 @@
 - 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
 - 切换 Targets、Events、Topology、System，确认Primary/BTW/Selection Explain、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
 
+- macOS 与 Windows 分别在未登录和已登录状态创建本地看板任务；登录、退出、切换账号后都能查看、编辑、移动和删除同一份本地任务。退出后由原账号创建的本地待办仍可调度并接收运行结果，云端任务仅当前账号可见。
+
 ## 首装引导 Chat
 
 - 准备至少 16 条 Platform Chats，并让固定 seed Chat `00000000-0000-4000-8000-000000000001` 位于第 16 条；首次安装默认显示 8 条时，确认列表严格等于 Platform 前 8 条，不出现额外的“开始使用”行或聊天引导气泡。

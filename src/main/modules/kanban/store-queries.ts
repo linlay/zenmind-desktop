@@ -57,7 +57,7 @@ export function selectIssues(db: DatabaseSync, currentUser: KanbanCurrentUser): 
     FROM issue
     JOIN desktop_issue_sync sync ON sync.LOCAL_ISSUE_ID_ = issue.ID_
     WHERE issue.DELETED_AT_ IS NULL
-      AND (sync.OWNER_USER_ID_ = ? OR sync.SYNC_MODE_ = 'cloud')
+      AND (sync.SYNC_MODE_ = 'local' OR sync.OWNER_USER_ID_ = ?)
     ORDER BY
       CASE issue.STATUS_
         WHEN 'backlog' THEN 0

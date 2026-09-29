@@ -57,6 +57,33 @@ function cloudIssue(overrides = {}) {
   };
 }
 
+test("local tasks survive login, logout and account switches while cloud tasks remain account scoped", (t) => {
+  const app = createTempApp(t);
+  const guest = { id: "device:local", name: "Local", email: "", source: "device" };
+  const otherUser = { ...currentUser, id: "user-2" };
+  const offline = createLocalDesktopKanbanIssue(app, guest, { title: "Created offline" }).issue;
+  const online = createLocalDesktopKanbanIssue(app, currentUser, { title: "Created while signed in" }).issue;
+  assert.equal(offline.ownerUserId, "<local>");
+  assert.equal(online.ownerUserId, "<local>");
+  // Existing tasks may still carry the creating account; no data migration is required.
+  const db = new DatabaseSync(getDesktopKanbanDatabasePath(app));
+  db.prepare("UPDATE desktop_issue_sync SET OWNER_USER_ID_ = ? WHERE LOCAL_ISSUE_ID_ = ?").run(currentUser.id, online.id);
+  db.close();
+  applyDesktopKanbanCloudSnapshot(app, currentUser, {
+    scope: "project_set", complete: true, projectIds: ["cloud-project-1"],
+    lastSeq: 50, projects: [], issues: [cloudIssue()]
+  });
+  const matchingMarkerUser = { ...currentUser, id: "<local>" };
+  for (const user of [guest, currentUser, otherUser, matchingMarkerUser, guest]) {
+    const issues = listDesktopKanbanIssues(app, user).issues;
+    assert.deepEqual(issues.filter(issue => issue.syncMode === "local").map(issue => issue.id).sort(),
+      [offline.id, online.id].sort());
+    assert.equal(issues.filter(issue => issue.syncMode === "cloud").length, user.id === currentUser.id ? 1 : 0);
+    assert.equal(updateDesktopKanbanIssue(app, user, online.id, { title: "Editable in every session" }).ok, true);
+  }
+  assert.equal(deleteDesktopKanbanIssue(app, guest, online.id).ok, true);
+});
+
 test("local issue IDs use the short local-prefixed Server base36 format", (t) => {
   const app = createTempApp(t);
   const fixedNow = 1_786_588_420_234;
