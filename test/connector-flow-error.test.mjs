@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
+const flowModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/renderer/pages/functional-market/connectorFlow.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: flowModule, exports: flowModule.exports, Error });
 function setup(onChanged) {
   const slots = []; let cursor = 0; const calls = []; const timers = new Map(); let nextTimer = 0;
   const react = {
@@ -24,6 +26,78 @@ function setup(onChanged) {
 }
 const wecom = { id: 'wecom', connectorId: 'wecom-cli', name: '企业微信' };
 const jira = { id: 'jira', name: 'Jira' };
+
+test('card retry reads fresh state before retrying installation on the same page', async () => {
+  const s = setup(); const actions = []; let listFailed = false; let installCalls = 0;
+  const ready = { connectorId: 'wecom-cli', configured: true, readiness: 'ready', authentication: { status: 'delegated' }, capabilities: { hasCli: false, authMode: 'oauth' } };
+  s.api.market.getConnectorConnections = async () => {
+    actions.push('read');
+    if (listFailed) throw new Error('Connection status unavailable');
+    return installCalls > 1 ? [ready] : [];
+  };
+  s.api.market.install = async () => {
+    actions.push('install'); installCalls++;
+    if (installCalls === 1) { listFailed = true; return { ok: false, message: 'Download failed' }; }
+    return { ok: true, connectorId: 'wecom-cli' };
+  };
+  s.api.market.getConnectorConnection = async () => ready;
+  s.flow.runMarketConnectorFlow = intent => flowModule.exports.runMarketConnectorFlow(intent, s.api.market, async () => {});
+  await s.render().refresh();
+  await s.render().start(wecom, false);
+  await s.render().refresh();
+  const failed = s.render();
+  assert.equal(failed.busy, false);
+  assert.equal(failed.stateError, 'Connection status unavailable');
+  listFailed = false; actions.length = 0;
+  await failed.retry(wecom);
+  assert.equal(actions[0], 'read');
+  assert.equal(installCalls, 2);
+  assert.equal(s.render().stateError, '');
+  assert.equal(s.render().error, '');
+  assert.equal(s.render().busy, false);
+});
+
+test('card retry releases the button when state recovery still fails without installing', async () => {
+  const s = setup(); let stateReads = 0; let installCalls = 0;
+  s.api.market.getConnectorConnections = async () => { stateReads++; throw new Error('Connection status unavailable'); };
+  s.api.market.install = async () => { installCalls++; return { ok: false, message: 'Must not install without fresh state' }; };
+  s.flow.runMarketConnectorFlow = intent => flowModule.exports.runMarketConnectorFlow(intent, s.api.market, async () => {});
+  await s.render().refresh();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = stateReads;
+    await s.render().start(wecom, false);
+    assert.ok(stateReads > before);
+    assert.equal(installCalls, 0);
+    assert.equal(s.render().busy, false);
+    assert.equal(s.render().stateError, 'Connection status unavailable');
+  }
+});
+
+test('card retry uses the current installed alias and avoids installing an existing connector again', async () => {
+  const s = setup(); const item = { id: 'market-wecom', name: '企业微信' };
+  let installCalls = 0; let connectionFailed = true; let listFailed = false; const ids = [];
+  const ready = { connectorId: 'runtime-wecom', configured: true, readiness: 'ready', authentication: { status: 'delegated' }, capabilities: { hasCli: false, authMode: 'oauth' } };
+  s.api.market.getConnectorConnections = async () => {
+    if (listFailed) throw new Error('Connection status unavailable');
+    return installCalls ? [ready] : [];
+  };
+  s.api.market.install = async () => { installCalls++; listFailed = true; return { ok: true, connectorId: 'runtime-wecom' }; };
+  s.api.market.getConnectorConnection = async id => { ids.push(id); if (connectionFailed) throw new Error('Connection read failed'); return ready; };
+  s.flow.runMarketConnectorFlow = intent => flowModule.exports.runMarketConnectorFlow(intent, s.api.market, async () => {});
+  await s.render().refresh();
+  await s.render().start(item, false);
+  await s.render().refresh();
+  const failed = s.render();
+  assert.equal(installCalls, 1);
+  assert.equal(failed.stateError, 'Connection status unavailable');
+  connectionFailed = false; listFailed = false;
+  await failed.retry(item);
+  assert.equal(installCalls, 1);
+  assert.deepEqual(ids, ['runtime-wecom', 'runtime-wecom']);
+  assert.equal(s.render().busy, false);
+  assert.equal(s.render().error, '');
+});
+
 test('checking updates only the selected connector without refreshing the catalog or list', async () => {
   let catalogRefreshes = 0, listRefreshes = 0, finish;
   const s = setup(() => { catalogRefreshes++; });
