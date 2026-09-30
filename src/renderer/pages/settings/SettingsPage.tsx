@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
+import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
@@ -2509,6 +2510,8 @@ export function SettingsPage({
     schemaVersion: 1,
     runtimeExecutables: {}
   });
+  const [webappRuntimeSettingsTarget, setWebappRuntimeSettingsTarget] = useState<{ webappId?: string } | null>(null);
+  const webappRuntimeSettingsRevisionRef = useRef(0);
   const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
   const [webappDetailsOpen, setWebappDetailsOpen] = useState(false);
@@ -2703,6 +2706,7 @@ export function SettingsPage({
 
   useEffect(() => {
     if (activeSection !== "webapps") {
+      setWebappRuntimeSettingsTarget(null);
       return;
     }
     const requestedId = readSettingsWebappId(location.search);
@@ -2780,11 +2784,20 @@ export function SettingsPage({
     if (activeSection !== "webapps") {
       return;
     }
+    let cancelled = false;
+    const revision = ++webappRuntimeSettingsRevisionRef.current;
     void window.electronAPI.webs.webapps.getRuntimeSettings()
-      .then((result) => setWebappRuntimeSettings(result.settings))
+      .then((result) => {
+        if (cancelled || revision !== webappRuntimeSettingsRevisionRef.current) return;
+        if (!result.ok) throw new Error(result.message);
+        setWebappRuntimeSettings(result.settings);
+      })
       .catch((reason) => {
-        showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+        if (!cancelled && revision === webappRuntimeSettingsRevisionRef.current) {
+          showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+        }
       });
+    return () => { cancelled = true; };
   }, [activeSection]);
 
   function commitSavedMarketSettings(settings: MarketSettings) {
@@ -3752,13 +3765,6 @@ export function SettingsPage({
           showSectionResultNotice("webapps", configResult);
           return;
         }
-      }
-
-      if (selectedWebapp.backend?.command.type === "runtime") {
-        const runtimeSettingsResult = await window.electronAPI.webs.webapps.saveRuntimeSettings(
-          webappRuntimeSettings
-        );
-        setWebappRuntimeSettings(runtimeSettingsResult.settings);
       }
 
       await refreshWebItemsFromSettings();
@@ -5393,11 +5399,16 @@ export function SettingsPage({
                 <h1>{t("settings.webapps.label")}</h1>
                 <p>{t("settings.webapps.description")}</p>
               </div>
-              {renderWebMetrics(
-                webappItems.length,
-                runningWebappCount,
-                t("settings.webapps.metricsAria")
-              )}
+              <div className="webapp-page-header-actions">
+                <Button onClick={() => setWebappRuntimeSettingsTarget({})}>
+                  {t("settings.webapps.runtimeSettingsAction")}
+                </Button>
+                {renderWebMetrics(
+                  webappItems.length,
+                  runningWebappCount,
+                  t("settings.webapps.metricsAria")
+                )}
+              </div>
             </div>
 
             <div className="control-center-shell web-settings-shell">
@@ -5635,73 +5646,34 @@ export function SettingsPage({
                       ) : (
                         <div className="webapp-user-config-empty">{t("settings.webapps.userConfigEmpty")}</div>
                       )}
-                      {!runtimeExecutableBindingKey || selectedWebapp.removable === false ? (
-                        <div className="web-detail-actions">
-                          {!runtimeExecutableBindingKey ? (
-                            <Button
-                              type="primary"
-                              htmlType="submit"
-                              loading={webappPending || webappUserConfigPending}
-                              disabled={webappPending || webappUserConfigPending || webappUserConfigLoading}
-                            >
-                              {webappPending || webappUserConfigPending
-                                ? t("settings.websites.updating")
-                                : t("settings.websites.save")}
-                            </Button>
-                          ) : null}
-                          {selectedWebapp.removable === false ? (
-                            <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </form>
-
-                  {runtimeExecutableBindingKey ? (
-                    <div
-                      className="webapp-runtime-settings-card"
-                      key={`${selectedWebapp.id}:runtime-settings`}
-                    >
-                      <div className="settings-control-grid">
-                        <label className="settings-control-row">
-                          <span className="settings-control-row-copy">
-                            <span className="webapp-user-config-label-row">
-                              <strong>{t("settings.webapps.runtimeExecutable")}</strong>
-                              <Tooltip title={t("settings.webapps.runtimeExecutableHint", { runtime: runtimeExecutableName })}>
-                                <span
-                                  className="webapp-user-config-help"
-                                  tabIndex={0}
-                                  aria-label={`${t("settings.webapps.runtimeExecutable")}：${t("settings.webapps.runtimeExecutableHint", { runtime: runtimeExecutableName })}`}
-                                >
-                                  <QuestionCircleOutlined aria-hidden="true" />
-                                </span>
-                              </Tooltip>
-                            </span>
-                          </span>
-                          <Input
-                            value={webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey] ?? ""}
-                            placeholder={t("settings.webapps.runtimeExecutablePlaceholder")}
-                            onChange={(event) => setWebappRuntimeSettings((current) => ({
-                              ...current,
-                              runtimeExecutables: {
-                                ...current.runtimeExecutables,
-                                [runtimeExecutableBindingKey]: event.target.value
-                              }
-                            }))}
-                          />
-                        </label>
-                      </div>
                       <div className="web-detail-actions">
                         <Button
                           type="primary"
+                          htmlType="submit"
                           loading={webappPending || webappUserConfigPending}
                           disabled={webappPending || webappUserConfigPending || webappUserConfigLoading}
-                          onClick={() => void handleSaveWebappSettings()}
                         >
                           {webappPending || webappUserConfigPending
                             ? t("settings.websites.updating")
                             : t("settings.websites.save")}
                         </Button>
+                        {selectedWebapp.removable === false ? (
+                          <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
+                        ) : null}
                       </div>
+                    </form>
+
+                  {runtimeExecutableBindingKey ? (
+                    <div className="webapp-runtime-settings-entry">
+                      <div className="webapp-runtime-settings-entry-copy">
+                        <strong>{t("settings.webapps.runtimeLanguageTitle", { runtime: getWebappRuntimeLabel(runtimeExecutableName) })}</strong>
+                        <Tooltip title={webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey]}>
+                          <span>{webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey] || t("settings.webapps.runtimeAutomatic")}</span>
+                        </Tooltip>
+                      </div>
+                      <Button onClick={() => setWebappRuntimeSettingsTarget({ webappId: selectedWebapp.id })}>
+                        {t("settings.webapps.runtimeSettingsConfigure")}
+                      </Button>
                     </div>
                   ) : null}
                     </div>
@@ -5943,6 +5915,21 @@ export function SettingsPage({
                 </article>
               )}
             </div>
+            {webappRuntimeSettingsTarget ? (
+              <WebappRuntimeSettingsDialog
+                items={webappItems}
+                initialWebappId={webappRuntimeSettingsTarget.webappId}
+                isWindows={isWindows}
+                isMac={isMac}
+                onClose={() => setWebappRuntimeSettingsTarget(null)}
+                onSaved={(settings, webappId) => {
+                  webappRuntimeSettingsRevisionRef.current += 1;
+                  setWebappRuntimeSettings(settings);
+                  showSectionNotice("webapps", t("settings.webapps.runtimeSettingsSaved"), "success");
+                  void refreshSelectedWebappRuntimeCheck(webappId);
+                }}
+              />
+            ) : null}
           </WebappImportDropTarget>
         );
       }
