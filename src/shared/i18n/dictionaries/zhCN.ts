@@ -115,7 +115,7 @@ export const zhCNMessages = {
   "market.connector.flow.state.disabled": "已连接 · 未启用",
   "market.connector.flow.state.preparing": "准备中",
   "market.connector.flow.state.authorization_required": "需要重新授权",
-  "market.connector.flow.state.ready": "可用",
+  "market.connector.flow.state.ready": "已连接",
   "market.connector.flow.state.unavailable": "暂不可用",
   "market.connector.flow.phase.installing": "正在安装…",
   "market.connector.flow.phase.preparing": "正在准备工具…",
