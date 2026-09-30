@@ -157,6 +157,7 @@ import {
   createAgentWebclientRoute,
   findAgentWebclientRouteDefinition,
   isEmbeddedAgentWebclientRoute,
+  resolveAgentWebclientConnectorManagementRoute,
   type AgentWebclientResolvedRoute
 } from "../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../shared/route-path";
@@ -5376,6 +5377,11 @@ function resolveAgentWebclientRoute(
   const staticRoute = findAgentWebclientRouteDefinition(pathname);
   if (staticRoute) {
     return staticRoute;
+  }
+
+  const connectorManagementRoute = resolveAgentWebclientConnectorManagementRoute(pathname, search);
+  if (connectorManagementRoute) {
+    return connectorManagementRoute;
   }
 
   const skillManagementRoute = resolveSkillManagementWebclientRoute(pathname, search);

@@ -31,6 +31,23 @@ test("Main Chat connector configuration navigation uses the installed package id
   assert.equal(routes.createAgentWebclientConnectorManagementPath("wecom-cli-connector"), "/connectors/wecom-cli-connector");
 });
 
+test("Desktop connector detail routes resolve to an actual management embed", () => {
+  assert.equal(routes.AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.includes("/connectors/:connectorId"), true);
+  for (const id of ["wecom-cli-connector", "docx-uat", "builtin.desktop"]) {
+    const pathname = routes.createAgentWebclientConnectorManagementPath(id);
+    assert.deepEqual(routes.resolveAgentWebclientConnectorManagementRoute(pathname, "?section=auth"), {
+      key: "mcp-servers", routePath: `${pathname}?section=auth`, embedPath: `${pathname}?section=auth`,
+      labelKey: "nav.mcpConnectors", kind: "management", mode: "embedded"
+    });
+  }
+  for (const pathname of ["/connectors", "/connectors/../private", "/connectors/wecom/child", "/connectors/%2Fprivate",
+    "/connectors/%252e%252e", "/connectors/%", "/agents/wecom-cli-connector"]) {
+    assert.equal(routes.resolveAgentWebclientConnectorManagementRoute(pathname), null);
+  }
+  const shell = readFileSync(new URL("../src/renderer/app-shell/AppShell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /const connectorManagementRoute = resolveAgentWebclientConnectorManagementRoute\(pathname, search\);\s*if \(connectorManagementRoute\) \{\s*return connectorManagementRoute;/);
+});
+
 test("inactive, non-Main, unavailable and arbitrary destinations do not navigate", () => {
   for (const [context, payload] of [
     [{ serviceId: "other" }, {}], [{ canOpenConnectorConfiguration: false }, {}],

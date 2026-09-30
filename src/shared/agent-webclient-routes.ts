@@ -110,6 +110,7 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
 export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agents/:agentKey",
   "/agent/:agentKey",
+  "/connectors/:connectorId",
   "/skills/:skillKey"
 ] as const;
 
@@ -202,6 +203,25 @@ export function createAgentWebclientManagementPath(
 export function createAgentWebclientConnectorManagementPath(connectorId: string) {
   if (!/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(connectorId) || connectorId.includes("..")) return "";
   return `/connectors/${encodeURIComponent(connectorId)}`;
+}
+
+export function resolveAgentWebclientConnectorManagementRoute(
+  pathname: string,
+  search = ""
+): AgentWebclientResolvedRoute | null {
+  const match = pathname.match(/^\/connectors\/([^/]+)\/?$/u);
+  const connectorId = decodeRoutePathSegment(match?.[1] ?? "") ?? "";
+  const embedPath = createAgentWebclientConnectorManagementPath(connectorId);
+  if (!embedPath) return null;
+  const query = normalizeRouteSearch(search);
+  return {
+    key: "mcp-servers",
+    routePath: `${pathname}${query}`,
+    embedPath: `${embedPath}${query}`,
+    labelKey: "nav.mcpConnectors",
+    kind: "management",
+    mode: "embedded"
+  };
 }
 
 export function createAgentWebclientCopilotPath(
