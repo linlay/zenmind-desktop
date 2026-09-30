@@ -1,3 +1,4 @@
+import { normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -21,6 +22,7 @@ export type DesktopGeneralSettings = {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
+  desktopActionConfirmationTimeoutSeconds: number;
 };
 
 export type DesktopProfile = {
@@ -123,6 +125,7 @@ function normalizeDesktopProfile(
       desktopWsServerEnabled: typeof general.desktopWsServerEnabled === "boolean"
         ? general.desktopWsServerEnabled
         : false,
+      desktopActionConfirmationTimeoutSeconds: normalizeConfirmationTimeoutSeconds(general.desktopActionConfirmationTimeoutSeconds),
       desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
         ? general.desktopActionConfirmationEnabled
         : true

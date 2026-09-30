@@ -14,7 +14,7 @@ export type AppearanceEnvironment = {
   cacheSkin: (id: DesktopSkinId) => void;
   getDesktopSkin: () => Promise<DesktopSkinResult>;
   setDesktopSkin: (id: DesktopSkinId, options?: DesktopSkinSelectionOptions) => Promise<DesktopSkinResult>;
-  importDesktopSkinPackage: () => Promise<DesktopSkinResult>;
+  importDesktopSkinPackage: (file?: File) => Promise<DesktopSkinResult>;
   removeDesktopSkinPackage: (id: DesktopSkinId) => Promise<DesktopSkinResult>;
   importDesktopBackground: () => Promise<DesktopSkinResult>;
   resetDesktopBackground: () => Promise<DesktopSkinResult>;
@@ -197,10 +197,10 @@ export function createAppearanceController(environment: AppearanceEnvironment) {
     return saveSkin(() => environment.setDesktopSkin(id, options), findDesktopSkin(id) ? id : undefined);
   }
 
-  async function importSkinPackage() {
+  async function importSkinPackage(file?: File) {
     let importedSkinId: InstalledDesktopSkinId | undefined;
     await saveSkin(async () => {
-      const result = await environment.importDesktopSkinPackage();
+      const result = await environment.importDesktopSkinPackage(file);
       if (result.ok) importedSkinId = result.importedSkinId;
       return result;
     });

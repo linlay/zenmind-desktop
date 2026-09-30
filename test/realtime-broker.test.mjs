@@ -409,49 +409,112 @@ test("identity fingerprint ignores token rotation claims and normalizes endpoint
   assert.equal(normalizeAgentPlatformRealtimeEndpoint("HTTP://127.0.0.1:11789///?token=hidden"), "http://127.0.0.1:11789");
 });
 
-test("Primary and BTW lanes stay at exactly two physical sockets and multiplex Runs", async (t) => {
-  const { broker, sockets, socket, token } = createHarness(t);
-  const observer = rootObserver();
-  broker.activateRootObserver(observer);
-  const received = [];
-  const queries = [
-    ["primary", "/api/query", "run-main-1"],
-    ["primary", "/api/query", "run-main-2"],
-    ["btw", "/api/query", "run-btw-1"],
-    ["btw", "/api/query", "run-btw-2"],
-  ].map(([lane, requestType, runId]) => broker.query({
-    baseUrl: "http://127.0.0.1:8080",
-    token,
-    id: `op-${runId}`,
-    lane,
-    requestType,
-    runId,
-    chatId: "chat-1",
-    owner: { kind: "agent", agentKey: "agent-1" },
-    observerToken: observer.token,
-    consumerId: `surface:${runId}`,
-    payload: { runId, chatId: "chat-1", agentKey: "agent-1", message: runId },
-    onEvent: (event) => received.push([runId, event.type]),
-  }));
-
-  await waitUntil(() => sockets.length === 2 && requestOfType(socket("primary"), "/api/query").length === 2 && requestOfType(socket("btw"), "/api/query").length === 2);
-  assert.deepEqual(sockets.map((item) => item.source).sort(), ["desktop-btw", "desktop-main"]);
-
-  for (const [lane, , runId] of [
-    ["primary", "/api/query", "run-main-1"],
-    ["primary", "/api/query", "run-main-2"],
-    ["btw", "/api/query", "run-btw-1"],
-    ["btw", "/api/query", "run-btw-2"],
-  ]) {
-    const request = socket(lane).sent.find((frame) => frame.payload?.runId === runId);
-    socket(lane).emit({ frame: "stream", id: request.id, event: runEvent("run.start", runId, "chat-1", 1) });
+test("each lane reserves only one stream before Run acceptance while different lanes run in parallel", async (t) => {
+  const h = createHarness(t);
+  const options = { baseUrl: "http://127.0.0.1:8080", token: h.token, payload: { message: "private body" }, onEvent() {} };
+  const queries = ["primary", "btw", "selection-explain"].map((lane) => h.broker.query({ ...options, lane, id: `first-${lane}`, consumerId: `internal:${lane}` }));
+  await waitUntil(() => h.sockets.length === 3 && h.sockets.every((socket) => requestOfType(socket, "/api/query").length === 1));
+  for (const lane of ["primary", "btw", "selection-explain"]) {
+    const second = h.broker.query({ ...options, lane, id: `second-${lane}` });
+    const validate = (error) => {
+      const frame = error.platformErrorFrame;
+      assert.equal(frame.code, 409);
+      const info = frame.data.error.diagnostics;
+      assert.equal(info.lane, lane);
+      assert.equal(info.activeStream.requestId, requestOfType(h.socket(lane), "/api/query")[0].id);
+      assert.equal(info.activeStream.consumerId, `internal:${lane}`);
+      assert.equal(info.activeStream.state, "reserving");
+      assert.equal(JSON.stringify(info).includes("private body"), false);
+      return true;
+    };
+    await Promise.all([assert.rejects(second.accepted, validate), assert.rejects(second.completed, /active_stream_exists/)]);
+    assert.equal(requestOfType(h.socket(lane), "/api/query").length, 1);
   }
-  await Promise.all(queries.map((query) => query.accepted));
+  for (const [index, lane] of ["primary", "btw", "selection-explain"].entries()) {
+    const socket = h.socket(lane), id = requestOfType(socket, "/api/query")[0].id;
+    socket.emit({ frame: "stream", id, event: runEvent("run.start", `run-${lane}`, "chat-1", 1) });
+    await queries[index].accepted;
+    socket.emit({ frame: "stream", id, reason: "done", lastSeq: 1 });
+    await queries[index].completed;
+  }
+  assert.equal(h.broker.getDiagnostics().activeStreamCount, 0);
+});
+
+for (const completion of ["push", "event"]) {
+test(`Run completion ${completion} waits for its terminal stream frame before sending again`, async (t) => {
+  const h = createHarness(t);
+  const old = await acceptedRun(h, { lane: "primary", runId: "run-old" });
+  if (completion === "push") {
+    old.socket.emit({ frame: "push", type: "run.finished", data: { runId: "run-old", chatId: "chat-1", finishedAt: EPOCH_MS, status: "done" } });
+    await old.query.completed;
+  } else {
+    old.socket.emit({ frame: "stream", id: old.request.id, event: runEvent("run.complete", "run-old", "chat-1", 2) });
+  }
+  const options = { baseUrl: "http://127.0.0.1:8080", token: h.token, payload: {}, onEvent() {} };
+  const next = h.broker.query({ ...options, id: "next" });
   await nextTurn();
-  assert.equal(sockets.length, 2);
-  assert.equal(broker.getDiagnostics().replay.filter((run) => run.lane === "primary").length, 2);
-  assert.equal(broker.getDiagnostics().replay.filter((run) => run.lane === "btw").length, 2);
-  assert.equal(received.filter(([, type]) => type === "run.start").length, 4);
+  assert.equal(requestOfType(old.socket, "/api/query").length, 1, "new query must wait for transport release");
+  assert.equal(h.broker.getDiagnostics().activeStreamCount, 1);
+  old.socket.emit({ frame: "stream", id: old.request.id, reason: "done", lastSeq: 2 });
+  await waitUntil(() => requestOfType(old.socket, "/api/query").length === 2);
+  const request = requestOfType(old.socket, "/api/query")[1];
+  old.socket.emit({ frame: "stream", id: request.id, event: runEvent("run.start", "run-next", "chat-1", 1) });
+  await next.accepted;
+  old.socket.emit({ frame: "stream", id: old.request.id, reason: "done" });
+  assert.equal(h.broker.getDiagnostics().laneStreams[0].requestId, request.id, "late old frame cannot free new slot");
+  old.socket.emit({ frame: "stream", id: request.id, reason: "done" });
+  await next.completed;
+});
+
+}
+
+for (const failure of ["rejected", "timeout", "malformed"]) {
+  test(`detach ${failure} keeps the occupying stream and reports its origin`, async (t) => {
+    const h = createHarness(t);
+    h.broker.activateRootObserver(rootObserver());
+    const old = await acceptedRun(h, { lane: "primary", runId: "run-old", observerToken: rootObserver().token });
+    const nextRoot = rootObserver({ token: "new-root", contextId: "chat-2" });
+    h.broker.activateRootObserver(nextRoot);
+    await waitUntil(() => requestOfType(old.socket, "/api/detach").length === 1);
+    const detach = requestOfType(old.socket, "/api/detach")[0];
+    const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: "new-query", chatId: "chat-2", observerToken: nextRoot.token,
+      payload: { chatId: "chat-2" }, onEvent() {} });
+    const rejected = Promise.all([assert.rejects(query.accepted, (error) => {
+      const occupant = error.platformErrorFrame.data.error.diagnostics.activeStream;
+      assert.equal(occupant.runId, "run-old");
+      assert.equal(occupant.consumerId, "source:run-old");
+      assert.equal(occupant.surfaceId, "main-chat");
+      assert.equal(occupant.state, "release_unconfirmed");
+      assert.ok(occupant.lastDetachError);
+      return true;
+    }), assert.rejects(query.completed, /active_stream_exists/)]);
+    if (failure === "timeout") {
+      // Exercise the actual pending-request timeout without a 30s wall-clock delay.
+      const pending = h.broker.pendingRequests.get(detach.id);
+      pending.timer._onTimeout();
+    } else if (failure === "rejected") {
+      old.socket.emit({ frame: "error", id: detach.id, type: "detach_denied", code: 403, msg: "detach denied" });
+    } else {
+      old.socket.emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: "wrong-request" } });
+    }
+    await rejected;
+    assert.equal(requestOfType(old.socket, "/api/query").length, 1);
+    assert.ok(h.diagnostics.some((entry) => entry.startsWith("run_stream_detach_failed:")));
+  });
+}
+
+test("local acceptance timeout keeps its request reservation until the upstream releases it", async (t) => {
+  const h = createHarness(t);
+  const options = { baseUrl: "http://127.0.0.1:8080", token: h.token, payload: {}, onEvent() {} };
+  const first = h.broker.query({ ...options, id: "slow" });
+  await waitUntil(() => h.socket("primary")?.sent.some((frame) => frame.type === "/api/query"));
+  const rejected = Promise.all([assert.rejects(first.accepted, /acceptance timed out/), assert.rejects(first.completed, /acceptance timed out/)]);
+  const transaction = [...h.broker.queriesByRequestId.values()][0];
+  transaction.acceptanceTimer._onTimeout();
+  await rejected;
+  const second = h.broker.query({ ...options, id: "second" });
+  await Promise.all([assert.rejects(second.accepted, /active_stream_exists/), assert.rejects(second.completed, /active_stream_exists/)]);
+  assert.equal(requestOfType(h.socket("primary"), "/api/query").length, 1);
 });
 
 test("push-only consumers never race Query RunChannel registration", async (t) => {
@@ -1812,3 +1875,28 @@ for (const platform of ['darwin', 'win32']) {
     assert.equal(h.broker.getDiagnostics().laneRotationCount, 0);
   });
 }
+
+test("ordinary Desktop Action receives trusted tool deadline and upstream cancellation", async t => {
+  const { broker, socket, token } = createHarness(t);
+  let invocationSignal;
+  let receivedDeadline;
+  broker.setDesktopBridgeProvider({
+    action: async (_request, _scope, signal, deadlineAt) => {
+      invocationSignal = signal;
+      receivedDeadline = deadlineAt;
+      await new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+      return { ok: false, error: { code: "request_aborted", message: "cancelled" } };
+    },
+    cdp: async () => ({ ok: true }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  const deadlineAt = Date.now() + 60_000;
+  socket("primary").emit({ frame: "request", id: "action-cancel", type: "desktop.theme.set", deadlineAt,
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" }, payload: { themeMode: "dark" } });
+  await waitUntil(() => invocationSignal);
+  assert.equal(receivedDeadline, deadlineAt);
+  socket("primary").emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "action-cancel" } });
+  await waitUntil(() => invocationSignal.aborted);
+  await nextTurn();
+  assert.equal(socket("primary").sent.some(frame => frame.id === "action-cancel"), false);
+});

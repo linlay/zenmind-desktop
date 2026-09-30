@@ -80,7 +80,9 @@ export type DesktopActionBridgeOptions = {
     workspaceRelativePath: string;
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
-  confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
+  actionSignal?: AbortSignal;
+  actionDeadlineAt?: number;
+  confirmRendererAction?: (request: DesktopActionConfirmationRequest, context?: { signal?: AbortSignal; timeoutMs?: number; deadlineAt?: number }) => Promise<DesktopActionConfirmationResponse>;
   resolveWebSurface?: (request: EmbeddedCdpCommandRequest) => Promise<{
     surfaceId: string; containerId: string; surfaceKind: string; contents: WebContents; validate(): Promise<void>;
   }>;

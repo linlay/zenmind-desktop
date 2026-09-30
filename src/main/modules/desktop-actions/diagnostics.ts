@@ -6,6 +6,7 @@ const categories: Record<string, DesktopActionErrorCategory> = {
   forbidden: "authorization", permission_denied: "authorization", confirmation_required: "authorization", user_cancelled: "authorization",
   unknown_action: "not_found", not_found: "not_found", file_unavailable: "not_found", project_missing: "not_found",
   workspace_unavailable: "unavailable", renderer_unavailable: "unavailable",
+  confirmation_timeout: "timeout", confirmation_unavailable: "unavailable", request_aborted: "conflict", request_timeout: "timeout",
   renderer_timeout: "timeout", tooling_timeout: "timeout", tooling_busy: "conflict", output_exists: "conflict",
 };
 

@@ -1578,3 +1578,25 @@ for (const boundary of ["retirement", "service-state", "access-token"]) {
     assert.ok(sender.messages.some(({ message }) => message.type === "close" && message.event.reason === "surface_inactive"));
   });
 }
+
+test("Frame Port preserves stream occupant diagnostics and changes only the guest request ID", async () => {
+  const { frameError } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.shared.js");
+  const diagnostics = { lane: "primary", activeStream: { runId: "old-run", requestId: "old-request", consumerId: "internal:kanban", state: "release_unconfirmed", lastDetachError: "detach timed out" } };
+  const platformFrame = { frame: "error", id: "upstream-new", type: "active_stream_exists", code: 409,
+    msg: "detach the current run stream before starting or attaching another",
+    data: { error: { code: "active_stream_exists", status: 409, retryable: false, diagnostics } } };
+  const runtime = createRuntime(new Map([[101, mainTarget()]]), { realtimeBroker: {
+    query: () => {
+      const error = frameError(platformFrame);
+      const accepted = Promise.reject(error), completed = Promise.reject(error);
+      void completed.catch(() => undefined);
+      return { accepted, completed };
+    },
+  } });
+  const sender = createSender(101, mainTarget().currentUrl);
+  await openSession(runtime, sender, "main");
+  send(runtime, sender, "main", { frame: "request", id: "guest-new", type: "/api/query",
+    payload: { chatId: "chat-1", agentKey: "agent-1", message: "next" } });
+  await flush();
+  assert.deepEqual(sentFrames(sender).at(-1), { ...platformFrame, id: "guest-new" });
+});

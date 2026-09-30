@@ -133,7 +133,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getMainWindow: options.getMainWindow,
       pendingRequests: desktopActionRendererRequests
     }),
-    confirmRendererAction: (request: any) => integration.callDesktopActionConfirmation(request, {
+    confirmRendererAction: (request: any, context: any) => integration.callDesktopActionConfirmation(request, {
+      ...context,
       getMainWindow: options.getMainWindow,
       pendingRequests: desktopActionConfirmationRequests
     }),
@@ -144,8 +145,10 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
   });
   options.realtimeBroker.setDesktopBridgeProvider({
     acquireWorkPanelAwcpScope: (surfaceId, chatId) => acquireWorkPanelAwcpScope(options.browserSurfaces, surfaceId, chatId),
-    action: (request, scope) => integration.handleAgentPlatformDesktopActionRequest({
+    action: (request, scope, signal, deadlineAt) => integration.handleAgentPlatformDesktopActionRequest({
       ...desktopActionOptions,
+      actionSignal: signal,
+      actionDeadlineAt: deadlineAt,
       resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request, scope),
       executeCdpCommand: (command: any) => options.cdpIntegration.start().executeCommand(command, scope),
     }, request as any),

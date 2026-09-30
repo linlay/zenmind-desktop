@@ -1,3 +1,4 @@
+import { isAgentPlatformEpochMilliseconds } from "../../../../shared/time-contract";
 import { randomUUID } from "node:crypto";
 import { type AgentWebclientRunOwner } from "../../../../shared/contracts";
 import { desktopActionErrorStatus } from "../../../../shared/desktop-action-diagnostics";
@@ -191,6 +192,10 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
           throw brokerError("protocol_error", "AWCP manual payload accepts section and revision together, plus an optional surfaceId");
         }
       }
+      const deadlineAt = frame.deadlineAt;
+      if (deadlineAt !== undefined && (!isAgentPlatformEpochMilliseconds(deadlineAt))) {
+        throw brokerError("protocol_error", "Invalid Desktop request deadlineAt");
+      }
       let actionRequest: Record<string, unknown> | null = null;
       let actionSource: Record<string, unknown> = {};
       if (!isCdp) {
@@ -240,7 +245,7 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
           : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);
       }
       else if (isDesktopAction) {
-        result = await provider.action(actionRequest as Record<string, unknown>, type.startsWith("desktop.web.") ? deps.siteControlGrants.resolve(actionSource) : undefined);
+        result = await provider.action(actionRequest as Record<string, unknown>, type.startsWith("desktop.web.") ? deps.siteControlGrants.resolve(actionSource) : undefined, controller.signal, deadlineAt);
       }
       else {
         const scope = deps.siteControlGrants.resolve(cdpSource);

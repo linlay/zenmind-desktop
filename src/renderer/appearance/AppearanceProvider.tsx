@@ -42,7 +42,7 @@ export function useAppearance() {
     setThemeMode: controller.setThemeMode,
     setSkinId: controller.setSkinId,
     skinPackagesAvailable: snapshot.skinSettings.packageApiVersion === 1 && skinPackageApiAvailable() && typeof controller.importSkinPackage === "function",
-    importSkinPackage: () => typeof controller.importSkinPackage === "function" ? controller.importSkinPackage() : Promise.reject(new Error("runtimeOutdated")),
+    importSkinPackage: (file?: File) => typeof controller.importSkinPackage === "function" ? controller.importSkinPackage(file) : Promise.reject(new Error("runtimeOutdated")),
     removeSkinPackage: (id: Parameters<typeof controller.removeSkinPackage>[0]) => typeof controller.removeSkinPackage === "function" ? controller.removeSkinPackage(id) : Promise.reject(new Error("runtimeOutdated")),
     importBackground: controller.importBackground,
     resetBackground: controller.resetBackground,

@@ -687,85 +687,38 @@ test("agent platform assistant bridge reuses an existing chat with a new run id"
   }
 });
 
-test("agent platform assistant bridge shares one wake lock across concurrent runs", async () => {
+test("assistant rejects a concurrent lane query without releasing the active Run wake lock", async () => {
   const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { throw new Error(`unexpected request ${url}`); };
   const wakeLock = makeWakeLockRecorder();
   const streams = [];
-  const ws = createWsHarness({
-    autoOpen: false,
-    onQuery: ({ socket, frame, payload }) => {
-      streams.push({ socket, frame, body: payload });
-      acceptQuery(socket, frame);
-    },
-  });
-  const { bridge, events } = makeBridge({
-    wakeLock: wakeLock.wakeLock,
-    createWebSocket: ws.createWebSocket,
-  });
-  globalThis.fetch = async (url) => {
-    throw new Error(`unexpected request ${url}`);
-  };
-
+  const ws = createWsHarness({ autoOpen: false, onQuery: ({ socket, frame, payload }) => {
+    streams.push({ socket, frame, body: payload }); acceptQuery(socket, frame);
+  } });
+  const { bridge } = makeBridge({ wakeLock: wakeLock.wakeLock, createWebSocket: ws.createWebSocket });
   try {
     const firstPromise = bridge.startRun({ message: "first" });
     const secondPromise = bridge.startRun({ message: "second" });
     await waitFor(() => ws.sockets.length === 1, "shared WebSocket was not created");
     ws.sockets[0].open();
-    const [first, second] = await Promise.all([firstPromise, secondPromise]);
-
-    assert.equal(first.ok, true);
-    assert.equal(second.ok, true);
+    const results = await Promise.all([firstPromise, secondPromise]);
+    const first = results.find((result) => result.ok);
+    const rejected = results.find((result) => !result.ok);
+    assert.ok(first, JSON.stringify(results));
+    assert.ok(rejected, JSON.stringify(results));
+    assert.match(rejected.message, /active_stream_exists/);
     assert.deepEqual(wakeLock.calls, ["acquire"]);
-    await waitFor(() => streams.length === 2, "expected both query streams to start");
-
-    const firstStream = streams.find((stream) => stream.body.runId === first.runId);
-    const secondStream = streams.find((stream) => stream.body.runId === second.runId);
-    assert.ok(firstStream);
-    assert.ok(secondStream);
-    sendStreamEvent(firstStream.socket, firstStream.frame, {
-      seq: 2,
-      type: "content.delta",
-      runId: firstStream.body.runId,
-      chatId: firstStream.body.chatId,
-      delta: "first",
-      timestamp: EPOCH_MS
-    });
-    sendStreamEvent(firstStream.socket, firstStream.frame, {
-      seq: 3,
-      type: "run.complete",
-      runId: firstStream.body.runId,
-      chatId: firstStream.body.chatId,
-      timestamp: EPOCH_MS + 1
-    });
-    endStream(firstStream.socket, firstStream.frame, "done", 3);
-    await waitFor(
-      () => events.some((event) => event.runId === first.runId && event.type === "run.complete"),
-      "first run did not complete"
-    );
-    assert.deepEqual(wakeLock.calls, ["acquire"]);
-
-    sendStreamEvent(secondStream.socket, secondStream.frame, {
-      seq: 2,
-      type: "content.delta",
-      runId: secondStream.body.runId,
-      chatId: secondStream.body.chatId,
-      delta: "second",
-      timestamp: EPOCH_MS + 2
-    });
-    sendStreamEvent(secondStream.socket, secondStream.frame, {
-      seq: 3,
-      type: "run.complete",
-      runId: secondStream.body.runId,
-      chatId: secondStream.body.chatId,
-      timestamp: EPOCH_MS + 3
-    });
-    endStream(secondStream.socket, secondStream.frame, "done", 3);
-    await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after both runs completed");
+    assert.equal(streams.length, 1);
+    const stream = streams[0];
+    sendStreamEvent(stream.socket, stream.frame, { seq: 2, type: "content.delta", delta: "done", runId: first.runId, chatId: first.chatId, timestamp: EPOCH_MS });
+    sendStreamEvent(stream.socket, stream.frame, { seq: 3, type: "run.complete", runId: first.runId, chatId: first.chatId, timestamp: EPOCH_MS + 1 });
+    endStream(stream.socket, stream.frame, "done", 3);
+    await waitFor(() => wakeLock.calls.includes("release"), "accepted Run did not release wake lock");
     assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
-  } finally {
-    bridge.dispose();
-    globalThis.fetch = originalFetch;
-  }
+    const next = await bridge.startRun({ message: "next after release" });
+    assert.equal(next.ok, true);
+    assert.equal(streams.length, 2);
+  } finally { bridge.dispose(); globalThis.fetch = originalFetch; }
 });
 
 test("agent platform assistant bridge releases wake lock when stopRun interrupt fails", async () => {

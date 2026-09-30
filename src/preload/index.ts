@@ -233,7 +233,8 @@ const api: DesktopApi = {
     capture: () => ipcRenderer.invoke("desktopScreenshot.capture")
   },
   clipboard: {
-    writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
+    writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text),
+    writePng: (dataBase64: string) => ipcRenderer.invoke("clipboard.writePng", dataBase64)
   },
   kanban: {
     markResultRead: (input) => ipcRenderer.invoke("kanban.markResultRead", input),
@@ -631,6 +632,7 @@ const api: DesktopApi = {
     getDesktopSkin: () => ipcRenderer.invoke("settings.getDesktopSkin"),
     setDesktopSkin: (skinId, options) => ipcRenderer.invoke("settings.setDesktopSkin", options === undefined ? skinId : { id: skinId, options }),
     importDesktopSkinPackage: () => ipcRenderer.invoke("settings.importDesktopSkinPackage"),
+    importDroppedDesktopSkinPackage: (file: File) => ipcRenderer.invoke("settings.importDroppedDesktopSkinPackage", webUtils.getPathForFile(file)),
     removeDesktopSkinPackage: (skinId) => ipcRenderer.invoke("settings.removeDesktopSkinPackage", skinId),
     importDesktopBackground: () => ipcRenderer.invoke("settings.importDesktopBackground"),
     resetDesktopBackground: () => ipcRenderer.invoke("settings.resetDesktopBackground"),
@@ -688,6 +690,11 @@ const api: DesktopApi = {
       return () => {
         ipcRenderer.off("desktopActions.call", handleDesktopActionCall);
       };
+    },
+    onConfirmationClosed: (listener: (requestId: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, requestId: string) => listener(requestId);
+      ipcRenderer.on("desktopActions.confirmationClosed", handler);
+      return () => ipcRenderer.off("desktopActions.confirmationClosed", handler);
     },
     onConfirm: (listener: DesktopActionConfirmationListener) => {
       const handleDesktopActionConfirmation = (

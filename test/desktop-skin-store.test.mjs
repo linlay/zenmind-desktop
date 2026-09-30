@@ -150,6 +150,24 @@ test("appearance IPC restricts sender/frame, handles cancellation and uses expli
   }
   const invoke = (name, ...args) => handlers.get(`settings.${name}`)(event, ...args);
   assert.equal((await invoke("getDesktopSkin")).settings.skinId, "default");
+  const zipPath = path.join(h.root, "皮肤 测试.ZIP");
+  const zip = new (require("jszip"))();
+  zip.file("skin.json", JSON.stringify({ schemaVersion: "1.1", id: "drop.test", name: "Drop test", version: "1.0.0", variants: { light: { tokens: {} }, dark: { tokens: {} } } }));
+  fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));
+  const importedPackage = await invoke("importDroppedDesktopSkinPackage", zipPath);
+  assert.equal(importedPackage.ok, true);
+  assert.equal(importedPackage.settings.skinId, "default");
+  assert.equal(importedPackage.settings.installedSkins.length, 1);
+  assert.equal(selections, 0, "a dropped ZIP bypasses the picker");
+  assert.deepEqual(await invoke("importDroppedDesktopSkinPackage", zipPath), { ok: false, error: "packageExists" });
+  const directoryZip = path.join(h.root, "folder.zip"); fs.mkdirSync(directoryZip);
+  for (const invalid of [directoryZip, h.source, "relative.zip", null, undefined]) {
+    assert.deepEqual(await invoke("importDroppedDesktopSkinPackage", invalid), { ok: false, error: "invalidPackage" });
+  }
+  const brokenZip = path.join(h.root, "broken.zip"); fs.writeFileSync(brokenZip, "not a skin");
+  assert.deepEqual(await invoke("importDroppedDesktopSkinPackage", brokenZip), { ok: false, error: "invalidPackage" });
+  assert.equal((await invoke("importDesktopSkinPackage")).cancelled, true);
+  selections = 0;
   assert.equal((await invoke("importDesktopBackground")).cancelled, true);
   assert.equal(selections, 1);
   canceled = false;

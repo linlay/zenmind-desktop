@@ -42,7 +42,16 @@
 
 .desktop-skin-settings + .settings-appearance-row { border-top: 1px solid var(--line); }
 
-.desktop-skin-import { flex-shrink: 0; }
+.desktop-skin-import-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.desktop-skin-import { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--control-border); border-radius: var(--control-radius-lg); }
+.desktop-skin-import-hint { font-size: 12px; color: var(--ink-soft); }
+.desktop-skin-import.is-drag-active { border-color: var(--control-primary-bg); background: color-mix(in srgb, var(--control-primary-bg) 12%, transparent); }
+.desktop-skin-import[aria-disabled="true"] { opacity: var(--control-disabled-opacity); }
+@container (max-width: 440px) {
+  .desktop-skin-heading:has(.desktop-skin-import-actions) { flex-wrap: wrap; }
+  .desktop-skin-import-actions { flex: 1 1 100%; }
+  .desktop-skin-import { flex: 1; min-width: 0; }
+}
 .desktop-installed-skin { position: relative; min-width: 0; display: flex; }
 .desktop-installed-skin .desktop-skin-option { width: 100%; }
 .desktop-installed-skin .desktop-skin-remove { position: absolute; right: 8px; bottom: 8px; width: 24px; height: 24px; opacity: 0; pointer-events: none; }

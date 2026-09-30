@@ -250,6 +250,7 @@ export class AssistantRunController {
         baseUrl,
         token,
         id: requestId,
+        consumerId: `assistant:${request.source || "copilot"}:${requestId}`,
         runId: run.runId,
         chatId: run.chatId,
         ...(request.agentKey?.trim()

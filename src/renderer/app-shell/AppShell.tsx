@@ -60,7 +60,7 @@ import {
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
 import { dispatchDesktopCloseShortcut } from "../services/desktopCloseShortcutRegistry";
-import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationPresentation, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -778,7 +778,7 @@ export function AppShell() {
   const [pendingAgentChatFocusRequest, setPendingAgentChatFocusRequest] =
     useState<AgentChatFocusRequest | null>(null);
   const [desktopActionConfirmation, setDesktopActionConfirmation] =
-    useState<DesktopActionConfirmationRequest | null>(null);
+    useState<DesktopActionConfirmationPresentation | null>(null);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -838,7 +838,7 @@ export function AppShell() {
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
   const [envImportBusy, setEnvImportBusy] = useState(false);
   const [envImportError, setEnvImportError] = useState("");
-  const desktopActionConfirmationRef = useRef<DesktopActionConfirmationRequest | null>(null);
+  const desktopActionConfirmationRef = useRef<DesktopActionConfirmationPresentation | null>(null);
   const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search);
   const rawActiveAgentWebclientRouteLabelKey = rawActiveAgentWebclientRoute?.labelKey;
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
@@ -2358,15 +2358,14 @@ export function AppShell() {
   }, [desktopActionConfirmation]);
 
   useEffect(() => window.electronAPI.desktopActions.onConfirm((request) => {
-    const previousRequest = desktopActionConfirmationRef.current;
-    if (previousRequest && previousRequest.requestId !== request.requestId) {
-      void window.electronAPI.desktopActions.respondConfirmation({
-        requestId: previousRequest.requestId,
-        decision: previousRequest.cancelDecision
-      }).catch(() => undefined);
-    }
     desktopActionConfirmationRef.current = request;
     setDesktopActionConfirmation(request);
+  }), []);
+
+  useEffect(() => window.electronAPI.desktopActions.onConfirmationClosed((requestId) => {
+    if (desktopActionConfirmationRef.current?.requestId !== requestId) return;
+    desktopActionConfirmationRef.current = null;
+    setDesktopActionConfirmation(null);
   }), []);
 
   const handleDesktopActionConfirmationDecision = useCallback((decision: DesktopActionConfirmationDecision) => {
@@ -2374,8 +2373,6 @@ export function AppShell() {
     if (!request) {
       return;
     }
-    desktopActionConfirmationRef.current = null;
-    setDesktopActionConfirmation(null);
     void window.electronAPI.desktopActions.respondConfirmation({
       requestId: request.requestId,
       decision
@@ -4527,19 +4524,15 @@ export function AppShell() {
     );
   }, []);
 
-  const activeChatName = desiredChatRouteChatId
-    ? [
-        ...assistantPinnedChatItems,
-        ...assistantNavChatItems,
-        ...assistantNavAgents.flatMap((agent) => agent.recentChats),
-      ].find((chat) => chat.chatId === desiredChatRouteChatId)?.chatName ||
-      t("sidebar.chat.current")
-    : t("sidebar.chat.current");
   const shareDisabledReason = !desiredChatRouteChatId
     ? t("sidebar.chat.shareRequiresConversation")
     : "";
-  const openConversationShare = (chatId: string, chatName: string) => {
-    shellOverlay.openConversationShare(chatId, chatName);
+  const openConversationShare = (chatId: string, chatName?: string) => {
+    const resolvedChatName = chatName?.trim() ||
+      [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
+      workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
+      chatId;
+    shellOverlay.openConversationShare(chatId, resolvedChatName);
   };
   const openTunnelSettings = () => {
     requestSidebarNavigation(buildSettingsSectionPath("tunnelHub"));
@@ -4565,7 +4558,7 @@ export function AppShell() {
             disabled={Boolean(shareDisabledReason)}
             onClick={() => {
               if (desiredChatRouteChatId) {
-                openConversationShare(desiredChatRouteChatId, activeChatName);
+                openConversationShare(desiredChatRouteChatId);
               }
             }}
           >
@@ -5045,6 +5038,17 @@ export function AppShell() {
                 : <Navigate to="/control-center" replace />
             } />
           </Routes>
+          {conversationShareOverlay ? (
+            <ConversationShareDialog
+              key={conversationShareOverlay.sessionId}
+              chatId={conversationShareOverlay.chatId}
+              chatName={conversationShareOverlay.chatName}
+              tunnelHubEnabled={tunnelHubEnabled}
+              t={t}
+              onClose={() => shellOverlay.closeConversationShare(conversationShareOverlay)}
+              onOpenTunnelSettings={openTunnelSettingsFromShare}
+            />
+          ) : null}
         </main>
         {activeChatWorkPanelVisible ? (
           <div
@@ -5280,17 +5284,6 @@ export function AppShell() {
           onClose={() => setChatHistoryDialog(null)}
           onOpenChat={openChatFromHistoryDialog}
           onChatRemoved={handleHistoryChatRemoved}
-        />
-      ) : null}
-      {conversationShareOverlay ? (
-        <ConversationShareDialog
-          key={conversationShareOverlay.sessionId}
-          chatId={conversationShareOverlay.chatId}
-          chatName={conversationShareOverlay.chatName}
-          tunnelHubEnabled={tunnelHubEnabled}
-          t={t}
-          onClose={() => shellOverlay.closeConversationShare(conversationShareOverlay)}
-          onOpenTunnelSettings={openTunnelSettingsFromShare}
         />
       ) : null}
       <DesktopGlobalSearchOverlay

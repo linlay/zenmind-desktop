@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import { dialog, nativeImage, type App, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { getDesktopConfigRoot, getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
 import type { DesktopSkinResult, DesktopSkinView, DesktopSkinSelectionOptions, InstalledDesktopSkinId } from "../../../shared/desktop-appearance";
@@ -54,6 +55,14 @@ export function registerAppearanceIpcHandlers(ipcMain: IpcMain, options: {
     return { settings: store.setSkin(request.id, selection) };
   });
   register("settings.removeDesktopSkinPackage", (_event, id, store) => ({ settings: store.removePackage(id) }));
+  // A drop must never fall back to a picker, including missing/invalid payloads.
+  register("settings.importDroppedDesktopSkinPackage", async (event, input, store) => {
+    // Native paths use host platform semantics for Finder and Explorer.
+    if (typeof input !== "string" || !path.isAbsolute(input) || path.extname(input).toLowerCase() !== ".zip" ||
+        !(await fs.stat(input)).isFile()) throw new SkinPackageError("invalidPackage");
+    assertOwner(event);
+    return store.importPackage(input, () => { assertOwner(event); });
+  });
   register("settings.importDesktopSkinPackage", async (event, _input, store) => {
     const selected = await dialog.showOpenDialog(assertOwner(event), getBackgroundDialogOptions(platform, true));
     assertOwner(event);

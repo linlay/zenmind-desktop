@@ -1,3 +1,4 @@
+import type { LaneStreams } from "./lane-stream";
 import type { BrokerDiagnosticsCounters } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
 import { type AgentWebclientConnectionPhase } from "../../../../shared/contracts";
@@ -24,11 +25,13 @@ import {
   brokerError,
   frameError,
   readText,
+  isRecord,
   unrefTimer,
 } from "./realtime-broker.shared";
 
 /** Dependencies limited to connection; state remains owned by the Broker. */
 export interface ConnectionPort {
+  laneStreams: LaneStreams;
   connectionStates: Record<RealtimeLane, AgentPlatformRealtimeConnectionState>;
   clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
   disposed: boolean;
@@ -62,6 +65,12 @@ export interface ConnectionPort {
 }
 
 export function createConnection(deps: ConnectionPort) {
+  const restoreTargets = new Map<RealtimeLane, string>();
+  function sendRunRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame, consumerId = "") {
+    deps.laneStreams.reserve(lane, frame, deps.clients[lane].getState().generation, consumerId);
+    try { deps.clients[lane].send(frame); }
+    catch (error) { deps.laneStreams.release(lane, readText(frame.id)); throw error; }
+  }
   function getConnectionPhase(): AgentWebclientConnectionPhase {
     return deps.connectionStates.primary.phase;
   }
@@ -139,7 +148,15 @@ export function createConnection(deps: ConnectionPort) {
     });
     try {
       await ensureConnected(options.baseUrl, options.token, lane);
-      deps.clients[lane].send({
+      if (["/api/query", "/api/btw", "/api/attach"].includes(type)) {
+        await Promise.all([...deps.runChannels.values()].filter((run) => run.lane === lane).map((run) => run.detachInFlight));
+        await deps.laneStreams.waitForEnding(lane);
+        if (!deps.pendingRequests.has(upstreamId)) throw brokerError("connection_unavailable", "request expired before stream delivery");
+      }
+      const send = ["/api/query", "/api/btw", "/api/attach"].includes(type)
+        ? (frame: AgentPlatformRealtimeFrame) => sendRunRequest(lane, frame, options.consumerId)
+        : (frame: AgentPlatformRealtimeFrame) => deps.clients[lane].send(frame);
+      send({
         frame: "request",
         type: type === "/api/btw" ? "/api/query" : type,
         id: upstreamId,
@@ -159,6 +176,8 @@ export function createConnection(deps: ConnectionPort) {
     const error = brokerError("connection_unavailable", "realtime identity was invalidated");
     // Revoke channels before notifying their former consumers. Unsubscribing
     // those consumers must not schedule a detach using the old identity.
+    deps.laneStreams.clear();
+    restoreTargets.clear();
     deps.runChannels.clear();
     for (const pending of [...deps.pendingRequests.values()]) {
       cleanupPending(pending.upstreamId);
@@ -205,6 +224,8 @@ export function createConnection(deps: ConnectionPort) {
     deps.runSubscriptions.clear();
     deps.pushSubscriptions.clear();
     deps.connectionSubscriptions.clear();
+    deps.laneStreams.clear();
+    restoreTargets.clear();
     deps.runChannels.clear();
     for (const pending of [...deps.pendingClones.values()])
       pending.reject(error);
@@ -233,16 +254,18 @@ export function createConnection(deps: ConnectionPort) {
       subscription.onState({ ...state, key: state.key ? { ...state.key } : null });
     }
     if (state.phase === "connected" && previous !== "connected") {
-      for (const run of deps.runChannels.values()) {
-        if (run.lane === lane && run.suspended && !run.terminal &&
-          (run.rootObserverTokens.size > 0 || deps.hasSystemRunLease(run))) {
-          void deps.restoreRun(run);
-        }
-      }
+      const runId = restoreTargets.get(lane);
+      restoreTargets.delete(lane);
+      const run = runId ? deps.getRunChannel(runId, lane) : undefined;
+      if (run && run.suspended && !run.terminal &&
+        (run.rootObserverTokens.size > 0 || deps.hasSystemRunLease(run))) void deps.restoreRun(run);
       return;
     }
     if (state.phase !== "reconnecting" && state.phase !== "error")
       return;
+    const occupied = deps.laneStreams.snapshot(lane);
+    if (occupied?.runId) restoreTargets.set(lane, occupied.runId);
+    deps.laneStreams.clear(lane);
     const disconnectError = brokerError("connection_lost_before_acceptance", state.lastError || "Agent Platform realtime connection lost");
     const requestError = brokerError("connection_unavailable", state.lastError || "Agent Platform realtime connection lost", { retryable: true });
     for (const pending of [...deps.pendingRequests.values()]) {
@@ -300,6 +323,16 @@ export function createConnection(deps: ConnectionPort) {
       deps.diagnostics.unknownRequestIdCount += 1;
       return;
     }
+    if (kind === "error" && frame.type === "active_stream_exists") {
+      const data = isRecord(frame.data) ? frame.data : {};
+      const error = isRecord(data.error) ? data.error : {};
+      const diagnostics = isRecord(error.diagnostics) ? error.diagnostics : {};
+      const enriched = { ...diagnostics, desktopLane: deps.laneStreams.snapshot(lane) };
+      frame = { ...frame, data: { ...data, error: { ...error, diagnostics: enriched } } };
+      deps.options.onDiagnostic?.(`active_stream_exists:${JSON.stringify(enriched)}`);
+    }
+    // Only a stream end/error (not a run.finished Push) frees the physical slot.
+    deps.laneStreams.receive(lane, frame);
     const query = deps.queriesByRequestId.get(id);
     if (query) {
       if (query.lane !== lane) {
@@ -373,5 +406,5 @@ export function createConnection(deps: ConnectionPort) {
     }
   }
 
-  return { getConnectionPhase, getConnectionState, getConnectionStates, ensureConnected, forwardRequest, rotateIdentity, beginShutdown, dispose, handleConnectionState, handleFrame, cleanupPending, prepareConnectionIdentity };
+  return { sendRunRequest, getConnectionPhase, getConnectionState, getConnectionStates, ensureConnected, forwardRequest, rotateIdentity, beginShutdown, dispose, handleConnectionState, handleFrame, cleanupPending, prepareConnectionIdentity };
 }

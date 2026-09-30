@@ -29,6 +29,8 @@ import { type RunSiteControlGrants } from "./run-site-control-grants";
 
 /** Dependencies limited to query; state remains owned by the Broker. */
 export interface QueryPort {
+  waitForStreamEnd(lane: RealtimeLane): Promise<void>;
+  sendRunRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame): void;
   acceptingDelivery: boolean;
   prepareConnectionIdentity(baseUrl: string, token: string): void;
   getRunChannel(runIdValue: string, lane?: RealtimeLane): BrokerRun | undefined;
@@ -171,8 +173,9 @@ export function createQuery(deps: QueryPort) {
     }
     void deps.ensureConnected(options.baseUrl, options.token, lane)
       .then(async () => {
-        if (observerToken && lane === "primary") {
-          await Promise.all([...deps.runChannels.values()].filter((run) => run.lane === "primary").map((run) => run.detachInFlight));
+        await Promise.all([...deps.runChannels.values()].filter((run) => run.lane === lane).map((run) => run.detachInFlight));
+        await deps.waitForStreamEnd(lane);
+        if (observerToken) {
           if (!deps.findRootObserver(observerToken)) {
             throw brokerError("surface_generation_superseded", "Root Observer changed before query delivery");
           }
@@ -184,7 +187,7 @@ export function createQuery(deps: QueryPort) {
         transaction.acceptanceTimer = setTimeout(() => {
           failQuery(transaction, brokerError("connection_unavailable", "query acceptance timed out"));
         }, deps.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
-        deps.clients[lane].send({
+        deps.sendRunRequest(lane, {
           frame: "request",
           // Frame Port retains WebClient's BTW intent; Platform selects semantics by authenticated lane.
           type: "/api/query",

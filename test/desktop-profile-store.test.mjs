@@ -103,3 +103,15 @@ test("desktop profile leaves Chat agent unset instead of inheriting the sidebar 
 
   assert.equal(readDesktopProfileFromRoot(root).assistant.chat.agentKey, "chat-agent");
 });
+
+test("confirmation timeout defaults to 120 seconds, caps at 600 and survives other updates", t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-confirmation-profile-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(readDesktopProfileFromRoot(root).general.desktopActionConfirmationTimeoutSeconds, 120);
+  updateDesktopProfileInRoot(root, { general: { desktopActionConfirmationTimeoutSeconds: 999 } });
+  assert.equal(readDesktopProfileFromRoot(root).general.desktopActionConfirmationTimeoutSeconds, 600);
+  updateDesktopProfileInRoot(root, { general: { desktopActionConfirmationEnabled: false } });
+  assert.equal(readDesktopProfileFromRoot(root).general.desktopActionConfirmationTimeoutSeconds, 600);
+  updateDesktopProfileInRoot(root, { general: { desktopActionConfirmationTimeoutSeconds: 45 } });
+  assert.equal(readDesktopProfileFromRoot(root).general.desktopActionConfirmationTimeoutSeconds, 45);
+});

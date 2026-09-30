@@ -1,3 +1,4 @@
+import type { LaneStreams } from "./lane-stream";
 import type { BrokerDiagnosticsCounters } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
 import { AgentPlatformRealtimeClient, type AgentPlatformRealtimeFrame } from "./agent-platform-realtime-client";
@@ -6,12 +7,15 @@ import {
   QueryTransaction,
   RealtimeLane,
   RealtimeQueryCompleted,
+  frameError,
   framePayload,
   readText,
 } from "./realtime-broker.shared";
 
 /** Dependencies limited to run attachment; state remains owned by the Broker. */
 export interface RunAttachmentPort {
+  laneStreams: LaneStreams;
+  sendRunRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame): void;
   queriesByRequestId: Map<string, QueryTransaction>;
   terminalRequestIds: Set<string>;
   unsubscribe(subscriptionId: string): boolean;
@@ -37,6 +41,7 @@ export interface RunAttachmentPort {
 
 export function createRunAttachment(deps: RunAttachmentPort) {
   function releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void {
+    deps.laneStreams.release(run.lane, requestId);
     if (typeof lastSeq === "number" && Number.isSafeInteger(lastSeq) && lastSeq >= 0) {
       run.lastSeq = Math.max(run.lastSeq, lastSeq);
     }
@@ -74,17 +79,13 @@ export function createRunAttachment(deps: RunAttachmentPort) {
     if (deps.getRunChannel(run.runId, run.lane) !== run || run.upstreamRequestId || run.terminal)
       return;
     await deps.ensureConnected(baseUrl, token, run.lane);
-    if (run.lane === "primary" && run.rootObserverTokens.size > 0) {
-      await Promise.all([...deps.runChannels.values()].filter((other) => other !== run && other.lane === "primary").map((other) => other.detachInFlight));
-    }
+    await Promise.all([...deps.runChannels.values()].filter((other) => other.lane === run.lane).map((other) => other.detachInFlight));
+    await deps.laneStreams.waitForEnding(run.lane);
     if (run.rootObserverTokens.size === 0 && !deps.hasSystemRunLease(run)) return;
     if (deps.getRunChannel(run.runId, run.lane) !== run || run.upstreamRequestId || run.terminal)
       return;
     const id = `desktop-attach-${randomUUID()}`;
-    run.upstreamRequestId = id;
-    run.upstreamSource = "attach_stream";
-    deps.diagnostics.upstreamAttachCount += 1;
-    deps.clients[run.lane].send({
+    deps.sendRunRequest(run.lane, {
       frame: "request",
       type: "/api/attach",
       id,
@@ -99,6 +100,9 @@ export function createRunAttachment(deps: RunAttachmentPort) {
             : {}),
       },
     });
+    run.upstreamRequestId = id;
+    run.upstreamSource = "attach_stream";
+    deps.diagnostics.upstreamAttachCount += 1;
   }
 
   async function restoreRun(run: BrokerRun): Promise<void> {
@@ -113,7 +117,7 @@ export function createRunAttachment(deps: RunAttachmentPort) {
       run.upstreamRequestId = id;
       run.upstreamSource = "attach_stream";
       deps.diagnostics.upstreamAttachCount += 1;
-      deps.clients[run.lane].send({
+      deps.sendRunRequest(run.lane, {
         frame: "request",
         type: "/api/attach",
         id,
@@ -149,6 +153,12 @@ export function createRunAttachment(deps: RunAttachmentPort) {
       return run.detachInFlight;
     run.suspended = true;
     const operationGeneration = ++run.operationGeneration;
+    const streamRequestId = run.upstreamRequestId;
+    const failed = (error: unknown) => {
+      deps.laneStreams.detachFailed(run.lane, streamRequestId, error);
+      if (run.upstreamRequestId === streamRequestId)
+        run.lastRestoreResult = `detach_failed:${error instanceof Error ? error.message : String(error)}`;
+    };
     const detach = new Promise<void>((resolve) => {
       void deps.ensureConnected(run.baseUrl, run.accessToken, run.lane).then(() => {
         if (deps.getRunChannel(run.runId, run.lane) !== run || run.operationGeneration !== operationGeneration ||
@@ -158,6 +168,7 @@ export function createRunAttachment(deps: RunAttachmentPort) {
           resolve();
           return;
         }
+        deps.laneStreams.detaching(run.lane, streamRequestId);
         void deps.forwardRequest({
           baseUrl: run.baseUrl,
           token: run.accessToken,
@@ -175,25 +186,29 @@ export function createRunAttachment(deps: RunAttachmentPort) {
             reason,
           },
           onFrame: (frame: AgentPlatformRealtimeFrame) => {
+            if (frame.frame === "error") { failed(frameError(frame)); resolve(); return; }
             const payload = framePayload(frame);
             const detachedRequestId = readText(payload.streamRequestId) ||
-              (payload.accepted === false ? run.upstreamRequestId || "" : "");
-            if (detachedRequestId) {
-              releaseRunObserver(run, detachedRequestId, "detached", payload.lastSeq);
+              (payload.accepted === false ? streamRequestId : "");
+            if (detachedRequestId === streamRequestId) {
+              if (run.upstreamRequestId === streamRequestId)
+                releaseRunObserver(run, streamRequestId, "detached", payload.lastSeq);
+            } else {
+              failed(new Error("detach response did not confirm stream release"));
             }
             resolve();
           },
-          onError: () => resolve(),
-        }).catch(() => resolve());
+          onError: (error) => { failed(error); resolve(); },
+        }).catch((error) => { failed(error); resolve(); });
         deps.diagnostics.upstreamDetachCount += 1;
-      }).catch(() => resolve());
+      }).catch((error) => { failed(error); resolve(); });
     }).finally(() => {
       if (run.detachInFlight === detach)
         run.detachInFlight = null;
       if (deps.getRunChannel(run.runId, run.lane) === run &&
         (run.rootObserverTokens.size > 0 || deps.hasSystemRunLease(run)) &&
         !run.terminal && !run.upstreamRequestId) {
-        void startAttach(run, run.baseUrl, run.accessToken);
+        void startAttach(run, run.baseUrl, run.accessToken).catch((error) => failed(error));
       }
     });
     run.detachInFlight = detach;

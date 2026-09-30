@@ -2,6 +2,7 @@ import CheckOutlined from "@ant-design/icons/CheckOutlined";
 import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import DownOutlined from "@ant-design/icons/DownOutlined";
+import EnterOutlined from "@ant-design/icons/EnterOutlined";
 import LoadingOutlined from "@ant-design/icons/LoadingOutlined";
 import MessageOutlined from "@ant-design/icons/MessageOutlined";
 import MinusOutlined from "@ant-design/icons/MinusOutlined";
@@ -1685,18 +1686,6 @@ export function DesktopPet() {
                         className={`desktop-pet-message-card is-${cardStatus}${message.unread ? " is-unread" : ""}${canReply ? " can-reply" : ""}${isReplying ? " is-replying" : ""}`}
                         onPointerDown={handleTaskPointerDown}
                       >
-                        <div className="desktop-pet-message-meta">
-                          <button
-                            type="button"
-                            className="desktop-pet-message-dismiss"
-                            aria-label={t("desktopPet.message.close")}
-                            title={t("desktopPet.message.close")}
-                            disabled={dismissingMessageIds.includes(message.chatId)}
-                            onClick={(event) => handleDismissMessageClick(event, message)}
-                          >
-                            <CloseOutlined aria-hidden="true" />
-                          </button>
-                        </div>
                         <button
                           type="button"
                           className="desktop-pet-message-main"
@@ -1725,6 +1714,29 @@ export function DesktopPet() {
                             <span className="desktop-pet-message-preview">{previewText}</span>
                           </span>
                         </button>
+                        <div className="desktop-pet-message-meta">
+                          {canReply && !isReplying ? (
+                            <button
+                              type="button"
+                              className="desktop-pet-message-reply"
+                              aria-label={t("desktopPet.reply.action")}
+                              title={t("desktopPet.reply.action")}
+                              onClick={(event) => handleReplyToggleClick(event, message.chatId)}
+                            >
+                              <EnterOutlined aria-hidden="true" />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="desktop-pet-message-dismiss"
+                            aria-label={t("desktopPet.message.close")}
+                            title={t("desktopPet.message.close")}
+                            disabled={dismissingMessageIds.includes(message.chatId)}
+                            onClick={(event) => handleDismissMessageClick(event, message)}
+                          >
+                            <CloseOutlined aria-hidden="true" />
+                          </button>
+                        </div>
                         {isReplying ? (
                           <div
                             className="desktop-pet-message-reply-box"
@@ -1767,14 +1779,6 @@ export function DesktopPet() {
                               {t("desktopPet.reply.send")}
                             </button>
                           </div>
-                        ) : canReply ? (
-                          <button
-                            type="button"
-                            className="desktop-pet-message-reply"
-                            onClick={(event) => handleReplyToggleClick(event, message.chatId)}
-                          >
-                            {t("desktopPet.reply.action")}
-                          </button>
                         ) : null}
                       </div>
                       );

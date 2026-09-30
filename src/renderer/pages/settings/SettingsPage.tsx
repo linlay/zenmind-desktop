@@ -1,4 +1,6 @@
+import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
+import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
@@ -529,6 +531,7 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   deviceName: "",
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
+  desktopActionConfirmationTimeoutSeconds: DEFAULT_CONFIRMATION_TIMEOUT_SECONDS,
   desktopActionConfirmationEnabled: true
 };
 
@@ -2470,6 +2473,10 @@ export function SettingsPage({
   const [usageProfileLoading, setUsageProfileLoading] = useState(false);
   const [usageHeatmapMode, setUsageHeatmapMode] = useState<UsageHeatmapMode>("day");
   const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
+  const [confirmationTimeoutDraft, setConfirmationTimeoutDraft] = useState<number | null>(DEFAULT_CONFIRMATION_TIMEOUT_SECONDS);
+  useEffect(() => {
+    setConfirmationTimeoutDraft(generalSettings.desktopActionConfirmationTimeoutSeconds);
+  }, [generalSettings.desktopActionConfirmationTimeoutSeconds]);
   const [enterpriseImSettings, setEnterpriseImSettings] = useState<EnterpriseImSettings>(defaultEnterpriseImSettings);
   const [generalDeviceNameDraft, setGeneralDeviceNameDraft] = useState(defaultGeneralSettings.deviceName);
   const [desktopDeviceInfo, setDesktopDeviceInfo] = useState<DesktopDeviceInfo | null>(null);
@@ -2503,6 +2510,8 @@ export function SettingsPage({
     schemaVersion: 1,
     runtimeExecutables: {}
   });
+  const [webappRuntimeSettingsTarget, setWebappRuntimeSettingsTarget] = useState<{ webappId?: string } | null>(null);
+  const webappRuntimeSettingsRevisionRef = useRef(0);
   const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
   const [webappDetailsOpen, setWebappDetailsOpen] = useState(false);
@@ -2697,6 +2706,7 @@ export function SettingsPage({
 
   useEffect(() => {
     if (activeSection !== "webapps") {
+      setWebappRuntimeSettingsTarget(null);
       return;
     }
     const requestedId = readSettingsWebappId(location.search);
@@ -2774,11 +2784,20 @@ export function SettingsPage({
     if (activeSection !== "webapps") {
       return;
     }
+    let cancelled = false;
+    const revision = ++webappRuntimeSettingsRevisionRef.current;
     void window.electronAPI.webs.webapps.getRuntimeSettings()
-      .then((result) => setWebappRuntimeSettings(result.settings))
+      .then((result) => {
+        if (cancelled || revision !== webappRuntimeSettingsRevisionRef.current) return;
+        if (!result.ok) throw new Error(result.message);
+        setWebappRuntimeSettings(result.settings);
+      })
       .catch((reason) => {
-        showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+        if (!cancelled && revision === webappRuntimeSettingsRevisionRef.current) {
+          showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+        }
       });
+    return () => { cancelled = true; };
   }, [activeSection]);
 
   function commitSavedMarketSettings(settings: MarketSettings) {
@@ -3332,6 +3351,20 @@ export function SettingsPage({
     }
   }
 
+  async function saveConfirmationTimeout(seconds: number) {
+    setGeneralSettingsSaving(true);
+    try {
+      const saved = await window.electronAPI.settings.saveGeneralSettings({ desktopActionConfirmationTimeoutSeconds: seconds });
+      setGeneralSettings({ ...defaultGeneralSettings, ...saved });
+      showSectionNotice("general", t("settings.general.confirmationTimeoutSaved"), "success");
+    } catch (reason) {
+      setConfirmationTimeoutDraft(generalSettings.desktopActionConfirmationTimeoutSeconds);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
   async function handleToggleDesktopActionConfirmation() {
     const previousSettings = generalSettings;
     const nextSettings = {
@@ -3732,13 +3765,6 @@ export function SettingsPage({
           showSectionResultNotice("webapps", configResult);
           return;
         }
-      }
-
-      if (selectedWebapp.backend?.command.type === "runtime") {
-        const runtimeSettingsResult = await window.electronAPI.webs.webapps.saveRuntimeSettings(
-          webappRuntimeSettings
-        );
-        setWebappRuntimeSettings(runtimeSettingsResult.settings);
       }
 
       await refreshWebItemsFromSettings();
@@ -4565,6 +4591,26 @@ export function SettingsPage({
                 onChange={() => void handleToggleDesktopActionConfirmation()}
               />
             </div>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.confirmationTimeout")}</strong>
+                <span>{t("settings.general.confirmationTimeoutDescription")}</span>
+              </div>
+              <InputNumber
+                min={1}
+                max={MAX_CONFIRMATION_TIMEOUT_SECONDS}
+                precision={0}
+                value={confirmationTimeoutDraft}
+                onChange={setConfirmationTimeoutDraft}
+                aria-label={t("settings.general.confirmationTimeout")}
+                disabled={generalSettingsSaving || !generalSettings.desktopActionConfirmationEnabled}
+                onBlur={() => {
+                  const seconds = normalizeConfirmationTimeoutSeconds(confirmationTimeoutDraft ?? generalSettings.desktopActionConfirmationTimeoutSeconds);
+                  setConfirmationTimeoutDraft(seconds);
+                  if (seconds !== generalSettings.desktopActionConfirmationTimeoutSeconds) void saveConfirmationTimeout(seconds);
+                }}
+              />
+            </div>
             {enterpriseImSettings.baseUrl ? <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.enterpriseChat")}</strong>
@@ -5353,11 +5399,16 @@ export function SettingsPage({
                 <h1>{t("settings.webapps.label")}</h1>
                 <p>{t("settings.webapps.description")}</p>
               </div>
-              {renderWebMetrics(
-                webappItems.length,
-                runningWebappCount,
-                t("settings.webapps.metricsAria")
-              )}
+              <div className="webapp-page-header-actions">
+                <Button onClick={() => setWebappRuntimeSettingsTarget({})}>
+                  {t("settings.webapps.runtimeSettingsAction")}
+                </Button>
+                {renderWebMetrics(
+                  webappItems.length,
+                  runningWebappCount,
+                  t("settings.webapps.metricsAria")
+                )}
+              </div>
             </div>
 
             <div className="control-center-shell web-settings-shell">
@@ -5595,73 +5646,34 @@ export function SettingsPage({
                       ) : (
                         <div className="webapp-user-config-empty">{t("settings.webapps.userConfigEmpty")}</div>
                       )}
-                      {!runtimeExecutableBindingKey || selectedWebapp.removable === false ? (
-                        <div className="web-detail-actions">
-                          {!runtimeExecutableBindingKey ? (
-                            <Button
-                              type="primary"
-                              htmlType="submit"
-                              loading={webappPending || webappUserConfigPending}
-                              disabled={webappPending || webappUserConfigPending || webappUserConfigLoading}
-                            >
-                              {webappPending || webappUserConfigPending
-                                ? t("settings.websites.updating")
-                                : t("settings.websites.save")}
-                            </Button>
-                          ) : null}
-                          {selectedWebapp.removable === false ? (
-                            <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </form>
-
-                  {runtimeExecutableBindingKey ? (
-                    <div
-                      className="webapp-runtime-settings-card"
-                      key={`${selectedWebapp.id}:runtime-settings`}
-                    >
-                      <div className="settings-control-grid">
-                        <label className="settings-control-row">
-                          <span className="settings-control-row-copy">
-                            <span className="webapp-user-config-label-row">
-                              <strong>{t("settings.webapps.runtimeExecutable")}</strong>
-                              <Tooltip title={t("settings.webapps.runtimeExecutableHint", { runtime: runtimeExecutableName })}>
-                                <span
-                                  className="webapp-user-config-help"
-                                  tabIndex={0}
-                                  aria-label={`${t("settings.webapps.runtimeExecutable")}：${t("settings.webapps.runtimeExecutableHint", { runtime: runtimeExecutableName })}`}
-                                >
-                                  <QuestionCircleOutlined aria-hidden="true" />
-                                </span>
-                              </Tooltip>
-                            </span>
-                          </span>
-                          <Input
-                            value={webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey] ?? ""}
-                            placeholder={t("settings.webapps.runtimeExecutablePlaceholder")}
-                            onChange={(event) => setWebappRuntimeSettings((current) => ({
-                              ...current,
-                              runtimeExecutables: {
-                                ...current.runtimeExecutables,
-                                [runtimeExecutableBindingKey]: event.target.value
-                              }
-                            }))}
-                          />
-                        </label>
-                      </div>
                       <div className="web-detail-actions">
                         <Button
                           type="primary"
+                          htmlType="submit"
                           loading={webappPending || webappUserConfigPending}
                           disabled={webappPending || webappUserConfigPending || webappUserConfigLoading}
-                          onClick={() => void handleSaveWebappSettings()}
                         >
                           {webappPending || webappUserConfigPending
                             ? t("settings.websites.updating")
                             : t("settings.websites.save")}
                         </Button>
+                        {selectedWebapp.removable === false ? (
+                          <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
+                        ) : null}
                       </div>
+                    </form>
+
+                  {runtimeExecutableBindingKey ? (
+                    <div className="webapp-runtime-settings-entry">
+                      <div className="webapp-runtime-settings-entry-copy">
+                        <strong>{t("settings.webapps.runtimeLanguageTitle", { runtime: getWebappRuntimeLabel(runtimeExecutableName) })}</strong>
+                        <Tooltip title={webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey]}>
+                          <span>{webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey] || t("settings.webapps.runtimeAutomatic")}</span>
+                        </Tooltip>
+                      </div>
+                      <Button onClick={() => setWebappRuntimeSettingsTarget({ webappId: selectedWebapp.id })}>
+                        {t("settings.webapps.runtimeSettingsConfigure")}
+                      </Button>
                     </div>
                   ) : null}
                     </div>
@@ -5903,6 +5915,21 @@ export function SettingsPage({
                 </article>
               )}
             </div>
+            {webappRuntimeSettingsTarget ? (
+              <WebappRuntimeSettingsDialog
+                items={webappItems}
+                initialWebappId={webappRuntimeSettingsTarget.webappId}
+                isWindows={isWindows}
+                isMac={isMac}
+                onClose={() => setWebappRuntimeSettingsTarget(null)}
+                onSaved={(settings, webappId) => {
+                  webappRuntimeSettingsRevisionRef.current += 1;
+                  setWebappRuntimeSettings(settings);
+                  showSectionNotice("webapps", t("settings.webapps.runtimeSettingsSaved"), "success");
+                  void refreshSelectedWebappRuntimeCheck(webappId);
+                }}
+              />
+            ) : null}
           </WebappImportDropTarget>
         );
       }
