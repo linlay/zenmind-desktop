@@ -1,3 +1,4 @@
+import type { LaneStreams } from "./lane-stream";
 import type { BrokerDiagnosticsCounters, RootObserverSnapshot } from "./realtime-broker.shared";
 import { type AgentRealtimeDebugTraceEntry } from "../../../../shared/contracts";
 import { AgentPlatformRealtimeClient } from "./agent-platform-realtime-client";
@@ -19,6 +20,7 @@ import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 
 /** Dependencies limited to diagnostics; state remains owned by the Broker. */
 export interface DiagnosticsPort {
+  laneStreams: LaneStreams;
   clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
   getConnectionStates(): RealtimeConnectionStates;
   pendingRequests: Map<string, PendingRequest>;
@@ -40,12 +42,15 @@ export interface DiagnosticsPort {
 
 export function createDiagnostics(deps: DiagnosticsPort) {
   function getDiagnostics() {
+    const laneStreams = (["primary", "btw", "selection-explain"] as const)
+      .flatMap((lane) => { const slot = deps.laneStreams.snapshot(lane); return slot ? [slot] : []; });
     return {
+      laneStreams,
       connection: deps.clients.primary.getState(),
       connections: deps.getConnectionStates(),
       pendingRequestCount: deps.pendingRequests.size,
       pendingQueryCount: deps.queriesByRequestId.size,
-      activeStreamCount: [...deps.runChannels.values()].filter((run) => Boolean(run.upstreamRequestId && !run.terminal)).length,
+      activeStreamCount: laneStreams.length,
       runCount: deps.runChannels.size,
       localRunSubscriberCount: deps.runSubscriptions.size,
       pushSubscriberCount: deps.pushSubscriptions.size,

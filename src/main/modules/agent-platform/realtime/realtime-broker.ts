@@ -12,6 +12,7 @@ import {
   type AgentPlatformRealtimeSocketFactory,
   type RealtimeIdentityRotationReason,
 } from "./agent-platform-realtime-client";
+import { LaneStreams } from "./lane-stream";
 import { createConnection } from "./connection";
 import { createDesktopRequests } from "./desktop-requests";
 import { createDiagnostics } from "./diagnostics";
@@ -79,6 +80,7 @@ export class RealtimeBroker {
     laneRotationCount: 0,
   };
 
+  private readonly laneStreams: LaneStreams;
   private readonly connectionController: ReturnType<typeof createConnection>;
   private readonly rootObserversController: ReturnType<typeof createRootObservers>;
   private readonly queryController: ReturnType<typeof createQuery>;
@@ -145,7 +147,11 @@ export class RealtimeBroker {
       "selection-explain": createClient("selection-explain"),
     };
     const broker = this;
+    this.laneStreams = new LaneStreams({ runs: this.runChannels, queries: this.queriesByRequestId,
+      subscriptions: this.runSubscriptions, findObserver: (token) => this.findRootObserver(token),
+      onDiagnostic: options.onDiagnostic });
     this.connectionController = createConnection({
+      laneStreams: this.laneStreams,
       get connectionStates() { return broker.connectionStates; },
       get clients() { return broker.clients; },
       get disposed() { return broker.disposed; },
@@ -197,6 +203,8 @@ export class RealtimeBroker {
       pruneRetainedTerminalRuns: (...args) => this.pruneRetainedTerminalRuns(...args),
     });
     this.queryController = createQuery({
+      waitForStreamEnd: (lane) => this.laneStreams.waitForEnding(lane),
+      sendRunRequest: (...args) => this.connectionController.sendRunRequest(...args),
       get acceptingDelivery() { return broker.acceptingDelivery; },
       set acceptingDelivery(value) { broker.acceptingDelivery = value; },
       prepareConnectionIdentity: (...args) => this.prepareConnectionIdentity(...args),
@@ -236,6 +244,8 @@ export class RealtimeBroker {
       get pushSubscriptions() { return broker.pushSubscriptions; },
     });
     this.runAttachmentController = createRunAttachment({
+      sendRunRequest: (...args) => this.connectionController.sendRunRequest(...args),
+      laneStreams: this.laneStreams,
       get queriesByRequestId() { return broker.queriesByRequestId; },
       get terminalRequestIds() { return broker.terminalRequestIds; },
       unsubscribe: (...args) => this.unsubscribe(...args),
@@ -282,6 +292,7 @@ export class RealtimeBroker {
       getRunChannel: (...args) => this.getRunChannel(...args),
     });
     this.diagnosticsController = createDiagnostics({
+      laneStreams: this.laneStreams,
       get clients() { return broker.clients; },
       getConnectionStates: (...args) => this.getConnectionStates(...args),
       get pendingRequests() { return broker.pendingRequests; },
