@@ -35,6 +35,8 @@ export function writeInstallerInclude(rootDir, brand) {
   const content = `!include nsDialogs.nsh
 !include FileFunc.nsh
 
+${fs.readFileSync(new URL("./windows-shortcut-identity.nsh", import.meta.url), "utf8")}
+
 !define DESKTOP_UPDATE_LOG_NAMESPACE "${storageNamespace}"
 ${fs.readFileSync(new URL("./windows-update-progress.nsh", import.meta.url), "utf8")}
 
@@ -737,6 +739,7 @@ FunctionEnd
   CreateDirectory "$DesktopProgramDataRoot"
   !insertmacro DesktopWriteOwnerFile $DesktopProgramOwnerMarker "${programOwnerToken}"
   !insertmacro DesktopWriteOwnerMarker $INSTDIR "${installOwnerToken}"
+  !insertmacro DesktopRefreshShortcutDescriptions
 !macroend
 !endif
 
