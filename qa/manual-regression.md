@@ -596,6 +596,9 @@
 - 在五个管理页面点击创建/修改：进入设置中默认 Chat 智能体的 Main Chat；自动化选中 platform-automation，其他四类选中 platform-admin；草稿可编辑、未发送前不产生 Run。
 - 修改草稿包含正确稳定标识；Registry 包含分类。刷新不重复预填；返回管理页加载最新结果。市场创建技能仍选中 skill-creator。
 - macOS / Windows 均检查管理 guest 向 Main Chat 的 URL 交接；非当前 surface、跨域、含 chatId 或重复 Composer 参数的跳转不能借用该入口。
+- 市场连接器详情的“试试这样用”：每条示例的对话图标对齐行尾，长文本和窄窗口下保留完整点击区；鼠标点击或键盘 Enter / Space 后进入默认 Chat，将所选示例完整填入可编辑输入框，不额外选择技能、不自动发送；聊天页一次性消费并清除预填参数，重复渲染不重复填入。检查中英文与浅深色。
+- 先在新 Chat 选择“技能制作”并输入草稿，再从连接器市场或管理页发起示例：新草稿只含示例，旧手动技能清空；“去对话”打开空白 Composer。返回历史 Chat 仍恢复其文字与技能，普通新 Chat 保留共享草稿；配置对话只选 `platform-admin`，创建技能仍选 `skill-creator`。
+- 安装后实际 connectorId 与市场商品 ID 不同时，从详情“配置与授权”精确进入该连接器；从当前 Main Chat 的连接器配置入口打开同一详情，原 Chat 草稿可恢复。非活动或非 Main surface 的导航请求、非法 ID、外部 URL 和重复 Composer 参数被拒绝，失败不得先改变 guest 路由。
 
 ### 本地阶段工作流（macOS / Windows）
 

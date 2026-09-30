@@ -1,12 +1,13 @@
 import { ConnectorMessages } from "./ConnectorMessages";
 import { ConnectorIcon } from "./ConnectorIcon";
+import { connectorIsUsable } from "./connectorFlow";
 import { useState, type ReactNode } from "react";
 import { CheckOutlined, LoadingOutlined, MessageOutlined, PlusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { Modal } from "antd";
 import { useNavigate } from "react-router-dom";
 import type { MarketItem } from "@shared/contracts";
 import type { TranslationKey } from "../../../shared/i18n";
-import { createAgentWebclientAgentPath } from "../../../shared/agent-webclient-routes";
+import { createAgentWebclientAgentPath, createAgentWebclientConnectorManagementPath } from "../../../shared/agent-webclient-routes";
 import { useI18n } from "../../i18n/useI18n";
 import { MarketCardDescription } from "./MarketCardDescription";
 import { MarketPageFrame } from "./MarketPageFrame";
@@ -34,10 +35,13 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const [detailItem, setDetailItem] = useState<MarketItem | null>(null);
   const [disconnectItem, setDisconnectItem] = useState<MarketItem | null>(null);
   const runtime = useMarketConnectorFlow(props.onChanged, (agentKey, draft) => {
-    const search = new URLSearchParams({ newChat: String(Date.now()) });
-    if (draft) search.set("composerDraft", draft);
+    const search = new URLSearchParams({ newChat: String(Date.now()), composerDraft: draft ?? "" });
     navigate(createAgentWebclientAgentPath(agentKey, search));
   });
+  const configureConnector = (item: MarketItem) => {
+    const route = createAgentWebclientConnectorManagementPath(runtime.getConnectorId(item));
+    if (route) { setDetailItem(null); navigate(route); }
+  };
   const message = (value: string) => value.startsWith("market.") ? t(value as TranslationKey) : value;
   const items = [...props.items, ...localItems.filter(local => !props.items.some(item => (item.connectorId || item.id) === local.connectorId))];
   const visible = items.filter(item => item.type === "connector" && (item.marketplaceAvailable || item.source === "local") && matchesMarketItemQuery(item, query, t));
@@ -51,7 +55,7 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
       <div className="skill-discovery-scroll"><div className="skill-discovery-grid" aria-busy={props.loading || runtime.loading}>
         {visible.map(item => {
           const connection = runtime.getConnection(item), installed = runtime.isInstalled(item);
-          const ready = connection?.readiness === "ready";
+          const ready = connectorIsUsable(connection);
           const checking = runtime.loading && !connection;
           const statusLabel = checking ? t("market.connector.flow.checking") : connection ? t(`market.connector.flow.state.${connection.readiness}` as TranslationKey) : t(installed ? "market.connector.flow.stateUnavailable" : "market.connector.flow.notInstalled");
           const statusTone = ready ? "ready" : installed || checking ? "pending" : "idle";
@@ -82,7 +86,7 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
       setLocalItems(previous => [...previous.filter(value => value.connectorId !== item.connectorId), item]); setDetailItem(item); props.onChanged?.(); void runtime.refresh();
       if (connect) void runtime.start(item, true, true);
     }} />
-    <ConnectorDetailDialog item={detailItem} runtime={runtime} onClose={() => setDetailItem(null)} onDisconnect={setDisconnectItem} />
+    <ConnectorDetailDialog item={detailItem} runtime={runtime} onClose={() => setDetailItem(null)} onDisconnect={setDisconnectItem} onConfigure={configureConnector} />
     <ConnectorCredentialsDialog connectorName={runtime.flow?.item.name || ""} schema={runtime.flow?.phase === "credentials" ? runtime.flow.schema || null : null} busy={runtime.busy} error={runtime.error ? message(runtime.error) : undefined} onSubmit={runtime.submitCredentials} onCancel={() => void runtime.cancel()} />
     <Modal open={!!disconnectItem} centered title={t("market.connector.flow.disconnectTitle")} okText={t("market.connector.flow.disconnect")} okButtonProps={{ danger: true }} confirmLoading={runtime.busy}
       onCancel={() => setDisconnectItem(null)} onOk={() => { if (disconnectItem) { void runtime.mutate(disconnectItem, "disconnect"); setDisconnectItem(null); } }}>
