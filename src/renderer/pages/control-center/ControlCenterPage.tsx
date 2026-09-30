@@ -1640,6 +1640,7 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
           className="service-sider service-catalog"
           aria-label={catalogAriaLabel}
         >
+          <div className="management-group-scroll">
           <div className="service-accordion">
             {catalogGroups.map((group) => (
                 <section
@@ -1856,10 +1857,12 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
                 </section>
               ))}
           </div>
+          </div>
         </aside>
 
         {activeDetailService ? (
-          <article className="control-center-detail">
+          <article className="control-center-detail management-detail-group">
+            <div className="management-group-scroll service-detail-scroll">
             <section className="service-card control-center-service-hero">
               <div className="control-center-service-head">
                 <div className="control-center-service-main">
@@ -2517,6 +2520,7 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
               )}
             </section>
 
+            </div>
             {detailDialogOpen ? (
               <div
                 className="service-detail-dialog-backdrop"

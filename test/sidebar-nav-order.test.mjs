@@ -40,7 +40,7 @@ const {
   moveSidebarNavItem,
 } = mod.exports;
 
-test("default order is stable and missing items append after valid saved entries", () => {
+test("default order is stable and missing default entries return to their default position", () => {
   const availableItems = createDefaultSidebarNavOrderItems({
     kanbanEnabled: true,
     serviceItems: [],
@@ -50,6 +50,10 @@ test("default order is stable and missing items append after valid saved entries
 
   assert.deepEqual(
     availableItems.map((item) => item.key),
+    ["kanban", "schedules", "new-chat", "chats", "group:assistants", "group:webs"],
+  );
+  assert.deepEqual(
+    normalizeSidebarNavOrder(["schedules", "new-chat"], availableItems),
     ["kanban", "schedules", "new-chat", "chats", "group:assistants", "group:webs"],
   );
   assert.deepEqual(
@@ -128,11 +132,11 @@ test("mixed navigation order preserves moved Kanban, independent New Chat and we
   assert.deepEqual(moveSidebarNavItem(mixed, "kanban", "kanban", true), mixed);
 });
 
-test("newly available reorderable entries append while Chats stays in the fixed groups", () => {
+test("new default entries use default neighbors while Chats stays in the fixed groups", () => {
   const items = ["website:docs", "new-chat", "chats", "schedules"].map((key) => ({ key, label: key }));
   assert.deepEqual(normalizeSidebarNavOrder(["schedules", "schedules", null, "removed"], items),
     ["schedules", "website:docs", "new-chat", "chats"]);
-  assert.deepEqual(normalizeSidebarNavOrder(null, items), ["website:docs", "new-chat", "schedules", "chats"]);
+  assert.deepEqual(normalizeSidebarNavOrder(null, items), ["website:docs", "schedules", "new-chat", "chats"]);
 });
 
 

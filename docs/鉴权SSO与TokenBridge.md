@@ -155,3 +155,15 @@ HTTP 请求与 WS upgrade 校验精确 Host、Origin、会话及有效期；写�
 ### 本机调用示例
 
 本机服务设置允许用户显式复制含 Platform App access token 的调用示例，复用现有 Agent Auth 签发能力，不导出 canonical SSO token。页面默认只显示占位符；点击复制时获取当前有效 token，校验到期时间并生成命令，完成后仅反馈到期时间，不将 token 保存到页面状态、配置或日志。剪贴板中的命令是固定快照，过期后用户需重新复制；此入口不为外部程序提供自动续期。
+
+## WebApp / Website 会话交换
+
+`auth` SDK 提供页面发起的原子会话交换。网站拥有交换路径、服务端 token 验证、Cookie 会话与业务授权；Desktop 不实现网站用户系统，也不向页面返回凭据。
+
+本地 WebApp 与远端 Website 的顶层 guest 经专用 sandbox preload 调用独立 IPC。Main 以真实 sender、live Registry 或独立 WebApp 窗口、实际 session 和当前 origin 校验，不接受调用方自报目标。页面可在启动时自动尝试，也可由用户点击发起；原生确认展示精确同源交换地址，仅授权这次凭据提交。未登录 Desktop 时直接返回需登录状态，不弹出凭据提交确认。页面早于 Surface 登记时仅有界等待真实登记，来源变化即拒绝。该授权不由添加网址、安装包字段或同源本身推导，不创建通用 HTTP/WS Action 能力。
+
+Main 在独立网络 session 中提交当前 canonical SSO Bearer，省略 Cookie 并拒绝重定向；成功后先校验 Cookie 范围，再复验页面与已确认账号，将 Cookie 写到调用页面使用的 session。HTTP 只允许已登记本地 WebApp 的 loopback；远端必须 HTTPS。Cookie 生命周期受 token 有效期约束，网站不得通过本能力写父域 Cookie 或覆盖未登记的现有 Cookie。响应正文、token 与 Cookie 值不进入 guest 返回或日志。
+
+Identity 清空 canonical 凭据时同步通知会话交换模块取消在途请求，异步清理本能力拥有的 Cookie；新交换等待清理完成。Cookie 名、origin 和受控 partition 写入清理 journal，不写 Cookie 值；启动先清理遗留记录以避免跨进程账号串用。网站后端仍负责会话撤销及其他设备的退出。正常 token 续期不因 token 字符串变化主动撤销网站 Cookie。
+
+发布后的 SDK 由访问者自己的 preload 执行，禁止向发布者 gateway 请求访问者凭据。独立浏览器不拥有此能力；Help、Service、普通 WorkPanel 和子 frame 也不获得会话交换权限。Windows/macOS 使用相同 Chromium Cookie 和网络语义，preload 的平台路径由既有 bundle path 规则提供。

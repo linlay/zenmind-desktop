@@ -210,6 +210,23 @@ async function getUserConfig() {
   return values;
 }
 
+// Uses the visitor's preload, including when this module is served by Tunnel.
+// Never call the publisher's HTTP action bridge to obtain a visitor identity.
+export const auth = Object.freeze({
+  isAvailable() {
+    return typeof globalThis.__ZENMIND_AUTH__?.createSession === "function";
+  },
+  async createSession(input) {
+    const bridge = globalThis.__ZENMIND_AUTH__;
+    if (!bridge || typeof bridge.createSession !== "function") {
+      throw new DesktopBridgeError("auth.createSession", "unavailable", "Open this application in Desktop to sign in.");
+    }
+    const result = await bridge.createSession(input);
+    if (!result?.ok) throw new DesktopBridgeError("auth.createSession", result?.error?.code || "exchange_failed", result?.error?.message || "Sign-in failed.");
+    return { ok: true };
+  }
+});
+
 export const desktop = Object.freeze({
   requestAccess: (input) => {
     return call("desktop.requestAccess", input);

@@ -28,3 +28,5 @@ export { webappWindowManager } from "./webapps/window-manager";
 export { addWebsiteItem, listWebsiteItems, removeWebsiteItem, updateWebsiteItem } from "./websites/actions";
 export { registerWebsiteFaviconProtocol, registerWebsiteFaviconProtocolScheme } from "./websites/favicon-protocol";
 export { createWebsiteItem, getWebsiteDir, readWebsiteItems, writeWebsiteItem } from "./websites/store";
+
+export { registerWebappAuth } from "./auth-session";

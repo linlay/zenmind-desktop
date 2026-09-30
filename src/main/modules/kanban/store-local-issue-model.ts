@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { KanbanIssueInput, KanbanCurrentUser, KanbanIssue, KanbanIssueUpdateInput } from "../../../shared/contracts";
+import type { KanbanIssueInput, KanbanIssue, KanbanIssueUpdateInput } from "../../../shared/contracts";
 import {
   trimText,
   nowIso,
@@ -8,6 +8,7 @@ import {
   createLocalIssueId,
   BOARD_ID,
   PROJECT_ID,
+  LOCAL_OWNER_USER_ID,
   normalizeDueDate,
   normalizeStringList,
   normalizeEffortSeconds,
@@ -22,8 +23,7 @@ import { moveLocalWorkflow } from "./local-workflows";
 
 export function buildLocalIssue(
   db: DatabaseSync,
-  input: KanbanIssueInput,
-  currentUser: KanbanCurrentUser
+  input: KanbanIssueInput
 ): KanbanIssue | null {
   const title = trimText(input.title);
   if (!title) return null;
@@ -74,7 +74,7 @@ export function buildLocalIssue(
     syncMode: "local",
     syncState: "local",
     origin: "desktop",
-    ownerUserId: currentUser.id,
+    ownerUserId: LOCAL_OWNER_USER_ID,
     lastRemoteRevision: 0,
     lastSyncedAt: null,
     syncError: null,

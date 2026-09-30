@@ -9,6 +9,18 @@ export function buildSettingsSectionPath(sectionId: SettingsSectionId): string {
   return `${SETTINGS_ROUTE_PREFIX}/${sectionId}`;
 }
 
+export function buildWebsiteSettingsPath(websiteId: string): string {
+  const normalizedId = websiteId.trim();
+  const path = buildSettingsSectionPath("websites");
+  return normalizedId
+    ? `${path}?${new URLSearchParams({ websiteId: normalizedId }).toString()}`
+    : path;
+}
+
+export function readSettingsWebsiteId(search: string): string {
+  return new URLSearchParams(search).get("websiteId")?.trim() ?? "";
+}
+
 export function buildWebappSettingsPath(webappId: string): string {
   const normalizedId = webappId.trim();
   const path = buildSettingsSectionPath("webapps");

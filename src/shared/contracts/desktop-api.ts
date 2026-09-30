@@ -907,6 +907,7 @@ export interface DesktopApi {
   };
   desktopDialog: {
     selectDirectory: () => Promise<{ ok: boolean; path?: string; message?: string }>;
+    resolveDroppedDirectory: (file: File) => Promise<{ ok: boolean; path?: string; message?: string }>;
   };
   sidebarContextMenu: {
     popup: (
@@ -1334,7 +1335,7 @@ export interface DesktopApi {
     };
     webapps: {
       list: () => Promise<WebappItemsResult>;
-      import: () => Promise<WebappImportResult>;
+      import: (file?: File) => Promise<WebappImportResult>;
       export: (id: string) => Promise<WebappExportResult>;
       update: (id: string, input: WebappUpdateInput) => Promise<WebappResult>;
       uninstall: (id: string) => Promise<WebappDeleteResult>;

@@ -549,12 +549,6 @@
   gap: 16px;
 }
 
-.settings-page .web-settings-page .control-center-dashboard-metrics {
-  grid-template-columns: minmax(160px, 1fr);
-  width: min(230px, 34%);
-  min-width: 190px;
-}
-
 .settings-page .web-settings-shell {
   align-items: stretch;
   gap: 12px;
@@ -716,7 +710,8 @@
 
 .settings-page .web-settings-detail {
   min-width: 0;
-  max-height: calc(100vh - 154px);
+  min-height: 0;
+  max-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 2px;
@@ -3472,5 +3467,196 @@
 
   .settings-page-head .page-copy {
     font-size: 12px;
+  }
+}
+
+/* The app catalog fills the available workspace, including its empty state. */
+@media (min-width: 761px) {
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+    align-items: stretch;
+  }
+
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-catalog {
+    min-height: 0;
+    max-height: none;
+    height: 100%;
+  }
+}
+
+.settings-page .webapp-import-drop-target {
+  position: relative;
+}
+
+.settings-page .webapp-import-drop-target.is-dragging {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.settings-page .webapp-import-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--accent);
+  background: var(--surface-soft);
+  border: 2px dashed var(--accent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+
+.settings-page .web-detail-label-with-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-page .web-detail-label-with-help .webapp-user-config-help {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-page .web-detail-switch-control {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+/* Propagate available height through settings wrappers instead of using viewport offsets. */
+.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) :is(
+  .settings-content-panel,
+  .settings-content-shell,
+  .settings-section-body,
+  .settings-control-center-embed
+) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.app-main .control-center-page:is(.is-control, .is-plugins, .is-websites, .is-webapps) {
+  height: 100%;
+  max-height: 100%;
+  flex: 1 1 0;
+}
+
+/* Keep the three system settings compact; access controls share a row. */
+.settings-page .web-settings-page .webapp-system-name {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.settings-page .webapp-system-access-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 32px;
+  row-gap: 12px;
+  max-width: 672px;
+  box-sizing: border-box;
+  padding: 8px 24px;
+}
+
+.settings-page .web-settings-page .webapp-system-access-row .web-detail-form-item {
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+  padding: 0;
+}
+
+.settings-page .webapp-system-access-row .web-detail-label-with-help {
+  white-space: nowrap;
+}
+
+.settings-page .webapp-system-access-row .ant-select {
+  min-width: 140px;
+}
+
+@media (max-width: 760px) {
+  .settings-page .webapp-system-access-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-page .web-settings-page .webapp-system-access-row .web-detail-form-item {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+}
+
+/* Keep scrolling inside each rounded group, inset from its outer border. */
+.settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.settings-page :is(.is-websites, .is-webapps) :is(.web-settings-catalog, .web-settings-detail) {
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.settings-page :is(.is-websites, .is-webapps) .web-settings-catalog,
+.settings-page :is(.is-websites, .is-webapps) .web-settings-detail > .web-detail-card {
+  padding: 4px;
+}
+
+.settings-page :is(.is-websites, .is-webapps) .web-settings-detail > .web-detail-card {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: auto;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar-track,
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar-corner {
+  background: transparent;
+  border: 0;
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor)::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-muted) 25%, transparent);
+}
+
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor):hover::-webkit-scrollbar-thumb,
+:is(.settings-page, .control-center-page) :is(.webapp-group-scroll, .management-group-scroll, .management-detail-group .config-editor):focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-muted) 50%, transparent);
+}
+
+@media (max-width: 760px) {
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+    grid-template-rows: minmax(0, 0.4fr) minmax(0, 1fr);
+  }
+
+  .settings-page :is(.is-websites, .is-webapps) .web-settings-catalog {
+    height: auto;
   }
 }

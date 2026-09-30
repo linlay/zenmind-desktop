@@ -75,3 +75,23 @@ test('Platform discovers skills outside Desktop guessed runtime and keeps undecl
  assert.ok(item);assert.equal(item.name,'国泰君安期货工作流');assert.equal(item.version,'');assert.equal(item.metadata.revision,'r18');
  assert.equal(item.installPath,undefined);
 });
+
+test('nested package members do not install or update the same-named standalone skill', async t => {
+ const s = setup(t);
+ let standalone = false;
+ let memberVersion = '';
+ configureSkillMarketPlatformCaller(async route => route === '/api/skills'
+  ? {pinned:[],skills:[{key:'bundle/test-skill',displayName:'Package member',version:memberVersion}, ...(standalone ? [{key:'test-skill',version:'1.0.0'}] : [])]}
+  : [{id:'bundle',skills:[{id:'bundle/test-skill',version:memberVersion}]}]);
+ assert.equal((await s.read()).state,'not-installed');
+ let items = (await listSkillMarketItems(s.app,s.options)).items;
+ assert.equal(items.find(x=>x.id==='bundle/test-skill').skillPackageId,'bundle');
+ assert.equal(items.find(x=>x.id==='bundle/test-skill').installedVersion,'');
+ standalone = true;
+ assert.equal((await s.read()).installedVersion,'1.0.0');
+ memberVersion = '9.0.0';
+ const item = await s.read();
+ assert.equal(item.installedVersion,'1.0.0');
+ assert.equal(item.state,'update-available');
+ assert.equal(item.skillPackageId,undefined);
+});

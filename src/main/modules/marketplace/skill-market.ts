@@ -76,7 +76,7 @@ export async function readMarketSkillPins(): Promise<MarketSkillPins> {
 export async function saveMarketSkillPins(input: unknown): Promise<MarketSkillPins> {
   const value = asObject(input);
   const key = asString(value.key).trim().toLowerCase();
-  if (!key || Buffer.byteLength(key, "utf8") > 256 || /[\/\\\x00-\x1f]/.test(key) || typeof value.pinned !== "boolean") throw new Error("market_skill_pins_invalid");
+  if (!key || Buffer.byteLength(key, "utf8") > 256 || !/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?$/.test(key) || typeof value.pinned !== "boolean") throw new Error("market_skill_pins_invalid");
   if (!skillMarketPlatformCall) throw new Error("market_skill_pins_unavailable");
   return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills", { method: "PUT", body: { key, pinned: value.pinned } }));
 }
@@ -145,7 +145,7 @@ function mergePlatformSkillPackageState(items: ReturnType<typeof mergeCatalogIte
     for (const skill of packageItem.skills ?? []) {
       const skillId = asString(skill.id).trim();
       const version = asString(skill.version).trim();
-      if (skillId && version) {
+      if (skillId) {
         ownerBySkill.set(skillId, { packageId, version });
       }
     }
@@ -154,13 +154,13 @@ function mergePlatformSkillPackageState(items: ReturnType<typeof mergeCatalogIte
     if (item.type !== "skill") return item;
     const owner = ownerBySkill.get(item.id);
     if (!owner) return item;
-    // A child may have been updated independently since the package was installed.
-    // Package membership is still valid, but its recorded child version is only a fallback.
+    // Package members use qualified keys, so the same-named standalone skill
+    // retains its own installation state and update destination.
     const installedVersion = localVersionById.get(item.id) || owner.version;
     return {
       ...item,
       source: "cloud" as const,
-      state: compareVersions(item.version, installedVersion) > 0 ? "update-available" as const : "installed" as const,
+      state: installedVersion && compareVersions(item.version, installedVersion) > 0 ? "update-available" as const : "installed" as const,
       installedVersion,
       skillPackageId: owner.packageId
     };

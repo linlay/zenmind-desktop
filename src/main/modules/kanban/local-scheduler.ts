@@ -66,7 +66,7 @@ export class LocalKanbanScheduler {
     const user = this.user();
     const issues = listDesktopKanbanIssues(this.options.app, user).issues
       .filter(isLocalIssueRunnable).sort((a, b) => a.position - b.position || a.createdAt.localeCompare(b.createdAt));
-    const eligibilityKey = (issue: KanbanIssue) => JSON.stringify([user.id, issue.id, issue.stageId, localIssueExecutor(issue)]);
+    const eligibilityKey = (issue: KanbanIssue) => JSON.stringify([issue.id, issue.stageId, localIssueExecutor(issue)]);
     const currentKeys = new Set(issues.map(eligibilityKey));
     for (const key of this.eligibleAfter.keys()) if (!currentKeys.has(key)) this.eligibleAfter.delete(key);
     let nextAdmissionAt = Infinity;
@@ -80,7 +80,7 @@ export class LocalKanbanScheduler {
         continue;
       }
       const agentKey = localIssueExecutor(issue);
-      const key = JSON.stringify([user.id, agentKey]);
+      const key = agentKey;
       if (this.admitting.has(key) || (this.retryAfter.get(key) ?? 0) > Date.now()) continue;
       // Serialize admission per Agent, not execution. Other Agents are independent.
       this.admitting.add(key);
@@ -97,7 +97,7 @@ export class LocalKanbanScheduler {
 
   private async admit(user: KanbanCurrentUser, candidate: KanbanIssue, agentKey: string, key: string) {
     const issue = getDesktopKanbanIssue(this.options.app, user, candidate.id);
-    if (!this.running || user.id !== this.user().id || !issue || !isLocalIssueRunnable(issue)) return;
+    if (!this.running || !issue || !isLocalIssueRunnable(issue)) return;
     const chatId = issue.chatId?.trim()
       || (issue.attachments.length ? issue.attachmentChatId?.trim() : "") || createKanbanRemoteChatId();
     const runId = createKanbanRemoteRunId();

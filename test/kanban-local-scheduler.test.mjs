@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { KanbanRuntime, getKanbanConfigPath } from "../dist-electron/main/modules/kanban/runtime.js";
 import { isLocalIssueRunnable } from "../dist-electron/main/modules/kanban/local-scheduler.js";
+import { createLocalDesktopKanbanIssue } from "../dist-electron/main/modules/kanban/local-store.js";
 
 async function until(check) {
   for (let i = 0; i < 500; i++) {
@@ -28,12 +29,24 @@ function setup(t, start) {
     }
   }, callAgentPlatform: async () => ({}) });
   t.after(() => { runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
-  return { runtime, calls };
+  return { runtime, calls, app };
 }
 function finish(runtime, call, status = "completed", finishReason = "complete") {
   runtime.sendNavigationPushEvent({ frame: "push", type: "run.finished", runId: call.runId,
     chatId: call.chatId, status, finishReason, finishedAt: Date.now() });
 }
+
+test("signed-out runtime schedules local tasks created by a signed-in user", async t => {
+  const { runtime, calls, app } = setup(t);
+  const { issue } = createLocalDesktopKanbanIssue(app,
+    { id: "signed-in-user", name: "User", email: "", source: "sso" },
+    { title: "Continue offline", status: "todo", assigneeAgentKey: "a" });
+  assert.equal(runtime.listIssues().currentUser.source, "device");
+  runtime.start();
+  await until(() => calls.length === 1 && runtime.listIssues().issues.find(item => item.id === issue.id)?.status === "in_progress");
+  finish(runtime, calls[0]);
+  assert.equal(runtime.listIssues().issues.find(item => item.id === issue.id)?.status, "completed");
+});
 
 for (const scenario of [
   { name: "prefers the existing Chat over the attachment Chat", chatId: " chat-existing ", attachmentChatId: "chat-attachments", hasAttachments: true, expected: "chat-existing" },

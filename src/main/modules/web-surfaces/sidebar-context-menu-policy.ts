@@ -282,7 +282,9 @@ export function buildSidebarContextMenuPolicy(
         group: 1,
         enabled: target.canOpenAlternative
       },
-      { id: "web.open-in-browser", group: 1, enabled: true }
+      { id: "web.open-in-browser", group: 1, enabled: true },
+      { id: "web.copy-access-url", group: 1, enabled: true },
+      { id: "web.configure", group: 1, enabled: true }
     );
     if (target.showRemove) {
       items.push({
@@ -291,6 +293,9 @@ export function buildSidebarContextMenuPolicy(
         enabled: target.canRemove
       });
     }
+  }
+  if (target.webKind === "website") {
+    items.push({ id: "web.configure", group: 1, enabled: true });
   }
   return items;
 }

@@ -1345,8 +1345,8 @@ export function AppShell() {
     return result;
   }
 
-  async function importWebappItem(): Promise<WebappImportResult> {
-    const result = await window.electronAPI.webs.webapps.import();
+  async function importWebappItem(file?: File): Promise<WebappImportResult> {
+    const result = await window.electronAPI.webs.webapps.import(file);
     if (result.ok) {
       updateWebItems(result.items);
     } else {
@@ -4948,6 +4948,8 @@ export function AppShell() {
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     webItems={webItems}
+                    webOpenEntryKeys={webOpenEntryKeys}
+                    runningWebappCount={webItems.filter((item) => item.kind === "webapp" && webappRuntimeById[item.id]?.status === "running").length}
                     copilotAgentOptions={copilotAgentOptions}
                     onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
                     webappPublishStateById={webappPublishStateById}

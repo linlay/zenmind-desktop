@@ -13,7 +13,15 @@ function copyDarwinServiceResources(sourceRoot, destinationRoot, verifyServices 
   // permissions. Both participate in Platform tree hashes. Copy the complete
   // verified resource tree, including empty directories, before app signing.
   fs.rmSync(destination, { recursive: true, force: true });
-  fs.cpSync(source, destination, { recursive: true, force: true });
+  fs.cpSync(source, destination, {
+    recursive: true,
+    force: true,
+    filter: (entry) => {
+      const relative = path.relative(source, entry).split(path.sep);
+      // Exclude only sibling signing transactions, never content inside a bundle.
+      return !(relative.length === 2 && relative[1].startsWith(".service-sign-"));
+    }
+  });
   verifyServices(destination);
 }
 

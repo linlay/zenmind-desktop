@@ -4,6 +4,13 @@ import type { CallbackServerInfo, CallbackHooks, PendingLogin, DesktopSsoProxySt
 import type { App } from "electron";
 import type { DesktopSsoStatus, DesktopSsoClaims } from "../../../shared/contracts";
 
+let canonicalAccessToken = "";
+const credentialRevocationListeners = new Set<() => void>();
+export function subscribeDesktopSsoCredentialRevocation(listener: () => void) {
+  credentialRevocationListeners.add(listener);
+  return () => { credentialRevocationListeners.delete(listener); };
+}
+
 export const desktopSsoRuntimeState = {
   currentStatus: createSignedOutStatus(t("sso.notSignedIn")),
   callbackServers: [] as http.Server[],
@@ -12,7 +19,12 @@ export const desktopSsoRuntimeState = {
   callbackHooks: {} as CallbackHooks,
   pendingLogin: null as PendingLogin | null,
   desktopSsoProxyState: null as DesktopSsoProxyState | null,
-  currentAccessToken: "",
+  get currentAccessToken() { return canonicalAccessToken; },
+  set currentAccessToken(value: string) {
+    const revoked = Boolean(canonicalAccessToken) && !value;
+    canonicalAccessToken = value;
+    if (revoked) for (const listener of credentialRevocationListeners) listener();
+  },
   currentIdToken: "",
   currentSessionAuthMode: null as DesktopSsoSessionMetadata["authMode"] | null,
   currentSessionApp: null as App | null,
