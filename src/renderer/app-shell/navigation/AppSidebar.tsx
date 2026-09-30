@@ -6164,7 +6164,6 @@ export function AppSidebar({
             .join(" ")}
           role="group"
           aria-label={desktopSsoUserLabel}
-          title={desktopSsoUserLabel}
         >
           <AccountMenuAvatar
             avatarUrl={desktopSsoStatus.user?.avatarUrl}
