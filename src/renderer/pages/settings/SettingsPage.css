@@ -729,22 +729,35 @@
   overflow: hidden;
 }
 
-.settings-page .webapp-runtime-settings-card .settings-control-grid {
-  display: grid;
-  border-top: 1px solid var(--control-center-border);
-}
-
-.settings-page .webapp-runtime-settings-card .settings-control-row {
+.settings-page .webapp-page-header-actions {
+  display: flex;
+  flex: 0 1 auto;
   min-width: 0;
-  padding: 12px 16px;
+  max-width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
-.settings-page .webapp-runtime-settings-card .settings-control-row + .settings-control-row {
+.settings-page .webapp-page-header-actions .control-center-dashboard-metrics {
+  width: 332px;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-page .webapp-runtime-settings-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
   border-top: 1px solid var(--control-center-border);
 }
 
-.settings-page .webapp-runtime-settings-card .settings-control-row-copy {
-  display: grid;
+.settings-page .webapp-runtime-settings-entry-copy {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   gap: 4px;
   color: var(--ink-soft);
@@ -752,10 +765,16 @@
   line-height: 1.4;
 }
 
-.settings-page .webapp-runtime-settings-card .settings-control-row-copy small {
+.settings-page .webapp-runtime-settings-entry-copy span {
+  overflow: hidden;
   color: var(--ink-muted);
   font-size: 11px;
-  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page .webapp-runtime-settings-entry > button {
+  flex-shrink: 0;
 }
 
 .settings-page .webapp-user-config-section {
@@ -1204,12 +1223,6 @@
   .webapp-details-modal .web-detail-row:nth-child(2) {
     border-top: 1px solid var(--control-center-border);
   }
-}
-
-.settings-page .webapp-runtime-settings-card .ant-input,
-.settings-page .webapp-runtime-settings-card .ant-select {
-  width: 100%;
-  min-width: 0;
 }
 
 .settings-page .web-publish-panel .config-head {

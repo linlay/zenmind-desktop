@@ -8897,13 +8897,10 @@ test("websites and webapps settings use split workspace detail panes", () => {
   assert.match(settingsPage, /settings\.webapps\.logsTitle/);
   assert.match(
     settingsPage,
-    /case "webapps"[\s\S]*className="control-center-shell web-settings-shell"[\s\S]*className="control-center-detail web-settings-detail"[\s\S]*className="service-card web-detail-card control-center-service-hero webapp-user-config-card"[\s\S]*className="webapp-runtime-settings-card"/
+    /case "webapps"[\s\S]*className="control-center-shell web-settings-shell"[\s\S]*className="control-center-detail web-settings-detail"[\s\S]*className="service-card web-detail-card control-center-service-hero webapp-user-config-card"[\s\S]*className="webapp-runtime-settings-entry"/
   );
-  assert.match(
-    settingsPage,
-    /handleSaveWebappSettings[\s\S]*command\.type === "runtime"[\s\S]*saveRuntimeSettings\(\s*webappRuntimeSettings/
-  );
-  assert.doesNotMatch(settingsPage, /handleSaveWebappRuntimeSettings|settings\.webapps\.runtimeSettingsSave/);
+  assert.match(settingsPage, /<WebappRuntimeSettingsDialog/u);
+  assert.doesNotMatch(settingsPage, /webapps\.saveRuntimeSettings/u);
   assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("start", selectedWebapp\)/);
   assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("stop", selectedWebapp\)/);
   assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("restart", selectedWebapp\)/);
@@ -8915,8 +8912,8 @@ test("websites and webapps settings use split workspace detail panes", () => {
   assert.match(settingsPageCss, /\.settings-page \.web-settings-shell\s*\{/u);
   assert.match(settingsPageCss, /\.settings-page \.web-settings-catalog\s*\{/u);
   assert.match(settingsPageCss, /\.settings-page \.web-detail-form \.settings-control-row\s*\{/u);
-  assert.match(settingsPageCss, /\.settings-page \.web-detail-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/u);
-  assert.match(settingsPageCss, /\.settings-page \.web-log-preview\s*\{/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-detail-grid(?:,\s*\.webapp-details-modal \.web-detail-grid)?\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-log-preview(?:,\s*\.webapp-details-modal \.web-log-preview)?\s*\{/u);
   assert.match(settingsPage, /desktop-pet-agent-select-wrap/);
 });
 

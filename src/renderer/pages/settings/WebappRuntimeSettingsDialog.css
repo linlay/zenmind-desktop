@@ -1,0 +1,71 @@
+.webapp-runtime-dialog .webapp-runtime-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  padding: 4px 0 8px;
+}
+
+.webapp-runtime-dialog .webapp-runtime-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.webapp-runtime-dialog .webapp-runtime-heading p,
+.webapp-runtime-dialog .webapp-runtime-field p,
+.webapp-runtime-dialog .webapp-runtime-empty p,
+.webapp-runtime-dialog .webapp-runtime-restart-hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.webapp-runtime-dialog .webapp-runtime-heading p,
+.webapp-runtime-dialog .webapp-runtime-empty p {
+  margin-top: 6px;
+}
+
+.webapp-runtime-dialog .webapp-runtime-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+}
+
+.webapp-runtime-dialog .webapp-runtime-field label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.webapp-runtime-dialog .webapp-runtime-path {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.webapp-runtime-dialog .webapp-runtime-empty {
+  padding: 24px 0 32px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.webapp-runtime-dialog .webapp-runtime-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 112px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.webapp-runtime-dialog .webapp-runtime-read-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
