@@ -5183,7 +5183,7 @@ export function AppShell() {
                 title={desktopSsoLoginSettled ? t("sidebar.sso.closeResult") : t("sidebar.sso.cancelLogin")}
                 onClick={() => void handleDesktopSsoLoginDialogClose()}
               >
-                <span aria-hidden="true">x</span>
+                <SidebarActionIcon kind="close" className="desktop-sso-login-modal-close-icon" />
               </button>
             </header>
             <div className="desktop-sso-login-modal-frame">

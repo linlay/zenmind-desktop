@@ -5427,7 +5427,7 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appSidebar, /function renderBootstrapGuideCard\(\)/);
   assert.match(appSidebar, /function renderBootstrapGuideFloatingBubbles\(\)/);
   assert.match(appSidebar, /closest\("\.app-shell"\)/);
-  assert.match(appSidebar, /createPortal\([\s\S]*?appShell,\s*\)/);
+  assert.match(appSidebar, /createPortal\([\s\S]*?portalHost,\s*\)/);
   assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
   assert.match(appSidebar, /window\.setTimeout\(\(\) => \{[\s\S]*?chat: true,[\s\S]*?help: true,[\s\S]*?BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS\);[\s\S]*?\}, \[bootstrapActive\]\);/);
   assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?onAutoOpenToolMenu\(\)/);
