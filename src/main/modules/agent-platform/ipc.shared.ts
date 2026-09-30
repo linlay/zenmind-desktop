@@ -282,6 +282,7 @@ export type FramePortOptions = {
   documentLocalOpen?: {
     getOptions(source: WorkPanelDocumentSource, stillOwned: () => boolean): Promise<WorkPanelDocumentOpenOptionsResult>;
     openCopy(source: WorkPanelDocumentSource, applicationId: string, stillOwned: () => boolean): Promise<WorkPanelDocumentOpenCopyResult>;
+    openDocument?(source: WorkPanelDocumentSource, applicationId: string, stillOwned: () => boolean): Promise<WorkPanelDocumentOpenCopyResult>;
   };
   app: App;
   getMainWebContents?(): WebContents | null;

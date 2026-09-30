@@ -53,6 +53,7 @@ test('Workspace, Artifact, nested Reference and root Reference resolve within th
     assert.deepEqual(result.bytes, bytes);
     assert.equal(result.fileName, path.basename(relativePath));
     assert.equal(result.originalPath, await fs.realpath(original));
+    assert.equal(result.isOriginalCurrent(), true);
     assert.deepEqual(result.protectedRoots, [await fs.realpath(f.runtimeRoot)]);
   }
   assert.deepEqual(f.calls.workspaces, ['agent-a']);
@@ -187,4 +188,35 @@ test('a file replaced during the asynchronous read fails without falling back to
   try { await assert.rejects(f.read(source('artifact', 'artifacts/run/replaced.pptx'))); }
   finally { fs.open = originalOpen; }
   assert.deepEqual(f.calls.remote, []);
+});
+
+test('local version guards invalidate originals modified, replaced or removed after reading', async (t) => {
+  for (const kind of ['workspace-file', 'artifact', 'reference']) {
+    for (const change of ['modified', 'replaced', 'removed']) {
+      const f = await fixture(t);
+      const relativePath = kind === 'workspace-file' ? 'report.pptx'
+        : kind === 'artifact' ? 'artifacts/run/report.pptx' : 'references/report.pptx';
+      const original = await f.write(relativePath, Buffer.from('local document'), kind === 'workspace-file' ? f.workspace : f.chatRoot);
+      const document = await f.read(source(kind, relativePath));
+      assert.equal(document.isOriginalCurrent(), true);
+      if (change === 'modified') await fs.writeFile(original, 'changed content');
+      if (change === 'replaced') {
+        await fs.rename(original, `${original}.old`);
+        await fs.writeFile(original, 'local document');
+      }
+      if (change === 'removed') await fs.unlink(original);
+      assert.equal(document.isOriginalCurrent(), false, `${kind}/${change}`);
+    }
+  }
+});
+
+test('local version guard rejects a Chat directory rebound to another Chat after reading', async (t) => {
+  const f = await fixture(t);
+  await f.write('artifacts/run/report.pptx');
+  const document = await f.read(source('artifact', 'artifacts/run/report.pptx'));
+  assert.equal(document.isOriginalCurrent(), true);
+  const otherChat = path.join(f.runtimeRoot, 'chats', 'other-chat');
+  await fs.rename(f.chatRoot, otherChat);
+  await fs.symlink(otherChat, f.chatRoot, 'dir');
+  assert.equal(document.isOriginalCurrent(), false);
 });

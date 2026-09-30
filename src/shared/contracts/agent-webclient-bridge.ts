@@ -593,6 +593,7 @@ export type WorkPanelBridgeResult =
 export type WorkPanelCapability =
   | "workpanel.open"
   | "workpanel.document.open-local"
+  | "workpanel.document.open-local-direct"
   | "workpanel.activate"
   | "workpanel.close";
 
@@ -604,6 +605,8 @@ export type AgentWebclientWorkPanelBridge = {
   getCapabilities(): Promise<WorkPanelCapabilityResult>;
   getDocumentOpenOptions?(input: WorkPanelDocumentOpenOptionsInput): Promise<WorkPanelDocumentOpenOptionsResult>;
   openDocumentCopy?(input: WorkPanelDocumentOpenCopyInput): Promise<WorkPanelDocumentOpenCopyResult>;
+  /** Opens a local original directly; remote resources use a host-owned cache without a save dialog. */
+  openDocumentInLocalApp?(input: WorkPanelDocumentOpenCopyInput): Promise<WorkPanelDocumentOpenCopyResult>;
   openDocument(input: WorkPanelOpenDocumentInput): Promise<WorkPanelOpenDocumentResult>;
   openResource(input: WorkPanelOpenResourceInput): Promise<WorkPanelOpenResourceResult>;
   openItem(input: WorkPanelOpenItemInput): Promise<WorkPanelBridgeResult>;

@@ -10,6 +10,7 @@ const JSZip = require('jszip');
 const { createDocumentLocalOpenService, isLocalDocumentPathWithinRoot } = require('../dist-electron/main/modules/work-panel/document-local-open.js');
 const { isLocalDocumentBytes, LOCAL_DOCUMENT_MAX_BYTES } = require('../dist-electron/main/modules/work-panel/document-local-open-format.js');
 const { LocalDocumentApplicationError } = require('../dist-electron/main/infrastructure/electron/local-document-apps.js');
+const { createWorkPanelDocumentReader } = require('../dist-electron/main/modules/work-panel/document-local-reader.js');
 
 const parts = {
   '.docx': ['word/document.xml', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'],
@@ -71,6 +72,7 @@ async function fixture(t, overrides = {}, extension = '.pptx') {
   const ports = {
     platform: 'darwin',
     getDownloadsPath: () => directory,
+    getCachePath: () => path.join(directory, 'document-open-cache'),
     listApplications: async (ext) => { calls.queried.push(ext); return [app, secondApp]; },
     showSaveDialog: async (options) => { calls.dialogs.push(options); return { canceled: false, filePath: destination }; },
     readDocument: async (source) => { calls.read.push(source); return { fileName: `季度 #1${extension}`, bytes }; },
@@ -324,4 +326,177 @@ test('pending dialog prevents duplicate launches and cancellation releases the r
   await new Promise((resolve) => setImmediate(resolve));
   finishDialog({ canceled: true });
   assert.deepEqual(await retry, { ok: true, status: 'cancelled' });
+});
+
+async function localDocumentFixture(t, kind = 'workspace-file', extension = '.pptx') {
+  const f = await fixture(t, {
+    showSaveDialog: async () => { throw new Error('Direct opening must never request a save dialog'); },
+    getDownloadsPath: () => { throw new Error('Direct opening must never use Downloads'); },
+  }, extension);
+  const source = sourceFor(kind, extension);
+  const runtimeRoot = path.join(f.directory, 'runtime');
+  const workspace = path.join(f.directory, 'workspace');
+  const original = kind === 'workspace-file' ? path.join(workspace, source.path)
+    : path.join(runtimeRoot, 'chats', source.chatId, source.relativePath);
+  await fs.mkdir(path.dirname(original), { recursive: true });
+  await fs.writeFile(original, f.bytes);
+  const readDocument = createWorkPanelDocumentReader({
+    app: {}, platform: 'darwin', resolveRuntimeRoot: () => runtimeRoot,
+    getWorkspace: async () => workspace,
+    verifyChatOwner: async (chatId, agentKey) => chatId === 'chat' && agentKey === 'agent',
+    fetchResource: async () => { throw new Error('An existing local source must never be downloaded'); },
+  });
+  const ports = { ...f.ports, readDocument };
+  return { ...f, source, original, ports, service: createDocumentLocalOpenService(ports) };
+}
+
+test('direct open uses the original for every local source and document type without dialogs or file changes', async (t) => {
+  for (const kind of ['workspace-file', 'artifact', 'reference']) {
+    for (const extension of ['.ppt', '.pptx', '.doc', '.docx', '.xls', '.xlsx', '.pdf']) {
+      const f = await localDocumentFixture(t, kind, extension);
+      const before = await fs.stat(f.original);
+      const result = await f.service.openDocument(f.source, 'wps', f.stillOwned);
+      assert.deepEqual(result, { ok: true, status: 'launch-requested' }, `${kind}/${extension}`);
+      assert.equal(f.calls.opened.length, 1);
+      assert.equal(f.calls.opened[0].file, await fs.realpath(f.original));
+      assert.equal(f.calls.opened[0].selected.id, 'wps');
+      const after = await fs.stat(f.original);
+      for (const field of ['dev', 'ino', 'size', 'mtimeMs', 'ctimeMs']) assert.equal(after[field], before[field], field);
+      assert.deepEqual(await fs.readFile(f.original), f.bytes);
+      await assert.rejects(fs.stat(f.ports.getCachePath()), { code: 'ENOENT' });
+      assert.equal(f.calls.dialogs.length, 0);
+    }
+  }
+});
+
+test('remote direct opens prepare independent named caches and preserve a previously edited cache', async (t) => {
+  for (const kind of ['artifact', 'reference']) {
+    for (const extension of ['.ppt', '.pptx', '.doc', '.docx', '.xls', '.xlsx', '.pdf']) {
+      const f = await fixture(t, {
+        showSaveDialog: async () => { throw new Error('Remote opening must not prompt for a save location'); },
+        getDownloadsPath: () => { throw new Error('The cache must not fall back to Downloads'); },
+      }, extension);
+      const source = sourceFor(kind, extension);
+      assert.deepEqual(await f.service.openDocument(source, 'office', f.stillOwned), { ok: true, status: 'launch-requested' });
+      const first = f.calls.opened[0].file;
+      const cacheRoot = await fs.realpath(f.ports.getCachePath());
+      assert.equal(path.dirname(path.dirname(first)), cacheRoot);
+      assert.equal(path.basename(first), `季度 #1${extension}`);
+      assert.deepEqual(await fs.readFile(first), f.bytes);
+      await fs.writeFile(first, 'saved edits from local application');
+      assert.deepEqual(await f.service.openDocument(source, 'office', f.stillOwned), { ok: true, status: 'launch-requested' });
+      const second = f.calls.opened[1].file;
+      assert.notEqual(path.dirname(second), path.dirname(first));
+      assert.equal(await fs.readFile(first, 'utf8'), 'saved edits from local application');
+      assert.deepEqual(await fs.readFile(second), f.bytes);
+      assert.equal(f.calls.dialogs.length, 0);
+    }
+  }
+});
+
+test('direct opens fail before launching when source content or background cache preparation fails', async (t) => {
+  for (const kind of ['unconfigured-cache', 'symlink-cache', 'bad-content', 'cache-write-failure', 'read-failure']) {
+    const f = await fixture(t, {
+      showSaveDialog: async () => { throw new Error('No dialogs'); },
+      getDownloadsPath: () => { throw new Error('No Downloads fallback'); },
+    });
+    const ports = { ...f.ports };
+    if (kind === 'unconfigured-cache') delete ports.getCachePath;
+    if (kind === 'symlink-cache') {
+      const external = path.join(f.directory, 'external');
+      await fs.mkdir(external);
+      await fs.symlink(external, f.ports.getCachePath(), 'dir');
+    }
+    if (kind === 'bad-content') ports.readDocument = async () => ({ fileName: 'fake.pptx', bytes: Buffer.from('not an Office file') });
+    if (kind === 'read-failure') ports.readDocument = async () => { throw new Error('Source disappeared'); };
+    const originalOpen = fs.open;
+    if (kind === 'cache-write-failure') {
+      fs.open = async (...args) => {
+        const handle = await originalOpen(...args);
+        if (String(args[0]).includes('document-open-cache')) handle.sync = async () => { throw new Error('Disk I/O failed'); };
+        return handle;
+      };
+    }
+    try {
+      const result = await createDocumentLocalOpenService(ports).openDocument(sourceFor('artifact'), 'office', f.stillOwned);
+      assert.equal(result.error.code, kind === 'bad-content' ? 'unsupported_document_type' : kind === 'read-failure' ? 'target_unavailable' : 'document_save_failed', kind);
+      assert.ok(!result.error.message.includes('copy'));
+      assert.equal(f.calls.opened.length, 0);
+      if (kind === 'cache-write-failure') assert.deepEqual(await fs.readdir(f.ports.getCachePath()), []);
+    } finally { fs.open = originalOpen; }
+  }
+});
+
+test('direct open rejects local files replaced after reading and during the native launch boundary', async (t) => {
+  for (const moment of ['application-query', 'native-check']) {
+    const f = await localDocumentFixture(t);
+    let queries = 0;
+    let launches = 0;
+    const replace = async () => {
+      await fs.rename(f.original, `${f.original}.previous`);
+      await fs.writeFile(f.original, 'different file');
+    };
+    const service = createDocumentLocalOpenService({ ...f.ports,
+      listApplications: async () => {
+        if (++queries === 2 && moment === 'application-query') await replace();
+        return [app];
+      },
+      openApplication: async (_application, _filePath, canLaunch) => {
+        if (moment === 'native-check') await replace();
+        if (!canLaunch()) throw new LocalDocumentApplicationError('application-unavailable', 'Document changed');
+        launches++;
+      },
+    });
+    const result = await service.openDocument(f.source, 'office', f.stillOwned);
+    assert.equal(result.error.code, 'target_unavailable', moment);
+    assert.equal(launches, 0);
+    assert.equal(await fs.readFile(f.original, 'utf8'), 'different file');
+  }
+});
+
+test('direct opening checks surface lifetime after reading, during caching and at native launch', async (t) => {
+  for (const stage of ['read', 'cache', 'native']) {
+    const f = await fixture(t);
+    let launches = 0;
+    const service = createDocumentLocalOpenService({ ...f.ports,
+      readDocument: async () => {
+        if (stage === 'read') f.release();
+        return { fileName: 'report.pptx', bytes: f.bytes };
+      },
+      openApplication: async (_application, _filePath, canLaunch) => {
+        if (stage === 'native') f.release();
+        if (!canLaunch()) throw new LocalDocumentApplicationError('application-unavailable', 'Surface changed');
+        launches++;
+      },
+    });
+    const originalOpen = fs.open;
+    if (stage === 'cache') {
+      fs.open = async (...args) => {
+        const handle = await originalOpen(...args);
+        if (String(args[0]).includes('document-open-cache')) f.release();
+        return handle;
+      };
+    }
+    try {
+      assert.equal((await service.openDocument(sourceFor('artifact'), 'office', f.stillOwned)).error.code, 'target_unavailable', stage);
+      assert.equal(launches, 0);
+      if (stage === 'cache') assert.deepEqual(await fs.readdir(f.ports.getCachePath()), []);
+    } finally { fs.open = originalOpen; }
+  }
+});
+
+test('local app edits immediately after launching are accepted and direct-open errors have no copy text', async (t) => {
+  const f = await localDocumentFixture(t);
+  const service = createDocumentLocalOpenService({ ...f.ports,
+    openApplication: async (_application, filePath, canLaunch) => {
+      assert.equal(canLaunch(), true);
+      await fs.writeFile(filePath, 'user edits made by the selected application');
+    },
+  });
+  assert.deepEqual(await service.openDocument(f.source, 'office', f.stillOwned), { ok: true, status: 'launch-requested' });
+  const remote = await fixture(t, { openApplication: async () => { throw new Error('Cannot launch'); } });
+  const failed = await remote.service.openDocument(sourceFor('artifact'), 'office', remote.stillOwned);
+  assert.equal(failed.error.code, 'application_launch_failed');
+  assert.ok(!failed.error.message.includes('copy'));
+  assert.equal((await fs.readdir(remote.ports.getCachePath())).length, 1);
 });

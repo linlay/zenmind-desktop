@@ -26,6 +26,10 @@ function harness() {
       calls.push({ document, applicationId, stillOwned });
       return { ok: true, status: "launch-requested" };
     },
+    openDocument: async (document, applicationId, stillOwned) => {
+      calls.push({ document, applicationId, stillOwned, direct: true });
+      return { ok: true, status: "launch-requested" };
+    },
   };
   const handler = createWorkpanelInvoke({ options: {
     browserSurfaces: {
@@ -64,6 +68,34 @@ test("initial capability query waits for a trusted document registration before 
   assert.equal(result.ok, true);
   assert.ok(result.capabilities.includes("workpanel.document.open-local"));
   assert.equal(h.calls.length, 0);
+});
+
+test("direct-open capability selects the new entrypoint and never falls back to a save dialog", async () => {
+  const h = harness();
+  assert.ok((await h.invoke("getCapabilities")).capabilities.includes("workpanel.document.open-local-direct"));
+  assert.equal((await h.invoke("openDocumentInLocalApp", { version: 6, source, applicationId: "app" })).ok, true);
+  assert.equal(h.calls[0].direct, true);
+  h.local.openDocument = undefined;
+  assert.equal((await h.invoke("getCapabilities")).capabilities.includes("workpanel.document.open-local-direct"), false);
+  assert.equal((await h.invoke("openDocumentInLocalApp", { version: 6, source, applicationId: "app" })).error.code, "capability_denied");
+  assert.equal(h.calls.length, 1);
+});
+
+test("direct-open requests reject substituted documents and cannot survive a reload", async () => {
+  const h = harness();
+  assert.equal((await h.invoke("openDocumentInLocalApp", { version: 6, source: { ...source, relativePath: "artifacts/other.pptx" }, applicationId: "app" })).error.code, "capability_denied");
+  let complete;
+  h.local.openDocument = async (_source, _app, stillOwned) => {
+    await new Promise((resolve) => { complete = resolve; });
+    return stillOwned() ? { ok: true, status: "launch-requested" }
+      : { ok: false, error: { code: "target_unavailable", message: "invalidated" } };
+  };
+  const pending = h.invoke("openDocumentInLocalApp", { version: 6, source, applicationId: "app" });
+  assert.equal((await h.invoke("openDocumentCopy", { version: 6, source, applicationId: "app" })).error.code, "duplicate_id");
+  h.sender.emit("did-start-navigation", {}, "http://localhost:3000/resource-viewer/agent", false, true);
+  complete();
+  assert.equal((await pending).error.code, "target_unavailable");
+  assert.equal(h.sender.listenerCount("did-start-navigation"), 0);
 });
 
 test("guest cannot substitute another document, Chat, path or command", async () => {

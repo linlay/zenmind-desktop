@@ -1,5 +1,6 @@
 import { createDocumentLocalOpenService, createWorkPanelDocumentReader } from "../modules/work-panel";
 import type { MainIpcRegistrationOptions } from "./ipc-registration-contracts";
+import path from "node:path";
 
 const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
 
@@ -60,6 +61,7 @@ export function createDesktopDocumentLocalOpen(options: MainIpcRegistrationOptio
     readDocument,
     platform: options.platform,
     getDownloadsPath: () => app.getPath("downloads"),
+    getCachePath: () => path.join(app.getPath("userData"), "document-open-cache"),
     showSaveDialog: (dialog) => options.showSaveDialog(dialog, options.getMainWindow()),
   });
 }

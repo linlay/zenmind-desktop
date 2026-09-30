@@ -194,6 +194,7 @@ export function buildServiceWebviewMainWorldScript() {
       getCapabilities: () => invoke("workpanel", "getCapabilities"),
       getDocumentOpenOptions: (input) => invoke("workpanel", "getDocumentOpenOptions", input),
       openDocumentCopy: (input) => invoke("workpanel", "openDocumentCopy", input),
+      openDocumentInLocalApp: (input) => invoke("workpanel", "openDocumentInLocalApp", input),
       openResource: (input) => invoke("workpanel", "openResource", input),
       openDocument: (input) => invoke("workpanel", "openDocument", input),
       openItem: (input) => invoke("workpanel", "openItem", input),

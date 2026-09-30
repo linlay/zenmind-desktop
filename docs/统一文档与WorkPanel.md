@@ -35,7 +35,7 @@ Desktop 只原生承载 HTML 和图片。Markdown、文本、代码、PDF、Offi
 
 Desktop 中的 Word、Excel、PowerPoint 与 PDF 文档在展示时，通过独立的受限 WorkPanel 能力查询本机文件关联，显示实际默认应用与可选打开方式。PDF 保留内嵌预览，打开方式作为独立操作行提供。查询失败与没有处理程序是不同状态；普通浏览器和旧宿主没有该能力时保留下载流程。此能力只属于宿主已登记的当前文档子 Surface，来源由 AppShell 的 item descriptor 绑定到 Main Registry，guest 请求不能替换文件、Chat、应用路径或命令。
 
-本地应用打开统一先由用户另存独立副本，完整写入后再调用所选处理程序。Workspace、Artifact 与 Reference 原件都不因此被编辑，副本修改不回传。保存目标不得覆盖原文件或 Platform 管理目录；取消另存正常结束。等待系统对话框、文件读取及启动期间持续校验文档归属与 registration generation，关闭、切换或替换文档后不再启动。返回成功只表示系统接受打开请求，不表示 Office 已完成加载或保存。macOS 与 Windows 分别查询系统文件关联并启动精确的所选应用。
+用户点击本地应用打开后直接启动所选处理程序，不弹出另存或下载对话框。经授权解析的 Workspace、Artifact、Reference 本地文件直接交给应用，因此用户在外部应用保存会修改本地原件；此显式外部操作与 WebClient 内编辑器的 document.commit 保存规则分别处理。仅远端存在的资源由 Main 读取后写入独立受控缓存再打开，不自动回传，也不覆盖已有缓存中的用户编辑。文件读取和启动期间持续校验文档归属、registration generation 以及原文件身份，关闭、切换、重载或路径替换后不再启动。返回成功只表示系统接受打开请求，不表示 Office 已完成加载或保存。旧副本桥接方法保留原语义，新界面必须探测直接打开能力，不能回退到旧的另存流程。macOS 与 Windows 分别查询系统文件关联并启动精确的所选应用。
 
 Platform 的 MIME、签名和文本探测是加载后最终事实。WebClient 可以用扩展名做加载前临时分类；Desktop 在创建 HTML/图片原生 Surface 前必须从权威来源重新检查，不信任 guest 自报类型。
 

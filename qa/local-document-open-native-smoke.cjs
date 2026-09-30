@@ -1,11 +1,12 @@
 // Run with Electron after build:main:prepared. All input files must be generated
-// fixtures; --launch explicitly enables opening their independent local copies.
+// fixtures; --launch explicitly enables opening the test files directly.
 const { app } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { createDocumentLocalOpenService } = require("../dist-electron/main/modules/work-panel/document-local-open.js");
+const { createWorkPanelDocumentReader } = require("../dist-electron/main/modules/work-panel/document-local-reader.js");
 
 const fixtureRoot = path.resolve(process.argv[2] || ".cache/office-local-open-acceptance/fixtures");
 const copyRoot = path.join(path.dirname(fixtureRoot), "copies");
@@ -15,9 +16,16 @@ const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex"
 app.whenReady().then(async () => {
   await fs.mkdir(copyRoot, { recursive: true });
   const service = createDocumentLocalOpenService({
-    readDocument: async (source) => ({ fileName: source.path, bytes: await fs.readFile(path.join(fixtureRoot, source.path)), originalPath: path.join(fixtureRoot, source.path) }),
-    showSaveDialog: async (options) => ({ canceled: false, filePath: path.join(copyRoot, path.basename(options.defaultPath)) }),
+    readDocument: createWorkPanelDocumentReader({
+      app,
+      getWorkspace: async () => fixtureRoot,
+      verifyChatOwner: async () => false,
+      fetchResource: async () => { throw new Error("Local fixture must never download"); },
+      resolveRuntimeRoot: () => path.join(copyRoot, "unused-runtime"),
+    }),
+    showSaveDialog: async () => { throw new Error("Direct opening must not display a save dialog"); },
     getDownloadsPath: () => copyRoot,
+    getCachePath: () => path.join(copyRoot, "cache"),
   });
   const receipts = [];
   for (const fileName of (await fs.readdir(fixtureRoot)).filter((name) => /\.(docx|xlsx|pptx|pdf)$/i.test(name))) {
@@ -31,9 +39,8 @@ app.whenReady().then(async () => {
     assert.ok(selected.iconDataUrl?.startsWith("data:image/png;base64,"), "Electron returned the real application icon");
     let result;
     if (launch) {
-      result = await service.openCopy(source, selected.id, () => true);
+      result = await service.openDocument(source, selected.id, () => true);
       assert.deepEqual(result, { ok: true, status: "launch-requested" });
-      assert.equal(digest(await fs.readFile(path.join(copyRoot, fileName))), before);
     }
     assert.equal(digest(await fs.readFile(path.join(fixtureRoot, fileName))), before);
     receipts.push({ fileName, application: selected.name, candidateCount: options.applications.length, icon: true,

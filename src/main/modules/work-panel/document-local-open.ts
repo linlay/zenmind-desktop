@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { SaveDialogOptions, SaveDialogReturnValue } from "electron";
@@ -17,16 +18,19 @@ type LocalOpenFailureCode = "local_app_query_failed" | "local_app_unavailable" |
 type ApplicationOption = Omit<LocalDocumentApplication, "path">;
 type OptionsResult = { ok: true; applications: ApplicationOption[] } | AgentWebclientBridgeFailure;
 type OpenResult = { ok: true; status: "cancelled" | "launch-requested" } | AgentWebclientBridgeFailure;
+type DirectOpenResult = { ok: true; status: "launch-requested" } | AgentWebclientBridgeFailure;
 
 export type DocumentLocalOpenPorts = {
   readDocument(source: WorkPanelDocumentSource): Promise<{
     fileName: string;
     bytes: Buffer;
     originalPath?: string;
+    isOriginalCurrent?(): boolean;
     protectedRoots?: string[];
   }>;
   showSaveDialog(options: SaveDialogOptions): Promise<SaveDialogReturnValue>;
   getDownloadsPath(): string;
+  getCachePath?(): string;
   resolveFileName?(source: WorkPanelDocumentSource): string;
   listApplications?(extension: LocalDocumentExtension): Promise<LocalDocumentApplication[]>;
   openApplication?(application: LocalDocumentApplication, filePath: string, stillOwned?: () => boolean): Promise<void>;
@@ -172,6 +176,64 @@ async function saveCompleteCopy(
   }
 }
 
+async function prepareCachedDocument(
+  root: string,
+  fileName: string,
+  bytes: Buffer,
+  stillOwned: () => boolean,
+): Promise<{ filePath: string; isCurrent(): boolean }> {
+  if (!path.isAbsolute(root) || /[\x00-\x1f\x7f]/.test(root)) throw new Error("Document cache is unavailable");
+  assertOwned(stillOwned);
+  await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  assertOwned(stillOwned);
+  const rootStat = await fs.lstat(root);
+  assertOwned(stillOwned);
+  if (!rootStat.isDirectory()) throw new Error("Document cache is not a directory");
+  const cacheRoot = await fs.realpath(root);
+  assertOwned(stillOwned);
+  // Each opening gets an independent directory. Reopening a remote document
+  // must never overwrite a previously opened version the user may have edited.
+  const directory = await fs.mkdtemp(path.join(cacheRoot, "document-"));
+  let filePath: string | undefined;
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  let complete = false;
+  try {
+    assertOwned(stillOwned);
+    const realDirectory = await fs.realpath(directory);
+    assertOwned(stillOwned);
+    if (path.dirname(realDirectory) !== cacheRoot) throw new Error("Document cache location changed");
+    filePath = path.join(realDirectory, fileName);
+    handle = await fs.open(filePath, "wx", 0o600);
+    assertOwned(stillOwned);
+    await handle.writeFile(bytes);
+    assertOwned(stillOwned);
+    await handle.sync();
+    assertOwned(stillOwned);
+    const stat = await handle.stat();
+    assertOwned(stillOwned);
+    await handle.close();
+    handle = undefined;
+    assertOwned(stillOwned);
+    const target = filePath;
+    const isCurrent = () => {
+      try {
+        const current = lstatSync(target);
+        return current.isFile() && sameFileIdentity(stat, current) && current.size === stat.size &&
+          current.mtimeMs === stat.mtimeMs && current.ctimeMs === stat.ctimeMs && realpathSync.native(target) === target;
+      } catch { return false; }
+    };
+    if (!isCurrent()) throw new Error("Document cache changed while being prepared");
+    complete = true;
+    return { filePath, isCurrent };
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    if (!complete) {
+      if (filePath) await fs.unlink(filePath).catch(() => {});
+      await fs.rmdir(directory).catch(() => {});
+    }
+  }
+}
+
 export function createDocumentLocalOpenService(ports: DocumentLocalOpenPorts) {
   const platform = ports.platform ?? process.platform;
   const listApplications = ports.listApplications ?? listLocalDocumentApplications;
@@ -275,5 +337,90 @@ export function createDocumentLocalOpenService(ports: DocumentLocalOpenPorts) {
     } finally { if (key !== undefined) pending.delete(key); }
   }
 
-  return { getOptions, openCopy };
+  async function openDocument(source: WorkPanelDocumentSource, applicationId: string, stillOwned: () => boolean): Promise<DirectOpenResult> {
+    let key: string | undefined;
+    let phase: LocalOpenFailureCode = "invalid_request";
+    let mayLaunch = stillOwned;
+    try {
+      assertOwned(stillOwned);
+      if (!supported) return failure("capability_denied", "Local document applications are unavailable on this platform.");
+      const extension = documentExtension(fileNameFor(source));
+      if (!extension) return failure("unsupported_document_type", "This file type cannot be opened with a local document application.");
+      if (typeof applicationId !== "string" || !applicationId || applicationId.length > 4096 || /[\x00-\x1f\x7f]/.test(applicationId)) {
+        return failure("invalid_request", "Select an available document application.");
+      }
+      const sourceKey = source.kind === "workspace-file"
+        ? JSON.stringify([source.kind, source.agentKey, source.path])
+        : JSON.stringify([source.kind, source.agentKey, source.chatId, source.resourceId, source.relativePath]);
+      if (pending.has(sourceKey)) return failure("duplicate_id", "This document is already being opened.");
+      key = sourceKey;
+      pending.add(key);
+      phase = "local_app_query_failed";
+      const applications = await listApplications(extension);
+      assertOwned(stillOwned);
+      if (!applications.some((application) => application.id === applicationId)) {
+        return failure("local_app_unavailable", "The selected application is no longer available.");
+      }
+      phase = "target_unavailable";
+      const document = await ports.readDocument(source);
+      assertOwned(stillOwned);
+      if (documentExtension(document.fileName) !== extension || !(await isLocalDocumentBytes(document.bytes, extension))) {
+        assertOwned(stillOwned);
+        return failure("unsupported_document_type", "The document content does not match the supported file type.");
+      }
+      assertOwned(stillOwned);
+      let target: string;
+      if (document.originalPath) {
+        // Local documents are handed to the chosen app in place. The reader
+        // binds its version and source boundaries so replacement during async
+        // application discovery cannot open an unvalidated file.
+        if (!path.isAbsolute(document.originalPath) || !document.isOriginalCurrent) throw unavailable();
+        target = document.originalPath;
+        const originalCurrent = document.isOriginalCurrent;
+        mayLaunch = () => {
+          try { return stillOwned() && originalCurrent(); } catch { return false; }
+        };
+        assertOwned(mayLaunch);
+      } else {
+        phase = "document_save_failed";
+        const cacheRoot = ports.getCachePath?.();
+        if (!cacheRoot) throw new Error("Document cache is not configured");
+        const cached = await prepareCachedDocument(cacheRoot, document.fileName, document.bytes, stillOwned);
+        target = cached.filePath;
+        mayLaunch = () => stillOwned() && cached.isCurrent();
+        assertOwned(mayLaunch);
+      }
+      phase = "local_app_query_failed";
+      const currentApplications = await listApplications(extension);
+      assertOwned(mayLaunch);
+      const application = currentApplications.find((candidate) => candidate.id === applicationId);
+      if (!application) return failure("local_app_unavailable", "The selected application is no longer available.");
+      phase = "application_launch_failed";
+      await openApplication(application, target, mayLaunch);
+      // Once launched, edits by the selected app are expected. Only the surface
+      // lifecycle still matters when delivering the request result.
+      assertOwned(stillOwned);
+      return { ok: true, status: "launch-requested" };
+    } catch (error) {
+      if (!mayLaunch()) return failure("target_unavailable", "The document is no longer available.");
+      if (error instanceof LocalOpenError) return failure(error.code, error.message);
+      if (error instanceof LocalDocumentApplicationError && error.code === "application-unavailable") {
+        return failure("local_app_unavailable", "The selected application is no longer available.");
+      }
+      const messages: Record<LocalOpenFailureCode, string> = {
+        invalid_request: "The local document request is invalid.",
+        duplicate_id: "This document is already being opened.",
+        capability_denied: "Local document applications are unavailable on this platform.",
+        local_app_query_failed: "Unable to read the installed document applications.",
+        local_app_unavailable: "The selected application is no longer available.",
+        unsupported_document_type: "This file type cannot be opened with a local document application.",
+        target_unavailable: "The document is no longer available.",
+        document_save_failed: "Unable to prepare the document for the selected application.",
+        application_launch_failed: "Unable to open the document in the selected application.",
+      };
+      return failure(phase, messages[phase]);
+    } finally { if (key !== undefined) pending.delete(key); }
+  }
+
+  return { getOptions, openCopy, openDocument };
 }

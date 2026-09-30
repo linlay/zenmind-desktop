@@ -70,6 +70,7 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
       (documentSource.kind === "workspace-file" || documentSource.chatId === ownerChatId));
     const capabilities: WorkPanelCapability[] = [
       ...(localDocumentAllowed ? ["workpanel.document.open-local" as const] : []),
+      ...(localDocumentAllowed && deps.options.documentLocalOpen?.openDocument ? ["workpanel.document.open-local-direct" as const] : []),
       ...(context.kind === "agent-chat" || context.kind === "agent-copilot" || context.kind === "agent-overview"
         || documentSurface
         ? ["workpanel.open" as const]
@@ -79,13 +80,16 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
     ];
     if (method === "getCapabilities")
       return { ok: true, capabilities };
-    if (method === "getDocumentOpenOptions" || method === "openDocumentCopy") {
+    if (method === "getDocumentOpenOptions" || method === "openDocumentCopy" || method === "openDocumentInLocalApp") {
       if (!localDocumentAllowed || !documentSource || !deps.options.documentLocalOpen)
         return failure("capability_denied", "This surface cannot open local documents");
+      if (method === "openDocumentInLocalApp" && !deps.options.documentLocalOpen.openDocument)
+        return failure("capability_denied", "Direct document opening is unavailable");
+      const opening = method !== "getDocumentOpenOptions";
       const input = isPlainBridgeRecord(record.input) ? record.input : {};
       if (!isAgentWebclientBridgeVersion(input.version))
         return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
-      const allowedKeys = method === "openDocumentCopy" ? ["version", "source", "applicationId"] : ["version", "source"];
+      const allowedKeys = opening ? ["version", "source", "applicationId"] : ["version", "source"];
       if (Object.keys(input).some((key) => !allowedKeys.includes(key)) ||
         !sameWorkPanelDocumentSource(input.source, documentSource))
         return failure("capability_denied", "Document does not match the host-owned WorkPanel item");
@@ -104,16 +108,16 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
           current.target.ownerWebContentsId === initial.ownerWebContentsId &&
           current.target.surfaceId === initial.surfaceId && current.target.ownerChatId === ownerChatId &&
           current.target.surfaceRole === initial.surfaceRole &&
-          (method !== "openDocumentCopy" || current.target.active) &&
+          (!opening || current.target.active) &&
           event.sender.getURL() === initialUrl &&
           sameWorkPanelDocumentSource(current.target.documentSource, documentSource);
       };
       if (!stillOwned()) return failure("surface_unavailable", "Document surface is no longer available");
-      if (method === "openDocumentCopy" && (typeof input.applicationId !== "string" || !input.applicationId.trim() || input.applicationId.length > 256))
+      if (opening && (typeof input.applicationId !== "string" || !input.applicationId.trim() || input.applicationId.length > 256))
         return failure("invalid_request", "Invalid local application identity");
-      if (method === "openDocumentCopy" && openingGuests.has(event.sender.id))
+      if (opening && openingGuests.has(event.sender.id))
         return failure("duplicate_id", "A local document open is already pending");
-      if (method === "openDocumentCopy") openingGuests.add(event.sender.id);
+      if (opening) openingGuests.add(event.sender.id);
       // A reload can keep both URL and host registration id unchanged. Bind
       // in-flight native work to this document lifetime as well as its source.
       event.sender.on("did-start-navigation", onNavigation);
@@ -121,9 +125,10 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
       event.sender.on("destroyed", invalidateDocument);
       try {
         if (method === "getDocumentOpenOptions") return await deps.options.documentLocalOpen.getOptions(documentSource, stillOwned);
+        if (method === "openDocumentInLocalApp") return await deps.options.documentLocalOpen.openDocument!(documentSource, input.applicationId as string, stillOwned);
         return await deps.options.documentLocalOpen.openCopy(documentSource, input.applicationId as string, stillOwned);
       } finally {
-        if (method === "openDocumentCopy") openingGuests.delete(event.sender.id);
+        if (opening) openingGuests.delete(event.sender.id);
         event.sender.removeListener("did-start-navigation", onNavigation);
         event.sender.removeListener("render-process-gone", invalidateDocument);
         event.sender.removeListener("destroyed", invalidateDocument);
