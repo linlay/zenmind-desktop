@@ -1322,6 +1322,7 @@ export function AppSidebar({
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const sidebarScrollThumbRef = useRef<HTMLDivElement | null>(null);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
+  const toolMenuContentRef = useRef<HTMLDivElement | null>(null);
   const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
   const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(
     null,
@@ -5963,7 +5964,12 @@ export function AppSidebar({
       bootstrapGuideChatAnchorRef.current ??
       bootstrapGuideToolHelpAnchorRef.current
     )?.closest(".app-shell");
-    if (!appShell) {
+    // Keep guide controls above the menu dismissal layer and inside its click boundary.
+    const toolMenuPopover = toolMenuOpen
+      ? toolMenuContentRef.current?.closest(".sidebar-tool-menu-popover")
+      : null;
+    const portalHost = toolMenuPopover ?? appShell;
+    if (!portalHost) {
       return null;
     }
 
@@ -5983,10 +5989,21 @@ export function AppSidebar({
             role="note"
           >
             {t(bubble.messageKey, { appName: PRODUCT_NAME })}
+            <button
+              type="button"
+              className="sidebar-bootstrap-guide-bubble-dismiss"
+              aria-label={t("sidebar.bootstrapGuide.dismiss")}
+              onClick={(event) => {
+                event.stopPropagation();
+                dismissBootstrapGuideBubble(bubble.id === "chat" ? "chat" : "help");
+              }}
+            >
+              <CloseOutlined aria-hidden="true" />
+            </button>
           </div>
         ))}
       </div>,
-      appShell,
+      portalHost,
     );
   }
 
@@ -6298,6 +6315,7 @@ export function AppSidebar({
 
     return (
       <div
+        ref={toolMenuContentRef}
         className={[
           "sidebar-tool-menu",
           "sidebar-account-menu",
