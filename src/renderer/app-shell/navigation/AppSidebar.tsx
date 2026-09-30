@@ -5435,7 +5435,7 @@ export function AppSidebar({
         }
         headerActions={
           <span className="assistant-worker-actions">
-            <Tooltip content={t("sidebar.agent.moreActions")}>
+            <Tooltip content={t("sidebar.agent.moreActions")} hoverOnly>
               <button
                 type="button"
                 className="assistant-worker-icon-button sidebar-more-actions-button sidebar-agent-more-actions-button"
