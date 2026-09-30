@@ -1003,6 +1003,15 @@
 - 请求携带其他 Agent、来自非活动 Main Chat 或其他 Surface 时拒绝；WebClient 显示失败提示且支持重试，不跳转外部 URL。
 - WebClient standalone：同一入口仍为编码后的 `/agents/:agentKey` 链接，不调用 Desktop bridge。
 
+## Office 与 PDF 文档的本地应用打开
+
+- 在 macOS 和 Windows 分别打开 `.ppt/.pptx`、`.doc/.docx`、`.xls/.xlsx`、`.pdf`：点击前显示系统真实默认应用名称和图标，多候选可选择，检测失败与未找到应用有不同提示；PDF 内嵌分页、缩放与搜索不受影响。
+- 从 Workspace、Artifact、Reference 各打开一份本地测试文档；点击后直接由所选应用打开原路径，不弹出下载或另存框，不产生额外副本。仅远端资源使用独立缓存，重复打开不覆盖之前缓存中的用户编辑，不自动回传。
+- 本地和远端读取期间重复点击不产生第二个流程；关闭、切换、重载文档后迟到结果不得启动应用。
+- 源文件被替换、越界符号链接及失效来源不得启动；含空格、中文的正常文件路径可直接打开。在线预览与本地打开为两个上方大按钮，底部仅保留下载与定位。
+- 默认关联改为 WPS 时主按钮显示 WPS，手动选择 Microsoft Office 时仍打开所选程序；卸载所选程序后明确失败，不偷偷改用其他程序。
+- 独立浏览器或不支持该能力的旧 Desktop 不展示新原生动作，现有下载和预览保持可用。
+
 ## WebApp / Website SSO 会话交换
 
 - macOS / Windows 分别导入 sso-notes ZIP；未配置公钥时应用健康启动但拒绝登录。填写 RSA 公钥、issuer、audience 后重启。

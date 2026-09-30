@@ -1,4 +1,5 @@
 import type { ExternalWebviewController } from "../pages/external-webview/ExternalWebviewPage";
+import { documentSourceFromWebclientDescriptor } from "../../shared/work-panel-document-source";
 import { registerDesktopCloseShortcutHandler } from "../services/desktopCloseShortcutRegistry";
 import {
   AppstoreOutlined,
@@ -2259,6 +2260,7 @@ export function WorkPanelHost({
                         <ServiceWebviewSurface
                           active={active}
                           embedPath={item.descriptor.route}
+                          documentSource={documentSourceFromWebclientDescriptor(item.descriptor)}
                           hostTheme={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
                           loadInitialEmbeddedUrlDirectly
                           ownerChatId={workspace.ownerChatId}

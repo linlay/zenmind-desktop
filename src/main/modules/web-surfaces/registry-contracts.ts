@@ -188,6 +188,7 @@ export type PendingSurfaceRegistrationDiagnostic = {
 };
 
 export type RegisteredWebviewSurfaceTarget = {
+  documentSource?: EmbeddedCdpSurfaceRegistration["documentSource"];
   registrationId: string;
   surfaceId: string;
   surfaceKind: EmbeddedCdpSurfaceKind;

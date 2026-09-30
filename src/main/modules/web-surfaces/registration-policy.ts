@@ -1,4 +1,5 @@
 import type { SurfaceRole } from "../../../shared/surface-identity";
+import { normalizeWorkPanelDocumentSource } from "../../../shared/work-panel-document-source";
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
 import { readAgentWebclientCanonicalChatSource, readAgentWebclientNewChatSource } from "../../../shared/canonical-chat-sync";
 import { EmbeddedCdpSurfaceKind, EmbeddedCdpSurfaceRegistration, EmbeddedCdpSurfaceTabRegistration } from "../../../shared/embedded-cdp";
@@ -273,6 +274,14 @@ export function createRegistrationPolicy(options: Pick<BrowserSurfaceRegistryOpt
       (input.pageRouteIdentity !== undefined && typeof input.pageRouteIdentity !== "string") ||
       (input.ownerChatId !== undefined && typeof input.ownerChatId !== "string"))
       return { ok: false, check: "invalid_optional_fields" };
+    if (input.documentSource !== undefined) {
+      const document = normalizeWorkPanelDocumentSource(input.documentSource);
+      if (!document || input.serviceId !== "agent-webclient" || input.surfaceLevel !== "child" ||
+        input.surfaceRole !== (document.kind === "workspace-file" ? "file" : document.kind) ||
+        !input.ownerChatId?.trim() || (document.kind !== "workspace-file" && document.chatId !== input.ownerChatId.trim())) {
+        return { ok: false, check: "invalid_optional_fields" };
+      }
+    }
     if (input.presentationScope !== undefined &&
       input.presentationScope !== "main-workspace" &&
       !(input.presentationScope === "workpanel" && input.surfaceKind === "webapp" && Boolean(input.ownerChatId?.trim())))
