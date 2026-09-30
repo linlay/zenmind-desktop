@@ -24,6 +24,59 @@ function setup() {
   const intent = { item: { id: 'market-id' }, installed: false, connectorId: 'market-id', mountAgent: true, agentKey: 'xiaojun', signal: controller.signal, onPhase() {}, onInstalled() {}, onConnection() {}, async onSession() {}, onTokenSchema() {} };
   return { calls, api, intent, controller, session, state };
 }
+function noAuthState(extra={}) {
+ return {connectorId:'actual-id',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'actual-id',status:'no_auth',sessionId:'',expiresAt:''},capabilities:{authMode:'no_auth',authBrowser:'',hasCli:true,canConnect:false,canCheck:false,canDisconnect:false},preparation:{connectorId:'actual-id',status:'ready'},...extra};
+}
+test('no-auth connector installs and mounts without authentication or redundant CLI preparation',async()=>{
+ const s=setup();s.api.getConnectorConnection=async()=>noAuthState();
+ await runMarketConnectorFlow(s.intent,s.api,async()=>{});
+ assert.deepEqual(s.calls,['install','bind']);
+ s.calls.length=0;s.intent.installed=true;s.intent.connectorId='actual-id';
+ await runMarketConnectorFlow(s.intent,s.api,async()=>{});
+ assert.deepEqual(s.calls,['bind']);
+});
+test('no-auth CLI prepares before mounting and failed preparation never mounts',async()=>{
+ const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';let ready=false;
+ s.api.getConnectorConnection=async()=>noAuthState(ready?{}:{readiness:'preparing',authentication:{connectorId:'actual-id',status:'setup_required'},preparation:{status:'pending'}});
+ s.api.prepareConnector=async()=>{s.calls.push('prepare');ready=true;return {status:'ready'};};
+ await runMarketConnectorFlow(s.intent,s.api,async()=>{});
+ assert.deepEqual(s.calls,['prepare','bind']);
+ s.calls.length=0;ready=false;s.api.prepareConnector=async()=>({status:'failed',message:'CLI dependency missing'});
+ await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}),/CLI dependency missing/);
+ assert.deepEqual(s.calls,[]);
+});
+test('no-auth CLI readiness requires fresh ready preparation even when readiness remains no_auth',async()=>{
+ for(const preparation of [undefined,{connectorId:'actual-id',status:'failed'}]) {
+  const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';let ready=false;
+  s.api.getConnectorConnection=async()=>noAuthState({preparation:ready?{connectorId:'actual-id',status:'ready'}:preparation});
+  s.api.prepareConnector=async()=>{s.calls.push('prepare');ready=true;return {status:'ready'};};
+  await runMarketConnectorFlow(s.intent,s.api,async()=>{});
+  assert.deepEqual(s.calls,['prepare','bind']);
+  s.calls.length=0;ready=false;
+  s.api.prepareConnector=async()=>{s.calls.push('prepare');return {status:'ready'};};
+  await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}),/notReady/);
+  assert.deepEqual(s.calls,['prepare'],'prepare response cannot replace the refreshed snapshot');
+ }
+});
+test('canceling no-auth CLI preparation prevents a late mount',async()=>{
+ const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';
+ s.api.getConnectorConnection=async()=>noAuthState({readiness:'preparing'});
+ s.api.prepareConnector=async()=>{s.controller.abort();return {status:'ready'};};
+ await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}));
+ assert.deepEqual(s.calls,[]);
+});
+test('unavailable no-auth connector without CLI cannot report success',async()=>{
+ const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';s.intent.mountAgent=false;
+ s.api.getConnectorConnection=async()=>noAuthState({readiness:'unavailable',capabilities:{authMode:'no_auth',hasCli:false}});
+ await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}),/notReady/);
+ assert.deepEqual(s.calls,[]);
+});
+test('no-auth readiness cannot hide failed authorization and mount an Agent',async()=>{
+ const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';
+ s.api.getConnectorConnection=async()=>noAuthState({authentication:{status:'failed',message:'Unavailable'}});
+ await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}),/Unavailable/);
+ assert.deepEqual(s.calls,[]);
+});
 test('market identity resolves to the installed Platform identity and one explicit add configures and mounts', async () => {
   const s = setup(); await runMarketConnectorFlow(s.intent, s.api, async () => {});
   assert.deepEqual(s.calls, ['install', 'connect', 'bind']);

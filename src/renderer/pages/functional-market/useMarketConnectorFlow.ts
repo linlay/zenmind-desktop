@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MarketItem } from "@shared/contracts";
 import type { MarketConnectorAuthSession, MarketConnectorConnection, MarketConnectorTokenSchema } from "@shared/contracts/market-connector-state";
-import { openConnectorAuthorization, connectorAuthorizationUrl, connectorSessionActive, sameConnectorAuthorization, runMarketConnectorFlow, type ConnectorFlowPhase } from "./connectorFlow";
+import { connectorIsUsable, openConnectorAuthorization, connectorAuthorizationUrl, connectorSessionActive, sameConnectorAuthorization, runMarketConnectorFlow, type ConnectorFlowPhase } from "./connectorFlow";
 
 interface FlowState { item: MarketItem; connectorId: string; phase: ConnectorFlowPhase; session?: MarketConnectorAuthSession; schema?: MarketConnectorTokenSchema; mountAgent: boolean; openChat: boolean; draft?: string }
 export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKey: string, draft?: string) => void) {
@@ -42,7 +42,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     try { const list = await window.electronAPI.market.getConnectorConnections(); if (!mounted.current || request !== revision.current) return;
       setConnections(Object.fromEntries(list.map(item => [item.connectorId, item]))); setStateError("");
       // Ready only proves recovery of preparation/auth failures, not update or Agent mounting failures.
-      setFailure(previous => previous?.recoveredByReady && list.some(connection => connection.connectorId === previous.recoveredByReady && connection.readiness === "ready") ? null : previous);
+      setFailure(previous => previous?.recoveredByReady && list.some(connection => connection.connectorId === previous.recoveredByReady && connectorIsUsable(connection)) ? null : previous);
     } catch (cause) { if (mounted.current && request === revision.current) setStateError(cause instanceof Error ? cause.message : String(cause)); }
     finally { if (mounted.current && request === revision.current) setLoading(false); }
   }, []);
@@ -216,7 +216,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
   };
   return { connections, loading, stateError, error, errorItem: failure?.item, dismissError: () => setFailure(null),
     getError: (item: MarketItem) => failure && getId(failure.item) === getId(item) ? failure.message : "",
-    notice, dismissNotice, flow, busy, mutation, refresh, getConnection, isInstalled, start, cancel, mutate,
+    notice, dismissNotice, flow, busy, mutation, refresh, getConnection, getConnectorId: getId, isInstalled, start, cancel, mutate,
     retry: (item?: MarketItem) => { if (failure && (!item || getId(failure.item) === getId(item))) return failure.retry(); },
     submitCredentials: (credentials: Record<string, string>) => { const value = latest.current; return value ? start(value.item, value.mountAgent, value.openChat, value.draft, credentials) : Promise.resolve(); },
     openingAuth, authRedirectKey,

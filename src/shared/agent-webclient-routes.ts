@@ -110,6 +110,7 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
 export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agents/:agentKey",
   "/agent/:agentKey",
+  "/connectors/:connectorId",
   "/skills/:skillKey"
 ] as const;
 
@@ -197,6 +198,30 @@ export function createAgentWebclientManagementPath(
     return AGENT_WEBCLIENT_TARGET_PATH;
   }
   return `/agents/${encodedAgentKey}${normalizeRouteSearch(search)}`;
+}
+
+export function createAgentWebclientConnectorManagementPath(connectorId: string) {
+  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(connectorId) || connectorId.includes("..")) return "";
+  return `/connectors/${encodeURIComponent(connectorId)}`;
+}
+
+export function resolveAgentWebclientConnectorManagementRoute(
+  pathname: string,
+  search = ""
+): AgentWebclientResolvedRoute | null {
+  const match = pathname.match(/^\/connectors\/([^/]+)\/?$/u);
+  const connectorId = decodeRoutePathSegment(match?.[1] ?? "") ?? "";
+  const embedPath = createAgentWebclientConnectorManagementPath(connectorId);
+  if (!embedPath) return null;
+  const query = normalizeRouteSearch(search);
+  return {
+    key: "mcp-servers",
+    routePath: `${pathname}${query}`,
+    embedPath: `${embedPath}${query}`,
+    labelKey: "nav.mcpConnectors",
+    kind: "management",
+    mode: "embedded"
+  };
 }
 
 export function createAgentWebclientCopilotPath(
@@ -467,13 +492,18 @@ export function resolveAgentWebclientDesktopComposerRouteFromUrl(value: string, 
     if (!/^https?:$/u.test(parsed.protocol) || parsed.origin !== source.origin || parsed.username || parsed.password || parsed.hash) return "";
     const match = /^\/agent\/([^/]+)$/u.exec(parsed.pathname);
     const agentKey = match ? decodeRoutePathSegment(match[1]) : null;
-    const fields = ["newChat", "composerSkill", "composerDraft"];
-    if (!agentKey || parsed.searchParams.has("chatId") || fields.some(key => parsed.searchParams.getAll(key).length !== 1)) return "";
+    const fields = ["newChat", "composerDraft"];
+    if (!agentKey || parsed.searchParams.has("chatId") || fields.some(key => parsed.searchParams.getAll(key).length !== 1) || parsed.searchParams.getAll("composerSkill").length > 1) return "";
     const newChat = parsed.searchParams.get("newChat")!;
-    const composerSkill = parsed.searchParams.get("composerSkill")!;
+    const composerSkill = parsed.searchParams.get("composerSkill");
     const composerDraft = parsed.searchParams.get("composerDraft")!;
-    if (!/^[1-9]\d{12}$/u.test(newChat) || !["platform-automation", "platform-admin", "skill-creator"].includes(composerSkill) || !composerDraft.trim() || composerDraft.length > 2048) return "";
-    return createAgentWebclientAgentPath(agentKey, new URLSearchParams({ newChat, composerSkill, composerDraft }));
+    if (!/^[1-9]\d{12}$/u.test(newChat) || composerDraft.length > 2048 ||
+        (composerSkill !== null && (!["platform-automation", "platform-admin", "skill-creator"].includes(composerSkill) || !composerDraft.trim())) ||
+        (composerSkill === null && composerDraft !== "" && !composerDraft.trim())) return "";
+    const search = new URLSearchParams({ newChat });
+    if (composerSkill !== null) search.set("composerSkill", composerSkill);
+    search.set("composerDraft", composerDraft);
+    return createAgentWebclientAgentPath(agentKey, search);
   } catch {
     return "";
   }

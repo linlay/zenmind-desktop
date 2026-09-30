@@ -11,6 +11,8 @@ import {
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_REQUEST_TYPE,
   AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_REQUEST_TYPE,
+  AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_RESPONSE_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
@@ -35,11 +37,14 @@ import {
   normalizeAgentWebclientCurrentResourceIdentity,
   type ServiceWebviewBridgeMessage
 } from "../../shared/service-webview-bridge";
+import { createAgentWebclientConnectorManagementPath } from "../../shared/agent-webclient-routes";
 
 export type ServiceWebviewBridgeHostContext = {
   serviceId?: string | null;
   activeAgentConfigurationKey?: string;
   openAgentConfiguration?: (agentKey: string) => void;
+  canOpenConnectorConfiguration?: boolean;
+  openConnectorConfiguration?: (connectorId: string) => void;
   bridgeProtocol?: ServiceWebviewAuthProtocol | null;
   desktopAuthContext?: string;
   sendBridgeMessageToWebview: (payload: ServiceWebviewBridgeMessage) => void;
@@ -91,6 +96,25 @@ export function handleServiceWebviewBridgeMessage(
 
   if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
+    return true;
+  }
+
+  if (payload.type === AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_REQUEST_TYPE) {
+    const connectorId = typeof payload.connectorId === "string" ? payload.connectorId : "";
+    const responseType = AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_RESPONSE_TYPE;
+    // The live Main Chat grants navigation only; the host constructs the destination.
+    if (context.serviceId !== "agent-webclient" || context.canOpenConnectorConfiguration !== true ||
+        !context.openConnectorConfiguration || !createAgentWebclientConnectorManagementPath(connectorId) ||
+        typeof payload.requestId !== "string" || payload.requestId.length > 128 || payload.url !== undefined) {
+      sendFailure(context, responseType, payload.requestId, "Connector configuration navigation is unavailable for this surface");
+      return true;
+    }
+    try {
+      context.openConnectorConfiguration(connectorId);
+      context.sendBridgeMessageToWebview({ type: responseType, requestId: payload.requestId, ok: true });
+    } catch {
+      sendFailure(context, responseType, payload.requestId, "Connector configuration navigation failed");
+    }
     return true;
   }
 
