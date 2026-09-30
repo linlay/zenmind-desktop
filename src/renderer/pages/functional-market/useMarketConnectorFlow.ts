@@ -30,6 +30,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
   const authOpening = useRef(false);
   const mounted = useRef(true);
   const revision = useRef(0);
+  const snapshot = useRef({ connections, aliases, stateError }); snapshot.current = { connections, aliases, stateError };
   const callbacks = useRef({ onChanged, onChat }); callbacks.current = { onChanged, onChat };
   const latest = useRef(flow); latest.current = flow;
   const updateConnection = useCallback((connection: MarketConnectorConnection) => {
@@ -97,9 +98,9 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       clearInterval(timer); document.removeEventListener("visibilitychange", visible); unsubscribe(); void dismiss().catch(() => {});
     };
   }, [refresh, dismiss]);
-  const getId = (item: MarketItem) => aliases[item.id] || item.connectorId || item.id;
-  const getConnection = (item: MarketItem) => connections[getId(item)];
-  const isInstalled = (item: MarketItem) => item.connectorInstalled === true || !!aliases[item.id] || !!getConnection(item);
+  const getId = (item: MarketItem) => snapshot.current.aliases[item.id] || item.connectorId || item.id;
+  const getConnection = (item: MarketItem) => snapshot.current.connections[getId(item)];
+  const isInstalled = (item: MarketItem) => item.connectorInstalled === true || !!snapshot.current.aliases[item.id] || !!getConnection(item);
   const start = async (item: MarketItem, mountAgent = true, openChat = false, draft?: string, credentials?: Record<string, string>) => {
     if (!mounted.current || controller.current) return;
     const setError = (message: string, allowRecovery = true) => setFailure({ item, message, retry: () => start(item, mountAgent, openChat, draft),
@@ -108,7 +109,8 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     setBusy(true); setFailure(null); setNotice("");
     browserChoice.current = undefined;
     const credentialSchema = credentials ? latest.current?.schema : undefined;
-    const initial: FlowState = { schema: credentialSchema, item, connectorId: getId(item), phase: isInstalled(item) ? "preparing" : "installing", mountAgent, openChat, draft };
+    let installed: boolean = isInstalled(item);
+    const initial: FlowState = { schema: credentialSchema, item, connectorId: getId(item), phase: installed ? "preparing" : "installing", mountAgent, openChat, draft };
     latest.current = initial; setFlow(initial);
     const change = (patch: Partial<FlowState>) => { if (!abort.signal.aborted && mounted.current && latest.current) { const value = { ...latest.current, ...patch }; latest.current = value; setFlow(value); } };
     let cancellationFailed = false;
@@ -122,6 +124,20 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     };
     abort.signal.addEventListener("abort", clearAuthorizationTimer, { once: true });
     try {
+      if (snapshot.current.stateError) {
+        // A failed status read must be retried before deciding whether to install.
+        // Keep recovery under the same operation lock and use its returned snapshot.
+        let list: MarketConnectorConnection[];
+        try { list = await window.electronAPI.market.getConnectorConnections(); }
+        catch (cause) {
+          if (!abort.signal.aborted && mounted.current) setStateError(cause instanceof Error ? cause.message : String(cause));
+          throw cause;
+        }
+        if (abort.signal.aborted || !mounted.current) return;
+        setConnections(Object.fromEntries(list.map(connection => [connection.connectorId, connection]))); setStateError("");
+        installed = item.connectorInstalled === true || !!snapshot.current.aliases[item.id] || list.some(connection => connection.connectorId === initial.connectorId);
+        change({ phase: installed ? "preparing" : "installing" });
+      }
       let agentKey: string | undefined;
       if (mountAgent) {
         const settings = await window.electronAPI.assistant.getSettings();
@@ -129,7 +145,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
         agentKey = settings.chatDefaultAgentKey.trim();
         if (!agentKey) throw new Error("market.discovery.defaultAgentRequired");
       }
-      const result = await Promise.race([runMarketConnectorFlow({ item, installed: isInstalled(item), connectorId: initial.connectorId, mountAgent, agentKey, credentials, signal: abort.signal,
+      const result = await Promise.race([runMarketConnectorFlow({ item, installed, connectorId: initial.connectorId, mountAgent, agentKey, credentials, signal: abort.signal,
         onPhase: phase => {
           change({ phase });
           if (phase !== "authorizing") { clearAuthorizationTimer(); return; }
