@@ -37,6 +37,7 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect }: 
   return <Modal open centered width={600} footer={null} title={null} onCancel={onClose}
     styles={{ content: { borderRadius: 20, padding: 0, overflow: "hidden" }, body: { maxHeight: "calc(100dvh - 80px)", overflow: "hidden" } }}>
     <div className="connector-detail-dialog" key={item.id}>
+      <div className="connector-detail-status"><ConnectorStateTag connection={connection} installed={installed} checking={runtime.loading && !connection} /></div>
       <header className="connector-detail-header">
       <div className="connector-detail-brand-row" aria-hidden="true">
         <BrandMark className="connector-detail-brand" ariaLabel={PRODUCT_NAME} />
@@ -45,8 +46,7 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect }: 
       </div>
       <h2 className="connector-detail-title">{t("market.connector.flow.detailTitle", { name: item.name })}</h2>
       <p className="connector-detail-description">{item.description || t("market.discovery.noDescription")}</p>
-      <div className="connector-detail-status"><ConnectorStateTag connection={connection} installed={installed} checking={runtime.loading && !connection} /></div>
-      {!error && connection?.authentication.message && <Alert type={connection.authentication.status === "failed" || connection.authentication.status === "unauthorized" ? "warning" : "info"} showIcon message={connection.authentication.message} />}
+      {!error && connection?.authentication.message && (connection.authentication.status === "failed" || connection.authentication.status === "unauthorized") && <Alert type="warning" showIcon message={connection.authentication.message} />}
       {error && <Alert type="error" showIcon closable onClose={runtime.dismissError} message={error.startsWith("market.") ? t(error as TranslationKey) : error} action={<Button size="small" disabled={runtime.busy} onClick={() => void runtime.retry(item)}>{t("market.connector.flow.retry")}</Button>} />}
       {runtime.flow?.item.id === item.id && runtime.busy && <Alert type="info" message={t(`market.connector.flow.phase.${runtime.flow.phase}` as TranslationKey)} action={<Button size="small" onClick={() => void runtime.cancel()}>{t("market.connector.flow.cancel")}</Button>} />}
       {runtime.flow?.item.id === item.id && runtime.busy && runtime.flow.session?.authorizationUrl && <div className="connector-detail-actions"><Button disabled={runtime.openingAuth} onClick={() => void runtime.reopenAuth()}>{t("market.connector.flow.reopenAuthorization")}</Button></div>}

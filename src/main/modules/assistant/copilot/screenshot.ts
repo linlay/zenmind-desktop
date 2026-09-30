@@ -32,6 +32,11 @@ type ScreenshotSelectionRect = {
   height: number;
 };
 
+type ScreenshotSelection = {
+  display: Display;
+  rect: ScreenshotSelectionRect;
+};
+
 type CaptureAssistantScreenshotOptions = {
   app: App;
   chatId: string | null | undefined;
@@ -109,8 +114,12 @@ function parseScreenshotSelectionUrl(value: string, selectionId: string) {
     ) {
       return undefined;
     }
-    if (url.searchParams.get("action") === "cancel") {
+    const action = url.searchParams.get("action");
+    if (action === "cancel") {
       return null;
+    }
+    if (action !== "select") {
+      return undefined;
     }
     const rawRect = url.searchParams.get("rect");
     if (!rawRect) {
@@ -122,6 +131,10 @@ function parseScreenshotSelectionUrl(value: string, selectionId: string) {
       typeof rect.y !== "number" ||
       typeof rect.width !== "number" ||
       typeof rect.height !== "number" ||
+      !Number.isFinite(rect.x) ||
+      !Number.isFinite(rect.y) ||
+      !Number.isFinite(rect.width) ||
+      !Number.isFinite(rect.height) ||
       rect.width < 1 ||
       rect.height < 1
     ) {
@@ -138,79 +151,125 @@ function parseScreenshotSelectionUrl(value: string, selectionId: string) {
   }
 }
 
-function selectScreenshotRegion(display: Display, platform: NodeJS.Platform) {
-  return new Promise<ScreenshotSelectionRect | null>((resolve) => {
+function selectScreenshotRegion(preferredDisplay: Display, platform: NodeJS.Platform) {
+  return new Promise<ScreenshotSelection | null>((resolve) => {
     const selectionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const overlayWindow = new BrowserWindow({
-      ...display.bounds,
-      show: false,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      maximizable: false,
-      minimizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      hasShadow: false,
-      ...(platform === "darwin" ? { roundedCorners: false, enableLargerThanScreen: true } : {}),
-      backgroundColor: "#00000000",
-      title: `${PRODUCT_NAME} Screenshot Selection`,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    });
+    const displays = screen.getAllDisplays();
+    const overlays: {
+      display: Display;
+      window: BrowserWindow;
+      handleNavigate: (event: Electron.Event, url: string) => void;
+    }[] = [];
     let settled = false;
-    const settle = (rect: ScreenshotSelectionRect | null) => {
+    const settle = (selection: ScreenshotSelection | null) => {
       if (settled) {
         return;
       }
       settled = true;
-      overlayWindow.webContents.off("will-navigate", handleNavigate);
-      if (!overlayWindow.isDestroyed()) {
-        overlayWindow.close();
+      screen.off("display-removed", handleDisplayRemoved);
+      screen.off("display-metrics-changed", handleDisplayMetricsChanged);
+      for (const overlay of overlays) {
+        overlay.window.webContents.off("will-navigate", overlay.handleNavigate);
+        if (!overlay.window.isDestroyed()) {
+          overlay.window.hide();
+          // These temporary pages have no unsaved state; dispose before capture.
+          overlay.window.destroy();
+        }
       }
-      resolve(rect);
+      resolve(selection);
     };
-    const handleNavigate = (event: Electron.Event, url: string) => {
-      const selection = parseScreenshotSelectionUrl(url, selectionId);
-      if (selection === undefined) {
-        return;
+    const handleDisplayRemoved = (_event: Electron.Event, removedDisplay: Display) => {
+      if (displays.some((display) => display.id === removedDisplay.id)) {
+        settle(null);
       }
-      event.preventDefault();
-      settle(selection);
     };
-
-    if (platform === "darwin") {
-      overlayWindow.setAlwaysOnTop(true, "screen-saver");
-      overlayWindow.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-        // Preserve the foreground app identity so the Dock icon remains visible.
-        skipTransformProcessType: true
-      });
-    } else if (platform === "win32") {
-      overlayWindow.setAlwaysOnTop(true, "screen-saver");
-    } else {
-      overlayWindow.setAlwaysOnTop(true);
+    const handleDisplayMetricsChanged = (_event: Electron.Event, changedDisplay: Display, metrics: string[]) => {
+      if (displays.some((display) => display.id === changedDisplay.id) &&
+          metrics.some((metric) => metric === "bounds" || metric === "scaleFactor" || metric === "rotation")) {
+        settle(null);
+      }
+    };
+    if (displays.length === 0) {
+      settle(null);
+      return;
     }
 
-    overlayWindow.webContents.on("will-navigate", handleNavigate);
-    overlayWindow.on("closed", () => settle(null));
-    overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createScreenshotSelectionHtml(selectionId))}`)
-      .then(() => {
-        if (overlayWindow.isDestroyed()) {
-          return;
+    screen.on("display-removed", handleDisplayRemoved);
+    screen.on("display-metrics-changed", handleDisplayMetricsChanged);
+    const loading: Promise<void>[] = [];
+    try {
+      for (const display of displays) {
+        const overlayWindow = new BrowserWindow({
+          ...display.bounds,
+          show: false,
+          frame: false,
+          transparent: true,
+          resizable: false,
+          maximizable: false,
+          minimizable: false,
+          fullscreenable: false,
+          skipTaskbar: true,
+          hasShadow: false,
+          ...(platform === "darwin" ? {
+            roundedCorners: false,
+            enableLargerThanScreen: true,
+            // The first drag on an unfocused monitor must reach its renderer.
+            acceptFirstMouse: true
+          } : {}),
+          backgroundColor: "#00000000",
+          title: `${PRODUCT_NAME} Screenshot Selection`,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true
+          }
+        });
+        const handleNavigate = (event: Electron.Event, url: string) => {
+          const rect = parseScreenshotSelectionUrl(url, selectionId);
+          if (rect === undefined) {
+            return;
+          }
+          event.preventDefault();
+          settle(rect ? { display, rect } : null);
+        };
+        overlays.push({ display, window: overlayWindow, handleNavigate });
+
+        if (platform === "darwin") {
+          overlayWindow.setAlwaysOnTop(true, "screen-saver");
+          overlayWindow.setVisibleOnAllWorkspaces(true, {
+            visibleOnFullScreen: true,
+            // Preserve the foreground app identity so the Dock icon remains visible.
+            skipTransformProcessType: true
+          });
+        } else if (platform === "win32") {
+          overlayWindow.setAlwaysOnTop(true, "screen-saver");
+        } else {
+          overlayWindow.setAlwaysOnTop(true);
         }
-        // Electron 36 creates Windows HWNDs on the primary display before moving
-        // them; reapply DIP bounds after placement to correct mixed-DPI sizing.
-        // On macOS this also covers the full display, including the menu/Dock area.
-        overlayWindow.setBounds(display.bounds, false);
-        overlayWindow.show();
-        overlayWindow.moveTop();
-        overlayWindow.focus();
-      })
-      .catch(() => settle(null));
+
+        overlayWindow.webContents.on("will-navigate", handleNavigate);
+        overlayWindow.on("closed", () => settle(null));
+        loading.push(overlayWindow.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(createScreenshotSelectionHtml(selectionId))}`
+        ));
+      }
+    } catch {
+      settle(null);
+    }
+    void Promise.all(loading).then(() => {
+      if (settled) {
+        return;
+      }
+      for (const overlay of overlays) {
+        // Reapply each display's DIP bounds after native mixed-DPI placement.
+        overlay.window.setBounds(overlay.display.bounds, false);
+        overlay.window.showInactive();
+        overlay.window.moveTop();
+      }
+      // Show all monitors together, then focus once instead of racing loads.
+      const focused = overlays.find((overlay) => overlay.display.id === preferredDisplay.id) ?? overlays[0];
+      focused.window.focus();
+    }).catch(() => settle(null));
   });
 }
 
@@ -243,15 +302,21 @@ function chooseDisplaySource(
   display: Display,
   thumbnailSize: { width: number; height: number }
 ) {
-  const displayId = String(display.id);
-  return sources.find((source) => source.display_id === displayId) ??
-    sources.find((source) => {
-      const size = source.thumbnail.getSize();
-      return Math.abs(size.width - thumbnailSize.width) <= 2 &&
-        Math.abs(size.height - thumbnailSize.height) <= 2;
-    }) ??
-    sources[0] ??
-    null;
+  const exactSource = sources.find((source) => source.display_id === String(display.id));
+  if (exactSource) {
+    return exactSource;
+  }
+  // A known different monitor must never substitute for the selected monitor.
+  // Older sources without display IDs are usable only with an unambiguous size.
+  const unidentifiedSources = sources.filter((source) => {
+    if (source.display_id) {
+      return false;
+    }
+    const size = source.thumbnail.getSize();
+    return Math.abs(size.width - thumbnailSize.width) <= 2 &&
+      Math.abs(size.height - thumbnailSize.height) <= 2;
+  });
+  return unidentifiedSources.length === 1 ? unidentifiedSources[0] : null;
 }
 
 async function captureDisplayImage(display: Display) {
@@ -459,7 +524,7 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
     }
 
     await options.delay(80);
-    const cropped = await captureScreenshotImage(display, selection, options);
+    const cropped = await captureScreenshotImage(selection.display, selection.rect, options);
     return createAssistantAttachmentFromImageBuffer(options.app, options.chatId, {
       name: createScreenshotAttachmentName(),
       mimeType: "image/png",
@@ -521,7 +586,7 @@ export async function captureScreenshotForBridge(
         }
 
         await options.delay(80);
-        captured = await captureScreenshotImage(display, selection, options);
+        captured = await captureScreenshotImage(selection.display, selection.rect, options);
       }
     }
 

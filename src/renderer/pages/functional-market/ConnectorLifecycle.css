@@ -18,7 +18,8 @@
 .connector-detail-dots { color: var(--text-secondary); letter-spacing: 5px; font-size: 24px; }
 .connector-detail-dialog .connector-detail-title { text-align: center; font-size: 22px; line-height: 1.4; margin: 0 0 12px; }
 .connector-detail-description { text-align: center; color: var(--text-secondary); font-size: 13px; line-height: 1.7; margin: 0 auto 12px; overflow-wrap: anywhere; }
-.connector-detail-status { text-align: center; margin-bottom: 12px; }
+.connector-detail-status { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; flex-shrink: 0; padding: 21px 56px 0 28px; }
+.connector-detail-status .ant-tag { margin-inline-end: 0; }
 .connector-detail-primary-actions { justify-content: center; margin: 20px 0 28px; }
 .connector-detail-primary-actions > button { min-width: 108px; border-radius: 9px; }
 .connector-detail-usage h3 { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin: 0 0 12px; }
@@ -71,13 +72,12 @@
 
 /* Keep connector identity/actions visible while expanded documentation scrolls. */
 .connector-detail-dialog { display: flex; flex-direction: column; max-height: calc(100dvh - 80px); min-height: 0; }
-.connector-detail-header { flex-shrink: 0; padding: 22px 28px 18px; border-bottom: 1px solid var(--border-color, #eceef1); max-height: 48dvh; overflow-y: auto; }
+.connector-detail-header { flex-shrink: 0; padding: 12px 28px 18px; border-bottom: 1px solid var(--border-color, #eceef1); max-height: 48dvh; overflow-y: auto; }
 .connector-detail-header .connector-detail-brand-row { height: 46px; margin: 0 0 12px; }
 .connector-detail-header .connector-detail-brand { --brand-mark-size: 42px; flex-basis: 42px; width: 42px; height: 42px; }
 .connector-detail-header .connector-detail-brand-row .connector-detail-icon { flex-basis: 42px; width: 42px; height: 42px; }
 .connector-detail-header .connector-detail-title { font-size: 20px; margin-bottom: 8px; }
 .connector-detail-header .connector-detail-description { margin-bottom: 10px; line-height: 1.6; }
-.connector-detail-header .connector-detail-status { margin-bottom: 12px; }
 .connector-detail-header .connector-detail-primary-actions { margin: 14px 0 0; }
 .connector-detail-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 28px 24px; scrollbar-gutter: stable; }
 .connector-detail-usage .connector-suggestions { margin-bottom: 0; gap: 8px; }
@@ -107,7 +107,8 @@
 .connector-detail-readme table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .connector-detail-readme :is(th, td) { padding: 7px 10px; border: 1px solid var(--border-color, #e5e7eb); }
 @media (max-width: 560px) {
-  .connector-detail-header { padding: 22px 20px 16px; }
+  .connector-detail-header { padding: 12px 20px 16px; }
+  .connector-detail-status { padding-left: 20px; }
   .connector-detail-scroll { padding: 18px 20px 20px; }
   .connector-detail-info { align-items: flex-start; flex-wrap: wrap; }
 }

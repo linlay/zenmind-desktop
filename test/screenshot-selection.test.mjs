@@ -50,45 +50,65 @@ function readMacApplicationActivationPolicy(pid) {
   ], { encoding: "utf8" }).trim());
 }
 
-test("macOS region screenshot covers the application display and keeps the app visible in the Dock", {
-  skip: process.platform !== "darwin"
-}, async (t) => {
-  const electronPath = require("electron");
-  const fixturePath = path.join(
-    projectRoot,
-    "test",
-    "fixtures",
-    "macos-screenshot-dock-app.cjs"
-  );
-  const child = childProcess.spawn(electronPath, [fixturePath], {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      ELECTRON_DISABLE_SECURITY_WARNINGS: "true"
-    },
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGTERM");
-      await once(child, "exit");
+for (const action of ["escape", "right-click", "drag"]) {
+  test(`macOS region screenshot covers every display, keeps the Dock icon, and handles ${action}`, {
+    skip: process.platform !== "darwin"
+  }, async (t) => {
+    const electronPath = require("electron");
+    const fixturePath = path.join(
+      projectRoot,
+      "test",
+      "fixtures",
+      "macos-screenshot-dock-app.cjs"
+    );
+    const child = childProcess.spawn(electronPath, [fixturePath], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: "true"
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    t.after(async () => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+        await once(child, "exit");
+      }
+    });
+
+    const output = await waitForOutput(child, "SCREENSHOT_OVERLAY_READY");
+    const probe = JSON.parse(output.match(/SCREENSHOT_OVERLAY_READY (\{[^\n]+\})/u)[1]);
+    t.diagnostic(`Native macOS probe: ${probe.displayCount} display(s); ${action}; ${JSON.stringify(probe.overlays.map(({ displayId, bounds, viewport }) => ({ displayId, bounds, viewport })))}`);
+    assert.equal(probe.overlays.length, probe.displayCount);
+    assert.equal(new Set(probe.overlays.map((overlay) => overlay.displayId)).size, probe.displayCount);
+    for (const overlay of probe.overlays) {
+      assert.deepEqual(overlay.bounds, overlay.displayBounds);
+      assert.deepEqual(overlay.viewport, {
+        width: overlay.displayBounds.width,
+        height: overlay.displayBounds.height
+      });
+    }
+    assert.deepEqual(probe.overlays.filter((overlay) => overlay.focused).map((overlay) => overlay.displayId), [probe.preferredDisplayId]);
+
+    assert.equal(
+      readMacApplicationActivationPolicy(child.pid),
+      0,
+      "opening the screenshot overlay must not turn the Desktop app into a UIElement"
+    );
+    const resultOutput = waitForOutput(child, "SCREENSHOT_SELECTION_RESULT");
+    child.stdin.write(`${action}\n`);
+    const result = JSON.parse((await resultOutput).match(/SCREENSHOT_SELECTION_RESULT (\{[^\n]+\})/u)[1]);
+    assert.equal(result.action, action);
+    assert.equal(result.remainingOverlays, 0);
+    if (action === "drag") {
+      assert.equal(result.ok, true);
+      assert.deepEqual([result.width, result.height], [result.expectedWidth, result.expectedHeight]);
+    } else {
+      assert.equal(result.cancelled, true);
+      assert.equal(result.ok, false);
     }
   });
-
-  const output = await waitForOutput(child, "SCREENSHOT_OVERLAY_READY");
-  const probe = JSON.parse(output.match(/SCREENSHOT_OVERLAY_READY (\{[^\n]+\})/u)[1]);
-  assert.deepEqual(probe.bounds, probe.displayBounds);
-  assert.deepEqual(probe.viewport, {
-    width: probe.displayBounds.width,
-    height: probe.displayBounds.height
-  });
-
-  assert.equal(
-    readMacApplicationActivationPolicy(child.pid),
-    0,
-    "opening the screenshot overlay must not turn the Desktop app into a UIElement"
-  );
-});
+}
 
 test("screenshot selection supports right-click cancellation", () => {
   const screenshotSource = readSourceFile(
