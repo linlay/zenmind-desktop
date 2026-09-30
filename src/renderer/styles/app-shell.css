@@ -174,23 +174,39 @@
 }
 
 .desktop-sso-login-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
-  color: var(--ink-muted);
-  font-size: 16px;
-  line-height: 1;
+  color: var(--control-icon-color);
   cursor: pointer;
+  appearance: none;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
 }
 
 .desktop-sso-login-modal-close:hover,
 .desktop-sso-login-modal-close:focus-visible {
-  background: rgba(148, 163, 184, 0.16);
-  color: var(--ink);
-  outline: none;
+  background: var(--control-hover-bg);
+  color: var(--control-icon-hover-color);
+}
+
+.desktop-sso-login-modal-close:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent, #2563eb) 48%, transparent);
+  outline-offset: 1px;
+}
+
+.desktop-sso-login-modal-close-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 
 .desktop-sso-login-modal-frame,
