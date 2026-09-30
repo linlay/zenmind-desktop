@@ -1,6 +1,5 @@
 import type { App } from "electron";
 import {
-  isAssistantConversationShareExpiration,
   type AssistantConversationShareCreateResult,
   type AssistantConversationShareListResult,
   type AssistantConversationShareRequest,
@@ -29,9 +28,6 @@ export async function createConversationShare(
   if (!isValidConversationId(conversationId)) {
     return { ok: false, message: t("assistant.chatShareConversationIdInvalid") };
   }
-  if (!isAssistantConversationShareExpiration(request.expiration)) {
-    return { ok: false, message: t("assistant.chatShareExpirationInvalid") };
-  }
   const target = resolveConversationShareTarget(app);
   if (!target.ok) {
     return target;
@@ -51,7 +47,6 @@ export async function createConversationShare(
     const record = await shareCreator.create({
       target: target.target,
       conversationId,
-      expiration: request.expiration,
       snapshot: snapshot.bytes,
       attachments: snapshot.attachments,
     });

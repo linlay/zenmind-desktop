@@ -4526,19 +4526,15 @@ export function AppShell() {
     );
   }, []);
 
-  const activeChatName = desiredChatRouteChatId
-    ? [
-        ...assistantPinnedChatItems,
-        ...assistantNavChatItems,
-        ...assistantNavAgents.flatMap((agent) => agent.recentChats),
-      ].find((chat) => chat.chatId === desiredChatRouteChatId)?.chatName ||
-      t("sidebar.chat.current")
-    : t("sidebar.chat.current");
   const shareDisabledReason = !desiredChatRouteChatId
     ? t("sidebar.chat.shareRequiresConversation")
     : "";
-  const openConversationShare = (chatId: string, chatName: string) => {
-    shellOverlay.openConversationShare(chatId, chatName);
+  const openConversationShare = (chatId: string, chatName?: string) => {
+    const resolvedChatName = chatName?.trim() ||
+      [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
+      workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
+      chatId;
+    shellOverlay.openConversationShare(chatId, resolvedChatName);
   };
   const openTunnelSettings = () => {
     requestSidebarNavigation(buildSettingsSectionPath("tunnelHub"));
@@ -4564,7 +4560,7 @@ export function AppShell() {
             disabled={Boolean(shareDisabledReason)}
             onClick={() => {
               if (desiredChatRouteChatId) {
-                openConversationShare(desiredChatRouteChatId, activeChatName);
+                openConversationShare(desiredChatRouteChatId);
               }
             }}
           >
@@ -5044,6 +5040,17 @@ export function AppShell() {
                 : <Navigate to="/control-center" replace />
             } />
           </Routes>
+          {conversationShareOverlay ? (
+            <ConversationShareDialog
+              key={conversationShareOverlay.sessionId}
+              chatId={conversationShareOverlay.chatId}
+              chatName={conversationShareOverlay.chatName}
+              tunnelHubEnabled={tunnelHubEnabled}
+              t={t}
+              onClose={() => shellOverlay.closeConversationShare(conversationShareOverlay)}
+              onOpenTunnelSettings={openTunnelSettingsFromShare}
+            />
+          ) : null}
         </main>
         {activeChatWorkPanelVisible ? (
           <div
@@ -5279,17 +5286,6 @@ export function AppShell() {
           onClose={() => setChatHistoryDialog(null)}
           onOpenChat={openChatFromHistoryDialog}
           onChatRemoved={handleHistoryChatRemoved}
-        />
-      ) : null}
-      {conversationShareOverlay ? (
-        <ConversationShareDialog
-          key={conversationShareOverlay.sessionId}
-          chatId={conversationShareOverlay.chatId}
-          chatName={conversationShareOverlay.chatName}
-          tunnelHubEnabled={tunnelHubEnabled}
-          t={t}
-          onClose={() => shellOverlay.closeConversationShare(conversationShareOverlay)}
-          onOpenTunnelSettings={openTunnelSettingsFromShare}
         />
       ) : null}
       <DesktopGlobalSearchOverlay

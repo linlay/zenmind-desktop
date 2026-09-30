@@ -117,7 +117,7 @@ export function useShellOverlay() {
       const overlay = {
         kind: "conversationShare" as const,
         chatId: normalizedChatId,
-        chatName: chatName.trim(),
+        chatName: chatName.trim() || normalizedChatId,
         sessionId: shareSessionIdRef.current,
       };
       activeOverlayRef.current = overlay;

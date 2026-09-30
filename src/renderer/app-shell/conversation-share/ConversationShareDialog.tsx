@@ -1,29 +1,9 @@
 import { useEffect, useRef } from "react";
-import {
-  CheckOutlined,
-  CloseOutlined,
-  CopyOutlined,
-  LinkOutlined,
-  ShareAltOutlined,
-} from "@ant-design/icons";
-import {
-  ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS,
-  type AssistantConversationShareExpiration,
-} from "../../../shared/contracts";
-import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
-import { useConversationShareDialog } from "./useConversationShareDialog";
-
-const EXPIRATION_LABEL_KEYS: Record<
-  AssistantConversationShareExpiration,
-  TranslationKey
-> = {
-  once: "sidebar.chat.shareExpiration.once",
-  "3h": "sidebar.chat.shareExpiration.3h",
-  "1d": "sidebar.chat.shareExpiration.1d",
-  "7d": "sidebar.chat.shareExpiration.7d",
-  "30d": "sidebar.chat.shareExpiration.30d",
-  permanent: "sidebar.chat.shareExpiration.permanent",
-};
+import { CopyOutlined, GlobalOutlined, QrcodeOutlined } from "@ant-design/icons";
+import { Spin } from "antd";
+import type { TranslateFunction } from "../../../shared/i18n";
+import { ConversationShareQrDialog } from "./ConversationShareQrDialog";
+import { useConversationShareDialog, type ConversationShareAction } from "./useConversationShareDialog";
 
 type ConversationShareDialogProps = {
   chatId: string;
@@ -34,6 +14,12 @@ type ConversationShareDialogProps = {
   onOpenTunnelSettings: () => void;
 };
 
+const ACTIONS = [
+  { id: "copy", icon: CopyOutlined, label: "sidebar.chat.shareCopyLink" },
+  { id: "qr", icon: QrcodeOutlined, label: "sidebar.chat.shareGenerateQr" },
+  { id: "browser", icon: GlobalOutlined, label: "sidebar.chat.shareOpenBrowser" },
+] as const;
+
 export function ConversationShareDialog({
   chatId,
   chatName,
@@ -42,155 +28,118 @@ export function ConversationShareDialog({
   onClose,
   onOpenTunnelSettings,
 }: ConversationShareDialogProps) {
-  const dialog = useConversationShareDialog({ chatId, chatName }, t);
-  const { state } = dialog;
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const { state, run, notify } = useConversationShareDialog({ chatId }, t);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const lastActionRef = useRef<HTMLButtonElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    closeButtonRef.current?.focus();
+    const returnFocus = document.activeElement;
+    return () => {
+      if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, [chatId]);
+
+  useEffect(() => {
+    if (state.phase === "choice" && state.feedback?.kind === "error") lastActionRef.current?.focus();
+  }, [state.phase, state.feedback]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onCloseRef.current();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [chatId]);
+  }, []);
+
+  useEffect(() => {
+    if (state.phase !== "done") return;
+    const timer = window.setTimeout(() => onCloseRef.current(), 1_800);
+    return () => window.clearTimeout(timer);
+  }, [state.phase]);
 
   return (
-    <div className="conversation-share-dialog-layer" role="presentation" onMouseDown={onClose}>
-      <section
-        className="conversation-share-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="conversation-share-dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header className="conversation-share-dialog-head">
-          <div className="conversation-share-dialog-heading">
-            <ShareAltOutlined aria-hidden="true" />
-            <div>
-              <h2 id="conversation-share-dialog-title">{t("sidebar.chat.shareTitle")}</h2>
-              <p>{t("sidebar.chat.shareConversation", { name: state.chatName })}</p>
-            </div>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="conversation-share-icon-button conversation-share-dialog-close"
-            aria-label={t("common.close")}
-            onClick={onClose}
-          >
-            <CloseOutlined aria-hidden="true" />
-          </button>
-        </header>
+    <div
+      className="conversation-share-dialog-layer"
+      data-phase={state.phase}
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      {state.feedback ? (
+        <div className="conversation-share-toast" data-kind={state.feedback.kind} role={state.feedback.kind === "error" ? "alert" : "status"}>
+          {state.feedback.kind === "loading" ? <Spin size="small" aria-hidden="true" /> : null}
+          <span>{state.feedback.message}</span>
+          {state.phase === "done" && state.warning ? <small>{state.warning}</small> : null}
+        </div>
+      ) : null}
 
-        <div className="conversation-share-dialog-body">
+      {state.phase === "choice" ? (
+        <section
+          ref={dialogRef}
+          className="conversation-share-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-busy={Boolean(state.workingAction)}
+          aria-labelledby="conversation-share-title"
+          tabIndex={-1}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="conversation-share-dialog-head">
+            <h2 id="conversation-share-title">
+              {t(tunnelHubEnabled ? "sidebar.chat.shareTitle" : "shareManagement.tunnelRequiredTitle")}
+            </h2>
+            <button type="button" className="conversation-share-icon-button" aria-label={t("common.close")} onClick={onClose}>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17" /></svg>
+            </button>
+          </div>
           {!tunnelHubEnabled ? (
-            <section className="conversation-share-tunnel-gate">
-              <ShareAltOutlined aria-hidden="true" />
-              <div>
-                <h3>{t("shareManagement.tunnelRequiredTitle")}</h3>
-                <p>{t("assistant.chatShareTunnelRequired")}</p>
-              </div>
-              <button
-                type="button"
-                className="conversation-share-button is-primary"
-                onClick={onOpenTunnelSettings}
-              >
+            <div className="conversation-share-tunnel-gate">
+              <p>{t("assistant.chatShareTunnelRequired")}</p>
+              <button type="button" className="conversation-share-button" onClick={onOpenTunnelSettings}>
                 {t("shareManagement.openTunnelSettings")}
               </button>
-            </section>
+            </div>
           ) : (
-            <>
-              <div className="conversation-share-settings">
-                <div className="conversation-share-create-row">
-                  <label className="conversation-share-field">
-                    <span>{t("sidebar.chat.shareExpiration")}</span>
-                    <select
-                      value={state.expiration}
-                      disabled={state.creating}
-                      onChange={(event) =>
-                        dialog.setExpiration(
-                          event.target.value as AssistantConversationShareExpiration,
-                        )
-                      }
-                    >
-                      {ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.map((expiration) => (
-                        <option key={expiration} value={expiration}>
-                          {t(EXPIRATION_LABEL_KEYS[expiration])}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+            <div className="conversation-share-choice-body">
+              <div className="conversation-share-actions">
+                {ACTIONS.map(({ id, icon: Icon, label }) => (
                   <button
+                    key={id}
                     type="button"
-                    className="conversation-share-button is-primary"
-                    disabled={state.creating}
-                    onClick={() => void dialog.create()}
+                    className={`conversation-share-action${state.workingAction === id ? " is-working" : ""}`}
+                    disabled={Boolean(state.workingAction)}
+                    onClick={(event) => {
+                      lastActionRef.current = event.currentTarget;
+                      void run(id as ConversationShareAction);
+                    }}
                   >
-                    <LinkOutlined aria-hidden="true" />
-                    <span>
-                      {state.creating
-                        ? t("sidebar.common.processing")
-                        : t("sidebar.chat.shareCreate")}
+                    <span className="conversation-share-action-icon">
+                      {state.workingAction === id ? <Spin size="small" aria-hidden="true" /> : <Icon aria-hidden="true" />}
                     </span>
+                    <span>{t(label)}</span>
                   </button>
-                </div>
-                {state.expiration === "once" ? (
-                  <p className="conversation-share-warning" role="note">
-                    {t("sidebar.chat.shareExpiration.onceWarning")}
-                  </p>
-                ) : null}
+                ))}
               </div>
-
-              <details className="conversation-share-details">
-                <summary>{t("sidebar.chat.shareDetails")}</summary>
-                <p>{t("sidebar.chat.shareDetailsDescription")}</p>
-              </details>
-
-              {state.notice ? (
-                <div className="conversation-share-feedback is-success" role="status">
-                  {state.notice}
-                </div>
-              ) : null}
-              {state.warning ? (
-                <p className="conversation-share-warning" role="note">{state.warning}</p>
-              ) : null}
-              {state.actionError ? (
-                <div className="conversation-share-feedback is-error" role="alert">
-                  {state.actionError}
-                </div>
-              ) : null}
-
-              {state.createdRecord ? (
-                <section className="conversation-share-created-result" aria-label={t("sidebar.chat.shareCreated")}>
-                  <div className="conversation-share-link-control">
-                    <LinkOutlined aria-hidden="true" />
-                    <input
-                      aria-label={t("sidebar.chat.shareLink")}
-                      title={state.createdRecord.url}
-                      value={state.createdRecord.url}
-                      readOnly
-                      onFocus={(event) => event.currentTarget.select()}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="conversation-share-button is-compact"
-                    data-copied={state.copied || undefined}
-                    aria-live="polite"
-                    onClick={() => void dialog.copyCreatedLink()}
-                  >
-                    {state.copied ? <CheckOutlined aria-hidden="true" /> : <CopyOutlined aria-hidden="true" />}
-                    <span>{state.copied ? t("sidebar.chat.shareCopied") : t("common.copy")}</span>
-                  </button>
-                </section>
-              ) : null}
-            </>
+              {state.warning ? <p className="conversation-share-warning" role="note">{state.warning}</p> : null}
+            </div>
           )}
-        </div>
-      </section>
+        </section>
+      ) : state.phase === "qr" && state.createdRecord ? (
+        <ConversationShareQrDialog
+          url={state.createdRecord.url}
+          chatId={chatId}
+          chatName={chatName}
+          warning={state.warning}
+          t={t}
+          onClose={onClose}
+          onFeedback={notify}
+        />
+      ) : null}
     </div>
   );
 }

@@ -18,7 +18,7 @@ function record(overrides = {}) {
     conversationId: "chat_1",
     url: "https://share.example.test/share/share_abc",
     createdAt: "2026-08-17T10:00:00.000Z",
-    expiresAt: "2026-09-16T10:00:00.000Z",
+    expiresAt: null,
     lastAccessedAt: null,
     singleUse: false,
     ...overrides
@@ -63,14 +63,13 @@ test("Tunnel client submits the V1 snapshot and attachments in one multipart req
   const result = await client.create({
     target,
     conversationId: "chat_1",
-    expiration: "30d",
     snapshot: snapshotBytes,
     attachments: [resource]
   });
 
   assert.equal(result.shareId, "share_abc");
   assert.equal(result.createdAt, Date.parse("2026-08-17T10:00:00.000Z"));
-  assert.equal(result.expiresAt, Date.parse("2026-09-16T10:00:00.000Z"));
+  assert.equal(result.expiresAt, null);
   assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares");
   assert.equal(requests[0].init.method, "POST");
   assert.equal(requests[0].init.redirect, "manual");
@@ -82,7 +81,7 @@ test("Tunnel client submits the V1 snapshot and attachments in one multipart req
   assert.equal(requests[0].init.headers["Content-Type"], undefined);
   assert.equal(requests[0].init.headers["X-Conversation-Snapshot-Version"], "1");
   assert.equal(requests[0].init.headers["X-Conversation-ID"], "chat_1");
-  assert.equal(requests[0].init.headers["X-Conversation-Share-Expiration"], "30d");
+  assert.equal(requests[0].init.headers["X-Conversation-Share-Expiration"], "permanent");
   assert.ok(requests[0].init.signal instanceof AbortSignal);
 });
 
@@ -93,7 +92,6 @@ test("Tunnel client requires explicit null metadata for permanent shares", async
   const result = await client.create({
     target,
     conversationId: "chat_1",
-    expiration: "permanent",
     snapshot: snapshot(),
     attachments: []
   });
@@ -111,7 +109,6 @@ test("Tunnel client rejects a create response for a different conversation", asy
     () => client.create({
       target,
       conversationId: "chat_1",
-      expiration: "30d",
       snapshot: snapshot(),
       attachments: []
     }),
@@ -119,30 +116,25 @@ test("Tunnel client rejects a create response for a different conversation", asy
   );
 });
 
-test("Tunnel client requires explicit single-use metadata for once shares", async () => {
-  const client = new TunnelConversationShareClient(async () =>
-    jsonResponse(record({ id: "share_once", expiresAt: null, singleUse: true }), 201)
-  );
-  const result = await client.create({
-    target,
-    conversationId: "chat_1",
-    expiration: "once",
-    snapshot: snapshot(),
-    attachments: []
-  });
-
-  assert.equal(result.shareId, "share_once");
-  assert.equal(result.expiresAt, null);
-  assert.equal(result.lastAccessedAt, null);
-  assert.equal(result.singleUse, true);
+test("Tunnel client rejects expiring and single-use create responses", async () => {
+  for (const responseRecord of [
+    record({ expiresAt: "2026-09-16T10:00:00.000Z" }),
+    record({ singleUse: true })
+  ]) {
+    const client = new TunnelConversationShareClient(async () => jsonResponse(responseRecord, 201));
+    await assert.rejects(
+      () => client.create({ target, conversationId: "chat_1", snapshot: snapshot(), attachments: [] }),
+      (error) => error instanceof TunnelConversationShareError && error.kind === "invalid_response"
+    );
+  }
 });
 
 test("Tunnel client rejects missing or inconsistent single-use metadata", async () => {
   const { singleUse: _singleUse, ...withoutSingleUse } = record();
   const responses = [
-    jsonResponse(withoutSingleUse),
-    jsonResponse(record({ expiresAt: null, singleUse: true, lastAccessedAt: "2026-08-17T10:05:00.000Z" })),
-    jsonResponse(record({ singleUse: true }))
+    jsonResponse({ items: [withoutSingleUse] }),
+    jsonResponse({ items: [record({ singleUse: true, lastAccessedAt: "2026-08-17T10:05:00.000Z" })] }),
+    jsonResponse({ items: [record({ singleUse: true, expiresAt: "2026-09-16T10:00:00.000Z" })] })
   ];
   const client = new TunnelConversationShareClient(async () => responses.shift());
 
@@ -155,7 +147,7 @@ test("Tunnel client lists RFC3339 metadata and rejects duplicate IDs", async () 
   const requests = [];
   const responses = [
     jsonResponse({
-      items: [record({ expiresAt: null, lastAccessedAt: "2026-08-17T10:05:00.000Z" })]
+      items: [record({ lastAccessedAt: "2026-08-17T10:05:00.000Z" }), record({ id: "legacy_30d", expiresAt: "2026-09-16T10:00:00.000Z" }), record({ id: "legacy_once", singleUse: true })]
     }),
     jsonResponse({ items: [record(), record()] })
   ];
@@ -168,6 +160,8 @@ test("Tunnel client lists RFC3339 metadata and rejects duplicate IDs", async () 
   assert.equal(records[0].chatId, "chat_1");
   assert.equal(records[0].lastAccessedAt, Date.parse("2026-08-17T10:05:00.000Z"));
   assert.equal(records[0].expiresAt, null);
+  assert.equal(records[1].expiresAt, Date.parse("2026-09-16T10:00:00.000Z"));
+  assert.equal(records[2].singleUse, true);
   assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares");
   assert.equal(requests[0].init.method, "GET");
   assert.equal(requests[0].init.redirect, "manual");
@@ -244,7 +238,6 @@ test("Tunnel client rejects redirects, invalid JSON, oversized JSON, URLs, RFC33
       () => client.create({
         target,
         conversationId: "chat_1",
-        expiration: "30d",
         snapshot: snapshot(),
         attachments: []
       }),

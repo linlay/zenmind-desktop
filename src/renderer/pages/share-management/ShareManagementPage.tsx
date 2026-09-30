@@ -1,8 +1,10 @@
 import {
   ArrowRightOutlined,
+  CheckCircleOutlined,
   CheckOutlined,
   CopyOutlined,
   DisconnectOutlined,
+  ExclamationCircleOutlined,
   LinkOutlined,
   ShareAltOutlined,
 } from "@ant-design/icons";
@@ -29,6 +31,8 @@ type ShareManagementPageProps = {
 };
 
 const COPY_FEEDBACK_DURATION_MS = 1_600;
+const ACTION_FEEDBACK_DURATION_MS = 3_200;
+type ActionFeedback = { kind: "success" | "error"; message: string };
 
 export function ShareManagementPage({
   tunnelHubEnabled,
@@ -40,14 +44,30 @@ export function ShareManagementPage({
   const [records, setRecords] = useState<AssistantConversationShareRecord[]>([]);
   const [chatDetails, setChatDetails] = useState<Record<string, ShareChatDetails>>({});
   const [loadError, setLoadError] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [copiedShareId, setCopiedShareId] = useState("");
   const [selectedChatId, setSelectedChatId] = useState("");
-  const [confirmingRevokeShareId, setConfirmingRevokeShareId] = useState("");
   const [revokingShareId, setRevokingShareId] = useState("");
   const requestIdRef = useRef(0);
   const copyFeedbackTimerRef = useRef<number | null>(null);
+  const actionFeedbackTimerRef = useRef<number | null>(null);
+
+  const clearActionFeedback = useCallback(() => {
+    if (actionFeedbackTimerRef.current !== null) {
+      window.clearTimeout(actionFeedbackTimerRef.current);
+      actionFeedbackTimerRef.current = null;
+    }
+    setActionFeedback(null);
+  }, []);
+
+  const showActionFeedback = useCallback((kind: ActionFeedback["kind"], message: string) => {
+    if (actionFeedbackTimerRef.current !== null) window.clearTimeout(actionFeedbackTimerRef.current);
+    setActionFeedback({ kind, message });
+    actionFeedbackTimerRef.current = window.setTimeout(() => {
+      actionFeedbackTimerRef.current = null;
+      setActionFeedback(null);
+    }, ACTION_FEEDBACK_DURATION_MS);
+  }, []);
 
   const load = useCallback(async () => {
     if (!tunnelHubEnabled) return;
@@ -95,20 +115,21 @@ export function ShareManagementPage({
       setRecords([]);
       setChatDetails({});
       setLoadError("");
-      setActionError("");
-      setNotice("");
-      setConfirmingRevokeShareId("");
+      clearActionFeedback();
       setRevokingShareId("");
       return;
     }
     void load();
-  }, [load, tunnelHubEnabled]);
+  }, [clearActionFeedback, load, tunnelHubEnabled]);
 
   useEffect(
     () => () => {
       requestIdRef.current += 1;
       if (copyFeedbackTimerRef.current !== null) {
         window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+      if (actionFeedbackTimerRef.current !== null) {
+        window.clearTimeout(actionFeedbackTimerRef.current);
       }
     },
     [],
@@ -126,38 +147,35 @@ export function ShareManagementPage({
       }
       if (!result.ok) {
         setCopiedShareId("");
-        setActionError(result.message || t("sidebar.chat.shareCopyFailed"));
+        showActionFeedback("error", result.message || t("sidebar.chat.shareCopyFailed"));
         return;
       }
       setCopiedShareId(record.shareId);
-      setActionError("");
+      clearActionFeedback();
       copyFeedbackTimerRef.current = window.setTimeout(() => {
         copyFeedbackTimerRef.current = null;
         setCopiedShareId((current) => current === record.shareId ? "" : current);
       }, COPY_FEEDBACK_DURATION_MS);
     } catch (error) {
       setCopiedShareId("");
-      setActionError(error instanceof Error ? error.message : t("sidebar.chat.shareCopyFailed"));
+      showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareCopyFailed"));
     }
   }
 
-  async function confirmRevoke() {
-    const shareId = confirmingRevokeShareId;
-    if (!shareId || revokingShareId) return;
-    setConfirmingRevokeShareId("");
+  async function revokeShare(shareId: string) {
+    if (revokingShareId) return;
     setRevokingShareId(shareId);
-    setActionError("");
-    setNotice("");
+    clearActionFeedback();
     try {
       const result = await window.electronAPI.assistant.revokeChatShare(shareId);
       if (!result.ok) {
-        setActionError(result.message || t("sidebar.chat.shareRevokeFailed"));
+        showActionFeedback("error", result.message || t("sidebar.chat.shareRevokeFailed"));
         return;
       }
       setRecords((current) => current.filter((record) => record.shareId !== shareId));
-      setNotice(result.message || t("assistant.chatShareRevoked"));
+      showActionFeedback("success", result.message || t("assistant.chatShareRevoked"));
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : t("sidebar.chat.shareRevokeFailed"));
+      showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareRevokeFailed"));
     } finally {
       setRevokingShareId("");
     }
@@ -165,6 +183,12 @@ export function ShareManagementPage({
 
   return (
     <section className="share-management-page" aria-labelledby="share-management-title">
+      {actionFeedback ? (
+        <div className="share-management-action-toast" data-kind={actionFeedback.kind} role={actionFeedback.kind === "error" ? "alert" : "status"}>
+          {actionFeedback.kind === "success" ? <CheckCircleOutlined aria-hidden="true" /> : <ExclamationCircleOutlined aria-hidden="true" />}
+          <span>{actionFeedback.message}</span>
+        </div>
+      ) : null}
       <header className="share-management-page-header">
         <div>
           <h1 id="share-management-title">{t("shareManagement.title")}</h1>
@@ -188,8 +212,6 @@ export function ShareManagementPage({
         </div>
       ) : (
         <div className="share-management-content" aria-busy={status === "loading"}>
-          {actionError ? <div className="share-management-feedback is-error" role="alert">{actionError}</div> : null}
-          {notice ? <div className="share-management-feedback is-success" role="status">{notice}</div> : null}
           {status === "loading" && records.length === 0 ? (
             <div className="share-management-state-card"><p>{t("shareManagement.loading")}</p></div>
           ) : null}
@@ -222,7 +244,6 @@ export function ShareManagementPage({
                       aria-current={group.chatId === selectedGroup.chatId ? "true" : undefined}
                       onClick={() => {
                         setSelectedChatId(group.chatId);
-                        setConfirmingRevokeShareId("");
                       }}
                     >
                       <strong>{group.chatName}</strong>
@@ -266,17 +287,10 @@ export function ShareManagementPage({
                           key={record.shareId}
                           record={record}
                           copied={copiedShareId === record.shareId}
-                          confirmingRevoke={confirmingRevokeShareId === record.shareId}
                           revoking={revokingShareId === record.shareId}
                           anotherRevokePending={Boolean(revokingShareId && revokingShareId !== record.shareId)}
                           onCopy={() => void copyShare(record)}
-                          onRequestRevoke={() => {
-                            setConfirmingRevokeShareId(record.shareId);
-                            setActionError("");
-                            setNotice("");
-                          }}
-                          onCancelRevoke={() => setConfirmingRevokeShareId("")}
-                          onConfirmRevoke={() => void confirmRevoke()}
+                          onRevoke={() => void revokeShare(record.shareId)}
                         />
                       ))}
                     </div>
@@ -294,23 +308,17 @@ export function ShareManagementPage({
 function ShareManagementRecord({
   record,
   copied,
-  confirmingRevoke,
   revoking,
   anotherRevokePending,
   onCopy,
-  onRequestRevoke,
-  onCancelRevoke,
-  onConfirmRevoke,
+  onRevoke,
 }: {
   record: AssistantConversationShareRecord;
   copied: boolean;
-  confirmingRevoke: boolean;
   revoking: boolean;
   anotherRevokePending: boolean;
   onCopy: () => void;
-  onRequestRevoke: () => void;
-  onCancelRevoke: () => void;
-  onConfirmRevoke: () => void;
+  onRevoke: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -321,23 +329,14 @@ function ShareManagementRecord({
           <span className="share-management-link-text" title={record.url}>{record.url}</span>
         </div>
         <div className="share-management-record-actions">
-          {confirmingRevoke ? (
-            <div className="share-management-revoke-confirmation" role="group" aria-label={t("sidebar.chat.shareRevokeConfirm")}>
-              <button type="button" className="share-management-button" onClick={onCancelRevoke}>{t("common.cancel")}</button>
-              <button type="button" className="share-management-button is-danger" onClick={onConfirmRevoke}>{t("sidebar.chat.shareRevoke")}</button>
-            </div>
-          ) : (
-            <>
-              <button type="button" className="share-management-button" data-copied={copied || undefined} aria-live="polite" onClick={onCopy}>
-                {copied ? <CheckOutlined aria-hidden="true" /> : <CopyOutlined aria-hidden="true" />}
-                <span>{copied ? t("sidebar.chat.shareCopied") : t("common.copy")}</span>
-              </button>
-              <button type="button" className="share-management-button is-danger" disabled={revoking || anotherRevokePending} onClick={onRequestRevoke}>
-                <DisconnectOutlined aria-hidden="true" />
-                <span>{revoking ? t("sidebar.common.processing") : t("sidebar.chat.shareRevokeAction")}</span>
-              </button>
-            </>
-          )}
+          <button type="button" className="share-management-button" data-copied={copied || undefined} aria-live="polite" onClick={onCopy}>
+            {copied ? <CheckOutlined aria-hidden="true" /> : <CopyOutlined aria-hidden="true" />}
+            <span>{copied ? t("sidebar.chat.shareCopied") : t("common.copy")}</span>
+          </button>
+          <button type="button" className="share-management-button is-danger" disabled={revoking || anotherRevokePending} onClick={onRevoke}>
+            <DisconnectOutlined aria-hidden="true" />
+            <span>{revoking ? t("sidebar.common.processing") : t("sidebar.chat.shareRevokeAction")}</span>
+          </button>
         </div>
       </div>
       <dl className="share-management-meta">
