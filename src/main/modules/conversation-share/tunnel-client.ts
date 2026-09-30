@@ -1,7 +1,4 @@
-import type {
-  AssistantConversationShareExpiration,
-  AssistantConversationShareRecord,
-} from "../../../shared/contracts";
+import type { AssistantConversationShareRecord } from "../../../shared/contracts";
 import { requireEpochMillis } from "../../../shared/time-contract";
 import {
   isTunnelHubForbiddenHostname,
@@ -42,7 +39,6 @@ export class TunnelConversationShareError extends Error {
 export type ConversationShareCreateInput = {
   target: ConversationShareTarget;
   conversationId: string;
-  expiration: AssistantConversationShareExpiration;
   snapshot: Buffer;
   attachments: Array<{ id: string; name: string; mimeType: string; bytes: Buffer }>;
 };
@@ -83,7 +79,7 @@ export class TunnelConversationShareClient implements
         headers: {
           ...authorizationHeaders(input.target),
           [CONVERSATION_SNAPSHOT_VERSION_HEADER]: CONVERSATION_SNAPSHOT_VERSION,
-          [CONVERSATION_SHARE_EXPIRATION_HEADER]: input.expiration,
+          [CONVERSATION_SHARE_EXPIRATION_HEADER]: "permanent",
           [CONVERSATION_ID_HEADER]: input.conversationId,
         },
         body: form,
@@ -95,12 +91,7 @@ export class TunnelConversationShareClient implements
     if (
       record.chatId !== input.conversationId ||
       record.lastAccessedAt !== null ||
-      (input.expiration === "once"
-        ? !record.singleUse || record.expiresAt !== null
-        : record.singleUse ||
-          (input.expiration === "permanent"
-            ? record.expiresAt !== null
-            : record.expiresAt === null))
+      record.singleUse || record.expiresAt !== null
     ) {
       throw new TunnelConversationShareError("invalid_response");
     }

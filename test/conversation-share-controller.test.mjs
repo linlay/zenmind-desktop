@@ -49,7 +49,7 @@ function shareRecord(overrides = {}) {
     chatId: "chat-1",
     url: "https://share.example.test/share/opaque_abc",
     createdAt: 1_786_363_200_000,
-    expiresAt: 1_788_955_200_000,
+    expiresAt: null,
     lastAccessedAt: null,
     singleUse: false,
     ...overrides
@@ -73,10 +73,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
     }
   };
 
-  const result = await createConversationShare(app, reader, client, {
-    chatId: " chat-1 ",
-    expiration: "30d"
-  });
+  const result = await createConversationShare(app, reader, client, { chatId: " chat-1 " });
 
   assert.equal(result.ok, true);
   assert.equal(result.warning, undefined);
@@ -85,7 +82,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   assert.equal(calls[1].input.snapshot, snapshot);
   assert.deepEqual(calls[1].input.attachments, []);
   assert.equal(calls[1].input.conversationId, "chat-1");
-  assert.equal(calls[1].input.expiration, "30d");
+  assert.equal(Object.hasOwn(calls[1].input, "expiration"), false);
   assert.equal(calls[1].input.target.origin, "https://tunnel.example.test");
   assert.match(calls[1].input.target.accessToken, /^header\./u);
 });
@@ -104,7 +101,7 @@ test("createConversationShare keeps the link and reports observed attachment omi
           attachmentUnauthorized: unauthorized
         };
       }
-    }, client, { chatId: "chat-1", expiration: "30d" });
+    }, client, { chatId: "chat-1" });
     assert.equal(result.ok, true);
     assert.equal(result.record.url, shareRecord().url);
     assert.match(result.warning, unauthorized ? /身份/u : /部分附件/u);
@@ -128,7 +125,7 @@ test("createConversationShare resolves login and Tunnel before reading Snapshot"
       created = true;
       return shareRecord();
     }
-  }, { chatId: "chat-1", expiration: "30d" });
+  }, { chatId: "chat-1" });
 
   assert.equal(result.ok, false);
   assert.equal(read, false);
@@ -147,31 +144,10 @@ test("createConversationShare does not call Tunnel when Snapshot reading fails",
       created = true;
       return shareRecord();
     }
-  }, { chatId: "chat-1", expiration: "30d" });
+  }, { chatId: "chat-1" });
 
   assert.deepEqual(result, { ok: false, message: "snapshot failed" });
   assert.equal(created, false);
-});
-
-test("createConversationShare rejects removed and invalid expirations before resolving dependencies", async (t) => {
-  const app = createFixture(t);
-  for (const expiration of ["5m", "30m", "1h", "5d", "15d", "90d"]) {
-    let called = false;
-    const result = await createConversationShare(app, {
-      async readChatSnapshot() {
-        called = true;
-        return { ok: true, bytes: Buffer.from('{"version":1}') };
-      }
-    }, {
-      async create() {
-        called = true;
-        return shareRecord();
-      }
-    }, { chatId: "chat-1", expiration });
-
-    assert.equal(result.ok, false, expiration);
-    assert.equal(called, false, expiration);
-  }
 });
 
 test("createConversationShare rejects an invalid conversation id before reading", async (t) => {
@@ -187,7 +163,7 @@ test("createConversationShare rejects an invalid conversation id before reading"
       called = true;
       return shareRecord();
     }
-  }, { chatId: `chat-${"x".repeat(256)}`, expiration: "30d" });
+  }, { chatId: `chat-${"x".repeat(256)}` });
 
   assert.equal(result.ok, false);
   assert.equal(called, false);
@@ -211,7 +187,7 @@ test("development allows canonical loopback Tunnel origins while packaged Deskto
       developmentApp,
       reader,
       client,
-      { chatId: "chat-1", expiration: "30d" }
+      { chatId: "chat-1" }
     );
     assert.equal(developmentResult.ok, true, relayUrl);
 
@@ -223,7 +199,7 @@ test("development allows canonical loopback Tunnel origins while packaged Deskto
         packagedRead = true;
         return { ok: true, bytes: Buffer.from('{"version":1}') };
       }
-    }, client, { chatId: "chat-1", expiration: "30d" });
+    }, client, { chatId: "chat-1" });
     assert.equal(packagedResult.ok, false, relayUrl);
     assert.equal(packagedRead, false, relayUrl);
   }
