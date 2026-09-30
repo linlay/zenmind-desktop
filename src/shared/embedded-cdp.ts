@@ -1,5 +1,6 @@
 import type { WebviewContextMenuSurfaceType } from "./webview-context-menu";
 import type { SurfaceIdentity } from "./surface-identity";
+import type { WorkPanelDocumentSource } from "./contracts/agent-webclient-bridge";
 
 export const EMBEDDED_CDP_GATEWAY_HOST = "127.0.0.1";
 export const EMBEDDED_CDP_GATEWAY_PORT = 11789;
@@ -57,6 +58,8 @@ export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   pageRoute?: string;
   /** Main-only route snapshot used for authorization; never expose it in diagnostics. */
   pageRouteIdentity?: string;
+  /** Host-owned document identity. Never accepted from guest navigation or exposed in diagnostics. */
+  documentSource?: WorkPanelDocumentSource;
   ownerChatId?: string;
   presentationScope?: "main-workspace" | "workpanel";
   label: string;

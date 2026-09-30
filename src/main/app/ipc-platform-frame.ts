@@ -1,4 +1,5 @@
 import { createAgentRealtimeRuntimeDiagnostics } from "./realtime-diagnostics";
+import { createDesktopDocumentLocalOpen } from "./ipc-document-local-open";
 import { handleAgentWebclientWorkPanelActionRequest } from "../modules/desktop-actions";
 import { registerAgentWebclientBridgeIpcHandlers } from "../modules/agent-platform";
 import { registerCanonicalChatSyncIpc } from "../modules/agent-platform";
@@ -33,6 +34,7 @@ export function registerPlatformFrameIpc(options: MainIpcRegistrationOptions) {
 
   const agentWebclientBridgeRuntime = registerAgentWebclientBridgeIpcHandlers(ipcMain, {
     app,
+    documentLocalOpen: createDesktopDocumentLocalOpen(options),
     getMainWebContents: () => {
       const mainWindow = options.getMainWindow();
       return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;

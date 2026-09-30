@@ -1,4 +1,5 @@
 import { createSurfacePerformanceTrace, retainHostPerformanceMonitor } from "../services/performanceDiagnostics";
+import type { WorkPanelDocumentSource } from "../../shared/contracts/agent-webclient-bridge";
 import {
   createElement,
   useCallback,
@@ -140,6 +141,7 @@ type ServiceWebviewSurfaceProps = {
   surfaceId?: string;
   surfaceIdentity?: SurfaceIdentity;
   surfaceIdentityKey?: string;
+  documentSource?: WorkPanelDocumentSource;
   active?: boolean | undefined;
   surfaceOwnershipActive?: boolean;
   desktopRoute?: string;
@@ -660,6 +662,7 @@ export function ServiceWebviewSurface({
   surfaceId: surfaceIdProp,
   surfaceIdentity: surfaceIdentityProp,
   surfaceIdentityKey,
+  documentSource,
   active,
   surfaceOwnershipActive,
   desktopRoute: desktopRouteProp,
@@ -681,6 +684,7 @@ export function ServiceWebviewSurface({
   onAgentWebclientDocumentHandoff,
   onAgentWebclientWorkspaceArrowKey,
 }: ServiceWebviewSurfaceProps) {
+  const documentSourceIdentity = documentSource ? JSON.stringify(documentSource) : "";
   const location = useLocation();
   const navigate = useNavigate();
   const currentRoute = `${location.pathname}${location.search}`;
@@ -1487,6 +1491,7 @@ export function ServiceWebviewSurface({
       registrationId: surfaceRegistrationIdRef.current,
       ...surfaceIdentity,
       ...(resolvedSurfaceIdentityKey ? { surfaceIdentityKey: resolvedSurfaceIdentityKey } : {}),
+      ...(documentSource ? { documentSource } : {}),
       surfaceKind: "service",
       surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceIdentity.surfaceRole),
       ...(serviceId ? { serviceId } : {}),
@@ -1707,6 +1712,7 @@ export function ServiceWebviewSurface({
     };
   }, [
     ownsActiveSurface,
+    documentSourceIdentity,
     ownerChatId,
     desiredMainChatIdentity,
     desiredMainChatKey,

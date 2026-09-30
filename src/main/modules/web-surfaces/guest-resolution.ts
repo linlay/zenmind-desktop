@@ -68,6 +68,7 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
         ...(surface.serviceId ? { serviceId: surface.serviceId } : {}),
         ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
         ...(surface.pageRouteIdentity ? { pageRouteIdentity: surface.pageRouteIdentity } : {}),
+        ...(surface.documentSource ? { documentSource: surface.documentSource } : {}),
         ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
         ...(surface.presentationScope ? { presentationScope: surface.presentationScope } : {}),
         surfaceRole: surface.surfaceRole,
@@ -108,7 +109,7 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
     return contents && !contents.isDestroyed() && contents.getType() === "webview" ? contents : null;
   }
 
-  function resolveWebviewSurfaceTarget(webContentsId: number): { ownerChatId?: string; pageRouteIdentity?: string; pageRoute?: string; currentUrl: string; label: string; registrationId: string; surfaceId: string; surfaceKind: EmbeddedCdpSurfaceKind; surfaceType: NonNullable<EmbeddedCdpSurfaceRegistration["surfaceType"]>; surfaceIdentityKey?: string; serviceId?: string; tabId: string; webContentsId: number; ownerWebContentsId: number; active: boolean; presentationScope?: "main-workspace" | "workpanel"; surfaceRole: SurfaceRole; surfaceLevel: SurfaceIdentity["surfaceLevel"]; parentSurfaceId?: string; interaction: SurfaceIdentity["interaction"]; } | null {
+  function resolveWebviewSurfaceTarget(webContentsId: number): RegisteredWebviewSurfaceTarget | null {
     const indexed = registeredGuestTargets.get(webContentsId);
     if (!indexed) {
       return null;
@@ -126,6 +127,7 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
       ...indexed,
       currentUrl: tab.currentUrl,
       label: resolved.registered.label,
+      documentSource: resolved.registered.documentSource,
       ...(resolved.registered.pageRoute ? { pageRoute: resolved.registered.pageRoute } : {}),
       ...(resolved.registered.pageRouteIdentity
         ? { pageRouteIdentity: resolved.registered.pageRouteIdentity }
