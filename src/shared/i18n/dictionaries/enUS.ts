@@ -115,7 +115,7 @@ export const enUSMessages = {
   "market.connector.flow.state.disabled": "Connected · Disabled",
   "market.connector.flow.state.preparing": "Preparing",
   "market.connector.flow.state.authorization_required": "Authorization required",
-  "market.connector.flow.state.ready": "Ready",
+  "market.connector.flow.state.ready": "Connected",
   "market.connector.flow.state.unavailable": "Unavailable",
   "market.connector.flow.phase.installing": "Installing…",
   "market.connector.flow.phase.preparing": "Preparing tools…",
