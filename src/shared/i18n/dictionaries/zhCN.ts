@@ -1175,6 +1175,8 @@ export const zhCNMessages = {
   "enterpriseChat.loadingImage": "正在加载预览",
   "enterpriseChat.previewImage": "预览图片：{name}",
   "enterpriseChat.download": "下载文件",
+  "enterpriseChat.saveAttachment": "保存附件",
+  "enterpriseChat.saveDialogUnavailable": "无法打开保存位置选择窗口。",
   "enterpriseChat.downloaded": "已下载",
   "enterpriseChat.downloading": "下载中…",
   "enterpriseChat.downloadCancelled": "已取消下载",

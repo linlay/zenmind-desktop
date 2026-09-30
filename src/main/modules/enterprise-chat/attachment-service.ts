@@ -238,20 +238,23 @@ export async function downloadAttachment(dependencies: AttachmentServiceDependen
   if (!fileId) {
     throw new Error("fileId is required.");
   }
-  const { buffer } = await dependencies.fetchAttachment(fileId, ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES);
+  if (!dependencies.showSaveDialog) {
+    throw new Error(t("enterpriseChat.saveDialogUnavailable"));
+  }
   const filename = safeDownloadName(readText(input?.name) || "attachment", dependencies.platform);
-  const saveResult = dependencies.showSaveDialog
-    ? await dependencies.showSaveDialog({
-      title: "Save attachment",
-      defaultPath: path.join(dependencies.app.getPath("downloads"), filename)
-    })
-    : {
-      canceled: false,
-      filePath: path.join(dependencies.app.getPath("downloads"), filename)
-    };
+  const downloadsDirectory = dependencies.app.getPath("downloads");
+  const defaultPath = dependencies.platform === "win32"
+    ? path.win32.join(downloadsDirectory, filename)
+    : path.posix.join(downloadsDirectory, filename);
+  // Choose the destination first so cancelling the native dialog never starts a download.
+  const saveResult = await dependencies.showSaveDialog({
+    title: t("enterpriseChat.saveAttachment"),
+    defaultPath
+  });
   if (saveResult.canceled || !saveResult.filePath) {
     return { ok: false, cancelled: true, path: "", message: "Download cancelled." };
   }
+  const { buffer } = await dependencies.fetchAttachment(fileId, ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES);
   const target = saveResult.filePath;
   if (dependencies.platform === "win32") {
     await fs.promises.writeFile(target, buffer);

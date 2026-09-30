@@ -1175,6 +1175,8 @@ export const enUSMessages = {
   "enterpriseChat.loadingImage": "Loading preview",
   "enterpriseChat.previewImage": "Preview image: {name}",
   "enterpriseChat.download": "Download file",
+  "enterpriseChat.saveAttachment": "Save attachment",
+  "enterpriseChat.saveDialogUnavailable": "The save location dialog is unavailable.",
   "enterpriseChat.downloaded": "Downloaded",
   "enterpriseChat.downloading": "Downloading…",
   "enterpriseChat.downloadCancelled": "Download cancelled",
