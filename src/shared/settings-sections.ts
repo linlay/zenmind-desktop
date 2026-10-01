@@ -10,6 +10,7 @@ export type SettingsSectionId =
   | "tunnelHub"
   | "plugins"
   | "navigation"
+  | "websiteBridges"
   | "websites"
   | "webapps"
   | "about"

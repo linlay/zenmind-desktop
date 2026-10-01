@@ -141,6 +141,8 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
           <rect x="14" y="3" width="7" height="7" rx="1.5" transform="rotate(45 17.5 6.5)" />
         </svg>
       );
+    case "websiteBridges":
+      return <svg {...iconProps}><path d="M3 17V7m18 10V7M3 10c5 7 13 7 18 0M3 17h18M8 14v3m8-3v3" /></svg>;
     case "websites":
       return (
         <svg {...iconProps}>

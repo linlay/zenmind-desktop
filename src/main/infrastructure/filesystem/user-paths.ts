@@ -364,3 +364,7 @@ export const __testInternals = {
   resolveApplicationSupportRoot,
   resolveDesktopSsoAccessTokenFilePath
 };
+
+export function getDesktopWebsiteBridgesDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopWebsDataRoot(app, platform), "website-bridges");
+}

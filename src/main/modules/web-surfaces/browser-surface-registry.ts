@@ -6,6 +6,8 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   const store = createRegistrationStore(options);
   const projection = createContainerProjection(options, { registeredSurfaces: store.registeredSurfaces, resolveRegisteredSurface: store.resolveRegisteredSurface, findWebContentsForSurfaceUrl: store.guest.findWebContentsForSurfaceUrl });
   return {
+    websiteBridges: store.guest.websiteBridges,
+    ensureWebsiteBridge: store.guest.ensureWebsiteBridge,
     currentPageSnapshotMatchesSurface: projection.currentPageSnapshotMatchesSurface,
     builtinBrowserSurface: projection.builtinBrowserSurface,
     listBrowserContainers: projection.listBrowserContainers,

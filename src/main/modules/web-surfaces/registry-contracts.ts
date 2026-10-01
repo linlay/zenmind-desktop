@@ -33,6 +33,7 @@ export type WebContentsAccess = {
 };
 
 export type BrowserSurfaceRegistryOptions = {
+  websiteBridgeStorage?: import("./website-bridges/manager").WebsiteBridgeStorage;
   webContents: WebContentsAccess;
   listWebEntries(): {
     items: Array<{

@@ -89,7 +89,7 @@ export function installAwcpAddon(rule: AwcpAddonRule | null, expectedUrl: string
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 30000);
       try {
-        const args = { ...request.args };
+        const args = { ...definition.boundArgs, ...request.args };
         const endpoint = definition.path.replace(/\{([a-zA-Z]+)\}/g, (_match, key: string) => {
           const value = args[key]; delete args[key]; return encodeURIComponent(String(value));
         });

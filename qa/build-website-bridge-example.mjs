@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { createWebsiteBridgeManager } = require('../dist-electron/main/modules/web-surfaces/website-bridges/manager.js');
+const manager = createWebsiteBridgeManager();
+const item = manager.list().items[0];
+const output = path.resolve('build/examples/website-bridges', `${item.id}-${item.version}.zip`);
+await fs.mkdir(path.dirname(output), { recursive: true });
+await fs.writeFile(output, await manager.exportBytes(item.id));
+console.log(output);

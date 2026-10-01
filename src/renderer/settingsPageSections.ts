@@ -115,6 +115,10 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "websiteBridges",
+      group: "integrations", label: "websiteBridges", description: "", layout: "wide", visible: true
+    },
+    {
       id: "webapps",
       group: "integrations",
       label: "webapps",
@@ -164,6 +168,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
   plugins: { label: "settings.plugins.label", description: "settings.plugins.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
+  websiteBridges: { label: "settings.websiteBridges.label", description: "settings.websiteBridges.description" },
   websites: { label: "settings.websites.label", description: "settings.websites.description" },
   webapps: { label: "settings.webapps.label", description: "settings.webapps.description" },
   about: { label: "settings.about.label", description: "settings.about.description" },

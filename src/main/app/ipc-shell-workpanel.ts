@@ -3,7 +3,7 @@ import { shell } from "electron";
 import { callAgentPlatform } from "../modules/desktop-actions";
 import { getTunnelHubRuntimeStatus } from "../modules/tunnel";
 import { registerShellIpcHandlers } from "../modules/shell";
-import { registerSidebarContextMenuIpcHandlers } from "../modules/web-surfaces";
+import { registerSidebarContextMenuIpcHandlers, registerWebsiteBridgeIpc } from "../modules/web-surfaces";
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "../modules/work-panel";
 import { registerChatWorkPanelLocalFileIpcHandlers } from "../modules/work-panel";
 import { registerChatWorkPanelDocumentHtmlIpcHandlers } from "../modules/work-panel";
@@ -36,6 +36,8 @@ export function registerShellWorkPanelIpc(options: MainIpcRegistrationOptions) {
     getTunnelHubRuntimeStatus,
     setWorkPanelFullscreenActive: options.setWorkPanelFullscreenActive
   });
+
+  registerWebsiteBridgeIpc(ipcMain, { getMainWindow: options.getMainWindow, browserSurfaces: options.browserSurfaces, platform: options.platform });
 
   registerSidebarContextMenuIpcHandlers(ipcMain, {
     getMainWindow: options.getMainWindow

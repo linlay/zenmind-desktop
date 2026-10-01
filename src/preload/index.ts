@@ -612,6 +612,12 @@ const api: DesktopApi = {
     }
   },
   settings: {
+    listWebsiteBridges: () => ipcRenderer.invoke("settings.listWebsiteBridges"),
+    importWebsiteBridge: (expectedId) => ipcRenderer.invoke("settings.importWebsiteBridge", expectedId),
+    exportWebsiteBridge: (id) => ipcRenderer.invoke("settings.exportWebsiteBridge", id),
+    setWebsiteBridgeEnabled: (input) => ipcRenderer.invoke("settings.setWebsiteBridgeEnabled", input),
+    removeWebsiteBridge: (id) => ipcRenderer.invoke("settings.removeWebsiteBridge", id),
+    readWebsiteBridgeScript: (input) => ipcRenderer.invoke("settings.readWebsiteBridgeScript", input),
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     getAppInfo: () => ipcRenderer.invoke("settings.getAppInfo"),

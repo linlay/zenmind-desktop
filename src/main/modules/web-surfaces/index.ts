@@ -16,3 +16,5 @@ export { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview, resolveReg
 export { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-ipc";
 
 export { validateDesktopCdpParams, DesktopCdpParamsError } from "./cdp/params";
+
+export { registerWebsiteBridgeIpc } from "./website-bridges/ipc";

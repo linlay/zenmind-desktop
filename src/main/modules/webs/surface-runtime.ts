@@ -1,3 +1,4 @@
+import { getDesktopWebsiteBridgesDataRoot, getDesktopWebsConfigRoot } from "../../infrastructure/filesystem/user-paths";
 import type { App, BrowserWindow } from "electron";
 import type { CopilotDevToolsTarget, DesktopPageContextSnapshot } from "../../../shared/contracts";
 import {
@@ -67,6 +68,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
   }
 
   const browserSurfaceRegistry = createBrowserSurfaceRegistry({
+    websiteBridgeStorage: { packagesRoot: getDesktopWebsiteBridgesDataRoot(options.app), configRoot: getDesktopWebsConfigRoot(options.app) },
     webContents: options.webContents,
     listWebEntries: listBrowserRegistryWebItems,
     getCurrentPageSnapshot: () => currentPageSnapshot,

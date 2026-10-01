@@ -19,6 +19,7 @@ export type AddonAction = {
   path: string;
   method: "GET" | "POST";
   bodyDefaults?: Record<string, unknown>;
+  boundArgs?: Record<string, unknown>;
   inputSchema: { type: "object"; properties: Record<string, AddonField>; required: string[]; additionalProperties: false };
 };
 export type AwcpAddonRule = {

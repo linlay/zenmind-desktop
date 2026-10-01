@@ -1,3 +1,4 @@
+import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
@@ -4507,6 +4508,7 @@ export function SettingsPage({
 
   function renderActiveSection() {
     switch (activeSection) {
+      case "websiteBridges": return <WebsiteBridgesSettings />;
       case "usage":
         return (
           <UsageSettingsPanel
@@ -5955,7 +5957,8 @@ export function SettingsPage({
     activeSection !== "control" &&
     activeSection !== "plugins" &&
     activeSection !== "websites" &&
-    activeSection !== "webapps";
+    activeSection !== "webapps" &&
+    activeSection !== "websiteBridges";
   const activeSectionDescription = activeSectionDefinition
     ? activeSectionDefinition.description.trim()
     : t("settings.description");

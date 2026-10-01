@@ -1081,7 +1081,17 @@
 ## 论坛 AWCP 外挂（macOS / Windows 均执行）
 
 - 在 Website 和普通 Chat WorkPanel 打开 `https://1024.qiuer.net/forum`，完成网站登录；通过 `desktop_cdp` 先读取 AWCP 目录，再读取 `forum.posts.list` 章节并调用，确认返回帖子；通知数与网站一致。凭据不需要写入外挂配置。
-- 刷新、打开帖子子路径、后台 tab、站内 SPA 跳转与返回后重新读取手册均成功；跳到同站非 `/forum` 路径或其他 origin 后不再提供外挂。原生 AWCP 不被覆盖，近似域名和 `/forum-other` 不匹配。
+- 刷新、打开帖子子路径、后台 tab、站内 SPA 跳转与返回后重新读取手册均成功；跳到未配置页面路径或其他 origin 后不再提供外挂。原生 AWCP 不被覆盖，近似域名和 `/forum-other` 不匹配。
 - 同一 Surface 的 Run 门禁保持：未读章节、其他 Chat、本地文件、关闭后复用旧 ID 均被拒绝。取消在途请求、关闭页面与注销回收监听器；写入未知结果不重放。
 - 仅在明确授权的测试账号中验证发布、评论、点赞和收藏；检查实际服务端结果后手动刷新页面。点赞/收藏是切换动作，不能盲目重试。未登录返回登录提示；不要在生产账号上自动生成测试帖子。
 - 自动验证：`npm run build:main:types` 后运行 `node --test test/awcp-addons.test.mjs test/site-cdp-control.test.mjs`。真实站点只读验证可运行 `node_modules/.bin/electron qa/awcp-forum-smoke.cjs`，通过 stdin 临时提供登录 Cookie 值；不落盘、不写仓库。
+
+
+## 网站桥管理（macOS / Windows 均执行）
+
+- 设置 → 网站桥：显示内置论坛包，可搜索名称和域名；选择页面规则可查看对应 JS。发帖路径为 `/forum/new`，帖子详情使用页面参数，首页不暴露发帖或评论动作。
+- 导出 ZIP 后修改版本或脚本并导入更新，包身份不变，原启用状态保留；取消文件选择不修改状态。重启后包、版本及启用状态保持。
+- 打开的 Website 与普通 WorkPanel 网页在禁用时清理 AWCP，启用时重新注入；切换页面、SPA 路由、刷新后只暴露匹配页动作；离开规则后清理。原生 AWCP 不覆盖。
+- 卸载取消不改变包；确认后移除包与页面适配器，重启不恢复。Website 入口及网页登录不受影响。
+- 导入错误 JSON、缺失 JS、路径穿越、符号链接、过大压缩包、相同域名的第二个启用包均失败；旧包保持可用。更新选择其他包 ID 时拒绝。
+- 浅色、深色及窄窗口检查按钮、规则选择、代码预览与确认框；Windows/macOS 各验证原生 ZIP 打开和保存对话框。

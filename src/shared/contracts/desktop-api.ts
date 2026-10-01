@@ -1,3 +1,4 @@
+import type { WebsiteBridgeResult } from "../website-bridge";
 import type { BrowserWebclientState, BrowserWebclientResult } from "./services";
 import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
 import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
@@ -1194,6 +1195,12 @@ export interface DesktopApi {
     onStateChanged: (listener: EnterpriseChatSnapshotListener) => () => void;
   };
   settings: {
+    listWebsiteBridges: () => Promise<WebsiteBridgeResult>;
+    importWebsiteBridge: (expectedId?: string) => Promise<WebsiteBridgeResult>;
+    exportWebsiteBridge: (id: string) => Promise<WebsiteBridgeResult>;
+    setWebsiteBridgeEnabled: (input: { id: string; enabled: boolean }) => Promise<WebsiteBridgeResult>;
+    removeWebsiteBridge: (id: string) => Promise<WebsiteBridgeResult>;
+    readWebsiteBridgeScript: (input: { id: string; script: string }) => Promise<WebsiteBridgeResult>;
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;

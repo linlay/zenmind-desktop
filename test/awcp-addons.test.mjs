@@ -126,7 +126,7 @@ test('Desktop bridge reads injected manuals and invokes through an authorized Ru
 
 test('minified production bundle serializes a self-contained page runtime', async () => {
   const built = await build({ entryPoints: ['src/main/modules/web-surfaces/awcp/addons/injection.ts'], bundle: true, minify: true, platform: 'node', format: 'cjs', target: 'node20', write: false });
-  const exports = { exports: {} }; vm.runInNewContext(built.outputFiles[0].text, { module: exports, exports: exports.exports, URL });
+  const exports = { exports: {} }; vm.runInNewContext(built.outputFiles[0].text, { module: exports, exports: exports.exports, URL, require });
   const p = page(); p.install(false);
   vm.runInContext(exports.exports.buildAwcpAddonScript(url), p.context);
   assert.equal((await p.invoke('forum.notifications.unread-count')).result.count, 9);

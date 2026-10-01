@@ -57,11 +57,18 @@ app.whenReady().then(async () => {
   }
   const posts = await read('forum.posts.list');
   await read('forum.sections.list'); await read('forum.tags.list');
-  await read('forum.notifications.unread-count'); await read('forum.notifications.list');
+  await read('forum.notifications.unread-count');
+  await guest.executeJavaScript("history.pushState({}, '', '/forum/new');");
+  const draftIndex = await bridge.manual(`draft-${++sequence}`, {}, scope);
+  assert.ok(draftIndex.sections.some(item => item.section === 'forum.posts.create'));
+  await guest.executeJavaScript("history.pushState({}, '', '/forum/notifications');");
+  await read('forum.notifications.list');
   if (posts.items[0]) {
-    await read('forum.posts.get', { postId: posts.items[0].id });
-    await read('forum.comments.list', { postId: posts.items[0].id });
+    await guest.executeJavaScript(`history.pushState({}, '', ${JSON.stringify('/forum/posts/' + posts.items[0].id)});`);
+    await read('forum.posts.get');
+    await read('forum.comments.list');
   }
+  await guest.executeJavaScript("history.pushState({}, '', '/forum');");
   const reload = new Promise(resolve => guest.once('dom-ready', resolve)); guest.reload(); await reload;
   await read('forum.notifications.unread-count');
   await guest.executeJavaScript("history.pushState({}, '', '/not-forum');");

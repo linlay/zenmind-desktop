@@ -2,6 +2,7 @@ import { EmbeddedCdpSurfaceKind, EmbeddedCdpSurfaceRegistration } from "../../..
 import { type SurfaceIdentity, type SurfaceRole } from "../../../shared/surface-identity";
 import type { BrowserSurfaceRegistryOptions, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, ResolvedSurface } from "./registry-contracts";
 import { AwcpAddonInjection } from "./awcp/addons/injection";
+import { createWebsiteBridgeManager } from "./website-bridges/manager";
 
 export function guestTargetMatches(
   predicate: PendingGuestTargetWaiter["predicate"],
@@ -19,10 +20,12 @@ interface GuestResolutionDependencies {
 }
 
 /** Owns the derived guest index and bounded waiters; resolves trust against the registration store. */
-export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOptions, "webContents">, dependencies: GuestResolutionDependencies) {
+export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOptions, "webContents" | "websiteBridgeStorage">, dependencies: GuestResolutionDependencies) {
   const registeredGuestTargets = new Map<number, RegisteredWebviewSurfaceTarget>();
   const pendingGuestTargetWaiters = new Map<number, Set<PendingGuestTargetWaiter>>();
-  const awcpAddons = new AwcpAddonInjection();
+  const websiteBridges = createWebsiteBridgeManager(options.websiteBridgeStorage);
+  const awcpAddons = new AwcpAddonInjection(websiteBridges.runtimePackages);
+  websiteBridges.subscribe(() => awcpAddons.refresh());
 
   function settleGuestTargetWaiters(webContentsId: number, target: RegisteredWebviewSurfaceTarget | null): void {
     const waiters = pendingGuestTargetWaiters.get(webContentsId);
@@ -237,5 +240,5 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
 
   function findGuestClaim(webContentsId: number) { return registeredGuestTargets.get(webContentsId); }
 
-  return { removeGuestTargetsForSurface, indexRegisteredSurface, findRegisteredSurfaceWebContents, findWebContentsById, resolveWebviewSurfaceTarget, waitForWebviewSurfaceTarget, waitForWebviewSurfaceTargetMatching, findWebContentsForSurfaceUrl, findGuestClaim };
+  return { websiteBridges, ensureWebsiteBridge: (contents: Electron.WebContents) => awcpAddons.ensure(contents), removeGuestTargetsForSurface, indexRegisteredSurface, findRegisteredSurfaceWebContents, findWebContentsById, resolveWebviewSurfaceTarget, waitForWebviewSurfaceTarget, waitForWebviewSurfaceTargetMatching, findWebContentsForSurfaceUrl, findGuestClaim };
 }

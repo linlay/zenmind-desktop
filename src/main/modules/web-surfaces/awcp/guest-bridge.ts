@@ -87,7 +87,7 @@ export class AwcpGuestBridge {
   private readonly active = new Map<string, ActiveInvocation>();
   private readonly manuals = new AwcpManualBindings();
 
-  constructor(private readonly browserSurfaces: Pick<BrowserSurfaceRegistry, "findWebContentsById">) {}
+  constructor(private readonly browserSurfaces: Pick<BrowserSurfaceRegistry, "findWebContentsById"> & Partial<Pick<BrowserSurfaceRegistry, "ensureWebsiteBridge">>) {}
 
   async manual(
     requestId: string,
@@ -192,7 +192,7 @@ export class AwcpGuestBridge {
   private async ensurePageProtocol(guest: WebContents, lifecycleFailure: Promise<never>) {
     // The first tool request may beat registration/dom-ready injection. Installation
     // is idempotent, URL-checked in both worlds, and runs only after scope validation.
-    await Promise.race([ensureAwcpAddon(guest), lifecycleFailure]);
+    await Promise.race([this.browserSurfaces.ensureWebsiteBridge ? this.browserSurfaces.ensureWebsiteBridge(guest) : ensureAwcpAddon(guest), lifecycleFailure]);
     const probe = await Promise.race([
       guest.executeJavaScript(`(() => {
         const api = globalThis.awcp;
