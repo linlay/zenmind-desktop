@@ -56,7 +56,7 @@ import type {
   AssistantChatOrderMutationRequest,
   AssistantChatOrderMutationResult,
   AssistantChatSortMode,
-  AssistantCreateProjectRequest,
+  AssistantCreateProjectResult,
   AssistantNavAgentItem,
   AssistantNavChatItem,
   AssistantNavigationListOptions,
@@ -123,6 +123,7 @@ import {
 } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
+import { CreateProjectDialog } from "./CreateProjectDialog";
 import type {
   SettingsSectionGroupId,
   SettingsSectionId,
@@ -288,26 +289,8 @@ type NavigateOptions = {
   focusAgentChat?: boolean;
 };
 
-type CoderAcpProxyOption = {
-  serviceId: string;
-  acpProxyId: string;
-  label: string;
-};
-
-type RunningCoderAcpProxyOption = CoderAcpProxyOption & {
-  statusLabel: string;
-};
-
-type CreateProjectType = "coder" | "kbase";
-
 type CreateProjectDialogState = {
   workspaceDir: string;
-  projectType: CreateProjectType;
-  useAcp: boolean;
-  options: RunningCoderAcpProxyOption[];
-  selectedAcpProxyId: string;
-  pending: boolean;
-  error: string;
 };
 
 type BootstrapGuideFloatingBubble = {
@@ -342,19 +325,6 @@ const defaultSidebarGroupState: SidebarGroupState = {
   chats: true,
   webs: true,
 };
-
-const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
-  {
-    serviceId: "proxy-acp-claudecode",
-    acpProxyId: "claude",
-    label: "Claude Code ACP Proxy",
-  },
-  {
-    serviceId: "proxy-acp-codex",
-    acpProxyId: "codex",
-    label: "Codex ACP Proxy",
-  },
-];
 
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const CHATS_VISIBLE_LIMIT = 8;
@@ -589,27 +559,6 @@ function readInitialSidebarGroupState() {
   } catch {
     return defaultSidebarGroupState;
   }
-}
-
-function getRunningCoderAcpProxyOptions(
-  services: ServiceState[],
-  t: TranslateFunction,
-): RunningCoderAcpProxyOption[] {
-  const servicesById = new Map(
-    services.map((service) => [service.id, service]),
-  );
-  return CODER_ACP_PROXY_SERVICE_OPTIONS.flatMap((option) => {
-    const service = servicesById.get(option.serviceId);
-    if (!service || service.status !== "running") {
-      return [];
-    }
-    return [
-      {
-        ...option,
-        statusLabel: service.statusLabel || t("controlCenter.status.running"),
-      },
-    ];
-  });
 }
 
 function getRoutePathname(route: string) {
@@ -3154,24 +3103,7 @@ export function AppSidebar({
         if (file) throw new Error(selection.message || t("sidebar.drop.projectHint"));
         return;
       }
-      let runningAcpProxies: RunningCoderAcpProxyOption[] = [];
-      try {
-        runningAcpProxies = getRunningCoderAcpProxyOptions(
-          await window.electronAPI.services.list(),
-          t,
-        );
-      } catch (error) {
-        console.warn("[assistant] failed to list ACP proxy services", error);
-      }
-      setCreateProjectDialog({
-        workspaceDir: selection.path,
-        projectType: "coder",
-        useAcp: false,
-        options: runningAcpProxies,
-        selectedAcpProxyId: runningAcpProxies[0]?.acpProxyId ?? "",
-        pending: false,
-        error: "",
-      });
+      setCreateProjectDialog({ workspaceDir: selection.path });
     } catch (error) {
       console.warn("[assistant] failed to prepare project", error);
       if (file) throw error;
@@ -3186,59 +3118,12 @@ export function AppSidebar({
     await beginCreateProject();
   }
 
-  async function handleSubmitCreateProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const dialog = createProjectDialog;
-    if (!dialog || dialog.pending) {
-      return;
-    }
-    const selectedAcpProxy =
-      dialog.projectType === "coder" &&
-      dialog.useAcp &&
-      dialog.selectedAcpProxyId
-        ? dialog.options.find(
-            (option) => option.acpProxyId === dialog.selectedAcpProxyId,
-          )
-        : null;
-    if (dialog.projectType === "coder" && dialog.useAcp && !selectedAcpProxy) {
-      setCreateProjectDialog({
-        ...dialog,
-        error: t("sidebar.project.acpRequired"),
-      });
-      return;
-    }
-    setCreateProjectDialog({ ...dialog, pending: true, error: "" });
-    try {
-      const createInput: AssistantCreateProjectRequest = {
-        projectType: dialog.projectType,
-        workspaceDir: dialog.workspaceDir,
-      };
-      if (selectedAcpProxy) {
-        createInput.acpProxyId = selectedAcpProxy.acpProxyId;
-      }
-      const result =
-        await window.electronAPI.assistant.createProject(createInput);
-      if (!result.ok) {
-        setCreateProjectDialog({
-          ...dialog,
-          pending: false,
-          error: result.message || t("sidebar.project.createFailed"),
-        });
-        return;
-      }
-      setCreateProjectDialog(null);
-      await onRefreshAssistantNavAgents?.();
-      if (result.agentKey) {
-        setAssistantAgentExpanded(result.agentKey, true);
-        requestNavigate(createAgentNewChatRoute(result.agentKey));
-      }
-    } catch (error) {
-      console.warn("[assistant] failed to create project", error);
-      setCreateProjectDialog({
-        ...dialog,
-        pending: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  async function handleProjectCreated(result: AssistantCreateProjectResult) {
+    setCreateProjectDialog(null);
+    await onRefreshAssistantNavAgents?.();
+    if (result.agentKey) {
+      setAssistantAgentExpanded(result.agentKey, true);
+      requestNavigate(createAgentNewChatRoute(result.agentKey));
     }
   }
 
@@ -5261,11 +5146,6 @@ export function AppSidebar({
       >
         <span className="worker-chat-item-head">
           <ChatTitle text={previewText} />
-          {chat.pinned ? (
-            <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
-              {getChatHoverAgent(chat).displayName}
-            </span>
-          ) : null}
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
               {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
@@ -5287,6 +5167,11 @@ export function AppSidebar({
             />
           </span>
         </span>
+        {chat.pinned ? (
+          <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
+            {getChatHoverAgent(chat).displayName}
+          </span>
+        ) : null}
       </button>
     );
     return (
@@ -5294,6 +5179,7 @@ export function AppSidebar({
         key={chat.chatId}
         className={[
           "assistant-worker-chat-row",
+          chat.pinned ? "sidebar-pinned-chat-row" : "",
           options.rowClassName ?? "",
           action === "awaiting" || action === "loading"
             ? "has-status-action"
@@ -6586,193 +6472,16 @@ export function AppSidebar({
   }
 
   function renderCreateProjectDialog() {
-    if (!createProjectDialog || typeof document === "undefined") {
+    if (!createProjectDialog) {
       return null;
     }
-
-    return createPortal(
-      <div
-        className="sidebar-website-dialog-layer"
-        role="presentation"
-        onMouseDown={() => {
-          if (!createProjectDialog.pending) {
-            setCreateProjectDialog(null);
-          }
-        }}
-      >
-        <form
-          className="sidebar-website-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="sidebar-create-project-dialog-title"
-          onSubmit={(event) => void handleSubmitCreateProject(event)}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <div className="sidebar-website-dialog-head">
-            <strong id="sidebar-create-project-dialog-title">
-              {t("sidebar.project.createTitle")}
-            </strong>
-            <button
-              type="button"
-              className="sidebar-website-dialog-close"
-              aria-label={t("common.close")}
-              disabled={createProjectDialog.pending}
-              onClick={() => setCreateProjectDialog(null)}
-            >
-              ×
-            </button>
-          </div>
-          <label className="sidebar-website-dialog-field">
-            <span>{t("sidebar.project.directory")}</span>
-            <input
-              className="sidebar-website-dialog-readonly-input"
-              value={createProjectDialog.workspaceDir}
-              readOnly
-              disabled
-              aria-disabled="true"
-            />
-          </label>
-          <div className="sidebar-website-dialog-field">
-            <span>{t("sidebar.project.type")}</span>
-            <div
-              className="sidebar-project-option-grid"
-              role="radiogroup"
-              aria-label={t("sidebar.project.type")}
-            >
-              <label>
-                <input
-                  type="radio"
-                  name="create-project-type"
-                  value="coder"
-                  checked={createProjectDialog.projectType === "coder"}
-                  autoFocus
-                  onChange={() =>
-                    setCreateProjectDialog((current) =>
-                      current
-                        ? {
-                            ...current,
-                            projectType: "coder",
-                            error: "",
-                          }
-                        : current,
-                    )
-                  }
-                  disabled={createProjectDialog.pending}
-                />
-                <span>{t("sidebar.project.coder")}</span>
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="create-project-type"
-                  value="kbase"
-                  checked={createProjectDialog.projectType === "kbase"}
-                  onChange={() =>
-                    setCreateProjectDialog((current) =>
-                      current
-                        ? {
-                            ...current,
-                            projectType: "kbase",
-                            error: "",
-                          }
-                        : current,
-                    )
-                  }
-                  disabled={createProjectDialog.pending}
-                />
-                <span>{t("sidebar.project.kbase")}</span>
-              </label>
-            </div>
-          </div>
-          {createProjectDialog.projectType === "coder" ? (
-            <div className="sidebar-website-dialog-field">
-              <label className="sidebar-project-checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={createProjectDialog.useAcp}
-                  onChange={(event) => {
-                    const useAcp = event.target.checked;
-                    setCreateProjectDialog((current) =>
-                      current
-                        ? {
-                            ...current,
-                            useAcp,
-                            selectedAcpProxyId: useAcp
-                              ? current.selectedAcpProxyId ||
-                                current.options[0]?.acpProxyId ||
-                                ""
-                              : current.selectedAcpProxyId,
-                            error: "",
-                          }
-                        : current,
-                    );
-                  }}
-                  disabled={createProjectDialog.pending}
-                />
-                <span>{t("sidebar.project.useAcp")}</span>
-              </label>
-            </div>
-          ) : null}
-          {createProjectDialog.projectType === "coder" &&
-          createProjectDialog.useAcp ? (
-            <label className="sidebar-website-dialog-field">
-              <span>{t("sidebar.project.acpProxy")}</span>
-              <select
-                value={createProjectDialog.selectedAcpProxyId}
-                onChange={(event) =>
-                  setCreateProjectDialog((current) =>
-                    current
-                      ? {
-                          ...current,
-                          selectedAcpProxyId: event.target.value,
-                          error: "",
-                        }
-                      : current,
-                  )
-                }
-                disabled={
-                  createProjectDialog.pending ||
-                  createProjectDialog.options.length === 0
-                }
-              >
-                {createProjectDialog.options.length === 0 ? (
-                  <option value="">{t("sidebar.project.noRunningAcp")}</option>
-                ) : null}
-                {createProjectDialog.options.map((option) => (
-                  <option value={option.acpProxyId} key={option.serviceId}>
-                    {option.label} · {option.statusLabel}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {createProjectDialog.error ? (
-            <div className="sidebar-website-dialog-error" role="alert">
-              {createProjectDialog.error}
-            </div>
-          ) : null}
-          <div className="sidebar-website-dialog-actions">
-            <button
-              type="button"
-              className="sidebar-website-secondary-button"
-              disabled={createProjectDialog.pending}
-              onClick={() => setCreateProjectDialog(null)}
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              className="sidebar-website-primary-button"
-              disabled={createProjectDialog.pending}
-            >
-              {createProjectDialog.pending
-                ? t("sidebar.project.creating")
-                : t("sidebar.project.create")}
-            </button>
-          </div>
-        </form>
-      </div>,
-      document.body,
+    return (
+      <CreateProjectDialog
+        workspaceDir={createProjectDialog.workspaceDir}
+        t={t}
+        onClose={() => setCreateProjectDialog(null)}
+        onCreated={handleProjectCreated}
+      />
     );
   }
 

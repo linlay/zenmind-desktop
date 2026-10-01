@@ -104,15 +104,16 @@ test("buildProjectAgentCreateRequest builds a minimal CODER project create reque
 
 test("buildProjectAgentCreateRequest includes ACP only for CODER projects", () => {
   const request = buildProjectAgentCreateRequest("coder", "/Users/demo/Project/acp-coder", {
-    acpProxyId: "codex"
+    acpBridgeId: "codex"
   });
 
   assert.deepEqual(request, {
     definition: {
       mode: "CODER",
+      engine: "acp",
       runtimeConfig: {
         workspaceRoot: "/Users/demo/Project/acp-coder",
-        acpProxyId: "codex"
+        acpBridgeId: "codex"
       }
     }
   });
@@ -121,7 +122,7 @@ test("buildProjectAgentCreateRequest includes ACP only for CODER projects", () =
 
 test("buildProjectAgentCreateRequest builds a minimal KBASE project create request", () => {
   const request = buildProjectAgentCreateRequest("kbase", "/Users/demo/Knowledge/my-project", {
-    acpProxyId: "codex"
+    acpBridgeId: "codex"
   });
 
   assert.deepEqual(request, {
@@ -141,15 +142,16 @@ test("buildProjectAgentCreateRequest builds a minimal KBASE project create reque
 
 test("legacy buildCoderProjectAgentCreateRequest delegates to the minimal CODER request", () => {
   const request = buildCoderProjectAgentCreateRequest("/Users/demo/Project/agent-coder", {
-    acpProxyId: "claude"
+    acpBridgeId: "claude"
   });
 
   assert.deepEqual(request, {
     definition: {
       mode: "CODER",
+      engine: "acp",
       runtimeConfig: {
         workspaceRoot: "/Users/demo/Project/agent-coder",
-        acpProxyId: "claude"
+        acpBridgeId: "claude"
       }
     }
   });
@@ -188,7 +190,7 @@ test("assistant.createProject creates a CODER ACP project with the simplified pa
   const result = await handler(null, {
     projectType: "coder",
     workspaceDir: "/Users/demo/Project/acp-coder",
-    acpProxyId: "codex"
+    acpBridgeId: "codex"
   });
 
   assert.equal(result.ok, true);
@@ -196,9 +198,10 @@ test("assistant.createProject creates a CODER ACP project with the simplified pa
   assert.deepEqual(calls[0].options.body, {
     definition: {
       mode: "CODER",
+      engine: "acp",
       runtimeConfig: {
         workspaceRoot: "/Users/demo/Project/acp-coder",
-        acpProxyId: "codex"
+        acpBridgeId: "codex"
       }
     }
   });
@@ -222,12 +225,12 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
     result = await handler(null, {
       name: "ignored-name",
       workspaceDir: "/Users/demo/Project/legacy-coder",
-      acpProxyId: "claude"
+      acpBridgeId: "claude"
     });
     await handler(null, {
       name: "ignored-name",
       workspaceDir: "/Users/demo/Project/legacy-coder",
-      acpProxyId: "claude"
+      acpBridgeId: "claude"
     });
   } finally {
     console.warn = originalWarn;
@@ -238,9 +241,10 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
   assert.deepEqual(calls[0].options.body, {
     definition: {
       mode: "CODER",
+      engine: "acp",
       runtimeConfig: {
         workspaceRoot: "/Users/demo/Project/legacy-coder",
-        acpProxyId: "claude"
+        acpBridgeId: "claude"
       }
     }
   });
@@ -432,4 +436,54 @@ test("assistant.reorderProjects maps stale and Platform failures to structured r
   });
   assert.equal(platformResult.ok, false);
   assert.equal(platformResult.message, "agent-platform rejected order");
+});
+
+test("buildProjectAgentCreateRequest builds general, external-engine and template requests", () => {
+  assert.deepEqual(
+    buildProjectAgentCreateRequest("general", "/Users/demo/Project/notes", {
+      modelKey: " picked-model ",
+      capabilityGroups: ["office", " web-data ", "office", ""]
+    }),
+    {
+      definition: {
+        mode: "GENERAL",
+        runtimeConfig: { workspaceRoot: "/Users/demo/Project/notes" },
+        modelConfig: { modelKey: "picked-model" }
+      },
+      capabilityGroups: ["office", "web-data"]
+    }
+  );
+
+  // Deselecting every group still sends the field so Agent Platform applies
+  // the project-creation rules and the type's base tools.
+  assert.deepEqual(
+    buildProjectAgentCreateRequest("kbase", "/Users/demo/Knowledge/docs", { capabilityGroups: [] }),
+    {
+      definition: { mode: "KBASE", runtimeConfig: { workspaceRoot: "/Users/demo/Knowledge/docs" } },
+      capabilityGroups: []
+    }
+  );
+
+  // The external engine never receives a model or capability groups.
+  assert.deepEqual(
+    buildProjectAgentCreateRequest("acp", "/Users/demo/Project/acp", {
+      acpBridgeId: "codex",
+      modelKey: "picked-model",
+      capabilityGroups: ["office"]
+    }),
+    {
+      definition: {
+        mode: "CODER",
+        engine: "acp",
+        runtimeConfig: { workspaceRoot: "/Users/demo/Project/acp", acpBridgeId: "codex" }
+      },
+      capabilityGroups: []
+    }
+  );
+
+  // A caller that does not use templates sends a plain create request.
+  assert.equal(
+    Object.hasOwn(buildProjectAgentCreateRequest("general", "/Users/demo/Project/plain"), "capabilityGroups"),
+    false
+  );
 });

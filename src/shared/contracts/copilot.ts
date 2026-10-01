@@ -385,18 +385,79 @@ export interface AssistantReorderProjectsResult {
   updatedAt?: EpochMilliseconds;
 }
 
-export type AssistantCreateProjectType = "coder" | "kbase";
+export type AssistantCreateProjectType = "general" | "coder" | "kbase" | "acp";
 
 export interface AssistantCreateProjectRequest {
   projectType: AssistantCreateProjectType;
   workspaceDir: string;
-  acpProxyId?: string;
+  acpBridgeId?: string;
+  /** Overrides the type's default model; ignored for the external engine. */
+  modelKey?: string;
+  /**
+   * Capability group keys chosen in the New Project dialog. Present (even
+   * when empty) means Agent Platform expands its creation template; absent
+   * keeps the request as a plain create.
+   */
+  capabilityGroups?: string[];
+}
+
+/** Mirrors Agent Platform GET /api/admin/agents/creation-options. */
+export interface AssistantProjectCreationType {
+  key: AssistantCreateProjectType;
+  label: string;
+  mode: string;
+  engine: string;
+  available: boolean;
+  unavailableReason?: string;
+  workspaceRequired: boolean;
+  modelRequired: boolean;
+  defaultModelKey?: string;
+  defaultModelAvailable: boolean;
+  defaultReasoningEffort?: string;
+  supportsGroups: boolean;
+  groupsUnsupportedReason?: string;
+  baseTools: string[];
+  defaultGroups: string[];
+  acpBridges?: Array<{ id: string }>;
+}
+
+export interface AssistantProjectCreationMember {
+  key: string;
+  name: string;
+}
+
+export interface AssistantProjectCreationGroup {
+  key: string;
+  name: string;
+  description?: string;
+  skills: AssistantProjectCreationMember[];
+  tools: string[];
+  connectors: AssistantProjectCreationMember[];
+  available: boolean;
+  unavailableReason?: string;
+}
+
+export interface AssistantProjectCreationModel {
+  key: string;
+  name?: string;
+}
+
+export interface AssistantProjectCreationOptions {
+  types: AssistantProjectCreationType[];
+  groups: AssistantProjectCreationGroup[];
+  models: AssistantProjectCreationModel[];
+}
+
+export interface AssistantProjectCreationOptionsResult {
+  ok: boolean;
+  message: string;
+  options?: AssistantProjectCreationOptions;
 }
 
 export interface AssistantCreateCoderProjectRequest {
   name?: string;
   workspaceDir: string;
-  acpProxyId?: string;
+  acpBridgeId?: string;
 }
 
 export interface AssistantCreateProjectResult {

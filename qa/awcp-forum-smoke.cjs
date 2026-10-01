@@ -60,7 +60,7 @@ app.whenReady().then(async () => {
   await read('forum.notifications.unread-count');
   await guest.executeJavaScript("history.pushState({}, '', '/forum/new');");
   const draftIndex = await bridge.manual(`draft-${++sequence}`, {}, scope);
-  assert.ok(draftIndex.sections.some(item => item.section === 'forum.posts.create'));
+  assert.ok(draftIndex.sections.some(item => item.section === 'forum.compose.fill'));
   await guest.executeJavaScript("history.pushState({}, '', '/forum/notifications');");
   await read('forum.notifications.list');
   if (posts.items[0]) {

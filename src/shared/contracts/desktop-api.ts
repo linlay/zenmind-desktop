@@ -33,6 +33,7 @@ import type {
   AssistantCreateCoderProjectResult,
   AssistantCreateProjectRequest,
   AssistantCreateProjectResult,
+  AssistantProjectCreationOptionsResult,
   AssistantEventListener,
   AssistantFirstInstallBootstrapNavigationResult,
   AssistantHistoryChatsResult,
@@ -1015,6 +1016,7 @@ export interface DesktopApi {
     reorderProjects: (input: AssistantReorderProjectsRequest) => Promise<AssistantReorderProjectsResult>;
     getNavigationLiveStatus: () => Promise<AssistantNavigationLiveStatus>;
     listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
+    getProjectCreationOptions: () => Promise<AssistantProjectCreationOptionsResult>;
     createProject: (input: AssistantCreateProjectRequest) => Promise<AssistantCreateProjectResult>;
     createCoderProject: (input: AssistantCreateCoderProjectRequest) => Promise<AssistantCreateCoderProjectResult>;
     listChats: () => Promise<AssistantChatSummary[]>;

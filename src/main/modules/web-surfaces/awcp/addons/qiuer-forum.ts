@@ -17,12 +17,12 @@ export const qiuerForumRule: AwcpAddonRule = {
   apiBasePath: "/forum/api/v1",
   site: {
     name: "1024 论坛 · Desktop AWCP",
-    description: "Desktop 为现有论坛注入的 AWCP 适配器。使用当前网页登录会话调用同源论坛 API，无需改造网站。可查询板块、帖子、评论和通知，也可按用户意图执行写入。先查询板块 slug，再搜索帖子或读取详情。写入不自动刷新页面或重放；需要时由用户刷新查看。401 表示需在 Desktop 网站中登录。服务端负责权限与业务校验。",
+    description: "Desktop 为现有论坛注入的 AWCP 适配器。使用当前网页登录会话调用同源论坛 API，无需改造网站。可查询板块、帖子、评论和通知，也可按用户意图执行写入。普通帖子查询或关键词搜索可直接使用 forum.posts.list，无需先查板块。只有需要按板块筛选且尚不知道 slug 时，才查询 forum.sections.list；发帖时进入 /forum/new，重新读取该页 AWCP 目录后使用批量填写与发送动作。读取帖子详情无需查询板块。写入不自动刷新页面或重放；需要时由用户刷新查看。401 表示需在 Desktop 网站中登录。服务端负责权限与业务校验。",
   },
   actions: [
     action("sections.list", "查询板块", "读取可见板块及 slug、发帖权限，发帖前选择允许发帖的板块。", "/sections"),
     action("tags.list", "查询标签", "读取论坛热门标签及数量。", "/tags"),
-    action("posts.list", "搜索和筛选帖子", "读取帖子列表。参数均可省略；section 使用板块 slug，keyword 搜索关键词。cursor 使用上次结果的 nextCursor，null 表示结束。返回 items 与 nextCursor，不修改已读状态。", "/posts", {
+    action("posts.list", "搜索和筛选帖子", "读取帖子列表。参数均可省略，查询列表可传 args: {}，无需先查询板块；keyword 搜索关键词。仅按板块筛选时填写 section（板块 slug），不知道 slug 时才查询 forum.sections.list。cursor 使用上次结果的 nextCursor，null 表示结束。返回 items 与 nextCursor，不修改已读状态。", "/posts", {
       keyword: text("搜索词"), section: text("板块 slug"), tag: text("标签"), author: text("作者员工号"),
       post_type: choice("QUESTION", "DISCUSSION", "ARTICLE"), status: choice("PUBLISHED", "DRAFT"),
       question_status: choice("SOLVED", "UNSOLVED"), featured: flag, bookmarked: flag,

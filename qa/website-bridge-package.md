@@ -19,7 +19,7 @@ pages/notifications.js
   "schemaVersion": 1,
   "id": "qiuer-forum",
   "name": "1024 Forum",
-  "version": "1.1.0",
+  "version": "1.2.3",
   "origin": "https://1024.qiuer.net",
   "pages": [
     { "path": "/forum", "script": "pages/forum.js" },
@@ -48,8 +48,12 @@ npm run build:main:types
 node qa/build-website-bridge-example.mjs
 ```
 
-输出 `build/examples/website-bridges/qiuer-forum-1.1.0.zip`。ZIP 只包含 manifest 和引用的 JS，不包含 Cookie 或 Desktop 凭据。登录使用 Desktop 网页自己的会话。
+输出 `build/examples/website-bridges/qiuer-forum-1.2.3.zip`。ZIP 只包含 manifest 和引用的 JS，不包含 Cookie 或 Desktop 凭据。登录使用 Desktop 网页自己的会话。
 
 持久化资源在 `<desktop-data-root>/data/website-bridges/<id>/<内容摘要>/`，安装和启用清单在 `<desktop-data-root>/config/website-bridges/website-bridges.json`。默认品牌的数据根为品牌运行目录中的 `.desktop`，路径来源沿用 Desktop 的平台路径函数。
 
 验证：`node --test test/website-bridge.test.mjs`；真实设置页交互：`node qa/website-bridges-smoke.mjs`（临时目录、隔离 Electron profile）。macOS 和 Windows 的完整人工流程见 `qa/manual-regression.md`。
+
+发帖页提供 `forum.compose.fill`、`forum.compose.publish`。填写返回实际表单内容和 `draftToken`，确认内容后向 publish 传入该 token；填写本身不发布。正文及元数据若被用户修改，旧 token 不再有效。当前流程仅支持纯文字，不处理上传图片或附件。发送动作点击页面原生发布按钮，由网站处理校验、CSRF、请求及跳转。返回 submitted 仅确认表单提交事件，不宣称服务端发布成功；后续通过页面结果确认，不重复点击。
+
+隔离 React 表单回归：`node qa/forum-compose-smoke.mjs`。其网络完全模拟，不连接真实论坛，也不发布测试帖子。

@@ -100,9 +100,9 @@ test('same page installs once; route parameters, disable and native AWCP preserv
 
 test('forum pages expose only relevant actions and bind post IDs from the page', async () => {
   const pkg = builtinForumBridge(); const p = page('https://1024.qiuer.net/forum/new'); p.run([pkg]);
-  let index = p.context.awcp.manual(); assert.ok(index.sections.some(item => item.section === 'forum.posts.create')); assert.ok(!index.sections.some(item => item.section === 'forum.comments.create'));
+  let index = p.context.awcp.manual(); assert.deepEqual(Array.from(index.sections, item => item.section), ['forum.compose.fill', 'forum.compose.publish']); assert.ok(!index.sections.some(item => item.section === 'forum.comments.create'));
   p.context.location = new URL('https://1024.qiuer.net/forum/posts/19'); p.run([pkg]); index = p.context.awcp.manual();
-  assert.ok(!index.sections.some(item => item.section === 'forum.posts.create'));
+  assert.ok(!index.sections.some(item => item.section === 'forum.compose.fill'));
   const manual = p.context.awcp.manual({ section: 'forum.posts.get', revision: index.revision }); assert.equal(manual.inputSchema.properties.postId, undefined);
   const result = await p.context.awcp.invoke({ requestId: 'read', revision: index.revision, action: 'forum.posts.get', args: {} }); assert.equal(result.ok, true);
   assert.equal(p.requests[0][0], 'https://1024.qiuer.net/forum/api/v1/posts/19');
@@ -139,7 +139,7 @@ test('minified production package remains self-contained in the page world', asy
   vm.runInNewContext(output.outputFiles[0].text, { module: mod, exports: mod.exports, require });
   const pkg = mod.exports.builtinForumBridge();
   const p = page('https://1024.qiuer.net/forum/new'); p.run([pkg]);
-  assert.ok(p.context.awcp.manual().sections.some(item => item.section === 'forum.posts.create'));
+  assert.ok(p.context.awcp.manual().sections.some(item => item.section === 'forum.compose.fill'));
   p.context.location = new URL('https://1024.qiuer.net/forum/posts/19'); p.run([pkg]);
   const result = await p.context.awcp.invoke({ requestId: 'minified', revision: p.context.awcp.manual().revision, action: 'forum.posts.get', args: {} });
   assert.equal(result.ok, true); assert.equal(p.requests[0][0], 'https://1024.qiuer.net/forum/api/v1/posts/19');

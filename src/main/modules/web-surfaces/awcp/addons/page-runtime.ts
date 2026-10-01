@@ -1,7 +1,7 @@
 import type { AddonField, AwcpAddonRule } from "./types";
 
 /** Serialized into the page main world. Keep all runtime dependencies inside this function. */
-export function installAwcpAddon(rule: AwcpAddonRule | null, expectedUrl: string) {
+export function installAwcpAddon(rule: AwcpAddonRule | null, expectedUrl: string, handlers: Record<string, (args: Record<string, unknown>, signal: AbortSignal) => Promise<{ ok: boolean; result?: unknown; error?: unknown }>> = {}) {
   type Request = { requestId: string; revision: string; action: string; args: Record<string, unknown> };
   type Api = { protocolVersion: number; manual(request?: Record<string, unknown>): unknown; invoke(request: Request): Promise<unknown>; cancel(id: string): boolean };
   const root = globalThis as typeof globalThis & {
@@ -89,6 +89,10 @@ export function installAwcpAddon(rule: AwcpAddonRule | null, expectedUrl: string
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 30000);
       try {
+        if (Object.hasOwn(handlers, request.action)) {
+          const response = await handlers[request.action](request.args, controller.signal);
+          return { ...response, requestId: request.requestId, action: request.action };
+        }
         const args = { ...definition.boundArgs, ...request.args };
         const endpoint = definition.path.replace(/\{([a-zA-Z]+)\}/g, (_match, key: string) => {
           const value = args[key]; delete args[key]; return encodeURIComponent(String(value));

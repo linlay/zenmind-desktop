@@ -280,6 +280,8 @@ const api: DesktopApi = {
       ipcRenderer.invoke("assistant.reorderProjects", input),
     getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
+    getProjectCreationOptions: () =>
+      ipcRenderer.invoke("assistant.getProjectCreationOptions"),
     createProject: (input: AssistantCreateProjectRequest) =>
       ipcRenderer.invoke("assistant.createProject", input),
     createCoderProject: (input: AssistantCreateCoderProjectRequest) =>

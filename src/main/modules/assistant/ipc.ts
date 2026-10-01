@@ -5,7 +5,7 @@ import {
   getAssistantExportDefaultPath,
   getAvailableFilePath
 } from "../../infrastructure/filesystem/download-paths";
-import { buildProjectAgentCreateRequest, type ProjectCreateType } from "./coder-project";
+import { PROJECT_CREATE_TYPES, buildProjectAgentCreateRequest, type ProjectCreateType } from "./coder-project";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type {
   AssistantChatOrderMutationRequest,
@@ -409,19 +409,26 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   async function createProject(input: any): Promise<any> {
     const projectTypeValue = String(input?.projectType || "").trim().toLowerCase();
     const projectType: ProjectCreateType | null =
-      projectTypeValue === "coder" || projectTypeValue === "kbase"
-        ? projectTypeValue
+      (PROJECT_CREATE_TYPES as readonly string[]).includes(projectTypeValue)
+        ? projectTypeValue as ProjectCreateType
         : null;
     const workspaceDir = String(input?.workspaceDir || "").trim();
-    const acpProxyId = String(input?.acpProxyId || "").trim();
+    const acpBridgeId = String(input?.acpBridgeId || "").trim();
     if (!projectType) {
       return { ok: false, message: t("assistant.projectTypeUnsupported") };
     }
     if (!workspaceDir) {
       return { ok: false, message: t("assistant.projectWorkspaceMissing") };
     }
+    if (projectType === "acp" && !acpBridgeId) {
+      return { ok: false, message: t("assistant.projectAcpBridgeMissing") };
+    }
 
-    const request = buildProjectAgentCreateRequest(projectType, workspaceDir, { acpProxyId });
+    const request = buildProjectAgentCreateRequest(projectType, workspaceDir, {
+      acpBridgeId,
+      modelKey: String(input?.modelKey || "").trim(),
+      capabilityGroups: Array.isArray(input?.capabilityGroups) ? input.capabilityGroups : undefined
+    });
     try {
       const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
         method: "POST",
@@ -636,6 +643,24 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   ipcMain.handle("assistant.createProject", async (_event: any, input: any): Promise<any> =>
     createProject(input)
   );
+
+  ipcMain.handle("assistant.getProjectCreationOptions", async (): Promise<any> => {
+    try {
+      if (!callAgentPlatform) {
+        return { ok: false, message: t("assistant.agentPlatformUnavailable") };
+      }
+      const options = await callAgentPlatform(app, "/api/admin/agents/creation-options");
+      if (!options || !Array.isArray(options.types) || !Array.isArray(options.groups)) {
+        return { ok: false, message: t("assistant.projectCreationOptionsInvalid") };
+      }
+      return { ok: true, message: "", options: { ...options, models: Array.isArray(options.models) ? options.models : [] } };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable")
+      };
+    }
+  });
 
   ipcMain.handle("assistant.createCoderProject", async (_event: any, input: any): Promise<any> =>
     {

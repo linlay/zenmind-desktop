@@ -20,7 +20,7 @@ export function buildWebsiteBridgeScript(url: string, packages: WebsiteBridgePac
     if (window.top !== window || location.href !== ${JSON.stringify(url)}) return;
     const key = '__zenmindWebsiteBridge';
     const previous = globalThis[key];
-    if (previous && previous.revision === ${JSON.stringify(revision)}) return;
+    if (previous && previous.revision === ${JSON.stringify(revision)} && globalThis.awcp != null) return;
     try { previous?.dispose(); } catch { /* A faulty cleanup must not block the next page bridge. */ }
     ${selected && source !== undefined ? `
     // An existing native AWCP implementation owns its page.

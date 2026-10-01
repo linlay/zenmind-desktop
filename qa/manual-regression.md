@@ -207,6 +207,7 @@
 
 ## 对话置顶
 
+- macOS 与 Windows 分别检查展开侧栏和收起态 Pinned Popover：标题与时间/运行状态保持第一行，智能体名称独占紧凑第二行（11px 字号、14px 行高、1px 行间距）；长名称省略且悬停可查看全名，选中底色覆盖两行，更多按钮相对整条对话上下居中。覆盖浅深色、长标题和长智能体名称，普通非置顶对话仍保持原行高。
 - macOS 与 Windows 分别在展开和收起侧栏确认默认顺序为“自动化 → 新建对话 → 置顶 / Pinned → 对话 / Chats”；调整 Chats 导航位置后 Pinned 仍紧邻其上方，键盘焦点顺序与显示顺序一致。
 - 在普通、CODER、KBASE 的对话菜单中分别置顶，确认全部进入同一 Pinned，原 Chats/Project 下不再重复；有足够历史时 Chats 始终补满 8 条、每个 Project 补满 5 条，查看更多分别按 8/5 增长到 24/20，新增行焦点不落到置顶项。
 - 混合拖动 Pinned 内不同 Agent 的对话，确认保存并跨重启恢复；普通 Chats 原 recent/manual 模式和序列不改变。取消置顶回到原组的排序位置，新置顶在 Pinned 首位，重复设置相同状态不改位置。组间拖放不得迁移记录。
@@ -1077,6 +1078,15 @@
 - 切换 Chat/Copilot/Kanban：旧流 detach 确认后新流才能 attach；后台 Run 不被中断。
 - 注入 detach 拒绝/超时：新请求被阻止，技术详情可复制旧占用者与释放失败，不提示盲目重试。
 - 断线重连只恢复每个 lane 原先观察的一条 Run；完成 Push 先到时不得提前释放流槽位。
+
+### macOS ACP 插件
+
+- 分别导入 Claude/Codex 单顶层 ZIP，检查平台、版本、可执行入口和 required paths 校验；真实配置不在归档中。
+- 初始化、启动插件后，检查注册成功/拒绝和需重启 Platform 的日志；重复就绪通知不改写相同配置。
+- 启用插件 auth token 后确认模型发现、查询与控制操作携带匹配凭据，日志不显示 token。
+- 重启 Platform 后，创建 CODER 项目能选择正在运行的 Claude/Codex bridge，并使用 canonical Bridge 字段。
+- 使用与工作目录契约修复配套的 Platform 验证查询、授权、steer、中断；普通 PROXY/CHANNEL 不获得本机 cwd。
+- 关闭 Desktop 时插件 socket 读循环能退出；Windows 插件发布不在本轮验收范围。
 
 ## 论坛 AWCP 外挂（macOS / Windows 均执行）
 

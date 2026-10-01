@@ -276,7 +276,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 25, pinned: false });
+  assert.deepEqual(firstRequest.payload, { mode: "GENERAL", agentType: "chat", limit: 25, pinned: false });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
     [
@@ -2326,7 +2326,7 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(result.items.find((agent) => agent.agentKey === "project").recentChats.length, 50);
   assert.equal(requests.filter((request) => request.type === "/api/chats" && request.payload.pinned === true).length, 0);
   assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 1);
-  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { mode: "REACT", limit: 25, pinned: false });
+  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { mode: "GENERAL", agentType: "chat", limit: 25, pinned: false });
   assert.equal(new URL(urls[0]).searchParams.get("chatsPinned"), "false");
   push({ frame: "push", type: "chat.read", data: {
     chatId: "pin-1", agentKey: "project", readRunId: "loyw3v28", lastRunId: "loyw3v28", readAt: EPOCH_MS + 100, agentUnreadCount: 14,

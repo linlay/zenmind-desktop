@@ -23,6 +23,7 @@ import {
   type AssistantNavigationChatsSnapshot,
   type PlatformChatSummary,
   NAVIGATION_CHAT_AGENT_MODE,
+  NAVIGATION_CHAT_AGENT_TYPE,
   NAVIGATION_CHAT_PROBE_LIMIT,
   type AssistantNavigationChatOrderSnapshot,
   type PlatformChatOrder,
@@ -429,6 +430,7 @@ export class AssistantNavigationStatusClient {
         type: "/api/chats",
         payload: {
           mode: NAVIGATION_CHAT_AGENT_MODE,
+          agentType: NAVIGATION_CHAT_AGENT_TYPE,
           limit: NAVIGATION_CHAT_PROBE_LIMIT,
           pinned: false,
         },

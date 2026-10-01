@@ -40,7 +40,7 @@ const click=async text=>{await js('Array.from(document.querySelectorAll("button"
 await win.loadFile(path.join(__dirname,'index.html'));await until('document.querySelector(".website-bridge-source")?.value.includes("context")');
 assert.equal(await js('document.querySelectorAll(".website-bridge-routes button").length'),4);
 await js('Array.from(document.querySelectorAll(".website-bridge-routes button")).find(b=>b.textContent.includes("/forum/new")).click()');
-await until('document.querySelector(".website-bridge-source")?.value.includes("forum.posts.create")');
+await until('document.querySelector(".website-bridge-source")?.value.includes("forum.compose.fill")');
 assert.equal(await js('document.querySelector(".website-bridge-source").value.includes("forum.comments.create")'),false);
 fs.writeFileSync(path.join(__dirname,'light.png'),(await win.webContents.capturePage()).toPNG());
 await js('document.querySelector("[role=switch]").click()');await until('document.querySelector("[role=switch]").getAttribute("aria-checked")==="false"');assert.equal(manager.list().items[0].enabled,false);
