@@ -192,6 +192,7 @@ test('scope identity cannot be forged, reattached to another application, or res
 
 test('background throttle leases are reference counted and restore original state on terminal or crash', () => {
   const h = createSiteHarness(); const a = h.site('a'); const guest = h.contents.get(a.tabs[0].webContentsId);
+  const registeredGuestListeners = guest.listenerCount('destroyed');
   const first = h.capture(a); first.activate(); const second = h.capture(a); second.activate();
   assert.deepEqual(guest.throttleChanges, [false]);
   first.release(); assert.equal(guest.throttle, false);
@@ -200,7 +201,7 @@ test('background throttle leases are reference counted and restore original stat
   const third = h.capture(a); third.activate(); third.release(); assert.equal(guest.throttle, false);
   const fourth = h.capture(a); fourth.activate(); guest.emit('render-process-gone');
   assert.throws(() => fourth.readContainer(), { code: 'site_control_unavailable' });
-  assert.equal(guest.listenerCount('destroyed'), 0);
+  assert.equal(guest.listenerCount('destroyed'), registeredGuestListeners);
 });
 
 test('WebApp keeps one guest across WorkPanel presentation and revokes when guest changes', async () => {

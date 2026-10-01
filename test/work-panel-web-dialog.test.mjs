@@ -151,7 +151,7 @@ test("presentation retains logical item, avoids duplicate reopen, survives navig
 test("Main-only dialog reservation survives parent remount without changing Chat ownership", async () => {
   const { createBrowserSurfaceRegistry } = await import("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
   const { createSurfaceIdentity, createChatChildSurfaceIdentity } = await import("../dist-electron/shared/surface-identity.js");
-  const guests = new Map([1, 2, 3].map(id => [id, { id, getType: () => "webview", isDestroyed: () => false }]));
+  const guests = new Map([1, 2, 3].map(id => [id, Object.assign(new EventEmitter(), { id, getType: () => "webview", getURL: () => "https://example.test/", isDestroyed: () => false })]));
   const registry = createBrowserSurfaceRegistry({ webContents: { fromId: id => guests.get(id), getAllWebContents: () => [...guests.values()] }, listWebEntries: () => ({ items: [] }), getCurrentPageSnapshot: () => null });
   const tab = (id, url) => ({ tabId: `tab-${id}`, webContentsId: id, currentUrl: url, title: "Page", canGoBack: false, canGoForward: false, isLoading: false });
   const root = { ...createSurfaceIdentity("main-chat", "", { ownerChatId: "chat-1" }), registrationId: "root-1", surfaceKind: "service", surfaceType: "agent-chat", serviceId: "agent-webclient", pageRoute: "/agent/agent-1", pageRouteIdentity: "/agent/agent-1?chatId=chat-1", label: "Chat", url: "http://127.0.0.1:7788/agent/agent-1?chatId=chat-1", active: true, tabs: [tab(1, "http://127.0.0.1:7788/agent/agent-1?chatId=chat-1")], activeTabId: "tab-1" };
@@ -180,7 +180,7 @@ test("Main-only dialog reservation survives parent remount without changing Chat
   assert.equal(registry.retainWorkPanelDialogSibling(child.surfaceId, "forged", siblingIdentity.surfaceId, "sibling-1"), false);
   assert.equal(registry.retainWorkPanelDialogSibling(child.surfaceId, detached.registrationId, child.surfaceId, "sibling-1"), false);
   assert.equal(registry.retainWorkPanelDialogSibling(child.surfaceId, detached.registrationId, siblingIdentity.surfaceId, "sibling-1"), true);
-  guests.set(4, { ...guests.get(3), id: 4 });
+  guests.set(4, Object.assign(new EventEmitter(), { id: 4, getType: () => "webview", getURL: () => "https://second.test/", isDestroyed: () => false }));
   const sibling = { ...detached, ...siblingIdentity, surfaceIdentityKey: siblingKey, registrationId: "sibling-1", tabs: [tab(4, "https://second.test/")], activeTabId: "tab-4" };
   assert.equal(registry.registerSurface(sibling, 7), true, "a popup retains its original Chat while another Chat is active");
   assert.equal(registry.resolveWebviewSurfaceTarget(4).ownerChatId, "chat-1");

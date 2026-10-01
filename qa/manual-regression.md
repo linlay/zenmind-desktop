@@ -1077,3 +1077,11 @@
 - 切换 Chat/Copilot/Kanban：旧流 detach 确认后新流才能 attach；后台 Run 不被中断。
 - 注入 detach 拒绝/超时：新请求被阻止，技术详情可复制旧占用者与释放失败，不提示盲目重试。
 - 断线重连只恢复每个 lane 原先观察的一条 Run；完成 Push 先到时不得提前释放流槽位。
+
+## 论坛 AWCP 外挂（macOS / Windows 均执行）
+
+- 在 Website 和普通 Chat WorkPanel 打开 `https://1024.qiuer.net/forum`，完成网站登录；通过 `desktop_cdp` 先读取 AWCP 目录，再读取 `forum.posts.list` 章节并调用，确认返回帖子；通知数与网站一致。凭据不需要写入外挂配置。
+- 刷新、打开帖子子路径、后台 tab、站内 SPA 跳转与返回后重新读取手册均成功；跳到同站非 `/forum` 路径或其他 origin 后不再提供外挂。原生 AWCP 不被覆盖，近似域名和 `/forum-other` 不匹配。
+- 同一 Surface 的 Run 门禁保持：未读章节、其他 Chat、本地文件、关闭后复用旧 ID 均被拒绝。取消在途请求、关闭页面与注销回收监听器；写入未知结果不重放。
+- 仅在明确授权的测试账号中验证发布、评论、点赞和收藏；检查实际服务端结果后手动刷新页面。点赞/收藏是切换动作，不能盲目重试。未登录返回登录提示；不要在生产账号上自动生成测试帖子。
+- 自动验证：`npm run build:main:types` 后运行 `node --test test/awcp-addons.test.mjs test/site-cdp-control.test.mjs`。真实站点只读验证可运行 `node_modules/.bin/electron qa/awcp-forum-smoke.cjs`，通过 stdin 临时提供登录 Cookie 值；不落盘、不写仓库。

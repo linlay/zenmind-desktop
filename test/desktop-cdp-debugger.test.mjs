@@ -1,4 +1,5 @@
 import test from "node:test";
+import { EventEmitter } from "node:events";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -887,6 +888,8 @@ test("browser surface registry uses explicit guest registrations for complete su
     getURL: () => "https://redirected.example/background",
     getTitle: () => "Background Docs"
   };
+  Object.setPrototypeOf(docsContents, new EventEmitter());
+  Object.setPrototypeOf(docsBackgroundContents, new EventEmitter());
   contentsById.set(docsContents.id, docsContents);
   contentsById.set(appContents.id, appContents);
   contentsById.set(docsBackgroundContents.id, docsBackgroundContents);
@@ -1070,7 +1073,7 @@ test("browser surface registry keeps Copilot Dock live-active while excluding it
       }
     }
   };
-  const createContents = (id, url, title) => ({
+  const createContents = (id, url, title) => Object.assign(new EventEmitter(), {
     id,
     isDestroyed: () => false,
     getType: () => "webview",

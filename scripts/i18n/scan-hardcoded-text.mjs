@@ -32,6 +32,12 @@ const allowedLinePatterns = [
 
 const allowedBlocks = [
   {
+    file: "src/main/modules/web-surfaces/awcp/addons/qiuer-forum.ts",
+    start: /^export const qiuerForumRule:/u,
+    end: /^\};/u,
+    reason: "versioned AI-facing AWCP manual for the Chinese forum, not Desktop UI labels"
+  },
+  {
     file: "src/renderer/pages/functional-market/skillDiscovery.ts",
     start: /^const categoryAliases:/u,
     end: /^\};/u,

@@ -1,6 +1,7 @@
 import { EmbeddedCdpSurfaceKind, EmbeddedCdpSurfaceRegistration } from "../../../shared/embedded-cdp";
 import { type SurfaceIdentity, type SurfaceRole } from "../../../shared/surface-identity";
 import type { BrowserSurfaceRegistryOptions, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, ResolvedSurface } from "./registry-contracts";
+import { AwcpAddonInjection } from "./awcp/addons/injection";
 
 export function guestTargetMatches(
   predicate: PendingGuestTargetWaiter["predicate"],
@@ -21,6 +22,7 @@ interface GuestResolutionDependencies {
 export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOptions, "webContents">, dependencies: GuestResolutionDependencies) {
   const registeredGuestTargets = new Map<number, RegisteredWebviewSurfaceTarget>();
   const pendingGuestTargetWaiters = new Map<number, Set<PendingGuestTargetWaiter>>();
+  const awcpAddons = new AwcpAddonInjection();
 
   function settleGuestTargetWaiters(webContentsId: number, target: RegisteredWebviewSurfaceTarget | null): void {
     const waiters = pendingGuestTargetWaiters.get(webContentsId);
@@ -41,6 +43,7 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
     for (const [webContentsId, target] of registeredGuestTargets) {
       if (target.surfaceId === surfaceId) {
         registeredGuestTargets.delete(webContentsId);
+        awcpAddons.detach(webContentsId);
         if (settleWaiters)
           settleGuestTargetWaiters(webContentsId, null);
       }
@@ -84,10 +87,17 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
       };
       nextWebContentsIds.add(tab.webContentsId);
       registeredGuestTargets.set(tab.webContentsId, target);
+      const contents = findWebContentsById(tab.webContentsId);
+      if (contents && (surface.surfaceKind === "website" || surface.surfaceRole === "workpanel-web")) {
+        awcpAddons.attach(contents);
+      } else {
+        awcpAddons.detach(tab.webContentsId);
+      }
       settleGuestTargetWaiters(tab.webContentsId, target);
     }
     for (const webContentsId of previousWebContentsIds) {
       if (!nextWebContentsIds.has(webContentsId)) {
+        awcpAddons.detach(webContentsId);
         settleGuestTargetWaiters(webContentsId, null);
       }
     }
