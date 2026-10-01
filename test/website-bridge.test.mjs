@@ -152,26 +152,3 @@ test('invalid guest URL and throwing user cleanup do not block subsequent bridge
   p.context.location = new URL('https://site.test/posts/2'); p.run([pkg]);
   assert.equal(p.context.awcp.page, '2');
 });
-
-test('legacy Webs installation migrates without losing disabled state and new catalogue wins', async t => {
-  const root = temporary(t);
-  const legacy = { packagesRoot: path.join(root, 'data/webs/website-bridges'), configRoot: path.join(root, 'config/webs') };
-  const before = createWebsiteBridgeManager(legacy);
-  await before.setEnabled('qiuer-forum', false);
-  const storage = { packagesRoot: path.join(root, 'data/website-bridges'), configRoot: path.join(root, 'config/website-bridges'), legacy };
-  const migrated = createWebsiteBridgeManager(storage);
-  assert.equal(migrated.list().items[0].enabled, false);
-  assert.equal(fs.existsSync(path.join(storage.configRoot, 'website-bridges.json')), true);
-  assert.equal(fs.existsSync(path.join(legacy.configRoot, 'website-bridges.json')), true);
-  await migrated.remove('qiuer-forum');
-  assert.deepEqual(createWebsiteBridgeManager(storage).list().items, []);
-});
-
-test('invalid legacy catalogue is preserved and never replaced with a seeded install', t => {
-  const root = temporary(t);
-  const legacy = { packagesRoot: path.join(root, 'old-data'), configRoot: path.join(root, 'old-config') };
-  fs.mkdirSync(legacy.configRoot); fs.writeFileSync(path.join(legacy.configRoot, 'website-bridges.json'), '{broken');
-  const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config'), legacy };
-  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
-  assert.equal(fs.existsSync(path.join(storage.configRoot, 'website-bridges.json')), false);
-});

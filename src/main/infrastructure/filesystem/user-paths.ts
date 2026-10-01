@@ -370,11 +370,7 @@ function resolveWebsiteBridgeRoots(dataRoot: string, platform: NodeJS.Platform) 
   const paths = pathApiForRoot(platform, dataRoot);
   return {
     packagesRoot: paths.join(dataRoot, "data", "website-bridges"),
-    configRoot: paths.join(dataRoot, "config", "website-bridges"),
-    legacy: {
-      packagesRoot: paths.join(dataRoot, "data", "webs", "website-bridges"),
-      configRoot: paths.join(dataRoot, "config", "webs")
-    }
+    configRoot: paths.join(dataRoot, "config", "website-bridges")
   };
 }
 

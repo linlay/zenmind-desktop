@@ -52,6 +52,5 @@ test('website bridges own independent data and config roots on macOS and Windows
     const roots = __testInternals.resolveWebsiteBridgeRoots(root, platform);
     assert.equal(roots.packagesRoot, api.join(root, 'data', 'website-bridges'));
     assert.equal(roots.configRoot, api.join(root, 'config', 'website-bridges'));
-    assert.equal(roots.legacy.packagesRoot, api.join(root, 'data', 'webs', 'website-bridges'));
   }
 });
