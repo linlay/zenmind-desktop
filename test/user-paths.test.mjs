@@ -46,3 +46,12 @@ test("canonical Desktop SSO access-token path follows macOS and Windows roots", 
     )
   );
 });
+
+test('website bridges own independent data and config roots on macOS and Windows', () => {
+  for (const [platform, root, api] of [['darwin', '/Users/tester/.desktop', path.posix], ['win32', 'C:\\Users\\tester\\.desktop', path.win32]]) {
+    const roots = __testInternals.resolveWebsiteBridgeRoots(root, platform);
+    assert.equal(roots.packagesRoot, api.join(root, 'data', 'website-bridges'));
+    assert.equal(roots.configRoot, api.join(root, 'config', 'website-bridges'));
+    assert.equal(roots.legacy.packagesRoot, api.join(root, 'data', 'webs', 'website-bridges'));
+  }
+});

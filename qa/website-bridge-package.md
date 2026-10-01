@@ -50,6 +50,8 @@ node qa/build-website-bridge-example.mjs
 
 输出 `build/examples/website-bridges/qiuer-forum-1.1.0.zip`。ZIP 只包含 manifest 和引用的 JS，不包含 Cookie 或 Desktop 凭据。登录使用 Desktop 网页自己的会话。
 
-持久化资源在 `<desktop-data-root>/data/webs/website-bridges/<id>/<内容摘要>/`，安装和启用清单在 `<desktop-data-root>/config/webs/website-bridges.json`。默认品牌的数据根为品牌运行目录中的 `.desktop`，路径来源沿用 Desktop 的平台路径函数。
+持久化资源在 `<desktop-data-root>/data/website-bridges/<id>/<内容摘要>/`，安装和启用清单在 `<desktop-data-root>/config/website-bridges/website-bridges.json`。默认品牌的数据根为品牌运行目录中的 `.desktop`，路径来源沿用 Desktop 的平台路径函数。
 
 验证：`node --test test/website-bridge.test.mjs`；真实设置页交互：`node qa/website-bridges-smoke.mjs`（临时目录、隔离 Electron profile）。macOS 和 Windows 的完整人工流程见 `qa/manual-regression.md`。
+
+旧版 Webs 子目录中的安装在新目录没有清单时自动验证并复制，保留启用状态；新目录已有清单时以新目录为准。旧资源保留作为迁移备份，不再参与运行读取。

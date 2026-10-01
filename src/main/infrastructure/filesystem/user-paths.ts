@@ -362,9 +362,26 @@ export const __testInternals = {
   DESKTOP_DIRS,
   resolveDesktopRoot,
   resolveApplicationSupportRoot,
-  resolveDesktopSsoAccessTokenFilePath
+  resolveDesktopSsoAccessTokenFilePath,
+  resolveWebsiteBridgeRoots
 };
 
+function resolveWebsiteBridgeRoots(dataRoot: string, platform: NodeJS.Platform) {
+  const paths = pathApiForRoot(platform, dataRoot);
+  return {
+    packagesRoot: paths.join(dataRoot, "data", "website-bridges"),
+    configRoot: paths.join(dataRoot, "config", "website-bridges"),
+    legacy: {
+      packagesRoot: paths.join(dataRoot, "data", "webs", "website-bridges"),
+      configRoot: paths.join(dataRoot, "config", "webs")
+    }
+  };
+}
+
+export function getDesktopWebsiteBridgeStorage(app: App, platform: NodeJS.Platform = process.platform) {
+  return resolveWebsiteBridgeRoots(getDataRoot(app, platform), platform);
+}
+
 export function getDesktopWebsiteBridgesDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getDesktopWebsDataRoot(app, platform), "website-bridges");
+  return getDesktopWebsiteBridgeStorage(app, platform).packagesRoot;
 }

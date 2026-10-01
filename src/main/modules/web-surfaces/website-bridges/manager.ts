@@ -7,7 +7,7 @@ import { builtinForumBridge, type WebsiteBridgePackage } from "./builtin";
 import { readWebsiteBridgeArchive } from "./archive";
 
 type Installed = WebsiteBridgePackage & { enabled: boolean; digest: string };
-export type WebsiteBridgeStorage = { packagesRoot: string; configRoot: string };
+export type WebsiteBridgeStorage = { packagesRoot: string; configRoot: string; legacy?: { packagesRoot: string; configRoot: string } };
 const digestOf = (pkg: WebsiteBridgePackage) => createHash("sha256").update(JSON.stringify([pkg.manifest, [...pkg.scripts].sort()])).digest("hex");
 
 /** Immutable package directories plus one atomic catalogue keep failed updates inactive. */
@@ -44,15 +44,21 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
     } finally { fs.rmSync(temporary, { force: true }); }
   }
   try {
-    if (catalog && fs.existsSync(catalog)) {
-      if (fs.statSync(catalog).size > 65536) throw new Error("Invalid catalogue");
-      const data = JSON.parse(fs.readFileSync(catalog, "utf8"));
+    // Copy only a validated legacy catalogue. Publish the new catalogue last;
+    // interrupted copies remain inactive and the old installation is preserved.
+    const legacyCatalog = storage?.legacy && path.join(storage.legacy.configRoot, "website-bridges.json");
+    const migrating = !!(catalog && !fs.existsSync(catalog) && legacyCatalog && fs.existsSync(legacyCatalog));
+    const sourceCatalog = migrating ? legacyCatalog : catalog;
+    const sourceRoot = migrating ? storage!.legacy!.packagesRoot : storage?.packagesRoot;
+    if (sourceCatalog && fs.existsSync(sourceCatalog)) {
+      if (fs.statSync(sourceCatalog).size > 65536) throw new Error("Invalid catalogue");
+      const data = JSON.parse(fs.readFileSync(sourceCatalog, "utf8"));
       if (data.schemaVersion !== 1 || !Array.isArray(data.items) || data.items.length > 50) throw new Error("Invalid catalogue");
       const ids = new Set<string>();
       installed = data.items.map((entry: { id: string; digest: string; enabled: boolean }) => {
         if (typeof entry.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.id) || ids.has(entry.id) || !/^[a-f0-9]{64}$/.test(entry.digest) || typeof entry.enabled !== "boolean") throw new Error("Invalid catalogue");
         ids.add(entry.id);
-        const directory = packageDir(entry.id, entry.digest);
+        const directory = path.join(sourceRoot!, entry.id, entry.digest);
         const read = (name: string, limit: number) => { const file = path.join(directory, name); if (fs.lstatSync(file).isSymbolicLink() || fs.statSync(file).size > limit) throw new Error("Invalid package"); return fs.readFileSync(file, "utf8"); };
         const manifest = parseWebsiteBridgeManifest(JSON.parse(read("bridge.json", 65536)));
         if (manifest.id !== entry.id) throw new Error("Invalid identity");
@@ -60,6 +66,10 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
         if (digestOf({ manifest, scripts }) !== entry.digest) throw new Error("Package changed");
         return { manifest, scripts, digest: entry.digest, enabled: entry.enabled };
       });
+      if (migrating) {
+        for (const item of installed) writePackage(item);
+        persist(installed);
+      }
     } else {
       const pkg = builtinForumBridge(); installed = [{ ...pkg, enabled: true, digest: writePackage(pkg) }]; persist(installed);
     }
