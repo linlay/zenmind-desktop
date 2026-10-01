@@ -44,13 +44,13 @@ export async function archiveSkillDirectory(root: string): Promise<Buffer> {
   return archive;
 }
 
-type SkillSnapshot = { key: string; exists: boolean; revision: string; archiveBase64?: string };
+type SkillSnapshot = { id: string; exists: boolean; revision: string; archiveBase64?: string };
 
-async function transact(call: SkillPlatformCaller, key: string, operation: "snapshot" | "replace" | "delete", expectedRevision?: string, archive?: Buffer): Promise<SkillSnapshot> {
+async function transact(call: SkillPlatformCaller, id: string, operation: "snapshot" | "replace" | "delete", expectedRevision?: string, archive?: Buffer): Promise<SkillSnapshot> {
   const result = await call("/api/admin/skills/transaction", {
-    method: "POST", body: { key, operation, expectedRevision, ...(archive ? { archiveBase64: archive.toString("base64") } : {}) }
+    method: "POST", body: { id, operation, expectedRevision, ...(archive ? { archiveBase64: archive.toString("base64") } : {}) }
   }) as SkillSnapshot;
-  if (result?.key !== key || typeof result.exists !== "boolean" ||
+  if (result?.id !== id || typeof result.exists !== "boolean" ||
       (result.exists ? !/^[a-f0-9]{64}$/.test(result.revision ?? "") : result.revision !== "missing") ||
       (operation === "replace" && !result.exists) || (operation === "delete" && result.exists)) {
     throw new Error(t("skillInstaller.publicationUnconfirmed"));
@@ -61,12 +61,12 @@ async function transact(call: SkillPlatformCaller, key: string, operation: "snap
 // Serialize local publication and record compensation together. Files under
 // Platform owns both the consistent snapshot and the conditional mutation.
 // No filesystem read of a live skill occurs in Desktop, including compensation.
-export function mutateSkillThroughPlatform(key: string, _targetDir: string, archive: Buffer | null, commit: () => void) {
+export function mutateSkillThroughPlatform(id: string, _targetDir: string, archive: Buffer | null, commit: () => void) {
   const call = platformCaller;
   const operation = pendingMutation.catch(() => undefined).then(async () => {
     if (!call) throw new Error(t("skillInstaller.platformRequired"));
-    if (!key || key === "." || key === ".." || /[\/\\\x00-\x1f]/u.test(key)) throw new Error(t("skillInstaller.invalidId"));
-    const snapshot = await transact(call, key, "snapshot");
+    if (!id || id === "." || id === ".." || /[\/\\\x00-\x1f]/u.test(id)) throw new Error(t("skillInstaller.invalidId"));
+    const snapshot = await transact(call, id, "snapshot");
     if (snapshot.exists && (typeof snapshot.archiveBase64 !== "string" || snapshot.archiveBase64.length > 44 * 1024 * 1024)) {
       throw new Error(t("skillInstaller.publicationUnconfirmed"));
     }
@@ -78,7 +78,7 @@ export function mutateSkillThroughPlatform(key: string, _targetDir: string, arch
     if (previous) fs.writeFileSync(recoveryPath, previous, { mode: 0o600 });
     let published: SkillSnapshot;
     try {
-      published = await transact(call, key, archive ? "replace" : "delete", snapshot.revision, archive ?? undefined);
+      published = await transact(call, id, archive ? "replace" : "delete", snapshot.revision, archive ?? undefined);
     } catch (error) {
       // A transport failure may occur after server commit. Never automatically
       // issue an inverse operation when the publication result is uncertain.
@@ -90,7 +90,7 @@ export function mutateSkillThroughPlatform(key: string, _targetDir: string, arch
       try {
         // Compare and restore happen under one Platform transaction lock.
         // A later edit/recreation is rejected by the server with 409.
-        await transact(call, key, previous ? "replace" : "delete", published.revision, previous ?? undefined);
+        await transact(call, id, previous ? "replace" : "delete", published.revision, previous ?? undefined);
       } catch (rollbackError) {
         throw new Error(t("skillInstaller.compensationFailed", { message: String(error), rollback: String(rollbackError), recovery: recoveryPath ? t("skillInstaller.recoveryLocation", { path: recoveryPath }) : "" }), { cause: error });
       }

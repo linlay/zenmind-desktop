@@ -78,7 +78,7 @@ test("Agent Platform bridge forwards raw ZIP bodies without JSON encoding", asyn
   const archive = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x01, 0x02]);
   const result = await __testInternals.fetchAgentPlatformWithAuth(
     "http://127.0.0.1:17078",
-    "/api/admin/skill-packages/import?key=office-pack&version=1.0.0",
+    "/api/admin/skill-packages/import?id=office-pack&version=1.0.0",
     {
       method: "POST",
       rawBody: archive,

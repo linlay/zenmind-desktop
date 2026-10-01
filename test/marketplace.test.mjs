@@ -155,15 +155,15 @@ function createSkillPlatformMock(app) {
     if (targetPath === "/api/admin/skill-packages") return [];
     assert.equal(targetPath, "/api/admin/skills/transaction");
     assert.equal(options.method, "POST");
-    const { key, operation, expectedRevision, archiveBase64 } = options.body;
-    const target = getSkillInstallDir(app, key);
+    const { id, operation, expectedRevision, archiveBase64 } = options.body;
+    const target = getSkillInstallDir(app, id);
     if (operation === "snapshot") {
       const current = snapshot(target), zip = new JSZip();
       for (const entry of current.entries) {
         if (entry.directory) zip.folder(entry.relative);
         else zip.file(entry.relative, entry.bytes, { unixPermissions: entry.mode });
       }
-      return { key, exists: current.exists, revision: current.revision,
+      return { id, exists: current.exists, revision: current.revision,
         ...(current.exists ? { archiveBase64: await zip.generateAsync({ type: "base64", platform: "UNIX" }) } : {}) };
     }
     assert.ok(operation === "replace" || operation === "delete");
@@ -185,7 +185,7 @@ function createSkillPlatformMock(app) {
       }
     }
     const result = snapshot(target);
-    return { key, exists: result.exists, revision: result.revision };
+    return { id, exists: result.exists, revision: result.revision };
   };
 }
 
@@ -1165,10 +1165,10 @@ test("skill package installs and uninstalls all included skills as one transacti
       };
     }
     if (targetPath === "/api/admin/skill-packages/delete") {
-      assert.deepEqual(options.body, { key: "office-pack" });
+      assert.deepEqual(options.body, { id: "office-pack" });
       platformPackageInstalled = false;
       return {
-        key: "office-pack",
+        id: "office-pack",
         deleted: true,
         skills: [{ id: "word-helper" }, { id: "excel-helper" }]
       };

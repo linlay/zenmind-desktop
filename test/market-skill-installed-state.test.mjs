@@ -56,7 +56,7 @@ test('Platform localized skill metadata overrides legacy files without changing 
  fs.writeFileSync(path.join(s.dir,'skill.json'),JSON.stringify({id:'test-skill',name:'Legacy',version:'9.0.0'}));
  let name = '国泰君安期货工作流';
  configureSkillMarketPlatformCaller(async route => route === '/api/skills'
-  ? {pinned:[],skills:[{key:'test-skill',name:'test-skill',displayName:name,description:'Localized description',revision:'r18'}]}
+  ? {pinned:[],skills:[{id:'test-skill',name:'test-skill',displayName:name,description:'Localized description',revision:'r18'}]}
   : []);
  let item = await s.read();
  assert.equal(item.id,'test-skill');assert.equal(item.name,name);assert.equal(item.description,'Localized description');
@@ -70,7 +70,7 @@ test('Platform localized skill metadata overrides legacy files without changing 
 test('Platform discovers skills outside Desktop guessed runtime and keeps undeclared version empty', async t => {
  const s = setup(t);
  configureSkillMarketPlatformCaller(async route => route === '/api/skills'
-  ? {pinned:[],skills:[{key:'gtjaqh-flow',name:'gtjaqh-flow',displayName:'国泰君安期货工作流',revision:'r18'}]} : []);
+  ? {pinned:[],skills:[{id:'gtjaqh-flow',name:'gtjaqh-flow',displayName:'国泰君安期货工作流',revision:'r18'}]} : []);
  const item=(await listSkillMarketItems(s.app,s.options)).items.find(item=>item.id==='gtjaqh-flow');
  assert.ok(item);assert.equal(item.name,'国泰君安期货工作流');assert.equal(item.version,'');assert.equal(item.metadata.revision,'r18');
  assert.equal(item.installPath,undefined);
@@ -81,7 +81,7 @@ test('nested package members do not install or update the same-named standalone 
  let standalone = false;
  let memberVersion = '';
  configureSkillMarketPlatformCaller(async route => route === '/api/skills'
-  ? {pinned:[],skills:[{key:'bundle/test-skill',displayName:'Package member',version:memberVersion}, ...(standalone ? [{key:'test-skill',version:'1.0.0'}] : [])]}
+  ? {pinned:[],skills:[{id:'bundle/test-skill',displayName:'Package member',version:memberVersion}, ...(standalone ? [{id:'test-skill',version:'1.0.0'}] : [])]}
   : [{id:'bundle',skills:[{id:'bundle/test-skill',version:memberVersion}]}]);
  assert.equal((await s.read()).state,'not-installed');
  let items = (await listSkillMarketItems(s.app,s.options)).items;

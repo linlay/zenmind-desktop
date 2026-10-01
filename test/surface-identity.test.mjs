@@ -257,10 +257,10 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceRole, "file");
   assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceType, "agent-management");
 
-  const skillKey = "skill:pdf";
-  const skill = createChatChildSurfaceIdentity("skill", skillKey, "chat-1");
+  const skillId = "skill:pdf";
+  const skill = createChatChildSurfaceIdentity("skill", skillId, "chat-1");
   assert.equal(registry.registerSurface(
-    registration(skill, 78, "agent-management", skillKey),
+    registration(skill, 78, "agent-management", skillId),
     7
   ), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(78).surfaceRole, "skill");

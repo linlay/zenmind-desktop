@@ -513,13 +513,13 @@ export async function executeAction(
       return ok(action, { agentKey, route });
     }
     case "desktop.skill.open": {
-      const skillKey = readString(args, "skillKey") || readString(args, "id");
-      if (!skillKey) {
-        return fail(action, "invalid_args", "skillKey is required.");
+      const skillId = readString(args, "id") || readString(args, "skillId");
+      if (!skillId) {
+        return fail(action, "invalid_args", "id is required.");
       }
-      const route = `/skills/${encodeURIComponent(skillKey)}`;
+      const route = `/skills/${encodeURIComponent(skillId)}`;
       options.navigate(route);
-      return ok(action, { skillKey, route });
+      return ok(action, { id: skillId, route });
     }
     case "desktop.agent.update": {
       const agentKey = readString(args, "agentKey") || readString(args, "id");
@@ -540,10 +540,10 @@ export async function executeAction(
       return ok(action, response);
     }
     case "desktop.skill.update": {
-      const skillKey = readString(args, "skillKey") || readString(args, "id");
+      const skillId = readString(args, "id") || readString(args, "skillId");
       const filePath = readString(args, "path") || "SKILL.md";
-      if (!skillKey) {
-        return fail(action, "invalid_args", "skillKey is required.");
+      if (!skillId) {
+        return fail(action, "invalid_args", "id is required.");
       }
       if (typeof args.content !== "string") {
         return fail(action, "invalid_args", "content is required.");
@@ -555,7 +555,7 @@ export async function executeAction(
         issueAgentAccessToken: options.issueAgentAccessToken,
         method: "PUT",
         body: {
-          key: skillKey,
+          id: skillId,
           path: filePath,
           content: args.content,
           ...(typeof args.baseSha256 === "string" && args.baseSha256.trim()

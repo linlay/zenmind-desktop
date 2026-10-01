@@ -27,7 +27,7 @@ export const ENTERPRISE_CHAT_REMOTE_ACTIONS = [
   { name: "desktop.controlCenter.openService", category: "navigation", title: "Open Control Center service", risk: "low", summary: (args) => targetSummary("Open Control Center service", args, "serviceId", "id") },
   { name: "desktop.market.openItem", category: "navigation", title: "Open market item", risk: "low", summary: (args) => targetSummary("Open market item", args, "itemId", "id") },
   { name: "desktop.agent.open", category: "navigation", title: "Open agent", risk: "low", summary: (args) => targetSummary("Open agent", args, "agentKey", "id") },
-  { name: "desktop.skill.open", category: "navigation", title: "Open skill", risk: "low", summary: (args) => targetSummary("Open skill", args, "skillKey", "id") },
+  { name: "desktop.skill.open", category: "navigation", title: "Open skill", risk: "low", summary: (args) => targetSummary("Open skill", args, "id", "skillId") },
   { name: "desktop.website.open", category: "navigation", title: "Open website", risk: "low", summary: (args) => targetSummary("Open website", args, "websiteId", "id") },
   { name: "desktop.webapp.open", category: "navigation", title: "Open WebApp", risk: "medium", summary: (args) => targetSummary("Start and open WebApp", args, "webappId", "id") },
 
@@ -43,7 +43,7 @@ export const ENTERPRISE_CHAT_REMOTE_ACTIONS = [
   { name: "desktop.webapp.updatePreferences", category: "content", title: "Update WebApp", risk: "medium", summary: (args) => targetSummary("Update WebApp preferences", args, "webappId", "id") },
   { name: "desktop.webapp.restart", category: "content", title: "Restart WebApp", risk: "high", summary: (args) => targetSummary("Restart WebApp", args, "webappId", "id") },
   { name: "desktop.agent.update", category: "content", title: "Update agent", risk: "high", summary: (args) => targetSummary("Update agent", args, "agentKey", "id") },
-  { name: "desktop.skill.update", category: "content", title: "Update skill", risk: "high", summary: (args) => targetSummary("Update skill file", args, "skillKey", "id") },
+  { name: "desktop.skill.update", category: "content", title: "Update skill", risk: "high", summary: (args) => targetSummary("Update skill file", args, "id", "skillId") },
 
   { name: "desktop.market.installItem", category: "installation", title: "Install market item", risk: "high", summary: (args) => targetSummary("Install market item", args, "itemId", "id") },
   { name: "desktop.market.updateItem", category: "installation", title: "Update market item", risk: "high", summary: (args) => targetSummary("Update market item", args, "itemId", "id") },

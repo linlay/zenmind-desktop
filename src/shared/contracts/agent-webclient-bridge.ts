@@ -401,7 +401,7 @@ export type WorkPanelProjectContext = {
 };
 export type WorkPanelFileDiffContext = WorkPanelChatContext & { runId: string; path: string };
 export type WorkPanelAgentContext = { agentKey: string; chatId?: string };
-export type WorkPanelSkillContext = { key: string };
+export type WorkPanelSkillContext = { id: string };
 
 export type WorkPanelContext =
   | WorkPanelChatContext

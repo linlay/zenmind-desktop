@@ -111,7 +111,7 @@ export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agents/:agentKey",
   "/agent/:agentKey",
   "/connectors/:connectorId",
-  "/skills/:skillKey"
+  "/skills/:skillId"
 ] as const;
 
 const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([

@@ -40,8 +40,8 @@ function resolveTargetAgentKey(openRequest: AssistantWorkerOpenRequest | null, f
 }
 
 function appendMustUseSkills(params: URLSearchParams, mustUseSkills: readonly string[]) {
-  for (const skillKey of mustUseSkills) {
-    params.append("mustUseSkill", skillKey);
+  for (const skillId of mustUseSkills) {
+    params.append("mustUseSkill", skillId);
   }
 }
 

@@ -389,8 +389,8 @@ export const DESKTOP_ACTION_DEFINITIONS = [
 
   { name: "desktop.agent.open", kind: "execute", category: "agent", description: "Open an agent in the Desktop agent client. Args: { agentKey|id }." },
   { name: "desktop.agent.update", kind: "execute", category: "agent", description: "Update an agent definition or prompts in agent-platform. Args: { agentKey, definition?, soulPrompt?, agentsPrompt? }." },
-  { name: "desktop.skill.open", kind: "execute", category: "skill", description: "Open a skill in the Desktop skill manager. Args: { skillKey|id }." },
-  { name: "desktop.skill.update", kind: "execute", category: "skill", description: "Update one editable text file in an agent-platform skill. Args: { skillKey|id, path?, content, baseSha256? }." },
+  { name: "desktop.skill.open", kind: "execute", category: "skill", description: "Open a skill in the Desktop skill manager. Args: { id }." },
+  { name: "desktop.skill.update", kind: "execute", category: "skill", description: "Update one editable text file in an agent-platform skill. Args: { id, path?, content, baseSha256? }." },
 
   { name: "desktop.kanban.listIssues", kind: "read", category: "kanban", description: "List Desktop Kanban issues." },
   { name: "desktop.kanban.getIssue", kind: "read", category: "kanban", description: "Read one Desktop Kanban issue. Returns: { issue }." },

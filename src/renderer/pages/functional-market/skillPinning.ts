@@ -1,6 +1,6 @@
 import type { MarketItem } from "@shared/contracts";
 
-export function marketSkillPinKeys(items: MarketItem[], pinnedItemIds: string[]): string[] {
+export function marketSkillPinIds(items: MarketItem[], pinnedItemIds: string[]): string[] {
   const ids = new Set(items.filter((item) => item.type === "skill").map((item) => item.id));
   return [...new Set(pinnedItemIds.filter((id) => ids.has(id)))];
 }

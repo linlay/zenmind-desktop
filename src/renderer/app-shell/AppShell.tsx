@@ -2161,8 +2161,8 @@ export function AppShell() {
     if (requestedChatId) {
       params.set("chatId", requestedChatId);
     }
-    for (const skillKey of resolvedCopilotMustUseSkills) {
-      params.append("mustUseSkill", skillKey);
+    for (const skillId of resolvedCopilotMustUseSkills) {
+      params.append("mustUseSkill", skillId);
     }
     const embedPath = createAgentWebclientCopilotPath(requestedAgentKey, params);
     pendingAssistantDockOpenRequestRef.current = request
@@ -5428,17 +5428,17 @@ function isSingleAgentWebclientRoute(pathname: string) {
 }
 
 function resolveSkillManagementWebclientRoute(pathname: string, search: string): AgentWebclientResolvedRoute | null {
-  const match = matchPath("/skills/:skillKey", pathname);
-  const encodedSkillKey = match?.params.skillKey?.trim() ?? "";
-  const skillKey = decodeRoutePathSegment(encodedSkillKey);
-  if (!skillKey) {
+  const match = matchPath("/skills/:skillId", pathname);
+  const encodedSkillId = match?.params.skillId?.trim() ?? "";
+  const skillId = decodeRoutePathSegment(encodedSkillId);
+  if (!skillId) {
     return null;
   }
 
   return {
     key: "skills",
     routePath: `${pathname}${search}`,
-    embedPath: `/skills/${encodeURIComponent(skillKey)}${search}`,
+    embedPath: `/skills/${encodeURIComponent(skillId)}${search}`,
     labelKey: "nav.skills",
     kind: "management",
     mode: "embedded"

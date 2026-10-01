@@ -5,4 +5,4 @@ export interface MarketSkillPins {
   updatedAt?: number;
 }
 
-export interface MarketSkillPinUpdate { key: string; pinned: boolean }
+export interface MarketSkillPinUpdate { id: string; pinned: boolean }

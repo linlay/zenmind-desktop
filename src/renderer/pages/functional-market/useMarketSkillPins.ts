@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MarketItem } from "@shared/contracts";
-import { marketSkillPinKeys, pinnedMarketItems } from "./skillPinning";
+import { marketSkillPinIds, pinnedMarketItems } from "./skillPinning";
 
 const LEGACY_PINS = "market.skillPins";
 const MIGRATED = "market.skillPins.orderMigrated";
@@ -37,10 +37,10 @@ export function useMarketSkillPins(items: MarketItem[], loading: boolean) {
         try { migrated = localStorage.getItem(MIGRATED) === "1"; } catch { /* No legacy storage. */ }
         const old = legacyPins();
         if (!migrated && itemsRef.current.length > 0) {
-          const keys = marketSkillPinKeys(itemsRef.current, old).reverse();
+          const keys = marketSkillPinIds(itemsRef.current, old).reverse();
           for (const key of keys) {
             if (!active || request !== generation.current) return;
-            if (!value.order.includes(key.toLowerCase())) value = await api.saveSkillPins({ key, pinned: true });
+            if (!value.order.includes(key.toLowerCase())) value = await api.saveSkillPins({ id: key, pinned: true });
           }
           try { localStorage.setItem(MIGRATED, "1"); } catch { /* Per-key updates are idempotent. */ }
         }
@@ -56,11 +56,11 @@ export function useMarketSkillPins(items: MarketItem[], loading: boolean) {
     if (!ready || inFlight.current) return;
     inFlight.current = true; generation.current++; setSaving(true); setFailed(false);
     const pinned = !pins.includes(id);
-    const [key] = marketSkillPinKeys(itemsRef.current, [id]);
+    const [key] = marketSkillPinIds(itemsRef.current, [id]);
     try {
       if (!key) throw new Error("unknown_skill_item");
       // A package is one presentation pin; member preferences remain independent.
-      const value = await window.electronAPI.market.saveSkillPins({ key, pinned });
+      const value = await window.electronAPI.market.saveSkillPins({ id: key, pinned });
       setOrder(value.order);
     } catch {
       setFailed(true);

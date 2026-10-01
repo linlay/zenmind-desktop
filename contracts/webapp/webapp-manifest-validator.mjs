@@ -5271,8 +5271,8 @@ const webappManifestV2Schema = strictObject({
   }
   if (value.copilot) {
     const skills = /* @__PURE__ */ new Set();
-    value.copilot.mustUseSkills.forEach((skillKey, index) => {
-      const normalized = skillKey.toLowerCase();
+    value.copilot.mustUseSkills.forEach((skillId, index) => {
+      const normalized = skillId.toLowerCase();
       if (skills.has(normalized)) {
         context.addIssue({
           code: "custom",

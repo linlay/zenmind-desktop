@@ -6,15 +6,15 @@ const source = fs.readFileSync(new URL("../src/renderer/pages/functional-market/
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 new Function("module", "exports", compiled)(module, module.exports);
-const { marketSkillPinKeys, sortPinnedSkills, pinnedMarketItems } = module.exports;
+const { marketSkillPinIds, sortPinnedSkills, pinnedMarketItems } = module.exports;
 const skill = (id, extra = {}) => ({ id, type: "skill", ...extra });
 
 test("package and standalone pins each use their own id", () => {
   const items = [skill("a"), skill("b"), skill("pack", { skill: { kind: "package", includedSkills: [{ id: "a" }, { id: "b" }] } })];
-  assert.deepEqual(marketSkillPinKeys(items, ["a", "pack", "a"]), ["a", "pack"]);
-  assert.deepEqual(marketSkillPinKeys(items, ["unknown"]), []);
-  assert.deepEqual(marketSkillPinKeys([{ id: "a", type: "mcp" }], ["a"]), []);
-  assert.deepEqual(marketSkillPinKeys([skill("empty", { skill: { kind: "package", includedSkills: [] } })], ["empty"]), ["empty"]);
+  assert.deepEqual(marketSkillPinIds(items, ["a", "pack", "a"]), ["a", "pack"]);
+  assert.deepEqual(marketSkillPinIds(items, ["unknown"]), []);
+  assert.deepEqual(marketSkillPinIds([{ id: "a", type: "mcp" }], ["a"]), []);
+  assert.deepEqual(marketSkillPinIds([skill("empty", { skill: { kind: "package", includedSkills: [] } })], ["empty"]), ["empty"]);
 });
 test("market pins have deterministic order and unpinned entries retain original order", () => {
   const items = [skill("a"), skill("b"), skill("c"), skill("d")];
@@ -67,8 +67,8 @@ function hookHarness(items, initialOrder, legacy = []) {
       getSkillPins: async () => ({ order: [...order] }),
       saveSkillPins: async (update) => {
         writes.push(update);
-        if (update.pinned && !order.includes(update.key)) order.unshift(update.key);
-        if (!update.pinned) order = order.filter((key) => key !== update.key);
+        if (update.pinned && !order.includes(update.id)) order.unshift(update.id);
+        if (!update.pinned) order = order.filter((key) => key !== update.id);
         return { order: [...order] };
       },
     } },
@@ -99,11 +99,11 @@ test("market package toggle makes one request and preserves existing member pins
   await flush();
   assert.deepEqual(h.render().pins, ["a"]);
   await h.render().toggle("pack");
-  assert.deepEqual(h.writes, [{ key: "pack", pinned: true }]);
+  assert.deepEqual(h.writes, [{ id: "pack", pinned: true }]);
   assert.deepEqual(h.order(), ["pack", "pack/a", "a"]);
   assert.deepEqual(h.render().pins, ["pack", "a"]);
   await h.render().toggle("pack");
-  assert.deepEqual(h.writes, [{ key: "pack", pinned: true }, { key: "pack", pinned: false }]);
+  assert.deepEqual(h.writes, [{ id: "pack", pinned: true }, { id: "pack", pinned: false }]);
   assert.deepEqual(h.order(), ["pack/a", "a"]);
   assert.deepEqual(h.render().pins, ["a"]);
 });
@@ -113,7 +113,7 @@ test("legacy market migration keeps package IDs and does not replace member pref
   const h = hookHarness(items, ["pack/a"], ["pack", "a"]);
   h.render();
   await flush();
-  assert.deepEqual(h.writes, [{ key: "a", pinned: true }, { key: "pack", pinned: true }]);
+  assert.deepEqual(h.writes, [{ id: "a", pinned: true }, { id: "pack", pinned: true }]);
   assert.deepEqual(h.order(), ["pack", "a", "pack/a"]);
   assert.deepEqual(h.render().pins, ["pack", "a"]);
   assert.equal(h.storage.get("market.skillPins.orderMigrated"), "1");

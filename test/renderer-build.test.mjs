@@ -1718,8 +1718,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/connectors"[\s\S]*?embedPath:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.doesNotMatch(appShell, /routePath:\s*"\/copilot"|"\/copilot\/:agentKey"|kind:\s*"copilot"/u);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
-  assert.match(appShell, /"\/skills\/:skillKey"/);
-  assert.match(appShell, /function resolveSkillManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?embedPath: `\/skills\/\$\{encodeURIComponent\(skillKey\)\}\$\{search\}`/);
+  assert.match(appShell, /"\/skills\/:skillId"/);
+  assert.match(appShell, /function resolveSkillManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?embedPath: `\/skills\/\$\{encodeURIComponent\(skillId\)\}\$\{search\}`/);
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
   assert.match(appShell, /const rawActiveAgentWebclientRouteLabelKey = rawActiveAgentWebclientRoute\?\.labelKey/);
   assert.match(appShell, /I18N_KEYS\.includes\(rawActiveAgentWebclientRouteLabelKey as TranslationKey\)[\s\S]{0,120}t\(rawActiveAgentWebclientRouteLabelKey as TranslationKey\)[\s\S]{0,120}rawActiveAgentWebclientRoute\.label \?\? rawActiveAgentWebclientRouteLabelKey/);

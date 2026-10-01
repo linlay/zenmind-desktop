@@ -5,31 +5,31 @@ const require = createRequire(import.meta.url);
 const { configureSkillMarketPlatformCaller, readMarketSkillPins, saveMarketSkillPins } = require("../dist-electron/main/modules/marketplace/skill-market.js");
 const { registerMarketplaceIpcHandlers } = require("../dist-electron/main/modules/marketplace/ipc.js");
 
-test("Desktop reads and updates the official single-key skill order API", async (t) => {
+test("Desktop reads and updates the official single-id skill order API", async (t) => {
   const calls = [];
   configureSkillMarketPlatformCaller(async (url, options) => { calls.push({ url, options }); return { pinned: ["B", "a"], updatedAt: 1780000000000 }; });
   t.after(() => configureSkillMarketPlatformCaller(null));
   assert.deepEqual((await readMarketSkillPins()).order, ["b", "a"]);
   assert.equal(calls[0].url, "/api/skills");
-  await saveMarketSkillPins({ key: " A ", pinned: false, user: "must-not-forward" });
-  assert.deepEqual(calls[1], { url: "/api/skills", options: { method: "PUT", body: { key: "a", pinned: false } } });
+  await saveMarketSkillPins({ id: " A ", pinned: false, user: "must-not-forward" });
+  assert.deepEqual(calls[1], { url: "/api/skills", options: { method: "PUT", body: { id: "a", pinned: false } } });
 });
 test("malformed pin mutations are rejected before calling Platform", async (t) => {
   let calls = 0;
   configureSkillMarketPlatformCaller(async () => { calls++; });
   t.after(() => configureSkillMarketPlatformCaller(null));
-  for (const value of [{ key: "../x", pinned: true }, { key: "p/../x", pinned: true }, { key: "p//x", pinned: true }, { key: "p\\x", pinned: true }, { key: "a" }, { pinned: true }, { key: "a", pinned: "false" }, { pinnedItemIds: ["a"], pinnedSkillKeys: ["a"] }]) {
+  for (const value of [{ id: "../x", pinned: true }, { id: "p/../x", pinned: true }, { id: "p//x", pinned: true }, { id: "p\\x", pinned: true }, { id: "a" }, { pinned: true }, { id: "a", pinned: "false" }, { pinnedItemIds: ["a"], pinnedSkillKeys: ["a"] }]) {
     await assert.rejects(saveMarketSkillPins(value), /market_skill_pins_invalid/);
   }
   assert.equal(calls, 0);
 });
 
-test("package member pins preserve the qualified key", async (t) => {
+test("package member pins preserve the qualified id", async (t) => {
   let mutation;
   configureSkillMarketPlatformCaller(async (_, options) => { mutation = options.body; return { pinned: ["suite/meeting"] }; });
   t.after(() => configureSkillMarketPlatformCaller(null));
-  assert.deepEqual((await saveMarketSkillPins({ key: "suite/meeting", pinned: true })).order, ["suite/meeting"]);
-  assert.deepEqual(mutation, { key: "suite/meeting", pinned: true });
+  assert.deepEqual((await saveMarketSkillPins({ id: "suite/meeting", pinned: true })).order, ["suite/meeting"]);
+  assert.deepEqual(mutation, { id: "suite/meeting", pinned: true });
 });
 
 test("malformed server order and unavailable service fail instead of fabricating local pins", async (t) => {
@@ -40,7 +40,7 @@ test("malformed server order and unavailable service fail instead of fabricating
   }
   configureSkillMarketPlatformCaller(null);
   await assert.rejects(readMarketSkillPins(), /market_skill_pins_unavailable/);
-  await assert.rejects(saveMarketSkillPins({ key: "a", pinned: true }), /market_skill_pins_unavailable/);
+  await assert.rejects(saveMarketSkillPins({ id: "a", pinned: true }), /market_skill_pins_unavailable/);
 });
 
 test("pin IPC accepts only the current main window top frame", async (t) => {
@@ -54,7 +54,7 @@ test("pin IPC accepts only the current main window top frame", async (t) => {
   registerMarketplaceIpcHandlers({ handle: (name, fn) => handlers.set(name, fn) }, { app: {}, getMainWindow: () => window });
   for (const channel of ["market.getSkillPins", "market.saveSkillPins"]) {
     const handler = handlers.get(channel);
-    const mutation = { key: "a", pinned: true };
+    const mutation = { id: "a", pinned: true };
     await assert.rejects(handler({ sender: {}, senderFrame: frame }, mutation), /market_skill_pins_forbidden/);
     await assert.rejects(handler({ sender: webContents, senderFrame: {} }, mutation), /market_skill_pins_forbidden/);
     assert.equal(calls, channel === "market.getSkillPins" ? 0 : 1);

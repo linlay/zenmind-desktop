@@ -175,7 +175,7 @@ function normalizeContext(
     module === "planning"
       ? ["chatId", "planningId", "agentKey"]
       : module === "skill"
-        ? ["key"]
+        ? ["id"]
         : [
             "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
             "publishId", "sourceId", "btwId", "instanceId", "path", "relativePath",
@@ -187,7 +187,7 @@ function normalizeContext(
   const context: Record<string, string> = {};
   for (const key of [
     "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-    "publishId", "sourceId", "btwId", "instanceId", "key",
+    "publishId", "sourceId", "btwId", "instanceId", "id",
   ] as const) {
     const value = cleanIdentity(record[key]);
     if (record[key] !== undefined && !value) return null;
@@ -491,7 +491,7 @@ function normalizeDescriptor(
         : "";
       break;
     case "skill":
-      stableKey = context.key ? `skill:${context.key}` : "";
+      stableKey = context.id ? `skill:${context.id}` : "";
       break;
   }
   if (!stableKey) return null;

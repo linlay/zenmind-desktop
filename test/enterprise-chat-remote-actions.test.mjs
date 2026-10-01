@@ -44,7 +44,7 @@ test("enterprise chat uses structured device-targeted remote actions and flat si
   assert.match(actions, /desktop\.webapp\.updatePreferences/);
   assert.match(actions, /desktop\.skill\.update/);
   assert.match(bridge, /case "desktop\.skill\.update"/);
-  assert.match(bridge, /const route = `\/skills\/\$\{encodeURIComponent\(skillKey\)\}`/);
+  assert.match(bridge, /const route = `\/skills\/\$\{encodeURIComponent\(skillId\)\}`/);
   assert.match(appShell, /resolveSkillManagementWebclientRoute/);
   assert.match(marketPage, /searchParams\.get\("itemId"\)/);
   assert.match(storefront, /setSelectedDetailItem\(initialItem\)/);

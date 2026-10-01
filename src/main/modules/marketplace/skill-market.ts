@@ -61,10 +61,10 @@ export function configureSkillMarketPlatformCaller(call: SkillMarketPlatformCall
 
 export function normalizeMarketSkillPins(value: unknown): MarketSkillPins {
   const input = asObject(value);
-  if (!Array.isArray(input.pinned) || input.pinned.length > 4096 || input.pinned.some((key) => typeof key !== "string" || !key.trim() || key.length > 256)) {
+  if (!Array.isArray(input.pinned) || input.pinned.length > 4096 || input.pinned.some((id) => typeof id !== "string" || !id.trim() || id.length > 256)) {
     throw new Error("market_skill_pins_invalid");
   }
-  return { version: 1, order: [...new Set(input.pinned.map((key: string) => key.trim().toLowerCase()))],
+  return { version: 1, order: [...new Set(input.pinned.map((id: string) => id.trim().toLowerCase()))],
     ...(typeof input.updatedAt === "number" && Number.isSafeInteger(input.updatedAt) ? { updatedAt: input.updatedAt } : {}) };
 }
 
@@ -75,13 +75,13 @@ export async function readMarketSkillPins(): Promise<MarketSkillPins> {
 
 export async function saveMarketSkillPins(input: unknown): Promise<MarketSkillPins> {
   const value = asObject(input);
-  const key = asString(value.key).trim().toLowerCase();
-  if (!key || Buffer.byteLength(key, "utf8") > 256 || !/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?$/.test(key) || typeof value.pinned !== "boolean") throw new Error("market_skill_pins_invalid");
+  const id = asString(value.id).trim().toLowerCase();
+  if (!id || Buffer.byteLength(id, "utf8") > 256 || !/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?$/.test(id) || typeof value.pinned !== "boolean") throw new Error("market_skill_pins_invalid");
   if (!skillMarketPlatformCall) throw new Error("market_skill_pins_unavailable");
-  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills", { method: "PUT", body: { key, pinned: value.pinned } }));
+  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills", { method: "PUT", body: { id, pinned: value.pinned } }));
 }
 
-type PlatformSkill = { key: string; name?: string; displayName?: string; description?: string; version?: string; revision?: string };
+type PlatformSkill = { id: string; name?: string; displayName?: string; description?: string; version?: string; revision?: string };
 
 async function listPlatformSkills(): Promise<PlatformSkill[] | null> {
   if (!skillMarketPlatformCall) return null;
@@ -90,9 +90,9 @@ async function listPlatformSkills(): Promise<PlatformSkill[] | null> {
     if (!Array.isArray(value.skills)) return null;
     return value.skills.map(raw => {
       const skill = asObject(raw);
-      const key = asString(skill.key).trim();
-      if (!key) throw new Error("invalid_platform_skill");
-      return { key, name: asString(skill.name), displayName: asString(skill.displayName),
+      const id = asString(skill.id).trim();
+      if (!id) throw new Error("invalid_platform_skill");
+      return { id, name: asString(skill.name), displayName: asString(skill.displayName),
         description: asString(skill.description), version: asString(skill.version), revision: asString(skill.revision) };
     });
   } catch { return null; }
@@ -104,16 +104,16 @@ function mergePlatformSkillPresentation(localItems: ReturnType<typeof listInstal
   if (skills === null) return localItems;
   const localById = new Map(localItems.map(item => [item.id, item]));
   return skills.map((skill): ReturnType<typeof listInstalledSkills>[number] => ({
-    ...localById.get(skill.key),
-    id: skill.key, type: "skill", name: skill.displayName?.trim() || skill.name?.trim() || skill.key,
+    ...localById.get(skill.id),
+    id: skill.id, type: "skill", name: skill.displayName?.trim() || skill.name?.trim() || skill.id,
     description: skill.description || "", version: skill.version || "", installedVersion: skill.version || "",
-    tags: localById.get(skill.key)?.tags || [], state: "local-imported", source: "local",
-    metadata: { ...localById.get(skill.key)?.metadata, ...(skill.revision ? { revision: skill.revision } : {}) }
+    tags: localById.get(skill.id)?.tags || [], state: "local-imported", source: "local",
+    metadata: { ...localById.get(skill.id)?.metadata, ...(skill.revision ? { revision: skill.revision } : {}) }
   }));
 }
 
 function applyPlatformSkillPresentation(items: ReturnType<typeof mergeCatalogItems>, skills: PlatformSkill[] | null) {
-  const byId = new Map((skills || []).map(skill => [skill.key, skill]));
+  const byId = new Map((skills || []).map(skill => [skill.id, skill]));
   return items.map(item => {
     const skill = item.type === "skill" && item.skill?.kind !== "package" ? byId.get(item.id) : undefined;
     if (!skill) return item;
@@ -154,7 +154,7 @@ function mergePlatformSkillPackageState(items: ReturnType<typeof mergeCatalogIte
     if (item.type !== "skill") return item;
     const owner = ownerBySkill.get(item.id);
     if (!owner) return item;
-    // Package members use qualified keys, so the same-named standalone skill
+    // Package members use qualified IDs, so the same-named standalone skill
     // retains its own installation state and update destination.
     const installedVersion = localVersionById.get(item.id) || owner.version;
     return {
@@ -317,7 +317,7 @@ async function installSkillPackageMarketItem(
   );
   const bytes = await readResponseBytesWithLimit(response, MAX_SKILL_PACKAGE_BYTES);
   const installed = await skillMarketPlatformCall(
-    `/api/admin/skill-packages/import?${new URLSearchParams({ key: item.id, version: item.version }).toString()}`,
+    `/api/admin/skill-packages/import?${new URLSearchParams({ id: item.id, version: item.version }).toString()}`,
     { method: "POST", rawBody: bytes, contentType: "application/zip" }
   ) as PlatformSkillPackageResponse;
   if (installed.id?.trim() !== item.id || installed.version?.trim() !== item.version) {
@@ -364,7 +364,7 @@ export async function uninstallSkillMarketItem(app: App, itemId: string): Promis
     }
     const deleted = await skillMarketPlatformCall("/api/admin/skill-packages/delete", {
       method: "POST",
-      body: { key: itemId }
+      body: { id: itemId }
     }) as { deleted?: boolean; skills?: Array<{ id?: string }> };
     if (deleted.deleted !== true) {
       throw new Error(t("market.main.skillPackageRemovalUnconfirmed"));

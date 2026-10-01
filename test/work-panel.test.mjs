@@ -513,10 +513,10 @@ test("WorkPanel rejects untrusted fields and only accepts registered host native
     kind: "webclient", module: "summary", route: "/overview", context: { chatId: "chat" },
   }).ok, false);
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
-    kind: "webclient", module: "skill", route: "/skill-viewer/skill", context: { key: "" },
+    kind: "webclient", module: "skill", route: "/skill-viewer/skill", context: { id: "" },
   }).ok, false);
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
-    kind: "webclient", module: "skill", route: "/skill-viewer/skill", context: { key: "skill", agentKey: "forged" },
+    kind: "webclient", module: "skill", route: "/skill-viewer/skill", context: { id: "skill", agentKey: "forged" },
   }).ok, false);
   const native = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "native", surfaceKey: "not-registered", context: {},
@@ -785,7 +785,7 @@ test("WorkPanel derives distinct canonical identities for every independent WebC
     ["file", "/file-viewer/agent?path=src%2Fapp.ts&line=20", { agentKey: "agent", path: "src/app.ts" }, "file:agent:src/app.ts"],
     ["project", "/project/agent?chatId=chat&path=src%2Fapp.ts", { agentKey: "agent", chatId: "chat", path: "src/app.ts" }, "project:agent:chat:all:src/app.ts"],
     ["file-diff", "/project/agent?chatId=chat&runId=run&path=src%2Fapp.ts&view=diff", { agentKey: "agent", chatId: "chat", runId: "run", path: "src/app.ts" }, "file-diff:agent:chat:run:src/app.ts"],
-    ["skill", "/skill-viewer/pdf", { key: "pdf" }, "skill:pdf"],
+    ["skill", "/skill-viewer/pdf", { id: "pdf" }, "skill:pdf"],
   ];
   let state = EMPTY_WORK_PANEL_STATE;
   for (const [module, route, context, stableKey] of descriptors) {
