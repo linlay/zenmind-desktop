@@ -552,7 +552,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       }
       const projectAgents = await callAgentPlatform(
         app,
-        "/api/agents?scope=nav",
+        "/api/agents?hasWorkspace=true",
       );
       const agentOrder = await callAgentPlatform(app, "/api/agents/order");
       const plan = createProjectAgentOrderPlan({

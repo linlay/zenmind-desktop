@@ -167,24 +167,6 @@ export function compareNavChats(left: AssistantNavChatItem, right: AssistantNavC
   return left.chatId.localeCompare(right.chatId);
 }
 
-export function mergeNavigationChats(
-  primaryChats: AssistantNavChatItem[],
-  secondaryChats: AssistantNavChatItem[]
-) {
-  const chatsById = new Map<string, AssistantNavChatItem>();
-  for (const chat of [...primaryChats, ...secondaryChats]) {
-    const chatId = toText(chat.chatId);
-    if (!chatId) {
-      continue;
-    }
-    const existing = chatsById.get(chatId);
-    if (!existing || chat.updatedAt > existing.updatedAt) {
-      chatsById.set(chatId, chat);
-    }
-  }
-  return limitNavigationChats([...chatsById.values()]);
-}
-
 export function limitNavigationChats(chats: AssistantNavChatItem[]) {
   const sorted = [...chats].sort(compareNavChats);
   return [...sorted.filter((chat) => chat.pinned), ...sorted.filter((chat) => !chat.pinned).slice(0, NAVIGATION_AGENT_CHAT_LIMIT)].sort(compareNavChats);
@@ -195,79 +177,6 @@ export function resolveNavigationUnreadCount(options: {
   unreadFromChats: number;
 }) {
   return options.statsUnreadCount ?? options.unreadFromChats;
-}
-
-export function pickLatestTimestamp(
-  left: AssistantNavAgentItem["updatedAt"],
-  right: AssistantNavAgentItem["updatedAt"],
-) {
-  const leftTimestamp = left ?? undefined;
-  const rightTimestamp = right ?? undefined;
-  if (leftTimestamp === undefined || rightTimestamp === undefined) {
-    return left ?? right;
-  }
-  return rightTimestamp > leftTimestamp ? rightTimestamp : leftTimestamp;
-}
-
-export function mergeNavigationAgentItem(
-  primary: AssistantNavAgentItem,
-  secondary: AssistantNavAgentItem
-): AssistantNavAgentItem {
-  const recentChats = mergeNavigationChats(primary.recentChats, secondary.recentChats);
-  const latestChat = recentChats[0] ?? null;
-  const unreadFromChats = recentChats.filter((chat) => !chat.isRead).length;
-  const chatCount = Math.max(primary.chatCount, secondary.chatCount, recentChats.length);
-  const unreadCount = resolveNavigationUnreadCount({
-    statsUnreadCount: Math.max(primary.unreadCount, secondary.unreadCount),
-    unreadFromChats,
-  });
-  const unreadChatCount = unreadCount;
-  const latestPreview = latestChat
-    ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
-    : primary.latestPreview || secondary.latestPreview;
-  return {
-    ...secondary,
-    ...primary,
-    role: primary.role || secondary.role,
-    ...(primary.icon !== undefined || secondary.icon !== undefined ? { icon: primary.icon ?? secondary.icon } : {}),
-    unreadCount,
-    unreadChatCount,
-    chatCount,
-    hasPendingAwaiting: primary.hasPendingAwaiting || secondary.hasPendingAwaiting || recentChats.some((chat) => chat.hasPendingAwaiting),
-    latestChatId: latestChat?.chatId ?? primary.latestChatId ?? secondary.latestChatId,
-    latestPreview: latestPreview.slice(0, 120),
-    ...(pickLatestTimestamp(primary.updatedAt, secondary.updatedAt) !== undefined
-      ? { updatedAt: pickLatestTimestamp(primary.updatedAt, secondary.updatedAt) }
-      : {}),
-    recentChats,
-    mode: primary.mode ?? secondary.mode,
-    workspaceDir: primary.workspaceDir ?? secondary.workspaceDir,
-    workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists,
-    gitBranch: primary.gitBranch ?? secondary.gitBranch,
-  };
-}
-
-export function mergeNavigationAgentGroups(
-  primaryItems: AssistantNavAgentItem[],
-  secondaryItems: AssistantNavAgentItem[]
-) {
-  const mergedItems = primaryItems.slice();
-  const indexByKey = new Map(
-    mergedItems.map((agent, index) => [agent.agentKey, index] as const),
-  );
-  for (const agent of secondaryItems) {
-    const existingIndex = indexByKey.get(agent.agentKey);
-    if (existingIndex === undefined) {
-      indexByKey.set(agent.agentKey, mergedItems.length);
-      mergedItems.push(agent);
-      continue;
-    }
-    mergedItems[existingIndex] = mergeNavigationAgentItem(
-      mergedItems[existingIndex],
-      agent,
-    );
-  }
-  return mergedItems;
 }
 
 export function mapNavigationChat(

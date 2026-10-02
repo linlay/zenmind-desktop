@@ -15,7 +15,8 @@ const {
   buildAssistantNavigationChatsFromPlatform,
   buildAssistantNavigationAgentsFromPlatformAgents,
   enrichNavigationAgentsWithGitBranches,
-  readAssistantNavigationActivityAgentsFromPlatform,
+  readAssistantNavigationChatAgentsFromPlatform,
+  readAssistantNavigationProjectAgentsFromPlatform,
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform,
   resolveAssistantWorkspaceGitBranch,
@@ -276,7 +277,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "GENERAL", agentType: "chat", limit: 25, pinned: false });
+  assert.deepEqual(firstRequest.payload, { hasWorkspace: false, limit: 25, pinned: false });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
     [
@@ -1416,45 +1417,32 @@ test("assistant copilot agents keep the copilot scope when it has results", asyn
   assert.equal(items[0].agentKey, "sidekick");
 });
 
-test("assistant navigation activity agents include copilot-only chats for desktop pet state", async (t) => {
+test("assistant navigation reads projects and the chat agent directory as separate requests", async (t) => {
   const originalFetch = globalThis.fetch;
-  const requestedUrls = [];
+  const requestedSearches = [];
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (url) => {
     const parsed = new URL(String(url));
-    requestedUrls.push({
-      scope: parsed.searchParams.get("scope"),
-      includeChats: parsed.searchParams.get("includeChats"),
-    });
-    const data = parsed.searchParams.get("scope") === "copilot"
+    requestedSearches.push(parsed.search);
+    const data = parsed.searchParams.get("hasWorkspace") === "true"
       ? [{
-          key: "net-yu",
-          name: "网驭智能体",
-          role: "网络协同",
+          key: "project",
+          name: "Project",
+          workspaceDir: "/tmp/zenmind-missing-project",
           stats: { unreadCount: 1 },
           chats: [{
-            chatId: "helper-chat-1",
-            agentKey: "net-yu",
-            chatName: "网络诊断",
-            lastRunContent: "已完成网络诊断",
+            chatId: "project-chat-1",
+            agentKey: "project",
+            chatName: "项目会话",
+            lastRunContent: "已完成",
             isRead: false,
             createdAt: EPOCH_MS,
             updatedAt: EPOCH_MS + 1,
           }],
-        }, {
-          key: "zenmi",
-          name: "Duplicate Zenmi",
-          chats: [{
-            chatId: "copilot-zenmi-chat",
-            agentKey: "zenmi",
-            chatName: "Copilot duplicate chat",
-            createdAt: EPOCH_MS + 2,
-            updatedAt: EPOCH_MS + 3,
-          }],
         }]
-      : [{ key: "zenmi", name: "Zenmi" }];
+      : [{ key: "zenmi", name: "Zenmi", stats: { unreadCount: 2 } }];
     return {
       ok: true,
       status: 200,
@@ -1464,22 +1452,19 @@ test("assistant navigation activity agents include copilot-only chats for deskto
     };
   };
 
-  const items = await readAssistantNavigationActivityAgentsFromPlatform("http://127.0.0.1:11789", "token");
+  const projects = await readAssistantNavigationProjectAgentsFromPlatform("http://127.0.0.1:11789", "token");
+  const chatAgents = await readAssistantNavigationChatAgentsFromPlatform("http://127.0.0.1:11789", "token");
 
-  assert.deepEqual(requestedUrls, [
-    { scope: "nav", includeChats: "50" },
-    { scope: "copilot", includeChats: "50" },
+  assert.deepEqual(requestedSearches, [
+    "?hasWorkspace=true&includeChats=50&chatsPinned=false",
+    "?scope=nav&hasWorkspace=false",
   ]);
-  assert.deepEqual(items.map((item) => item.agentKey), ["zenmi", "net-yu"]);
-  const copilotAgent = items.find((item) => item.agentKey === "net-yu");
-  assert.equal(copilotAgent?.displayName, "网驭智能体");
-  assert.equal(copilotAgent?.unreadCount, 1);
-  assert.equal(copilotAgent?.recentChats[0]?.chatId, "helper-chat-1");
-  assert.equal(copilotAgent?.recentChats[0]?.lastRunContent, "已完成网络诊断");
-  assert.equal(
-    items[0]?.recentChats.some((chat) => chat.chatId === "copilot-zenmi-chat"),
-    true,
-  );
+  assert.deepEqual(projects.map((item) => item.agentKey), ["project"]);
+  assert.equal(projects[0]?.recentChats[0]?.chatId, "project-chat-1");
+  assert.equal(projects[0]?.unreadCount, 1);
+  assert.deepEqual(chatAgents.map((item) => item.agentKey), ["zenmi"]);
+  assert.equal(chatAgents[0]?.unreadCount, 2);
+  assert.deepEqual(chatAgents[0]?.recentChats, []);
 });
 
 test("assistant navigation client preserves the Platform nav catalog order", async (t) => {
@@ -2280,15 +2265,25 @@ test("navigation fetches global pins independently of the regular and project cu
     lastRunId: "loyw3v28", read: { isRead: false, readRunId: "" },
   });
   const pins = Array.from({ length: 30 }, (_, i) => platformChat(`pin-${i}`, i % 2 ? "CODER" : "REACT", true, i));
-  let orderData = { sortMode: "recent", pinnedChats: pins };
+  let orderData = { sortMode: "manual", pinnedChats: pins };
   let orderFailure = false;
   globalThis.fetch = async (url) => {
     urls.push(String(url));
-    return { ok: true, status: 200, json: async () => ({ code: 0, data: [
-      { key: "zenmi", name: "Zenmi", mode: "REACT", chats: [] },
-      { key: "project", name: "Project", mode: "CODER", stats: { totalCount: 65, unreadCount: 15 },
-        chats: Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i)) },
-    ] }) };
+    const data = new URL(String(url)).searchParams.get("hasWorkspace") === "true"
+      ? [{ key: "project", name: "Project", mode: "CODER", workspaceDir: temp, stats: { totalCount: 65, unreadCount: 15 },
+          chats: Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i)) }]
+      : new URL(String(url)).searchParams.has("includeChats")
+        ? [{ key: "zenmi", name: "Zenmi", mode: "REACT",
+            chats: Array.from({ length: 50 }, (_, i) => ({
+              ...platformChat(`regular-${i}`, "REACT", false, i),
+              ...(i === 49 ? { activeRun: { runId: "running-outside-sidebar" } } : {}),
+            })) },
+           { key: "copilot-only", name: "Copilot", chats: [{
+             ...platformChat("copilot-awaiting", "REACT", false, 100),
+             agentKey: "copilot-only", hasPendingAwaiting: true,
+           }] }]
+        : [{ key: "zenmi", name: "Zenmi", mode: "REACT" }];
+    return { ok: true, status: 200, json: async () => ({ code: 0, data }) };
   };
   const broker = {
     async ensureConnected() {},
@@ -2326,8 +2321,27 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(result.items.find((agent) => agent.agentKey === "project").recentChats.length, 50);
   assert.equal(requests.filter((request) => request.type === "/api/chats" && request.payload.pinned === true).length, 0);
   assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 1);
-  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { mode: "GENERAL", agentType: "chat", limit: 25, pinned: false });
-  assert.equal(new URL(urls[0]).searchParams.get("chatsPinned"), "false");
+  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { hasWorkspace: false, limit: 25, pinned: false });
+  assert.deepEqual(urls.map((url) => new URL(url).search).sort(), [
+    "?hasWorkspace=false&includeChats=50&chatsPinned=false",
+    "?hasWorkspace=true&includeChats=50&chatsPinned=false",
+    "?scope=nav&hasWorkspace=false",
+  ]);
+  assert.deepEqual(result.items.map((agent) => agent.agentKey), ["project", "zenmi"]);
+  const chatAgentActivity = result.activityItems.find((agent) => agent.agentKey === "zenmi");
+  assert.equal(chatAgentActivity.recentChats.filter((chat) => !chat.pinned).length, 50);
+  assert.equal(chatAgentActivity.recentChats.filter((chat) => chat.pinned).length, 15);
+  assert.equal(result.items.find((agent) => agent.agentKey === "zenmi").recentChats.length, 0);
+  const { createDesktopPetActiveTasksFromNavigationSnapshot } = require("../dist-electron/main/modules/pet/navigation-projection.js");
+  const { getAppTrayRecentChats } = require("../dist-electron/main/modules/shell/tray-chats.js");
+  const tasks = createDesktopPetActiveTasksFromNavigationSnapshot(result);
+  assert.ok(tasks.some((task) => task.chatId === "regular-49" && task.status === "running"));
+  assert.ok(tasks.some((task) => task.chatId === "copilot-awaiting" && task.status === "awaiting"));
+  assert.equal(result.items.some((agent) => agent.agentKey === "copilot-only"), false);
+  assert.equal(result.chatItems.some((chat) => chat.chatId === "regular-49"), false);
+  const trayChats = getAppTrayRecentChats(result);
+  assert.equal(trayChats[0].chatId, "copilot-awaiting");
+  assert.ok(trayChats.some((chat) => chat.chatId === "regular-49"));
   push({ frame: "push", type: "chat.read", data: {
     chatId: "pin-1", agentKey: "project", readRunId: "loyw3v28", lastRunId: "loyw3v28", readAt: EPOCH_MS + 100, agentUnreadCount: 14,
   } });

@@ -165,11 +165,9 @@ export const NAVIGATION_CHAT_LIMIT = 24;
 
 export const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT + 1;
 
-export const NAVIGATION_CHAT_AGENT_MODE = "GENERAL";
-
-// The global chat list holds chat-type agents only; chats of project agents
-// (any mode with a specific project directory) are listed under their project.
-export const NAVIGATION_CHAT_AGENT_TYPE = "chat";
+// The global chat list holds chats of agents without a project directory, in
+// any mode; chats of project agents are listed under their project.
+export const NAVIGATION_CHAT_HAS_WORKSPACE = false;
 
 export const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 

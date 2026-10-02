@@ -4977,7 +4977,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(assistantRuntime, /AssistantNavigationStatusClient/);
   assert.match(assistantNavigationStatusClient, /type: "\/api\/chats"/);
-  assert.match(assistantNavigationStatusClient, /mode: NAVIGATION_CHAT_AGENT_MODE/);
+  assert.match(assistantNavigationStatusClient, /hasWorkspace: NAVIGATION_CHAT_HAS_WORKSPACE/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /agentType:|mode: NAVIGATION_CHAT/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_LIMIT = 24;/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT \+ 1;/);
   assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_PROBE_LIMIT/);

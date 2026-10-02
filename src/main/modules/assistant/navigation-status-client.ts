@@ -22,8 +22,7 @@ import {
   NAVIGATION_LIVE_FRAME_LIMIT,
   type AssistantNavigationChatsSnapshot,
   type PlatformChatSummary,
-  NAVIGATION_CHAT_AGENT_MODE,
-  NAVIGATION_CHAT_AGENT_TYPE,
+  NAVIGATION_CHAT_HAS_WORKSPACE,
   NAVIGATION_CHAT_PROBE_LIMIT,
   type AssistantNavigationChatOrderSnapshot,
   type PlatformChatOrder,
@@ -36,8 +35,9 @@ import { nowEpochMillis, toText } from "./navigation-values";
 import {
   ASSISTANT_NAVIGATION_WS_SOURCE,
   createRedactedWsEndpoint,
-  readAssistantNavigationAgentsFromPlatform,
-  readAssistantNavigationActivityAgentsFromPlatform,
+  readAssistantNavigationChatAgentsFromPlatform,
+  readAssistantNavigationChatActivityFromPlatform,
+  readAssistantNavigationProjectAgentsFromPlatform,
   unwrapApiResponse
 } from "./navigation-api";
 import { type App } from "electron";
@@ -249,26 +249,34 @@ export class AssistantNavigationStatusClient {
         return this.latestResult;
       }
 
-      const items = await readAssistantNavigationAgentsFromPlatform(baseUrl, token);
-      const activityItems = await readAssistantNavigationActivityAgentsFromPlatform(
-        baseUrl,
-        token,
-        NAVIGATION_AGENT_CHAT_LIMIT,
-        items
-      );
-      await this.connectRealtime(baseUrl, token);
-      const [chatSnapshot, chatOrderSnapshot] = await Promise.all([
-        this.requestNavigationChats(baseUrl, token),
-        this.requestNavigationChatOrder(baseUrl, token),
+      // Projects, the chat-agent directory, activity, Chats and Pinned are independent
+      // reads, so they are requested together.
+      const [[projectItems, chatAgentItems, chatActivityItems], [chatSnapshot, chatOrderSnapshot]] = await Promise.all([
+        Promise.all([
+          readAssistantNavigationProjectAgentsFromPlatform(baseUrl, token),
+          readAssistantNavigationChatAgentsFromPlatform(baseUrl, token),
+          readAssistantNavigationChatActivityFromPlatform(baseUrl, token),
+        ]),
+        this.connectRealtime(baseUrl, token).then(() => Promise.all([
+          this.requestNavigationChats(baseUrl, token),
+          this.requestNavigationChatOrder(baseUrl, token),
+        ])),
       ]);
+      const items = [...projectItems, ...chatAgentItems];
       const { pinnedChatItems } = chatOrderSnapshot;
-      // Activity retains owner-level attention for pinned project conversations.
-      for (const agent of activityItems) {
+      // Keep runtime activity and tray recency independent of the sidebar window.
+      // Projects retain their catalog order; chat activity includes copilot-only owners.
+      const activityItems = [...projectItems, ...chatActivityItems].map((agent) => {
+        const recent = agent.recentChats;
         const pins = pinnedChatItems.filter((chat) => chat.agentKey === agent.agentKey);
         const ids = new Set(pins.map((chat) => chat.chatId));
-        agent.recentChats = [...pins, ...agent.recentChats.filter((chat) => !ids.has(chat.chatId))];
-        agent.hasPendingAwaiting ||= pins.some((chat) => chat.hasPendingAwaiting);
-      }
+        const recentChats = [...pins, ...recent.filter((chat) => !ids.has(chat.chatId))];
+        return {
+          ...agent,
+          recentChats,
+          hasPendingAwaiting: agent.hasPendingAwaiting || recentChats.some((chat) => chat.hasPendingAwaiting),
+        };
+      });
       if (chatOrderSnapshot.chatOrderingSupported) {
         this.cacheChatSortMode(chatOrderSnapshot.chatSortMode);
       }
@@ -429,8 +437,7 @@ export class AssistantNavigationStatusClient {
         consumerId: "assistant-navigation",
         type: "/api/chats",
         payload: {
-          mode: NAVIGATION_CHAT_AGENT_MODE,
-          agentType: NAVIGATION_CHAT_AGENT_TYPE,
+          hasWorkspace: NAVIGATION_CHAT_HAS_WORKSPACE,
           limit: NAVIGATION_CHAT_PROBE_LIMIT,
           pinned: false,
         },

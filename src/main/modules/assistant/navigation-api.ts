@@ -4,10 +4,8 @@ import { type AssistantNavAgentItem } from "../../../shared/contracts";
 import { enrichNavigationAgentsWithGitBranches } from "./navigation-workspace";
 import {
   buildAssistantNavigationAgentsFromPlatformAgents,
-  mergeNavigationAgentGroups,
   buildAssistantCopilotAgentsFromPlatformAgents
 } from "./navigation-projections";
-import { isTimeContractViolation } from "../../../shared/time-contract";
 
 export function createApiUrl(baseUrl: string, pathname: string) {
   const url = new URL(pathname, baseUrl);
@@ -77,26 +75,46 @@ export async function readAssistantNavigationAgentsFromPlatformScope(
   );
 }
 
-export async function readAssistantNavigationActivityAgentsFromPlatform(
+// Sidebar Projects: every agent with a project directory plus its recent
+// unpinned chats, in one request. Visibility scope is not part of this query.
+export async function readAssistantNavigationProjectAgentsFromPlatform(
   baseUrl: string,
   token: string,
-  includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT,
-  navigationItems?: AssistantNavAgentItem[]
+  includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): Promise<AssistantNavAgentItem[]> {
-  const navItems = navigationItems ?? await readAssistantNavigationAgentsFromPlatform(baseUrl, token, includeChatLimit);
-  let copilotItems: AssistantNavAgentItem[] = [];
-  try {
-    const copilotAgents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "copilot", includeChatLimit);
-    copilotItems = await enrichNavigationAgentsWithGitBranches(
-      buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit),
-    );
-  } catch (error) {
-    if (isTimeContractViolation(error)) {
-      throw error;
-    }
-    copilotItems = [];
-  }
-  return mergeNavigationAgentGroups(navItems, copilotItems);
+  const agents = await readApiJson<unknown[]>(
+    `${createApiUrl(baseUrl, "/api/agents")}?hasWorkspace=true&includeChats=${encodeURIComponent(String(includeChatLimit))}&chatsPinned=false`,
+    token
+  );
+  return await enrichNavigationAgentsWithGitBranches(
+    buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit),
+  );
+}
+
+// Chat-type agents the user can start a conversation with. This is an agent
+// directory only; their conversations come from the global chat list.
+export async function readAssistantNavigationChatAgentsFromPlatform(
+  baseUrl: string,
+  token: string
+): Promise<AssistantNavAgentItem[]> {
+  const agents = await readApiJson<unknown[]>(
+    `${createApiUrl(baseUrl, "/api/agents")}?scope=nav&hasWorkspace=false`,
+    token
+  );
+  return buildAssistantNavigationAgentsFromPlatformAgents(agents, 0);
+}
+
+// Runtime activity must not inherit the sidebar's manual order or 24-chat
+// window, nor the new-chat picker's visibility scope.
+export async function readAssistantNavigationChatActivityFromPlatform(
+  baseUrl: string,
+  token: string,
+): Promise<AssistantNavAgentItem[]> {
+  const agents = await readApiJson<unknown[]>(
+    `${createApiUrl(baseUrl, "/api/agents")}?hasWorkspace=false&includeChats=${NAVIGATION_AGENT_CHAT_LIMIT}&chatsPinned=false`,
+    token,
+  );
+  return buildAssistantNavigationAgentsFromPlatformAgents(agents, NAVIGATION_AGENT_CHAT_LIMIT);
 }
 
 export async function readAssistantCopilotAgentsFromPlatform(
