@@ -31,10 +31,10 @@ export function buildZenmiImageGenerateMessage(request: AgentPlatformImageComple
     n: request.count
   };
   if (source) {
-    toolArgs.images = [{ source_type: "reference_name", value: source.name }];
+    toolArgs.images = [{ sourceType: "referenceName", value: source.name }];
   }
   if (source && mask) {
-    toolArgs.mask = { source_type: "reference_name", value: mask.name, mode: "white_edit" };
+    toolArgs.mask = { sourceType: "referenceName", value: mask.name, mode: "white_edit" };
   }
   return [
     "必须且只能调用一次 image_generate 工具；不要调用文件、Shell、浏览器、桌面控制或其他工具，也不要向用户追问。",

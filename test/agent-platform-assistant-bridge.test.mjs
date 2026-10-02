@@ -34,7 +34,7 @@ test("Zenmi image message requires exactly one image_generate call with source a
     ]
   });
   assert.match(message, /必须且只能调用一次 image_generate/u);
-  assert.match(message, /"source_type":"reference_name"/u);
+  assert.match(message, /"sourceType":"referenceName"/u);
   assert.match(message, /"mode":"white_edit"/u);
   assert.match(message, /"size":"1024x768"/u);
   assert.doesNotMatch(message, /file:\/\//u);
