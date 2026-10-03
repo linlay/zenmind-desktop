@@ -502,6 +502,7 @@ export const zhCNMessages = {
   "nav.archives": "已归档对话",
   "nav.registries": "注册配置",
   "nav.mcpConnectors": "连接器中心",
+  "nav.memory": "记忆与资料",
   "nav.skills": "技能中心",
   "nav.schedules": "自动化",
   "nav.schedulesCollapsed": "自动化",

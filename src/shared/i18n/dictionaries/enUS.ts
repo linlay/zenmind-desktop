@@ -502,6 +502,7 @@ export const enUSMessages = {
   "nav.archives": "Archived Chats",
   "nav.registries": "Registries",
   "nav.mcpConnectors": "Connectors Center",
+  "nav.memory": "Memory & Profile",
   "nav.skills": "Skills Center",
   "nav.schedules": "Automations",
   "nav.schedulesCollapsed": "Autos",

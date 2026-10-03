@@ -45,6 +45,7 @@ test("capability navigation keeps the agreed item order", () => {
     [
       "agents",
       "skills",
+      "memory",
       "mcp-servers",
       "registries",
       "archives",
@@ -59,6 +60,7 @@ test("capability navigation keeps the agreed item order", () => {
     [
       "/agents",
       "/skills",
+      "/memory",
       "/connectors",
       "/registries",
       "/archives",
@@ -76,6 +78,7 @@ test("capability routes select their root item and keep supported details active
     ["/agents/demo-agent", "agents"],
     ["/agents/%E4%B8%AD%E6%96%87?tab=profile", "agents"],
     ["/skills", "skills"],
+    ["/memory", "memory"],
     ["/skills/demo-skill?tab=files", "skills"],
     ["/market", "market"],
     ["/share-management", "share-management"],
@@ -96,7 +99,6 @@ test("primary and settings routes do not enter capability mode", () => {
   for (const route of [
     "/agent/demo-agent",
     "/automations",
-    "/memory",
     "/help/topic",
     "/agentship",
     "/skills-center",
@@ -157,7 +159,7 @@ test("capability navigation groups platform, cloud and help entries", () => {
       CAPABILITY_NAVIGATION_ITEMS.filter((item) => item.group === group).map((item) => item.id),
     ])),
     {
-      platform: ["agents", "skills", "mcp-servers", "registries", "archives"],
+      platform: ["agents", "skills", "memory", "mcp-servers", "registries", "archives"],
       cloud: ["market", "artifact-management", "share-management"],
       help: ["help"],
     },
