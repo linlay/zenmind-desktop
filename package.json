@@ -4,6 +4,9 @@
   "private": true,
   "description": "桌面壳",
   "main": "dist-electron/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "updates:signing": "node ./scripts/update-signing.mjs",
     "updates:verify-feed": "npm run build:main:types && node ./scripts/verify-update-feed.mjs",
@@ -47,7 +50,7 @@
     "test:webclient-appearance": "npm run architecture:check && npm run agent-webclient-contract:check && npm run build:main:prepared && npm run typecheck:renderer && node --test test/skin-visuals.test.mjs test/agent-webclient-appearance.test.mjs test/agent-webclient-contract.test.mjs test/agent-webclient-embedded-url.test.mjs && node qa/webclient-appearance-smoke.mjs"
   },
   "dependencies": {
-    "@ant-design/icons": "^6.1.1",
+    "@ant-design/icons": "^6.3.4",
     "@ant-design/x": "^1.0.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
@@ -55,29 +58,29 @@
     "@napi-rs/canvas": "^0.1.100",
     "antd": "^5.0.0",
     "exceljs": "^4.4.0",
-    "fast-xml-parser": "^5.7.2",
-    "js-yaml": "^4.1.0",
-    "jszip": "^3.10.1",
+    "fast-xml-parser": "^5.11.2",
+    "js-yaml": "^4.3.2",
+    "jszip": "^3.10.2",
     "pdfjs-dist": "^5.7.284",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "mermaid": "^11.16.1",
+    "mermaid": "^11.17.2",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^6.30.1",
+    "react-router-dom": "^6.30.6",
     "remark-gfm": "^4.0.1",
-    "zod": "^4.4.1",
-    "koffi": "3.2.1"
+    "zod": "^4.6.5",
+    "koffi": "3.3.2"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^24.5.2",
-    "@types/react": "^18.3.24",
+    "@types/node": "^24.19.1",
+    "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^36.2.1",
+    "electron": "42.11.4",
     "electron-builder": "^24.13.3",
     "esbuild": "^0.27.7",
     "typescript": "^5.9.2",
-    "vite": "^7.1.7"
+    "vite": "^7.3.6"
   }
 }

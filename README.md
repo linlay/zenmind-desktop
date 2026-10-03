@@ -30,9 +30,9 @@
 
 前置要求：
 
-- Node.js 18 及以上
+- Node.js 22.12.0 及以上
 - npm 9 及以上
-- macOS arm64 或 Windows x64 开发环境
+- macOS 12 及以上（arm64）或 Windows x64 开发环境
 - `zip` / `unzip` / `tar`
 - 如需启动 `agent-container-hub`，本机需要 Docker 或 Podman
 

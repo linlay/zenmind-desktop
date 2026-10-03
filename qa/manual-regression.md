@@ -1,5 +1,12 @@
 # Desktop 手工回归清单
 
+## Electron 42 升级
+
+- 使用 Node.js 22.12.0 及以上安装依赖，确认开发启动实际运行 Electron 42.11.4；macOS 要求 12 及以上，Windows 单独验证安装与启动。
+- WorkPanel 手动打开 `https://mp.weixin.qq.com/s/aHr1Kq5CxspxXqK9vXfFWg`，确认正文或可操作的验证页可显示，渲染进程不崩溃；验证后刷新、前后导航与关闭标签正常。
+- 在独立测试数据目录验证 Website/WorkPanel 登录与 Cookie、PDF 预览、页面批注、查找、缩放、打印、CDP 操作和独立浏览器窗口。签名后的 macOS 应用另验通知，Windows 另验原生窗口及截图。
+- 发布前分别验证 macOS/Windows 打包、签名与覆盖更新；最小网页复现和开发构建通过不代表安装包已验收。
+
 ## Windows 快捷方式名称
 
 - CuteJ / ZenMind 分别全新安装，悬停桌面与开始菜单快捷方式，提示只显示对应应用名，不显示“应用壳”或品牌描述。
