@@ -1549,7 +1549,7 @@
 
 .sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .sidebar-group-heading-arrow,
 .sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .sidebar-chats-agent-trigger,
-.sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .assistant-worker-icon-button {
+.sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .assistant-worker-icon-button:not(.sidebar-chats-new-button):not(.sidebar-assistant-project-button) {
   opacity: 0;
 }
 
@@ -1916,6 +1916,10 @@ div.sidebar-chats-group-popover {
   padding: 0 2px;
 }
 
+.sidebar-nav-group .assistant-worker-collapse {
+  padding-right: 0;
+}
+
 .sidebar-sortable-project {
   position: relative;
 }
@@ -2007,6 +2011,10 @@ div.sidebar-chats-group-popover {
   justify-content: flex-end;
   min-height: 36px;
   padding-right: 6px;
+}
+
+.sidebar-nav-group .assistant-worker-collapse-item>.Collapse-header .Collapse-headerActions {
+  padding-right: 0;
 }
 
 .assistant-worker-collapse-item.is-selected .assistant-worker-header,
@@ -2214,6 +2222,11 @@ div.sidebar-chats-group-popover {
 
 .sidebar-agent-more-actions-button {
   margin-inline-end: 2px;
+}
+
+.assistant-worker-collapse-item>.Collapse-header:not(:hover) .sidebar-agent-more-actions-button {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .assistant-worker-icon-button:disabled {
@@ -2794,6 +2807,16 @@ div.sidebar-chats-group-popover {
   opacity: 1;
 }
 
+/* Align timestamps 8px from the sidebar content edge without moving status/menu icons.
+   Project chat lists have 2px right padding; Chats and pinned lists have 6px. */
+.sidebar-nav-group .worker-chat-preview-list .assistant-worker-chat-action[data-action="time"] {
+  margin-right: -2px;
+}
+
+.sidebar-nav-group .sidebar-chats-list .assistant-worker-chat-action[data-action="time"] {
+  margin-right: -6px;
+}
+
 .assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading,
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
   display: inline-flex;
@@ -2870,6 +2893,11 @@ div.sidebar-chats-group-popover {
 
 .worker-chat-preview-list {
   margin-top: 2px;
+}
+
+.sidebar-nav-group .worker-chat-preview-list {
+  padding-left: 4px;
+  padding-right: 2px;
 }
 
 .worker-chat-preview-list .status-line {
