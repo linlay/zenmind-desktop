@@ -5621,6 +5621,10 @@ div.sidebar-chats-group-popover {
   color: var(--accent-strong);
 }
 
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-directory .sidebar-link-active .sidebar-link-icon {
+  color: inherit;
+}
+
 .app-shell.is-secondary-sidebar-mode .sidebar-link-label {
   font-size: 13px;
 }
