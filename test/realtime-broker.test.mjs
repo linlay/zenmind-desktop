@@ -1729,7 +1729,7 @@ test("reverse CDP validation retains field diagnostics in the error frame", asyn
 
 test("Desktop action errors use flat transport diagnostics without internal result envelope", async (t) => {
   const { broker, socket, token } = createHarness(t);
-  const details = { category: "validation", stage: "arguments", executionState: "not_started", issues: [{ path: "args.input", code: "required", expected: "object", actual: "missing" }], recovery: { strategy: "fix_input", message: "Read desktop-action/references/kanban.md" } };
+  const details = { category: "validation", stage: "arguments", executionState: "not_started", issues: [{ path: "args.input", code: "required", expected: "object", actual: "missing" }], recovery: { strategy: "fix_input", message: "Read @connectors/builtin.platform-control/skills/platform-control/references/kanban.md" } };
   broker.setDesktopBridgeProvider({
     action: async request => ({ ok: false, action: request.action, error: { code: "invalid_args", message: "args.input must be an object.", details } }),
     cdp: async () => ({ ok: true }),

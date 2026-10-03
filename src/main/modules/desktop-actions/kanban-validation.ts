@@ -1,7 +1,7 @@
 import { KANBAN_STATUSES, type KanbanStatus } from "../../../shared/contracts";
 
 type Issue = { path: string; code: string; expected: string; actual: string };
-const reference = "Read desktop-action/references/kanban.md before retrying with corrected args. Do not reuse another action's argument shape.";
+const reference = "Read @connectors/builtin.platform-control/skills/platform-control/references/kanban.md before retrying with corrected args. Do not reuse another action's argument shape.";
 
 export function validateKanbanActionArgs(action: string, args: Record<string, unknown>) {
   const issues: Issue[] = [];
