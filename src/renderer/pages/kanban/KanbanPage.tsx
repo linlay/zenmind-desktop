@@ -670,14 +670,14 @@ function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
   return agents.find((agent) => agent.agentKey === agentKey)?.displayName ?? agentKey;
 }
 
-function formatKanbanPersonLabel(value: string | null | undefined, fallback: string) {
+function formatKanbanPersonLabel(value: string | null | undefined, fallback: string, t: TranslateFunction) {
   const raw = (value ?? "").trim();
   if (!raw) {
     return fallback;
   }
   const deviceMatch = /^device:([0-9a-f]{8})/i.exec(raw);
   if (deviceMatch) {
-    return `设备·${deviceMatch[1]}`;
+    return t("kanban.person.device", { id: deviceMatch[1] });
   }
   const uuidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(raw);
   if (uuidMatch) {
@@ -734,7 +734,7 @@ function getIssueCardAssigneePresentation(
   }
   return {
     icon: <UserOutlined />,
-    label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
+    label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned"), t),
     rawLabel,
     avatarUrl: cloudUser?.avatarUrl,
     kind: "assignee"
@@ -755,7 +755,7 @@ function getIssueCardWorkerPresentation(
     const rawLabel = issue.workerAgent.trim();
     return {
       icon: <RobotOutlined />,
-      label: formatKanbanPersonLabel(getAssigneeName(rawLabel, agents), t("kanban.form.unassigned")),
+      label: formatKanbanPersonLabel(getAssigneeName(rawLabel, agents), t("kanban.form.unassigned"), t),
       rawLabel,
       kind: "worker"
     };
@@ -765,7 +765,7 @@ function getIssueCardWorkerPresentation(
     const rawLabel = cloudUser?.displayName?.trim() || issue.workerId.trim();
     return {
       icon: <UserOutlined />,
-      label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
+      label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned"), t),
       rawLabel,
       avatarUrl: cloudUser?.avatarUrl,
       kind: "worker"

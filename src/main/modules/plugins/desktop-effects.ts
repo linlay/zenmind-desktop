@@ -401,17 +401,17 @@ function normalizeCalendarOverlayDays(input: unknown) {
 }
 
 function getCalendarOverlayHtml(input: CalendarOverlayInput) {
-  const title = String(input.title ?? "最近三天").replace(/\s+/gu, " ").trim().slice(0, 64) || "最近三天";
+  const title = String(input.title ?? t("desktopEffects.calendar.title")).replace(/\s+/gu, " ").trim().slice(0, 64) || t("desktopEffects.calendar.title");
   const days = normalizeCalendarOverlayDays(input.days);
   const columns = days.map((day) => {
     const rows = day.events.length > 0
       ? day.events.map((event) => `
         <li class="event is-${event.status}">
-          <span class="time">${escapeHtml(event.time || "全天")}</span>
+          <span class="time">${escapeHtml(event.time || t("desktopEffects.calendar.allDay"))}</span>
           <span class="event-title">${escapeHtml(event.title)}</span>
         </li>
       `).join("")
-      : '<li class="empty">暂无安排</li>';
+      : `<li class="empty">${escapeHtml(t("desktopEffects.calendar.empty"))}</li>`;
     return `
       <section class="day">
         <header><strong>${escapeHtml(day.label)}</strong><span>${escapeHtml(day.date)}</span></header>

@@ -113,3 +113,12 @@ test("desktop ws protocol helper builds token transports and request frames", ()
     });
   }
 });
+
+test("pairing errors use the caller's translator without exposing QR contents", () => {
+  const { createTranslator } = require("../dist-electron/shared/i18n/index.js");
+  for (const [locale, expected] of [["zh-CN", "二维码内容格式不正确"], ["en-US", "Invalid QR code format"]]) {
+    assert.throws(() => parsePairingPayload("private-token-not-json", createTranslator(locale)), { message: expected });
+  }
+  assert.throws(() => parsePairingPayload("{}", createTranslator("en-US")), { message: "The QR code is missing required pairing fields" });
+  assert.throws(() => parsePairingPayload(JSON.stringify({ v: 2, kind: "desktop-ws" }), createTranslator("en-US")), { message: "The QR code is missing required Desktop WS pairing fields or has expired" });
+});

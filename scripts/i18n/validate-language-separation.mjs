@@ -7,6 +7,8 @@ const dictionariesRoot = path.join(projectRoot, "src", "shared", "i18n", "dictio
 
 const allowedLatinTerms = [
   /ZenMind/g,
+  /\bZenmi\b/g, // Product agent name.
+  /\bimages\[\]/g, // image_generate result field.
   /Codex/g,
   /Docker Desktop/g,
   /Desktop/g,

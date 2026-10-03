@@ -1,3 +1,4 @@
+import { t } from "../../support/i18n/main-i18n";
 import { type AgentPlatformImageOperation, type AgentPlatformImageCompletionRequest } from "./bridge-contracts";
 import { readString } from "./bridge-values";
 
@@ -58,7 +59,7 @@ export function imageResultRecord(value: unknown): Record<string, unknown> | nul
 
 export function imageGenerateFailureMessage(value: unknown): string {
   const record = imageResultRecord(value);
-  if (!record) return "image_generate 返回了无效结果。";
+  if (!record) return t("imageGeneration.invalidResult");
   const direct = readString(record.message).trim() || readString(record.error).trim();
   if (direct) return direct;
   const nested = record.output;
@@ -66,11 +67,11 @@ export function imageGenerateFailureMessage(value: unknown): string {
     try {
       return imageGenerateFailureMessage(JSON.parse(nested));
     } catch {
-      return nested.trim().slice(0, 500) || "image_generate 执行失败。";
+      return nested.trim().slice(0, 500) || t("imageGeneration.failed");
     }
   }
   if (nested && nested !== value) return imageGenerateFailureMessage(nested);
-  return "image_generate 执行失败。";
+  return t("imageGeneration.failed");
 }
 
 export function observeImageGenerateEvent(event: Record<string, unknown>, outcome: ImageGenerateOutcome) {
@@ -78,19 +79,19 @@ export function observeImageGenerateEvent(event: Record<string, unknown>, outcom
   const toolName = readString(event.toolName);
   if (eventType === "tool.start") {
     if (toolName !== "image_generate") {
-      outcome.message = `Zenmi 图片任务不允许调用 ${toolName || "未知工具"}。`;
+      outcome.message = t("imageGeneration.toolNotAllowed", { toolName: toolName || t("imageGeneration.unknownTool") });
       return true;
     }
     outcome.callCount += 1;
     if (outcome.callCount > 1) {
-      outcome.message = "Zenmi 图片任务检测到第二次 image_generate 调用，运行已终止。";
+      outcome.message = t("imageGeneration.duplicateCall");
       return true;
     }
     return false;
   }
   if (eventType !== "tool.result" || toolName !== "image_generate") return false;
   if (outcome.resultSeen) {
-    outcome.message = "Zenmi 图片任务返回了多个 image_generate 结果，运行已终止。";
+    outcome.message = t("imageGeneration.duplicateResult");
     outcome.ok = false;
     return true;
   }
@@ -108,7 +109,7 @@ export function observeImageGenerateEvent(event: Record<string, unknown>, outcom
     if (artifact) outcome.artifacts.push(artifact);
   }
   outcome.ok = outcome.artifacts.length > 0;
-  outcome.message = outcome.ok ? "" : "image_generate 未返回有效 images[]。";
+  outcome.message = outcome.ok ? "" : t("imageGeneration.imagesMissing");
   return true;
 }
 

@@ -9,10 +9,37 @@ const hanPattern = /[\p{Script=Han}]/u;
 
 const allowedFiles = new Set([
   "src/shared/i18n/dictionaries/zhCN.ts",
-  "src/shared/brand.ts"
+  "src/shared/brand.ts",
+  // Generated brand metadata and per-locale dictionary overrides, not UI source.
+  "src/shared/generated/brand.ts"
 ]);
 
 const allowedLinePatterns = [
+  {
+    file: "src/main/modules/web-surfaces/awcp/addons/forum-compose.ts",
+    pattern: /textContent\?\.trim\(\) === 'Markdown 源码'|input\[placeholder\^="最多 5 个"\]/u,
+    reason: "selectors match literal labels on the external Chinese website"
+  },
+  {
+    file: "src/main/modules/web-surfaces/website-bridges/builtin.ts",
+    pattern: /^\s*(?:compose\("(?:fill|publish)"|rule\.site =|if \(page\.path === "\/forum"\) rule\.site =)/u,
+    reason: "versioned AI-facing AWCP manual for the Chinese forum"
+  },
+  {
+    file: "src/main/modules/webs/webapps/lan-access.ts",
+    pattern: /^\s*if \(platform === "win32"\) return \/.*\/iu\.test\(name\) \? 0 : 1;$/u,
+    reason: "localized Windows network interface names used for matching"
+  },
+  {
+    file: "src/renderer/pages/kanban/KanbanPage.tsx",
+    pattern: /^\s*if \(\/.*\/u\.test\((?:normalized|granularStatusKey)\)\) (?:return [0-3];|\{)$/u,
+    reason: "server status keywords used for classification, not display"
+  },
+  {
+    file: "src/renderer/pages/kanban/stageColor.ts",
+    pattern: /^\s*if \(\/.*\/u\.test\(semantic\)\) \{$/u,
+    reason: "multilingual server stage keywords used for color classification"
+  },
   {
     file: "src/main/modules/identity/identity-center-auth.ts",
     pattern: /找不到与参数名称/u,
@@ -31,6 +58,24 @@ const allowedLinePatterns = [
 ];
 
 const allowedBlocks = [
+  {
+    file: "src/main/modules/agent-platform/image-generation-events.ts",
+    start: /^export const IMAGE_OPERATION_INSTRUCTIONS:/u,
+    end: /^\};/u,
+    reason: "fixed AI-facing image generation instructions, not UI messages"
+  },
+  {
+    file: "src/main/modules/agent-platform/image-generation-events.ts",
+    start: /^export function buildZenmiImageGenerateMessage\(/u,
+    end: /^\}/u,
+    reason: "fixed tool invocation prompt; UI errors below remain subject to scanning"
+  },
+  {
+    file: "src/renderer/pages/kanban/KanbanPage.tsx",
+    start: /^\s*const columnLabels = new Set\(\[/u,
+    end: /^\s*\]\);/u,
+    reason: "server status aliases used to suppress duplicate labels, not display"
+  },
   {
     file: "src/main/modules/web-surfaces/awcp/addons/1024forum.ts",
     start: /^export const forum1024Rule:/u,
@@ -123,7 +168,7 @@ function allowedLineReason(relativePath, line) {
 }
 
 function scanFile(filePath) {
-  const relativePath = path.relative(projectRoot, filePath);
+  const relativePath = path.relative(projectRoot, filePath).split(path.sep).join("/");
   if (!/\.(ts|tsx)$/u.test(filePath) || allowedFiles.has(relativePath)) {
     return [];
   }

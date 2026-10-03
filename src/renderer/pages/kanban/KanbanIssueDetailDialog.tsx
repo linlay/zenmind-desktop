@@ -934,9 +934,9 @@ export function KanbanIssueDetailDialog({
       description: appendMarkdown(draft.description, [
         "```mermaid",
         "flowchart LR",
-        "  A[开始] --> B{检查条件}",
-        "  B -->|通过| C[完成]",
-        "  B -->|失败| D[回退]",
+        t("kanban.mermaid.exampleStart"),
+        t("kanban.mermaid.exampleSuccess"),
+        t("kanban.mermaid.exampleFailure"),
         "```"
       ].join("\n"))
     });

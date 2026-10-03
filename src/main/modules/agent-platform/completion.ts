@@ -1,3 +1,4 @@
+import { t } from "../../support/i18n/main-i18n";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import type { AssistantStartRunRequest, AssistantTextCompletionResult } from "../../../shared/contracts";
@@ -42,7 +43,7 @@ export class ImageCompletion {
         ok: false,
         runId: completion.runId,
         chatId: completion.chatId,
-        message: "Zenmi 未返回 image_generate 工具结果。",
+        message: t("imageGeneration.resultMissing"),
         images: []
       };
     }
@@ -97,7 +98,7 @@ export class ImageCompletion {
         ok: false,
         runId: completion.runId,
         chatId: completion.chatId,
-        message: "Zenmi 已生成图片，但 Desktop 无法安全读取生成结果。",
+        message: t("imageGeneration.resultUnreadable"),
         images: []
       };
     }
@@ -105,7 +106,7 @@ export class ImageCompletion {
       ok: true,
       runId: completion.runId,
       chatId: completion.chatId,
-      message: "Zenmi 图片生成成功。",
+      message: t("imageGeneration.succeeded"),
       images
     };
   }

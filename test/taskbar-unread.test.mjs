@@ -105,3 +105,16 @@ test("native failures do not break navigation updates and can be retried", () =>
   controller.refresh(snapshot(3));
   assert.equal(calls[0].description, "3 个未读会话");
 });
+
+test("unchanged unread counts refresh the accessible label after a locale change", t => {
+  const { setMainLocaleForCurrentProcess } = require("../dist-electron/main/support/i18n/main-i18n.js");
+  t.after(() => setMainLocaleForCurrentProcess("zh-CN"));
+  const { controller, calls } = setup();
+  setMainLocaleForCurrentProcess("zh-CN");
+  controller.refresh(snapshot(6));
+  setMainLocaleForCurrentProcess("en-US");
+  controller.refresh(snapshot(6));
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].description, "6 个未读会话");
+  assert.equal(calls[1].description, "Unread conversations: 6");
+});

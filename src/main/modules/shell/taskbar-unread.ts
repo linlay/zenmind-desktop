@@ -1,3 +1,4 @@
+import { t } from "../../support/i18n/main-i18n";
 import { nativeImage, type BrowserWindow } from "electron";
 import type { AssistantNavAgentItemsResult } from "../../../shared/contracts";
 import { summarizeAssistantNavigationAttention } from "../../../shared/assistant-navigation-attention";
@@ -27,6 +28,7 @@ export function createTaskbarUnreadController(options: {
 }) {
   let lastWindow: BrowserWindow | null = null;
   let lastCount = -1;
+  let lastDescription = "";
 
   return {
     refresh(snapshot: AssistantNavAgentItemsResult | undefined, force = false) {
@@ -36,11 +38,13 @@ export function createTaskbarUnreadController(options: {
       const window = options.getWindow();
       if (!window || window.isDestroyed()) return;
       const count = summarizeAssistantNavigationAttention(snapshot?.ok ? snapshot : {}).total.unreadCount;
-      if (!force && window === lastWindow && count === lastCount) return;
+      const description = count > 0 ? t("shell.unreadConversations", { count }) : "";
+      if (!force && window === lastWindow && count === lastCount && description === lastDescription) return;
       try {
-        window.setOverlayIcon(count > 0 ? createTaskbarUnreadIcon(count) : null, count > 0 ? `${count} 个未读会话` : "");
+        window.setOverlayIcon(count > 0 ? createTaskbarUnreadIcon(count) : null, description);
         lastWindow = window;
         lastCount = count;
+        lastDescription = description;
       } catch (error) {
         // A native badge failure must not interrupt the navigation projection.
         options.onError("[taskbar] Failed to update unread badge", error);

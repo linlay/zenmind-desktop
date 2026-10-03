@@ -1,3 +1,4 @@
+import { createTranslator, DEFAULT_LOCALE, type TranslateFunction } from "./i18n";
 import type { MobilePairingPayloadV2 } from "./contracts";
 
 export type DesktopWsNamespace = "d" | "ap" | "wa";
@@ -36,9 +37,6 @@ export type ParsedPairingPayload =
 
 const DESKTOP_WS_PAIRING_PREFIX = "zmpair:v2:";
 const DESKTOP_WS_PATH = "/ws";
-const INVALID_PAIRING_MESSAGE = "二维码内容格式不正确";
-const MISSING_LEGACY_PAIRING_MESSAGE = "二维码缺少必要配对字段";
-const MISSING_DESKTOP_WS_PAIRING_MESSAGE = "二维码缺少必要 Desktop WS 配对字段或已过期";
 
 type BufferCtor = {
   from(input: string, encoding?: string): { toString(encoding?: string): string };
@@ -169,10 +167,10 @@ export function encodePairingPayloadV2(payload: MobilePairingPayloadV2) {
   return `${DESKTOP_WS_PAIRING_PREFIX}${encodeBase64Url(JSON.stringify(payload))}`;
 }
 
-function parsePairingJson(payloadText: string): unknown {
+function parsePairingJson(payloadText: string, t: TranslateFunction): unknown {
   const text = readText(payloadText);
   if (!text) {
-    throw new Error(INVALID_PAIRING_MESSAGE);
+    throw new Error(t("pairing.invalidPayload"));
   }
 
   try {
@@ -181,11 +179,11 @@ function parsePairingJson(payloadText: string): unknown {
     }
     return JSON.parse(text);
   } catch {
-    throw new Error(INVALID_PAIRING_MESSAGE);
+    throw new Error(t("pairing.invalidPayload"));
   }
 }
 
-function parseLegacyPairingPayload(record: Record<string, unknown>): LegacyPairingPayload {
+function parseLegacyPairingPayload(record: Record<string, unknown>, t: TranslateFunction): LegacyPairingPayload {
   const payload: LegacyPairingPayload = {
     desktopDeviceId: readText(record.desktopDeviceId),
     desktopIdentityCreatedAt: readText(record.desktopIdentityCreatedAt),
@@ -199,15 +197,15 @@ function parseLegacyPairingPayload(record: Record<string, unknown>): LegacyPairi
     expiresAt: readText(record.expiresAt)
   };
   if (!payload.desktopDeviceId || !payload.apiBaseUrl || !payload.pairingId || !payload.secret) {
-    throw new Error(MISSING_LEGACY_PAIRING_MESSAGE);
+    throw new Error(t("pairing.missingFields"));
   }
   return payload;
 }
 
-function parseDesktopWsPairingPayload(record: Record<string, unknown>): MobilePairingPayloadV2 {
+function parseDesktopWsPairingPayload(record: Record<string, unknown>, t: TranslateFunction): MobilePairingPayloadV2 {
   const expiresAtMs = Number(record.expiresAtMs);
   if (record.targetMode !== "tunnel") {
-    throw new Error(MISSING_DESKTOP_WS_PAIRING_MESSAGE);
+    throw new Error(t("pairing.missingWsFields"));
   }
   const payload: MobilePairingPayloadV2 = {
     v: 2,
@@ -227,27 +225,27 @@ function parseDesktopWsPairingPayload(record: Record<string, unknown>): MobilePa
     !Number.isFinite(payload.expiresAtMs) ||
     payload.expiresAtMs <= Date.now()
   ) {
-    throw new Error(MISSING_DESKTOP_WS_PAIRING_MESSAGE);
+    throw new Error(t("pairing.missingWsFields"));
   }
 
   return payload;
 }
 
-export function parsePairingPayload(payloadText: string): ParsedPairingPayload {
-  const parsed = parsePairingJson(payloadText);
+export function parsePairingPayload(payloadText: string, t: TranslateFunction = createTranslator(DEFAULT_LOCALE)): ParsedPairingPayload {
+  const parsed = parsePairingJson(payloadText, t);
   if (!isObjectRecord(parsed)) {
-    throw new Error(INVALID_PAIRING_MESSAGE);
+    throw new Error(t("pairing.invalidPayload"));
   }
 
   if (Number(parsed.v) === 2 && readText(parsed.kind) === "desktop-ws") {
     return {
       transportKind: "desktop-ws",
-      payload: parseDesktopWsPairingPayload(parsed)
+      payload: parseDesktopWsPairingPayload(parsed, t)
     };
   }
 
   return {
     transportKind: "http",
-    payload: parseLegacyPairingPayload(parsed)
+    payload: parseLegacyPairingPayload(parsed, t)
   };
 }
