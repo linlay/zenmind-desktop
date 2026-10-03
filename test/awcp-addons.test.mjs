@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import JSZip from 'jszip';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
@@ -25,7 +29,7 @@ function page(fetcher = async () => new Response(JSON.stringify({ items: [], cou
 }
 
 test('URL rules match the exact HTTPS origin and forum path segment', () => {
-  for (const suffix of ['', '/', '/posts/19', '?keyword=a', '#x']) assert.equal(matchAwcpAddon(url + suffix)?.id, 'qiuer-forum');
+  for (const suffix of ['', '/', '/posts/19', '?keyword=a', '#x']) assert.equal(matchAwcpAddon(url + suffix)?.id, '1024forum');
   for (const other of ['https://1024.qiuer.net/forum-other', 'https://1024.qiuer.net/', 'http://1024.qiuer.net/forum',
     'https://1024.qiuer.net.evil.test/forum', 'https://evil.test/forum?next=' + url, 'https://user@1024.qiuer.net/forum',
     'https://1024.qiuer.net:444/forum', 'file:///forum', 'not a URL']) assert.equal(matchAwcpAddon(other), null);
@@ -83,7 +87,7 @@ test('401, non-JSON, cancellation and leaving the URL rule fail without replay',
   assert.equal((await pending).error.code, 'cancelled');
   const old = p.context.awcp;
   p.context.location = new URL('https://1024.qiuer.net/other');
-  assert.equal((await old.invoke({ requestId: 'outside', revision: 'qiuer-forum:1', action: 'forum.posts.list', args: {} })).error.code, 'stale_revision');
+  assert.equal((await old.invoke({ requestId: 'outside', revision: '1024forum:1', action: 'forum.posts.list', args: {} })).error.code, 'stale_revision');
   p.install(); assert.equal(p.context.awcp, undefined); assert.equal(p.calls.length, 1);
   p.context.location = new URL(url); p.install(); assert.ok(p.context.awcp);
 });
@@ -108,7 +112,17 @@ test('guest lifecycle installs once, handles SPA entry/exit and removes listener
 });
 
 test('Desktop bridge reads injected manuals and invokes through an authorized Run', async t => {
-  const h = createSiteHarness(); const site = h.site('addon'); const guest = h.contents.get(site.tabs[0].webContentsId);
+  const h = createSiteHarness();
+  const { builtinForumBridge } = require('../dist-electron/main/modules/web-surfaces/website-bridges/builtin.js');
+  const pkg = builtinForumBridge(); const zip = new JSZip();
+  zip.file('bridge.json', JSON.stringify(pkg.manifest));
+  for (const [name, source] of pkg.scripts) zip.file(name, source);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'awcp-addon-import-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const archive = path.join(directory, 'bridge.zip');
+  fs.writeFileSync(archive, await zip.generateAsync({ type: 'nodebuffer' }));
+  assert.equal((await h.registry.websiteBridges.importFile(archive)).ok, true);
+  const site = h.site('addon'); const guest = h.contents.get(site.tabs[0].webContentsId);
   const p = page(); p.install(false);
   guest.url = url; guest.executeJavaScript = async script => {
     const value = await vm.runInContext(script, p.context);

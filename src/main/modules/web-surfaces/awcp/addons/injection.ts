@@ -1,11 +1,11 @@
 import type { WebContents } from "electron";
 import { installAwcpAddon } from "./page-runtime";
-import { qiuerForumRule } from "./qiuer-forum";
+import { forum1024Rule } from "./1024forum";
 import type { WebsiteBridgePackage } from "../../website-bridges/builtin";
 import { buildWebsiteBridgeScript, selectWebsiteBridgePage } from "../../website-bridges/injection-script";
 
 /** Reviewed, bundled rules; remote pages cannot supply scripts or widen matches. */
-export const AWCP_ADDON_RULES = [qiuerForumRule] as const;
+export const AWCP_ADDON_RULES = [forum1024Rule] as const;
 
 export function matchAwcpAddon(rawUrl: string) {
   try {

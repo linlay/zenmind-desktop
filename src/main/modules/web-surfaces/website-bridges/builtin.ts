@@ -2,7 +2,7 @@ import type { WebsiteBridgeManifest } from "../../../../shared/website-bridge";
 import { installAwcpAddon } from "../awcp/addons/page-runtime";
 import { createForumComposeHandlers } from "../awcp/addons/forum-compose";
 import type { AddonAction } from "../awcp/addons/types";
-import { qiuerForumRule } from "../awcp/addons/qiuer-forum";
+import { forum1024Rule } from "../awcp/addons/1024forum";
 
 export type WebsiteBridgePackage = { manifest: WebsiteBridgeManifest; scripts: Map<string, string> };
 export function builtinForumBridge(): WebsiteBridgePackage {
@@ -12,12 +12,12 @@ export function builtinForumBridge(): WebsiteBridgePackage {
     { path: "/forum/posts/:postId", script: "pages/post.js", actions: ["posts.get", "comments.list", "comments.create", "posts.bookmark", "reactions.toggle"] },
     { path: "/forum/notifications", script: "pages/notifications.js", actions: ["notifications.list", "notifications.unread-count", "notifications.mark-read"] },
   ];
-  const manifest: WebsiteBridgeManifest = { schemaVersion: 1, id: "qiuer-forum", name: "1024 Forum", version: "1.2.3", origin: qiuerForumRule.origin,
+  const manifest: WebsiteBridgeManifest = { schemaVersion: 1, id: "1024forum", name: "1024 Forum", version: "1.2.3", origin: forum1024Rule.origin,
     description: "Page-scoped AWCP for the 1024 forum.", pages: definitions.map(({ path, script }) => ({ path, script })) };
   const scripts = new Map(definitions.map(page => {
-    const rule = { ...qiuerForumRule, actions: qiuerForumRule.actions.filter(action => page.actions.includes(action.action.replace("forum.", ""))) };
+    const rule = { ...forum1024Rule, actions: forum1024Rule.actions.filter(action => page.actions.includes(action.action.replace("forum.", ""))) };
     if (page.path === "/forum/new") {
-      const create = qiuerForumRule.actions.find(action => action.action === "forum.posts.create")!;
+      const create = forum1024Rule.actions.find(action => action.action === "forum.posts.create")!;
       const { status: _status, ...fields } = create.inputSchema.properties;
       const compose = (name: string, title: string, description: string, properties: AddonAction["inputSchema"]["properties"], required: string[] = []): AddonAction => ({
         action: "forum.compose." + name, title, description, path: "", method: "POST",

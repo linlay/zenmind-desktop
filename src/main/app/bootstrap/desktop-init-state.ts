@@ -26,6 +26,7 @@ export type BootstrapApplyResult = {
   sso: BootstrapSectionResult;
   tunnelHub: BootstrapSectionResult;
   webs: BootstrapSectionResult;
+  websiteBridges: BootstrapSectionResult;
   assistant: BootstrapAssistantResult;
   desktopActionBridge: BootstrapSectionResult;
   enterpriseIm: BootstrapSectionResult;
@@ -144,6 +145,7 @@ export function removeDesktopInitSitesStaging(initPath: string) {
   const sitesDir = path.join(desktopInitDir, "sites");
   try {
     fs.rmSync(sitesDir, { recursive: true, force: true });
+    fs.rmSync(path.join(desktopInitDir, "website-bridges"), { recursive: true, force: true });
     if (fs.existsSync(desktopInitDir) && fs.readdirSync(desktopInitDir).length === 0) {
       fs.rmdirSync(desktopInitDir);
     }

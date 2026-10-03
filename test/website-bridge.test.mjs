@@ -62,7 +62,7 @@ test('ZIP rejects symlinks and case-colliding paths on both platforms', async t 
 
 test('packages persist, update atomically, retain disabled state and do not resurrect after removal', async t => {
   const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data/webs/website-bridges'), configRoot: path.join(root, 'config/webs') };
-  let manager = createWebsiteBridgeManager(storage); assert.equal(manager.list().items[0].id, 'qiuer-forum');
+  let manager = createWebsiteBridgeManager(storage); assert.deepEqual(manager.list().items, []);
   const zip = await zipAt(root); assert.equal((await manager.importFile(zip)).ok, true);
   await manager.setEnabled('sample', false);
   await zipAt(root, { ...manifest, version: '1.1.0' }); assert.equal((await manager.importFile(zip)).ok, true);
@@ -71,7 +71,7 @@ test('packages persist, update atomically, retain disabled state and do not resu
   await zipAt(root, { ...manifest, version: '2.0.0' }, { 'pages/post.js': '(', 'pages/new.js': source });
   assert.equal((await manager.importFile(zip)).ok, false); assert.equal(manager.list().items.find(item => item.id === 'sample').version, '1.1.0');
   const exported = await manager.exportBytes('sample'); fs.writeFileSync(zip, exported); assert.equal((await readWebsiteBridgeArchive(zip)).manifest.version, '1.1.0');
-  await manager.remove('qiuer-forum'); await manager.remove('sample'); manager = createWebsiteBridgeManager(storage); assert.deepEqual(manager.list().items, []);
+  await manager.remove('sample'); manager = createWebsiteBridgeManager(storage); assert.deepEqual(manager.list().items, []);
 });
 
 test('conflicting site packages, wrong update identity and lost owner do not change installation', async t => {
@@ -239,13 +239,59 @@ test('rollback failure preserves backup and blocks mutations until startup recov
   assert.equal(createWebsiteBridgeManager(storage).list().items.find(item => item.id === 'sample').version, '1.0.0');
 });
 
-test('legacy hash directory is rejected without migration', t => {
+test('legacy hash directory is rejected without migration', async t => {
   const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
-  createWebsiteBridgeManager(storage);
+  await createWebsiteBridgeManager(storage).importFile(await zipAt(root));
   const entry = JSON.parse(fs.readFileSync(path.join(storage.configRoot, 'website-bridges.json'))).items[0];
   const target = path.join(storage.packagesRoot, entry.id); const staged = path.join(root, 'legacy');
   fs.renameSync(target, staged); fs.mkdirSync(target); fs.renameSync(staged, path.join(target, entry.digest));
   assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
   assert.equal(fs.existsSync(path.join(target, entry.digest, 'bridge.json')), true);
   assert.equal(fs.existsSync(path.join(target, 'bridge.json')), false);
+});
+
+test('seed validation rejects all packages before writing and never executes scripts', t => {
+  const { initializeWebsiteBridgeSeeds } = require('../dist-electron/main/modules/web-surfaces/website-bridges/seed.js');
+  const root = temporary(t);
+  const seeds = path.join(root, 'desktop-init/website-bridges');
+  const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const write = (id, script) => {
+    const dir = path.join(seeds, id);
+    fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bridge.json'), JSON.stringify({ ...manifest, id, origin: `https://${id}.test` }));
+    for (const name of ['post', 'new']) fs.writeFileSync(path.join(dir, `pages/${name}.js`), script);
+  };
+  write('sample', 'globalThis.__seedExecuted = true;');
+  write('broken', 'syntax (');
+  assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['sample', 'broken']));
+  assert.equal(fs.existsSync(storage.packagesRoot), false);
+  assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['../sample']));
+  assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['sample', 'sample']));
+  const scriptPath = path.join(seeds, 'sample/pages/post.js');
+  fs.unlinkSync(scriptPath); fs.symlinkSync(path.join(seeds, 'sample/pages/new.js'), scriptPath);
+  assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['sample']));
+  fs.unlinkSync(scriptPath); fs.writeFileSync(scriptPath, 'globalThis.__seedExecuted = true;');
+  assert.equal(initializeWebsiteBridgeSeeds(storage, seeds, ['sample']), 'applied');
+  assert.equal(globalThis.__seedExecuted, undefined);
+  assert.equal(createWebsiteBridgeManager(storage).list().items[0].id, 'sample');
+  assert.equal(initializeWebsiteBridgeSeeds(storage, seeds, ['broken']), 'preserved');
+});
+
+test('seed catalogue commit failure rolls back every newly installed package', t => {
+  const { initializeWebsiteBridgeSeeds } = require('../dist-electron/main/modules/web-surfaces/website-bridges/seed.js');
+  const root = temporary(t); const seeds = path.join(root, 'desktop-init/website-bridges');
+  const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  for (const id of ['first', 'second']) {
+    const dir = path.join(seeds, id); fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bridge.json'), JSON.stringify({ ...manifest, id, origin: `https://${id}.test` }));
+    for (const page of manifest.pages) fs.writeFileSync(path.join(dir, page.script), source);
+  }
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === path.join(storage.configRoot, 'website-bridges.json')) throw new Error('catalogue locked');
+    return rename(from, to);
+  });
+  assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['first', 'second']), /catalogue locked/);
+  assert.deepEqual(fs.readdirSync(storage.packagesRoot), []);
+  assert.equal(fs.existsSync(path.join(storage.configRoot, 'website-bridges.json')), false);
 });

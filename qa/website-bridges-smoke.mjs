@@ -4,9 +4,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
+import JSZip from 'jszip';
 import { loadBrandConfig, resolveBrandId, runtimeBrandPayload } from '../scripts/lib/brand-model.mjs';
 const require = createRequire(import.meta.url);
 const repo = process.cwd(); const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'website-bridges-ui-'));
+const { builtinForumBridge } = require('../dist-electron/main/modules/web-surfaces/website-bridges/builtin.js');
+const example = builtinForumBridge(); const zip = new JSZip();
+zip.file('bridge.json', JSON.stringify(example.manifest));
+for (const [name, source] of example.scripts) zip.file(name, source);
+fs.writeFileSync(path.join(temp, 'forum.zip'), await zip.generateAsync({ type: 'nodebuffer' }));
 const modulePath = name => JSON.stringify(path.join(repo, 'dist-electron/main/modules/web-surfaces/website-bridges', name));
 const source = name => JSON.stringify(path.join(repo, 'src/renderer', name));
 await build({ stdin: { contents: `
@@ -31,7 +37,7 @@ const {createWebsiteBridgeManager}=require(${modulePath('manager.js')});const {r
 const manager=createWebsiteBridgeManager({packagesRoot:path.join(__dirname,'packages'),configRoot:path.join(__dirname,'config')});let win;
 const timer=setTimeout(()=>{console.error('UI smoke timed out');app.exit(1)},30000);
 (async()=>{await app.whenReady();
-const pkg=path.join(__dirname,'forum.zip');fs.writeFileSync(pkg,await manager.exportBytes('qiuer-forum'));
+const pkg=path.join(__dirname,'forum.zip');assert.equal((await manager.importFile(pkg)).ok,true);
 dialog.showOpenDialog=async()=>({canceled:false,filePaths:[pkg]});dialog.showSaveDialog=async()=>({canceled:false,filePath:path.join(__dirname,'export.zip')});
 registerWebsiteBridgeIpc(ipcMain,{browserSurfaces:{websiteBridges:manager},getMainWindow:()=>win,platform:process.platform});
 win=new BrowserWindow({show:false,width:1180,height:940,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});

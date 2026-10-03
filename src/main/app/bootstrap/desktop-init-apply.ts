@@ -16,7 +16,7 @@ import {
   errorMessage
 } from "./desktop-init-state";
 import path from "node:path";
-import { getDesktopStateRoot } from "../../infrastructure/filesystem/user-paths";
+import { getDesktopStateRoot, getDesktopWebsiteBridgeStorage } from "../../infrastructure/filesystem/user-paths";
 import fs from "node:fs";
 import {
   normalizeDesktopInitAssistantDefaults,
@@ -32,6 +32,7 @@ import {
   applyServiceDefaults
 } from "./desktop-init-settings";
 import { writeUpdateConfig } from "../../modules/updates";
+import { initializeWebsiteBridgeSeeds } from "../../modules/web-surfaces";
 import { applyWebsiteDefaults } from "./desktop-init-sites";
 
 export function applyDesktopInitBootstrap(
@@ -92,6 +93,16 @@ export function applyDesktopInitBootstrap(
         );
         websReport = result.report;
         return result.status;
+      }),
+      websiteBridges: runBootstrapSection("websiteBridges", errors, () => {
+        if (defaults.websiteBridges === undefined) return "absent";
+        if (preserveSites) return "preserved";
+        if (!isRecord(defaults.websiteBridges)) throw new Error("websiteBridges must be an object.");
+        return initializeWebsiteBridgeSeeds(
+          getDesktopWebsiteBridgeStorage(app, platform),
+          path.join(path.dirname(initPath), "desktop-init", "website-bridges"),
+          defaults.websiteBridges.items
+        );
       }),
       assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant, platform)),
       desktopActionBridge: runBootstrapSection(

@@ -17,7 +17,7 @@ pages/notifications.js
 ```json
 {
   "schemaVersion": 1,
-  "id": "qiuer-forum",
+  "id": "1024forum",
   "name": "1024 Forum",
   "version": "1.2.3",
   "origin": "https://1024.qiuer.net",
@@ -48,7 +48,7 @@ npm run build:main:types
 node qa/build-website-bridge-example.mjs
 ```
 
-输出 `build/examples/website-bridges/qiuer-forum-1.2.3.zip`。ZIP 只包含 manifest 和引用的 JS，不包含 Cookie 或 Desktop 凭据。登录使用 Desktop 网页自己的会话。
+输出 `build/examples/website-bridges/1024forum-1.2.3.zip`。ZIP 只包含 manifest 和引用的 JS，不包含 Cookie 或 Desktop 凭据。登录使用 Desktop 网页自己的会话。
 
 持久化资源在 `<desktop-data-root>/data/website-bridges/<id>/<内容摘要>/`，安装和启用清单在 `<desktop-data-root>/config/website-bridges/website-bridges.json`。默认品牌的数据根为品牌运行目录中的 `.desktop`，路径来源沿用 Desktop 的平台路径函数。
 

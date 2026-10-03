@@ -32,8 +32,8 @@ const allowedLinePatterns = [
 
 const allowedBlocks = [
   {
-    file: "src/main/modules/web-surfaces/awcp/addons/qiuer-forum.ts",
-    start: /^export const qiuerForumRule:/u,
+    file: "src/main/modules/web-surfaces/awcp/addons/1024forum.ts",
+    start: /^export const forum1024Rule:/u,
     end: /^\};/u,
     reason: "versioned AI-facing AWCP manual for the Chinese forum, not Desktop UI labels"
   },

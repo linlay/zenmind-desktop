@@ -12,8 +12,8 @@ function action(name: string, title: string, description: string, path: string,
 }
 
 /** Only endpoints and parameters observed in the published forum client are exposed. */
-export const qiuerForumRule: AwcpAddonRule = {
-  id: "qiuer-forum", version: "1", origin: "https://1024.qiuer.net", pathPrefix: "/forum",
+export const forum1024Rule: AwcpAddonRule = {
+  id: "1024forum", version: "1", origin: "https://1024.qiuer.net", pathPrefix: "/forum",
   apiBasePath: "/forum/api/v1",
   site: {
     name: "1024 论坛 · Desktop AWCP",

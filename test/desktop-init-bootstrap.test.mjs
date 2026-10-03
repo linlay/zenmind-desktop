@@ -1731,3 +1731,31 @@ for (const platform of ["darwin", "win32"]) {
     assert.equal(stored.relayUrl, "wss://relay.example.test/tunnel");
   });
 }
+
+for (const platform of ['darwin', 'win32']) {
+  test(`website bridge seeds install once and preserve user removal (${platform})`, async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-bridge-seed-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createApp(path.join(root, 'home'));
+    const { getDesktopWebsiteBridgeStorage } = require('../dist-electron/main/infrastructure/filesystem/user-paths.js');
+    const { createWebsiteBridgeManager } = require('../dist-electron/main/modules/web-surfaces/website-bridges/manager.js');
+    const { builtinForumBridge } = require('../dist-electron/main/modules/web-surfaces/website-bridges/builtin.js');
+    const initPath = writeDesktopInit(app, platform, { websiteBridges: { items: ['1024forum'] } });
+    const staging = path.join(path.dirname(initPath), 'desktop-init', 'website-bridges');
+    const pkg = builtinForumBridge();
+    const seed = path.join(staging, pkg.manifest.id);
+    fs.mkdirSync(path.join(seed, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(seed, 'bridge.json'), JSON.stringify(pkg.manifest));
+    for (const [name, source] of pkg.scripts) fs.writeFileSync(path.join(seed, name), source);
+    const storage = getDesktopWebsiteBridgeStorage(app, platform);
+    const manager = createWebsiteBridgeManager(storage); // Runtime is assembled before bootstrap.
+    const result = applyDesktopInitBootstrap(app, platform);
+    assert.equal(result.appliedResult.websiteBridges, 'applied');
+    assert.equal(fs.existsSync(staging), false);
+    assert.equal(manager.list().items[0].id, '1024forum');
+    assert.equal((await manager.remove('1024forum')).ok, true);
+    writeDesktopInit(app, platform, { websiteBridges: { items: ['1024forum'] } });
+    assert.equal(applyDesktopInitBootstrap(app, platform).appliedResult.websiteBridges, 'preserved');
+    assert.deepEqual(createWebsiteBridgeManager(storage).list().items, []);
+  });
+}

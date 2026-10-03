@@ -18,3 +18,5 @@ export { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-ip
 export { validateDesktopCdpParams, DesktopCdpParamsError } from "./cdp/params";
 
 export { registerWebsiteBridgeIpc } from "./website-bridges/ipc";
+
+export { initializeWebsiteBridgeSeeds } from "./website-bridges/seed";

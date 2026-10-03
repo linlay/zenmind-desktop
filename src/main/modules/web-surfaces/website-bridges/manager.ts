@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { WebsiteBridgeError, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
-import { builtinForumBridge, type WebsiteBridgePackage } from "./builtin";
+import { type WebsiteBridgePackage } from "./builtin";
 import { readWebsiteBridgeArchive } from "./archive";
 import { digestOf, loadPackage, savePackage, WebsiteBridgeRecoveryError, type WebsiteBridgeStorage } from "./storage";
 export type { WebsiteBridgeStorage } from "./storage";
@@ -24,23 +24,26 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
       fs.renameSync(temporary, catalog);
     } finally { fs.rmSync(temporary, { force: true }); }
   }
-  try {
-    if (catalog && fs.existsSync(catalog)) {
-      if (fs.statSync(catalog).size > 65536) throw new Error("Invalid catalogue");
-      const data = JSON.parse(fs.readFileSync(catalog, "utf8"));
-      if (data.schemaVersion !== 1 || !Array.isArray(data.items) || data.items.length > 50) throw new Error("Invalid catalogue");
-      const ids = new Set<string>();
-      installed = data.items.map((entry: { id: string; digest: string; enabled: boolean }) => {
-        if (typeof entry.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.id) || ids.has(entry.id) || !/^[a-f0-9]{64}$/.test(entry.digest) || typeof entry.enabled !== "boolean") throw new Error("Invalid catalogue");
-        ids.add(entry.id);
-        const pkg = loadPackage(storage!, entry.id, entry.digest);
-        return { ...pkg, digest: entry.digest, enabled: entry.enabled };
-      });
-    } else {
-      const pkg = builtinForumBridge(); installed = [{ ...pkg, enabled: true, digest: digestOf(pkg) }];
-      if (storage) savePackage(storage, pkg, () => persist(installed));
-    }
-  } catch { installed = []; failed = true; }
+  let loaded = false;
+  // The registry is assembled before desktop-init; read disk on first use after bootstrap.
+  function ensureLoaded() {
+    if (loaded) return;
+    loaded = true;
+    try {
+      if (catalog && fs.existsSync(catalog)) {
+        if (fs.statSync(catalog).size > 65536) throw new Error("Invalid catalogue");
+        const data = JSON.parse(fs.readFileSync(catalog, "utf8"));
+        if (data.schemaVersion !== 1 || !Array.isArray(data.items) || data.items.length > 50) throw new Error("Invalid catalogue");
+        const ids = new Set<string>();
+        installed = data.items.map((entry: { id: string; digest: string; enabled: boolean }) => {
+          if (typeof entry.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.id) || ids.has(entry.id) || !/^[a-f0-9]{64}$/.test(entry.digest) || typeof entry.enabled !== "boolean") throw new Error("Invalid catalogue");
+          ids.add(entry.id);
+          const pkg = loadPackage(storage!, entry.id, entry.digest);
+          return { ...pkg, digest: entry.digest, enabled: entry.enabled };
+        });
+      }
+    } catch { installed = []; failed = true; }
+  }
   const views = (): WebsiteBridgeView[] => installed.map(({ manifest, enabled }) => ({ ...JSON.parse(JSON.stringify(manifest)), enabled }));
   function changed(next: Installed[], pkg?: WebsiteBridgePackage) {
     if (storage && pkg) savePackage(storage, pkg, () => persist(next));
@@ -55,6 +58,7 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
   let queue = Promise.resolve();
   function run(operation: () => Promise<Partial<Extract<WebsiteBridgeResult, { ok: true }>>> | Partial<Extract<WebsiteBridgeResult, { ok: true }>>): Promise<WebsiteBridgeResult> {
     const result = queue.then(async (): Promise<WebsiteBridgeResult> => {
+      ensureLoaded();
       if (failed) return { ok: false, error: "storageFailed" };
       try { const extra = await operation(); return { ok: true, items: views(), ...extra }; }
       catch (error) {
@@ -65,8 +69,8 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
     queue = result.then(() => undefined); return result;
   }
   return {
-    list: (): WebsiteBridgeResult => failed ? { ok: false, error: "storageFailed" } : { ok: true, items: views() },
-    runtimePackages: () => installed.filter(item => item.enabled),
+    list: (): WebsiteBridgeResult => { ensureLoaded(); return failed ? { ok: false, error: "storageFailed" } : { ok: true, items: views() }; },
+    runtimePackages: () => { ensureLoaded(); return installed.filter(item => item.enabled); },
     subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
     importFile(file: string, checkOwner: () => void = () => {}, expectedId?: string) { return run(async () => {
       const pkg = await readWebsiteBridgeArchive(file); checkOwner();
@@ -88,6 +92,7 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
     remove(id: string, checkOwner: () => void = () => {}) { return run(() => { checkOwner(); find(id); changed(installed.filter(item => item.manifest.id !== id)); return {}; }); },
     readScript(id: string, script: string) { return run(() => { const source = find(id).scripts.get(script); if (source === undefined) throw new WebsiteBridgeError("notFound"); return { script: source }; }); },
     async exportBytes(id: string) {
+      ensureLoaded();
       if (failed) throw new WebsiteBridgeError("storageFailed");
       const item = find(id); const zip = new JSZip(); zip.file("bridge.json", JSON.stringify(item.manifest, null, 2));
       for (const [name, source] of item.scripts) zip.file(name, source);
