@@ -394,9 +394,9 @@ for (const lane of ["primary", "selection-explain"]) {
         surfaceType: "agent-selection-explain",
         surfaceRole: "selection-explain",
         surfaceLevel: "root",
-        pageRoute: "/selection-explain/chat-1?runId=run-explain",
-        pageRouteIdentity: "/selection-explain/chat-1?runId=run-explain",
-        currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=run-explain",
+        pageRoute: "/explain/chat-1?runId=run-explain",
+        pageRouteIdentity: "/explain/chat-1?runId=run-explain",
+        currentUrl: "http://127.0.0.1:7079/explain/chat-1?runId=run-explain",
       });
       let completeAvailability;
       const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
@@ -1089,9 +1089,9 @@ test("Main Chat, Copilot Dock, Kanban Chat and isolated explanations use bounded
     surfaceType: "agent-selection-explain",
     surfaceRole: "selection-explain",
     surfaceLevel: "root",
-    pageRoute: "/selection-explain/chat-1?runId=run-explain",
-    pageRouteIdentity: "/selection-explain/chat-1?runId=run-explain",
-    currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=run-explain",
+    pageRoute: "/explain/chat-1?runId=run-explain",
+    pageRouteIdentity: "/explain/chat-1?runId=run-explain",
+    currentUrl: "http://127.0.0.1:7079/explain/chat-1?runId=run-explain",
   });
   const runtime = createRuntime(new Map([[105, kanban], [106, project], [107, explanation]]));
   const kanbanSender = createSender(105, kanban.currentUrl);
@@ -1177,9 +1177,9 @@ test("Explanation surface routes follow-ups and Run control independently but ke
   const target = mainTarget(107, {
     registrationId: "selection-explain-g1", surfaceId: "selection-explain",
     surfaceType: "agent-selection-explain", surfaceRole: "selection-explain",
-    pageRoute: "/selection-explain/chat-1?runId=explain-run",
-    pageRouteIdentity: "/selection-explain/chat-1?runId=explain-run",
-    currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=explain-run",
+    pageRoute: "/explain/chat-1?runId=explain-run",
+    pageRouteIdentity: "/explain/chat-1?runId=explain-run",
+    currentUrl: "http://127.0.0.1:7079/explain/chat-1?runId=explain-run",
   });
   const runtime = createRuntime(new Map([[107, target]]));
   const sender = createSender(107, target.currentUrl);

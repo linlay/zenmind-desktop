@@ -314,7 +314,7 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
     "/overview/",
     "/debug/",
     "/btw/",
-    "/selection-explain/",
+    "/explain/",
     "/source-viewer/",
     "/planning-viewer/",
     "/resource-viewer/",

@@ -55,7 +55,7 @@ function AuxiliarySurface({ theme }) {
     <ServicesProvider>
       <ReadProbe />
       <ServiceWebviewSurface hostTheme={theme} active serviceId="agent-webclient"
-        ownerChatId="fixture-chat" embedPath="/selection-explain/fixture-chat?runId=fixture-run"
+        ownerChatId="fixture-chat" embedPath="/explain/fixture-chat?runId=fixture-run"
         surfaceIdentity={createSurfaceIdentity("selection-explain", "", { ownerChatId: "fixture-chat" })}
         skipContextRegistration loadInitialEmbeddedUrlDirectly suppressInitialLoadingCopy />
     </ServicesProvider>

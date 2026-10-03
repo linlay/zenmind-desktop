@@ -40,7 +40,7 @@ function registration(role, guestId, generation) {
   const isMainChat = role === "main-chat";
   const pageRoute = isMainChat
     ? "/agent/helper?newChat=new-1"
-    : "/selection-explain/chat-selection?runId=run-selection";
+    : "/explain/chat-selection?runId=run-selection";
   const url = `http://127.0.0.1:17080${pageRoute}`;
   const tabId = `tab-${guestId}`;
   return {

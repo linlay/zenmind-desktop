@@ -61,7 +61,7 @@ ipcMain.handle("fixture.preload", () => pathToFileURL(path.join(root, "guest-pre
   for (const theme of ["dark", "light"]) {
     await js(`fixture.render('auxiliary', ${JSON.stringify(theme)})`);
     await until("document.querySelector('#read-snapshot')?.dataset.theme === 'none'", "read hook did not return null outside provider");
-    await until(`document.querySelector('webview')?.getURL?.().startsWith('http://127.0.0.1:19789/selection-explain/')`, "auxiliary ServiceWebviewSurface failed to mount");
+    await until(`document.querySelector('webview')?.getURL?.().startsWith('http://127.0.0.1:19789/explain/')`, "auxiliary ServiceWebviewSurface failed to mount");
     await until("document.querySelector('webview').executeJavaScript('!!window.appearanceFixture?.read()')", "auxiliary guest received no appearance snapshot");
     const snapshot = await readGuest();
     assert.equal(snapshot.resolvedTheme, theme);

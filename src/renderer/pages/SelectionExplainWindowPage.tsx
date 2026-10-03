@@ -29,7 +29,7 @@ export function SelectionExplainWindowPage() {
   }, []);
   const embedPath = useMemo(() => {
     if (state?.status !== "ready") return "";
-    return `/selection-explain/${encodeURIComponent(state.chatId)}?runId=${encodeURIComponent(state.runId)}`;
+    return `/explain/${encodeURIComponent(state.chatId)}?runId=${encodeURIComponent(state.runId)}`;
   }, [state]);
 
   return (
