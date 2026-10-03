@@ -1,39 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
-import { parseWebsiteBridgeManifest, WebsiteBridgeError, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
+import { WebsiteBridgeError, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
 import { builtinForumBridge, type WebsiteBridgePackage } from "./builtin";
 import { readWebsiteBridgeArchive } from "./archive";
+import { digestOf, loadPackage, savePackage, WebsiteBridgeRecoveryError, type WebsiteBridgeStorage } from "./storage";
+export type { WebsiteBridgeStorage } from "./storage";
 
 type Installed = WebsiteBridgePackage & { enabled: boolean; digest: string };
-export type WebsiteBridgeStorage = { packagesRoot: string; configRoot: string };
-const digestOf = (pkg: WebsiteBridgePackage) => createHash("sha256").update(JSON.stringify([pkg.manifest, [...pkg.scripts].sort()])).digest("hex");
-
-/** Immutable package directories plus one atomic catalogue keep failed updates inactive. */
+/** Stable ID directories with staged replacement and catalogue-based recovery. */
 export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
   let installed: Installed[] = [];
   let failed = false;
   const listeners = new Set<() => void>();
   const catalog = storage && path.join(storage.configRoot, "website-bridges.json");
-  const packageDir = (id: string, digest: string) => path.join(storage!.packagesRoot, id, digest);
-  function writePackage(pkg: WebsiteBridgePackage) {
-    const digest = digestOf(pkg);
-    if (!storage) return digest;
-    const target = packageDir(pkg.manifest.id, digest);
-    if (fs.existsSync(target)) return digest;
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    const temporary = path.join(path.dirname(target), ".staging-" + randomUUID());
-    try {
-      fs.mkdirSync(temporary);
-      fs.writeFileSync(path.join(temporary, "bridge.json"), JSON.stringify(pkg.manifest, null, 2) + "\n");
-      for (const [name, source] of pkg.scripts) {
-        const file = path.join(temporary, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, source);
-      }
-      fs.renameSync(temporary, target);
-    } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
-    return digest;
-  }
   function persist(items: Installed[]) {
     if (!catalog) return;
     fs.mkdirSync(path.dirname(catalog), { recursive: true });
@@ -52,24 +33,22 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
       installed = data.items.map((entry: { id: string; digest: string; enabled: boolean }) => {
         if (typeof entry.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.id) || ids.has(entry.id) || !/^[a-f0-9]{64}$/.test(entry.digest) || typeof entry.enabled !== "boolean") throw new Error("Invalid catalogue");
         ids.add(entry.id);
-        const directory = packageDir(entry.id, entry.digest);
-        const read = (name: string, limit: number) => { const file = path.join(directory, name); if (fs.lstatSync(file).isSymbolicLink() || fs.statSync(file).size > limit) throw new Error("Invalid package"); return fs.readFileSync(file, "utf8"); };
-        const manifest = parseWebsiteBridgeManifest(JSON.parse(read("bridge.json", 65536)));
-        if (manifest.id !== entry.id) throw new Error("Invalid identity");
-        const scripts = new Map(manifest.pages.map(page => [page.script, read(page.script, 512 * 1024)]));
-        if (digestOf({ manifest, scripts }) !== entry.digest) throw new Error("Package changed");
-        return { manifest, scripts, digest: entry.digest, enabled: entry.enabled };
+        const pkg = loadPackage(storage!, entry.id, entry.digest);
+        return { ...pkg, digest: entry.digest, enabled: entry.enabled };
       });
     } else {
-      const pkg = builtinForumBridge(); installed = [{ ...pkg, enabled: true, digest: writePackage(pkg) }]; persist(installed);
+      const pkg = builtinForumBridge(); installed = [{ ...pkg, enabled: true, digest: digestOf(pkg) }];
+      if (storage) savePackage(storage, pkg, () => persist(installed));
     }
   } catch { installed = []; failed = true; }
   const views = (): WebsiteBridgeView[] => installed.map(({ manifest, enabled }) => ({ ...JSON.parse(JSON.stringify(manifest)), enabled }));
-  function changed(next: Installed[]) {
-    persist(next); const previous = installed; installed = next;
+  function changed(next: Installed[], pkg?: WebsiteBridgePackage) {
+    if (storage && pkg) savePackage(storage, pkg, () => persist(next));
+    else persist(next);
+    const previous = installed; installed = next;
     for (const listener of listeners) { try { listener(); } catch { /* A failed guest cannot roll back storage. */ } }
-    if (storage) for (const item of previous) if (!next.some(value => value.manifest.id === item.manifest.id && value.digest === item.digest)) {
-      try { fs.rmSync(packageDir(item.manifest.id, item.digest), { recursive: true, force: true }); } catch { /* Inactive immutable data can be removed later. */ }
+    if (storage) for (const item of previous) if (!next.some(value => value.manifest.id === item.manifest.id)) {
+      try { fs.rmSync(path.join(storage.packagesRoot, item.manifest.id), { recursive: true, force: true }); } catch { /* Inactive package data can be removed later. */ }
     }
   }
   const find = (id: string) => { const item = installed.find(item => item.manifest.id === id); if (!item) throw new WebsiteBridgeError("notFound"); return item; };
@@ -78,7 +57,10 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
     const result = queue.then(async (): Promise<WebsiteBridgeResult> => {
       if (failed) return { ok: false, error: "storageFailed" };
       try { const extra = await operation(); return { ok: true, items: views(), ...extra }; }
-      catch (error) { return { ok: false, error: error instanceof WebsiteBridgeError ? error.code : "storageFailed" }; }
+      catch (error) {
+        if (error instanceof WebsiteBridgeRecoveryError) failed = true;
+        return { ok: false, error: error instanceof WebsiteBridgeError ? error.code : "storageFailed" };
+      }
     });
     queue = result.then(() => undefined); return result;
   }
@@ -93,8 +75,8 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
       if (!existing && installed.length >= 50) throw new WebsiteBridgeError("packageTooLarge");
       const enabled = existing?.enabled ?? true;
       if (enabled && installed.some(item => item.enabled && item.manifest.id !== pkg.manifest.id && item.manifest.origin === pkg.manifest.origin)) throw new WebsiteBridgeError("conflict");
-      const item = { ...pkg, enabled, digest: writePackage(pkg) };
-      changed(existing ? installed.map(old => old === existing ? item : old) : [...installed, item]);
+      const item = { ...pkg, enabled, digest: digestOf(pkg) };
+      changed(existing ? installed.map(old => old === existing ? item : old) : [...installed, item], pkg);
       return { selectedId: pkg.manifest.id };
     }); },
     setEnabled(id: string, enabled: boolean, checkOwner: () => void = () => {}) { return run(() => {

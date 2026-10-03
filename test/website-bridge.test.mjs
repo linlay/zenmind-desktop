@@ -152,3 +152,100 @@ test('invalid guest URL and throwing user cleanup do not block subsequent bridge
   p.context.location = new URL('https://site.test/posts/2'); p.run([pkg]);
   assert.equal(p.context.awcp.page, '2');
 });
+
+test('stable ID directory retains identity and disabled state across updates', async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  let manager = createWebsiteBridgeManager(storage);
+  await manager.importFile(await zipAt(root)); await manager.setEnabled('sample', false);
+  const catalogPath = path.join(storage.configRoot, 'website-bridges.json');
+  const before = fs.readFileSync(catalogPath, 'utf8');
+  const entry = JSON.parse(before).items.find(item => item.id === 'sample');
+  const target = path.join(storage.packagesRoot, 'sample');
+  manager = createWebsiteBridgeManager(storage);
+  assert.equal(manager.list().ok, true);
+  assert.equal(manager.list().items.find(item => item.id === 'sample').enabled, false);
+  assert.equal(fs.existsSync(path.join(target, 'bridge.json')), true);
+  assert.equal(fs.existsSync(path.join(target, entry.digest)), false);
+  assert.equal(fs.readFileSync(catalogPath, 'utf8'), before);
+  await manager.importFile(await zipAt(root, { ...manifest, version: '2.0.0' }));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'bridge.json'))).version, '2.0.0');
+  assert.equal(fs.existsSync(path.join(storage.packagesRoot, '.backup-sample')), false);
+});
+
+for (const failure of ['promote', 'catalog']) test(`failed ${failure} restores the previous package and catalogue`, async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const manager = createWebsiteBridgeManager(storage); await manager.importFile(await zipAt(root));
+  const catalog = path.join(storage.configRoot, 'website-bridges.json'); const before = fs.readFileSync(catalog, 'utf8');
+  const zip = await zipAt(root, { ...manifest, version: '2.0.0' });
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if ((failure === 'catalog' && to === catalog) || (failure === 'promote' && path.basename(from).startsWith('.staging-'))) throw new Error('injected failure');
+    return rename(from, to);
+  });
+  assert.equal((await manager.importFile(zip)).ok, false);
+  t.mock.restoreAll();
+  assert.equal(fs.readFileSync(catalog, 'utf8'), before);
+  assert.equal(createWebsiteBridgeManager(storage).list().items.find(item => item.id === 'sample').version, '1.0.0');
+});
+
+for (const phase of ['backed-up', 'promoted', 'committed']) test(`interrupted ${phase} update recovers using the catalogue digest`, async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const manager = createWebsiteBridgeManager(storage); await manager.importFile(await zipAt(root));
+  const catalog = path.join(storage.configRoot, 'website-bridges.json'); const before = fs.readFileSync(catalog, 'utf8');
+  const target = path.join(storage.packagesRoot, 'sample'); const old = path.join(root, 'old');
+  fs.cpSync(target, old, { recursive: true });
+  await manager.importFile(await zipAt(root, { ...manifest, version: '2.0.0' }));
+  fs.renameSync(old, path.join(storage.packagesRoot, '.backup-sample'));
+  if (phase !== 'committed') fs.writeFileSync(catalog, before);
+  if (phase === 'backed-up') fs.rmSync(target, { recursive: true });
+  const recovered = createWebsiteBridgeManager(storage);
+  assert.equal(recovered.list().items.find(item => item.id === 'sample').version, phase === 'committed' ? '2.0.0' : '1.0.0');
+  assert.equal(fs.existsSync(path.join(storage.packagesRoot, '.backup-sample')), false);
+});
+
+test('tampered stable package fails closed', async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const manager = createWebsiteBridgeManager(storage); await manager.importFile(await zipAt(root));
+  fs.appendFileSync(path.join(storage.packagesRoot, 'sample/pages/post.js'), '\n// changed');
+  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+});
+
+for (const platform of ['win32', 'darwin']) test(`${platform} replacement never renames over an existing package directory`, async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (fs.statSync(from).isDirectory()) assert.equal(fs.existsSync(to), false, `${platform} requires an absent directory destination`);
+    return rename(from, to);
+  });
+  const manager = createWebsiteBridgeManager(storage);
+  assert.equal((await manager.importFile(await zipAt(root))).ok, true);
+  assert.equal((await manager.importFile(await zipAt(root, { ...manifest, version: '2.0.0' }))).ok, true);
+  assert.equal(createWebsiteBridgeManager(storage).list().items.find(item => item.id === 'sample').version, '2.0.0');
+});
+
+test('rollback failure preserves backup and blocks mutations until startup recovery', async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const manager = createWebsiteBridgeManager(storage); await manager.importFile(await zipAt(root));
+  const zip = await zipAt(root, { ...manifest, version: '2.0.0' });
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === path.join(storage.configRoot, 'website-bridges.json') || path.basename(from) === '.backup-sample') throw new Error('locked');
+    return rename(from, to);
+  });
+  assert.equal((await manager.importFile(zip)).error, 'storageFailed');
+  assert.equal((await manager.remove('sample')).error, 'storageFailed');
+  assert.equal(fs.existsSync(path.join(storage.packagesRoot, '.backup-sample/bridge.json')), true);
+  t.mock.restoreAll();
+  assert.equal(createWebsiteBridgeManager(storage).list().items.find(item => item.id === 'sample').version, '1.0.0');
+});
+
+test('legacy hash directory is rejected without migration', t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  createWebsiteBridgeManager(storage);
+  const entry = JSON.parse(fs.readFileSync(path.join(storage.configRoot, 'website-bridges.json'))).items[0];
+  const target = path.join(storage.packagesRoot, entry.id); const staged = path.join(root, 'legacy');
+  fs.renameSync(target, staged); fs.mkdirSync(target); fs.renameSync(staged, path.join(target, entry.digest));
+  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+  assert.equal(fs.existsSync(path.join(target, entry.digest, 'bridge.json')), true);
+  assert.equal(fs.existsSync(path.join(target, 'bridge.json')), false);
+});
