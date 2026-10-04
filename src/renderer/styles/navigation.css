@@ -396,7 +396,6 @@
 
 .sidebar-nav {
   --control-icon-color: var(--ink-soft);
-  --nav-selected-text: var(--control-primary-bg);
   --sidebar-scrollbar-thumb: transparent;
   display: flex;
   flex-direction: column;
@@ -604,6 +603,12 @@
 
 .sidebar-chats-new-button.is-in-popover {
   margin-left: 0;
+}
+
+/* Match the chat menu inset: 6px list padding plus 2px button offset. */
+.sidebar-nav-group>.Collapse-header .sidebar-chats-new-button,
+.sidebar-nav-group>.Collapse-header .sidebar-assistant-project-button {
+  margin-right: 8px;
 }
 
 .sidebar-new-chat-button {
@@ -2014,7 +2019,7 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-nav-group .assistant-worker-collapse-item>.Collapse-header .Collapse-headerActions {
-  padding-right: 0;
+  padding-right: 8px;
 }
 
 .assistant-worker-collapse-item.is-selected .assistant-worker-header,
@@ -2807,14 +2812,15 @@ div.sidebar-chats-group-popover {
   opacity: 1;
 }
 
-/* Align timestamps 8px from the sidebar content edge without moving status/menu icons.
-   Project chat lists have 2px right padding; Chats and pinned lists have 6px. */
-.sidebar-nav-group .worker-chat-preview-list .assistant-worker-chat-action[data-action="time"] {
-  margin-right: -2px;
-}
-
+/* Align timestamps 8px from the sidebar content edge in all chat lists. */
+.sidebar-nav-group .worker-chat-preview-list .assistant-worker-chat-action[data-action="time"],
 .sidebar-nav-group .sidebar-chats-list .assistant-worker-chat-action[data-action="time"] {
   margin-right: -6px;
+}
+
+/* Preserve project status positions when aligning the row's right edge. */
+.sidebar-nav-group .worker-chat-preview-list .assistant-worker-chat-action:not([data-action="time"]) {
+  margin-right: -4px;
 }
 
 .assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading,
@@ -2897,7 +2903,7 @@ div.sidebar-chats-group-popover {
 
 .sidebar-nav-group .worker-chat-preview-list {
   padding-left: 4px;
-  padding-right: 2px;
+  padding-right: 6px;
 }
 
 .worker-chat-preview-list .status-line {
