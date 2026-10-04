@@ -96,10 +96,6 @@ export function getWebappDir(app: App, id: string, platform: NodeJS.Platform = p
   return path.join(getDesktopWebappsDataRoot(app, platform), assertWebappId(id));
 }
 
-export function getWebappPath(app: App, id: string, platform: NodeJS.Platform = process.platform) {
-  return path.join(getWebappDir(app, id, platform), WEBAPP_FILE);
-}
-
 function getPreferencesPath(app: App) {
   return path.join(getDesktopWebsConfigRoot(app), WEBAPP_PREFERENCES_FILE);
 }
@@ -364,11 +360,6 @@ function manifestToEntry(
     createdAt: manifestStat.birthtimeMs || manifestStat.ctimeMs,
     updatedAt: manifestStat.mtimeMs
   };
-}
-
-export function normalizeWebappManifest(value: unknown, projectDir: string): WebappEntry {
-  const manifest = parseWebappManifest(value);
-  return manifestToEntry(manifest, projectDir);
 }
 
 export function readWebappManifestFromDir(webappDir: string) {

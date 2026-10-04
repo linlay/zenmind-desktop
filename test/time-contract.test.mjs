@@ -253,8 +253,6 @@ const LEGACY_SHARED_STRING_TIME_FIELDS = [
   "src/shared/contracts/webs.ts#startedAt",
   "src/shared/contracts/webs.ts#updatedAt",
   "src/shared/contracts/webs.ts#updatedAt",
-  "src/shared/desktop-ws-protocol.ts#desktopIdentityCreatedAt",
-  "src/shared/desktop-ws-protocol.ts#expiresAt",
 ].sort();
 
 test("shared contracts do not add string *At or *timestamp fields", () => {

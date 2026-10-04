@@ -1,39 +1,4 @@
-import { createTranslator, DEFAULT_LOCALE, type TranslateFunction } from "./i18n";
 import type { MobilePairingPayloadV2 } from "./contracts";
-
-export type DesktopWsNamespace = "d" | "ap" | "wa";
-export type DesktopWsTokenMode = "query" | "subprotocol";
-
-export type DesktopBusinessFrame = {
-  ns: DesktopWsNamespace;
-  frame: "request";
-  type: string;
-  id: string;
-  payload: unknown;
-};
-
-export type DesktopTokenTransport = {
-  url: string;
-  tokenMode: DesktopWsTokenMode;
-  protocols?: string[];
-};
-
-export type LegacyPairingPayload = {
-  desktopDeviceId: string;
-  desktopIdentityCreatedAt?: string;
-  desktopUsername?: string;
-  desktopHostname?: string;
-  appServerIssuer?: string;
-  appServerPublicKeySha256?: string;
-  apiBaseUrl: string;
-  pairingId: string;
-  secret: string;
-  expiresAt?: string;
-};
-
-export type ParsedPairingPayload =
-  | { transportKind: "http"; payload: LegacyPairingPayload }
-  | { transportKind: "desktop-ws"; payload: MobilePairingPayloadV2 };
 
 const DESKTOP_WS_PAIRING_PREFIX = "zmpair:v2:";
 const DESKTOP_WS_PATH = "/ws";
@@ -51,14 +16,6 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function normalizeHttpBaseUrl(value: unknown): string {
-  return readText(value).replace(/\/+$/u, "");
-}
-
 function encodeBase64Url(text: string) {
   const buffer = bufferCtor();
   if (buffer) {
@@ -71,26 +28,6 @@ function encodeBase64Url(text: string) {
     chunks.push(String.fromCharCode(...bytes.subarray(index, index + 0x8000)));
   }
   return btoa(chunks.join("")).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
-}
-
-function decodeBase64UrlToText(value: string) {
-  const normalized = readText(value).replace(/-/gu, "+").replace(/_/gu, "/");
-  const padded = `${normalized}${"=".repeat((4 - (normalized.length % 4)) % 4)}`;
-  const buffer = bufferCtor();
-  if (buffer) {
-    return buffer.from(padded, "base64").toString("utf8");
-  }
-
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return new TextDecoder().decode(bytes);
-}
-
-export function normalizeDesktopWsTokenMode(value: unknown): DesktopWsTokenMode {
-  return value === "subprotocol" ? "subprotocol" : "query";
 }
 
 export function normalizeDesktopWsUrlInput(value: unknown, fallback = ""): string {
@@ -119,133 +56,6 @@ export function normalizeDesktopWsUrlInput(value: unknown, fallback = ""): strin
   }
 }
 
-export function applyDesktopTokenToUrl(rawUrl: string, tokenMode: DesktopWsTokenMode, token: string) {
-  const normalized = normalizeDesktopWsUrlInput(rawUrl);
-  if (!normalized) {
-    return "";
-  }
-  const url = new URL(normalized);
-  const normalizedToken = readText(token);
-  url.searchParams.delete("token");
-  if (tokenMode === "query" && normalizedToken) {
-    url.searchParams.set("token", normalizedToken);
-  }
-  return url.toString();
-}
-
-export function buildDesktopTokenTransport(
-  rawUrl: string,
-  tokenModeInput: DesktopWsTokenMode,
-  token: string
-): DesktopTokenTransport {
-  const tokenMode = normalizeDesktopWsTokenMode(tokenModeInput);
-  const url = applyDesktopTokenToUrl(rawUrl, tokenMode, token);
-  const normalizedToken = readText(token);
-  return {
-    url,
-    tokenMode,
-    protocols: tokenMode === "subprotocol" && normalizedToken ? [`bearer.${normalizedToken}`] : undefined
-  };
-}
-
-export function buildDesktopBusinessFrame(
-  ns: DesktopWsNamespace,
-  type: string,
-  payload: unknown,
-  id: string
-): DesktopBusinessFrame {
-  return {
-    ns,
-    frame: "request",
-    type,
-    id,
-    payload: payload === undefined ? {} : payload
-  };
-}
-
 export function encodePairingPayloadV2(payload: MobilePairingPayloadV2) {
   return `${DESKTOP_WS_PAIRING_PREFIX}${encodeBase64Url(JSON.stringify(payload))}`;
-}
-
-function parsePairingJson(payloadText: string, t: TranslateFunction): unknown {
-  const text = readText(payloadText);
-  if (!text) {
-    throw new Error(t("pairing.invalidPayload"));
-  }
-
-  try {
-    if (text.startsWith(DESKTOP_WS_PAIRING_PREFIX)) {
-      return JSON.parse(decodeBase64UrlToText(text.slice(DESKTOP_WS_PAIRING_PREFIX.length)));
-    }
-    return JSON.parse(text);
-  } catch {
-    throw new Error(t("pairing.invalidPayload"));
-  }
-}
-
-function parseLegacyPairingPayload(record: Record<string, unknown>, t: TranslateFunction): LegacyPairingPayload {
-  const payload: LegacyPairingPayload = {
-    desktopDeviceId: readText(record.desktopDeviceId),
-    desktopIdentityCreatedAt: readText(record.desktopIdentityCreatedAt),
-    desktopUsername: readText(record.desktopUsername),
-    desktopHostname: readText(record.desktopHostname),
-    appServerIssuer: readText(record.appServerIssuer),
-    appServerPublicKeySha256: readText(record.appServerPublicKeySha256),
-    apiBaseUrl: normalizeHttpBaseUrl(record.apiBaseUrl),
-    pairingId: readText(record.pairingId),
-    secret: readText(record.secret),
-    expiresAt: readText(record.expiresAt)
-  };
-  if (!payload.desktopDeviceId || !payload.apiBaseUrl || !payload.pairingId || !payload.secret) {
-    throw new Error(t("pairing.missingFields"));
-  }
-  return payload;
-}
-
-function parseDesktopWsPairingPayload(record: Record<string, unknown>, t: TranslateFunction): MobilePairingPayloadV2 {
-  const expiresAtMs = Number(record.expiresAtMs);
-  if (record.targetMode !== "tunnel") {
-    throw new Error(t("pairing.missingWsFields"));
-  }
-  const payload: MobilePairingPayloadV2 = {
-    v: 2,
-    kind: "desktop-ws",
-    targetMode: "tunnel",
-    wsUrl: normalizeDesktopWsUrlInput(record.wsUrl),
-    tokenMode: normalizeDesktopWsTokenMode(record.tokenMode),
-    token: readText(record.token),
-    expiresAtMs,
-    desktopDeviceId: readText(record.desktopDeviceId)
-  };
-
-  if (
-    !payload.wsUrl ||
-    !payload.token ||
-    !payload.desktopDeviceId ||
-    !Number.isFinite(payload.expiresAtMs) ||
-    payload.expiresAtMs <= Date.now()
-  ) {
-    throw new Error(t("pairing.missingWsFields"));
-  }
-
-  return payload;
-}
-
-export function parsePairingPayload(payloadText: string, t: TranslateFunction = createTranslator(DEFAULT_LOCALE)): ParsedPairingPayload {
-  const parsed = parsePairingJson(payloadText, t);
-  if (!isObjectRecord(parsed)) {
-    throw new Error(t("pairing.invalidPayload"));
-  }
-
-  if (Number(parsed.v) === 2 && readText(parsed.kind) === "desktop-ws") {
-    return {
-      transportKind: "desktop-ws",
-      payload: parseDesktopWsPairingPayload(parsed, t)
-    };
-  }
-
-  return {
-    transportKind: "http",
-    payload: parseLegacyPairingPayload(parsed, t)
-  };
 }

@@ -15,7 +15,7 @@ const DESKTOP_DIRS = [
   "secrets",
   "profiles"
 ] as const;
-export const DESKTOP_SSO_ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
+const DESKTOP_SSO_ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
 type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
@@ -175,10 +175,6 @@ export function getSoftwarePackagesRoot(app: App) {
   return path.join(getProgramsRoot(app), "software-packages");
 }
 
-export function getConfigRoot(app: App) {
-  return path.join(getDataRoot(app), "config");
-}
-
 export function getDesktopConfigRoot(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDataRoot(app, platform), "config", "desktop");
 }
@@ -203,7 +199,7 @@ export function getDesktopPetsDataRoot(app: App, platform: NodeJS.Platform = pro
   return path.join(getRuntimeDataRoot(app, platform), "pets");
 }
 
-export function getDesktopWebsDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+function getDesktopWebsDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getRuntimeDataRoot(app, platform), "webs");
 }
 
@@ -241,11 +237,7 @@ export function getDesktopWebsConfigRoot(app: App, platform: NodeJS.Platform = p
   return path.join(getDataRoot(app, platform), "config", "webs");
 }
 
-export function getDesktopWebsitesConfigRoot(app: App) {
-  return getDesktopWebsConfigRoot(app);
-}
-
-export function getDesktopWebsStateRoot(app: App) {
+function getDesktopWebsStateRoot(app: App) {
   return path.join(getDataRoot(app), "state", "webs");
 }
 
@@ -257,11 +249,11 @@ export function getDesktopWebappStateRoot(app: App, webappId: string) {
   return path.join(getDesktopWebappsStateRoot(app), webappId);
 }
 
-export function getDesktopWebsLogsRoot(app: App) {
+function getDesktopWebsLogsRoot(app: App) {
   return path.join(getDataRoot(app), "logs", "webs");
 }
 
-export function getDesktopWebappsLogsRoot(app: App) {
+function getDesktopWebappsLogsRoot(app: App) {
   return path.join(getDesktopWebsLogsRoot(app), "webapps");
 }
 
@@ -269,15 +261,11 @@ export function getDesktopWebappLogsRoot(app: App, webappId: string) {
   return path.join(getDesktopWebappsLogsRoot(app), webappId);
 }
 
-export function getDesktopInitialEnvDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getRuntimeDataRoot(app, platform), "env-initial");
-}
-
 export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
   return path.join(getDataRoot(app), "data", kindDirectoryName(kind), serviceId);
 }
 
-export function getApplicationSupportRoot(app: App) {
+function getApplicationSupportRoot(app: App) {
   const applicationSupportRoot = resolveApplicationSupportRoot({
     platform: process.platform,
     appDataPath: getAppDataPath(app)
@@ -289,10 +277,6 @@ export function getApplicationSupportRoot(app: App) {
 export function getAssistantTempRoot(app: App) {
   const tempRoot = tryGetAppPath(app, "temp") || os.tmpdir();
   return path.join(tempRoot, APP_BRAND.packageName, "assistant");
-}
-
-export function getStateRoot(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getDataRoot(app, platform), "state");
 }
 
 export function getDesktopStateRoot(app: App, platform: NodeJS.Platform = process.platform) {
@@ -318,24 +302,12 @@ export function getServiceStateRoot(app: App, serviceId: ServiceId, kind: Servic
   return path.join(getDataRoot(app), "state", kindDirectoryName(kind), serviceId);
 }
 
-export function getLogsRoot(app: App) {
-  return path.join(getDataRoot(app), "logs");
-}
-
 export function getServiceLogsRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
   return path.join(getDataRoot(app), "logs", kindDirectoryName(kind), serviceId);
 }
 
-export function getCacheRoot(app: App) {
-  return path.join(getDataRoot(app), "cache");
-}
-
 export function getMarketplaceCacheRoot(app: App) {
   return path.join(getDataRoot(app), "cache", "marketplace");
-}
-
-export function getMarketplaceConfigRoot(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getDataRoot(app, platform), "config", "marketplace");
 }
 
 export function getMarketplaceStateRoot(app: App) {
@@ -345,8 +317,6 @@ export function getMarketplaceStateRoot(app: App) {
 export function getSecretsRoot(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDataRoot(app, platform), "secrets");
 }
-
-export const getCredentialsRoot = getSecretsRoot;
 
 export function getProfilesRoot(app: App, platform: NodeJS.Platform = process.platform) {
   const dataRoot = getDataRoot(app, platform);
@@ -376,8 +346,4 @@ function resolveWebsiteBridgeRoots(dataRoot: string, platform: NodeJS.Platform) 
 
 export function getDesktopWebsiteBridgeStorage(app: App, platform: NodeJS.Platform = process.platform) {
   return resolveWebsiteBridgeRoots(getDataRoot(app, platform), platform);
-}
-
-export function getDesktopWebsiteBridgesDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
-  return getDesktopWebsiteBridgeStorage(app, platform).packagesRoot;
 }

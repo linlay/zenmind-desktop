@@ -39,7 +39,6 @@ export function clearServices(kind?: ServiceKind) {
 }
 
 export const registerPlugin = registerService;
-export const unregisterPlugin = unregisterService;
 export const getBuiltinService = getService;
 
 export const __testInternals = {

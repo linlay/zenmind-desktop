@@ -4,7 +4,6 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 
 export type LocalDocumentExtension = ".ppt" | ".pptx" | ".doc" | ".docx" | ".xls" | ".xlsx" | ".pdf";
-/** @deprecated Use LocalDocumentExtension, which also includes PDF. */
 
 /** Main-only descriptor. Never send the application path to a guest or renderer. */
 export interface LocalDocumentApplication {
