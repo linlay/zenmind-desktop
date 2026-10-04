@@ -1,3 +1,4 @@
+import { getMainLocale, subscribeMainLocale } from "../../../support/i18n/main-i18n";
 import { createHash, randomUUID } from "node:crypto";
 import type { App } from "electron";
 import type {
@@ -120,6 +121,7 @@ export function createAgentPlatformRealtimeUrl(
   url.searchParams.set("token", token);
   url.searchParams.set("source", source.trim() || "desktop-main");
   url.searchParams.set("deviceId", deviceId);
+  url.searchParams.set("locale", getMainLocale());
   if (surfaceId.trim()) url.searchParams.set("surfaceId", surfaceId.trim());
   return url.toString();
 }
@@ -220,6 +222,8 @@ export class AgentPlatformRealtimeClient {
   private lastHeartbeatAt = 0;
   private lastHeartbeatSequence = 0;
   private lastCloseReason = "";
+  private localeSync: Promise<void> | null = null;
+  private readonly unsubscribeLocale: () => void;
   private disposed = false;
   private intentionallyClosing = false;
   private refreshPromise: Promise<void> | null = null;
@@ -251,7 +255,30 @@ export class AgentPlatformRealtimeClient {
     onState?(state: AgentPlatformRealtimeConnectionState): void;
     onDiagnostic?(message: string): void;
     onTrace?(direction: "in" | "out", frame: AgentPlatformRealtimeFrame): void;
-  }) {}
+  }) {
+    this.unsubscribeLocale = subscribeMainLocale(() => this.syncLocale());
+  }
+
+  private syncLocale() {
+    const socket = this.socket;
+    const generation = this.generation;
+    if (!socket || this.state.phase !== "connected") return;
+    const locale = getMainLocale();
+    const pending = Promise.resolve(this.localeSync).then(async () => {
+      if (this.socket !== socket || this.generation !== generation) return;
+      const response = await this.sendInternalRequest("/api/locale", { locale });
+      if (Number(response.code) !== 0) throw frameError(response);
+    });
+    this.localeSync = pending;
+    void pending.then(() => {
+      if (this.localeSync === pending) this.localeSync = null;
+    }, (error) => {
+      if (this.localeSync === pending) this.localeSync = null;
+      this.options.onDiagnostic?.(`Platform locale sync failed: ${String(error)}`);
+      this.handleClosed(socket, generation, error instanceof Error ? error : new Error(String(error)));
+      try { socket.close(1000, "locale sync failed"); } catch { /* Connection ownership was already cleared. */ }
+    });
+  }
 
   getState() {
     return { ...this.state, key: this.state.key ? { ...this.state.key } : null };
@@ -315,6 +342,13 @@ export class AgentPlatformRealtimeClient {
     if (!socket || this.state.phase !== "connected") {
       throw new Error("connection_unavailable: Agent Platform realtime connection is not open");
     }
+    // Wait for the connection setting acknowledgement before sending later business requests.
+    if (this.localeSync && frame.frame === "request" && frame.type !== "/api/locale") {
+      void this.localeSync.then(() => {
+        if (this.socket === socket && this.state.phase === "connected") this.send(frame);
+      }).catch(() => {}); // The sync failure closes the connection and fails pending requests.
+      return;
+    }
     socket.send(JSON.stringify(frame));
     this.options.onTrace?.("out", frame);
   }
@@ -331,6 +365,7 @@ export class AgentPlatformRealtimeClient {
       return;
     }
     this.disposed = true;
+    this.unsubscribeLocale();
     this.intentionallyClosing = true;
     this.clearReconnectTimer();
     this.clearHeartbeatTimer();
@@ -397,6 +432,7 @@ export class AgentPlatformRealtimeClient {
     }
     const factory = this.options.createWebSocket ?? defaultSocketFactory;
     const deviceId = this.options.getDesktopDeviceId(this.options.app);
+    const connectingLocale = getMainLocale();
     const socket = factory(
       createAgentPlatformRealtimeUrl(
         this.currentBaseUrl,
@@ -409,6 +445,7 @@ export class AgentPlatformRealtimeClient {
     this.generation += 1;
     const generation = this.generation;
     this.socket = socket;
+    this.localeSync = null;
     this.publishState(reconnecting ? "reconnecting" : "connecting", 1);
     const timeoutMs = this.options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -420,6 +457,8 @@ export class AgentPlatformRealtimeClient {
         if (timer) clearTimeout(timer);
         this.rejectConnect = null;
         this.reconnectAttempt = 0;
+        this.state.phase = "connected";
+        if (connectingLocale !== getMainLocale()) this.syncLocale();
         this.publishState("connected", 1);
         this.resetHeartbeatTimer(socket, generation);
         resolve();
