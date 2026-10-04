@@ -45,8 +45,8 @@ test("capability navigation keeps the agreed item order", () => {
     [
       "agents",
       "skills",
-      "memory",
       "mcp-servers",
+      "memory",
       "registries",
       "archives",
       "market",
@@ -60,8 +60,8 @@ test("capability navigation keeps the agreed item order", () => {
     [
       "/agents",
       "/skills",
-      "/memory",
       "/connectors",
+      "/memory",
       "/registries",
       "/archives",
       "/market",
@@ -159,7 +159,7 @@ test("capability navigation groups platform, cloud and help entries", () => {
       CAPABILITY_NAVIGATION_ITEMS.filter((item) => item.group === group).map((item) => item.id),
     ])),
     {
-      platform: ["agents", "skills", "memory", "mcp-servers", "registries", "archives"],
+      platform: ["agents", "skills", "mcp-servers", "memory", "registries", "archives"],
       cloud: ["market", "artifact-management", "share-management"],
       help: ["help"],
     },

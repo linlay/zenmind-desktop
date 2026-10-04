@@ -42,18 +42,18 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
     detailPathPrefix: "/skills/",
   },
   {
-    id: "memory",
-    group: "platform",
-    to: "/memory",
-    labelKey: "nav.memory",
-    icon: "archive",
-  },
-  {
     id: "mcp-servers",
     group: "platform",
     to: "/connectors",
     labelKey: "nav.mcpConnectors",
     icon: "connector",
+  },
+  {
+    id: "memory",
+    group: "platform",
+    to: "/memory",
+    labelKey: "nav.memory",
+    icon: "archive",
   },
   {
     id: "registries",
