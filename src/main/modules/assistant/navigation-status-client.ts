@@ -71,7 +71,7 @@ export class AssistantNavigationStatusClient {
     activityItems: [],
     chatItems: [],
     chatItemsHasMore: false,
-    chatSortMode: "recent",
+    chatSortMode: "manual",
     chatOrderingSupported: false,
     message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowEpochMillis()
@@ -602,7 +602,7 @@ export class AssistantNavigationStatusClient {
         pinnedChatItems: nextPins.items,
         chatPinningSupported: this.latestResult.chatPinningSupported === true,
         chatItemsHasMore: this.latestResult.chatItemsHasMore,
-        chatSortMode: this.latestResult.chatSortMode ?? "recent",
+        chatSortMode: this.latestResult.chatSortMode ?? "manual",
         chatOrderingSupported: this.latestResult.chatOrderingSupported === true,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowEpochMillis()

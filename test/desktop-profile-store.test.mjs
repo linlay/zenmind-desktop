@@ -115,3 +115,11 @@ test("confirmation timeout defaults to 120 seconds, caps at 600 and survives oth
   updateDesktopProfileInRoot(root, { general: { desktopActionConfirmationTimeoutSeconds: 45 } });
   assert.equal(readDesktopProfileFromRoot(root).general.desktopActionConfirmationTimeoutSeconds, 45);
 });
+
+test("chat sorting defaults to manual and preserves an explicit recent preference", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-sort-default-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(readDesktopProfileFromRoot(root).navigation.chatSortMode, "manual");
+  updateDesktopProfileInRoot(root, { navigation: { chatSortMode: "recent" } });
+  assert.equal(readDesktopProfileFromRoot(root).navigation.chatSortMode, "recent");
+});

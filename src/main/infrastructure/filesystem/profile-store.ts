@@ -97,7 +97,7 @@ function normalizeTheme(value: unknown): DesktopThemePreference {
 }
 
 function normalizeChatSortMode(value: unknown): AssistantChatSortMode {
-  return value === "manual" ? "manual" : "recent";
+  return value === "recent" ? "recent" : "manual";
 }
 
 function normalizeDesktopProfile(

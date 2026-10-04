@@ -735,7 +735,7 @@ export function AppShell() {
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
   const [assistantChatSortMode, setAssistantChatSortMode] =
-    useState<AssistantChatSortMode>("recent");
+    useState<AssistantChatSortMode>("manual");
   const [assistantChatOrderingSupported, setAssistantChatOrderingSupported] =
     useState(false);
   const [projectFloatingWebviews, setProjectFloatingWebviews] =
@@ -1773,7 +1773,7 @@ export function AppShell() {
         setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
         setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
         setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
-        setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
+        setAssistantChatSortMode(nextResult.chatSortMode ?? "manual");
         setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
       }
     } catch {
@@ -1923,7 +1923,7 @@ export function AppShell() {
       setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
       setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
       setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
-      setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
+      setAssistantChatSortMode(nextResult.chatSortMode ?? "manual");
       setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
     });
 
@@ -4028,7 +4028,7 @@ export function AppShell() {
     (workPanelLauncherAgentMode === "CODER" && !workPanelProjectDisabledReason);
   const workPanelLastRunId = activeChatWorkPanelChatId
     ? [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
-      workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ?? ""
+      [...(workPanelLauncherAgent?.projectChats ?? []), ...(workPanelLauncherAgent?.recentChats ?? [])].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ?? ""
     : "";
   const workPanelWebapps = webItems
     .filter((item): item is WebappEntry => item.kind === "webapp")
@@ -4481,7 +4481,7 @@ export function AppShell() {
       agent.latestChatId?.trim() ||
       agent.recentChats[0]?.chatId.trim() ||
       "";
-    const preferredChat = [...assistantPinnedChatItems, ...agent.recentChats, ...assistantNavChatItems].find(
+    const preferredChat = [...assistantPinnedChatItems, ...(agent.projectChats ?? []), ...agent.recentChats, ...assistantNavChatItems].find(
       (chat) =>
         (chat.agentKey.trim() || agentKey) === agentKey &&
         chat.chatId.trim() === preferredChatId,
@@ -4530,7 +4530,7 @@ export function AppShell() {
   const openConversationShare = (chatId: string, chatName?: string) => {
     const resolvedChatName = chatName?.trim() ||
       [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
-      workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
+      [...(workPanelLauncherAgent?.projectChats ?? []), ...(workPanelLauncherAgent?.recentChats ?? [])].find((chat) => chat.chatId === chatId)?.chatName?.trim() ||
       chatId;
     shellOverlay.openConversationShare(chatId, resolvedChatName);
   };
@@ -5079,7 +5079,7 @@ export function AppShell() {
             agentKey: activeChatRouteInfo.agentKey,
             agentMode: workPanelLauncherAgentMode,
             agentLabel: workPanelLauncherAgent?.displayName ? `${workPanelLauncherAgent.displayName} (${activeChatRouteInfo.agentKey})` : activeChatRouteInfo.agentKey,
-            chatLabel: [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || activeChatWorkPanelChatId || "",
+            chatLabel: [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || [...(workPanelLauncherAgent?.projectChats ?? []), ...(workPanelLauncherAgent?.recentChats ?? [])].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || activeChatWorkPanelChatId || "",
             projectEnabled: workPanelProjectEnabled,
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,

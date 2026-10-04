@@ -474,7 +474,7 @@ export function findAgentIndexForPush(items: AssistantNavAgentItem[], event: Nav
   return -1;
 }
 
-export function applyAssistantNavigationPush(
+function applyAssistantNavigationActivityPush(
   currentItems: AssistantNavAgentItem[],
   frame: NavigationPushFrame
 ): AssistantNavigationApplyResult {
@@ -662,4 +662,23 @@ export function applyAssistantNavigationChatPush(
   }
 
   return { items: currentItems, changed: false, shouldRefresh: true };
+}
+
+// Sidebar order is server-owned; push patches update fields without reshuffling it.
+export function applyAssistantNavigationPush(
+  currentItems: AssistantNavAgentItem[],
+  frame: NavigationPushFrame,
+): AssistantNavigationApplyResult {
+  const activity = applyAssistantNavigationActivityPush(currentItems, frame);
+  let changed = activity.changed;
+  let sidebarHandled = false;
+  const items = activity.items.map((agent) => {
+    if (!agent.projectChats) return agent;
+    const next = applyAssistantNavigationChatPush(agent.projectChats, frame);
+    sidebarHandled ||= !next.shouldRefresh;
+    if (!next.changed) return agent;
+    changed = true;
+    return { ...agent, projectChats: next.items };
+  });
+  return { items: changed ? items : currentItems, changed, shouldRefresh: activity.shouldRefresh && !sidebarHandled };
 }

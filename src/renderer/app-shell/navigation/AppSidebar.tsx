@@ -103,7 +103,6 @@ import {
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
-  getAssistantNavAgentSortedChats,
   getAssistantNavAgentUnpinnedChats,
   hasAssistantNavChat,
   isAssistantNavChatAgent,
@@ -1085,7 +1084,7 @@ export function AppSidebar({
   assistantChatPinningSupported = false,
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
-  assistantChatSortMode = "recent",
+  assistantChatSortMode = "manual",
   assistantChatOrderingSupported = false,
   chatWorkPanelOpenChatIds = [],
   assistantNavAgentsLoaded = true,
@@ -2345,7 +2344,7 @@ export function AppSidebar({
     const direct = [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === chatId);
     if (direct) return direct;
     for (const agent of assistantNavAgentsRef.current) {
-      const chat = getAssistantNavAgentRecentChats(agent).find(
+      const chat = [...(agent.projectChats ?? []), ...getAssistantNavAgentRecentChats(agent)].find(
         (item) => item.chatId === chatId,
       );
       if (chat) {
@@ -3760,7 +3759,7 @@ export function AppSidebar({
         (agent) => agent.agentKey === agentKey,
       );
       const nextChat = currentAgent
-        ? getAssistantNavAgentSortedChats(currentAgent).find(
+        ? getAssistantNavAgentUnpinnedChats(currentAgent).find(
             (candidate) => candidate.chatId !== chat.chatId,
           )
         : null;
@@ -3805,7 +3804,7 @@ export function AppSidebar({
           (agent) => agent.agentKey === agentKey,
         );
         const nextChat = currentAgent
-          ? getAssistantNavAgentSortedChats(currentAgent).find(
+          ? getAssistantNavAgentUnpinnedChats(currentAgent).find(
               (candidate) => candidate.chatId !== chat.chatId,
             )
           : null;

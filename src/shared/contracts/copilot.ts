@@ -343,6 +343,8 @@ export interface AssistantNavAgentItem {
   latestPreview: string;
   updatedAt?: EpochMilliseconds | null;
   recentChats: AssistantNavChatItem[];
+  /** Platform-ordered project sidebar window; activity keeps recentChats. */
+  projectChats?: AssistantNavChatItem[];
   mode?: string;
   workspaceDir?: string;
   workspaceDirExists?: boolean;

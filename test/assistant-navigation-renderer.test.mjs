@@ -636,3 +636,20 @@ test("root-agent API projection keeps zenmi available for startup and Chats new 
   assert.equal(runtime.defaultAgentAvailable, true);
   assert.deepEqual(resolveFirstInstallBootstrapNavigationTarget(options, [], { defaultChatAgentKey: "zenmi" }), { agentKey: "zenmi" });
 });
+
+test("chat sorting uses manual only when no recent preference was returned", () => {
+  const result = { ok: true, items: [], message: "ok", updatedAt: TEST_EPOCH_MILLIS };
+  assert.equal(normalizeAssistantNavAgentItemsResult(result).chatSortMode, "manual");
+  assert.equal(normalizeAssistantNavAgentItemsResult({ ...result, chatSortMode: "recent" }).chatSortMode, "recent");
+  assert.equal(normalizeAssistantNavAgentItemsResult({ ...result, chatSortMode: "manual" }).chatSortMode, "manual");
+});
+
+
+test("project previews preserve the server order independently of recent activity", () => {
+  const chat = (chatId, time) => ({ chatId, agentKey: "project", chatName: chatId, createdAt: epoch(time), updatedAt: epoch(time) });
+  for (const order of [[chat("older", 1), chat("newer", 9)], [chat("newer", 9), chat("older", 1)]]) {
+    const [agent] = normalizeAssistantNavAgents([{ agentKey: "project", displayName: "Project", recentChats: [chat("active", 20)], projectChats: order }]);
+    assert.deepEqual(getAssistantNavAgentPreviewChats(agent, 1).map((item) => item.chatId), [order[0].chatId]);
+    assert.deepEqual(agent.recentChats.map((item) => item.chatId), ["active"]);
+  }
+});

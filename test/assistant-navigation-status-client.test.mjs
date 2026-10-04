@@ -249,11 +249,11 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   }
 
   globalThis.WebSocket = FakeWebSocket;
-  globalThis.fetch = async () => ({
+  globalThis.fetch = async (url) => ({
     ok: true,
     status: 200,
     async json() {
-      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+      return { code: 0, data: new URL(String(url)).pathname === "/api/chats" ? [] : [{ key: "zenmi", name: "Zenmi", chats: [] }] };
     },
   });
   t.after(() => {
@@ -530,11 +530,11 @@ test("assistant navigation reports a failed order snapshot without probing a pin
   }
 
   globalThis.WebSocket = FakeWebSocket;
-  globalThis.fetch = async () => ({
+  globalThis.fetch = async (url) => ({
     ok: true,
     status: 200,
     async json() {
-      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+      return { code: 0, data: new URL(String(url)).pathname === "/api/chats" ? [] : [{ key: "zenmi", name: "Zenmi", chats: [] }] };
     },
   });
   t.after(() => {
@@ -644,7 +644,7 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     async json() {
       return {
         code: 0,
-        data: String(input).includes("scope=copilot")
+        data: new URL(String(input)).pathname === "/api/chats" ? [staleChat] : String(input).includes("scope=copilot")
           ? []
           : [{
               key: "coder-project",
@@ -980,11 +980,11 @@ test("assistant navigation live status reports WebSocket setup failures without 
     globalThis.WebSocket = originalWebSocket;
   });
   globalThis.WebSocket = undefined;
-  globalThis.fetch = async () => ({
+  globalThis.fetch = async (url) => ({
     ok: true,
     status: 200,
     async json() {
-      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+      return { code: 0, data: new URL(String(url)).pathname === "/api/chats" ? [] : [{ key: "zenmi", name: "Zenmi", chats: [] }] };
     },
   });
 
@@ -1055,11 +1055,11 @@ test("assistant navigation retains its last valid snapshot when a refreshed batc
   }
 
   globalThis.WebSocket = FakeWebSocket;
-  globalThis.fetch = async () => ({
+  globalThis.fetch = async (url) => ({
     ok: true,
     status: 200,
     async json() {
-      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+      return { code: 0, data: new URL(String(url)).pathname === "/api/chats" ? [] : [{ key: "zenmi", name: "Zenmi", chats: [] }] };
     },
   });
   t.after(() => {
@@ -1426,7 +1426,7 @@ test("assistant navigation reads projects and the chat agent directory as separa
   globalThis.fetch = async (url) => {
     const parsed = new URL(String(url));
     requestedSearches.push(parsed.search);
-    const data = parsed.searchParams.get("hasWorkspace") === "true"
+    const data = parsed.pathname === "/api/chats" ? [{ chatId: "ordered-project-chat", agentKey: "project", createdAt: EPOCH_MS, updatedAt: EPOCH_MS }] : parsed.searchParams.get("hasWorkspace") === "true"
       ? [{
           key: "project",
           name: "Project",
@@ -1457,11 +1457,13 @@ test("assistant navigation reads projects and the chat agent directory as separa
 
   assert.deepEqual(requestedSearches, [
     "?hasWorkspace=true&includeChats=50&chatsPinned=false",
+    "?agentKey=project&pinned=false&limit=50",
     "?scope=nav&hasWorkspace=false",
   ]);
   assert.deepEqual(projects.map((item) => item.agentKey), ["project"]);
   assert.equal(projects[0]?.recentChats[0]?.chatId, "project-chat-1");
   assert.equal(projects[0]?.unreadCount, 1);
+  assert.deepEqual(projects[0].projectChats.map((chat) => chat.chatId), ["ordered-project-chat"]);
   assert.deepEqual(chatAgents.map((item) => item.agentKey), ["zenmi"]);
   assert.equal(chatAgents[0]?.unreadCount, 2);
   assert.deepEqual(chatAgents[0]?.recentChats, []);
@@ -1539,7 +1541,7 @@ test("assistant navigation requests enough chat history for sidebar attention pr
       async json() {
         return {
           code: 0,
-          data: [{ key: "zenmi", name: "Zenmi", chats: [] }],
+          data: new URL(String(url)).pathname === "/api/chats" ? [] : [{ key: "zenmi", name: "Zenmi", chats: [] }],
         };
       },
     };
@@ -2269,7 +2271,9 @@ test("navigation fetches global pins independently of the regular and project cu
   let orderFailure = false;
   globalThis.fetch = async (url) => {
     urls.push(String(url));
-    const data = new URL(String(url)).searchParams.get("hasWorkspace") === "true"
+    const data = new URL(String(url)).pathname === "/api/chats"
+      ? Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i))
+      : new URL(String(url)).searchParams.get("hasWorkspace") === "true"
       ? [{ key: "project", name: "Project", mode: "CODER", workspaceDir: temp, stats: { totalCount: 65, unreadCount: 15 },
           chats: Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i)) }]
       : new URL(String(url)).searchParams.has("includeChats")
@@ -2323,6 +2327,7 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 1);
   assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { hasWorkspace: false, limit: 25, pinned: false });
   assert.deepEqual(urls.map((url) => new URL(url).search).sort(), [
+    "?agentKey=project&pinned=false&limit=50",
     "?hasWorkspace=false&includeChats=50&chatsPinned=false",
     "?hasWorkspace=true&includeChats=50&chatsPinned=false",
     "?scope=nav&hasWorkspace=false",
@@ -2403,4 +2408,20 @@ test("explicit activeRun null clears finished tasks before unread is cleared", (
     agentKey: "zenmi", chatId: "finished", updatedAt: EPOCH_MS + 1,
   } }).items;
   assert.equal(omitted[0].hasActiveRun, true);
+});
+
+
+test("project sidebar pushes retain manual order and update chats outside the activity window", () => {
+  const ordered = [createNavigationChat({ chatId: "older" }), createNavigationChat({ chatId: "newer", updatedAt: EPOCH_MS + 10 })];
+  const agent = createAgent({ recentChats: [createNavigationChat({ chatId: "active" })], projectChats: ordered });
+  const started = applyAssistantNavigationPush([agent], {
+    frame: "push", type: "run.started", data: { chatId: "older", agentKey: "zenmi", runId: "run-older", startedAt: EPOCH_MS + 100 },
+  });
+  assert.equal(started.changed, true);
+  assert.deepEqual(started.items[0].projectChats.map((chat) => chat.chatId), ["older", "newer"]);
+  assert.equal(started.items[0].projectChats[0].hasActiveRun, true);
+  const read = applyAssistantNavigationPush(started.items, {
+    frame: "push", type: "chat.read_all", data: { agentKey: "zenmi" },
+  });
+  assert.deepEqual(read.items[0].projectChats.map((chat) => chat.chatId), ["older", "newer"]);
 });

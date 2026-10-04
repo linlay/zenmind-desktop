@@ -193,6 +193,10 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     latestPreview: toText(record.latestPreview),
     ...(updatedAt !== undefined ? { updatedAt } : {}),
     recentChats,
+    ...(Array.isArray(record.projectChats) ? {
+      projectChats: record.projectChats.map((chat) => normalizeAssistantNavChat(chat, agentKey))
+        .filter((chat): chat is AssistantNavChatItem => Boolean(chat)),
+    } : {}),
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,
     workspaceDirExists:
@@ -369,7 +373,7 @@ export function normalizeAssistantNavAgentItemsResult(
     pinnedChatItems: normalizeAssistantNavChats(result.pinnedChatItems, { requireAgentKey: true }).filter((chat) => chat.pinned),
     chatPinningSupported: result.chatPinningSupported === true,
     chatItemsHasMore: result.chatItemsHasMore === true,
-    chatSortMode: result.chatSortMode === "manual" ? "manual" : "recent",
+    chatSortMode: result.chatSortMode === "recent" ? "recent" : "manual",
     chatOrderingSupported: result.chatOrderingSupported === true,
     ...(activityItems ? { activityItems } : {})
   };
@@ -380,7 +384,7 @@ export function getAssistantNavAgentRecentChats(agent: Pick<AssistantNavAgentIte
 }
 
 export function getAssistantNavAgentSortedChats(
-  agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "recentChats" | "projectChats"> | null | undefined,
 ) {
   return getAssistantNavAgentRecentChats(agent)
     .slice()
@@ -388,13 +392,13 @@ export function getAssistantNavAgentSortedChats(
 }
 
 export function getAssistantNavAgentUnpinnedChats(
-  agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "recentChats" | "projectChats"> | null | undefined,
 ) {
-  return getAssistantNavAgentSortedChats(agent).filter((chat) => !chat.pinned);
+  return (agent?.projectChats ?? getAssistantNavAgentSortedChats(agent)).filter((chat) => !chat.pinned);
 }
 
 export function getAssistantNavAgentPreviewChats(
-  agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "recentChats" | "projectChats"> | null | undefined,
   limit = 5,
 ) {
   const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
@@ -425,7 +429,7 @@ export function getAdjacentAssistantNavChat(
 }
 
 export function getAssistantNavAgentAttentionChat(
-  agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "recentChats" | "projectChats"> | null | undefined,
 ) {
   const chats = getAssistantNavAgentSortedChats(agent);
   const runningChat = chats.find((chat) => chat.hasActiveRun === true);

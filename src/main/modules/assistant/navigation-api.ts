@@ -1,8 +1,9 @@
 import { isObjectRecord } from "./navigation-values";
-import { type AgentPlatformApiResponse, NAVIGATION_AGENT_CHAT_LIMIT } from "./navigation-contracts";
+import { type AgentPlatformApiResponse, type PlatformChatSummary, NAVIGATION_AGENT_CHAT_LIMIT } from "./navigation-contracts";
 import { type AssistantNavAgentItem } from "../../../shared/contracts";
 import { enrichNavigationAgentsWithGitBranches } from "./navigation-workspace";
 import {
+  mapNavigationChat,
   buildAssistantNavigationAgentsFromPlatformAgents,
   buildAssistantCopilotAgentsFromPlatformAgents
 } from "./navigation-projections";
@@ -86,9 +87,18 @@ export async function readAssistantNavigationProjectAgentsFromPlatform(
     `${createApiUrl(baseUrl, "/api/agents")}?hasWorkspace=true&includeChats=${encodeURIComponent(String(includeChatLimit))}&chatsPinned=false`,
     token
   );
-  return await enrichNavigationAgentsWithGitBranches(
-    buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit),
-  );
+  const projects = buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
+  const orderedProjects = await Promise.all(projects.map(async (agent) => {
+    const chats = includeChatLimit > 0 ? await readApiJson<PlatformChatSummary[]>(
+      `${createApiUrl(baseUrl, "/api/chats")}?agentKey=${encodeURIComponent(agent.agentKey)}&pinned=false&limit=${includeChatLimit}`,
+      token,
+    ) : [];
+    const projectChats = chats.map((chat, index) => mapNavigationChat(
+      chat, agent.agentKey, `navigation.projects.${agent.agentKey}.chats[${index}]`,
+    )).filter((chat): chat is NonNullable<typeof chat> => Boolean(chat) && !chat?.pinned);
+    return { ...agent, projectChats };
+  }));
+  return await enrichNavigationAgentsWithGitBranches(orderedProjects);
 }
 
 // Chat-type agents the user can start a conversation with. This is an agent
