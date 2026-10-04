@@ -96,3 +96,9 @@ node qa/skin-packages/build-bow-example.mjs --base /absolute/path/hello-kitty.sk
 以上是需要合并到完整清单的片段，显示当前缺省值。省略任一项时沿用该页面的默认值；浅色 New Chat 缺省为 `transparent`。输入框与推荐卡片的底色不受这两个配置影响。需要同时更新 Desktop 和 WebClient 消费端，旧版本会拒绝不认识的 token。
 
 `chat.screenshot` 已不支持定制；旧包中的该字段会被静默忽略，不校验其值，也不加载所指资源。截图菜单使用客户端原生图标。
+
+## 本地主题制作资源
+
+`output/` 不纳入版本控制，已有本地文件可继续保留。历史主题集合的批量重建、专属检查和预览脚本已移除；通用示例、包校验与 smoke 验收仍使用本目录和 `qa/` 中的入口。
+
+`collection-artwork.mjs` 及其 `themed-artwork.mjs`、`kitty-artwork.mjs` 依赖继续保留：已有本地 `output/skin-collection/strengthen-icons.mjs` 仍通过相对路径使用它们。不要把本地主题集合当成通用示例或回归检查的必备输入。

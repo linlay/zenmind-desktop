@@ -1,5 +1,7 @@
 # Agent WebClient 双环境架构改造完整计划
 
+> 历史计划，保留用于追溯，不作为当前实现契约或可直接执行的改造指令。文中的 Desktop 单物理 WS / 多 active stream 方案已被后续设计更新：当前由一个 Broker 管理 Primary、BTW、Selection Explain 三条隔离 lane，每条 lane 最多一个 live Run stream。当前边界见 [架构与模块边界](../docs/架构与模块边界.md) 与 [统一文档与 WorkPanel](../docs/统一文档与WorkPanel.md)。
+
 > 目标仓库：`/Users/linlay/Project/zenmind/agent-webclient`  
 > 参考方案：`/Users/linlay/Downloads/webclient-双环境架构改造规划-V5/agent-webclient`  
 > 本文是当前 WebClient 改造的权威计划；V5 中与本文冲突的内容以本文为准。

@@ -63,7 +63,10 @@ npm test
 ├── build/                  # 生成的品牌配置、资源和打包中间产物
 ├── contracts/              # 由源码生成的机器可读对外契约
 ├── docs/                   # 架构与专题设计文档
-├── qa/                     # 手工回归清单
+├── native/                 # 平台原生能力与构建输入
+├── output/                 # 本地生成物与个人制作资源（不纳入版本控制）
+├── planning/               # 历史改造计划（当前设计以 docs/ 为准）
+├── qa/                     # 手工回归、验收脚本、示例素材与历史验证证据
 ├── scripts/                # 开发、同步、打包和验证脚本
 ├── src/
 │   ├── main/               # Electron 主进程
@@ -72,7 +75,6 @@ npm test
 │   └── shared/             # main / preload / renderer 共享契约
 ├── test/                   # Node 测试
 ├── AGENTS.md
-├── CLAUDE.md
 ├── package.json
 └── VERSION
 ```

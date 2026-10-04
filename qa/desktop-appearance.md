@@ -39,6 +39,6 @@ CSS 的 Windows 分支检查不能证明 Windows 原生窗口已验收。发布�
 
 Agent WebClient 的独立外观桥另用 `npm run test:webclient-appearance` 验证。该入口使用真实 Service WebView preload、contextBridge 和宿主外观 relay，检查消费后协商、定向快照、主题与 token 热更新、单层壁纸像素、文档 nonce、旧页面与不可用回退，以及 URL、guest ID 和输入保留。测试 guest 只消费公开外观接口，不加载 Platform 或用户数据。
 
-若另一个 WebClient 工作区已启动 `qa/appearance-preview.tsx` 的隔离演示，可把 `WEBCLIENT_APPEARANCE_DEMO_URL` 指向其本地 `?mode=desktop` 地址，再执行 `node qa/webclient-appearance-smoke.mjs`。测试会使用真实 Desktop 雾林 token、山湖图片和 preload，验证 WebClient 的 AppearanceProvider、Composer、消息/审批、Ant Design 浮层、草稿/附件/滚动/焦点/流式状态保持，以及 Copilot/WorkPanel 的实色策略；演示必须不依赖真实登录或业务数据。输出包含各平台样式的浅深色及浮层截图。
+若另一个 `agent-webclient` 工作区已启动其外观隔离演示（预览入口和启动命令以该仓库当前 QA 文档为准，不是本仓库的文件），可把 `WEBCLIENT_APPEARANCE_DEMO_URL` 指向其本地 `?mode=desktop` 地址，再执行 `node qa/webclient-appearance-smoke.mjs`。测试会使用真实 Desktop 雾林 token、山湖图片和 preload，验证 WebClient 的 AppearanceProvider、Composer、消息/审批、Ant Design 浮层、草稿/附件/滚动/焦点/流式状态保持，以及 Copilot/WorkPanel 的实色策略；演示必须不依赖真实登录或业务数据。输出包含各平台样式的浅深色及浮层截图。
 
 这些检查覆盖 macOS/Windows 的宿主 CSS 路径与隔离真实组件，不替代带后端身份的完整聊天业务、Standalone 发布构建和 Windows 原生窗口验收。

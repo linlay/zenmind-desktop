@@ -1,5 +1,7 @@
 # Part 文件功能拆分总结报告
 
+> 历史验证记录：保留当时的失败基线与验证限制，不代表当前版本状态或发布结论。当前设计见 [docs](../docs/README.md)，发布验收见 [手工回归清单](manual-regression.md)。
+
 日期：2026-09-21。基线：`1cb7b804488002fef528bcf6febaced989d5732e`。三个独立任务在同一目录完成；没有创建 worktree。本文记录重构完成并准备提交时的代码快照；报告与重构代码一并纳入提交。
 
 ## 总体结论
@@ -17,7 +19,7 @@
 
 ## 19 组原文件现在如何划分
 
-以下均为 src/main 下的相对路径；完整逐旧文件到多个目标的映射见各组报告。
+以下均为 src/main 下的相对路径；逐文件职责见本文末尾清单；原始分组过程记录可从 Git 历史追溯。
 
 | 原文件组 | 现在的职责划分 |
 | --- | --- |
@@ -58,7 +60,7 @@
 - Main TypeScript：`tsc -p tsconfig.main.json --noEmit` 通过。
 - 架构检查：`npm run architecture:check` 通过，585 个源文件 / 20 个领域模块。
 - `git diff --check` 通过。
-- `src` 文件名中的 part-N：0；`src/scripts/test` 中旧 .part-N 引用：0。QA 原始清单与映射报告仍保留历史文件名供追溯。
+- `src` 文件名中的 part-N：0；`src/scripts/test` 中旧 .part-N 引用：0。QA 原始清单与分组映射报告可从 Git 历史追溯。
 - 当前全仓 i18n strict 扫描仍不通过，输出位于 /tmp/part-refactor-final-i18n.log；未对所有命中逐项完成基线归因。
 
 以下功能测试为三个执行任务的最终隔离输出结果，父任务没有重复执行全部套件；存在测试重叠，不合并成去重总数：
@@ -85,12 +87,25 @@
 
 发布前应优先完成 renderer-build 失败的逐项基线归因、全仓 i18n 检查清理和双平台关键流程手工回归。本报告不以这些未完成项否定已通过的局部验证，也不将重构直接视为可发布状态。
 
-## 详细映射报告
+## 分组失败基线证据（历史）
 
-- [A：动作与通信](part-refactor-actions-communication.md)
-- [B：服务与启动](part-refactor-services-bootstrap.md)
-- [C：身份与桌面交互](part-refactor-identity-desktop.md)
-- [原始 61 文件清单](part-files-inventory.md)
+没有已知 A 运行行为或类型检查失败。全仓 renderer 源码断言套件仍未全绿，其他 58 项失败未逐项做基线归因，标为范围外待核实。以下三个具体断言已直接读取 `git show 1cb7b804488002fef528bcf6febaced989d5732e:<path>` 并应用相同正则，基线也返回 false：
+
+| 断言 | 基线文件与结果 |
+| --- | --- |
+| shutdown：preparing 后紧邻 EMPTY_WORK_PANEL_STATE 清理 | `src/renderer/app-shell/AppShell.tsx`：false |
+| project ACP：projectType/useAcp 到 sidebar.project.acpProxy 的旧结构 | `src/renderer/app-shell/AppShell.tsx`：false |
+| 中文 sidebar.webapp.remove 值为“卸载网页应用” | `src/shared/i18n/dictionaries/zhCN.ts`：false |
+
+- 基线证据：用 `git archive HEAD src test scripts package.json` 将 **`1cb7b804488002fef528bcf6febaced989d5732e`** 导出到 `/tmp/zenmind-b-head-baseline`，在该目录以相同 `--test-name-pattern` 运行原始 `test/renderer-build.test.mjs`；结果也是 **2 通过、5 失败**，五项在相同断言处失败：
+
+| 源码测试 | 当前与 HEAD 基线共同失败点 |
+| --- | --- |
+| public source keeps ZenMind literals out of shared paths except brand-specific defaults | 全局已有品牌字面量；B 的 ZIP 兼容名称已随职责提取迁移白名单 |
+| sidebar translucency is fixed and not user configurable | macSidebarRule 的 `background: transparent` 断言 |
+| Kanban route exposes native desktop api and page styles | `ReferenceError: zhCN is not defined` |
+| website Copilot association is exposed across webs desktop api layers | `requestNavigate(buildSettingsSectionPath("websites"))` 旧形式匹配 |
+| assistant navigation agents are exposed through dedicated ipc without changing pet agents | AppSidebar 的 Coder ACP checkbox UI 源码匹配 |
 
 ## 全部最终文件与磁盘行数
 
