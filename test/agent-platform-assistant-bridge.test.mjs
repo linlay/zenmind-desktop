@@ -2020,3 +2020,123 @@ test("disposing an Assistant consumer aborts its run without disposing the share
     globalThis.fetch = originalFetch;
   }
 });
+
+test("background runs start detached while a live stream occupies the Primary lane", async () => {
+  const originalFetch = globalThis.fetch;
+  const wakeLock = makeWakeLockRecorder();
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
+      if (frame.payload.detached !== true) {
+        // The foreground stream stays live for the whole test.
+        acceptQuery(socket, frame);
+        return;
+      }
+      if (frame.payload.runId === "run-bg-rejected") {
+        socket.receive({ frame: "error", id: frame.id, type: "agent_not_found", code: 404, msg: "agent not found" });
+        return;
+      }
+      if (frame.payload.runId === "run-bg-lost") {
+        queueMicrotask(() => socket.disconnect());
+        return;
+      }
+      socket.receive({
+        frame: "response",
+        id: frame.id,
+        type: "/api/query",
+        code: 0,
+        msg: "success",
+        data: { accepted: true, status: "running", runId: frame.payload.runId, chatId: frame.payload.chatId, agentKey: "agent-bg", startedAt: EPOCH_MS },
+      });
+    },
+  });
+  const { bridge, events } = makeBridge({ wakeLock: wakeLock.wakeLock, createWebSocket: ws.createWebSocket });
+  const interrupts = [];
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "http://127.0.0.1:18888/api/interrupt");
+    interrupts.push(JSON.parse(init.body));
+    return new Response(null, { status: 204 });
+  };
+
+  try {
+    const foreground = await bridge.startRun({ message: "foreground", runId: "run-fg", chatId: "chat-fg" });
+    assert.equal(foreground.ok, true);
+
+    const first = await bridge.startBackgroundRun({ message: "first", runId: "run-bg-1", chatId: "chat-bg-1", agentKey: "agent-bg", source: "copilot" });
+    const second = await bridge.startBackgroundRun({ message: "second", runId: "run-bg-2", chatId: "chat-bg-2", agentKey: "agent-bg" });
+    assert.deepEqual([first.ok, first.runId, first.chatId], [true, "run-bg-1", "chat-bg-1"]);
+    assert.equal(second.ok, true, second.message);
+    const detached = ws.queryRequests.filter((request) => request.payload.detached === true);
+    assert.deepEqual(detached.map((request) => request.payload.runId), ["run-bg-1", "run-bg-2"]);
+    assert.equal(detached[0].payload.stream, undefined);
+    assert.equal(detached[0].socket, ws.queryRequests[0].socket);
+
+    const rejected = await bridge.startBackgroundRun({ message: "rejected", runId: "run-bg-rejected", chatId: "chat-bg-3" });
+    assert.equal(rejected.ok, false);
+    assert.doesNotMatch(rejected.message, /connection_lost_before_acceptance/);
+
+    // Background runs emit no Assistant stream events and hold the wake lock until run.finished.
+    assert.deepEqual(events.map((event) => event.runId), ["run-fg"]);
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+    const socket = ws.queryRequests[0].socket;
+    for (const runId of ["run-bg-1", "run-bg-2"]) {
+      socket.receive({ frame: "push", type: "run.finished", data: { runId, chatId: runId.replace("run", "chat"), status: "completed", finishReason: "complete", finishedAt: EPOCH_MS + 10 } });
+    }
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+    assert.equal((await bridge.stopRun("run-fg")).ok, true);
+    await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after every run ended");
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+    assert.deepEqual(interrupts.map((interrupt) => interrupt.runId), ["run-fg"]);
+
+    const lost = await bridge.startBackgroundRun({ message: "lost", runId: "run-bg-lost", chatId: "chat-bg-4" });
+    assert.equal(lost.ok, false);
+    assert.match(lost.message, /^connection_lost_before_acceptance: /);
+    assert.deepEqual(wakeLock.calls, ["acquire", "release", "acquire", "release"]);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("background runs that ended during a Primary outage are released on reconnect", async () => {
+  const originalFetch = globalThis.fetch;
+  const wakeLock = makeWakeLockRecorder();
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => socket.receive({
+      frame: "response", id: frame.id, type: "/api/query", code: 0, msg: "success",
+      data: { accepted: true, status: "running", runId: frame.payload.runId, chatId: frame.payload.chatId, agentKey: "agent-bg", startedAt: EPOCH_MS },
+    }),
+  });
+  const { bridge } = makeBridge({ wakeLock: wakeLock.wakeLock, createWebSocket: ws.createWebSocket });
+  const chatReads = [];
+  globalThis.fetch = async (url) => {
+    const chatId = new URL(String(url)).searchParams.get("chatId");
+    assert.equal(new URL(String(url)).pathname, "/api/chat");
+    chatReads.push(chatId);
+    // chat-bg-live is still running; chat-bg-done finished while the lane was down.
+    const data = chatId === "chat-bg-live" ? { chatId, activeRun: { runId: "run-bg-live", state: "RUNNING" } } : { chatId };
+    return new Response(JSON.stringify({ code: 0, msg: "success", data }), { status: 200 });
+  };
+
+  try {
+    assert.equal((await bridge.startBackgroundRun({ message: "live", runId: "run-bg-live", chatId: "chat-bg-live" })).ok, true);
+    assert.equal((await bridge.startBackgroundRun({ message: "done", runId: "run-bg-done", chatId: "chat-bg-done" })).ok, true);
+    ws.sockets[0].disconnect();
+    // The physical client reconnects on its own backoff timer.
+    for (let waited = 0; chatReads.length < 2 && waited < 5_000; waited += 25) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(chatReads.length, 2, "background runs were not reconciled after reconnect");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual([...chatReads].sort(), ["chat-bg-done", "chat-bg-live"]);
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+
+    const live = ws.sockets.at(-1);
+    live.receive({ frame: "push", type: "run.finished", data: { runId: "run-bg-live", chatId: "chat-bg-live", status: "completed", finishReason: "complete", finishedAt: EPOCH_MS + 10 } });
+    // The lock is released once the reconciliation read has also dropped run-bg-done.
+    await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after the last background run ended");
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});

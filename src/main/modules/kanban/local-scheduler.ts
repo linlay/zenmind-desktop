@@ -109,7 +109,7 @@ export class LocalKanbanScheduler {
     if (!reserved.ok) return;
     this.changed();
     try {
-      const result = await this.options.assistantBridge.startRun({
+      const result = await this.options.assistantBridge.startBackgroundRun({
         chatId, runId, requestId: runId, agentKey, source: "copilot", attachments: issue.attachments,
         message: buildLocalRunPrompt(issue)
       });

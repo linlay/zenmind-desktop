@@ -125,6 +125,13 @@ export function createConnection(deps: ConnectionPort) {
     if (!localId || !type) {
       throw brokerError("invalid_request", "request id and type are required");
     }
+    // A detached query is answered by a plain response and never opens a Run
+    // stream, so it neither waits for nor reserves the lane's single stream slot.
+    const detachedQuery = type === "/api/query" && options.payload?.detached === true;
+    if (detachedQuery && (lane !== "primary" || options.stream)) {
+      throw brokerError("invalid_request", "detached queries are plain Primary lane requests");
+    }
+    const opensRunStream = !detachedQuery && ["/api/query", "/api/btw", "/api/attach"].includes(type);
     const upstreamId = `desktop-forward-${randomUUID()}`;
     const timer = options.stream
       ? null
@@ -148,12 +155,12 @@ export function createConnection(deps: ConnectionPort) {
     });
     try {
       await ensureConnected(options.baseUrl, options.token, lane);
-      if (["/api/query", "/api/btw", "/api/attach"].includes(type)) {
+      if (opensRunStream) {
         await Promise.all([...deps.runChannels.values()].filter((run) => run.lane === lane).map((run) => run.detachInFlight));
         await deps.laneStreams.waitForEnding(lane);
         if (!deps.pendingRequests.has(upstreamId)) throw brokerError("connection_unavailable", "request expired before stream delivery");
       }
-      const send = ["/api/query", "/api/btw", "/api/attach"].includes(type)
+      const send = opensRunStream
         ? (frame: AgentPlatformRealtimeFrame) => sendRunRequest(lane, frame, options.consumerId)
         : (frame: AgentPlatformRealtimeFrame) => deps.clients[lane].send(frame);
       send({

@@ -138,7 +138,7 @@ export async function startRemoteRun(dependencies: CommandDeliveryDependencies, 
   const chatId = request.chatId?.trim() || createKanbanRemoteChatId();
   const fallbackRunId = request.runId?.trim() || createKanbanRemoteRunId();
   const startRequest = { ...request, chatId, runId: fallbackRunId, requestId: request.requestId?.trim() || fallbackRunId };
-  const startRun = dependencies.options.assistantBridge.startRun(startRequest);
+  const startRun = dependencies.options.assistantBridge.startBackgroundRun(startRequest);
   const applyRunResult = (runResult: AssistantStartRunResult) => {
     if (runResult.ok && localIssueId) {
       updateDesktopKanbanIssueRuntimeState(dependencies.options.app, currentUser, localIssueId, {

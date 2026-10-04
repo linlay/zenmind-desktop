@@ -205,7 +205,7 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {}
@@ -268,7 +268,7 @@ test("Kanban runtime reports sign-in required when SSO credentials are unavailab
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     canUseDesktopSsoCredentials: () => false,
@@ -311,7 +311,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "unused", chatId: "unused", message: "started" }),
+      startBackgroundRun: async () => ({ ok: true, runId: "unused", chatId: "unused", message: "started" }),
     },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => { changedCount += 1; },
@@ -413,7 +413,7 @@ test("local run results survive terminal event ordering, reopening, and reused c
   let changes = 0;
   const options = {
     app,
-    assistantBridge: { listAgents: async () => [], startRun: async () => ({ ok: true }) },
+    assistantBridge: { listAgents: async () => [], startBackgroundRun: async () => ({ ok: true }) },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => { changes += 1; },
   };
@@ -460,7 +460,7 @@ test("local run results survive terminal event ordering, reopening, and reused c
 test("local result can arrive after automatic workflow stage advancement", async (t) => {
   const app = createTempApp(t);
   const runtime = new KanbanRuntime({ app,
-    assistantBridge: { listAgents: async () => [], startRun: async () => ({ ok: true }) },
+    assistantBridge: { listAgents: async () => [], startBackgroundRun: async () => ({ ok: true }) },
     callAgentPlatform: async () => ({ ok: true }), onChanged: () => {},
   });
   t.after(() => runtime.stop());
@@ -486,7 +486,7 @@ test("Kanban navigation push queues Cloud Issue terminals without changing the c
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "unused", chatId: "unused", message: "started" }),
+      startBackgroundRun: async () => ({ ok: true, runId: "unused", chatId: "unused", message: "started" }),
     },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {},
@@ -595,7 +595,7 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v1",
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "Code Assistant" }],
-      startRun: async (request) => {
+      startBackgroundRun: async (request) => {
         starts.push(request);
         await queryAccepted;
         return { ok: true, runId: request.runId, chatId: request.chatId, message: "started" };
@@ -751,7 +751,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {}
@@ -890,7 +890,7 @@ test("Kanban runtime applies paged issue event pulls and tombstones deleted issu
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {}
@@ -1037,7 +1037,7 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
-      startRun: async (request) => {
+      startBackgroundRun: async (request) => {
         startRuns.push(request);
         return { ok: true, runId: "run-remote-1", chatId: "chat-remote-1", message: "started" };
       }
@@ -1177,7 +1177,7 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
-      startRun: async (request) => {
+      startBackgroundRun: async (request) => {
         startRuns.push(request);
         return { ok: true, runId: request.runId, chatId: request.chatId, message: "started" };
       }
@@ -1343,7 +1343,7 @@ test("Kanban runtime recovers a terminal starting receipt without launching a du
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => {
+      startBackgroundRun: async () => {
         startCount += 1;
         return { ok: true, runId: stored.receipt.runId, chatId: stored.receipt.chatId, message: "started" };
       },
@@ -1434,7 +1434,7 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
-      startRun: async (request) => {
+      startBackgroundRun: async (request) => {
         startRuns.push(request);
         return { ok: true, runId: "run-dispatch-1", chatId: "chat-dispatch-1", message: "started" };
       }
@@ -1565,7 +1565,7 @@ test("Kanban runtime ignores retired aliases and reconnects with the global devi
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {}
@@ -1666,7 +1666,7 @@ test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
-      startRun: async (request) => {
+      startBackgroundRun: async (request) => {
         startRuns.push(request);
         await slowStartRunGate;
         return { ok: true, runId: "run-slow-1", chatId: request.chatId, message: "started" };
@@ -1801,7 +1801,7 @@ test("Kanban runtime falls back to local agents for remote listAgents", async (t
     app,
     assistantBridge: {
       listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     listLocalAgents: () => [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体", unreadCount: 0 }],
@@ -1890,7 +1890,7 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
         platformListAgentsCalled = true;
         return new Promise(() => {});
       },
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
     listLocalAgents: () => [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体", unreadCount: 0 }],

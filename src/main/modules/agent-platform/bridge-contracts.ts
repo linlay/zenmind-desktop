@@ -34,6 +34,8 @@ export type ActiveAssistantRun = {
   baseUrl: string;
   token: string;
   acceptance?: Promise<AssistantStartRunResult>;
+  /** Started detached: no local Run stream; released by the Platform Run terminal state. */
+  background?: "starting" | "running";
 };
 
 export type PlatformUploadTicket = {

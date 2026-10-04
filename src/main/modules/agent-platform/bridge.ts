@@ -88,6 +88,8 @@ export class AgentPlatformAssistantBridge {
 
   async startRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> { return this.runs.startRun(request); }
 
+  async startBackgroundRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> { return this.runs.startBackgroundRun(request); }
+
   async completeText(
     request: AssistantStartRunRequest,
     onRawEvent?: (event: Record<string, unknown>) => boolean | void,

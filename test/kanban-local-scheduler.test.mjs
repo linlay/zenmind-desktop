@@ -23,7 +23,7 @@ function setup(t, start) {
   const calls = [];
   const runtime = new KanbanRuntime({ app, assistantBridge: {
     listAgents: async () => [],
-    startRun: async request => {
+    startBackgroundRun: async request => {
       calls.push(request);
       return start ? start(request, runtime) : { ok: true, runId: request.runId, chatId: request.chatId, message: "accepted" };
     }

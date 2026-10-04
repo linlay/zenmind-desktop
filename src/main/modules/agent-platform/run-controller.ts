@@ -23,14 +23,16 @@ import type { PlatformClient } from "./platform-client";
 import { isAssistantRunTerminalEvent, normalizePlatformEvent } from "./platform-event-normalizer";
 import { readErrorText } from "./platform-http-response";
 import type { RealtimeQueryHandle, RealtimeBroker } from "./realtime/realtime-broker";
+import { framePayload, frameError, readText } from "./realtime/realtime-broker.shared";
 
 /** Owns Assistant transactions and their wake-lock lifetime. */
 export class AssistantRunController {
   private readonly activeRuns = new Map<string, ActiveAssistantRun>();
+  private unsubscribeBackgroundWatch: (() => void) | null = null;
   private disposed = false;
   constructor(
     private readonly platform: Pick<PlatformClient, "resolvePlatform" | "platformFetch" | "jsonHeaders">,
-    private readonly realtimeBroker: Pick<RealtimeBroker, "query" | "dispose">,
+    private readonly realtimeBroker: Pick<RealtimeBroker, "query" | "dispose" | "forwardRequest" | "subscribePush" | "subscribeConnection">,
     private readonly ownsRealtimeBroker: boolean,
     private readonly attachments: Pick<AttachmentUploader, "uploadAttachments">,
     private readonly options: { onEvent: (event: AssistantEvent) => void; wakeLock?: AssistantRunWakeLock; resolveChatFile: (chatId: string) => string }
@@ -111,6 +113,206 @@ export class AssistantRunController {
       onAcceptance: resolveAcceptance,
     });
     return acceptance;
+  }
+
+  /**
+   * Starts a Run that keeps executing in the Platform without a live Run
+   * stream. Callers follow it through run.* Push; a surface that wants the
+   * output attaches by runId. Acceptance is the only thing awaited here.
+   */
+  async startBackgroundRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> {
+    const message = request.message.trim();
+    const chatId = request.chatId?.trim() || createChatId();
+    const runId = request.runId?.trim() || createRunId();
+    if (!message) {
+      return { ok: false, runId: "", chatId, message: t("assistant.messageRequired") };
+    }
+    if (this.disposed) {
+      return { ok: false, runId, chatId, message: "Assistant bridge is disposed" };
+    }
+    const availability = await this.platform.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, runId, chatId, message: availability.message };
+    }
+    const existing = this.activeRuns.get(runId);
+    if (existing) {
+      if (existing.chatId !== chatId || !existing.acceptance) {
+        return { ok: false, runId, chatId, message: "runId is already active with a different Assistant transaction" };
+      }
+      return existing.acceptance;
+    }
+    const activeRun: ActiveAssistantRun = {
+      controller: new AbortController(),
+      chatId,
+      agentKey: request.agentKey?.trim() || "",
+      baseUrl: availability.baseUrl,
+      token: availability.token,
+      background: "starting",
+    };
+    activeRun.acceptance = this.submitBackgroundQuery(availability.baseUrl, availability.token, request, { chatId, runId, activeRun });
+    this.activeRuns.set(runId, activeRun);
+    this.acquireWakeLockForActiveRuns();
+    this.watchBackgroundRuns();
+    const result = await activeRun.acceptance;
+    // A rejected or unconfirmed start holds no Run lifetime. An unconfirmed
+    // Run that did start is still converged by the caller through Push.
+    if (!result.ok && this.activeRuns.get(runId) === activeRun) {
+      this.activeRuns.delete(runId);
+      this.releaseWakeLockIfIdle();
+    }
+    if (result.ok) {
+      activeRun.background = "running";
+    }
+    return result;
+  }
+
+  private async submitBackgroundQuery(baseUrl: string, token: string, request: AssistantStartRunRequest, run: {
+    chatId: string;
+    runId: string;
+    activeRun: ActiveAssistantRun;
+  }): Promise<AssistantStartRunResult> {
+    const failed = (message: string): AssistantStartRunResult => ({ ok: false, runId: run.runId, chatId: run.chatId, message });
+    const requestId = request.requestId?.trim() || run.runId;
+    // A stop that lands between here and acceptance is deliberately not
+    // handled: background starts are unattended, and an upload that precedes a
+    // skipped query is bound only to the Chat. Such a Run simply starts.
+    // Settles once the request frame was written (true) or was never sent (false).
+    let delivered: Promise<boolean> = Promise.resolve(false);
+    try {
+      const references = await this.attachments.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? [], false);
+      const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
+      const frame = await new Promise<Parameters<Parameters<RealtimeBroker["forwardRequest"]>[0]["onFrame"]>[0]>((resolve, reject) => {
+        delivered = this.realtimeBroker.forwardRequest({
+          baseUrl,
+          token,
+          lane: "primary",
+          localId: requestId,
+          consumerId: `assistant:${request.source || "copilot"}:${requestId}:background`,
+          type: "/api/query",
+          payload: {
+            requestId,
+            runId: run.runId,
+            chatId: run.chatId,
+            agentKey: request.agentKey?.trim() || undefined,
+            message: request.message.trim(),
+            ...(request.mustUseSkills?.length ? { mustUseSkills: request.mustUseSkills } : {}),
+            ...(accessLevel ? { accessLevel } : {}),
+            references,
+            params: {
+              desktop: {
+                source: request.source || "copilot",
+                action: request.action || "chat",
+                pageContext: request.pageContext ?? null
+              }
+            },
+            detached: true
+          },
+          onFrame: resolve,
+          onError: reject,
+        }).then(() => true, (error) => { reject(error); return false; });
+      });
+      if (frame.frame === "error") {
+        return failed(frameError(frame).message);
+      }
+      const accepted = framePayload(frame);
+      // An older Platform ignores `detached` and answers with a Run stream.
+      if (frame.frame !== "response" || accepted.accepted !== true) {
+        return failed("protocol_error: Agent Platform did not acknowledge the detached query");
+      }
+      if (readText(accepted.runId) !== run.runId || readText(accepted.chatId) !== run.chatId) {
+        this.bestEffortInterrupt(readText(accepted.runId) || run.runId, run.activeRun, "Desktop Assistant run identity mismatch.");
+        return failed("protocol_error: detached query returned a different Run identity");
+      }
+      run.activeRun.agentKey = readText(accepted.agentKey) || run.activeRun.agentKey;
+      return {
+        ok: true,
+        runId: run.runId,
+        chatId: run.chatId,
+        message: t("agentPlatform.runSubmitted"),
+        permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
+        fullAccessRemainingMs: 0
+      };
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Once the request left this process, a transport failure or timeout
+      // does not prove rejection; report it like a stream query lost before acceptance.
+      return failed(await delivered ? `connection_lost_before_acceptance: ${message}` : message);
+    }
+  }
+
+  private watchBackgroundRuns() {
+    if (this.unsubscribeBackgroundWatch) {
+      return;
+    }
+    const unsubscribePush = this.realtimeBroker.subscribePush({
+      types: ["run.finished"],
+      kind: "internal",
+      consumerId: "assistant:background-runs",
+      onPush: (frame) => {
+        const runId = readText(framePayload(frame).runId);
+        if (this.activeRuns.get(runId)?.background) {
+          this.releaseBackgroundRun(runId);
+        }
+      },
+    });
+    // Push is not replayed: a terminal Push missed while Primary was down is
+    // recovered by checking each background Run once the lane is back.
+    let connected = true;
+    const unsubscribeConnection = this.realtimeBroker.subscribeConnection({
+      lane: "primary",
+      consumerId: "assistant:background-runs",
+      onState: (state) => {
+        const wasConnected = connected;
+        connected = state.phase === "connected";
+        if (connected && !wasConnected) {
+          void this.reconcileBackgroundRuns();
+        }
+      },
+    });
+    this.unsubscribeBackgroundWatch = () => { unsubscribePush(); unsubscribeConnection(); };
+  }
+
+  private releaseBackgroundRun(runId: string, expected?: ActiveAssistantRun) {
+    if ((!expected || this.activeRuns.get(runId) === expected) && this.activeRuns.delete(runId)) {
+      this.releaseWakeLockIfIdle();
+    }
+  }
+
+  private async reconcileBackgroundRuns() {
+    if (![...this.activeRuns.values()].some((activeRun) => activeRun.background === "running")) {
+      return;
+    }
+    // The token captured at start may have expired during the outage.
+    const availability = await this.platform.resolvePlatform();
+    if (!availability.ok) {
+      return;
+    }
+    for (const [runId, activeRun] of [...this.activeRuns]) {
+      // A Run still awaiting acceptance is settled by its own start transaction.
+      if (activeRun.background !== "running") {
+        continue;
+      }
+      try {
+        const response = await this.platform.platformFetch(availability.baseUrl, `/api/chat?chatId=${encodeURIComponent(activeRun.chatId)}`, {
+          headers: this.platform.jsonHeaders(availability.token)
+        });
+        if (response.status === 404) {
+          this.releaseBackgroundRun(runId, activeRun);
+          continue;
+        }
+        if (!response.ok) {
+          continue;
+        }
+        const body = await response.json() as { data?: { activeRun?: { runId?: string } | null } };
+        if (readText(body?.data?.activeRun?.runId) !== runId) {
+          this.releaseBackgroundRun(runId, activeRun);
+        }
+      }
+      catch {
+        // Unknown stays held; the next reconnect or run.finished Push retries.
+      }
+    }
   }
 
   async completeText(request: AssistantStartRunRequest, onRawEvent?: (event: Record<string, unknown>) => boolean | void, strictAttachments = false): Promise<AssistantTextCompletionResult> {
@@ -429,6 +631,8 @@ export class AssistantRunController {
       activeRun.controller.abort();
     }
     this.activeRuns.clear();
+    this.unsubscribeBackgroundWatch?.();
+    this.unsubscribeBackgroundWatch = null;
     if (this.ownsRealtimeBroker) {
       this.realtimeBroker.dispose();
     }

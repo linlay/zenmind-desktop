@@ -16,7 +16,8 @@ export type AgentPlatformCaller<TApp> = <T = unknown>(
 
 export type AssistantBridgeLike = {
   listAgents: () => Promise<DesktopPetAgentOption[]>;
-  startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
+  /** Starts the Run detached: Kanban follows run.* Push and never holds a live Run stream. */
+  startBackgroundRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   stopRun?: (runId: string) => Promise<{ ok: boolean; message?: string }>;
   getChat?: (chatId: string) => Promise<{
     messages?: Array<{ runId?: string; role?: string; content?: string }>;

@@ -131,7 +131,7 @@ export async function runIssue(dependencies: ManualRunControllerDependencies, in
   };
   let runResult: AssistantStartRunResult;
   try {
-    runResult = await dependencies.options.assistantBridge.startRun({
+    runResult = await dependencies.options.assistantBridge.startBackgroundRun({
       agentKey,
       chatId,
       runId,
@@ -229,7 +229,7 @@ export async function recoverPendingManualRuns(dependencies: ManualRunController
         updateDesktopKanbanManualRun(dependencies.options.app, currentUser, receipt.runId, "failed", t("kanban.runtime.missing"));
         continue;
       }
-      const result = await dependencies.options.assistantBridge.startRun({
+      const result = await dependencies.options.assistantBridge.startBackgroundRun({
         agentKey: receipt.agentKey,
         chatId: receipt.chatId,
         runId: receipt.runId,
