@@ -2,6 +2,7 @@ import type { MainWindowLifecycleEventsLike } from "./window-model";
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
 import type { DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
 import { toggleMainRendererDevTools } from "./main-window-options";
+import { isWorkPanelFullscreenExitShortcut } from "./webview-shortcuts";
 
 export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLifecycleEventsLike>(
   targetWindow: TWindow,
@@ -17,6 +18,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isDesktopCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelFullscreenActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
     requestAppQuit(): void;
@@ -66,6 +68,11 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
   targetWindow.on("unmaximize", sendWindowState);
 
   targetWindow.webContents.on("before-input-event", (event, input) => {
+    if (options.isWorkPanelFullscreenActive?.() && isWorkPanelFullscreenExitShortcut(options.platform, input)) {
+      event.preventDefault();
+      targetWindow.webContents.send("app.workPanelFullscreenExitShortcut", { guestId: null });
+      return;
+    }
     const globalSearchCommandShortcut = options.lifecycle.isGlobalSearchOverlayVisible?.()
       ? options.resolveGlobalSearchCommandShortcut?.(options.platform, input) ?? null
       : null;

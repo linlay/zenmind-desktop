@@ -93,7 +93,7 @@ export function configureAttachedWebview<
     if (
       options.isWorkPanelWebview?.(contents) === true &&
       options.isWorkPanelFullscreenActive?.() === true &&
-      isWorkPanelFullscreenExitShortcut(input)
+      isWorkPanelFullscreenExitShortcut(options.platform, input)
     ) {
       event.preventDefault();
       const mainWindow = options.getMainWindow();

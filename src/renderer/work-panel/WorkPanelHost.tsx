@@ -77,6 +77,7 @@ import {
   createWorkPanelLocalFileUrl,
 } from "../../shared/chat-work-panel";
 import { WorkPanelReviewPanel } from "./WorkPanelReviewPanel";
+import { WorkPanelFullscreenControls } from "./WorkPanelFullscreenControls";
 import { WorkPanelResourceImage } from "./WorkPanelResourceImage";
 import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController } from "./WorkPanelDocumentHtml";
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
@@ -1942,14 +1943,6 @@ export function WorkPanelHost({
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && fullscreenOwnerChatId === activeChatId) {
-        void onFullscreenChange(null);
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-    root.addEventListener("keydown", handleKeyDown, true);
     const disposeFullscreenExitShortcut = window.electronAPI.onWorkPanelFullscreenExitShortcut(() => {
       if (fullscreenOwnerChatId === activeChatId) {
         void onFullscreenChange(null);
@@ -1979,7 +1972,6 @@ export function WorkPanelHost({
       return true;
     });
     return () => {
-      root.removeEventListener("keydown", handleKeyDown, true);
       disposeFullscreenExitShortcut();
       disposeGuestShortcut();
     };
@@ -2047,9 +2039,17 @@ export function WorkPanelHost({
   return (
     <div
       ref={rootRef}
-      className={`work-panel-host${fullscreenOwnerChatId === activeChatId ? " is-fullscreen" : ""}`}
+      className={`work-panel-host${activeChatId && fullscreenOwnerChatId === activeChatId ? " is-fullscreen" : ""}`}
     >
       {modalContext}
+      {activeChatId && fullscreenOwnerChatId === activeChatId && (
+        <WorkPanelFullscreenControls
+          key={activeChatId}
+          isMac={isMac}
+          isWindows={isWindows}
+          onExit={() => { void onFullscreenChange(null); }}
+        />
+      )}
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeChatId;
         return (

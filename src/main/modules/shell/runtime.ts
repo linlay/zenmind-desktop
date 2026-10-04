@@ -317,6 +317,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     configureMainWindowLifecycleEvents<BrowserWindow>(targetWindow, {
       platform: options.platform,
       lifecycle: mainWindowLifecycle,
+      isWorkPanelFullscreenActive: () => state.workPanelFullscreenActive,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isDesktopCloseShortcut: options.isDesktopCloseShortcut,

@@ -81,10 +81,10 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
             accelerator: "Command+W",
             click: () => options.requestCloseWindow()
           },
-          { role: "minimize" },
-          { role: "zoom" },
+          { role: "minimize", label: options.t("menu.minimize") },
+          { role: "zoom", label: options.t("menu.zoomWindow") },
           { type: "separator" },
-          { role: "front" }
+          { role: "front", label: options.t("menu.bringAllToFront") }
         ]
       }
     : { role: "windowMenu" };
@@ -94,15 +94,15 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
       ? {
           label: options.appName,
           submenu: [
-            { role: "about" },
+            { role: "about", label: options.t("menu.about", { appName: options.appName }) },
             { type: "separator" },
             settingsItem,
             { type: "separator" },
-            { role: "services" },
+            { role: "services", label: options.t("menu.services") },
             { type: "separator" },
-            { role: "hide" },
-            { role: "hideOthers" },
-            { role: "unhide" },
+            { role: "hide", label: options.t("menu.hide", { appName: options.appName }) },
+            { role: "hideOthers", label: options.t("menu.hideOthers") },
+            { role: "unhide", label: options.t("menu.showAll") },
             { type: "separator" },
             {
               label: options.t("menu.quit", { appName: options.appName }),
@@ -121,8 +121,49 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
           label: options.t("menu.file"),
           submenu: [settingsItem, { type: "separator" }, { role: "quit" }]
         },
-    { role: "editMenu" },
-    { role: "viewMenu" },
+    isMac ? {
+      role: "editMenu",
+      label: options.t("menu.edit"),
+      submenu: [
+        { role: "undo", label: options.t("webviewContextMenu.edit.undo") },
+        { role: "redo", label: options.t("webviewContextMenu.edit.redo") },
+        { type: "separator" },
+        { role: "cut", label: options.t("webviewContextMenu.edit.cut") },
+        { role: "copy", label: options.t("webviewContextMenu.edit.copy") },
+        { role: "paste", label: options.t("webviewContextMenu.edit.paste") },
+        { role: "pasteAndMatchStyle", label: options.t("menu.pasteAndMatchStyle") },
+        { role: "delete", label: options.t("common.delete") },
+        { role: "selectAll", label: options.t("webviewContextMenu.edit.select-all") },
+        { type: "separator" },
+        { label: options.t("menu.speech"), submenu: [
+          { role: "startSpeaking", label: options.t("menu.startSpeaking") },
+          { role: "stopSpeaking", label: options.t("menu.stopSpeaking") }
+        ] }
+      ]
+    } : { role: "editMenu" },
+    isMac ? {
+      label: options.t("menu.view"),
+      submenu: [
+        { role: "reload", label: options.t("webviewContextMenu.page.reload") },
+        { role: "forceReload", label: options.t("menu.forceReload") },
+        { role: "toggleDevTools", label: options.t("menu.devTools") },
+        { type: "separator" },
+        { role: "resetZoom", label: options.t("menu.resetZoom") },
+        { role: "zoomIn", label: options.t("menu.zoomIn") },
+        { role: "zoomOut", label: options.t("menu.zoomOut") },
+        { type: "separator" },
+        {
+          id: "desktop-window-fullscreen",
+          label: options.t("menu.toggleFullscreen"),
+          accelerator: "Control+Command+F",
+          // AppKit can inject a second item for Electron's native fullscreen role.
+          // An explicit action preserves the shortcut without registering that selector.
+          click: (_item, window) => {
+            if (window && !window.isDestroyed()) window.setFullScreen(!window.isFullScreen());
+          }
+        }
+      ]
+    } : { role: "viewMenu" },
     windowMenuItem
   ];
 

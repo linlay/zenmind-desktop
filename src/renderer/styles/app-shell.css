@@ -1206,6 +1206,99 @@
   overflow: hidden;
 }
 
+/* Hide only host chrome; keep every item and live guest in its existing tree. */
+.work-panel-host.is-fullscreen .chat-work-panel-tabs,
+.work-panel-host.is-fullscreen .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-browser-chrome,
+.app-shell.is-work-panel-fullscreen .canonical-webapp-surface[data-work-panel-owner] .external-webview-browser-chrome,
+.work-panel-host.is-fullscreen .work-panel-document-html-toolbar {
+  display: none;
+}
+
+.work-panel-host.is-fullscreen .chat-work-panel-body {
+  top: 0;
+}
+
+.work-panel-fullscreen-controls {
+  position: fixed;
+  inset: 0 0 auto;
+  box-sizing: border-box;
+  width: min(520px, 100vw);
+  height: 10px;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: var(--ink);
+  text-align: center;
+  -webkit-app-region: no-drag;
+}
+
+.work-panel-fullscreen-controls::backdrop {
+  background: transparent;
+  pointer-events: none;
+}
+
+.work-panel-fullscreen-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 8px 16px;
+  color: var(--ink);
+  background: var(--embedded-surface-page-bg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.work-panel-fullscreen-controls:is(:hover, :focus-within, .is-hint-visible) {
+  height: 68px;
+}
+
+.work-panel-fullscreen-controls:is(:hover, :focus-within, .is-hint-visible) .work-panel-fullscreen-exit {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.work-panel-fullscreen-exit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.work-panel-fullscreen-exit kbd {
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+}
+
+.work-panel-fullscreen-hint {
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 8px auto 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--embedded-surface-page-bg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-panel-fullscreen-exit {
+    transition: none;
+  }
+}
+
 .chat-work-panel-item,
 .chat-work-panel-item > .embedded-surface-page,
 .chat-work-panel-item > .external-webview-page {

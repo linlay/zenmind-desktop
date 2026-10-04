@@ -166,7 +166,7 @@
 - 分别拖动后立即点击、先点击再拖动、按住移出后移回、右键、触摸拖动、拖动时失焦或取消，确认不会误触发最大化；松手后窗口不能继续跟随指针。
 - 双击按钮、链接、输入框、Chat 行、Project 标题、浏览器标签与地址栏，确认只执行原有业务交互；后台浏览器工具栏不响应。
 - 系统全屏、WorkPanel 全屏及其切换期间、搜索或 guest 模态遮罩显示时，双击不得切换主窗口最大化状态。
-- Windows 从概览进入 WorkPanel 全屏，再通过菜单或 Esc 退出，连续重复两次；最小化、最大化和关闭按钮必须恢复，面板按钮始终位于标签栏，不覆盖运行状态或耗时。覆盖普通窗口和最大化窗口；macOS 同时回归原生全屏进入与退出。
+- Windows 从概览进入 WorkPanel 全屏，再通过顶部退出按钮或 Ctrl+Shift+F 退出，连续重复两次；最小化、最大化和关闭按钮必须恢复，退出后面板按钮恢复在标签栏，不覆盖运行状态或耗时。覆盖普通窗口和最大化窗口；macOS 同时回归原生全屏进入与退出。
 
 ## Windows 主窗口系统栏
 
@@ -1123,3 +1123,13 @@
 - macOS/Windows 全新运行根导入含 websiteBridges seed 的 env.zip，确认设置中出现 1024forum，匹配页面可读取 AWCP。
 - 不含桥选择的环境首次启动不出现自动论坛桥；卸载桥后重启、重新应用 desktop-init 或升级不恢复。
 - seed 含非法脚本、身份不一致或重复 origin 时整组拒绝，不产生部分安装；在 bootstrap 状态中记录失败。
+
+## WorkPanel 沉浸式全屏
+
+- macOS 应用设置在 English → 简体中文 → English 间切换，View/Window 及其所有 Desktop 自有子项立即统一切换语言；Window 中关闭、最小化、窗口缩放、全部置前均保留原有行为。打开真实原生 View 菜单，确认全屏只有一项（包括菜单展开后系统可能注入的项），点击及 Control+Command+F 可连续进出窗口全屏。Windows 文件/编辑/视图菜单保持原行为。可先构建 Main，再使用 Electron 运行 `qa/mac-application-menu-smoke.cjs` 检查 AppKit 实际菜单。
+
+- macOS 与 Windows 分别从普通 Web、原生 HTML、Overview 进入全屏：Overview/全部 Tab/新增按钮以及整行地址、前进、后退、刷新工具栏隐藏，内容从顶部铺满。退出后恢复原布局、选中项、网页输入与滚动位置，guest ID 不变。
+- 进入时显示 3 秒提示；鼠标移到顶部中央浮出退出按钮，移动到按钮可点击，移开后收起；按钮浮出不改变内容尺寸。键盘 Tab 聚焦时按钮可见，Enter/Space 可退出。覆盖明暗主题和窄窗口。
+- 焦点分别放在宿主、网页输入框、本地 HTML 和幻灯片内：macOS ⌘⇧F、Windows Ctrl+Shift+F 均退出；非全屏不拦截，另一平台修饰键、长按不触发。Esc 只交给页面，不退出 WorkPanel。
+- 在 WorkPanel 全屏中启动页面 HTML Fullscreen API 幻灯片，验证网页覆盖宿主按钮时独立快捷键仍可退出；Esc 退出页面播放后仍保留 WorkPanel 全屏。退出 WorkPanel 不重载 guest；原生窗口退出全屏可能联动结束页面的 HTML fullscreen，但不主动重置幻灯片页面状态。
+- 进入前已是系统全屏时，退出 WorkPanel 恢复壳布局并保留系统全屏；系统直接退出全屏时同步恢复壳布局。连续进出两次，隐藏/关闭 workspace 后退出浮层和计时器均清理。

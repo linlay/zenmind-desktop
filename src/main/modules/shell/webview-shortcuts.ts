@@ -1,14 +1,16 @@
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
 import type { WebviewEditCommand, AttachedWebviewLike } from "./window-model";
 
-export function isWorkPanelFullscreenExitShortcut(input: any) {
+export function isWorkPanelFullscreenExitShortcut(platform: DesktopPlatform, input: any) {
+  const platformModifier = platform === "darwin"
+    ? input?.meta === true && input?.control !== true
+    : platform === "win32" && input?.control === true && input?.meta !== true;
   return input?.type === "keyDown" &&
-    String(input?.key || "").toLowerCase() === "escape" &&
+    String(input?.key || "").toLowerCase() === "f" &&
     input?.isAutoRepeat !== true &&
-    input?.meta !== true &&
-    input?.control !== true &&
+    platformModifier &&
     input?.alt !== true &&
-    input?.shift !== true;
+    input?.shift === true;
 }
 
 export function resolveWebviewEditShortcut(

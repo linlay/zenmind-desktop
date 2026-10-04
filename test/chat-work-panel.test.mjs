@@ -310,7 +310,7 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and layered cl
   assert.match(host, /result\.actionId === "toggle-fullscreen"/u);
   assert.match(host, /findItemWebview\(ownerChatId, item\.itemId\)\?\.reload\(\)/u);
   assert.match(host, /normalizeWorkPanelWebUrl\(findItemWebview\(ownerChatId, item\.itemId\)\?\.getURL\(\)\)/u);
-  assert.match(host, /work-panel-host\$\{fullscreenOwnerChatId === activeChatId \? " is-fullscreen" : ""\}/u);
+  assert.match(host, /work-panel-host\$\{activeChatId && fullscreenOwnerChatId === activeChatId \? " is-fullscreen" : ""\}/u);
   assert.match(host, /const closable = item\.closable && !item\.pinned/u);
   assert.match(host, /registerDesktopCloseShortcutHandler/u);
   assert.match(host, /guestId === null/u);

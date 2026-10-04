@@ -1297,57 +1297,69 @@ test("attached webviews forward close only for trusted Main Chat, current WorkPa
   ]);
 });
 
-test("attached WorkPanel webviews forward Escape only while panel fullscreen is active", () => {
-  const target = new FakeWindow();
-  const workPanelGuest = new FakeWebContents(94);
-  const ordinaryGuest = new FakeWebContents(95);
-  let fullscreenActive = false;
-  const prevented = { inactive: false, active: false, repeated: false, ordinary: false };
-  const baseOptions = {
-    platform: "win32",
-    getMainWindow: () => target,
-    isDevToolsShortcut: () => false,
-    isWorkPanelWebview: (contents) => contents.id === workPanelGuest.id,
-    isWorkPanelFullscreenActive: () => fullscreenActive,
-    shouldDownloadUrl: () => false,
-    resolveOpenDisposition: () => "external",
-    collectLoadDiagnostics: async () => ({}),
-    report: () => {},
-    openExternal: async () => {},
-    schedule: (callback) => callback(),
-  };
-
-  configureAttachedWebview(workPanelGuest, baseOptions);
-  configureAttachedWebview(ordinaryGuest, baseOptions);
-
-  workPanelGuest.emit("before-input-event", {
-    preventDefault: () => { prevented.inactive = true; }
-  }, {
-    type: "keyDown", key: "Escape", isAutoRepeat: false,
-  });
-  fullscreenActive = true;
-  workPanelGuest.emit("before-input-event", {
-    preventDefault: () => { prevented.active = true; }
-  }, {
-    type: "keyDown", key: "Escape", isAutoRepeat: false,
-  });
-  workPanelGuest.emit("before-input-event", {
-    preventDefault: () => { prevented.repeated = true; }
-  }, {
-    type: "keyDown", key: "Escape", isAutoRepeat: true,
-  });
-  ordinaryGuest.emit("before-input-event", {
-    preventDefault: () => { prevented.ordinary = true; }
-  }, {
-    type: "keyDown", key: "Escape", isAutoRepeat: false,
+for (const platform of ["darwin", "win32"]) {
+  const shortcut = { type: "keyDown", key: "F", shift: true,
+    meta: platform === "darwin", control: platform === "win32" };
+  test(`${platform}: WorkPanel exit shortcut preserves Escape and is scoped to fullscreen guests`, () => {
+    const target = new FakeWindow();
+    const guest = new FakeWebContents(94);
+    const ordinary = new FakeWebContents(95);
+    let active = false;
+    const options = {
+      platform, getMainWindow: () => target, isDevToolsShortcut: () => false,
+      isWorkPanelWebview: (contents) => contents.id === guest.id,
+      isWorkPanelFullscreenActive: () => active,
+      shouldDownloadUrl: () => false, resolveOpenDisposition: () => "external",
+      collectLoadDiagnostics: async () => ({}), report: () => {},
+      openExternal: async () => {}, schedule: (callback) => callback(),
+    };
+    configureAttachedWebview(guest, options);
+    configureAttachedWebview(ordinary, options);
+    function press(contents, input) {
+      let prevented = false;
+      contents.emit("before-input-event", { preventDefault: () => { prevented = true; } }, input);
+      return prevented;
+    }
+    assert.equal(press(guest, shortcut), false);
+    active = true;
+    assert.equal(press(guest, { type: "keyDown", key: "Escape" }), false);
+    assert.equal(press(guest, { ...shortcut, isAutoRepeat: true }), false);
+    // Cmd/Ctrl+F remains the ordinary browser find command, not fullscreen exit.
+    assert.equal(press(guest, { ...shortcut, shift: false }), true);
+    assert.equal(target.webContents.sentMessages.at(-1).payload.command, "find");
+    target.webContents.sentMessages.length = 0;
+    assert.equal(press(guest, { ...shortcut, alt: true }), false);
+    assert.equal(press(guest, { ...shortcut, meta: !shortcut.meta, control: !shortcut.control }), false);
+    assert.equal(press(ordinary, shortcut), false);
+    assert.equal(press(guest, shortcut), true);
+    assert.deepEqual(target.webContents.sentMessages, [{
+      channel: "app.workPanelFullscreenExitShortcut", payload: { guestId: 94 },
+    }]);
   });
 
-  assert.deepEqual(prevented, { inactive: false, active: true, repeated: false, ordinary: false });
-  assert.deepEqual(target.webContents.sentMessages, [{
-    channel: "app.workPanelFullscreenExitShortcut",
-    payload: { guestId: 94 },
-  }]);
-});
+  test(`${platform}: main renderer forwards the same fullscreen exit shortcut`, () => {
+    const target = new FakeWindow();
+    let active = false;
+    configureMainWindowLifecycleEvents(target, {
+      platform, lifecycle: { applyAppearance() {}, hideForClose() {}, cancelPendingClose() {} },
+      isDevToolsShortcut: () => false, isHandlingQuit: () => false, clearWindow() {},
+      isWorkPanelFullscreenActive: () => active,
+    });
+    let count = 0;
+    const press = (input) => target.webContents.emit("before-input-event", {
+      preventDefault: () => { count++; },
+    }, input);
+    press(shortcut);
+    active = true;
+    press({ type: "keyDown", key: "Escape" });
+    press({ ...shortcut, isAutoRepeat: true });
+    press(shortcut);
+    assert.equal(count, 1);
+    assert.deepEqual(target.webContents.sentMessages, [{
+      channel: "app.workPanelFullscreenExitShortcut", payload: { guestId: null },
+    }]);
+  });
+}
 
 test("window manager grants media permissions only to the main window", async () => {
   const permissionSession = new FakePermissionSession();
