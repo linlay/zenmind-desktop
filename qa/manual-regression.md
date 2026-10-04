@@ -1133,3 +1133,12 @@
 - 焦点分别放在宿主、网页输入框、本地 HTML 和幻灯片内：macOS ⌘⇧F、Windows Ctrl+Shift+F 均退出；非全屏不拦截，另一平台修饰键、长按不触发。Esc 只交给页面，不退出 WorkPanel。
 - 在 WorkPanel 全屏中启动页面 HTML Fullscreen API 幻灯片，验证网页覆盖宿主按钮时独立快捷键仍可退出；Esc 退出页面播放后仍保留 WorkPanel 全屏。退出 WorkPanel 不重载 guest；原生窗口退出全屏可能联动结束页面的 HTML fullscreen，但不主动重置幻灯片页面状态。
 - 进入前已是系统全屏时，退出 WorkPanel 恢复壳布局并保留系统全屏；系统直接退出全屏时同步恢复壳布局。连续进出两次，隐藏/关闭 workspace 后退出浮层和计时器均清理。
+
+## 内置服务发布包边界
+
+- macOS / Windows 分别同步当前 Platform 发布包（包含 kbx、memx，不含旧 kbase-lance-engine），确认不因组件替换或 lifecycle 内部脚本重组而失败；Desktop 只检查上游 manifest 声明的必需文件和公开宿主能力。
+- 在隔离发布包副本中删除 manifest 声明的主程序或文件，确认同步拒绝；新增 README.txt 不应导致 Platform 包被拒绝。
+- macOS 验证签名前、签名后及复制进 App 后仍通过 Platform 自带的完整性检查；损坏清单不能通过重算掩盖。
+- 两平台安装、deploy、start 后，确认 Desktop 能通过认证访问 Platform 并完成一次对话；停止 Platform 或提供不兼容的生命周期入口时应报告真实失败，不因移除文本扫描而假报可用。
+- Identity Center、WebClient、Container Hub 在 macOS / Windows 分别验证 lifecycle 脚本拆分、内部 helper 调整和附带说明文件不影响同步；缺失上游声明文件仍失败。
+- Identity Center 公钥输出改为另一条 manifest 声明路径后，Desktop 仍可取用公钥和令牌；缺失认证能力或目标平台命令应拒绝。WebClient 缺失宿主托管能力、认证依赖或公开错误代理路由时，归档与目录包均应拒绝。

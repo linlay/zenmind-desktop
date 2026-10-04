@@ -21,45 +21,6 @@ const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
-const STALE_AGENT_PLATFORM_DEPLOY_PROTOCOL_MARKERS = [
-  "--local-public-key-file",
-  "DEPLOY_LOCAL_PUBLIC_KEY_FILE",
-  "DeployLocalPublicKeyFile"
-];
-const DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS = [
-  "--desktop-config-reset",
-  "--desktop-config-backup-dir",
-  "--desktop-version-from",
-  "--desktop-version-to"
-];
-const AGENT_PLATFORM_RUNTIME_RESOURCE_PROTOCOL_MARKERS = [
-  "--runtime-resource-source",
-  "--runtime-resource-previous-source",
-  "--runtime-resource-mode",
-  "--desktop-device-id",
-  "runtime-resource-sync"
-];
-const LIFECYCLE_DEPLOY_PROTOCOLS = {
-  "identity-center": {
-    required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
-    message: "Please rebuild the Desktop-ready identity-center bundle with deploy.sh --output-dir support."
-  },
-  "agent-container-hub": {
-    required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
-    forbidden: [
-      "program_prepare_runtime_dirs",
-      "Prepare-ProgramRuntimeDirs",
-      'program_apply_layout_args "$@"',
-      "Set-ProgramLayoutArgs $args"
-    ],
-    message: "Please rebuild the Desktop-ready agent-container-hub bundle with deploy-only --output-dir support."
-  },
-  "agent-webclient": {
-    required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
-    forbidden: ["deploy is intentionally a no-op"],
-    message: "Please rebuild the Desktop-ready agent-webclient bundle so deploy.sh initializes the host-managed .env."
-  }
-};
 const MACHO_MAGICS = new Set([
   0xfeedface,
   0xcefaedfe,
@@ -1030,82 +991,6 @@ export function findMissingBundleEntries(service, entries) {
   });
 }
 
-function findStaleAgentPlatformDeployProtocolMarker(content) {
-  if (!content) {
-    return "";
-  }
-  return STALE_AGENT_PLATFORM_DEPLOY_PROTOCOL_MARKERS.find((marker) => content.includes(marker)) || "";
-}
-
-function findAgentContainerHubAcceptedDeployLayoutArg(content) {
-  const text = content || "";
-  const layoutFlags = [
-    "--config-dir",
-    "--data-dir",
-    "--state-dir",
-    "--log-dir",
-    "--bind-addr",
-    "--daemon"
-  ];
-  const lines = text.split(/\r?\n/u);
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const flag = layoutFlags.find((candidate) => line.includes(candidate));
-    if (!flag) {
-      continue;
-    }
-    const block = lines.slice(index, index + 8).join("\n");
-    if (/(?:throw\b|exit\s+[1-9]\d*|return\s+[1-9]\d*|unsupported deploy argument|start\/runtime argument)/iu.test(block)) {
-      continue;
-    }
-    if (
-      /(?:\b(?:config|data|state|log|bind|daemon)[A-Za-z0-9_]*\s*=|\$(?:configDir|dataDir|stateDir|logDir|bindAddr|daemon)\s*=|\$i\+\+|shift\s+2)/u.test(block)
-    ) {
-      return flag;
-    }
-  }
-  return "";
-}
-
-function validateAgentPlatformDeployProtocolText(service, sourceLabel, relativePath, content) {
-  const staleMarker = findStaleAgentPlatformDeployProtocolMarker(content);
-  if (staleMarker) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-        `Detected stale deploy protocol marker ${JSON.stringify(staleMarker)} in ${relativePath}.\n` +
-        `Please rebuild the Desktop-ready agent-platform bundle with --public-key-source-file launcher support.`
-    );
-  }
-  if (
-    !content.includes("program_sync_deploy_env_values") &&
-    !content.includes("Sync-ProgramDeployEnvValues")
-  ) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-        `Missing deploy-owned env upsert support in ${relativePath}.\n` +
-        `Please rebuild the Desktop-ready agent-platform bundle so deploy.sh updates existing .env files.`
-    );
-  }
-  for (const marker of DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS) {
-    if (!content.includes(marker)) {
-      throw new Error(
-        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-          `Missing Desktop config reset marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
-          "Please rebuild the Desktop-ready agent-platform bundle with the current reset deploy protocol."
-      );
-    }
-  }
-  for (const marker of AGENT_PLATFORM_RUNTIME_RESOURCE_PROTOCOL_MARKERS) {
-    if (!content.includes(marker)) {
-      throw new Error(
-        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-          `Missing Platform runtime resource marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
-          "Please rebuild the Desktop-ready agent-platform bundle with runtimeResources v1 support."
-      );
-    }
-  }
-}
-
 function validateAgentPlatformRuntimeResourceCapability(service, sourceLabel) {
   if (service.desktop?.runtimeResources !== "v1") {
     throw new Error(
@@ -1115,107 +1000,7 @@ function validateAgentPlatformRuntimeResourceCapability(service, sourceLabel) {
   }
 }
 
-function validateAgentPlatformArchiveDeployProtocol(service, archivePath) {
-  const isWindowsArchive = archivePath.endsWith(".zip");
-  const programCommonPath = isWindowsArchive
-    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
-    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
-  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
-  validateAgentPlatformDeployProtocolText(service, archivePath, programCommonPath, programCommon);
-}
-
-function expectedAgentPlatformSidecarPath(service) {
-  if (service.platform?.os === "windows") {
-    return "bin/kbase-lance-engine.exe";
-  }
-  if (service.platform?.os === "darwin" || service.platform?.os === "linux") {
-    return "bin/kbase-lance-engine";
-  }
-  throw new Error(
-    `invalid builtin bundle for ${service.id}: unsupported agent-platform target OS ${JSON.stringify(service.platform?.os ?? "")}`
-  );
-}
-
-function validateAgentPlatformSidecarContract(service, sourceLabel, containsPath) {
-  if (service.id !== "agent-platform") {
-    return;
-  }
-  const sidecarPath = expectedAgentPlatformSidecarPath(service);
-  const requiredPaths = new Set(service.requiredBundleEntries.map((entry) => normalizeRequiredPath(entry)));
-  if (!requiredPaths.has(sidecarPath)) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-        `Missing required agent-platform sidecar contract ${sidecarPath} in manifest runtime.requiredPaths.\n` +
-        "Please rebuild the upstream agent-platform release bundle."
-    );
-  }
-  if (!containsPath(sidecarPath)) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-        `Missing required agent-platform sidecar file: ${sidecarPath}.\n` +
-        "Please rebuild the upstream agent-platform release bundle."
-    );
-  }
-}
-
-function validateAgentPlatformBundleArchive(service, archivePath, entries) {
-  validateAgentPlatformRuntimeResourceCapability(service, archivePath);
-  validateAgentPlatformArchiveDeployProtocol(service, archivePath);
-  validateAgentPlatformSidecarContract(
-    service,
-    archivePath,
-    (relativePath) => entries.has(`${service.bundleTopLevelDir}/${relativePath}`)
-  );
-}
-
-function lifecycleDeployScriptPathForArchive(service, archivePath) {
-  const fileName = archivePath.endsWith(".zip") ? "deploy.ps1" : "deploy.sh";
-  return `${service.bundleTopLevelDir}/${fileName}`;
-}
-
-function validateLifecycleDeployProtocolText(service, sourceLabel, relativePath, content) {
-  const protocol = LIFECYCLE_DEPLOY_PROTOCOLS[service.id];
-  if (!protocol) {
-    return;
-  }
-  const text = content || "";
-  for (const marker of protocol.required || []) {
-    if (!text.includes(marker)) {
-      throw new Error(
-        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-          `Missing lifecycle contract marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
-          protocol.message
-      );
-    }
-  }
-  for (const marker of protocol.forbidden || []) {
-    if (text.includes(marker)) {
-      throw new Error(
-        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-          `Detected stale lifecycle contract marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
-          protocol.message
-      );
-    }
-  }
-  if (service.id === "agent-container-hub") {
-    const marker = findAgentContainerHubAcceptedDeployLayoutArg(text);
-    if (marker) {
-      throw new Error(
-        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-          `Detected deploy-time start layout argument ${JSON.stringify(marker)} in ${relativePath}.\n` +
-          protocol.message
-      );
-    }
-  }
-}
-
-function validateAgentWebclientBundleArchive(service, archivePath) {
-  const manifest = readManifestFromArchive(archivePath);
-  const isWindowsArchive = archivePath.endsWith(".zip");
-  const entries = listArchiveEntries(archivePath);
-  const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
-  const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
-  validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
+function validateAgentWebclientHostContract(service, manifest, archivePath) {
   validateAgentWebclientPlatformFramePortManifest(service, manifest, archivePath);
 
   if (manifest?.frontend?.hostManaged !== true) {
@@ -1229,63 +1014,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   if (manifest?.backend?.entry) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected backend.entry ${JSON.stringify(manifest.backend.entry)}; Desktop-ready agent-webclient bundles must not ship a backend server.\n` +
-        `Please rebuild the Desktop-ready agent-webclient bundle.`
-    );
-  }
-
-  const requiredPaths = Array.isArray(manifest?.runtime?.requiredPaths)
-    ? manifest.runtime.requiredPaths.filter((entry) => typeof entry === "string")
-    : [];
-  const backendRequiredPath = requiredPaths.find((entry) => entry.replace(/\\/g, "/").startsWith("backend/"));
-  if (backendRequiredPath) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected backend runtime required path ${backendRequiredPath}; Desktop hosts agent-webclient itself.\n` +
-        `Please rebuild the Desktop-ready agent-webclient bundle.`
-    );
-  }
-
-  const programCommonPath = isWindowsArchive
-    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
-    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
-  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
-  if (!programCommon) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Missing ${programCommonPath} in the Desktop-ready agent-webclient bundle.`
-    );
-  }
-
-  const staleRuntimeMarkers = isWindowsArchive
-    ? ["BackendEntry", "BackendPackageFile", "BackendModulesDir", "backend\\server.cjs", "backend\\server.js", "backend\\package.json", "backend\\node_modules"]
-    : ["BACKEND_ENTRY", "BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/server.cjs", "backend/server.js", "backend/package.json", "backend/node_modules"];
-  const staleRuntimeMarker = staleRuntimeMarkers.find((marker) => programCommon.includes(marker));
-  if (staleRuntimeMarker) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected stale launcher runtime check ${JSON.stringify(staleRuntimeMarker)} in ${programCommonPath}.\n` +
-        `Desktop-ready agent-webclient launchers must not reference backend runtime files.`
-    );
-  }
-
-  const backendEntry = [...entries].find((entry) => entry.startsWith(`${service.bundleTopLevelDir}/backend/`));
-  if (backendEntry) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected backend runtime file ${backendEntry}; Desktop hosts agent-webclient itself.\n` +
-        `Please rebuild the Desktop-ready agent-webclient bundle.`
-    );
-  }
-
-  const forbiddenEntries = [
-    `${service.bundleTopLevelDir}/README.txt`
-  ];
-  const forbiddenEntry = forbiddenEntries.find((entry) => entries.has(entry));
-  if (forbiddenEntry) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected non-runtime file ${forbiddenEntry} in final bundle.\n` +
+        `Unexpected backend.entry ${JSON.stringify(manifest.backend.entry)}; Desktop-ready agent-webclient bundles must not declare a backend server.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle.`
     );
   }
@@ -1360,23 +1089,8 @@ function validateAgentWebclientPlatformFramePortManifest(service, manifest, sour
   }
 }
 
-function validateIdentityCenterBundleArchive(service, archivePath) {
-  const manifest = readManifestFromArchive(archivePath);
-  const isWindowsArchive = archivePath.endsWith(".zip");
-  const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
-  const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
-  validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
-  if (isWindowsArchive) {
-    validateIdentityCenterAuthCapabilities(service, archivePath, manifest, "windowsCommand");
-    return;
-  }
-
-  const commandKey = manifest?.platform?.os === "linux" ? "linuxCommand" : "darwinCommand";
-  validateIdentityCenterAuthCapabilities(service, archivePath, manifest, commandKey);
-}
-
 function hasNonEmptyStringArray(value) {
-  return Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim());
+  return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string" && item.trim());
 }
 
 function validateIdentityCenterAuthCapabilities(service, archivePath, manifest, commandKey) {
@@ -1387,8 +1101,8 @@ function validateIdentityCenterAuthCapabilities(service, archivePath, manifest, 
   if (
     !authPublicKeyProvider ||
     authPublicKeyProvider.output !== "file" ||
-    authPublicKeyProvider.outputPath !== "{{provider.dataDir}}/keys/publicKey.pem" ||
-    authPublicKeyProvider.retryOnSqliteBusy !== true ||
+    typeof authPublicKeyProvider.outputPath !== "string" ||
+    !authPublicKeyProvider.outputPath.trim() ||
     !hasNonEmptyStringArray(authPublicKeyProvider[commandKey])
   ) {
     throw new Error(
@@ -1402,9 +1116,7 @@ function validateIdentityCenterAuthCapabilities(service, archivePath, manifest, 
   if (
     !authAccessTokenProvider ||
     authAccessTokenProvider.output !== "stdoutLastLine" ||
-    authAccessTokenProvider.retryOnSqliteBusy !== true ||
     authAccessTokenProvider.validateJwtDeviceId !== true ||
-    authAccessTokenProvider.allowDeviceIdFallback !== true ||
     !Array.isArray(authAccessTokenProvider.dependsOn) ||
     !authAccessTokenProvider.dependsOn.includes("auth.publicKey") ||
     !hasNonEmptyStringArray(authAccessTokenProvider[commandKey])
@@ -1417,20 +1129,20 @@ function validateIdentityCenterAuthCapabilities(service, archivePath, manifest, 
   }
 }
 
-function validateAgentContainerHubBundleArchive(service, archivePath) {
-  const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
-  const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
-  validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
-}
-
-function validateBundleContents(service, archivePath, entries) {
-  const readmeEntry = `${service.bundleTopLevelDir}/README.txt`;
-  if (entries.has(readmeEntry)) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected non-runtime file ${readmeEntry} in final bundle.\n` +
-        `Please regenerate the upstream release bundle.`
-    );
+// Validate only interfaces consumed by Desktop. Service-private components and
+// lifecycle script implementations are owned and tested by their release builds.
+function validateBundleHostContract(service, manifest, sourceLabel) {
+  if (service.id === "agent-platform") {
+    validateAgentPlatformRuntimeResourceCapability(service, sourceLabel);
+  }
+  if (service.id === "agent-webclient") {
+    validateAgentWebclientHostContract(service, manifest, sourceLabel);
+  }
+  if (service.id === "identity-center") {
+    const targetOS = manifest?.platform?.os;
+    const commandKey = targetOS === "windows" ? "windowsCommand"
+      : targetOS === "darwin" ? "darwinCommand" : "linuxCommand";
+    validateIdentityCenterAuthCapabilities(service, sourceLabel, manifest, commandKey);
   }
 }
 
@@ -1455,20 +1167,7 @@ export function validateBundleArchive(service, archivePath) {
     );
   }
 
-  validateBundleContents(service, archivePath, entries);
-
-  if (service.id === "agent-platform") {
-    validateAgentPlatformBundleArchive(service, archivePath, entries);
-  }
-  if (service.id === "agent-container-hub") {
-    validateAgentContainerHubBundleArchive(service, archivePath);
-  }
-  if (service.id === "agent-webclient") {
-    validateAgentWebclientBundleArchive(service, archivePath);
-  }
-  if (service.id === "identity-center") {
-    validateIdentityCenterBundleArchive(service, archivePath);
-  }
+  validateBundleHostContract(service, readManifestFromArchive(archivePath), archivePath);
 }
 
 function findMissingBundleDirectoryEntries(service, directoryPath) {
@@ -1476,54 +1175,6 @@ function findMissingBundleDirectoryEntries(service, directoryPath) {
     const normalizedRelativePath = normalizeRequiredPath(relativePath);
     return !fs.existsSync(path.join(directoryPath, ...normalizedRelativePath.split("/").filter(Boolean)));
   });
-}
-
-function validateBundleDirectoryContents(service, directoryPath) {
-  if (fs.existsSync(path.join(directoryPath, "README.txt"))) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
-        `Unexpected non-runtime file README.txt in final bundle.\n` +
-        `Please regenerate the upstream release bundle.`
-    );
-  }
-}
-
-function validateAgentPlatformBundleDirectory(service, directoryPath) {
-  if (service.id !== "agent-platform") {
-    return;
-  }
-  validateAgentPlatformRuntimeResourceCapability(service, directoryPath);
-
-  for (const relativePath of ["scripts/program-common.sh", "scripts/program-common.ps1"]) {
-    const filePath = path.join(directoryPath, ...relativePath.split("/"));
-    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-      continue;
-    }
-    validateAgentPlatformDeployProtocolText(
-      service,
-      directoryPath,
-      relativePath,
-      fs.readFileSync(filePath, "utf8")
-    );
-  }
-  validateAgentPlatformSidecarContract(
-    service,
-    directoryPath,
-    (relativePath) => {
-      const filePath = path.join(directoryPath, ...relativePath.split("/"));
-      return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
-    }
-  );
-}
-
-function validateBundleDirectoryDeployProtocol(service, directoryPath) {
-  for (const relativePath of ["deploy.sh", "deploy.ps1"]) {
-    const filePath = path.join(directoryPath, relativePath);
-    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-      continue;
-    }
-    validateLifecycleDeployProtocolText(service, directoryPath, relativePath, fs.readFileSync(filePath, "utf8"));
-  }
 }
 
 export function validateBundleDirectory(service, directoryPath) {
@@ -1555,21 +1206,10 @@ export function validateBundleDirectory(service, directoryPath) {
     );
   }
 
-  validateBundleDirectoryContents(service, directoryPath);
-  validateAgentWebclientPlatformFramePortManifest(service, manifest, directoryPath);
-  validateAgentPlatformBundleDirectory(service, directoryPath);
+  validateBundleHostContract(service, manifest, directoryPath);
   if (service.id === "agent-platform" && manifest.platform?.os === "darwin" &&
       fs.existsSync(path.join(directoryPath, "builtins.manifest.json"))) {
     runPlatformBuiltinsManifest(directoryPath, "verify");
-  }
-  if (service.id === "agent-container-hub") {
-    validateBundleDirectoryDeployProtocol(service, directoryPath);
-  }
-  if (service.id === "agent-webclient") {
-    validateBundleDirectoryDeployProtocol(service, directoryPath);
-  }
-  if (service.id === "identity-center") {
-    validateBundleDirectoryDeployProtocol(service, directoryPath);
   }
 }
 

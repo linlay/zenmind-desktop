@@ -159,15 +159,6 @@ test("native PowerShell orchestrator cleans generated releases and preserves the
   assert.match(source, /--os=\$SyncOS/u);
   assert.match(source, /--arch=\$SyncArch/u);
   assert.match(source, /synced 4 builtin service assets/u);
-  for (const relative of [
-    "connectors/builtin.dbx/bin/dbx.exe",
-    "connectors/builtin.httpx/bin/httpx.exe",
-    "libexec/git-bash/windows-amd64"
-  ]) {
-    assert.match(source, new RegExp(escapeRegExp(`"${relative}"`), "u"));
-  }
-  assert.match(source, /"git-bash"/u);
-  assert.doesNotMatch(source, /"bin\/(?:dbx|httpx)\.exe"/u);
   assert.doesNotMatch(source, /sync-local-builtins|stage-builtins|builtins\.lock\.json/u);
 });
 

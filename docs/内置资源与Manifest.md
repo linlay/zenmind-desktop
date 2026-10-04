@@ -46,7 +46,11 @@ Windows 与 macOS 使用各自平台可验证的归档和脚本格式。资源�
 
 Desktop 同时读取 bundled 资源和已安装程序版本，按稳定 service id 建立运行时 registry。新资源通过服务生命周期完成安装与 deploy；registry 只表达当前可用定义，不成为持久配置或业务状态源。
 
-核心服务可以有额外的硬门禁，例如必须携带的 sidecar 或 runtime resource contract。门禁属于 Desktop 与 bundle 的兼容边界，应由同步和安装测试共同锁定，而不是依赖文档字段清单。
+Desktop 对四个内置服务的兼容边界限于公开 manifest、生命周期、宿主能力和主程序对 Desktop 的认证与连通性。各服务自己拥有内部组件清单、脚本组织、配置实现与业务健康判断；Desktop 按 manifest 声明验证必需文件，不另列组件名称，不扫描脚本中的参数或内部函数名，也不因包内附带说明文件而拒绝发布物。内部组件调整不应要求 Desktop 同步修改。
+
+Platform 的运行资源接口、Identity Center 的公钥与令牌输出能力、WebClient 的宿主托管形态与认证代理路由属于 Desktop 实际消费的契约，应保留校验。Identity Center 自己选择公钥输出位置与存储实现，Desktop 按声明取用结果，不强制其私有目录、数据库重试或兼容策略。Container Hub 内部如何处理部署参数与创建目录由自身发布测试负责。
+
+归档与解压目录消费同一套公开宿主契约检查。部署和启动阶段消费命令结果并验证主程序状态及对外接口；文件名或脚本文本不能代替连通性验证。Darwin 签名会改变交付字节，因此仍由下述 Platform 自检命令负责签名前后完整性，Desktop 不解释其内部组件规则。
 
 ## 安全与维护约束
 

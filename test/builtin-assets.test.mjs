@@ -94,27 +94,7 @@ async function writeZipArchive(archivePath, entries) {
 function writeDarwinCoreServiceArchive(sourceRoot, id, {
   includeAgentPlatformRuntime = true,
   requireAgentPlatformRuntime = true,
-  includeAgentPlatformSidecar = true,
-  requireAgentPlatformSidecar = true,
-  includeAgentPlatformRuntimeCapability = true,
-  agentPlatformProgramCommon = [
-    "#!/usr/bin/env bash",
-    "program_sync_deploy_env_values() {",
-    "  program_set_env_value \"$ENV_FILE\" \"AP_RUNTIME_DIR\" \"$DEPLOY_AP_RUNTIME_DIR\"",
-    "  program_set_env_value \"$ENV_FILE\" \"AP_CONTAINER_HUB_BASE_URL\" \"$DEPLOY_CONTAINER_HUB_BASE_URL\"",
-    "}",
-    "program_sync_runtime_resources() { agent-platform runtime-resource-sync; }",
-    "program_apply_deploy_flags() {",
-    "  while [[ $# -gt 0 ]]; do",
-    "    case \"$1\" in",
-    "      --public-key-source-file) shift 2 ;;",
-    "      --desktop-config-reset) shift ;;",
-    "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to|--runtime-resource-source|--runtime-resource-previous-source|--runtime-resource-mode|--desktop-device-id) shift 2 ;;",
-    "      *) shift ;;",
-    "    esac",
-    "  done",
-    "}"
-  ].join("\n") + "\n"
+  includeAgentPlatformRuntimeCapability = true
 } = {}) {
   const version = "v999.0.0";
   const assetFileName = `${id}-${version}-darwin-arm64.tar.gz`;
@@ -138,7 +118,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
       deploy: "deploy.sh"
     },
     runtime: {
-      requiredPaths: ["manifest.json", ".env.example", "scripts/program-common.sh"]
+      requiredPaths: ["manifest.json", ".env.example", "start.sh", "stop.sh", "deploy.sh"]
     },
     web: {
       routePath: "",
@@ -163,25 +143,6 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
 
   if (id === "agent-container-hub") {
     writeText(path.join(bundleRoot, "backend", "agent-container-hub"), "fixture\n");
-    writeText(
-      path.join(bundleRoot, "deploy.sh"),
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "program_apply_deploy_args() {",
-        "  while [[ $# -gt 0 ]]; do",
-        "    case \"$1\" in",
-        "      --output-dir) shift 2 ;;",
-        "      --desktop-config-reset) shift ;;",
-        "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
-        "      --config-dir|--data-dir|--state-dir|--log-dir|--bind-addr|--daemon) echo 'start/runtime argument' >&2; exit 1 ;;",
-        "      *) echo \"unsupported deploy argument: $1\" >&2; exit 1 ;;",
-        "    esac",
-        "  done",
-        "}",
-        "program_apply_deploy_args \"$@\""
-      ].join("\n") + "\n"
-    );
     manifest.runtime.requiredPaths.push("backend/agent-container-hub");
   }
 
@@ -191,12 +152,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     }
     fs.mkdirSync(path.join(bundleRoot, "configs"), { recursive: true });
     manifest.runtime.requiredPaths.push("configs");
-    if (includeAgentPlatformSidecar) {
-      writeText(path.join(bundleRoot, "bin", "kbase-lance-engine"), "sidecar fixture\n");
-    }
-    if (requireAgentPlatformSidecar) {
-      manifest.runtime.requiredPaths.push("bin/kbase-lance-engine");
-    }
+    writeText(path.join(bundleRoot, "backend", "agent-platform"), "main program fixture\n");
+    manifest.runtime.requiredPaths.push("backend/agent-platform");
     if (includeAgentPlatformRuntime) {
       fs.mkdirSync(path.join(bundleRoot, "runtime", "registries", "providers"), { recursive: true });
       fs.mkdirSync(path.join(bundleRoot, "runtime", "chats"), { recursive: true });
@@ -204,27 +161,11 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     if (requireAgentPlatformRuntime) {
       manifest.runtime.requiredPaths.push("runtime");
     }
-    writeText(path.join(bundleRoot, "scripts", "program-common.sh"), agentPlatformProgramCommon);
   }
 
   if (id === "agent-webclient") {
     writeText(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n");
     writeText(path.join(bundleRoot, ".env.example"), "# Optional agent-webclient runtime feature flags\n");
-    writeText(
-      path.join(bundleRoot, "deploy.sh"),
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "while [[ $# -gt 0 ]]; do",
-        "  case \"$1\" in",
-        "    --output-dir) shift 2 ;;",
-        "    --desktop-config-reset) shift ;;",
-        "    --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
-        "    *) shift ;;",
-        "  esac",
-        "done"
-      ].join("\n") + "\n"
-    );
     manifest.frontend = {
       mode: "standalone",
       hostManaged: true
@@ -268,21 +209,6 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
 
   if (id === "identity-center") {
     writeText(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n");
-    writeText(
-      path.join(bundleRoot, "deploy.sh"),
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "while [[ $# -gt 0 ]]; do",
-        "  case \"$1\" in",
-        "    --output-dir|--auth-issuer) shift 2 ;;",
-        "    --desktop-config-reset) shift ;;",
-        "    --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
-        "    *) shift ;;",
-        "  esac",
-        "done"
-      ].join("\n") + "\n"
-    );
     writeText(
       path.join(bundleRoot, ".env.example"),
       [
@@ -656,63 +582,6 @@ test("syncBuiltinAssets use-existing signing refuses existing Darwin archives", 
   );
 });
 
-test("syncBuiltinAssets allows agent-container-hub runtime helpers outside deploy scripts", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-start-helpers-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const hubArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
-  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-start-helpers-stage-"));
-  execFileSync("tar", ["-xzf", hubArchive, "-C", stagingRoot]);
-  writeText(
-    path.join(stagingRoot, "agent-container-hub", "scripts", "program-common.sh"),
-    [
-      "#!/usr/bin/env bash",
-      "program_prepare_runtime_dirs() {",
-      "  mkdir -p \"$DATA_DIR\" \"$RUN_DIR\" \"$LOG_DIR\"",
-      "}"
-    ].join("\n") + "\n"
-  );
-  writeText(
-    path.join(stagingRoot, "agent-container-hub", "start.sh"),
-    [
-      "#!/usr/bin/env bash",
-      ". \"$(dirname \"$0\")/scripts/program-common.sh\"",
-      "program_prepare_runtime_dirs"
-    ].join("\n") + "\n"
-  );
-  execFileSync("tar", ["-czf", hubArchive, "-C", stagingRoot, "agent-container-hub"]);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-hub-start-helpers-${Date.now()}`);
-  const manifest = syncBuiltinAssets(tempRoot, {
-    os: "darwin",
-    arch: "arm64",
-    brandId: "cutej"
-  });
-
-  const hub = manifest.find((service) => service.id === "agent-container-hub");
-  assert.ok(hub);
-  assert.equal(hub.assetType, "directory");
-});
-
 test("syncBuiltinAssets rejects agent-platform archives without runtimeResources v1", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-resource-capability-"));
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
@@ -775,374 +644,65 @@ test("syncBuiltinAssets rejects agent-platform archives without required runtime
   );
 });
 
-test("syncBuiltinAssets rejects agent-platform archives that omit the sidecar contract", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-sidecar-contract-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
+// Platform can reorganize helpers and lifecycle implementation without a Desktop update.
+for (const targetOs of ["darwin", "windows", "linux"]) {
+  for (const helpers of [[], ["kbx", "memx"], ["future-helper"]]) {
+    test(`Platform ${targetOs} accepts its own component layout: ${helpers.join(",") || "main only"}`, async (t) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-boundary-"));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const bundleRoot = path.join(root, "agent-platform");
+      const isWindows = targetOs === "windows";
+      const suffix = isWindows ? ".exe" : "";
+      const scriptSuffix = isWindows ? ".ps1" : ".sh";
+      const requiredPaths = [
+        "manifest.json", `backend/agent-platform${suffix}`,
+        ...["deploy", "start", "stop"].map(name => `${name}${scriptSuffix}`),
+        ...helpers.map(name => `bin/${name}${suffix}`)
+      ];
+      const manifest = {
+        kind: "builtin", id: "agent-platform", version: "v999.0.0",
+        platform: { os: targetOs, arch: isWindows ? "amd64" : "arm64" },
+        desktop: { runtimeResources: "v1", bundleTopLevelDir: "agent-platform" },
+        runtime: { requiredPaths }
+      };
+      for (const entry of requiredPaths) writeText(path.join(bundleRoot, entry), "fixture\n");
+      writeJson(path.join(bundleRoot, "manifest.json"), manifest);
+      // Neither documentation nor historical strings in private scripts are contracts.
+      writeText(path.join(bundleRoot, "README.txt"), "Platform release notes\n");
+      writeText(path.join(bundleRoot, "scripts", `program-common${scriptSuffix}`),
+        "# --local-public-key-file DEPLOY_LOCAL_PUBLIC_KEY_FILE DeployLocalPublicKeyFile\n");
+      const service = { ...manifest, bundleTopLevelDir: "agent-platform", requiredBundleEntries: requiredPaths };
+      const { validateBundleArchive, validateBundleDirectory } = await importBuiltinAssetsModule(`boundary-${targetOs}-${helpers.length}`);
+      const archivePath = path.join(root, isWindows ? "platform.zip" : "platform.tar.gz");
+      const pack = async () => {
+        if (isWindows) {
+          const entries = {};
+          for (const entry of [...requiredPaths, "README.txt", `scripts/program-common${scriptSuffix}`]) {
+            const file = path.join(bundleRoot, entry);
+            if (fs.existsSync(file)) entries[`agent-platform/${entry}`] = fs.readFileSync(file);
+          }
+          await writeZipArchive(archivePath, entries);
+        } else {
+          execFileSync("tar", ["-czf", archivePath, "-C", root, "agent-platform"]);
+        }
+      };
+      await pack();
+      assert.doesNotThrow(() => validateBundleArchive(service, archivePath));
+      assert.doesNotThrow(() => validateBundleDirectory(service, bundleRoot));
 
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
-    includeAgentPlatformSidecar: false,
-    requireAgentPlatformSidecar: false
-  });
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-sidecar-contract-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /Missing required agent-platform sidecar contract bin\/kbase-lance-engine/u
-  );
-});
-
-test("syncBuiltinAssets rejects agent-platform archives that declare but omit the sidecar file", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-sidecar-file-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
-    includeAgentPlatformSidecar: false,
-    requireAgentPlatformSidecar: true
-  });
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-sidecar-file-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /Missing required entries: bin\/kbase-lance-engine/u
-  );
-});
-
-test("validateBundleDirectory rejects a Windows agent-platform sidecar without the exe suffix", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-windows-sidecar-"));
-  const directoryPath = path.join(tempRoot, "agent-platform");
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-  writeText(path.join(directoryPath, "bin", "kbase-lance-engine"), "wrong platform sidecar\n");
-  writeJson(path.join(directoryPath, "manifest.json"), {
-    kind: "builtin",
-    id: "agent-platform",
-    version: "v999.0.0",
-    platform: { os: "windows", arch: "amd64" },
-    desktop: { runtimeResources: "v1" },
-    runtime: { requiredPaths: ["manifest.json", "bin/kbase-lance-engine"] }
-  });
-
-  const { validateBundleDirectory } = await importBuiltinAssetsModule(`windows-sidecar-suffix-${Date.now()}`);
-  assert.throws(
-    () => validateBundleDirectory({
-      id: "agent-platform",
-      version: "v999.0.0",
-      platform: { os: "windows", arch: "amd64" },
-      desktop: { runtimeResources: "v1" },
-      requiredBundleEntries: ["manifest.json", "bin/kbase-lance-engine"]
-    }, directoryPath),
-    /Missing required agent-platform sidecar contract bin\/kbase-lance-engine\.exe/u
-  );
-});
-
-test("syncBuiltinAssets rejects stale agent-platform public key deploy flag", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-stale-key-flag-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
-    agentPlatformProgramCommon: [
-      "#!/usr/bin/env bash",
-      "program_apply_deploy_flags() {",
-      "  while [[ $# -gt 0 ]]; do",
-      "    case \"$1\" in",
-      "      --local-public-key-file) shift 2 ;;",
-      "      *) shift ;;",
-      "    esac",
-      "  done",
-      "}"
-    ].join("\n") + "\n"
-  });
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-stale-key-flag-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /Detected stale deploy protocol marker "--local-public-key-file"/u
-  );
-});
-
-test("syncBuiltinAssets rejects identity-center deploy scripts without output-dir support", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-identity-old-deploy-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const oldArchive = path.join(sourceRoot, "identity-center-v999.0.0-darwin-arm64.tar.gz");
-  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-identity-old-deploy-stage-"));
-  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
-  writeText(path.join(stagingRoot, "identity-center", "deploy.sh"), "#!/usr/bin/env bash\n# old deploy\n");
-  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "identity-center"]);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-identity-old-deploy-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /identity-center[\s\S]*Missing lifecycle contract marker "--output-dir"/u
-  );
-});
-
-test("syncBuiltinAssets rejects core deploy scripts without Desktop config reset support", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-missing-config-reset-"));
-  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const archivePath = path.join(sourceRoot, "identity-center-v999.0.0-darwin-arm64.tar.gz");
-  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-missing-config-reset-stage-"));
-  execFileSync("tar", ["-xzf", archivePath, "-C", stagingRoot]);
-  writeText(
-    path.join(stagingRoot, "identity-center", "deploy.sh"),
-    "#!/usr/bin/env bash\n# supports --output-dir only\n"
-  );
-  execFileSync("tar", ["-czf", archivePath, "-C", stagingRoot, "identity-center"]);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    else process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-missing-config-reset-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, { os: "darwin", arch: "arm64", brandId: "cutej" }),
-    /identity-center[\s\S]*Missing lifecycle contract marker "--desktop-config-reset"/u
-  );
-});
-
-test("syncBuiltinAssets rejects agent-container-hub deploy scripts that reuse start layout args", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-old-deploy-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const oldArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
-  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-old-deploy-stage-"));
-  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
-	  writeText(
-	    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
-	    [
-	      "#!/usr/bin/env bash",
-	      "set -euo pipefail",
-	      "while [[ $# -gt 0 ]]; do",
-	      "  case \"$1\" in",
-	      "    --output-dir) config_dir=\"$2\"; shift 2 ;;",
-	      "    --desktop-config-reset) shift ;;",
-	      "    --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
-	      "    --data-dir) data_dir=\"$2\"; shift 2 ;;",
-	      "    *) shift ;;",
-	      "  esac",
-	      "done"
-	    ].join("\n") + "\n"
-	  );
-  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-container-hub"]);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-hub-old-deploy-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-	    /agent-container-hub[\s\S]*Detected deploy-time start layout argument "--data-dir"/u
-	  );
-	});
-
-test("syncBuiltinAssets rejects agent-container-hub deploy scripts that prepare runtime dirs", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-runtime-deploy-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const oldArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
-  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-runtime-deploy-stage-"));
-  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
-  writeText(
-    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
-    [
-      "#!/usr/bin/env bash",
-      "case \"$1\" in",
-      "  --output-dir) shift 2 ;;",
-      "  --desktop-config-reset) shift ;;",
-      "  --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
-      "esac",
-      "program_prepare_runtime_dirs"
-    ].join("\n") + "\n"
-  );
-  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-container-hub"]);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-hub-runtime-deploy-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /agent-container-hub[\s\S]*program_prepare_runtime_dirs/u
-  );
-});
-
-test("syncBuiltinAssets rejects no-op agent-webclient deploy scripts", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-webclient-noop-deploy-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
-  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
-  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
-
-  const oldArchive = path.join(sourceRoot, "agent-webclient-v999.0.0-darwin-arm64.tar.gz");
-  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webclient-noop-stage-"));
-  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
-  writeText(
-    path.join(stagingRoot, "agent-webclient", "deploy.sh"),
-    "#!/usr/bin/env bash\n# Desktop hosts agent-webclient directly; deploy is intentionally a no-op.\n:\n"
-  );
-  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-webclient"]);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-  });
-
-  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-webclient-noop-deploy-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /agent-webclient[\s\S]*(Missing lifecycle contract marker "--output-dir"|deploy is intentionally a no-op)/u
-  );
-});
+      // The upstream manifest remains authoritative for every target.
+      const missingPath = helpers.length ? `bin/${helpers[0]}${suffix}` : `backend/agent-platform${suffix}`;
+      fs.rmSync(path.join(bundleRoot, missingPath));
+      await pack();
+      for (const validate of [
+        () => validateBundleArchive(service, archivePath),
+        () => validateBundleDirectory(service, bundleRoot)
+      ]) {
+        assert.throws(validate, error => error.message.includes(`Missing required entries: ${missingPath}`));
+      }
+    });
+  }
+}
 
 test("syncBuiltinAssets rejects a legacy Agent WebClient manifest before packaging", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-webclient-bridge-v1-"));
@@ -1182,3 +742,91 @@ test("syncBuiltinAssets rejects a legacy Agent WebClient manifest before packagi
     /agent-webclient[\s\S]*Frame Port manifest must not expose \/auth or \/ws/u
   );
 });
+
+for (const targetOs of ["darwin", "windows"]) {
+  for (const id of ["identity-center", "agent-webclient", "agent-container-hub"]) {
+    test(`${id} ${targetOs} validates public capabilities without inspecting private components`, async (t) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-boundary-"));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const source = writeDarwinCoreServiceArchive(root, id);
+      const staging = path.join(root, "staging");
+      fs.mkdirSync(staging);
+      execFileSync("tar", ["-xzf", source, "-C", staging]);
+      const bundleRoot = path.join(staging, id);
+      const manifestPath = path.join(bundleRoot, "manifest.json");
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      const isWindows = targetOs === "windows";
+      manifest.platform = { os: targetOs, arch: isWindows ? "amd64" : "arm64" };
+      fs.rmSync(path.join(bundleRoot, "scripts"), { recursive: true });
+      for (const name of ["deploy", "start", "stop"]) {
+        const file = `${name}${isWindows ? ".ps1" : ".sh"}`;
+        if (isWindows) {
+          fs.renameSync(path.join(bundleRoot, `${name}.sh`), path.join(bundleRoot, file));
+          manifest.runtime.requiredPaths = manifest.runtime.requiredPaths.map(p => p === `${name}.sh` ? file : p);
+        }
+        writeText(path.join(bundleRoot, file), "# implementation delegated to service-owned code\n");
+      }
+      writeText(path.join(bundleRoot, "README.txt"), "release notes\n");
+      // Even backend-named private files in the host-managed WebClient are not a server declaration.
+      const privateFile = "backend/private-resource.txt";
+      writeText(path.join(bundleRoot, privateFile), "opaque payload\n");
+      manifest.runtime.requiredPaths.push(privateFile);
+      if (id === "identity-center") {
+        for (const provider of manifest.desktop.capabilities.provides) {
+          if (isWindows) {
+            provider.windowsCommand = ["auth-provider.ps1"];
+            delete provider.darwinCommand;
+          }
+          delete provider.retryOnSqliteBusy;
+          delete provider.allowDeviceIdFallback;
+        }
+        manifest.desktop.capabilities.provides[0].outputPath = "{{provider.dataDir}}/auth/custom-public.pem";
+      }
+      const archive = path.join(root, isWindows ? "service.zip" : "service.tar.gz");
+      const pack = async () => {
+        writeJson(manifestPath, manifest);
+        if (isWindows) {
+          const entries = {};
+          const collect = (dir, relative = id) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const file = path.join(dir, entry.name);
+              const key = `${relative}/${entry.name}`;
+              if (entry.isDirectory()) collect(file, key);
+              else entries[key] = fs.readFileSync(file);
+            }
+          };
+          collect(bundleRoot);
+          await writeZipArchive(archive, entries);
+        } else {
+          execFileSync("tar", ["-czf", archive, "-C", staging, id]);
+        }
+      };
+      const { validateBundleArchive, validateBundleDirectory } = await importBuiltinAssetsModule(`${id}-${targetOs}-public`);
+      const service = { ...manifest, bundleTopLevelDir: id, requiredBundleEntries: manifest.runtime.requiredPaths };
+      const validators = [
+        () => validateBundleArchive(service, archive),
+        () => validateBundleDirectory(service, bundleRoot)
+      ];
+      await pack();
+      for (const validate of validators) assert.doesNotThrow(validate);
+      fs.rmSync(path.join(bundleRoot, privateFile));
+      await pack();
+      for (const validate of validators) assert.throws(validate, /Missing required entries: backend\/private-resource.txt/u);
+      writeText(path.join(bundleRoot, privateFile), "restored\n");
+      if (id === "identity-center") {
+        manifest.desktop.capabilities.provides[0][isWindows ? "windowsCommand" : "darwinCommand"] = [];
+        await pack();
+        for (const validate of validators) assert.throws(validate, /Missing desktop capability provider auth.publicKey/u);
+      }
+      if (id === "agent-webclient") {
+        manifest.frontend.hostManaged = false;
+        await pack();
+        for (const validate of validators) assert.throws(validate, /Expected frontend.hostManaged/u);
+        manifest.frontend.hostManaged = true;
+        manifest.desktop.capabilities.requires = [];
+        await pack();
+        for (const validate of validators) assert.throws(validate, /auth.accessToken preload/u);
+      }
+    });
+  }
+}
