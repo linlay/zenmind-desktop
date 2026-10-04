@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
-import packageValidation = require("../../../shared/webapp-package-validation.js");
+import packageValidation = require("./package-safety.js");
 import { beginStartupTiming } from "../logging/startup-timing";
 
 const {

@@ -1,3 +1,4 @@
+import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
@@ -132,17 +133,6 @@ type SettingsPageProps = {
   debugVisible: boolean;
   onCloseDebug: () => void;
 };
-
-type NoticeTone = "success" | "error";
-
-type SettingsNotice = {
-  id: number;
-  sectionId: SettingsSectionId;
-  tone: NoticeTone;
-  message: string;
-};
-
-type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
 type WebsiteDraftSnapshot = {
   id: string;
@@ -2459,7 +2449,7 @@ export function SettingsPage({
     }
 
     const timeoutId = window.setTimeout(() => {
-      setNotice((current) => (current?.id === notice.id ? null : current));
+      setNotice((current) => dismissSectionNoticeById(current, notice.id));
     }, SETTINGS_NOTICE_AUTO_CLOSE_MS);
 
     return () => {
@@ -2832,20 +2822,14 @@ export function SettingsPage({
   }
 
   function showSectionNotice(sectionId: SettingsSectionId, message: string, tone: NoticeTone) {
-    if (tone === "success") {
-      return;
-    }
-    noticeIdRef.current += 1;
-    setNotice({
-      id: noticeIdRef.current,
-      sectionId,
-      tone,
-      message
-    });
+    const nextNotice = createSectionNotice(noticeIdRef.current + 1, sectionId, message, tone);
+    if (!nextNotice) return;
+    noticeIdRef.current = nextNotice.id;
+    setNotice(nextNotice);
   }
 
   function dismissSectionNotice(noticeId: number) {
-    setNotice((current) => (current?.id === noticeId ? null : current));
+    setNotice((current) => dismissSectionNoticeById(current, noticeId));
   }
 
   function showSectionResultNotice(
@@ -4225,8 +4209,7 @@ export function SettingsPage({
   const settingsContentStyle = activeSectionDefinition?.layout === "wide"
     ? ({ "--settings-content-max": "var(--workspace-wide-max)" } as CSSProperties)
     : undefined;
-  const activeSectionReadError = activeSection ? sectionReadErrors[activeSection] ?? "" : "";
-  const activeSectionNotice = notice && notice.sectionId === activeSection && notice.tone === "error" ? notice : null;
+  const { readError: activeSectionReadError, notice: activeSectionNotice } = selectSectionFeedback(activeSection, notice, sectionReadErrors);
 
   function renderHeaderSwitch({
     enabled,

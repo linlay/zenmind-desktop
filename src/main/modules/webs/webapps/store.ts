@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import packageValidation = require("../../../../shared/webapp-package-validation.js");
+import packageValidation = require("./package-validation.js");
 import type {
   WebappEntry,
   WebappAuthMode,

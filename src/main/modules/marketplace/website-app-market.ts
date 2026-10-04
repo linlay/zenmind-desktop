@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../../shared/contracts";
 import { WEBAPP_ID_PATTERN } from "../../../shared/webapp-manifest";
-import packageValidation = require("../../../shared/webapp-package-validation.js");
+import { WebappPackageValidationError } from "../../support/archive/package-safety.js";
+import { validateWebappArchiveLayout } from "../webs";
 import { extractArchiveToDir, inspectZipArchiveSafety } from "../../support/archive/archive-utils";
 import { t } from "../../support/i18n/main-i18n";
 import {
@@ -48,11 +49,6 @@ import {
   type MarketplaceOptions,
   type MarketSectionResult
 } from "./common";
-
-const {
-  WebappPackageValidationError,
-  validateWebappArchiveLayout
-} = packageValidation;
 
 type WebsiteAppCatalogResult = {
   catalog: Catalog;

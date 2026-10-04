@@ -14,7 +14,7 @@ function listSourceFiles(directory) {
     const target = path.join(directory, entry.name);
     return entry.isDirectory()
       ? listSourceFiles(target)
-      : /\.(?:ts|tsx)$/u.test(entry.name) && !entry.name.endsWith(".d.ts")
+      : /\.(?:ts|tsx|js)$/u.test(entry.name) && !entry.name.endsWith(".d.ts")
         ? [path.normalize(target)]
         : [];
   });
@@ -31,8 +31,10 @@ function resolveRelativeModule(sourceFile, specifier) {
     base,
     `${base}.ts`,
     `${base}.tsx`,
+    `${base}.js`,
     path.join(base, "index.ts"),
-    path.join(base, "index.tsx")
+    path.join(base, "index.tsx"),
+    path.join(base, "index.js")
   ]) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return path.normalize(candidate);
   }
@@ -94,7 +96,7 @@ const errors = [];
 const warnings = [];
 const files = listSourceFiles(mainRoot);
 const rootFiles = fs.readdirSync(mainRoot, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && /\.(?:ts|tsx)$/u.test(entry.name))
+  .filter((entry) => entry.isFile() && /\.(?:ts|tsx|js)$/u.test(entry.name))
   .map((entry) => entry.name);
 if (rootFiles.length !== 1 || rootFiles[0] !== "index.ts") {
   errors.push(`src/main root must contain only index.ts; found: ${rootFiles.sort().join(", ") || "none"}`);
@@ -138,7 +140,11 @@ for (const file of files) {
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
       node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
       specifier = node.moduleSpecifier.text;
-    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) &&
+      node.moduleReference.expression && ts.isStringLiteral(node.moduleReference.expression)) {
+      specifier = node.moduleReference.expression.text;
+    } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+      (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
       node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])) {
       specifier = node.arguments[0].text;
     }

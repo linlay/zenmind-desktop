@@ -4,7 +4,8 @@ import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import JSZip from "jszip";
-import packageValidation from "../../../../../shared/webapp-package-validation.js";
+import { WEBAPP_PACKAGE_LIMITS, WebappPackageValidationError, normalizePackagePath, validateZipEntrySafety } from "../../../../support/archive/package-safety.js";
+import { validateWebappArchiveLayout, validateWebappPackageDirectory } from "../package-validation.js";
 import {
   WEBAPP_ID_PATTERN,
   WEBAPP_KEY_PATTERN,
@@ -14,15 +15,6 @@ import {
 } from "../../../../../shared/webapp-manifest";
 import { WebappToolingError } from "./errors";
 import { resolveCreatableWorkspacePath, resolveExistingWorkspacePath } from "./workspace";
-
-const {
-  WEBAPP_PACKAGE_LIMITS,
-  WebappPackageValidationError,
-  normalizePackagePath,
-  validateWebappArchiveLayout,
-  validateWebappPackageDirectory,
-  validateZipEntrySafety,
-} = packageValidation;
 
 type ToolingZipEntry = JSZip.JSZipObject & {
   _data?: { compressedSize?: number; uncompressedSize?: number };

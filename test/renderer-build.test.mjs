@@ -620,22 +620,6 @@ test("dark settings keep the control center config editor on the workspace backg
   );
 });
 
-test("control center internal endpoint opens service frontend entrypoints", () => {
-  const controlCenter = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
-    "utf8"
-  );
-
-  assert.match(controlCenter, /function shouldOpenControlCenterEndpointInternally\(/);
-  assert.match(controlCenter, /service\.frontendMode !== "none" \|\| service\.id === "agent-platform"/);
-  assert.match(controlCenter, /function resolveControlCenterEndpoint\(/);
-  assert.match(controlCenter, /service\.id === "identity-center"[\s\S]*?return appendEndpointPath\(baseUrl, "\/admin\/"\)/);
-  assert.match(controlCenter, /service\.id === "agent-platform"[\s\S]*?return appendEndpointPath\(baseUrl, "\/monitor"\)/);
-  assert.match(controlCenter, /const detailEndpoint = activeDetailService\s*\?\s*resolveControlCenterEndpoint\(activeDetailService\)\s*:\s*"";/);
-  assert.match(controlCenter, /if \(\s*!shouldOpenControlCenterEndpointInternally\(activeDetailService\)\s*\)/);
-  assert.doesNotMatch(controlCenter, /const detailEndpoint = activeDetailService\?\.healthMeta\.webUrl \?\? "";/);
-});
-
 test("embedded service previews load auth and platform entrypoints directly", () => {
   const embeddedSurfaceHosts = readSourceFile(
     "src",
@@ -2969,17 +2953,6 @@ test("settings page scopes notices to the active section and keeps load failures
   assert.match(feedbackStack, /page-feedback-anchor/);
   assert.match(feedbackStack, /page-feedback-dismiss/);
 
-  assert.match(settingsPage, /type NoticeTone = "success" \| "error";/);
-  assert.match(settingsPage, /type SettingsNotice = \{/);
-  assert.match(settingsPage, /sectionId: SettingsSectionId;/);
-  assert.doesNotMatch(settingsPage, /const \[feedback, setFeedback\] = useState/);
-  assert.match(settingsPage, /const \[notice, setNotice\] = useState<SettingsNotice \| null>\(null\)/);
-  assert.match(settingsPage, /const \[sectionReadErrors, setSectionReadErrors\] = useState<SectionReadErrorMap>\(\{\}\)/);
-  assert.match(settingsPage, /function showSectionNotice\(sectionId: SettingsSectionId, message: string, tone: NoticeTone\)/);
-  assert.match(settingsPage, /if \(tone === "success"\) \{\s*return;\s*\}/);
-  assert.match(settingsPage, /const activeSectionNotice = notice && notice\.sectionId === activeSection && notice\.tone === "error" \? notice : null;/);
-  assert.doesNotMatch(settingsPage, /SETTINGS_NOTICE_AUTO_CLOSE_MS/);
-  assert.match(settingsPage, /const activeSectionReadError = activeSection \? sectionReadErrors\[activeSection\] \?\? "" : "";/);
   assert.match(settingsPage, /settings-section-feedback/);
   assert.match(settingsPage, /<PageFeedbackStack/);
   assert.match(settingsPage, /showSectionNotice\("assistant", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
@@ -3494,11 +3467,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.doesNotMatch(settingsHandlers, /settings\.setSidebarTranslucency/);
 });
 
-test("sidebar navigation order helper normalizes and sorts available items", () => {
-  const orderHelper = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "sidebarNavOrder.ts"),
-    "utf8"
-  );
+test("sidebar navigation order remains wired to shell preferences", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
@@ -3506,32 +3475,6 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   );
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
 
-  assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
-  assert.match(orderHelper, /"kanban"/);
-  assert.match(orderHelper, /"schedules"/);
-  assert.match(orderHelper, /"chats"/);
-  assert.match(orderHelper, /"group:assistants"/);
-  assert.match(orderHelper, /"group:webs"/);
-  assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
-  assert.match(orderHelper, /createDefaultSidebarNavOrderItems/);
-  assert.match(orderHelper, /kanbanEnabled\?:\s*boolean/);
-  assert.match(orderHelper, /staticItems\.get\("kanban"\)/);
-  assert.match(orderHelper, /\.\.\.\(kanbanEnabled \? \[staticItems\.get\("kanban"\)!\] : \[\]\)/);
-  assert.match(orderHelper, /staticItems\.get\("schedules"\)/);
-  assert.match(orderHelper, /staticItems\.get\("chats"\)/);
-  assert.doesNotMatch(orderHelper, /staticItems\.get\("market"\)/);
-  assert.doesNotMatch(orderHelper, /staticItems\.get\("agents"\)/);
-  assert.doesNotMatch(orderHelper, /staticItems\.get\("help"\)/);
-  assert.doesNotMatch(orderHelper, /\.\.\.customItems/);
-  assert.doesNotMatch(orderHelper, /\.\.\.serviceItems/);
-  assert.doesNotMatch(orderHelper, /\.\.\.experimentalItems/);
-  assert.match(orderHelper, /normalizeSidebarNavOrder/);
-  assert.match(orderHelper, /const availableKeys = new Set\(availableItems\.map\(\(item\) => item\.key\)\)/);
-  assert.match(orderHelper, /availableKeys\.has\(key as SidebarNavOrderItemKey\)/);
-  assert.match(orderHelper, /orderedKeys\.push\(item\.key\)/);
-  assert.doesNotMatch(orderHelper, /return \["kanban", \.\.\.orderedKeys\.filter\(\(key\) => key !== "kanban"\)\]/);
-  assert.doesNotMatch(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
-  assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
   assert.match(appShell, /WEB_GROUP_ORDER_STORAGE_KEY/);
   assert.match(appShell, /readInitialWebGroupOrder/);

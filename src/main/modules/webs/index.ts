@@ -30,3 +30,5 @@ export { registerWebsiteFaviconProtocol, registerWebsiteFaviconProtocolScheme } 
 export { createWebsiteItem, getWebsiteDir, readWebsiteItems, writeWebsiteItem } from "./websites/store";
 
 export { registerWebappAuth } from "./auth-session";
+
+export { validateWebappArchiveLayout } from "./webapps/package-validation.js";

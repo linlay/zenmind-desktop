@@ -154,3 +154,16 @@ test("capability entries share the persisted mixed navigation order", () => {
   assert.deepEqual(normalizeSidebarNavOrder(moved.filter((key) => key !== "capability:agents"), available.slice(1)),
     ["kanban", "capability:market", "website:docs"]);
 });
+
+
+test("disabled Kanban and unrelated catalog entries do not enter default navigation", () => {
+  const items = createDefaultSidebarNavOrderItems({ kanbanEnabled: false, serviceItems: [{ id: "service" }], experimentalItems: [{ id: "experimental" }], webItems: [{ id: "site" }] });
+  assert.deepEqual(items.map(item => item.key), ["schedules", "new-chat", "chats", "group:assistants", "group:webs"]);
+});
+
+test("sorting applies persisted order and preserves unknown item order without mutating input", () => {
+  const items = ["website:a", "kanban", "website:b", "schedules"].map(orderKey => ({ orderKey }));
+  const original = [...items];
+  assert.deepEqual(mod.exports.sortSidebarNavItems(items, ["schedules", "kanban"]), [items[3], items[1], items[0], items[2]]);
+  assert.deepEqual(items, original);
+});
