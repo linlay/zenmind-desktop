@@ -446,26 +446,34 @@ export async function executeAction(
     case "desktop.market.listItems":
       return ok(action, await listMarketItems(options.app, {
         ...readMarketListOptions(args),
-        createContainerHubClient: options.createContainerHubClient
+        createContainerHubClient: options.createContainerHubClient,
+        services: options.services
       }));
     case "desktop.market.refresh":
-      return ok(action, await refreshMarketCatalog(options.app, readMarketListOptions(args)));
+      return ok(action, await refreshMarketCatalog(options.app, {
+        ...readMarketListOptions(args),
+        createContainerHubClient: options.createContainerHubClient,
+        services: options.services
+      }));
     case "desktop.market.getItemDetail": {
       const itemId = readItemId(args);
       const market = await listMarketItems(options.app, {
         ...readMarketListOptions(args),
-        createContainerHubClient: options.createContainerHubClient
+        createContainerHubClient: options.createContainerHubClient,
+        services: options.services
       });
       const item = market.items.find((candidate) => candidate.id === itemId);
       return item ? ok(action, item) : fail(action, "not_found", `market item not found: ${itemId}`);
     }
     case "desktop.market.installItem":
       return ok(action, await installMarketItem(options.app, readItemId(args), {
-        createContainerHubClient: options.createContainerHubClient
+        createContainerHubClient: options.createContainerHubClient,
+        services: options.services
       }));
     case "desktop.market.updateItem":
       return ok(action, await updateMarketItem(options.app, readItemId(args), {
-        createContainerHubClient: options.createContainerHubClient
+        createContainerHubClient: options.createContainerHubClient,
+        services: options.services
       }));
     case "desktop.market.uninstallItem":
       return ok(action, await uninstallMarketItem(options.app, readItemId(args)));
@@ -490,7 +498,8 @@ export async function executeAction(
       return ok(action, await deleteSandboxImage(options.app, readItemId(args)));
     case "desktop.market.buildSandboxImage":
       return ok(action, await buildSandboxImage(options.app, readItemId(args), {
-        createContainerHubClient: options.createContainerHubClient
+        createContainerHubClient: options.createContainerHubClient,
+        services: options.services
       }));
     case "desktop.help.openTopic": {
       if (!options.getHelpUrl?.()) {

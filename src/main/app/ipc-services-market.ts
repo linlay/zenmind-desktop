@@ -58,6 +58,7 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     createContainerHubClient: (config: ConstructorParameters<typeof ContainerHubClient>[0]) =>
       new ContainerHubClient(config),
     webs: options.websFacade,
+    services,
     plugins
   });
 

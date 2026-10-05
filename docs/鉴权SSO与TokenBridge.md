@@ -91,9 +91,9 @@ Provider 登记由运行环境 `provider-register.json` 选择 Grant 或登录�
 
 Transit Hub 使用受信任公钥验证身份，以签发方、稳定用户 ID 和设备号作为绑定。重复领取返回同一 Key，不重置额度和有效期；服务端只在该受保护接口解密返回绑定 Key。Desktop 不从未经验证的 JWT claims 自行建立用户身份，也不接受页面传入用户 ID 或模型凭据。
 
-两种模式都沿用 Electron 的 macOS/Windows 系统代理解析，省略 Cookie、拒绝重定向并设置请求超时。登录模式只允许无 URL 凭据、查询参数和片段的 HTTPS 配置地址；401 仅允许 main 刷新一次 canonical token，不能回退到 Grant。返回前重新验证当前 token、设备、登记配置和身份 generation，迟到响应不得覆盖其他账号的配置。网络和业务失败均不放行依赖服务，错误不包含原始凭据。
+两种模式都沿用 Electron 的 macOS/Windows 系统代理解析，省略 Cookie、拒绝重定向并设置请求超时。登录模式只允许无 URL 凭据、查询参数和片段的 HTTPS 配置地址；401 仅允许 main 刷新一次 canonical token，不能回退到 Grant。返回前重新验证当前 token、设备、登记配置和身份 generation，迟到响应不得覆盖其他账号的配置。Grant 模式的网络和业务失败仍阻止依赖服务启动；access-token 模式的申请失败只影响选定 Provider 的凭据，不阻止 Platform/WebClient 启动，错误不包含原始凭据。
 
-登录模式选中的 Provider 属于此登记策略管理，其 Key 可在登录后替换并在身份失效且消费者停止后清除；其他 Provider 与服务内部配置不受此流程修改。生命周期门禁见[启动初始化与恢复](启动初始化与恢复.md)。
+登录模式选中的 Provider 属于此登记策略管理，其 Key 可在登录后替换并在身份失效后清除，不停止 Platform/WebClient；配置通过 Platform 热更新生效，已运行任务保留既有快照，其他 Provider 与服务内部配置不受此流程修改。生命周期处理见[启动初始化与恢复](启动初始化与恢复.md)。
 
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 
