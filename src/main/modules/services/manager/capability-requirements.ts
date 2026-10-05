@@ -1,6 +1,6 @@
 import { type ManifestDesktopCapabilityRequirement, type ServiceId, type ManifestDesktopCapabilityPhase } from "../../../../shared/contracts";
 import { type ServiceDefinition } from "../../../support/manifest/manifest-utils";
-import { normalizeProbeUrl, type HttpProbeResult, probeHttpUrl } from "./service-probes";
+import { normalizeProbeUrl, probeHttpUrl, probeServiceHealth } from "./service-probes";
 import { type App } from "electron";
 import { ServiceVerificationOptions, integrationPorts } from "./manager-contracts";
 import { resolveDesktopCapability, createVerificationCapabilityResolver } from "./capabilities";
@@ -31,7 +31,7 @@ export function describeCapabilityRequirement(requirement: ManifestDesktopCapabi
 
 export function getDefaultRequirementHttpTarget(requiredService: ServiceDefinition, webUrl: string) {
   if (requiredService.id === "agent-platform" || requiredService.id === "agent-container-hub") {
-    return normalizeProbeUrl(webUrl, "/api/runtime-info");
+    return normalizeProbeUrl(webUrl, "/healthz");
   }
   return webUrl;
 }
@@ -45,26 +45,6 @@ export function resolveRequirementHttpTarget(requiredService: ServiceDefinition,
     return trimmed;
   }
   return normalizeProbeUrl(webUrl, trimmed);
-}
-
-export function resolveAgentPlatformReadinessFallbackTarget(
-  requiredServiceId: string,
-  target: string,
-  probe: Pick<HttpProbeResult, "statusCode">
-) {
-  if (requiredServiceId !== "agent-platform" || probe.statusCode !== 404) {
-    return null;
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(target);
-  } catch {
-    return null;
-  }
-  if (parsed.pathname !== "/api/runtime-info") {
-    return null;
-  }
-  return normalizeProbeUrl(target, "/api/agents");
 }
 
 export async function ensureRequiredServiceHttpReachable(
@@ -99,7 +79,9 @@ export async function ensureRequiredServiceHttpReachable(
   }
 
   const target = resolveRequirementHttpTarget(requiredService, webUrl, requirement.target);
-  const authCapability = requirement.authCapability?.trim() ?? "";
+  const isHealthCheck = (requiredServiceId === "agent-platform" || requiredServiceId === "agent-container-hub")
+    && target === normalizeProbeUrl(webUrl, "/healthz");
+  const authCapability = isHealthCheck ? "" : requirement.authCapability?.trim() ?? "";
   const authResult = authCapability
     ? await runStartupCheckpoint(requiredService.id, "dependency-http", "resolve-auth", () => resolveCapability(app, authCapability, {
       ports: integrationPorts(options.integrationPorts),
@@ -109,27 +91,11 @@ export async function ensureRequiredServiceHttpReachable(
     }))
     : null;
   const authToken = authResult?.token || authResult?.text || "";
-  const probe = await runStartupCheckpoint(requiredService.id, "dependency-http", "probe", () => probeHttpUrl(target, {
+  const probe = await runStartupCheckpoint(requiredService.id, "dependency-http", "probe", () => isHealthCheck ? probeServiceHealth(target) : probeHttpUrl(target, {
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
   }));
   if (!probe.ok) {
     console.warn("[service-verification] HTTP check failed", { serviceId: requiredService.id, statusCode: probe.statusCode ?? null });
-    const fallbackTarget = resolveAgentPlatformReadinessFallbackTarget(requiredService.id, target, probe);
-    if (fallbackTarget) {
-      const fallbackProbe = await probeHttpUrl(fallbackTarget, {
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
-      });
-      if (fallbackProbe.ok) {
-        return;
-      }
-      console.warn("[service-verification] fallback HTTP check failed", { serviceId: requiredService.id, statusCode: fallbackProbe.statusCode ?? null });
-      throw new Error(
-        [
-          t("service.verify.probeFailed", { target, message: probe.message || t("service.probeHttpUnavailable") }),
-          t("service.verify.probeFailed", { target: fallbackTarget, message: fallbackProbe.message || t("service.probeHttpUnavailable") })
-        ].join(t("common.listSeparator"))
-      );
-    }
     throw new Error(t("service.verify.probeFailed", {
       target,
       message: probe.message || t("service.probeHttpUnavailable")

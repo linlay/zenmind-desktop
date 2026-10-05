@@ -1142,3 +1142,9 @@
 - 两平台安装、deploy、start 后，确认 Desktop 能通过认证访问 Platform 并完成一次对话；停止 Platform 或提供不兼容的生命周期入口时应报告真实失败，不因移除文本扫描而假报可用。
 - Identity Center、WebClient、Container Hub 在 macOS / Windows 分别验证 lifecycle 脚本拆分、内部 helper 调整和附带说明文件不影响同步；缺失上游声明文件仍失败。
 - Identity Center 公钥输出改为另一条 manifest 声明路径后，Desktop 仍可取用公钥和令牌；缺失认证能力或目标平台命令应拒绝。WebClient 缺失宿主托管能力、认证依赖或公开错误代理路由时，归档与目录包均应拒绝。
+
+## 内置服务健康检查
+
+- macOS / Windows 分别验证 Hub 开启认证后 `/healthz` 可匿名访问，业务 API 仍返回 401；Desktop 能确认受管进程和端口，未知进程占端口仍失败。
+- Platform 智能体列表报错不影响健康探针；必需 sidecar 不健康导致 `/healthz` 503 时，不发布就绪。404、重定向、非 JSON 和超时不得降级请求 `/api/agents`。
+- WebClient 的 token preload 失败仍阻止其验证通过；健康请求不发送凭据。发布时同步新版 Hub 和 WebClient bundle，旧 WebClient 健康声明在资源预检时拒绝。
