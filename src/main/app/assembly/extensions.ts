@@ -73,6 +73,11 @@ export function assemblePluginBridge(dependencies: AssemblePluginBridgeDependenc
     retryPendingPluginResourceSync,
     notifyAgentPlatformConfigChanged: () => dependencies.notifyServicesChanged(),
     getAssistantActiveTasks: () => dependencies.petRuntime.getAssistantActiveTasksSnapshotForPlugins(),
+    mutateAcpBridge: (sourcePluginId, operation, input) => callAgentPlatform(app, "/api/desktop/acp-bridges", {
+      issueAgentAccessToken: dependencies.issueAgentAccessToken,
+      method: operation === "upsert" ? "PUT" : "DELETE",
+      body: { ...input, sourcePluginId }
+    }),
     queryAgentPlatform: (params) => callAgentPlatform(app, "/api/query", {
       issueAgentAccessToken: dependencies.issueAgentAccessToken,
       method: "POST",

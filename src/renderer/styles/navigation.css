@@ -2444,6 +2444,11 @@ div.sidebar-chats-group-popover {
   font-weight: 600;
 }
 
+.sidebar-project-type-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .sidebar-project-type-grid input {
   position: absolute;
   opacity: 0;
@@ -2477,11 +2482,15 @@ div.sidebar-chats-group-popover {
 .sidebar-project-group-list {
   display: grid;
   gap: 6px;
-  max-height: 220px;
+  grid-auto-rows: 50px;
+  max-height: calc(4 * 50px + 3 * 6px);
   overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .sidebar-project-group {
+  box-sizing: border-box;
+  min-height: 0;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -2505,9 +2514,17 @@ div.sidebar-chats-group-popover {
   min-width: 0;
 }
 
+.sidebar-project-group-text strong,
+.sidebar-project-group-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-project-group-text strong {
   color: var(--ink);
   font-size: 12px;
+  line-height: 16px;
 }
 
 .sidebar-project-group-text small,
@@ -2516,6 +2533,9 @@ div.sidebar-chats-group-popover {
   color: var(--ink-muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.sidebar-project-dialog-hint {
   white-space: pre-line;
 }
 

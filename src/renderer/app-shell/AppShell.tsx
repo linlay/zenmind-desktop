@@ -283,6 +283,7 @@ const KanbanPage = lazy(() =>
 );
 
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
+const SETTINGS_SECTION_STORAGE_KEY = `${STORAGE_NAMESPACE}.settings.last-section`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
 const WORK_PANEL_WIDTH_STORAGE_KEY = `${STORAGE_NAMESPACE}.work-panel-width`;
@@ -970,6 +971,17 @@ export function AppShell() {
     [visibleSettingsSections]
   );
   const activeSettingsSectionId = resolveSettingsSectionId(location.pathname, visibleSettingsSectionIds);
+  const [lastSettingsSectionId, setLastSettingsSectionId] = useState(() => {
+    try {
+      return window.localStorage.getItem(SETTINGS_SECTION_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const rememberedSettingsSection = visibleSettingsSectionIds.find((id) => id === lastSettingsSectionId);
+  const settingsEntryPath = rememberedSettingsSection
+    ? buildSettingsSectionPath(rememberedSettingsSection)
+    : getDefaultSettingsSectionPath(visibleSettingsSectionIds);
 
   const clearWorkPanelFullscreen = useCallback(() => {
     workPanelFullscreenOwnerChatIdRef.current = null;
@@ -3423,17 +3435,20 @@ export function AppShell() {
   ]);
 
   useEffect(() => {
-    if (!isSettingsRoute || location.pathname !== "/settings") {
+    if (!isSettingsRoute || !activeSettingsSectionId ||
+      location.pathname !== buildSettingsSectionPath(activeSettingsSectionId)) {
       return;
     }
-    const normalizedSettingsPath = getDefaultSettingsSectionPath(visibleSettingsSectionIds);
-    if (normalizedSettingsPath !== location.pathname) {
-      navigate(normalizedSettingsPath, { replace: true });
+    setLastSettingsSectionId(activeSettingsSectionId);
+    try {
+      window.localStorage.setItem(SETTINGS_SECTION_STORAGE_KEY, activeSettingsSectionId);
+    } catch {
+      // Keep the in-memory selection when persistent storage is unavailable.
     }
-  }, [isSettingsRoute, location.pathname, navigate, visibleSettingsSectionIds]);
+  }, [activeSettingsSectionId, isSettingsRoute, location.pathname]);
 
   useEffect(() => {
-    if (!isSettingsRoute || !activeSettingsSectionId) {
+    if (!isSettingsRoute || location.pathname === "/settings" || !activeSettingsSectionId) {
       return;
     }
     const normalizedSettingsPath = buildSettingsSectionPath(activeSettingsSectionId);
@@ -4925,7 +4940,7 @@ export function AppShell() {
             <Route path="/control-center" element={<Navigate to={buildSettingsSectionPath("control")} replace />} />
             <Route
               path="/settings"
-              element={<Navigate to={getDefaultSettingsSectionPath(visibleSettingsSectionIds)} replace />}
+              element={<Navigate to={settingsEntryPath} replace />}
             />
             <Route
               path="/settings/:sectionId"

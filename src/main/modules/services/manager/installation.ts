@@ -10,9 +10,7 @@ import {
   appendAgentPlatformDesktopDeployArgs,
   appendAgentPlatformRuntimeResourceDeployArgs,
   appendDesktopConfigResetDeployArgs,
-  appendAgentContainerHubDesktopDeployArgs,
-  appendIdentityCenterDesktopDeployArgs,
-  appendAgentWebclientDesktopDeployArgs
+  appendDesktopDeployOutputDir
 } from "./lifecycle-command-policy";
 import fs from "node:fs";
 import { t } from "../../../support/i18n/main-i18n";
@@ -97,24 +95,13 @@ export async function buildDesktopManagedDeployCommand(
       integrationPorts(ports).getDesktopDeviceId(app)
     );
   }
-  if (service.id === "agent-container-hub") {
+  if (
+    service.id === "agent-container-hub" ||
+    service.id === "identity-center" ||
+    service.id === "agent-webclient"
+  ) {
     return appendDesktopConfigResetDeployArgs(
-      appendAgentContainerHubDesktopDeployArgs(commandWithConfiguredArgs, layout),
-      desktopConfigReset
-    );
-  }
-  if (service.id === "identity-center") {
-    return appendDesktopConfigResetDeployArgs(
-      appendIdentityCenterDesktopDeployArgs(commandWithConfiguredArgs, layout),
-      desktopConfigReset
-    );
-  }
-  if (service.id === "agent-webclient") {
-    return appendDesktopConfigResetDeployArgs(
-      appendAgentWebclientDesktopDeployArgs(
-        commandWithConfiguredArgs,
-        layout
-      ),
+      appendDesktopDeployOutputDir(commandWithConfiguredArgs, layout),
       desktopConfigReset
     );
   }

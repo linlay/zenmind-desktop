@@ -86,7 +86,14 @@ export async function fetchAgentPlatformWithAuth<T>(
       throw new Error(agentPlatformAuthFailureMessage());
     }
     if (!response.ok) {
-      throw new Error(text || `agent-platform returned HTTP ${response.status}`);
+      const record = readObject(payload);
+      // Preserve the response identity so callers can distinguish a missing
+      // resource from a failed request or an unsupported HTTP route.
+      throw Object.assign(new Error(text || `agent-platform returned HTTP ${response.status}`), {
+        status: response.status,
+        platformCode: record.code,
+        platformMessage: record.msg
+      });
     }
     return unwrapPlatformResponse<T>(payload);
   }

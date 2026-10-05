@@ -52,7 +52,7 @@ const REASONING_EFFORT_FLAGS = new Set([
   "--coder-reasoning-effort",
   "--kbase-reasoning-effort"
 ]);
-const REASONING_EFFORT_VALUES = new Set(["NONE", "LOW", "MEDIUM", "HIGH"]);
+const REASONING_EFFORT_VALUES = new Set(["NONE", "LOW", "MEDIUM", "HIGH", "XHIGH", "MAX"]);
 
 type CoreLifecycleServiceId = keyof typeof CORE_SERVICE_LIFECYCLE_COMMANDS;
 

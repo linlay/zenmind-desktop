@@ -64,7 +64,6 @@ export interface AssistantIpcHandlerOptions {
   emitAssistantAttachmentProgress: ((progress: any) => void) | null;
   getAssistantSettings: ((app: any) => any) | null;
   saveAssistantSettings: ((app: any, input: any) => any) | null;
-  getAgentPlatformMinimaxSettingsPublic: ((app: any) => any) | null;
   resolveAssistantAttachmentPath: ((app: any, chatId: string, attachmentId: string) => string) | null;
   createAssistantAttachmentFromPastedImage: ((app: any, chatId: any, input: any) => any) | null;
   cancelAssistantAttachmentTask: ((taskId: string) => any) | null;
@@ -221,7 +220,6 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     emitAssistantAttachmentProgress,
     getAssistantSettings,
     saveAssistantSettings,
-    getAgentPlatformMinimaxSettingsPublic,
     resolveAssistantAttachmentPath,
     createAssistantAttachmentFromPastedImage,
     cancelAssistantAttachmentTask,
@@ -392,7 +390,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // assistant — settings
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.getSettings", async () =>
-    (getAgentPlatformMinimaxSettingsPublic?.(app) ?? null) ?? getAssistantSettings?.(app)
+    getAssistantSettings?.(app)
   );
 
   ipcMain.handle("assistant.consumeFirstInstallBootstrapNavigation", async () =>

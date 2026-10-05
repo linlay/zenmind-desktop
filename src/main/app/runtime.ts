@@ -65,9 +65,7 @@ export function createMainProcessRuntime() {
       servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId));
   const servicesIntegrationPorts = services.assembleServicesIntegration({
     get issueAgentAccessToken() { return identityTokenProvider; },
-    get servicesFacade() { return servicesFacade; },
     get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
-    get startupRestoreController() { return startupRestoreController; },
     get websFacade() { return websFacade; }
   });
   servicesFacade = createServicesFacade(servicesIntegrationPorts);
@@ -650,11 +648,8 @@ export function createMainProcessRuntime() {
       set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
       get appState() { return appState; },
       get startupPlatform() { return startupPlatform; },
-      get startupRestoreController() { return startupRestoreController; },
       get servicesRuntime() { return servicesRuntime; },
-      get servicesFacade() { return servicesFacade; },
-      get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
-      get startupPipeline() { return startupPipeline; },
+      get servicesIntegrationPorts() { return servicesIntegrationPorts; },
       get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
       set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },

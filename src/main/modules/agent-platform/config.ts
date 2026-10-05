@@ -3,20 +3,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type { App } from "electron";
 import yaml from "js-yaml";
-import type { AssistantSettingsPublic } from "../../../shared/contracts";
 import { APP_BRAND } from "../../../shared/brand";
 import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
 import { getServiceConfigRoot } from "../../infrastructure/filesystem/user-paths";
 import { t } from "../../support/i18n/main-i18n";
-
-export type AgentPlatformSettingsPorts = {
-  readAssistantSettings: (app: App) => any;
-  toPublicAssistantSettings: (
-    settings: any,
-    source?: "desktop" | "agent-platform",
-    sourceLabel?: string
-  ) => AssistantSettingsPublic;
-};
 
 type ProviderConfig = {
   key?: string;
@@ -87,12 +77,6 @@ const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
 const PROVIDER_API_KEY_CODE_PART = `${APP_BRAND.storageNamespace}:provider`;
 const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
 const AES_WRAPPED_PATTERN = /^AES\((.+)\)$/u;
-
-type ProviderConfigLocation = {
-  providerPath: string;
-  modelDirs: string[];
-  env: Map<string, string>;
-};
 
 export type AgentPlatformUsageProviderCandidate = {
   providerKey: string;
@@ -168,20 +152,6 @@ function looksLikePlaceholderProviderAPIKey(apiKey: string) {
     return true;
   }
   return /(?:your|example|demo|placeholder|replace[-_\s]*me|change[-_\s]*me|xxx)/iu.test(normalized);
-}
-
-function resolveProviderConfigLocation(app: App, providerKey = "minimax"): ProviderConfigLocation | null {
-  const env = readAgentPlatformEnv(app);
-  const candidates: Array<{ providerPath: string; modelDirs: string[] }> = [];
-  for (const registriesDir of resolveRegistriesDirs(app, env)) {
-    candidates.push({
-      providerPath: path.join(registriesDir, "providers", `${providerKey}.yml`),
-      modelDirs: [path.join(registriesDir, "models")]
-    });
-  }
-
-  const match = candidates.find((candidate) => fs.existsSync(candidate.providerPath));
-  return match ? { ...match, env } : null;
 }
 
 function listProviderConfigFiles(registriesDir: string) {
@@ -267,135 +237,12 @@ export function listAgentPlatformUsageProviderCandidates(app: App): AgentPlatfor
   });
 }
 
-export function loadAgentPlatformMinimaxSettings(app: App, ports: AgentPlatformSettingsPorts): any {
-  const location = resolveProviderConfigLocation(app, "minimax");
-  if (!location) {
-    return null;
-  }
-  const localSettings = ports.readAssistantSettings(app);
-
-  const provider = loadYamlFile<ProviderConfig>(location.providerPath);
-  if (!provider?.baseUrl || !provider.apiKey) {
-    return null;
-  }
-
-  const defaultModelKey = provider.defaultModel || "minimax-m2_7-openai";
-  const modelPath = location.modelDirs
-    .map((modelDir) => path.join(modelDir, `${defaultModelKey}.yml`))
-    .find((candidate) => fs.existsSync(candidate));
-  const model = modelPath ? loadYamlFile<ModelConfig>(modelPath) : null;
-  const modelId = model?.modelId || "MiniMax-M2.7";
-  const endpointPath = provider.protocols?.OPENAI?.endpointPath || "/v1/chat/completions";
-
-  return {
-    baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
-    model: modelId,
-    apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env),
-    desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
-    chatDefaultAgentKey: localSettings.chatDefaultAgentKey,
-    bootstrapAgentKey: localSettings.bootstrapAgentKey,
-    bootstrapChatId: localSettings.bootstrapChatId,
-    desktopCopilotPages: localSettings.desktopCopilotPages
-  };
-}
-
-export function loadAgentPlatformProviderSettings(
-  app: App,
-  providerKey: string,
-  ports: AgentPlatformSettingsPorts,
-  options: {
-    modelKey?: string;
-    modelId?: string;
-    rejectPlaceholderApiKey?: boolean;
-  } = {}
-): any {
-  const normalizedProviderKey = providerKey.trim();
-  if (!normalizedProviderKey) {
-    return null;
-  }
-
-  const location = resolveProviderConfigLocation(app, normalizedProviderKey);
-  if (!location) {
-    return null;
-  }
-  const localSettings = ports.readAssistantSettings(app);
-
-  const provider = loadYamlFile<ProviderConfig>(location.providerPath);
-  if (!provider?.baseUrl || !provider.apiKey) {
-    return null;
-  }
-
-  const modelKey = options.modelKey || provider.defaultModel || "";
-  const modelPath = modelKey
-    ? location.modelDirs
-        .map((modelDir) => path.join(modelDir, `${modelKey}.yml`))
-        .find((candidate) => fs.existsSync(candidate))
-    : "";
-  const model = modelPath ? loadYamlFile<ModelConfig>(modelPath) : null;
-  const modelId = options.modelId || model?.modelId || provider.defaultModel || "";
-  if (!modelId) {
-    return null;
-  }
-  const endpointPath = provider.protocols?.OPENAI?.endpointPath || "/v1/chat/completions";
-  const apiKey = resolveProviderAPIKey(provider.key || normalizedProviderKey, provider.apiKey, location.env);
-  if (options.rejectPlaceholderApiKey && looksLikePlaceholderProviderAPIKey(apiKey)) {
-    return null;
-  }
-
-  return {
-    baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
-    model: modelId,
-    apiKey,
-    desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
-    chatDefaultAgentKey: localSettings.chatDefaultAgentKey,
-    bootstrapAgentKey: localSettings.bootstrapAgentKey,
-    bootstrapChatId: localSettings.bootstrapChatId,
-    desktopCopilotPages: localSettings.desktopCopilotPages
-  };
-}
-
-export function loadAgentPlatformAssistantSettings(app: App, ports: AgentPlatformSettingsPorts): any {
-  return loadAgentPlatformProviderSettings(app, "openai", ports) ?? loadAgentPlatformMinimaxSettings(app, ports);
-}
-
-function warnAgentPlatformSettingsLoadFailure(scope: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.warn(`[assistant] Failed to load agent-platform ${scope} settings: ${message}`);
-}
-
-export function tryLoadAgentPlatformAssistantSettings(app: App, ports: AgentPlatformSettingsPorts): any {
-  try {
-    return loadAgentPlatformAssistantSettings(app, ports);
-  } catch (error) {
-    warnAgentPlatformSettingsLoadFailure("assistant", error);
-    return null;
-  }
-}
-
-export function getAgentPlatformSettingsPublic(app: App, ports: AgentPlatformSettingsPorts): AssistantSettingsPublic | null {
-  const settings = tryLoadAgentPlatformAssistantSettings(app, ports);
-  if (!settings) {
-    return null;
-  }
-  return ports.toPublicAssistantSettings(
-    settings,
-    "agent-platform",
-    "agent-platform"
-  );
-}
-
-export function getAgentPlatformMinimaxSettingsPublic(app: App, ports: AgentPlatformSettingsPorts): AssistantSettingsPublic | null {
-  return getAgentPlatformSettingsPublic(app, ports);
-}
-
 export const __testInternals = {
   endpointToBaseURL,
   parseEnv,
   readAgentPlatformEnv,
-  resolveProviderConfigLocation,
   resolveRegistriesDirs,
   resolveProviderAPIKey,
   looksLikePlaceholderProviderAPIKey,
-  listAgentPlatformUsageProviderCandidates,
-  loadAgentPlatformProviderSettings
+  listAgentPlatformUsageProviderCandidates
 };

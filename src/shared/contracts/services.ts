@@ -143,7 +143,7 @@ export interface ServiceVerification {
   portListening: boolean;
   managedPortPid: number | null;
   httpOk: boolean | null;
-  runtimeInfoOk: boolean | null;
+  healthOk: boolean | null;
   checkedAt: string;
   issues: string[];
   probes: ServiceVerificationProbe[];

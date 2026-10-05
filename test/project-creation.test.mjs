@@ -69,7 +69,7 @@ test("the dialog starts on the first available type with its default groups", ()
   assert.deepEqual(selectableProjectCreationGroups(options, "acp"), []);
 });
 
-test("switching type applies defaults until the user edits the groups", () => {
+test("switching type always restores capability and model defaults", () => {
   const options = creationOptions();
   let selection = initialProjectCreationSelection(options);
 
@@ -81,24 +81,25 @@ test("switching type applies defaults until the user edits the groups", () => {
   selection = changeProjectCreationType(options, selection, "general");
   assert.deepEqual(selection.groups, ["office", "web-data"]);
 
-  // Touched: the user's choice survives a switch, in configured order.
+  // Manual edits do not override the next type preset.
   selection = toggleProjectCreationGroup(options, selection, "automation");
   selection = toggleProjectCreationGroup(options, selection, "office");
   assert.deepEqual(selection.groups, ["web-data", "automation"]);
   assert.equal(selection.groupsTouched, true);
-  selection = changeProjectCreationType(options, selection, "coder");
-  assert.deepEqual(selection.groups, ["web-data", "automation"]);
+  selection = changeProjectCreationType(options, { ...selection, modelKey: "other-model" }, "coder");
+  assert.deepEqual(selection.groups, ["web-data"]);
+  assert.equal(selection.groupsTouched, false);
+  assert.equal(resolveProjectCreationModel(options, selection), "default-model");
 
-  // A type that takes no groups shows none, but the choice is not lost.
+  // External engines do not receive native capabilities or a model.
   const acp = changeProjectCreationType(options, selection, "acp");
   assert.deepEqual(acp.groups, []);
   assert.equal(acp.acpBridgeId, "claude");
 
-  // Deselecting everything is a valid, kept choice.
+  // Deselecting everything is valid until switching type.
   let empty = toggleProjectCreationGroup(options, selection, "web-data");
-  empty = toggleProjectCreationGroup(options, empty, "automation");
   assert.deepEqual(empty.groups, []);
-  assert.deepEqual(changeProjectCreationType(options, empty, "general").groups, []);
+  assert.deepEqual(changeProjectCreationType(options, empty, "general").groups, ["office", "web-data"]);
 
   // An unavailable group can never be selected.
   assert.equal(toggleProjectCreationGroup(options, selection, "broken"), selection);

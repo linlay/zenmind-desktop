@@ -4,7 +4,7 @@ import {build} from 'esbuild';
 let fetcher;let confirm;
 const electron={net:{fetch:(...args)=>fetcher(...args)},dialog:{showMessageBox:(...args)=>confirm(...args)},BrowserWindow:class{constructor(){throw Error('unexpected browser')}},shell:{openExternal:()=>{throw Error('unexpected system browser')}}};
 globalThis.__webappConnectorElectron=electron;
-const {outputFiles}=await build({stdin:{contents:`export * from './src/main/modules/desktop-actions/webapp-connector'; export * from './src/main/modules/desktop-actions/webapp-assistant'; export * from './src/main/modules/desktop-actions/webapp-platform-client'; export * from './src/main/modules/desktop-actions/webapp-kanban';`,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',banner:{js:'import {createRequire} from "node:module"; const require=createRequire('+JSON.stringify(process.cwd()+'/test/webapp-connector.test.mjs')+');'},plugins:[{name:'ports',setup(b){b.onResolve({filter:/\/artifacts$/},()=>({path:process.cwd()+'/src/main/modules/artifacts/actions.ts'}));b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const {net,dialog,BrowserWindow,shell,session}=globalThis.__webappConnectorElectron;'}));b.onResolve({filter:/agent-platform$/},()=>({path:'auth',namespace:'mock-auth'}));b.onLoad({filter:/.*/,namespace:'mock-auth'},()=>({contents:'export function readEmbeddedAuthorization(){throw Error("unexpected UI")}'}));b.onResolve({filter:/main-i18n$/},()=>({path:'i18n',namespace:'mock-i18n'}));b.onLoad({filter:/.*/,namespace:'mock-i18n'},()=>({contents:'export const t=(key)=>key;'}));}}]});
+const {outputFiles}=await build({stdin:{contents:`export * from './src/main/modules/desktop-actions/webapp-connector'; export * from './src/main/modules/desktop-actions/webapp-assistant'; export * from './src/main/modules/desktop-actions/webapp-platform-client'; export * from './src/main/modules/desktop-actions/webapp-kanban';`,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',banner:{js:'import {createRequire} from "node:module"; const require=createRequire('+JSON.stringify(process.cwd()+'/test/webapp-connector.test.mjs')+');'},plugins:[{name:'ports',setup(b){b.onResolve({filter:/^\.\.\/artifacts$/},()=>({path:process.cwd()+'/src/main/modules/artifacts/actions.ts'}));b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const {net,dialog,BrowserWindow,shell,session}=globalThis.__webappConnectorElectron;'}));b.onResolve({filter:/agent-platform$/},()=>({path:'auth',namespace:'mock-auth'}));b.onLoad({filter:/.*/,namespace:'mock-auth'},()=>({contents:'export function readEmbeddedAuthorization(){throw Error("unexpected UI")}'}));b.onResolve({filter:/main-i18n$/},()=>({path:'i18n',namespace:'mock-i18n'}));b.onLoad({filter:/.*/,namespace:'mock-i18n'},()=>({contents:'export const t=(key)=>key; export const getMainLocale=()=>"en";'}));}}]});
 const api=await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 const subject='desktop-app';
 const token='header.'+Buffer.from(JSON.stringify({sub:subject})).toString('base64url')+'.signature';
@@ -16,10 +16,10 @@ function fixture(){
  return {app:{},services:{getResponsiveServiceState:async()=>({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}})},issueAgentAccessToken:async()=>({ok:true,token}),webs:{webappManager:{list:()=>items},webappRuntime:{getStatus:()=>({status:'running',startedAt})}},getMainWindow:()=>({isDestroyed:()=>false,webContents:{id:1}})};
 }
 test('business invocation uses a connector execution grant and revokes it without leaking credentials',async()=>{
- const calls=[];fetcher=async(url,options)=>{calls.push([new URL(url).pathname,options]);if(options.method==='DELETE')return response({revoked:true});if(url.includes('/grants'))return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000});return response({status:'succeeded',output:{items:[]}})};
+ const calls=[];fetcher=async(url,options)=>{calls.push([new URL(url).pathname,options]);if(options.method==='DELETE')return response({revoked:true});if(url.includes('/grants'))return response({token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000});return response({status:'succeeded',output:{items:[]}})};
  const options=fixture(); confirm=async()=>({response:0});
  const result=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'cli',args:['calendar','schedules','list','--json','{}']},{kind:'webappPage',webappId:'one'});
- assert.equal(result.ok,true);assert.equal(calls.length,3);assert.equal(calls[1][1].headers.Authorization,'Bearer wap_test');assert.equal(calls[2][1].method,'DELETE');assert.equal(JSON.stringify(result).includes(token),false);
+ assert.equal(result.ok,true);assert.equal(calls.length,3);assert.equal(calls[1][1].headers.Authorization,'Bearer cxg_test');assert.equal(calls[2][1].method,'DELETE');assert.deepEqual(calls.map(call=>call[0]),['/api/connectors/execution/grants','/api/connectors/execution/invoke','/api/connectors/execution/grants']);assert.equal(calls[0][1].headers.Authorization,`Bearer ${token}`);assert.equal(calls[2][1].headers.Authorization,`Bearer ${token}`);assert.equal(JSON.stringify(result).includes(token),false);
 });
 test('obsolete operations, caller-selected URL and backend login are denied',async()=>{
  let calls=0;fetcher=async()=>{calls++;throw Error('unexpected')};confirm=()=>{throw Error('unexpected')};
@@ -46,7 +46,7 @@ test('an uninstalled app releases only its waiter, not another app or the shared
  confirm=async()=>({response:0});
  fetcher=async(url,request)=>{
   if(url.includes('/cancel')){cancels++;throw Error('unexpected cancellation')}
-  if(request.method==='POST')starts++;
+  assert.equal(new URL(url).pathname,'/api/connectors/auth');if(request.method==='POST')starts++;
   if(request.method==='GET'&&!url.includes('sessionId='))return response({status:'unauthorized'});
   return response({connectorId:'wecom',sessionId:'shared',status:ready?'authorized':'preparing',expiresAt:new Date(Date.now()+60000).toISOString()});
  };
@@ -74,7 +74,7 @@ for (const kind of ['webappPage','webappBackend']) test(`${kind}: a revoked runt
  const invocation={kind,webappId:'one',signal:controller.signal};let deleted=0;
  fetcher=async(url,request)=>{
   if(request.method==='DELETE'){deleted++;return response({revoked:true})}
-  if(url.includes('/grants'))return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000});
+  if(url.includes('/grants'))return response({token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000});
   controller.abort();return response({items:[]});
  };
  const result=await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation);
@@ -86,7 +86,7 @@ for (const kind of ['webappPage','webappBackend']) test(`${kind}: a revoked runt
 for (const kind of ['webappPage','webappBackend']) test(`${kind}: an existing token cannot switch to another local service identity`,async()=>{
  const options=fixture();const controller=new AbortController();
  const invocation={kind,webappId:'one',signal:controller.signal};
- fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000}:{items:[]});
+ fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000}:{items:[]});
  assert.equal((await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation)).ok,true);
  options.issueAgentAccessToken=async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'other-app'})).toString('base64url')+'.s'});
  const result=await api.executeWebappConnector(options,'connector.describe',{connectorId:'wecom'},invocation);
@@ -106,7 +106,7 @@ test('skills expose only declared IDs and safe metadata',async()=>{
  const options=fixture();options.webs.webappManager.list()[0].copilot={agentKey:'writer',mustUseSkills:['writing']};
  fetcher=async(url)=>{
   assert.equal(new URL(url).searchParams.get('agentKey'),'writer');
-  return response({skills:[{id:'writing',name:'Writing',description:'Write',agentHasSkill:true,path:'/private/skills',token:'secret'},{id:'private',name:'Hidden'}]});
+  return response({skills:[{id:'writing',displayName:'Writing',description:'Write',configured:true,path:'/private/skills',token:'secret'},{id:'private',name:'Hidden'}]});
  };
  const result=await api.executeWebappConnector(options,'skill.list',{}, {kind:'webappBackend',webappId:'one'});
  assert.deepEqual(result.result,{items:[{skillId:'writing',name:'Writing',description:'Write',agentHasSkill:true}]});
@@ -137,16 +137,17 @@ test('background runs expose bounded safe events and cannot be stopped by anothe
  controller.abort();assert.ok(detached>0);
 });
 
-test('artifact grants are chat-scoped; restarting an app loses previous chat access',async()=>{
+test('artifact reads use host JWT and local Chat ownership; restarting loses access',async()=>{
  const options=fixture();const context=await api.captureWebappContext(options,'one');
- api.rememberWebappChat(context.key,'chat');let deleted=0;
+ api.rememberWebappChat(context.key,'chat');let calls=0;
  fetcher=async(url,request)=>{
-  if(request.method==='DELETE'){deleted++;return response({revoked:true})}
-  if(url.includes('/grants')){assert.deepEqual(JSON.parse(request.body),{version:2,appId:'one',execution:[],chatIds:['chat']});return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000})}
+  calls++;assert.equal(new URL(url).pathname,'/api/chat/artifacts/list');
+  assert.equal(request.headers.Authorization,`Bearer ${token}`);
+  assert.deepEqual(JSON.parse(request.body),{chatId:'chat'});
   return response({items:[{chatId:'chat',artifactId:'a',name:'report.txt'}]});
  };
  const own=await api.executeWebappConnector(options,'artifact.list',{chatId:'chat'},{kind:'webappBackend',webappId:'one'});
- assert.equal(own.ok,true);assert.equal(deleted,1);
+ assert.equal(own.ok,true);assert.equal(calls,1);
  const other=await api.executeWebappConnector(options,'artifact.list',{chatId:'chat'},{kind:'webappBackend',webappId:'two'});
  assert.equal(other.error.code,'app_grant_required');
  options.webs.webappRuntime.getStatus=()=>({status:'running',startedAt:'new'});
@@ -154,15 +155,15 @@ test('artifact grants are chat-scoped; restarting an app loses previous chat acc
  assert.equal(restarted.error.code,'app_grant_required');
 });
 
-test('artifact reads reject oversized bytes and always revoke the grant',async()=>{
- const options=fixture();const context=await api.captureWebappContext(options,'one');api.rememberWebappChat(context.key,'chat');let deleted=0;
+test('artifact reads reject oversized bytes without requesting an execution grant',async()=>{
+ const options=fixture();const context=await api.captureWebappContext(options,'one');api.rememberWebappChat(context.key,'chat');let calls=0;
  fetcher=async(url,request)=>{
-  if(request.method==='DELETE'){deleted++;return response({revoked:true})}
-  if(url.includes('/grants'))return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000});
+  calls++;assert.equal(new URL(url).pathname,'/api/chat/artifacts/read');
+  assert.equal(request.headers.Authorization,`Bearer ${token}`);
   return new Response(new Uint8Array(1024*1024+1));
  };
  const result=await api.executeWebappConnector(options,'artifact.read',{chatId:'chat',artifactId:'a'},{kind:'webappBackend',webappId:'one'});
- assert.equal(result.error.code,'artifact_too_large');assert.equal(deleted,1);
+ assert.equal(result.error.code,'artifact_too_large');assert.equal(calls,1);
 });
 
 test('Kanban only exposes read projections and suppresses disconnected cloud cache',async()=>{
@@ -179,7 +180,7 @@ test('Kanban only exposes read projections and suppresses disconnected cloud cac
 
 test('connector login needs no manifest declaration',async()=>{
  const options=fixture();confirm=async()=>({response:0});const calls=[];
- fetcher=async(url,request)=>{calls.push(url);assert.equal(new URL(url).pathname,'/api/desktop/connector/auth');assert.equal(request.method,'GET');return response({status:'authorized'})};
+ fetcher=async(url,request)=>{calls.push(url);assert.equal(new URL(url).pathname,'/api/connectors/auth');assert.equal(request.method,'GET');return response({status:'authorized'})};
  const result=await api.executeWebappConnector(options,'desktop.authenticateConnector',{connectorId:'wecom'},{kind:'webappPage',webappId:'one'});
  assert.equal(result.result.status,'authorized');assert.equal(calls.length,1);
 });
@@ -198,13 +199,13 @@ test('CLI and MCP execute from either application transport; obsolete payloads r
  const options=fixture();
  const grants=[];fetcher=async(url,request)=>{
   if(request.method==='DELETE')return response({revoked:true});
-  if(url.includes('/grants')){grants.push(JSON.parse(request.body));return response({token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000})}
+  if(url.includes('/grants')){grants.push(JSON.parse(request.body));return response({token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000})}
   return response({exitCode:0,stdout:'{"success":true}'});
  };
  confirm=()=>{throw Error('unexpected consent')};const page={kind:'webappPage',webappId:'one'};
  const input={connectorId:'wecom',adapter:'cli',args:['message','aibot','send','--json','{"text":"%PATH% & 中文"}'],idempotencyKey:'daily-key-123'};
  assert.equal((await api.executeWebappConnector(options,'connector.invoke',input,page)).ok,true);
- assert.deepEqual(grants.at(-1),{version:2,appId:'one',execution:[{connectorId:'wecom',adapter:'cli'}]});
+ assert.deepEqual(grants.at(-1),{version:3,idempotencyNamespace:'one',execution:[{connectorId:'wecom',adapter:'cli'}]});
  const backend=await api.executeWebappConnector(options,'connector.invoke',input,{kind:'webappBackend',webappId:'one'});
  assert.equal(backend.ok,true);assert.equal(grants.length,2);
  const mcp=await api.executeWebappConnector(options,'connector.invoke',{connectorId:'wecom',adapter:'mcp',component:'main',toolName:'send',arguments:{}},{kind:'webappBackend',webappId:'one'});
@@ -219,6 +220,87 @@ test('CLI and MCP execute from either application transport; obsolete payloads r
 test('legacy restrictive declarations do not constrain installed apps',async()=>{
  const options=fixture();options.webs.webappManager.list()[0].desktopBridge={version:1,kanbanRead:false,connectorExecution:[]};
  confirm=()=>{throw Error('unexpected consent')};
- fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'wap_test',grantId:'g',appId:'one',expiresAt:Date.now()+60000}:{exitCode:0});
+ fetcher=async(url,request)=>response(url.includes('/grants')&&request.method==='POST'?{token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000}:{exitCode:0});
  assert.equal((await api.executeWebappConnector(options,'connector.invoke',{connectorId:'another',adapter:'cli',args:['status']},{kind:'webappPage',webappId:'one'})).ok,true);
+});
+
+for (const method of ['describe','invoke']) test(`v3 ${method} keeps the original namespace and payload`,async()=>{
+ const options=fixture();const calls=[];
+ const args=method==='describe'?{connectorId:'wecom'}:{connectorId:'wecom',adapter:'cli',args:['send','hello'],idempotencyKey:'existing-key-123',credentialRevision:'rev-1'};
+ fetcher=async(url,request)=>{
+  const parsed=new URL(url);calls.push(parsed.pathname);
+  if(request.method==='DELETE'){
+   assert.equal(parsed.pathname,'/api/connectors/execution/grants');assert.equal(parsed.searchParams.get('grantId'),'g');
+   assert.equal(request.headers.Authorization,`Bearer ${token}`);return response({revoked:true});
+  }
+  if(parsed.pathname==='/api/connectors/execution/grants'){
+   assert.equal(request.headers.Authorization,`Bearer ${token}`);
+   assert.deepEqual(JSON.parse(request.body),{version:3,idempotencyNamespace:'one',execution:(method==='invoke'?['cli']:['cli','mcp']).map(adapter=>({connectorId:'wecom',adapter}))});
+   return response({token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000});
+  }
+  assert.equal(parsed.pathname,`/api/connectors/execution/${method}`);assert.equal(request.headers.Authorization,'Bearer cxg_test');
+  assert.deepEqual(JSON.parse(request.body),args);return response({exitCode:0});
+ };
+ assert.equal((await api.executeWebappConnector(options,`connector.${method}`,args,{kind:'webappBackend',webappId:'one'})).ok,true);
+ assert.equal(calls.length,3);
+});
+
+for (const invalid of [{token:'wap_old'},{idempotencyNamespace:'other'},{expiresAt:0}]) test(`invalid v3 grant is rejected: ${JSON.stringify(invalid)}`,async()=>{
+ let calls=0;fetcher=async(url)=>{calls++;assert.equal(new URL(url).pathname,'/api/connectors/execution/grants');return response({token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000,...invalid})};
+ const result=await api.executeWebappConnector(fixture(),'connector.describe',{connectorId:'wecom'},{kind:'webappPage',webappId:'one'});
+ assert.equal(result.error.code,'invalid_platform_response');assert.equal(calls,1);
+});
+
+for (const code of ['invocation_outcome_unknown','idempotency_conflict','connector_contract_upgrade_required']) test(`${code} never retries or falls back to an old endpoint`,async()=>{
+ const calls=[];fetcher=async(url,request)=>{
+  const route=new URL(url).pathname;calls.push([route,request.method]);
+  if(request.method==='DELETE')return response({revoked:true});
+  if(route==='/api/connectors/execution/grants')return response({token:'cxg_test',grantId:'g',idempotencyNamespace:'one',expiresAt:Date.now()+60000});
+  assert.equal(route,'/api/connectors/execution/invoke');return new Response(JSON.stringify({code:409,data:{errorCode:code}}),{status:409});
+ };
+ const result=await api.executeWebappConnector(fixture(),'connector.invoke',{connectorId:'wecom',adapter:'cli',args:['send'],idempotencyKey:'existing-key-123'},{kind:'webappBackend',webappId:'one'});
+ assert.equal(result.error.code,code);assert.equal(calls.length,3);assert.equal(calls.at(-1)[1],'DELETE');
+});
+
+for(const action of ['artifact.get','artifact.read','artifact.open','artifact.saveAs']) test(`${action} uses Chat API with host JWT only`,async()=>{
+ const options=fixture();const context=await api.captureWebappContext(options,'one');api.rememberWebappChat(context.key,'chat');const calls=[];
+ const metadata={chatId:'chat',artifactId:'a',name:'report.txt',runId:'run'};
+ options.assistantBridge={getChatInfo:async()=>({chatId:'chat',agentKey:'writer',rawJson:JSON.stringify({chatId:'chat',artifact:{items:[{...metadata,url:'artifacts/run/report.txt'}]}})})};
+ options.callRendererAction=async()=>({ok:true});
+ electron.dialog.showSaveDialog=async()=>({canceled:true});
+ fetcher=async(url,request)=>{
+  const route=new URL(url).pathname;calls.push(route);assert.equal(request.headers.Authorization,`Bearer ${token}`);
+  assert.equal(request.method,'POST');assert.deepEqual(JSON.parse(request.body),{chatId:'chat',artifactId:'a'});
+  if(route==='/api/chat/artifacts/read')return new Response('report bytes');
+  assert.equal(route,'/api/chat/artifacts/get');return response(metadata);
+ };
+ const result=await api.executeWebappConnector(options,action,{chatId:'chat',artifactId:'a'},{kind:'webappPage',webappId:'one'});
+ assert.equal(result.ok,true);assert.equal(calls.length,1);
+ if(action==='artifact.read')assert.equal(Buffer.from(result.result.dataBase64,'base64').toString(),'report bytes');
+ if(action==='artifact.saveAs')assert.equal(result.result.cancelled,true);
+});
+
+for(const kind of ['webappPage','webappBackend']) test(`${kind}: stale artifact results remain blocked with host JWT`,async()=>{
+ const options=fixture();const context=await api.captureWebappContext(options,'one');api.rememberWebappChat(context.key,'chat');let calls=0;
+ fetcher=async(url)=>{calls++;assert.equal(new URL(url).pathname,'/api/chat/artifacts/get');options.webs.webappRuntime.getStatus=()=>({status:'stopped'});return response({chatId:'chat',artifactId:'a'})};
+ const result=await api.executeWebappConnector(options,'artifact.get',{chatId:'chat',artifactId:'a'},{kind,webappId:'one'});
+ assert.equal(result.error.code,'app_grant_required');assert.equal(calls,1);
+});
+
+test('artifact.saveAs fetches bytes through Chat API after the native picker',async()=>{
+ const fs=await import('node:fs/promises');const os=await import('node:os');const path=await import('node:path');
+ const folder=await fs.mkdtemp(path.join(os.tmpdir(),'connector-v3-save-'));
+ try {
+  const target=path.join(folder,'report.txt');const options=fixture();
+  const context=await api.captureWebappContext(options,'one');api.rememberWebappChat(context.key,'chat');const calls=[];
+  electron.dialog.showSaveDialog=async(_owner,input)=>{assert.equal(input.defaultPath,'report.txt');return {canceled:false,filePath:target}};
+  fetcher=async(url,request)=>{
+   const route=new URL(url).pathname;calls.push(route);assert.equal(request.headers.Authorization,`Bearer ${token}`);
+   if(route==='/api/chat/artifacts/get')return response({chatId:'chat',artifactId:'a',name:'report.txt'});
+   assert.equal(route,'/api/chat/artifacts/read');return new Response('saved report');
+  };
+  const result=await api.executeWebappConnector(options,'artifact.saveAs',{chatId:'chat',artifactId:'a'},{kind:'webappPage',webappId:'one'});
+  assert.equal(result.result.saved,true);assert.equal(await fs.readFile(target,'utf8'),'saved report');
+  assert.deepEqual(calls,['/api/chat/artifacts/get','/api/chat/artifacts/read']);
+ } finally {await fs.rm(folder,{recursive:true,force:true})}
 });
