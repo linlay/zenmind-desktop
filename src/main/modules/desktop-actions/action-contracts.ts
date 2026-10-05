@@ -37,6 +37,7 @@ export type DesktopActionBridgeOptions = {
   getDesktopRuntimeDiagnostics: () => Promise<DesktopRuntimeDiagnostics>;
   services: Pick<
     ServicesFacade,
+    | "resolveDesktopCapability"
     | "getResponsiveServiceState"
     | "getServiceLogsMeta"
     | "getServiceState"

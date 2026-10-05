@@ -77,8 +77,8 @@
       "variants": [
         {
           "path": "signature/work-hard-v3.webp",
-          "frameCount": 14,
-          "durationMs": 5200,
+          "frameCount": 22,
+          "durationMs": 2640,
           "weight": 1
         }
       ]

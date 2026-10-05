@@ -141,6 +141,8 @@ export interface ManifestDesktopCapabilityProvider {
   output?: ManifestDesktopCapabilityOutput;
   outputPath?: string;
   dependsOn?: string[];
+  /** Defaults to true for existing providers; false lets the command own config loading. */
+  loadServiceEnv?: boolean;
   retryOnSqliteBusy?: boolean;
   validateJwtDeviceId?: boolean;
   allowDeviceIdFallback?: boolean;

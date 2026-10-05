@@ -72,6 +72,8 @@ export function resolveCapabilityProvider(value: unknown): ManifestDesktopCapabi
   if (outputPath !== undefined) entry.outputPath = outputPath;
   const dependsOn = asStringArray(provider.dependsOn);
   if (dependsOn.length > 0) entry.dependsOn = dependsOn;
+  const loadServiceEnv = asBoolean(provider.loadServiceEnv);
+  if (loadServiceEnv !== undefined) entry.loadServiceEnv = loadServiceEnv;
   const retryOnSqliteBusy = asBoolean(provider.retryOnSqliteBusy);
   if (retryOnSqliteBusy !== undefined) entry.retryOnSqliteBusy = retryOnSqliteBusy;
   const validateJwtDeviceId = asBoolean(provider.validateJwtDeviceId);

@@ -87,7 +87,7 @@ function normalizeMode(config: ProviderRegisterConfig): "access-token" | "grant-
   throw new Error(t("providerRegister.modeInvalid"));
 }
 
-// Called only after managed consumers have stopped on identity loss.
+// Platform hot-reloads these selected keys; existing runs retain their provider snapshot.
 export function clearAccessTokenProviderKeys(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   if (getProviderRegisterMode(app, platform) !== "access-token") return;
   const { config } = readRegisterConfig(resolveProviderRegisterPath(app, platform));
@@ -293,7 +293,7 @@ export async function ensureProviderRegisterApiKey(
   const mode = normalizeMode(config);
   const providers = normalizeProviders(config.providers);
   if (mode === "access-token") {
-    // Identity service deployment must be allowed before the interactive login gate.
+    // Registration runs after deployment; preparation does not require a login.
     if (options.preparation) return { status: "skipped", reason: "unchanged" };
     return bindAccessTokenProviders(app, options, config, providers, registerPath);
   }

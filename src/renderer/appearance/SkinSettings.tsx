@@ -158,10 +158,12 @@ export function SkinSettings() {
                 {option.previewDataUrl && <img src={option.previewDataUrl} alt="" />}
                 {!option.previewDataUrl && <span className="desktop-skin-no-preview">{option.name.slice(0, 1)}</span>}
               </span>
-              <span className="desktop-skin-option-label">{option.name}<span aria-hidden="true">{skinSettings.skinId === option.id ? "✓" : ""}</span></span>
-              <span className="desktop-skin-package-meta">v{option.version}{option.author ? ` · ${option.author}` : ""}</span>
+              <span className="desktop-skin-option-label" title={option.name}>
+                <span className="desktop-skin-package-name">{option.name}</span>
+                <span className="desktop-skin-selected-mark" aria-hidden="true">{skinSettings.skinId === option.id ? "✓" : ""}</span>
+              </span>
             </button>
-            <Button className="desktop-skin-remove" type="text" size="small" danger icon={<DeleteOutlined />} disabled={disabled}
+            <Button className="desktop-skin-remove" type="text" size="small" icon={<DeleteOutlined />} disabled={disabled}
               title={t("settings.appearance.removePackage")} aria-label={t("settings.appearance.removePackageNamed", { name: option.name })}
               onClick={() => void perform(async () => { await appearance.removeSkinPackage(option.id); if (importedId === option.id) setImportedId(undefined); })} />
           </div>)}

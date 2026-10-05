@@ -1,5 +1,4 @@
-import { getAgentPlatformMinimaxSettingsPublic } from "../modules/agent-platform";
-import { getAssistantSettings, readAssistantSettings, saveAssistantSettings, toPublicAssistantSettings } from "../modules/assistant";
+import { getAssistantSettings, saveAssistantSettings } from "../modules/assistant";
 import {
   cancelAssistantAttachmentTask,
   createAssistantAttachmentFromPastedImage,
@@ -46,8 +45,6 @@ export function registerAssistantRuntimeIpc(options: MainIpcRegistrationOptions)
     emitAssistantAttachmentProgress: options.emitAssistantAttachmentProgress,
     getAssistantSettings,
     saveAssistantSettings,
-    getAgentPlatformMinimaxSettingsPublic: (targetApp) =>
-      getAgentPlatformMinimaxSettingsPublic(targetApp, { readAssistantSettings, toPublicAssistantSettings }),
     resolveAssistantAttachmentPath,
     createAssistantAttachmentFromPastedImage,
     cancelAssistantAttachmentTask,
