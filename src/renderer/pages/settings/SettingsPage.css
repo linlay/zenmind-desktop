@@ -3730,19 +3730,23 @@
   box-shadow: none;
 }
 .settings-page .pet-appearance-pick {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font: inherit;
   position: absolute;
   inset: 0;
   z-index: 1;
   width: 100%;
   height: 100%;
-  padding: 0;
+  padding: 0 30px 8px;
   border: 0;
   border-radius: 12px;
   background: transparent;
   cursor: pointer;
 }
 .settings-page .pet-appearance-card.is-current .pet-appearance-pick {
-  box-shadow: inset 0 0 0 2px var(--control-primary-bg);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .settings-page .pet-appearance-caption {
   display: flex;
@@ -3754,7 +3758,7 @@
   padding: 4px 30px 8px;
 }
 .settings-page .pet-appearance-pick:focus-visible {
-  outline: 2px solid var(--control-primary-bg);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .settings-page .pet-appearance-pick:disabled { cursor: wait; }

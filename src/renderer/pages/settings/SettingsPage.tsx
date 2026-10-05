@@ -4779,19 +4779,17 @@ export function SettingsPage({
                           aria-label={appearanceLabel}
                           aria-pressed={selected}
                           aria-busy={pending}
-                          title={appearanceDescription}
                           disabled={Boolean(desktopPetAppearancePending)}
                           onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
                         >
+                          <span className="desktop-pet-appearance-copy">
+                            <strong title={appearanceDescription}>{appearanceLabel}</strong>
+                          </span>
                         </button>
                         <span className="desktop-pet-appearance-preview" aria-hidden="true">
                           <PetAppearancePreview appearance={appearance} hovered={hoveredPetAppearanceId === appearance.id} />
                         </span>
                         <div className="pet-appearance-caption">
-                        <span className="desktop-pet-appearance-copy">
-                          <strong>{appearanceLabel}</strong>
-                          <small>{appearanceDescription}</small>
-                        </span>
                         {appearance.id.startsWith("user:") && (
                           <Popconfirm
                             title={t("settings.desktopPet.remove.confirm")}
