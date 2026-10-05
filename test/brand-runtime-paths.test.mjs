@@ -1007,8 +1007,6 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\cutej-desktop" "DataRoot"/u);
   assert.match(installerInclude, /WriteRegDWORD HKCU "Software\\cutej-desktop" "DataRootLayoutVersion" 2/u);
-  assert.match(installerInclude, /ReadRegDWORD \$R0 HKCU "Software\\cutej-desktop" "LayoutVersion"[\s\S]*?\$DesktopDataRootLayoutVersion "2"/u);
-  assert.match(installerInclude, /DeleteRegValue HKCU "Software\\cutej-desktop" "LayoutVersion"/u);
   assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$0\\\.cutej"/u);
   assert.match(installerInclude, /cc\.cutej\.desktop\|cutej-desktop\|data-root\|v1/u);
   assert.match(installerInclude, /!macro customInit/u);
@@ -1055,7 +1053,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(installerInclude, /Delete "\$DesktopProgramOwnerMarker"/u);
   assert.match(installerInclude, /RMDir \/r "\$DesktopOwnedDataRoot"/u);
   assert.doesNotMatch(installerInclude, /RMDir \/r "\$DesktopDataRoot"/u);
-  assert.match(installerInclude, /历史自定义运行数据目录缺少所有权信息/u);
+  assert.match(installerInclude, /运行数据目录缺少所有权信息/u);
   assert.match(safeRepairScript, /6a975fec-3ca7-58ef-bfce-86a97ccbe0ca/u);
   assert.match(safeRepairScript, /reg\.exe.* export/u);
   assert.match(safeRepairScript, /不会删除或移动该目录中的任何文件/u);
@@ -1292,7 +1290,7 @@ test("brand manifest keeps explicit mac privacy usage descriptions when provided
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 需要系统语音识别权限用于转写语音。");
 });
 
-test("sync-env rejects current brand and legacy env wrapper directories", async (t) => {
+test("sync-env rejects a nested current brand wrapper", async (t) => {
   const root = createBrandFixture(t);
   fs.writeFileSync(path.join(root, "VERSION"), "v1.2.3\n", "utf8");
 
@@ -1305,20 +1303,6 @@ test("sync-env rejects current brand and legacy env wrapper directories", async 
     () => prepareBundledEnvZip({
       rootDir: root,
       env: { BRAND: "cutej", ENV_ZIP: cutejWrapperZipPath },
-      logger: silentLogger
-    }),
-    /nested environment wrapper/u
-  );
-
-  const legacyWrapperZipPath = path.join(root, "fixtures", "legacy-wrapper.zip");
-  await writeZip(legacyWrapperZipPath, {
-    "env/.zenmind/VERSION": "1.2.3\n",
-    "env/.zenmind/agents/demo/agent.yml": "name: demo\n"
-  });
-  await assert.rejects(
-    () => prepareBundledEnvZip({
-      rootDir: root,
-      env: { BRAND: "cutej", ENV_ZIP: legacyWrapperZipPath },
       logger: silentLogger
     }),
     /nested environment wrapper/u
@@ -1485,9 +1469,6 @@ test("Windows installer data directory page requires the visible path to end wit
   assert.match(installerInclude, /DesktopValidateOwnedRoot \$DesktopDataRoot/u);
   assert.match(dataDirectoryPageLeave, /StrCpy \$DesktopDataRootAdoptConfirmed "0"/u);
   assert.match(dataDirectoryPageLeave, /StrCpy \$DesktopDataRootStored "0"/u);
-  assert.match(dataDirectoryPageLeave, /\$\{andIfNot\} \$\{FileExists\} "\$DesktopDataRoot\\\.desktop-owner"/u);
-  assert.match(dataDirectoryPageLeave, /仅当你确认这是历史 CuteJ 数据目录时才继续/u);
-  assert.match(dataDirectoryPageLeave, /CuteJDataDirectoryAdoptLegacy:[\s\S]*?StrCpy \$DesktopDataRootAdoptConfirmed "1"/u);
   assert.match(installerInclude, /StrCmp "\$\{ROOT\}" "\$PROFILE\\Downloads"/u);
   assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$0\\\.cutej"/u);
   assert.match(installerInclude, /\$R2 == "\\"[\s\S]*?StrCpy \$DesktopDataParent "\$0\.cutej"/u);
@@ -1593,13 +1574,7 @@ test("critical runtime path modules use shared brand-aware roots", () => {
   }
 });
 
-test("skill installer uses shared runtime root on Windows before legacy ZenMind fallbacks", () => {
+test("skill installer resolves the current brand runtime root", () => {
   const content = fs.readFileSync(path.join(projectRoot, "src/main/modules/marketplace/skill-installer.ts"), "utf8");
-
-  assert.match(content, /import \{ resolveRuntimeRootPath \} from "\.\.\/\.\.\/infrastructure\/filesystem\/runtime-root";/u);
-  assert.match(content, /const preferredRuntimeRoot = resolveRuntimeRootPath\(/u);
-  assert.match(content, /if \(process\.platform === "win32"\) \{\s*return preferredRuntimeRoot;\s*\}/u);
-  assert.match(content, /if \(String\(APP_BRAND\.id\) === "zenmind"\) \{/u);
-  assert.match(content, /return preferredRuntimeRoot;/u);
-  assert.equal([...content.matchAll(/path\.join\([^)]*"\.zenmind"[^)]*\)/gu)].length, 2);
+  assert.match(content, /return resolveRuntimeRootPath\(\{\s*platform: process.platform,\s*homePath: resolveHomeDir\(app\)/u);
 });

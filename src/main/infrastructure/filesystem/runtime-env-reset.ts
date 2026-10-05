@@ -31,7 +31,7 @@ export function generateBackupDirName(
   return backupPath;
 }
 
-export function migrateOldRootToBackup(
+export function backupRuntimeRoot(
   platform: NodeJS.Platform,
   rootPath: string,
   backupPath = generateBackupDirName(rootPath, platform)
@@ -126,7 +126,7 @@ export async function resetBundledRuntimeEnv(
         throw new Error(t("envBootstrap.runtimeRootNotDirectory", { path: runtimeRoot }));
       }
       backupPath = generateBackupDirName(runtimeRoot, platform, options.nowSeconds);
-      migrateOldRootToBackup(platform, runtimeRoot, backupPath);
+      backupRuntimeRoot(platform, runtimeRoot, backupPath);
     }
 
     const importResult = await importEnvZipToRuntime(

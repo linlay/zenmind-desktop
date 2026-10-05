@@ -1355,14 +1355,7 @@ function getTestPidPath(userDataRoot, serviceId, fileName, kind = "services") {
   return path.join(getTestStateDir(userDataRoot, serviceId, kind), fileName);
 }
 
-function getTestLegacyPidPath(userDataRoot, serviceId, fileName, kind = "services") {
-  return path.join(getTestStateDir(userDataRoot, serviceId, kind), "pid", fileName);
-}
 
-function markInstallInitialized(installDir, version = "v1.0.0") {
-  const initStatePath = __testInternals.getInitializationStatePath(installDir);
-  markInitializationState(initStatePath, version);
-}
 
 function markInitializationState(initStatePath, version = "v1.0.0") {
   fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
@@ -1390,11 +1383,6 @@ function writeTestEnv(userDataRoot, serviceId, content, kind = "services") {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function assertIdentityCenterDefaultBcryptEnv(content) {
-  assert.match(content, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_BCRYPT)}'$`, "m"));
-  assert.match(content, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_BCRYPT)}'$`, "m"));
 }
 
 function writeExecutableFile(filePath, content) {
@@ -3436,75 +3424,6 @@ test("terminateProcessTree uses taskkill tree mode on Windows", () => {
   ]);
 });
 
-test("collectManagedRootPids reads legacy state pid directory", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-legacy-pid-root-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "legacy-plugin");
-  const app = createApp(userDataRoot);
-  const fixturePath = path.join(installDir, "legacy-worker.mjs");
-  let child = null;
-
-  registryInternals.clearServices();
-  writePluginInstallRoot(installDir, {
-    id: "legacy-plugin",
-    port: 0,
-    deployScriptContent: false
-  });
-  fs.writeFileSync(fixturePath, "setInterval(() => {}, 1000);\n", "utf8");
-
-  try {
-    child = spawn(process.execPath, [fixturePath], {
-      cwd: installDir,
-      stdio: "ignore"
-    });
-    assert.ok(child.pid, "expected fixture process to expose a pid");
-    const legacyPidPath = getTestLegacyPidPath(userDataRoot, "legacy-plugin", "test-plugin.pid", "plugins");
-    fs.mkdirSync(path.dirname(legacyPidPath), { recursive: true });
-    fs.writeFileSync(legacyPidPath, `${child.pid}\n`, "utf8");
-
-    const roots = __testInternals.collectManagedRootPids(app);
-    assert.equal(roots.some((root) => root.pid === child.pid && root.pidFilePaths.includes(legacyPidPath)), true);
-  } finally {
-    if (child?.pid && isPidRunning(child.pid)) {
-      try {
-        process.kill(child.pid, "SIGKILL");
-      } catch {
-        // Process may already be gone when the test finishes.
-      }
-    }
-    registryInternals.clearServices();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("forceCleanupManagedProcesses removes stale legacy pid files without killing unrelated processes", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-stale-legacy-pid-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "stale-legacy-plugin");
-  const app = createApp(userDataRoot);
-
-  registryInternals.clearServices();
-  writePluginInstallRoot(installDir, {
-    id: "stale-legacy-plugin",
-    port: 0,
-    deployScriptContent: false
-  });
-
-  try {
-    const legacyPidPath = getTestLegacyPidPath(userDataRoot, "stale-legacy-plugin", "test-plugin.pid", "plugins");
-    fs.mkdirSync(path.dirname(legacyPidPath), { recursive: true });
-    fs.writeFileSync(legacyPidPath, `${process.pid}\n`, "utf8");
-
-    await forceCleanupManagedProcesses(app);
-
-    assert.equal(fs.existsSync(legacyPidPath), false);
-    assert.equal(isPidRunning(process.pid), true);
-  } finally {
-    registryInternals.clearServices();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
 test("forceCleanupManagedProcesses recomputes process trees before killing snapshot roots", async (t) => {
   if (process.platform === "win32") {
     t.skip("This fixture uses POSIX process parentage; Windows tree cleanup is covered by unit tests.");
@@ -4195,7 +4114,7 @@ test("installBuiltinService leaves container hub env ownership to deploy script"
     "CONFIG_ROOT=./configs",
     "ROOTFS_ROOT=./data/rootfs",
     "BUILD_ROOT=./data/builds",
-    "SESSION_MOUNT_TEMPLATE_ROOT=./zenmind-env",
+    "SESSION_MOUNT_TEMPLATE_ROOT=./custom-template",
     "ENGINE=auto"
   ].join("\n") + "\n";
   const { assetsRoot, userDataRoot } = createContainerHubBundleFixture(tempRoot);
@@ -5127,39 +5046,33 @@ test("initializeService lets deploy scripts apply configured default ports witho
   }
 });
 
-test("initializeService leaves existing identity-center env untouched", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const userDataRoot = path.join(fixture.tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+for (const { name, originalContent } of [
+  {
+    name: "initializeService leaves existing identity-center env untouched",
+    originalContent: "AUTH_DB_PATH=./data/auth.db\nAP_UPSTREAM_ACCESS_TOKEN=keep-existing-token\n"
+  },
+  {
+    name: "initializeService preserves custom identity-center bcrypt values without adding missing defaults",
+    originalContent: `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'\n`
+  }
+]) {
+  test(name, async (t) => {
+    const fixture = createStartupCoreAssetsFixture();
+    const userDataRoot = path.join(fixture.tempRoot, "user-data");
+    const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+    t.after(() => {
+      restore();
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    });
 
-  try {
     await installBuiltinService(app, "identity-center");
-    const originalContent = [
-      "AUTH_DB_PATH=./data/auth.db",
-      "AP_UPSTREAM_ACCESS_TOKEN=keep-existing-token",
-      ""
-    ].join("\n");
-    writeTestEnv(
-      userDataRoot,
-      "identity-center",
-      originalContent
-    );
-
+    writeTestEnv(userDataRoot, "identity-center", originalContent);
     const result = await initializeService(app, "identity-center");
     assert.equal(result.ok, true);
-
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
-    assert.equal(envContent, originalContent);
-    assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-    assert.doesNotMatch(envContent, /^AUTH_ADMIN_PASSWORD_BCRYPT=/m);
-    assert.doesNotMatch(envContent, /^AUTH_APP_MASTER_PASSWORD_BCRYPT=/m);
-    assert.doesNotMatch(envContent, /^AP_UPSTREAM_BASE_URL=/m);
-    assert.doesNotMatch(envContent, /^CHAT_WS_UPSTREAM_URL=/m);
-  } finally {
-    restore();
-    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-  }
-});
+    // Exact byte equality covers both preserving custom values and not adding defaults.
+    assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8"), originalContent);
+  });
+}
 
 test("ensurePreStartRequirements leaves identity-center env untouched", async () => {
   const fixture = createStartupCoreAssetsFixture();
@@ -5188,35 +5101,6 @@ test("ensurePreStartRequirements leaves identity-center env untouched", async ()
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
     assert.equal(envContent, originalContent);
-  } finally {
-    restore();
-    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("initializeService preserves custom identity-center bcrypt values without adding missing defaults", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const userDataRoot = path.join(fixture.tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
-
-  try {
-    await installBuiltinService(app, "identity-center");
-    const originalContent = [
-      `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'`,
-      ""
-    ].join("\n");
-    writeTestEnv(
-      userDataRoot,
-      "identity-center",
-      originalContent
-    );
-
-    const result = await initializeService(app, "identity-center");
-    assert.equal(result.ok, true);
-
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
-    assert.equal(envContent, originalContent);
-    assert.doesNotMatch(envContent, /^AUTH_APP_MASTER_PASSWORD_BCRYPT=/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5580,7 +5464,7 @@ test("startService verifies command success and reports delayed container hub cr
   try {
     setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
-    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    const initStatePath = getTestInitializationStatePath(userDataRoot, service.id);
     fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
     fs.writeFileSync(
       initStatePath,
@@ -5622,10 +5506,17 @@ test("startService verifies running container hub with port and runtime-info pro
     startScriptContent: [
       "#!/usr/bin/env bash",
       "set -euo pipefail",
-      'state_dir="$PWD/run"',
-      'log_dir="$PWD/run"',
-      'mkdir -p "$state_dir" "$log_dir" run',
-      'env_file="$PWD/.env"',
+      'state_dir=""; log_dir=""; config_dir=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  case "$1" in',
+      '    --state-dir) state_dir="$2"; shift 2 ;;',
+      '    --log-dir) log_dir="$2"; shift 2 ;;',
+      '    --config-dir) config_dir="$2"; shift 2 ;;',
+      '    *) shift ;;',
+      '  esac',
+      'done',
+      'mkdir -p "${state_dir:?}" "${log_dir:?}" run',
+      'env_file="${config_dir:?}/.env"',
       'if [ -f "$env_file" ]; then set -a; . "$env_file"; set +a; fi',
       "cat > run/container-hub-fixture.js <<'NODE'",
       "const http = require('node:http');",
@@ -5662,7 +5553,7 @@ test("startService verifies running container hub with port and runtime-info pro
   try {
     setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
-    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    const initStatePath = getTestInitializationStatePath(userDataRoot, service.id);
     fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
     fs.writeFileSync(
       initStatePath,
@@ -5710,10 +5601,17 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
     startScriptContent: [
       "#!/usr/bin/env bash",
       "set -euo pipefail",
-      'state_dir="$PWD/run"',
-      'log_dir="$PWD/run"',
-      'mkdir -p "$state_dir" "$log_dir" run',
-      'env_file="$PWD/.env"',
+      'state_dir=""; log_dir=""; config_dir=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  case "$1" in',
+      '    --state-dir) state_dir="$2"; shift 2 ;;',
+      '    --log-dir) log_dir="$2"; shift 2 ;;',
+      '    --config-dir) config_dir="$2"; shift 2 ;;',
+      '    *) shift ;;',
+      '  esac',
+      'done',
+      'mkdir -p "${state_dir:?}" "${log_dir:?}" run',
+      'env_file="${config_dir:?}/.env"',
       'if [ -f "$env_file" ]; then set -a; . "$env_file"; set +a; fi',
       "cat > run/container-hub-delayed-fixture.js <<'NODE'",
       "const http = require('node:http');",
@@ -5747,7 +5645,7 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
   try {
     setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
-    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    const initStatePath = getTestInitializationStatePath(userDataRoot, service.id);
     fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
     fs.writeFileSync(
       initStatePath,
@@ -6286,219 +6184,19 @@ test("ensurePreStartRequirements does not fill default env for the local-cli-acp
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements leaves legacy agent-platform runtime root untouched", async () => {
+test("ensurePreStartRequirements preserves service-owned configuration bytes", async (t) => {
   const fixture = createStartupCoreAssetsFixture();
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+  t.after(() => {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const runtimeRoot = path.join(tempRoot, "custom-runtime");
-  const originalEnv = `SERVER_PORT=11949\nAP_RUNTIME_DIR=${runtimeRoot}\n`;
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(path.join(homeRoot, "zenmind", "registries"), { recursive: true });
-  fs.mkdirSync(path.join(homeRoot, "zenmind", "agents"), { recursive: true });
-  writeTestEnv(userDataRoot, platformService.id, originalEnv);
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.equal(envContent, originalEnv);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements leaves legacy desktop runtime child paths untouched", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const legacyRuntimeRoot = path.join(homeRoot, "zenmind");
-  const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
-  const secondaryRuntimeRoot = path.join(homeRoot, "Desktop", "zenmind-env");
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(path.join(legacyRuntimeRoot, "chats"), { recursive: true });
-  fs.mkdirSync(path.join(preferredRuntimeRoot, "agents", "demoAgent"), { recursive: true });
-  fs.mkdirSync(path.join(preferredRuntimeRoot, "registries", "providers"), { recursive: true });
-  fs.mkdirSync(path.join(preferredRuntimeRoot, "teams"), { recursive: true });
-  fs.mkdirSync(path.join(preferredRuntimeRoot, "chats"), { recursive: true });
-  fs.mkdirSync(path.join(secondaryRuntimeRoot, "agents", "secondaryAgent"), { recursive: true });
-  fs.mkdirSync(path.join(secondaryRuntimeRoot, "registries", "providers"), { recursive: true });
-  fs.mkdirSync(path.join(secondaryRuntimeRoot, "teams"), { recursive: true });
-  fs.mkdirSync(path.join(secondaryRuntimeRoot, "chats"), { recursive: true });
-  fs.writeFileSync(path.join(preferredRuntimeRoot, "agents", "demoAgent", "agent.yml"), "name: demo\n", "utf8");
-  fs.writeFileSync(path.join(preferredRuntimeRoot, "registries", "providers", "demo.yml"), "key: demo\n", "utf8");
-  fs.writeFileSync(path.join(secondaryRuntimeRoot, "agents", "secondaryAgent", "agent.yml"), "name: secondary\n", "utf8");
-  fs.writeFileSync(path.join(secondaryRuntimeRoot, "registries", "providers", "secondary.yml"), "key: secondary\n", "utf8");
-
-  const originalEnv = [
-    "SERVER_PORT=11949",
-    `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
-    `OWNER_DIR=${legacyRuntimeRoot}/owner`,
-    `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
-    `TEAMS_DIR=${legacyRuntimeRoot}/teams`,
-    `ROOT_DIR=${legacyRuntimeRoot}/root`,
-    `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
-    `CHATS_DIR=${legacyRuntimeRoot}/chats`,
-    `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
-    `PAN_DIR=${legacyRuntimeRoot}/pan`
-  ].join("\n");
-  writeTestEnv(userDataRoot, platformService.id, originalEnv);
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.equal(envContent, originalEnv);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements leaves legacy resolved desktop runtime paths untouched", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const desktopPath = path.join(homeRoot, "OneDrive", "Desktop");
-  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
-    homePath: homeRoot,
-    desktopPath
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const legacyRuntimeRoot = path.join(homeRoot, "zenmind");
-  const desktopRuntimeRoot = path.join(desktopPath, "zenmind-env");
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(path.join(legacyRuntimeRoot, "chats"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries", "providers"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "teams"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "chats"), { recursive: true });
-  fs.writeFileSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent", "agent.yml"), "name: desktop\n", "utf8");
-  fs.writeFileSync(path.join(desktopRuntimeRoot, "registries", "providers", "desktop.yml"), "key: desktop\n", "utf8");
-
-  const originalEnv = [
-    "SERVER_PORT=11949",
-    `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
-    `OWNER_DIR=${legacyRuntimeRoot}/owner`,
-    `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
-    `TEAMS_DIR=${legacyRuntimeRoot}/teams`,
-    `ROOT_DIR=${legacyRuntimeRoot}/root`,
-    `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
-    `CHATS_DIR=${legacyRuntimeRoot}/chats`,
-    `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
-    `PAN_DIR=${legacyRuntimeRoot}/pan`
-  ].join("\n");
-  writeTestEnv(userDataRoot, platformService.id, originalEnv);
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.equal(envContent, originalEnv);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements leaves hidden desktop legacy runtime roots untouched", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const desktopPath = path.join(homeRoot, "OneDrive", "Desktop");
-  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
-    homePath: homeRoot,
-    desktopPath
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const legacyRuntimeRoot = path.join(homeRoot, "zenmind");
-  const desktopRuntimeRoot = path.join(desktopPath, ".zenmind");
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(path.join(legacyRuntimeRoot, "chats"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries", "providers"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "teams"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "chats"), { recursive: true });
-  fs.writeFileSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent", "agent.yml"), "name: desktop\n", "utf8");
-  fs.writeFileSync(path.join(desktopRuntimeRoot, "registries", "providers", "desktop.yml"), "key: desktop\n", "utf8");
-
-  const originalEnv = [
-    "SERVER_PORT=11949",
-    `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
-    `OWNER_DIR=${legacyRuntimeRoot}/owner`,
-    `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
-    `TEAMS_DIR=${legacyRuntimeRoot}/teams`,
-    `ROOT_DIR=${legacyRuntimeRoot}/root`,
-    `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
-    `CHATS_DIR=${legacyRuntimeRoot}/chats`,
-    `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
-    `PAN_DIR=${legacyRuntimeRoot}/pan`
-  ].join("\n");
-  writeTestEnv(userDataRoot, platformService.id, originalEnv);
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.equal(envContent, originalEnv);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+  const service = getBuiltinService("agent-platform");
+  const original = "# Service-owned configuration\nCUSTOM_SETTING='keep exactly'\n";
+  writeTestEnv(userDataRoot, service.id, original);
+  await __testInternals.ensurePreStartRequirements(app, service);
+  assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8"), original);
 });
 
 test("startService hosts agent-webclient without executing bundle start script", async () => {

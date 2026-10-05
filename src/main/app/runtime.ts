@@ -212,7 +212,7 @@ export function createMainProcessRuntime() {
     bundledEnvZipExists: bundledEnvZipExistsAtStartup,
     runtimeRootExistedAtStartup
   });
-  const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
+  const runtimeRootConflictDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
   let startupEnvImportFailureMessage: string | null = null;
   let nonCoreDesktopRuntimeStarted = false;
   let ssoCredentialDependentRuntimesStarted = false;
@@ -308,7 +308,7 @@ export function createMainProcessRuntime() {
     get envZipConflictNeedsDecision() { return envZipConflictNeedsDecision; },
     get requireEnvZipImportAtStartup() { return requireEnvZipImportAtStartup; },
     get runtimeRootAtProcessStart() { return runtimeRootAtProcessStart; },
-    get oldRootDecisionRef() { return oldRootDecisionRef; },
+    get runtimeRootConflictDecisionRef() { return runtimeRootConflictDecisionRef; },
     get startupRestoreController() { return startupRestoreController; },
     get appShellRuntime() { return appShellRuntime; }
   });
@@ -754,7 +754,7 @@ export function createMainProcessRuntime() {
         get petRuntime() { return petRuntime; },
         get enterpriseChatRuntime() { return enterpriseChatRuntime; },
         get desktopAppInfo() { return desktopAppInfo; },
-        get oldRootDecisionRef() { return oldRootDecisionRef; },
+        get runtimeRootConflictDecisionRef() { return runtimeRootConflictDecisionRef; },
         get isFirstDesktopInstall() { return isFirstDesktopInstall; },
         get bundledEnvZipExistsAtStartup() { return bundledEnvZipExistsAtStartup; },
         get runtimeRootExistedAtStartup() { return runtimeRootExistedAtStartup; },

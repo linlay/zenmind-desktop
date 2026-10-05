@@ -12,8 +12,7 @@ const DESKTOP_DIRS = [
   "state",
   "logs",
   "cache",
-  "secrets",
-  "profiles"
+  "secrets"
 ] as const;
 const DESKTOP_SSO_ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
 type DesktopRootOptions = {
@@ -316,11 +315,6 @@ export function getMarketplaceStateRoot(app: App) {
 
 export function getSecretsRoot(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDataRoot(app, platform), "secrets");
-}
-
-export function getProfilesRoot(app: App, platform: NodeJS.Platform = process.platform) {
-  const dataRoot = getDataRoot(app, platform);
-  return pathApiForRoot(platform, dataRoot).join(dataRoot, "profiles");
 }
 
 export function getElectronUserDataRoot(app: App, platform: NodeJS.Platform = process.platform) {

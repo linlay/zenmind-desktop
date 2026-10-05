@@ -2,7 +2,7 @@ import type { App } from "electron";
 import {
   generateBackupDirName,
   importBundledEnvZipToRuntime,
-  migrateOldRootToBackup,
+  backupRuntimeRoot,
   type EnvRootConflictDecision
 } from "../../infrastructure/filesystem/runtime-environment";
 
@@ -13,7 +13,7 @@ export type StartupEnvironmentRuntimeOptions = {
   envZipConflictNeedsDecision: boolean;
   requireEnvZipImportAtStartup: boolean;
   runtimeRootAtProcessStart: string;
-  oldRootDecisionRef: { current: EnvRootConflictDecision | undefined };
+  runtimeRootConflictDecisionRef: { current: EnvRootConflictDecision | undefined };
   startupRestoreController: {
     beginSession(mode: string): void;
     updateService(serviceId: string, phase: string, message: string): void;
@@ -40,7 +40,7 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
       message: options.t("startup.envConflict.message", { path: options.runtimeRootAtProcessStart }),
       detail: options.t("startup.envConflict.detail", { backupPath }),
       buttons: [
-        options.t("startup.envConflict.migrate"),
+        options.t("startup.envConflict.backup"),
         options.t("startup.envConflict.keep"),
         options.t("menu.quit", { appName: options.productName })
       ],
@@ -50,25 +50,25 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
     });
 
     if (choice.response === 1) {
-      options.oldRootDecisionRef.current = "keep";
+      options.runtimeRootConflictDecisionRef.current = "keep";
       return true;
     }
     if (choice.response !== 0) {
-      options.oldRootDecisionRef.current = "cancel";
+      options.runtimeRootConflictDecisionRef.current = "cancel";
       return false;
     }
 
     try {
-      migrateOldRootToBackup(options.platform, options.runtimeRootAtProcessStart, backupPath);
-      options.oldRootDecisionRef.current = "migrate";
+      backupRuntimeRoot(options.platform, options.runtimeRootAtProcessStart, backupPath);
+      options.runtimeRootConflictDecisionRef.current = "backup";
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const retryChoice = await options.showMessageBox({
         type: "error",
-        title: options.t("startup.envConflict.migrationFailedTitle"),
+        title: options.t("startup.envConflict.backupFailedTitle"),
         message,
-        detail: options.t("startup.envConflict.migrationFailedDetail", {
+        detail: options.t("startup.envConflict.backupFailedDetail", {
           path: options.runtimeRootAtProcessStart,
           backupPath
         }),
@@ -78,22 +78,22 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
         noLink: true
       });
       if (retryChoice.response === 1) {
-        options.oldRootDecisionRef.current = "keep";
+        options.runtimeRootConflictDecisionRef.current = "keep";
         return true;
       }
-      options.oldRootDecisionRef.current = "cancel";
+      options.runtimeRootConflictDecisionRef.current = "cancel";
       return false;
     }
   }
 
   async function prepareStartupRuntimeEnvironment(): Promise<{ ok: true } | { ok: false; message: string }> {
     const shouldImportBundledEnvZip =
-      options.oldRootDecisionRef.current === "migrate" ||
-      (options.requireEnvZipImportAtStartup && options.oldRootDecisionRef.current !== "keep");
+      options.runtimeRootConflictDecisionRef.current === "backup" ||
+      (options.requireEnvZipImportAtStartup && options.runtimeRootConflictDecisionRef.current !== "keep");
     if (shouldImportBundledEnvZip) {
       return tryImportBundledEnvZipAtStartup();
     }
-    if (options.oldRootDecisionRef.current === "keep") {
+    if (options.runtimeRootConflictDecisionRef.current === "keep") {
       return { ok: true };
     }
     return { ok: true };

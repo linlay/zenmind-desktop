@@ -70,7 +70,7 @@ export interface AssembleStartupEnvironmentDependencies {
   readonly envZipConflictNeedsDecision: ReturnType<typeof shouldPromptEnvRootConflict>;
   readonly requireEnvZipImportAtStartup: boolean;
   readonly runtimeRootAtProcessStart: ReturnType<typeof resolveRuntimeRoot>;
-  readonly oldRootDecisionRef: { current: EnvRootConflictDecision | undefined };
+  readonly runtimeRootConflictDecisionRef: { current: EnvRootConflictDecision | undefined };
   readonly startupRestoreController: ReturnType<typeof createStartupRestoreController>;
   readonly appShellRuntime: Pick<AppShellRuntime, "showMessageBox">;
 }
@@ -83,7 +83,7 @@ export function assembleStartupEnvironment(dependencies: AssembleStartupEnvironm
     envZipConflictNeedsDecision: dependencies.envZipConflictNeedsDecision,
     requireEnvZipImportAtStartup: dependencies.requireEnvZipImportAtStartup,
     runtimeRootAtProcessStart: dependencies.runtimeRootAtProcessStart,
-    oldRootDecisionRef: dependencies.oldRootDecisionRef,
+    runtimeRootConflictDecisionRef: dependencies.runtimeRootConflictDecisionRef,
     startupRestoreController: dependencies.startupRestoreController,
     showMessageBox: (options) => dependencies.appShellRuntime.showMessageBox(options),
     t

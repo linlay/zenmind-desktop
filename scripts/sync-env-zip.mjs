@@ -85,16 +85,7 @@ function normalizeSafeRelativePath(relativePath) {
 function isNestedEnvWrapperSegment(segment, runtimeRootDirName) {
   const normalized = segment.trim().toLowerCase();
   const normalizedRuntimeRootDirName = runtimeRootDirName.trim().toLowerCase();
-  const normalizedRuntimeRootName = normalizedRuntimeRootDirName.replace(/^\./u, "");
-  return (
-    normalized === ENV_ZIP_ROOT_DIR_NAME ||
-    normalized === normalizedRuntimeRootDirName ||
-    normalized === normalizedRuntimeRootName ||
-    normalized === ".zenmind" ||
-    normalized === "zenmind" ||
-    normalized === "zenmind-env" ||
-    /^zenmind-env[-_].+/u.test(normalized)
-  );
+  return normalized === ENV_ZIP_ROOT_DIR_NAME || normalized === normalizedRuntimeRootDirName;
 }
 
 function normalizeEnvZipEntryRelativePath(entryName, runtimeRootDirName) {

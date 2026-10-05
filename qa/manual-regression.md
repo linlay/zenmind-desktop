@@ -1142,3 +1142,10 @@
 - 两平台安装、deploy、start 后，确认 Desktop 能通过认证访问 Platform 并完成一次对话；停止 Platform 或提供不兼容的生命周期入口时应报告真实失败，不因移除文本扫描而假报可用。
 - Identity Center、WebClient、Container Hub 在 macOS / Windows 分别验证 lifecycle 脚本拆分、内部 helper 调整和附带说明文件不影响同步；缺失上游声明文件仍失败。
 - Identity Center 公钥输出改为另一条 manifest 声明路径后，Desktop 仍可取用公钥和令牌；缺失认证能力或目标平台命令应拒绝。WebClient 缺失宿主托管能力、认证依赖或公开错误代理路由时，归档与目录包均应拒绝。
+
+### 当前品牌数据目录
+
+- Windows 与 macOS 首次启动均使用 `.<brand>/.desktop`，重复启动保留当前 Chromium Cookie 与存储。
+- Windows 安装器选择其他父路径后，完整目录名仍为 `.<brand>`；安装、覆盖和卸载继续执行当前路径与所有权校验。
+- 技能安装位置与当前品牌运行根一致；服务 PID 在当前服务状态目录创建、读取和清理。
+- 当前运行根的显式备份、环境导入与还原保持可用；不将根目录备份误当作目录兼容迁移。
