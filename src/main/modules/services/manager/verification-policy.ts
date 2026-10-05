@@ -1,6 +1,6 @@
 import { type ServiceDefinition } from "../../../support/manifest/manifest-utils";
 import { type ServiceState, type ServiceDesiredStatus, type ServiceVerification } from "../../../../shared/contracts";
-import { type HttpProbeResult } from "./service-probes";
+import { normalizeProbeUrl, type HttpProbeResult } from "./service-probes";
 import { ServiceVerificationOptions, DEFAULT_DEPENDENCY_RUNNING_VERIFICATION_TIMEOUT_MS } from "./manager-contracts";
 import { isProcessRunning } from "./process-cleanup";
 import { isHostManagedService } from "./host-policy";
@@ -39,8 +39,9 @@ export function buildVerificationResult(
     : skipManagedPortProbe
     ? state.status === "running"
     : port > 0 ? Boolean(managedPortPid) : desired === "running";
-  const httpProbe = probes.find((probe) => probe.target === state.healthMeta.webUrl);
-  const runtimeInfoProbe = probes.find((probe) => probe.target.includes("/api/runtime-info"));
+  const healthTarget = state.healthMeta.webUrl ? normalizeProbeUrl(state.healthMeta.webUrl, "/healthz") : null;
+  const healthProbe = probes.find((probe) => probe.target === healthTarget);
+  const httpProbe = healthProbe ?? probes.find((probe) => probe.target === state.healthMeta.webUrl);
   const issues: string[] = [];
 
   if (desired === "running") {
@@ -57,25 +58,15 @@ export function buildVerificationResult(
       if (port > 0 && !managedPortPid) {
         issues.push(t("service.verify.portNoManagedProcess", { port }));
       }
-      if (httpProbe && !httpProbe.ok) {
+    }
+    if (service.id === "agent-container-hub" || service.id === "agent-platform") {
+      if (!healthProbe) {
+        issues.push(t("service.verify.healthMissing"));
+      } else if (!healthProbe.ok) {
         issues.push(t("service.verify.probeFailed", {
-          target: httpProbe.target,
-          message: httpProbe.message || t("service.probeHttpUnavailable")
+          target: "/healthz",
+          message: healthProbe.message || t("service.probeHttpUnavailable")
         }));
-      }
-      if (runtimeInfoProbe) {
-        const looksJson = /application\/json/iu.test(runtimeInfoProbe.contentType || "")
-          || /^\s*[{[]/u.test(runtimeInfoProbe.bodyPreview || "");
-        if (!runtimeInfoProbe.ok || !looksJson) {
-          issues.push(runtimeInfoProbe.ok
-            ? t("service.verify.runtimeInfoNotJson", { statusCode: runtimeInfoProbe.statusCode })
-            : t("service.verify.probeFailed", {
-                target: "/api/runtime-info",
-                message: runtimeInfoProbe.message || t("service.probeHttpUnavailable")
-              }));
-        }
-      } else {
-        issues.push(t("service.verify.runtimeInfoMissing"));
       }
     }
   } else {
@@ -94,7 +85,7 @@ export function buildVerificationResult(
     ? state.status === "running" && pidAlive
     : state.status !== "running" && pidAlive && !managedPortPid;
   const strictVerified = service.id === "agent-container-hub" && desired === "running"
-    ? baseVerified && portListening && probes.every((probe) => probe.ok) && Boolean(runtimeInfoProbe)
+    ? baseVerified && portListening && probes.every((probe) => probe.ok) && Boolean(healthProbe)
     : baseVerified;
 
   return {
@@ -105,10 +96,7 @@ export function buildVerificationResult(
     portListening,
     managedPortPid,
     httpOk: httpProbe ? httpProbe.ok : null,
-    runtimeInfoOk: runtimeInfoProbe ? runtimeInfoProbe.ok && (
-      /application\/json/iu.test(runtimeInfoProbe.contentType || "") ||
-      /^\s*[{[]/u.test(runtimeInfoProbe.bodyPreview || "")
-    ) : null,
+    healthOk: healthProbe ? healthProbe.ok : null,
     checkedAt: new Date().toISOString(),
     issues,
     probes: probes.map((probe) => ({

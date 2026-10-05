@@ -1042,13 +1042,13 @@ function validateAgentWebclientHostContract(service, manifest, archivePath) {
       requirement.phase === "verifyRunning" &&
       requirement.service === "agent-platform" &&
       requirement.action === "waitHttp" &&
-      requirement.target === "/api/runtime-info" &&
-      requirement.authCapability === "auth.accessToken"
+      requirement.target === "/healthz" &&
+      !requirement.authCapability
   );
   if (!hasAgentPlatformWaitHttp) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Missing desktop capability requirement verifyRunning agent-platform waitHttp /api/runtime-info with auth.accessToken in manifest.json.\n` +
+        `Missing desktop capability requirement verifyRunning agent-platform waitHttp /healthz without authCapability in manifest.json.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle with manifest-declared platform readiness dependencies.`
     );
   }

@@ -1190,3 +1190,9 @@
 
 - Windows/macOS 分别开启 Desktop 动作确认，通过可信 Platform 调用换主题、增改网站条目和看板动作，确认不会再弹 Desktop confirm action dialog；Platform 若配置审阅，仅显示 Platform 的 viewport。
 - 同样动作由普通 Desktop Action 入口调用仍要求确认，伪造 source 不豁免；基础服务重启、WebApp 安装/卸载/发布、市场安装和镜像删除仍进入原确认策略。
+
+## 内置服务健康检查
+
+- macOS / Windows 分别验证 Hub 开启认证后 `/healthz` 可匿名访问，业务 API 仍返回 401；Desktop 能确认受管进程和端口，未知进程占端口仍失败。
+- Platform 智能体列表报错不影响健康探针；必需 sidecar 不健康导致 `/healthz` 503 时，不发布就绪。404、重定向、非 JSON 和超时不得降级请求 `/api/agents`。
+- WebClient 的 token preload 失败仍阻止其验证通过；健康请求不发送凭据。发布时同步新版 Hub 和 WebClient bundle，旧 WebClient 健康声明在资源预检时拒绝。

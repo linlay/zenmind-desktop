@@ -13,6 +13,7 @@ import { getServiceState } from "./service-state";
 import {
   type HttpProbeResult,
   probeHttpUrl,
+  probeServiceHealth,
   normalizeProbeUrl,
   getServiceVerificationDelayMs,
   CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS,
@@ -40,9 +41,10 @@ export async function collectServiceVerification(
 
   if (desired === "running" && state.status === "running" && state.healthMeta.webUrl) {
     const webUrl = state.healthMeta.webUrl;
-    probes.push(await runStartupCheckpoint(serviceId, "verification", "http-service-root", () => probeHttpUrl(webUrl)));
-    if (service.id === "agent-container-hub") {
-      probes.push(await probeHttpUrl(normalizeProbeUrl(webUrl, "/api/runtime-info")));
+    if (service.id === "agent-container-hub" || service.id === "agent-platform") {
+      probes.push(await probeServiceHealth(normalizeProbeUrl(webUrl, "/healthz")));
+    } else {
+      probes.push(await runStartupCheckpoint(serviceId, "verification", "http-service-root", () => probeHttpUrl(webUrl)));
     }
   }
 
@@ -94,7 +96,7 @@ export async function verifyServiceState(
     const retryUntil =
       service.id === "agent-container-hub" && desired === "running"
         ? Date.now() + CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS
-        : hasVerifyRunningRequirements(service) && desired === "running"
+        : (service.id === "agent-platform" || hasVerifyRunningRequirements(service)) && desired === "running"
         ? Date.now() + getDependencyRunningVerificationTimeoutMs()
         : 0;
     checkpoints.next("initial-probe");
@@ -146,7 +148,7 @@ export function shouldRetryServiceVerification(
     verification.actualStatus === "running" &&
     verification.pidAlive;
   const retriesVerifyRunningRequirements =
-    hasVerifyRunningRequirements(service) &&
+    (service.id === "agent-platform" || hasVerifyRunningRequirements(service)) &&
     desired === "running" &&
     !verification.verified &&
     verification.actualStatus === "running" &&

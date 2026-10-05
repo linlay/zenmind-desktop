@@ -261,8 +261,7 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
             phase: "verifyRunning",
             service: "agent-platform",
             action: "waitHttp",
-            target: "/api/runtime-info",
-            authCapability: "auth.accessToken"
+            target: "/healthz"
           }
         ]
       }
@@ -820,8 +819,8 @@ function createStartupCoreAssetsFixture(options = {}) {
                 options.platformRootReturns404 && service.id === "agent-platform"
                   ? [
                       "  const server = http.createServer((req, res) => {",
-                      "    if (req.url === '/api/runtime-info') {",
-                      options.platformRuntimeInfoRequiresAuth
+                      "    if (req.url === '/healthz') {",
+                      options.platformHealthRequiresAuth
                         ? [
                             "      if (!String(req.headers.authorization || '').startsWith('Bearer ')) {",
                             "        res.writeHead(401, { 'content-type': 'application/json' });",
@@ -838,7 +837,7 @@ function createStartupCoreAssetsFixture(options = {}) {
                       "    res.end('not found');",
                       "  });"
                     ].join("\r\n")
-                  : "  const server = http.createServer((_req, res) => res.end('ok'));",
+                  : "  const server = http.createServer((_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ status: 'ok' })); });",
                 "  server.on('error', () => {});",
                 "  server.listen(port, '127.0.0.1');",
                 "}",
@@ -983,8 +982,8 @@ function createStartupCoreAssetsFixture(options = {}) {
                 options.platformRootReturns404 && service.id === "agent-platform"
                   ? [
                       "  const server = http.createServer((req, res) => {",
-                      "    if (req.url === '/api/runtime-info') {",
-                      options.platformRuntimeInfoRequiresAuth
+                      "    if (req.url === '/healthz') {",
+                      options.platformHealthRequiresAuth
                         ? [
                             "      if (!String(req.headers.authorization || '').startsWith('Bearer ')) {",
                             "        res.writeHead(401, { 'content-type': 'application/json' });",
@@ -1001,7 +1000,7 @@ function createStartupCoreAssetsFixture(options = {}) {
                       "    res.end('not found');",
                       "  });"
                     ].join("\n")
-                  : "  const server = http.createServer((_req, res) => res.end('ok'));",
+                  : "  const server = http.createServer((_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ status: 'ok' })); });",
                 "  server.on('error', () => {});",
                 "  server.listen(port, '127.0.0.1');",
                 "}",
@@ -5596,7 +5595,7 @@ test("startService verifies command success and reports delayed container hub cr
     assert.equal(result.verification.verified, false);
     assert.equal(result.verification.desired, "running");
     assert.equal(result.verification.actualStatus, "stopped");
-    assert.ok(result.verification.issues.some((issue) => /复查|stopped|PID|端口|runtime-info/u.test(issue)));
+    assert.ok(result.verification.issues.some((issue) => /复查|stopped|PID|端口|healthz/u.test(issue)));
     assert.match(result.message, /启动命令已执行|启动命令执行过/);
     assert.match(result.message, /复查失败|未确认启动/);
   } finally {
@@ -5606,7 +5605,7 @@ test("startService verifies command success and reports delayed container hub cr
   }
 });
 
-test("startService verifies running container hub with port and runtime-info probe", async (t) => {
+test("startService verifies running container hub with port and healthz probe", async (t) => {
   if (process.platform === "win32") {
     t.skip("This fixture uses a POSIX shell daemon; Windows service verification is covered by process and port parser tests.");
     return;
@@ -5630,7 +5629,7 @@ test("startService verifies running container hub with port and runtime-info pro
       "const bindAddr = process.env.BIND_ADDR || `127.0.0.1:${fallbackPort}`;",
       "const port = Number(String(bindAddr).match(/:(\\d+)$/)?.[1] || fallbackPort);",
       "const server = http.createServer((req, res) => {",
-      "  if (req.url === '/api/runtime-info') {",
+      "  if (req.url === '/healthz') {",
       "    res.writeHead(200, { 'content-type': 'application/json' });",
       "    res.end(JSON.stringify({ engine: 'docker', ok: true }));",
       "    return;",
@@ -5645,7 +5644,7 @@ test("startService verifies running container hub with port and runtime-info pro
       "printf '%s\\n' \"$!\" > \"$state_dir/agent-container-hub.pid\"",
       'probe_port="$(node -e "const bindAddr = process.env.BIND_ADDR || process.argv[1]; console.log(String(bindAddr).match(/:(\\\\d+)$/)?.[1] || process.argv[2])" "127.0.0.1:' + port + '" "' + port + '")"',
       "for attempt in $(seq 1 50); do",
-      '  node -e "const port=Number(process.argv[1]); require(\'node:http\').get(\'http://127.0.0.1:\'+port+\'/api/runtime-info\', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on(\'error\', () => process.exit(1))" "$probe_port" && exit 0',
+      '  node -e "const port=Number(process.argv[1]); require(\'node:http\').get(\'http://127.0.0.1:\'+port+\'/healthz\', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on(\'error\', () => process.exit(1))" "$probe_port" && exit 0',
       "  sleep 0.05",
       "done",
       "exit 1"
@@ -5679,7 +5678,7 @@ test("startService verifies running container hub with port and runtime-info pro
     assert.equal(result.verification.verified, true);
     assert.equal(result.verification.portListening, true);
     assert.equal(result.verification.httpOk, true);
-    assert.equal(result.verification.runtimeInfoOk, true);
+    assert.equal(result.verification.healthOk, true);
   } finally {
     setContainerEngineProbeState();
     const pidPath = getTestPidPath(userDataRoot, service.id, "agent-container-hub.pid");
@@ -5694,7 +5693,7 @@ test("startService verifies running container hub with port and runtime-info pro
   }
 });
 
-test("startService waits for delayed container hub runtime-info readiness", async (t) => {
+test("startService waits for delayed container hub healthz readiness", async (t) => {
   if (process.platform === "win32") {
     t.skip("This fixture uses a POSIX shell daemon; Windows service verification is covered by process and port parser tests.");
     return;
@@ -5718,7 +5717,7 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
       "const bindAddr = process.env.BIND_ADDR || `127.0.0.1:${fallbackPort}`;",
       "const port = Number(String(bindAddr).match(/:(\\d+)$/)?.[1] || fallbackPort);",
       "const server = http.createServer((req, res) => {",
-      "  if (req.url === '/api/runtime-info') {",
+      "  if (req.url === '/healthz') {",
       "    res.writeHead(200, { 'content-type': 'application/json' });",
       "    res.end(JSON.stringify({ engine: 'docker', ok: true }));",
       "    return;",
@@ -5762,7 +5761,7 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
     assert.equal(result.service.status, "running");
     assert.equal(result.verification.verified, true);
     assert.equal(result.verification.portListening, true);
-    assert.equal(result.verification.runtimeInfoOk, true);
+    assert.equal(result.verification.healthOk, true);
   } finally {
     setContainerEngineProbeState();
     if (previousVerifyDelay === undefined) {
@@ -7705,10 +7704,10 @@ test("runStartupPreparation prepares packaged first-launch core services in para
   }
 });
 
-test("runStartupPreparation uses manifest auth capability for agent-platform runtime-info readiness", async () => {
+test("runStartupPreparation checks unauthenticated agent-platform healthz independently of token preload", async () => {
   const fixture = createStartupCoreAssetsFixture({
     platformRootReturns404: true,
-    platformRuntimeInfoRequiresAuth: true
+    platformHealthRequiresAuth: false
   });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -7732,17 +7731,17 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
     const platformState = await getServiceState(app, "agent-platform");
     const webclientState = await getServiceState(app, "agent-webclient");
     const platformRootProbe = await __testInternals.probeHttpUrl(platformState.healthMeta.webUrl);
-    const platformRuntimeProbe = await __testInternals.probeHttpUrl(
-      new URL("/api/runtime-info", platformState.healthMeta.webUrl).toString()
+    const platformHealthProbe = await __testInternals.probeHttpUrl(
+      new URL("/healthz", platformState.healthMeta.webUrl).toString()
     );
-    const authenticatedPlatformRuntimeProbe = await __testInternals.probeHttpUrl(
-      new URL("/api/runtime-info", platformState.healthMeta.webUrl).toString(),
+    const authenticatedPlatformHealthProbe = await __testInternals.probeHttpUrl(
+      new URL("/healthz", platformState.healthMeta.webUrl).toString(),
       { headers: { Authorization: "Bearer fixture-token" } }
     );
 
     assert.equal(platformRootProbe.statusCode, 404);
-    assert.equal(platformRuntimeProbe.statusCode, 401);
-    assert.equal(authenticatedPlatformRuntimeProbe.ok, true);
+    assert.equal(platformHealthProbe.statusCode, 200);
+    assert.equal(authenticatedPlatformHealthProbe.ok, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.equal(webclientState.status, "running");
