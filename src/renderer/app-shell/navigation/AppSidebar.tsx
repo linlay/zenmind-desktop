@@ -3093,11 +3093,13 @@ export function AppSidebar({
     if (creatingProject || createProjectDialog) {
       return;
     }
+    if (!file) {
+      setCreateProjectDialog({ workspaceDir: "" });
+      return;
+    }
     setCreatingProject(true);
     try {
-      const selection = file
-        ? await window.electronAPI.desktopDialog.resolveDroppedDirectory(file)
-        : await window.electronAPI.desktopDialog.selectDirectory();
+      const selection = await window.electronAPI.desktopDialog.resolveDroppedDirectory(file);
       if (!selection.ok || !selection.path) {
         if (file) throw new Error(selection.message || t("sidebar.drop.projectHint"));
         return;
