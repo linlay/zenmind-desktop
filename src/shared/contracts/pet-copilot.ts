@@ -216,3 +216,7 @@ export type DesktopPetSignatureRequestedListener = (signatureId?: string) => voi
 export type DesktopPetImportResult =
   | { ok: true; cancelled?: boolean; importedAppearanceId?: string; state: DesktopPetState }
   | { ok: false; error: "invalidPackage" | "packageTooLarge" | "packageExists" | "storageFailed" };
+
+export type DesktopPetRemoveResult =
+  | { ok: true; state: DesktopPetState }
+  | { ok: false; error: "removeFailed" };

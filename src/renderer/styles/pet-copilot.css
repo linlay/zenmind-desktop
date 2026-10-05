@@ -351,51 +351,6 @@ body.desktop-pet-body,
   transform-origin: 50% 88%;
 }
 
-.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-image {
-  filter:
-    drop-shadow(0 0 6px rgba(255, 229, 86, 0.78))
-    drop-shadow(0 0 18px rgba(255, 172, 28, 0.42));
-}
-
-.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::before,
-.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::after {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::before {
-  left: 5px;
-  top: -4px;
-  width: 122px;
-  height: 136px;
-  border-radius: 52% 52% 45% 45%;
-  background:
-    radial-gradient(ellipse at 50% 72%, rgba(255, 255, 255, 0.72) 0 9%, rgba(255, 225, 62, 0.48) 18%, rgba(255, 180, 18, 0.2) 36%, rgba(255, 180, 18, 0) 62%),
-    conic-gradient(from 210deg at 50% 72%, rgba(255, 196, 22, 0) 0deg, rgba(255, 214, 48, 0.74) 34deg, rgba(255, 246, 138, 0.5) 56deg, rgba(255, 163, 12, 0.56) 84deg, rgba(255, 196, 22, 0) 112deg, rgba(255, 231, 92, 0.66) 145deg, rgba(255, 174, 18, 0.44) 180deg, rgba(255, 196, 22, 0) 222deg, rgba(255, 220, 58, 0.62) 258deg, rgba(255, 196, 22, 0) 312deg);
-  clip-path: polygon(50% 0%, 60% 22%, 72% 3%, 70% 30%, 92% 18%, 78% 44%, 100% 42%, 78% 61%, 91% 78%, 66% 76%, 55% 100%, 47% 78%, 24% 92%, 34% 67%, 3% 68%, 27% 52%, 7% 34%, 34% 38%, 28% 12%, 44% 28%);
-  filter: blur(1.2px) saturate(1.25);
-  opacity: 0.88;
-  animation: desktop-pet-power-aura 0.86s ease-in-out infinite;
-}
-
-.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::after {
-  left: 0;
-  top: 0;
-  width: 132px;
-  height: 128px;
-  background:
-    radial-gradient(circle at 30% 22%, rgba(255, 245, 138, 0.96) 0 2px, rgba(255, 245, 138, 0) 3px),
-    radial-gradient(circle at 76% 30%, rgba(255, 211, 56, 0.92) 0 2px, rgba(255, 211, 56, 0) 3px),
-    radial-gradient(circle at 18% 54%, rgba(255, 169, 21, 0.86) 0 2px, rgba(255, 169, 21, 0) 3px),
-    radial-gradient(circle at 88% 62%, rgba(255, 241, 112, 0.86) 0 1.5px, rgba(255, 241, 112, 0) 3px),
-    linear-gradient(90deg, rgba(255, 210, 42, 0) 0 14%, rgba(255, 235, 88, 0.4) 15% 17%, rgba(255, 210, 42, 0) 19% 42%, rgba(255, 245, 130, 0.34) 43% 45%, rgba(255, 210, 42, 0) 47% 72%, rgba(255, 178, 24, 0.32) 73% 75%, rgba(255, 210, 42, 0) 77% 100%);
-  filter: blur(0.2px);
-  opacity: 0.82;
-  animation: desktop-pet-power-particles 1.12s linear infinite;
-}
-
 .desktop-pet-root.is-dragging .desktop-pet-image {
   animation: none;
   transform: none;

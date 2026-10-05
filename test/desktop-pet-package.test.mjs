@@ -29,13 +29,15 @@ for(const prefix of ['', 'my-pet/'])test('install complete ZIP with '+(prefix||'
   await assert.rejects(installLocalPetPackage(h.source,dest),e=>e.code==='packageExists');
   assert.deepEqual(fs.readdirSync(dest),['test-pet']);
 });
-test('imports folder, preserving source and checking nested signature files',async t=>{
-  const h=fixture(t),folder=path.join(h.root,'角色');fs.mkdirSync(folder);
+test('imports a ZIP with nested signature assets',async t=>{
+  const h=fixture(t);
   h.manifest.signature=[{id:'wave',label:'Wave',trigger:['manual'],variants:[{path:'signature/wave.png',frameCount:4,durationMs:1000}]}];
-  fs.writeFileSync(path.join(folder,'pet.json'),JSON.stringify(h.manifest));for(const k of keys)fs.writeFileSync(path.join(folder,k+'.png'),png);
-  fs.mkdirSync(path.join(folder,'signature'));fs.writeFileSync(path.join(folder,'signature/wave.png'),png);
-  assert.equal(await installLocalPetPackage(folder,path.join(h.root,'installed')),'user:test-pet');
-  assert.ok(fs.existsSync(path.join(folder,'pet.json')));
+  await h.zip(z=>z.file('signature/wave.png',png));
+  assert.equal(await installLocalPetPackage(h.source,path.join(h.root,'installed')),'user:test-pet');
+});
+test('rejects a directory even when its name ends in ZIP',async t=>{
+  const h=fixture(t),directory=path.join(h.root,'package.zip');fs.mkdirSync(directory);
+  await assert.rejects(readPetPackage(directory),e=>e.code==='invalidPackage');
 });
 for(const [name,edit] of [
   ['missing state',h=>delete h.manifest.states.review],
@@ -53,19 +55,20 @@ for(const [name,edit] of [
   ['multiple manifests',z=>z.file('other/pet.json','{}')],
   ['pixel bomb',z=>{const b=Buffer.from(png);b.writeUInt32BE(100000,16);z.file('idle.png',b);}],
 ])test('rejects '+name,async t=>{const h=fixture(t);await h.zip(edit);await assert.rejects(readPetPackage(h.source),e=>e.code==='invalidPackage');});
-test('rejects symlink folder and aborts before commit when owner disappears',async t=>{
+test('rejects symlink archive and aborts before commit when owner disappears',async t=>{
   const h=fixture(t);await h.zip();const link=path.join(h.root,'linked.zip');fs.symlinkSync(h.source,link);
   await assert.rejects(readPetPackage(link),e=>e.code==='invalidPackage');
   const dest=path.join(h.root,'installed');let checks=0;
   await assert.rejects(installLocalPetPackage(h.source,dest,()=>{if(++checks===2)throw Error('owner gone');}),/owner gone/);
   assert.deepEqual(fs.readdirSync(dest),[]);
 });
-test('platform pickers separate directories from files',()=>{
-  for(const platform of ['darwin','win32'])for(const folder of [true,false]){
-    const options=petImportDialogOptions(platform,folder);
-    assert.ok(options.properties.includes(folder?'openDirectory':'openFile'));
+test('platform pickers only select ZIP files',()=>{
+  for(const platform of ['darwin','win32']){
+    const options=petImportDialogOptions(platform);
+    assert.ok(options.properties.includes('openFile'));
+    assert.equal(options.properties.includes('openDirectory'),false);
     assert.equal(options.properties.includes('dontAddToRecent'),platform==='win32');
-    assert.equal(Boolean(options.filters),!folder);
+    assert.deepEqual(options.filters[0].extensions,['zip']);
   }
 });
 test('rejects oversized decompressed files before decoding',async t=>{
@@ -79,4 +82,17 @@ test('temporary import folders never appear in installed pets',t=>{
   const root=getDesktopPetsDataRoot(app);
   for(const name of ['visible','.pet-import-staging']){fs.mkdirSync(path.join(root,name),{recursive:true});fs.writeFileSync(path.join(root,name,'pet.json'),JSON.stringify({...h.manifest,id:name==='visible'?'visible':'hidden'}));}
   assert.deepEqual(listUserDesktopPets(app).map(p=>p.petId),['visible']);
+});
+
+test('removal resolves only catalog user IDs, refusing built-ins, traversal and symlinks',t=>{
+ const h=fixture(t),app={getPath:()=>h.root};
+ const {getDesktopPetsDataRoot}=require('../dist-electron/main/infrastructure/filesystem/user-paths.js');
+ const {resolveRemovablePetPath}=require('../dist-electron/main/modules/pet/remove-package.js');
+ const root=getDesktopPetsDataRoot(app),pet=path.join(root,'test-pet');
+ fs.mkdirSync(pet,{recursive:true});fs.writeFileSync(path.join(pet,'pet.json'),JSON.stringify(h.manifest));
+ assert.equal(resolveRemovablePetPath(app,'user:test-pet'),pet);
+ for(const id of ['classic','cutej','zenmi','../test-pet','user:../test-pet','user:missing',null])assert.throws(()=>resolveRemovablePetPath(app,id));
+ const outside=path.join(h.root,'outside');fs.renameSync(pet,outside);fs.symlinkSync(outside,pet,'dir');
+ assert.throws(()=>resolveRemovablePetPath(app,'user:test-pet'));
+ assert.ok(fs.existsSync(path.join(outside,'pet.json')));
 });

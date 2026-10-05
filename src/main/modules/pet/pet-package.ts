@@ -125,72 +125,44 @@ async function packageFiles(input: string) {
   if (stat.isSymbolicLink())
     throw invalid();
   const files = new Map<string, () => Promise<Buffer>>();
-  let total = 0, count = 0;
+  let total = 0;
   const addSize = (size: number) => {
     total += size;
     if (!Number.isSafeInteger(size) || size < 0)
       throw invalid();
-    if (++count > limits.entries || size > limits.fileBytes || total > limits.expandedBytes)
+    if (size > limits.fileBytes || total > limits.expandedBytes)
       throw new PetPackageError("packageTooLarge");
   };
-  if (stat.isDirectory()) {
-    const walk = async (dir: string, prefix = "") => {
-      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-        if (entry.name === ".DS_Store" || entry.name === "__MACOSX")
-          continue;
-        const name = safePath(prefix + entry.name), file = path.join(dir, entry.name);
-        const info = await fs.lstat(file);
-        if (info.isSymbolicLink())
-          throw invalid();
-        if (info.isDirectory()) {
-          addSize(0);
-          await walk(file, name + "/");
-        }
-        else {
-          if (!info.isFile())
-            throw invalid();
-          addSize(info.size);
-          files.set(name, () => boundedFile(file, limits.fileBytes));
-        }
-      }
-    };
-    await walk(input);
-  }
-  else {
-    if (!stat.isFile() || path.extname(input).toLowerCase() !== ".zip")
-      throw invalid();
-    const data = await boundedFile(input, limits.archiveBytes);
-    const count = entryCount(data);
-    const zip = await JSZip.loadAsync(data, { createFolders: false });
-    const entries = Object.values(zip.files);
-    if (entries.length !== count)
-      throw invalid();
-    const names = new Set<string>();
-    for (const entry of entries) {
-      const raw = (entry as JSZip.JSZipObject & {
-        unsafeOriginalName?: string;
-      }).unsafeOriginalName ?? entry.name;
-      const name = safePath(entry.dir ? raw.replace(/\/$/u, "") : raw);
-      if (name !== (entry.dir ? entry.name.replace(/\/$/u, "") : entry.name) || names.has(name.toLowerCase()))
-        throw invalid();
-      names.add(name.toLowerCase());
-      const type = typeof entry.unixPermissions === "number" ? entry.unixPermissions & 0o170000 : 0;
-      if (type && type !== (entry.dir ? 0o040000 : 0o100000))
-        throw invalid();
-      if (entry.dir)
-        continue;
-      const meta = metadata(entry);
-      if (!meta)
-        throw invalid();
-      addSize(meta.uncompressedSize);
-      if (name.startsWith("__MACOSX/") || name.split("/").at(-1) === ".DS_Store")
-        continue;
-      files.set(name, () => readEntry(entry, limits.fileBytes));
-    }
-  }
-  const names = [...files.keys()];
-  if (new Set(names.map(n => n.toLowerCase())).size !== names.length)
+  if (!stat.isFile() || path.extname(input).toLowerCase() !== ".zip")
     throw invalid();
+  const data = await boundedFile(input, limits.archiveBytes);
+  const count = entryCount(data);
+  const zip = await JSZip.loadAsync(data, { createFolders: false });
+  const entries = Object.values(zip.files);
+  if (entries.length !== count)
+    throw invalid();
+  const names = new Set<string>();
+  for (const entry of entries) {
+    const raw = (entry as JSZip.JSZipObject & {
+      unsafeOriginalName?: string;
+    }).unsafeOriginalName ?? entry.name;
+    const name = safePath(entry.dir ? raw.replace(/\/$/u, "") : raw);
+    if (name !== (entry.dir ? entry.name.replace(/\/$/u, "") : entry.name) || names.has(name.toLowerCase()))
+      throw invalid();
+    names.add(name.toLowerCase());
+    const type = typeof entry.unixPermissions === "number" ? entry.unixPermissions & 0o170000 : 0;
+    if (type && type !== (entry.dir ? 0o040000 : 0o100000))
+      throw invalid();
+    if (entry.dir)
+      continue;
+    const meta = metadata(entry);
+    if (!meta)
+      throw invalid();
+    addSize(meta.uncompressedSize);
+    if (name.startsWith("__MACOSX/") || name.split("/").at(-1) === ".DS_Store")
+      continue;
+    files.set(name, () => readEntry(entry, limits.fileBytes));
+  }
   return files;
 }
 // Inspect dimensions before native decode, so a tiny compressed image cannot allocate an unbounded bitmap.

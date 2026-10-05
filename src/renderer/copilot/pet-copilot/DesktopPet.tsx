@@ -47,7 +47,7 @@ import {
   type DesktopPetDragDirection,
   type DesktopPetVisualStatus
 } from "../../../shared/desktop-pet-visual";
-import { BRAND_ID, PRODUCT_NAME } from "../../../shared/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { useI18n } from "../../i18n/useI18n";
 import { formatDesktopPetMessagePreview } from "./desktopPetMessagePreview";
 import {
@@ -962,7 +962,6 @@ export function DesktopPet() {
     [appearanceId, petState, visualStatus]
   );
   const shouldShowSignatureSpriteAnimation = visualStatus === "signature" && Boolean(activeSignature);
-  const hasSignatureAura = BRAND_ID === "cutej";
   const shouldShowStateSpriteAnimation = !shouldShowSignatureSpriteAnimation && isDesktopPetAnimatedAsset(visualAsset.asset);
   const stateAnimationFrameCount = Math.max(1, Math.round(Number(visualAsset.asset?.frameCount) || 1));
   const stateAnimationDurationMs = Math.max(100, Math.round(Number(visualAsset.asset?.durationMs) || 0));
@@ -1478,7 +1477,6 @@ export function DesktopPet() {
         `is-${visualStatus}`,
         `is-appearance-${appearanceId}`,
           shouldShowSignatureSpriteAnimation ? "has-signature-animation" : "",
-          hasSignatureAura && visualStatus === "signature" ? "has-signature-aura" : "",
           shouldShowStateSpriteAnimation ? "has-state-animation" : "",
           hasTaskPanelAnchor ? "has-tasks" : "",
           hasCompactTaskPanelAnchor ? "has-compact-tasks" : "",

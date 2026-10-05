@@ -28,7 +28,7 @@ export function PetImportControls({ onImported, onNotice }: {
     };
   }, []);
 
-  async function importPet(kind: "zip" | "folder" | "drop", file?: File) {
+  async function importPet(kind: "zip" | "drop", file?: File) {
     if (busy.current) return;
     busy.current = true;
     setPending(true);
@@ -36,7 +36,7 @@ export function PetImportControls({ onImported, onNotice }: {
       const api = window.electronAPI.desktopPet;
       const result = kind === "drop"
         ? await api.importDroppedPackage(file!)
-        : kind === "folder" ? await api.importFolder() : await api.importPackage();
+        : await api.importPackage();
       if (!result.ok) {
         onNotice(t(`settings.desktopPet.import.${result.error}`), "error");
         return;
@@ -78,6 +78,11 @@ export function PetImportControls({ onImported, onNotice }: {
       onNotice(t("settings.desktopPet.import.single"), "error");
       return;
     }
+    const entry = Array.from(event.dataTransfer.items).find((item) => item.kind === "file")?.webkitGetAsEntry();
+    if (entry?.isDirectory || !files[0].name.toLowerCase().endsWith(".zip")) {
+      onNotice(t("settings.desktopPet.import.hint"), "error");
+      return;
+    }
     void importPet("drop", files[0]);
   }
 
@@ -85,10 +90,7 @@ export function PetImportControls({ onImported, onNotice }: {
     <div className="pet-import-controls" aria-busy={pending}
       onDragOver={captureFileDrag}
       onDrop={(event) => { if (captureFileDrag(event)) reset(); }}>
-      <div className="pet-import-buttons">
-        <Button disabled={pending} onClick={() => void importPet("zip")}>{t("settings.desktopPet.import.zip")}</Button>
-        <Button disabled={pending} onClick={() => void importPet("folder")}>{t("settings.desktopPet.import.folder")}</Button>
-      </div>
+      <Button disabled={pending} onClick={() => void importPet("zip")}>{t("settings.desktopPet.import.zip")}</Button>
       <div className={`pet-import-drop${dragging ? " is-dragging" : ""}`} aria-disabled={pending}
         onDragEnter={enter}
         onDragLeave={leave}
