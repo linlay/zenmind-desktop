@@ -4774,8 +4774,9 @@ export function SettingsPage({
                     const previewSpriteStyle = shouldRenderSpritePreview
                       ? ({
                           "--desktop-pet-appearance-preview-frames": String(idlePreviewFrameCount),
-                          "--pet-preview-end": `${-128 * idlePreviewFrameCount}px`,
-                          "--pet-preview-duration": `${Math.max(100, idlePreviewAsset?.durationMs || 1200)}ms`,
+                          "--pet-preview-end": `${-128 * (idlePreviewFrameCount - 1)}px`,
+                          "--pet-preview-steps": String(Math.max(1, idlePreviewFrameCount - 1)),
+                          "--pet-preview-duration": "3600ms",
                           backgroundImage: `url("${idlePreviewUrl}")`
                         } as CSSProperties)
                       : undefined;
