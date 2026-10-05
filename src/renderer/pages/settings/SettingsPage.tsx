@@ -1,3 +1,4 @@
+import { PetAppearancePreview } from "./PetAppearancePreview";
 import { PetImportControls } from "./PetImportControls";
 import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
@@ -2525,6 +2526,7 @@ export function SettingsPage({
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
+  const [hoveredPetAppearanceId, setHoveredPetAppearanceId] = useState("");
   const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [savedMarketSettings, setSavedMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
@@ -4767,21 +4769,10 @@ export function SettingsPage({
                     const pending = desktopPetAppearancePending === appearance.id;
                     const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
                     const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
-                    const idlePreviewAsset = appearance.states.idle;
-                    const idlePreviewFrameCount = Math.max(1, Math.round(Number(idlePreviewAsset?.frameCount) || 1));
-                    const shouldRenderSpritePreview = Boolean(idlePreviewAsset?.path);
-                    const idlePreviewUrl = `${appearance.assetBasePath.replace(/\/$/u, "")}/${idlePreviewAsset?.path}`;
-                    const previewSpriteStyle = shouldRenderSpritePreview
-                      ? ({
-                          "--desktop-pet-appearance-preview-frames": String(idlePreviewFrameCount),
-                          "--pet-preview-end": `${-128 * (idlePreviewFrameCount - 1)}px`,
-                          "--pet-preview-steps": String(Math.max(1, idlePreviewFrameCount - 1)),
-                          "--pet-preview-duration": "3600ms",
-                          backgroundImage: `url("${idlePreviewUrl}")`
-                        } as CSSProperties)
-                      : undefined;
                     return (
-                      <div className={`desktop-pet-appearance-row pet-appearance-card${selected ? " is-current" : ""}`} key={appearance.id}>
+                      <div className={`desktop-pet-appearance-row pet-appearance-card${selected ? " is-current" : ""}`} key={appearance.id}
+                        onMouseEnter={() => setHoveredPetAppearanceId(appearance.id)}
+                        onMouseLeave={() => setHoveredPetAppearanceId("")}>
                         <button
                           type="button"
                           className="pet-appearance-pick"
@@ -4794,11 +4785,7 @@ export function SettingsPage({
                         >
                         </button>
                         <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                          {shouldRenderSpritePreview ? (
-                            <span className="desktop-pet-appearance-sprite" style={previewSpriteStyle} />
-                          ) : (
-                            <img src={appearance.previewUrl} alt="" />
-                          )}
+                          <PetAppearancePreview appearance={appearance} hovered={hoveredPetAppearanceId === appearance.id} />
                         </span>
                         <div className="pet-appearance-caption">
                         <span className="desktop-pet-appearance-copy">

@@ -427,6 +427,17 @@ body.desktop-pet-body,
   animation: desktop-pet-state-frames var(--desktop-pet-state-duration, 900ms) steps(var(--desktop-pet-state-frames, 1), end) var(--desktop-pet-state-loop-count, infinite);
 }
 
+/* Idle blinks briskly, then rests; task, movement and signature timings stay asset-owned. */
+.desktop-pet-root.has-state-animation.is-idle .desktop-pet-state-sprite {
+  animation: desktop-pet-idle-blink 3600ms steps(var(--desktop-pet-idle-steps, 1), end) infinite;
+}
+
+@keyframes desktop-pet-idle-blink {
+  0% { background-position: 0 0; }
+  16.6666% { background-position: var(--desktop-pet-idle-end, 0px) 0; }
+  16.6667%, 100% { background-position: 0 0; }
+}
+
 .desktop-pet-root.has-state-animation.is-drag-mirror .desktop-pet-state-sprite {
   transform: scaleX(-1);
 }

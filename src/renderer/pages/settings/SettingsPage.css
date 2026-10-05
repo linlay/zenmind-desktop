@@ -3777,9 +3777,7 @@
   animation: none;
   background-position: 0 0;
 }
-.settings-page .pet-appearance-card:hover .desktop-pet-appearance-sprite {
-  animation: pet-card-idle var(--pet-preview-duration) steps(var(--pet-preview-steps)) infinite;
-}
+
 .settings-page .pet-appearance-card .desktop-pet-appearance-preview img {
   width: 128px;
   height: 128px;
@@ -3800,12 +3798,10 @@
   bottom: 4px;
   z-index: 2;
 }
-/* A quick 600 ms gesture, followed by three seconds resting on the first frame. */
-@keyframes pet-card-idle {
-  0% { background-position: 0 0; }
-  16.6666% { background-position: var(--pet-preview-end) 0; }
-  16.6667%, 100% { background-position: 0 0; }
+@keyframes pet-card-action {
+  from { background-position: 0 0; }
+  to { background-position: var(--pet-preview-end) 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .settings-page .pet-appearance-card:hover .desktop-pet-appearance-sprite { animation: none; }
+  .settings-page .pet-appearance-card .desktop-pet-appearance-sprite { animation: none !important; }
 }

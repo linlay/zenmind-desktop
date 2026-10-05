@@ -1003,6 +1003,8 @@ export function DesktopPet() {
       ? {
           "--desktop-pet-state-duration": `${stateAnimationDurationMs}ms`,
           "--desktop-pet-state-frames": String(stateAnimationFrameCount),
+          "--desktop-pet-idle-steps": String(Math.max(1, stateAnimationFrameCount - 1)),
+          "--desktop-pet-idle-end": `${-96 * (stateAnimationFrameCount - 1)}px`,
           "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
         }
       : {})
