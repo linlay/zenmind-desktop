@@ -4,15 +4,11 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
-import yaml from "js-yaml";
 import type { DesktopPetTaskItem, ServiceState } from "../../../shared/contracts";
 import type { ServiceDefinition } from "../../support/manifest/manifest-utils";
-import { getServiceConfigRoot, getServiceStateRoot } from "../../infrastructure/filesystem/user-paths";
 
 const PLUGIN_BRIDGE_VERSION = "1";
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
-const CODER_SETTINGS_RELATIVE_PATH = path.join("configs", "coder-settings.yml");
-const OWNERSHIP_FILE_NAME = "plugin-bridge-acp-bridges.json";
 
 type BridgeEnvelope = Record<string, unknown>;
 type BridgeClient = {
@@ -47,6 +43,13 @@ type PluginBridgeRequestResult = {
   error?: string;
 };
 
+type AcpBridgeMutationInput = { bridgeId: string; baseUrl?: string; timeoutMs?: number; authToken?: string };
+export type AcpBridgeMutation = (
+  sourcePluginId: string,
+  operation: "upsert" | "remove",
+  input: AcpBridgeMutationInput
+) => Promise<{ changed: boolean; restartRequired: boolean; removed?: boolean }>;
+
 type AcpBridgeInput = {
   bridgeId: string;
   baseUrl: string;
@@ -69,6 +72,7 @@ const MAX_PENDING_PLUGIN_EVENTS = 20;
 let systemRequestCallback: ((pluginId: string, method: string, params: unknown) => Promise<unknown>) | null = null;
 let desktopReady = false;
 let getServiceStateCallback: ((serviceId: string) => Promise<ServiceState>) | null = null;
+let mutateAcpBridgeCallback: AcpBridgeMutation | null = null;
 let notifyAgentPlatformConfigChangedCallback: (() => void) | null = null;
 let runDesktopPetBannerCallback: ((params: unknown) => unknown) | null = null;
 let showSystemUpdateOverlayCallback: ((params: unknown) => unknown) | null = null;
@@ -270,110 +274,27 @@ function normalizeAcpBridgeInput(params: unknown): AcpBridgeInput {
   };
 }
 
-function readYamlObject(filePath: string) {
-  if (!fs.existsSync(filePath)) {
-    return {};
+async function mutateAgentPlatformAcpBridge(sourcePluginId: string, operation: "upsert" | "remove", input: AcpBridgeMutationInput) {
+  if (!mutateAcpBridgeCallback) throw new Error("ACP registration API is unavailable");
+  const result = await mutateAcpBridgeCallback(sourcePluginId, operation, input);
+  if (typeof result?.changed !== "boolean" || typeof result?.restartRequired !== "boolean") {
+    throw new Error("Invalid ACP registration response");
   }
-  const parsed = yaml.load(fs.readFileSync(filePath, "utf8"));
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${filePath} must contain a YAML object`);
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function writeYamlObject(filePath: string, value: Record<string, unknown>) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, yaml.dump(value, { lineWidth: 120, noRefs: true }), "utf8");
-}
-
-function getAgentPlatformCoderSettingsPath(app: App) {
-  return path.join(getServiceConfigRoot(app, AGENT_PLATFORM_SERVICE_ID, "builtin"), CODER_SETTINGS_RELATIVE_PATH);
-}
-
-function getPluginBridgeOwnershipPath(app: App, pluginId: string) {
-  return path.join(getServiceStateRoot(app, pluginId, "plugin"), OWNERSHIP_FILE_NAME);
-}
-
-function readOwnership(app: App, pluginId: string) {
-  const filePath = getPluginBridgeOwnershipPath(app, pluginId);
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as { acpBridges?: Record<string, { updatedAt: string }> };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { acpBridges: {} };
-    }
-    throw error;
-  }
-}
-
-function writeOwnership(app: App, pluginId: string, ownership: { acpBridges?: Record<string, { updatedAt: string }> }) {
-  const filePath = getPluginBridgeOwnershipPath(app, pluginId);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify({ acpBridges: ownership.acpBridges ?? {} }, null, 2)}\n`, "utf8");
-}
-
-function ensureAcpBridges(config: Record<string, unknown>) {
-  if (Object.prototype.hasOwnProperty.call(config, "acp-proxies")) {
-    throw new Error("coder-settings contains retired acp-proxies; migrate it in agent-platform before registering a bridge");
-  }
-  const existing = config["acp-bridges"];
-  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-    return existing as Record<string, unknown>;
-  }
-  if (existing !== undefined) throw new Error("acp-bridges must be an object");
-  const next: Record<string, unknown> = {};
-  config["acp-bridges"] = next;
-  return next;
-}
-
-function upsertAgentPlatformAcpBridge(app: App, sourcePluginId: string, params: unknown) {
-  const input = normalizeAcpBridgeInput(params);
-  const configPath = getAgentPlatformCoderSettingsPath(app);
-  const config = readYamlObject(configPath);
-  const acpBridges = ensureAcpBridges(config);
-  const nextEntry = {
-    ...asObject(acpBridges[input.bridgeId]),
-    ...(input.authToken !== undefined ? { "auth-token": input.authToken } : {}),
-    "base-url": input.baseUrl,
-    "timeout-ms": input.timeoutMs
-  };
-  const changed = JSON.stringify(acpBridges[input.bridgeId] ?? null) !== JSON.stringify(nextEntry);
-  acpBridges[input.bridgeId] = nextEntry;
-  if (changed) writeYamlObject(configPath, config);
-
-  const ownership = readOwnership(app, sourcePluginId);
-  ownership.acpBridges = {
-    ...(ownership.acpBridges ?? {}),
-    [input.bridgeId]: { updatedAt: new Date().toISOString() }
-  };
-  writeOwnership(app, sourcePluginId, ownership);
-  if (changed) {
+  if (result.changed) {
     notifyAgentPlatformConfigChangedCallback?.();
     emitPluginBridgeHook("agentPlatform.configChanged", { sourcePluginId, bridgeId: input.bridgeId });
   }
-  return { changed, restartRequired: changed, path: configPath };
+  return result;
 }
 
-function removeAgentPlatformAcpBridge(app: App, sourcePluginId: string, params: unknown) {
+async function upsertAgentPlatformAcpBridge(_app: App, sourcePluginId: string, params: unknown) {
+  return mutateAgentPlatformAcpBridge(sourcePluginId, "upsert", normalizeAcpBridgeInput(params));
+}
+
+async function removeAgentPlatformAcpBridge(_app: App, sourcePluginId: string, params: unknown) {
   const bridgeId = asString(asObject(params).bridgeId);
-  if (!bridgeId) {
-    throw new Error("bridgeId is required");
-  }
-  const ownership = readOwnership(app, sourcePluginId);
-  if (!ownership.acpBridges?.[bridgeId]) {
-    return { changed: false, removed: false };
-  }
-  const configPath = getAgentPlatformCoderSettingsPath(app);
-  const config = readYamlObject(configPath);
-  const acpBridges = ensureAcpBridges(config);
-  const hadProxy = Object.prototype.hasOwnProperty.call(acpBridges, bridgeId);
-  delete acpBridges[bridgeId];
-  delete ownership.acpBridges[bridgeId];
-  writeYamlObject(configPath, config);
-  writeOwnership(app, sourcePluginId, ownership);
-  notifyAgentPlatformConfigChangedCallback?.();
-  emitPluginBridgeHook("agentPlatform.configChanged", { sourcePluginId, bridgeId });
-  return { changed: hadProxy, removed: hadProxy };
+  if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(bridgeId)) throw new Error("bridgeId must be a non-empty identifier");
+  return mutateAgentPlatformAcpBridge(sourcePluginId, "remove", { bridgeId });
 }
 
 function normalizeAgentPlatformQueryInput(params: unknown): AgentPlatformQueryInput {
@@ -466,10 +387,10 @@ async function handleBridgeRequest(
       return { ok: true, result: { service: state } };
     }
     if (context.method === "agentPlatform.upsertAcpBridge") {
-      return { ok: true, result: upsertAgentPlatformAcpBridge(app, context.sourcePluginId, context.params) };
+      return { ok: true, result: await upsertAgentPlatformAcpBridge(app, context.sourcePluginId, context.params) };
     }
     if (context.method === "agentPlatform.removeAcpBridge") {
-      return { ok: true, result: removeAgentPlatformAcpBridge(app, context.sourcePluginId, context.params) };
+      return { ok: true, result: await removeAgentPlatformAcpBridge(app, context.sourcePluginId, context.params) };
     }
     if (context.method === "agentPlatform.query") {
       if (!queryAgentPlatformCallback) {
@@ -670,6 +591,7 @@ function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord 
 }
 
 export function configurePluginBridge(options: {
+  mutateAcpBridge?: AcpBridgeMutation;
   systemRequest?: (pluginId: string, method: string, params: unknown) => Promise<unknown>;
   getServiceState?: (serviceId: string) => Promise<ServiceState>;
   notifyAgentPlatformConfigChanged?: () => void;
@@ -691,6 +613,7 @@ export function configurePluginBridge(options: {
   cleanupPluginBridgePlugin?: (pluginId: string) => void;
   queryAgentPlatform?: (params: AgentPlatformQueryInput) => unknown;
 }) {
+  mutateAcpBridgeCallback = options.mutateAcpBridge ?? null;
   systemRequestCallback = options.systemRequest ?? null;
   getServiceStateCallback = options.getServiceState ?? null;
   notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;

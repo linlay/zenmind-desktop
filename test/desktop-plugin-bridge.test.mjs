@@ -8,7 +8,6 @@ import { once } from "node:events";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const yaml = require("js-yaml");
 
 const {
   loadInstalledPlugins,
@@ -68,10 +67,6 @@ function createApp(root) {
       assert.fail(`unexpected app.getPath(${name})`);
     }
   };
-}
-
-function readYaml(filePath) {
-  return yaml.load(fs.readFileSync(filePath, "utf8"));
 }
 
 function desktopRoot(root) {
@@ -867,16 +862,6 @@ test("plugin global shortcuts register enabled shortcuts and disable conflicts",
 });
 
 test("plugin resource payload normalization is stable", () => {
-  const agent = resourceInternals.normalizeAgentPayload({
-    key: "happy-agent",
-    definition: {
-      name: "Happy Agent"
-    }
-  });
-  assert.equal(agent.key, "happy-agent");
-  assert.equal(agent.definition.key, "happy-agent");
-  assert.equal(agent.definition.name, "Happy Agent");
-
   const automation = resourceInternals.normalizeAutomationPayload({
     id: "happy-agent-happy-story",
     name: "Happy Agent 开心故事",
@@ -936,7 +921,7 @@ test("plugin webapp resources do not overwrite unowned webapps", async () => {
   }
 });
 
-test("plugin agent and automation resources use current admin routes", async () => {
+test("plugin Agents use files while automations use Platform routes", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-admin-routes-"));
   try {
     const app = createApp(root);
@@ -964,7 +949,6 @@ test("plugin agent and automation resources use current admin routes", async () 
     }, root);
 
     assert.deepEqual(calls.map((call) => call.endpoint), [
-      "/api/admin/agents/create",
       "/api/automation/create"
     ]);
     const ownershipPath = path.join(
@@ -1050,7 +1034,7 @@ test("stopped resource plugin records pending agent-platform removal and retries
     });
 
     configurePluginResources({ callAgentPlatform: null });
-    await stopPluginResources(app, service);
+    await assert.rejects(stopPluginResources(app, service), /unavailable/);
     let ownership = resourceInternals.readOwnership(app, "happy-agent");
     assert.equal(ownership.desiredStatus, "stopped");
     assert.equal(ownership.pendingAgentPlatformRemoval, true);
@@ -1066,8 +1050,7 @@ test("stopped resource plugin records pending agent-platform removal and retries
     await retryPendingPluginResourceSync(app);
 
     assert.deepEqual(calls.map((call) => call.endpoint), [
-      "/api/automation/delete",
-      "/api/admin/agents/delete"
+      "/api/automation/delete"
     ]);
     ownership = resourceInternals.readOwnership(app, "happy-agent");
     assert.equal(ownership.pendingAgentPlatformRemoval, false);
@@ -1080,46 +1063,6 @@ test("stopped resource plugin records pending agent-platform removal and retries
   }
 });
 
-test("plugin agent resources only update owned agent-platform records", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-agent-"));
-  try {
-    const app = createApp(root);
-    const calls = [];
-    configurePluginResources({
-      callAgentPlatform: async (_app, endpoint, options) => {
-        calls.push({ endpoint, body: options?.body });
-        if (endpoint.endsWith("/create")) {
-          throw new Error("already exists");
-        }
-        return { ok: true };
-      }
-    });
-    await syncPluginResources(app, {
-      kind: "plugin",
-      id: "happy-agent",
-      resources: {
-        webapps: [],
-        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
-        automations: []
-      }
-    }, root);
-    assert.deepEqual(calls.map((call) => call.endpoint), ["/api/admin/agents/create"]);
-
-    const ownershipPath = path.join(
-      desktopRoot(root),
-      "state",
-      "plugins",
-      "happy-agent",
-      "plugin-resources.json"
-    );
-    const ownership = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
-    assert.equal(ownership.pendingAgentPlatformSync, true);
-    assert.equal(ownership.agents?.["happy-agent"], undefined);
-  } finally {
-    configurePluginResources({ callAgentPlatform: null });
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
 
 test("desktop pet banner resolves builtin and user pet assets", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-pet-banner-"));
@@ -1156,60 +1099,42 @@ test("desktop pet banner resolves builtin and user pet assets", () => {
   }
 });
 
-test("agentPlatform ACP bridge request preserves YAML and ownership", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-bridge-yaml-"));
+test("ACP registration forwards trusted identity and never writes Platform settings", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-bridge-api-"));
   try {
     const app = createApp(root);
-    const configPath = path.join(
-      desktopRoot(root),
-      "config",
-      "services",
-      "agent-platform",
-      "configs",
-      "coder-settings.yml"
-    );
+    const configPath = path.join(desktopRoot(root), "config/services/agent-platform/configs/coder-settings.yml");
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, "acp-bridges:\n  existing:\n    base-url: http://127.0.0.1:18080\n", "utf8");
-
-    const upsertResult = bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
-      bridgeId: "codex",
-      baseUrl: "http://127.0.0.1:17071",
-      timeoutMs: 300000
+    const original = "acp-bridges: {}\n";
+    fs.writeFileSync(configPath, original);
+    const calls = [];
+    let notifications = 0;
+    configurePluginBridge({
+      mutateAcpBridge: async (...args) => {
+        calls.push(args);
+        return { changed: calls.length === 1, restartRequired: true };
+      },
+      notifyAgentPlatformConfigChanged: () => { notifications++; }
     });
-    assert.equal(upsertResult.changed, true);
-    assert.equal(upsertResult.restartRequired, true);
-    const unchanged = bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
-      bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000
-    });
-    assert.equal(unchanged.changed, false);
-    assert.equal(unchanged.restartRequired, false);
-    bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
-      bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000, authToken: "test-secret"
-    });
-    bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
-      bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000
-    });
-    assert.equal(readYaml(configPath)["acp-bridges"].codex["auth-token"], "test-secret");
-
-    const afterUpsert = readYaml(configPath);
-    assert.equal(afterUpsert["acp-bridges"].existing["base-url"], "http://127.0.0.1:18080");
-    assert.equal(afterUpsert["acp-bridges"].codex["base-url"], "http://127.0.0.1:17071");
-    assert.equal(afterUpsert["acp-bridges"].codex["timeout-ms"], 300000);
-
-    const deniedRemove = bridgeInternals.removeAgentPlatformAcpBridge(app, "other-plugin", {
-      bridgeId: "codex"
-    });
-    assert.equal(deniedRemove.changed, false);
-    assert.ok(readYaml(configPath)["acp-bridges"].codex);
-
-    const removeResult = bridgeInternals.removeAgentPlatformAcpBridge(app, "codex-acp-bridge", {
-      bridgeId: "codex"
-    });
-    assert.equal(removeResult.changed, true);
-    const afterRemove = readYaml(configPath);
-    assert.equal(afterRemove["acp-bridges"].codex, undefined);
-    assert.ok(afterRemove["acp-bridges"].existing);
+    const input = { sourcePluginId: "forged", bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", authToken: "test-token" };
+    const first = await bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input);
+    const retry = await bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input);
+    assert.equal(first.restartRequired, true);
+    assert.equal(retry.restartRequired, true);
+    assert.equal(retry.changed, false);
+    assert.equal(notifications, 1);
+    await bridgeInternals.removeAgentPlatformAcpBridge(app, "codex-plugin", { bridgeId: "codex", sourcePluginId: "forged" });
+    assert.deepEqual(calls[0], ["codex-plugin", "upsert", { bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000, authToken: "test-token" }]);
+    assert.deepEqual(calls[2], ["codex-plugin", "remove", { bridgeId: "codex" }]);
+    configurePluginBridge({ mutateAcpBridge: async () => { throw new Error("Platform unavailable"); } });
+    await assert.rejects(bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input), /Platform unavailable/);
+    await assert.rejects(bridgeInternals.removeAgentPlatformAcpBridge(app, "codex-plugin", { bridgeId: "codex" }), /Platform unavailable/);
+    configurePluginBridge({});
+    await assert.rejects(bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input), /API is unavailable/);
+    assert.equal(fs.readFileSync(configPath, "utf8"), original);
+    assert.equal(fs.existsSync(path.join(desktopRoot(root), "state/plugins/codex-plugin/plugin-bridge-acp-bridges.json")), false);
   } finally {
+    configurePluginBridge({});
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -1219,7 +1144,8 @@ test("ACP plugins register through the canonical socket request", async () => {
   try {
     const app = createApp(root);
     fs.mkdirSync(path.join(root, "tmp"), { recursive: true });
-    configurePluginBridge({});
+    const calls = [];
+    configurePluginBridge({ mutateAcpBridge: async (...args) => { calls.push(args); return { changed: true, restartRequired: true }; } });
     const service = registerPlugin({
       pluginApiVersion: 1, id: "codex-acp-bridge", name: "Codex ACP Bridge", version: "v0.1.1",
       lifecycle: { start: ["start.sh", "--daemon"], stop: "stop.sh" },
@@ -1230,9 +1156,9 @@ test("ACP plugins register through the canonical socket request", async () => {
     });
     assert.equal(response.ok, true);
     assert.equal(response.result.restartRequired, true);
-    const config = readYaml(response.result.path);
-    assert.equal(config["acp-bridges"].codex["auth-token"], "test-token");
-    assert.equal(config["acp-proxies"], undefined);
+    assert.equal(response.result.path, undefined);
+    assert.equal(calls[0][0], "codex-acp-bridge");
+    assert.equal(calls[0][2].authToken, "test-token");
   } finally {
     stopPluginBridgeServers();
     configurePluginBridge({});
@@ -1242,7 +1168,7 @@ test("ACP plugins register through the canonical socket request", async () => {
 });
 
 
-test("ACP registration refuses legacy config without rewriting it", () => {
+test("ACP registration API rejection never falls back to rewriting legacy config", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "acp-legacy-"));
   try {
     const app = createApp(root);
@@ -1250,9 +1176,10 @@ test("ACP registration refuses legacy config without rewriting it", () => {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     const original = "acp-proxies: {}\n";
     fs.writeFileSync(configPath, original);
-    assert.throws(() => bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
+    configurePluginBridge({ mutateAcpBridge: async () => { throw new Error("acp_configuration_invalid"); } });
+    await assert.rejects(bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
       bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000
-    }), /retired acp-proxies/);
+    }), /acp_configuration_invalid/);
     assert.equal(fs.readFileSync(configPath, "utf8"), original);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally { configurePluginBridge({}); fs.rmSync(root, { recursive: true, force: true }); }
 });

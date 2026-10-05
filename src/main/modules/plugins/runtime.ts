@@ -4,6 +4,7 @@ import type { App } from "electron";
 import type { DesktopPetTaskItem } from "../../../shared/contracts";
 import {
   configurePluginBridge,
+  type AcpBridgeMutation,
   emitPluginSystemEvent,
   emitPluginBridgeHook,
   publishPluginBridgeAssistantActiveTasks,
@@ -23,6 +24,7 @@ import {
 import type { PluginClipboardBridge } from "./clipboard";
 
 export type PluginBridgeRuntimeOptions = {
+  mutateAcpBridge: AcpBridgeMutation;
   app: App;
   clipboardBridge: PluginClipboardBridge;
   getServiceState: (serviceId: string) => Promise<any>;
@@ -41,6 +43,7 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
 
   function configure() {
     configurePluginBridge({
+      mutateAcpBridge: options.mutateAcpBridge,
       systemRequest: (pluginId, method, params) => {
         if (stopped) throw new Error("plugin bridge runtime has stopped");
         const service = getService(pluginId);

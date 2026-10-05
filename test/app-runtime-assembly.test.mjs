@@ -180,3 +180,22 @@ for (const failure of ['throw', 'reject']) test(`ready IPC continues non-core st
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(events, ['core-ready', 'non-core']);
 });
+
+test("plugin assembly forwards ACP operations to the authenticated Platform registration API", async () => {
+  const calls = [];
+  const tokenProvider = async () => ({ ok: true, token: "app-token" });
+  const { assemblePluginBridge } = loadUnit("assembly/extensions", {
+    electron: { app: {} },
+    "../../modules/plugins": { createPluginBridgeRuntime: options => options },
+    "../../modules/desktop-actions": { callAgentPlatform: async (...args) => { calls.push(args); return { changed: true, restartRequired: true }; } }
+  });
+  const runtime = assemblePluginBridge({ servicesFacade: {}, issueAgentAccessToken: tokenProvider });
+  for (const operation of ["upsert", "remove"]) {
+    await runtime.mutateAcpBridge("trusted-plugin", operation, { bridgeId: "codex", sourcePluginId: "forged" });
+  }
+  assert.deepEqual(calls.map(call => [call[1], call[2].method, call[2].body]), [
+    ["/api/desktop/acp-bridges", "PUT", { bridgeId: "codex", sourcePluginId: "trusted-plugin" }],
+    ["/api/desktop/acp-bridges", "DELETE", { bridgeId: "codex", sourcePluginId: "trusted-plugin" }]
+  ]);
+  assert.equal(calls[0][2].issueAgentAccessToken, tokenProvider);
+});

@@ -4908,7 +4908,6 @@ test("resource plugin start-stop manages agent-platform resources and preserves 
     assert.equal(startResult.ok, true);
     assert.equal(startResult.service.status, "running");
     assert.deepEqual(calls.map((call) => call.endpoint), [
-      "/api/admin/agents/create",
       "/api/automation/create"
     ]);
 
@@ -4916,15 +4915,13 @@ test("resource plugin start-stop manages agent-platform resources and preserves 
     assert.equal(stopResult.ok, true);
     assert.equal(stopResult.service.status, "stopped");
     assert.deepEqual(calls.map((call) => call.endpoint), [
-      "/api/admin/agents/create",
       "/api/automation/create",
-      "/api/automation/delete",
-      "/api/admin/agents/delete"
+      "/api/automation/delete"
     ]);
     const ownership = pluginResourceInternals.readOwnership(app, "happy-agent");
     assert.equal(ownership.desiredStatus, "stopped");
-    assert.equal(Boolean(ownership.agents?.["happy-agent"]), true);
-    assert.equal(Boolean(ownership.automations?.["happy-agent-happy-story"]), true);
+    assert.equal(Boolean(ownership.agents?.["happy-agent"]), false);
+    assert.equal(Boolean(ownership.automations?.["happy-agent-happy-story"]), false);
   } finally {
     configurePluginResources({ callAgentPlatform: null });
     registryInternals.clearServices();
