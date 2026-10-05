@@ -1,3 +1,4 @@
+import { registerPetImportIpcHandlers } from "./import-ipc";
 import {
   isDesktopPetSupportedPlatform,
   sanitizeDesktopPetAppearanceId,
@@ -34,6 +35,7 @@ export interface DesktopPetWindowModeInput {
 }
 
 export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
+  registerPetImportIpcHandlers(ipcMain, options);
   function isPetWindowSender(event: any) {
     const win = options.getWindow();
     return Boolean(win && !win.isDestroyed() && event.sender === win.webContents);

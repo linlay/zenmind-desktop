@@ -1,3 +1,4 @@
+import { PetImportControls } from "./PetImportControls";
 import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
@@ -4721,6 +4722,10 @@ export function SettingsPage({
           <>
             {desktopPetSupported ? (
               <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
+                <PetImportControls
+                  onImported={(state) => { setDesktopPetState(state); setReadErrorSections(["assistant"], ""); }}
+                  onNotice={(message, tone) => showSectionNotice("assistant", message, tone)}
+                />
                 <div
                   className={desktopPetEnabled
                     ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"

@@ -67,7 +67,7 @@ export function listUserDesktopPets(app: App): UserDesktopPetAsset[] {
   }
   const pets: UserDesktopPetAsset[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) {
       continue;
     }
     const rootPath = path.join(root, entry.name);

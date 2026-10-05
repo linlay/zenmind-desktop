@@ -212,3 +212,7 @@ export interface DesktopPetState {
 
 export type DesktopPetStateListener = (state: DesktopPetState) => void;
 export type DesktopPetSignatureRequestedListener = (signatureId?: string) => void;
+
+export type DesktopPetImportResult =
+  | { ok: true; cancelled?: boolean; importedAppearanceId?: string; state: DesktopPetState }
+  | { ok: false; error: "invalidPackage" | "packageTooLarge" | "packageExists" | "storageFailed" };

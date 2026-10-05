@@ -1,0 +1,7 @@
+.pet-import-controls { display: flex; flex-direction: column; gap: 12px; }
+.pet-import-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.pet-import-drop { border: 1px dashed var(--app-border, #cbd5e1); border-radius: 10px; padding: 18px 16px; text-align: center; color: var(--app-text-secondary, #64748b); transition: border-color .15s, background .15s; }
+.pet-import-drop.is-dragging { border-color: #1677ff; background: rgba(22,119,255,.08); }
+.pet-import-drop[aria-disabled="true"] { opacity: .6; }
+:root[data-theme="dark"] .pet-import-drop { color: #aab8ca; border-color: #475569; }
+:root[data-theme="dark"] .pet-import-drop.is-dragging { border-color: #69b1ff; background: rgba(22,119,255,.15); }

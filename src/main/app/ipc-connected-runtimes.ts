@@ -158,6 +158,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
   });
 
   registerDesktopPetIpcHandlers(ipcMain, {
+    getMainWindow: options.getMainWindow,
     platform: options.platform,
     app,
     getSettings: petRuntime.getSettings,

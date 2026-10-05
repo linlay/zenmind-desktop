@@ -806,6 +806,9 @@ const api: DesktopApi = {
       ipcRenderer.invoke("diagnostics.clearAgentRealtimeDebugTrace")
   },
   desktopPet: {
+    importPackage: () => ipcRenderer.invoke("desktopPet.importPackage"),
+    importFolder: () => ipcRenderer.invoke("desktopPet.importFolder"),
+    importDroppedPackage: (file: File) => ipcRenderer.invoke("desktopPet.importDroppedPackage", webUtils.getPathForFile(file)),
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
     getState: () => ipcRenderer.invoke("desktopPet.getState"),
     saveSettings: (input) => ipcRenderer.invoke("desktopPet.saveSettings", input),
