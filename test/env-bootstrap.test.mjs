@@ -16,9 +16,8 @@ const {
   applyProviderRegisterUpgradeInput,
   importEnvZipToRuntime,
   importBundledEnvZipToRuntime,
-  resetBundledRuntimeEnv,
   resolveRuntimeRoot,
-  resolveBundledEnvZipPath,
+  resolveBundledEnvPackage,
   shouldPromptEnvRootConflict,
   stageValidatedDesktopVersionUpgradeInput,
   validateBundledEnvForDesktopVersionUpgrade,
@@ -289,7 +288,7 @@ test("bundled env.zip falls back to the packaged app resources directory", (t) =
   };
 
   assert.equal(
-    resolveBundledEnvZipPath(app, "win32", staleResourcesRoot),
+    resolveBundledEnvPackage(app, "win32", staleResourcesRoot)?.zipPath,
     path.join(resourcesRoot, "env", "env.zip")
   );
 });
@@ -313,16 +312,16 @@ test("development env.zip resolves from the explicit brand resources root on eve
 
   for (const platform of ["darwin", "win32", "linux"]) {
     assert.equal(
-      resolveBundledEnvZipPath({ isPackaged: false, getAppPath: () => root }, platform),
+      resolveBundledEnvPackage({ isPackaged: false, getAppPath: () => root }, platform)?.zipPath,
       zipPath
     );
   }
   assert.equal(
-    resolveBundledEnvZipPath({ isPackaged: true, getAppPath: () => root }, "linux"),
+    resolveBundledEnvPackage({ isPackaged: true, getAppPath: () => root }, "linux"),
     null
   );
   assert.notEqual(
-    resolveBundledEnvZipPath({ isPackaged: true, getAppPath: () => root }, "darwin"),
+    resolveBundledEnvPackage({ isPackaged: true, getAppPath: () => root }, "darwin")?.zipPath,
     zipPath
   );
 });
@@ -462,38 +461,6 @@ test("unrelated skills-market and skills-center directories can coexist", (t) =>
   assert.equal(runtimeEnvExists(app, "win32"), true);
   assert.equal(fs.readFileSync(removedFile, "utf8"), "removed\n");
   assert.equal(fs.readFileSync(centerFile, "utf8"), "center\n");
-});
-
-test("explicit bundled reset backs up a legacy runtime and restores skills-center", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-center-reset-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  const app = createPathApp(root);
-  const runtimeRoot = resolveRuntimeRoot(app, "darwin");
-  fs.mkdirSync(path.join(runtimeRoot, "skills-market"), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, "skills-market", "keep.txt"), "legacy\n", "utf8");
-
-  const resourcesRoot = path.join(root, "resources");
-  const zipPath = path.join(resourcesRoot, "env", "env.zip");
-  fs.mkdirSync(path.dirname(zipPath), { recursive: true });
-  await writeEnvZip(zipPath, {
-    "env/VERSION": "1.0.0\n",
-    "env/skills-center/demo/SKILL.md": "# Demo\n"
-  });
-
-  const result = await resetBundledRuntimeEnv(app, "darwin", {
-    resourcesRoot,
-    expectedDesktopVersion: "1.0.0",
-    nowSeconds: 123
-  });
-  assert.equal(result.backupPath, `${runtimeRoot}-123`);
-  assert.equal(fs.readFileSync(path.join(result.backupPath, "skills-market", "keep.txt"), "utf8"), "legacy\n");
-  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-center", "demo", "SKILL.md")), true);
-  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-market")), false);
-  assert.equal(
-    fs.existsSync(path.join(runtimeRoot, ".desktop", "state", "desktop", "env-resource-sync.json")),
-    false
-  );
 });
 
 test("Windows runtime root can come from the installer selected data directory", (t) => {
@@ -692,3 +659,147 @@ test("upgrade registration preflight rejects malformed JSON without exposing the
     assert.equal(fs.existsSync(resolveRuntimeRoot(app, "darwin")), false);
   }
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: first import rejects unsafe input before writing runtime files`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-import-preflight-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createPathApp(root);
+    const runtimeRoot = resolveRuntimeRoot(app, platform);
+    const zipPath = path.join(root, "env.zip");
+    const unsafePaths = ["env/../escaped.txt", "env/.desktop/state/desktop/env-bootstrap.json"];
+    if (platform === "win32") unsafePaths.push("env/agents/file:stream", "env/CON.txt");
+    for (const unsafePath of unsafePaths) {
+      await writeEnvZip(zipPath, { "env/VERSION": "1.0.0", "env/agents/good/agent.yml": "good", [unsafePath]: "bad" });
+      await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"));
+      assert.equal(fs.existsSync(runtimeRoot), false);
+    }
+    const zip = new JSZip();
+    zip.file("env/VERSION", "1.0.0");
+    zip.file("env/link", "outside", { unixPermissions: 0o120777 });
+    fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer", platform: "UNIX" }));
+    await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"), /symlink|symbolic|符号/iu);
+    assert.equal(fs.existsSync(runtimeRoot), false);
+
+    await writeEnvZip(zipPath, { "env/VERSION": "1.0.0", "env/agents/good/agent.yml": "unique-corrupt-payload" });
+    const corrupted = fs.readFileSync(zipPath);
+    const offset = corrupted.indexOf(Buffer.from("unique-corrupt-payload"));
+    assert.ok(offset >= 0);
+    corrupted[offset] ^= 1;
+    fs.writeFileSync(zipPath, corrupted);
+    await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"), /CRC32/);
+    assert.equal(fs.existsSync(runtimeRoot), false);
+  });
+
+  test(`${platform}: import rejects an existing directory link without touching its target`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-import-link-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createPathApp(root);
+    const runtimeRoot = resolveRuntimeRoot(app, platform);
+    const outside = path.join(root, "outside");
+    fs.mkdirSync(runtimeRoot, { recursive: true });
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, path.join(runtimeRoot, "agents"), process.platform === "win32" ? "junction" : "dir");
+    const zipPath = path.join(root, "env.zip");
+    await writeEnvZip(zipPath, { "env/VERSION": "1.0.0", "env/agents/new/agent.yml": "new" });
+    await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"), /Unsafe runtime import target/);
+    assert.deepEqual(fs.readdirSync(outside), []);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "VERSION")), false);
+  });
+
+  test(`${platform}: failed metadata publication rolls back new files and preserves old data`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-import-rollback-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createPathApp(root);
+    const runtimeRoot = resolveRuntimeRoot(app, platform);
+    const zipPath = path.join(root, "env.zip");
+    await writeEnvZip(zipPath, { "env/VERSION": "1.0.0", "env/agents/user/agent.yml": "original" });
+    await importEnvZipToRuntime(app, zipPath, platform, "1.0.0");
+    const metadataPaths = [".desktop/data/env-initial/env.zip", ".desktop/data/env-initial/manifest.json", ".desktop/state/desktop/env-bootstrap.json"];
+    const originals = metadataPaths.map((file) => fs.readFileSync(path.join(runtimeRoot, file)));
+    await writeEnvZip(zipPath, { "env/VERSION": "1.0.0", "env/agents/user/agent.yml": "changed", "env/agents/new/agent.yml": "new" });
+    const renameSync = fs.renameSync;
+    let injected = false;
+    const rename = t.mock.method(fs, "renameSync", (source, target) => {
+      if (!injected && target === path.join(runtimeRoot, metadataPaths[2])) {
+        injected = true;
+        throw new Error("injected marker publish failure");
+      }
+      return renameSync(source, target);
+    });
+    await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"), /injected marker publish failure/);
+    rename.mock.restore();
+    assert.equal(injected, true);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents/new")), false);
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, "agents/user/agent.yml"), "utf8"), "original");
+    metadataPaths.forEach((file, index) => assert.deepEqual(fs.readFileSync(path.join(runtimeRoot, file)), originals[index]));
+    assert.equal(fs.existsSync(path.join(runtimeRoot, ".desktop/state/desktop/env-import-pending.json")), false);
+    await importEnvZipToRuntime(app, zipPath, platform, "1.0.0");
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, "agents/new/agent.yml"), "utf8"), "new");
+  });
+
+  test(`${platform}: interrupted import cannot be mistaken for a complete runtime`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-import-pending-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createPathApp(root);
+    const runtimeRoot = resolveRuntimeRoot(app, platform);
+    const stateRoot = path.join(runtimeRoot, ".desktop/state/desktop");
+    fs.mkdirSync(stateRoot, { recursive: true });
+    fs.writeFileSync(path.join(stateRoot, "env-bootstrap.json"), "{}");
+    const pendingPath = path.join(stateRoot, "env-import-pending.json");
+    fs.writeFileSync(pendingPath, "interrupted state");
+    assert.equal(runtimeEnvExists(app, platform), false);
+    const zipPath = path.join(root, "env.zip");
+    await writeEnvZip(zipPath, { "env/VERSION": "1.0.0" });
+    await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"), /interrupted runtime import requires recovery/);
+    assert.equal(fs.readFileSync(pendingPath, "utf8"), "interrupted state");
+  });
+}
+
+for (const platform of ["darwin", "win32"]) {
+  for (const failurePhase of ["staging", "publication", "rollback"]) {
+    test(`${platform}: ${failurePhase} failure leaves a retryable or explicitly blocked import`, async (t) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-import-failure-"));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const app = createPathApp(root);
+      const runtimeRoot = resolveRuntimeRoot(app, platform);
+      const zipPath = path.join(root, "env.zip");
+      await writeEnvZip(zipPath, { "env/VERSION": "1.0.0", "env/agents/new/agent.yml": "new" });
+      const writeFile = fs.promises.writeFile;
+      const copyFileSync = fs.copyFileSync;
+      const rmSync = fs.rmSync;
+      const mocks = [];
+      if (failurePhase === "staging") {
+        mocks.push(t.mock.method(fs.promises, "writeFile", async (file, ...args) => {
+          if (String(file).endsWith(path.join("agents", "new", "agent.yml"))) throw new Error("injected staging failure");
+          return writeFile(file, ...args);
+        }));
+      } else {
+        mocks.push(t.mock.method(fs, "copyFileSync", (source, target, ...args) => {
+          if (target === path.join(runtimeRoot, "agents/new/agent.yml")) throw new Error("injected publication failure");
+          return copyFileSync(source, target, ...args);
+        }));
+        if (failurePhase === "rollback") {
+          mocks.push(t.mock.method(fs, "rmSync", (target, ...args) => {
+            if (target === path.join(runtimeRoot, "VERSION")) throw new Error("injected rollback failure");
+            return rmSync(target, ...args);
+          }));
+        }
+      }
+      await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"),
+        failurePhase === "rollback" ? /rollback is incomplete/ : /injected/);
+      mocks.forEach((mock) => mock.mock.restore());
+      assert.equal(runtimeEnvExists(app, platform), false);
+      if (failurePhase === "rollback") {
+        const pendingPath = path.join(runtimeRoot, ".desktop/state/desktop/env-import-pending.json");
+        const pending = JSON.parse(fs.readFileSync(pendingPath, "utf8"));
+        assert.ok(fs.existsSync(pending.stageRoot));
+        await assert.rejects(importEnvZipToRuntime(app, zipPath, platform, "1.0.0"), /requires recovery/);
+      } else {
+        assert.equal(fs.existsSync(runtimeRoot), false);
+        await importEnvZipToRuntime(app, zipPath, platform, "1.0.0");
+        assert.equal(runtimeEnvExists(app, platform), true);
+      }
+    });
+  }
+}

@@ -7,7 +7,6 @@ import {
   startDesktopSsoLogin
 } from "../modules/identity";
 import { callAgentPlatform } from "../modules/desktop-actions";
-import { resetBundledRuntimeEnv } from "../infrastructure/filesystem/runtime-environment";
 import { getDataRoot } from "../infrastructure/filesystem/user-paths";
 import { t, initializeMainI18n, setMainLocale } from "../support/i18n/main-i18n";
 import { isSupportedLocale } from "../../shared/i18n";
@@ -187,7 +186,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     platform: options.platform,
     nativeTheme: options.nativeTheme,
     getDataRoot,
-    resetRuntimeEnv: resetBundledRuntimeEnv as any,
+    resetRuntimeEnv: options.resetRuntimeEnv,
     initializeMainI18n,
     isSupportedLocale,
     setMainLocale,

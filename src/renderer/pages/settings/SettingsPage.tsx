@@ -2378,17 +2378,17 @@ function AboutAppCard({
         </div>
         {runtimeResetResult?.ok ? (
           <div className="feedback-banner settings-reset-result" role="status">
-            <strong>{t("settings.reset.success")}</strong>
-            {runtimeResetResult.backupPath ? (
+            <strong>{runtimeResetResult.restartScheduled ? t("settings.reset.restarting") : t("settings.reset.success")}</strong>
+            {!runtimeResetResult.restartScheduled && runtimeResetResult.backupPath ? (
               <span>{t("settings.reset.backupPath", { path: runtimeResetResult.backupPath })}</span>
             ) : null}
             <span>{t("settings.reset.runtimeRoot", { path: runtimeResetResult.runtimeRoot })}</span>
-            <span>
+            {!runtimeResetResult.restartScheduled && <span>
               {t("settings.reset.importSummary", {
                 copied: runtimeResetResult.copiedFiles,
                 skipped: runtimeResetResult.skippedFiles
               })}
-            </span>
+            </span>}
             {runtimeResetResult.restartRequired ? (
               <span>{t("settings.reset.restartReminder")}</span>
             ) : null}

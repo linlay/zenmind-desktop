@@ -444,6 +444,56 @@ test("successful version commit removes the staged development env input", async
   assert.equal(fs.existsSync(inputDir), false);
 });
 
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: startup finishes interrupted input cleanup after version commit`, async (t) => {
+    const { app, root } = createTestApp(t);
+    const originalZip = path.join(root, "env.zip");
+    fs.writeFileSync(originalZip, "original zip");
+    let inputDir;
+    const prepared = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks({
+      prepareDesktopConfiguration: async (context) => {
+        inputDir = context.inputDir;
+        fs.mkdirSync(inputDir, { recursive: true });
+        const sourceZipPath = path.join(inputDir, `env-${"b".repeat(64)}.zip`);
+        fs.copyFileSync(originalZip, sourceZipPath);
+        return { sourceZipPath, sha256: "b".repeat(64), size: 12 };
+      }
+    }), platform);
+    assert.deepEqual(prepared.failures, []);
+    assert.equal(fs.existsSync(inputDir), true, "uncommitted upgrade retains its input");
+    const configBackup = path.join(prepared.journal.backupRoot, "desktop", "config.backup.json");
+    writeJson(configBackup, { original: true });
+
+    const originalRmSync = fs.rmSync;
+    const cleanup = t.mock.method(fs, "rmSync", (target, options) => {
+      if (target === inputDir) throw new Error("injected cleanup interruption");
+      return originalRmSync(target, options);
+    });
+    assert.throws(() => completeDesktopServiceConfigUpgrade(app, "v0.3.40", platform),
+      /injected cleanup interruption/);
+    cleanup.mock.restore();
+    assert.equal(__testInternals.readVersionState(app, platform).desktopVersion, "v0.3.40");
+    assert.ok(__testInternals.readUpgradeJournal(app, platform));
+    assert.equal(fs.existsSync(inputDir), true);
+
+    const unexpectedWork = async () => assert.fail("completed upgrade must only finish cleanup");
+    const resumeCallbacks = callbacks({
+      prepareDesktopConfiguration: unexpectedWork,
+      stopService: unexpectedWork,
+      installCurrentService: unexpectedWork,
+      resetServiceConfig: unexpectedWork
+    });
+    const resumed = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", resumeCallbacks, platform);
+    assert.equal(resumed.mode, "none");
+    assert.equal(fs.existsSync(inputDir), false);
+    assert.equal(__testInternals.readUpgradeJournal(app, platform), null);
+    assert.equal(fs.readFileSync(originalZip, "utf8"), "original zip");
+    assert.deepEqual(JSON.parse(fs.readFileSync(configBackup, "utf8")), { original: true });
+    const repeated = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", resumeCallbacks, platform);
+    assert.equal(repeated.mode, "none");
+  });
+}
+
 test("same completed Desktop version does not read env.zip or run deploy", async (t) => {
   const { app } = createTestApp(t);
   await prepareDesktopServiceConfigUpgrade(app, "v0.3.27", callbacks({
@@ -465,3 +515,38 @@ test("same completed Desktop version does not read env.zip or run deploy", async
   assert.equal(preflightCalls, 0);
   assert.equal(resetCalls, 0);
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: corrupt upgrade state blocks preparation and preserves the original files`, async (t) => {
+    const { app } = createTestApp(t);
+    const prepared = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks(), platform);
+    const journalPath = __testInternals.getUpgradeJournalPath(app, platform);
+    const originalJournal = JSON.stringify(prepared.journal);
+    const cases = [
+      "{broken-json",
+      "null",
+      JSON.stringify({ ...prepared.journal, schemaVersion: 99 }),
+      JSON.stringify({ ...prepared.journal, services: {} }),
+      JSON.stringify({ ...prepared.journal, backupRoot: path.dirname(prepared.journal.backupRoot) }),
+      JSON.stringify({ ...prepared.journal, desktopConfig: { status: "applied" } })
+    ];
+    const unexpectedWork = async () => assert.fail("invalid state must not touch services or configuration");
+    for (const content of cases) {
+      fs.writeFileSync(journalPath, content);
+      await assert.rejects(prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks({
+        prepareDesktopConfiguration: unexpectedWork,
+        stopService: unexpectedWork,
+        installCurrentService: unexpectedWork,
+        resetServiceConfig: unexpectedWork
+      }), platform), /preserved for recovery/);
+      assert.equal(fs.readFileSync(journalPath, "utf8"), content);
+      assert.throws(() => completeDesktopServiceConfigUpgrade(app, "v0.3.40", platform), /preserved for recovery/);
+      assert.equal(fs.existsSync(__testInternals.getVersionStatePath(app, platform)), false);
+    }
+    fs.writeFileSync(journalPath, originalJournal);
+    const versionPath = __testInternals.getVersionStatePath(app, platform);
+    writeJson(versionPath, { schemaVersion: 99, desktopVersion: "v0.3.40", completedAt: "now" });
+    await assert.rejects(prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks(), platform), /preserved for recovery/);
+    assert.equal(fs.readFileSync(journalPath, "utf8"), originalJournal);
+  });
+}

@@ -1,4 +1,4 @@
-import { app, clipboard, globalShortcut, ipcMain, protocol } from "electron";
+import { app, dialog, clipboard, globalShortcut, ipcMain, protocol } from "electron";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
 import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE } from "../../shared/brand";
 import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
@@ -31,6 +31,8 @@ import * as services from "./assembly/services";
 import * as settings from "./assembly/settings";
 import * as shell from "./assembly/shell";
 import * as webSurfaces from "./assembly/web-surfaces";
+import { consumeRuntimeEnvReset, prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset } from "../infrastructure/filesystem/runtime-env-reset-transaction";
+import { createRuntimeResetCoordinator } from "./lifecycle/runtime-reset";
 import { initializeElectronProfile } from "./bootstrap/electron-profile";
 import * as appReady from "./lifecycle/app-ready";
 import * as runtimeEvents from "./lifecycle/runtime-events";
@@ -53,9 +55,51 @@ export function createMainProcessRuntime() {
   configureRuntimeEnvironmentTranslator(t);
   setDeprecatedCompatibilityDesktopVersion(app.getVersion());
   const startupPlatform = process.platform;
-  const isFirstDesktopInstall = !desktopDataRootExists(app, startupPlatform);
+  const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, startupPlatform);
+  const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
+  // Keep dev Electron runs on the same data root as packaged builds.
+  const systemIdentityRuntime = identity.assembleSystemIdentity({
+    get startupPlatform() { return startupPlatform; },
+    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; }
+  });
+  const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
+  const gotSingleInstanceLock = requestMainSingleInstanceLock(app);
+
+  const startupInstallerShutdownRequest = parseInstallerShutdownRequest(
+    process.argv,
+    INSTALLER_SHUTDOWN_ARGS,
+    STORAGE_NAMESPACE
+  );
+  if (startupInstallerShutdownRequest.requested && gotSingleInstanceLock) {
+    if (startupInstallerShutdownRequest.ackPath) {
+      try {
+        writeShutdownAck(
+          startupInstallerShutdownRequest.ackPath,
+          "NO_PRIMARY",
+          createNoPrimaryShutdownReport()
+        );
+      } catch (error) {
+        console.error("[main] failed to write NO_PRIMARY shutdown acknowledgement", error);
+      }
+    }
+    app.exit(0);
+    return { start() { } };
+  }
+  if (!gotSingleInstanceLock) {
+    return { start() { } };
+  }
+
+  let completedRuntimeReset = false;
+  try {
+    completedRuntimeReset = consumeRuntimeEnvReset(app, startupPlatform);
+  } catch (error) {
+    dialog.showErrorBox(t("settings.reset.failed"), error instanceof Error ? error.message : String(error));
+    app.exit(1);
+    return { start() {} };
+  }
+  const isFirstDesktopInstall = completedRuntimeReset || !desktopDataRootExists(app, startupPlatform);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);
-  const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);
+  const runtimeRootExistedAtStartup = !completedRuntimeReset && runtimeRootExists(app, startupPlatform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
   const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   const appState = createMainAppState();
@@ -96,10 +140,8 @@ export function createMainProcessRuntime() {
   const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
   const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
   const SELECTION_EXPLAIN_WINDOW_ROUTE = "/selection-explain-window";
-  const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, startupPlatform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, startupPlatform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(startupPlatform);
-  const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
   const ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS =
     ".enterprise-chat-floating { visibility: hidden !important; }";
 
@@ -137,6 +179,7 @@ export function createMainProcessRuntime() {
     app,
     getMainWindow: () => getMainWindow(),
     notifyServicesChanged,
+    isShuttingDown: () => appState.isHandlingQuit,
     delay,
     getServiceState: servicesFacade.getServiceState,
     startService: servicesFacade.startService
@@ -192,12 +235,6 @@ export function createMainProcessRuntime() {
     get assistantBridgeRuntime() { return assistantBridgeRuntime; }
   });
 
-  // Keep dev Electron runs on the same data root as packaged builds.
-  const systemIdentityRuntime = identity.assembleSystemIdentity({
-    get startupPlatform() { return startupPlatform; },
-    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; }
-  });
-  const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
   const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, startupPlatform);
   const bundledSeedRefreshNeededAtStartup =
     bundledEnvZipExistsAtStartup &&
@@ -231,32 +268,6 @@ export function createMainProcessRuntime() {
       get desktopAppInfo() { return desktopAppInfo; },
       get petRuntime() { return petRuntime; }
     });
-  }
-
-  const gotSingleInstanceLock = requestMainSingleInstanceLock(app);
-
-  const startupInstallerShutdownRequest = parseInstallerShutdownRequest(
-    process.argv,
-    INSTALLER_SHUTDOWN_ARGS,
-    STORAGE_NAMESPACE
-  );
-  if (startupInstallerShutdownRequest.requested && gotSingleInstanceLock) {
-    if (startupInstallerShutdownRequest.ackPath) {
-      try {
-        writeShutdownAck(
-          startupInstallerShutdownRequest.ackPath,
-          "NO_PRIMARY",
-          createNoPrimaryShutdownReport()
-        );
-      } catch (error) {
-        console.error("[main] failed to write NO_PRIMARY shutdown acknowledgement", error);
-      }
-    }
-    app.exit(0);
-    return { start() { } };
-  }
-  if (!gotSingleInstanceLock) {
-    return { start() { } };
   }
 
   // Keep startup snapshots and the existing single-instance lock ahead of profile
@@ -409,6 +420,22 @@ export function createMainProcessRuntime() {
     get websFacade() { return websFacade; },
     get servicesFacade() { return servicesFacade; }
   });
+  const resetRuntimeEnv = createRuntimeResetCoordinator({
+    state: appState,
+    prepare: () => prepareRuntimeEnvReset(app, startupPlatform),
+    arm: (id) => armRuntimeEnvReset(app, startupPlatform, id),
+    cancel: (id) => cancelRuntimeEnvReset(app, startupPlatform, id),
+    beginShutdown: () => {
+      realtimeBroker.beginShutdown();
+      pluginBridgeRuntime.emitBeforeQuit();
+      stopResourceDirectoryWatcher();
+    },
+    cleanup: runShutdownCleanup,
+    flushLogs: () => logsRuntime.flush(500),
+    relaunch: () => app.relaunch(),
+    quit: beginAppQuitWithoutConfirmation
+  });
+
 
   async function handleDesktopSsoWebviewNavigation(url: string) {
     return identity.handleDesktopSsoWebviewNavigation({
@@ -738,6 +765,7 @@ export function createMainProcessRuntime() {
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
       registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+        resetRuntimeEnv: () => servicesRuntime.runServiceMutation(resetRuntimeEnv),
         get setStartupPhase() { return setStartupPhase; },
         get startupRestoreController() { return startupRestoreController; },
         get startupPlatform() { return startupPlatform; },

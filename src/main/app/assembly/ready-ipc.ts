@@ -48,6 +48,7 @@ import {
 import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { registerMainIpcHandlers } from "../module-registry";
 export interface ReadyIpcDependencies {
+  resetRuntimeEnv: import("../ipc-registration-contracts").MainIpcRegistrationOptions["resetRuntimeEnv"];
   appearanceRuntime: AppearanceRuntime;
   readonly setStartupPhase: (phase: StartupPhase) => void;
   readonly startupRestoreController: ReturnType<typeof createStartupRestoreController>;
@@ -101,6 +102,7 @@ export interface ReadyIpcDependencies {
 }
 export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
   registerMainIpcHandlers({
+    resetRuntimeEnv: dependencies.resetRuntimeEnv,
     appearanceRuntime: dependencies.appearanceRuntime,
     app,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,

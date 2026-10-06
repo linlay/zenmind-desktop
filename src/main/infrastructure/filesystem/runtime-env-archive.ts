@@ -182,7 +182,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function assertStrictArchiveEntry(entry: JSZip.JSZipObject) {
   const originalName = (entry as JSZip.JSZipObject & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
-  if (originalName.includes("\\") || originalName.includes("\0")) {
+  if (originalName.includes("\\") || originalName.includes("\0") ||
+      originalName.startsWith("/") || originalName.split("/").includes("..")) {
     throw new Error(t("envBootstrap.unsafePath", { path: originalName }));
   }
   const segments = entrySegments(originalName);

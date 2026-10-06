@@ -42,6 +42,7 @@ export interface SettingsIpcHandlerOptions {
   getDataRoot: (app: any) => string;
   resetRuntimeEnv?: (app: any, platform: string) => Promise<{
     targetRoot: string;
+    restartScheduled?: boolean;
     backupPath?: string;
     copiedFiles: number;
     skippedFiles: number;
@@ -364,7 +365,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
       return {
         ok: true,
         restartRequired: true,
-        message: result.backupPath
+        restartScheduled: result.restartScheduled === true,
+        message: result.restartScheduled ? t("settings.reset.restarting") : result.backupPath
           ? t("settings.reset.successWithBackup", { path: result.backupPath })
           : t("settings.reset.success"),
         runtimeRoot: result.targetRoot,

@@ -13,6 +13,7 @@ import { type EnterpriseChatRuntime } from "../modules/enterprise-chat";
 export const PLATFORM_DOCUMENT_REVISION_HEADER = "X-Document-Revision";
 
 export type MainIpcRegistrationOptions = {
+  resetRuntimeEnv: () => Promise<import("../infrastructure/filesystem/runtime-env-contracts").RuntimeEnvResetResult & { restartScheduled: true }>;
   appearanceRuntime: AppearanceRuntime;
   app: App;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<any>;

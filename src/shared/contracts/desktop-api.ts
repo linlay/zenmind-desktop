@@ -755,6 +755,7 @@ export type DesktopUsageProfileResult =
 
 export interface DesktopRuntimeEnvResetResult {
   ok: boolean;
+  restartScheduled?: boolean;
   restartRequired: boolean;
   message: string;
   runtimeRoot: string;

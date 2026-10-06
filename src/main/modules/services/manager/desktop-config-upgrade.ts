@@ -158,24 +158,35 @@ function writeSecureJsonAtomic(filePath: string, value: unknown, platform: NodeJ
   fs.renameSync(tempPath, filePath);
 }
 
-function readVersionState(app: App, platform: NodeJS.Platform) {
+function readStateJson(filePath: string): unknown {
+  let content: string;
   try {
-    const parsed = JSON.parse(fs.readFileSync(getVersionStatePath(app, platform), "utf8")) as unknown;
-    if (!isRecord(parsed)) {
-      return null;
-    }
-    const desktopVersion = normalizeDesktopServiceConfigVersion(parsed.desktopVersion);
-    const completedAt = typeof parsed.completedAt === "string" ? parsed.completedAt : "";
-    return desktopVersion && completedAt
-      ? {
-          schemaVersion: 1,
-          desktopVersion,
-          completedAt
-        } satisfies DesktopServiceConfigVersionState
-      : null;
-  } catch {
-    return null;
+    content = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new Error(`Cannot read Desktop upgrade state; preserved for recovery: ${filePath}`);
   }
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    throw new Error(`Invalid Desktop upgrade state JSON; preserved for recovery: ${filePath}`);
+  }
+}
+
+function readVersionState(app: App, platform: NodeJS.Platform) {
+  const filePath = getVersionStatePath(app, platform);
+  const parsed = readStateJson(filePath);
+  if (parsed === undefined) return null;
+  if (!isRecord(parsed) || parsed.schemaVersion !== 1 ||
+      typeof parsed.desktopVersion !== "string" || !parsed.desktopVersion.trim() ||
+      typeof parsed.completedAt !== "string" || !parsed.completedAt.trim()) {
+    throw new Error(`Invalid or unsupported Desktop version state; preserved for recovery: ${filePath}`);
+  }
+  return {
+    schemaVersion: 1,
+    desktopVersion: normalizeDesktopServiceConfigVersion(parsed.desktopVersion),
+    completedAt: parsed.completedAt
+  } satisfies DesktopServiceConfigVersionState;
 }
 
 function readServiceUpgradeState(value: unknown): DesktopServiceConfigUpgradeServiceState | null {
@@ -188,8 +199,9 @@ function readServiceUpgradeState(value: unknown): DesktopServiceConfigUpgradeSer
   }
   const attempts = typeof value.attempts === "number" && Number.isInteger(value.attempts) && value.attempts >= 0
     ? value.attempts
-    : 0;
+    : -1;
   const updatedAt = typeof value.updatedAt === "string" ? value.updatedAt : "";
+  if (attempts < 0 || !updatedAt.trim()) return null;
   const lastError = typeof value.lastError === "string" && value.lastError.trim()
     ? value.lastError
     : undefined;
@@ -202,84 +214,97 @@ function readServiceUpgradeState(value: unknown): DesktopServiceConfigUpgradeSer
 }
 
 function readUpgradeJournal(app: App, platform: NodeJS.Platform) {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(getUpgradeJournalPath(app, platform), "utf8")) as unknown;
-    if (!isRecord(parsed)) {
-      return null;
-    }
-    const mode = parsed.mode === "fresh-install" || parsed.mode === "version-change"
-      ? parsed.mode
-      : null;
-    const status = parsed.status === "in-progress" || parsed.status === "awaiting-core-health" || parsed.status === "failed"
-      ? parsed.status
-      : null;
-    const fromVersion = parsed.fromVersion === "legacy"
-      ? "legacy"
-      : normalizeDesktopServiceConfigVersion(parsed.fromVersion);
-    const toVersion = normalizeDesktopServiceConfigVersion(parsed.toVersion);
-    const backupRoot = typeof parsed.backupRoot === "string" ? parsed.backupRoot : "";
-    const startedAt = typeof parsed.startedAt === "string" ? parsed.startedAt : "";
-    const updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : "";
-    if (!mode || !status || !fromVersion || !toVersion || !startedAt || !updatedAt) {
-      return null;
-    }
-    const expectedBackupRoot = mode === "version-change"
-      ? getTransactionBackupRoot(app, fromVersion, toVersion, platform)
-      : "";
-    if (
-      (mode === "version-change" && path.resolve(backupRoot) !== path.resolve(expectedBackupRoot)) ||
-      (mode === "fresh-install" && backupRoot !== "")
-    ) {
-      return null;
-    }
-    const rawServices = isRecord(parsed.services) ? parsed.services : {};
-    const services = {} as DesktopServiceConfigUpgradeJournal["services"];
-    for (const serviceId of DESKTOP_SERVICE_CONFIG_UPGRADE_IDS) {
-      services[serviceId] = readServiceUpgradeState(rawServices[serviceId]) ?? {
-        status: "pending",
-        attempts: 0,
-        updatedAt: startedAt
-      };
-    }
-    const lastError = typeof parsed.lastError === "string" && parsed.lastError.trim()
-      ? parsed.lastError
-      : undefined;
-    const rawDesktopConfig = isRecord(parsed.desktopConfig) ? parsed.desktopConfig : {};
-    const desktopConfigStatus = rawDesktopConfig.status === "applied" ||
-      rawDesktopConfig.status === "failed" ||
-      rawDesktopConfig.status === "not-required" ||
-      rawDesktopConfig.status === "pending"
-      ? rawDesktopConfig.status
-      : mode === "fresh-install" ? "not-required" : "pending";
-    const desktopConfig = {
-      status: desktopConfigStatus,
-      updatedAt: typeof rawDesktopConfig.updatedAt === "string"
-        ? rawDesktopConfig.updatedAt
-        : updatedAt,
-      ...(typeof rawDesktopConfig.sourceZipPath === "string" ? { sourceZipPath: rawDesktopConfig.sourceZipPath } : {}),
-      ...(typeof rawDesktopConfig.previousSourceZipPath === "string"
-        ? { previousSourceZipPath: rawDesktopConfig.previousSourceZipPath }
-        : {}),
-      ...(typeof rawDesktopConfig.sha256 === "string" ? { sha256: rawDesktopConfig.sha256 } : {}),
-      ...(typeof rawDesktopConfig.size === "number" ? { size: rawDesktopConfig.size } : {}),
-      ...(typeof rawDesktopConfig.lastError === "string" ? { lastError: rawDesktopConfig.lastError } : {})
-    } satisfies DesktopServiceConfigUpgradeJournal["desktopConfig"];
-    return {
-      schemaVersion: 2,
-      mode,
-      status,
-      fromVersion,
-      toVersion,
-      backupRoot,
-      startedAt,
-      updatedAt,
-      desktopConfig,
-      services,
-      ...(lastError ? { lastError } : {})
-    } satisfies DesktopServiceConfigUpgradeJournal;
-  } catch {
-    return null;
+  const filePath = getUpgradeJournalPath(app, platform);
+  const parsed = readStateJson(filePath);
+  if (parsed === undefined) return null;
+  const invalid = () => new Error(`Invalid or unsupported Desktop upgrade journal; preserved for recovery: ${filePath}`);
+  if (!isRecord(parsed) || parsed.schemaVersion !== 2 ||
+      typeof parsed.fromVersion !== "string" || typeof parsed.toVersion !== "string") {
+    throw invalid();
   }
+  const mode = parsed.mode === "fresh-install" || parsed.mode === "version-change"
+    ? parsed.mode
+    : null;
+  const status = parsed.status === "in-progress" || parsed.status === "awaiting-core-health" || parsed.status === "failed"
+    ? parsed.status
+    : null;
+  const fromVersion = parsed.fromVersion === "legacy"
+    ? "legacy"
+    : normalizeDesktopServiceConfigVersion(parsed.fromVersion);
+  const toVersion = normalizeDesktopServiceConfigVersion(parsed.toVersion);
+  const backupRoot = typeof parsed.backupRoot === "string" ? parsed.backupRoot : "";
+  const startedAt = typeof parsed.startedAt === "string" ? parsed.startedAt : "";
+  const updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : "";
+  if (!mode || !status || !fromVersion || !toVersion || !startedAt || !updatedAt) {
+    throw invalid();
+  }
+  const expectedBackupRoot = mode === "version-change"
+    ? getTransactionBackupRoot(app, fromVersion, toVersion, platform)
+    : "";
+  if (
+    (mode === "version-change" && path.resolve(backupRoot) !== path.resolve(expectedBackupRoot)) ||
+    (mode === "fresh-install" && backupRoot !== "")
+  ) {
+    throw invalid();
+  }
+  const rawServices = isRecord(parsed.services) ? parsed.services : {};
+  const services = {} as DesktopServiceConfigUpgradeJournal["services"];
+  for (const serviceId of DESKTOP_SERVICE_CONFIG_UPGRADE_IDS) {
+    const serviceState = readServiceUpgradeState(rawServices[serviceId]);
+    if (!serviceState) throw invalid();
+    services[serviceId] = serviceState;
+  }
+  const lastError = typeof parsed.lastError === "string" && parsed.lastError.trim()
+    ? parsed.lastError
+    : undefined;
+  const rawDesktopConfig = isRecord(parsed.desktopConfig) ? parsed.desktopConfig : {};
+  const desktopConfigStatus = rawDesktopConfig.status === "applied" ||
+    rawDesktopConfig.status === "failed" ||
+    rawDesktopConfig.status === "not-required" ||
+    rawDesktopConfig.status === "pending"
+    ? rawDesktopConfig.status
+    : null;
+  if (!desktopConfigStatus || typeof rawDesktopConfig.updatedAt !== "string" ||
+      !rawDesktopConfig.updatedAt.trim() ||
+      (["sourceZipPath", "previousSourceZipPath"].some((key) =>
+        rawDesktopConfig[key] !== undefined &&
+        (typeof rawDesktopConfig[key] !== "string" || !rawDesktopConfig[key].trim()))) ||
+      (rawDesktopConfig.sha256 !== undefined &&
+        (typeof rawDesktopConfig.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(rawDesktopConfig.sha256))) ||
+      (rawDesktopConfig.size !== undefined &&
+        (typeof rawDesktopConfig.size !== "number" || !Number.isSafeInteger(rawDesktopConfig.size) || rawDesktopConfig.size < 0)) ||
+      (mode === "version-change" && desktopConfigStatus === "not-required") ||
+      (desktopConfigStatus === "applied" && (
+        typeof rawDesktopConfig.sourceZipPath !== "string" || !rawDesktopConfig.sourceZipPath.trim() ||
+        typeof rawDesktopConfig.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(rawDesktopConfig.sha256) ||
+        typeof rawDesktopConfig.size !== "number" || !Number.isSafeInteger(rawDesktopConfig.size) || rawDesktopConfig.size < 0
+      ))) {
+    throw invalid();
+  }
+  const desktopConfig = {
+    status: desktopConfigStatus,
+    updatedAt: rawDesktopConfig.updatedAt,
+    ...(typeof rawDesktopConfig.sourceZipPath === "string" ? { sourceZipPath: rawDesktopConfig.sourceZipPath } : {}),
+    ...(typeof rawDesktopConfig.previousSourceZipPath === "string"
+      ? { previousSourceZipPath: rawDesktopConfig.previousSourceZipPath }
+      : {}),
+    ...(typeof rawDesktopConfig.sha256 === "string" ? { sha256: rawDesktopConfig.sha256 } : {}),
+    ...(typeof rawDesktopConfig.size === "number" ? { size: rawDesktopConfig.size } : {}),
+    ...(typeof rawDesktopConfig.lastError === "string" ? { lastError: rawDesktopConfig.lastError } : {})
+  } satisfies DesktopServiceConfigUpgradeJournal["desktopConfig"];
+  return {
+    schemaVersion: 2,
+    mode,
+    status,
+    fromVersion,
+    toVersion,
+    backupRoot,
+    startedAt,
+    updatedAt,
+    desktopConfig,
+    services,
+    ...(lastError ? { lastError } : {})
+  } satisfies DesktopServiceConfigUpgradeJournal;
 }
 
 function versionPathSegment(version: string) {
@@ -357,6 +382,8 @@ function cleanupSuccessfulUpgradeBackups(
   if (journal.mode !== "version-change" || !journal.backupRoot) {
     return;
   }
+  // Also runs on startup if the version was committed before cleanup finished.
+  fs.rmSync(path.join(journal.backupRoot, "input"), { recursive: true, force: true });
   const backupsRoot = getServiceBackupsRoot(app, platform);
   if (!fs.existsSync(backupsRoot)) {
     return;
@@ -658,9 +685,6 @@ export function completeDesktopServiceConfigUpgrade(
   }
   writeCompletedVersion(app, desktopVersion, platform);
   if (journal) {
-    if (journal.mode === "version-change" && journal.backupRoot) {
-      fs.rmSync(path.join(journal.backupRoot, "input"), { recursive: true, force: true });
-    }
     cleanupSuccessfulUpgradeBackups(app, journal, platform);
     removeUpgradeJournal(app, platform);
   }

@@ -139,9 +139,9 @@ test("main runtime freezes first-install navigation before any startup initializ
 
   const startupSnapshot = [
     "const startupPlatform = process.platform;",
-    "const isFirstDesktopInstall = !desktopDataRootExists(app, startupPlatform);",
+    "const isFirstDesktopInstall = completedRuntimeReset || !desktopDataRootExists(app, startupPlatform);",
     "const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);",
-    "const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);",
+    "const runtimeRootExistedAtStartup = !completedRuntimeReset && runtimeRootExists(app, startupPlatform);",
     "const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);",
     "const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);",
   ];
@@ -166,7 +166,7 @@ test("main runtime freezes the runtime-root snapshot before startup runtimes can
   ), "utf8");
 
   const runtimeRootSnapshotIndex = runtimeSource.indexOf(
-    "const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);",
+    "const runtimeRootExistedAtStartup = !completedRuntimeReset && runtimeRootExists(app, startupPlatform);",
   );
   const firstRuntimeInitializationIndex = runtimeSource.indexOf(
     "configureAgentMarketPlatformCaller(",

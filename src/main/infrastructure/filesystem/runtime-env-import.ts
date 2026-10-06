@@ -2,6 +2,7 @@ import {
   EnvZipImportResult,
   InitialEnvPackageRecord,
   ENV_IMPORT_MARKER_RELATIVE_PATH,
+  ENV_IMPORT_PENDING_RELATIVE_PATH,
   AppPathReader,
   AppVersionReader,
   InitialEnvPackageSource,
@@ -15,10 +16,13 @@ import { t } from "./runtime-environment-translator";
 import JSZip from "jszip";
 import {
   normalizeZipEntries,
+  assertStrictArchiveEntry,
+  shouldSkipArchiveEntry,
   validateEnvZipVersion,
   resolveSafeTargetPath,
   restoreImportedShellScriptPermissions
 } from "./runtime-env-archive";
+import { ENV_IMPORT_METADATA_PATHS, inspectEnvImportTarget, publishRuntimeEnvImport } from "./runtime-env-publication";
 import { persistInitialEnvPackage } from "./runtime-env-seed";
 import { resolveBundledEnvPackage, validateBundledEnvPackageManifest } from "./runtime-env-bundle";
 
@@ -54,68 +58,81 @@ export async function importEnvZipToRuntime(
   if (path.extname(zipPath).toLowerCase() !== ".zip") {
     throw new Error(t("envBootstrap.firstInstallZipOnly"));
   }
-
-  const targetRoot = resolveRuntimeRoot(app, platform);
-
   const zipBuffer = await fs.promises.readFile(zipPath);
-  const zip = await JSZip.loadAsync(zipBuffer);
+  return importValidatedEnvBuffer(app, zipPath, zipBuffer, platform, expectedDesktopVersion, options.source ?? "manual");
+}
+
+async function importValidatedEnvBuffer(
+  app: AppPathReader,
+  zipPath: string,
+  zipBuffer: Buffer,
+  platform: NodeJS.Platform,
+  expectedDesktopVersion: string,
+  source: InitialEnvPackageSource,
+  targetRoot = resolveRuntimeRoot(app, platform)
+): Promise<EnvZipImportResult> {
+  const pendingPath = path.join(targetRoot, ENV_IMPORT_PENDING_RELATIVE_PATH);
+  inspectEnvImportTarget(targetRoot, ENV_IMPORT_PENDING_RELATIVE_PATH, false);
+  if (fs.existsSync(pendingPath)) {
+    throw new Error(`An interrupted runtime import requires recovery; preserved pending state: ${pendingPath}`);
+  }
+  const zip = await JSZip.loadAsync(zipBuffer, { checkCRC32: true });
+  for (const entry of Object.values(zip.files)) {
+    if (!shouldSkipArchiveEntry(entry.name)) assertStrictArchiveEntry(entry);
+  }
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, expectedDesktopVersion);
-  let copiedFiles = 0;
-  let skippedFiles = 0;
-  const overwrittenFiles = 0;
-  let createdDirectories = 0;
-
-  fs.mkdirSync(targetRoot, { recursive: true });
-
+  const reservedPaths = [...ENV_IMPORT_METADATA_PATHS, ENV_IMPORT_PENDING_RELATIVE_PATH]
+    .map((value) => value.split(path.sep).join("/"));
   for (const entry of entries) {
-    const targetPath = resolveSafeTargetPath(targetRoot, entry.relativePath);
-    if (entry.directory) {
-      if (!fs.existsSync(targetPath)) {
-        fs.mkdirSync(targetPath, { recursive: true });
-        createdDirectories += 1;
+    const relativePath = entry.relativePath;
+    if (reservedPaths.some((reserved) => relativePath.toLowerCase() === reserved.toLowerCase() ||
+        relativePath.toLowerCase().startsWith(`${reserved.toLowerCase()}/`))) {
+      throw new Error(`env.zip contains Desktop-owned import metadata: ${relativePath}`);
+    }
+    if (platform === "win32" && relativePath.split("/").some((segment) =>
+      /[<>:"|?*]|[. ]$/u.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(segment))) {
+      throw new Error(`env.zip contains an unsafe Windows path: ${relativePath}`);
+    }
+    inspectEnvImportTarget(targetRoot, relativePath, entry.directory);
+  }
+  for (const relativePath of ENV_IMPORT_METADATA_PATHS) inspectEnvImportTarget(targetRoot, relativePath, false);
+  if (!entries.some((entry) => !entry.directory)) throw new Error(t("envBootstrap.emptyImport"));
+
+  fs.mkdirSync(path.dirname(targetRoot), { recursive: true });
+  const stageRoot = fs.mkdtempSync(path.join(path.dirname(targetRoot), ".desktop-env-import-"));
+  if (platform !== "win32") fs.chmodSync(stageRoot, 0o700);
+  const result: EnvZipImportResult = { targetRoot, copiedFiles: 0, skippedFiles: 0, overwrittenFiles: 0, createdDirectories: 0 };
+  try {
+    // Decode every file before touching runtime contents, including skipped files.
+    for (const entry of entries) {
+      const stagedPath = resolveSafeTargetPath(stageRoot, entry.relativePath);
+      if (entry.directory) {
+        fs.mkdirSync(stagedPath, { recursive: true });
+      } else {
+        fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+        await fs.promises.writeFile(stagedPath, await entry.entry.async("nodebuffer"), { flag: "wx" });
+        restoreImportedShellScriptPermissions(stagedPath, platform);
       }
-      continue;
     }
-
-    if (fs.existsSync(targetPath)) {
-      skippedFiles += 1;
-      restoreImportedShellScriptPermissions(targetPath, platform);
-      continue;
-    }
-
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    await fs.promises.writeFile(targetPath, await entry.entry.async("nodebuffer"));
-    restoreImportedShellScriptPermissions(targetPath, platform);
-    copiedFiles += 1;
+    const initialEnvPackage = await persistInitialEnvPackage({
+      targetRoot: stageRoot,
+      zipPath,
+      zipBuffer,
+      source,
+      desktopVersion: expectedDesktopVersion
+    });
+    // Count before publication so the staged completion marker contains final file stats.
+    const copiedFiles = entries.filter((entry) => !entry.directory &&
+      !inspectEnvImportTarget(targetRoot, entry.relativePath, false)).length;
+    const skippedFiles = entries.filter((entry) => !entry.directory).length - copiedFiles;
+    writeEnvImportMarker(stageRoot, { ...result, copiedFiles, skippedFiles }, initialEnvPackage);
+  } catch (error) {
+    fs.rmSync(stageRoot, { recursive: true, force: true });
+    throw error;
   }
-
-  if (copiedFiles + skippedFiles === 0) {
-    throw new Error(t("envBootstrap.emptyImport"));
-  }
-
-  const initialEnvPackage = await persistInitialEnvPackage({
-    targetRoot,
-    zipPath,
-    zipBuffer,
-    source: options.source ?? "manual",
-    desktopVersion: expectedDesktopVersion
-  });
-
-  writeEnvImportMarker(targetRoot, {
-    copiedFiles,
-    skippedFiles,
-    overwrittenFiles,
-    createdDirectories
-  }, initialEnvPackage);
-
-  return {
-    targetRoot,
-    copiedFiles,
-    skippedFiles,
-    overwrittenFiles,
-    createdDirectories
-  };
+  publishRuntimeEnvImport({ targetRoot, stageRoot, entries, platform, result });
+  return result;
 }
 
 export function bundledEnvZipExists(
@@ -138,6 +155,8 @@ export async function importBundledEnvZipToRuntime(
   options: {
     resourcesRoot?: string;
     expectedDesktopVersion?: string;
+    targetRoot?: string;
+    source?: InitialEnvPackageSource;
   } = {}
 ): Promise<BundledEnvZipImportResult | null> {
   const bundledPackage = resolveBundledEnvPackage(app, platform, options.resourcesRoot);
@@ -149,12 +168,14 @@ export async function importBundledEnvZipToRuntime(
   const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
   validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
 
-  const result = await importEnvZipToRuntime(
+  const result = await importValidatedEnvBuffer(
     app,
     bundledPackage.zipPath,
+    zipBuffer,
     platform,
     desktopVersion,
-    { source: "bundled" }
+    options.source ?? "bundled",
+    options.targetRoot
   );
   return {
     ...result,

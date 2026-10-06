@@ -2,11 +2,10 @@ import path from "node:path";
 import {
   AppPathReader,
   ENV_IMPORT_MARKER_RELATIVE_PATH,
+  ENV_IMPORT_PENDING_RELATIVE_PATH,
   ENV_RUNTIME_DIRS,
   ENV_AGENT_DEFINITION_FILE_NAME,
   AppPackageReader,
-  BUNDLED_ENV_RESOURCES_DIR_NAME,
-  ENV_ZIP_FILE_NAME,
   AppVersionReader,
   VERSION_FILE_NAME
 } from "./runtime-env-contracts";
@@ -16,16 +15,6 @@ import fs from "node:fs";
 import { isDesktopDevelopmentRuntime } from "../electron/development-runtime";
 import { readVersionFileIfExists, normalizeVersion } from "./runtime-env-archive";
 import { t } from "./runtime-environment-translator";
-
-export function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
-  if (platform === "win32") {
-    return path.win32;
-  }
-  if (platform === "darwin") {
-    return path.posix;
-  }
-  return path.posix;
-}
 
 export function pathApiForResolvedRoot(platform: NodeJS.Platform | undefined, rootPath: string) {
   if (platform === "win32") {
@@ -75,6 +64,7 @@ export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform =
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
+  if (fs.existsSync(path.join(root, ENV_IMPORT_PENDING_RELATIVE_PATH))) return false;
   if (fs.existsSync(path.join(root, ENV_IMPORT_MARKER_RELATIVE_PATH))) {
     return true;
   }
@@ -220,20 +210,6 @@ export function fileExists(filePath: string) {
 
 export function supportsBundledEnvResources(app: AppPackageReader, platform: NodeJS.Platform) {
   return platform === "darwin" || platform === "win32" || isDesktopDevelopmentRuntime(app, { platform });
-}
-
-export function resolveBundledEnvZipPath(
-  app: AppPackageReader,
-  platform: NodeJS.Platform = process.platform,
-  resourcesRootOverride?: string
-) {
-  if (!supportsBundledEnvResources(app, platform)) {
-    return null;
-  }
-
-  const candidates = bundledResourcesRootCandidates(app, resourcesRootOverride)
-    .map((resourcesRoot) => path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME));
-  return candidates.find(fileExists) ?? candidates[0] ?? null;
 }
 
 export function resolveDesktopVersion(app: AppVersionReader = {}) {

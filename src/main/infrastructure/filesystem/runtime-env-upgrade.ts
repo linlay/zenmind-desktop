@@ -67,38 +67,12 @@ export async function validateBundledEnvForDesktopVersionUpgrade(
 
   const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
   validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
-  const zip = await JSZip.loadAsync(zipBuffer);
-  for (const entry of Object.values(zip.files)) {
-    assertStrictArchiveEntry(entry);
-  }
-  const entries = normalizeZipEntries(zip);
-  await validateEnvZipVersion(entries, desktopVersion);
-  const desktopInitEntry = entries.find(
-    (entry) => !entry.directory && entry.relativePath === "desktop-init.json"
-  );
-  if (!desktopInitEntry) {
-    throw new Error("Bundled env.zip requires env/desktop-init.json for a Desktop version change.");
-  }
-  let desktopInit: unknown;
-  try {
-    desktopInit = JSON.parse(await desktopInitEntry.entry.async("string")) as unknown;
-  } catch (error) {
-    throw new Error(`Bundled desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!isRecord(desktopInit)) {
-    throw new Error("Bundled desktop-init.json must be a JSON object.");
-  }
-
-  const previousSourceZipPath = resolvePreviousRuntimeResourceSource(app, platform);
-  return {
+  return validateEnvUpgradeContents(app, platform, {
     sourceZipPath: bundledPackage.zipPath,
-    ...(previousSourceZipPath ? { previousSourceZipPath } : {}),
+    zipBuffer,
     desktopVersion,
-    sha256: sha256Hex(zipBuffer),
-    size: zipBuffer.byteLength,
-    desktopInit,
-    providerRegister: await readProviderRegisterUpgradeInput(zip)
-  };
+    purpose: "bundled-version-change"
+  });
 }
 
 export async function validateEnvZipForDesktopManualImport(
@@ -133,6 +107,26 @@ export async function validateSelectedEnvZipForDesktopVersionUpgrade(
     throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: sourcePath }));
   }
   const zipBuffer = await fs.promises.readFile(sourcePath);
+  return validateEnvUpgradeContents(app, platform, {
+    sourceZipPath: sourcePath,
+    zipBuffer,
+    desktopVersion,
+    purpose
+  });
+}
+
+async function validateEnvUpgradeContents(
+  app: AppPathReader,
+  platform: NodeJS.Platform,
+  input: {
+    sourceZipPath: string;
+    zipBuffer: Buffer;
+    desktopVersion: string;
+    purpose: "bundled-version-change" | "version-change" | "manual-import";
+  }
+): Promise<ValidatedBundledEnvUpgradeInput> {
+  const { sourceZipPath, zipBuffer, desktopVersion, purpose } = input;
+  const prefix = purpose === "bundled-version-change" ? "Bundled " : "";
   const zip = await JSZip.loadAsync(zipBuffer);
   for (const entry of Object.values(zip.files)) {
     assertStrictArchiveEntry(entry);
@@ -145,20 +139,20 @@ export async function validateSelectedEnvZipForDesktopVersionUpgrade(
   if (!desktopInitEntry) {
     throw new Error(purpose === "manual-import"
       ? "env.zip requires env/desktop-init.json for manual import into an existing runtime."
-      : "env.zip requires env/desktop-init.json for a Desktop version change.");
+      : `${prefix}env.zip requires env/desktop-init.json for a Desktop version change.`);
   }
   let desktopInit: unknown;
   try {
     desktopInit = JSON.parse(await desktopInitEntry.entry.async("string")) as unknown;
   } catch (error) {
-    throw new Error(`desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${prefix}desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!isRecord(desktopInit)) {
-    throw new Error("desktop-init.json must be a JSON object.");
+    throw new Error(`${prefix}desktop-init.json must be a JSON object.`);
   }
   const previousSourceZipPath = resolvePreviousRuntimeResourceSource(app, platform);
   return {
-    sourceZipPath: sourcePath,
+    sourceZipPath,
     ...(previousSourceZipPath ? { previousSourceZipPath } : {}),
     desktopVersion,
     sha256: sha256Hex(zipBuffer),

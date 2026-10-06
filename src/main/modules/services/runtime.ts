@@ -13,6 +13,7 @@ export type ServicesRuntimeOptions = {
   app: App;
   getMainWindow: () => BrowserWindow | null;
   notifyServicesChanged: () => void;
+  isShuttingDown?: () => boolean;
   delay: (ms: number) => Promise<void>;
   getServiceState: (app: App, serviceId: ServiceId) => Promise<any>;
   startService: (app: App, serviceId: ServiceId) => Promise<any>;
@@ -20,12 +21,16 @@ export type ServicesRuntimeOptions = {
 
 export function createServicesRuntime(options: ServicesRuntimeOptions) {
   let serviceMutationQueue = Promise.resolve();
+  function assertNotShuttingDown() {
+    if (options.isShuttingDown?.()) throw new Error("Desktop is shutting down; service changes are unavailable.");
+  }
 
   async function ensureAssistantTargetServicesRunning(source: string) {
     const failures: string[] = [];
 
     for (const serviceId of STARTUP_RESTORE_SERVICE_ORDER) {
       try {
+        assertNotShuttingDown();
         const current = await options.getServiceState(options.app, serviceId);
         if (current.status === "running") {
           continue;
@@ -55,6 +60,7 @@ export function createServicesRuntime(options: ServicesRuntimeOptions) {
     });
     await previousTask;
     try {
+      assertNotShuttingDown();
       return await task();
     } finally {
       releaseQueue();
@@ -63,6 +69,7 @@ export function createServicesRuntime(options: ServicesRuntimeOptions) {
   }
 
   async function handleServiceStart(serviceId: ServiceId) {
+    assertNotShuttingDown();
     try {
       return await options.startService(options.app, serviceId);
     } catch (error) {

@@ -63,17 +63,13 @@ export type RuntimeEnvResetResult = BundledEnvZipImportResult & {
   backupPath?: string;
 };
 
-export type RuntimeEnvResetFailure = Error & {
-  runtimeRoot?: string;
-  backupPath?: string;
-  sourceZipPath?: string;
-};
-
 export const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center", "tools"] as const;
 
 export const REMOVED_SKILLS_MARKET_DIR_NAME = "skills-market";
 
 export const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
+
+export const ENV_IMPORT_PENDING_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-import-pending.json");
 
 export const ENV_AGENT_DEFINITION_FILE_NAME = "agent.yml";
 
