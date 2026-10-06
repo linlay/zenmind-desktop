@@ -395,15 +395,11 @@ export interface AssistantCreateProjectRequest {
   acpBridgeId?: string;
   /** Overrides the type's default model; ignored for the external engine. */
   modelKey?: string;
-  /**
-   * Capability group keys chosen in the New Project dialog. Present (even
-   * when empty) means Agent Platform expands its creation template; absent
-   * keeps the request as a plain create.
-   */
-  capabilityGroups?: string[];
+  /** Concrete configuration assembled by the client. */
+  definition?: Record<string, unknown>;
 }
 
-/** Mirrors Agent Platform GET /api/admin/agents/creation-options. */
+/** Client view combining runtime defaults with a brand profile. */
 export interface AssistantProjectCreationType {
   key: AssistantCreateProjectType;
   label: string;

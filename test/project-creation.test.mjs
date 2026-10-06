@@ -116,7 +116,7 @@ test("an unusable default model must be replaced by an explicit choice", () => {
   assert.deepEqual(buildProjectCreationRequest(options, selection, " /project "), {
     projectType: "kbase",
     workspaceDir: "/project",
-    capabilityGroups: [],
+    definition: {},
     modelKey: "other-model",
   });
 
@@ -124,14 +124,14 @@ test("an unusable default model must be replaced by an explicit choice", () => {
   assert.equal(resolveProjectCreationModel(options, { ...selection, modelKey: "ghost" }), "");
 });
 
-test("requests carry groups for native types and only the bridge for the external engine", () => {
+test("requests carry concrete configuration for native types and only the bridge for the external engine", () => {
   const options = creationOptions();
   const general = initialProjectCreationSelection(options);
   // The type default model is left for Agent Platform to apply.
   assert.deepEqual(buildProjectCreationRequest(options, general, "/project"), {
     projectType: "general",
     workspaceDir: "/project",
-    capabilityGroups: ["office", "web-data"],
+    definition: {},
   });
   assert.equal(projectCreationProblem(options, general, "  "), "directoryRequired");
 
@@ -140,7 +140,7 @@ test("requests carry groups for native types and only the bridge for the externa
   assert.deepEqual(buildProjectCreationRequest(options, { ...acp, acpBridgeId: "codex" }, "/project"), {
     projectType: "acp",
     workspaceDir: "/project",
-    capabilityGroups: [],
+    definition: {},
     acpBridgeId: "codex",
   });
   assert.equal(projectCreationProblem(options, { ...acp, acpBridgeId: "" }, "/project"), "acpBridgeRequired");

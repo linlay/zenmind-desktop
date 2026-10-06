@@ -88,6 +88,7 @@ export function isServiceWebviewRouteStatus(
 }
 
 export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
+  "desktop:agent-webclient:creation:options",
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
@@ -106,6 +107,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
 ] as const;
 
 export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
+  "desktop:agent-webclient:creation:options:response",
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,

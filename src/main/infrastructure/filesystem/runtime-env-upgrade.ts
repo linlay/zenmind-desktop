@@ -1,3 +1,4 @@
+import { readCreationProfileUpgradeInput } from "./runtime-environment-creation";
 import {
   AppPathReader,
   ENV_INITIAL_PACKAGE_RELATIVE_PATH,
@@ -97,7 +98,8 @@ export async function validateBundledEnvForDesktopVersionUpgrade(
     sha256: sha256Hex(zipBuffer),
     size: zipBuffer.byteLength,
     desktopInit,
-    providerRegister: await readProviderRegisterUpgradeInput(zip)
+    providerRegister: await readProviderRegisterUpgradeInput(zip),
+    creationProfile: await readCreationProfileUpgradeInput(zip)
   };
 }
 
@@ -164,7 +166,8 @@ export async function validateSelectedEnvZipForDesktopVersionUpgrade(
     sha256: sha256Hex(zipBuffer),
     size: zipBuffer.byteLength,
     desktopInit,
-    providerRegister: await readProviderRegisterUpgradeInput(zip)
+    providerRegister: await readProviderRegisterUpgradeInput(zip),
+    creationProfile: await readCreationProfileUpgradeInput(zip)
   };
 }
 

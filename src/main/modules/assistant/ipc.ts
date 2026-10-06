@@ -1,4 +1,5 @@
 import path from "node:path";
+import { loadProjectCreationOptions } from "./project-creation-options";
 import { selectChatRunJson } from "./chat-run-json";
 import fs from "node:fs";
 import {
@@ -425,7 +426,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     const request = buildProjectAgentCreateRequest(projectType, workspaceDir, {
       acpBridgeId,
       modelKey: String(input?.modelKey || "").trim(),
-      capabilityGroups: Array.isArray(input?.capabilityGroups) ? input.capabilityGroups : undefined
+      definition: input?.definition
     });
     try {
       const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
@@ -647,7 +648,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       if (!callAgentPlatform) {
         return { ok: false, message: t("assistant.agentPlatformUnavailable") };
       }
-      const options = await callAgentPlatform(app, "/api/admin/agents/creation-options");
+      const options = await loadProjectCreationOptions(app, callAgentPlatform);
       if (!options || !Array.isArray(options.types) || !Array.isArray(options.groups)) {
         return { ok: false, message: t("assistant.projectCreationOptionsInvalid") };
       }

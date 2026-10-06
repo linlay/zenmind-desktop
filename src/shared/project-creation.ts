@@ -1,3 +1,4 @@
+import { selectedCreationDefinition } from "./creation-profile";
 import type {
   AssistantCreateProjectRequest,
   AssistantCreateProjectType,
@@ -8,7 +9,7 @@ import type {
 
 /**
  * Selection rules of the New Project dialog. They are kept free of UI state so
- * Desktop applies type presets from Agent Platform on every type switch.
+ * Desktop applies the brand profile defaults on every type switch.
  */
 
 export type ProjectCreationSelection = {
@@ -154,7 +155,7 @@ export function buildProjectCreationRequest(
   const request: AssistantCreateProjectRequest = {
     projectType: selection.typeKey,
     workspaceDir: workspaceDir.trim(),
-    capabilityGroups: type?.supportsGroups ? [...selection.groups] : [],
+    definition: selectedCreationDefinition(options, selection.typeKey, selection.groups),
   };
   if (selection.typeKey === "acp") {
     request.acpBridgeId = selection.acpBridgeId;

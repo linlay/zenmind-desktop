@@ -57,6 +57,7 @@ export type ValidatedBundledEnvUpgradeInput = {
   size: number;
   desktopInit: Record<string, unknown>;
   providerRegister?: string;
+  creationProfile?: string;
 };
 
 export type RuntimeEnvResetResult = BundledEnvZipImportResult & {
