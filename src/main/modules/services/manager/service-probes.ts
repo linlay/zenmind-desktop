@@ -95,3 +95,17 @@ export function probeHttpUrl(target: string, optionsOrTimeoutMs: HttpProbeOption
     request.end();
   });
 }
+
+// Platform may spend up to three seconds checking a required sidecar.
+export async function probeServiceHealth(target: string): Promise<HttpProbeResult> {
+  const probe = await probeHttpUrl(target, { timeoutMs: 5000 });
+  const looksJson = /application\/json/iu.test(probe.contentType || "")
+    || /^\s*[{[]/u.test(probe.bodyPreview || "");
+  return {
+    ...probe,
+    ok: probe.statusCode === 200 && looksJson,
+    message: probe.message ?? (probe.statusCode !== 200
+      ? `HTTP ${probe.statusCode ?? 0}`
+      : !looksJson ? t("service.verify.healthNotJson", { statusCode: probe.statusCode }) : undefined)
+  };
+}

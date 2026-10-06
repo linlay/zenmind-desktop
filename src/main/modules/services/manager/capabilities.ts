@@ -104,8 +104,8 @@ function parsePortValue(value: string) {
   return portMatch ? Number.parseInt(portMatch[1], 10) : 0;
 }
 
-function readAuthSettings(service: ServiceDefinition, layout: ServiceLayout) {
-  const env = readEnvFile(layout.envPath);
+function readAuthSettings(service: ServiceDefinition, layout: ServiceLayout, loadServiceEnv = true) {
+  const env = loadServiceEnv ? readEnvFile(layout.envPath) : new Map<string, string>();
   const port = parsePortValue(env.get(service.web.portEnvKey) ?? "") || service.web.defaultPort;
   const configuredDBPath = env.get("AUTH_DB_PATH")?.trim() ?? "";
   return {
@@ -149,7 +149,7 @@ function buildTemplateValues(
   provider: ManifestDesktopCapabilityProvider,
   ports: ServiceCapabilityPorts
 ) {
-  const auth = readAuthSettings(service, layout);
+  const auth = readAuthSettings(service, layout, provider.loadServiceEnv !== false);
   const desktopDeviceName = ports.getDesktopDeviceInfo(app).deviceName;
   const outputPath = provider.outputPath
     ? path.normalize(renderTemplate(provider.outputPath, {
@@ -182,7 +182,7 @@ function buildTemplateValues(
     "output.dir": outputPath ? path.dirname(outputPath) : ""
   };
 
-  const env = readEnvFile(layout.envPath);
+  const env = provider.loadServiceEnv === false ? new Map<string, string>() : readEnvFile(layout.envPath);
   for (const [key, value] of env) {
     values[`provider.env.${key}`] = value;
   }
@@ -255,7 +255,7 @@ async function runCapabilityCommand(
     try {
       return await runStartupCheckpoint(serviceId, `capability-${provider.id}`, `execute-attempt-${attempt + 1}`, () => runExecFile(command[0], command.slice(1), layout.programDir, {
         env: {
-          ...Object.fromEntries(readEnvFile(layout.envPath)),
+          ...(provider.loadServiceEnv === false ? {} : Object.fromEntries(readEnvFile(layout.envPath))),
           ...env
         }
       }));
@@ -336,8 +336,10 @@ async function resolveDesktopCapabilityInternal(
   const values = buildTemplateValues(app, service, layout, provider, options.ports);
   const renderedCommand = renderCommand(command, values);
   const renderedEnv = renderStringRecord(provider.env, values);
-  const auth = readAuthSettings(service, layout);
-  ensureDir(path.dirname(auth.dbPath));
+  if (provider.loadServiceEnv !== false) {
+    const auth = readAuthSettings(service, layout);
+    ensureDir(path.dirname(auth.dbPath));
+  }
   if (values["output.dir"]) {
     ensureDir(values["output.dir"]);
   }

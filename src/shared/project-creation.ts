@@ -1,3 +1,4 @@
+import { selectedCreationDefinition } from "./creation-profile";
 import type {
   AssistantCreateProjectRequest,
   AssistantCreateProjectType,
@@ -8,8 +9,7 @@ import type {
 
 /**
  * Selection rules of the New Project dialog. They are kept free of UI state so
- * Desktop and the web client apply identical behavior to the options that
- * Agent Platform returns.
+ * Desktop applies the brand profile defaults on every type switch.
  */
 
 export type ProjectCreationSelection = {
@@ -69,26 +69,20 @@ export function initialProjectCreationSelection(
   };
 }
 
-/**
- * Switching type applies the new type's default groups until the user has
- * edited the groups; after that the user's choice is kept, minus anything the
- * new type cannot use. A hand-picked model is kept across native types.
- */
+/** Every type switch reapplies its capability and model defaults. */
 export function changeProjectCreationType(
   options: AssistantProjectCreationOptions,
   selection: ProjectCreationSelection,
   typeKey: AssistantCreateProjectType,
 ): ProjectCreationSelection {
   const type = findProjectCreationType(options, typeKey);
-  const selectable = new Set(selectableProjectCreationGroups(options, typeKey).map((group) => group.key));
-  const groups = selection.groupsTouched
-    ? selection.groups.filter((key) => selectable.has(key))
-    : defaultGroups(options, typeKey);
   const bridges = type?.acpBridges ?? [];
   return {
     ...selection,
     typeKey,
-    groups,
+    groups: defaultGroups(options, typeKey),
+    groupsTouched: false,
+    modelKey: "",
     acpBridgeId: bridges.some((bridge) => bridge.id === selection.acpBridgeId)
       ? selection.acpBridgeId
       : bridges[0]?.id ?? "",
@@ -161,7 +155,7 @@ export function buildProjectCreationRequest(
   const request: AssistantCreateProjectRequest = {
     projectType: selection.typeKey,
     workspaceDir: workspaceDir.trim(),
-    capabilityGroups: type?.supportsGroups ? [...selection.groups] : [],
+    definition: selectedCreationDefinition(options, selection.typeKey, selection.groups),
   };
   if (selection.typeKey === "acp") {
     request.acpBridgeId = selection.acpBridgeId;

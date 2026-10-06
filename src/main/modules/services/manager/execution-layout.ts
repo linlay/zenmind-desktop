@@ -36,16 +36,16 @@ export function prepareServiceExecutionLayout(_service: ServiceDefinition, layou
 
 export function isAssetNewerThanInstall(
   assetPath: string,
-  layoutOrInstallDir: ServiceLayout | string,
+  layout: ServiceLayout,
   app?: App,
   service?: ServiceDefinition
 ) {
   try {
-    const initStatePath = getInitializationStatePath(layoutOrInstallDir);
+    const initStatePath = getInitializationStatePath(layout);
     if (!fs.existsSync(initStatePath)) {
       return true;
     }
-    const initializationState = readInitializationState(layoutOrInstallDir);
+    const initializationState = readInitializationState(layout);
     if (initializationState?.assetSignature) {
       const assetSignature = app && service
         ? readBuiltinAssetSignature(app, service) ?? computeAssetSignature(assetPath)

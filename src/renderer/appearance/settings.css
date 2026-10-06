@@ -7,12 +7,12 @@
 .desktop-skin-heading > span, .desktop-background-copy > span { color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
 .desktop-skin-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 14px 0 20px; }
 .desktop-skin-option { appearance: none; min-width: 0; padding: 5px; border: 1px solid var(--control-border); border-radius: var(--control-radius-lg); background: var(--control-button-bg); color: var(--ink); text-align: left; cursor: pointer; }
-.desktop-skin-option[aria-pressed="true"] { border-color: var(--control-primary-bg); box-shadow: 0 0 0 1px var(--control-primary-bg); }
+.desktop-skin-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .desktop-skin-option:hover:not(:disabled) { background: var(--control-hover-bg); }
-.desktop-skin-option:focus-visible { outline: 2px solid var(--control-primary-bg); outline-offset: 4px; }
+.desktop-skin-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .desktop-skin-option:disabled { cursor: default; opacity: var(--control-disabled-opacity); }
 .desktop-skin-option-label { display: flex; justify-content: space-between; gap: 4px; padding: 8px 6px 4px; font-size: 12px; }
-.desktop-skin-option-label > span { color: var(--control-primary-bg); }
+.desktop-skin-option-label > span { color: var(--accent); }
 .desktop-skin-sample { --control-primary-bg: var(--accent); position: relative; display: flex; aspect-ratio: 1.8; overflow: hidden; border-radius: var(--control-radius); background-color: var(--bg-base); background-size: cover; background-position: center; }
 /* Default preview must not inherit the currently selected skin's colors. */
 .desktop-skin-sample[data-sample-skin="default"] { --bg-base: #f5f7fb; --surface: #fff; --ink-muted: #b5bdcb; --control-primary-bg: #2663eb; }
@@ -53,8 +53,9 @@
   .desktop-skin-import { flex: 1; min-width: 0; }
 }
 .desktop-installed-skin { position: relative; min-width: 0; display: flex; }
-.desktop-installed-skin .desktop-skin-option { width: 100%; }
-.desktop-installed-skin .desktop-skin-remove { position: absolute; right: 8px; bottom: 8px; width: 24px; height: 24px; opacity: 0; pointer-events: none; }
+.desktop-installed-skin .desktop-skin-option { width: 100%; box-sizing: border-box; }
+.desktop-installed-skin .desktop-skin-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 1px var(--accent); }
+.desktop-installed-skin .desktop-skin-remove { position: absolute; right: 9px; bottom: 8px; width: 24px; height: 24px; color: var(--ink-soft); opacity: 0; pointer-events: none; }
 .desktop-installed-skin:hover .desktop-skin-remove,
 .desktop-installed-skin:focus-within .desktop-skin-remove { opacity: 1; pointer-events: auto; }
 .desktop-installed-skin .desktop-skin-remove:focus-visible { outline: 2px solid var(--control-primary-bg); outline-offset: 2px; }
@@ -63,5 +64,7 @@
 }
 .desktop-skin-sample > img { width: 100%; height: 100%; object-fit: cover; }
 .desktop-skin-no-preview { margin: auto; font-size: 32px; color: var(--ink-soft); }
-.desktop-skin-package-meta { display: block; min-height: 24px; padding: 0 32px 6px 8px; font-size: 11px; color: var(--ink-soft); overflow-wrap: anywhere; }
-.desktop-installed-skin .desktop-skin-option-label { overflow-wrap: anywhere; }
+.desktop-installed-skin .desktop-skin-option-label { align-items: center; min-height: 24px; padding: 6px 32px 2px 6px; }
+.desktop-skin-option-label > .desktop-skin-package-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-skin-selected-mark { flex-shrink: 0; font-weight: 700; }
+.desktop-installed-skin .desktop-skin-remove:hover:not(:disabled) { color: var(--ant-color-error, #dc4446); }

@@ -318,9 +318,11 @@ export function resolveDesktopPetWindowLayout(
   };
   if (mode === "base") {
     // Keep the native host on screen, while the body moves continuously inside it.
-    // macOS can constrain a narrow host to the side Dock's work-area inset, so
-    // expand before crossing that inset without changing the visible position.
-    const useWideLeftHost = baseBounds.x < displayArea.x + (displayArea.windowLeftInset ?? 0);
+    // A left work-area inset (such as the macOS side Dock) requires a wide host.
+    // Keep that host width stable across this display: resizing at a cursor
+    // threshold races the renderer bodyOffset update and flashes the old body.
+    // Without an inset, use the same narrow host at both screen edges.
+    const useWideLeftHost = (displayArea.windowLeftInset ?? 0) > 0;
     bounds = {
       x: useWideLeftHost ? displayArea.x : Math.round(clampNumber(
         baseBounds.x, displayArea.x, displayArea.x + Math.max(0, displayArea.width - size.width)

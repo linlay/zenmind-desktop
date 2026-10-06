@@ -466,7 +466,7 @@ test("unrelated skills-market and skills-center directories can coexist", (t) =>
 test("Windows runtime root can come from the installer selected data directory", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-runtime-root-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const selectedRoot = path.join(root, "selected-data");
+  const selectedRoot = path.join(root, "selected-data", APP_BRAND.paths.runtimeRootDirName);
 
   assert.equal(WINDOWS_RUNTIME_ROOT_REGISTRY_KEY, `Software\\${APP_BRAND.storageNamespace}`);
   assert.equal(WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE, "DataRoot");
@@ -504,7 +504,7 @@ test("Windows registry runtime root preserves non-ASCII values from encoded Powe
 test("Windows program root stays under roaming app data when data root is selected", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-program-root-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const selectedRoot = path.join(root, "selected-data");
+  const selectedRoot = path.join(root, "selected-data", APP_BRAND.paths.runtimeRootDirName);
 
   assert.equal(
     userPathInternals.resolveApplicationSupportRoot({
@@ -517,7 +517,7 @@ test("Windows program root stays under roaming app data when data root is select
   );
 });
 
-test("Windows first install uses an existing selected data directory without old-data migration prompt", () => {
+test("Windows first install uses an existing selected data directory without a root conflict prompt", () => {
   assert.equal(
     shouldPromptEnvRootConflict({
       platform: "win32",

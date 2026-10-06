@@ -23,6 +23,9 @@
 
 ## Implementation Style
 
+- 2026-10-05 过度设计纠错记录：用户要求助理导入参照已有皮肤交互，Codex 却额外增加了文件夹导入按钮、IPC、目录递归读取与对应测试，这是错误扩大需求。已要求删除整条文件夹导入流程。以后“参照现有功能”必须先对齐其实际交互和能力范围；助理仅保留单个 ZIP 的导入按钮与拖拽入口，不擅自增加目录扫描、批量导入或额外选项。
+- 同次视觉纠错：Codex 又把拖拽提示做成大面积区域，仍未对齐皮肤。参照皮肤时应沿用紧凑按钮和小型虚线提示区的尺寸、间距、字体与主题变量，不擅自扩大为整行上传面板。
+
 - For compatibility-sensitive code, clarity is more important than clever abstraction.
 - If platform behavior is intentionally different, keep the branching explicit in code and explain the reason briefly in comments when it is not obvious.
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dictionariesRoot = path.join(projectRoot, "src", "shared", "i18n", "dictionaries");
@@ -55,8 +55,6 @@ const allowedLatinTerms = [
   /App/g,
   /Action/g,
   /Bridge/g,
-  /Frame/g,
-  /Port/g,
   /Session/g,
   /Run/g,
   /Chat/g,
@@ -126,18 +124,14 @@ const allowedLatinTerms = [
   /\b(?:access|action|apikey|apiKey|assetFileName|audience|auth|authMode|backend|bridge|capability|chatId|clientId|clientSecret|code|cookie|cron|daemon|definition|device|endpoint|env|fetch|field|fields|frontend|grant|hello|hostname|http|https|id|issuer|jwk|jwks|jwt|key|kind|machine|manifest|message|patch|payload|podman|provider|providers|public|readyState|runId|runState|running|script|scripts|selector|server|service|socket|start|startRun|status|sub|targetPath|token|type|ui|uri|web|worker|workspace)\b/g
 ];
 
+// Match whole Latin identifiers in one pass; shorter terms must not consume prefixes.
+const allowedLatinPattern = new RegExp(
+  `(?<![A-Za-z0-9_])(?:${allowedLatinTerms.map(pattern => pattern.source).join("|")})(?![A-Za-z0-9_])`,
+  "g"
+);
+
 function readFile(filePath) {
   return fs.readFileSync(filePath, "utf8");
-}
-
-function walkFiles(dir, predicate) {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const target = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      return walkFiles(target, predicate);
-    }
-    return predicate(target) ? [target] : [];
-  });
 }
 
 function extractDictionaryEntries(filePath) {
@@ -160,63 +154,70 @@ function stripMarkdownCodeBlocks(text) {
 
 function stripNonProse(text) {
   return stripMarkdownCodeBlocks(text)
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/`[^`]*`/g, "")
     .replace(/\{\{[A-Za-z0-9_.-]+\}\}/g, "")
     .replace(/\{[A-Za-z0-9_.-]+\}/g, "")
+    .replace(/\b\d+(?:\.\d+)?(?:GB|MB)\b/g, " ")
     .replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z][A-Za-z0-9]*)+\b/g, " ")
     .replace(/\b[A-Za-z_][A-Za-z0-9_.-]*=/g, " ")
     .replace(/\b[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+\b/g, " ")
     .replace(/\b[A-Za-z]+[A-Z][A-Za-z0-9]*\b/g, " ")
-    .replace(/\[[^\]]+\]\([^)]+\)/g, "")
     .replace(/(?:^|\s)[~./%A-Za-z0-9_-]+(?:[\\/][~./%A-Za-z0-9_-]+)+/g, " ")
     .replace(/\b[A-Za-z0-9_.-]+\.(?:zip|tar\.gz|skill|json|md|png|dmg|ps1|sh|example|com)\b/g, " ")
     .replace(/\.(?:zip|tar\.gz|skill|json|md|png|dmg|ps1|sh)\b/g, " ");
 }
 
 function removeAllowedLatinTerms(text) {
-  return allowedLatinTerms.reduce((current, pattern) => current.replace(pattern, " "), text);
+  return text.replace(allowedLatinPattern, " ");
 }
 
-function findUnexpectedLatin(text) {
+export function findUnexpectedLatin(text) {
   const prose = removeAllowedLatinTerms(stripNonProse(text));
   return [...prose.matchAll(/[A-Za-z][A-Za-z0-9.+/-]*[A-Za-z0-9]/g)]
     .map((match) => match[0])
     .filter((word) => word.length > 1);
 }
 
-const failures = [];
+function validateLanguageSeparation() {
+  const failures = [];
 
-function checkNoHan(entries, localeLabel) {
-  for (const { context, text } of entries) {
-    if (/[\p{Script=Han}]/u.test(text)) {
-      failures.push(`${localeLabel} contains Han text: ${context} -> ${JSON.stringify(text)}`);
+  function checkNoHan(entries, localeLabel) {
+    for (const { context, text } of entries) {
+      if (/[\p{Script=Han}]/u.test(text)) {
+        failures.push(`${localeLabel} contains Han text: ${context} -> ${JSON.stringify(text)}`);
+      }
     }
   }
-}
 
-function checkChineseLatin(entries) {
-  for (const { context, text } of entries) {
-    const unexpected = findUnexpectedLatin(text);
-    if (unexpected.length > 0) {
-      failures.push(`zh-CN contains unclassified Latin text: ${context} -> ${unexpected.join(", ")} in ${JSON.stringify(text)}`);
+  function checkChineseLatin(entries) {
+    for (const { context, text } of entries) {
+      const unexpected = findUnexpectedLatin(text);
+      if (unexpected.length > 0) {
+        failures.push(`zh-CN contains unclassified Latin text: ${context} -> ${unexpected.join(", ")} in ${JSON.stringify(text)}`);
+      }
     }
   }
+
+  const enEntries = [
+    ...extractDictionaryEntries(path.join(dictionariesRoot, "enUS.ts"))
+  ];
+
+  const zhEntries = [
+    ...extractDictionaryEntries(path.join(dictionariesRoot, "zhCN.ts"))
+  ];
+
+  checkNoHan(enEntries, "en-US");
+  checkChineseLatin(zhEntries);
+
+  if (failures.length > 0) {
+    console.error(failures.join("\n"));
+    process.exit(1);
+  }
+
+  console.log(`validated localized language separation (${zhEntries.length} zh-CN entries, ${enEntries.length} en-US entries)`);
 }
 
-const enEntries = [
-  ...extractDictionaryEntries(path.join(dictionariesRoot, "enUS.ts"))
-];
-
-const zhEntries = [
-  ...extractDictionaryEntries(path.join(dictionariesRoot, "zhCN.ts"))
-];
-
-checkNoHan(enEntries, "en-US");
-checkChineseLatin(zhEntries);
-
-if (failures.length > 0) {
-  console.error(failures.join("\n"));
-  process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  validateLanguageSeparation();
 }
-
-console.log(`validated localized language separation (${zhEntries.length} zh-CN entries, ${enEntries.length} en-US entries)`);

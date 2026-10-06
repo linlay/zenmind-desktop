@@ -10,9 +10,7 @@ import {
   getServicesRoot,
   getServiceStateRoot
 } from "../../../infrastructure/filesystem/user-paths";
-import { STORAGE_NAMESPACE } from "../../../../shared/brand";
 
-const INITIALIZATION_STATE_DIRNAME = `.${STORAGE_NAMESPACE}`;
 const INITIALIZATION_STATE_FILE = "init-state.json";
 
 export type ServiceLayout = {
@@ -73,11 +71,8 @@ export function resolveServiceRuntimePath(layout: ServiceLayout, relativePath: s
   return path.join(layout.stateDir, relativePath);
 }
 
-export function getInitializationStatePath(layoutOrInstallDir: ServiceLayout | string) {
-  if (typeof layoutOrInstallDir === "string") {
-    return path.join(layoutOrInstallDir, INITIALIZATION_STATE_DIRNAME, INITIALIZATION_STATE_FILE);
-  }
-  return path.join(layoutOrInstallDir.stateDir, INITIALIZATION_STATE_FILE);
+export function getInitializationStatePath(layout: ServiceLayout) {
+  return path.join(layout.stateDir, INITIALIZATION_STATE_FILE);
 }
 
 export function getBuiltinServiceVersionRoot(app: App, serviceId: ServiceId) {

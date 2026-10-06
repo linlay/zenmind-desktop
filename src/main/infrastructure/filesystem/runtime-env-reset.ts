@@ -21,7 +21,7 @@ export function generateBackupDirName(
   return backupPath;
 }
 
-export function migrateOldRootToBackup(
+export function backupRuntimeRoot(
   platform: NodeJS.Platform,
   rootPath: string,
   backupPath = generateBackupDirName(rootPath, platform)

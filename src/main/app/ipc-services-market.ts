@@ -32,7 +32,7 @@ import { applyDesktopInitBootstrap, applyDesktopInitVersionUpgrade } from "./boo
 import {
   generateBackupDirName,
   importEnvZipToRuntime,
-  migrateOldRootToBackup,
+  backupRuntimeRoot,
   runtimeEnvExists,
   shouldPromptEnvRootConflict
 } from "../infrastructure/filesystem/runtime-environment";
@@ -58,6 +58,7 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     createContainerHubClient: (config: ConstructorParameters<typeof ContainerHubClient>[0]) =>
       new ContainerHubClient(config),
     webs: options.websFacade,
+    services,
     plugins
   });
 
@@ -149,9 +150,9 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     logStreamSubscriptions: logsRuntime.getServiceLogSubscriptions(),
     applyDesktopInitBootstrap,
     refreshDesktopRuntimeConfigFromCanonicalFiles: options.refreshDesktopRuntimeConfigFromCanonicalFiles,
-    oldRootDecisionRef: options.oldRootDecisionRef,
+    runtimeRootConflictDecisionRef: options.runtimeRootConflictDecisionRef,
     generateBackupDirName: generateBackupDirName as any,
-    migrateOldRootToBackup: migrateOldRootToBackup as any,
+    backupRuntimeRoot: backupRuntimeRoot as any,
     shouldPromptEnvRootConflict: shouldPromptEnvRootConflict as any,
     isFirstDesktopInstall: options.isFirstDesktopInstall,
     bundledEnvZipExistsAtStartup: options.bundledEnvZipExistsAtStartup,

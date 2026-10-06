@@ -1,3 +1,4 @@
+import { readCreationProfileUpgradeInput } from "./runtime-environment-creation";
 import {
   AppPathReader,
   ENV_INITIAL_PACKAGE_RELATIVE_PATH,
@@ -158,7 +159,8 @@ async function validateEnvUpgradeContents(
     sha256: sha256Hex(zipBuffer),
     size: zipBuffer.byteLength,
     desktopInit,
-    providerRegister: await readProviderRegisterUpgradeInput(zip)
+    providerRegister: await readProviderRegisterUpgradeInput(zip),
+    creationProfile: await readCreationProfileUpgradeInput(zip)
   };
 }
 

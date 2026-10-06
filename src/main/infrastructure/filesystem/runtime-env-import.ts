@@ -1,3 +1,4 @@
+import { readCreationProfileUpgradeInput } from "./runtime-environment-creation";
 import {
   EnvZipImportResult,
   InitialEnvPackageRecord,
@@ -80,6 +81,7 @@ async function importValidatedEnvBuffer(
   for (const entry of Object.values(zip.files)) {
     if (!shouldSkipArchiveEntry(entry.name)) assertStrictArchiveEntry(entry);
   }
+  await readCreationProfileUpgradeInput(zip);
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, expectedDesktopVersion);
   const reservedPaths = [...ENV_IMPORT_METADATA_PATHS, ENV_IMPORT_PENDING_RELATIVE_PATH]

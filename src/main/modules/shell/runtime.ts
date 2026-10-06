@@ -34,6 +34,7 @@ import {
   getServiceWebviewPreloadPath as resolveServiceWebviewPreloadPath
 } from "../../infrastructure/electron/bundle-paths";
 import { buildApplicationMenu as installApplicationMenu } from "./app-menu";
+import { toggleMainRendererDevTools } from "./main-window-options";
 import { AgentPlatformMonitorWindowController } from "./agent-platform-monitor-window";
 import { AgentRealtimeInspectorWindowController } from "./agent-realtime-inspector-window";
 import { DesktopActionWorkbenchWindowController } from "./desktop-action-workbench-window";
@@ -371,6 +372,12 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       t: options.t,
       openSettings: () => navigateMainWindow("/settings"),
+      toggleDesktopDevTools: () => {
+        const targetWindow = state.mainWindow;
+        if (targetWindow && !targetWindow.isDestroyed()) {
+          toggleMainRendererDevTools(targetWindow.webContents);
+        }
+      },
       helpEnabled: Boolean(options.getHelpUrl()),
       openHelp: () => {
         if (options.getHelpUrl()) navigateMainWindow("/help");

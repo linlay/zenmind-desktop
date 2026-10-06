@@ -181,8 +181,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         phase: "verifyRunning",
         service: "agent-platform",
         action: "waitHttp",
-        target: "/api/runtime-info",
-        authCapability: "auth.accessToken"
+        target: "/healthz"
       }
     ];
     manifest.desktop.hosting = {
@@ -327,7 +326,7 @@ test("syncBuiltinAssets selects the newest PowerShell-style ZIP bundle", async (
   );
 });
 
-test("syncBuiltinAssets writes brand-neutral service resources and removes legacy brand-scoped services", async (t) => {
+test("syncBuiltinAssets writes service resources and their index to the shared build directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-sync-"));
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -335,9 +334,6 @@ test("syncBuiltinAssets writes brand-neutral service resources and removes legac
 
   const sourceRoot = path.join(tempRoot, "release");
   const archivePath = writeBuiltinArchive(sourceRoot, "example-desktop-tool", { os: "testos", arch: "arm64" });
-  const legacyServicesRoot = path.join(tempRoot, "build", "brands", "cutej", "resources", "services");
-  fs.mkdirSync(legacyServicesRoot, { recursive: true });
-  fs.writeFileSync(path.join(legacyServicesRoot, "stale.txt"), "stale", "utf8");
 
   const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
   process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
@@ -352,8 +348,7 @@ test("syncBuiltinAssets writes brand-neutral service resources and removes legac
   const { syncBuiltinAssets } = await importBuiltinAssetsModule(`sync-${Date.now()}`);
   const manifest = syncBuiltinAssets(tempRoot, {
     os: "testos",
-    arch: "arm64",
-    brandId: "cutej"
+    arch: "arm64"
   });
 
   const expectedOutputArchive = path.join(
@@ -368,7 +363,6 @@ test("syncBuiltinAssets writes brand-neutral service resources and removes legac
   assert.deepEqual(manifest.map((service) => service.id), ["example-desktop-tool"]);
   assert.equal(fs.existsSync(expectedOutputArchive), true);
   assert.equal(fs.existsSync(path.join(tempRoot, "build", "resources", "services", "manifest.json")), true);
-  assert.equal(fs.existsSync(legacyServicesRoot), false);
 });
 
 test("syncBuiltinAssets uses explicit release sources without scanning configured or workspace releases", async (t) => {
@@ -809,6 +803,21 @@ for (const targetOs of ["darwin", "windows"]) {
       ];
       await pack();
       for (const validate of validators) assert.doesNotThrow(validate);
+      if (id === "agent-webclient") {
+        const health = manifest.desktop.capabilities.requires.find(item => item.service === "agent-platform");
+        for (const legacyTarget of ["/api/runtime-info", "/api/agents"]) {
+          health.target = legacyTarget;
+          await pack();
+          for (const validate of validators) assert.throws(validate, /waitHttp \/healthz/u);
+        }
+        health.target = "/healthz";
+        health.authCapability = "auth.accessToken";
+        await pack();
+        for (const validate of validators) assert.throws(validate, /without authCapability/u);
+        delete health.authCapability;
+        await pack();
+        for (const validate of validators) assert.doesNotThrow(validate);
+      }
       fs.rmSync(path.join(bundleRoot, privateFile));
       await pack();
       for (const validate of validators) assert.throws(validate, /Missing required entries: backend\/private-resource.txt/u);
@@ -819,6 +828,18 @@ for (const targetOs of ["darwin", "windows"]) {
         for (const validate of validators) assert.throws(validate, /Missing desktop capability provider auth.publicKey/u);
       }
       if (id === "agent-webclient") {
+        const originalRoutes = manifest.desktop.hosting.proxyRoutes;
+        const apiRoute = originalRoutes.find(route => route.match === "prefix" && route.path === "/api");
+        for (const routes of [
+          [...originalRoutes, { ...apiRoute }],
+          [...originalRoutes, { ...apiRoute, auth: undefined }],
+          [{ ...apiRoute, auth: undefined }, ...originalRoutes]
+        ]) {
+          manifest.desktop.hosting.proxyRoutes = routes;
+          await pack();
+          for (const validate of validators) assert.throws(validate, /requires exactly one/u);
+        }
+        manifest.desktop.hosting.proxyRoutes = originalRoutes;
         manifest.frontend.hostManaged = false;
         await pack();
         for (const validate of validators) assert.throws(validate, /Expected frontend.hostManaged/u);

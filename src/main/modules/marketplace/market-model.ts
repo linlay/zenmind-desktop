@@ -1,5 +1,6 @@
 import type { MarketCatalogItem, MarketItemType, MarketListOptions, MarketItem } from "../../../shared/contracts";
 import type { PluginLifecycle } from "../plugins";
+import type { ServicesFacade } from "../services";
 import type { WebsFacade } from "../webs";
 import type { App } from "electron";
 import { t } from "../../support/i18n/main-i18n";
@@ -45,6 +46,7 @@ export type MarketplaceOptions = MarketListOptions & {
   marketEnabled?: boolean;
   containerHubBaseUrl?: string;
   containerHubAuthToken?: string;
+  services?: Pick<ServicesFacade, "resolveDesktopCapability">;
   fetchImpl?: typeof fetch;
   issueMarketAccessToken?: MarketAccessTokenIssuer;
   /** Main-process identity snapshot; null keeps browsing anonymous. Never supplied by renderer IPC. */

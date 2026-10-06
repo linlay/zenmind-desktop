@@ -15,7 +15,6 @@ import {
   runContainerEngineCommand
 } from "../services";
 import { extractArchiveToDir, listArchiveEntries } from "../../support/archive/archive-utils";
-import { readEnvFile } from "../../infrastructure/filesystem/env-file";
 import { getResponsiveServiceState } from "../services";
 import { t } from "../../support/i18n/main-i18n";
 import {
@@ -131,10 +130,15 @@ async function resolveContainerHubConfig(app: App, options: MarketplaceOptions =
     if (state.status !== "running" || !state.healthMeta.webUrl) {
       return null;
     }
-    const env = readEnvFile(path.join(state.installDir, ".env"));
+    if (!options.services) return null;
+    const capability = await options.services.resolveDesktopCapability(app, "containerHub.authentication");
+    if (capability.providerServiceId !== CONTAINER_HUB_SERVICE_ID) return null;
+    const authentication = asObject(JSON.parse(capability.text ?? ""));
+    const authToken = asString(authentication.token).trim();
+    if (authentication.type !== "none" && (authentication.type !== "bearer" || !authToken)) return null;
     return {
       baseURL: normalizeContainerHubBaseUrl(state.healthMeta.webUrl),
-      authToken: env.get("AUTH_TOKEN")?.trim() || undefined
+      authToken: authentication.type === "bearer" ? authToken : undefined
     };
   } catch {
     return null;

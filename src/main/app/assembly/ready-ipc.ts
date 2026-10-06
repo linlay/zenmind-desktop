@@ -69,7 +69,7 @@ export interface ReadyIpcDependencies {
   readonly petRuntime: DesktopPetRuntime;
   readonly enterpriseChatRuntime: InstanceType<typeof EnterpriseChatRuntime>;
   readonly desktopAppInfo: DesktopAppInfo;
-  readonly oldRootDecisionRef: { current: EnvRootConflictDecision | undefined };
+  readonly runtimeRootConflictDecisionRef: { current: EnvRootConflictDecision | undefined };
   readonly isFirstDesktopInstall: boolean;
   readonly bundledEnvZipExistsAtStartup: ReturnType<typeof bundledEnvZipExists>;
   readonly runtimeRootExistedAtStartup: ReturnType<typeof runtimeRootExists>;
@@ -131,7 +131,7 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     desktopSsoController: dependencies.desktopSsoController,
     startupRestoreController: dependencies.startupRestoreController,
     desktopAppInfo: dependencies.desktopAppInfo,
-    oldRootDecisionRef: dependencies.oldRootDecisionRef,
+    runtimeRootConflictDecisionRef: dependencies.runtimeRootConflictDecisionRef,
     isFirstDesktopInstall: dependencies.isFirstDesktopInstall,
     bundledEnvZipExistsAtStartup: dependencies.bundledEnvZipExistsAtStartup,
     runtimeRootExistedAtStartup: dependencies.runtimeRootExistedAtStartup,

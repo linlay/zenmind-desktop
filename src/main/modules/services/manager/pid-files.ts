@@ -73,12 +73,7 @@ export function getManagedPidFilePaths(service: ServiceDefinition, layout: Servi
     return [];
   }
 
-  const pidFileName = path.basename(service.runtime.pidRelativePath);
-  return uniqueNonEmptyPaths([
-    resolveRuntimePath(layout, service.runtime.pidRelativePath),
-    resolveRuntimePath(layout.programDir, service.runtime.pidRelativePath),
-    pidFileName ? path.join(layout.stateDir, "pid", pidFileName) : ""
-  ]);
+  return [resolveRuntimePath(layout, service.runtime.pidRelativePath)];
 }
 
 export function readManagedPidFile(

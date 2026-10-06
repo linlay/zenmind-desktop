@@ -12,10 +12,12 @@ export class AgentDirectory {
   ) {}
 
   async listAgents(): Promise<DesktopPetAgentOption[]> {
-    const data = await this.platform.getJson<PlatformAgentSummary[]>("/api/agents", {
-      fallbackWhenUnavailable: []
-    });
-    return this.ports.toDesktopPetAgentOptions(Array.isArray(data) ? data : []);
+    // An unavailable directory is different from a successful empty catalog.
+    // Callers choose their own fallback; Kanban must not resurrect disk entries
+    // after Platform explicitly returned no available Agents.
+    const data = await this.platform.getJson<PlatformAgentSummary[]>("/api/agents");
+    if (!Array.isArray(data)) throw new Error("Invalid Platform Agent directory response");
+    return this.ports.toDesktopPetAgentOptions(data);
   }
 
   async listMcpRuntimeStatuses() {

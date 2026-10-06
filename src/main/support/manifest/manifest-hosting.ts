@@ -1,3 +1,4 @@
+import { getPlatformFramePortRoutesError } from "./platform-frame-port-policy.js";
 import {
   type ManifestDesktopHosting,
   type ManifestDesktopDisabledResponse,
@@ -152,24 +153,8 @@ export function assertAgentWebclientPlatformFramePortHosting(
   hosting: ManifestDesktopHosting | undefined,
 ) {
   if (serviceId !== "agent-webclient" || frontend.hostManaged !== true) return;
-  const routes = hosting?.proxyRoutes ?? [];
-  if (routes.some((route) => route.path === "/auth" || route.path === "/ws")) {
-    throw new Error("agent-webclient Frame Port manifest must not expose /auth or /ws");
-  }
-  const apiRoute = routes.find((route) => route.match === "prefix" && route.path === "/api");
-  if (
-    !apiRoute ||
-    apiRoute.targetEnv !== "BASE_URL" ||
-    apiRoute.auth !== "agent-platform-access-token" ||
-    apiRoute.http !== true ||
-    apiRoute.websocket === true ||
-    Boolean(apiRoute.ssePaths?.length)
-  ) {
-    throw new Error(
-      "agent-webclient Frame Port manifest requires an HTTP-only authenticated /api route without SSE overrides",
-    );
-  }
-  if (routes.some((route) => route.targetEnv === "BASE_URL" && route.websocket === true)) {
-    throw new Error("agent-webclient Frame Port manifest forbids Agent Platform WebSocket proxy routes");
+  const reason = getPlatformFramePortRoutesError(hosting?.proxyRoutes ?? []);
+  if (reason) {
+    throw new Error(`agent-webclient Frame Port manifest ${reason}`);
   }
 }

@@ -6,7 +6,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../../shared/contracts";
-import { APP_BRAND } from "../../../shared/brand";
 import { extractArchiveToDir, inspectZipArchiveSafety } from "../../support/archive/archive-utils";
 import { t } from "../../support/i18n/main-i18n";
 import { resolveRuntimeRootPath } from "../../infrastructure/filesystem/runtime-root";
@@ -81,54 +80,11 @@ function resolveHomeDir(app: App) {
   return process.env.HOME || os.homedir();
 }
 
-function resolveDesktopDir(app: App, homeDir = resolveHomeDir(app)) {
-  try {
-    const desktopPath = app.getPath("desktop")?.trim();
-    if (desktopPath) {
-      return desktopPath;
-    }
-  } catch {
-    // Fall through to the conventional Desktop location.
-  }
-  return path.join(homeDir, "Desktop");
-}
-
-function scoreRuntimeRoot(runtimeRoot: string) {
-  if (!fs.existsSync(runtimeRoot) || !fs.statSync(runtimeRoot).isDirectory()) {
-    return -1;
-  }
-  return ["agents", "registries", "teams", "chats", "skills-center"]
-    .filter((entry) => fs.existsSync(path.join(runtimeRoot, entry)))
-    .length;
-}
-
 function resolveDesktopRuntimeRoot(app: App) {
-  const homeDir = resolveHomeDir(app);
-  const preferredRuntimeRoot = resolveRuntimeRootPath({
+  return resolveRuntimeRootPath({
     platform: process.platform,
-    homePath: homeDir
+    homePath: resolveHomeDir(app)
   });
-  if (process.platform === "win32") {
-    return preferredRuntimeRoot;
-  }
-  const desktopDir = resolveDesktopDir(app, homeDir);
-  const legacyDesktopDir = path.join(homeDir, "Desktop");
-  const candidates = [preferredRuntimeRoot];
-  if (String(APP_BRAND.id) === "zenmind") {
-    candidates.push(
-      path.join(desktopDir, ".zenmind"),
-      path.join(legacyDesktopDir, ".zenmind"),
-      path.join(desktopDir, "zenmind-env"),
-      path.join(legacyDesktopDir, "zenmind-env"),
-      path.join(homeDir, "zenmind")
-    );
-  }
-  for (const candidate of candidates) {
-    if (scoreRuntimeRoot(candidate) > 0) {
-      return candidate;
-    }
-  }
-  return preferredRuntimeRoot;
 }
 
 export function getSkillsCenterDir(app: App) {

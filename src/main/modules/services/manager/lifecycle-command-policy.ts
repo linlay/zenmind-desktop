@@ -23,24 +23,7 @@ export function appendAgentPlatformDesktopDeployArgs(
   ];
 }
 
-export function appendAgentContainerHubDesktopDeployArgs(
-  command: string[],
-  layout: ServiceLayout
-) {
-  return [
-    ...command,
-    "--output-dir", layout.configDir
-  ];
-}
-
-export function appendIdentityCenterDesktopDeployArgs(command: string[], layout: ServiceLayout) {
-  return [
-    ...command,
-    "--output-dir", layout.configDir
-  ];
-}
-
-export function appendAgentWebclientDesktopDeployArgs(
+export function appendDesktopDeployOutputDir(
   command: string[],
   layout: ServiceLayout
 ) {

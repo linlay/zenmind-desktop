@@ -162,3 +162,49 @@ test('market install/uninstall share the bound lifecycle and failed initializati
   assert.equal(readInstalledRecords(app).some(record => record.id === pluginId), false);
   assert.equal(webs.webappManager.listInstalled(app).length, 0);
 });
+
+test('Agent ZIP upgrade and same-version reinstall synchronize the full owned Agent set', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-agent-upgrade-'));
+  const { app, services, plugins, webs } = createPluginTestRuntime(root);
+  const { resolveRuntimeRoot } = require('../dist-electron/main/infrastructure/filesystem/runtime-env-paths');
+  const { configurePluginResources, __testInternals: ownership } = require('../dist-electron/main/modules/plugins/resources');
+  const id = 'agent-upgrade-fixture';
+  registry.clearServices();
+  configurePluginResources({ callAgentPlatform: null });
+  t.after(async () => {
+    await webs.webappRuntime.stopAll(app);
+    configurePluginResources({ callAgentPlatform: null });
+    registry.clearServices();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  async function archive(version, entries) {
+    const zip = new JSZip();
+    zip.file(`${id}/manifest.json`, JSON.stringify({
+      pluginApiVersion: 1, id, name: 'Agent upgrade fixture', version,
+      runtime: { requiredPaths: ['manifest.json'] },
+      resources: { agents: entries.map(([key, name]) => ({ key, definition: { name, mode: 'GENERAL' } })) },
+      desktop: { bundleTopLevelDir: id }
+    }));
+    const file = path.join(root, `${version}.zip`);
+    fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
+    return file;
+  }
+  const first = await plugins.installFromArchive(app, await archive('v1.0.0', [['kept', 'Old'], ['retired', 'Old']]));
+  assert.equal(first.ok, true, first.message);
+  assert.equal((await services.getServiceState(app, id)).status, 'stopped');
+  const started = await services.startService(app, id);
+  assert.equal(started.ok, true, started.message);
+  const agentsRoot = path.join(resolveRuntimeRoot(app), 'agents');
+  const upgraded = await plugins.installFromArchive(app, await archive('v2.0.0', [['kept', 'Updated'], ['added', 'New']]));
+  assert.equal(upgraded.ok, true, upgraded.message);
+  assert.equal(fs.existsSync(path.join(agentsRoot, 'retired')), false);
+  assert.match(fs.readFileSync(path.join(agentsRoot, 'kept/agent.yml'), 'utf8'), /Updated/);
+  assert.ok(Object.values(ownership.readOwnership(app, id).agents).every(item => item.pluginVersion === 'v2.0.0'));
+  const reinstalled = await plugins.installFromArchive(app, await archive('v2.0.0', [['kept', 'Reinstalled'], ['added', 'New']]));
+  assert.equal(reinstalled.ok, true, reinstalled.message);
+  assert.match(fs.readFileSync(path.join(agentsRoot, 'kept/agent.yml'), 'utf8'), /Reinstalled/);
+  const empty = await plugins.installFromArchive(app, await archive('v3.0.0', []));
+  assert.equal(empty.ok, true, empty.message);
+  assert.deepEqual(fs.readdirSync(agentsRoot), []);
+  assert.deepEqual(ownership.readOwnership(app, id).agents, {});
+});

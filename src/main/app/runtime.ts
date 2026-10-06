@@ -109,9 +109,7 @@ export function createMainProcessRuntime() {
       servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId));
   const servicesIntegrationPorts = services.assembleServicesIntegration({
     get issueAgentAccessToken() { return identityTokenProvider; },
-    get servicesFacade() { return servicesFacade; },
     get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
-    get startupRestoreController() { return startupRestoreController; },
     get websFacade() { return websFacade; }
   });
   servicesFacade = createServicesFacade(servicesIntegrationPorts);
@@ -249,7 +247,7 @@ export function createMainProcessRuntime() {
     bundledEnvZipExists: bundledEnvZipExistsAtStartup,
     runtimeRootExistedAtStartup
   });
-  const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
+  const runtimeRootConflictDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
   let startupEnvImportFailureMessage: string | null = null;
   let nonCoreDesktopRuntimeStarted = false;
   let ssoCredentialDependentRuntimesStarted = false;
@@ -319,7 +317,7 @@ export function createMainProcessRuntime() {
     get envZipConflictNeedsDecision() { return envZipConflictNeedsDecision; },
     get requireEnvZipImportAtStartup() { return requireEnvZipImportAtStartup; },
     get runtimeRootAtProcessStart() { return runtimeRootAtProcessStart; },
-    get oldRootDecisionRef() { return oldRootDecisionRef; },
+    get runtimeRootConflictDecisionRef() { return runtimeRootConflictDecisionRef; },
     get startupRestoreController() { return startupRestoreController; },
     get appShellRuntime() { return appShellRuntime; }
   });
@@ -677,11 +675,8 @@ export function createMainProcessRuntime() {
       set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
       get appState() { return appState; },
       get startupPlatform() { return startupPlatform; },
-      get startupRestoreController() { return startupRestoreController; },
       get servicesRuntime() { return servicesRuntime; },
-      get servicesFacade() { return servicesFacade; },
-      get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
-      get startupPipeline() { return startupPipeline; },
+      get servicesIntegrationPorts() { return servicesIntegrationPorts; },
       get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
       set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
@@ -782,7 +777,7 @@ export function createMainProcessRuntime() {
         get petRuntime() { return petRuntime; },
         get enterpriseChatRuntime() { return enterpriseChatRuntime; },
         get desktopAppInfo() { return desktopAppInfo; },
-        get oldRootDecisionRef() { return oldRootDecisionRef; },
+        get runtimeRootConflictDecisionRef() { return runtimeRootConflictDecisionRef; },
         get isFirstDesktopInstall() { return isFirstDesktopInstall; },
         get bundledEnvZipExistsAtStartup() { return bundledEnvZipExistsAtStartup; },
         get runtimeRootExistedAtStartup() { return runtimeRootExistedAtStartup; },

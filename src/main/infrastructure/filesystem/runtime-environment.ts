@@ -8,3 +8,5 @@ export * from "./runtime-env-import";
 export * from "./runtime-env-reset";
 export * from "./runtime-environment-translator";
 export { applyProviderRegisterUpgradeInput } from "./runtime-environment-provider-register";
+
+export { applyCreationProfileUpgradeInput } from "./runtime-environment-creation";
