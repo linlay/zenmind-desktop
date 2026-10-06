@@ -11,6 +11,7 @@ export type BuildApplicationMenuOptions = {
   t: TranslateFunction;
   openSettings: () => void;
   openHelp: () => void;
+  toggleDesktopDevTools: () => void;
   helpEnabled?: boolean;
   requestCloseWindow: () => void;
   requestQuit: () => void;
@@ -35,6 +36,12 @@ export function popupWindowsApplicationMenu(window: BrowserWindow, request: unkn
 }
 
 export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
+  // Electron's default role inspects the focused guest, not the Desktop shell.
+  const desktopDevToolsItem: MenuItemConstructorOptions = {
+    label: options.t("menu.devTools"),
+    accelerator: options.platform === "darwin" ? "Alt+Command+I" : "Control+Shift+I",
+    click: options.toggleDesktopDevTools
+  };
   if (options.platform === "win32") {
     Menu.setApplicationMenu(null);
     windowsMenus.clear();
@@ -57,7 +64,7 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
       { role: "zoomIn", label: options.t("menu.zoomIn") },
       { role: "zoomOut", label: options.t("menu.zoomOut") },
       { type: "separator" },
-      { role: "toggleDevTools", label: options.t("menu.devTools") }
+      desktopDevToolsItem
     ]));
     if (options.helpEnabled) windowsMenus.set("help", Menu.buildFromTemplate([
       { label: options.t("nav.help"), click: options.openHelp },
@@ -146,7 +153,7 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
       submenu: [
         { role: "reload", label: options.t("webviewContextMenu.page.reload") },
         { role: "forceReload", label: options.t("menu.forceReload") },
-        { role: "toggleDevTools", label: options.t("menu.devTools") },
+        desktopDevToolsItem,
         { type: "separator" },
         { role: "resetZoom", label: options.t("menu.resetZoom") },
         { role: "zoomIn", label: options.t("menu.zoomIn") },

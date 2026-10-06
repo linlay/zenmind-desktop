@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   isDesktopCloseShortcut,
+  isDevToolsShortcut,
   resolveGlobalSearchCommandShortcut,
 } = require("../dist-electron/main/infrastructure/electron/platform-adapter.js");
 
@@ -111,4 +112,14 @@ test("Desktop close shortcut uses exact platform modifiers and keyDown only", ()
     isDesktopCloseShortcut("win32", { ...keyDown("w", { control: true }), type: "keyUp" }),
     false,
   );
+});
+
+test("Desktop DevTools shortcut matches the macOS Option dead key by physical key", () => {
+  const macDeadKey = { ...keyDown("Dead", { meta: true, alt: true }), code: "KeyI" };
+  assert.equal(isDevToolsShortcut("darwin", macDeadKey), true);
+  assert.equal(isDevToolsShortcut("darwin", { ...macDeadKey, shift: true }), false);
+  assert.equal(isDevToolsShortcut("darwin", { ...macDeadKey, isAutoRepeat: true }), false);
+  assert.equal(isDevToolsShortcut("darwin", { ...keyDown("i", { meta: true }), code: "KeyI" }), false);
+  assert.equal(isDevToolsShortcut("win32", { ...keyDown("I", { control: true, shift: true }), code: "KeyI" }), true);
+  assert.equal(isDevToolsShortcut("win32", { ...keyDown("i", { control: true }), code: "KeyI" }), false);
 });

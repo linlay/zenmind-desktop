@@ -27,13 +27,14 @@ type KeyboardShortcutInput = {
 };
 
 export function isDevToolsShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {
-  if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "i") {
+  if (input.type !== "keyDown" || input.isAutoRepeat) {
     return false;
   }
   if (platform === "darwin") {
-    return Boolean(input.meta && input.alt && !input.control && !input.shift);
+    // macOS Option+I is a dead key, so `key` is never "i"; `code` preserves the physical key.
+    return Boolean(input.code === "KeyI" && input.meta && input.alt && !input.control && !input.shift);
   }
-  return Boolean(input.control && input.shift && !input.meta && !input.alt);
+  return Boolean(input.key.toLowerCase() === "i" && input.control && input.shift && !input.meta && !input.alt);
 }
 
 export function isGlobalSearchShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {

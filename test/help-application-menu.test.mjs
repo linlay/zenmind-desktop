@@ -23,10 +23,10 @@ try {
   Module._load = originalLoad;
 }
 const noop = () => {};
-function build(platform, helpEnabled, t = (key) => key) {
+function build(platform, helpEnabled, t = (key) => key, toggleDesktopDevTools = noop) {
   templates.length = 0;
   buildApplicationMenu({ platform, helpEnabled, appName: "Test", t,
-    openSettings: noop, openHelp: noop, requestCloseWindow: noop,
+    openSettings: noop, openHelp: noop, toggleDesktopDevTools, requestCloseWindow: noop,
     requestQuit: noop, quitWithoutConfirmation: noop });
 }
 test("Windows removes unavailable Help including stale popup registrations and retains local About", async () => {
@@ -82,4 +82,19 @@ test("macOS retains its local native app menu without adding an unconfigured Hel
   build("darwin", false);
   assert(templates[0][0].submenu.some(item => item.role === "about"));
   assert(!templates[0].some(item => item.label === "nav.help"));
+});
+
+test("Desktop DevTools menu preserves platform shortcuts and ignores focused guest", () => {
+  for (const platform of ["darwin", "win32"]) {
+    let toggles = 0;
+    build(platform, false, key => key, () => { toggles += 1; });
+    const items = platform === "darwin"
+      ? templates[0].find(item => item.label === "menu.view").submenu
+      : templates[2];
+    const item = items.find(item => item.label === "menu.devTools");
+    assert.equal(item.role, undefined);
+    assert.equal(item.accelerator, platform === "darwin" ? "Alt+Command+I" : "Control+Shift+I");
+    item.click(null, { webContents: { toggleDevTools() { assert.fail("must not inspect focused guest"); } } });
+    assert.equal(toggles, 1);
+  }
 });

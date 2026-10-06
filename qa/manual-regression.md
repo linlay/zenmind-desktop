@@ -175,6 +175,11 @@
 - 系统全屏、WorkPanel 全屏及其切换期间、搜索或 guest 模态遮罩显示时，双击不得切换主窗口最大化状态。
 - Windows 从概览进入 WorkPanel 全屏，再通过顶部退出按钮或 Ctrl+Shift+F 退出，连续重复两次；最小化、最大化和关闭按钮必须恢复，退出后面板按钮恢复在标签栏，不覆盖运行状态或耗时。覆盖普通窗口和最大化窗口；macOS 同时回归原生全屏进入与退出。
 
+## Desktop 开发者工具
+
+- macOS 聚焦 Main Chat、Website 或 WorkPanel 后，按 `Cmd+Alt+I` 或选择视图菜单的开发者工具，确认检查的是 Desktop 主 renderer，Elements 可以选中主导航栏；Windows 对应 `Ctrl+Shift+I`。
+- `Cmd+Shift+D` / `Ctrl+Shift+D` 仍只打开当前 WebView 的独立 DevTools。
+
 ## Windows 主窗口系统栏
 
 - Windows 顶栏显示文件、编辑、视图、帮助，中英文与浅深色正常；各菜单可通过鼠标、Tab/Enter、方向键打开，Esc 关闭。编辑菜单对当前输入框或 WebView 的选区生效；设置、帮助、关于、缩放和开发者工具可用，关闭与退出沿用确认流程。弹出菜单不拖动窗口，不覆盖右侧窗口按钮；macOS 原生应用菜单不变。
