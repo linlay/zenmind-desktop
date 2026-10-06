@@ -1,3 +1,4 @@
+import type { DesktopPetImportResult } from "../../../shared/contracts";
 import type { DesktopAppearancePort } from "./appearance-port";
 import { type App, type BrowserWindow, type WebContents, type OpenDialogOptions, type SaveDialogOptions } from "electron";
 import {
@@ -97,6 +98,7 @@ export type DesktopActionBridgeOptions = {
   webappToolingWorkerPath?: string;
   emitWebappChanged?: (reason: DesktopWebappChangedReason, webappId: string) => void;
   desktopPet?: {
+    importPackage?: (filePath: string) => Promise<DesktopPetImportResult>;
     refreshState: () => DesktopPetState | Promise<DesktopPetState>;
     saveSettings: (input: { enabled?: boolean; appearanceId?: string }) => DesktopPetState | Promise<DesktopPetState>;
     show: () => DesktopPetState | Promise<DesktopPetState>;
@@ -142,6 +144,7 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
   "desktop.pet.show",
   "desktop.pet.hide",
   "desktop.pet.set",
+  "desktop.pet.import",
   "desktop.copilot.setPagePreference",
   // Website entries and Kanban.
   "desktop.website.add",

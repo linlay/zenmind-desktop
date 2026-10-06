@@ -1,9 +1,8 @@
 import { resolveRemovablePetPath } from "./remove-package";
-import path from "node:path";
 import { dialog, shell, type App, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import type { DesktopPetImportResult, DesktopPetRemoveResult, DesktopPetState } from "../../../shared/contracts";
-import { getDesktopPetsDataRoot } from "../../infrastructure/filesystem/user-paths";
-import { installLocalPetPackage, PetPackageError } from "./pet-package";
+import { PetPackageError } from "./pet-package";
+import type { PetPackageService } from "./package-service";
 export function petImportDialogOptions(platform: NodeJS.Platform): OpenDialogOptions {
   const filters = [{ name: "Desktop Pet ZIP", extensions: ["zip"] }];
   // Windows avoids adding imported packages to Explorer recent documents.
@@ -15,12 +14,13 @@ export function petImportDialogOptions(platform: NodeJS.Platform): OpenDialogOpt
 }
 export function registerPetImportIpcHandlers(ipcMain: IpcMain, options: {
   app: App;
+  packageService: PetPackageService;
   platform: NodeJS.Platform;
   getMainWindow: () => BrowserWindow | null;
   refreshState: () => DesktopPetState;
   onRemoved: (appearanceId: string) => void;
 }) {
-  let queue: Promise<unknown> = Promise.resolve();
+  const packages = options.packageService;
   function owner(event: IpcMainInvokeEvent) {
     const win = options.getMainWindow();
     if (!win || win.isDestroyed() || win.webContents.isDestroyed() || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
@@ -42,9 +42,7 @@ export function registerPetImportIpcHandlers(ipcMain: IpcMain, options: {
         return { ok: false, error: "removeFailed" };
       }
     };
-    const result = queue.then(run, run);
-    queue = result.catch(() => { });
-    return result;
+    return packages.run(run);
   });
   for (const kind of ["Package", "DroppedPackage"] as const) {
     ipcMain.handle(`desktopPet.import${kind}`, (event, input): Promise<DesktopPetImportResult> => {
@@ -62,19 +60,13 @@ export function registerPetImportIpcHandlers(ipcMain: IpcMain, options: {
               return { ok: true, cancelled: true, state: options.refreshState() };
             source = selected.filePaths[0];
           }
-          // Drops never open a picker or accept renderer-supplied relative paths.
-          if (typeof source !== "string" || !path.isAbsolute(source) || path.extname(source).toLowerCase() !== ".zip")
-            throw new PetPackageError("invalidPackage");
-          const importedAppearanceId = await installLocalPetPackage(source, getDesktopPetsDataRoot(options.app, options.platform), () => { owner(event); });
-          return { ok: true, importedAppearanceId, state: options.refreshState() };
+          return await packages.importPackage(source, () => { owner(event); });
         }
         catch (error) {
           return { ok: false, error: error instanceof PetPackageError ? error.code : "storageFailed" };
         }
       };
-      const result = queue.then(run, run);
-      queue = result.catch(() => { });
-      return result;
+      return run();
     });
   }
 }

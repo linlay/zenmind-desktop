@@ -1,3 +1,4 @@
+import type { DesktopPetImportResult } from "../../../shared/contracts";
 import type { DesktopAppearancePort } from "./appearance-port";
 import type { SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
@@ -43,6 +44,7 @@ export interface DesktopActionContextDependencies {
   hasTunnelWebappSubscriber?: () => boolean;
   emitWebappChanged?: (...args: any[]) => unknown;
   desktopPet?: {
+    importPackage: (filePath: string) => Promise<DesktopPetImportResult>;
     refreshState: (...args: any[]) => unknown;
     showWindow: (...args: any[]) => unknown;
     hideWindow: (...args: any[]) => unknown;
@@ -94,6 +96,7 @@ export function createDesktopActionOptions(
     emitWebappChanged: dependencies.emitWebappChanged,
     desktopPet: dependencies.desktopPet
       ? {
+          importPackage: (filePath: string) => dependencies.desktopPet!.importPackage(filePath),
           refreshState: () => dependencies.desktopPet?.refreshState(),
           saveSettings: (input: unknown) => dependencies.desktopPet?.saveSettings(input),
           show: () => dependencies.desktopPet?.showWindow(),

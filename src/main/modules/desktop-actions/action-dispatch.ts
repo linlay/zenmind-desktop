@@ -585,8 +585,9 @@ export async function executeAction(
     case "desktop.pet.show":
     case "desktop.pet.hide":
     case "desktop.pet.list":
+    case "desktop.pet.import":
     case "desktop.pet.set":
-      return executePetAction(options, action, args);
+      return executePetAction(options, action, args, invocation);
     default:
       return fail(action, "unknown_action", `unknown action: ${action}`);
   }

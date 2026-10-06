@@ -78,6 +78,11 @@ export interface DesktopPetVisibilityResult {
   enabled: boolean;
 }
 
+export interface DesktopPetImportActionResult {
+  appearanceId: string;
+  displayName: string;
+}
+
 export interface DesktopPetSetResult {
   appearanceId: string;
 }
@@ -403,6 +408,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.pet.show", kind: "execute", category: "pet", description: "Show the Desktop pet. Returns: { enabled }." },
   { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet. Returns: { enabled }." },
   { name: "desktop.pet.list", kind: "read", category: "pet", description: "List local Desktop pet appearance summaries. Returns: { appearanceId, appearances: [{ id, displayName, description }] }." },
+  { name: "desktop.pet.import", kind: "execute", category: "pet", description: "Import a pet ZIP from an absolute local Desktop-host filePath. Args: { filePath }. Installs only; does not select or show the pet or replace existing packages. Returns: { appearanceId, displayName }." },
   { name: "desktop.pet.set", kind: "execute", category: "pet", description: "Set the Desktop pet appearance. Returns: { appearanceId }." }
 ] as const satisfies readonly DesktopActionDefinition[];
 

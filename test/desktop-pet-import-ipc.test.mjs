@@ -19,8 +19,11 @@ function harness({picker,install,trash,platform="darwin"}={}){
     id.includes('user-paths')?{getDesktopPetsDataRoot:()=>'/tmp/test-pets'}:realRequire(id);
   vm.runInNewContext('(function(require,module,exports){'+fs.readFileSync(file,'utf8')+'\n})',{process})(req,module,module.exports);
   const state={enabled:false,appearanceId:'classic',appearanceOptions:[]};
-  module.exports.registerPetImportIpcHandlers({handle:(key,fn)=>handlers.set(key,fn)},{app:{},platform,onRemoved:()=>calls.push('removed'),getMainWindow:()=>current,refreshState:()=>state});
-  return {handlers,calls,event,state,close:()=>{current=null;}};
+  const serviceModule={exports:{}};
+  vm.runInNewContext('(function(require,module,exports){'+fs.readFileSync(path.resolve('dist-electron/main/modules/pet/package-service.js'),'utf8')+'\n})',{process})(req,serviceModule,serviceModule.exports);
+  const packageService=serviceModule.exports.createPetPackageService({app:{},platform,refreshState:()=>state});
+  module.exports.registerPetImportIpcHandlers({handle:(key,fn)=>handlers.set(key,fn)},{app:{},platform,packageService,onRemoved:()=>calls.push('removed'),getMainWindow:()=>current,refreshState:()=>state});
+  return {handlers,calls,event,state,packageService,close:()=>{current=null;}};
 }
 test('only the main window top frame can import',()=>{
   const h=harness(),run=h.handlers.get('desktopPet.importPackage');
@@ -74,4 +77,19 @@ test('queued deletion rechecks owner before touching storage',async()=>{
  const deleting=h.handlers.get('desktopPet.removePackage')(h.event,'user:test');
  await new Promise(setImmediate);h.close();finish('user:test');await importing;
  assert.equal((await deleting).ok,false);assert.deepEqual(h.calls,['install']);
+});
+
+test('action and IPC imports share the queue with removal',async()=>{
+ let finish;let count=0;const h=harness({install:async()=>{if(++count===1)await new Promise(r=>finish=r);return 'user:test';}});
+ const a=h.packageService.importPackage('/tmp/action.zip');
+ const b=h.handlers.get('desktopPet.importDroppedPackage')(h.event,'/tmp/drop.zip');
+ const c=h.handlers.get('desktopPet.removePackage')(h.event,'user:test');
+ await new Promise(setImmediate);assert.deepEqual(h.calls,['install']);finish();
+ await Promise.all([a,b,c]);assert.deepEqual(h.calls,['install','install','trash','removed']);
+ assert.equal(h.state.appearanceId,'classic');assert.equal(h.state.enabled,false);
+});
+test('failed import does not poison the shared queue',async()=>{
+ let count=0;const h=harness({install:async()=>{if(++count===1)throw Error('failed');return 'user:test';}});
+ await assert.rejects(h.packageService.importPackage('/tmp/bad.zip'));
+ assert.equal((await h.packageService.importPackage('/tmp/good.zip')).importedAppearanceId,'user:test');
 });

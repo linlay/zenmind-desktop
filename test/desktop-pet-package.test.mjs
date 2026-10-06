@@ -96,3 +96,12 @@ test('removal resolves only catalog user IDs, refusing built-ins, traversal and 
  assert.throws(()=>resolveRemovablePetPath(app,'user:test-pet'));
  assert.ok(fs.existsSync(path.join(outside,'pet.json')));
 });
+
+test('pet import path validation uses the explicit Desktop host platform',()=>{
+ const {isDesktopPetArchivePath}=require('../dist-electron/main/modules/pet/package-service.js');
+ assert.equal(isDesktopPetArchivePath('/Users/example/熊猫.pet.zip','darwin'),true);
+ assert.equal(isDesktopPetArchivePath('C:\\Users\\example\\熊猫.pet.zip','win32'),true);
+ for(const p of ['C:pet.zip','\\\\host\\share\\pet.zip','\\\\?\\C:\\pet.zip','C:\\pet.zip:stream','/tmp/pet.zip']) assert.equal(isDesktopPetArchivePath(p,'win32'),false,p);
+ for(const p of ['relative.zip','@chat/pet.zip','https://example.test/pet.zip','file:///tmp/pet.zip','//host/pet.zip','/tmp/pet.zip\0']) assert.equal(isDesktopPetArchivePath(p,'darwin'),false,p);
+ assert.equal(isDesktopPetArchivePath('/tmp/pet.zip','linux'),false);
+});

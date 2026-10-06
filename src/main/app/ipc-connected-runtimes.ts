@@ -160,6 +160,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     getMainWindow: options.getMainWindow,
     platform: options.platform,
     app,
+    packageService: petRuntime.packageService,
     getSettings: petRuntime.getSettings,
     saveSettingsInState: petRuntime.saveSettings,
     getWindow: petRuntime.getWindow,

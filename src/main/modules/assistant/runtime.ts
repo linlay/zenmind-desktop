@@ -1,3 +1,4 @@
+import type { DesktopPetImportResult } from "../../../shared/contracts";
 import { AwcpGuestBridge, acquireWorkPanelAwcpScope, type BrowserSurfaceRegistry, type SiteControlScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type {
@@ -45,6 +46,7 @@ export type AssistantBridgeRuntimeOptions = {
   emitAssistantNavigationPushEvent: (event: AssistantNavigationPushEvent) => void;
   onTunnelConnected?: () => Promise<unknown> | unknown;
   desktopPet: {
+    importPackage: (filePath: string) => Promise<DesktopPetImportResult>;
     refreshState: (...args: any[]) => unknown;
     showWindow: (...args: any[]) => unknown;
     hideWindow: (...args: any[]) => unknown;

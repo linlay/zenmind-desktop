@@ -4,3 +4,6 @@ export { registerDesktopPetIpcHandlers } from "./ipc";
 export { registerDesktopPetAssetProtocol, registerDesktopPetAssetProtocolScheme } from "./pet-asset-protocol";
 export { createDesktopPetRuntime } from "./runtime";
 export type { DesktopPetRuntime } from "./runtime";
+
+export { isDesktopPetArchivePath } from "./package-service";
+export { PetPackageError } from "./pet-package";

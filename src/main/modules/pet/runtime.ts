@@ -1,3 +1,4 @@
+import { createPetPackageService } from "./package-service";
 import { Menu, type App, type BrowserWindow, type MenuItemConstructorOptions, type Rectangle } from "electron";
 import type {
   AssistantNavAgentItemsResult,
@@ -89,6 +90,7 @@ function normalizeDesktopPetRendererWindowMode(mode: unknown): DesktopPetWindowM
 }
 
 export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
+  const packageService = createPetPackageService({app: options.app, platform: options.platform, refreshState: () => refreshState()});
   type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
   const state = {
     desktopPetWindow: null as BrowserWindow | null,
@@ -823,6 +825,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   return {
+    packageService,
+    importPackage: packageService.importPackage,
     getSettings: () => state.desktopPetSettings,
     reloadSettings: () => {
       state.desktopPetSettings = readDesktopPetStoredState(options.app, options.platform);

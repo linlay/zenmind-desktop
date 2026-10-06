@@ -124,7 +124,7 @@ export interface AssembleAssistantRuntimeDependencies {
   readonly showFileDialog: AppShellRuntime["showFileDialog"];
   readonly showSaveDialog: AppShellRuntime["showSaveDialog"];
   readonly openLogViewerWindow: ReturnType<typeof createLogsRuntime>["openLogViewerWindow"];
-  readonly petRuntime: Pick<DesktopPetRuntime, "listKanbanLocalAgents" | "refreshState" | "showWindow" | "hideWindow" | "saveSettings">;
+  readonly petRuntime: Pick<DesktopPetRuntime, "importPackage" | "listKanbanLocalAgents" | "refreshState" | "showWindow" | "hideWindow" | "saveSettings">;
   readonly emitKanbanChanged: () => void;
   readonly emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
   readonly emitAssistantNavigationPushEvent: (event: AssistantNavigationPushEvent) => void;
@@ -168,6 +168,7 @@ export function assembleAssistantRuntime(dependencies: AssembleAssistantRuntimeD
     emitAssistantNavigationPushEvent: dependencies.emitAssistantNavigationPushEvent,
     onTunnelConnected: () => dependencies.websFacade.restorePublishedWebapps(app),
     desktopPet: {
+      importPackage: dependencies.petRuntime.importPackage,
       refreshState: () => dependencies.petRuntime.refreshState(),
       showWindow: () => dependencies.petRuntime.showWindow(),
       hideWindow: () => dependencies.petRuntime.hideWindow(),

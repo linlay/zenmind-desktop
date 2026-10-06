@@ -3716,3 +3716,42 @@ test("Platform management exemptions preserve public and heavy-action confirmati
   assert.equal(confirmations.length, 13);
   assert.equal(created, 1);
 });
+
+test("pet import returns only identity, preserves selection, and only Platform bypasses host confirmation", async t => {
+  const { options, calls } = createDesktopActionOptions(t);
+  options.platform = 'darwin';
+  let imports = 0, confirmations = 0;
+  const before = await options.desktopPet.refreshState();
+  options.desktopPet.importPackage = async filePath => {
+    assert.equal(filePath, '/tmp/panda.pet.zip'); imports++;
+    return {ok:true, importedAppearanceId:'user:dario', state:before};
+  };
+  options.getMainWindow = () => ({isDestroyed:()=>false});
+  options.confirmRendererAction = async request => { confirmations++; return {requestId:request.requestId,decision:'cancel'}; };
+  const request={action:'desktop.pet.import',args:{filePath:'/tmp/panda.pet.zip'}};
+  const result=await handleAgentPlatformDesktopActionRequest(options,request);
+  assert.equal(result.ok,true,JSON.stringify(result));
+  assert.deepEqual(result.result,{appearanceId:'user:dario',displayName:'Dario'});
+  assert.equal(imports,1);assert.equal(confirmations,0);assert.deepEqual(calls.saveSettings,[]);
+  assert.equal((await options.desktopPet.refreshState()).appearanceId,before.appearanceId);
+  const denied=await handleDesktopActionRequest(options,request);
+  assert.equal(denied.error.code,'user_cancelled');assert.equal(confirmations,1);assert.equal(imports,1);
+  const {executePetAction}=require('../dist-electron/main/modules/desktop-actions/pet-actions.js');
+  const foreign=await executePetAction(options,request.action,request.args,{kind:'webappPage',webappId:'foreign'});
+  assert.equal(foreign.error.code,'forbidden');assert.equal(imports,1);
+});
+
+test("pet import validates paths and does not leak filesystem errors", async t => {
+  const {options}=createDesktopActionOptions(t);options.platform='darwin';let imports=0;
+  options.desktopPet.importPackage=async()=>{imports++;throw Error('/private/secret/path');};
+  for(const args of [{filePath:'relative.zip'},{filePath:'https://example.test/a.zip'},{filePath:'/tmp/a.zip',apply:true}]) {
+    const r=await handleAgentPlatformDesktopActionRequest(options,{action:'desktop.pet.import',args});
+    assert.equal(r.error.code,'invalid_args');
+  }
+  assert.equal(imports,0);
+  const r=await handleAgentPlatformDesktopActionRequest(options,{action:'desktop.pet.import',args:{filePath:'/tmp/panda.zip'}});
+  assert.equal(r.error.code,'storageFailed');assert.ok(!JSON.stringify(r).includes('/private/secret'));
+  const {PetPackageError}=require('../dist-electron/main/modules/pet/pet-package.js');
+  options.desktopPet.importPackage=async()=>{throw new PetPackageError('packageExists');};
+  assert.equal((await handleAgentPlatformDesktopActionRequest(options,{action:'desktop.pet.import',args:{filePath:'/tmp/panda.zip'}})).error.code,'packageExists');
+});
