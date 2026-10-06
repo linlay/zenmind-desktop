@@ -112,6 +112,12 @@ export function registerSidebarContextMenuIpcHandlers(
       if (policy.length === 0) {
         return { actionId: null };
       }
+      const resolveLabel = (itemId: SidebarContextMenuLabelId) => {
+        const label = t(resolveSidebarContextMenuLabelKey(itemId, options.platform));
+        // Electron exposes no menu min-width. Full-width trailing spaces give
+        // Website/WebApp labels a four-character floor in native menu layout.
+        return request.target.kind === "web" ? label.padEnd(4, "\u3000") : label;
+      };
 
       return await new Promise<SidebarContextMenuPopupResult>((resolve) => {
         let settled = false;
@@ -124,7 +130,7 @@ export function registerSidebarContextMenuIpcHandlers(
           item: SidebarContextMenuPolicyActionItem
         ): MenuItemConstructorOptions => ({
           id: item.id,
-          label: t(resolveSidebarContextMenuLabelKey(item.id, options.platform)),
+          label: resolveLabel(item.id),
           type: item.type,
           checked: item.checked,
           enabled: item.enabled,
@@ -140,7 +146,7 @@ export function registerSidebarContextMenuIpcHandlers(
           if ("submenu" in item) {
             template.push({
               id: item.id,
-              label: t(resolveSidebarContextMenuLabelKey(item.id, options.platform)),
+              label: resolveLabel(item.id),
               enabled: item.enabled,
               submenu: item.submenu.map(buildActionTemplate)
             });
