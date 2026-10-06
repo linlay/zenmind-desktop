@@ -87,6 +87,7 @@ test("buildProjectAgentCreateRequest builds a minimal CODER project create reque
   const request = buildProjectAgentCreateRequest("coder", "/Users/demo/Project/agent-coder");
 
   assert.deepEqual(request, {
+    isProject: true,
     definition: {
       mode: "CODER",
       runtimeConfig: {
@@ -107,6 +108,7 @@ test("buildProjectAgentCreateRequest includes ACP only for CODER projects", () =
   });
 
   assert.deepEqual(request, {
+    isProject: true,
     definition: {
       mode: "CODER",
       engine: "acp",
@@ -125,6 +127,7 @@ test("buildProjectAgentCreateRequest builds a minimal KBASE project create reque
   });
 
   assert.deepEqual(request, {
+    isProject: true,
     definition: {
       mode: "KBASE",
       runtimeConfig: {
@@ -145,6 +148,7 @@ test("legacy buildCoderProjectAgentCreateRequest delegates to the minimal CODER 
   });
 
   assert.deepEqual(request, {
+    isProject: true,
     definition: {
       mode: "CODER",
       engine: "acp",
@@ -170,6 +174,7 @@ test("assistant.createProject creates a KBASE project without updating generated
   assert.equal(result.agentKey, "created-agent");
   assert.equal(calls[0].path, "/api/admin/agents/create");
   assert.deepEqual(calls[0].options.body, {
+    isProject: true,
     definition: {
       mode: "KBASE",
       runtimeConfig: {
@@ -195,6 +200,7 @@ test("assistant.createProject creates a CODER ACP project with the simplified pa
   assert.equal(result.ok, true);
   assert.equal(calls[0].path, "/api/admin/agents/create");
   assert.deepEqual(calls[0].options.body, {
+    isProject: true,
     definition: {
       mode: "CODER",
       engine: "acp",
@@ -238,6 +244,7 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
   assert.equal(result.ok, true);
   assert.equal(calls[0].path, "/api/admin/agents/create");
   assert.deepEqual(calls[0].options.body, {
+    isProject: true,
     definition: {
       mode: "CODER",
       engine: "acp",
@@ -440,9 +447,11 @@ test("assistant.reorderProjects maps stale and Platform failures to structured r
 test("buildProjectAgentCreateRequest carries client configuration and isolates ACP", () => {
   const definition = { skillConfig: { skills: ["local-docx"] }, connectorConfig: { connectors: ["builtin.dbx"] } };
   assert.deepEqual(buildProjectAgentCreateRequest("general", "/project", { definition, modelKey: " chosen " }), {
+    isProject: true,
     definition: { ...definition, mode: "GENERAL", runtimeConfig: {workspaceRoot: "/project"}, modelConfig: {modelKey: "chosen"} }
   });
   assert.deepEqual(buildProjectAgentCreateRequest("acp", "/project", { definition, acpBridgeId: "codex", modelKey: "ignored" }), {
+    isProject: true,
     definition: {mode: "CODER", engine: "acp", runtimeConfig: {workspaceRoot: "/project", acpBridgeId: "codex"}}
   });
 });
