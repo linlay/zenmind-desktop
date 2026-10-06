@@ -40,7 +40,7 @@ export function buildProjectAgentCreateRequest(
     definition.modelConfig = { modelKey };
   }
 
-  return { definition };
+  return { isProject: true, definition };
 }
 
 export function buildCoderProjectAgentCreateRequest(
