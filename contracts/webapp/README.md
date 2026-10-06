@@ -25,7 +25,7 @@ CLI 请求为 `{connectorId,adapter:"cli",args:string[],idempotencyKey?,credenti
 
 MCP 请求为 `{connectorId,adapter:"mcp",component,toolName,arguments,idempotencyKey?,credentialRevision?}`；返回相同身份字段及 `mcp` 原生结果（content/structuredContent/isError），不要求只有结构化对象。只访问已配置组件和实际存在、未禁用工具，禁止自定义 URL。
 
-`connector.list()` 返回已安装且具备 CLI/MCP 的连接器及 adapters；`describe({connectorId})` 返回 revision、adapters、components。revision 为描述信息，执行端自己冻结并复核包指纹，不要求应用维护业务 operation revision。
+`connector.list()` 读取 Platform 的 `/api/connectors` 使用目录，默认连接器由 Platform 过滤，返回 `{items:[{connectorId,name}]}`；列表不包含版本或 adapter 信息。需要执行详情时按需调用 `connector.describe({connectorId})`，返回 revision、adapters、components。revision 为描述信息，执行端自己冻结并复核包指纹，不要求应用维护业务 operation revision。
 
 收到 `connector_auth_required` / `connector_auth_expired` 后显示登录按钮，在新的用户点击中调用 `desktop.authenticateConnector({connectorId})`，只得到 `{status:'authorized'|'cancelled'|'failed'}`。认证接口不接受 URL、回调、账号或 token。成功后由业务显式重试原只读请求；SDK 不自动重放。
 

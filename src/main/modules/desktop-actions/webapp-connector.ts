@@ -151,14 +151,13 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
       } else throw new ConnectorError("invalid_arguments");
     }
     if (action === "connector.list") {
-      // Discovery uses the installed catalog, never an app-authored allowlist.
+      // Platform's usage catalog excludes presets. Adapter details are read on demand through describe.
       const catalog = await request(identity.baseUrl, identity.token, "/api/connectors", "GET", undefined, false, context.signal);
       if (!Array.isArray(catalog?.connectors)) throw new ConnectorError("invalid_platform_response");
       const items = catalog.connectors.map((entry: any) => {
         if (typeof entry?.id !== "string" || typeof entry.name !== "string") throw new ConnectorError("invalid_platform_response");
-        return { connectorId: entry.id, name: entry.name, packageVersion: entry.version,
-          adapters: [...(entry.hasCli ? ["cli"] : []), ...(entry.hasMcp ? ["mcp"] : [])] };
-      }).filter((entry: { adapters: string[] }) => entry.adapters.length > 0);
+        return { connectorId: entry.id, name: entry.name };
+      });
       await context.check();
       return { ok: true, action, result: { items } };
     }

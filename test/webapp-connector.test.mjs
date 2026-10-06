@@ -185,14 +185,16 @@ test('connector login needs no manifest declaration',async()=>{
  assert.equal(result.result.status,'authorized');assert.equal(calls.length,1);
 });
 
-test('connector discovery lists installed adapters without exposing catalog internals',async()=>{
+for(const kind of ['webappPage','webappBackend'])test(`${kind}: connector discovery uses the minimal usage catalog without management reads`,async()=>{
  const options=fixture();confirm=()=>{throw Error('unexpected consent')};
- fetcher=async(url,request)=>{assert.equal(new URL(url).pathname,'/api/connectors');assert.equal(request.method,'GET');return response({connectors:[
-  {id:'wecom',name:'WeCom',version:'1.0.0',hasCli:true,hasMcp:true,preparation:{path:'/private'}},
-  {id:'no-adapter',name:'Other',hasCli:false,hasMcp:false}
+ let calls=0;
+ fetcher=async(url,request)=>{calls++;assert.equal(new URL(url).pathname,'/api/connectors');assert.equal(request.method,'GET');return response({connectors:[
+  {id:'wecom',name:'WeCom',description:'Messaging'},
+  {id:'docs',name:'Documents',iconUrl:'/api/connectors/icon?id=docs',mutuallyExclusiveWith:['other']}
  ]})};
- const result=await api.executeWebappConnector(options,'connector.list',{}, {kind:'webappPage',webappId:'one'});
- assert.deepEqual(result.result,{items:[{connectorId:'wecom',name:'WeCom',packageVersion:'1.0.0',adapters:['cli','mcp']}]});
+ const result=await api.executeWebappConnector(options,'connector.list',{}, {kind,webappId:'one'});
+ assert.equal(result.ok,true);assert.equal(calls,1);
+ assert.deepEqual(result.result,{items:[{connectorId:'wecom',name:'WeCom'},{connectorId:'docs',name:'Documents'}]});
 });
 
 test('CLI and MCP execute from either application transport; obsolete payloads remain invalid',async()=>{
