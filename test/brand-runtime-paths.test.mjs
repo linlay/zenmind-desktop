@@ -947,13 +947,9 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
     electronBuilderConfig.directories.output === "dist/cutej",
     true
   );
-  assert.equal(
-    electronBuilderConfig.extraResources.some((item) => item.from === desktopBuiltinServicesRelativePath() && item.to === "services"),
-    true
-  );
-  assert.equal(
-    electronBuilderConfig.extraResources.some((item) => item.from === brandBuildRelativePath(brand, "resources", "services")),
-    false
+  assert.deepEqual(
+    electronBuilderConfig.extraResources.filter((item) => item.to === "services"),
+    [{ from: desktopBuiltinServicesRelativePath(), to: "services" }]
   );
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.to === "demo"),

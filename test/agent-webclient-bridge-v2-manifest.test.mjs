@@ -61,3 +61,36 @@ test("Frame Port bundle rejects old or partially upgraded Agent WebClient manife
     /authenticated \/api route/u,
   );
 });
+
+test("Frame Port rejects duplicate /api routes regardless of their order or authentication", () => {
+  for (const routes of [
+    [apiRoute, { ...apiRoute }],
+    [apiRoute, { ...apiRoute, auth: undefined }],
+    [{ ...apiRoute, auth: undefined }, apiRoute],
+  ]) {
+    assert.throws(() => normalize(manifest(routes)), /requires exactly one/u);
+  }
+});
+
+test("Frame Port rejects missing API routes and forbidden proxy routes", () => {
+  for (const routes of [
+    [],
+    [voiceRoute],
+    [{ ...apiRoute, targetEnv: "OTHER_URL" }],
+    [{ ...apiRoute, http: false }],
+    [apiRoute, { match: "prefix", path: "/auth", targetEnv: "AUTH_URL" }],
+    [apiRoute, { match: "exact", path: "/realtime", targetEnv: "BASE_URL", websocket: true }],
+  ]) {
+    assert.throws(() => normalize(manifest(routes)), /Frame Port manifest/u);
+  }
+});
+
+test("Frame Port consolidation preserves hosting defaults and service selection", () => {
+  const value = manifest([]);
+  delete value.desktop.hosting;
+  assert.doesNotThrow(() => normalize(value));
+  const unmanaged = manifest([]);
+  unmanaged.frontend.hostManaged = false;
+  assert.doesNotThrow(() => normalize(unmanaged));
+  assert.doesNotThrow(() => normalize({ ...manifest([]), id: "another-service" }));
+});

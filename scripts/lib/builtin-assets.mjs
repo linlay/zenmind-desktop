@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { desktopBuiltinServicesDir } from "./desktop-resources.mjs";
 import { runPlatformBuiltinsManifest } from "./platform-builtins.js";
+import { getPlatformFramePortRoutesError } from "../../src/main/support/manifest/platform-frame-port-policy.js";
 
 // monorepo 根目录：当前仓库的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -90,23 +91,6 @@ function readDirectoryEntries(directoryPath, { optional = false } = {}) {
       return [];
     }
     throw error;
-  }
-}
-
-function cleanupLegacyBrandScopedServiceAssets(projectRoot) {
-  const brandsRoot = path.join(projectRoot, "build", "brands");
-  if (!fs.existsSync(brandsRoot)) {
-    return;
-  }
-
-  for (const brandEntry of readDirectoryEntries(brandsRoot, { optional: true })) {
-    if (!brandEntry.isDirectory()) {
-      continue;
-    }
-    fs.rmSync(path.join(brandsRoot, brandEntry.name, "resources", "services"), {
-      recursive: true,
-      force: true
-    });
   }
 }
 
@@ -1058,34 +1042,13 @@ function validateAgentWebclientPlatformFramePortManifest(service, manifest, sour
   if (service.id !== "agent-webclient") {
     return;
   }
-  const routes = manifest?.desktop?.hosting?.proxyRoutes;
-  const fail = (reason) => {
+  const reason = getPlatformFramePortRoutesError(manifest?.desktop?.hosting?.proxyRoutes);
+  if (reason) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
         `Platform Frame Port manifest ${reason}.\n` +
         `Please rebuild and atomically publish the Frame Port agent-webclient bundle.`
     );
-  };
-  if (!Array.isArray(routes)) {
-    fail("is missing desktop.hosting.proxyRoutes");
-  }
-  if (routes.some((route) => route?.path === "/auth" || route?.path === "/ws")) {
-    fail("must not expose /auth or /ws");
-  }
-  const apiRoutes = routes.filter((route) => route?.match === "prefix" && route?.path === "/api");
-  const apiRoute = apiRoutes[0];
-  if (
-    apiRoutes.length !== 1 ||
-    apiRoute?.targetEnv !== "BASE_URL" ||
-    apiRoute?.auth !== "agent-platform-access-token" ||
-    apiRoute?.http !== true ||
-    apiRoute?.websocket === true ||
-    (Array.isArray(apiRoute?.ssePaths) && apiRoute.ssePaths.length > 0)
-  ) {
-    fail("requires exactly one authenticated HTTP-only /api route without SSE overrides");
-  }
-  if (routes.some((route) => route?.targetEnv === "BASE_URL" && route?.websocket === true)) {
-    fail("must not expose an Agent Platform WebSocket route");
   }
 }
 
@@ -1272,8 +1235,6 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
   });
 
   writeSyncedAssetManifest(outputRoot, manifest);
-
-  cleanupLegacyBrandScopedServiceAssets(projectRoot);
 
   return manifest;
 }
