@@ -60,7 +60,11 @@ function normalizeConfiguredRuntimeRoot(value: string | undefined, platform: Nod
   if (!isAbsolute) {
     return "";
   }
-  return pathApi.resolve(expanded);
+  const resolved = pathApi.resolve(expanded);
+  if (pathApi.basename(resolved).toLowerCase() !== APP_BRAND.paths.runtimeRootDirName.toLowerCase()) {
+    return "";
+  }
+  return resolved;
 }
 
 function windowsPowerShellPath() {

@@ -72,7 +72,6 @@ function registerProjectHandlers({
     emitAssistantAttachmentProgress: null,
     getAssistantSettings: null,
     saveAssistantSettings: null,
-    getAgentPlatformMinimaxSettingsPublic: null,
     resolveAssistantAttachmentPath: null,
     createAssistantAttachmentFromPastedImage: null,
     cancelAssistantAttachmentTask: null,
@@ -438,52 +437,12 @@ test("assistant.reorderProjects maps stale and Platform failures to structured r
   assert.equal(platformResult.message, "agent-platform rejected order");
 });
 
-test("buildProjectAgentCreateRequest builds general, external-engine and template requests", () => {
-  assert.deepEqual(
-    buildProjectAgentCreateRequest("general", "/Users/demo/Project/notes", {
-      modelKey: " picked-model ",
-      capabilityGroups: ["office", " web-data ", "office", ""]
-    }),
-    {
-      definition: {
-        mode: "GENERAL",
-        runtimeConfig: { workspaceRoot: "/Users/demo/Project/notes" },
-        modelConfig: { modelKey: "picked-model" }
-      },
-      capabilityGroups: ["office", "web-data"]
-    }
-  );
-
-  // Deselecting every group still sends the field so Agent Platform applies
-  // the project-creation rules and the type's base tools.
-  assert.deepEqual(
-    buildProjectAgentCreateRequest("kbase", "/Users/demo/Knowledge/docs", { capabilityGroups: [] }),
-    {
-      definition: { mode: "KBASE", runtimeConfig: { workspaceRoot: "/Users/demo/Knowledge/docs" } },
-      capabilityGroups: []
-    }
-  );
-
-  // The external engine never receives a model or capability groups.
-  assert.deepEqual(
-    buildProjectAgentCreateRequest("acp", "/Users/demo/Project/acp", {
-      acpBridgeId: "codex",
-      modelKey: "picked-model",
-      capabilityGroups: ["office"]
-    }),
-    {
-      definition: {
-        mode: "CODER",
-        engine: "acp",
-        runtimeConfig: { workspaceRoot: "/Users/demo/Project/acp", acpBridgeId: "codex" }
-      },
-      capabilityGroups: []
-    }
-  );
-
-  // A caller that does not use templates sends a plain create request.
-  assert.equal(
-    Object.hasOwn(buildProjectAgentCreateRequest("general", "/Users/demo/Project/plain"), "capabilityGroups"),
-    false
-  );
+test("buildProjectAgentCreateRequest carries client configuration and isolates ACP", () => {
+  const definition = { skillConfig: { skills: ["local-docx"] }, connectorConfig: { connectors: ["builtin.dbx"] } };
+  assert.deepEqual(buildProjectAgentCreateRequest("general", "/project", { definition, modelKey: " chosen " }), {
+    definition: { ...definition, mode: "GENERAL", runtimeConfig: {workspaceRoot: "/project"}, modelConfig: {modelKey: "chosen"} }
+  });
+  assert.deepEqual(buildProjectAgentCreateRequest("acp", "/project", { definition, acpBridgeId: "codex", modelKey: "ignored" }), {
+    definition: {mode: "CODER", engine: "acp", runtimeConfig: {workspaceRoot: "/project", acpBridgeId: "codex"}}
+  });
 });

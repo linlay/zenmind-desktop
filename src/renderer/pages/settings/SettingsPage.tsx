@@ -1,3 +1,5 @@
+import { PetAppearancePreview } from "./PetAppearancePreview";
+import { PetImportControls } from "./PetImportControls";
 import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
@@ -8,8 +10,8 @@ import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
-import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
+import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
+import { Button, Input, InputNumber, Modal, Popconfirm, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
@@ -2524,6 +2526,7 @@ export function SettingsPage({
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
+  const [hoveredPetAppearanceId, setHoveredPetAppearanceId] = useState("");
   const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [savedMarketSettings, setSavedMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
@@ -4719,73 +4722,15 @@ export function SettingsPage({
       case "assistant":
         return (
           <>
-            {desktopPetSupported ? (
-              <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
-                <div
-                  className={desktopPetEnabled
-                    ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
-                    : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
-                  aria-label={t("settings.desktopPet.appearance")}
-                  aria-disabled={!desktopPetEnabled}
-                >
-                  {desktopPetAppearanceOptions.map((appearance) => {
-                    const selected = appearance.id === currentDesktopPetAppearanceId;
-                    const pending = desktopPetAppearancePending === appearance.id;
-                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
-                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
-                    const idlePreviewAsset = appearance.states.idle;
-                    const idlePreviewFrameCount = Math.max(1, Math.round(Number(idlePreviewAsset?.frameCount) || 1));
-                    const shouldRenderSpritePreview =
-                      idlePreviewAsset?.path === appearance.preview && idlePreviewFrameCount > 1;
-                    const previewSpriteStyle = shouldRenderSpritePreview
-                      ? ({
-                          "--desktop-pet-appearance-preview-frames": String(idlePreviewFrameCount),
-                          backgroundImage: `url("${appearance.previewUrl}")`
-                        } as CSSProperties)
-                      : undefined;
-                    let actionLabel = t("settings.desktopPet.select");
-                    if (selected) {
-                      actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
-                    }
-                    if (pending) {
-                      actionLabel = t("settings.desktopPet.switching");
-                    }
-                    return (
-                      <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
-                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                          {shouldRenderSpritePreview ? (
-                            <span className="desktop-pet-appearance-sprite" style={previewSpriteStyle} />
-                          ) : (
-                            <img src={appearance.previewUrl} alt="" />
-                          )}
-                        </span>
-                        <span className="desktop-pet-appearance-copy">
-                          <strong>{appearanceLabel}</strong>
-                          <small>{appearanceDescription}</small>
-                        </span>
-                        <Button
-                          type={selected ? "default" : "primary"}
-                          className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
-                          aria-pressed={selected}
-                          disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
-                          onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
-                        >
-                          {actionLabel}
-                        </Button>
-                      </div>
-                    );
-                  })}
+            <div className="settings-appearance-panel">
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.chat.defaultAgent")}</strong>
+                  {!resolvedChatDefaultAgentKey ? <span>{t("settings.chat.defaultUnavailable")}</span> : null}
                 </div>
-              </div>
-            ) : null}
-            <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.chat.defaultAgent")}>
-              <div className="settings-item-form desktop-pet-agent-form">
-                <label className="desktop-pet-agent-field">
-                  <span>{t("settings.chat.defaultAgent")}</span>
-                  <span className="desktop-pet-agent-select-wrap">
                     <Select
                       classNames={SETTINGS_SELECT_CLASS_NAMES}
-                      style={{ width: "100%" }}
+                      className="settings-appearance-control"
                       value={resolvedChatDefaultAgentKey}
                       onChange={(value) => void handleSelectChatDefaultAgentKey(value)}
                       disabled={chatAgentOptions.length === 0 || chatDefaultAgentPending}
@@ -4805,12 +4750,79 @@ export function SettingsPage({
                         }))
                       ]}
                     />
-                  </span>
-                  {!resolvedChatDefaultAgentKey ? (
-                    <em>{t("settings.chat.defaultUnavailable")}</em>
-                  ) : null}
-                </label>
               </div>
+            {desktopPetSupported ? (
+              <div className="settings-pet-gallery">
+                <div className="settings-appearance-row pet-gallery-heading">
+                  <div className="settings-appearance-row-copy"><strong>{t("settings.desktopPet.appearance")}</strong></div>
+                <PetImportControls
+                  onImported={(state) => { setDesktopPetState(state); setReadErrorSections(["assistant"], ""); }}
+                  onNotice={(message, tone) => showSectionNotice("assistant", message, tone)}
+                />
+                </div>
+                <div
+                  className="desktop-pet-appearance-list pet-appearance-grid"
+                  aria-label={t("settings.desktopPet.appearance")}
+                >
+                  {desktopPetAppearanceOptions.map((appearance) => {
+                    const selected = appearance.id === currentDesktopPetAppearanceId;
+                    const pending = desktopPetAppearancePending === appearance.id;
+                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
+                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                    return (
+                      <div className={`desktop-pet-appearance-row pet-appearance-card${selected ? " is-current" : ""}`} key={appearance.id}
+                        onMouseEnter={() => setHoveredPetAppearanceId(appearance.id)}
+                        onMouseLeave={() => setHoveredPetAppearanceId("")}>
+                        <button
+                          type="button"
+                          className="pet-appearance-pick"
+                          aria-label={appearanceLabel}
+                          aria-pressed={selected}
+                          aria-busy={pending}
+                          disabled={Boolean(desktopPetAppearancePending)}
+                          onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+                        >
+                          <span className="desktop-pet-appearance-copy">
+                            <strong title={appearanceDescription}>{appearanceLabel}</strong>
+                          </span>
+                        </button>
+                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
+                          <PetAppearancePreview appearance={appearance} hovered={hoveredPetAppearanceId === appearance.id} />
+                        </span>
+                        <div className="pet-appearance-caption">
+                        {appearance.id.startsWith("user:") && (
+                          <Popconfirm
+                            title={t("settings.desktopPet.remove.confirm")}
+                            description={t("settings.desktopPet.remove.hint")}
+                            okText={t("common.delete")}
+                            cancelText={t("common.cancel")}
+                            okButtonProps={{ danger: true }}
+                            onConfirm={async () => {
+                              setDesktopPetAppearancePending(appearance.id);
+                              try {
+                                const result = await window.electronAPI.desktopPet.removePackage(appearance.id);
+                                if (!result.ok) throw new Error(result.error);
+                                setDesktopPetState(result.state);
+                                showSectionNotice("assistant", t("settings.desktopPet.remove.success"), "success");
+                              } catch {
+                                showSectionNotice("assistant", t("settings.desktopPet.remove.failed"), "error");
+                              } finally {
+                                setDesktopPetAppearancePending("");
+                              }
+                            }}
+                          >
+                            <Button className="desktop-pet-appearance-delete" type="text" size="small"
+                              icon={<DeleteOutlined />} aria-label={`${t("common.delete")} ${appearanceLabel}`}
+                              title={t("common.delete")} disabled={Boolean(desktopPetAppearancePending)} />
+                          </Popconfirm>
+                        )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             </div>
           </>
         );

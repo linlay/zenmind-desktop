@@ -81,7 +81,6 @@ function registerFirstInstallNavigationHandler(navigation) {
     emitAssistantAttachmentProgress: null,
     getAssistantSettings: null,
     saveAssistantSettings: null,
-    getAgentPlatformMinimaxSettingsPublic: null,
     resolveAssistantAttachmentPath: null,
     createAssistantAttachmentFromPastedImage: null,
     cancelAssistantAttachmentTask: null,

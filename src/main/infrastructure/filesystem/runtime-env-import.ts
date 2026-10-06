@@ -1,3 +1,4 @@
+import { readCreationProfileUpgradeInput } from "./runtime-environment-creation";
 import {
   EnvZipImportResult,
   InitialEnvPackageRecord,
@@ -59,6 +60,7 @@ export async function importEnvZipToRuntime(
 
   const zipBuffer = await fs.promises.readFile(zipPath);
   const zip = await JSZip.loadAsync(zipBuffer);
+  await readCreationProfileUpgradeInput(zip);
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, expectedDesktopVersion);
   let copiedFiles = 0;

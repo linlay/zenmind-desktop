@@ -88,15 +88,8 @@ export function applyConfiguredCoreServiceDefaultPorts(
 }
 
 export function getCoreServicePortOverrides(options: NormalizeManifestOptions = {}): Record<string, CoreServicePortOverride> {
-  // The defaults are currently shared, but builtin service manifests are platform-specific.
-  let overrides: Record<string, CoreServicePortOverride>;
-  if (process.platform === "win32") {
-    overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
-  } else if (process.platform === "darwin") {
-    overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
-  } else {
-    overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
-  }
+  // Desktop port defaults are shared across platforms.
+  const overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
 
   return applyConfiguredCoreServiceDefaultPorts(overrides, options.coreServiceDefaultPorts);
 }

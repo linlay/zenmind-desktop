@@ -34,8 +34,8 @@ const NON_BLOCKING_RESTORE_SERVICE_ID_SET = new Set<ServiceId>([
 ]);
 const DEFAULT_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(DEFAULT_STARTUP_SERVICE_IDS);
 
-export function readInitializationState(layoutOrInstallDir: ServiceLayout | string): InitializationState | null {
-  const filePath = getInitializationStatePath(layoutOrInstallDir);
+export function readInitializationState(layout: ServiceLayout): InitializationState | null {
+  const filePath = getInitializationStatePath(layout);
   if (!fs.existsSync(filePath)) {
     return null;
   }
@@ -64,8 +64,8 @@ export function readInitializationState(layoutOrInstallDir: ServiceLayout | stri
   }
 }
 
-export function writeInitializationState(layoutOrInstallDir: ServiceLayout | string, state: InitializationState) {
-  const filePath = getInitializationStatePath(layoutOrInstallDir);
+export function writeInitializationState(layout: ServiceLayout, state: InitializationState) {
+  const filePath = getInitializationStatePath(layout);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }

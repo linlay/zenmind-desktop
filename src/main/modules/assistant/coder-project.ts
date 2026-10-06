@@ -5,8 +5,7 @@ export const PROJECT_CREATE_TYPES: readonly ProjectCreateType[] = ["general", "c
 export type ProjectAgentCreateOptions = {
   acpBridgeId?: string;
   modelKey?: string;
-  /** Present (even when empty) asks Agent Platform to expand its creation template. */
-  capabilityGroups?: readonly string[];
+  definition?: Record<string, unknown>;
 };
 
 const PROJECT_MODES: Record<Exclude<ProjectCreateType, "acp">, string> = {
@@ -36,24 +35,12 @@ export function buildProjectAgentCreateRequest(
     // Platform never infers the engine from acpBridgeId; it must be explicit.
     // The external engine has no mode of its own; CODER is kept for clarity.
     ? { mode: "CODER", engine: "acp", runtimeConfig }
-    : { mode: PROJECT_MODES[projectType as Exclude<ProjectCreateType, "acp">], runtimeConfig };
+    : { ...options.definition, mode: PROJECT_MODES[projectType as Exclude<ProjectCreateType, "acp">], runtimeConfig };
   if (modelKey && !useAcp) {
     definition.modelConfig = { modelKey };
   }
 
-  const request: { definition: Record<string, unknown>; capabilityGroups?: string[] } = { definition };
-  if (options.capabilityGroups) {
-    const groups: string[] = [];
-    for (const raw of options.capabilityGroups) {
-      const key = String(raw || "").trim();
-      if (key && !groups.includes(key)) {
-        groups.push(key);
-      }
-    }
-    // The external engine manages its own capabilities; never send groups.
-    request.capabilityGroups = useAcp ? [] : groups;
-  }
-  return request;
+  return { definition };
 }
 
 export function buildCoderProjectAgentCreateRequest(

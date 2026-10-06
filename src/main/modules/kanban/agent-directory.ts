@@ -19,7 +19,7 @@ export function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
     return [];
   }
   const agents: DesktopPetAgentOption[] = [];
-  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.filter((item) => item.isDirectory() && !item.name.startsWith(".")).sort((a, b) => a.name.localeCompare(b.name))) {
     const agentFile = ["agent.yml", "agent.yaml"]
       .map((fileName) => path.join(agentsRoot, entry.name, fileName))
       .find((filePath) => fs.existsSync(filePath));
@@ -28,6 +28,7 @@ export function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
     }
     let parsed: unknown;
     try {
+      if (!fs.lstatSync(agentFile).isFile()) continue;
       parsed = yaml.load(fs.readFileSync(agentFile, "utf8"));
     } catch {
       continue;
@@ -35,8 +36,8 @@ export function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
     if (!isRecord(parsed)) {
       continue;
     }
-    const agentKey = readText(parsed.key) || entry.name.trim();
-    if (!agentKey) {
+    const agentKey = readText(parsed.key);
+    if (!agentKey || agentKey !== entry.name) {
       continue;
     }
     agents.push({

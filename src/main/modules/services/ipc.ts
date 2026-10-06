@@ -117,10 +117,10 @@ export interface ServicesIpcHandlerOptions {
   // Agent platform monitor
   issueAgentPlatformAccessToken?: (app: any, reason: "missing" | "unauthorized") => Promise<any>;
 
-  // Old root migration decision (shared from startup)
-  oldRootDecisionRef?: { current: "migrate" | "keep" | "cancel" | undefined };
+  // Current runtime-root backup/import decision shared with startup.
+  runtimeRootConflictDecisionRef?: { current: "backup" | "keep" | "cancel" | undefined };
   generateBackupDirName?: (rootPath: string, platform: string) => string;
-  migrateOldRootToBackup?: (platform: string, rootPath: string, backupPath?: string) => string;
+  backupRuntimeRoot?: (platform: string, rootPath: string, backupPath?: string) => string;
   shouldPromptEnvRootConflict?: (input: {
     platform: string;
     isFirstDesktopInstall: boolean;
@@ -229,9 +229,9 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     runStartupPreparation,
     desktopVersion,
     issueAgentPlatformAccessToken,
-    oldRootDecisionRef,
+    runtimeRootConflictDecisionRef,
     generateBackupDirName,
-    migrateOldRootToBackup,
+    backupRuntimeRoot,
     shouldPromptEnvRootConflict,
     isFirstDesktopInstall,
     bundledEnvZipExistsAtStartup,
@@ -324,15 +324,15 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     return { ok: true };
   }
 
-  async function promptManualEnvRootConflict(): Promise<"migrate" | "keep" | "cancel" | undefined> {
-    if (oldRootDecisionRef?.current === "migrate" || oldRootDecisionRef?.current === "keep") {
-      return oldRootDecisionRef.current;
+  async function promptManualEnvRootConflict(): Promise<"backup" | "keep" | "cancel" | undefined> {
+    if (runtimeRootConflictDecisionRef?.current === "backup" || runtimeRootConflictDecisionRef?.current === "keep") {
+      return runtimeRootConflictDecisionRef.current;
     }
     if (
       !shouldPromptEnvRootConflict ||
       !showMessageBox ||
       !generateBackupDirName ||
-      !migrateOldRootToBackup ||
+      !backupRuntimeRoot ||
       !runtimeRootAtProcessStart
     ) {
       return undefined;
@@ -355,7 +355,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       message: t("startup.envConflict.message", { path: runtimeRootAtProcessStart }),
       detail: t("startup.envConflict.detail", { backupPath }),
       buttons: [
-        t("startup.envConflict.migrate"),
+        t("startup.envConflict.backup"),
         t("startup.envConflict.keep"),
         t("startup.envConflict.cancel")
       ],
@@ -365,8 +365,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     });
 
     if (choice.response === 1) {
-      if (oldRootDecisionRef) {
-        oldRootDecisionRef.current = "keep";
+      if (runtimeRootConflictDecisionRef) {
+        runtimeRootConflictDecisionRef.current = "keep";
       }
       return "keep";
     }
@@ -375,25 +375,25 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     }
 
     try {
-      migrateOldRootToBackup(platform || process.platform, runtimeRootAtProcessStart, backupPath);
-      if (oldRootDecisionRef) {
-        oldRootDecisionRef.current = "migrate";
+      backupRuntimeRoot(platform || process.platform, runtimeRootAtProcessStart, backupPath);
+      if (runtimeRootConflictDecisionRef) {
+        runtimeRootConflictDecisionRef.current = "backup";
       }
-      return "migrate";
+      return "backup";
     } catch (error) {
       const retryChoice = await showMessageBox({
         type: "error",
-        title: t("startup.envConflict.migrationFailedTitle"),
+        title: t("startup.envConflict.backupFailedTitle"),
         message: error instanceof Error ? error.message : String(error),
-        detail: t("startup.envConflict.migrationFailedDetail", { path: runtimeRootAtProcessStart, backupPath }),
+        detail: t("startup.envConflict.backupFailedDetail", { path: runtimeRootAtProcessStart, backupPath }),
         buttons: [t("startup.envConflict.cancel"), t("startup.envConflict.keep")],
         defaultId: 0,
         cancelId: 0,
         noLink: true
       });
       if (retryChoice.response === 1) {
-        if (oldRootDecisionRef) {
-          oldRootDecisionRef.current = "keep";
+        if (runtimeRootConflictDecisionRef) {
+          runtimeRootConflictDecisionRef.current = "keep";
         }
         return "keep";
       }

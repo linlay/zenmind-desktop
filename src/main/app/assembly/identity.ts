@@ -34,7 +34,7 @@ import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../../mo
 import {
   createServicesRuntime,
   stopBrowserWebclient,
-  type ServicesFacade
+  type ServicesIntegrationPorts
 } from "../../modules/services";
 import {
   stopTunnelHubRuntime
@@ -42,11 +42,9 @@ import {
 import { createWebSurfaceRuntime } from "../../modules/webs";
 import { t } from "../../support/i18n/main-i18n";
 import { safeConsoleError } from "../../support/logging/safe-console";
-import { createStartupPipeline } from "../lifecycle/startup";
 import {
   isStartupPhaseAtLeast
 } from "../lifecycle/startup-phases";
-import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { createMainAppState } from "../state";
 import { configureSystemIdentity } from "../system-identity";
 export interface AssembleSystemIdentityDependencies {
@@ -202,11 +200,8 @@ export interface ApplyDesktopSsoRestoreResultDependencies {
   desktopSsoRestoreState: DesktopSsoRestoreResult["state"];
   readonly appState: Pick<ReturnType<typeof createMainAppState>, "startupPhase">;
   readonly startupPlatform: NodeJS.Platform;
-  readonly startupRestoreController: Pick<ReturnType<typeof createStartupRestoreController>, "setAuthenticationRequired" | "getState">;
   readonly servicesRuntime: Pick<ReturnType<typeof createServicesRuntime>, "runServiceMutation">;
-  readonly servicesFacade: Pick<ServicesFacade, "stopService">;
-  readonly notifyCoreServicesChanged: () => void;
-  readonly startupPipeline: Pick<ReturnType<typeof createStartupPipeline>, "run">;
+  readonly servicesIntegrationPorts: Pick<ServicesIntegrationPorts, "ensureProviderRegisterApiKey">;
   ssoCredentialDependentRuntimesStarted: boolean;
   readonly nonCoreDesktopRuntimeStarted: boolean;
   readonly startSsoCredentialDependentRuntimes: () => void;
@@ -223,19 +218,15 @@ export function applyDesktopSsoRestoreResult(dependencies: ApplyDesktopSsoRestor
   if (shellStarted && getProviderRegisterMode(app, dependencies.startupPlatform) === "access-token") {
     if (result.state !== "authenticated" && previousRestoreState === "authenticated") {
       invalidateProviderRegistration(app, dependencies.startupPlatform);
-      dependencies.startupRestoreController.setAuthenticationRequired(true);
       void dependencies.servicesRuntime.runServiceMutation(async () => {
-        for (const serviceId of ["agent-webclient", "agent-platform"] as const) {
-          const stopped = await dependencies.servicesFacade.stopService(app, serviceId);
-          if (!stopped.ok) throw new Error(stopped.message);
-        }
         clearAccessTokenProviderKeys(app, dependencies.startupPlatform);
-        dependencies.notifyCoreServicesChanged();
-      }).catch(error => safeConsoleError("failed to stop account-bound provider consumers", { error: String(error) }));
-    } else if (result.state === "authenticated" && isDesktopSsoCredentialRuntimeReady() &&
-      dependencies.startupRestoreController.getState().authenticationRequired) {
-      dependencies.startupRestoreController.setAuthenticationRequired(false);
-      void dependencies.startupPipeline.run();
+      }).catch(error => safeConsoleError("failed to clear access-token Provider Keys", { error: String(error) }));
+    } else if (result.state === "authenticated" && previousRestoreState !== "authenticated" &&
+      isDesktopSsoCredentialRuntimeReady()) {
+      // Update the selected Provider in place; do not start or restart local services.
+      void dependencies.servicesRuntime.runServiceMutation(() =>
+        dependencies.servicesIntegrationPorts.ensureProviderRegisterApiKey(app)
+      ).catch(error => safeConsoleError("failed to register access-token Provider Key", { error: String(error) }));
     }
   }
   if (result.state !== "authenticated") {

@@ -795,13 +795,13 @@ test("desktop pet left edge keeps the BrowserWindow onscreen while the visible p
 
   assert.equal(edgeDock, "left");
   assert.equal(bounds.x, displayArea.x);
-  assert.equal(bounds.width, displayArea.width);
+  assert.equal(bounds.width, 176);
   assert.equal(visibleFootprintRect(bounds, footprint).x, displayArea.x);
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, position), position);
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, {
     x: displayArea.x,
     y: position.y
-  }), position);
+  }), { x: displayArea.x, y: position.y });
 
   const legacyBounds = getAnchoredDesktopPetBounds({
     x: displayArea.x,
@@ -814,7 +814,7 @@ test("desktop pet left edge keeps the BrowserWindow onscreen while the visible p
   }), { x: displayArea.x, y: position.y });
 });
 
-test("desktop pet full-width left host persists as a left-edge logical position", () => {
+test("desktop pet narrow left host persists as a left-edge logical position", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
     getAnchoredDesktopPetBounds,
@@ -835,7 +835,7 @@ test("desktop pet full-width left host persists as a left-edge logical position"
   const bounds = getAnchoredDesktopPetBounds(leftPosition, displayArea, "base");
 
   assert.equal(bounds.x, displayArea.x);
-  assert.equal(bounds.width, displayArea.width);
+  assert.equal(bounds.width, 176);
   assert.deepEqual(
     visibleFootprintRect(bounds, getDesktopPetVisibleFootprintForMode("base", "left")),
     {
@@ -1101,7 +1101,7 @@ test("desktop pet drag preserves the pointer offset near the macOS side Dock", (
   const initialPosition = { x: 220, y: 300 };
   let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
   let cursorPoint = {
-    x: bounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x + 10,
+    x: initialPosition.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x + 10,
     y: bounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y + 54
   };
   const setBoundsCalls = [];
@@ -1119,7 +1119,7 @@ test("desktop pet drag preserves the pointer offset near the macOS side Dock", (
   const controller = createDesktopPetDragController({
     platform: "darwin",
     getWindow: () => fakeWindow,
-    getSettings: () => ({}),
+    getSettings: () => ({ position: initialPosition }),
     saveSettings: () => {},
     getMode: () => "base",
     getCursorScreenPoint: () => ({ ...cursorPoint }),
@@ -1165,7 +1165,7 @@ test("desktop pet drag release preserves its requested position when native boun
   let requestedBounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
   let reportedBounds = { ...requestedBounds };
   let cursorPoint = {
-    x: requestedBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x + 10,
+    x: initialPosition.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x + 10,
     y: requestedBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y + 54
   };
   const setBoundsCalls = [];
@@ -1189,7 +1189,7 @@ test("desktop pet drag release preserves its requested position when native boun
   const controller = createDesktopPetDragController({
     platform: "darwin",
     getWindow: () => fakeWindow,
-    getSettings: () => ({}),
+    getSettings: () => ({ position: initialPosition }),
     saveSettings: (settings) => {
       savedSettings.push(settings);
     },
@@ -1866,8 +1866,8 @@ test("desktop pet exposes brand-specific built-in appearance defaults", () => {
         variants: [
           {
             path: "signature/work-hard-v3.webp",
-            frameCount: 14,
-            durationMs: 5200,
+            frameCount: 22,
+            durationMs: 2640,
             weight: 1
           }
         ]
@@ -2052,4 +2052,34 @@ test("desktop pet retains older awaiting messages ahead of the unread limit", ()
   });
   assert.equal(messages.length, 50);
   assert.deepEqual(messages.slice(0, 3).map(message => message.chatId), ["newer-awaiting", "older-awaiting", "unread-0"]);
+});
+
+// Native bounds and renderer offsets can be painted on different frames.
+// Crossing a left-edge threshold must not resize/re-anchor the host underneath
+// the previous body offset (the source of the transient second position).
+test("pet left-edge crossing keeps host width stable and tolerates delayed body projection", () => {
+  const { resolveDesktopPetWindowLayout } = __testInternals;
+  for (const displayX of [0, -1440]) {
+    for (const inset of [0, 79]) {
+      const display = { x: displayX, y: 25, width: 1440, height: 900, windowLeftInset: inset };
+      const xs = [120, 80, 79, 78, 2, 1, 0, -1, -2, -39, -40];
+      for (const positions of [xs, [...xs].reverse()]) {
+        let previous;
+        for (const x of positions) {
+          const layout = resolveDesktopPetWindowLayout({ x: displayX + x, y: 250 }, display);
+          assert.equal(layout.bounds.width, inset ? display.width : 176);
+          if (previous) {
+            const oldBodyX = previous.bounds.x + previous.bodyOffset.x;
+            const newBodyX = layout.bounds.x + layout.bodyOffset.x;
+            const intermediateX = layout.bounds.x + previous.bodyOffset.x;
+            assert.ok(intermediateX >= Math.min(oldBodyX, newBodyX) &&
+              intermediateX <= Math.max(oldBodyX, newBodyX),
+              'delayed renderer offset must not place the pet outside its movement segment');
+            assert.equal(layout.bounds.width, previous.bounds.width);
+          }
+          previous = layout;
+        }
+      }
+    }
+  }
 });

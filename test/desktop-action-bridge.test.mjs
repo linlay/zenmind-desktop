@@ -3638,7 +3638,7 @@ for (const [reason, code, category] of [["timeout", "confirmation_timeout", "tim
   test(`confirmation ${reason ?? "user cancel"} keeps its cause and prevents execution`, async t => {
     const { options, calls } = createDesktopActionOptions(t);
     options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "cancel", reason });
-    const result = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+    const result = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
     assert.equal(result.error.code, code);
     assert.equal(result.error.details.category, category);
     assert.equal(result.error.details.stage, "confirmation");
@@ -3660,7 +3660,7 @@ test("upstream cancellation after confirmation prevents execution and passes con
     controller.abort();
     return { requestId: request.requestId, decision: "confirm" };
   };
-  const result = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  const result = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
   assert.equal(result.error.code, "request_aborted");
   assert.equal(result.error.details.executionState, "not_started");
   assert.equal(calls.runtimeDiagnostics, 0);
@@ -3671,8 +3671,48 @@ for (const platform of ["darwin", "win32"]) {
     const { options, calls } = createDesktopActionOptions(t);
     options.platform = platform;
     delete options.confirmRendererAction;
-    const result = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+    const result = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
     assert.equal(result.error.code, "confirmation_unavailable");
     assert.equal(calls.runtimeDiagnostics, 0);
   });
 }
+
+
+test("Platform management exemptions preserve public and heavy-action confirmation", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const confirmations = [];
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async request => {
+    confirmations.push(request.action);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  options.callRendererAction = async request => ({ requestId: request.requestId, action: request.action, ok: true, result: { handled: true } });
+  let created = 0;
+  options.getKanbanRuntime = () => ({ createIssue: async () => {
+    created++;
+    return { ok: true, issue: { id: "issue-exempt", title: "Example" } };
+  } });
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "helper" };
+  for (const [action, args] of [
+    ["desktop.theme.set", { themeMode: "dark" }],
+    ["desktop.website.add", { input: { label: "Example", url: "https://example.test" } }],
+    ["desktop.kanban.createIssue", { input: { title: "Example" } }]
+  ]) {
+    const response = await handleAgentPlatformDesktopActionRequest(options, { action, source, args });
+    assert.equal(response.ok, true, JSON.stringify(response));
+    assert.equal(confirmations.length, 0, action);
+  }
+  assert.equal(created, 1);
+  for (const action of ["desktop.theme.set", "desktop.website.add", "desktop.kanban.createIssue"]) {
+    const response = await handleDesktopActionRequest(options, { action, source, args: {} });
+    assert.equal(response.requiresConfirmation, true, action);
+    assert.equal(response.error.code, "user_cancelled", action);
+  }
+  for (const action of ["desktop.controlCenter.restartService", "desktop.webapp.install", "desktop.webapp.uninstall", "desktop.webapp.publish", "desktop.market.applySettingsPatch", "desktop.market.deleteSandboxImage", "desktop.market.installItem", "desktop.market.updateItem", "desktop.market.uninstallItem", "desktop.market.exportSandboxImage"]) {
+    const response = await handleAgentPlatformDesktopActionRequest(options, { action, source, args: {} });
+    assert.equal(response.requiresConfirmation, true, action);
+    assert.equal(response.error.code, "user_cancelled", action);
+  }
+  assert.equal(confirmations.length, 13);
+  assert.equal(created, 1);
+});

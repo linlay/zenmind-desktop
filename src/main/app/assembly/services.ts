@@ -17,21 +17,18 @@ import {
   syncPluginResources
 } from "../../modules/plugins";
 import {
-  type ServicesFacade,
   type ServicesIntegrationPorts
 } from "../../modules/services";
 import {
   type WebsFacade
 } from "../../modules/webs";
-import { createStartupRestoreController } from "../lifecycle/startup-restore";
+import { safeConsoleError } from "../../support/logging/safe-console";
 export interface AssembleServicesIntegrationDependencies {
   readonly issueAgentAccessToken: (
     app: Parameters<typeof issueAgentAccessToken>[0],
     reason: Parameters<typeof issueAgentAccessToken>[1]
   ) => ReturnType<typeof issueAgentAccessToken>;
-  readonly servicesFacade: Pick<ServicesFacade, "getResponsiveServiceState" | "stopService">;
   readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
-  readonly startupRestoreController: Pick<ReturnType<typeof createStartupRestoreController>, "setAuthenticationRequired">;
   readonly websFacade: Pick<WebsFacade, "webappManager">;
 }
 
@@ -46,29 +43,30 @@ export function assembleServicesIntegration(
     ensureProviderRegisterApiKey: async (targetApp, preparation) => {
       const accessMode = getProviderRegisterMode(targetApp) === "access-token";
       const token = isDesktopSsoCredentialRuntimeReady() ? getDesktopSsoAccessToken() : null;
-      if (accessMode && (preparation || !token || appliedProviderToken !== token)) {
-        // Never reuse a surviving process with a previous account's loaded provider credentials.
+      if (accessMode && !preparation && (!token || appliedProviderToken !== token)) {
+        // Only selected Provider Keys follow SSO; local services remain available.
         appliedProviderToken = null;
-        for (const id of ["agent-webclient", "agent-platform"] as const) {
-          const state = await dependencies.servicesFacade.getResponsiveServiceState(targetApp, id);
-          if (state.installed) {
-            const stopped = await dependencies.servicesFacade.stopService(targetApp, id);
-            if (!stopped.ok) throw new Error(stopped.message);
-          }
+        clearAccessTokenProviderKeys(targetApp);
+      }
+      if (accessMode && !preparation && !token) {
+        return { status: "skipped", reason: "login-required" };
+      }
+      try {
+        const result = await ensureProviderRegisterApiKey(targetApp, {
+          getDesktopDeviceId, preparation,
+          getAccessToken: () => isDesktopSsoCredentialRuntimeReady() ? getDesktopSsoAccessToken() : null,
+          refreshAccessToken: () => dependencies.refreshDesktopSsoIdentityToken(true)
+        });
+        if (accessMode && !preparation) {
+          appliedProviderToken = getDesktopSsoAccessToken();
         }
-        if (!preparation) clearAccessTokenProviderKeys(targetApp);
+        return result;
+      } catch (error) {
+        if (!accessMode) throw error;
+        // Registration failure affects this Provider, not Platform/WebClient startup.
+        safeConsoleError("failed to register access-token Provider Key", { error: String(error) });
+        return { status: "skipped", reason: "unavailable" };
       }
-      const result = await ensureProviderRegisterApiKey(targetApp, {
-        getDesktopDeviceId, preparation,
-        getAccessToken: () => isDesktopSsoCredentialRuntimeReady() ? getDesktopSsoAccessToken() : null,
-        refreshAccessToken: () => dependencies.refreshDesktopSsoIdentityToken(true),
-        onLoginRequired: () => dependencies.startupRestoreController.setAuthenticationRequired(true)
-      });
-      if (accessMode && !preparation) {
-        appliedProviderToken = getDesktopSsoAccessToken();
-        dependencies.startupRestoreController.setAuthenticationRequired(false);
-      }
-      return result;
     },
     resolveConversationAssetOrigin,
     emitPluginBridgeHook,

@@ -245,30 +245,15 @@ Function ${nsisPrefix}EnsureDataRootDefault
   \${endif}
   StrCpy $DesktopDataRootStored "0"
   ReadRegStr $DesktopDataRoot HKCU "${dataRegistryKey}" "DataRoot"
+  \${GetFileName} "$DesktopDataRoot" $R6
+  \${if} $R6 != "${runtimeRootDirName}"
+    StrCpy $DesktopDataRoot ""
+  \${endif}
   StrCpy $DesktopDataRootLayoutVersion "0"
   ReadRegDWORD $DesktopDataRootLayoutVersion HKCU "${dataRegistryKey}" "DataRootLayoutVersion"
-  \${if} $DesktopDataRootLayoutVersion != "2"
-    StrCpy $R0 "0"
-    ReadRegDWORD $R0 HKCU "${dataRegistryKey}" "LayoutVersion"
-    \${if} $R0 == "2"
-      StrCpy $DesktopDataRootLayoutVersion "2"
-    \${endif}
-  \${endif}
   \${if} $DesktopDataRoot != ""
-    \${if} $DesktopDataRootLayoutVersion == "2"
-      \${if} \${FileExists} "$DesktopDataRoot\\*.*"
-        !insertmacro DesktopDirectoryHasEntries $DesktopDataRoot $R0
-        \${if} $R0 == "1"
-          StrCpy $DesktopDataRootStored "1"
-        \${else}
-          StrCpy $DesktopDataRootStored "0"
-        \${endif}
-      \${else}
-        StrCpy $DesktopDataRootStored "0"
-      \${endif}
-    \${else}
-      StrCpy $DesktopDataRootStored "1"
-    \${endif}
+  \${andIf} \${FileExists} "$DesktopDataRoot\\*.*"
+    !insertmacro DesktopDirectoryHasEntries $DesktopDataRoot $DesktopDataRootStored
   \${endif}
   \${if} $DesktopDataRoot == ""
     \${if} \${FileExists} "$PROFILE\\${runtimeRootDirName}\\*.*"
@@ -285,15 +270,12 @@ FunctionEnd
 !ifdef BUILD_UNINSTALLER
 Function un.${nsisPrefix}EnsureDataRootDefault
   ReadRegStr $DesktopDataRoot HKCU "${dataRegistryKey}" "DataRoot"
+  \${GetFileName} "$DesktopDataRoot" $R6
+  \${if} $R6 != "${runtimeRootDirName}"
+    StrCpy $DesktopDataRoot ""
+  \${endif}
   StrCpy $DesktopDataRootLayoutVersion "0"
   ReadRegDWORD $DesktopDataRootLayoutVersion HKCU "${dataRegistryKey}" "DataRootLayoutVersion"
-  \${if} $DesktopDataRootLayoutVersion != "2"
-    StrCpy $R0 "0"
-    ReadRegDWORD $R0 HKCU "${dataRegistryKey}" "LayoutVersion"
-    \${if} $R0 == "2"
-      StrCpy $DesktopDataRootLayoutVersion "2"
-    \${endif}
-  \${endif}
   \${if} $DesktopDataRoot == ""
     StrCpy $DesktopDataRoot "$PROFILE\\${runtimeRootDirName}"
     StrCpy $DesktopDataRootLayoutVersion "0"
@@ -318,7 +300,7 @@ FunctionEnd
         SetErrorLevel 4
         Abort
       \${elseIf} \${Silent}
-        MessageBox MB_ICONSTOP "${productName} 数据目录缺少安全标记，静默安装无法确认沿用历史数据，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
+        MessageBox MB_ICONSTOP "${productName} 数据目录缺少安全标记，静默安装无法确认目录所有权，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
         SetErrorLevel 4
         Abort
       \${endif}
@@ -462,16 +444,8 @@ Function ${nsisPrefix}DataDirectoryPageLeave
     StrCpy $DesktopDataRootAdoptConfirmed "1"
     Goto ${nsisPrefix}DataDirectoryReady
   \${endif}
-  \${if} $R1 == "1"
-  \${andIfNot} \${FileExists} "$DesktopDataRoot\\.desktop-owner"
-    MessageBox MB_YESNO|MB_ICONEXCLAMATION "目标目录已有数据但缺少 ${productName} 所有权标记：$\\r$\\n$DesktopDataRoot$\\r$\\n$\\r$\\n仅当你确认这是历史 ${productName} 数据目录时才继续。安装器会保留全部现有文件并补写所有权与注册表记录；以后卸载时选择清理数据将允许删除该目录。" /SD IDNO IDYES ${nsisPrefix}DataDirectoryAdoptLegacy
-    Abort
-  \${endif}
   MessageBox MB_ICONEXCLAMATION "目标专属目录已存在但不属于 ${productName}：$\\r$\\n$DesktopDataRoot$\\r$\\n请改选其他位置。"
   Abort
-${nsisPrefix}DataDirectoryAdoptLegacy:
-  StrCpy $DesktopDataRootAdoptConfirmed "1"
-  Goto ${nsisPrefix}DataDirectoryReady
 ${nsisPrefix}DataDirectoryCreateFailed:
   MessageBox MB_ICONEXCLAMATION "所选父目录无法创建，请改选其他位置。"
   Abort
@@ -686,13 +660,12 @@ FunctionEnd
     MessageBox MB_ICONSTOP "程序安装目录不是 ${productName} 固定目录，安装已停止：$\\r$\\n$INSTDIR"
     Abort
   \${endif}
-  StrCpy $R2 "0"
-  \${if} $DesktopDataRootStored == "0"
-  \${orIf} $DesktopDataRootLayoutVersion == "2"
-  \${orIf} $DesktopDataRoot == "$PROFILE\\${runtimeRootDirName}"
-    StrCpy $R2 "1"
+  \${GetFileName} "$DesktopDataRoot" $R6
+  \${if} $R6 != "${runtimeRootDirName}"
+    MessageBox MB_ICONSTOP "数据目录必须以 ${runtimeRootDirName} 结尾。"
+    Abort
   \${endif}
-  \${if} $R2 == "1"
+  \${if} $DesktopDataRoot != ""
     !insertmacro DesktopValidateOwnedRoot $DesktopDataRoot $R1
     \${if} $R1 != "1"
       MessageBox MB_ICONSTOP "数据目录未通过最终安全校验，安装已停止：$\\r$\\n$DesktopDataRoot"
@@ -713,7 +686,6 @@ FunctionEnd
     \${endif}
     !insertmacro DesktopWriteOwnerMarker $DesktopDataRoot "${dataOwnerToken}"
     WriteRegDWORD HKCU "${dataRegistryKey}" "DataRootLayoutVersion" 2
-    DeleteRegValue HKCU "${dataRegistryKey}" "LayoutVersion"
   \${endif}
   WriteRegStr HKCU "${dataRegistryKey}" "DataRoot" "$DesktopDataRoot"
   StrCpy $DesktopProgramDataRoot "$APPDATA\\${programDataDirName}"
@@ -781,7 +753,7 @@ removeDesktopOwnedDataRetry:
       StrCpy $DesktopCleanupWarning "运行数据目录未通过规范化路径、品牌目录名或所有权校验，已保留：$DesktopDataRoot"
     \${endif}
   \${else}
-    StrCpy $DesktopCleanupWarning "历史自定义运行数据目录缺少所有权信息，已保留：$DesktopDataRoot"
+    StrCpy $DesktopCleanupWarning "运行数据目录缺少所有权信息，已保留：$DesktopDataRoot"
   \${endif}
 
   !insertmacro DesktopReadOwnerFile $DesktopProgramOwnerMarker "${programOwnerToken}" $R0

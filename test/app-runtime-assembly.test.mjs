@@ -43,6 +43,97 @@ test("service assembly defers cyclic wiring reads and uses the current token ref
   assert.deepEqual(calls, ["first", "replacement"]);
 });
 
+for (const mode of ["access-token", "grant-jwt", "disabled"]) {
+  test(`service registration preserves availability and mode boundaries (${mode})`, async () => {
+    const events = [];
+    let token = null;
+    let failure = false;
+    const { assembleServicesIntegration } = loadUnit("assembly/services", {
+      "../../modules/agent-platform": {
+        getProviderRegisterMode: () => mode,
+        clearAccessTokenProviderKeys: () => events.push("clear"),
+        ensureProviderRegisterApiKey: async (_app, options) => {
+          events.push(options.preparation ? "prepare" : "register");
+          if (failure) throw new Error("synthetic registration failure");
+          return { status: options.preparation ? "skipped" : "applied" };
+        }
+      },
+      "../../modules/identity": {
+        isDesktopSsoCredentialRuntimeReady: () => Boolean(token),
+        getDesktopSsoAccessToken: () => token
+      },
+      "../../support/logging/safe-console": { safeConsoleError: () => events.push("error") }
+    });
+    const ports = assembleServicesIntegration({
+      // Any attempted service stop or login gate access fails this test.
+      get servicesFacade() { assert.fail("Provider registration must not stop services"); },
+      get startupRestoreController() { assert.fail("Provider registration must not gate startup"); }
+    });
+    await ports.ensureProviderRegisterApiKey({}, true);
+    assert.deepEqual(events, ["prepare"]);
+    events.length = 0;
+    await ports.ensureProviderRegisterApiKey({});
+    assert.deepEqual(events, mode === "access-token" ? ["clear"] : ["register"]);
+    events.length = 0;
+    token = "current-access-token";
+    await ports.ensureProviderRegisterApiKey({});
+    assert.deepEqual(events, mode === "access-token" ? ["clear", "register"] : ["register"]);
+    events.length = 0;
+    failure = true;
+    token = "new-access-token";
+    if (mode === "access-token") {
+      assert.equal((await ports.ensureProviderRegisterApiKey({})).reason, "unavailable");
+      assert.deepEqual(events, ["clear", "register", "error"]);
+    } else {
+      await assert.rejects(ports.ensureProviderRegisterApiKey({}), /synthetic registration failure/);
+      assert.deepEqual(events, ["register"]);
+    }
+  });
+}
+
+for (const platform of ["darwin", "win32"]) for (const mode of ["access-token", "grant-jwt", "disabled"]) {
+  test(`${platform}: SSO updates only selected Provider Keys without restarting services (${mode})`, async () => {
+    const events = [];
+    let pendingMutation = Promise.resolve();
+    const { applyDesktopSsoRestoreResult } = loadUnit("assembly/identity", {
+      electron: { app: {} },
+      "../../modules/agent-platform": {
+        getProviderRegisterMode: () => mode,
+        invalidateProviderRegistration: (_app, targetPlatform) => { assert.equal(targetPlatform, platform); events.push("invalidate"); },
+        clearAccessTokenProviderKeys: (_app, targetPlatform) => { assert.equal(targetPlatform, platform); events.push("clear"); }
+      },
+      "../../modules/identity": { isDesktopSsoCredentialRuntimeReady: () => true },
+      "../../modules/services": { stopBrowserWebclient: async () => {} },
+      "../../modules/marketplace": { refreshMarketCatalog: async () => {} },
+      "../lifecycle/startup-phases": { isStartupPhaseAtLeast: () => true },
+      "../../support/logging/safe-console": { safeConsoleError: () => events.push("error") }
+    });
+    const dependencies = {
+      desktopSsoRestoreState: "authenticated",
+      appState: { startupPhase: "core-ready" },
+      startupPlatform: platform,
+      servicesRuntime: { runServiceMutation: fn => { pendingMutation = pendingMutation.then(fn); return pendingMutation; } },
+      servicesIntegrationPorts: { ensureProviderRegisterApiKey: async () => events.push("register") },
+      ssoCredentialDependentRuntimesStarted: true,
+      nonCoreDesktopRuntimeStarted: false,
+      startSsoCredentialDependentRuntimes: () => { dependencies.ssoCredentialDependentRuntimesStarted = true; },
+      enterpriseChatRuntime: { refresh: async () => {} },
+      get servicesFacade() { assert.fail("SSO must not stop Platform/WebClient"); },
+      get startupPipeline() { assert.fail("SSO must not rerun service startup"); },
+      get startupRestoreController() { assert.fail("SSO must not set a startup login gate"); }
+    };
+    applyDesktopSsoRestoreResult(dependencies, { state: "signed_out" });
+    // Invalidate immediately, before the queued write, then serialize the new binding behind it.
+    assert.deepEqual(events, mode === "access-token" ? ["invalidate"] : []);
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
+    await pendingMutation;
+    assert.deepEqual(events, mode === "access-token" ? ["invalidate", "clear", "register"] : []);
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
+    await pendingMutation;
+    assert.deepEqual(events, mode === "access-token" ? ["invalidate", "clear", "register"] : []);
+  });
+}
+
 test("navigation notifications retain taskbar, tray, renderer and visible pet ordering", () => {
   const { emitAssistantNavigationAgentsChanged } = loadUnit("runtime-notifications");
   const events = [];
@@ -179,4 +270,23 @@ for (const failure of ['throw', 'reject']) test(`ready IPC continues non-core st
   assert.doesNotThrow(() => handlers.onStartupPreparationSucceeded());
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(events, ['core-ready', 'non-core']);
+});
+
+test("plugin assembly forwards ACP operations to the authenticated Platform registration API", async () => {
+  const calls = [];
+  const tokenProvider = async () => ({ ok: true, token: "app-token" });
+  const { assemblePluginBridge } = loadUnit("assembly/extensions", {
+    electron: { app: {} },
+    "../../modules/plugins": { createPluginBridgeRuntime: options => options },
+    "../../modules/desktop-actions": { callAgentPlatform: async (...args) => { calls.push(args); return { changed: true, restartRequired: true }; } }
+  });
+  const runtime = assemblePluginBridge({ servicesFacade: {}, issueAgentAccessToken: tokenProvider });
+  for (const operation of ["upsert", "remove"]) {
+    await runtime.mutateAcpBridge("trusted-plugin", operation, { bridgeId: "codex", sourcePluginId: "forged" });
+  }
+  assert.deepEqual(calls.map(call => [call[1], call[2].method, call[2].body]), [
+    ["/api/desktop/acp-bridges", "PUT", { bridgeId: "codex", sourcePluginId: "trusted-plugin" }],
+    ["/api/desktop/acp-bridges", "DELETE", { bridgeId: "codex", sourcePluginId: "trusted-plugin" }]
+  ]);
+  assert.equal(calls[0][2].issueAgentAccessToken, tokenProvider);
 });

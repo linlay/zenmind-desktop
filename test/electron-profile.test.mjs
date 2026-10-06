@@ -37,6 +37,7 @@ test("Windows profile initialization uses the registered data root and Windows s
   const paths = {};
   t.mock.method(childProcess, "execFileSync", () => Buffer.from(Buffer.from(root).toString("base64")));
   t.mock.method(fs, "mkdirSync", (directory) => { created.push(directory); });
+  t.mock.method(fs, "existsSync", () => assert.fail("profile initialization only creates its current directory"));
   initializeElectronProfile({
     isReady: () => false,
     getPath: () => "C:\\Users\\tester",
@@ -45,35 +46,6 @@ test("Windows profile initialization uses the registered data root and Windows s
   const expected = path.win32.join(root, APP_BRAND.paths.desktopDataSubdir, "state", "chromium");
   assert.deepEqual(paths, { userData: expected, sessionData: expected });
   assert.ok(created.includes(expected));
-});
-
-test("legacy SSO store becomes the default Chromium profile without overwriting existing state", (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-sso-partition-"));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const app = { isReady: () => false, getPath: () => home, setPath() {} };
-  const dataRoot = path.join(home, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
-  const partitionsRoot = path.join(dataRoot, "profiles", "electron", "Partitions");
-  const legacy = path.join(partitionsRoot, `${APP_BRAND.storageNamespace}-sso`);
-  const current = path.join(dataRoot, "state", "chromium");
-  fs.mkdirSync(path.join(legacy, "Local Storage"), { recursive: true });
-  fs.writeFileSync(path.join(legacy, "Cookies"), "stored-cookie-database");
-  fs.writeFileSync(path.join(legacy, "Local Storage", "website-data"), "stored-website-data");
-  fs.writeFileSync(path.join(dataRoot, "profiles", "electron", "Local State"), "chromium-profile-metadata");
-  fs.mkdirSync(path.join(partitionsRoot, "service-example"));
-  fs.writeFileSync(path.join(partitionsRoot, "service-example", "Cookies"), "isolated-service-cookies");
-
-  initializeElectronProfile(app, "darwin");
-
-  assert.equal(fs.existsSync(legacy), false);
-  assert.equal(fs.readFileSync(path.join(current, "Cookies"), "utf8"), "stored-cookie-database");
-  assert.equal(fs.readFileSync(path.join(current, "Local Storage", "website-data"), "utf8"), "stored-website-data");
-  assert.equal(fs.readFileSync(path.join(current, "Local State"), "utf8"), "chromium-profile-metadata");
-  assert.equal(fs.readFileSync(path.join(current, "Partitions", "service-example", "Cookies"), "utf8"), "isolated-service-cookies");
-  fs.mkdirSync(legacy, { recursive: true });
-  fs.writeFileSync(path.join(legacy, "Cookies"), "stale-cookie-database");
-  initializeElectronProfile(app, "darwin");
-  assert.equal(fs.readFileSync(path.join(current, "Cookies"), "utf8"), "stored-cookie-database");
-  assert.equal(fs.readFileSync(path.join(legacy, "Cookies"), "utf8"), "stale-cookie-database");
 });
 
 test("profile paths cannot be relocated after Electron is ready", () => {

@@ -99,6 +99,18 @@ export function handleServiceWebviewBridgeMessage(
     return true;
   }
 
+  if (payload.type === "desktop:agent-webclient:creation:options") {
+    const responseType = "desktop:agent-webclient:creation:options:response";
+    if (context.serviceId !== "agent-webclient") {
+      sendFailure(context, responseType, payload.requestId, "Creation options unavailable for this surface");
+      return true;
+    }
+    void window.electronAPI.assistant.getProjectCreationOptions().then(result => {
+      context.sendBridgeMessageToWebview({ type: responseType, requestId: payload.requestId, ...result });
+    }).catch(error => sendFailure(context, responseType, payload.requestId, errorMessage(error)));
+    return true;
+  }
+
   if (payload.type === AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_REQUEST_TYPE) {
     const connectorId = typeof payload.connectorId === "string" ? payload.connectorId : "";
     const responseType = AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_RESPONSE_TYPE;

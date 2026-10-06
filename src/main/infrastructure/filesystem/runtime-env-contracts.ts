@@ -2,7 +2,7 @@ import { type App } from "electron";
 import JSZip from "jszip";
 import path from "node:path";
 
-export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
+export type EnvRootConflictDecision = "backup" | "keep" | "cancel";
 
 export type AppPathReader = Pick<App, "getPath">;
 
@@ -57,6 +57,7 @@ export type ValidatedBundledEnvUpgradeInput = {
   size: number;
   desktopInit: Record<string, unknown>;
   providerRegister?: string;
+  creationProfile?: string;
 };
 
 export type RuntimeEnvResetResult = BundledEnvZipImportResult & {

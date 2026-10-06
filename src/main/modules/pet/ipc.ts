@@ -1,3 +1,5 @@
+import { DEFAULT_DESKTOP_PET_APPEARANCE_ID } from "../../../shared/desktop-pet";
+import { registerPetImportIpcHandlers } from "./import-ipc";
 import {
   isDesktopPetSupportedPlatform,
   sanitizeDesktopPetAppearanceId,
@@ -34,6 +36,16 @@ export interface DesktopPetWindowModeInput {
 }
 
 export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
+  registerPetImportIpcHandlers(ipcMain, {
+    ...options,
+    onRemoved: (appearanceId: string) => {
+      if (options.getSettings().appearanceId === appearanceId) {
+        options.saveSettingsInState(saveDesktopPetSettings(options.app, {
+          appearanceId: DEFAULT_DESKTOP_PET_APPEARANCE_ID
+        }, options.platform));
+      }
+    }
+  });
   function isPetWindowSender(event: any) {
     const win = options.getWindow();
     return Boolean(win && !win.isDestroyed() && event.sender === win.webContents);

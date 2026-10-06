@@ -41,7 +41,7 @@ export type MainIpcRegistrationOptions = {
   desktopSsoController: any;
   startupRestoreController: any;
   desktopAppInfo: any;
-  oldRootDecisionRef: { current: "migrate" | "keep" | "cancel" | undefined };
+  runtimeRootConflictDecisionRef: { current: "backup" | "keep" | "cancel" | undefined };
   isFirstDesktopInstall: boolean;
   bundledEnvZipExistsAtStartup: boolean;
   runtimeRootExistedAtStartup: boolean;

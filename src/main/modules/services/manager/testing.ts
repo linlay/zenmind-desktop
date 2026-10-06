@@ -17,7 +17,7 @@ import {
   readBuiltinAssetSignature
 } from "./bundle-assets";
 import { upsertEnvFileContent } from "./env-content";
-import { ensurePreStartRequirements, resolveAgentPlatformReadinessFallbackTarget } from "./capability-requirements";
+import { ensurePreStartRequirements } from "./capability-requirements";
 import { getStartCommandEnvOverrides, buildDesktopServiceCommandEnvForTests, getDesktopStartCommandOptions } from "./command-environment";
 import {
   getDesktopStartCommand,
@@ -120,7 +120,6 @@ export const __testInternals = {
   probeHttpUrl,
   verifyServiceState,
   buildVerificationResult,
-  resolveAgentPlatformReadinessFallbackTarget,
   clearContainerEngineProbeCache,
   matchProcessInstallDir,
   readManagedPidFile,

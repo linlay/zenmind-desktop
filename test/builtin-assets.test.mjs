@@ -181,8 +181,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         phase: "verifyRunning",
         service: "agent-platform",
         action: "waitHttp",
-        target: "/api/runtime-info",
-        authCapability: "auth.accessToken"
+        target: "/healthz"
       }
     ];
     manifest.desktop.hosting = {
@@ -804,6 +803,21 @@ for (const targetOs of ["darwin", "windows"]) {
       ];
       await pack();
       for (const validate of validators) assert.doesNotThrow(validate);
+      if (id === "agent-webclient") {
+        const health = manifest.desktop.capabilities.requires.find(item => item.service === "agent-platform");
+        for (const legacyTarget of ["/api/runtime-info", "/api/agents"]) {
+          health.target = legacyTarget;
+          await pack();
+          for (const validate of validators) assert.throws(validate, /waitHttp \/healthz/u);
+        }
+        health.target = "/healthz";
+        health.authCapability = "auth.accessToken";
+        await pack();
+        for (const validate of validators) assert.throws(validate, /without authCapability/u);
+        delete health.authCapability;
+        await pack();
+        for (const validate of validators) assert.doesNotThrow(validate);
+      }
       fs.rmSync(path.join(bundleRoot, privateFile));
       await pack();
       for (const validate of validators) assert.throws(validate, /Missing required entries: backend\/private-resource.txt/u);

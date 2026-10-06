@@ -19,6 +19,7 @@ import {
   validateBundledEnvForDesktopVersionUpgrade,
   stageValidatedDesktopVersionUpgradeInput,
   applyProviderRegisterUpgradeInput,
+  applyCreationProfileUpgradeInput,
   validateEnvZipForDesktopManualImport
 } from "../../../infrastructure/filesystem/runtime-environment";
 import { t } from "../../../support/i18n/main-i18n";
@@ -177,6 +178,7 @@ export async function runDesktopServiceConfigUpgradePreparation(
       // Restore on every unfinished transaction attempt: the previous grant may
       // have been consumed before a later service failure required another deploy.
       applyProviderRegisterUpgradeInput(app, validated.providerRegister, context.backupDir);
+      applyCreationProfileUpgradeInput(app, validated.creationProfile, context.backupDir);
       return {
         sourceZipPath: validated.sourceZipPath,
         ...(validated.previousSourceZipPath
@@ -236,6 +238,7 @@ export async function importEnvZipIntoExistingRuntime(
   }
   applyDesktopConfiguration(app, validated.desktopInit, backupDir, platform);
   applyProviderRegisterUpgradeInput(app, validated.providerRegister, backupDir, platform);
+  applyCreationProfileUpgradeInput(app, validated.creationProfile, backupDir, platform);
   const currentDesktopDefaultPorts = Object.fromEntries(
     DESKTOP_SERVICE_CONFIG_UPGRADE_IDS.map((serviceId) => [
       serviceId,

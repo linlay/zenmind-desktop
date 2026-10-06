@@ -1800,7 +1800,7 @@ test("Kanban runtime falls back to local agents for remote listAgents", async (t
   const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
-      listAgents: async () => [],
+      listAgents: async () => { throw new Error("Platform unavailable"); },
       startBackgroundRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     callAgentPlatform: async () => ({ ok: true }),
@@ -1926,9 +1926,9 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
     await waitFor(() => socket.sent.some((frame) => frame.id === "list-agents-timeout"), "installed agents ACK", 3000);
     const ack = socket.sent.find((frame) => frame.id === "list-agents-timeout");
     assert.equal(ack.ok, true);
-    assert.deepEqual(ack.payload.items.map((agent) => agent.agentKey), ["bootstrap", "cutej"]);
-    assert.equal(ack.payload.items[0].displayName, "初始化");
-    assert.equal(ack.payload.items[1].displayName, "小君");
+    assert.deepEqual(ack.payload.items.map((agent) => agent.agentKey), ["cutej", "bootstrap"]);
+    assert.equal(ack.payload.items[0].displayName, "小君");
+    assert.equal(ack.payload.items[1].displayName, "初始化");
     assert.equal(platformListAgentsCalled, true);
     assert.equal(debugMessages.some((message) => message.includes("安装目录 2")), true);
   } finally {

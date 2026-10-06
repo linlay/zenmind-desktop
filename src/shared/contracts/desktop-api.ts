@@ -12,7 +12,7 @@ import type { MarketSkillPins, MarketSkillPinUpdate } from "./market-skill-pins"
 import type { MarketConnectorConnection, MarketConnectorAuthSession, MarketConnectorPreparation, MarketConnectorDisconnectResult, MarketConnectorTokenSchema, MarketConnectorAgentState } from "./market-connector-state";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
-import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
+import type { DesktopPetRemoveResult, DesktopPetImportResult, DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
@@ -1316,6 +1316,9 @@ export interface DesktopApi {
     clearAgentRealtimeDebugTrace: () => Promise<AgentRealtimeDebugSnapshot>;
   };
   desktopPet: {
+    removePackage: (appearanceId: string) => Promise<DesktopPetRemoveResult>;
+    importPackage: () => Promise<DesktopPetImportResult>;
+    importDroppedPackage: (file: File) => Promise<DesktopPetImportResult>;
     getSettings: () => Promise<DesktopPetSettings>;
     getState: () => Promise<DesktopPetState>;
     saveSettings: (input: DesktopPetSettingsInput) => Promise<DesktopPetState>;

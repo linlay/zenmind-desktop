@@ -32,7 +32,7 @@ async function wait(ms: number, signal: AbortSignal) {
   });
 }
 async function authenticate(options: DesktopActionBridgeOptions, identity: Awaited<ReturnType<typeof platform>>, connectorId: string, signal: AbortSignal): Promise<AuthResult> {
-  const authPath = `/api/desktop/connector/auth?id=${encodeURIComponent(connectorId)}`;
+  const authPath = `/api/connectors/auth?id=${encodeURIComponent(connectorId)}`;
   let window: BrowserWindow | undefined; let release: (() => void) | undefined; let partition = ""; let currentURL = "";
   const owner = options.getMainWindow();
   if (!owner || owner.isDestroyed()) return { status: "failed" };
@@ -166,18 +166,19 @@ export async function executeWebappConnector(options: DesktopActionBridgeOptions
     // to this request without requiring a manifest declaration or UI approval.
     const execution = (action === "connector.invoke" ? [args.adapter] : ["cli", "mcp"])
       .map(adapter => ({ connectorId, adapter }));
-    const grant = await request(identity.baseUrl, identity.token, "/api/desktop/webapp/grants", "POST", { version: 2, appId: invocation.webappId, execution });
-    if (typeof grant?.token !== "string" || !grant.token.startsWith("wap_") || typeof grant.grantId !== "string" || grant.appId !== invocation.webappId || !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= Date.now()) throw new ConnectorError("invalid_platform_response");
+    // Preserve the original appId as the receipt namespace across protocol upgrades.
+    const grant = await request(identity.baseUrl, identity.token, "/api/connectors/execution/grants", "POST", { version: 3, idempotencyNamespace: invocation.webappId, execution });
+    if (typeof grant?.token !== "string" || !grant.token.startsWith("cxg_") || typeof grant.grantId !== "string" || grant.idempotencyNamespace !== invocation.webappId || !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= Date.now()) throw new ConnectorError("invalid_platform_response");
     try {
       await context.check();
       const method = action.slice("connector.".length);
-      const result = await request(identity.baseUrl, grant.token, `/api/webapp/connector/${method}`, "POST", args, false, context.signal);
+      const result = await request(identity.baseUrl, grant.token, `/api/connectors/execution/${method}`, "POST", args, false, context.signal);
       await context.check();
       const fresh = await platform(options);
       if (fresh.subject !== identity.subject) throw new ConnectorError("app_grant_required");
       return { ok: true, action, result };
     } finally {
-      await request(identity.baseUrl, identity.token, `/api/desktop/webapp/grants?grantId=${encodeURIComponent(grant.grantId)}`, "DELETE").catch(() => {});
+      await request(identity.baseUrl, identity.token, `/api/connectors/execution/grants?grantId=${encodeURIComponent(grant.grantId)}`, "DELETE").catch(() => {});
     }
   } catch (error) { return { ok: false, action, error: { code: error instanceof ConnectorError ? error.code : "connector_unavailable", message: error instanceof ConnectorError ? error.code : "Connector is unavailable." } }; }
 }
@@ -204,47 +205,41 @@ async function executeWebappRead(options: DesktopActionBridgeOptions, action: st
   const allowed = action === "artifact.list" ? ["chatId", "runId", "cursor", "limit"] : ["chatId", "runId", "artifactId"];
   if (Object.keys(args).some(key => !allowed.includes(key))) throw new ConnectorError("invalid_arguments");
   if (typeof args.chatId !== "string" || !applicationChats.get(context.key)?.has(args.chatId)) throw new ConnectorError("app_grant_required");
-  const grant = await request(identity.baseUrl, identity.token, "/api/desktop/webapp/grants", "POST", { version: 2, appId, execution: [], chatIds: [args.chatId] });
-  if (typeof grant?.token !== "string" || !grant.token.startsWith("wap_") || typeof grant.grantId !== "string" || grant.appId !== appId || !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= Date.now()) throw new ConnectorError("invalid_platform_response");
-  try {
+  await context.check();
+  if (action === "artifact.open" || action === "artifact.saveAs") {
+    const metadata = await request(identity.baseUrl, identity.token, "/api/chat/artifacts/get", "POST", args, false, signal);
     await context.check();
-    if (action === "artifact.open" || action === "artifact.saveAs") {
-      const metadata = await request(identity.baseUrl, grant.token, "/api/webapp/artifact/get", "POST", args, false, signal);
+    if (metadata?.chatId !== args.chatId || metadata?.artifactId !== args.artifactId || typeof metadata.name !== "string") throw new ConnectorError("invalid_platform_response");
+    if (action === "artifact.saveAs") {
+      const owner = options.getMainWindow();
+      if (!owner || owner.isDestroyed()) throw new ConnectorError("desktop_unavailable");
+      // Use the native picker on both macOS and Windows; never accept a caller path.
+      const selected = await dialog.showSaveDialog(owner, { defaultPath: path.basename(metadata.name.replaceAll("\\", "/")) });
       await context.check();
-      if (metadata?.chatId !== args.chatId || metadata?.artifactId !== args.artifactId || typeof metadata.name !== "string") throw new ConnectorError("invalid_platform_response");
-      if (action === "artifact.saveAs") {
-        const owner = options.getMainWindow();
-        if (!owner || owner.isDestroyed()) throw new ConnectorError("desktop_unavailable");
-        // Use the native picker on both macOS and Windows; never accept a caller path.
-        const selected = await dialog.showSaveDialog(owner, { defaultPath: path.basename(metadata.name.replaceAll("\\", "/")) });
-        await context.check();
-        if (selected.canceled || !selected.filePath) return { ok: true, action, result: { cancelled: true } };
-        const content = await request(identity.baseUrl, grant.token, "/api/webapp/artifact/read", "POST", args, true, signal);
-        await context.check();
-        await fs.writeFile(selected.filePath, Buffer.from(content.dataBase64, "base64"));
-        return { ok: true, action, result: { saved: true } };
-      }
-      const info = await options.assistantBridge.getChatInfo(args.chatId as string);
-      if (!info || info.chatId !== args.chatId || !info.agentKey) throw new ConnectorError("artifact_not_found");
-      const raw = JSON.parse(info.rawJson);
-      if (raw.chatId !== args.chatId) throw new ConnectorError("artifact_not_found");
-      const matches = Array.isArray(raw?.artifact?.items) ? raw.artifact.items.filter((value: any) => value.artifactId === args.artifactId && (!args.runId || value.runId === args.runId)) : [];
-      if (matches.length !== 1) throw new ConnectorError("artifact_ambiguous");
-      const relativePath = artifactRelativePath(matches[0].url, info.chatId);
-      if (!relativePath) throw new ConnectorError("artifact_not_found");
+      if (selected.canceled || !selected.filePath) return { ok: true, action, result: { cancelled: true } };
+      const content = await request(identity.baseUrl, identity.token, "/api/chat/artifacts/read", "POST", args, true, signal);
       await context.check();
-      const route = `/resource-viewer/${encodeURIComponent(info.agentKey)}?${new URLSearchParams({ chatId: info.chatId, file: relativePath.split("/").map(encodeURIComponent).join("/") })}`;
-      const opened = await options.callRendererAction({ requestId: artifactRequestId(), action: "desktop.workpanel.openTab", source: { chatId: info.chatId }, args: {
-        descriptor: { kind: "webclient", module: "artifact", route, title: metadata.name,
-          context: { agentKey: info.agentKey, chatId: info.chatId, artifactId: args.artifactId, relativePath } }
-      } });
-      if (!opened.ok) throw new ConnectorError("artifact_preview_unavailable");
-      return { ok: true, action, result: { opened: true } };
+      await fs.writeFile(selected.filePath, Buffer.from(content.dataBase64, "base64"));
+      return { ok: true, action, result: { saved: true } };
     }
-    const result = await request(identity.baseUrl, grant.token, `/api/webapp/artifact/${action.slice("artifact.".length)}`, "POST", args, action === "artifact.read", signal);
-    if ((await platform(options)).subject !== identity.subject || !options.webs.webappManager.list(options.app).some(value => value.id === appId)) throw new ConnectorError("app_grant_required");
-    return { ok: true, action, result };
-  } finally {
-    await request(identity.baseUrl, identity.token, `/api/desktop/webapp/grants?grantId=${encodeURIComponent(grant.grantId)}`, "DELETE").catch(() => {});
+    const info = await options.assistantBridge.getChatInfo(args.chatId as string);
+    if (!info || info.chatId !== args.chatId || !info.agentKey) throw new ConnectorError("artifact_not_found");
+    const raw = JSON.parse(info.rawJson);
+    if (raw.chatId !== args.chatId) throw new ConnectorError("artifact_not_found");
+    const matches = Array.isArray(raw?.artifact?.items) ? raw.artifact.items.filter((value: any) => value.artifactId === args.artifactId && (!args.runId || value.runId === args.runId)) : [];
+    if (matches.length !== 1) throw new ConnectorError("artifact_ambiguous");
+    const relativePath = artifactRelativePath(matches[0].url, info.chatId);
+    if (!relativePath) throw new ConnectorError("artifact_not_found");
+    await context.check();
+    const route = `/resource-viewer/${encodeURIComponent(info.agentKey)}?${new URLSearchParams({ chatId: info.chatId, file: relativePath.split("/").map(encodeURIComponent).join("/") })}`;
+    const opened = await options.callRendererAction({ requestId: artifactRequestId(), action: "desktop.workpanel.openTab", source: { chatId: info.chatId }, args: {
+      descriptor: { kind: "webclient", module: "artifact", route, title: metadata.name,
+        context: { agentKey: info.agentKey, chatId: info.chatId, artifactId: args.artifactId, relativePath } }
+    } });
+    if (!opened.ok) throw new ConnectorError("artifact_preview_unavailable");
+    return { ok: true, action, result: { opened: true } };
   }
+  const result = await request(identity.baseUrl, identity.token, `/api/chat/artifacts/${action.slice("artifact.".length)}`, "POST", args, action === "artifact.read", signal);
+  if ((await platform(options)).subject !== identity.subject || !options.webs.webappManager.list(options.app).some(value => value.id === appId)) throw new ConnectorError("app_grant_required");
+  return { ok: true, action, result };
 }

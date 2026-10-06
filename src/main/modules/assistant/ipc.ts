@@ -1,4 +1,5 @@
 import path from "node:path";
+import { loadProjectCreationOptions } from "./project-creation-options";
 import { selectChatRunJson } from "./chat-run-json";
 import fs from "node:fs";
 import {
@@ -64,7 +65,6 @@ export interface AssistantIpcHandlerOptions {
   emitAssistantAttachmentProgress: ((progress: any) => void) | null;
   getAssistantSettings: ((app: any) => any) | null;
   saveAssistantSettings: ((app: any, input: any) => any) | null;
-  getAgentPlatformMinimaxSettingsPublic: ((app: any) => any) | null;
   resolveAssistantAttachmentPath: ((app: any, chatId: string, attachmentId: string) => string) | null;
   createAssistantAttachmentFromPastedImage: ((app: any, chatId: any, input: any) => any) | null;
   cancelAssistantAttachmentTask: ((taskId: string) => any) | null;
@@ -221,7 +221,6 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     emitAssistantAttachmentProgress,
     getAssistantSettings,
     saveAssistantSettings,
-    getAgentPlatformMinimaxSettingsPublic,
     resolveAssistantAttachmentPath,
     createAssistantAttachmentFromPastedImage,
     cancelAssistantAttachmentTask,
@@ -392,7 +391,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // assistant — settings
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.getSettings", async () =>
-    (getAgentPlatformMinimaxSettingsPublic?.(app) ?? null) ?? getAssistantSettings?.(app)
+    getAssistantSettings?.(app)
   );
 
   ipcMain.handle("assistant.consumeFirstInstallBootstrapNavigation", async () =>
@@ -427,7 +426,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     const request = buildProjectAgentCreateRequest(projectType, workspaceDir, {
       acpBridgeId,
       modelKey: String(input?.modelKey || "").trim(),
-      capabilityGroups: Array.isArray(input?.capabilityGroups) ? input.capabilityGroups : undefined
+      definition: input?.definition
     });
     try {
       const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
@@ -649,7 +648,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       if (!callAgentPlatform) {
         return { ok: false, message: t("assistant.agentPlatformUnavailable") };
       }
-      const options = await callAgentPlatform(app, "/api/admin/agents/creation-options");
+      const options = await loadProjectCreationOptions(app, callAgentPlatform);
       if (!options || !Array.isArray(options.types) || !Array.isArray(options.groups)) {
         return { ok: false, message: t("assistant.projectCreationOptionsInvalid") };
       }

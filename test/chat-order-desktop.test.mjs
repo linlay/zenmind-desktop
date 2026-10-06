@@ -63,7 +63,6 @@ function registerChatOrderHandler(t, callAgentPlatform) {
     emitAssistantAttachmentProgress: null,
     getAssistantSettings: null,
     saveAssistantSettings: null,
-    getAgentPlatformMinimaxSettingsPublic: null,
     resolveAssistantAttachmentPath: null,
     createAssistantAttachmentFromPastedImage: null,
     cancelAssistantAttachmentTask: null,

@@ -94,26 +94,28 @@ export async function applyDelivery(dependencies: CommandDeliveryDependencies, d
 
 export async function listAgents(dependencies: CommandDeliveryDependencies): Promise<DesktopPetAgentOption[]> {
   dependencies.options.onDebug?.(t("kanban.runtime.debugReadingAgents"));
-  const installedAgents = readInstalledAgentOptions(dependencies.options.app);
-  const localAgents = normalizeDesktopPetAgentOptions(dependencies.options.listLocalAgents?.() ?? []);
-  let platformAgents: DesktopPetAgentOption[] = [];
   try {
-    platformAgents = normalizeDesktopPetAgentOptions(await withTimeout(() => dependencies.options.assistantBridge.listAgents(), ASSISTANT_AGENT_LIST_TIMEOUT_MS, t("kanban.runtime.agentListTimeout")));
+    const agents = normalizeDesktopPetAgentOptions(await withTimeout(() => dependencies.options.assistantBridge.listAgents(), ASSISTANT_AGENT_LIST_TIMEOUT_MS, t("kanban.runtime.agentListTimeout")));
+    dependencies.options.onDebug?.(t("kanban.runtime.debugAgentsReturned", {
+      total: agents.length, installed: 0, platform: agents.length, cached: 0
+    }));
+    return agents;
   }
   catch (error) {
     dependencies.options.onDebug?.(t("kanban.runtime.debugAgentListFallback", {
       message: error instanceof Error ? error.message : String(error)
     }));
   }
+  const installedAgents = readInstalledAgentOptions(dependencies.options.app);
+  const localAgents = normalizeDesktopPetAgentOptions(dependencies.options.listLocalAgents?.() ?? []);
   const agents = normalizeDesktopPetAgentOptions([
-    ...installedAgents,
-    ...platformAgents,
-    ...localAgents
+    ...localAgents,
+    ...installedAgents
   ]);
   dependencies.options.onDebug?.(t("kanban.runtime.debugAgentsReturned", {
     total: agents.length,
     installed: installedAgents.length,
-    platform: platformAgents.length,
+    platform: 0,
     cached: localAgents.length
   }));
   return agents;
