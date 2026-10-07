@@ -837,7 +837,8 @@ test("mac sidebar top chrome stays aligned with the compact native titlebar", ()
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-chrome\s*\{[\s\S]*?margin-bottom:\s*8px;/);
   assert.match(globalStyles, /\.sidebar-chrome-toolbar\.is-mac\s*\{[\s\S]*?margin-bottom:\s*2px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*9px;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed\s*\{[\s\S]*?--sidebar-toolbar-height:\s*61px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed\s*\{[\s\S]*?--sidebar-toolbar-height:\s*89px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-history-controls\s*\{\s*display:\s*inline-flex;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*35px;/);
 });
 
@@ -1783,15 +1784,14 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const globalStyles = readRendererStyles();
 
-  assert.match(appShell, /type SidebarNavigationHistory = \{\s*back: string\[\];\s*forward: string\[\];\s*\};/);
-  assert.match(appShell, /const \[sidebarNavigationHistory,\s*setSidebarNavigationHistory\] = useState<SidebarNavigationHistory>/);
-  assert.match(appShell, /function navigateWithSidebarHistory\(targetPath: string, direction: "back" \| "forward"\)/);
-  assert.match(appShell, /function handleSidebarBackNavigation\(\)[\s\S]*?navigateWithSidebarHistory\(targetPath,\s*"back"\)/);
-  assert.match(appShell, /function handleSidebarForwardNavigation\(\)[\s\S]*?navigateWithSidebarHistory\(targetPath,\s*"forward"\)/);
-  assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?back:\s*\[\.\.\.current\.back,\s*currentRoute\]/);
-  assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?forward:\s*\[\]/);
-  assert.match(appShell, /sidebarNavigationCanGoBack=\{sidebarNavigationHistory\.back\.length > 0\}/);
-  assert.match(appShell, /sidebarNavigationCanGoForward=\{sidebarNavigationHistory\.forward\.length > 0\}/);
+  assert.doesNotMatch(appShell, /sidebarNavigationHistory/);
+  assert.match(appShell, /const navigationType = useNavigationType\(\);/);
+  assert.match(appShell, /recordDesktopNavigation\(current, navigationType, \{[\s\S]*?key: location\.key,[\s\S]*?position: readRouterHistoryPosition\(\),/);
+  assert.match(appShell, /function navigateWithSidebarHistory\(direction: "back" \| "forward"\)[\s\S]*?navigate\(step\.delta\);/);
+  assert.match(appShell, /function handleSidebarBackNavigation\(\)[\s\S]*?navigateWithSidebarHistory\("back"\)/);
+  assert.match(appShell, /function handleSidebarForwardNavigation\(\)[\s\S]*?navigateWithSidebarHistory\("forward"\)/);
+  assert.match(appShell, /sidebarNavigationCanGoBack=\{Boolean\(desktopNavigationBackStep\)\}/);
+  assert.match(appShell, /sidebarNavigationCanGoForward=\{Boolean\(desktopNavigationForwardStep\)\}/);
   assert.match(appShell, /onSidebarNavigateBack=\{handleSidebarBackNavigation\}/);
   assert.match(appShell, /onSidebarNavigateForward=\{handleSidebarForwardNavigation\}/);
 

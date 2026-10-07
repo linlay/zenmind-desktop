@@ -6807,30 +6807,28 @@ export function AppSidebar({
                     t={t}
                   />
                 ) : null}
-                {isPrimaryMode ? (
-                  <div className="sidebar-history-controls">
-                    <button
-                      type="button"
-                      className="sidebar-history-button"
-                      aria-label={t("sidebar.navigation.back")}
-                      title={t("sidebar.navigation.back")}
-                      disabled={!sidebarNavigationCanGoBack}
-                      onClick={onSidebarNavigateBack}
-                    >
-                      <SidebarActionIcon kind="back" />
-                    </button>
-                    <button
-                      type="button"
-                      className="sidebar-history-button"
-                      aria-label={t("sidebar.navigation.forward")}
-                      title={t("sidebar.navigation.forward")}
-                      disabled={!sidebarNavigationCanGoForward}
-                      onClick={onSidebarNavigateForward}
-                    >
-                      <SidebarActionIcon kind="forward" />
-                    </button>
-                  </div>
-                ) : null}
+                <div className="sidebar-history-controls">
+                  <button
+                    type="button"
+                    className="sidebar-history-button"
+                    aria-label={t("sidebar.navigation.back")}
+                    title={t("sidebar.navigation.back")}
+                    disabled={!sidebarNavigationCanGoBack}
+                    onClick={onSidebarNavigateBack}
+                  >
+                    <SidebarActionIcon kind="back" />
+                  </button>
+                  <button
+                    type="button"
+                    className="sidebar-history-button"
+                    aria-label={t("sidebar.navigation.forward")}
+                    title={t("sidebar.navigation.forward")}
+                    disabled={!sidebarNavigationCanGoForward}
+                    onClick={onSidebarNavigateForward}
+                  >
+                    <SidebarActionIcon kind="forward" />
+                  </button>
+                </div>
                 {isPrimaryMode && assistantLauncherVisible ? (
                   <button
                     type="button"

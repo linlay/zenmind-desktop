@@ -2711,6 +2711,13 @@ export function SettingsPage({
     const nextId = nextWebapp?.id ?? "";
     if (selectedWebappId !== nextId) {
       setSelectedWebappId(nextId);
+      // Back/forward changes the selection through the route, so per-item state resets here as well;
+      // a failed config read must never leave the previous app's values ready to save.
+      setWebappDetailsOpen(false);
+      setWebappUserConfigValues({});
+      setWebappUserConfigIssues({});
+      webappUserConfigRequestRef.current += 1;
+      setWebappLogContent("");
     }
     const canonicalRoute = buildWebappSettingsPath(nextId);
     if (currentRoute !== canonicalRoute) {
@@ -3649,7 +3656,7 @@ export function SettingsPage({
   function handleSelectWebappItem(item: WebappEntry) {
     setWebappDetailsOpen(false);
     setSelectedWebappId(item.id);
-    navigate(buildWebappSettingsPath(item.id), { replace: true });
+    navigate(buildWebappSettingsPath(item.id));
     setWebappLabel(item.label);
     setWebappOpenMode(item.openMode);
     setWebappAllowLanAccess(item.allowLanAccess === true);

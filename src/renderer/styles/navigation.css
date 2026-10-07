@@ -4045,7 +4045,7 @@ div.sidebar-chats-group-popover {
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed {
-  --sidebar-toolbar-height: 61px;
+  --sidebar-toolbar-height: 89px;
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-mac {
@@ -4080,7 +4080,7 @@ div.sidebar-chats-group-popover {
   grid-template-columns: 1fr;
   place-items: center;
   box-sizing: border-box;
-  gap: 0;
+  gap: 4px;
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button {
@@ -4117,6 +4117,11 @@ div.sidebar-chats-group-popover {
 
 .app-sidebar.is-collapsed .sidebar-history-controls {
   display: none;
+}
+
+/* macOS has no system bar, so the collapsed rail keeps back/forward under the collapse toggle. */
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-history-controls {
+  display: inline-flex;
 }
 
 .app-sidebar.is-collapsed .sidebar-nav {

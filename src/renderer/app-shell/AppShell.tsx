@@ -1,5 +1,5 @@
-import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
+import { createElement, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { ConnectorAuthBrowser } from "../connectors/ConnectorAuthBrowser";
@@ -16,6 +16,14 @@ import {
   type SidebarMode,
   resolveSidebarMode,
 } from "./navigation/capabilityNavigation";
+import {
+  createDesktopNavigationTimeline,
+  findDesktopNavigationEntry,
+  recordDesktopNavigation,
+  recordDesktopNavigationSidebarMode,
+  resolveDesktopNavigationStep,
+  type DesktopNavigationTimeline,
+} from "./navigation/desktopNavigationTimeline";
 import type { WebsiteFaviconCache } from "../components/Favicon";
 import { BrandMark, SidebarActionIcon } from "../components/BrandMark";
 import { PageFeedbackStack } from "../components/PageFeedbackStack";
@@ -432,8 +440,10 @@ function resolveSecondarySidebarExitTargetPath(
   return targetPath;
 }
 
-function removeSecondarySidebarRoutesFromHistory(history: string[], mainOrder: readonly string[] = []) {
-  return history.filter((item) => !isSecondarySidebarRoute(item, mainOrder));
+// The router keeps the index of the current entry in window.history.state; null when it is not exposed.
+function readRouterHistoryPosition() {
+  const position: unknown = window.history.state?.idx;
+  return typeof position === "number" ? position : null;
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
@@ -508,11 +518,6 @@ type CopilotDockResizeDragState = {
   initialWidth: number;
   pointerId: number;
   startClientX: number;
-};
-
-type SidebarNavigationHistory = {
-  back: string[];
-  forward: string[];
 };
 
 function inferDesktopPlatform() {
@@ -798,10 +803,6 @@ export function AppShell() {
   const websiteAgentSyncRequestRef = useRef("");
   const marketSettingsRefreshIdRef = useRef(0);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
-  const [sidebarNavigationHistory, setSidebarNavigationHistory] = useState<SidebarNavigationHistory>({
-    back: [],
-    forward: []
-  });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
   const [isCopilotDockResizing, setIsCopilotDockResizing] = useState(false);
@@ -942,6 +943,39 @@ export function AppShell() {
     setRetainedSidebarMode((current) => current?.locationKey === location.key ? current : null);
   }, [location.key]);
   const isSecondarySidebarMode = sidebarMode !== "primary";
+  const navigationType = useNavigationType();
+  // Desktop back/forward follows the router's own history, recorded by observing every committed location.
+  const [desktopNavigationTimeline, setDesktopNavigationTimeline] = useState<DesktopNavigationTimeline>(() =>
+    createDesktopNavigationTimeline({
+      key: location.key,
+      route: currentRoute,
+      sidebarMode,
+      position: readRouterHistoryPosition(),
+    })
+  );
+  useLayoutEffect(() => {
+    if (navigationType === "POP") {
+      const recordedEntry = findDesktopNavigationEntry(desktopNavigationTimeline, location.key);
+      if (recordedEntry && recordedEntry.sidebarMode !== sidebarMode) {
+        setRetainedSidebarMode({ locationKey: location.key, mode: recordedEntry.sidebarMode });
+      }
+    }
+    setDesktopNavigationTimeline((current) =>
+      recordDesktopNavigation(current, navigationType, {
+        key: location.key,
+        route: currentRoute,
+        sidebarMode,
+        position: readRouterHistoryPosition(),
+      })
+    );
+  }, [location.key]);
+  useEffect(() => {
+    setDesktopNavigationTimeline((current) =>
+      recordDesktopNavigationSidebarMode(current, location.key, sidebarMode)
+    );
+  }, [location.key, sidebarMode]);
+  const desktopNavigationBackStep = resolveDesktopNavigationStep(desktopNavigationTimeline, "back");
+  const desktopNavigationForwardStep = resolveDesktopNavigationStep(desktopNavigationTimeline, "forward");
   useEffect(() => {
     if (sidebarMode !== "primary") {
       shellOverlay.closeToolMenu(toolMenuOverlay);
@@ -3261,10 +3295,6 @@ export function AppShell() {
 
     beginChatPerformanceNavigation(targetPath);
 
-    setSidebarNavigationHistory((current) => ({
-      back: [...current.back, currentRoute],
-      forward: []
-    }));
     setPendingSidebarNavigationPath(targetPath);
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
@@ -3319,25 +3349,13 @@ export function AppShell() {
     );
   }
 
-  function navigateWithSidebarHistory(targetPath: string, direction: "back" | "forward") {
-    targetPath = resolveKanbanAwareNavigationPath(targetPath, kanbanEnabled);
-    if (targetPath === currentRoute) {
+  function navigateWithSidebarHistory(direction: "back" | "forward") {
+    const step = direction === "back" ? desktopNavigationBackStep : desktopNavigationForwardStep;
+    if (!step) {
       return;
     }
 
-    setSidebarNavigationHistory((current) => {
-      if (direction === "back") {
-        return {
-          back: current.back.slice(0, -1),
-          forward: [...current.forward, currentRoute]
-        };
-      }
-      return {
-        back: [...current.back, currentRoute],
-        forward: current.forward.slice(0, -1)
-      };
-    });
-    setPendingSidebarNavigationPath(targetPath);
+    setPendingSidebarNavigationPath(step.entry.route);
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
@@ -3345,23 +3363,16 @@ export function AppShell() {
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, SIDEBAR_NAVIGATION_LOCK_MS);
-    navigate(targetPath);
+    // Move inside the router history so page-level "back" buttons and these controls share one history.
+    navigate(step.delta);
   }
 
   function handleSidebarBackNavigation() {
-    const targetPath = sidebarNavigationHistory.back.at(-1);
-    if (!targetPath) {
-      return;
-    }
-    navigateWithSidebarHistory(targetPath, "back");
+    navigateWithSidebarHistory("back");
   }
 
   function handleSidebarForwardNavigation() {
-    const targetPath = sidebarNavigationHistory.forward.at(-1);
-    if (!targetPath) {
-      return;
-    }
-    navigateWithSidebarHistory(targetPath, "forward");
+    navigateWithSidebarHistory("forward");
   }
 
   function handleSelectSettingsSection(sectionId: SettingsSectionId) {
@@ -3386,12 +3397,7 @@ export function AppShell() {
     setDebugSettingsUnlocked(false);
     void window.electronAPI.desktopActions.closeWorkbench();
 
-    const targetPath = buildSettingsSectionPath("about");
-    setSidebarNavigationHistory((current) => ({
-      back: current.back.at(-1) === targetPath ? current.back.slice(0, -1) : current.back,
-      forward: []
-    }));
-    navigate(targetPath, { replace: true });
+    navigate(buildSettingsSectionPath("about"), { replace: true });
   }
 
   function handleExitSecondarySidebarMode() {
@@ -3401,10 +3407,6 @@ export function AppShell() {
       chatRuntimeAgent.agentKey,
       sidebarNavOrder,
     );
-    setSidebarNavigationHistory((current) => ({
-      back: removeSecondarySidebarRoutesFromHistory(current.back, sidebarNavOrder),
-      forward: []
-    }));
     setPendingSidebarNavigationPath(targetPath);
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
@@ -3413,7 +3415,8 @@ export function AppShell() {
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, SIDEBAR_NAVIGATION_LOCK_MS);
-    navigate(targetPath, { replace: true });
+    // Leaving settings or capabilities is a normal visit: the pages left behind stay reachable with back.
+    navigate(targetPath);
   }
 
   useEffect(() => {
@@ -4666,69 +4669,72 @@ export function AppShell() {
             {BRAND_ID !== "cutej" ? (
               <span className="app-system-bar-product-name">{PRODUCT_NAME}</span>
             ) : null}
-            {sidebarMode === "primary" ? (
-              <nav className="app-system-bar-primary-actions" aria-label={t("nav.main")}>
-                <button
-                  type="button"
-                  className="app-system-bar-action"
-                  aria-label={t("desktop.globalSearch.title")}
-                  title={t("desktop.globalSearch.shortcutHint")}
-                  onClick={shellOverlay.openGlobalSearch}
-                >
-                  <SettingsSidebarIcon kind="search" />
-                </button>
-                <button
-                  type="button"
-                  className={`app-system-bar-action${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
-                  aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
-                  title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
-                  aria-expanded={!effectiveSidebarCollapsed}
-                  onClick={toggleSidebarCollapsed}
-                >
-                  <SidebarActionIcon kind="sidebar_left" />
-                </button>
-                <button
-                  type="button"
-                  className="app-system-bar-action"
-                  aria-label={t("sidebar.navigation.back")}
-                  title={t("sidebar.navigation.back")}
-                  disabled={sidebarNavigationHistory.back.length === 0}
-                  onClick={handleSidebarBackNavigation}
-                >
-                  <SidebarActionIcon kind="back" />
-                </button>
-                <button
-                  type="button"
-                  className="app-system-bar-action"
-                  aria-label={t("sidebar.navigation.forward")}
-                  title={t("sidebar.navigation.forward")}
-                  disabled={sidebarNavigationHistory.forward.length === 0}
-                  onClick={handleSidebarForwardNavigation}
-                >
-                  <SidebarActionIcon kind="forward" />
-                </button>
-                {assistantLauncherVisible ? (
+            {/* Settings and capabilities keep their own secondary header; only history stays in the system bar. */}
+            <nav className="app-system-bar-primary-actions" aria-label={t("nav.main")}>
+              {sidebarMode === "primary" ? (
+                <>
                   <button
                     type="button"
-                    className={`app-system-bar-action${assistantCopilotOpen ? " is-active" : ""}`}
-                    onClick={toggleSystemBarAssistantDock}
-                    aria-label={
-                      isAgentWebclientMainRoute
-                        ? t("sidebar.copilot.unavailableForPage", { appName: PRODUCT_NAME })
-                        : assistantCopilotOpen
-                          ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
-                          : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
-                    }
-                    aria-disabled={isAgentWebclientMainRoute}
-                    aria-pressed={assistantCopilotOpen}
-                    disabled={isAgentWebclientMainRoute}
-                    title={t("sidebar.copilot.title")}
+                    className="app-system-bar-action"
+                    aria-label={t("desktop.globalSearch.title")}
+                    title={t("desktop.globalSearch.shortcutHint")}
+                    onClick={shellOverlay.openGlobalSearch}
                   >
-                    <SidebarActionIcon kind="sidebar_right" />
+                    <SettingsSidebarIcon kind="search" />
                   </button>
-                ) : null}
-              </nav>
-            ) : null}
+                  <button
+                    type="button"
+                    className={`app-system-bar-action${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                    aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                    title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                    aria-expanded={!effectiveSidebarCollapsed}
+                    onClick={toggleSidebarCollapsed}
+                  >
+                    <SidebarActionIcon kind="sidebar_left" />
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                className="app-system-bar-action"
+                aria-label={t("sidebar.navigation.back")}
+                title={t("sidebar.navigation.back")}
+                disabled={!desktopNavigationBackStep}
+                onClick={handleSidebarBackNavigation}
+              >
+                <SidebarActionIcon kind="back" />
+              </button>
+              <button
+                type="button"
+                className="app-system-bar-action"
+                aria-label={t("sidebar.navigation.forward")}
+                title={t("sidebar.navigation.forward")}
+                disabled={!desktopNavigationForwardStep}
+                onClick={handleSidebarForwardNavigation}
+              >
+                <SidebarActionIcon kind="forward" />
+              </button>
+              {sidebarMode === "primary" && assistantLauncherVisible ? (
+                <button
+                  type="button"
+                  className={`app-system-bar-action${assistantCopilotOpen ? " is-active" : ""}`}
+                  onClick={toggleSystemBarAssistantDock}
+                  aria-label={
+                    isAgentWebclientMainRoute
+                      ? t("sidebar.copilot.unavailableForPage", { appName: PRODUCT_NAME })
+                      : assistantCopilotOpen
+                        ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
+                        : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
+                  }
+                  aria-disabled={isAgentWebclientMainRoute}
+                  aria-pressed={assistantCopilotOpen}
+                  disabled={isAgentWebclientMainRoute}
+                  title={t("sidebar.copilot.title")}
+                >
+                  <SidebarActionIcon kind="sidebar_right" />
+                </button>
+              ) : null}
+            </nav>
             <WindowsApplicationMenu disabled={windowControlsMasked} helpEnabled={helpEnabled} />
           </div>
           <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
@@ -4816,8 +4822,8 @@ export function AppShell() {
           bootstrapActive={chatRuntimeAgent.bootstrapActive}
           bootstrapAgentKey={normalizedBootstrapAgentKey}
           bootstrapChatId={assistantSettings?.bootstrapChatId}
-          sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}
-          sidebarNavigationCanGoForward={sidebarNavigationHistory.forward.length > 0}
+          sidebarNavigationCanGoBack={Boolean(desktopNavigationBackStep)}
+          sidebarNavigationCanGoForward={Boolean(desktopNavigationForwardStep)}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={closeAssistantDock}
           onDesktopSsoLogin={handleDesktopSsoLogin}
