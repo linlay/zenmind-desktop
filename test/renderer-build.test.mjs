@@ -2461,12 +2461,12 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
     popoverSource,
     /onFocus:[\s\S]*?triggerMode === "hover"[\s\S]*?event\.currentTarget\.matches\(":focus-visible"\)[\s\S]*?setOpen\(canOpenFromTrigger\(\)\)/,
   );
-  assert.match(sidebarSource, /"assistant-worker-unread-dot",\s*"chat-unread-dot"/);
+  assert.match(sidebarSource, /className="assistant-worker-unread-dot chat-unread-dot is-unread"/);
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
   assert.doesNotMatch(styles, /\.sidebar-chats-item\.is-unread \.sidebar-chats-preview::before/);
-  assert.match(styles, /\.assistant-worker-unread-dot\s*\{[\s\S]{0,160}width:\s*8px;[\s\S]{0,120}height:\s*8px;[\s\S]{0,120}background:\s*#1677ff;/);
+  assert.match(styles, /\.assistant-worker-unread-dot\s*\{[\s\S]{0,160}width:\s*8px;[\s\S]{0,120}height:\s*8px;[\s\S]{0,120}background:\s*var\(--skin-unread,\s*#1677ff\);/);
   assert.match(styles, /\.worker-chat-item-head\s*\{[\s\S]*?display:\s*flex;/);
-  assert.match(styles, /\.worker-chat-name\s*\{[\s\S]*?text-overflow:\s*ellipsis;/);
+  assert.match(styles, /\.worker-chat-name\s*\{[^}]*text-overflow:\s*clip;/);
   assert.match(
     styles,
     /\.sidebar-chats-item\[data-popover-hover-suppressed="true"\]:not\(\.is-active\):hover\s*\{[\s\S]*?background:\s*transparent;/,

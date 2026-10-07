@@ -2707,7 +2707,7 @@ div.sidebar-chats-group-popover {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
   font-size: 14px;
   line-height: 1.35;
@@ -2716,13 +2716,19 @@ div.sidebar-chats-group-popover {
 .sidebar-chat-title-text {
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
+}
+
+.sidebar-chat-title[data-overflow="true"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .assistant-worker-chat-row:hover .sidebar-chat-title[data-overflow="true"],
   .assistant-worker-chat-item:focus-visible .sidebar-chat-title[data-overflow="true"] {
-    text-overflow: clip;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .assistant-worker-chat-row:hover .sidebar-chat-title[data-overflow="true"] .sidebar-chat-title-text,
