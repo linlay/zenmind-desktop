@@ -669,7 +669,7 @@ export interface AssistantAwaitingPayload {
     freeTextPlaceholder?: string;
   };
   forms?: AssistantAwaitingForm[];
-  viewportKey?: string;
+  view?: {source: "builtin" | "connector"; key: string; connectorId?: string; renderer?: "native" | "html" | "qlc"; version?: string; hash?: string};
   viewportHtml?: string;
   loading?: boolean;
   loadError?: string;
@@ -844,8 +844,7 @@ export interface AssistantRunEvent {
   awaiting?: AssistantAwaitingPayload;
   awaitingId?: string;
   mode?: AssistantAwaitingMode;
-  viewportType?: string;
-  viewportKey?: string;
+  view?: {source: "builtin" | "connector"; key: string; connectorId?: string; renderer?: "native" | "html" | "qlc"; version?: string; hash?: string};
   timeout?: number | null;
   timeoutMs?: number;
   timestamp?: EpochMilliseconds | null;
@@ -883,8 +882,7 @@ export interface AssistantEvent {
   awaiting?: AssistantAwaitingPayload;
   awaitingId?: string;
   mode?: AssistantAwaitingMode;
-  viewportType?: string;
-  viewportKey?: string;
+  view?: {source: "builtin" | "connector"; key: string; connectorId?: string; renderer?: "native" | "html" | "qlc"; version?: string; hash?: string};
   timeout?: number | null;
   timeoutMs?: number;
   timestamp?: EpochMilliseconds | null;
