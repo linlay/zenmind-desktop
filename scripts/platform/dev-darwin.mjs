@@ -68,23 +68,6 @@ export function applyDarwinBundleLocalizationInfo(plist) {
   );
 }
 
-function plistEnvironmentEntry([key, value]) {
-  return `    <key>${escapePlistText(key)}</key>\n    <string>${escapePlistText(value)}</string>`;
-}
-
-function setPlistEnvironment(plist, env) {
-  const entries = Object.entries(env)
-    .filter(([, value]) => typeof value === "string" && value.length > 0)
-    .map(plistEnvironmentEntry)
-    .join("\n");
-  const replacement = `<key>LSEnvironment</key>\n  <dict>\n${entries}\n  </dict>`;
-  const pattern = /<key>LSEnvironment<\/key>\s*<dict>[\s\S]*?<\/dict>/u;
-  if (pattern.test(plist)) {
-    return plist.replace(pattern, replacement);
-  }
-  return insertPlistRootEntry(plist, `\t${replacement}`);
-}
-
 function fileHashPrefix(filePath) {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex").slice(0, 12);
 }
@@ -131,10 +114,26 @@ function prepareDarwinDevHelper(contentsDir) {
   }
 }
 
-export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
+export function signDarwinDevElectronApp(appRoot) {
+  // Re-seal the copied bundle after changing its identity, Helper metadata and
+  // icons so macOS can validate the development app's privacy-permission identity.
+  execFileSync("/usr/bin/codesign", [
+    "--force", "--deep", "--sign", "-", "--preserve-metadata=entitlements", appRoot
+  ], { timeout: 60000, stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", appRoot], {
+    timeout: 60000,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+}
+
+export function prepareDarwinDevElectronApp(
+  electronBinary,
+  projectRoot,
+  brand = loadBrandConfig(projectRoot, resolveBrandId()),
+  signApp = signDarwinDevElectronApp
+) {
   const devAppName = brand.productName;
   const devAppId = `${brand.appId}.dev`;
-  const serviceAssetsRoot = desktopBuiltinServicesDir(projectRoot);
   const metadata = createDesktopBuildMetadata({
     productName: devAppName,
     version: readDesktopVersion(projectRoot)
@@ -178,8 +177,11 @@ export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand =
   plist = setPlistString(plist, "CFBundleShortVersionString", plistVersion);
   plist = setPlistString(plist, "CFBundleVersion", plistVersion);
   plist = applyDarwinBundleLocalizationInfo(plist);
-  plist = setPlistEnvironment(plist, buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot));
+  // Runtime paths and PATH can change between launches. Keep them outside the
+  // signed bundle so a new terminal/session does not invalidate saved TCC grants.
+  plist = plist.replace(/<key>LSEnvironment<\/key>\s*<dict>[\s\S]*?<\/dict>/u, "");
   fs.writeFileSync(targetPlistPath, plist);
+  signApp(targetAppRoot);
 
   return {
     appRoot: targetAppRoot,
@@ -192,10 +194,18 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   return prepareDarwinDevElectronApp(electronBinary, projectRoot, brand).binaryPath;
 }
 
+export function buildDarwinDevOpenArgs(preparedApp, projectRoot, brand) {
+  const launchEnvironment = buildDarwinDevLaunchEnvironment(projectRoot, brand, desktopBuiltinServicesDir(projectRoot));
+  const environmentArgs = Object.entries(launchEnvironment)
+    .filter(([, value]) => typeof value === "string" && value.length > 0)
+    .flatMap(([key, value]) => ["--env", `${key}=${value}`]);
+  return ["-n", "-W", ...environmentArgs, preparedApp.appRoot, "--args", projectRoot];
+}
+
 export function spawnElectron(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
   const preparedApp = prepareDarwinDevElectronApp(electronBinary, projectRoot, brand);
   // LaunchServices is required for macOS to treat dev builds as foreground apps with Dock/menu identity.
-  return spawn("open", ["-n", "-W", preparedApp.appRoot, "--args", projectRoot], {
+  return spawn("open", buildDarwinDevOpenArgs(preparedApp, projectRoot, brand), {
     cwd: projectRoot,
     stdio: "inherit",
     env: {
