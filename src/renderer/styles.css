@@ -19,5 +19,6 @@
 @import "./styles/shutdown.css";
 @import "./styles/desktop-display.css";
 @import "./styles/base-tail.css";
+@import "./styles/start-page.css";
 @import "./appearance/controls.css";
 @import "./appearance/background.css";

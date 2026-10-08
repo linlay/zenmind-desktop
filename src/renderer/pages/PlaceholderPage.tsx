@@ -1,16 +1,19 @@
+import type { ReactNode } from "react";
+
 interface PlaceholderPageProps {
   title: string;
   description: string;
+  action?: ReactNode;
 }
 
-export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
+export function PlaceholderPage({ title, description, action }: PlaceholderPageProps) {
   return (
     <section className="placeholder-page">
       <div className="placeholder-orbit" />
       <div className="placeholder-copy">
-        <p className="eyebrow">Coming Next</p>
         <h1>{title}</h1>
         <p>{description}</p>
+        {action}
       </div>
     </section>
   );

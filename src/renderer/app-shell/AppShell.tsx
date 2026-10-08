@@ -38,13 +38,13 @@ import { useShellOverlay } from "./useShellOverlay";
 import {
   BuiltinBrowserSurfaceHost,
   CanonicalWebappSurfaceHost,
-  EmptyWebSurfaceRoute,
   WebRouteFallback,
   WebSurfaceHost,
   ExternalItemRoute,
   ServiceWebviewSurfaceHost,
   type WebappPresentationOwner,
 } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import { StartPage, type StartPageRecentItem } from "../pages/StartPage";
 import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
@@ -3320,6 +3320,37 @@ export function AppShell() {
     return requestSidebarNavigation(targetPath);
   }
 
+  function openStartPageSite(item: WebEntry) {
+    if (item.kind === "webapp" && item.openMode === "dialog") {
+      void handleOpenWebappWindow(item);
+      return;
+    }
+    requestSidebarNavigation(`/webs/${item.entryKey}`);
+  }
+
+  // Project the existing router timeline; do not persist a second browsing history.
+  const startPageRecentItems: StartPageRecentItem[] = [];
+  if (location.pathname === EMPTY_WEB_SURFACE_ROUTE) {
+    const chats = [...assistantPinnedChatItems, ...assistantNavChatItems,
+      ...assistantNavAgents.flatMap((agent) => [...agent.recentChats, ...(agent.projectChats ?? [])])];
+    const seen = new Set<string>();
+    for (const entry of desktopNavigationTimeline.entries.slice(0, desktopNavigationTimeline.index + 1).reverse()) {
+      const site = webItems.find((item) => resolveNavigationPathname(entry.route) === `/webs/${item.entryKey}`);
+      const identity = readAgentRouteInfo(entry.route);
+      const chat = identity.chatId && chats.find((item) => item.chatId === identity.chatId && item.agentKey === identity.agentKey);
+      const key = site?.entryKey ?? (chat ? createAgentChatRoute(chat.agentKey, chat.chatId) : "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      if (site) {
+        startPageRecentItems.push({ key, label: site.label, kind: site.kind, open: () => openStartPageSite(site) });
+      } else if (chat) {
+        startPageRecentItems.push({ key, label: chat.chatName || t("startPage.untitledChat"), kind: "chat",
+          open: () => requestNavigationWithAgentChatFocus(createAgentChatRoute(chat.agentKey, chat.chatId)) });
+      }
+      if (startPageRecentItems.length === 6) break;
+    }
+  }
+
   function openChatHistoryDialog(agentKey = "") {
     chatHistoryDialogRequestIdRef.current += 1;
     setChatHistoryDialog({
@@ -5014,7 +5045,19 @@ export function AppShell() {
               }
             />
             <Route path={BUILTIN_BROWSER_ROUTE} element={null} />
-            <Route path={EMPTY_WEB_SURFACE_ROUTE} element={<EmptyWebSurfaceRoute />} />
+            <Route path={EMPTY_WEB_SURFACE_ROUTE} element={<StartPage
+              canCreateChat={chatRuntimeAgent.defaultAgentAvailable}
+              sites={webItems}
+              sitesLoaded={webItemsLoaded}
+              recentItems={startPageRecentItems}
+              onNewChat={() => {
+                if (chatRuntimeAgent.defaultAgentAvailable) {
+                  requestNavigationWithAgentChatFocus(createAgentNewChatRoute(chatRuntimeAgent.agentKey));
+                }
+              }}
+              onOpenSite={openStartPageSite}
+              onManageSites={() => requestSidebarNavigation(buildSettingsSectionPath("websites"), true)}
+            />} />
             <Route path="/webs/:entryKey" element={<WebRouteFallback itemMap={webItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />

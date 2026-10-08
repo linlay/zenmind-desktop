@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { PlaceholderPage } from "../../pages/PlaceholderPage";
 import { setActiveServiceSurfaceId } from "../../services/serviceSurfaceWebviewRefs";
 import {
@@ -552,16 +552,7 @@ export function WebRouteFallback({
     <PlaceholderPage
       title={t("webapp.entryMissingTitle")}
       description={t("webapp.entryMissingDescription")}
-    />
-  );
-}
-
-export function EmptyWebSurfaceRoute() {
-  const { t } = useI18n();
-  return (
-    <PlaceholderPage
-      title={t("webapp.emptySurfaceTitle")}
-      description={t("webapp.emptySurfaceDescription")}
+      action={<Link to="/webs">{t("startPage.returnHome")}</Link>}
     />
   );
 }
