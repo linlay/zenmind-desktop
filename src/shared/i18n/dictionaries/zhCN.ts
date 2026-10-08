@@ -3779,7 +3779,6 @@ export const zhCNMessages = {
   "desktopPet.message.collapse": "收起聊天内容",
   "desktopPet.message.close": "标为已读并关闭",
   "desktopPet.message.closeFailed": "标记已读失败，请重试",
-  "desktopPet.message.more": "+{count} 更多",
   "desktopPet.message.status": "桌宠消息状态",
   "desktopPet.reply.awaitingPlaceholder": "回复确认…",
   "desktopPet.reply.placeholder": "回复…",
