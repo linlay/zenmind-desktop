@@ -3780,7 +3780,6 @@ export const enUSMessages = {
   "desktopPet.message.collapse": "Collapse chat content",
   "desktopPet.message.close": "Mark as read and close",
   "desktopPet.message.closeFailed": "Could not mark as read. Try again.",
-  "desktopPet.message.more": "+{count} more",
   "desktopPet.message.status": "Desktop pet message status",
   "desktopPet.reply.awaitingPlaceholder": "Reply to confirm...",
   "desktopPet.reply.placeholder": "Reply...",
