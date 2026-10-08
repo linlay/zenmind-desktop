@@ -497,7 +497,7 @@
 - 打开旧 `/service/agent-webclient` 深链，确认重定向到 `/agents`；同一进程重复命中只记录一次。分别以固定旧 surface ID 和动态旧哈希执行受支持的 Desktop Web Action，确认仍解析到 canonical surface，每类与 canonical role 组合只记录一次，日志不含旧 ID、URL、identity key 或 Chat ID。
 - 用历史 Program bundle 验证 WorkPanel bridge：v4 仅旧 item 操作，v5 额外支持 resource，v6 支持当前完整能力，其他版本返回 version mismatch；重复同一 `version + method` 只记录一次。验证 `agent-webclient v0.3.59` 被安装/恢复/升级路径升级或拒绝启动，`v0.3.60` 正常启动。
 - 在 macOS、Windows 分别执行内置服务首次安装、旧版本升级和启动恢复，确认 identity 公钥由 `auth.publicKey` capability 提供；覆盖 capability 成功、命令失败、结果文件缺失和 canonical `keys/publicKey.pem` 回退，不执行 Desktop 内旧 `.env` 解析、身份脚本或 token 构造路径。
-- 在 macOS、Windows 用 Agent Workspace 相对路径执行 `package.init → package.validate(projectPath) → package.build → package.validate(archivePath) → install(workspaceArchivePath) → checkRuntime → open → site.list`；覆盖绝对路径、URI、`..`、控制字符、符号链接/Junction 越界、输出已存在、断连和十分钟超时，确认失败无临时文件且所有响应与 Debug 记录不含 Workspace 绝对根路径。
+- 在 macOS、Windows 用 Agent Workspace 相对路径执行 `package.init → package.validate(projectPath) → package.build → package.validate(archivePath) → install(archivePath) → checkRuntime → open → site.list`；覆盖绝对路径、URI、`..`、控制字符、符号链接/Junction 越界、输出已存在、断连和十分钟超时，确认失败无临时文件且所有响应与 Debug 记录不含 Workspace 绝对根路径。
 - 检查开发态与正式安装包：Tooling Worker 存在于 `app.asar` 编译产物，`Resources/scripts/webapp-tooling.mjs` 与 `Resources/tooling/webapp-tooling.mjs` 均不存在，所有内置服务和插件均未收到 `DESKTOP_WEBAPP_TOOLING_PATH` 或运行时 `DESKTOP_ROOT`。正式 `dist:mac/dist:win` 缺少匹配当前 Desktop 版本的 `env.zip` 时失败，开发模式不带 `env.zip` 仍可启动。
 - 用 WebApp Builder `0.2.0` 验证 Skill 包没有 `scripts/`、`--desktop-root`、磁盘扫描或 Node 子进程逻辑；版本化事务同步失败时回滚，不能留下新 Skill/旧 Desktop Action 或新 Desktop/旧 Skill 的混合组合。
 - 启动、市场刷新、插件加载和升级不再根据退休 denylist 删除、过滤或拒绝任何插件；插件程序、配置、用户数据、状态和日志均保持不变，显式卸载仍遵循现有用户选择。
@@ -1245,3 +1245,10 @@
 - 当前运行根的显式备份、环境导入与还原保持可用；不将根目录备份误当作目录兼容迁移。
 
 - 桌宠工具导入：macOS/Windows 使用 Desktop 本机绝对 ZIP 路径导入，当前角色、启用状态和 Agent 绑定不变；重复、无效和集合 ZIP 不覆盖现有资源。默认权限只出现 Platform 外观审阅，自动批准档位不出现 Desktop 二次确认；普通 Desktop Action 仍要求确认。工具与拖入同时导入相同包时仅一个成功，另一个返回重复；取消审批不写入。
+
+## WebApp 单路径安装与确认前校验
+
+- macOS / Windows：用同一个 archivePath 分别安装本机 Workspace 外的 ZIP、Workspace 相对 ZIP、@workspace ZIP 和当前 @chat ZIP；Chat 在项目外或未绑定 Workspace 时仍能安装，原文件保留。外部绝对路径用于 package.validate/init/build 时仍被拒绝。
+- 安装默认省略 expectedId，读取返回的 webappId 完成 checkRuntime → start → open，再 stop → start → open 并回读状态；没有 itemId 或 message 成功字段。
+- 缺失文件、目录、损坏 ZIP、非法 Manifest、错误 expectedId、URL/URI、相对路径或别名越界均在安装确认前报错且未执行安装。确认展示精确文件、应用身份和版本；取消不安装，确认过程中改变 ZIP 后拒绝安装并要求重新发起。
+- Windows 验证驱动器绝对路径，拒绝 UNC、设备与驱动器相对路径；macOS 验证中文和空格路径及符号链接边界。

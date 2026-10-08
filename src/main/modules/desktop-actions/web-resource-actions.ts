@@ -22,10 +22,7 @@ import {
   type DesktopWebappUnpublishResult,
   type DesktopWebappUninstallResult
 } from "../../../shared/desktop-actions";
-import { rejectUnexpectedArgs, trustedWebappWorkspaceSource } from "./webapp-tooling-actions";
 import {
-  resolveExistingWorkspacePath,
-  WebappToolingError,
   listWebEntries,
   WebappRuntimeRequiredError,
   createWebappImportDiagnostic,
@@ -34,9 +31,10 @@ import {
   updateWebsiteItem,
   removeWebsiteItem
 } from "../webs";
-import { WEBAPP_ID_PATTERN } from "../../../shared/webapp-manifest";
 import { type OpenDialogOptions, dialog } from "electron";
 import path from "node:path";
+import { verifyPreparedWebappArchive, type PreparedWebappInstall } from "./webapp-install-preflight";
+import { assertActionCanStart } from "./confirmation-dialog";
 import { t } from "../../support/i18n/main-i18n";
 
 export function webappRoute(webappId: string) {
@@ -104,61 +102,19 @@ export async function openWebapp(options: DesktopActionBridgeOptions, action: st
 export async function installWebapp(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
-  invocation: DesktopActionInvocationContext,
-  args: Record<string, unknown>,
+  prepared: PreparedWebappInstall,
 ) {
   const action = request.action;
-  const directArchivePath = readString(args, "archivePath");
-  const workspaceArchivePath = readString(args, "workspaceArchivePath");
-  const hasDirectArchivePath = Object.hasOwn(args, "archivePath");
-  const hasWorkspaceArchivePath = Object.hasOwn(args, "workspaceArchivePath");
-  let archivePath = directArchivePath;
-  let publicArchivePath = directArchivePath;
-  let workspaceRootToRedact = "";
-  const hasExpectedId = Object.hasOwn(args, "expectedId");
-  const expectedId = hasExpectedId && typeof args.expectedId === "string" ? args.expectedId : "";
-  if (Object.prototype.hasOwnProperty.call(args, "itemId")) {
-    return fail(action, "invalid_args", "itemId is not supported; install market items with desktop.market.installItem.");
-  }
-  const invalid = rejectUnexpectedArgs(action, args, ["archivePath", "workspaceArchivePath", "expectedId"]);
-  if (invalid) return invalid;
-  if (invocation.kind === "agentPlatform") {
-    if (!workspaceArchivePath || hasDirectArchivePath) {
-      return fail(action, "invalid_args", "Agent Platform must provide workspaceArchivePath and cannot provide archivePath.");
-    }
-    const trusted = trustedWebappWorkspaceSource(action, request);
-    if (!trusted.ok) return trusted.response;
-    workspaceRootToRedact = trusted.workspaceRoot;
-    try {
-      const resolved = resolveExistingWorkspacePath(
-        trusted.workspaceRoot,
-        workspaceArchivePath,
-        "file",
-        "archive",
-      );
-      archivePath = resolved.absolutePath;
-      publicArchivePath = resolved.relativePath;
-    } catch (error) {
-      if (error instanceof WebappToolingError) {
-        return fail(action, error.code, sanitizeWebappErrorText(error.message), {
-          stage: error.stage,
-          ...sanitizeWebappDiagnosticValue(error.details) as Record<string, unknown>,
-        });
-      }
-      return fail(action, "archive_unavailable", "Desktop could not resolve the workspace archive.", { stage: "archive" });
-    }
-  } else if (!archivePath || hasWorkspaceArchivePath) {
-    return fail(action, "invalid_args", "archivePath is required; workspaceArchivePath is reserved for Agent Platform Runs.");
-  }
-  if (hasExpectedId && !WEBAPP_ID_PATTERN.test(expectedId)) {
-    return fail(action, "invalid_args", "expectedId must already be a valid WebApp id; it is never normalized.");
-  }
+  const changed = await verifyPreparedWebappArchive(action, prepared);
+  if (changed) return changed;
+  assertActionCanStart(options);
+  const { archivePath, publicArchivePath, workspaceRootToRedact, expectedId } = prepared;
   const previousItemIds = new Set(
     listWebEntries(options.app, options.webs.webappManager).items
       .filter((item) => item.kind === "webapp")
       .map((item) => item.id)
   );
-  const installOptions = { ...(expectedId ? { expectedId } : {}) };
+  const installOptions = { expectedId, version: prepared.version, sha256: prepared.sha256 };
   let installResult;
   try {
     installResult = await options.webs.webappManager.installArchive(options.app, archivePath, installOptions);
@@ -461,9 +417,6 @@ export async function executeWebAction(
       webappId,
       status: result.state.status
     } satisfies DesktopWebappUnpublishResult);
-  }
-  if (action === "desktop.webapp.install") {
-    return installWebapp(options, request, invocation, args);
   }
   if (action === "desktop.webapp.uninstall") {
     const webappId = readWebappId(args);

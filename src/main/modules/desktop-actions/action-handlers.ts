@@ -25,6 +25,8 @@ import { executeWebappKanban } from "./webapp-kanban";
 import { executeWebappAssistant } from "./webapp-assistant";
 import { isWebappConnectorAction, executeWebappConnector } from "./webapp-connector";
 import { resolveWebappAction } from "../../../shared/webapp-bridge";
+import { prepareWebappInstall, type PreparedWebappInstall } from "./webapp-install-preflight";
+import { installWebapp } from "./web-resource-actions";
 
 export async function handleActionCallRaw(
   options: DesktopActionBridgeOptions,
@@ -67,13 +69,21 @@ export async function handleActionCallRaw(
     AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action);
   const requiresConfirmation = definition.confirmation !== "none" &&
     (isDesktopActionMutating(action) || definition.confirmation === "sensitive-read");
+  let preparedInstall: PreparedWebappInstall | undefined;
   try {
     assertActionCanStart(options);
+    if (action === "desktop.webapp.install") {
+      const preflight = await prepareWebappInstall(options, normalizedRequest, invocation, args);
+      if (!preflight.ok) return preflight.response;
+      preparedInstall = preflight.prepared;
+      assertActionCanStart(options);
+    }
     if (requiresConfirmation && confirmationEligibleInvocation && !agentPlatformConfirmationExempt) {
       const confirmationResponse = await confirmDesktopActionIfNeeded(
         options,
         normalizedRequest,
-        args,
+        preparedInstall ? { archivePath: preparedInstall.archivePath, webappId: preparedInstall.expectedId,
+          label: preparedInstall.label, version: preparedInstall.version } : args,
         definition.confirmation
       );
       if (confirmationResponse) {
@@ -86,8 +96,10 @@ export async function handleActionCallRaw(
     throw error;
   }
   try {
+    if (preparedInstall) return await installWebapp(options, normalizedRequest, preparedInstall);
     return await executeAction(options, normalizedRequest, invocation);
   } catch (error) {
+    if (error instanceof ConfirmationEndedError) return { ok: false, action, error: error.toActionError() };
     return fail(action, "action_failed", error instanceof Error ? error.message : "Unexpected Desktop Action exception.", {
       stage: "execution", executionState: "unknown",
       cause: error instanceof Error ? { name: error.name, message: error.message, code: (error as NodeJS.ErrnoException).code } : { message: "Non-Error exception" },

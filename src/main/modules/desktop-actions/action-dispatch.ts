@@ -408,7 +408,6 @@ export async function executeAction(
     case "desktop.webapp.open":
     case "desktop.webapp.updatePreferences":
     case "desktop.webapp.checkRuntime":
-    case "desktop.webapp.install":
     case "desktop.webapp.uninstall":
     case "desktop.webapp.getPublishStatus":
     case "desktop.webapp.publish":

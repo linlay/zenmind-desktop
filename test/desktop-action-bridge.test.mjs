@@ -914,7 +914,7 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   const installed = await handleAgentPlatformDesktopActionRequest(options, {
     action: "desktop.webapp.install",
     source,
-    args: { workspaceArchivePath: built.result.outputPath, expectedId: built.result.id }
+    args: { archivePath: built.result.outputPath, expectedId: built.result.id }
   });
   assert.equal(installed.ok, true);
   assert.equal(installed.result.webappId, initialized.result.id);
@@ -994,30 +994,117 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   assert.equal(forgedDesktop.error.code, "forbidden");
 });
 
-test("Agent Platform WebApp install accepts only a workspace-relative archive path", async (t) => {
+test("Agent Platform WebApp install accepts one archivePath inside or outside Workspace", async (t) => {
   const { options } = createDesktopActionOptions(t);
-  options.getMainWindow = () => ({ isDestroyed: () => false });
-  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+  options.getMainWindow = () => ({ isDestroyed: () => false, webContents: { send() {} } });
+  let confirmations = 0;
+  options.confirmRendererAction = async (request) => { confirmations++; return { requestId: request.requestId, decision: "confirm" }; };
   const workspaceRoot = path.join(options.app.getPath("home"), "agent-workspace");
   fs.mkdirSync(workspaceRoot, { recursive: true });
   const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder", workspaceRoot };
-
-  const direct = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.install",
-    source,
-    args: { archivePath: path.join(workspaceRoot, "example.zip") }
+  const outside = await writeStaticWebappArchive(options.app.getPath("home"), "outside-workspace");
+  const inside = await writeStaticWebappArchive(workspaceRoot, "inside-workspace");
+  for (const [archivePath, trustedSource, key] of [
+    [outside, { ...source, workspaceRoot: undefined }, "outside-workspace"],
+    [path.basename(inside), source, "inside-workspace"],
+  ]) {
+    const installed = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.webapp.install", source: trustedSource, args: { archivePath }
+    });
+    assert.deepEqual(installed.result, { webappId: webappId(key), operation: "installed" });
+  }
+  assert.equal(confirmations, 2);
+  const legacy = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.install", source, args: { workspaceArchivePath: path.basename(inside) }
   });
-  assert.equal(direct.ok, false);
-  assert.equal(direct.error.code, "invalid_args");
-
-  const absoluteWorkspacePath = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.install",
-    source,
-    args: { workspaceArchivePath: path.join(workspaceRoot, "example.zip") }
+  assert.equal(legacy.error.code, "invalid_args");
+  assert.equal(confirmations, 2);
+  const missingWorkspace = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.install", source: { ...source, workspaceRoot: undefined }, args: { archivePath: path.basename(inside) }
   });
-  assert.equal(absoluteWorkspacePath.ok, false);
-  assert.equal(absoluteWorkspacePath.error.code, "invalid_path");
-  assert.equal(JSON.stringify(absoluteWorkspacePath).includes(workspaceRoot), false);
+  assert.equal(missingWorkspace.error.code, "workspace_unavailable");
+});
+
+test("WebApp install rejects invalid inputs and packages before requesting confirmation", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  let confirmations = 0;
+  options.confirmRendererAction = async request => { confirmations++; return { requestId: request.requestId, decision: "cancel" }; };
+  const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "preflight-install");
+  const broken = path.join(options.app.getPath("home"), "broken.zip");
+  fs.writeFileSync(broken, "not a zip");
+  for (const [args, code] of [
+    [{}, "invalid_args"],
+    [{ archivePath, expectedId: "preflight-install" }, "invalid_args"],
+    [{ archivePath, expectedId: webappId("another-app") }, "webapp_install_failed"],
+    [{ archivePath: broken }, "webapp_install_failed"],
+    [{ archivePath: path.join(options.app.getPath("home"), "missing.zip") }, "file_unavailable"],
+    [{ archivePath: "@chat/app.zip" }, "invalid_path"],
+    [{ archivePath: "file:///tmp/app.zip" }, "invalid_path"],
+  ]) {
+    const result = await handleDesktopActionRequest(options, { action: "desktop.webapp.install", args });
+    assert.equal(result.ok, false, JSON.stringify(result));
+    assert.equal(result.error.code, code);
+    assert.equal(result.error.details.executionState, "not_started");
+    assert.equal(confirmations, 0);
+  }
+  assert.equal(options.webs.webappManager.listInstalled(options.app).length, 0);
+});
+
+test("WebApp install confirmation binds package identity and rejects a changed ZIP", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "confirmed-install", "Confirmed app", "1.2.3");
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async request => {
+    assert.match(request.details, /Confirmed app/);
+    assert.match(request.details, /1\.2\.3/);
+    assert.match(request.details, new RegExp(webappId("confirmed-install")));
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  const cancelled = await handleDesktopActionRequest(options, { action: "desktop.webapp.install", args: { archivePath } });
+  assert.equal(cancelled.error.code, "user_cancelled");
+  assert.equal(options.webs.webappManager.listInstalled(options.app).length, 0);
+  options.confirmRendererAction = async request => {
+    fs.writeFileSync(archivePath, "changed after preflight");
+    return { requestId: request.requestId, decision: "confirm" };
+  };
+  const changed = await handleDesktopActionRequest(options, { action: "desktop.webapp.install", args: { archivePath } });
+  assert.equal(changed.error.code, "archive_changed");
+  assert.equal(changed.error.details.executionState, "not_started");
+  assert.equal(options.webs.webappManager.listInstalled(options.app).length, 0);
+});
+
+test("WebApp install keeps relative paths contained and requires a trusted Run", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const workspaceRoot = path.join(options.app.getPath("home"), "project");
+  fs.mkdirSync(workspaceRoot);
+  const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "outside-install");
+  const source = { chatId: "chat", runId: "run", agentKey: "coder", workspaceRoot };
+  const traversal = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.webapp.install", source, args: { archivePath: "../" + path.basename(archivePath) } });
+  assert.equal(traversal.error.code, "invalid_path");
+  const forged = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.webapp.install", args: { archivePath } });
+  assert.equal(forged.error.code, "forbidden");
+  const tooling = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.webapp.package.validate", source, args: { archivePath } });
+  assert.equal(tooling.error.code, "invalid_path");
+  const foreign = await handleWebappPageActionRequest(options, "foreign", { action: "desktop.webapp.install", args: { archivePath } });
+  assert.equal(foreign.error.code, "forbidden");
+  if (process.platform !== "win32") {
+    fs.symlinkSync(archivePath, path.join(workspaceRoot, "escape.zip"));
+    const linked = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.webapp.install", source, args: { archivePath: "escape.zip" } });
+    assert.equal(linked.error.code, "path_outside_workspace");
+  }
+});
+
+test("WebApp host ZIP syntax explicitly handles macOS and Windows", () => {
+  const { isAbsoluteWebappArchivePath } = require("../dist-electron/main/modules/desktop-actions/webapp-install-preflight.js");
+  assert.equal(isAbsoluteWebappArchivePath("/Users/example/中文 工作台.zip", "darwin"), true);
+  assert.equal(isAbsoluteWebappArchivePath(String.raw`C:\Users\example\中文 工作台.zip`, "win32"), true);
+  for (const platform of ["darwin", "win32"]) {
+    for (const input of ["app.zip", "@chat/app.zip", "file:///tmp/app.zip", "https://example/app.zip", String.raw`\\server\share\app.zip`, String.raw`\\?\C:\app.zip`, "C:app.zip", "/tmp/app.zip\u0000"]) {
+      assert.equal(isAbsoluteWebappArchivePath(input, platform), false, `${platform}: ${input}`);
+    }
+  }
+  assert.equal(isAbsoluteWebappArchivePath("C:/app.zip", "darwin"), false);
+  assert.equal(isAbsoluteWebappArchivePath("/Users/example/app.zip", "win32"), false);
 });
 
 test("Agent Platform context exempts approved WorkPanel Web actions without exempting openTab", async (t) => {
@@ -3550,7 +3637,7 @@ test("WebApp path preflight runs before Worker launch and missing archives retai
   options.getMainWindow = () => ({ isDestroyed: () => false, webContents: { send() {}, isDestroyed: () => false } });
   options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "confirm" });
   const missingArchive = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.install", source, args: { workspaceArchivePath: "releases/missing.zip" }
+    action: "desktop.webapp.install", source, args: { archivePath: "releases/missing.zip" }
   });
   assert.equal(missingArchive.error.code, "file_unavailable");
   assert.equal(missingArchive.error.details.cause.code, "ENOENT");
@@ -3708,8 +3795,9 @@ test("Platform management exemptions preserve public and heavy-action confirmati
     assert.equal(response.requiresConfirmation, true, action);
     assert.equal(response.error.code, "user_cancelled", action);
   }
+  const installArchive = await writeStaticWebappArchive(options.app.getPath("home"), "heavy-confirmation");
   for (const action of ["desktop.controlCenter.restartService", "desktop.webapp.install", "desktop.webapp.uninstall", "desktop.webapp.publish", "desktop.market.applySettingsPatch", "desktop.market.deleteSandboxImage", "desktop.market.installItem", "desktop.market.updateItem", "desktop.market.uninstallItem", "desktop.market.exportSandboxImage"]) {
-    const response = await handleAgentPlatformDesktopActionRequest(options, { action, source, args: {} });
+    const response = await handleAgentPlatformDesktopActionRequest(options, { action, source, args: action === "desktop.webapp.install" ? { archivePath: installArchive } : {} });
     assert.equal(response.requiresConfirmation, true, action);
     assert.equal(response.error.code, "user_cancelled", action);
   }

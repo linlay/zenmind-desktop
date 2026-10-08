@@ -22,6 +22,7 @@ type ToolingZipEntry = JSZip.JSZipObject & {
 };
 
 export type WebappToolingTask =
+  | { operation: "install.preflight"; archivePath: string; expectedId?: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
   | { operation: "package.init"; workspaceRoot: string; projectPath: string; key: string; label: string; target?: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
   | { operation: "package.validate"; workspaceRoot: string; projectPath: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
   | { operation: "package.validate"; workspaceRoot: string; archivePath: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
@@ -129,8 +130,10 @@ async function validateArchiveFile(archivePath: string, displayArchivePath: stri
     });
   }
   let zip: JSZip;
+  let archiveBytes: Buffer;
   try {
-    zip = await JSZip.loadAsync(fs.readFileSync(archivePath), { checkCRC32: true });
+    archiveBytes = fs.readFileSync(archivePath);
+    zip = await JSZip.loadAsync(archiveBytes, { checkCRC32: true });
   } catch {
     throw new WebappToolingError("archive", "invalid_archive", "The WebApp ZIP is invalid.", {
       path: displayArchivePath,
@@ -175,7 +178,7 @@ async function validateArchiveFile(archivePath: string, displayArchivePath: stri
         archiveBytes: archiveStat.size,
         totalBytes: inspected.expandedBytes,
         entryCount: entries.length,
-        sha256: createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex"),
+        sha256: createHash("sha256").update(archiveBytes).digest("hex"),
       };
     } finally {
       fs.rmSync(temporaryRoot, { recursive: true, force: true });
@@ -369,6 +372,17 @@ async function buildPackage(task: Extract<WebappToolingTask, { operation: "packa
 
 export async function executeWebappToolingTask(task: WebappToolingTask): Promise<WebappToolingResult> {
   switch (task.operation) {
+    case "install.preflight": {
+      // Internal install-only inspection. Public package.validate still requires a trusted Workspace.
+      const result = await validateArchiveFile(task.archivePath, task.archivePath, task);
+      if (task.expectedId && task.expectedId !== result.manifest.id) {
+        throw new WebappToolingError("manifest", "id_mismatch", "expectedId does not match the ZIP manifest id.", {
+          expected: task.expectedId, detected: result.manifest.id,
+        });
+      }
+      return { id: result.manifest.id, key: result.manifest.key, label: result.manifest.label,
+        version: result.manifest.version, sha256: result.sha256, archiveBytes: result.archiveBytes };
+    }
     case "package.init":
       return initializeManifest(task);
     case "package.validate": {
