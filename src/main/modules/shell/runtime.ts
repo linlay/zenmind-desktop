@@ -107,6 +107,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   const taskbarUnreadController = createTaskbarUnreadController({
     platform: options.platform,
     getWindow: () => state.mainWindow,
+    getDock: () => options.app.dock,
     onError: options.safeConsoleError
   });
   const mainWindowLifecycle = createMainWindowLifecycleController({
@@ -251,6 +252,12 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     }));
     const targetWindow = state.mainWindow;
     if (options.platform === "win32") {
+      const refreshUnread = () => taskbarUnreadController.refresh(options.getAssistantNavigationSnapshot(), true);
+      targetWindow.on("show", refreshUnread);
+      targetWindow.on("restore", refreshUnread);
+      targetWindow.once("ready-to-show", refreshUnread);
+    }
+    if (options.platform === "darwin") {
       const refreshUnread = () => taskbarUnreadController.refresh(options.getAssistantNavigationSnapshot(), true);
       targetWindow.on("show", refreshUnread);
       targetWindow.on("restore", refreshUnread);
