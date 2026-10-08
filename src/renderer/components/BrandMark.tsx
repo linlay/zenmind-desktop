@@ -11,6 +11,7 @@ type BrandMarkProps = {
 export type SidebarIllustrationKind =
   | "assistant"
   | "agent"
+  | "knowledge"
   | "skill"
   | "chat"
   | "project"
@@ -414,6 +415,14 @@ function DefaultSidebarIllustration({
           <path d="M19 21v-1.5a4.5 4.5 0 0 0-4.5-4.5h-5A4.5 4.5 0 0 0 5 19.5V21" />
           <circle cx="12" cy="7.5" r="4" />
           <line x1="3" y1="3" x2="21" y2="21" />
+        </svg>
+      );
+    case "knowledge":
+      return (
+        <svg {...iconProps}>
+          <path d="M3.5 6.25C6.7 5.2 9.45 5.8 12 8.15V18.3C9.55 16.4 6.75 15.85 3.5 16.85V6.25Z" />
+          <path d="M20.5 6.25C17.3 5.2 14.55 5.8 12 8.15V18.3C14.45 16.4 17.25 15.85 20.5 16.85V6.25Z" />
+          <path d="M12 8.15V18.3" />
         </svg>
       );
     case "archive":

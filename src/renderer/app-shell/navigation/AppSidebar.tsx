@@ -387,6 +387,8 @@ const fixedToolRowsBase: Array<
     Omit<SidebarToolItem, "label"> & {
       labelKey:
         | "nav.agents"
+        | "nav.knowledgeBase"
+        | "nav.memory"
         | "nav.archives"
         | "nav.registries"
         | "nav.mcpConnectors"
@@ -404,6 +406,18 @@ const fixedToolRowsBase: Array<
       to: "/agents",
       labelKey: "nav.agents",
       icon: "agent",
+    },
+    {
+      orderKey: "kbases",
+      to: "/kbases",
+      labelKey: "nav.knowledgeBase",
+      icon: "knowledge",
+    },
+    {
+      orderKey: "memory",
+      to: "/memory",
+      labelKey: "nav.memory",
+      icon: "archive",
     },
     {
       orderKey: "skills",
@@ -6191,6 +6205,8 @@ export function AppSidebar({
     const topToolItems = fixedToolItems.filter(
       (item) =>
         item.to === "/agents" ||
+        item.to === "/kbases" ||
+        item.to === "/memory" ||
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||

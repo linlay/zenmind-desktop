@@ -5,8 +5,9 @@ export type SidebarMode = "primary" | "capabilities" | "settings";
 
 export type CapabilityNavigationItemId =
   | "agents"
-  | "skills"
+  | "kbases"
   | "memory"
+  | "skills"
   | "mcp-servers"
   | "registries"
   | "archives"
@@ -34,6 +35,20 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
     detailPathPrefix: "/agents/",
   },
   {
+    id: "kbases",
+    group: "platform",
+    to: "/kbases",
+    labelKey: "nav.knowledgeBase",
+    icon: "knowledge",
+  },
+  {
+    id: "memory",
+    group: "platform",
+    to: "/memory",
+    labelKey: "nav.memory",
+    icon: "archive",
+  },
+  {
     id: "skills",
     group: "platform",
     to: "/skills",
@@ -47,13 +62,6 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
     to: "/connectors",
     labelKey: "nav.mcpConnectors",
     icon: "connector",
-  },
-  {
-    id: "memory",
-    group: "platform",
-    to: "/memory",
-    labelKey: "nav.memory",
-    icon: "archive",
   },
   {
     id: "registries",

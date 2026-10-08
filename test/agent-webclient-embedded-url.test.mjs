@@ -101,8 +101,14 @@ test("management embedded URLs do not carry WebSocket source or auth context", (
   assert.ok(connectorsRoute);
   assert.equal(buildAgentWebclientUrl("agent-webclient", connectorsRoute.embedPath).pathname, "/connectors");
 
+  const knowledgeBaseRoute = findAgentWebclientRouteDefinition("/kbases");
+  assert.ok(knowledgeBaseRoute);
+  assert.equal(knowledgeBaseRoute.kind, "management");
+  assert.equal(buildAgentWebclientUrl("agent-webclient", knowledgeBaseRoute.embedPath).pathname, "/kbases");
+
   const managementPaths = [
     "/agents",
+    "/kbases",
     "/agents/zenmi",
     "/archives",
     "/automations",

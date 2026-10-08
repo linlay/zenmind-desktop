@@ -17,6 +17,7 @@ export const AGENT_WEBCLIENT_TARGET_PATH = "/agents";
 
 export type AgentWebclientRouteKey =
   | "agents"
+  | "kbases"
   | "archives"
   | "schedules"
   | "memory"
@@ -54,6 +55,14 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     routePath: "/agents",
     embedPath: "/agents",
     labelKey: "nav.agents",
+    kind: "management",
+    mode: "embedded"
+  },
+  {
+    key: "kbases",
+    routePath: "/kbases",
+    embedPath: "/kbases",
+    labelKey: "nav.knowledgeBase",
     kind: "management",
     mode: "embedded"
   },

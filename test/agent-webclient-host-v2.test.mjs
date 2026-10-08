@@ -90,6 +90,9 @@ test("Frame Port host injects and refreshes /api auth while blocking HTTP Run by
 
   assert.ok(hostState?.webUrl);
   const baseUrl = hostState.webUrl.replace(/\/$/u, "");
+  const knowledgeBasePage = await fetch(`${baseUrl}/kbases`);
+  assert.equal(knowledgeBasePage.status, 200);
+  assert.match(await knowledgeBasePage.text(), /<title>fixture<\/title>/u);
   const response = await fetch(`${baseUrl}/api/agent?agentKey=demo`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true });

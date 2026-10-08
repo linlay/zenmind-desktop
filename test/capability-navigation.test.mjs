@@ -44,9 +44,10 @@ test("capability navigation keeps the agreed item order", () => {
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.id),
     [
       "agents",
+      "kbases",
+      "memory",
       "skills",
       "mcp-servers",
-      "memory",
       "registries",
       "archives",
       "market",
@@ -59,9 +60,10 @@ test("capability navigation keeps the agreed item order", () => {
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.to),
     [
       "/agents",
+      "/kbases",
+      "/memory",
       "/skills",
       "/connectors",
-      "/memory",
       "/registries",
       "/archives",
       "/market",
@@ -75,6 +77,8 @@ test("capability navigation keeps the agreed item order", () => {
 test("capability routes select their root item and keep supported details active", () => {
   const cases = [
     ["/agents", "agents"],
+    ["/kbases", "kbases"],
+    ["/kbases?library=demo", "kbases"],
     ["/agents/demo-agent", "agents"],
     ["/agents/%E4%B8%AD%E6%96%87?tab=profile", "agents"],
     ["/skills", "skills"],
@@ -159,7 +163,7 @@ test("capability navigation groups platform, cloud and help entries", () => {
       CAPABILITY_NAVIGATION_ITEMS.filter((item) => item.group === group).map((item) => item.id),
     ])),
     {
-      platform: ["agents", "skills", "mcp-servers", "memory", "registries", "archives"],
+      platform: ["agents", "kbases", "memory", "skills", "mcp-servers", "registries", "archives"],
       cloud: ["market", "artifact-management", "share-management"],
       help: ["help"],
     },

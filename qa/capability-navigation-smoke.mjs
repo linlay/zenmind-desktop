@@ -36,7 +36,8 @@ const {app,BrowserWindow}=require('electron');const fs=require('node:fs'),path=r
 app.setPath('userData',path.join(__dirname,'profile'));app.setPath('sessionData',path.join(__dirname,'session'));
 (async()=>{await app.whenReady();const win=new BrowserWindow({show:false,width:1280,height:800,webPreferences:{contextIsolation:true,nodeIntegration:false}});await win.loadFile(path.join(__dirname,'index.html'));const js=(s)=>win.webContents.executeJavaScript(s);const until=async(s)=>{for(let n=0;n<100;n++){if(await js(s))return;await new Promise(r=>setTimeout(r,50));}throw new Error('Timed out: '+s);};
 await until('document.querySelector(".sidebar-capability-visibility-button")');
-for(const [id,route] of [['agents','/agents'],['skills','/skills'],['mcp-servers','/connectors'],['registries','/registries'],['archives','/archives'],['market','/market'],['artifact-management','/artifact-management'],['share-management','/share-management'],['help','/help']]){
+assert.deepEqual(await js('Array.from(document.querySelectorAll(".sidebar-capabilities-nav [data-sidebar-capability-id]")).slice(0,3).map(item=>item.dataset.sidebarCapabilityId)'),['agents','kbases','memory']);
+for(const [id,route] of [['agents','/agents'],['kbases','/kbases'],['memory','/memory'],['skills','/skills'],['mcp-servers','/connectors'],['registries','/registries'],['archives','/archives'],['market','/market'],['artifact-management','/artifact-management'],['share-management','/share-management'],['help','/help']]){
  await js('window.navigate('+JSON.stringify(route)+')');await until('window.mode==="capabilities"');
  await js('document.querySelector('+JSON.stringify('[data-sidebar-capability-id="'+id+'"]').concat(').parentElement.querySelector("button").click()'));
  await until('window.order[0]==='+JSON.stringify('capability:'+id));
@@ -64,7 +65,7 @@ await until(\`getComputedStyle(document.querySelector('[data-sidebar-capability-
 for(const platform of ['darwin','win32']){
  for(const sso of [null,{configured:true,authenticated:false,completedSteps:{}},{configured:true,authenticated:true,user:{name:'Frank Linlay'},completedSteps:{userInfo:true,accessToken:true}}]){
   await js('window.setOptions('+JSON.stringify({platform,sso})+')');
-  for(const route of ['/agents','/skills','/artifact-management','/kanban']){
+  for(const route of ['/agents','/kbases','/memory','/skills','/artifact-management','/kanban']){
    await js('window.navigate('+JSON.stringify(route)+')');
    const expected=sso?.authenticated?'Frank Linlay':'未登录';
    await until('document.querySelector(".sidebar-tool-menu-trigger > .sidebar-link-label")?.textContent==='+JSON.stringify(expected));
@@ -74,13 +75,15 @@ for(const platform of ['darwin','win32']){
  }
 }
 // Footer menu opens the dedicated sidebar, including the current primary route.
-for(const route of ['/agents','/skills','/artifact-management']){
+for(const route of ['/agents','/kbases','/memory','/skills','/artifact-management']){
  for(const sameRoute of [false,true]){
   await js('window.navigate('+JSON.stringify(sameRoute?route:'/kanban')+');window.setOptions({menuOpen:true})');
   await until('document.querySelector('+JSON.stringify('.sidebar-tool-menu-item[href="'+route+'"]')+')');
+  assert.deepEqual(await js('Array.from(document.querySelectorAll(".sidebar-tool-menu-item[href]")).slice(0,3).map(item=>item.getAttribute("href"))'),['/agents','/kbases','/memory']);
+  assert.equal(await js('Array.from(document.querySelectorAll(".sidebar-tool-menu-item[href]")).find(item=>item.getAttribute("href")==="/memory").querySelector(".sidebar-link-label").textContent'),'记忆（规划）');
   await js('document.querySelector('+JSON.stringify('.sidebar-tool-menu-item[href="'+route+'"]')+').click()');
   await until('window.mode==="capabilities"');
-  assert.equal(await js('window.order.includes('+JSON.stringify('capability:'+({'/agents':'agents','/skills':'skills','/artifact-management':'artifact-management'}[route]))+')'),true);
+  assert.equal(await js('window.order.includes('+JSON.stringify('capability:'+({'/agents':'agents','/kbases':'kbases','/memory':'memory','/skills':'skills','/artifact-management':'artifact-management'}[route]))+')'),true);
   await js('window.setOptions({menuOpen:false});window.navigate("/kanban")');await until('window.mode==="primary"');
   await js('document.querySelector('+JSON.stringify('a.sidebar-primary-link[href="'+route+'"]')+').click()');
   await until('window.mode==="primary" && !!document.querySelector(".sidebar-footer")');

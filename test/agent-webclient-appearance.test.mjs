@@ -161,12 +161,12 @@ test('document navigation revokes negotiation while in-place business navigation
 });
 
 
-test('wallpaper eligibility includes six management pages without expanding Chat or child surfaces', () => {
+test('wallpaper eligibility includes seven management pages without expanding Chat or child surfaces', () => {
   const service = createServiceSurfaceIdentity('agent-webclient');
   const eligible = (surface, route, serviceId = 'agent-webclient') =>
     isWebclientHostBackgroundSurface(serviceId, surface, route);
   assert.equal(eligible(createSurfaceIdentity('main-chat'), '/agent/demo'), true);
-  for (const path of ['/agents', '/skills', '/connectors', '/registries', '/archives', '/automations']) {
+  for (const path of ['/agents', '/kbases', '/skills', '/connectors', '/registries', '/archives', '/automations']) {
     for (const suffix of ['', '?tab=models', '/demo', '/demo?tab=source#editor']) {
       assert.equal(eligible(service, path + suffix), true, path + suffix);
     }
