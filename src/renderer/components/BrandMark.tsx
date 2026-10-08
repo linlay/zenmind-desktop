@@ -43,6 +43,7 @@ export type SidebarActionIconKind =
   | "expand_all"
   | "collapse_all"
   | "refresh"
+  | "add"
   | "new_project"
   | "new_chat"
   | "more_actions"
@@ -224,11 +225,18 @@ function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
           <path d="M21 3v5h-5" />
         </svg>
       );
-    case "new_project":
+    case "add":
       return (
         <svg {...iconProps}>
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      );
+    case "new_project":
+      return (
+        <svg {...iconProps}>
+          <path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z" />
+          <path d="M12 10v6m-3-3h6" />
         </svg>
       );
     case "new_chat":
@@ -522,6 +530,7 @@ function DefaultSidebarIllustration({
 }
 
 export function SidebarActionIcon(props: SidebarActionIconProps) {
+  if (props.kind === "add") return <DefaultSidebarActionIcon {...props} />;
   const slot = props.kind === "new_chat" || props.kind === "new_project" ? `entry.${props.kind}` : `navigation.${props.kind}`;
   return <SkinVisual slot={slot} className={createSidebarActionIconProps(props.kind, props.className).className}><DefaultSidebarActionIcon {...props} /></SkinVisual>;
 }

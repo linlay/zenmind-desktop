@@ -2116,15 +2116,11 @@ div.sidebar-chats-group-popover {
 }
 
 .assistant-worker-actions {
-  display: none;
+  display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
   height: 28px;
-}
-
-.assistant-worker-collapse-item.is-expanded .assistant-worker-actions {
-  display: inline-flex;
 }
 
 .assistant-worker-collapse-item.is-expanded .assistant-worker-actions .assistant-worker-icon-button {
@@ -2229,6 +2225,10 @@ div.sidebar-chats-group-popover {
   margin-inline-end: 2px;
 }
 
+.assistant-worker-collapse-item:not(.is-expanded) .sidebar-agent-more-actions-button {
+  display: none !important;
+}
+
 .assistant-worker-collapse-item>.Collapse-header:not(:hover) .sidebar-agent-more-actions-button {
   opacity: 0;
   pointer-events: none;
@@ -2247,6 +2247,7 @@ div.sidebar-chats-group-popover {
 .sidebar-assistant-project-button {
   flex: 0 0 auto;
   margin-left: auto;
+  color: color-mix(in oklab, var(--ink) 50%, transparent);
 }
 
 
@@ -3975,6 +3976,7 @@ div.sidebar-chats-group-popover {
 }
 
 :root[data-theme="dark"] .assistant-worker-actions .assistant-worker-icon-button,
+:root[data-theme="dark"] .sidebar-assistant-project-button,
 :root[data-theme="dark"] .sidebar-more-actions-button {
   color: color-mix(in oklab, var(--ink) 50%, transparent);
 }

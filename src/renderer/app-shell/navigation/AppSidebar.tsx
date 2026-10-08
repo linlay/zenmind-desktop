@@ -5716,7 +5716,7 @@ export function AppSidebar({
                       );
                     }}
                   >
-                    <SidebarActionIcon kind="new_project" />
+                    <SidebarActionIcon kind="add" />
                   </button>
                 </Tooltip>
               </>
