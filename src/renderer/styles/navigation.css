@@ -4077,10 +4077,11 @@ div.sidebar-chats-group-popover {
   right: 0;
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, 24px);
+  justify-content: center;
   place-items: center;
   box-sizing: border-box;
-  gap: 4px;
+  gap: 4px 2px;
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button {
@@ -4115,13 +4116,19 @@ div.sidebar-chats-group-popover {
   pointer-events: none;
 }
 
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .sidebar-global-search-button {
+  display: inline-flex;
+  pointer-events: auto;
+}
+
 .app-sidebar.is-collapsed .sidebar-history-controls {
   display: none;
 }
 
-/* macOS has no system bar, so the collapsed rail keeps back/forward under the collapse toggle. */
+/* macOS keeps search/expand and back/forward in two rows below the native window buttons. */
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-history-controls {
   display: inline-flex;
+  grid-column: 1 / -1;
 }
 
 .app-sidebar.is-collapsed .sidebar-nav {
