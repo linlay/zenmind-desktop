@@ -13,7 +13,8 @@ function setup({
   platform = "win32", mainAvailable = true, mainVisible = true, mainDestroyed = false,
   externalX = -2560, externalY = -200, mainOnLaptop = false,
   singleDisplay = false, deferredLoads = false, failLoadId, failConstructorId,
-  sourceMode = "identified", sameSize = false
+  sourceMode = "identified", sameSize = false,
+  sourceError, screenPermission = "granted", emptyThumbnailId
 } = {}) {
   const laptop = { id: 1, bounds: { x: 0, y: 0, width: 1440, height: 900 }, size: { width: 1440, height: 900 }, scaleFactor: 2 };
   const external = sameSize
@@ -26,15 +27,16 @@ function setup({
   const matched = [];
   const loads = [];
   const windowCaptures = [];
+  const diagnostics = [];
   const mainBounds = mainOnLaptop || singleDisplay
     ? { x: 100, y: 100, width: 800, height: 600 }
     : { x: externalX + 100, y: externalY + 100, width: 1800, height: 1000 };
-  function image(width, height, displayId) {
+  function image(width, height, displayId, empty = false) {
     return {
-      isEmpty: () => false,
-      getSize: () => ({ width, height }),
-      toPNG: () => Buffer.from(`display:${displayId};${width}x${height}`),
-      crop: (rect) => { crops.push({ displayId, ...rect }); return image(rect.width, rect.height, displayId); }
+      isEmpty: () => empty,
+      getSize: () => empty ? { width: 0, height: 0 } : { width, height },
+      toPNG: () => empty ? Buffer.alloc(0) : Buffer.from(`display:${displayId};${width}x${height}`),
+      crop: (rect) => { crops.push({ displayId, ...rect }); return image(rect.width, rect.height, displayId, empty); }
     };
   }
   class Overlay extends EventEmitter {
@@ -103,20 +105,22 @@ function setup({
   const electron = {
     BrowserWindow: Overlay,
     screen,
-    systemPreferences: { getMediaAccessStatus: () => "granted" },
+    systemPreferences: { getMediaAccessStatus: () => screenPermission },
     desktopCapturer: {
       getSources: async (options) => {
         captures.push(options);
+        if (sourceError !== undefined) throw sourceError;
+        if (sourceMode === "empty") return [];
         const sourceDisplays = sourceMode === "wrong-monitor" ? [laptop] : [external, laptop];
         return sourceDisplays.map((display) => ({
           display_id: sourceMode === "unidentified" ? "" : String(display.id),
-          thumbnail: image(display.size.width * display.scaleFactor, display.size.height * display.scaleFactor, display.id)
+          thumbnail: image(display.size.width * display.scaleFactor, display.size.height * display.scaleFactor, display.id, display.id === emptyThumbnailId)
         }));
       }
     }
   };
   const module = { exports: {} };
-  new Function("module", "exports", "require", compiled)(module, module.exports, (id) => {
+  new Function("module", "exports", "require", "console", compiled)(module, module.exports, (id) => {
     if (id === "electron") return electron;
     if (id.endsWith("/brand")) return { PRODUCT_NAME: "Test" };
     if (id.endsWith("/main-i18n")) return { t: (key) => key };
@@ -124,9 +128,9 @@ function setup({
       createAssistantAttachmentFromImageBuffer: async (_app, _chatId, attachment) => ({ ok: true, attachments: [attachment] })
     };
     throw new Error(`Unexpected import: ${id}`);
-  });
+  }, { warn: (...args) => diagnostics.push(args) });
   return {
-    ...module.exports, windows, captures, crops, matched, mainBounds, laptop, external, displays, screen, loads, windowCaptures,
+    ...module.exports, windows, captures, crops, matched, mainBounds, laptop, external, displays, screen, loads, windowCaptures, diagnostics,
     options: {
       platform, getMainWindow: () => mainAvailable ? mainWindow : null,
       delay: async () => assert.ok(windows.every((window) => window.destroyed && !window.visible), "capture starts after every overlay is closed"),
@@ -141,6 +145,19 @@ function assertCleanedUp(h) {
   assert.equal(h.screen.listenerCount("display-removed"), 0);
   assert.equal(h.screen.listenerCount("display-metrics-changed"), 0);
 }
+
+function assertNoCapturedImage(result) {
+  assert.equal(result.ok, false);
+  assert.equal(result.dataBase64, undefined);
+  assert.deepEqual(result.attachments ?? [], []);
+  assert.equal(result.width, undefined);
+  assert.equal(result.height, undefined);
+}
+
+const nativeFailures = [
+  ["string", () => "Failed to get sources."],
+  ["Error", () => new Error("Failed to get sources.")]
+];
 
 for (const platform of ["win32", "darwin"]) {
   for (const entry of ["captureScreenshotForBridge", "captureAssistantScreenshot"]) {
@@ -185,6 +202,83 @@ for (const platform of ["win32", "darwin"]) {
       assert.deepEqual(h.captures[0].thumbnailSize, { width: 2880, height: 1800 });
       assert.deepEqual(h.crops, [{ displayId: 1, x: 200, y: 400, width: 600, height: 500 }]);
       assert.equal(h.captures.length, 1);
+      assertCleanedUp(h);
+    });
+    for (const [kind, createFailure] of nativeFailures) {
+      test(`${platform} ${entry}: native ${kind} rejection on the other monitor returns a readable failure without another-screen fallback`, async () => {
+        const failure = createFailure();
+        const h = setup({ platform, mainOnLaptop: true, sourceError: failure });
+        const pending = h[entry](h.options);
+        await new Promise(setImmediate);
+        h.windows.find((window) => window.display.id === 2).finish({ x: 100, y: 200, width: 300, height: 250 });
+        const result = await pending;
+        assertNoCapturedImage(result);
+        assert.equal(result.message, platform === "darwin" ? "screenshot.captureFailedMac" : "screenshot.captureFailedWindows");
+        assert.equal(h.crops.length, 0);
+        assert.equal(h.windowCaptures.length, 0);
+        assert.ok(h.captures.length > 0);
+        assert.ok(h.captures.every((request) => request.thumbnailSize.width === 3840 && request.thumbnailSize.height === 2160));
+        assert.ok(h.diagnostics.some((args) => args.includes(failure)), "retain the native failure for diagnostics");
+        assertCleanedUp(h);
+      });
+    }
+    test(`${platform} ${entry}: enumeration failure can capture a complete selection inside the app on a negative-coordinate monitor`, async () => {
+      const h = setup({ platform, sourceError: new Error("Failed to get sources.") });
+      const pending = h[entry](h.options);
+      await new Promise(setImmediate);
+      h.windows.find((window) => window.display.id === 2).finish({ x: 200, y: 250, width: 300, height: 250 });
+      const result = await pending;
+      assert.equal(result.ok, true);
+      assert.deepEqual(h.windowCaptures, [{ x: 100, y: 150, width: 300, height: 250 }]);
+      const png = entry === "captureScreenshotForBridge"
+        ? Buffer.from(result.dataBase64, "base64")
+        : result.attachments[0].buffer;
+      assert.equal(png.toString(), "display:window;300x250");
+      assert.equal(h.crops.length, 0);
+      assertCleanedUp(h);
+    });
+    test(`${platform} ${entry}: a complete fractional-DIP selection falls back without false truncation`, async () => {
+      const h = setup({ platform, sourceError: "Failed to get sources." });
+      const pending = h[entry](h.options);
+      await new Promise(setImmediate);
+      h.windows.find((window) => window.display.id === 2).finish({ x: 200.3, y: 250.3, width: 300.2, height: 250.2 });
+      const result = await pending;
+      assert.equal(result.ok, true);
+      assert.deepEqual(h.windowCaptures, [{ x: 100, y: 150, width: 300, height: 250 }]);
+      const png = entry === "captureScreenshotForBridge"
+        ? Buffer.from(result.dataBase64, "base64")
+        : result.attachments[0].buffer;
+      assert.equal(png.toString(), "display:window;300x250");
+      assert.equal(h.crops.length, 0);
+      assertCleanedUp(h);
+    });
+    for (const [edge, rect] of [
+      ["left", { x: 50, y: 250, width: 300, height: 250 }],
+      ["top", { x: 200, y: 50, width: 300, height: 250 }]
+    ]) {
+      test(`${platform} ${entry}: failed screen capture does not return a truncated app image across its ${edge} edge`, async () => {
+        const h = setup({ platform, sourceError: "Failed to get sources." });
+        const pending = h[entry](h.options);
+        await new Promise(setImmediate);
+        h.windows.find((window) => window.display.id === 2).finish(rect);
+        const result = await pending;
+        assertNoCapturedImage(result);
+        assert.equal(result.message, platform === "darwin" ? "screenshot.captureFailedMac" : "screenshot.captureFailedWindows");
+        assert.equal(h.windowCaptures.length, 0, "partial overlap must not invoke capturePage");
+        assert.equal(h.crops.length, 0);
+        assertCleanedUp(h);
+      });
+    }
+  }
+  for (const [kind, createFailure] of nativeFailures) {
+    test(`${platform}: desktop mode translates native ${kind} rejection without falling back to the app window`, async () => {
+      const h = setup({ platform, sourceError: createFailure() });
+      const result = await h.captureScreenshotForBridge(h.options, "desktop");
+      assertNoCapturedImage(result);
+      assert.equal(result.message, platform === "darwin" ? "screenshot.captureFailedMac" : "screenshot.captureFailedWindows");
+      assert.equal(h.windows.length, 0);
+      assert.equal(h.windowCaptures.length, 0);
+      assert.equal(h.crops.length, 0);
       assertCleanedUp(h);
     });
   }
@@ -302,7 +396,7 @@ for (const platform of ["win32", "darwin"]) {
       h.windows[1].finish({ x: 100, y: 200, width: 300, height: 250 });
       const result = await pending;
       assert.equal(result.ok, false);
-      assert.equal(result.message, platform === "darwin" ? "screenshot.noSourceMac" : "screenshot.noSourceWindows");
+      assert.equal(result.message, platform === "darwin" ? "screenshot.captureFailedMac" : "screenshot.noSourceWindows");
       assert.equal(h.crops.length, 0);
       assert.equal(h.windowCaptures.length, 0, "do not fall back to a CuteJ window on the other monitor");
       assertCleanedUp(h);
@@ -337,3 +431,78 @@ for (const platform of ["win32", "darwin"]) {
     assert.equal(h.windowCaptures.length, 1);
   });
 }
+
+for (const [unavailable, captureOptions] of [
+  ["empty source list", { sourceMode: "empty" }],
+  ["empty selected thumbnail", { emptyThumbnailId: 2 }]
+]) {
+  for (const entry of ["captureScreenshotForBridge", "captureAssistantScreenshot"]) {
+    test(`macOS ${entry}: granted permission with ${unavailable} reports capture failure without changing monitors`, async () => {
+      const h = setup({ platform: "darwin", mainOnLaptop: true, screenPermission: "granted", ...captureOptions });
+      const pending = h[entry](h.options);
+      await new Promise(setImmediate);
+      h.windows.find((window) => window.display.id === 2).finish({ x: 100, y: 200, width: 300, height: 250 });
+      const result = await pending;
+      assertNoCapturedImage(result);
+      assert.equal(result.message, "screenshot.captureFailedMac");
+      assert.ok(h.captures.length > 0, "granted permission must reach native source enumeration");
+      assert.equal(h.crops.length, 0);
+      assert.equal(h.windowCaptures.length, 0);
+      assertCleanedUp(h);
+    });
+  }
+  test(`macOS desktop mode: granted permission with ${unavailable} reports capture failure`, async () => {
+    const h = setup({ platform: "darwin", screenPermission: "granted", ...captureOptions });
+    const result = await h.captureScreenshotForBridge(h.options, "desktop");
+    assertNoCapturedImage(result);
+    assert.equal(result.message, "screenshot.captureFailedMac");
+    assert.ok(h.captures.length > 0);
+    assert.equal(h.windows.length, 0);
+    assert.equal(h.windowCaptures.length, 0);
+    assert.equal(h.crops.length, 0);
+    assertCleanedUp(h);
+  });
+}
+
+for (const entry of ["captureScreenshotForBridge", "captureAssistantScreenshot"]) {
+  test(`macOS ${entry}: denied screen access explains permission failure on the other monitor`, async () => {
+    const h = setup({ platform: "darwin", mainOnLaptop: true, sourceError: "Failed to get sources.", screenPermission: "denied" });
+    const pending = h[entry](h.options);
+    await new Promise(setImmediate);
+    h.windows.find((window) => window.display.id === 2).finish({ x: 100, y: 200, width: 300, height: 250 });
+    const result = await pending;
+    assertNoCapturedImage(result);
+    assert.equal(result.message, "screenshot.permissionDeniedMac");
+    assert.equal(h.windowCaptures.length, 0);
+    assertCleanedUp(h);
+  });
+  test(`macOS ${entry}: restricted screen access fails before opening selectors or reading images`, async () => {
+    const h = setup({ platform: "darwin", screenPermission: "restricted" });
+    const result = await h[entry](h.options);
+    assertNoCapturedImage(result);
+    assert.equal(result.message, "screenshot.permissionDeniedMac");
+    assert.equal(h.windows.length, 0);
+    assert.equal(h.captures.length, 0);
+    assert.equal(h.windowCaptures.length, 0);
+    assertCleanedUp(h);
+  });
+}
+
+test("macOS desktop mode uses the permission explanation after a denied native enumeration", async () => {
+  const h = setup({ platform: "darwin", screenPermission: "denied", sourceError: new Error("Failed to get sources.") });
+  const result = await h.captureScreenshotForBridge(h.options, "desktop");
+  assertNoCapturedImage(result);
+  assert.equal(result.message, "screenshot.permissionDeniedMac");
+  assert.equal(h.windows.length, 0);
+  assert.equal(h.windowCaptures.length, 0);
+});
+
+test("macOS app-window mode remains available when screen-recording permission is denied", async () => {
+  const h = setup({ platform: "darwin", screenPermission: "denied", sourceError: new Error("Failed to get sources.") });
+  const result = await h.captureScreenshotForBridge(h.options, "window");
+  assert.equal(result.ok, true);
+  assert.equal(Buffer.from(result.dataBase64, "base64").toString(), "display:window;1800x1000");
+  assert.equal(h.captures.length, 0);
+  assert.equal(h.windows.length, 0);
+  assert.equal(h.windowCaptures.length, 1);
+});

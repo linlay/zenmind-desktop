@@ -49,6 +49,7 @@ type CaptureBridgeScreenshotOptions = Omit<CaptureAssistantScreenshotOptions, "a
 
 const MAX_BRIDGE_SCREENSHOT_BYTES = 32 * 1024 * 1024;
 const SCREENSHOT_SOURCE_UNAVAILABLE = "screen_capture_source_unavailable";
+const SCREENSHOT_SOURCE_ENUMERATION_FAILED = "screen_capture_source_enumeration_failed";
 const SCREENSHOT_SELECTION_PROTOCOL = "desktop:";
 
 function getScreenshotDisplay(options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow">) {
@@ -321,11 +322,17 @@ function chooseDisplaySource(
 
 async function captureDisplayImage(display: Display) {
   const thumbnailSize = getDisplayThumbnailSize(display);
-  const sources = await desktopCapturer.getSources({
-    types: ["screen"],
-    thumbnailSize,
-    fetchWindowIcons: false
-  });
+  let sources: Electron.DesktopCapturerSource[];
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize,
+      fetchWindowIcons: false
+    });
+  } catch (error) {
+    console.warn("[screenshot] System screen source enumeration failed", error);
+    throw new Error(SCREENSHOT_SOURCE_ENUMERATION_FAILED, { cause: error });
+  }
   const source = chooseDisplaySource(sources, display, thumbnailSize);
   if (!source || source.thumbnail.isEmpty()) {
     throw new Error(SCREENSHOT_SOURCE_UNAVAILABLE);
@@ -354,14 +361,25 @@ async function captureMainWindowImage(
 
 function translateScreenCaptureError(error: unknown, platform: NodeJS.Platform) {
   const normalized = error instanceof Error ? error : new Error(String(error));
-  if (normalized.message !== SCREENSHOT_SOURCE_UNAVAILABLE) {
+  if (normalized.message !== SCREENSHOT_SOURCE_UNAVAILABLE && normalized.message !== SCREENSHOT_SOURCE_ENUMERATION_FAILED) {
     return normalized;
   }
   if (platform === "darwin") {
-    return new Error(t("screenshot.noSourceMac", { appName: PRODUCT_NAME }));
+    const status = systemPreferences.getMediaAccessStatus("screen");
+    return new Error(t(
+      status === "denied" || status === "restricted"
+        ? "screenshot.permissionDeniedMac"
+        : "screenshot.captureFailedMac",
+      { appName: PRODUCT_NAME }
+    ), { cause: normalized });
   }
   if (platform === "win32") {
-    return new Error(t("screenshot.noSourceWindows", { appName: PRODUCT_NAME }));
+    return new Error(t(
+      normalized.message === SCREENSHOT_SOURCE_ENUMERATION_FAILED
+        ? "screenshot.captureFailedWindows"
+        : "screenshot.noSourceWindows",
+      { appName: PRODUCT_NAME }
+    ), { cause: normalized });
   }
   return normalized;
 }
@@ -424,7 +442,15 @@ async function captureWindowSelectionFallback(
   for (const targetWindow of getScreenshotWindowFallbackTargets(options)) {
     const contentBounds = targetWindow.getContentBounds();
     const intersection = intersectRect(selectionBounds, contentBounds);
-    if (!intersection) {
+    // A window-only fallback must cover the entire requested region. Returning
+    // just its intersection would silently truncate a desktop or other-app shot.
+    if (
+      !intersection ||
+      selectionBounds.x < contentBounds.x ||
+      selectionBounds.y < contentBounds.y ||
+      selectionBounds.x + selectionBounds.width > contentBounds.x + contentBounds.width ||
+      selectionBounds.y + selectionBounds.height > contentBounds.y + contentBounds.height
+    ) {
       continue;
     }
     const captured = await targetWindow.webContents.capturePage({
@@ -481,15 +507,7 @@ async function captureScreenshotImage(
     return fallback;
   }
 
-  if (options.platform === "darwin" && screenCaptureFailure.message === SCREENSHOT_SOURCE_UNAVAILABLE) {
-    throw new Error(t("screenshot.noSourceMac", { appName: PRODUCT_NAME }));
-  }
-
-  if (options.platform === "win32" && screenCaptureFailure.message === SCREENSHOT_SOURCE_UNAVAILABLE) {
-    throw new Error(t("screenshot.noSourceWindows", { appName: PRODUCT_NAME }));
-  }
-
-  throw screenCaptureFailure;
+  throw translateScreenCaptureError(screenCaptureFailure, options.platform);
 }
 
 function createScreenshotAttachmentName() {

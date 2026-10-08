@@ -1652,7 +1652,12 @@ export function DesktopPet() {
           >
             <div className="desktop-pet-task-head">
               <span className="desktop-pet-task-head-copy">
-                <strong><MessageOutlined aria-hidden="true" />{statusPanelTitle}</strong>
+                <strong>
+                  <MessageOutlined aria-hidden="true" />{statusPanelTitle}
+                  {hasHistoryMessages ? (
+                    <span className="desktop-pet-message-count">({visibleMessages.length})</span>
+                  ) : null}
+                </strong>
               </span>
               <button
                 type="button"
@@ -1802,13 +1807,6 @@ export function DesktopPet() {
                     </button>
                   )}
                 </div>
-                {unreadCount > visibleMessages.length && !replyingChatId ? (
-                  <div className="desktop-pet-task-actions">
-                    <span className="desktop-pet-task-more">
-                      {t("desktopPet.message.more", { count: unreadCount - visibleMessages.length })}
-                    </span>
-                  </div>
-                ) : null}
               </>
             ) : null}
           </section>
