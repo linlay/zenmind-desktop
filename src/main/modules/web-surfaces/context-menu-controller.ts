@@ -486,6 +486,12 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
       });
     });
     try {
+      if (request.action === "add-to-chat") {
+        // The toolbar lives in the host renderer. On macOS and Windows, return
+        // native keyboard focus to the guest before its annotation input opens;
+        // focusing a DOM textarea alone does not focus the guest WebContents.
+        visible.contents.focus();
+      }
       visible.contents.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
         action: AGENT_WEBCLIENT_SELECTION_ACTION,
         version: AGENT_WEBCLIENT_SELECTION_ACTION_VERSION,

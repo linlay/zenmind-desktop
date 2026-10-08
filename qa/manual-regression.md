@@ -321,6 +321,8 @@
 
 ## WorkPanel 统一文档 Surface
 
+- macOS 与 Windows：在主聊天消息或代码块内划词，点击 Add to chat 后不再点击页面，直接输入中英文；文字应进入已打开的批注框，主输入框保持原草稿。回车确认、再次划词添加、手动点击别处后不抢回焦点均正常；旁聊与详细解释仍进入各自目标。
+
 - macOS 与 Windows 分别打开 DOCX/PPTX/XLSX 元信息页，确认文件图标、名称、易读大小、可截断的 MIME 和操作集中在同一卡片；在线预览、下载、文件定位与默认应用打开按钮等宽、等高。窄 WorkPanel、全屏、浅色/深色及皮肤主题下无横向溢出；未配置预览时保留禁用按钮与原因，宿主定位/打开继续检查可用能力。
 
 - 以显式 title、相对路径、macOS/POSIX 绝对路径、Windows 驱动器路径、UNC 路径、中文/空格、空 basename 和超长名称创建 File descriptor；Tab 标题必须为“显式 title > basename > file”，不 URL decode，且 stable key 和 `surfaceId` 不变。分别使用新旧 WebClient bundle 验证 Desktop 兜底。
