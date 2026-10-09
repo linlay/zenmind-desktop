@@ -36,6 +36,7 @@ function setup(platform = "win32") {
   const controller = createTaskbarUnreadController({
     platform,
     getWindow: () => state.window,
+    getDock: () => { throw new Error("Windows must not access Dock"); },
     onError: (...args) => errors.push(args)
   });
   return { controller, state, calls, errors, makeWindow };
@@ -86,14 +87,78 @@ test("large counts share the 99+ image while retaining the exact accessible coun
   assert.equal(calls[5].description, "101 个未读会话");
 });
 
-test("macOS and Linux do not access a window or apply Windows overlays", () => {
-  for (const platform of ["darwin", "linux"]) {
-    createTaskbarUnreadController({
-      platform,
-      getWindow: () => { throw new Error("must not access window"); },
-      onError: () => assert.fail("unexpected error")
-    }).refresh(snapshot(3));
-  }
+function setupDock() {
+  const badges = [];
+  const errors = [];
+  const makeDock = () => ({ setBadge: (text) => badges.push(text) });
+  const state = { dock: makeDock() };
+  const controller = createTaskbarUnreadController({
+    platform: "darwin",
+    getWindow: () => { throw new Error("macOS must not access window"); },
+    getDock: () => state.dock,
+    onError: (...args) => errors.push(args)
+  });
+  return { controller, state, badges, errors, makeDock };
+}
+
+test("macOS Dock follows the same authoritative unread and pin deduplication", () => {
+  const { controller, badges } = setupDock();
+  controller.refresh({
+    ...snapshot(4),
+    chatItems: [{ chatId: "chat", agentKey: "general", isRead: false }],
+    pinnedChatItems: [
+      { chatId: "chat", agentKey: "general", isRead: false },
+      { chatId: "pin", agentKey: "general", isRead: false },
+      { chatId: "project-pin", agentKey: "project", isRead: false },
+      { chatId: "pending", agentKey: "general", isRead: true, hasPendingAwaiting: true }
+    ]
+  });
+  controller.refresh(snapshot(2));
+  controller.refresh(snapshot(0));
+  controller.refresh(snapshot(3));
+  controller.refresh({ ok: false });
+  controller.refresh(snapshot(5));
+  controller.refresh(undefined);
+  assert.deepEqual(badges, ["6", "2", "", "3", "", "5", ""]);
+});
+
+test("macOS Dock shows numeric counts and caps large counts at 99+", () => {
+  const { controller, badges } = setupDock();
+  for (const count of [1, 9, 10, 99, 100, 101]) controller.refresh(snapshot(count));
+  assert.deepEqual(badges, ["1", "9", "10", "99", "99+", "99+"]);
+});
+
+test("macOS skips unchanged counts and reapplies after restore or Dock availability", () => {
+  const { controller, badges, state, makeDock } = setupDock();
+  controller.refresh(snapshot(9));
+  controller.refresh(snapshot(9));
+  assert.equal(badges.length, 1);
+  controller.refresh(snapshot(9), true);
+  state.dock = undefined;
+  controller.refresh(snapshot(2));
+  state.dock = makeDock();
+  controller.refresh(snapshot(2));
+  assert.deepEqual(badges, ["9", "9", "2"]);
+});
+
+test("macOS Dock failures do not break navigation and retry the same count", () => {
+  const { controller, badges, state, errors } = setupDock();
+  const setBadge = state.dock.setBadge;
+  state.dock.setBadge = () => { throw new Error("native failure"); };
+  assert.doesNotThrow(() => controller.refresh(snapshot(3)));
+  assert.equal(errors.length, 1);
+  state.dock.setBadge = setBadge;
+  controller.refresh(snapshot(3));
+  assert.deepEqual(badges, ["3"]);
+});
+
+test("Linux does not access a window or Dock", () => {
+  createTaskbarUnreadController({
+    platform: "linux",
+    getWindow: () => { throw new Error("must not access window"); },
+    getDock: () => { throw new Error("must not access Dock"); },
+    onError: () => assert.fail("unexpected error")
+  }).refresh(snapshot(3));
 });
 
 test("native failures do not break navigation updates and can be retried", () => {
