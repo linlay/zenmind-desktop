@@ -5165,22 +5165,23 @@ export function AppSidebar({
             <span className="chat-awaiting-status">
               {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
             </span>
-          ) : null}
-          <span className="assistant-worker-chat-action" data-action={action}>
-            {action === "unread" ? (
+          ) : (
+            <span className="assistant-worker-chat-action" data-action={action}>
+              {action === "unread" ? (
+                <span
+                  className="assistant-worker-unread-dot chat-unread-dot is-unread"
+                  aria-label={t("sidebar.chat.unread")}
+                />
+              ) : null}
+              <span className="worker-panel-time-label">
+                {formatAssistantChatTime(chat.updatedAt)}
+              </span>
               <span
-                className="assistant-worker-unread-dot chat-unread-dot is-unread"
-                aria-label={t("sidebar.chat.unread")}
+                className="worker-chat-loading assistant-material-icon is-loading"
+                aria-hidden="true"
               />
-            ) : null}
-            <span className="worker-panel-time-label">
-              {formatAssistantChatTime(chat.updatedAt)}
             </span>
-            <span
-              className="worker-chat-loading assistant-material-icon is-loading"
-              aria-hidden="true"
-            />
-          </span>
+          )}
         </span>
         {chat.pinned ? (
           <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>

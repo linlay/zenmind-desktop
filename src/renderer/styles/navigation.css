@@ -2761,6 +2761,34 @@ div.sidebar-chats-group-popover {
 
 .assistant-worker-chat-item.has-awaiting .chat-awaiting-status {
   margin-left: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .assistant-worker-chat-item.has-awaiting .chat-awaiting-status::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.35) 50%, transparent 80%);
+    transform: translateX(-120%);
+    animation: sidebar-chat-awaiting-shimmer 3s ease-in-out infinite;
+  }
+}
+
+@keyframes sidebar-chat-awaiting-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  30%, 100% {
+    transform: translateX(120%);
+  }
+}
+
+/* Keep the badge's space when the row menu replaces it on hover. */
+.assistant-worker-chat-row:hover .assistant-worker-chat-item.has-awaiting .chat-awaiting-status {
+  opacity: 0;
 }
 
 .assistant-worker-chat-action {
@@ -2817,20 +2845,14 @@ div.sidebar-chats-group-popover {
   display: none;
 }
 
-.assistant-worker-chat-action[data-action="awaiting"],
 .assistant-worker-chat-action[data-action="loading"] {
   width: 18px;
-}
-
-.assistant-worker-chat-action[data-action="awaiting"] {
-  color: #b45309;
 }
 
 .assistant-worker-chat-action[data-action="loading"] {
   color: var(--ink-muted);
 }
 
-.assistant-worker-chat-action[data-action="awaiting"] .worker-panel-time-label,
 .assistant-worker-chat-action[data-action="loading"] .worker-panel-time-label {
   display: none;
 }
@@ -2850,14 +2872,9 @@ div.sidebar-chats-group-popover {
   margin-right: -4px;
 }
 
-.assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading,
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
   display: inline-flex;
   animation-name: assistant-worker-chat-spin;
-}
-
-.assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading {
-  color: #b45309;
 }
 
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
@@ -4011,9 +4028,7 @@ div.sidebar-chats-group-popover {
   background: var(--skin-pending, rgba(180, 83, 9, 0.24));
 }
 
-:root[data-theme="dark"] .chat-awaiting-status+.sidebar-assistant-preview-loading,
-:root[data-theme="dark"] .assistant-worker-chat-action[data-action="awaiting"],
-:root[data-theme="dark"] .assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading {
+:root[data-theme="dark"] .chat-awaiting-status+.sidebar-assistant-preview-loading {
   color: #facc15;
 }
 
