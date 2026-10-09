@@ -115,6 +115,9 @@ test("desktop owns the toolbar and executes through the bounded WebClient bridge
   assert.match(toolbar, /webviewSelectionToolbar\.moreDetails/u);
   assert.match(toolbar, /webviewSelectionToolbar\.askInSideChat/u);
   assert.match(toolbar, /onPointerDown=\{preserveGuestSelection\}/u);
+  assert.match(toolbar, /onMouseDown=\{preserveGuestSelection\}/u);
+  // The embedder must hand keyboard focus back to the <webview> element itself.
+  assert.match(surface, /action === "add-to-chat" && result\.ok[\s\S]{0,900}targetWebview\.focus\(\)/u);
   assert.match(surface, /executeSelectionToolbarAction/u);
   assert.match(styles, /border-radius:\s*16px/u);
   assert.match(styles, /webview-selection-toolbar button:hover/u);

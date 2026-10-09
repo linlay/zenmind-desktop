@@ -78,7 +78,11 @@ export function WebviewSelectionToolbar({
     [anchor, measurements],
   );
   const measured = measurements.toolbarWidth > 0 && measurements.toolbarHeight > 0;
-  const preserveGuestSelection = (event: React.PointerEvent<HTMLButtonElement>) => {
+  // Cancelling pointerdown alone still lets mousedown focus the button; cancel
+  // both so the host does not take keyboard focus off the guest.
+  const preserveGuestSelection = (
+    event: React.PointerEvent<HTMLButtonElement> | React.MouseEvent<HTMLButtonElement>,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
   };
@@ -126,6 +130,7 @@ export function WebviewSelectionToolbar({
             data-action={action}
             data-version={WEBVIEW_SELECTION_TOOLBAR_VERSION}
             onPointerDown={preserveGuestSelection}
+            onMouseDown={preserveGuestSelection}
             onClick={() => void execute(action)}
           >
             {t(labelKey)}

@@ -3757,13 +3757,28 @@ export function ServiceWebviewSurface({
               <WebviewSelectionToolbar
                 anchor={selectionToolbarState.rect}
                 selectionId={selectionToolbarState.selectionId}
-                onAction={(action) =>
-                  window.electronAPI.serviceWebview.executeSelectionToolbarAction({
+                onAction={async (action) => {
+                  const result = await window.electronAPI.serviceWebview.executeSelectionToolbarAction({
                     version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
                     selectionId: selectionToolbarState.selectionId,
                     action,
-                  })
-                }
+                  });
+                  if (action === "add-to-chat" && result.ok) {
+                    // Clicking the toolbar moved keyboard focus into this host
+                    // document. Main-process guest focus alone does not move it
+                    // back: the embedder has to focus the <webview> element so
+                    // the guest window regains focus and its annotation input
+                    // can take the caret.
+                    const targetWebview = webviewRef.current;
+                    if (targetWebview) {
+                      // focus() is a no-op while the element is still the host's
+                      // activeElement, so drop it first to force a real handoff.
+                      if (document.activeElement === targetWebview) targetWebview.blur();
+                      targetWebview.focus();
+                    }
+                  }
+                  return result;
+                }}
                 onDismiss={() => setSelectionToolbarState(null)}
               />
             ) : null}
