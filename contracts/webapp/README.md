@@ -48,8 +48,19 @@ const { connector, assistant, skill, artifact, kanban } = createBackendClient({
 | 技能 | `skill.list()`、`skill.describe({skillId})`；只返回固定 Copilot 声明的技能元数据，使用技能经 Agent chat，不直接执行任意技能脚本 |
 | 产物 | `artifact.list({chatId,runId?,cursor?,limit?})`；`get/read/open/saveAs({chatId,runId?,artifactId})`；只允许当前应用实例发起的 Chat |
 | 看板 | 安装后直接调用；`kanban.boards.list()`、`kanban.issues.list({projectId?,cursor?,limit?})`、`kanban.issues.get({issueId})` |
-| 宿主 | `desktop.capabilities.list/has`、`desktop.app.getConfig/getUserConfig`、browser、dialog、microphone、clipboard.writeText、notification |
+| 宿主 | `desktop.capabilities.list/has`、`desktop.app.getConfig/getUserConfig`、`desktop.theme.get/set`、`desktop.locale.get/set`、browser、dialog、microphone、clipboard.writeText、notification |
 | 预留 | `automation.*`、desktop.screen.capture、clipboard.readText、file.reveal、window、camera、share；调用抛 `not_implemented` |
+
+主题和语言设置只向本机 WebApp 页面开放，复用 Desktop 的设置持久化与界面更新；不要求 Manifest 声明或额外授权。托管后端 SDK、局域网和发布页面不能调用。能力检测使用 `desktop.capabilities.has('desktop.theme')` 与 `desktop.capabilities.has('desktop.locale')`。
+
+```js
+const theme = await desktop.theme.get(); // { themeMode, resolvedTheme }
+await desktop.theme.set({ themeMode: 'dark' }); // light | dark | system
+const language = await desktop.locale.get(); // { locale, source }
+await desktop.locale.set({ locale: 'en-US' }); // zh-CN | en-US
+```
+
+设置改变整个 Desktop，并在重启后保留。页面可用 `theme.get()` 回读偏好，`resolvedTheme` 是当前实际明暗；`system` 不会被改写为具体明暗。语言切换返回 Desktop 的语言状态，不会自动翻译 WebApp 文案，应用自行维护词典并按 `locale.get()` 同步。写入失败通过 `DesktopBridgeError` 返回，不能自行当作已保存。
 
 后台运行示例：
 

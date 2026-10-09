@@ -941,6 +941,8 @@
 
 ## WebApp 统一能力桥
 
+- macOS / Windows：在本机 WebApp 主区与独立窗口调用 SDK 的主题和语言 get/set，切换 light/dark/system、zh-CN/en-US 后回读一致，Desktop 界面、原生菜单和窗口明暗沿用设置页行为；重启 Desktop 后保留。system 跟随系统变化时偏好仍为 system，不重载 guest 或丢失应用草稿。非法参数和保存失败返回错误。
+- 主题与语言 capability 显示 available/not_required；无需 Manifest 权限声明或额外确认。后端 token、缺失/撤销的 page token、伪造外站 Origin、局域网和发布页面均不能修改这些设置，拒绝请求不产生 Desktop 状态变化；其他未开放的 Desktop 动作继续被拒绝。
 - macOS / Windows：页面从同源加载 SDK，托管 Node 后端使用注入的 `/webapps` token；后端调用认证、权限确认、预览/另存为被拒绝，普通 Website/Tunnel 无法调用页面能力。
 - 安装未配置 desktopBridge 的应用，直接调用 CLI/MCP、连接器发现和看板读取，无应用授权弹窗；旧声明为空或 kanbanRead:false 也不限制访问。旧 requestAccess 返回 granted。
 - 在两个 WebApp 同时登录同一连接器，只出现一个宿主确认与认证窗口。分别验证 embedded 与 system 入口、成功、关闭、过期；关闭一个应用不取消另一应用共享的 Platform session。

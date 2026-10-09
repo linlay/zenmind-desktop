@@ -239,6 +239,14 @@ export const desktop = Object.freeze({
     getConfig: getAppConfig,
     getUserConfig
   }),
+  theme: Object.freeze({
+    get: () => call("desktop.theme.get"),
+    set: (input) => call("desktop.theme.set", input)
+  }),
+  locale: Object.freeze({
+    get: () => call("desktop.locale.get"),
+    set: (input) => call("desktop.locale.set", input)
+  }),
   capabilities: Object.freeze({
     list: listCapabilities,
     async has(id) {
