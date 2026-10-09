@@ -638,11 +638,10 @@ export interface AssistantAwaitingApproval {
   freeTextPlaceholder?: string;
 }
 
+/** The single form of awaiting.ask(mode=form); the awaiting identifies it. */
 export interface AssistantAwaitingForm {
-  id: string;
-  action?: string;
-  form?: Record<string, unknown> | null;
   title?: string;
+  data?: Record<string, unknown> | null;
 }
 
 export interface AssistantAwaitingPayload {
@@ -668,7 +667,7 @@ export interface AssistantAwaitingPayload {
     allowFreeText?: boolean;
     freeTextPlaceholder?: string;
   };
-  forms?: AssistantAwaitingForm[];
+  form?: AssistantAwaitingForm;
   view?: {source: "builtin" | "connector"; key: string; connectorId?: string; renderer?: "native" | "html" | "qlc"; version?: string; hash?: string};
   viewportHtml?: string;
   loading?: boolean;
@@ -850,7 +849,7 @@ export interface AssistantRunEvent {
   timestamp?: EpochMilliseconds | null;
   questions?: AssistantAwaitingQuestion[];
   approvals?: AssistantAwaitingApproval[];
-  forms?: AssistantAwaitingForm[];
+  form?: AssistantAwaitingForm;
   artifactCount?: number;
   artifacts?: unknown[];
   data?: unknown;
@@ -888,7 +887,7 @@ export interface AssistantEvent {
   timestamp?: EpochMilliseconds | null;
   questions?: AssistantAwaitingQuestion[];
   approvals?: AssistantAwaitingApproval[];
-  forms?: AssistantAwaitingForm[];
+  form?: AssistantAwaitingForm;
   artifactCount?: number;
   artifacts?: unknown[];
   data?: unknown;

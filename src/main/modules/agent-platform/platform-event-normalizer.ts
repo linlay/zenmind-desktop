@@ -172,7 +172,7 @@ export function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
     timestamp,
     ...(Array.isArray(raw.questions) ? { questions: raw.questions as AssistantEvent["questions"] } : {}),
     ...(Array.isArray(raw.approvals) ? { approvals: raw.approvals as AssistantEvent["approvals"] } : {}),
-    ...(Array.isArray(raw.forms) ? { forms: raw.forms as AssistantEvent["forms"] } : {}),
+    ...(raw.form && typeof raw.form === "object" && !Array.isArray(raw.form) ? { form: raw.form as AssistantEvent["form"] } : {}),
     ...(typeof raw.artifactCount === "number" ? { artifactCount: raw.artifactCount } : {}),
     ...(Array.isArray(raw.artifacts) ? { artifacts: raw.artifacts } : {}),
     ...(raw.data !== undefined ? { data: raw.data } : {})
