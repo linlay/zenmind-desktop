@@ -1,4 +1,4 @@
-import type { DesktopPetImportResult } from "../../../shared/contracts";
+import type { DesktopPetImportResult, WorkPanelDocumentSource } from "../../../shared/contracts";
 import type { DesktopAppearancePort } from "./appearance-port";
 import { type App, type BrowserWindow, type WebContents, type OpenDialogOptions, type SaveDialogOptions } from "electron";
 import {
@@ -82,6 +82,11 @@ export type DesktopActionBridgeOptions = {
     workspaceRelativePath: string;
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
+  // The native HTML/image preview that the Agent WebClient bridge also uses.
+  openWorkPanelDocument?: (input: {
+    ownerChatId: string;
+    document: { source: WorkPanelDocumentSource; title?: string };
+  }) => Promise<{ ok: true; workspaceId: string; itemId: string } | { ok: false; error: { code: string; message: string } }>;
   actionSignal?: AbortSignal;
   actionDeadlineAt?: number;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest, context?: { signal?: AbortSignal; timeoutMs?: number; deadlineAt?: number }) => Promise<DesktopActionConfirmationResponse>;

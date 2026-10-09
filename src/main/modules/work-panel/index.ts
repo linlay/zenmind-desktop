@@ -1,5 +1,5 @@
 export { registerChatWorkPanelDocumentHtmlIpcHandlers, workPanelDocumentHtmlRegistry } from "./document-html";
-export { registerChatWorkPanelLocalFileIpcHandlers, registerChatWorkPanelLocalFileProtocolScheme, resolveWorkPanelLocalFileFromWorkspace, workPanelLocalFileRegistry } from "./local-files";
+export { registerChatWorkPanelLocalFileIpcHandlers, registerChatWorkPanelLocalFileProtocolScheme, normalizeWorkPanelLocalFileRelativePath, resolveWorkPanelLocalFileFromWorkspace, workPanelLocalFileRegistry } from "./local-files";
 export type { WorkPanelLocalFilePathResolution } from "./local-files";
 export { resolveWorkPanelDocumentFromWorkspace } from "./document-workspace-path";
 export { registerChatWorkPanelResourceImageIpcHandlers, workPanelResourceImageRegistry } from "./resource-images";

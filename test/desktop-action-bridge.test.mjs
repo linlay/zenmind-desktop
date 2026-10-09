@@ -813,6 +813,133 @@ test("WorkPanel openLocalFile fails closed for invalid paths and unavailable Age
   assert.equal(missing.error.code, "file_unavailable");
 });
 
+test("WorkPanel openLocalFile opens a Chat file without an Agent workspace", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererCalls = [];
+  options.assistantBridge.listNavigationAgents = async () => assert.fail("a Chat file must not look up the Agent workspace");
+  options.prepareWorkPanelLocalFileClaim = () => assert.fail("a Chat file must not prepare a local file claim");
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: createWorkPanelRendererResult(request.action),
+    };
+  };
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" };
+  const response = await handleAgentPlatformDesktopActionRequest(options, {
+    requestId: "platform-chat-file",
+    action: "desktop.workpanel.openLocalFile",
+    source,
+    args: { root: "chat", path: "artifacts/run-1/末位 淘汰.md", title: "Novel" },
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.action, "desktop.workpanel.openLocalFile");
+  assert.equal(rendererCalls.length, 1);
+  assert.equal(rendererCalls[0].action, "desktop.workpanel.openTab");
+  assert.deepEqual(rendererCalls[0].source, source);
+  const { descriptor } = rendererCalls[0].args;
+  assert.match(descriptor.context.artifactId, /^chat-file:[0-9a-f]{32}$/u);
+  assert.deepEqual({ ...descriptor, context: { ...descriptor.context, artifactId: "" } }, {
+    kind: "webclient",
+    module: "artifact",
+    route: "/resource-viewer/coder?chatId=chat-owner&file=artifacts%2Frun-1%2F%25E6%259C%25AB%25E4%25BD%258D%2520%25E6%25B7%2598%25E6%25B1%25B0.md",
+    title: "Novel",
+    context: { agentKey: "coder", chatId: "chat-owner", artifactId: "", relativePath: "artifacts/run-1/末位 淘汰.md" },
+  });
+
+  for (const args of [{ root: "chat", path: "../other/secret.md" }, { root: "chat", path: "/tmp/secret.md" }]) {
+    const invalid = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.workpanel.openLocalFile", source, args });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.error.code, "invalid_path");
+  }
+  const unknownRoot = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile", source, args: { root: "runtime", path: "a.md" },
+  });
+  assert.equal(unknownRoot.error.code, "invalid_args");
+  const team = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile", source: { ...source, teamId: "team" }, args: { root: "chat", path: "a.md" },
+  });
+  assert.equal(team.error.code, "forbidden");
+  assert.equal(rendererCalls.length, 1);
+});
+
+test("WorkPanel openLocalFile prefers the native preview for Chat HTML and images", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererCalls = [];
+  const documents = [];
+  let nativeResult = { ok: true, workspaceId: "ws", itemId: "item" };
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return { requestId: request.requestId, action: request.action, ok: true, result: createWorkPanelRendererResult(request.action) };
+  };
+  options.openWorkPanelDocument = async (input) => {
+    documents.push(input);
+    return nativeResult;
+  };
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" };
+  const open = (path, extra = {}) => handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile", source, args: { root: "chat", path, ...extra },
+  });
+  const actions = () => rendererCalls.map((call) => call.action);
+
+  // A published artifact opens under its manifest id, which later saves use.
+  const html = await open("artifacts/run-1/report.html", { artifactId: "artifact-real" });
+  assert.equal(html.ok, true);
+  assert.equal(html.result.workspace.ownerChatId, createWorkPanelWorkspace().ownerChatId);
+  assert.deepEqual(actions(), ["desktop.workpanel.getState"]);
+  assert.deepEqual(documents[0].document.source, {
+    kind: "artifact", agentKey: "coder", chatId: "chat-owner", resourceId: "artifact-real", relativePath: "artifacts/run-1/report.html",
+  });
+  assert.equal(documents[0].document.title, "report.html");
+
+  // A file in the Chat root (upload or generated image) is a reference.
+  await open("image.png");
+  assert.equal(documents[1].document.source.kind, "reference");
+  assert.match(documents[1].document.source.resourceId, /^chat-file:[0-9a-f]{32}$/u);
+
+  // Markdown has no native preview: it opens as the WebClient resource page,
+  // still carrying the real artifact identity.
+  rendererCalls.length = 0;
+  nativeResult = { ok: false, error: { code: "unsupported_native_type", message: "not HTML" } };
+  assert.equal((await open("artifacts/run-1/novel.md", { artifactId: "artifact-real" })).ok, true);
+  assert.deepEqual(actions(), ["desktop.workpanel.openTab"]);
+  const page = rendererCalls[0].args.descriptor;
+  assert.equal(page.context.artifactId, "artifact-real");
+  assert.equal(page.route, "/resource-viewer/coder?chatId=chat-owner&file=artifacts%2Frun-1%2Fnovel.md&sourceKind=artifact&resourceId=artifact-real&relativePath=artifacts%2Frun-1%2Fnovel.md");
+
+  // Other failures are reported, never masked by the fallback.
+  rendererCalls.length = 0;
+  nativeResult = { ok: false, error: { code: "target_unavailable", message: "missing" } };
+  const missing = await open("artifacts/run-1/missing.html", { artifactId: "artifact-real" });
+  assert.equal(missing.error.code, "target_unavailable");
+  assert.deepEqual(actions(), []);
+
+  // A file under artifacts/ that was never published has no identity to save
+  // against, and a nested Chat path has no native profile: both use the page.
+  for (const path of ["artifacts/run-1/unpublished.html", "drafts/notes/page.html"]) {
+    documents.length = 0;
+    rendererCalls.length = 0;
+    assert.equal((await open(path)).ok, true, path);
+    assert.equal(documents.length, 0, path);
+    assert.deepEqual(actions(), ["desktop.workpanel.openTab"], path);
+  }
+
+  // The id is Platform's statement about a published Chat file, nothing else.
+  for (const invalid of [
+    { root: "chat", path: "image.png", artifactId: "artifact-real" },
+    { root: "chat", path: "artifacts/run-1/a.html", artifactId: "" },
+    { root: "workspace", path: "artifacts/run-1/a.html", artifactId: "artifact-real" },
+    { path: "artifacts/run-1/a.html", artifactId: "artifact-real" },
+  ]) {
+    const rejected = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.workpanel.openLocalFile", source, args: invalid,
+    });
+    assert.equal(rejected.error.code, "invalid_args", JSON.stringify(invalid));
+  }
+});
+
 test("Agent Platform WebApp Tooling actions use only the trusted Run workspace", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const workspaceRoot = path.join(options.app.getPath("home"), "agent-workspace");
