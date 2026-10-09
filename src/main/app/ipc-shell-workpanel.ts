@@ -1,6 +1,7 @@
 import { registerArtifactActionIpc } from "../modules/artifacts";
 import { shell } from "electron";
 import { callAgentPlatform } from "../modules/desktop-actions";
+import { resolvePreferredAgentPlatformRuntimeRoot } from "../modules/services";
 import { getTunnelHubRuntimeStatus } from "../modules/tunnel";
 import { registerShellIpcHandlers } from "../modules/shell";
 import { registerSidebarContextMenuIpcHandlers, registerWebsiteBridgeIpc } from "../modules/web-surfaces";
@@ -90,6 +91,7 @@ export function registerShellWorkPanelIpc(options: MainIpcRegistrationOptions) {
     platform: options.platform,
     getMainWindow: options.getMainWindow,
     getChatInfo: (chatId) => assistantBridge.getChatInfo(chatId),
+    getRuntimeRoot: () => resolvePreferredAgentPlatformRuntimeRoot(app),
     fetchResource: ({ chatId, relativePath }) => fetchDocumentResource({
       chatId, relativePath: relativePath.split("/").map(encodeURIComponent).join("/"),
     }),

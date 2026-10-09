@@ -16,10 +16,10 @@ import {RendererI18nContext} from ${JSON.stringify(path.join(repo, "src/renderer
 import {createTranslator} from ${JSON.stringify(path.join(repo, "src/shared/i18n/index.ts"))};
 import ${JSON.stringify(path.join(repo, "src/renderer/styles.css"))};
 let items=Array.from({length:55},(_,i)=>({chatId:'chat-'+i,artifactId:'artifact-'+i,name:'Report '+i+'.pdf',mimeType:'application/pdf',sizeBytes:1024*(i+1),sha256:'a'.repeat(64),pushedAt:1800000000000-i}));
-let listener=()=>{};window.opened=[];window.fail=false;
+let listener=()=>{};window.opened=[];window.actions=[];window.fail=false;
 window.pushArtifact=()=>{items=[{...items[0],artifactId:'new-artifact',name:'New live artifact.html'},...items];listener()};
-window.electronAPI={artifacts:{list:async({search='',offset=0,limit=50}={})=>{if(window.fail)throw Error('test');const records=items.filter(item=>item.name.toLowerCase().includes(search.toLowerCase()));return{total:records.length,records:records.slice(offset,offset+limit)}},onChanged:fn=>{listener=fn;return()=>{listener=()=>{}}}},assistant:{listHistoryChats:async()=>({ok:true,items:items.map(item=>({chatId:item.chatId,agentKey:'agent-1',chatName:'Source '+item.chatId}))})}};
-function Fixture(){const [locale,setLocale]=useState('zh-CN');window.setLocale=setLocale;return <RendererI18nContext.Provider value={{locale,source:'user',t:createTranslator(locale),setLocale:async(next)=>setLocale(next)}}><ArtifactManagementPage onOpenChat={request=>window.opened.push(request)}/></RendererI18nContext.Provider>}
+window.electronAPI={settings:{getPlatform:async()=>window.platform||'darwin'},artifacts:{act:async(request)=>{window.actions.push(request);return{ok:true,agentKey:'agent-1',relativePath:'artifacts/run/page.html'}},list:async({search='',offset=0,limit=50}={})=>{if(window.fail)throw Error('test');const records=items.filter(item=>item.name.toLowerCase().includes(search.toLowerCase()));return{total:records.length,records:records.slice(offset,offset+limit)}},onChanged:fn=>{listener=fn;return()=>{listener=()=>{}}}},assistant:{listHistoryChats:async()=>({ok:true,items:items.map(item=>({chatId:item.chatId,agentKey:'agent-1',chatName:'Source '+item.chatId}))})}};
+function Fixture(){const [locale,setLocale]=useState('zh-CN');window.setLocale=setLocale;return <RendererI18nContext.Provider value={{locale,source:'user',t:createTranslator(locale),setLocale:async(next)=>setLocale(next)}}><ArtifactManagementPage onView={request=>{window.opened.push(request);return true}} onOpenChat={request=>window.opened.push(request)}/></RendererI18nContext.Provider>}
 createRoot(document.getElementById('root')).render(<Fixture/>);
 `, resolveDir: repo, loader: "tsx" }, outfile: path.join(root, "fixture.js"), bundle: true, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', __DESKTOP_APP_BRAND__: JSON.stringify(require(path.join(repo, "dist-electron/shared/brand.js")).APP_BRAND) } });
 fs.writeFileSync(path.join(root, "index.html"), '<!doctype html><html data-theme="light"><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"><div id="root"></div><script src="fixture.js"></script></html>');
@@ -33,9 +33,14 @@ await js('document.querySelector(".artifact-management-pagination button:last-ch
 await js('document.querySelector(".artifact-management-pagination button:first-child").click()');await until('document.querySelectorAll("tbody tr").length===50');
 await js('window.pushArtifact()');await until('document.querySelector("tbody").textContent.includes("New live artifact.html")');
 await js(\`(()=>{const input=document.querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'New live');input.dispatchEvent(new Event('input',{bubbles:true}));})()\`);await until('document.querySelectorAll("tbody tr").length===1');
-await js('document.querySelector("summary").click()');assert.equal(await js('document.querySelector("details").open'),true);
+await js('document.querySelector(".artifact-management-actions button:nth-child(2)").click()');await until('window.actions.length===1');assert.equal(await js('window.actions[0].action'),'open-browser');
+await js('document.querySelector(".artifact-management-extra-menu").click()');await until('document.querySelector(".ant-dropdown-menu")');
+assert.equal(await js('Array.from(document.querySelectorAll(".ant-dropdown-menu-item")).some(item=>item.textContent==="在 Finder 显示")'),true);
+assert.equal(await js('Array.from(document.querySelectorAll(".ant-dropdown-menu-item")).some(item=>item.textContent==="默认应用打开")'),true);
 await js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');fs.writeFileSync(path.join(__dirname,'artifacts-light.png'),(await win.webContents.capturePage()).toPNG());
 await js('window.setLocale("en-US");document.documentElement.dataset.theme="dark"');await until('document.querySelector("h1").textContent==="Artifacts"');
+await js('document.body.click();document.querySelector(".artifact-management-name").click()');await until('document.querySelector(".ant-modal-title")?.textContent==="Details"');
+await js('document.querySelector(".ant-modal-close").click()');await until('!document.querySelector(".ant-modal-wrap")||document.querySelector(".ant-modal-wrap").style.display==="none"');
 await js('window.fail=true;document.querySelector(".artifact-management-header button").click()');await until('document.querySelector("[role=alert]")');
 await js('window.fail=false;document.querySelector(".artifact-management-header button").click()');await until('document.querySelectorAll("tbody tr").length===1');
 await js(\`(()=>{const input=document.querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'missing');input.dispatchEvent(new Event('input',{bubbles:true}));})()\`);await until('document.querySelector("[role=status]")?.textContent.includes("No matching artifacts")');
