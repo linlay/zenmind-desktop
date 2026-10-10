@@ -1141,6 +1141,9 @@ export function ServiceWebviewSurface({
       return;
     }
     try {
+      // The host may still consider this WebView active after the guest loses
+      // keyboard focus. Force the same handoff used by the selection toolbar.
+      if (document.activeElement === targetWebview) targetWebview.blur();
       targetWebview.focus();
       lastHandledFocusRequestIdRef.current = requestId;
       onFocusRequestHandled?.(requestId);
