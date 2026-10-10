@@ -906,6 +906,74 @@ ${cleanup}`;
   assert.match(result.stdout, /SURVIVORS=4103/u);
 });
 
+test("Windows installer waits for the executable lock after managed processes exit", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$");
+  const transientCleanup = cleanup.replace(
+    "}; $children = @{};",
+    "}; $script:lockChecks = 0; function Test-DesktopExecutableUnlocked { $script:lockChecks += 1; return $script:lockChecks -ge 3 }; $children = @{};"
+  );
+  assert.notEqual(transientCleanup, cleanup);
+  const dataRoot = path.join(root, "data");
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  const quote = (value) => `'${value.replace(/'/gu, "''")}'`;
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  for (const appPresent of [true, false]) {
+    const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    ${appPresent ? `[pscustomobject]@{ ProcessId = 4101; ParentProcessId = 1; ExecutablePath = ${quote(appExecutable)}; CommandLine = '' },` : ""}
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 9001; ExecutablePath = 'powershell.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 9001; ParentProcessId = 1; ExecutablePath = 'installer.exe'; CommandLine = '' }
+  )
+}
+function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) }
+function Get-Process { [CmdletBinding()] param([int]$Id) return $null }
+${transientCleanup}`;
+    const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+      encoding: "utf8",
+      env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: dataRoot, DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+    });
+    assert.equal(result.status, 0, `${appPresent ? "managed app present" : "no managed app"}: ${result.stderr || result.stdout}`);
+  }
+});
+
+test("Windows installer still refuses a persistent executable lock", { skip: process.platform !== "win32" }, (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const command = installerInclude.split(/\r?\n/u).find((line) => line.includes("Get-CimInstance Win32_Process"));
+  assert.ok(command);
+  const start = command.indexOf('-Command "') + '-Command "'.length;
+  const cleanup = command.slice(start, command.lastIndexOf('"')).replace(/\$\$/gu, () => "$").replace("AddSeconds(5)", "AddMilliseconds(50)");
+  const lockedCleanup = cleanup.replace(
+    "}; $children = @{};",
+    "}; function Test-DesktopExecutableUnlocked { return $false }; $children = @{};"
+  );
+  assert.notEqual(lockedCleanup, cleanup);
+  const appExecutable = path.join(root, "program", "CuteJ.exe");
+  const powershell = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = `
+function Get-CimInstance { [CmdletBinding()] param([string]$ClassName)
+  @(
+    [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 9001; ExecutablePath = 'powershell.exe'; CommandLine = '' },
+    [pscustomobject]@{ ProcessId = 9001; ParentProcessId = 1; ExecutablePath = 'installer.exe'; CommandLine = '' }
+  )
+}
+${lockedCleanup}`;
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", fixture], {
+    encoding: "utf8",
+    env: { ...process.env, DESKTOP_MANAGED_APP_EXE: appExecutable, DESKTOP_MANAGED_DATA_ROOT: "", DESKTOP_MANAGED_PROGRAM_ROOT: "" }
+  });
+  assert.equal(result.status, 22, result.stderr || result.stdout);
+  assert.match(result.stdout, /FILE_LOCKED/u);
+});
+
 test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {
   const root = createBrandFixture(t);
   const sourcePackageBefore = fs.readFileSync(path.join(root, "package.json"), "utf8");

@@ -4541,11 +4541,52 @@ test("PowerShell service wrapper allows native stderr when the script exits succ
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "native-stderr-success-"));
   try {
     const scriptPath = path.join(root, "native-stderr-success.ps1");
-    fs.writeFileSync(scriptPath, 'cmd.exe /d /c "echo warning 1>&2"\n', "utf8");
+    fs.writeFileSync(scriptPath, 'cmd.exe /d /c "echo first warning 1>&2 & echo second warning 1>&2"\n', "utf8");
 
     const result = await __testInternals.runExecFile(scriptPath, [], root);
 
-    assert.match(result.stderr, /warning/u);
+    assert.match(result.stderr, /first warning/u);
+    assert.match(result.stderr, /second warning/u);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("PowerShell service wrapper allows captured native stderr after successful deploy", async () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "captured-native-stderr-success-"));
+  try {
+    const scriptPath = path.join(root, "deploy.ps1");
+    fs.writeFileSync(scriptPath, [
+      "$ErrorActionPreference = 'Stop'",
+      "$previousErrorActionPreference = $ErrorActionPreference",
+      "$ErrorActionPreference = 'Continue'",
+      "try {",
+      "  $nativeOutput = @(& cmd.exe /d /c 'echo first warning 1>&2 & echo second warning with a longer line that can wrap in powershell output formatting 1>&2 & echo sync complete' 2>&1)",
+      "  $nativeExitCode = $LASTEXITCODE",
+      "} finally {",
+      "  $ErrorActionPreference = $previousErrorActionPreference",
+      "}",
+      "foreach ($item in $nativeOutput) {",
+      "  if ($item -is [System.Management.Automation.ErrorRecord] -and",
+      "      @('NativeCommandError', 'NativeCommandErrorMessage') -contains [string]$item.FullyQualifiedErrorId) {",
+      "    Write-Output ([string]$item)",
+      "    continue",
+      "  }",
+      "  Write-Output $item",
+      "}",
+      "if ($nativeExitCode -ne 0) { throw 'resource sync failed' }",
+      "Write-Host '[program-deploy] deploy complete'"
+    ].join("\n"), "utf8");
+
+    const result = await __testInternals.runExecFile(scriptPath, [], root);
+    assert.match(result.stdout, /deploy complete/u);
+    assert.match(result.stdout, /sync complete/u);
+    assert.match(result.stdout, /first warning/u);
+    assert.match(result.stdout, /second warning/u);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

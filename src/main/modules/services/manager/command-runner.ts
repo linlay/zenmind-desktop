@@ -118,7 +118,7 @@ try {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-      $output = & $scriptPath @scriptHash @scriptPos 2>&1
+      $output = & $scriptPath @scriptHash @scriptPos 2>&1 6>&1
     } finally {
       $ErrorActionPreference = $previousErrorActionPreference
     }
@@ -126,17 +126,17 @@ try {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-      $output = & $scriptPath @scriptArgs 2>&1
+      $output = & $scriptPath @scriptArgs 2>&1 6>&1
     } finally {
       $ErrorActionPreference = $previousErrorActionPreference
     }
   }
   foreach ($item in @($output)) {
     if ($item -is [System.Management.Automation.ErrorRecord]) {
-      # Windows PowerShell converts stderr from a native child into an
-      # ErrorRecord even when that child exits successfully. Stderr is valid
-      # diagnostic output; the native exit code is the success signal.
-      if ([string]$item.FullyQualifiedErrorId -ne 'NativeCommandError') {
+      # Windows PowerShell uses NativeCommandError for the first stderr line
+      # and NativeCommandErrorMessage for subsequent lines. The native exit
+      # code, rather than diagnostic output, determines command success.
+      if (@('NativeCommandError', 'NativeCommandErrorMessage') -notcontains [string]$item.FullyQualifiedErrorId) {
         $hadError = $true
       }
       Add-CapturedText $stderr ($item | Out-String)
