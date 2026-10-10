@@ -1233,53 +1233,41 @@ test("WebApp host ZIP syntax explicitly handles macOS and Windows", () => {
   assert.equal(isAbsoluteWebappArchivePath("/Users/example/app.zip", "win32"), false);
 });
 
-test("Agent Platform context exempts approved WorkPanel Web actions without exempting openTab", async (t) => {
+test("Agent Platform WorkPanel lifecycle bypasses confirmation while public calls retain it", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const rendererCalls = [];
   const confirmationCalls = [];
-  options.getMainWindow = () => ({ isDestroyed: () => false });
   options.confirmRendererAction = async (request) => {
     confirmationCalls.push(request);
     return { requestId: request.requestId, decision: "cancel" };
   };
   options.callRendererAction = async (request) => {
     rendererCalls.push(request);
-    return {
-      requestId: request.requestId,
-      action: request.action,
-      ok: true,
-      result: createWorkPanelRendererResult(request.action)
-    };
+    return { requestId: request.requestId, action: request.action, ok: true,
+      result: createWorkPanelRendererResult(request.action) };
   };
-
-  for (const action of ["desktop.workpanel.openWeb", "desktop.workpanel.refreshWeb"]) {
-    const response = await handleAgentPlatformDesktopActionRequest(options, {
-      action,
-      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
-      args: { url: "https://example.test/page" }
-    });
-    assert.equal(response.ok, true, action);
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" };
+  const actions = [
+    ["desktop.workpanel.openWeb", { url: "https://example.test/page" }],
+    ["desktop.workpanel.refreshWeb", { url: "https://example.test/page" }],
+    ["desktop.workpanel.openTab", { descriptor: { kind: "web", url: "https://example.test/page" } }],
+    ["desktop.workpanel.activateTab", { tabId: "item-1" }],
+    ["desktop.workpanel.closeTab", { tabId: "item-1" }],
+    ["desktop.workpanel.closeWorkpanel", {}]
+  ];
+  for (const [action, args] of actions) {
+    const response = await handleAgentPlatformDesktopActionRequest(options, { action, source, args });
+    assert.equal(response.ok, true, JSON.stringify(response));
   }
   assert.equal(confirmationCalls.length, 0);
-  assert.equal(rendererCalls.length, 2);
-
-  const otherPlatformAction = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.workpanel.openTab",
-    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
-    args: { descriptor: { kind: "web", url: "https://example.test/page" } }
-  });
-  assert.equal(otherPlatformAction.ok, false);
-  assert.equal(otherPlatformAction.requiresConfirmation, true);
-
-  const ordinaryDesktopCall = await handleDesktopActionRequest(options, {
-    action: "desktop.workpanel.openWeb",
-    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
-    args: { url: "https://example.test/page" }
-  });
-  assert.equal(ordinaryDesktopCall.ok, false);
-  assert.equal(ordinaryDesktopCall.requiresConfirmation, true);
-  assert.equal(confirmationCalls.length, 2);
-  assert.equal(rendererCalls.length, 2);
+  assert.equal(rendererCalls.length, actions.length);
+  for (const [action, args] of actions) {
+    const response = await handleDesktopActionRequest(options, { action, source, args });
+    assert.equal(response.requiresConfirmation, true, action);
+    assert.equal(response.error.code, "user_cancelled", action);
+  }
+  assert.equal(confirmationCalls.length, actions.length);
+  assert.equal(rendererCalls.length, actions.length);
 });
 
 test("WorkPanel and settings mutations expose bounded post-action state", async (t) => {
@@ -2714,6 +2702,167 @@ test("Desktop web actions retain page interaction through the Surface resolver",
     assert.equal(response.ok, false, action);
     assert.equal(response.error.code, "unknown_action", action);
   }
+});
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform} Platform webpage mutations bypass confirmation without requiring a window`, async t => {
+    const { options } = createDesktopActionOptions(t);
+    options.platform = platform;
+    const confirmations = [], cdpCalls = [];
+    options.confirmRendererAction = async request => {
+      confirmations.push(request);
+      return { requestId: request.requestId, decision: "cancel" };
+    };
+    options.executeCdpCommand = async request => { cdpCalls.push(request); return { result: { method: request.method } }; };
+    const source = { runId: "background-run", chatId: "chat-owner", agentKey: "coder" };
+    const actions = [
+      ["interactElement", "Runtime.evaluate", { selector: 'textarea[name="q"]', action: "fill", value: "微软市值" }],
+      ["executeScript", "Runtime.evaluate", { script: "document.title" }],
+      ["activateSurface", "Page.bringToFront", {}],
+      ["navigate", "Page.navigate", { url: "https://example.test/next" }],
+      ["reload", "Page.reload", {}],
+      ["refreshSurface", "Page.reload", {}],
+      ["goBack", "Surface.goBack", {}],
+      ["openTab", "Surface.open", { url: "https://example.test/new" }],
+      ["closeTab", "Surface.close", {}],
+      ["switchTab", "Page.bringToFront", {}]
+    ];
+    for (const [name, method, params] of actions) {
+      const request = { action: `desktop.web.${name}`, source, args: { surfaceId: "page:background", ...params } };
+      const result = await handleAgentPlatformDesktopActionRequest(options, request);
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(cdpCalls.at(-1).method, method);
+      assert.equal(cdpCalls.at(-1).surfaceId, "page:background");
+      assert.deepEqual(cdpCalls.at(-1).source, source);
+      const publicResult = await handleDesktopActionRequest(options, request);
+      assert.equal(publicResult.requiresConfirmation, true, request.action);
+      assert.equal(publicResult.error.code, "user_cancelled");
+    }
+    assert.equal(cdpCalls.length, actions.length);
+    assert.equal(confirmations.length, actions.length);
+    // A missing confirmation UI cannot block an authorized background webpage.
+    delete options.confirmRendererAction;
+    assert.equal((await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.web.interactElement", source,
+      args: { surfaceId: "page:background", selector: "#q", action: "focus" }
+    })).ok, true);
+    assert.equal((await handleDesktopActionRequest(options, {
+      action: "desktop.web.interactElement", source,
+      args: { surfaceId: "page:background", selector: "#q", action: "focus" }
+    })).error.code, "confirmation_unavailable");
+  });
+}
+
+test("Platform webpage exemptions retain Surface denial, cancellation and deadline checks", async t => {
+  const { options } = createDesktopActionOptions(t);
+  options.confirmRendererAction = () => assert.fail("Platform webpage must not request confirmation");
+  const controller = new AbortController();
+  options.actionSignal = controller.signal;
+  let executions = 0;
+  options.executeCdpCommand = async (_request, _scope, signal) => {
+    executions++;
+    assert.equal(signal, controller.signal);
+    throw Object.assign(new Error("The page belongs to another Chat."), { code: "target_not_owned_by_chat" });
+  };
+  const request = { action: "desktop.web.executeScript",
+    source: { runId: "run-owner", chatId: "chat-owner", agentKey: "coder" },
+    args: { surfaceId: "page:other", script: "document.title" } };
+  const denied = await handleAgentPlatformDesktopActionRequest(options, request);
+  assert.equal(denied.ok, false);
+  assert.equal(denied.error.code, "target_not_owned_by_chat");
+  controller.abort();
+  const cancelled = await handleAgentPlatformDesktopActionRequest(options, request);
+  assert.equal(cancelled.error.code, "request_aborted");
+  assert.equal(cancelled.error.details.executionState, "not_started");
+  delete options.actionSignal;
+  options.actionDeadlineAt = Date.now() - 1;
+  const expired = await handleAgentPlatformDesktopActionRequest(options, request);
+  assert.equal(expired.error.code, "request_timeout");
+  assert.equal(expired.error.details.executionState, "not_started");
+  assert.equal(executions, 1);
+});
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform} Platform webpage bridge cancels queued CDP input and tab operations`, async t => {
+    const { options } = createDesktopActionOptions(t);
+    const { createAssistantBridgeRuntime } = require("../dist-electron/main/modules/assistant/runtime.js");
+    const { createSiteHarness } = require("./fixtures/site-cdp-harness.cjs");
+    const { EmbeddedCdpGateway, createEmbeddedWebSurfaceId } = require("../dist-electron/main/modules/web-surfaces/cdp/gateway.js");
+    const { withCdpCommandQueue } = require("../dist-electron/main/modules/web-surfaces/cdp/command-queue.js");
+    const h = createSiteHarness();
+    const site = h.site("queued-action");
+    const scope = h.capture(site);
+    scope.activate();
+    t.after(() => scope.release());
+    const tabsChanged = [];
+    const gateway = new EmbeddedCdpGateway({
+      getSurfaces: () => h.registry.listRegisteredSurfaces(),
+      resolveWebContents: (_surface, tab) => h.contents.get(tab.webContentsId),
+      openPage: async () => { tabsChanged.push("open"); return {}; },
+      closeTarget: async () => { tabsChanged.push("close"); },
+      logger: { debug() {}, warn() {} }
+    });
+    let provider;
+    const runtime = createAssistantBridgeRuntime({
+      ...options, platform, browserSurfaces: h.registry, agentPlatformPorts: {},
+      cdpIntegration: { start: () => gateway },
+      realtimeBroker: { setDesktopBridgeProvider: value => { provider = value; } },
+      integrationPorts: {
+        setWebappPublicationChangeListener() {},
+        createDesktopActionOptions: (_context, dependencies) => ({ ...options, ...dependencies }),
+        handleAgentPlatformDesktopActionRequest,
+        callDesktopActionConfirmation: () => assert.fail("queued webpage action must not request confirmation")
+      }
+    });
+    t.after(() => runtime.assistantBridge.dispose());
+    const surfaceId = createEmbeddedWebSurfaceId(scope.readContainer(), site.tabs[0]);
+    for (const [action, args] of [
+      ["desktop.web.interactElement", { selector: "#q", action: "fill", value: "test" }],
+      ["desktop.web.openTab", { url: "https://example.test/new" }],
+      ["desktop.web.closeTab", {}]
+    ]) {
+      let release;
+      const blocker = withCdpCommandQueue(site.tabs[0].webContentsId, () => new Promise(resolve => { release = resolve; }));
+      await new Promise(resolve => setImmediate(resolve));
+      const controller = new AbortController();
+      const pending = provider.action({ action, source: { runId: "run-owner", chatId: "chat-owner", agentKey: "coder" },
+        args: { surfaceId, ...args } }, scope, controller.signal, Date.now() + 10_000);
+      await new Promise(resolve => setImmediate(resolve));
+      controller.abort();
+      release();
+      await blocker;
+      const response = await pending;
+      assert.equal(response.ok, false, action);
+      assert.match(response.error.message, /canceled/);
+    }
+    assert.deepEqual(h.commands, []);
+    assert.deepEqual(tabsChanged, []);
+  });
+}
+
+test("Platform Agent and Skill updates bypass confirmation while public mutations stay gated", async t => {
+  const { options } = createDesktopActionOptions(t);
+  options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "cancel" });
+  const httpCalls = [];
+  t.mock.method(require("../dist-electron/main/modules/desktop-actions/platform-http.js"), "callAgentPlatform", async (_app, url, config) => {
+    httpCalls.push({ url, config });
+    return { updated: true };
+  });
+  const source = { runId: "run-owner", chatId: "chat-owner", agentKey: "coder" };
+  const actions = [
+    ["desktop.agent.update", { agentKey: "helper", soulPrompt: "Updated prompt" }, "/api/admin/agents/update", "POST"],
+    ["desktop.skill.update", { id: "helper-skill", content: "Updated skill", baseSha256: "expected-revision" }, "/api/admin/skills/file", "PUT"]
+  ];
+  for (const [action, args, url, method] of actions) {
+    const response = await handleAgentPlatformDesktopActionRequest(options, { action, source, args });
+    assert.equal(response.ok, true, JSON.stringify(response));
+    assert.equal(httpCalls.at(-1).url, url);
+    assert.equal(httpCalls.at(-1).config.method, method);
+    assert.equal((await handleDesktopActionRequest(options, { action, source, args })).error.code, "user_cancelled");
+    assert.equal((await handleAgentPlatformDesktopActionRequest(options, { action, source, args: {} })).error.code, "invalid_args");
+  }
+  assert.equal(httpCalls[1].config.body.baseSha256, "expected-revision");
+  assert.equal(httpCalls.length, actions.length);
 });
 
 test("desktop web exportArtifact writes provider bytes to Downloads without returning payload data", async (t) => {

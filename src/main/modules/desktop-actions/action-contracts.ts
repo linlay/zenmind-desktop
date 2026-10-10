@@ -133,10 +133,15 @@ export const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWor
 };
 
 // Only the trusted Agent Platform invocation context uses this list.
-// Keep action definitions and Desktop confirmation intact so removing an entry
-// restores host confirmation. Platform owns any review/auto-approval policy.
+// Webpage actions also have a namespace exemption in action-handlers.ts.
+// Keep action definitions and public Desktop confirmation intact.
+// Platform owns any review/auto-approval policy.
 export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
-  // Existing trusted WorkPanel actions.
+  // Trusted WorkPanel navigation and lifecycle.
+  "desktop.workpanel.openTab",
+  "desktop.workpanel.activateTab",
+  "desktop.workpanel.closeTab",
+  "desktop.workpanel.closeWorkpanel",
   "desktop.workpanel.openWeb",
   "desktop.workpanel.openLocalFile",
   "desktop.workpanel.refreshWeb",
@@ -171,7 +176,9 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
   "desktop.navigate.toRoute",
   "desktop.help.openTopic",
   "desktop.agent.open",
+  "desktop.agent.update",
   "desktop.skill.open",
+  "desktop.skill.update",
   "desktop.assistant.chat",
   "desktop.website.open",
   "desktop.controlCenter.openService",

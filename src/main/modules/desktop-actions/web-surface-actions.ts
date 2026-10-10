@@ -38,7 +38,7 @@ export async function executeWebSurfaceAction(
     default: return null;
   }
   try {
-    const response = await options.executeCdpCommand({ method, surfaceId, params, ...(source ? { source } : {}) });
+    const response = await options.executeCdpCommand({ method, surfaceId, params, ...(source ? { source } : {}) }, undefined, options.actionSignal);
     return ok(action, response.result);
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "web_action_failed";

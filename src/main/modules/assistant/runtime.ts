@@ -152,7 +152,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       actionSignal: signal,
       actionDeadlineAt: deadlineAt,
       resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request, scope),
-      executeCdpCommand: (command: any) => options.cdpIntegration.start().executeCommand(command, scope),
+      executeCdpCommand: (command: any) => options.cdpIntegration.start().executeCommand(command, scope, signal),
     }, request as any),
     cdp: (request, scope, signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, signal, true),
     awcpManual: (requestId, request, scope, signal, surfaceId) => awcpGuestBridge.manual(requestId, request, scope, signal, surfaceId),

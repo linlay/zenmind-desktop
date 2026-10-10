@@ -449,6 +449,8 @@ export class EmbeddedCdpGateway {
       if (live.tab.webContentsId !== tab.webContentsId || live.surface.targetGeneration !== surface.targetGeneration) {
         throw new EmbeddedCdpTargetError("target_not_found", "The page instance was replaced before execution.");
       }
+      // Queue waits can outlive the Run, including host-managed tab operations.
+      if (signal?.aborted) throw new Error("canceled");
       if (method === "Surface.open") {
         if (typeof params.url !== "string" || !/^https?:\/\//u.test(params.url) || !this.options.openPage) {
           throw new EmbeddedCdpInvalidArgsError("Surface.open requires an HTTP(S) URL and a supported container.");
@@ -474,7 +476,6 @@ export class EmbeddedCdpGateway {
           result: { success: true }
         };
       }
-      if (signal?.aborted) throw new Error("canceled");
       const result = await this.handleWebContentsCommandOnce(surface, tab, surfaceId, method, params, scope, signal);
       return {
         surfaceId,

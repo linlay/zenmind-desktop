@@ -65,8 +65,10 @@ export async function handleActionCallRaw(
     }
   }
   const confirmationEligibleInvocation = invocation.kind === "desktop" || invocation.kind === "agentPlatform";
+  // Authorized webpage control follows CDP/AWCP policy, including future web actions.
+  // This exemption does not replace Broker Run grants or CDP Surface authorization.
   const agentPlatformConfirmationExempt = invocation.kind === "agentPlatform" &&
-    AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action);
+    (action.startsWith("desktop.web.") || AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action));
   const requiresConfirmation = definition.confirmation !== "none" &&
     (isDesktopActionMutating(action) || definition.confirmation === "sensitive-read");
   let preparedInstall: PreparedWebappInstall | undefined;

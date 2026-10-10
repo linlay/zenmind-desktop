@@ -1240,6 +1240,9 @@
 
 - Windows/macOS 分别开启 Desktop 动作确认，通过可信 Platform 调用换主题、增改网站条目和看板动作，确认不会再弹 Desktop confirm action dialog；Platform 若配置审阅，仅显示 Platform 的 viewport。
 - 同样动作由普通 Desktop Action 入口调用仍要求确认，伪造 source 不豁免；基础服务重启、WebApp 安装/卸载/发布、市场安装和镜像删除仍进入原确认策略。
+- Windows/macOS 分别开启 Desktop 动作确认，以默认权限从可信 Platform Run 执行网页填写、选择、聚焦、滚动、点击、脚本、导航、刷新、新建标签、切换及关闭标签，确认 `desktop.web.*` 与 CDP/AWCP 均不弹 Desktop 二次确认；切换 Chat、隐藏 WorkPanel 或最小化主窗口后仍只能操作原 Run 授权的网页，跨 Chat、已关闭 Surface 与终态 Run 拒绝执行。
+- Windows/macOS：可信 Platform 调用 WorkPanel 打开/激活/关闭标签、关闭面板，以及智能体/技能文本更新，确认不弹 Desktop 动作确认；资源校验、版本冲突及编辑器丢弃未保存草稿的独立确认仍生效。同样动作从普通 Desktop Action 入口调用仍确认，公开请求伪造 Run/Chat source 不豁免。
+- Windows/macOS：让网页 Action 在 CDP 队列等待期间取消 Run，确认等待中的动作不执行、不弹确认、不转到当前前台页；操作已经开始时取消不声称业务副作用已回滚。
 
 ## 内置服务健康检查
 
