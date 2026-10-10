@@ -924,6 +924,16 @@
   flex: 0 0 auto;
 }
 
+.sidebar-chat-hover-card-timing {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .sidebar-chat-hover-card-statuses,
 .sidebar-project-hover-card-statuses,
 .sidebar-project-chat-hover-card-statuses {
@@ -2861,9 +2871,11 @@ div.sidebar-chats-group-popover {
   opacity: 1;
 }
 
-/* Align timestamps 8px from the sidebar content edge in all chat lists. */
+/* Align timestamps and awaiting badges with the same right edge. */
 .sidebar-nav-group .worker-chat-preview-list .assistant-worker-chat-action[data-action="time"],
-.sidebar-nav-group .sidebar-chats-list .assistant-worker-chat-action[data-action="time"] {
+.sidebar-nav-group .sidebar-chats-list .assistant-worker-chat-action[data-action="time"],
+.sidebar-nav-group .worker-chat-preview-list .assistant-worker-chat-item.has-awaiting .chat-awaiting-status,
+.sidebar-nav-group .sidebar-chats-list .assistant-worker-chat-item.has-awaiting .chat-awaiting-status {
   margin-right: -6px;
 }
 

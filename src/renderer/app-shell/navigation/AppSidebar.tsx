@@ -87,6 +87,7 @@ import {
 } from "./sidebarNavOrder";
 import { getAssistantWorkspaceName } from "./workspaceName";
 import { ChatTitle } from "./ChatTitle";
+import { ChatHoverTiming } from "./ChatHoverTiming";
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
@@ -4565,7 +4566,6 @@ export function AppSidebar({
     agent: AssistantNavAgentItem,
     chat: AssistantNavChatItem,
   ) {
-    const askedAt = formatAssistantChatDateTime(chat.createdAt);
     const workspaceName = getAssistantWorkspaceName(
       agent.workspaceDir,
       agent.workspaceDirExists,
@@ -4586,10 +4586,8 @@ export function AppSidebar({
           <span>
             {t("sidebar.chats.card.agent", { name: agent.displayName })}
           </span>
-          {askedAt ? (
-            <span>{t("sidebar.chats.card.askedAt", { time: askedAt })}</span>
-          ) : null}
         </div>
+        <ChatHoverTiming chat={chat} />
         {statusLabels.length > 0 ? (
           <div
             className="sidebar-chat-hover-card-statuses"
