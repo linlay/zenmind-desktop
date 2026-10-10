@@ -1038,6 +1038,7 @@ type AppSidebarProps = {
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onToggleChatWorkPanel?: (chatId: string, agentKey: string) => void;
+  onAwaitingDigit?: (chatId: string, agentKey: string, digit: string) => boolean;
   onOpenChatHistory?: (agentKey?: string) => void;
   onShareChat: (chatId: string, chatName: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
@@ -1123,6 +1124,7 @@ export function AppSidebar({
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
   onToggleChatWorkPanel,
+  onAwaitingDigit,
   onOpenChatHistory,
   onShareChat,
   onCloseChatWorkPanel,
@@ -3023,6 +3025,19 @@ export function AppSidebar({
       currentNavigationKind === "chats-chat";
     const isPlainArrow =
       !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    if (
+      currentIsChat && isPlainArrow && /^[1-9]$/.test(event.key) &&
+      !event.defaultPrevented && !event.repeat && !event.nativeEvent.isComposing &&
+      event.target === currentElement && document.activeElement === currentElement
+    ) {
+      const chatId = currentElement.dataset.sidebarChatId || "";
+      const agentKey = currentElement.dataset.sidebarAgentKey || "";
+      if (onAwaitingDigit?.(chatId, agentKey, event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     if (
       currentIsChat &&
       (event.key === "ArrowDown" || event.key === "ArrowUp")

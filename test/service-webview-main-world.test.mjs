@@ -18,6 +18,7 @@ const {
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
+  AGENT_WEBCLIENT_AWAITING_DIGIT_MESSAGE_TYPE,
   AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
@@ -166,6 +167,18 @@ function runMainWorldScript(window) {
 
   vm.runInContext(buildServiceWebviewMainWorldScript(), context);
 }
+
+test("awaiting digits cross the preload delivery bridge without becoming guest requests", () => {
+  const { window } = createFakeWindow();
+  runMainWorldScript(window);
+  const messages = [], requests = [];
+  window.addEventListener("message", (event) => messages.push(event.data));
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => requests.push(event.detail));
+  const payload = { type: AGENT_WEBCLIENT_AWAITING_DIGIT_MESSAGE_TYPE, agentKey: "agent", chatId: "chat", digit: "1" };
+  window.dispatchEvent({ type: PRELOAD_TO_PAGE_EVENT, detail: payload });
+  assert.deepEqual(messages, [payload]);
+  assert.deepEqual(requests, []);
+});
 
 test("service webview main-world script does not overwrite parent postMessage", () => {
   const parent = {

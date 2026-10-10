@@ -2,6 +2,9 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useLayoutEffect,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { forwardMainChatAwaitingDigit } from "../services/mainChatAwaitingShortcut";
+import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
+import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
 import { ConnectorAuthBrowser } from "../connectors/ConnectorAuthBrowser";
 import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
 import { useAppearance } from "../appearance/AppearanceProvider";
@@ -4865,6 +4868,17 @@ export function AppShell() {
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
           onToggleChatWorkPanel={toggleChatWorkPanelFromSidebar}
+          onAwaitingDigit={(chatId, agentKey, digit) => {
+            if (shellOverlay.activeOverlay || chatHistoryDialog ||
+                getActiveServiceSurfaceId() !== MAIN_CHAT_SURFACE_ID ||
+                document.querySelector('[role="dialog"][aria-modal="true"], [role="alertdialog"], dialog[open]')) return false;
+            return forwardMainChatAwaitingDigit({
+              chatId, agentKey, digit, currentRoute,
+              registeredRoute: registeredMainChatRouteRef.current,
+              committed: registeredMainChatSurfaceRef.current,
+              webview: getServiceSurfaceWebview(MAIN_CHAT_SURFACE_ID),
+            });
+          }}
           onOpenChatHistory={openChatHistoryDialog}
           onShareChat={openConversationShare}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}

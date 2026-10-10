@@ -45,6 +45,15 @@ export const AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE =
   "desktop:agent-webclient:document-handoff";
 export const AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE =
   "desktop:agent-webclient:workspace-arrow-key";
+export const AGENT_WEBCLIENT_AWAITING_DIGIT_MESSAGE_TYPE =
+  "desktop:agent-webclient:awaiting-digit";
+
+export type AgentWebclientAwaitingDigitMessage = {
+  type: typeof AGENT_WEBCLIENT_AWAITING_DIGIT_MESSAGE_TYPE;
+  agentKey: string;
+  chatId: string;
+  digit: string;
+};
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -118,6 +127,7 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   AGENT_WEBCLIENT_OPEN_AGENT_CONFIGURATION_RESPONSE_TYPE,
   AGENT_WEBCLIENT_OPEN_CONNECTOR_CONFIGURATION_RESPONSE_TYPE,
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_AWAITING_DIGIT_MESSAGE_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
