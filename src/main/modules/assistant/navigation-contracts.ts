@@ -15,7 +15,6 @@ export type AgentPlatformApiResponse<T> = {
 export type PlatformActiveRunSummary = {
   runId?: unknown;
   agentKey?: unknown;
-  teamId?: unknown;
   state?: unknown;
   lastSeq?: unknown;
   oldestSeq?: unknown;

@@ -65,7 +65,7 @@ export async function prepareWebappInstall(
   }
   if (invocation.kind === "agentPlatform") {
     const source = request.source;
-    if (!source?.runId?.trim() || !source.chatId?.trim() || Boolean(source.agentKey && source.teamId)) {
+    if (!source?.runId?.trim() || !source.chatId?.trim()) {
       return reject(fail(action, "forbidden", "WebApp installation requires a trusted Agent Platform Run."));
     }
   }

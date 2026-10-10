@@ -433,7 +433,6 @@ export interface DesktopActionSource {
   runId?: string;
   chatId?: string;
   agentKey?: string;
-  teamId?: string;
   workspaceRoot?: string;
   webappId?: string;
 }

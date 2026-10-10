@@ -859,7 +859,7 @@ test("WorkPanel openLocalFile opens a Chat file without an Agent workspace", asy
   });
   assert.equal(unknownRoot.error.code, "invalid_args");
   const team = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.workpanel.openLocalFile", source: { ...source, teamId: "team" }, args: { root: "chat", path: "a.md" },
+    action: "desktop.workpanel.openLocalFile", source: { ...source, agentKey: undefined }, args: { root: "chat", path: "a.md" },
   });
   assert.equal(team.error.code, "forbidden");
   assert.equal(rendererCalls.length, 1);
@@ -986,7 +986,7 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
 
   const manifest = await handleAgentPlatformDesktopActionRequest(options, {
     action: "desktop.webapp.package.validate",
-    source: { ...source, agentKey: undefined, teamId: "builders" },
+    source: { ...source, agentKey: "builders" },
     args: { projectPath: "apps/example" }
   });
   assert.equal(manifest.ok, true);
@@ -1103,13 +1103,12 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
       chatId: "chat-owner",
       runId: "run-owner",
       agentKey: "coder",
-      teamId: "builders",
       workspaceRoot: 42
     },
     args: { projectPath: "apps/example" }
   });
   assert.equal(forgedSource.ok, false);
-  assert.equal(forgedSource.error.code, "forbidden");
+  assert.equal(forgedSource.error.code, "workspace_unavailable");
 
   const forgedDesktop = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.package.build",
@@ -3622,7 +3621,7 @@ test("desktop action confirmation detail preserves Team run identity", () => {
     source: {
       runId: "run-team",
       chatId: "chat-team",
-      teamId: "research"
+      agentKey: "research"
     }
   }, {
     themeMode: "dark"
@@ -3630,8 +3629,7 @@ test("desktop action confirmation detail preserves Team run identity", () => {
 
   assert.match(detail, /runId=run-team/u);
   assert.match(detail, /chatId=chat-team/u);
-  assert.match(detail, /agentKey=-/u);
-  assert.match(detail, /teamId=research/u);
+  assert.match(detail, /agentKey=research/u);
 });
 
 test("desktop action confirmation request keeps compact fields free of debug context", () => {

@@ -274,8 +274,7 @@ export type AgentWebclientBridgeError = {
 };
 
 export type AgentWebclientRunOwner =
-  | { kind: "agent"; agentKey: string }
-  | { kind: "team"; teamId: string };
+  { kind: "agent"; agentKey: string };
 
 export type AgentWebclientBridgeFailure = {
   ok: false;

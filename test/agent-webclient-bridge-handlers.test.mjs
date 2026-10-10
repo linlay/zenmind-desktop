@@ -199,7 +199,7 @@ function createRuntime(targets, overrides = {}) {
         seq: 1,
         runId,
         chatId,
-        ...(owner.kind === "agent" ? { agentKey: owner.agentKey } : { teamId: owner.teamId }),
+        agentKey: owner.agentKey,
       };
       queueMicrotask(() => void input.onEvent(event, `test.${runId}`));
       return {
@@ -880,7 +880,7 @@ test("Copilot rejects ambiguous or conflicting attach identities before replacin
     { payload: { chatId: "chat-2" } },
     { payload: { runId: "" } },
     { payload: { agentKey: "" } },
-    { payload: { teamId: "team-1" } },
+    { payload: { agentKey: "another-agent" } },
   ];
   for (const scenario of cases) {
     const runtime = createRuntime(new Map([[201, target]]));

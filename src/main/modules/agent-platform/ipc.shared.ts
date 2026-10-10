@@ -262,16 +262,12 @@ export function parseRequestFrame(value: unknown): AgentPlatformRequestFrame | n
 export function readOwner(value: unknown): AgentWebclientRunOwner | null {
   if (!isPlainBridgeRecord(value)) return null;
   const agentKey = readText(value.agentKey);
-  const teamId = readText(value.teamId);
-  if (Boolean(agentKey) === Boolean(teamId)) return null;
-  return agentKey ? { kind: "agent", agentKey } : { kind: "team", teamId };
+  return agentKey ? { kind: "agent", agentKey } : null;
 }
 
 export function sameOwner(left: AgentWebclientRunOwner | null, right: AgentWebclientRunOwner | null) {
   if (!left || !right || left.kind !== right.kind) return false;
-  return left.kind === "agent" && right.kind === "agent"
-    ? left.agentKey === right.agentKey
-    : left.kind === "team" && right.kind === "team" && left.teamId === right.teamId;
+  return left.agentKey === right.agentKey;
 }
 
 export function protocolError(message: string) {

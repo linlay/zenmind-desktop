@@ -52,7 +52,6 @@ export function buildChatInfoRows(input: {
     createChatInfoRow("agentKey", t("sidebar.chat.infoField.agentKey"), detail?.agentKey || summary.agentKey),
     createChatInfoRow("firstAgentKey", t("sidebar.chat.infoField.firstAgentKey"), detail?.firstAgentKey),
     createChatInfoRow("firstAgentName", t("sidebar.chat.infoField.firstAgentName"), detail?.firstAgentName),
-    createChatInfoRow("teamId", t("sidebar.chat.infoField.teamId"), detail?.teamId),
     createChatInfoRow("source", t("sidebar.chat.infoField.source"), detail?.source),
     createChatInfoRow("createdAt", t("sidebar.chat.infoField.createdAt"), createdAt, {
       displayValue: formatTimestamp(createdAt),

@@ -16,7 +16,6 @@ const CODE_VALUE_FIELDS = new Set([
   "chatId",
   "agentKey",
   "firstAgentKey",
-  "teamId",
   "source",
   "createdAt",
   "updatedAt",

@@ -248,7 +248,6 @@ export interface ManifestPluginAutomationResource {
   cron: string;
   agentKey: string;
   enabled?: boolean;
-  teamId?: string;
   zoneId?: string;
   remainingRuns?: number;
   query: Record<string, unknown>;

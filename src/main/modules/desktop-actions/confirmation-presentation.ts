@@ -132,7 +132,6 @@ export function summarizeConfirmationSource(source: DesktopActionSource | undefi
     `runId=${source?.runId?.trim() || "-"}`,
     `chatId=${source?.chatId?.trim() || "-"}`,
     `agentKey=${source?.agentKey?.trim() || "-"}`,
-    `teamId=${source?.teamId?.trim() || "-"}`
   ].join(", ");
 }
 

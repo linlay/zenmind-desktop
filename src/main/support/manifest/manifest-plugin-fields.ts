@@ -57,7 +57,6 @@ export function resolvePluginResources(raw: Record<string, unknown>): ServiceDef
           cron: asString(automation.cron),
           agentKey: asString(automation.agentKey),
           enabled: asBoolean(automation.enabled),
-          teamId: asOptionalString(automation.teamId),
           zoneId: asOptionalString(automation.zoneId),
           remainingRuns: asNumber(automation.remainingRuns),
           query: asObject(automation.query)

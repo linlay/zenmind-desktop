@@ -199,7 +199,6 @@ export interface AssistantHistoryChatItem {
   chatId: string;
   chatName: string;
   agentKey: string;
-  teamId?: string;
   createdAt: EpochMilliseconds;
   updatedAt: EpochMilliseconds;
   lastRunId: string;
@@ -519,7 +518,6 @@ export interface AssistantChatInfo {
   agentKey: string;
   firstAgentKey: string;
   firstAgentName: string;
-  teamId: string;
   source: string;
   createdAt?: EpochMilliseconds;
   updatedAt?: EpochMilliseconds;

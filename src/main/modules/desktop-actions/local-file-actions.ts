@@ -140,7 +140,7 @@ export async function executeOpenLocalFileAction(
   const runId = source?.runId?.trim() || "";
   const ownerChatId = source?.chatId?.trim() || "";
   const agentKey = source?.agentKey?.trim() || "";
-  if (!runId || !ownerChatId || !agentKey || source?.teamId) {
+  if (!runId || !ownerChatId || !agentKey) {
     return fail(action, "forbidden", "openLocalFile requires a trusted Agent-owned Platform Run.");
   }
   if (validated.root === "chat") {

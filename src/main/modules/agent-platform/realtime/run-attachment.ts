@@ -95,9 +95,7 @@ export function createRunAttachment(deps: RunAttachmentPort) {
         lastSeq: run.lastSeq,
         ...(run.owner?.kind === "agent"
           ? { agentKey: run.owner.agentKey }
-          : run.owner?.kind === "team"
-            ? { teamId: run.owner.teamId }
-            : {}),
+          : {}),
       },
     });
     run.upstreamRequestId = id;
@@ -127,9 +125,7 @@ export function createRunAttachment(deps: RunAttachmentPort) {
           lastSeq: run.lastSeq,
           ...(run.owner?.kind === "agent"
             ? { agentKey: run.owner.agentKey }
-            : run.owner?.kind === "team"
-              ? { teamId: run.owner.teamId }
-              : {}),
+            : {}),
         },
       });
       run.suspended = false;
@@ -180,9 +176,7 @@ export function createRunAttachment(deps: RunAttachmentPort) {
             runId: run.runId,
             ...(run.owner?.kind === "agent"
               ? { agentKey: run.owner.agentKey }
-              : run.owner?.kind === "team"
-                ? { teamId: run.owner.teamId }
-                : {}),
+              : {}),
             reason,
           },
           onFrame: (frame: AgentPlatformRealtimeFrame) => {

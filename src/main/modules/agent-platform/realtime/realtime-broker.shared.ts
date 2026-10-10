@@ -291,11 +291,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function sameRunOwner(first: AgentWebclientRunOwner, second: AgentWebclientRunOwner) {
-  return first.kind === second.kind && (
-    first.kind === "agent" && second.kind === "agent"
-      ? first.agentKey === second.agentKey
-      : first.kind === "team" && second.kind === "team" && first.teamId === second.teamId
-  );
+  return first.agentKey === second.agentKey;
 }
 
 export function isTerminalEvent(type: string) {

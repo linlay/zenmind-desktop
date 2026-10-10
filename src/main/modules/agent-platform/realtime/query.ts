@@ -305,17 +305,12 @@ export function createQuery(deps: QueryPort) {
       throw brokerError("protocol_error", "run.start chatId conflicts with query chatId");
     }
     const agentKey = readText(event.agentKey);
-    const teamId = readText(event.teamId);
-    if (Boolean(agentKey) === Boolean(teamId)) {
-      throw brokerError("protocol_error", "run.start must include exactly one Run owner");
+    if (!agentKey) {
+      throw brokerError("protocol_error", "run.start must include the root agentKey");
     }
-    const owner: AgentWebclientRunOwner = teamId
-      ? { kind: "team", teamId }
-      : { kind: "agent", agentKey };
+    const owner: AgentWebclientRunOwner = { kind: "agent", agentKey };
     const expectedOwner = transaction.expectedOwner;
-    if (expectedOwner && (owner.kind !== expectedOwner.kind ||
-      (owner.kind === "agent" && expectedOwner.kind === "agent" && owner.agentKey !== expectedOwner.agentKey) ||
-      (owner.kind === "team" && expectedOwner.kind === "team" && owner.teamId !== expectedOwner.teamId))) {
+    if (expectedOwner && owner.agentKey !== expectedOwner.agentKey) {
       throw brokerError("protocol_error", "run.start owner conflicts with query owner");
     }
     if (deps.getRunChannel(runId)) {

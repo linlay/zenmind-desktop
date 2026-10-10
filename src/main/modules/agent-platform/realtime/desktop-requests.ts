@@ -203,9 +203,8 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
         const runId = readText(source.runId);
         const chatId = readText(source.chatId);
         const agentKey = readText(source.agentKey);
-        const teamId = readText(source.teamId);
-        if (!runId || !chatId || (agentKey && teamId)) {
-          throw brokerError("protocol_error", "Desktop Action source must include runId and chatId and at most one Run owner");
+        if (!runId || !chatId) {
+          throw brokerError("protocol_error", "Desktop Action source must include runId and chatId");
         }
         await awaitRunActionReadiness(type, source, controller.signal);
         if (type.startsWith("desktop.web.") && !deps.siteControlGrants.resolve(source)) {
@@ -225,7 +224,7 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
       }
       const cdpSource = isCdp && isRecord(frame.payload.source) ? frame.payload.source : {};
       if (isCdp && (!readText(cdpSource.runId) || !readText(cdpSource.chatId) ||
-        Boolean(readText(cdpSource.agentKey)) === Boolean(readText(cdpSource.teamId)))) {
+        !readText(cdpSource.agentKey))) {
         throw brokerError("protocol_error", "CDP source must include Run, Chat and exactly one owner");
       }
       let result: unknown;

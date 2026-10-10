@@ -124,9 +124,9 @@ test('independent Website Runs keep distinct target queries and reject each othe
   const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b');
   const grants = new RunSiteControlGrants(); t.after(() => grants.revokeAll());
   grants.bind(identity, h.capture(a));
-  grants.bind({ runId: 'run-b', chatId: 'chat-b', owner: { kind: 'team', teamId: 'team-b' } }, h.capture(b));
+  grants.bind({ runId: 'run-b', chatId: 'chat-b', owner: { kind: 'agent', agentKey: 'team-b' } }, h.capture(b));
   const aScope = grants.resolve(source);
-  const bScope = grants.resolve({ runId: 'run-b', chatId: 'chat-b', teamId: 'team-b' });
+  const bScope = grants.resolve({ runId: 'run-b', chatId: 'chat-b', agentKey: 'team-b' });
   const gateway = gatewayFor(h);
   const [at, bt] = await Promise.all([aScope, bScope].map((scope) => gateway.executeCommand({ method: 'Surface.getCurrent' }, scope)));
   assert.notEqual(at.surfaceId, bt.surfaceId);
@@ -180,7 +180,7 @@ test('scope identity cannot be forged, reattached to another application, or res
   await assert.rejects(gateway.executeCommand({ method: 'Surface.list' }, { ...scope }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, chatId: 'wrong' }), { code: 'site_control_unavailable' });
   assert.throws(() => grants.resolve({ ...source, agentKey: 'wrong' }), { code: 'site_control_unavailable' });
-  assert.throws(() => grants.resolve({ ...source, teamId: 'wrong' }), { code: 'site_control_unavailable' });
+  assert.throws(() => grants.resolve({ ...source, agentKey: 'wrong' }), { code: 'site_control_unavailable' });
   h.closeTab(a, a.activeTabId);
   a.registrationId = 'reopened-a'; a.tabs = [h.tab(h.guest(a.url))]; a.activeTabId = a.tabs[0].tabId; h.register(a);
   assert.throws(() => grants.resolve(source), { code: 'site_control_unavailable' });

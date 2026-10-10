@@ -13,7 +13,7 @@ export function trustedWebappWorkspaceSource(
   const runId = typeof source?.runId === "string" ? source.runId.trim() : "";
   const chatId = typeof source?.chatId === "string" ? source.chatId.trim() : "";
   const workspaceRoot = typeof source?.workspaceRoot === "string" ? source.workspaceRoot.trim() : "";
-  if (!runId || !chatId || Boolean(source?.agentKey && source?.teamId)) {
+  if (!runId || !chatId) {
     return {
       ok: false,
       response: fail(action, "forbidden", "This action requires a trusted Agent Platform Run workspace."),

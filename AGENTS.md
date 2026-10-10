@@ -42,3 +42,5 @@
 - Do not call removed public issue endpoints such as `issue.transition`, `issue.assignRun`, `issue.dispatchDesktop`, `issue.label.set`, `issue.dependency.*`, `issueLabel.*`, `review.*`, or `review.comment.*`.
 - Keep `run.event.append` as the Desktop runtime synchronization protocol for run state and exact `issueRunId + deviceId + externalRunId` identity; it is not public issue CRUD. Desktop manual runs must use normal Agent Platform query and the Server-prepared run identity.
 - Do not add `issue.claimAndRun` or call Website's `issue.run.request` from Desktop.
+
+Platform TEAM 是普通 Agent mode，Desktop 请求、会话控制和 WebClient bridge 只使用根 agentKey；成员事件携带实际执行者身份，但不改变 Run owner。独立 Team 列表与旧身份字段已删除，需和 Platform、WebClient 同批发布。Kanban 组织团队标识不属于此协议。

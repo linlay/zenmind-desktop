@@ -54,7 +54,6 @@ export function mapHistoryChat(
   }
   const awaitingCount = Math.max(0, Math.floor(readNumber(summary.awaitingCount)));
   const awaitingMode = readChatAwaitingMode(summary);
-  const teamId = readString(summary.teamId).trim();
   const agentKey = (
     readString(summary.agentKey) ||
     readString(summary.firstAgentKey) ||
@@ -64,7 +63,6 @@ export function mapHistoryChat(
     chatId,
     chatName: readString(summary.chatName).trim() || t("assistant.newChat"),
     agentKey,
-    ...(teamId ? { teamId } : {}),
     createdAt,
     updatedAt,
     lastRunId: readString(summary.lastRunId).trim(),

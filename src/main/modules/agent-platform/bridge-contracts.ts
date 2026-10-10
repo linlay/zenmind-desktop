@@ -101,7 +101,6 @@ export type PlatformChatSummary = {
   agentKey?: unknown;
   firstAgentKey?: unknown;
   workerKey?: unknown;
-  teamId?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
   lastRunId?: unknown;
@@ -132,7 +131,6 @@ export type PlatformChatDetail = {
   agentKey?: unknown;
   firstAgentKey?: unknown;
   firstAgentName?: unknown;
-  teamId?: unknown;
   source?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;

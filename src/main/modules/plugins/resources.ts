@@ -195,7 +195,6 @@ function normalizeAutomationPayload(automation: ServiceDefinition["resources"]["
     cron: automation.cron,
     agentKey: automation.agentKey,
     enabled: automation.enabled !== false,
-    ...(automation.teamId ? { teamId: automation.teamId } : {}),
     ...(automation.zoneId ? { zoneId: automation.zoneId } : {}),
     ...(automation.remainingRuns !== undefined ? { remainingRuns: automation.remainingRuns } : {}),
     query: automation.query

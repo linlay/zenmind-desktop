@@ -131,7 +131,6 @@ export class ChatClient {
       agentKey: readString(data.agentKey),
       firstAgentKey: readString(data.firstAgentKey),
       firstAgentName: readString(data.firstAgentName),
-      teamId: readString(data.teamId),
       source: readString(data.source),
       ...(createdAt !== undefined && createdAt !== null ? { createdAt } : {}),
       ...(updatedAt !== undefined && updatedAt !== null ? { updatedAt } : {}),

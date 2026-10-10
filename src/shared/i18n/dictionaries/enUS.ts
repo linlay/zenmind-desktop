@@ -734,7 +734,6 @@ export const enUSMessages = {
   "sidebar.chat.infoField.agentKey": "AgentKey",
   "sidebar.chat.infoField.firstAgentKey": "First agent ID",
   "sidebar.chat.infoField.firstAgentName": "First agent name",
-  "sidebar.chat.infoField.teamId": "Team ID",
   "sidebar.chat.infoField.source": "Source",
   "sidebar.chat.infoField.createdAt": "Created at",
   "sidebar.chat.infoField.updatedAt": "Updated at",

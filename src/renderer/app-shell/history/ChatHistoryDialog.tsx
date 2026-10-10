@@ -514,7 +514,6 @@ export function ChatHistoryDialog({
                 const pendingAction = pendingByChatId[chat.chatId];
                 const ownerLabel = ownerLabelByKey.get(chat.agentKey)
                   || chat.agentKey
-                  || chat.teamId
                   || t("history.dialog.ownerUnknown");
                 return (
                   <article

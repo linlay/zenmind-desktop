@@ -99,3 +99,5 @@ npm test
 - 文件系统和用户目录优先使用 Electron `app.getPath("home")`、`app.getPath("desktop")`、`app.getPath("appData")`。
 - cloud Kanban issue 正文在 Desktop UI/runtime 中是只读缓存；Contract 1.0 仅允许受限原子操作，运行状态同步使用 `run.event.append`。
 - 真实 token、私钥、证书、`.env.local` 和本地配置不得提交。
+
+Platform TEAM 是普通 Agent mode，Desktop 请求、会话控制和 WebClient bridge 只使用根 agentKey；成员事件携带实际执行者身份，但不改变 Run owner。独立 Team 列表与旧身份字段已删除，需和 Platform、WebClient 同批发布。Kanban 组织团队标识不属于此协议。

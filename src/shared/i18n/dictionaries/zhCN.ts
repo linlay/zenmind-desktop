@@ -734,7 +734,6 @@ export const zhCNMessages = {
   "sidebar.chat.infoField.agentKey": "AgentKey",
   "sidebar.chat.infoField.firstAgentKey": "首个 Agent ID",
   "sidebar.chat.infoField.firstAgentName": "首个 Agent 名称",
-  "sidebar.chat.infoField.teamId": "团队 ID",
   "sidebar.chat.infoField.source": "来源",
   "sidebar.chat.infoField.createdAt": "创建时间",
   "sidebar.chat.infoField.updatedAt": "更新时间",

@@ -18,7 +18,7 @@ export class RunSiteControlGrants {
     const runId = typeof source.runId === "string" ? source.runId.trim() : "";
     const chatId = typeof source.chatId === "string" ? source.chatId.trim() : "";
     const agentKey = typeof source.agentKey === "string" ? source.agentKey.trim() : "";
-    if (!runId || !chatId || !agentKey || source.teamId || !surfaceId || this.grants.has(runId)) {
+    if (!runId || !chatId || !agentKey || !surfaceId || this.grants.has(runId)) {
       throw denied("AWCP requires an exact webpage and a canonical Agent Chat Run.");
     }
     let grant = this.workPanelGrants.get(runId);
@@ -51,9 +51,7 @@ export class RunSiteControlGrants {
   resolve(source: Record<string, unknown>): SiteControlScope | undefined {
     const grant = typeof source.runId === "string" ? this.grants.get(source.runId.trim()) : undefined;
     if (!grant) return;
-    const ownerMatches = grant.owner.kind === "agent"
-      ? source.agentKey === grant.owner.agentKey && !source.teamId
-      : source.teamId === grant.owner.teamId && !source.agentKey;
+    const ownerMatches = source.agentKey === grant.owner.agentKey;
     if (source.chatId !== grant.chatId || !ownerMatches) throw denied("The CDP source conflicts with the accepted Run identity.");
     if (!grant.scope) throw denied("The Run application control grant has ended.");
     grant.scope.readContainer();
