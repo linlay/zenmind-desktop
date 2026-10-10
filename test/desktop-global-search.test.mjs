@@ -136,6 +136,7 @@ test("desktop global search resolves the current agent and default sections", ()
   );
   assert.equal(rowsOfKind(sections, "agent")[0].agentKey, "coder");
   assert.equal(rowsOfKind(sections, "chat")[0].chatId, "chat-1");
+  assert.equal(rowsOfKind(sections, "chat")[0].lastRunContent, "local deploy snippet");
 
   const sectionsWithoutCurrentAgent = buildDesktopGlobalSearchSections({
     agents: [agent({})],
@@ -357,6 +358,7 @@ test("desktop global search filters rows, boosts local attention state, and pref
         role: "assistant",
         timestamp: 1710000005000,
         snippet: "remote deploy snippet",
+        lastRunContent: "Latest remote result\nwith more details",
         score: 1,
       },
       {
@@ -368,6 +370,7 @@ test("desktop global search filters rows, boosts local attention state, and pref
         role: "assistant",
         timestamp: 1710000008000,
         snippet: "higher scoring remote deploy snippet",
+        lastRunContent: "",
         score: 100,
       },
       {
@@ -388,10 +391,30 @@ test("desktop global search filters rows, boosts local attention state, and pref
   assert.equal(chatRows[0].chatId, "chat-1");
   assert.equal(chatRows[0].label, "Remote deploy plan");
   assert.equal(chatRows[0].snippet, "remote deploy snippet");
+  assert.equal(chatRows[0].lastRunContent, "Latest remote result\nwith more details");
   assert.equal(chatRows[0].source, "remote");
   assert.equal(chatRows[0].hasPendingAwaiting, true);
   assert.equal(chatRows[0].awaitingMode, "question");
   assert.equal(chatRows[0].isUnread, true);
   assert.equal(chatRows[1].chatId, "chat-remote");
+  assert.equal(chatRows[1].lastRunContent, "");
   assert.equal(chatRows.some((row) => row.chatId === "chat-missing-agent"), false);
+});
+
+test("desktop global search keeps the local latest content when remote search omits it", () => {
+  const remoteResult = {
+    chatId: "chat-1", chatName: "Remote deploy plan", agentKey: "coder",
+    kind: "message", timestamp: EPOCH_MS, snippet: "An older deploy match", score: 1,
+  };
+  const input = { agents: [agent({})], query: "deploy", t };
+  const missingContent = rowsOfKind(buildDesktopGlobalSearchSections({
+    ...input, remoteResults: [remoteResult],
+  }), "chat")[0];
+  assert.equal(missingContent.lastRunContent, "local deploy snippet");
+  assert.equal(missingContent.snippet, "An older deploy match");
+
+  const emptyContent = rowsOfKind(buildDesktopGlobalSearchSections({
+    ...input, remoteResults: [{ ...remoteResult, lastRunContent: "" }],
+  }), "chat")[0];
+  assert.equal(emptyContent.lastRunContent, "");
 });

@@ -253,6 +253,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     className={[
                       "desktop-global-search-row",
                       `is-${row.kind}`,
+                      row.kind === "chat" && hasQuery ? "is-search-result" : "",
                       row.kind === "chat" && row.hasPendingAwaiting ? "is-awaiting" : "",
                       row.kind === "chat" && row.isUnread ? "is-unread" : "",
                       rowIndex === activeIndex ? "is-active" : ""
@@ -274,6 +275,11 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                         <span className="desktop-global-search-row-detail">{renderRowDetail(row)}</span>
                       ) : null}
                     </span>
+                    {row.kind === "chat" && hasQuery ? (
+                      <span className="desktop-global-search-row-detail desktop-global-search-row-preview">
+                        {row.lastRunContent.replace(/\s+/gu, " ").trim()}
+                      </span>
+                    ) : null}
                     {row.kind === "chat" ? (
                       <span className="desktop-global-search-row-meta">
                         {renderChatStatus(row, props.t)}

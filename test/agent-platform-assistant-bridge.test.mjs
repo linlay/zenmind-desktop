@@ -430,6 +430,7 @@ test("agent platform assistant bridge proxies global chat search with bearer tok
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
   const requests = [];
+  let includeLastRunContent = true;
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init });
     return new Response(JSON.stringify({
@@ -445,6 +446,7 @@ test("agent platform assistant bridge proxies global chat search with bearer tok
           role: "assistant",
           timestamp: 1710000000000,
           snippet: "deploy snippet",
+          ...(includeLastRunContent ? { lastRunContent: "Latest deployment completed" } : {}),
           score: 18
         }
       ]
@@ -471,6 +473,10 @@ test("agent platform assistant bridge proxies global chat search with bearer tok
       ["chat-1", "coder", "deploy snippet"]
     ]);
     assert.equal(result.count, 1);
+    assert.equal(result.results[0].lastRunContent, "Latest deployment completed");
+    includeLastRunContent = false;
+    const withoutContent = await bridge.searchChats({ query: "deploy", limit: 30 });
+    assert.equal("lastRunContent" in withoutContent.results[0], false);
   } finally {
     globalThis.fetch = originalFetch;
   }

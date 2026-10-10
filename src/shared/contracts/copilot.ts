@@ -233,6 +233,7 @@ export interface AssistantChatSearchResult {
   role?: string;
   timestamp: EpochMilliseconds;
   snippet: string;
+  lastRunContent?: string;
   score: number;
 }
 

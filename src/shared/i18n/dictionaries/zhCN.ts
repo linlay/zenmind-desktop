@@ -3962,7 +3962,7 @@ export const zhCNMessages = {
   "desktop.globalSearch.empty.default": "暂无最近智能体或对话。",
   "desktop.globalSearch.empty.query": "没有匹配的动作、智能体或对话。",
   "desktop.globalSearch.group.awaiting": "等待中",
-  "desktop.globalSearch.group.unread": "未读聊天",
+  "desktop.globalSearch.group.unread": "未读对话",
   "desktop.globalSearch.group.actions": "动作",
   "desktop.globalSearch.group.agents": "智能体",
   "desktop.globalSearch.group.chats": "对话",

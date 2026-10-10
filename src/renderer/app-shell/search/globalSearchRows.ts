@@ -41,6 +41,7 @@ export type DesktopGlobalSearchRow =
       label: string;
       agentLabel: string;
       snippet: string;
+      lastRunContent: string;
       updatedAtMs: EpochMilliseconds;
       source: "local" | "remote";
       score: number;
@@ -311,6 +312,7 @@ function createLocalChatRow(
     label,
     agentLabel: options.agentLabel,
     snippet: chat.lastRunContent || label,
+    lastRunContent: chat.lastRunContent || "",
     updatedAtMs,
     source: "local",
     score: 0,
@@ -348,6 +350,7 @@ function mergeQueryChatRows(
       label: result.chatName || fallbackLabel,
       agentLabel: agent?.displayName || localRow?.agentLabel || agentKey,
       snippet: result.snippet || localRow?.snippet || fallbackLabel,
+      lastRunContent: result.lastRunContent ?? localRow?.lastRunContent ?? "",
       updatedAtMs,
       source: "remote",
       score: result.score,

@@ -103,6 +103,7 @@ export function mapChatSearchResult(value: unknown, path: string): AssistantChat
     ...(role ? { role } : {}),
     timestamp,
     snippet: readString(record.snippet),
+    ...(typeof record.lastRunContent === "string" ? { lastRunContent: record.lastRunContent } : {}),
     score: readNumber(record.score)
   };
 }
