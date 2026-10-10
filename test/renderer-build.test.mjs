@@ -2441,8 +2441,9 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
   assert.match(chatsRowsSource, /wrapItem: \(item\) => \(/);
   assert.match(
     chatsRowsSource,
-    /shouldOpen=\{\(trigger\) => \{[\s\S]*?querySelector<HTMLElement>\("\.worker-chat-name"\)[\s\S]*?title\.scrollWidth > title\.clientWidth/,
+    /<Popover[\s\S]*?trigger="hover"[\s\S]*?content=\{\(\) => renderChatHoverCard\(agent, chat\)\}/,
   );
+  assert.doesNotMatch(chatsRowsSource, /shouldOpen=/);
   assert.match(sidebarSource, /options\.wrapItem \? options\.wrapItem\(item\) : item/);
   assert.match(
     popoverSource,
