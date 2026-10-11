@@ -2235,10 +2235,6 @@ div.sidebar-chats-group-popover {
   margin-inline-end: 2px;
 }
 
-.assistant-worker-collapse-item:not(.is-expanded) .sidebar-agent-more-actions-button {
-  display: none !important;
-}
-
 .assistant-worker-collapse-item>.Collapse-header:not(:hover) .sidebar-agent-more-actions-button {
   opacity: 0;
   pointer-events: none;
