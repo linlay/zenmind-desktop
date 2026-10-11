@@ -77,6 +77,7 @@
 
 ## 主窗口外观基础
 
+- macOS 的 Cmd+K / Windows 的 Ctrl+K 搜索浮层中，等待提交、等待审批等标签的背景和文字颜色跟随皮肤，与导航栏同类标签一致；分别检查浅色、深色和浮层打开时切换皮肤，切回默认皮肤后恢复原有配色，布局与快捷键保持正常。
 - Windows / macOS 分别在浅色、深色及图片皮肤下往返切换 Chat、Website 和 Kanban：侧栏整体底色保持一致，进入 Kanban 不新增白色衬底或遮罩；macOS 原生透明效果保持。
 - 使用支持外观桥的新 WebClient，打开 Main Chat 后切换皮肤、图片和系统明暗：主聊天透出同一张壁纸，Composer、消息、菜单与弹窗保持可读；URL、guest ID、草稿、附件、焦点、滚动和流式输出保持。没有图片时回到实色。
 - Copilot、WorkPanel、Kanban 与管理页跟随语义颜色，保留实色阅读面；普通 Website/Service 不接收外观快照。Standalone 的偏好不能被 Desktop 宿主覆盖。

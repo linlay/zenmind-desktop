@@ -4173,8 +4173,8 @@
 }
 
 .desktop-global-search-row-status.is-awaiting {
-  background: rgba(217, 119, 6, 0.12);
-  color: #b45309;
+  background: var(--skin-pending, rgba(217, 119, 6, 0.12));
+  color: var(--skin-pending-text, #b45309);
 }
 
 .desktop-global-search-row-shortcut {
@@ -4260,8 +4260,8 @@
 }
 
 :root[data-theme="dark"] .desktop-global-search-row-status.is-awaiting {
-  background: rgba(217, 119, 6, 0.18);
-  color: #f4bf75;
+  background: var(--skin-pending, rgba(217, 119, 6, 0.18));
+  color: var(--skin-pending-text, #f4bf75);
 }
 
 :root[data-theme="dark"] .desktop-global-search-row-shortcut {
