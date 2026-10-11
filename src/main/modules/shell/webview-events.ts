@@ -48,6 +48,8 @@ export function configureAttachedWebview<
   };
 
   contents.on("before-input-event", (event, input) => {
+    // A restricted document may already have consumed its own close/reload shortcut.
+    if (event.defaultPrevented) return;
     const globalSearchCommandShortcut = options.isGlobalSearchOverlayVisible?.()
       ? options.resolveGlobalSearchCommandShortcut?.(options.platform, input) ?? null
       : null;

@@ -91,6 +91,7 @@ export type WebviewAttachInput = {
   isSafeServiceUrl(value: string): unknown;
   isReviewableLocalFileUrl?(value: string): boolean;
   isDocumentHtmlPreview?(url: string, partition: string): boolean;
+  isLocalDocumentPreview?(url: string, partition: string): boolean;
 };
 
 export type WebviewAttachResult =

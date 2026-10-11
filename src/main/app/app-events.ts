@@ -3,6 +3,7 @@ import type { MainAppState } from "./state";
 import { hasInstallerShutdownArg } from "./lifecycle/single-instance";
 import type { ShutdownReport } from "../../shared/shutdown";
 import { findDesktopOpenDeepLink, isDesktopOpenDeepLink } from "./deep-link";
+import { findDesktopDocumentPaths, isSupportedDesktopDocumentPath } from "./open-file";
 
 export type MainAppEventsOptions = {
   app: App;
@@ -14,7 +15,9 @@ export type MainAppEventsOptions = {
   focusedWebviewDevToolsShortcut: string;
   onReady: () => Promise<void> | void;
   initialCommandLine: readonly string[];
+  initialWorkingDirectory?: string;
   showMainWindow: (targetPath?: string) => void;
+  openLocalDocument: (filePath: string) => Promise<void> | void;
   beginAppQuitWithoutConfirmation: () => void;
   beginInstallerShutdown: (commandLine: string[]) => void;
   isNativeDialogOpen: () => boolean;
@@ -41,8 +44,35 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
   }
 
   let readyCompleted = false;
-  let pendingDesktopOpen = Boolean(findDesktopOpenDeepLink(options.initialCommandLine));
+  const initialInstallerShutdown = options.initialCommandLine.some((argument) => options.installerShutdownArgs.has(argument));
+  const initialWorkingDirectory = options.initialWorkingDirectory ?? process.cwd();
+  let pendingDesktopOpen = !initialInstallerShutdown && Boolean(findDesktopOpenDeepLink(options.initialCommandLine));
   let pendingMainWindowOpen = false;
+  const pendingLocalDocuments = initialInstallerShutdown
+    ? []
+    : findDesktopDocumentPaths(options.initialCommandLine, options.platform, initialWorkingDirectory);
+
+  const dispatchLocalDocument = (filePath: string) => {
+    // Isolate each file's failure so a failed or slow preview cannot discard the
+    // remaining files from the same Finder/Explorer selection.
+    void (async () => {
+      try {
+        await options.openLocalDocument(filePath);
+      } catch (error) {
+        console.error("[main] local document open failed", error);
+      }
+    })();
+  };
+
+  const openLocalDocuments = (filePaths: readonly string[]) => {
+    if (!readyCompleted) {
+      pendingLocalDocuments.push(...filePaths);
+      return;
+    }
+    for (const filePath of filePaths) {
+      dispatchLocalDocument(filePath);
+    }
+  };
 
   const openDesktopHome = () => {
     if (!readyCompleted) {
@@ -53,6 +83,13 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
   };
 
   if (options.platform === "darwin") {
+    options.app.on("open-file", (event, filePath) => {
+      if (!isSupportedDesktopDocumentPath(filePath)) {
+        return;
+      }
+      event.preventDefault();
+      openLocalDocuments([filePath]);
+    });
     options.app.on("open-url", (event, url) => {
       if (!isDesktopOpenDeepLink(url)) {
         return;
@@ -62,14 +99,21 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     });
   }
 
-  options.app.on("second-instance", (_event, commandLine) => {
+  options.app.on("second-instance", (_event, commandLine, workingDirectory) => {
     if (hasInstallerShutdownArg(commandLine, options.installerShutdownArgs)) {
       options.beginInstallerShutdown(commandLine);
       return;
     }
-    if (options.platform === "win32" && findDesktopOpenDeepLink(commandLine)) {
-      openDesktopHome();
-      return;
+    if (options.platform === "win32") {
+      const desktopOpen = Boolean(findDesktopOpenDeepLink(commandLine));
+      const documentPaths = findDesktopDocumentPaths(commandLine, options.platform, workingDirectory || initialWorkingDirectory);
+      if (desktopOpen) {
+        openDesktopHome();
+      }
+      openLocalDocuments(documentPaths);
+      if (desktopOpen || documentPaths.length > 0) {
+        return;
+      }
     }
     if (!readyCompleted) {
       pendingMainWindowOpen = true;
@@ -88,6 +132,9 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     } else if (pendingMainWindowOpen) {
       pendingMainWindowOpen = false;
       options.showMainWindow();
+    }
+    for (const filePath of pendingLocalDocuments.splice(0)) {
+      dispatchLocalDocument(filePath);
     }
     options.app.on("activate", () => {
       if (options.isNativeDialogOpen()) {

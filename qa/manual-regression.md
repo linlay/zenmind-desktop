@@ -306,6 +306,22 @@
 - Chat 行按普通 `←` 时先把焦点移到对应 Chats/Project 父级再收起左栏，收起态父级再次按 `←` 可展开；普通 `→` 依次验证无 workspace 创建 Overview、隐藏态恢复、显示态隐藏，Chat 行焦点全程不变。带 Cmd/Ctrl/Alt/Shift、长按或键盘拖拽时不得切换两侧面板；分组标题的 `←/→`、Home/End、Enter/Space、菜单键与 `Shift+F10` 保持原行为。
 - 按 `Enter` 或鼠标点击进入 Main Chat 后，在消息时间线空白处按普通 `←/→`，确认分别切换左侧栏和当前 canonical Chat 的 WorkPanel，且焦点仍在 Main Chat。再分别聚焦 Composer、可编辑内容、按钮、链接、菜单、可聚焦选项、代码编辑器，并覆盖文字选区、Cmd/Ctrl/Alt/Shift、长按、输入法组合、按住指针和拖拽场景，确认方向键不触发宿主面板。Chat 存在 active awaiting/HITL 时，无论焦点位于选项还是其余 Main Chat 区域，`←/→`、`↑/↓` 与数字选择都只由 WebClient 处理；awaiting 结束后空白区宿主左右键恢复。
 
+## 系统文件打开
+
+- macOS 安装新 App 后，Finder 对 `.md`、`.markdown`、`.html`、`.htm` 右键“打开方式”列出当前品牌；Windows 新安装后 Explorer 列出当前品牌。原默认应用保持不变，两品牌可同时存在。
+- 应用关闭与已运行时分别从 Finder/Explorer 打开 HTML/Markdown，覆盖中文、空格和扩展名大小写。打开与连续多文件选择只在同一本机临时工作面板追加标签，输入框为空；确认没有 `/api/chat/prepare` 请求、新的服务端 Chat、历史空对话、query、Run、上传或副本。重复同原件激活已有标签。仅发送首条自然语言消息后，普通 WebClient query/chat.start 产生真实 Chat，现有工作区、标签、documentId、URL、session 和页面输入状态原位保留。模型首次调用 workpanel_state 能在 canonical binding 就绪后定位激活原文件；失败/关闭/重载/更换nonce不能提升其他文件组或伪造chatId。普通/其他Agent切换后文件组保持隔离，已聊天文件对话后续打开仍可追加。
+- 同时打开 Markdown、交互 HTML 和用户现有“鹈鹕骑车”页面，检查 WorkPanel 标签与工具栏样式、切换标签保留动画/表单状态、切换 Chat 后从原 Chat 返回、刷新当前文件、缩放及关闭单个标签。其他文件和聊天不受影响，关闭最后一个文件不关闭主窗口，重新从 Finder 打开能正常恢复。
+- 首次打开、返回已有文件 Chat、renderer 重载和文件自动刷新都不向输入框填入原文件路径或长提示词，不覆盖用户草稿，不自动发送。向左侧直接输入“修改右侧标题”等要求后，确认 query 正文保持原样且不自动追加文件引用，显式选择的附件仍保留。用安全 HTML/MD 测试文件确认小君先调用 `workpanel_state` 得到该 Run Chat 当前激活原文件的路径，再 `file_read`/`file_edit` 写回原件，右侧自动刷新，定位不扫描目录、不生成副本、不上传。切到 Overview/网页时返回 `activeFile:null`；原件缺失、关闭、重载或异步校验期间切换标签时工具失败且无原路径，不猜最近文件。后台 Run 只查其原 Chat，不随用户切 Chat 读取别的文件；公开动作伪造 source、WebApp 与预览页面不能获得原路径。
+- macOS / Windows：先在 Chat B 打开文件，再回 Chat A 重载 renderer，确认仍停留在 A，恢复快照不跳回 B。冷启动导航早于 React 订阅时仍进入 Main 指定的最新路由。关闭一个文件标签后，在 Main 关闭确认前刷新相邻文件或返回迟到绑定，已关闭标签不得复活；多文件首次追加及明确再次打开仍正常。
+- 后台文件变化、原子替换、删除和重新出现只刷新对应预览，不切换当前 Chat/Tab、不展开隐藏 WorkPanel。关闭标签移除对应 watcher；renderer 重载后重新绑定，guest 不能使用过期预览。窄宽度工具栏常用操作完整可达，两平台窗口控件和拖动区域沿用主窗口布局。
+- 在不同文件工作区打开同一原件，开始聊天后分别返回各 Chat，确认各自预览归属、session 和 watcher 独立；修改原件时两份预览都更新。关闭其中一个标签不释放另一组的预览；返回已有文件工作区不创建 Chat，只有首条消息建立尚未开始聊天的工作区身份。
+- Markdown 显示标题、列表、GFM 表格、代码和相对图片，UTF-8/BOM 与 UTF-16 BOM 中文正常；HTML 的内联脚本、同目录 CSS/JS/图片正常加载，文档自身 CSP 保持有效；外部 CDN、接口、WebSocket 和其他网络请求被阻止。
+- 文档 guest 不可访问 Node、Desktop bridge、宿主 Cookie、目录外路径或越界符号链接；popup、自动下载与设备请求被拒绝。关闭标签后重新打开仍能正常读取，原 WorkPanel 手选文件的离线限制保持不变。其他窗口、子 frame 与 guest 不能调用文件工作区 IPC 或使用其 session。
+- 删除/拒绝读取文件时给出失败反馈，其后打开其他文件仍正常。macOS Cmd+W / Cmd+R 和 Windows Ctrl+W / Ctrl+R 分别关闭、重新加载当前文件标签，不能关闭主窗口或相邻聊天；检查缩放快捷键、标签键盘导航、侧栏收起和窄窗内容滚动。
+- macOS 开发服务器仍运行时，开发 App 从 Finder 冷启动无需 `--args` 也能打开文件；更新 launch environment 不改写签名 bundle。正式安装包在无开发服务器时独立冷启动。Windows 覆盖安装后可继续打开，卸载只移除本安装拥有的打开方式登记。
+- 用只检测能力、不发起网络请求的 HTML 验证首段脚本、同步空白子页、普通/独立 sandbox 子页、同目录和 Blob Worker 都不能获得 WebRTC/WebTransport；各页面仍无 Node 或 Desktop bridge。保护初始化未完成时不交付 HTML，保护连接意外断开或 preload 失败时关闭预览，重新打开可恢复。
+
+
 ## WorkPanel 自由新增 Tab
 
 - macOS 与 Windows 分别在未打开 WorkPanel 的 Chat 和已有 WorkPanel 的 Chat 中让 Agent 打开网页：工具返回 Surface 身份及 loading/ready，不误报“页面已关闭”或标红；重复打开同一 URL 复用 tab。控制器注册前手动关闭页面仍报告关闭，注册超时仍报告未就绪，不自动重开。

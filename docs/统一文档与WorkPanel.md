@@ -4,7 +4,35 @@
 
 本文定义 WorkPanel 打开、展示、编辑、批注与保存文档的长期边界。精确字段、分类枚举和 bridge 结构以 shared contract 与测试为准。
 
-这一模型不包含用户从系统文件选择器临时打开的项目外文件；它们继续由 host-only 本地文件能力承载。
+这一模型不包含用户从系统文件选择器或系统“打开方式”临时打开的项目外文件；它们继续由 host-only 本地文件能力承载。
+
+## 系统文件打开
+
+用户可通过 Finder 或 Explorer 的“打开方式”将 Markdown、HTML 文件交给 Desktop。此入口只展示用户选择的本地原件，不要求文件位于 Agent workspace。尚未聊天时，文件进入同一个本机临时 WorkPanel，连续打开不同原件追加独立标签；重复打开同一原件激活该文件组已有标签。文件打开不调用 Platform 的 Chat 准备接口，不创建服务端 Chat、历史空对话或 Run，不上传或复制文件。左侧复用 WebClient 普通新聊天页，临时文件工作区只持有本机 newChat nonce 与视图 ownerKey；它们不是 chatId，不得进入 Platform query、Desktop Action source、Overview 或其他需要真实 Chat 的页面。
+
+用户发送首条消息后，WebClient 通过普通 query/chat.start 流程建立 canonical Chat。Desktop 复用既有 canonical surface 同步：先按服务端身份关联原临时文件组的待绑定状态；既有同步 ACK 只表示保护逻辑已安装，还须等待真实宿主路由和注册投影提交，持续复验原 newChat、guest、registration 和 Main frame。提交后 Main 一次性将临时文件组归属提升为真实 Chat，再发布状态。AppShell 的同一 command/reducer 原子迁移工作区并保持文档、标签、URL、partition、watcher 和 guest 身份，不能先关闭旧标签再重建。从待绑定开始到 canonical 文件 binding 确认之前，WorkPanel 工具都等待界面就绪，不能将过渡期的空状态报告为没有文件；Chat 事件交付本身不等待 guest 消费事件，避免首次聊天循环等待。未发送或失败的聊天保留本机预览，不用伪 Chat 或替代 query 补造身份。
+
+已开始聊天的文件对话可以继续追加文件；进入普通 Chat 或其他 Agent 时，下一次系统打开使用对应新聊天的临时文件工作区。文件打开在 Main registry 串行处理，按真实 Main 当前目标决定复用，异步文件系统校验后复验归属，不根据全局最后文件猜会话。AppShell 的统一 WorkPanel reducer 是临时和正式工作区、标签与可见性的唯一所有者；Main registry 只拥有原路径、文件身份、预览与生命周期权限，不维护第二套 WorkPanel 状态。
+
+系统打开的显式导航只由 Main 发出，preload 在界面订阅前保留最后一个导航意图。恢复文件快照只恢复当前路由的文件，不重放历史打开事件或切换到全局最近文件所属的 Chat。用户在界面关闭标签后，迟到绑定与旧文件快照不能重新创建它；Main 确认移除或用户再次明确打开时，再清理或更新这段短期关闭状态。
+
+打开文件只展示预览，不向输入框填入文件路径或提示词，也不自动发送消息。普通 query 原样保留用户消息和显式选择的附件，不自动追加 WorkPanel 文件引用。智能体需要处理“右侧文件”或“当前预览”时，调用已有 `workpanel_state` 读取当前 Run 所属 Chat 的激活文件元信息，再使用 `file_read` 读取精确原路径，按用户明确要求使用 `file_edit` 修改同一原件。查询本身不是写入授权，也不复制、上传或执行文件内容。
+
+AppShell 的 command/reducer 是标签与激活状态的唯一权威。Main 先读取可信 Run 所属 Chat 的激活项，仅用其不透明文档身份解析自身持有的原文件绑定；异步 realpath/stat 与文件身份检查完成后，再次复验该 Chat 的激活项、绑定及主窗口/renderer 生命周期。Overview、网页或其他非本地原文件标签返回没有激活原文件；原件缺失、关闭、归属变化、重载或检查期间切换标签明确失败，不回退最近打开的文件或扫描目录。用户切换到另一个 Chat 不改变已获授权 Run 的归属，后台 Run 仍只可查询其自身 Chat 的激活文件。
+
+原路径只在已有 canonical Run 授权通过后的内部 Agent Platform 动作回复中返回。公开动作自报 `source`、WebApp、预览 DTO、页面脚本及 CDP 不获得此字段。Platform 沿用原有文件工具权限，不因返回路径而提升权限；工具投影只保留所需文件元信息，不公开所有文档路径或内部身份。
+
+Main 对每个文档条目独立观察原文件变化，保存、原子替换、删除和重新出现时更新对应预览版本。同一原件在多个 Chat 中打开时，变化更新各自预览，关闭其中一个条目不释放其他条目的 watcher 或 session。文件内容变化不导航、不激活标签、不打开隐藏的面板；切换 Chat 或隐藏 WorkPanel 保留文件和已挂载 guest，关闭标签才撤销对应条目。renderer 重载保留原文件与 owner 身份并轮换预览会话，重新经过绑定后恢复。销毁主窗口或退出应用回收文件状态、watcher 与 session。
+
+Markdown 解析由按需 Worker 完成，Main 只处理文件读取与预览生命周期；解析并发、输入输出大小、时间和内存有界。刷新取消旧解析，关闭标签终止其未完成解析，文档页面不能借 beforeunload 阻止关闭或退出。
+
+macOS 在 Electron ready 前接收 `open-file`，Windows 从首次启动和第二实例的文件参数接收请求；两者都在应用初始化完成后交付预览，启动期间的多个请求不能丢失，单个文件失败不能阻止其他文件打开。安装器退出请求仍优先处理。
+
+Markdown 使用现有 Markdown/GFM 渲染器输出静态正文，跳过内嵌 HTML，不执行脚本；HTML 使用隔离 Chromium 页面展示原内容及同目录资源，保留文档自身 CSP。文件读取沿用本地文件协议的规范路径、realpath 与目录边界校验。每个文件持有独立临时 session；Main 在 guest 挂载前校验精确 URL、partition 与主窗口所有权。文档 guest 不加载 Desktop 业务 preload、不共享宿主 Cookie 或凭据、不开放 Node、Desktop bridge、设备权限、自动下载与 popup，也不进入公开网页 Surface/Run 自动化授权。
+
+手选文件预览允许读取同目录资源，因此保持离线边界。普通请求由临时 session 拦截；额外 CSP 只收紧连接来源，禁用 DNS 预取，不覆盖原文档策略。绕过普通请求管道的实时网络传输能力在页面首段脚本执行前禁用：Main 私有 debugger 覆盖同步创建的页面上下文并在 Worker 执行前保护它，固定的 sandbox preload 覆盖独立子框架且不导出任何宿主接口。保护未就绪时不交付 HTML，初始化或 preload 失败、debugger 意外分离时关闭 guest。该 debugger 不进入公开 CDP 网关；本地预览不支持另开 DevTools 抢占保护连接。关闭标签撤销协议处理器、关闭连接并清理 session。该入口不扩展公开 Action 或 guest bridge 的本地文件权限。
+
+文件类型声明由品牌打包生成：macOS 作为可选 Viewer 注册，Windows 仅登记当前用户的“打开方式”候选，不修改用户默认处理程序。开发用 macOS App 同样声明文件类型并提供无需命令行参数的启动入口；变动的开发环境仍位于签名 bundle 之外。开发 App 的主界面仍依赖正在运行的 Vite，正式安装包不依赖开发服务器。
 
 ## 两个正交维度
 

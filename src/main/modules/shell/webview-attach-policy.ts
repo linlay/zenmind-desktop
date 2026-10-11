@@ -10,6 +10,20 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
   const documentPreloadUrl = input.servicePreloadUrl.replace(/service-webview\.js$/u, "document-html-review.js");
   const usesDocumentPreload = requestedPreload === documentPreloadPath || requestedPreload === documentPreloadUrl;
   const partition = String(input.params.partition || "");
+  if (partition.startsWith("local-document-")) {
+    if (requestedPreload || input.isLocalDocumentPreview?.(src, partition) !== true) {
+      return { ok: false, reason: "unsafe-review-url", src };
+    }
+    Object.assign(input.webPreferences, {
+      // This fixed sandbox preload only removes network transports. Running it
+      // in child frames does not enable Node while sandbox remains enforced.
+      preload: input.servicePreloadPath.replace(/service-webview\.js$/u, "local-document-network.js"),
+      nodeIntegration: false, nodeIntegrationInSubFrames: true,
+      nodeIntegrationInWorker: false, contextIsolation: true, sandbox: true,
+      webSecurity: true, webviewTag: false, allowRunningInsecureContent: false,
+    });
+    return { ok: true };
+  }
   if (usesDocumentPreload || src.startsWith(`${WORK_PANEL_DOCUMENT_HTML_PROTOCOL}:`) || partition.startsWith("work-panel-document-html:")) {
     if (!usesDocumentPreload || input.isDocumentHtmlPreview?.(src, partition) !== true) {
       return { ok: false, reason: "unsafe-review-url", src };

@@ -1,5 +1,7 @@
 import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { createMainNavigationSubscription } from "./main-navigation";
+import { LOCAL_DOCUMENT_CHANNELS, type LocalDocumentWorkspaceState } from "../shared/local-document";
 import { CONNECTOR_AUTH_BROWSER_EVENT, CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
   AssistantEvent,
@@ -37,7 +39,6 @@ import type {
   DesktopLogTarget,
   DesktopApi,
   LocaleChangedListener,
-  NavigateListener,
   NativeDialogVisibilityListener,
   RendererDiagnosticReport,
   SandboxImageImportProgressListener,
@@ -106,8 +107,22 @@ const fallbackInitialLocaleSettings: LocaleSettings = {
   source: "default"
 };
 const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
+const onNavigate = createMainNavigationSubscription(ipcRenderer);
 
 const api: DesktopApi = {
+  localDocuments: {
+    select: () => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.select),
+    bind: request => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.bind, request),
+    getState: () => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.getState),
+    activate: (documentId) => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.activate, documentId),
+    close: (documentId) => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.close, documentId),
+    reveal: (documentId) => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.reveal, documentId),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: LocalDocumentWorkspaceState) => listener(state);
+      ipcRenderer.on(LOCAL_DOCUMENT_CHANNELS.changed, handler);
+      return () => { ipcRenderer.off(LOCAL_DOCUMENT_CHANNELS.changed, handler); };
+    },
+  },
   artifacts: {
     act: (input) => ipcRenderer.invoke("artifacts.act", input),
     list: (input) => ipcRenderer.invoke("artifacts.list", input),
@@ -900,16 +915,7 @@ const api: DesktopApi = {
       readLog: (id, target, options) => ipcRenderer.invoke("webs.webapps.readLog", id, target, options)
     }
   },
-  onNavigate: (listener: NavigateListener) => {
-    const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
-      listener(path);
-    };
-
-    ipcRenderer.on("app.navigate", handleNavigate);
-    return () => {
-      ipcRenderer.off("app.navigate", handleNavigate);
-    };
-  },
+  onNavigate,
   onServicesChanged: (listener: ServicesChangedListener) => {
     const handleServicesChanged = () => {
       listener();

@@ -19,6 +19,7 @@ export function configureMainWindowWebContents<
     isSafeServiceUrl(value: string): unknown;
     isReviewableLocalFileUrl?(value: string): boolean;
     isDocumentHtmlPreview?(url: string, partition: string): boolean;
+    isLocalDocumentPreview?(url: string, partition: string): boolean;
     configureDocumentHtmlGuest?(contents: TGuestContents): boolean;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
@@ -83,6 +84,7 @@ export function configureMainWindowWebContents<
       isSafeServiceUrl: options.isSafeServiceUrl,
       isReviewableLocalFileUrl: options.isReviewableLocalFileUrl,
       isDocumentHtmlPreview: options.isDocumentHtmlPreview,
+      isLocalDocumentPreview: options.isLocalDocumentPreview,
     });
 
     if (!result.ok && result.reason === "unexpected-preload") {

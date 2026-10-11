@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import plistPackage from "plist";
 import {
   brandBuildRoot,
   brandIconDir,
@@ -13,6 +14,7 @@ import {
 } from "../lib/brand-config.mjs";
 import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-metadata.mjs";
 import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
+import { macDocumentTypes } from "../lib/document-file-associations.mjs";
 
 function escapePlistText(value) {
   return String(value)
@@ -177,10 +179,32 @@ export function prepareDarwinDevElectronApp(
   plist = setPlistString(plist, "CFBundleShortVersionString", plistVersion);
   plist = setPlistString(plist, "CFBundleVersion", plistVersion);
   plist = applyDarwinBundleLocalizationInfo(plist);
+  const plistInfo = plistPackage.parse(plist);
+  plistInfo.CFBundleDocumentTypes = macDocumentTypes(targetIconFileName);
+  plist = plistPackage.build(plistInfo);
   // Runtime paths and PATH can change between launches. Keep them outside the
   // signed bundle so a new terminal/session does not invalidate saved TCC grants.
   plist = plist.replace(/<key>LSEnvironment<\/key>\s*<dict>[\s\S]*?<\/dict>/u, "");
   fs.writeFileSync(targetPlistPath, plist);
+  // Finder cold launches have no --args <projectRoot>. Keep a stable dev entry
+  // in the app, with changing launch environment stored outside the signed bundle.
+  const launchEnvironmentPath = path.join(path.dirname(targetAppRoot), "launch-environment.json");
+  fs.writeFileSync(launchEnvironmentPath, JSON.stringify(
+    buildDarwinDevLaunchEnvironment(projectRoot, brand, desktopBuiltinServicesDir(projectRoot))
+  ));
+  const devEntryRoot = path.join(targetResourcesDir, "app");
+  fs.mkdirSync(devEntryRoot, { recursive: true });
+  fs.writeFileSync(path.join(devEntryRoot, "package.json"), JSON.stringify({
+    name: brand.packageName || "desktop", version: plistVersion, main: "index.cjs"
+  }));
+  fs.writeFileSync(path.join(devEntryRoot, "index.cjs"), [
+    `Object.assign(process.env, require(${JSON.stringify(launchEnvironmentPath)}));`,
+    `process.chdir(${JSON.stringify(projectRoot)});`,
+    `if (process.argv[1] !== ${JSON.stringify(projectRoot)}) process.argv.splice(1, 0, ${JSON.stringify(projectRoot)});`,
+    `require('electron').app.setAppPath(${JSON.stringify(projectRoot)});`,
+    `require(${JSON.stringify(path.join(projectRoot, "dist-electron", "main", "index.js"))});`,
+    ""
+  ].join("\n"));
   signApp(targetAppRoot);
 
   return {

@@ -27,6 +27,7 @@ import { captureScreenshotForBridge, getAssistantSettings, type AssistantBridgeR
 import { isDesktopPetSupportedPlatform, type DesktopPetRuntime } from "../../modules/pet";
 import { readHelpSettings } from "../../modules/settings";
 import { createAppShellRuntime } from "../../modules/shell";
+import type { LocalDocumentWorkspaceController } from "../../modules/work-panel";
 import { createWebviewContextMenuController, resolveRegisteredWebviewPopupTarget } from "../../modules/web-surfaces";
 import {
   createWebSurfaceRuntime,
@@ -60,6 +61,7 @@ export function assembleLogsRuntime(dependencies: AssembleLogsRuntimeDependencie
 }
 
 export interface AssembleAppShellDependencies {
+  readonly localDocuments: Pick<LocalDocumentWorkspaceController, "canAttach" | "configureGuest">;
   readonly startupPlatform: NodeJS.Platform;
   readonly systemIdentityRuntime: Pick<ReturnType<typeof configureSystemIdentity>, "effectiveAppId" | "ensureDockIdentity">;
   readonly MAIN_PROCESS_DIR: ReturnType<typeof resolveElectronBundleRootFromRuntimeDir>;
@@ -103,6 +105,8 @@ export function assembleAppShell(dependencies: AssembleAppShellDependencies) {
     isDevToolsShortcut,
     isGlobalSearchShortcut,
     isDesktopCloseShortcut,
+    canAttachLocalDocument: (url, partition, ownerWebContentsId) => dependencies.localDocuments.canAttach(url, partition, ownerWebContentsId),
+    configureLocalDocumentGuest: (contents) => dependencies.localDocuments.configureGuest(contents),
     isWorkPanelWebview: (contents) => {
       const target = dependencies.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
       return Boolean(target?.active &&

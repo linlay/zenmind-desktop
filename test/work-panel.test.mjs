@@ -1,19 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
+const compiled = (relative) => require(process.env.LOCAL_DOCUMENT_TEST_BUILD_ROOT
+  ? path.join(process.env.LOCAL_DOCUMENT_TEST_BUILD_ROOT, relative)
+  : `../dist-electron/${relative}`);
 const {
   EMPTY_WORK_PANEL_STATE,
   normalizeWorkPanelWebUrl,
   reduceWorkPanelCommand,
-} = require("../dist-electron/shared/work-panel.js");
-const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = require("../dist-electron/shared/work-panel-native-registry.js");
+} = compiled("shared/work-panel.js");
+const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = compiled("shared/work-panel-native-registry.js");
 const {
   buildWorkPanelReviewComposerDraft,
   normalizeWorkPanelNormalizedRect,
   workPanelPixelRectFromNormalized,
-} = require("../dist-electron/shared/work-panel-review.js");
+} = compiled("shared/work-panel-review.js");
 
 function open(state, ownerChatId, descriptor) {
   return reduceWorkPanelCommand(state, { type: "openItem", ownerChatId, descriptor });
@@ -481,6 +485,7 @@ test("WorkPanel rejects untrusted fields and only accepts registered host native
     { surfaceKey: "resource-image", closableByDefault: true },
     { surfaceKey: "document-image", closableByDefault: true },
     { surfaceKey: "document-html", closableByDefault: true },
+    { surfaceKey: "local-document", closableByDefault: true },
   ]);
   for (const url of ["file:///tmp/secret", "javascript:alert(1)", "https://user:pass@example.test/"]) {
     assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", { kind: "web", url }).ok, false);
