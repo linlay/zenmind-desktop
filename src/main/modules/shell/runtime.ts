@@ -68,6 +68,8 @@ export type AppShellRuntimeOptions = {
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isDesktopCloseShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  canAttachLocalDocument?: (url: string, partition: string, ownerWebContentsId: number) => boolean;
+  configureLocalDocumentGuest?: (contents: Electron.WebContents) => boolean;
   isWorkPanelWebview: (contents: Electron.WebContents) => boolean;
   isMainChatWebview: (contents: Electron.WebContents) => boolean;
   resolveWebsiteCloseTarget: (contents: Electron.WebContents) => DesktopCloseShortcutRequest["website"] | null;
@@ -280,7 +282,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
       isReviewableLocalFileUrl: (url) => workPanelLocalFileRegistry.isReviewableUrl(url),
       isDocumentHtmlPreview: (url, partition) => workPanelDocumentHtmlRegistry.previews.canAttach(url, partition, targetWindow.webContents.id),
-      configureDocumentHtmlGuest: (guest) => workPanelDocumentHtmlRegistry.previews.configureGuest(guest, targetWindow.webContents.id),
+      isLocalDocumentPreview: (url, partition) => options.canAttachLocalDocument?.(url, partition, targetWindow.webContents.id) === true,
+      configureDocumentHtmlGuest: (guest) => options.configureLocalDocumentGuest?.(guest) === true || workPanelDocumentHtmlRegistry.previews.configureGuest(guest, targetWindow.webContents.id),
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isDesktopCloseShortcut: options.isDesktopCloseShortcut,

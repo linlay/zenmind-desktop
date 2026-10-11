@@ -9,6 +9,7 @@ import type { ServicesFacade } from "../services";
 import type { WebsFacade } from "../webs";
 import { workPanelLocalFileRegistry } from "../work-panel";
 import { createDesktopRuntimeDiagnostics } from "./runtime-info";
+import type { DesktopActionBridgeOptions } from "./action-contracts";
 
 export interface DesktopActionRuntimeContext {
   app: App;
@@ -38,6 +39,8 @@ export interface DesktopActionContextDependencies {
   showFileDialog?: (...args: any[]) => unknown;
   showSaveDialog?: (...args: any[]) => unknown;
   callRendererAction: (...args: any[]) => unknown;
+  resolveWorkPanelActiveFile?: DesktopActionBridgeOptions["resolveWorkPanelActiveFile"];
+  waitForWorkPanelFilePresentation?: DesktopActionBridgeOptions["waitForWorkPanelFilePresentation"];
   confirmRendererAction?: (...args: any[]) => unknown;
   resolveWebSurface?: (...args: any[]) => Promise<unknown>;
   executeCdpCommand: (request: unknown, scope?: SiteControlScope) => Promise<unknown>;
@@ -80,6 +83,8 @@ export function createDesktopActionOptions(
     showFileDialog: dependencies.showFileDialog,
     showSaveDialog: dependencies.showSaveDialog,
     callRendererAction: dependencies.callRendererAction,
+    resolveWorkPanelActiveFile: dependencies.resolveWorkPanelActiveFile,
+    waitForWorkPanelFilePresentation: dependencies.waitForWorkPanelFilePresentation,
     prepareWorkPanelLocalFileClaim: (input: {
       ownerChatId: string;
       rendererWebContentsId: number;

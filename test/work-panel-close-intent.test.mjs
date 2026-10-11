@@ -209,6 +209,7 @@ function shell({ registered = true, existing = false } = {}) {
     lastMainChatCommitRef: { current: null },
     activeChatRouteInfo: { agentKey: "agent-a", chatId: "chat-a" },
     desiredChatRouteChatId: "chat-a",
+    activeChatWorkPanelOwnerKey: "chat-a",
     activeChatWorkPanelVisible: false,
     currentRoute: route,
     t: (key) => key,

@@ -1,0 +1,67 @@
+.work-panel-local-document {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-work-panel .work-panel-local-document .external-webview-page.is-document-preview .external-webview-toolbar {
+  flex: 0 0 44px;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-base);
+}
+
+.work-panel-local-document .document-preview-file-name {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.work-panel-local-document-loading {
+  display: grid;
+  height: 100%;
+  place-content: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.work-panel-local-document-error {
+  position: absolute;
+  z-index: 5;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--embedded-surface-page-bg);
+  color: var(--ink);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 10%);
+  font-size: 12px;
+}
+
+.work-panel-local-document-error > span {
+  flex: 1;
+}
+
+.work-panel-local-document-error > button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.work-panel-local-document-error > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

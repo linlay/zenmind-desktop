@@ -57,6 +57,7 @@ import {
 } from "../../modules/webs";
 import { t } from "../../support/i18n/main-i18n";
 import { createLogsRuntime } from "../../support/logging/runtime";
+import type { LocalDocumentWorkspaceController } from "../../modules/work-panel";
 import { safeConsoleError } from "../../support/logging/safe-console";
 export interface AssembleAssistantIntegrationDependencies {
   readonly appearanceRuntime: AppearanceRuntime;
@@ -66,6 +67,8 @@ export interface AssembleAssistantIntegrationDependencies {
     reason: Parameters<typeof issueAgentAccessToken>[1]
   ) => ReturnType<typeof issueAgentAccessToken>;
   readonly websFacade: WebsFacade;
+  readonly resolveWorkPanelActiveFile: LocalDocumentWorkspaceController["resolveActiveFile"];
+  readonly waitForWorkPanelFilePresentation: LocalDocumentWorkspaceController["waitForChatPresentation"];
 }
 
 export function assembleAssistantIntegration(dependencies: AssembleAssistantIntegrationDependencies) {
@@ -88,6 +91,8 @@ export function assembleAssistantIntegration(dependencies: AssembleAssistantInte
     stopDesktopWsServer,
     createDesktopActionOptions: (context, actionDependencies) => createDesktopActionOptions(context, {
       ...actionDependencies,
+      resolveWorkPanelActiveFile: dependencies.resolveWorkPanelActiveFile,
+      waitForWorkPanelFilePresentation: dependencies.waitForWorkPanelFilePresentation,
       appearanceRuntime: dependencies.appearanceRuntime,
       getHelpUrl: () => readHelpSettings(context.app, context.platform).url,
       issueAgentAccessToken: dependencies.issueAgentAccessToken,

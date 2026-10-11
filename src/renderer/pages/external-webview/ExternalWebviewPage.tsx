@@ -1,11 +1,13 @@
 import { PageAnnotationIcon } from "./PageAnnotationIcon";
 import { WorkPanelBrowserTools } from "./WorkPanelBrowserTools";
+import { DocumentPreviewTools } from "./DocumentPreviewTools";
 import { ArrowLeftOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
 import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
   WheelEvent as ReactWheelEvent
 } from "react";
 import { useLocation } from "react-router-dom";
@@ -95,6 +97,11 @@ type ExternalWebviewPageProps = {
   showToolbar?: boolean;
   workPanelToolbarKind?: "web" | "document";
   toolbarDocumentName?: string;
+  /** Reuse WorkPanel document chrome without granting a Chat or public Surface identity. */
+  documentPreview?: boolean;
+  documentPreviewVersion?: number;
+  documentToolbarActions?: ReactNode;
+  onRevealDocument?: () => void;
   showLoadingProgress?: boolean;
   enableDesktopWebActions?: boolean;
   registerPublicWebSurface?: boolean;
@@ -195,6 +202,8 @@ type ExternalWebviewPaneProps = {
   preloadUrl?: string;
   onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
+  documentPreview?: boolean;
+  documentPreviewVersion?: number;
 };
 
 function getFallbackTabTitle(defaultTitle: string, url: string) {
@@ -316,10 +325,32 @@ function ExternalWebviewPane({
   onDomReady,
   preloadUrl,
   onIpcMessage,
-  onFaviconDiscovered
+  onFaviconDiscovered,
+  documentPreview = false,
+  documentPreviewVersion,
 }: ExternalWebviewPaneProps) {
+  const { t } = useI18n();
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const previewVersionRef = useRef(documentPreviewVersion);
+
+  useEffect(() => {
+    if (!documentPreview || documentPreviewVersion === undefined) return;
+    const webview = webviewRef.current;
+    if (!webview) return;
+    const refreshChangedDocument = () => {
+      if (previewVersionRef.current === documentPreviewVersion) return;
+      try {
+        if (webview.getWebContentsId() <= 0) return;
+        webview.reload();
+        previewVersionRef.current = documentPreviewVersion;
+      } catch { /* Retry on dom-ready when a watcher update precedes guest attachment. */ }
+    };
+    webview.addEventListener("dom-ready", refreshChangedDocument);
+    refreshChangedDocument();
+    return () => { webview.removeEventListener("dom-ready", refreshChangedDocument); };
+  }, [documentPreview, documentPreviewVersion]);
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -397,14 +428,23 @@ function ExternalWebviewPane({
       onCloseRequested(tab.id);
     };
     const handleDidStartLoading = () => {
+      setLoadFailed(false);
       syncFromWebview({ isLoading: true, reviewable: false });
     };
     const handleDidStopLoading = () => {
       syncFromWebview({ isLoading: false });
       syncReviewableDocument();
     };
-    const handleDidFailLoad = () => {
+    const handleDidFailLoad = (event: Event) => {
+      const failure = event as Event & { isMainFrame?: boolean; errorCode?: number };
+      if (documentPreview && failure.isMainFrame !== false && failure.errorCode !== -3) {
+        setLoadFailed(true);
+      }
       syncFromWebview({ isLoading: false });
+    };
+    const handleRenderProcessGone = () => {
+      if (documentPreview) setLoadFailed(true);
+      onTabStateChange(tab.id, { isLoading: false });
     };
     const handleDidNavigate = (event: Event) => {
       const nextUrl = readEventString(event, "url");
@@ -430,6 +470,7 @@ function ExternalWebviewPane({
     webview.addEventListener("did-start-loading", handleDidStartLoading);
     webview.addEventListener("did-stop-loading", handleDidStopLoading);
     webview.addEventListener("did-fail-load", handleDidFailLoad);
+    webview.addEventListener("render-process-gone", handleRenderProcessGone);
     webview.addEventListener("did-navigate", handleDidNavigate);
     webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
@@ -443,6 +484,7 @@ function ExternalWebviewPane({
       webview.removeEventListener("did-start-loading", handleDidStartLoading);
       webview.removeEventListener("did-stop-loading", handleDidStopLoading);
       webview.removeEventListener("did-fail-load", handleDidFailLoad);
+      webview.removeEventListener("render-process-gone", handleRenderProcessGone);
       webview.removeEventListener("did-navigate", handleDidNavigate);
       webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
@@ -450,7 +492,7 @@ function ExternalWebviewPane({
       webview.removeEventListener("close", handleClose);
       if (onIpcMessage) webview.removeEventListener("ipc-message", onIpcMessage as EventListener);
     };
-  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onIpcMessage, onTabStateChange, preloadUrl, tab.currentUrl, tab.id]);
+  }, [documentPreview, onCloseRequested, onDomReady, onFaviconDiscovered, onIpcMessage, onTabStateChange, preloadUrl, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -468,13 +510,28 @@ function ExternalWebviewPane({
         tabIndex: active && surfaceActive ? 0 : -1,
         className: "embedded-surface-frame external-webview-frame",
         // Main receives popup requests and routes them to the owning surface.
-        allowpopups: "true",
+        ...(!documentPreview ? { allowpopups: "true" } : {}),
         partition: tab.partition,
         ...(preloadUrl ? { preload: preloadUrl } : {}),
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
-      <WebviewDebugOverlay url={tab.currentUrl} surfaceIdentity={surfaceIdentity} />
+      {documentPreview && loadFailed ? (
+        <div className="document-preview-error" role="alert">
+          <FileTextOutlined aria-hidden="true" />
+          <strong>{t("localDocuments.loadFailed")}</strong>
+          <p>{t("localDocuments.loadFailedDescription")}</p>
+          <button type="button" onClick={() => {
+            const webview = webviewRef.current;
+            if (!webview) return;
+            setLoadFailed(false);
+            try {
+              void webview.loadURL(initialSrcRef.current).catch(() => setLoadFailed(true));
+            } catch { setLoadFailed(true); }
+          }}>{t("common.retry")}</button>
+        </div>
+      ) : null}
+      {!documentPreview ? <WebviewDebugOverlay url={tab.currentUrl} surfaceIdentity={surfaceIdentity} /> : null}
     </div>
   );
 }
@@ -505,6 +562,10 @@ export function ExternalWebviewPage({
   showToolbar = true,
   workPanelToolbarKind = "web",
   toolbarDocumentName,
+  documentPreview = false,
+  documentPreviewVersion,
+  documentToolbarActions,
+  onRevealDocument,
   showLoadingProgress = false,
   enableDesktopWebActions = true,
   registerPublicWebSurface = true,
@@ -535,8 +596,8 @@ export function ExternalWebviewPage({
       return retainForegroundFocusForBackgroundSites(document);
     }
   }, [registeredSurfaceKind]);
-  const workPanelBrowser = registeredSurfaceKind === "chat-work-panel";
-  const documentToolbar = workPanelBrowser && workPanelToolbarKind === "document";
+  const workPanelBrowser = documentPreview || registeredSurfaceKind === "chat-work-panel";
+  const documentToolbar = documentPreview || (workPanelBrowser && workPanelToolbarKind === "document");
   const surfaceIdentity = surfaceIdentityProp ?? (
     registeredSurfaceKind === "browser"
       ? createSurfaceIdentity("browser")
@@ -561,6 +622,7 @@ export function ExternalWebviewPage({
     registeredSurfaceKind === "website" || registeredSurfaceKind === "webapp" ? "is-site-surface" : "",
     appChrome ? "" : "has-browser-chrome",
     workPanelBrowser ? "is-work-panel-browser" : "",
+    documentPreview ? "is-document-preview" : "",
     showToolbar ? "has-browser-toolbar" : "",
     pageReviewActive ? "is-page-review-active" : "",
     !appChrome && !showToolbar ? "is-toolbarless-browser" : "",
@@ -1072,6 +1134,7 @@ export function ExternalWebviewPage({
   };
 
   useEffect(() => {
+    if (documentPreview) return;
     return window.electronAPI.onWebviewOpenTab(({
       target,
       navigationKind,
@@ -1114,7 +1177,7 @@ export function ExternalWebviewPage({
         userAgent: sourceTab.userAgent
       });
     });
-  }, [appChrome, partition]);
+  }, [appChrome, documentPreview, partition]);
 
   useEffect(() => {
     if (!refreshOnDesktopSso || !window.electronAPI.sso?.onStatusChanged) {
@@ -1869,7 +1932,7 @@ export function ExternalWebviewPage({
     <section className={surfaceClassName} {...surfaceVisibilityProps}>
       {appChrome ? null : (
       <div className="external-webview-browser-chrome">
-        <div className="external-webview-tabbar">
+        {!documentPreview ? <div className="external-webview-tabbar">
           <div
             className={`external-webview-tab-strip${tabsOverflowing ? " is-overflowing" : ""}`}
             ref={tabsStripRef}
@@ -1961,9 +2024,28 @@ export function ExternalWebviewPage({
               <CloseIcon />
             </button>
           ) : null}
-        </div>
+        </div> : null}
         {showToolbar ? (
           <div className={`external-webview-toolbar${pageReviewActive ? " is-review-mode" : ""}`}>
+            {documentPreview ? (
+              <>
+                <span className="document-preview-file-name" title={toolbarDocumentName || title}>
+                  {toolbarDocumentName || title}
+                </span>
+                <div className="document-preview-actions">
+                  {documentToolbarActions}
+                  <button type="button" className="external-webview-toolbar-button" onClick={handleReload}
+                    aria-label={t("externalWebview.refresh")} title={t("externalWebview.refresh")}>
+                    <SidebarActionIcon kind="refresh" />
+                  </button>
+                  <DocumentPreviewTools
+                    webview={activeTab?.guestId ? webviewRefs.current.get(activeTab.id) ?? null : null}
+                    active={active !== false}
+                    onReveal={onRevealDocument}
+                  />
+                </div>
+              </>
+            ) : <>
             {pageReviewActive && documentToolbar && onTogglePageReview ? (
               <>
                 <button
@@ -2086,6 +2168,7 @@ export function ExternalWebviewPage({
               webview={activeTab?.guestId ? webviewRefs.current.get(activeTab.id) ?? null : null}
               active={active !== false}
             /> : null}
+            </>}
           </div>
         ) : null}
         </div>
@@ -2117,7 +2200,7 @@ export function ExternalWebviewPage({
         ) : null}
         {browserState.tabs.map((tab) => (
           <ExternalWebviewPane
-            key={tab.id}
+            key={documentPreview ? `${tab.id}:${tab.partition || ""}` : tab.id}
             tab={tab}
             active={tab.id === browserState.activeTabId}
             surfaceActive={active !== false}
@@ -2126,8 +2209,11 @@ export function ExternalWebviewPage({
             surfaceLabel={surfaceLabel ?? title}
             onTabStateChange={handleTabStateChange}
             onCloseRequested={(tabId) => {
-              void closeTab(tabId).catch(() => undefined);
+              if (documentPreview) onCloseSurface?.();
+              else void closeTab(tabId).catch(() => undefined);
             }}
+            documentPreview={documentPreview}
+            documentPreviewVersion={documentPreviewVersion}
             onDomReady={finishRefreshWaiter}
             preloadUrl={preloadUrl}
             onIpcMessage={onIpcMessage}

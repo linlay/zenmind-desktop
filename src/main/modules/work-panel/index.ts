@@ -7,3 +7,5 @@ export { normalizeChatWorkPanelOpenLocalResourceRequest } from "./resource-open"
 export { createDocumentLocalOpenService } from "./document-local-open";
 export { createWorkPanelDocumentReader } from "./document-local-reader";
 export { registerChatWorkPanelTabContextMenuIpcHandlers } from "./tab-context-menu-ipc";
+export { LocalDocumentWorkspaceController } from "./local-document-workspace";
+export type { LocalDocumentActiveFile } from "./local-document-workspace";

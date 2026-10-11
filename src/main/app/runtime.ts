@@ -10,7 +10,7 @@ import { desktopDataRootExists, getDesktopConfigRoot } from "../infrastructure/f
 import { RealtimeBroker } from "../modules/agent-platform";
 import { createDesktopAppearanceRuntime } from "../modules/settings";
 import { createArtifactRuntime } from "../modules/artifacts";
-import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, type AssistantBridgeRuntime } from "../modules/assistant";
+import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, getAssistantSettings, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
 import { getDesktopDeviceId, getDesktopSsoAccessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
 import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
@@ -19,7 +19,7 @@ import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../module
 import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
 import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
 import { createWebsFacade, registerWebappAuth, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
-import { registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
+import { LocalDocumentWorkspaceController, registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
 import { t } from "../support/i18n/main-i18n";
 import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
 import * as assistant from "./assembly/assistant";
@@ -31,6 +31,8 @@ import * as services from "./assembly/services";
 import * as settings from "./assembly/settings";
 import * as shell from "./assembly/shell";
 import * as webSurfaces from "./assembly/web-surfaces";
+import { createLocalDocumentEditingChat } from "./assembly/local-documents";
+import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
 import { consumeRuntimeEnvReset, prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset } from "../infrastructure/filesystem/runtime-env-reset-transaction";
 import { createRuntimeResetCoordinator } from "./lifecycle/runtime-reset";
 import { initializeElectronProfile } from "./bootstrap/electron-profile";
@@ -129,6 +131,8 @@ export function createMainProcessRuntime() {
   const appearanceRuntime = createDesktopAppearanceRuntime(app, startupPlatform, () => settingsRuntime.emitDesktopConfigChanged("skin"));
   const assistantIntegrationPorts = assistant.assembleAssistantIntegration({
     appearanceRuntime,
+    resolveWorkPanelActiveFile: (request, isSelectionCurrent) => localDocuments.resolveActiveFile(request, isSelectionCurrent),
+    waitForWorkPanelFilePresentation: input => localDocuments.waitForChatPresentation(input),
     get servicesFacade() { return servicesFacade; },
     get issueAgentAccessToken() { return identityTokenProvider; },
     get websFacade() { return websFacade; }
@@ -187,6 +191,23 @@ export function createMainProcessRuntime() {
   registerWebsiteFaviconProtocolScheme(protocol);
   registerDesktopSsoAvatarProtocolScheme(protocol);
   registerChatWorkPanelLocalFileProtocolScheme(protocol);
+  const localDocumentEditingChat = createLocalDocumentEditingChat({
+    getAgentKey: () => {
+      const assistantSettings = getAssistantSettings(app);
+      // Bootstrap owns first-install setup, not the user's file editing Chat.
+      return assistantSettings.chatDefaultAgentKey;
+    },
+    getMainChatSurface: () => webSurfaceRuntime.browserSurfaceRegistry.listRegisteredSurfaces()
+      .find(surface => surface.surfaceId === MAIN_CHAT_SURFACE_ID),
+    getDesktopRoute: () => getMainWindow()?.webContents.getURL() ?? "",
+    delay,
+  });
+  const localDocuments = new LocalDocumentWorkspaceController({
+    platform: startupPlatform, getMainWindow, showMainWindow, showFileDialog,
+    ...localDocumentEditingChat,
+  });
+  localDocuments.registerIpc(ipcMain);
+  app.once("will-quit", () => localDocuments.dispose());
 
   const webSurfaceRuntime = webSurfaces.assembleWebSurfaceRuntime({
     get websFacade() { return websFacade; },
@@ -285,6 +306,7 @@ export function createMainProcessRuntime() {
     get getMainWindow() { return getMainWindow; }
   });
   appShellRuntime = shell.assembleAppShell({
+    localDocuments,
     get startupPlatform() { return startupPlatform; },
     get systemIdentityRuntime() { return systemIdentityRuntime; },
     get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; },
@@ -760,6 +782,9 @@ export function createMainProcessRuntime() {
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
       registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+        beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
+        cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
+        promoteLocalDocumentDraft: input => localDocuments.promoteDraftChat(input),
         resetRuntimeEnv: () => servicesRuntime.runServiceMutation(resetRuntimeEnv),
         get setStartupPhase() { return setStartupPhase; },
         get startupRestoreController() { return startupRestoreController; },
@@ -821,6 +846,13 @@ export function createMainProcessRuntime() {
       get FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT() { return FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT; },
       get handleAppReady() { return handleAppReady; },
       get showMainWindow() { return showMainWindow; },
+      async openLocalDocument(filePath) {
+        try {
+          await localDocuments.open(filePath);
+        } catch (error) {
+          dialog.showErrorBox(t("dialog.localDocument.openFailed"), error instanceof Error ? error.message : String(error));
+        }
+      },
       get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
       get beginInstallerShutdown() { return beginInstallerShutdown; },
       get appShellRuntime() { return appShellRuntime; },
