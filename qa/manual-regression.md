@@ -308,6 +308,8 @@
 
 ## WorkPanel 自由新增 Tab
 
+- macOS 与 Windows 分别在未打开 WorkPanel 的 Chat 和已有 WorkPanel 的 Chat 中让 Agent 打开网页：工具返回 Surface 身份及 loading/ready，不误报“页面已关闭”或标红；重复打开同一 URL 复用 tab。控制器注册前手动关闭页面仍报告关闭，注册超时仍报告未就绪，不自动重开。
+
 - macOS 与 Windows 分别在 Chat A 打开 Overview，立即切到 Chat B，再切回 A；重复隐藏/显示 WorkPanel、Overview 与普通网页 tab 互切，并覆盖 Overview 尚未加载完成的情况。确认 Overview/Debug 失活时 guest 被回收、激活时创建新 guest 并恢复内容，不残留 `Desktop Platform Frame Port is closed`；普通网页 guest 和文档未保存草稿继续保留，后台 Run 不被中断。
 
 - 在 macOS 与 Windows 分别打开一个稳定 Chat，确认 Overview 固定首项，`+` 图标框为 `16×16px`、四边内留 `2px`，按钮区域为 `24×24px`，默认透明，hover、键盘 focus 或菜单展开时显示底色；按钮在 tab 行内垂直居中，紧跟最后一个 tab 并随横向溢出滚动。切换语言后，新增菜单中文显示“网页应用”、英文显示“WebApp”，空列表提示同步使用对应语言。

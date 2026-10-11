@@ -1701,6 +1701,9 @@ export function WorkPanelHost({
     const current = () => stateRef.current.workspaces.find((workspace) => workspace.ownerChatId === ownerChatId) ?? null;
     const execute = (command: WorkPanelCommand) => {
       const result = dispatchCommand(command);
+      // Dispatch has committed; React props may still contain the previous state.
+      // Immediate action checks must read the committed state, not wait for render.
+      stateRef.current = result.nextState;
       const { nextState: _nextState, ...publicResult } = result;
       return publicResult.ok
         ? { ok: true as const, result: publicResult }
