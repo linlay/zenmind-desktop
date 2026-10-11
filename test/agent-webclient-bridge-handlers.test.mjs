@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const {
@@ -23,6 +26,95 @@ const EPOCH_MS = 1_788_000_000_000;
 
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((finish, fail) => { resolve = finish; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+async function createDraftFileFixture(t) {
+  const { LocalDocumentWorkspaceController } = require("../dist-electron/main/modules/work-panel/local-document-workspace.js");
+  const { LOCAL_DOCUMENT_CHANNELS, localDocumentOwnerKey } = require("../dist-electron/shared/local-document.js");
+  const { reduceWorkPanelCommand } = require("../dist-electron/shared/work-panel.js");
+  const { EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE } = require("../dist-electron/shared/work-panel-review.js");
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "deferred-file-chat-frame-")));
+  const nonce = "1783680000000";
+  const main = Object.assign(new EventEmitter(), { id: 7, mainFrame: {}, isDestroyed: () => false, send() {} });
+  const window = { isDestroyed: () => false, webContents: main };
+  let route = `/agent/agent-1?newChat=${nonce}`;
+  main.getURL = () => `http://127.0.0.1:5173/#${route}`;
+  let activeChatId = "";
+  const handlers = new Map();
+  const state = { main, window, nonce, root, rendererReads: [], syncInputs: [], ownerSelections: 0,
+    panel: { workspaces: [], visibleOwnerChatIds: [], review: structuredClone(EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE) } };
+  const matches = (chatId, agentKey, newChat) => {
+    const requested = new URL(route, "http://desktop.local");
+    return agentKey === "agent-1" && (newChat !== undefined
+      ? chatId === "" && requested.searchParams.get("newChat") === newChat
+      : Boolean(chatId) && requested.searchParams.get("chatId") === chatId);
+  };
+  const controller = new LocalDocumentWorkspaceController({
+    platform: "darwin", getMainWindow: () => window, showMainWindow: value => { route = value; },
+    getEditingChat: async () => { state.ownerSelections += 1; return { agentKey: "agent-1", chatId: "", newChat: nonce }; },
+    isEditingChatRequested: matches, waitForEditingChatRequested: async (...args) => matches(...args),
+    isEditingChatActive: (chatId, agentKey, newChat) => matches(chatId, agentKey, newChat) && (newChat !== undefined || activeChatId === chatId),
+  }, {
+    createSession() {
+      return Object.assign(new EventEmitter(), {
+        protocol: { handle() {}, unhandle() {} }, webRequest: { onBeforeRequest() {} },
+        setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setDevicePermissionHandler() {},
+        async clearStorageData() {}, async clearCache() {}, async closeAllConnections() {},
+      });
+    },
+    renderMarkdown: async bytes => `<p>${bytes.toString("utf8")}</p>`, watchFile() {}, unwatchFile() {},
+  });
+  controller.registerIpc({ handle: (channel, handler) => handlers.set(channel, handler), removeHandler: channel => handlers.delete(channel) });
+  const invoke = (channel, request) => Promise.resolve(handlers.get(channel)({ sender: main, senderFrame: main.mainFrame }, request));
+  state.controller = controller;
+  state.snapshot = () => invoke(LOCAL_DOCUMENT_CHANNELS.getState);
+  state.bind = document => invoke(LOCAL_DOCUMENT_CHANNELS.bind, {
+    documentId: document.documentId, ownerChatId: document.ownerChatId, rendererGeneration: "renderer-file-draft-1",
+    ...(document.newChat === undefined ? {} : { newChat: document.newChat }),
+  });
+  state.requestCanonicalRoute = chatId => { route = `/agent/agent-1?chatId=${chatId}`; };
+  state.activateCanonicalGuest = chatId => { activeChatId = chatId; };
+  state.adopt = documents => {
+    const result = reduceWorkPanelCommand(state.panel, {
+      type: "adoptLocalDocumentWorkspace", ownerChatId: documents[0].ownerChatId, draftOwnerKey: state.draftOwnerKey, documents,
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    state.panel = result.nextState;
+  };
+  state.callRendererAction = async request => {
+    state.rendererReads.push(request);
+    const workspace = state.panel.workspaces.find(item => item.ownerChatId === request.source?.chatId);
+    return { requestId: request.requestId, action: request.action, ok: true,
+      result: { ok: true, workspaceId: workspace?.workspaceId || "", ...(workspace ? { state: workspace } : {}) } };
+  };
+  const files = [{ name: "右侧页面.html", content: "<!doctype html><h1>原页面</h1>" }, { name: "右侧文档.md", content: "# 原文档\n" }];
+  state.paths = files.map(file => {
+    const target = path.join(root, file.name);
+    fs.writeFileSync(target, file.content);
+    return target;
+  });
+  t.after(() => { controller.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
+  for (const filePath of state.paths) await controller.open(filePath);
+  const original = await state.snapshot();
+  state.original = original;
+  state.draftOwnerKey = localDocumentOwnerKey(original.documents[0]);
+  for (const document of original.documents) {
+    assert.equal(document.ownerChatId, "");
+    assert.equal(document.newChat, nonce);
+    assert.equal((await state.bind(document)).ok, true);
+    const opened = reduceWorkPanelCommand(state.panel, { type: "openItem", ownerChatId: state.draftOwnerKey,
+      descriptor: { kind: "native", surfaceKey: "local-document", context: document, title: document.fileName } });
+    assert.equal(opened.ok, true, JSON.stringify(opened));
+    state.panel = opened.nextState;
+  }
+  return state;
 }
 
 test("selection reference text is redacted from Desktop realtime traces", () => {
@@ -445,6 +537,32 @@ test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2
   assert.equal(sentFrames(sender)[0].event.type, "run.start");
 });
 
+test("Main Chat sends only the user message and explicitly chosen references", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "file-query");
+  const references = [{ id: "selection", type: "selection", text: "chosen text" }];
+  send(runtime, sender, "file-query", { frame: "request", id: "file-query", type: "/api/query",
+    payload: { requestId: "file-request", agentKey: "agent-1", message: "把右侧标题改成绿色", references } });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 1);
+  assert.equal(runtime.calls.queries[0].payload.message, "把右侧标题改成绿色");
+  assert.deepEqual(runtime.calls.queries[0].payload.references, references);
+});
+
+test("referring to the right-side preview does not automatically add file references", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "plain-query");
+  send(runtime, sender, "plain-query", { frame: "request", id: "plain-query", type: "/api/query",
+    payload: { agentKey: "agent-1", message: "请修改右侧文件" } });
+  await flush();
+  assert.equal(runtime.calls.queries[0].payload.message, "请修改右侧文件");
+  assert.equal(runtime.calls.queries[0].payload.references, undefined);
+});
+
 test("Main Chat query rechecks route ownership after asynchronous availability", async () => {
   const target = mainTarget();
   let waitForState = false, complete;
@@ -683,6 +801,221 @@ test("chat.start promotes the Desktop owner before the guest promotion guard ACK
     sentFrames(sender).some((frame) => frame.event?.type === "chat.start"),
     true,
   );
+});
+
+for (const earlyFallback of [false, true]) {
+test(`${earlyFallback ? "earliest known-Run tool before the file guard ACK" : "first normal file-draft query"} waits for both canonical file bindings before reading WorkPanel state`, async t => {
+  const { createLocalDocumentChatSync } = require("../dist-electron/main/app/local-document-chat-sync.js");
+  const { createDesktopRequests } = require("../dist-electron/main/modules/agent-platform/realtime/desktop-requests.js");
+  const { executeWorkPanelStateAction } = require("../dist-electron/main/modules/desktop-actions/work-panel-state.js");
+  const files = await createDraftFileFixture(t);
+  const chatId = "f650cb6e-fc50-4cd7-817b-8ee7ed79a176";
+  const runId = "698249f1-3161-4a42-8ed4-cb41f8e8a9b";
+  const newChatUrl = `http://127.0.0.1:7079/agent/agent-1?newChat=${files.nonce}`;
+  const target = mainTarget(101, { ownerChatId: undefined, ownerWebContentsId: files.main.id,
+    pageRoute: `/agent/agent-1?newChat=${files.nonce}`, pageRouteIdentity: `/agent/agent-1?newChat=${files.nonce}`, currentUrl: newChatUrl });
+  const targets = new Map([[101, target]]);
+  const ack = deferred();
+  const accepted = deferred();
+  const completed = deferred();
+  let commitTicks = 0;
+  let knownRun;
+  const requests = createDesktopRequests({ desktopBridgeProvider: null, runActionGrants: new Map(),
+    siteControlGrants: {}, clients: {}, inboundDesktopRequests: new Map(), seenInboundDesktopRequestIds: new Set(),
+    getRunChannel: id => knownRun?.runId === id ? knownRun : undefined });
+  let upstream;
+  const synchronize = createLocalDocumentChatSync({
+    getMainContents: () => files.main, resolveSurface: id => targets.get(id) || null,
+    request: (ownerWebContentsId, input) => { files.syncInputs.push({ ownerWebContentsId, input }); return ack.promise; },
+    begin: input => files.controller.beginDraftChatPromotion(input),
+    cancel: input => { files.controller.cancelDraftChatPromotion(input); },
+    promote: input => { const promoted = files.controller.promoteDraftChat(input); assert.equal(promoted, true); return promoted; },
+    delay: async ms => {
+      assert.equal(ms, 50);
+      commitTicks += 1;
+      assert.equal(sentFrames(sender).some(frame => frame.event?.type === "chat.start"), false);
+      if (commitTicks === 1) files.requestCanonicalRoute(chatId);
+      if (commitTicks === 2) {
+        target.ownerChatId = chatId;
+        target.pageRoute = target.pageRouteIdentity = `/agent/agent-1?chatId=${chatId}`;
+        emitRegisteredTarget(runtime, target);
+      }
+    },
+  });
+  const runtime = createRuntime(targets, {
+    syncCanonicalChat: synchronize,
+    realtimeBroker: {
+      query: input => { runtime.calls.queries.push(input); upstream = input; return { accepted: accepted.promise, completed: completed.promise }; },
+      registerRunActionGrant: input => { runtime.calls.grants.push(input); requests.registerRunActionGrant(input); },
+    },
+  });
+  const sender = createSender(101, newChatUrl);
+  await openSession(runtime, sender, "main-local-file-draft");
+  assert.equal(runtime.calls.queries.length, 0, "previewing files must not submit a query or prepare a server Chat");
+  assert.equal(runtime.calls.forwarded.length, 0);
+  assert.equal(files.ownerSelections, 1);
+  const before = structuredClone(files.panel.workspaces[0]);
+  send(runtime, sender, "main-local-file-draft", { frame: "request", id: "query-file-first-message", type: "/api/query",
+    payload: { requestId: "request-file-first-message", agentKey: "agent-1", message: "请修改右侧文件的标题" } });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 1);
+  assert.deepEqual(runtime.calls.queries[0].payload, { requestId: "request-file-first-message", agentKey: "agent-1", message: "请修改右侧文件的标题" });
+  assert.equal(runtime.calls.forwarded.length, 0, "the normal query must not call a separate Chat preparation endpoint");
+  assert.deepEqual(await files.snapshot(), files.original);
+
+  const chatEvent = upstream.onEvent({ type: "chat.start", timestamp: EPOCH_MS, seq: 1, chatId, agentKey: "agent-1" }, "test.file.chat-start");
+  let runEvent;
+  if (earlyFallback) {
+    knownRun = { runId, chatId, terminal: false, owner: { kind: "agent", agentKey: "agent-1" } };
+    accepted.resolve({ runId, chatId, owner: knownRun.owner });
+  }
+  else runEvent = upstream.onEvent({ type: "run.start", timestamp: EPOCH_MS, seq: 2, chatId, runId, agentKey: "agent-1" }, "test.file.run-start");
+  void chatEvent.catch(() => undefined);
+  void runEvent?.catch(() => undefined);
+  await flush();
+  assert.equal(files.syncInputs.length, 1);
+  assert.deepEqual({ ...files.syncInputs[0].input, sourceId: undefined }, {
+    sourceId: undefined, surfaceId: "main-chat", registrationId: target.registrationId,
+    guestWebContentsId: 101, agentKey: "agent-1", newChat: files.nonce, chatId,
+  });
+  assert.equal(files.syncInputs[0].ownerWebContentsId, files.main.id);
+  assert.equal(runtime.calls.grants.length, earlyFallback ? 0 : 1);
+  assert.equal(sentFrames(sender).some(frame => frame.event?.type === "chat.start"), false);
+
+  const toolSource = { chatId, runId, agentKey: "agent-1" };
+  const presentationCalls = [];
+  let toolCompleted = false;
+  const tool = requests.awaitRunActionReadiness("desktop.workpanel.getState", toolSource, new AbortController().signal)
+    .then(() => executeWorkPanelStateAction({
+      getMainWindow: () => files.window, callRendererAction: files.callRendererAction,
+      waitForWorkPanelFilePresentation: input => { presentationCalls.push(input); return files.controller.waitForChatPresentation(input); },
+      resolveWorkPanelActiveFile: (input, isSelectionCurrent) => files.controller.resolveActiveFile(input, isSelectionCurrent),
+    }, { requestId: "first-workpanel-state", action: "desktop.workpanel.getState", source: toolSource }, { kind: "agentPlatform" }))
+    .finally(() => { toolCompleted = true; });
+  await flush();
+  assert.equal(toolCompleted, false);
+  assert.equal(files.rendererReads.length, 0);
+  assert.deepEqual(presentationCalls, earlyFallback ? [{ chatId, agentKey: "agent-1" }] : []);
+  assert.ok((await files.snapshot()).documents.every(document => document.ownerChatId === "" && document.newChat === files.nonce),
+    "the pending canonical association must not expose a fake or premature owner in preview metadata");
+  // The actual renderer ACK only installs the guard. Host and Registry commits
+  // happen in independent later ticks, while the guest still has its draft URL.
+  ack.resolve({ requestId: "canonical-file-ack", ok: true });
+  if (earlyFallback) {
+    runEvent = upstream.onEvent({ type: "run.start", timestamp: EPOCH_MS, seq: 2, chatId, runId, agentKey: "agent-1" }, "test.file.run-start");
+    void runEvent.catch(() => undefined);
+  } else accepted.resolve({ runId, chatId, owner: { kind: "agent", agentKey: "agent-1" } });
+  await Promise.all([chatEvent, runEvent]);
+  await flush();
+  assert.equal(commitTicks, 2);
+  assert.equal(sentFrames(sender).some(frame => frame.event?.type === "chat.start"), true,
+    "chat.start delivery must not depend on the guest consuming that same event and binding its files");
+  assert.deepEqual(presentationCalls, [{ chatId, agentKey: "agent-1" }]);
+  assert.equal(toolCompleted, false);
+  assert.equal(files.rendererReads.length, 0, "the private tool must not observe a transient empty canonical workspace");
+  const promoted = await files.snapshot();
+  assert.deepEqual(promoted.documents.map(document => ({ ...document, ownerChatId: "", newChat: files.nonce })), files.original.documents);
+  assert.ok(promoted.documents.every(document => document.ownerChatId === chatId && document.newChat === undefined));
+  assert.equal(promoted.activeDocumentId, files.original.activeDocumentId);
+
+  // The guest can now consume chat.start. AppShell adopts the existing items,
+  // then acknowledges each canonical binding without creating another preview.
+  sender.setURL(`http://127.0.0.1:7079/agent/agent-1?chatId=${chatId}`);
+  target.currentUrl = sender.getURL();
+  files.activateCanonicalGuest(chatId);
+  files.adopt(promoted.documents);
+  assert.equal((await files.bind(promoted.documents[0])).ok, true);
+  await flush();
+  assert.equal(toolCompleted, false);
+  assert.equal(files.rendererReads.length, 0);
+  assert.equal((await files.bind(promoted.documents[1])).ok, true);
+  const response = await tool;
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(response.result.activeFile.path, files.paths[1]);
+  assert.equal(response.result.activeFile.kind, "markdown");
+  const workspace = response.result.state;
+  assert.equal(workspace.ownerChatId, chatId);
+  assert.equal(workspace.workspaceId, before.workspaceId);
+  assert.equal(workspace.activeItemId, before.activeItemId);
+  assert.deepEqual(workspace.items.map(item => item.itemId), before.items.map(item => item.itemId));
+  assert.deepEqual(workspace.items.map(item => item.descriptor.context.documentId), before.items.map(item => item.descriptor.context.documentId));
+  assert.equal(workspace.items.length, 2);
+  for (const request of files.rendererReads) assert.deepEqual(request.source, toolSource);
+});
+}
+
+test("a failed guard ACK cancels an earliest pending file tool without reading a transient canonical workspace", async t => {
+  const { createLocalDocumentChatSync } = require("../dist-electron/main/app/local-document-chat-sync.js");
+  const { executeWorkPanelStateAction } = require("../dist-electron/main/modules/desktop-actions/work-panel-state.js");
+  const files = await createDraftFileFixture(t);
+  const chatId = "f650cb6e-fc50-4cd7-817b-8ee7ed79a176";
+  const ack = deferred();
+  const target = mainTarget(101, { ownerChatId: undefined, ownerWebContentsId: files.main.id,
+    pageRoute: `/agent/agent-1?newChat=${files.nonce}`, pageRouteIdentity: `/agent/agent-1?newChat=${files.nonce}`,
+    currentUrl: `http://127.0.0.1:7079/agent/agent-1?newChat=${files.nonce}` });
+  const synchronize = createLocalDocumentChatSync({
+    getMainContents: () => files.main, resolveSurface: () => target,
+    begin: input => files.controller.beginDraftChatPromotion(input),
+    cancel: input => { files.controller.cancelDraftChatPromotion(input); },
+    request: () => ack.promise,
+    promote: input => files.controller.promoteDraftChat(input),
+    delay: async () => assert.fail("a failed guard ACK cannot enter canonical commit waiting"),
+  });
+  const pendingSync = synchronize(files.main.id, {
+    sourceId: "source-first-query", surfaceId: "main-chat", registrationId: target.registrationId,
+    guestWebContentsId: 101, agentKey: "agent-1", newChat: files.nonce, chatId,
+  });
+  let toolCompleted = false;
+  const tool = executeWorkPanelStateAction({
+    getMainWindow: () => files.window, callRendererAction: files.callRendererAction,
+    waitForWorkPanelFilePresentation: input => files.controller.waitForChatPresentation(input),
+    resolveWorkPanelActiveFile: (input, current) => files.controller.resolveActiveFile(input, current),
+  }, { action: "desktop.workpanel.getState", source: { chatId, agentKey: "agent-1", runId: "run-first-query" } }, { kind: "agentPlatform" })
+    .finally(() => { toolCompleted = true; });
+  await flush();
+  assert.equal(toolCompleted, false);
+  assert.deepEqual(files.rendererReads, []);
+  ack.resolve({ requestId: "guard-rejected", ok: false, code: "route_mismatch", message: "Route changed" });
+  assert.equal((await pendingSync).ok, false);
+  const response = await tool;
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "target_unavailable");
+  assert.deepEqual(files.rendererReads, []);
+  assert.deepEqual(await files.snapshot(), files.original);
+  assert.equal(files.panel.workspaces[0].items.length, 2);
+});
+
+test("a first file-draft query that fails before chat.start leaves both previews local without a Chat preparation request", async t => {
+  const files = await createDraftFileFixture(t);
+  const newChatUrl = `http://127.0.0.1:7079/agent/agent-1?newChat=${files.nonce}`;
+  const target = mainTarget(101, { ownerChatId: undefined, ownerWebContentsId: files.main.id,
+    pageRoute: `/agent/agent-1?newChat=${files.nonce}`, pageRouteIdentity: `/agent/agent-1?newChat=${files.nonce}`, currentUrl: newChatUrl });
+  const accepted = deferred();
+  const completed = deferred();
+  const synchronizations = [];
+  const runtime = createRuntime(new Map([[101, target]]), {
+    syncCanonicalChat: (...args) => { synchronizations.push(args); throw new Error("a rejected query has no canonical Chat to promote"); },
+    realtimeBroker: { query: input => { runtime.calls.queries.push(input); return { accepted: accepted.promise, completed: completed.promise }; } },
+  });
+  const sender = createSender(101, newChatUrl);
+  await openSession(runtime, sender, "main-file-draft-failed-query");
+  const before = structuredClone(files.panel);
+  send(runtime, sender, "main-file-draft-failed-query", { frame: "request", id: "query-file-unavailable-model", type: "/api/query",
+    payload: { requestId: "request-file-unavailable-model", agentKey: "agent-1", message: "请修改右侧文件" } });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 1);
+  assert.equal(Object.hasOwn(runtime.calls.queries[0].payload, "chatId"), false);
+  assert.equal(Object.hasOwn(runtime.calls.queries[0].payload, "references"), false);
+  accepted.reject(new Error("model unavailable before Chat creation"));
+  completed.resolve({ reason: "failed", lastSeq: 0 });
+  await flush();
+  assert.deepEqual(synchronizations, []);
+  assert.deepEqual(runtime.calls.forwarded, []);
+  assert.deepEqual(runtime.calls.grants, []);
+  assert.equal(sentFrames(sender).some(frame => frame.event?.type === "chat.start"), false);
+  assert.deepEqual(await files.snapshot(), files.original);
+  assert.deepEqual(files.panel, before);
+  assert.equal(files.panel.workspaces[0].items.length, 2);
 });
 
 test("new Chat query waits for a stale canonical owner to become the new-chat source", async () => {

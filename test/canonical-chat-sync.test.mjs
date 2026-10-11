@@ -342,3 +342,71 @@ test("canonical Chat IPC accepts an ACK only from the owning renderer", async ()
     ok: true,
   });
 });
+
+test("deferred file Chat synchronization preserves the captured nonce and generation without accepting another renderer ACK", async () => {
+  const listeners = new Map();
+  const sent = [];
+  const renderer = { id: 7, isDestroyed: () => false, send: (channel, payload) => sent.push({ channel, payload }) };
+  const coordinator = registerCanonicalChatSyncIpc({ on: (channel, listener) => listeners.set(channel, listener) }, {
+    resolveRenderer: id => id === renderer.id ? renderer : null, timeoutMs: 1_000,
+  });
+  const captured = {
+    sourceId: "frame:query-first-message", surfaceId: "main-chat", registrationId: "main-draft-generation-1",
+    guestWebContentsId: 41, agentKey: "cutej", newChat: "1783680000000", chatId: "chat-from-platform",
+  };
+  let completed = false;
+  const pending = coordinator.request(renderer.id, captured).then(result => { completed = true; return result; });
+  const payload = sent[0].payload;
+  assert.deepEqual({ ...payload, requestId: undefined }, { ...captured, requestId: undefined });
+  assert.equal(sent[0].channel, CANONICAL_CHAT_SYNC_REQUEST_CHANNEL);
+  listeners.get(CANONICAL_CHAT_SYNC_RESULT_CHANNEL)({ sender: { id: 8 } }, { requestId: payload.requestId, ok: true });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(completed, false, "a different renderer must not release the source Chat's promotion barrier");
+  listeners.get(CANONICAL_CHAT_SYNC_RESULT_CHANNEL)({ sender: renderer }, { requestId: payload.requestId, ok: true });
+  assert.deepEqual(await pending, { requestId: payload.requestId, ok: true });
+});
+
+test("a late canonical ACK for one file draft cannot release a different draft's synchronization", async () => {
+  const listeners = new Map();
+  const sent = [];
+  const renderer = { id: 7, isDestroyed: () => false, send: (_channel, payload) => sent.push(payload) };
+  const coordinator = registerCanonicalChatSyncIpc({ on: (channel, listener) => listeners.set(channel, listener) }, {
+    resolveRenderer: id => id === renderer.id ? renderer : null, timeoutMs: 1_000,
+  });
+  const input = {
+    sourceId: "source-a", surfaceId: "main-chat", registrationId: "main-generation-a",
+    guestWebContentsId: 41, agentKey: "cutej", newChat: "1783680000000", chatId: "chat-platform-a",
+  };
+  const first = coordinator.request(renderer.id, input);
+  let secondCompleted = false;
+  const second = coordinator.request(renderer.id, {
+    ...input, sourceId: "source-b", registrationId: "main-generation-b",
+    newChat: "1783680000001", chatId: "chat-platform-b",
+  }).then(result => { secondCompleted = true; return result; });
+  assert.notEqual(sent[0].requestId, sent[1].requestId);
+  listeners.get(CANONICAL_CHAT_SYNC_RESULT_CHANNEL)({ sender: renderer }, { requestId: sent[0].requestId, ok: true });
+  assert.deepEqual(await first, { requestId: sent[0].requestId, ok: true });
+  assert.equal(secondCompleted, false);
+  // Duplicating a consumed ACK remains harmless while the second request waits.
+  listeners.get(CANONICAL_CHAT_SYNC_RESULT_CHANNEL)({ sender: renderer }, { requestId: sent[0].requestId, ok: true });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(secondCompleted, false);
+  listeners.get(CANONICAL_CHAT_SYNC_RESULT_CHANNEL)({ sender: renderer }, { requestId: sent[1].requestId, ok: true });
+  assert.deepEqual(await second, { requestId: sent[1].requestId, ok: true });
+});
+
+test("failed deferred file Chat guard acknowledgment remains a failure for the matching canonical source", async () => {
+  const listeners = new Map();
+  const sent = [];
+  const renderer = { id: 7, isDestroyed: () => false, send: (_channel, payload) => sent.push(payload) };
+  const coordinator = registerCanonicalChatSyncIpc({ on: (channel, listener) => listeners.set(channel, listener) }, {
+    resolveRenderer: () => renderer, timeoutMs: 1_000,
+  });
+  const pending = coordinator.request(renderer.id, {
+    sourceId: "source-stale-draft", surfaceId: "main-chat", registrationId: "main-generation-stale",
+    guestWebContentsId: 41, agentKey: "cutej", newChat: "1783680000000", chatId: "chat-from-platform",
+  });
+  const failure = { requestId: sent[0].requestId, ok: false, code: "stale_source", message: "The original file draft is no longer active" };
+  listeners.get(CANONICAL_CHAT_SYNC_RESULT_CHANNEL)({ sender: renderer }, failure);
+  assert.deepEqual(await pending, failure);
+});

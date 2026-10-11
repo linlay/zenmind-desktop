@@ -48,6 +48,9 @@ import {
 import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { registerMainIpcHandlers } from "../module-registry";
 export interface ReadyIpcDependencies {
+  beginLocalDocumentDraftPromotion: import("../ipc-registration-contracts").MainIpcRegistrationOptions["beginLocalDocumentDraftPromotion"];
+  cancelLocalDocumentDraftPromotion: import("../ipc-registration-contracts").MainIpcRegistrationOptions["cancelLocalDocumentDraftPromotion"];
+  promoteLocalDocumentDraft: import("../ipc-registration-contracts").MainIpcRegistrationOptions["promoteLocalDocumentDraft"];
   resetRuntimeEnv: import("../ipc-registration-contracts").MainIpcRegistrationOptions["resetRuntimeEnv"];
   appearanceRuntime: AppearanceRuntime;
   readonly setStartupPhase: (phase: StartupPhase) => void;
@@ -102,6 +105,9 @@ export interface ReadyIpcDependencies {
 }
 export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
   registerMainIpcHandlers({
+    beginLocalDocumentDraftPromotion: dependencies.beginLocalDocumentDraftPromotion,
+    cancelLocalDocumentDraftPromotion: dependencies.cancelLocalDocumentDraftPromotion,
+    promoteLocalDocumentDraft: dependencies.promoteLocalDocumentDraft,
     resetRuntimeEnv: dependencies.resetRuntimeEnv,
     appearanceRuntime: dependencies.appearanceRuntime,
     app,

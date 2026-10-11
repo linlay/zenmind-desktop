@@ -2,7 +2,8 @@
  * Desktop-owned Native WorkPanel surface registry.
  *
  * Public bridges cannot create these descriptors. Main turns a validated,
- * single-use claim into a host descriptor inside the trusted AppShell.
+ * single-use claim or Chat-bound local document into a host descriptor inside
+ * the trusted AppShell.
  */
 export type WorkPanelNativeSurfaceRegistration = {
   surfaceKey: string;
@@ -14,6 +15,7 @@ readonly WorkPanelNativeSurfaceRegistration[] = Object.freeze([
   { surfaceKey: "resource-image", closableByDefault: true },
   { surfaceKey: "document-image", closableByDefault: true },
   { surfaceKey: "document-html", closableByDefault: true },
+  { surfaceKey: "local-document", closableByDefault: true },
 ]);
 
 export function isRegisteredWorkPanelNativeSurface(surfaceKey: unknown) {

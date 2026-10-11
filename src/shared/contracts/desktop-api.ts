@@ -1,4 +1,5 @@
 import type { WebsiteBridgeResult } from "../website-bridge";
+import type { LocalDocumentsApi } from "../local-document";
 import type { BrowserWebclientState, BrowserWebclientResult } from "./services";
 import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
 import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
@@ -895,6 +896,7 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  localDocuments: LocalDocumentsApi;
   artifacts: {
     act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;
     list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;

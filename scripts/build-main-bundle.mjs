@@ -47,12 +47,14 @@ export async function buildMainBundle(rootDir = projectRoot) {
       "main/index": path.join(rootSrc, "main", "index.ts"),
       "main/attachment-worker": path.join(rootSrc, "main", "modules", "assistant", "attachments", "attachment-worker.ts"),
       "main/conversation-html-worker": path.join(rootSrc, "main", "modules", "conversation-share", "html-worker.ts"),
+      "main/local-document-worker": path.join(rootSrc, "main", "modules", "work-panel", "local-document-worker.ts"),
       "main/webapp-tooling-worker": path.join(rootSrc, "main", "modules", "webs", "webapps", "tooling", "worker.ts"),
       "preload/webapp-auth": path.join(rootSrc, "preload", "webapp-auth.ts"),
       "preload/plugin-window": path.join(rootSrc, "preload", "plugin-window.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
       "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts"),
       "preload/document-html-review": path.join(rootSrc, "preload", "document-html-review.ts"),
+      "preload/local-document-network": path.join(rootSrc, "preload", "local-document-network.ts"),
       "preload/work-panel-preview": path.join(rootSrc, "preload", "work-panel-preview.ts")
     },
     outdir,
@@ -80,7 +82,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
   // TypeScript output, so both runtimes must consume the self-contained bundle.
   const developmentPreloadDir = path.join(rootDir, "dist-electron", "preload");
   fs.mkdirSync(developmentPreloadDir, { recursive: true });
-  for (const name of ["webapp-auth.js", "document-html-review.js", "work-panel-preview.js", "plugin-window.js"]) {
+  for (const name of ["webapp-auth.js", "document-html-review.js", "work-panel-preview.js", "plugin-window.js", "local-document-network.js"]) {
     fs.copyFileSync(path.join(outdir, "preload", name), path.join(developmentPreloadDir, name));
   }
 
@@ -91,6 +93,10 @@ export async function buildMainBundle(rootDir = projectRoot) {
   const webappToolingWorker = path.join(outdir, "main", "webapp-tooling-worker.js");
   if (!fs.statSync(webappToolingWorker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error("WebApp Tooling Worker bundle is missing");
+  }
+  const localDocumentWorker = path.join(outdir, "main", "local-document-worker.js");
+  if (!fs.statSync(localDocumentWorker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error("local document Worker bundle is missing");
   }
   // Dev Main is tsc output; give it the same application-relative Worker
   // entry as the packaged app. Never reuse another brand's staged app.

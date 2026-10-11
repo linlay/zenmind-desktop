@@ -7,6 +7,8 @@ import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
 import { ConnectorAuthBrowser } from "../connectors/ConnectorAuthBrowser";
 import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
+import { useLocalDocumentWorkspace } from "../work-panel/useLocalDocumentWorkspace";
+import { localDocumentWorkPanelOwnerForRoute, useLocalDocumentsWorkPanel } from "../work-panel/useLocalDocumentsWorkPanel";
 import { useAppearance } from "../appearance/AppearanceProvider";
 import { DesktopBackground } from "../appearance/DesktopBackground";
 import { isThemePreference, type ThemePreference } from "../appearance/model";
@@ -181,7 +183,9 @@ import {
 } from "./project/ProjectFloatingWebviews";
 import {
   EMPTY_WORK_PANEL_STATE,
+  isLocalDocumentDraftOwnerKey,
   reduceWorkPanelCommand,
+  workPanelWorkspaceId,
   type WorkPanelCommand,
   type WorkPanelState,
 } from "../../shared/work-panel";
@@ -751,6 +755,7 @@ export function AppShell() {
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const localDocumentState = useLocalDocumentWorkspace();
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelDialogRestoresRef = useRef(new Set<string>());
   const [webappPresentationOwners, setWebappPresentationOwners] =
@@ -860,7 +865,7 @@ export function AppShell() {
     : null;
   const currentRoute = `${location.pathname}${location.search}`;
   const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
-  const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId
+  const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId && !activeChatRouteInfo.chatId.startsWith("file-draft:")
     ? activeChatRouteInfo.chatId
     : null;
   const activeChatWorkPanelChatId =
@@ -870,9 +875,12 @@ export function AppShell() {
     committedMainChatSnapshot.identity.agentKey === activeChatRouteInfo.agentKey.trim()
       ? committedMainChatSnapshot.identity.chatId
       : null;
+  // A local file draft can be visible without claiming a Platform Chat ID.
+  const activeChatWorkPanelOwnerKey = activeChatWorkPanelChatId ||
+    localDocumentWorkPanelOwnerForRoute(workPanelState, currentRoute);
   const activeChatWorkPanelVisible = Boolean(
-    activeChatWorkPanelChatId &&
-    workPanelState.visibleOwnerChatIds.includes(activeChatWorkPanelChatId)
+    activeChatWorkPanelOwnerKey &&
+    workPanelState.visibleOwnerChatIds.includes(activeChatWorkPanelOwnerKey)
   );
   const showMainChatWorkPanelToggle = activeEmbeddedAgentWebclientRoute?.kind === "chat";
   const workPanelMaxWidth = resolveWorkPanelMaxWidth(appContentWidth || undefined);
@@ -2929,15 +2937,23 @@ export function AppShell() {
   useEffect(() => {
     const ownerChatId = workPanelFullscreenOwnerChatId;
     if (!ownerChatId) return;
+    const adopted = isLocalDocumentDraftOwnerKey(ownerChatId)
+      ? workPanelState.workspaces.find(workspace => workspace.workspaceId === workPanelWorkspaceId(ownerChatId))
+      : null;
+    if (adopted && adopted.ownerChatId !== ownerChatId && activeChatWorkPanelOwnerKey === adopted.ownerChatId) {
+      workPanelFullscreenOwnerChatIdRef.current = adopted.ownerChatId;
+      setWorkPanelFullscreenOwnerChatId(adopted.ownerChatId);
+      return;
+    }
     const workspaceStillVisible =
-      activeChatWorkPanelChatId === ownerChatId &&
+      activeChatWorkPanelOwnerKey === ownerChatId &&
       workPanelState.visibleOwnerChatIds.includes(ownerChatId) &&
       workPanelState.workspaces.some((workspace) => workspace.ownerChatId === ownerChatId);
     if (!workspaceStillVisible) {
       forceExitWorkPanelFullscreen();
     }
   }, [
-    activeChatWorkPanelChatId,
+    activeChatWorkPanelOwnerKey,
     forceExitWorkPanelFullscreen,
     workPanelFullscreenOwnerChatId,
     workPanelState.visibleOwnerChatIds,
@@ -4092,8 +4108,8 @@ export function AppShell() {
     const isOverviewCommand = command.type === "openItem" &&
       command.descriptor.kind === "webclient" &&
       command.descriptor.module === "overview";
-    const shouldEnsureOverview = command.type === "showWorkspace" ||
-      (command.type === "openItem" && !isOverviewCommand);
+    const shouldEnsureOverview = !isLocalDocumentDraftOwnerKey(command.ownerChatId) &&
+      (command.type === "showWorkspace" || (command.type === "openItem" && !isOverviewCommand));
     const currentWorkspace = currentState.workspaces.find(
       (workspace) => workspace.ownerChatId === command.ownerChatId,
     );
@@ -4195,6 +4211,27 @@ export function AppShell() {
     }
     return result;
   }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, t]);
+
+  useLocalDocumentsWorkPanel({
+    state: localDocumentState,
+    currentRoute,
+    committed: committedMainChatSnapshot,
+    committedRoute: registeredMainChatRouteRef.current,
+    workPanelStateRef,
+    commitState: commitWorkPanelState,
+    dispatchCommand: dispatchWorkPanelCommand,
+    onError: () => setWorkPanelOpenError(t("localDocuments.actionFailed")),
+  });
+
+  useEffect(() => {
+    if (!activeChatWorkPanelChatId || !activeChatWorkPanelVisible) return;
+    const workspace = workPanelStateRef.current.workspaces.find(item => item.ownerChatId === activeChatWorkPanelChatId);
+    if (workspace?.items.some(item => item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document") &&
+        !workspace.items.some(item => item.descriptor.kind === "webclient" && item.descriptor.module === "overview")) {
+      // Canonical registration restores normal actions while preserving the file tab.
+      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: activeChatWorkPanelChatId });
+    }
+  }, [activeChatWorkPanelChatId, activeChatWorkPanelVisible, workPanelState.workspaces, dispatchWorkPanelCommand]);
 
   const ensureChatWorkPanelWorkspace = useCallback((chatId: string, agentKey: string) => {
     const normalizedAgentKey = agentKey.trim();
@@ -4421,7 +4458,12 @@ export function AppShell() {
 
   const toggleMainChatWorkPanel = useCallback(() => {
     const chatId = desiredChatRouteChatId;
-    if (!chatId) return;
+    if (!chatId) {
+      if (activeChatWorkPanelOwnerKey) dispatchWorkPanelCommand({
+        type: activeChatWorkPanelVisible ? "hideWorkspace" : "showWorkspace", ownerChatId: activeChatWorkPanelOwnerKey,
+      });
+      return;
+    }
     const currentState = workPanelStateRef.current;
     if (activeChatWorkPanelVisible) {
       dispatchWorkPanelCommand({ type: "hideWorkspace", ownerChatId: chatId });
@@ -4435,7 +4477,7 @@ export function AppShell() {
     const agentKey = activeChatRouteInfo.agentKey.trim();
     if (!agentKey) return;
     requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
-  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelVisible, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
+  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelOwnerKey, activeChatWorkPanelVisible, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
 
   const handleMainChatWorkspaceArrowKey = useCallback((direction: "left" | "right") => {
     if (direction === "left") {
@@ -4625,7 +4667,7 @@ export function AppShell() {
           ? "sidebar.chat.workPanel.close"
           : "sidebar.chat.workPanel.open")}
         aria-pressed={activeChatWorkPanelVisible}
-        disabled={!desiredChatRouteChatId}
+        disabled={!desiredChatRouteChatId && !activeChatWorkPanelOwnerKey}
         title={t(activeChatWorkPanelVisible
           ? "sidebar.chat.workPanel.close"
           : "sidebar.chat.workPanel.open")}
@@ -5146,6 +5188,7 @@ export function AppShell() {
         ) : null}
         <WorkPanelHost
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
+          activeOwnerKey={activeChatWorkPanelVisible ? activeChatWorkPanelOwnerKey : null}
           state={workPanelState}
           dispatchCommand={dispatchWorkPanelCommand}
           fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}

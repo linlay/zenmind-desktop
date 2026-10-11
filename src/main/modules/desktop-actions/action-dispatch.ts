@@ -20,6 +20,7 @@ import { captureWebappContext } from "./webapp-platform-client";
 import { startWebappAssistant } from "./webapp-assistant";
 import { rememberWebappChat } from "./webapp-connector";
 import { executeOpenLocalFileAction } from "./local-file-actions";
+import { executeWorkPanelStateAction } from "./work-panel-state";
 import { callRendererAction } from "./renderer-action-results";
 import { executeDesktopWebExportArtifact } from "./web-export-actions";
 import { getDesktopDeviceInfo } from "../identity";
@@ -301,6 +302,8 @@ export async function executeAction(
         chatId: completion.chatId
       });
     }
+    case "desktop.workpanel.getState":
+      return executeWorkPanelStateAction(options, request, invocation);
     case "desktop.theme.get":
     case "desktop.theme.set":
     case "desktop.locale.get":
@@ -320,7 +323,6 @@ export async function executeAction(
     case "desktop.web.switchTab":
     case "desktop.web.interactElement":
     case "desktop.web.executeScript":
-    case "desktop.workpanel.getState":
     case "desktop.workpanel.openTab":
     case "desktop.workpanel.openWeb":
     case "desktop.workpanel.openLocalFile":

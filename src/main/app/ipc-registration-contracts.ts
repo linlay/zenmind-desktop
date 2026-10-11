@@ -13,6 +13,9 @@ import { type EnterpriseChatRuntime } from "../modules/enterprise-chat";
 export const PLATFORM_DOCUMENT_REVISION_HEADER = "X-Document-Revision";
 
 export type MainIpcRegistrationOptions = {
+  beginLocalDocumentDraftPromotion(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): boolean;
+  cancelLocalDocumentDraftPromotion(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): void;
+  promoteLocalDocumentDraft(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): boolean;
   resetRuntimeEnv: () => Promise<import("../infrastructure/filesystem/runtime-env-contracts").RuntimeEnvResetResult & { restartScheduled: true }>;
   appearanceRuntime: AppearanceRuntime;
   app: App;
