@@ -1,7 +1,7 @@
 import type { MainRendererDevToolsContentsLike, AttachedWebviewLike, AttachedWebviewOptions } from "./window-model";
 import { isAllowedHelpNavigationUrl, isSafeHelpExternalUrl } from "../../../shared/help";
 import { resolveWorkPanelBrowserShortcut, WORK_PANEL_BROWSER_SHORTCUT_CHANNEL } from "../../../shared/work-panel-browser";
-import { resolveWebviewEditShortcut, runWebviewEditCommand, isWorkPanelFullscreenExitShortcut } from "./webview-shortcuts";
+import { resolveWebviewEditShortcut, runWebviewEditCommand, isWorkPanelFullscreenExitShortcut, resolveDesktopHistoryNavigationShortcut } from "./webview-shortcuts";
 import { toggleMainRendererDevTools } from "./main-window-options";
 import { isBlobSchemeUrl, normalizeWebviewBlobPopupForSource } from "../../../shared/webview-popup";
 import { normalizeChatWorkPanelUrl } from "../../../shared/chat-work-panel";
@@ -48,6 +48,15 @@ export function configureAttachedWebview<
   };
 
   contents.on("before-input-event", (event, input) => {
+    const historyDirection = resolveDesktopHistoryNavigationShortcut(options.platform, input);
+    if (historyDirection) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!input.isAutoRepeat && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("app.historyNavigation", historyDirection);
+      }
+      return;
+    }
     const globalSearchCommandShortcut = options.isGlobalSearchOverlayVisible?.()
       ? options.resolveGlobalSearchCommandShortcut?.(options.platform, input) ?? null
       : null;

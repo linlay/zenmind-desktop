@@ -2,7 +2,7 @@ import type { MainWindowLifecycleEventsLike } from "./window-model";
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
 import type { DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
 import { toggleMainRendererDevTools } from "./main-window-options";
-import { isWorkPanelFullscreenExitShortcut } from "./webview-shortcuts";
+import { isWorkPanelFullscreenExitShortcut, resolveDesktopHistoryNavigationShortcut } from "./webview-shortcuts";
 
 export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLifecycleEventsLike>(
   targetWindow: TWindow,
@@ -67,7 +67,26 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
   targetWindow.on("maximize", sendWindowState);
   targetWindow.on("unmaximize", sendWindowState);
 
+  if (options.platform === "darwin") {
+    // Native three-finger page swipes are window events, including over embedded guests.
+    targetWindow.on("swipe", (_event, direction) => {
+      if (targetWindow.isDestroyed()) return;
+      if (direction === "right" || direction === "left") {
+        targetWindow.webContents.send("app.historyNavigation", direction === "right" ? "back" : "forward");
+      }
+    });
+  }
+
   targetWindow.webContents.on("before-input-event", (event, input) => {
+    const historyDirection = resolveDesktopHistoryNavigationShortcut(options.platform, input);
+    if (historyDirection) {
+      event.preventDefault();
+      // Consume repeated keys too, so Chromium cannot navigate its own history.
+      if (!input.isAutoRepeat && !targetWindow.isDestroyed()) {
+        targetWindow.webContents.send("app.historyNavigation", historyDirection);
+      }
+      return;
+    }
     if (options.isWorkPanelFullscreenActive?.() && isWorkPanelFullscreenExitShortcut(options.platform, input)) {
       event.preventDefault();
       targetWindow.webContents.send("app.workPanelFullscreenExitShortcut", { guestId: null });

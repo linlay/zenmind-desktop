@@ -30,6 +30,7 @@ import type {
   DesktopActionConfirmationResponse,
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
+  DesktopHistoryNavigationListener,
   DesktopGlobalSearchShortcutListener,
   DesktopCloseShortcutListener,
   ShutdownProgressListener,
@@ -929,6 +930,13 @@ const api: DesktopApi = {
     return () => {
       ipcRenderer.off("services.startupRestoreState", handleStartupRestoreState);
     };
+  },
+  onHistoryNavigation: (listener: DesktopHistoryNavigationListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, direction: unknown) => {
+      if (direction === "back" || direction === "forward") listener(direction);
+    };
+    ipcRenderer.on("app.historyNavigation", handler);
+    return () => { ipcRenderer.off("app.historyNavigation", handler); };
   },
   onOpenGlobalSearch: (listener: () => void) => {
     const handleOpenGlobalSearch = () => {

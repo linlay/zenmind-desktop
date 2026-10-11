@@ -607,6 +607,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
+  const desktopHistoryNavigationPendingRef = useRef(false);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const workPanelResizeStateRef = useRef<WorkPanelResizeDragState | null>(null);
   const workPanelResizeCleanupRef = useRef<(() => void) | null>(null);
@@ -959,6 +960,7 @@ export function AppShell() {
     })
   );
   useLayoutEffect(() => {
+    desktopHistoryNavigationPendingRef.current = false;
     if (navigationType === "POP") {
       const recordedEntry = findDesktopNavigationEntry(desktopNavigationTimeline, location.key);
       if (recordedEntry && recordedEntry.sidebarMode !== sidebarMode) {
@@ -3387,15 +3389,18 @@ export function AppShell() {
 
   function navigateWithSidebarHistory(direction: "back" | "forward") {
     const step = direction === "back" ? desktopNavigationBackStep : desktopNavigationForwardStep;
-    if (!step) {
+    if (!step || desktopHistoryNavigationPendingRef.current) {
       return;
     }
 
+    // Ignore duplicate input until the router commits the requested history movement.
+    desktopHistoryNavigationPendingRef.current = true;
     setPendingSidebarNavigationPath(step.entry.route);
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
     sidebarNavigationUnlockTimerRef.current = window.setTimeout(() => {
+      desktopHistoryNavigationPendingRef.current = false;
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, SIDEBAR_NAVIGATION_LOCK_MS);
@@ -3410,6 +3415,9 @@ export function AppShell() {
   function handleSidebarForwardNavigation() {
     navigateWithSidebarHistory("forward");
   }
+
+  useLayoutEffect(() => window.electronAPI.onHistoryNavigation(navigateWithSidebarHistory),
+    [location.key, desktopNavigationTimeline, navigate]);
 
   function handleSelectSettingsSection(sectionId: SettingsSectionId) {
     if (sectionId === "about" && !debugSettingsUnlocked) {

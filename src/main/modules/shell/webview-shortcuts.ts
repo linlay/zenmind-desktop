@@ -1,5 +1,21 @@
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
+import type { Input } from "electron";
+import type { DesktopHistoryNavigationDirection } from "../../../shared/contracts/desktop-api";
 import type { WebviewEditCommand, AttachedWebviewLike } from "./window-model";
+
+export function resolveDesktopHistoryNavigationShortcut(
+  platform: DesktopPlatform,
+  input: Input
+): DesktopHistoryNavigationDirection | null {
+  // Windows touchpad gestures can be mapped to these shortcuts in system settings.
+  if (platform !== "win32" || input.type !== "keyDown" || !input.alt ||
+    input.control || input.meta || input.shift || input.isComposing) {
+    return null;
+  }
+  if (input.key === "ArrowLeft") return "back";
+  if (input.key === "ArrowRight") return "forward";
+  return null;
+}
 
 export function isWorkPanelFullscreenExitShortcut(platform: DesktopPlatform, input: any) {
   const platformModifier = platform === "darwin"

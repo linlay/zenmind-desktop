@@ -859,6 +859,8 @@ export type DesktopWindowState = {
   windowControlsMasked: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
+export type DesktopHistoryNavigationDirection = "back" | "forward";
+export type DesktopHistoryNavigationListener = (direction: DesktopHistoryNavigationDirection) => void;
 export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "shareManagement";
 export type DesktopGlobalSearchShortcutSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type DesktopGlobalSearchShortcut =
@@ -1379,6 +1381,7 @@ export interface DesktopApi {
     };
   };
   onNavigate: (listener: NavigateListener) => () => void;
+  onHistoryNavigation: (listener: DesktopHistoryNavigationListener) => () => void;
   onServicesChanged: (listener: ServicesChangedListener) => () => void;
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenGlobalSearch: (listener: () => void) => () => void;
