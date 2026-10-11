@@ -21,6 +21,11 @@ export function registeredSurfaceIdentitiesConflict(
   return (existing.surfaceIdentityKey?.trim() || "") !== (candidate.surfaceIdentityKey?.trim() || "");
 }
 
+/** WorkPanel web pages are scoped by owner Chat instead of the live Main Chat parent. */
+export function isWorkPanelWebSurface(surface: Pick<EmbeddedCdpSurfaceRegistration, "surfaceKind" | "surfaceRole">) {
+  return surface.surfaceKind === "chat-work-panel" && surface.surfaceRole === "workpanel-web";
+}
+
 export function sameNewChatSource(
   left: ReturnType<typeof readAgentWebclientNewChatSource>,
   right: ReturnType<typeof readAgentWebclientNewChatSource>,
@@ -197,9 +202,13 @@ export function createRegistrationPolicy(options: Pick<BrowserSurfaceRegistryOpt
       }
       if (input.parentSurfaceId) {
         const canonicalParentSurfaceId = dependencies.resolveCanonicalSurfaceId(input.parentSurfaceId);
+        // A WorkPanel web page belongs to its owner Chat, not to whichever
+        // Chat the singleton Main Chat surface currently shows; it stays
+        // registered while that parent is remounting or absent.
         if (canonicalParentSurfaceId !== input.parentSurfaceId ||
           canonicalParentSurfaceId === input.surfaceId ||
-          (!dependencies.resolveRegisteredSurface(canonicalParentSurfaceId) && dependencies.workPanelDialogRegistrations.get(input.surfaceId)?.registrationId !== input.registrationId))
+          (!isWorkPanelWebSurface(input) &&
+            !dependencies.resolveRegisteredSurface(canonicalParentSurfaceId) && dependencies.workPanelDialogRegistrations.get(input.surfaceId)?.registrationId !== input.registrationId))
           return { ok: false, check: "invalid_parent_surface" };
         const visited = new Set([input.surfaceId]);
         let cursor = dependencies.registeredSurfaces.get(canonicalParentSurfaceId);

@@ -2,7 +2,7 @@
   "name": "desktop",
   "version": "0.4.45",
   "private": true,
-  "description": "\u684c\u9762\u58f3",
+  "description": "桌面壳",
   "main": "dist-electron/main/index.js",
   "engines": {
     "node": ">=22.12.0"

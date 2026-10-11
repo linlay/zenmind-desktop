@@ -226,6 +226,11 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
   }
 }
 
+/** Network pages stay renderable while hidden; previews and observers do not. */
+function isWorkPanelBackgroundWebItem(item: WorkPanelItem) {
+  return item.descriptor.kind === "web" && Boolean(normalizeWorkPanelWebUrl(item.descriptor.url));
+}
+
 function readWebviewGuestId(webview: Electron.WebviewTag) {
   try {
     const guestId = webview.getWebContentsId();
@@ -341,6 +346,7 @@ export function WorkPanelHost({
   const { t } = useI18n();
   const [modal, modalContext] = Modal.useModal();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const lastVisiblePanelSizes = useRef(new Map<string, { width: number; height: number }>());
   const stateRef = useRef(state);
   const previousLocalFileHandlesRef = useRef(new Map<string, string>());
   const previousResourceImageHandlesRef = useRef(new Map<string, string>());
@@ -2025,6 +2031,26 @@ export function WorkPanelHost({
     }
   }, [activeChatId, isMac, isWindows, state.workspaces]);
 
+  // Remember the box each workspace had while shown. A hidden workspace keeps
+  // that viewport for its web pages instead of following the foreground
+  // panel's width; fullscreen is a transient presentation and is not recorded.
+  const workPanelFullscreen = Boolean(activeChatId && fullscreenOwnerChatId === activeChatId);
+  useEffect(() => {
+    const visiblePanel = rootRef.current?.querySelector<HTMLElement>(".chat-work-panel.is-visible");
+    const ownerChatId = visiblePanel?.dataset.workPanelChat;
+    if (!visiblePanel || !ownerChatId || workPanelFullscreen || typeof ResizeObserver === "undefined") return;
+    const record = () => {
+      const { width, height } = visiblePanel.getBoundingClientRect();
+      if (!visiblePanel.hidden && width > 0 && height > 0) {
+        lastVisiblePanelSizes.current.set(ownerChatId, { width, height });
+      }
+    };
+    record();
+    const observer = new ResizeObserver(record);
+    observer.observe(visiblePanel);
+    return () => observer.disconnect();
+  }, [activeChatId, state.workspaces, workPanelFullscreen]);
+
   useEffect(() => () => {
     const root = rootRef.current;
     if (!root) return;
@@ -2055,10 +2081,15 @@ export function WorkPanelHost({
       )}
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeChatId;
+        // A background Run keeps operating its own Chat's web pages, so a
+        // hidden workspace with web items retains a non-zero viewport.
+        const hasBackgroundWeb = !visible && workspace.items.some(isWorkPanelBackgroundWebItem);
+        const backgroundSize = hasBackgroundWeb ? lastVisiblePanelSizes.current.get(workspace.ownerChatId) : undefined;
         return (
           <aside
             key={workspace.workspaceId}
-            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}`}
+            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}${hasBackgroundWeb ? " has-background-web" : ""}`}
+            style={backgroundSize ? { width: backgroundSize.width, height: backgroundSize.height } : undefined}
             hidden={!visible}
             aria-hidden={!visible}
             aria-label={t("chatWorkPanel.title")}
@@ -2187,7 +2218,7 @@ export function WorkPanelHost({
                   return (
                     <div
                       key={item.itemId}
-                      className={`chat-work-panel-item${active ? " is-active" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}${reviewActive && reviewSession?.kind === "html" ? " is-html-review" : ""}`}
+                      className={`chat-work-panel-item${active ? " is-active" : ""}${!active && isWorkPanelBackgroundWebItem(item) ? " is-background-web" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}${reviewActive && reviewSession?.kind === "html" ? " is-html-review" : ""}`}
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}

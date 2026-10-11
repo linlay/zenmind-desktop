@@ -4,14 +4,15 @@ import { EventEmitter } from "node:events";
 
 const { createBrowserSurfaceRegistry } = await import("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
 const { registerEmbeddedCdpIpcHandlers } = await import("../dist-electron/main/modules/web-surfaces/cdp/ipc.js");
-const { createSurfaceIdentity } = await import("../dist-electron/shared/surface-identity.js");
+const { createChatChildSurfaceIdentity, createSurfaceIdentity } = await import("../dist-electron/shared/surface-identity.js");
 
 function createHarness() {
-  const guests = new Map([101, 102, 103].map((id) => [id, {
+  const guests = new Map([101, 102, 103].map((id) => [id, Object.assign(new EventEmitter(), {
     id,
     getType: () => "webview",
     isDestroyed: () => false,
-  }]));
+    getURL: () => "",
+  })]));
   const registry = createBrowserSurfaceRegistry({
     webContents: {
       getAllWebContents: () => [...guests.values()],
@@ -104,4 +105,90 @@ test("an auxiliary explanation keeps its own surface while Main Chat stays owned
   auxiliary.emit("destroyed");
   assert.equal(runtime.registry.resolveWebviewSurfaceTarget(103), null);
   assert.equal(runtime.registry.resolveWebviewSurfaceTarget(101).ownerWebContentsId, 1);
+});
+
+function ownedMainChat(guestId, generation, chatId) {
+  const route = `/agent/helper?chatId=${chatId}`;
+  const url = `http://127.0.0.1:17080${route}`;
+  return {
+    ...registration("main-chat", guestId, generation),
+    ...createSurfaceIdentity("main-chat", "", { ownerChatId: chatId }),
+    pageRoute: "/agent/helper",
+    pageRouteIdentity: route,
+    url,
+    tabs: [{
+      tabId: `tab-${guestId}`,
+      currentUrl: url,
+      title: "main-chat",
+      webContentsId: guestId,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+    }],
+  };
+}
+
+function workPanelWeb(guestId, generation, chatId) {
+  const key = `web:https://example.com/${chatId}`;
+  const url = `https://example.com/${chatId}`;
+  return {
+    ...createChatChildSurfaceIdentity("workpanel-web", key, chatId),
+    registrationId: generation,
+    surfaceIdentityKey: key,
+    surfaceKind: "chat-work-panel",
+    surfaceType: "chat-work-panel",
+    ownerChatId: chatId,
+    label: "page",
+    url,
+    active: false,
+    tabs: [{
+      tabId: `tab-${guestId}`,
+      currentUrl: url,
+      title: "page",
+      webContentsId: guestId,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+    }],
+    activeTabId: `tab-${guestId}`,
+  };
+}
+
+test("a WorkPanel web page registers for its owner Chat while Main Chat shows another Chat or is absent", () => {
+  const runtime = createHarness();
+  const main = runtime.sender(1);
+  const background = workPanelWeb(102, "page-generation-1", "chat-background");
+
+  // No Main Chat surface is registered yet.
+  assert.deepEqual(runtime.register(main, background), { ok: true });
+  assert.equal(runtime.registry.resolveWebviewSurfaceTarget(102).ownerChatId, "chat-background");
+
+  const mainChat = ownedMainChat(101, "main-generation-1", "chat-visible");
+  assert.deepEqual(runtime.register(main, mainChat), { ok: true });
+  assert.equal(runtime.registry.resolveWebviewSurfaceTarget(101).ownerChatId, "chat-visible");
+  // A later state sync (title, URL, loading) must not be rejected either.
+  assert.deepEqual(runtime.register(main, { ...background, label: "page reloaded" }), { ok: true });
+  assert.deepEqual(
+    runtime.registry.listWorkPanelContainers().map((container) => container.ownerChatId),
+    ["chat-background"],
+  );
+
+  assert.equal(runtime.registry.unregisterSurface({
+    surfaceId: mainChat.surfaceId,
+    registrationId: mainChat.registrationId,
+  }, 1), true);
+  assert.equal(runtime.registry.resolveWebviewSurfaceTarget(102).surfaceRole, "workpanel-web");
+});
+
+test("only the main window publishes WorkPanel web pages and its teardown releases them", () => {
+  const runtime = createHarness();
+  const main = runtime.sender(1);
+  const page = workPanelWeb(102, "page-generation-1", "chat-background");
+
+  assert.deepEqual(runtime.register(runtime.sender(3), page), { ok: false, reason: "ownership_conflict" });
+  assert.equal(runtime.registry.resolveWebviewSurfaceTarget(102), null);
+  assert.deepEqual(runtime.register(main, page), { ok: true });
+
+  main.emit("destroyed");
+  assert.equal(runtime.registry.resolveWebviewSurfaceTarget(102), null);
 });

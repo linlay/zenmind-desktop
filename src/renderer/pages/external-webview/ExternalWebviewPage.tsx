@@ -531,7 +531,7 @@ export function ExternalWebviewPage({
   const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
   const registeredSurfaceKind = surfaceKind ?? (surfaceIdProp === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
   useEffect(() => {
-    if (registeredSurfaceKind === "website" || registeredSurfaceKind === "webapp") {
+    if (registeredSurfaceKind === "website" || registeredSurfaceKind === "webapp" || registeredSurfaceKind === "chat-work-panel") {
       return retainForegroundFocusForBackgroundSites(document);
     }
   }, [registeredSurfaceKind]);

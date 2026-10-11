@@ -430,3 +430,30 @@ test("WorkPanel close shortcut uses visible composite ownership across renderer 
   assert.match(closeRegistry, /request\.guestId === null && !request\.website && request\.fallbackToWindowClose/u);
   assert.match(host, /if \(website\) return false/u);
 });
+
+test("hidden WorkPanel web pages keep a renderable viewport and foreground focus for background Runs", () => {
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const css = read("src/renderer/styles/app-shell.css");
+  assert.match(host, /function isWorkPanelBackgroundWebItem\(item: WorkPanelItem\) \{\s*return item\.descriptor\.kind === "web" && Boolean\(normalizeWorkPanelWebUrl\(item\.descriptor\.url\)\);/u);
+  assert.match(host, /const hasBackgroundWeb = !visible && workspace\.items\.some\(isWorkPanelBackgroundWebItem\)/u);
+  assert.match(host, /!active && isWorkPanelBackgroundWebItem\(item\) \? " is-background-web" : ""/u);
+  assert.match(host, /lastVisiblePanelSizes\.current\.set\(ownerChatId, \{ width, height \}\)/u);
+  assert.match(host, /style=\{backgroundSize \? \{ width: backgroundSize\.width, height: backgroundSize\.height \} : undefined\}/u);
+  // Read-only observers are still unmounted instead of kept in the background.
+  assert.match(host, /if \(!active && item\.descriptor\.kind === "webclient" &&\s*\(item\.descriptor\.module === "overview" \|\| item\.descriptor\.module === "debug"\)\) return null;/u);
+  for (const selector of [
+    /\.chat-work-panel\.has-background-web\[hidden\]\s*\{[^}]*position:\s*fixed;[^}]*display:\s*block !important;[^}]*width:\s*var\(--chat-work-panel-width, 360px\);\s*height:\s*100%;[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/su,
+    /\.chat-work-panel-item\.is-background-web\[hidden\]\s*\{[^}]*display:\s*block !important;[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/su,
+    /\.chat-work-panel-item\.is-background-web \.external-webview-page\.is-inactive-surface \.external-webview-frame\s*\{\s*visibility:\s*visible;/su,
+    /\.chat-work-panel\[hidden\]\s*\{\s*display:\s*none !important;/su,
+    /\.chat-work-panel-item\[hidden\]\s*\{\s*display:\s*none !important;/su,
+  ]) assert.match(css, selector);
+  assert.match(
+    read("src/renderer/services/backgroundSiteFocus.ts"),
+    /const backgroundSite = "[^"]*\.is-work-panel-browser\.is-inactive-surface"/u,
+  );
+  assert.match(
+    read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx"),
+    /registeredSurfaceKind === "webapp" \|\| registeredSurfaceKind === "chat-work-panel"\) \{\s*return retainForegroundFocusForBackgroundSites\(document\);/u,
+  );
+});

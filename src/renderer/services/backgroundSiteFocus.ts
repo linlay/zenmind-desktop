@@ -1,5 +1,5 @@
 const guards = new WeakMap<Document, { count: number; dispose: () => void; capture: () => void; restore: () => void; input: () => void }>();
-const backgroundSite = ".is-site-surface.is-inactive-surface, .is-site-surface .external-webview-panel[hidden]";
+const backgroundSite = ".is-site-surface.is-inactive-surface, .is-site-surface .external-webview-panel[hidden], .is-work-panel-browser.is-inactive-surface";
 
 function focusHostElement(element: HTMLElement) {
   element.focus({ preventScroll: true });

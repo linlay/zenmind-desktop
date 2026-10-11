@@ -61,6 +61,11 @@ export function registerEmbeddedCdpIpcHandlers(
       if (isMainChat && !options.isMainWindow(event.sender.id)) {
         return { ok: false, reason: "ownership_conflict" };
       }
+      // WorkPanel web pages are not tied to the Main Chat's current owner, so
+      // only the main window's WorkPanel host may publish them.
+      if (input?.surfaceKind === "chat-work-panel" && !options.isMainWindow(event.sender.id)) {
+        return { ok: false, reason: "ownership_conflict" };
+      }
       ensureOwnerCleanup(event.sender);
       return browserSurfaces.registerSurfaceResult(input, event.sender.id);
     }

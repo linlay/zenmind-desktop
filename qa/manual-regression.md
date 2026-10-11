@@ -33,6 +33,7 @@
 - macOS 26 折叠主导航栏，确认三个原生窗口按钮完整位于 66px 导航栏内，绿色按钮不越过右边界；展开/折叠、窗口缩放、最小化还原及系统全屏返回后仍正常，按钮点击与悬停可用。Windows 同时确认顶部窗口控件在两种导航状态下位置正常。
 - WorkPanel 手动打开 `https://mp.weixin.qq.com/s/aHr1Kq5CxspxXqK9vXfFWg`，确认正文或可操作的验证页可显示，渲染进程不崩溃；验证后刷新、前后导航与关闭标签正常。
 - 在独立测试数据目录验证 Website/WorkPanel 登录与 Cookie、PDF 预览、页面批注、查找、缩放、打印、CDP 操作和独立浏览器窗口。签名后的 macOS 应用另验通知，Windows 另验原生窗口及截图。
+- 在 Chat A 让 Agent 于 WorkPanel 打开普通网页并持续执行“列出网页、读取标题、截图、输入文字”，期间切换到 Chat B、切换 Chat A 的 WorkPanel tab、隐藏面板和最小化主窗口；确认各轮操作成功，前台输入焦点不被抢走，隐藏的网页不可见也不可点击。再在 Chat A 处于后台时让同一 Run 新开一个网页，确认可登记并操作。macOS 与 Windows 分别验证。
 - 发布前分别验证 macOS/Windows 打包、签名与覆盖更新；最小网页复现和开发构建通过不代表安装包已验收。
 
 ## Windows 快捷方式名称

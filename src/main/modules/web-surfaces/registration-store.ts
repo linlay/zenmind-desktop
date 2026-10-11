@@ -5,7 +5,7 @@ import { normalizeWorkPanelDocumentSource } from "../../../shared/work-panel-doc
 import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
 import { createGuestResolution } from "./guest-resolution";
 import { createRegistrationDiagnostics, sanitizeSurfaceDiagnosticId } from "./registration-diagnostics";
-import { activeRegistrationTab, createRegistrationPolicy, describeMainChatRoute, mainChatSurfaceRegistrationTransitionAllowed, preserveInactiveMainChatIdentity, registeredSurfaceIdentitiesConflict } from "./registration-policy";
+import { activeRegistrationTab, createRegistrationPolicy, describeMainChatRoute, isWorkPanelWebSurface, mainChatSurfaceRegistrationTransitionAllowed, preserveInactiveMainChatIdentity, registeredSurfaceIdentitiesConflict } from "./registration-policy";
 import type { BrowserSurfaceLifecycleEvent, BrowserSurfaceRegistryOptions, RegisteredSurface, ResolvedSurface, WorkPanelDialogReservation } from "./registry-contracts";
 
 /** Owns the authoritative registrations, aliases, reservations and lifecycle order. */
@@ -146,8 +146,11 @@ export function createRegistrationStore(options: BrowserSurfaceRegistryOptions) 
     const parentSurface = registrationInput.parentSurfaceId
       ? registeredSurfaces.get(registrationInput.parentSurfaceId)
       : undefined;
+    // The Main Chat parent follows the visible Chat. A WorkPanel web page of
+    // another Chat keeps its own owner; only the owning renderer must match.
     if (parentSurface && (parentSurface.ownerWebContentsId !== ownerWebContentsId ||
-      Boolean(parentSurface.ownerChatId &&
+      Boolean(!isWorkPanelWebSurface(registrationInput) &&
+        parentSurface.ownerChatId &&
         registrationInput.ownerChatId &&
         parentSurface.ownerChatId !== registrationInput.ownerChatId &&
         workPanelDialogRegistrations.get(registrationInput.surfaceId)?.registrationId !== registrationInput.registrationId))) {
@@ -278,6 +281,9 @@ export function createRegistrationStore(options: BrowserSurfaceRegistryOptions) 
   function removeChildSurfaces(parentSurfaceId: string): void {
     const children = [...registeredSurfaces.values()]
       .filter((surface) => surface.parentSurfaceId === parentSurfaceId &&
+        // WorkPanel web pages outlive Main Chat remounts and Chat switches;
+        // their own host unregisters them, or the owner renderer is destroyed.
+        !isWorkPanelWebSurface(surface) &&
         workPanelDialogRegistrations.get(surface.surfaceId)?.registrationId !== surface.registrationId)
       .map((surface) => surface.surfaceId);
     for (const childId of children) {

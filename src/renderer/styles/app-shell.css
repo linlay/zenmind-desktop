@@ -1195,6 +1195,25 @@
   display: none !important;
 }
 
+/* Hidden workspaces that hold web pages keep a real viewport, so a background
+   Run can still screenshot and click its pages. The host sets the box the
+   workspace last had while shown; the size below only covers a workspace that
+   was never shown. Fixed, not absolute: the host is a positioned zero-width
+   overflow box while no panel is visible and would clip an absolute child. */
+.chat-work-panel.has-background-web[hidden] {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  display: block !important;
+  width: var(--chat-work-panel-width, 360px);
+  height: 100%;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+
 .chat-work-panel-body {
   position: absolute;
   top: calc(var(--chat-work-panel-top-inset) + var(--chat-work-panel-tabs-height));
@@ -3082,6 +3101,19 @@
 
 .chat-work-panel-item[hidden] {
   display: none !important;
+}
+
+.chat-work-panel-item.is-background-web[hidden] {
+  z-index: 0;
+  display: block !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Keep the guest widget renderable for CDP; its hidden host stays unfocusable. */
+.chat-work-panel-item.is-background-web .external-webview-page.is-inactive-surface .external-webview-frame {
+  visibility: visible;
 }
 
 .chat-work-panel-tabs {
