@@ -38,17 +38,19 @@ export type WorkPanelState = {
   webItemUrls?: Record<string, string>;
   workspaces: WorkPanelWorkspace[];
   visibleOwnerChatIds: string[];
+  // Host-only intent for this workspace lifetime; never part of the bridge DTO.
+  explicitlyOpenedOwnerChatIds: string[];
   review: WorkPanelReviewRuntimeState;
 };
 
 export type WorkPanelCommand =
   | { type: "setDialogPresentation"; ownerChatId: string; itemId: string; dialog: WorkPanelDialogPresentation | null; restoreUrl?: string }
-  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
+  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; explicitlyOpened?: boolean }
   | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
-  | { type: "closeItem"; ownerChatId: string; itemId: string; force?: boolean }
+  | { type: "closeItem"; ownerChatId: string; itemId: string; force?: boolean; closeImplicitWorkspace?: boolean }
   | { type: "closeOtherItems"; ownerChatId: string; itemId: string; force?: boolean }
-  | { type: "showWorkspace"; ownerChatId: string }
+  | { type: "showWorkspace"; ownerChatId: string; explicitlyOpened?: boolean }
   | { type: "hideWorkspace"; ownerChatId: string }
   | { type: "closeWorkspace"; ownerChatId: string; force?: boolean }
   | {
@@ -100,6 +102,7 @@ export type WorkPanelCommandResult = WorkPanelBridgeResult & {
 export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
   visibleOwnerChatIds: [],
+  explicitlyOpenedOwnerChatIds: [],
   review: EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
 };
 
@@ -111,6 +114,12 @@ function withVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
 
 function withoutVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
   return state.visibleOwnerChatIds.filter((chatId) => chatId !== ownerChatId);
+}
+
+function withExplicitlyOpenedWorkspace(state: WorkPanelState, ownerChatId: string) {
+  return state.explicitlyOpenedOwnerChatIds.includes(ownerChatId)
+    ? state.explicitlyOpenedOwnerChatIds
+    : [...state.explicitlyOpenedOwnerChatIds, ownerChatId];
 }
 
 function fail(
@@ -667,14 +676,23 @@ function reduceWorkPanelCommandCore(
   }
   if (command.type === "showWorkspace") {
     if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
-    if (state.visibleOwnerChatIds.includes(ownerChatId)) {
+    if (
+      state.visibleOwnerChatIds.includes(ownerChatId) &&
+      (!command.explicitlyOpened || state.explicitlyOpenedOwnerChatIds.includes(ownerChatId))
+    ) {
       return { ok: true, workspaceId: current.workspaceId, state: current, nextState: state };
     }
     return {
       ok: true,
       workspaceId: current.workspaceId,
       state: current,
-      nextState: { ...state, visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId) },
+      nextState: {
+        ...state,
+        visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+        explicitlyOpenedOwnerChatIds: command.explicitlyOpened
+          ? withExplicitlyOpenedWorkspace(state, ownerChatId)
+          : state.explicitlyOpenedOwnerChatIds,
+      },
     };
   }
   if (command.type === "closeWorkspace") {
@@ -693,8 +711,10 @@ function reduceWorkPanelCommandCore(
       return fail(state, "capability_denied", "workspace contains unsent review annotations");
     }
     const nextState = {
+      ...state,
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
+      explicitlyOpenedOwnerChatIds: state.explicitlyOpenedOwnerChatIds.filter((chatId) => chatId !== ownerChatId),
       review: withoutReviewSessions(currentReviewState(state), ownerChatId),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
@@ -728,6 +748,7 @@ function reduceWorkPanelCommandCore(
       nextIndex === index ? nextWorkspace : workspace,
     );
     const nextState = {
+      ...state,
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
       review: currentReviewState(state),
@@ -821,8 +842,12 @@ function reduceWorkPanelCommandCore(
       }
     }
     const nextState = {
+      ...state,
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+      explicitlyOpenedOwnerChatIds: command.explicitlyOpened
+        ? withExplicitlyOpenedWorkspace(state, ownerChatId)
+        : state.explicitlyOpenedOwnerChatIds,
       review,
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
@@ -1034,6 +1059,7 @@ function reduceWorkPanelCommandCore(
       item,
       state: nextWorkspace,
       nextState: {
+        ...state,
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
         review: currentReviewState(state),
@@ -1063,6 +1089,7 @@ function reduceWorkPanelCommandCore(
       item,
       state: nextWorkspace,
       nextState: {
+        ...state,
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
         review: withoutReviewSessions(currentReviewState(state), ownerChatId, removedItemIds),
@@ -1081,11 +1108,16 @@ function reduceWorkPanelCommandCore(
     return fail(state, "capability_denied", "tab contains unsent review annotations");
   }
   const items = current.items.filter((_, nextIndex) => nextIndex !== itemIndex);
-  if (items.length === 0) {
+  const closeImplicitWorkspace = command.closeImplicitWorkspace &&
+    !state.explicitlyOpenedOwnerChatIds.includes(ownerChatId) &&
+    items.length === 1 && isOverviewItem(items[0]);
+  if (items.length === 0 || closeImplicitWorkspace) {
     const nextState = {
+      ...state,
       workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
-      review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),
+      explicitlyOpenedOwnerChatIds: state.explicitlyOpenedOwnerChatIds.filter((chatId) => chatId !== ownerChatId),
+      review: withoutReviewSessions(currentReviewState(state), ownerChatId),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
   }
@@ -1100,6 +1132,7 @@ function reduceWorkPanelCommandCore(
     item,
     state: nextWorkspace,
     nextState: {
+      ...state,
       workspaces,
       visibleOwnerChatIds: state.visibleOwnerChatIds,
       review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),

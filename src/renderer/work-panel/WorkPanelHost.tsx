@@ -531,7 +531,7 @@ export function WorkPanelHost({
       ? activeItem
       : closableItems[closableItems.length - 1];
     if (itemToClose) {
-      return closeItemWithReviewProtection(ownerChatId, itemToClose.itemId);
+      return closeItemWithReviewProtection(ownerChatId, itemToClose.itemId, true);
     }
     const result = dispatchCommand({
       type: "closeWorkspace",
@@ -557,7 +557,7 @@ export function WorkPanelHost({
     | "chatWorkPanel.review.confirmDiscardSession"
   ) => window.confirm(t(messageKey));
 
-  const closeItemWithReviewProtection = (ownerChatId: string, itemId: string) => {
+  const closeItemWithReviewProtection = (ownerChatId: string, itemId: string, closeImplicitWorkspace = false) => {
     const nativeImageBusy = rootRef.current?.querySelector<HTMLElement>(
       `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-saving="true"], ` +
       `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-ai-busy="true"], ` +
@@ -576,7 +576,11 @@ export function WorkPanelHost({
       ? confirmDiscardReview("chatWorkPanel.review.confirmDiscard")
       : false;
     if (hasWorkPanelReviewDraft(session) && !force) return false;
-    return dispatchCommand({ type: "closeItem", ownerChatId, itemId, ...(force ? { force: true } : {}) }).ok;
+    return dispatchCommand({
+      type: "closeItem", ownerChatId, itemId,
+      ...(force ? { force: true } : {}),
+      ...(closeImplicitWorkspace ? { closeImplicitWorkspace: true } : {}),
+    }).ok;
   };
 
   useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogCloseRequested((transferId) => {

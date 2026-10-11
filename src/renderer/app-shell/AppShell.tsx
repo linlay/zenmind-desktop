@@ -641,6 +641,7 @@ export function AppShell() {
     chatId: string;
     agentKey: string;
     action: "ensure" | "show";
+    explicitlyOpened: boolean;
     routeKey: string;
     minimumRevision: number;
     registrationId: string;
@@ -4196,11 +4197,12 @@ export function AppShell() {
     return result;
   }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, t]);
 
-  const ensureChatWorkPanelWorkspace = useCallback((chatId: string, agentKey: string) => {
+  const ensureChatWorkPanelWorkspace = useCallback((chatId: string, agentKey: string, explicitlyOpened: boolean) => {
     const normalizedAgentKey = agentKey.trim();
     return dispatchWorkPanelCommand({
       type: "openItem",
       ownerChatId: chatId,
+      explicitlyOpened,
       descriptor: {
         kind: "webclient",
         module: "overview",
@@ -4217,12 +4219,13 @@ export function AppShell() {
     chatId: string,
     agentKey: string,
     action: "ensure" | "show",
+    explicitlyOpened: boolean,
   ) => {
     if (action === "show") {
-      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: chatId });
+      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: chatId, explicitlyOpened });
       return;
     }
-    ensureChatWorkPanelWorkspace(chatId, agentKey);
+    ensureChatWorkPanelWorkspace(chatId, agentKey, explicitlyOpened);
   }, [dispatchWorkPanelCommand, ensureChatWorkPanelWorkspace]);
 
   const clearPendingChatWorkPanelOpen = useCallback(() => {
@@ -4238,6 +4241,7 @@ export function AppShell() {
     agentKeyValue: string,
     action: "ensure" | "show" = "ensure",
     routeKeyValue: string = currentRoute,
+    explicitlyOpened = false,
   ) => {
     const chatId = chatIdValue.trim();
     const agentKey = agentKeyValue.trim();
@@ -4253,7 +4257,7 @@ export function AppShell() {
       registered.identity.agentKey === agentKey
     ) {
       setWorkPanelOpenError("");
-      completeChatWorkPanelOpen(chatId, agentKey, action);
+      completeChatWorkPanelOpen(chatId, agentKey, action, explicitlyOpened);
       return;
     }
     clearPendingChatWorkPanelOpen();
@@ -4263,6 +4267,7 @@ export function AppShell() {
       chatId,
       agentKey,
       action,
+      explicitlyOpened,
       routeKey: routeKeyValue,
       minimumRevision: lastCommit?.revision ?? 0,
       registrationId: lastCommit?.registrationId ?? "",
@@ -4324,7 +4329,7 @@ export function AppShell() {
     if (resolution === "complete") {
       clearPendingChatWorkPanelOpen();
       setWorkPanelOpenError("");
-      completeChatWorkPanelOpen(pending.chatId, pending.agentKey, pending.action);
+      completeChatWorkPanelOpen(pending.chatId, pending.agentKey, pending.action, pending.explicitlyOpened);
     }
   }, [clearPendingChatWorkPanelOpen, completeChatWorkPanelOpen, currentRoute]);
 
@@ -4429,13 +4434,13 @@ export function AppShell() {
     }
     if (currentState.workspaces.some((workspace) => workspace.ownerChatId === chatId)) {
       const agentKey = activeChatRouteInfo.agentKey.trim();
-      if (agentKey) requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "show");
+      if (agentKey) requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "show", currentRoute, true);
       return;
     }
     const agentKey = activeChatRouteInfo.agentKey.trim();
     if (!agentKey) return;
-    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
-  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelVisible, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
+    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "ensure", currentRoute, true);
+  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelVisible, currentRoute, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
 
   const handleMainChatWorkspaceArrowKey = useCallback((direction: "left" | "right") => {
     if (direction === "left") {
@@ -4447,7 +4452,7 @@ export function AppShell() {
 
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
     const targetRoute = createAgentChatRoute(agentKey, chatId);
-    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "ensure", targetRoute);
+    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "ensure", targetRoute, true);
     if (desiredChatRouteChatId !== chatId) {
       requestSidebarNavigation(targetRoute);
     }
@@ -4504,6 +4509,7 @@ export function AppShell() {
       agentKey,
       workspaceExists ? "show" : "ensure",
       targetRoute,
+      true,
     );
     if (
       desiredChatRouteChatId !== chatId ||

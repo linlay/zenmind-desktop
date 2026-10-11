@@ -58,6 +58,7 @@ const initialState: WorkPanelState = {
     }],
   }],
   visibleOwnerChatIds: ["visual-chat"],
+  explicitlyOpenedOwnerChatIds: ["visual-chat"],
   review: EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
 };
 
