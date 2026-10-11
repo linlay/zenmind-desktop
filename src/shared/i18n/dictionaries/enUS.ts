@@ -505,7 +505,7 @@ export const enUSMessages = {
   "nav.capabilities.group.cloud": "Cloud",
   "nav.capabilities.group.help": "Help",
   "nav.agents": "Agents",
-  "nav.knowledgeBase": "Knowledge Base",
+  "nav.knowledgeBase": "Knowledge Bases",
   "nav.archives": "Archived Chats",
   "nav.registries": "Registries",
   "nav.mcpConnectors": "Connectors Center",
