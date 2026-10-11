@@ -199,6 +199,66 @@ function createWorkPanelRendererResult(action) {
   };
 }
 
+function createActiveDocumentWorkPanelFixture(t, { kind = "html", platform = "darwin" } = {}) {
+  const { options } = createDesktopActionOptions(t);
+  const source = { chatId: "chat-owner", agentKey: "cutej", runId: "run-owner" };
+  const documentId = "b0000000-1111-4111-8111-000000000002";
+  const handleId = "a0000000-1111-4111-8111-000000000002";
+  const fileName = `预览 文件.${kind === "markdown" ? "md" : "html"}`;
+  const { CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } = require("../dist-electron/shared/chat-work-panel.js");
+  const context = {
+    documentId, fileName, kind, ownerChatId: source.chatId, agentKey: source.agentKey, version: 1,
+    partition: `local-document-${handleId}`,
+    url: `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://${handleId}/${encodeURIComponent(fileName)}`,
+  };
+  const selected = {
+    itemId: "item-active-file", stableKey: `local-document:${documentId}`, title: fileName,
+    descriptor: { kind: "native", surfaceKey: "local-document", context },
+    closable: true, pinned: false, createdAt: 1_800_000_000_002,
+  };
+  const inactive = {
+    ...selected, itemId: "item-inactive-file", stableKey: "local-document:b0000000-1111-4111-8111-000000000001",
+    descriptor: { ...selected.descriptor, context: {
+      ...context, documentId: "b0000000-1111-4111-8111-000000000001",
+      partition: "local-document-a0000000-1111-4111-8111-000000000001",
+      url: `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://a0000000-1111-4111-8111-000000000001/${encodeURIComponent(fileName)}`,
+    } },
+  };
+  const workspace = { ...createWorkPanelWorkspace(), items: [inactive, ...createWorkPanelWorkspace().items, selected], activeItemId: selected.itemId };
+  const file = {
+    fileName, kind,
+    path: platform === "win32" ? path.win32.join("C:\\preview-fixture", "Desktop", fileName)
+      : path.join(options.app.getPath("home"), "Desktop", fileName),
+    mimeType: kind === "markdown" ? "text/markdown" : "text/html", sizeBytes: 42,
+  };
+  const contents = { id: 77, mainFrame: {}, isDestroyed: () => false };
+  const fixture = {
+    options, source, documentId, file, selected, contents,
+    window: { isDestroyed: () => false, webContents: contents },
+    rendererCalls: [], lookupCalls: [],
+    result: {
+      ok: true, workspaceId: workspace.workspaceId, state: workspace,
+      // These decoys must never select the original file for this Run.
+      activeDocumentId: inactive.descriptor.context.documentId,
+      workspaces: [{ ...workspace, ownerChatId: "other-chat", workspaceId: "workpanel:other-chat", activeItemId: inactive.itemId }],
+    },
+    invoke: () => handleAgentPlatformDesktopActionRequest(options, {
+      requestId: "active-file-state", action: "desktop.workpanel.getState", source,
+    }),
+  };
+  options.platform = platform;
+  options.getMainWindow = () => fixture.window;
+  options.callRendererAction = async request => {
+    fixture.rendererCalls.push(request);
+    return { requestId: request.requestId, action: request.action, ok: true, result: structuredClone(fixture.result) };
+  };
+  options.resolveWorkPanelActiveFile = async (request, isSelectionCurrent) => {
+    fixture.lookupCalls.push(request);
+    return await isSelectionCurrent() ? file : null;
+  };
+  return fixture;
+}
+
 function createWebActionState() {
   const tabs = [
     {
@@ -671,6 +731,228 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
     ]
   );
 });
+
+for (const platform of ["darwin", "win32"]) {
+  for (const kind of ["html", "markdown"]) {
+    test(`${platform} trusted WorkPanel state resolves only its Chat's active ${kind} original`, async t => {
+      const fixture = createActiveDocumentWorkPanelFixture(t, { platform, kind });
+      const response = await fixture.invoke();
+      assert.equal(response.ok, true, JSON.stringify(response));
+      assert.deepEqual(response.result.activeFile, fixture.file);
+      assert.deepEqual(response.result.state, fixture.result.state);
+      assert.deepEqual(fixture.lookupCalls, [{
+        chatId: fixture.source.chatId, agentKey: fixture.source.agentKey, documentId: fixture.documentId,
+      }]);
+      assert.ok(fixture.rendererCalls.length >= 2, "the selected item must be read again before publishing its original path");
+      for (const request of fixture.rendererCalls) {
+        assert.equal(request.action, "desktop.workpanel.getState");
+        assert.deepEqual(request.source, fixture.source);
+        assert.equal(JSON.stringify(request).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+      }
+    });
+  }
+}
+
+test("trusted WorkPanel state waits for canonical file presentation before its first renderer snapshot", async t => {
+  const fixture = createActiveDocumentWorkPanelFixture(t);
+  const waits = [];
+  let ready;
+  const presentation = new Promise(resolve => { ready = resolve; });
+  fixture.options.waitForWorkPanelFilePresentation = async input => { waits.push(input); await presentation; };
+  const pending = fixture.invoke();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(waits, [{ chatId: fixture.source.chatId, agentKey: fixture.source.agentKey }]);
+  assert.deepEqual(fixture.rendererCalls, []);
+  assert.deepEqual(fixture.lookupCalls, []);
+  ready();
+  const response = await pending;
+  assert.equal(response.ok, true);
+  assert.deepEqual(response.result.activeFile, fixture.file);
+});
+
+test("public and incomplete WorkPanel state sources cannot wait on or gain a file draft's canonical presentation", async t => {
+  const fixture = createActiveDocumentWorkPanelFixture(t);
+  fixture.options.waitForWorkPanelFilePresentation = async () => assert.fail("public source JSON cannot enter the private presentation barrier");
+  const publicResponse = await handleDesktopActionRequest(fixture.options, { action: "desktop.workpanel.getState", source: fixture.source });
+  assert.equal(publicResponse.ok, true);
+  assert.equal(publicResponse.result.activeFile, undefined);
+  const webappResponse = await handleWebappPageActionRequest(fixture.options, "webapp-preview-test", { action: "desktop.workpanel.getState", source: fixture.source });
+  assert.equal(webappResponse.result?.activeFile, undefined);
+  const incomplete = await handleAgentPlatformDesktopActionRequest(fixture.options, {
+    action: "desktop.workpanel.getState", source: { chatId: fixture.source.chatId, agentKey: fixture.source.agentKey },
+  });
+  assert.equal(incomplete.ok, false);
+  assert.equal(incomplete.error.code, "source_owner_required");
+  assert.deepEqual(fixture.lookupCalls, []);
+});
+
+test("a failed canonical file presentation never falls back to an empty snapshot or exposes its original path", async t => {
+  const fixture = createActiveDocumentWorkPanelFixture(t);
+  fixture.options.waitForWorkPanelFilePresentation = async () => { throw new Error(`Unbound file ${fixture.file.path}`); };
+  const response = await fixture.invoke();
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "target_unavailable");
+  assert.deepEqual(fixture.rendererCalls, []);
+  assert.deepEqual(fixture.lookupCalls, []);
+  assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+});
+
+for (const [name, invalidate] of [
+  ["Main frame replacement", fixture => { fixture.contents.mainFrame = {}; }],
+  ["Main contents replacement", fixture => { fixture.window = { ...fixture.window, webContents: { ...fixture.contents } }; }],
+  ["Main destruction", fixture => { fixture.contents.isDestroyed = () => true; }],
+  ["request cancellation", fixture => { fixture.abort.abort(); }],
+]) {
+  test(`trusted file presentation rejects ${name} before reading the WorkPanel snapshot`, async t => {
+    const fixture = createActiveDocumentWorkPanelFixture(t);
+    fixture.abort = new AbortController();
+    fixture.options.actionSignal = fixture.abort.signal;
+    let ready;
+    const presentation = new Promise(resolve => { ready = resolve; });
+    fixture.options.waitForWorkPanelFilePresentation = () => presentation;
+    const pending = fixture.invoke();
+    await new Promise(resolve => setImmediate(resolve));
+    invalidate(fixture);
+    ready();
+    const response = await pending;
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, "target_unavailable");
+    assert.deepEqual(fixture.rendererCalls, []);
+    assert.deepEqual(fixture.lookupCalls, []);
+  });
+}
+
+test("public and WebApp WorkPanel state cannot claim an internal Run or reflect a renderer-supplied original path", async t => {
+  const fixture = createActiveDocumentWorkPanelFixture(t);
+  fixture.result.activeFile = { ...fixture.file };
+  const request = {
+    action: "desktop.workpanel.getState", source: { ...fixture.source, kind: "agentPlatform" },
+    invocation: { kind: "agentPlatform" }, permissionMode: "full_access",
+  };
+  const publicResponse = await handleDesktopActionRequest(fixture.options, request);
+  assert.equal(publicResponse.ok, true);
+  assert.equal(Object.hasOwn(publicResponse.result, "activeFile"), false);
+  const webappResponse = await handleWebappPageActionRequest(fixture.options, "webapp-preview-test", request);
+  for (const response of [publicResponse, webappResponse]) {
+    assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+    assert.equal(response.result?.activeFile, undefined);
+  }
+  assert.deepEqual(fixture.lookupCalls, []);
+});
+
+for (const [label, select] of [
+  ["Overview", fixture => {
+    fixture.selected.descriptor = { kind: "webclient", module: "overview", route: "/overview/cutej?chatId=chat-owner", context: { agentKey: "cutej", chatId: "chat-owner" } };
+  }],
+  ["ordinary web tab", fixture => { fixture.result.state.activeItemId = "item-1"; }],
+  ["no active tab", fixture => { fixture.result.state.activeItemId = null; }],
+  ["no workspace", fixture => { fixture.result = { ok: true, workspaceId: "", workspaces: fixture.result.workspaces }; }],
+]) {
+  test(`trusted WorkPanel state returns no active file for ${label}, without falling back to an inactive or another Chat's document`, async t => {
+    const fixture = createActiveDocumentWorkPanelFixture(t);
+    select(fixture);
+    const response = await fixture.invoke();
+    assert.equal(response.ok, true, JSON.stringify(response));
+    assert.equal(response.result.activeFile, null);
+    assert.deepEqual(fixture.lookupCalls, []);
+    assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+  });
+}
+
+for (const [label, source] of [
+  ["no source", undefined],
+  ["no Chat", { agentKey: "cutej", runId: "run-owner" }],
+  ["no Agent", { chatId: "chat-owner", runId: "run-owner" }],
+  ["no Run", { chatId: "chat-owner", agentKey: "cutej" }],
+]) {
+  test(`trusted WorkPanel original lookup rejects ${label}`, async t => {
+    const fixture = createActiveDocumentWorkPanelFixture(t);
+    const response = await handleAgentPlatformDesktopActionRequest(fixture.options, {
+      action: "desktop.workpanel.getState", source,
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, "source_owner_required");
+    assert.deepEqual(fixture.lookupCalls, []);
+    assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+  });
+}
+
+for (const [label, change] of [
+  ["another Chat workspace", fixture => { fixture.result.state.ownerChatId = "other-chat"; }],
+  ["a missing workspace owner", fixture => { delete fixture.result.state.ownerChatId; }],
+  ["a mismatched workspace identity", fixture => { fixture.result.workspaceId = "workpanel:other-chat"; }],
+  ["a forged document Chat", fixture => { fixture.selected.descriptor.context.ownerChatId = "other-chat"; }],
+  ["a forged document Agent", fixture => { fixture.selected.descriptor.context.agentKey = "other-agent"; }],
+  ["a missing document identity", fixture => { delete fixture.selected.descriptor.context.documentId; }],
+  ["a missing active item", fixture => { fixture.result.state.activeItemId = "closed-item"; }],
+  ["duplicate active item identities", fixture => { fixture.result.state.items.push(structuredClone(fixture.selected)); }],
+]) {
+  test(`trusted WorkPanel original lookup rejects ${label} before entering the private registry`, async t => {
+    const fixture = createActiveDocumentWorkPanelFixture(t);
+    change(fixture);
+    const response = await fixture.invoke();
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, "target_unavailable");
+    assert.deepEqual(fixture.lookupCalls, []);
+    assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+  });
+}
+
+for (const [label, configure] of [
+  ["unavailable resolver", fixture => { delete fixture.options.resolveWorkPanelActiveFile; }],
+  ["closed registry entry", fixture => { fixture.options.resolveWorkPanelActiveFile = async () => null; }],
+  ["file lookup failure", fixture => { fixture.options.resolveWorkPanelActiveFile = async () => { throw new Error(`Cannot read ${fixture.file.path}`); }; }],
+]) {
+  test(`trusted WorkPanel state fails closed and hides private paths on ${label}`, async t => {
+    const fixture = createActiveDocumentWorkPanelFixture(t);
+    configure(fixture);
+    const response = await fixture.invoke();
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, "target_unavailable");
+    assert.equal(response.result, undefined);
+    assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+  });
+}
+
+for (const [label, change] of [
+  ["tab activation", fixture => { fixture.result.state.activeItemId = "item-inactive-file"; }],
+  ["active tab closure", fixture => { fixture.result.state.items = fixture.result.state.items.filter(item => item.itemId !== fixture.selected.itemId); }],
+  ["workspace closure", fixture => { fixture.result = { ok: true, workspaceId: "" }; }],
+  ["another Chat", fixture => { fixture.result.state.ownerChatId = "other-chat"; }],
+  ["document replacement under the same item", fixture => { fixture.selected.descriptor.context.documentId = "b0000000-1111-4111-8111-000000000003"; }],
+  ["workspace replacement under the same Chat", fixture => { fixture.result.state.workspaceId = fixture.result.workspaceId = "replacement:chat-owner"; }],
+  ["Main frame replacement", fixture => { fixture.contents.mainFrame = {}; }],
+  ["Main contents destruction", fixture => { fixture.contents.isDestroyed = () => true; }],
+  ["Main window replacement", fixture => { fixture.window = { ...fixture.window, webContents: { ...fixture.contents } }; }],
+  ["Run request abort", fixture => { fixture.abort.abort(); }],
+]) {
+  test(`trusted WorkPanel path lookup rejects ${label} during its asynchronous read`, async t => {
+    const fixture = createActiveDocumentWorkPanelFixture(t);
+    fixture.abort = new AbortController();
+    fixture.options.actionSignal = fixture.abort.signal;
+    let resume;
+    const blocked = new Promise(resolve => { resume = resolve; });
+    let entered;
+    const enteredLookup = new Promise(resolve => { entered = resolve; });
+    t.after(() => resume());
+    fixture.options.resolveWorkPanelActiveFile = async (request, isSelectionCurrent) => {
+      fixture.lookupCalls.push(request);
+      assert.equal(await isSelectionCurrent(), true);
+      entered();
+      await blocked;
+      return await isSelectionCurrent() ? fixture.file : null;
+    };
+    const pending = fixture.invoke();
+    await Promise.race([enteredLookup, pending.then(() => assert.fail("the lookup should reach the private registry before the target changes"))]);
+    change(fixture);
+    resume();
+    const response = await pending;
+    assert.equal(response.ok, false);
+    assert.equal(response.result, undefined);
+    assert.equal(JSON.stringify(response).includes(JSON.stringify(fixture.file.path).slice(1, -1)), false);
+    assert.equal(fixture.lookupCalls.length, 1, "a stale target must not be replaced with another file lookup");
+  });
+}
 
 test("Platform-only WorkPanel openLocalFile resolves a trusted workspace path without exposing it to the renderer", async (t) => {
   const { options } = createDesktopActionOptions(t);

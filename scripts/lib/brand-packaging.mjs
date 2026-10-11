@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { desktopBuiltinServicesRelativePath, desktopNodeRuntimeRelativePath } from "./desktop-resources.mjs";
+import { macDocumentFileAssociations } from "./document-file-associations.mjs";
 import {
   BRAND_RUNTIME_ASSET_DIR_NAME,
   DARWIN_BUNDLE_DEVELOPMENT_REGION,
@@ -121,6 +122,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
     ],
     mac: {
       icon: brandBuildRelativePath(brand, "icons", "icon.icns"),
+      fileAssociations: macDocumentFileAssociations(),
       extendInfo: {
         CFBundleDevelopmentRegion: DARWIN_BUNDLE_DEVELOPMENT_REGION,
         CFBundleLocalizations: DARWIN_BUNDLE_LOCALIZATIONS,
@@ -140,6 +142,8 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
     afterSign: "./scripts/verify-mac-services-signing.js",
     win: {
       icon: brandBuildRelativePath(brand, "icons", "icon.ico"),
+      // NSIS registers OpenWithProgids in our include; builder's association macro changes defaults.
+      fileAssociations: [],
       signAndEditExecutable: true,
       target: ["nsis"]
     },

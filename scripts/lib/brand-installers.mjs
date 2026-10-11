@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DESKTOP_PACKAGE_NAME, INSTALLER_SHUTDOWN_ARG, resolveBrandId } from "./brand-model.mjs";
 import { brandInstallerDir } from "./brand-paths.mjs";
+import { DESKTOP_DOCUMENT_FILE_TYPES } from "./document-file-associations.mjs";
 
 function writeFileIfChanged(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -21,6 +22,46 @@ function nsisIdentifier(value) {
   return normalized || "Desktop";
 }
 
+function documentFileHandlersNsis(brand) {
+  const productName = escapeNsisText(brand.productName);
+  const command = `'"$INSTDIR\\\${APP_EXECUTABLE_FILENAME}" "%1"'`;
+  const registrations = DESKTOP_DOCUMENT_FILE_TYPES.map(({ id, name, extensions }) => {
+    const progId = escapeNsisText(`${brand.appId}.${id}`);
+    const key = `Software\\Classes\\${progId}`;
+    return [
+      `  WriteRegStr HKCU "${key}" "" "${productName} ${escapeNsisText(name)}"`,
+      `  WriteRegStr HKCU "${key}\\Application" "ApplicationName" "${productName}"`,
+      `  WriteRegStr HKCU "${key}\\DefaultIcon" "" '"$INSTDIR\\\${APP_EXECUTABLE_FILENAME}",0'`,
+      `  WriteRegStr HKCU "${key}\\shell\\open\\command" "" ${command}`,
+      ...extensions.map((ext) => `  WriteRegStr HKCU "Software\\Classes\\.${ext}\\OpenWithProgids" "${progId}" ""`)
+    ].join("\n");
+  }).join("\n");
+  const unregistrations = DESKTOP_DOCUMENT_FILE_TYPES.map(({ id, extensions }) => {
+    const progId = escapeNsisText(`${brand.appId}.${id}`);
+    const key = `Software\\Classes\\${progId}`;
+    return [
+      `  ReadRegStr $R0 HKCU "${key}\\shell\\open\\command" ""`,
+      `  \${if} $R0 == ${command}`,
+      ...extensions.flatMap((ext) => [
+        `    DeleteRegValue HKCU "Software\\Classes\\.${ext}\\OpenWithProgids" "${progId}"`,
+        `    DeleteRegKey /ifempty HKCU "Software\\Classes\\.${ext}\\OpenWithProgids"`
+      ]),
+      `    DeleteRegKey HKCU "${key}"`,
+      "  ${endif}"
+    ].join("\n");
+  }).join("\n");
+  return `; Register only Open With candidates, preserving the user's default handlers.
+!macro DesktopRegisterDocumentFileHandlers
+${registrations}
+  System::Call 'shell32::SHChangeNotify(i, i, i, i) v (0x08000000, 0, 0, 0)'
+!macroend
+
+!macro DesktopUnregisterDocumentFileHandlers
+${unregistrations}
+  System::Call 'shell32::SHChangeNotify(i, i, i, i) v (0x08000000, 0, 0, 0)'
+!macroend`;
+}
+
 export function writeInstallerInclude(rootDir, brand) {
   const productName = escapeNsisText(brand.productName);
   const dataRegistryKey = `Software\\${brand.storageNamespace}`;
@@ -34,6 +75,8 @@ export function writeInstallerInclude(rootDir, brand) {
   const programOwnerToken = `${brand.appId}|${brand.storageNamespace}|program-root|v1`;
   const content = `!include nsDialogs.nsh
 !include FileFunc.nsh
+
+${documentFileHandlersNsis(brand)}
 
 ${fs.readFileSync(new URL("./windows-shortcut-identity.nsh", import.meta.url), "utf8")}
 
@@ -713,6 +756,7 @@ FunctionEnd
   !insertmacro DesktopWriteOwnerFile $DesktopProgramOwnerMarker "${programOwnerToken}"
   !insertmacro DesktopWriteOwnerMarker $INSTDIR "${installOwnerToken}"
   !insertmacro DesktopRefreshShortcutDescriptions
+  !insertmacro DesktopRegisterDocumentFileHandlers
 !macroend
 !endif
 
@@ -796,6 +840,7 @@ removeDesktopProgramDataRetry:
   \${endif}
 
 doneDataCleanup:
+  !insertmacro DesktopUnregisterDocumentFileHandlers
 !macroend
 `;
   writeFileIfChanged(path.join(brandInstallerDir(rootDir, brand), "installer.nsh"), content);

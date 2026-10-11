@@ -25,6 +25,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { createPortal, flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
+  isLocalDocumentDraftOwnerKey,
   normalizeWorkPanelWebUrl,
 } from "../../shared/work-panel";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../shared/sso";
@@ -81,6 +82,8 @@ import { WorkPanelFullscreenControls } from "./WorkPanelFullscreenControls";
 import { WorkPanelResourceImage } from "./WorkPanelResourceImage";
 import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController } from "./WorkPanelDocumentHtml";
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
+import { WorkPanelTab } from "./WorkPanelTab";
+import { WorkPanelLocalDocument, type WorkPanelLocalDocumentData } from "./WorkPanelLocalDocument";
 
 const ExternalWebviewPage = lazy(() =>
   import("../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage })),
@@ -91,6 +94,7 @@ const ServiceWebviewSurface = lazy(() =>
 
 type WorkPanelHostProps = {
   activeChatId: string | null;
+  activeOwnerKey?: string | null;
   state: WorkPanelState;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
   fullscreenOwnerChatId: string | null;
@@ -200,7 +204,7 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
   if (item.descriptor.kind === "web") return <GlobalOutlined />;
   if (item.descriptor.kind === "webapp-ref") return <AppstoreOutlined />;
   if (item.descriptor.kind === "local-file") return <FileTextOutlined />;
-  if (item.descriptor.kind === "native") return <PictureOutlined />;
+  if (item.descriptor.kind === "native") return item.descriptor.surfaceKey === "local-document" ? <FileTextOutlined /> : <PictureOutlined />;
   switch (item.descriptor.module) {
     case "overview":
       return <DashboardOutlined />;
@@ -335,6 +339,7 @@ function reviewSourceForItem(
 
 export function WorkPanelHost({
   activeChatId,
+  activeOwnerKey = activeChatId,
   state,
   dispatchCommand,
   fullscreenOwnerChatId,
@@ -352,6 +357,7 @@ export function WorkPanelHost({
   const previousLocalFileHandlesRef = useRef(new Map<string, string>());
   const previousResourceImageHandlesRef = useRef(new Map<string, string>());
   const previousDocumentHtmlHandlesRef = useRef(new Map<string, string>());
+  const previousSystemDocumentIdsRef = useRef(new Set<string>());
   const rendererGenerationRef = useRef(globalThis.crypto.randomUUID());
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
@@ -502,6 +508,14 @@ export function WorkPanelHost({
   };
 
   const openFilesFromMenu = async (ownerChatId: string) => {
+    const originalFiles = stateRef.current.workspaces.find(workspace => workspace.ownerChatId === ownerChatId)?.items
+      .some(item => item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document");
+    if (isLocalDocumentDraftOwnerKey(ownerChatId) || originalFiles) {
+      // Main reads the trusted current nonce/Chat; a UI draft key is never an API Chat ID.
+      await window.electronAPI.localDocuments.select();
+      closeAddMenu();
+      return;
+    }
     const result = await window.electronAPI.chatWorkPanel.localFiles.select({
       ownerChatId,
       rendererGeneration: rendererGenerationRef.current,
@@ -1482,6 +1496,25 @@ export function WorkPanelHost({
   }, []);
 
   useEffect(() => {
+    const nextDocumentIds = new Set<string>();
+    for (const workspace of state.workspaces) {
+      for (const item of workspace.items) {
+        if (item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document") {
+          const documentId = String(item.descriptor.context.documentId || "");
+          if (documentId) nextDocumentIds.add(documentId);
+        }
+      }
+    }
+    for (const documentId of previousSystemDocumentIdsRef.current) {
+      if (nextDocumentIds.has(documentId)) continue;
+      void window.electronAPI.localDocuments.close(documentId).catch(() => undefined);
+    }
+    previousSystemDocumentIdsRef.current = nextDocumentIds;
+    // Hiding a Chat or remounting this host does not revoke a system-opened file.
+    // Main owns renderer/window teardown; only removed WorkPanel items release here.
+  }, [state.workspaces]);
+
+  useEffect(() => {
     const nextHandles = new Map<string, string>();
     for (const workspace of state.workspaces) {
       for (const item of workspace.items) {
@@ -1702,7 +1735,7 @@ export function WorkPanelHost({
   useEffect(() => registerDesktopActionProviderForScope("global", async (request) => {
     if (!request.action.startsWith("desktop.workpanel.")) return null;
     const ownerChatId = request.source?.chatId?.trim() || "";
-    if (!ownerChatId) return actionError("source_chat_required", "A trusted source.chatId is required.");
+    if (!ownerChatId || ownerChatId.startsWith("file-draft:")) return actionError("source_chat_required", "A trusted canonical source.chatId is required.");
     const ownerAgentKey = request.source?.agentKey?.trim() || "";
     const args = request.args ?? {};
     const forbidden = [
@@ -1958,7 +1991,7 @@ export function WorkPanelHost({
     const root = rootRef.current;
     if (!root) return;
     const disposeFullscreenExitShortcut = window.electronAPI.onWorkPanelFullscreenExitShortcut(() => {
-      if (fullscreenOwnerChatId === activeChatId) {
+      if (fullscreenOwnerChatId === activeOwnerKey) {
         void onFullscreenChange(null);
       }
     });
@@ -1968,8 +2001,8 @@ export function WorkPanelHost({
     }) => {
       if (website) return false;
       if (guestId === null) {
-        if (activeChatId) {
-          closeWorkPanelStep(activeChatId);
+        if (activeOwnerKey) {
+          closeWorkPanelStep(activeOwnerKey);
           return true;
         }
         return false;
@@ -1981,7 +2014,7 @@ export function WorkPanelHost({
       const ownerChatId = itemHost?.dataset.workPanelOwner || "";
       const itemId = itemHost?.dataset.workPanelItem || "";
       const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
-      if (!workspace || workspace.ownerChatId !== activeChatId || workspace.activeItemId !== itemId) return false;
+      if (!workspace || workspace.ownerChatId !== activeOwnerKey || workspace.activeItemId !== itemId) return false;
       closeWorkPanelStep(ownerChatId);
       return true;
     });
@@ -1989,22 +2022,22 @@ export function WorkPanelHost({
       disposeFullscreenExitShortcut();
       disposeGuestShortcut();
     };
-  }, [activeChatId, dispatchCommand, fullscreenOwnerChatId, onFullscreenChange]);
+  }, [activeOwnerKey, dispatchCommand, fullscreenOwnerChatId, onFullscreenChange]);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const visiblePanel = activeChatId
-      ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeChatId)}"]`)
+    const visiblePanel = activeOwnerKey
+      ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeOwnerKey)}"]`)
       : null;
-    const activeItemId = activeChatId
-      ? state.workspaces.find((workspace) => workspace.ownerChatId === activeChatId)?.activeItemId ?? null
+    const activeItemId = activeOwnerKey
+      ? state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey)?.activeItemId ?? null
       : null;
     const isActiveItemHost = (element: HTMLElement | null) => Boolean(
       element &&
-      activeChatId &&
+      activeOwnerKey &&
       activeItemId &&
-      element.dataset.workPanelOwner === activeChatId &&
+      element.dataset.workPanelOwner === activeOwnerKey &&
       element.dataset.workPanelItem === activeItemId,
     );
     const activeElement = document.activeElement as HTMLElement | null;
@@ -2034,12 +2067,12 @@ export function WorkPanelHost({
     } else if (isMac && focusedItem && !isActiveItemHost(focusedItem)) {
       (focusedItem.querySelector("webview") as Electron.WebviewTag | null)?.blur();
     }
-  }, [activeChatId, isMac, isWindows, state.workspaces]);
+  }, [activeOwnerKey, isMac, isWindows, state.workspaces]);
 
   // Remember the box each workspace had while shown. A hidden workspace keeps
   // that viewport for its web pages instead of following the foreground
   // panel's width; fullscreen is a transient presentation and is not recorded.
-  const workPanelFullscreen = Boolean(activeChatId && fullscreenOwnerChatId === activeChatId);
+  const workPanelFullscreen = Boolean(activeOwnerKey && fullscreenOwnerChatId === activeOwnerKey);
   useEffect(() => {
     const visiblePanel = rootRef.current?.querySelector<HTMLElement>(".chat-work-panel.is-visible");
     const ownerChatId = visiblePanel?.dataset.workPanelChat;
@@ -2054,7 +2087,7 @@ export function WorkPanelHost({
     const observer = new ResizeObserver(record);
     observer.observe(visiblePanel);
     return () => observer.disconnect();
-  }, [activeChatId, state.workspaces, workPanelFullscreen]);
+  }, [activeOwnerKey, state.workspaces, workPanelFullscreen]);
 
   useEffect(() => () => {
     const root = rootRef.current;
@@ -2073,19 +2106,19 @@ export function WorkPanelHost({
   return (
     <div
       ref={rootRef}
-      className={`work-panel-host${activeChatId && fullscreenOwnerChatId === activeChatId ? " is-fullscreen" : ""}`}
+      className={`work-panel-host${activeOwnerKey && fullscreenOwnerChatId === activeOwnerKey ? " is-fullscreen" : ""}`}
     >
       {modalContext}
-      {activeChatId && fullscreenOwnerChatId === activeChatId && (
+      {activeOwnerKey && fullscreenOwnerChatId === activeOwnerKey && (
         <WorkPanelFullscreenControls
-          key={activeChatId}
+          key={activeOwnerKey}
           isMac={isMac}
           isWindows={isWindows}
           onExit={() => { void onFullscreenChange(null); }}
         />
       )}
       {state.workspaces.map((workspace) => {
-        const visible = workspace.ownerChatId === activeChatId;
+        const visible = workspace.ownerChatId === activeOwnerKey;
         // A background Run keeps operating its own Chat's web pages, so a
         // hidden workspace with web items retains a non-zero viewport.
         const hasBackgroundWeb = !visible && workspace.items.some(isWorkPanelBackgroundWebItem);
@@ -2114,31 +2147,24 @@ export function WorkPanelHost({
                   item.itemId,
                 );
                 return (
-                  <div
+                  <WorkPanelTab
                     key={item.itemId}
-                    className={`chat-work-panel-tab${active ? " is-active" : ""}${overview ? " is-overview" : ""}${closable ? " has-close" : ""}`}
-                    role="presentation"
+                    active={active}
+                    overview={overview}
+                    loading={itemLoading}
+                    title={item.title}
+                    tooltip={documentPath || item.title}
+                    icon={<WorkPanelItemIcon item={item} />}
                     onContextMenu={(event) => {
+                      if (isLocalDocumentDraftOwnerKey(workspace.ownerChatId)) return;
                       void handleTabContextMenu(event, workspace.ownerChatId, item).catch(() => undefined);
                     }}
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      className="chat-work-panel-tab-trigger"
-                      aria-selected={active}
-                      title={documentPath || item.title}
-                      onClick={() => dispatchCommand({
-                        type: "activateItem",
-                        ownerChatId: workspace.ownerChatId,
-                        itemId: item.itemId,
-                      })}
-                    >
-                      <span className={`chat-work-panel-tab-icon${itemLoading ? " is-loading" : ""}`} aria-hidden="true">
-                        {itemLoading ? <span className="chat-work-panel-tab-loading-spinner" /> : <WorkPanelItemIcon item={item} />}
-                      </span>
-                      <span className="chat-work-panel-tab-title">{item.title}</span>
-                      {reviewSession?.annotations.length ? (
+                    onActivate={() => dispatchCommand({
+                      type: "activateItem",
+                      ownerChatId: workspace.ownerChatId,
+                      itemId: item.itemId,
+                    })}
+                    badge={reviewSession?.annotations.length ? (
                         <span
                           className="chat-work-panel-tab-review-count"
                           aria-label={t("chatWorkPanel.review.annotationCount", {
@@ -2148,21 +2174,9 @@ export function WorkPanelHost({
                           {reviewSession.annotations.length}
                         </span>
                       ) : null}
-                    </button>
-                    {closable ? (
-                      <button
-                        type="button"
-                        className="chat-work-panel-tab-close"
-                        aria-label={t("chatWorkPanel.closeTab", { title: item.title })}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          closeItemWithReviewProtection(workspace.ownerChatId, item.itemId);
-                        }}
-                      >
-                        <CloseOutlined />
-                      </button>
-                    ) : null}
-                  </div>
+                    closeLabel={t("chatWorkPanel.closeTab", { title: item.title })}
+                    onClose={closable ? () => closeItemWithReviewProtection(workspace.ownerChatId, item.itemId) : undefined}
+                  />
                 );
               })}
               <div className="chat-work-panel-add-tab" role="presentation">
@@ -2190,6 +2204,8 @@ export function WorkPanelHost({
                       !webControllers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId)) &&
                       !failedWebDialogTransfers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId))) return null;
                   const active = visible && workspace.activeItemId === item.itemId;
+                  if (item.descriptor.kind === "webclient" &&
+                      (isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId))) return null;
                   // Read-only observers belong to the visible, committed Main Chat.
                   // A hidden guest can fail registration after a Chat switch and
                   // retain a permanently closed Frame Port when shown again.
@@ -2232,7 +2248,22 @@ export function WorkPanelHost({
                       hidden={!active}
                       aria-hidden={!active}
                     >
-                      {item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html" ? (
+                      {item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document" ? (
+                        <WorkPanelLocalDocument
+                          document={item.descriptor.context as unknown as WorkPanelLocalDocumentData}
+                          active={active}
+                          onLoadingChange={(isLoading) => {
+                            const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
+                            setLoadingWebItems((current) => {
+                              if (current.has(key) === isLoading) return current;
+                              const next = new Set(current);
+                              if (isLoading) next.add(key);
+                              else next.delete(key);
+                              return next;
+                            });
+                          }}
+                        />
+                      ) : item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html" ? (
                         <WorkPanelDocumentHtml
                           ref={(controller) => {
                             const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
@@ -2631,6 +2662,11 @@ export function WorkPanelHost({
                 </button>
               ))}
             </div>
+          ) : isLocalDocumentDraftOwnerKey(addMenuOwnerChatId) || (addMenuOwnerChatId === activeOwnerKey && !activeChatId) ? (
+            <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => void openFilesFromMenu(addMenuOwnerChatId)}>
+              <FolderOpenOutlined aria-hidden="true" />
+              <span>{t("chatWorkPanel.add.files")}</span>
+            </button>
           ) : (
             <>
               <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" disabled>

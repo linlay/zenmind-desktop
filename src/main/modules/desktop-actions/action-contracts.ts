@@ -19,6 +19,7 @@ import { type ServicesFacade } from "../services";
 import { type WebsFacade, publishWebapp, unpublishWebapp } from "../webs";
 import { type EmbeddedCdpCommandRequest, type SiteControlScope } from "../web-surfaces";
 import { type KanbanRuntime } from "../kanban";
+import type { LocalDocumentActiveFile } from "../work-panel";
 import { type DesktopActionSource, type DesktopActionError } from "../../../shared/desktop-actions";
 
 export type DesktopActionBridgeOptions = {
@@ -75,6 +76,11 @@ export type DesktopActionBridgeOptions = {
     onClick: () => void;
   }) => boolean;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
+  resolveWorkPanelActiveFile?: (
+    request: { chatId: string; agentKey: string; documentId: string },
+    isSelectionCurrent: () => Promise<boolean>,
+  ) => Promise<LocalDocumentActiveFile | null>;
+  waitForWorkPanelFilePresentation?: (input: { chatId: string; agentKey: string }) => Promise<void>;
   prepareWorkPanelLocalFileClaim?: (input: {
     ownerChatId: string;
     rendererWebContentsId: number;

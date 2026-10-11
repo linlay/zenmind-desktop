@@ -8,6 +8,7 @@ import { workPanelDocumentHtmlRegistry } from "../modules/work-panel";
 import { workPanelResourceImageRegistry } from "../modules/work-panel";
 import { requireEpochMillis } from "../../shared/time-contract";
 import { MainIpcRegistrationOptions } from "./ipc-registration-contracts";
+import { createLocalDocumentChatSync } from "./local-document-chat-sync";
 
 type AgentWebclientBridgeIpcOptions = Parameters<typeof registerAgentWebclientBridgeIpcHandlers>[1];
 
@@ -142,8 +143,14 @@ export function registerPlatformFrameIpc(options: MainIpcRegistrationOptions) {
     realtimeBroker: assistantBridgeRuntime.realtimeBroker,
     getServiceState: (targetApp, serviceId) => services.getServiceState(targetApp, serviceId, { mode: "bridge" }),
     issueAccessToken: options.issueAgentAccessToken,
-    syncCanonicalChat: (ownerWebContentsId, input) =>
-      canonicalChatSync.request(ownerWebContentsId, input),
+    syncCanonicalChat: createLocalDocumentChatSync({
+      getMainContents: () => options.getMainWindow()?.webContents ?? null,
+      resolveSurface: options.browserSurfaces.resolveWebviewSurfaceTarget,
+      request: canonicalChatSync.request,
+      begin: options.beginLocalDocumentDraftPromotion,
+      cancel: options.cancelLocalDocumentDraftPromotion,
+      promote: options.promoteLocalDocumentDraft,
+    }),
     dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
       const response = await handleAgentWebclientWorkPanelActionRequest(desktopActionOptions, {
         requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

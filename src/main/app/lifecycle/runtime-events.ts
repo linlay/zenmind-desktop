@@ -34,6 +34,7 @@ export interface StartRuntimeEventsDependencies {
   readonly FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT: ReturnType<typeof getFocusedWebviewDevToolsShortcut>;
   readonly handleAppReady: () => Promise<void>;
   readonly showMainWindow: AppShellRuntime["showMainWindow"];
+  readonly openLocalDocument: (filePath: string) => Promise<void> | void;
   readonly beginAppQuitWithoutConfirmation: () => void;
   readonly beginInstallerShutdown: (commandLine: string[]) => void;
   readonly appShellRuntime: Pick<AppShellRuntime, "isNativeDialogOpen">;
@@ -67,8 +68,10 @@ export function startRuntimeEvents(dependencies: StartRuntimeEventsDependencies)
     globalShortcut,
     focusedWebviewDevToolsShortcut: dependencies.FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT,
     initialCommandLine: process.argv,
+    initialWorkingDirectory: process.cwd(),
     onReady: dependencies.handleAppReady,
     showMainWindow: dependencies.showMainWindow,
+    openLocalDocument: dependencies.openLocalDocument,
     beginAppQuitWithoutConfirmation: dependencies.beginAppQuitWithoutConfirmation,
     beginInstallerShutdown: dependencies.beginInstallerShutdown,
     isNativeDialogOpen: () => dependencies.appShellRuntime.isNativeDialogOpen(),
