@@ -248,7 +248,8 @@
 - 将默认智能体设为配置 workspaceRoot: "@root" 的通用智能体（如小宅 zenmi），确认 Platform 列表省略 workspaceDir，重启后确认离开 Loading core components 并进入默认对话，Chats 新建对话与默认智能体选择仍可用；macOS 与 Windows 均覆盖，确认根路径不泄漏到项目列表。
 
 - macOS 与 Windows 分别确认 Chats 列出所有没有项目目录的智能体的对话（不限 mode，包含 copilot 智能体与 `@root` 智能体），项目智能体的对话只出现在对应 Project 下；删除某个智能体后其历史对话仍留在 Chats，可打开查看但输入框不可用。新建对话的智能体选择只列出可导航的 chat 类型智能体，不出现项目智能体。运行中或等待中的 chat 类型对话仍计入桌宠任务与托盘最近对话。
-- macOS 与 Windows 分别验证 Projects 仅按 workspaceDir 去除空白后是否非空分类：带目录的 REACT/CHAT Agent 显示为项目，无目录的 CODER/KBASE 不显示为项目；目录已删除的 Agent 仍保留项目归属。验证普通项目及非 CODER/KBASE 项目的拖拽保存、刷新顺序与 Git 分支显示。
+- macOS 与 Windows 分别验证 Projects 仅按 workspaceDir 去除空白后是否非空分类：带目录的 GENERAL/TEAM/REACT/CHAT Agent 显示为项目，无目录的 CODER/KBASE 不显示为项目；目录已删除的 Agent 仍保留项目归属。验证普通项目及非 CODER/KBASE 项目的拖拽保存、刷新顺序与 Git 分支显示。
+- macOS 与 Windows 分别在展开侧栏和收起态 Popover 打开 GENERAL、CODER、KBASE、TEAM 项目的菜单，确认具体 Workspace 可用时“打开项目编辑器”可点击；新建且暂无 Chat 的项目也能打开。覆盖中文和空格路径，同项目重复打开复用浮层；无目录、@root/@chat 或目录缺失时禁用，目录缺失的项目仍保留 Projects 归属。
 
 - 展开“项目”分组，确认标题栏显示“全部展开/全部收起项目”“刷新项目”和“新增项目”；收起外层分组后只保留“新增项目”，重新展开后前两个操作恢复，各项目原有展开状态保持不变，但“查看更多”恢复为首批 5 条。
 - 在 Projects 中分别展开和折叠单个项目，确认该项目的 New Chat 按钮始终显示；折叠后直接点击仍进入对应项目的新对话。macOS / Windows、浅深色及窄侧栏下，按钮不得被项目名称、未读或运行状态挤出。
@@ -335,7 +336,7 @@
 - macOS 验证 `.app`、Windows 验证 `.exe` 的无 shell 外部打开；有草稿时先提示只打开原文件。外部修改在无草稿时自动刷新，有草稿时只允许丢弃重载或另存新 Artifact；远端缓存先下载副本并明确不会回写。
 - 在浅色、深色、默认窄 WorkPanel、拉宽与全屏状态检查普通 Web 的分段按钮、地址截断、编辑按钮和键盘 focus；窄宽度仍保留完整编辑入口，地址安全截断且不挤出工具栏。Markdown/TXT/代码不得出现地址栏或第二行宿主工具栏。
 - 连续新增两个 Side Chat，确认都导航 `/btw/:chatId` 且 guest/instance 独立；active BTW 可调用 BTW/attach，不能 query；切换、隐藏、关闭不取消后台 Run。
-- KBASE 显示可用 Project；CODER 仅在 workspace 有效时可用，并携带当前 chatId 与 lastRunId；普通 Agent 不显示 Project。
+- GENERAL、CODER、KBASE、TEAM 等具有具体 Workspace 的 Agent 均显示 Project，目录可用时启用并携带当前 chatId 与 lastRunId；缺失目录时显示禁用原因，无 Workspace 的 Agent 不显示。侧栏与 WorkPanel 对同一 Agent 的编辑器可用性一致；macOS 与 Windows 均覆盖。
 
 ## WorkPanel 统一文档 Surface
 

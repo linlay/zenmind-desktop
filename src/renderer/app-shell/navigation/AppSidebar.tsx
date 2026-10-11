@@ -101,6 +101,7 @@ import { useI18n } from "../../i18n/useI18n";
 import {
   getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
+  getAssistantNavWorkspaceDisabledReason,
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
@@ -2406,7 +2407,7 @@ export function AppSidebar({
             canRevealWorkspace: !getRevealWorkspaceDisabledReason(agent),
             canOpenProjectEditor:
               Boolean(runtime.onOpenAgentProjectEditor) &&
-              canOpenAgentProjectEditor(agent),
+              !getRevealWorkspaceDisabledReason(agent),
           }
         : null;
     }
@@ -2601,7 +2602,7 @@ export function AppSidebar({
         await handleRevealWorkspace(agent);
       } else if (
         actionId === "agent.open-project-editor" &&
-        canOpenAgentProjectEditor(agent)
+        !getRevealWorkspaceDisabledReason(agent)
       ) {
         sidebarContextMenuRuntimeRef.current.onOpenAgentProjectEditor?.(agent);
       } else if (actionId === "agent.edit") {
@@ -6293,29 +6294,12 @@ export function AppSidebar({
   }
 
   function getRevealWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
-    const workspaceDir = agent.workspaceDir?.trim() ?? "";
-    if (!workspaceDir) {
-      return t("sidebar.agent.workspaceUnavailable");
-    }
-    if (workspaceDir === "@chat") {
-      return t("sidebar.agent.workspaceMissing");
-    }
-    if (agent.workspaceDirExists === false) {
-      return t("sidebar.agent.workspaceNotFound");
-    }
-    return "";
+    const reason = getAssistantNavWorkspaceDisabledReason(agent);
+    return reason ? t(reason) : "";
   }
 
   function isCoderAgent(agent: AssistantNavAgentItem) {
     return agent.mode?.trim().toUpperCase() === "CODER";
-  }
-
-  function canOpenAgentProjectEditor(agent: AssistantNavAgentItem) {
-    const mode = agent.mode?.trim().toUpperCase() ?? "";
-    if (mode === "KBASE") {
-      return true;
-    }
-    return mode === "CODER" && !getRevealWorkspaceDisabledReason(agent);
   }
 
   function createAgentEditRoute(agent: AssistantNavAgentItem) {

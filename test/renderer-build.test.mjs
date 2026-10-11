@@ -5013,7 +5013,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appSidebar, /使用本机 Codex CLI 运行 CODER 助理/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-assistant-project-button"/);
   assert.match(appSidebar, /function getRevealWorkspaceDisabledReason\(agent: AssistantNavAgentItem\)/);
-  assert.match(appSidebar, /agent\.workspaceDirExists === false/);
+  assert.match(appSidebar, /getAssistantNavWorkspaceDisabledReason\(agent\)/);
   assert.match(appSidebar, /disabled=\{Boolean\(openWorkspaceDisabledReason\)\}/);
   assert.match(appSidebar, /revealWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
   assert.doesNotMatch(appSidebar, /const title = isRename \? t\("sidebar\.agent\.rename"\) : t\("sidebar\.agent\.delete"\)/);

@@ -221,6 +221,23 @@ export function isAssistantNavProjectAgent(
   return Boolean(agent?.workspaceDir?.trim());
 }
 
+// Workspace availability constrains filesystem actions, independently of Agent mode.
+export function getAssistantNavWorkspaceDisabledReason(
+  agent: Pick<AssistantNavAgentItem, "workspaceDir" | "workspaceDirExists"> | null | undefined,
+) {
+  const workspaceDir = agent?.workspaceDir?.trim() ?? "";
+  if (!workspaceDir) {
+    return "sidebar.agent.workspaceUnavailable";
+  }
+  if (workspaceDir.startsWith("@")) {
+    return "sidebar.agent.workspaceMissing";
+  }
+  if (agent?.workspaceDirExists === false) {
+    return "sidebar.agent.workspaceNotFound";
+  }
+  return null;
+}
+
 export function isAssistantNavChatAgent(
   agent: Pick<AssistantNavAgentItem, "agentKey" | "workspaceDir"> | null | undefined,
 ) {

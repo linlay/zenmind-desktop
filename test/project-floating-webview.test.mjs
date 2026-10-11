@@ -10,7 +10,7 @@ function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("project agents expose the native project-editor action with mode-aware eligibility", () => {
+test("project agents expose the native project-editor action using workspace availability", () => {
   const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
   const policy = read("src/main/modules/web-surfaces/sidebar-context-menu-policy.ts");
   const handler = read("src/main/modules/web-surfaces/sidebar-context-menu-ipc.ts");
@@ -19,11 +19,11 @@ test("project agents expose the native project-editor action with mode-aware eli
 
   assert.match(
     sidebar,
-    /canOpenProjectEditor:[\s\S]{0,120}canOpenAgentProjectEditor\(agent\)/,
+    /canOpenProjectEditor:[\s\S]{0,120}!getRevealWorkspaceDisabledReason\(agent\)/,
   );
   assert.match(
     sidebar,
-    /function canOpenAgentProjectEditor[\s\S]*?mode === "KBASE"[\s\S]*?return true[\s\S]*?mode === "CODER" && !getRevealWorkspaceDisabledReason\(agent\)/,
+    /function getRevealWorkspaceDisabledReason[\s\S]*?getAssistantNavWorkspaceDisabledReason\(agent\)/,
   );
   assert.match(
     sidebar,
@@ -37,6 +37,19 @@ test("project agents expose the native project-editor action with mode-aware eli
   assert.match(enUS, /"sidebar\.agent\.openProjectEditor": "Open project editor"/);
   assert.match(zhCN, /"sidebar\.agent\.openProjectEditor": "打开项目编辑器"/);
   assert.match(sidebar, /desktopShell\.revealPath\(workspaceDir\)/);
+  assert.doesNotMatch(sidebar, /canOpenAgentProjectEditor/);
+});
+
+test("WorkPanel project entry shares workspace eligibility with the sidebar", () => {
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  assert.match(appShell, /workPanelProjectVisible = isAssistantNavProjectAgent\(workPanelLauncherAgent\)/);
+  assert.match(appShell, /workPanelProjectWorkspaceReason = getAssistantNavWorkspaceDisabledReason\(workPanelLauncherAgent\)/);
+  assert.match(appShell, /workPanelProjectEnabled = workPanelProjectWorkspaceReason === null/);
+  assert.match(appShell, /projectVisible: workPanelProjectVisible/);
+  assert.match(host, /launcher\.projectVisible \? \(/);
+  assert.match(host, /if \(!launcher\.projectEnabled\) return/);
+  assert.doesNotMatch(host, /launcher\.agentMode === "CODER" \|\| launcher\.agentMode === "KBASE"/);
 });
 
 test("AppShell keeps one floating entry per agent and enriches the project route", () => {

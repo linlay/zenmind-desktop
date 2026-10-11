@@ -146,6 +146,7 @@ import {
   resolveSettingsSectionId
 } from "../settings/settingsRoutes";
 import {
+  getAssistantNavWorkspaceDisabledReason,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
   normalizeAssistantNavAgentItemsResult,
@@ -4068,17 +4069,10 @@ export function AppShell() {
       chatNavAgentOptions.find((agent) => agent.agentKey === activeChatRouteInfo.agentKey) ?? null
     : null;
   const workPanelLauncherAgentMode = workPanelLauncherAgent?.mode?.trim().toUpperCase() ?? "";
-  const workPanelProjectDisabledReason = workPanelLauncherAgentMode === "CODER"
-    ? !workPanelLauncherAgent?.workspaceDir?.trim()
-      ? t("sidebar.agent.workspaceUnavailable")
-      : workPanelLauncherAgent.workspaceDir.trim() === "@chat"
-        ? t("sidebar.agent.workspaceMissing")
-        : workPanelLauncherAgent.workspaceDirExists === false
-          ? t("sidebar.agent.workspaceNotFound")
-          : ""
-    : "";
-  const workPanelProjectEnabled = workPanelLauncherAgentMode === "KBASE" ||
-    (workPanelLauncherAgentMode === "CODER" && !workPanelProjectDisabledReason);
+  const workPanelProjectVisible = isAssistantNavProjectAgent(workPanelLauncherAgent);
+  const workPanelProjectWorkspaceReason = getAssistantNavWorkspaceDisabledReason(workPanelLauncherAgent);
+  const workPanelProjectDisabledReason = workPanelProjectWorkspaceReason ? t(workPanelProjectWorkspaceReason) : "";
+  const workPanelProjectEnabled = workPanelProjectWorkspaceReason === null;
   const workPanelLastRunId = activeChatWorkPanelChatId
     ? [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
       [...(workPanelLauncherAgent?.projectChats ?? []), ...(workPanelLauncherAgent?.recentChats ?? [])].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ?? ""
@@ -5164,6 +5158,7 @@ export function AppShell() {
             agentMode: workPanelLauncherAgentMode,
             agentLabel: workPanelLauncherAgent?.displayName ? `${workPanelLauncherAgent.displayName} (${activeChatRouteInfo.agentKey})` : activeChatRouteInfo.agentKey,
             chatLabel: [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || [...(workPanelLauncherAgent?.projectChats ?? []), ...(workPanelLauncherAgent?.recentChats ?? [])].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.chatName || activeChatWorkPanelChatId || "",
+            projectVisible: workPanelProjectVisible,
             projectEnabled: workPanelProjectEnabled,
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,

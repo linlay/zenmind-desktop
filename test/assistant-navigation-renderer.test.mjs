@@ -68,6 +68,7 @@ function loadAssistantNavigationModule() {
 const {
   getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
+  getAssistantNavWorkspaceDisabledReason,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
   hasAssistantNavChat,
@@ -226,7 +227,7 @@ test("assistant nav preview caps visible awaiting rows at five", () => {
 });
 
 test("assistant nav project predicate uses workspace regardless of mode or directory existence", () => {
-  for (const mode of ["CODER", "KBASE", "CHAT", "REACT", undefined]) {
+  for (const mode of ["GENERAL", "CODER", "KBASE", "TEAM", "CHAT", "REACT", undefined]) {
     assert.equal(isAssistantNavProjectAgent({ mode, workspaceDir: " /projects/demo " }), true);
     assert.equal(isAssistantNavProjectAgent({ mode, workspaceDir: "C:\\projects\\demo", workspaceDirExists: false }), true);
     for (const workspaceDir of [undefined, "", "   "]) {
@@ -234,6 +235,32 @@ test("assistant nav project predicate uses workspace regardless of mode or direc
     }
   }
   assert.equal(isAssistantNavProjectAgent(null), false);
+});
+
+test("project editor availability follows concrete workspace across Agent modes", () => {
+  const paths = [
+    " /Users/demo/Documents/信息收集 ",
+    "C:\\projects\\信息收集",
+    "\\\\server\\share\\project",
+  ];
+  for (const mode of ["GENERAL", "CODER", "KBASE", "TEAM", "PROXY", undefined]) {
+    for (const workspaceDir of paths) {
+      const agent = { mode, workspaceDir };
+      assert.equal(isAssistantNavProjectAgent(agent), true);
+      assert.equal(getAssistantNavWorkspaceDisabledReason(agent), null);
+      assert.equal(getAssistantNavWorkspaceDisabledReason({ ...agent, workspaceDirExists: true }), null);
+      const missingDirectory = { ...agent, workspaceDirExists: false };
+      assert.equal(isAssistantNavProjectAgent(missingDirectory), true);
+      assert.equal(getAssistantNavWorkspaceDisabledReason(missingDirectory), "sidebar.agent.workspaceNotFound");
+    }
+    for (const workspaceDir of [undefined, "", "   "]) {
+      assert.equal(getAssistantNavWorkspaceDisabledReason({ mode, workspaceDir }), "sidebar.agent.workspaceUnavailable");
+    }
+    for (const workspaceDir of [" @root ", "@chat", "@workspace"]) {
+      assert.equal(getAssistantNavWorkspaceDisabledReason({ mode, workspaceDir }), "sidebar.agent.workspaceMissing");
+    }
+  }
+  assert.equal(getAssistantNavWorkspaceDisabledReason(null), "sidebar.agent.workspaceUnavailable");
 });
 
 test("assistant nav Chats exclude projects and internal agents", () => {

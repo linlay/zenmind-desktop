@@ -103,6 +103,7 @@ type WorkPanelHostProps = {
     agentMode: string;
     agentLabel: string;
     chatLabel: string;
+    projectVisible: boolean;
     projectEnabled: boolean;
     projectDisabledReason?: string;
     lastRunId?: string;
@@ -2649,7 +2650,7 @@ export function WorkPanelHost({
                 <MessageOutlined aria-hidden="true" />
                 <span>{t("chatWorkPanel.add.sideChat")}</span>
               </button>
-              {launcher.agentMode === "CODER" || launcher.agentMode === "KBASE" ? (
+              {launcher.projectVisible ? (
                 <button
                   type="button"
                   role="menuitem"
