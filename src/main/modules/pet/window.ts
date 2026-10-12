@@ -63,7 +63,12 @@ export function createDesktopPetBrowserWindow(options: {
     backgroundColor: "#00000000",
     // macOS non-activating panels are suitable for the sprite, not a reply editor.
     // The interactive panel must become a key window to receive keyboard/IME input.
-    ...(isMac && !focusable ? { type: "panel" as const } : {}),
+    ...(isMac && !focusable ? {
+      type: "panel" as const,
+      // Main already clamps the sprite host to display bounds. AppKit must not
+      // move or shrink its full-width host to avoid a left-side Dock.
+      enableLargerThanScreen: true
+    } : {}),
     ...(isMac && focusable ? { acceptFirstMouse: true } : {}),
     ...(isWindows ? { thickFrame: false } : {}),
     webPreferences: {
