@@ -3065,7 +3065,6 @@ export function SettingsPage({
     if (!shouldReadAssistantSettings || assistantSettingsLoadedRef.current) {
       return;
     }
-    assistantSettingsLoadedRef.current = true;
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getSettings(),
@@ -3075,7 +3074,6 @@ export function SettingsPage({
     ])
       .then(([settings, agentsResult, fallbackAgents, navigationResult]) => {
         if (cancelled) {
-          assistantSettingsLoadedRef.current = false;
           return;
         }
         const chatAgents = readChatAgentOptions(navigationResult);
@@ -3088,6 +3086,8 @@ export function SettingsPage({
         if (!agentsResult.ok && assistantAgents.length === 0) {
           throw new Error(agentsResult.message);
         }
+        // Cache only a committed result so effect replay or a quick return can reload.
+        assistantSettingsLoadedRef.current = true;
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
         setChatDefaultAgentKey(settings.chatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY);
@@ -3097,7 +3097,6 @@ export function SettingsPage({
         setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {
-        assistantSettingsLoadedRef.current = false;
         if (!cancelled) {
           setReadErrorSections(
             ASSISTANT_SETTINGS_SECTION_IDS,

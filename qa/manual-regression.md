@@ -400,7 +400,7 @@
 - macOS 与 Windows 分别在 Chats、Pinned 和 Project 内选择含 awaiting 的 Chat，不按 Enter，直接用主键盘或小键盘 `1–9` 选择选项，行为与 Chat 内相同；答题及多题翻页后焦点仍留在侧栏，`↑/↓` 可继续切换。覆盖快速 A→B 切换并立即按数字、页面加载中、无 awaiting、选项越界、提交中重复按键、提交失败重试和远端已回答：不得回答旧 Chat、重复提交或延迟补发。编辑输入框、打开弹窗、拖拽、组合键、输入法组合和长按均不触发；按 Enter 主动进入 Chat 后数字与方向键维持原有行为。
 
 - 从已有 Chat 打开 Cmd+K，分别通过鼠标、Enter、macOS Option+数字与 Windows Alt+数字选择当前 Agent 和其他 Agent；确认每次都进入所选 Agent 的 `/agent/:agentKey?newChat=<13 位 nonce>`，现有 Cmd+K “New Chat” 仍选择当前或默认 Agent。Desktop route、Main Chat guest URL、WebClient Router 与 Registry ownerless identity 必须一致，`webContentsId` 保持不变；立即发送第一条消息时 `/api/query` 只到达 Platform 一次，并正常以 `chat.start/run.start` 将同一 generation 提升为 canonical `chatId`。快速连续选择多个 Agent 时只允许最后一个目标提交，Chat 搜索结果仍打开原 canonical Chat。
-- macOS `Cmd+K` / Windows `Ctrl+K` 未输入关键词时，等待、未读对话和最近对话保持单行；中文未读分组名称为“未读对话”。输入关键词后，仅对话搜索结果显示两行：第一行保留图标、标题、助理名称、状态与快捷键，第二行与标题左对齐显示 `lastRunContent`。覆盖本地与仅远端命中的对话、命中较早 Run 的搜索、多行/长文本、空内容、浅深色与窄窗口；第二行合并换行、单行省略，空内容仍保留相同行高，选中背景覆盖整项。清空关键词后恢复单行，鼠标与键盘打开对话正常。
+- macOS `Cmd+K` / Windows `Ctrl+K` 未输入关键词时，等待、未读对话和最近对话保持单行；中文未读分组名称为“未读对话”。输入关键词后，仅对话搜索结果显示两行：第一行保留图标、标题、助理名称、状态与快捷键，第二行与标题左对齐显示 `lastRunContent`。运行状态只显示标题前的转圈图标，右侧不重复显示“运行中”；等待提交、等待审批等具体等待标签继续保留，读屏仍可识别运行状态。覆盖本地与仅远端命中的对话、命中较早 Run 的搜索、多行/长文本、空内容、浅深色与窄窗口；第二行合并换行、单行省略，空内容仍保留相同行高，选中背景覆盖整项。清空关键词后恢复单行，鼠标与键盘打开对话正常。
 - 准备一个不在 WebClient 当前列表缓存中的 unread Chat，分别从 Cmd+K、Sidebar 和桌宠打开。确认目标内容提交显示后只有 WebClient 经 Frame Port 发出一次单 Chat `/api/read`，Desktop 没有 `assistant.markChatRead` IPC、Sidebar fallback 或桌宠直写；Platform 的 `chat.read` 到达前 Sidebar 圆点保持，到达后全局 Chats、Project recentChats、activity 和 Agent 计数同时更新。让 read Push 在 Navigation 刷新旧快照期间到达，确认快照完成后仍为 read；再注入同 Run/旧 Run 的晚到 unread，确认被忽略，而更新 Run 的 unread 能恢复圆点。点击“全部标为已读”时确认 Desktop 只发送 Agent 级请求，UI 等待 `chat.read_all` Push，不做本地乐观清除。
 - 处于 `?newChat=` 空白页时通过 WebClient 切换到另一个 Agent；确认 Desktop 只生成一次目标 Agent 的新 nonce，WebClient Router、worker 选择和空白 Timeline 同步切换，旧 Agent 内容不得继续显示。ACK 前宿主目标造成的 guest URL 回声不得再次触发 Agent switch 或持续改写 `newChat=timestamp`；快速连续切换 Agent 时只提交最后一个真实目标，日志中的 `main-chat-route-transition-replaced` 应能明确列出前后 revision/target，不得被物理 URL 相等的判断吞掉。
 - 在稳定 Chat A 中首次选择此前未打开过的 Chat B，并在页面尚未完成切换时立即发送 Query、点击 WorkPanel：Registry 应先把 Main Chat 标为 inactive，待 Desktop route、guest URL 与 owner 收敛到 B 后再提交 active B；原 Query 在既有 1500ms 窗口内继续成功，WorkPanel 无需切走再返回即可自动打开。日志中的同一 revision 应能看到 `switching → ready`，不得出现 `Main Chat identity did not converge before query authorization`。
@@ -1255,6 +1255,7 @@
 
 - 宠物助理删除：内置宠物无删除按钮；用户宠物确认后消失，可重新导入同 ID。删除当前宠物自动切回内置默认形象，重启仍保持；删除非当前宠物不切换。关闭宠物时仍可删除；取消确认和回收站失败不改变列表及选择。macOS 废纸篓、Windows 回收站分别验证可恢复资源。
 - 宠物助理布局：默认对话智能体在顶部，标签和选择框左右布局，与下方宠物形象共用一个面板；宠物每行四个、无边框，默认静止 idle 首帧；悬停优先播放第一个专属动作，无专属动作时约 0.6 秒播放一次 idle，播完或移出恢复 idle 首帧，再次进入可重播，减少动态效果偏好下静止。无“已保存”和“选择”按钮，点击宠物即可选择，支持键盘 Enter/空格，当前宠物的选中边框和键盘焦点框使用与皮肤选择相同的主题强调色，切换主题或皮肤后即时更新，区域无底色；宠物区域右下角的删除图标在悬停或键盘聚焦时出现，内置卡片永远不显示删除。
+- macOS / Windows 分别从设置入口直接恢复“宠物助理”、通过指定分类入口进入，以及从其他设置分类切入，确认默认对话智能体列表自动显示，无需切页触发；开发模式也覆盖首次挂载。延迟列表请求并快速切到常规再返回，应显示最新有效请求结果；旧请求晚到或失败不得清空列表或覆盖错误，首次请求失败后切页返回可重试。
 
 - 自定义皮肤列表不显示版本号；名称与删除图标同排，长名称省略并可悬停查看。删除仅悬停或键盘聚焦时显示；选中皮肤有主题色外框和勾选标记，切换自定义/内置皮肤后标记同步，换明暗后仍清晰。
 - 专属动作：分别在内置及导入宠物上手动播放，只出现资源自身动画，不叠加品牌金色光环、粒子或阴影图层。

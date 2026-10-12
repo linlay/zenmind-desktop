@@ -416,7 +416,14 @@ function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   }
   if (row.kind === "chat") {
     if (row.hasPendingAwaiting || row.hasActiveRun) {
-      return <span className="worker-chat-loading assistant-material-icon is-loading" aria-hidden="true" />;
+      return (
+        <span
+          className="worker-chat-loading assistant-material-icon is-loading"
+          role={row.hasPendingAwaiting ? undefined : "img"}
+          aria-hidden={row.hasPendingAwaiting || undefined}
+          aria-label={row.hasPendingAwaiting ? undefined : t("desktop.globalSearch.status.running")}
+        />
+      );
     }
     if (row.isUnread) {
       return (
@@ -563,13 +570,6 @@ function renderChatStatus(row: Extract<DesktopGlobalSearchRow, { kind: "chat" }>
     return (
       <span className="desktop-global-search-row-status is-awaiting">
         {t(getAssistantAwaitingStatusKey(row.awaitingMode))}
-      </span>
-    );
-  }
-  if (row.hasActiveRun) {
-    return (
-      <span className="desktop-global-search-row-status is-running">
-        {t("desktop.globalSearch.status.running")}
       </span>
     );
   }
