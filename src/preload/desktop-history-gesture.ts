@@ -1,6 +1,6 @@
 import { ipcRenderer } from "electron";
 import type { DesktopHistoryGestureProgress } from "../shared/contracts/desktop-api";
-import { DESKTOP_HISTORY_GESTURE_CHANNEL, DESKTOP_HISTORY_GESTURE_IDLE_MS, DESKTOP_HISTORY_GESTURE_THRESHOLD } from "../shared/desktop-history-gesture";
+import { DESKTOP_HISTORY_GESTURE_CHANNEL, DESKTOP_HISTORY_GESTURE_RESET_CHANNEL, DESKTOP_HISTORY_GESTURE_IDLE_MS, DESKTOP_HISTORY_GESTURE_THRESHOLD } from "../shared/desktop-history-gesture";
 
 function keepsHorizontalScroll(event: WheelEvent) {
   for (const node of event.composedPath()) {
@@ -23,7 +23,7 @@ export function createDesktopHistoryWheelHandler(
   let blocked = false;
   let consumed = false;
   let previewing = false;
-  return (event: WheelEvent, now = performance.now()) => {
+  const handleWheel = (event: WheelEvent, now = performance.now()) => {
     // Pixel scrolling is the macOS two-finger trackpad path. Ignore wheel notches,
     // modified scrolling/pinching and synthetic page events. Do not filter on
     // cancelable: a sequence may have only its first sample cancelable, or no
@@ -61,11 +61,23 @@ export function createDesktopHistoryWheelHandler(
       committed,
     });
   };
+  return Object.assign(handleWheel, {
+    // DOM wheel events omit the native scroll phase. Main resets all retained
+    // preloads when a fresh native sequence begins, including rapid swipes.
+    reset() { lastSampleAt = Number.NEGATIVE_INFINITY; },
+  });
 }
 
 export function installDesktopHistoryGesture() {
   if (process.platform !== "darwin" || !process.isMainFrame) return;
-  window.addEventListener("wheel", createDesktopHistoryWheelHandler(
+  const handleWheel = createDesktopHistoryWheelHandler(
     (direction) => ipcRenderer.send(DESKTOP_HISTORY_GESTURE_CHANNEL, direction),
-  ), { capture: true, passive: true });
+  );
+  ipcRenderer.on(DESKTOP_HISTORY_GESTURE_RESET_CHANNEL, (_event, resetId: unknown) => {
+    if (typeof resetId !== "number" || !Number.isSafeInteger(resetId) || resetId < 1) return;
+    handleWheel.reset();
+    // Acknowledge after older samples already sent through this IPC stream.
+    ipcRenderer.send(DESKTOP_HISTORY_GESTURE_RESET_CHANNEL, resetId);
+  });
+  window.addEventListener("wheel", handleWheel, { capture: true, passive: true });
 }

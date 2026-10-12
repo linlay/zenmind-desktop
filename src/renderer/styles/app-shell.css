@@ -3862,11 +3862,15 @@
   width: var(--work-panel-resizer-hitbox);
   margin-right: calc(var(--work-panel-resizer-hitbox) / -2);
   margin-left: calc(var(--work-panel-resizer-hitbox) / -2);
-  cursor: ew-resize;
+  cursor: grab;
   touch-action: none;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+.chat-work-panel-resizer.is-active {
+  cursor: grabbing;
 }
 
 .app-content > .chat-work-panel-resizer {
@@ -3909,7 +3913,7 @@
 }
 
 .chat-work-panel-resize-overlay {
-  cursor: ew-resize;
+  cursor: grabbing;
 }
 
 .app-shell.is-work-panel-resizing,

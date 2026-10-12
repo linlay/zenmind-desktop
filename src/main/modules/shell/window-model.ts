@@ -106,6 +106,7 @@ export type WebviewAttachResult =
 export type AttachedWebviewLike = {
   id: number;
   mainFrame?: BrowserWindow["webContents"]["mainFrame"];
+  send(channel: string, ...args: unknown[]): void;
   session?: unknown;
   getURL(): string;
   isFocused?(): boolean;

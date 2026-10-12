@@ -40,11 +40,15 @@
   margin-left: calc(var(--sidebar-resizer-hitbox) / -2);
   margin-right: calc(var(--sidebar-resizer-hitbox) / -2);
   z-index: 6;
-  cursor: col-resize;
+  cursor: grab;
   touch-action: none;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+.app-sidebar-resizer.is-active {
+  cursor: grabbing;
 }
 
 .app-sidebar-resizer-line {
@@ -77,7 +81,7 @@
   position: absolute;
   inset: 0;
   z-index: 40;
-  cursor: col-resize;
+  cursor: grabbing;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;

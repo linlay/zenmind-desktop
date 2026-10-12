@@ -17,6 +17,7 @@ class Element {
 function fixture({ platform = "darwin", isMainFrame = true } = {}) {
   const sent = [];
   const listeners = [];
+  const ipcListeners = new Map();
   const exports = {};
   runInNewContext(source, {
     exports, Element, performance, document: { scrollingElement: null },
@@ -25,7 +26,10 @@ function fixture({ platform = "darwin", isMainFrame = true } = {}) {
       getComputedStyle: node => ({ overflowX: node.overflowX }),
       addEventListener: (...args) => listeners.push(args),
     },
-    require: name => name === "electron" ? { ipcRenderer: { send: (...args) => sent.push(args) } } : require(name),
+    require: name => name === "electron" ? { ipcRenderer: {
+      send: (...args) => sent.push(args),
+      on: (channel, listener) => ipcListeners.set(channel, listener),
+    } } : require(name),
   });
   exports.installDesktopHistoryGesture();
   const directions = [];
@@ -42,7 +46,7 @@ function fixture({ platform = "darwin", isMainFrame = true } = {}) {
       composedPath: () => [], ...overrides,
     }, clock);
   }
-  return { wheel, directions, updates, listeners };
+  return { wheel, directions, updates, listeners, reset: handler.reset, ipcListeners, sent };
 }
 
 test("two-finger horizontal sequences navigate once, ignore inertia and restart after idle", () => {
@@ -68,6 +72,40 @@ test("a small first sample previews immediately and navigation waits for the dis
   assert.deepEqual(directions, ["back"]);
   assert.equal(updates.at(-1).progress, 1);
   assert.equal(updates.at(-1).committed, true);
+});
+
+test("native sequence starts rearm rapid repeated swipes without a mouse move or idle delay", () => {
+  const { wheel, directions, updates, reset } = fixture();
+  for (let index = 0; index < 3; index += 1) {
+    wheel(-2); wheel(-65); wheel(-65);
+    wheel(-80); wheel(-80); // Momentum is still part of this sequence.
+    assert.equal(directions.length, index + 1);
+    reset();
+  }
+  assert.deepEqual(directions, ["back", "back", "back"]);
+  wheel(2);
+  assert.equal(updates.at(-1).direction, "forward");
+  assert.ok(updates.at(-1).progress < 0.1, "each sequence starts with a fresh distance buffer");
+  wheel(65); wheel(65);
+  assert.deepEqual(directions, ["back", "back", "back", "forward"]);
+});
+
+test("native starts reset the installed listener and acknowledge after its samples", () => {
+  const { listeners, ipcListeners, sent } = fixture();
+  const event = { deltaX: -65, deltaY: 0, deltaMode: 0, isTrusted: true, composedPath: () => [] };
+  const wheelListener = listeners[0][1];
+  const reset = ipcListeners.get("desktopShell.historyGestureReset");
+  for (let index = 0; index < 3; index += 1) {
+    wheelListener(event); wheelListener(event);
+    reset({}, index + 1);
+  }
+  const commits = sent.filter(([channel, payload]) => channel === "desktopShell.historyGesture" && payload?.committed);
+  assert.equal(commits.length, 3);
+  assert.deepEqual(sent.at(-1), ["desktopShell.historyGestureReset", 3]);
+  const count = sent.length;
+  for (const invalid of [undefined, "4", 0, -1, 0.5, Number.NaN]) reset({}, invalid);
+  assert.equal(sent.length, count);
+  assert.equal(fixture({ platform: "win32" }).ipcListeners.size, 0);
 });
 
 test("reversing or turning vertical cancels the preview without navigating", () => {

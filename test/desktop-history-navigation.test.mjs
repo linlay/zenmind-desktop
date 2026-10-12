@@ -30,8 +30,8 @@ function fixture(platform) {
     destroyed: false,
     isDestroyed() { return this.destroyed; },
     webContents: Object.assign(new EventEmitter(), {
-      mainFrame: {},
-      send(channel, payload) { ipc.emit(channel, {}, payload); },
+      mainFrame: {}, sent: [],
+      send(channel, payload) { this.sent.push([channel, payload]); ipc.emit(channel, {}, payload); },
     }),
   });
   configureMainWindowLifecycleEvents(main, {
@@ -54,6 +54,7 @@ function key(contents, keyName, overrides = {}) {
 function guestFor(main, platform, restrictedDocumentPreview = false) {
   const guest = Object.assign(new EventEmitter(), {
     id: 42, mainFrame: {}, getURL: () => "https://example.test/page", setWindowOpenHandler() {},
+    sent: [], send(...args) { this.sent.push(args); },
   });
   configureAttachedWebview(guest, {
     platform, restrictedDocumentPreview, getMainWindow: () => main,
@@ -69,6 +70,118 @@ function gesture(contents, direction, event = {}) {
   contents.emit("ipc-message", { sender: contents, senderFrame: contents.mainFrame, ...event },
     "desktopShell.historyGesture", payload);
 }
+
+function beginGesture(main, contents = [main.webContents]) {
+  main.webContents.emit("input-event", {}, { type: "gestureScrollBegin" });
+  const resetId = main.webContents.sent.findLast(([channel]) => channel === "desktopShell.historyGestureReset")[1];
+  for (const source of contents) acknowledgeReset(source, resetId);
+  return resetId;
+}
+
+function acknowledgeReset(contents, resetId, event = {}) {
+  contents.emit("ipc-message", { sender: contents, senderFrame: contents.mainFrame, ...event },
+    "desktopShell.historyGestureReset", resetId);
+}
+
+function endGesture(main) {
+  main.webContents.emit("input-event", {}, { type: "gestureScrollEnd" });
+}
+
+test("native sequences allow rapid successive history gestures, including retained guests", (t) => {
+  let now = 1000;
+  t.mock.method(performance, "now", () => now);
+  const { main, received } = fixture("darwin");
+  const guest = guestFor(main, "darwin");
+  for (const contents of [main.webContents, main.webContents, guest, guest]) {
+    now += 30;
+    beginGesture(main, [main.webContents, guest]);
+    gesture(contents, "back");
+    gesture(contents, "back");
+    endGesture(main);
+    gesture(contents, "back"); // Last DOM sample may arrive after native end.
+  }
+  assert.deepEqual(received, ["back", "back", "back", "back"]);
+  assert.equal(guest.sent.length, 4, "retained preloads receive every window-wide reset");
+});
+
+test("native ends cancel short previews but keep the inertia lock until the next begin", () => {
+  const { main, received, progress } = fixture("darwin");
+  beginGesture(main);
+  gesture(main.webContents, { direction: "back", progress: 0.2, committed: false });
+  endGesture(main);
+  assert.deepEqual(received, []);
+  assert.equal(progress.at(-1), null);
+  beginGesture(main);
+  gesture(main.webContents, "back");
+  endGesture(main);
+  gesture(main.webContents, "back");
+  assert.deepEqual(received, ["back"]);
+  beginGesture(main);
+  gesture(main.webContents, "back");
+  assert.deepEqual(received, ["back", "back"]);
+});
+
+test("reset acknowledgements exclude queued old samples and stale or invalid acknowledgements", () => {
+  const { main, received } = fixture("darwin");
+  const first = beginGesture(main);
+  gesture(main.webContents, "back");
+  endGesture(main);
+  main.webContents.emit("input-event", {}, { type: "gestureScrollBegin" });
+  const next = main.webContents.sent.at(-1)[1];
+  assert.ok(next > first);
+  for (const invalid of [first, undefined, "2", {}, next + 1]) {
+    acknowledgeReset(main.webContents, invalid);
+    gesture(main.webContents, "back");
+  }
+  acknowledgeReset(main.webContents, next, { senderFrame: {} });
+  gesture(main.webContents, "back");
+  assert.deepEqual(received, ["back"]);
+  acknowledgeReset(main.webContents, next);
+  gesture(main.webContents, "back");
+  assert.deepEqual(received, ["back", "back"]);
+});
+
+test("guest boundaries cannot release the root sequence, and long momentum cannot rearm it", (t) => {
+  let now = 1000;
+  t.mock.method(performance, "now", () => now);
+  const { main, received } = fixture("darwin");
+  const first = guestFor(main, "darwin");
+  const second = guestFor(main, "darwin");
+  beginGesture(main, [first, second]);
+  gesture(first, "back");
+  for (const source of [first, second]) {
+    source.emit("input-event", {}, { type: "gestureScrollEnd" });
+    source.emit("input-event", {}, { type: "gestureScrollBegin" });
+    now += 500;
+    gesture(source, "back");
+  }
+  main.webContents.emit("input-event", {}, { type: "gestureScrollBegin" });
+  assert.deepEqual(received, ["back"]);
+  endGesture(main);
+  beginGesture(main, [second]);
+  gesture(second, "back");
+  assert.deepEqual(received, ["back", "back"]);
+});
+
+test("destroyed guests are removed from the reset recipients", () => {
+  const { main } = fixture("darwin");
+  const guest = guestFor(main, "darwin");
+  guest.emit("destroyed");
+  beginGesture(main);
+  assert.deepEqual(guest.sent, []);
+});
+
+test("a fresh native begin after idle recovers even if the previous end was lost", (t) => {
+  let now = 1000;
+  t.mock.method(performance, "now", () => now);
+  const { main, received } = fixture("darwin");
+  beginGesture(main);
+  gesture(main.webContents, "back");
+  now += 321;
+  beginGesture(main);
+  gesture(main.webContents, "back");
+  assert.deepEqual(received, ["back", "back"]);
+});
 
 test("macOS forwards preview progress without moving history until the gesture commits", () => {
   const { main, received, progress } = fixture("darwin");
@@ -133,6 +246,7 @@ test("macOS ignores invalid directions, other senders, child/stale frames and un
 test("Windows swipes are not registered and only exact navigation shortcuts are consumed", () => {
   const { main, received } = fixture("win32");
   assert.equal(main.listenerCount("swipe"), 0);
+  assert.equal(main.webContents.listenerCount("input-event"), 0);
   gesture(main.webContents, "back");
   assert.deepEqual(received, []);
   assert.equal(key(main.webContents, "ArrowLeft"), true);

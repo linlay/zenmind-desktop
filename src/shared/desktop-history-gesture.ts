@@ -1,6 +1,7 @@
 import type { DesktopHistoryGestureProgress } from "./contracts/desktop-api";
 
 export const DESKTOP_HISTORY_GESTURE_CHANNEL = "desktopShell.historyGesture";
+export const DESKTOP_HISTORY_GESTURE_RESET_CHANNEL = "desktopShell.historyGestureReset";
 export const DESKTOP_HISTORY_GESTURE_PROGRESS_CHANNEL = "app.historyGestureProgress";
 export const DESKTOP_HISTORY_GESTURE_IDLE_MS = 320;
 export const DESKTOP_HISTORY_GESTURE_THRESHOLD = 120;
