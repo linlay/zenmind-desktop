@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { DESKTOP_PACKAGE_NAME, INSTALLER_SHUTDOWN_ARG, resolveBrandId } from "./brand-model.mjs";
 import { brandInstallerDir } from "./brand-paths.mjs";
 import { DESKTOP_DOCUMENT_FILE_TYPES } from "./document-file-associations.mjs";
@@ -20,6 +21,25 @@ function escapeNsisText(value) {
 function nsisIdentifier(value) {
   const normalized = String(value).replace(/[^A-Za-z0-9_]/gu, "");
   return normalized || "Desktop";
+}
+
+function writeMeasuredInstallerScript(rootDir, brand) {
+  const require = createRequire(import.meta.url);
+  const builderRequire = createRequire(require.resolve('electron-builder'));
+  const templates = path.join(path.dirname(builderRequire.resolve('app-builder-lib/package.json')), 'templates', 'nsis');
+  const source = fs.readFileSync(path.join(templates, 'include/extractAppPackage.nsh'), 'utf8');
+  if (source.split('Nsis7z::Extract "${FILE}"').length !== 3) {
+    throw new Error('Unsupported NSIS extraction template: review measured progress integration');
+  }
+  // Override only the extraction include. The standard electron-builder script
+  // still owns uninstaller generation, signing, and every atomic copy/retry.
+  const measured = source.replaceAll('Nsis7z::Extract "${FILE}"', '!insertmacro DesktopExtract7zMeasured "${FILE}"');
+  writeFileIfChanged(path.join(brandInstallerDir(rootDir, brand), 'measured', 'extractAppPackage.nsh'),
+    '!define DESKTOP_MEASURED_EXTRACT_LOADED\n' + measured + `\n!cd "${escapeNsisText(templates)}"\n`);
+  // This root template is normally located via the compiler's current directory.
+  // Keep it byte-for-byte unchanged while its helper loads our extraction include.
+  writeFileIfChanged(path.join(brandInstallerDir(rootDir, brand), 'measured', 'installSection.nsh'),
+    fs.readFileSync(path.join(templates, 'installSection.nsh'), 'utf8'));
 }
 
 function documentFileHandlersNsis(brand) {
@@ -80,7 +100,16 @@ ${documentFileHandlersNsis(brand)}
 
 ${fs.readFileSync(new URL("./windows-shortcut-identity.nsh", import.meta.url), "utf8")}
 
+!macro DesktopMeasuredExtractorHeader
+  !ifndef BUILD_UNINSTALLER
+    ; The current directory takes priority over NSIS include search directories.
+    ; The extraction include restores the template directory after loading.
+    !cd "${escapeNsisText(path.resolve(brandInstallerDir(rootDir, brand), 'measured'))}"
+  !endif
+!macroend
+
 !define DESKTOP_UPDATE_LOG_NAMESPACE "${storageNamespace}"
+${fs.readFileSync(new URL("./windows-install-activity.nsh", import.meta.url), "utf8")}
 ${fs.readFileSync(new URL("./windows-update-progress.nsh", import.meta.url), "utf8")}
 
 !ifdef DELETE_APP_DATA_ON_UNINSTALL
@@ -507,7 +536,7 @@ FunctionEnd
   ; A process can exit between the taskkill probe and execution; the final survivor and file-lock checks decide success.
   ; Keep checking the executable lock after the processes exit because Windows can release it slightly later.
   \${if} $DesktopProcessCleanupDone != "1"
-    DetailPrint "Stopping ${productName} app and managed service processes..."
+    DetailPrint "正在停止 ${productName} 和本地服务，请稍候…"
     System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_APP_EXE", "$INSTDIR\\\${APP_EXECUTABLE_FILENAME}").r0'
     StrCpy $DesktopProgramOwnerMarker "$APPDATA\\${programDataDirName}.desktop-owner"
     !insertmacro DesktopReadOwnerFile $DesktopProgramOwnerMarker "${programOwnerToken}" $R0
@@ -581,13 +610,14 @@ FunctionEnd
 !macro customPageAfterChangeDir
   Page custom ${nsisPrefix}DataDirectoryPage ${nsisPrefix}DataDirectoryPageLeave
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW DesktopUpdateProgressShow
+  !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DesktopInstallProgressEnd
 !macroend
 !endif
 
 !ifndef BUILD_UNINSTALLER
 !macro DesktopHandleOldUninstallAndRestoreInstallDir
   \${if} \${Errors}
-    DetailPrint "Old ${productName} uninstaller was not available; continuing with the fixed program directory."
+    DetailPrint "未找到 ${productName} 的旧版卸载程序，将继续处理固定程序目录。"
     ClearErrors
   \${elseIf} $R0 != 0
     MessageBox MB_OK|MB_ICONEXCLAMATION "旧版 ${productName} 卸载失败，错误码：$R0" /SD IDOK
@@ -596,6 +626,7 @@ FunctionEnd
   \${endif}
   !insertmacro DesktopResolveDefaultInstallDir
   StrCpy $INSTDIR "$DesktopDefaultInstallDir"
+  !insertmacro DesktopProgressAdvance 15
   !insertmacro DesktopUpdateStage "old-uninstall-handled"
 !macroend
 
@@ -609,6 +640,11 @@ FunctionEnd
 !endif
 
 !macro customCheckAppRunning
+  !ifdef BUILD_UNINSTALLER
+    !insertmacro DesktopUninstallProgressStart
+  !else
+    !insertmacro DesktopProgressStage "正在停止应用和本地服务…"
+  !endif
   !ifndef BUILD_UNINSTALLER
     !insertmacro DesktopUpdateStage "cleanup-start"
   !endif
@@ -659,7 +695,7 @@ FunctionEnd
   Delete "$DesktopShutdownAckPath"
   StrCpy $DesktopShutdownStatus ""
   \${if} \${FileExists} "$INSTDIR\\\${APP_EXECUTABLE_FILENAME}"
-    DetailPrint "Requesting ${productName} to exit and waiting for shutdown acknowledgement..."
+    DetailPrint "正在请求 ${productName} 退出，等待应用完成清理…"
     nsExec::ExecToLog \`"$INSTDIR\\\${APP_EXECUTABLE_FILENAME}" ${shutdownArg} "--desktop-shutdown-ack=$DesktopShutdownAckPath"\`
     Pop $R2
     StrCpy $R1 0
@@ -685,19 +721,32 @@ FunctionEnd
   !insertmacro stopManagedServiceProcesses
   Delete "$DesktopShutdownAckPath"
   \${if} $DesktopProcessCleanupStatus != "0"
+    !ifdef BUILD_UNINSTALLER
+      !insertmacro DesktopProgressStop 0
+    !endif
     MessageBox MB_ICONSTOP "${productName} 仍有受管进程未退出，覆盖安装或卸载已中止。$\\r$\\n$DesktopProcessSurvivors" /SD IDOK
     SetErrorLevel 20
     Abort
   \${endif}
   !ifndef BUILD_UNINSTALLER
+    !insertmacro DesktopProgressAdvance 10
     !insertmacro DesktopUpdateStage "cleanup-complete"
+    !insertmacro DesktopProgressStage "正在替换旧版本并解压程序文件…"
     DetailPrint "正在替换旧版本并解压程序文件，请稍候..."
+  !else
+    !insertmacro DesktopProgressAdvance 20
+    !insertmacro DesktopProgressStage "正在删除程序文件…"
   !endif
 !macroend
 
 !ifndef BUILD_UNINSTALLER
 !macro customInstall
+  !ifndef DESKTOP_MEASURED_EXTRACT_LOADED
+    !error "Measured extraction include was not loaded; refusing instruction-position progress"
+  !endif
+  !insertmacro DesktopProgressAdvance 95
   !insertmacro DesktopUpdateStage "files-installed"
+  !insertmacro DesktopProgressStage "正在完成安装…"
   Call ${nsisPrefix}EnsureDataRootDefault
   !insertmacro DesktopResolveDefaultInstallDir
   \${if} $INSTDIR != $DesktopDefaultInstallDir
@@ -761,6 +810,8 @@ FunctionEnd
 !endif
 
 !macro customUnInstall
+  !insertmacro DesktopProgressAdvance 60
+  !insertmacro DesktopProgressStage "正在确认应用数据保留选项…"
   SetOutPath $TEMP
   SetShellVarContext current
   Call un.${nsisPrefix}EnsureDataRootDefault
@@ -769,6 +820,8 @@ FunctionEnd
   MessageBox MB_YESNO|MB_ICONQUESTION "是否同时删除 ${productName} 应用数据？$\\r$\\n$\\r$\\n只会删除经过所有权校验的应用专属目录；历史自定义目录或安全标记异常时将保留数据。" /SD IDNO IDYES removeDesktopData IDNO doneDataCleanup
 
 removeDesktopData:
+  !insertmacro DesktopProgressAdvance 65
+  !insertmacro DesktopProgressStage "正在删除所选应用数据…"
   StrCpy $DesktopDataRemoved "0"
   StrCpy $DesktopCleanupWarning ""
   \${if} $DesktopDataRootLayoutVersion == "2"
@@ -841,9 +894,13 @@ removeDesktopProgramDataRetry:
 
 doneDataCleanup:
   !insertmacro DesktopUnregisterDocumentFileHandlers
+  !insertmacro DesktopProgressAdvance 95
+  !insertmacro DesktopProgressStage "正在完成卸载…"
+  !insertmacro DesktopUninstallProgressEnd
 !macroend
 `;
   writeFileIfChanged(path.join(brandInstallerDir(rootDir, brand), "installer.nsh"), content);
+  writeMeasuredInstallerScript(rootDir, brand);
 }
 
 const ELECTRON_BUILDER_NS_UUID = "50e065bc-3134-11e6-9bab-38c9862bdaf3";
