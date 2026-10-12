@@ -39,16 +39,16 @@ function resolveTargetAgentKey(openRequest: AssistantWorkerOpenRequest | null, f
   return normalizeAgentKey(openRequest?.agentKey ?? openRequest?.workerKey ?? fallbackAgentKey);
 }
 
-function appendMustUseSkills(params: URLSearchParams, mustUseSkills: readonly string[]) {
-  for (const skillId of mustUseSkills) {
-    params.append("mustUseSkill", skillId);
+function appendReferences(params: URLSearchParams, references: readonly {type:"skill";id:string}[]) {
+  for (const reference of references) {
+    params.append("reference", JSON.stringify(reference));
   }
 }
 
 function buildAgentWebclientCopilotPath(
   openRequest: AssistantWorkerOpenRequest | null,
   fallbackAgentKey = "",
-  mustUseSkills: readonly string[] = []
+  references: readonly {type:"skill";id:string}[] = []
 ) {
   const agentKey = resolveTargetAgentKey(openRequest, fallbackAgentKey);
   const chatId = openRequest?.chatId?.trim() ?? "";
@@ -58,7 +58,7 @@ function buildAgentWebclientCopilotPath(
     }
     const params = new URLSearchParams();
     params.set("chatId", chatId);
-    appendMustUseSkills(params, mustUseSkills);
+    appendReferences(params, references);
     return `${AGENT_WEBCLIENT_COPILOT_PATH}?${params.toString()}`;
   }
 
@@ -66,7 +66,7 @@ function buildAgentWebclientCopilotPath(
   if (chatId) {
     params.set("chatId", chatId);
   }
-  appendMustUseSkills(params, mustUseSkills);
+  appendReferences(params, references);
   return createAgentWebclientCopilotPath(agentKey, params);
 }
 
@@ -105,7 +105,7 @@ export function AgentWebclientCopilotDock({
   contextKey,
   parentSurfaceId,
   resolvedAgentKey,
-  mustUseSkills = [],
+  references = [],
   resize,
   onClose,
   onRunningRunIdChange,
@@ -120,7 +120,7 @@ export function AgentWebclientCopilotDock({
   contextKey: string;
   parentSurfaceId?: string;
   resolvedAgentKey: string;
-  mustUseSkills?: readonly string[];
+  references?: readonly {type:"skill";id:string}[];
   resize?: {
     active: boolean;
     minWidth: number;
@@ -139,8 +139,8 @@ export function AgentWebclientCopilotDock({
   const liveSurfaceActive = open && !nativeDialogVisible;
   const normalizedRestoredEmbedPath = normalizeCopilotEmbedPath(restoredEmbedPath ?? "");
   const targetEmbedPath = openRequest
-    ? buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey, mustUseSkills)
-    : normalizedRestoredEmbedPath || buildAgentWebclientCopilotPath(null, resolvedAgentKey, mustUseSkills);
+    ? buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey, references)
+    : normalizedRestoredEmbedPath || buildAgentWebclientCopilotPath(null, resolvedAgentKey, references);
   const targetAgentKey = readCopilotAgentKeyFromUrl(targetEmbedPath) ||
     resolveTargetAgentKey(openRequest, resolvedAgentKey);
   const lastHostTargetEmbedPathRef = useRef("");

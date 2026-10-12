@@ -43,7 +43,7 @@ export interface WebEntryBase {
   label: string;
   kind: WebKind;
   copilotAgentKey?: string;
-  copilotMustUseSkills?: string[];
+  copilotReferences?: {type: "skill"; id: string}[];
   createdAt: number;
   updatedAt: number;
 }

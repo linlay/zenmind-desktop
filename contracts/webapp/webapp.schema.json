@@ -587,21 +587,35 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
         },
-        "mustUseSkills": {
+        "references": {
           "minItems": 1,
           "maxItems": 16,
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 64,
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "skill"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false
           }
         }
       },
       "required": [
         "agentKey",
-        "mustUseSkills"
+        "references"
       ],
       "additionalProperties": false
     },

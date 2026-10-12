@@ -359,9 +359,10 @@ const webappManifestV2Schema = z.strictObject({
   backend: webappBackendSchema.optional(),
   copilot: z.strictObject({
     agentKey: z.string().regex(WEBAPP_AGENT_KEY_PATTERN),
-    mustUseSkills: z.array(
-      z.string().min(3).max(64).regex(WEBAPP_COPILOT_SKILL_KEY_PATTERN)
-    ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
+    references: z.array(z.strictObject({
+      type: z.literal("skill"),
+      id: z.string().min(3).max(64).regex(WEBAPP_COPILOT_SKILL_KEY_PATTERN)
+    })).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
   }).optional(),
   // Legacy capability fields are accepted for existing packages but no longer gate access.
   desktopBridge: z.strictObject({
@@ -390,13 +391,14 @@ const webappManifestV2Schema = z.strictObject({
   }
   if (value.copilot) {
     const skills = new Set<string>();
-    value.copilot.mustUseSkills.forEach((skillId, index) => {
+    value.copilot.references.forEach((reference, index) => {
+      const skillId = reference.id;
       const normalized = skillId.toLowerCase();
       if (skills.has(normalized)) {
         context.addIssue({
           code: "custom",
-          path: ["copilot", "mustUseSkills", index],
-          message: "mustUseSkills must be unique (case-insensitive)."
+          path: ["copilot", "references", index],
+          message: "references must be unique (case-insensitive)."
         });
       }
       skills.add(normalized);

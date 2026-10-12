@@ -343,16 +343,19 @@ test("manifest v2 validates fixed Copilot agent and forced skill configuration",
   const parsed = parseWebappManifest(manifest("poster-studio", {
     copilot: {
       agentKey: "webOperator",
-      mustUseSkills: ["poster-studio"]
+      references: (["poster-studio"]).map(id=>({type:"skill",id}))
     }
   }));
   assert.deepEqual(parsed.copilot, {
     agentKey: "webOperator",
-    mustUseSkills: ["poster-studio"]
+    references: (["poster-studio"]).map(id=>({type:"skill",id}))
   });
 
+  for(const old of [null,[],["poster-studio"]]) {
+    assert.throws(()=>parseWebappManifest(manifest("old-copilot",{copilot:{agentKey:"webOperator",mustUseSkills:old}})));
+  }
   assert.throws(() => parseWebappManifest(manifest("poster-conflict", {
-    copilot: { agentKey: "webOperator", mustUseSkills: ["poster-studio"] },
+    copilot: { agentKey: "webOperator", references: (["poster-studio"]).map(id=>({type:"skill",id})) },
     userConfig: {
       fields: [{
         name: "agentKey",
@@ -365,13 +368,13 @@ test("manifest v2 validates fixed Copilot agent and forced skill configuration",
   assert.throws(() => parseWebappManifest(manifest("poster-duplicate", {
     copilot: {
       agentKey: "webOperator",
-      mustUseSkills: ["poster-studio", "poster-studio"]
+      references: (["poster-studio", "poster-studio"]).map(id=>({type:"skill",id}))
     }
   })));
   assert.throws(() => parseWebappManifest(manifest("poster-invalid-skill", {
     copilot: {
       agentKey: "webOperator",
-      mustUseSkills: ["../poster-studio"]
+      references: (["../poster-studio"]).map(id=>({type:"skill",id}))
     }
   })));
 });

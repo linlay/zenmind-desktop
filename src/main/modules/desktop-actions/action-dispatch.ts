@@ -215,7 +215,7 @@ export async function executeAction(
       }
       const settings = options.getAssistantSettings(options.app);
       let agentKey = settings.desktopHelperAgentKey;
-      let mustUseSkills: string[] | undefined;
+      let references: {type:"skill";id:string}[] | undefined;
       if (isWebappInvocation) {
         const item = options.webs.webappManager.list(options.app)
           .find((candidate) => candidate.id === invocation.webappId) ?? null;
@@ -224,15 +224,15 @@ export async function executeAction(
         }
         if (item.copilot) {
           agentKey = item.copilot.agentKey;
-          mustUseSkills = [...item.copilot.mustUseSkills];
+          references = item.copilot.references.map(reference => ({...reference}));
         }
         if (args.skillIds !== undefined) {
-          const allowedSkills = new Set(item.copilot?.mustUseSkills ?? []);
+          const allowedSkills = new Set((item.copilot?.references ?? []).map(reference => reference.id));
           if (!Array.isArray(args.skillIds) || args.skillIds.length > 16 ||
               args.skillIds.some((id) => typeof id !== "string" || !allowedSkills.has(id))) {
             return fail(action, "invalid_args", "skillIds must be a subset of this WebApp's declared Copilot skills.");
           }
-          mustUseSkills = [...new Set(args.skillIds as string[])];
+          references = [...new Set(args.skillIds as string[])].map(id => ({type:"skill",id}));
         }
         const agentField = item.userConfig?.fields.find((field) =>
           field.type === "select" && "source" in field && field.source === "desktop.agents"
@@ -268,7 +268,7 @@ export async function executeAction(
       const webappContext = isWebappInvocation ? await captureWebappContext(options, invocation.webappId, invocation.signal) : null;
       if (isWebappInvocation && args.background !== undefined && typeof args.background !== "boolean") return fail(action, "invalid_args", "background must be boolean.");
       if (webappContext && args.background === true) {
-        const result = await startWebappAssistant(options, webappContext, { agentKey, source: "copilot", action: "chat", message, ...(mustUseSkills?.length ? { mustUseSkills } : {}) });
+        const result = await startWebappAssistant(options, webappContext, { agentKey, source: "copilot", action: "chat", message, ...(references?.length ? { references } : {}) });
         return ok(action, result);
       }
       const completion = await options.assistantBridge.completeText({
@@ -276,7 +276,7 @@ export async function executeAction(
         source: "copilot",
         action: "chat",
         message,
-        ...(mustUseSkills?.length ? { mustUseSkills } : {})
+        ...(references?.length ? { references } : {})
       });
       if (isWebappInvocation) {
         await webappContext!.check();

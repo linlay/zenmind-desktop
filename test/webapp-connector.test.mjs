@@ -103,7 +103,7 @@ test('artifacts require the owning app runtime and explicit chat context',async(
 });
 
 test('skills expose only declared IDs and safe metadata',async()=>{
- const options=fixture();options.webs.webappManager.list()[0].copilot={agentKey:'writer',mustUseSkills:['writing']};
+ const options=fixture();options.webs.webappManager.list()[0].copilot={agentKey:'writer',references: (['writing']).map(id=>({type:"skill",id}))};
  fetcher=async(url)=>{
   assert.equal(new URL(url).searchParams.get('agentKey'),'writer');
   return response({skills:[{id:'writing',displayName:'Writing',description:'Write',configured:true,path:'/private/skills',token:'secret'},{id:'private',name:'Hidden'}]});

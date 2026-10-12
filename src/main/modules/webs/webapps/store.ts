@@ -352,7 +352,7 @@ function manifestToEntry(
     ...(manifest.copilot
       ? {
           copilotAgentKey: manifest.copilot.agentKey,
-          copilotMustUseSkills: [...manifest.copilot.mustUseSkills]
+          copilotReferences: manifest.copilot.references.map(reference => ({...reference}))
         }
       : typeof userConfigValues.agentKey === "string" && WEBAPP_AGENT_KEY_PATTERN.test(userConfigValues.agentKey)
         ? { copilotAgentKey: userConfigValues.agentKey }

@@ -195,9 +195,8 @@ export class AssistantRunController {
             chatId: run.chatId,
             agentKey: request.agentKey?.trim() || undefined,
             message: request.message.trim(),
-            ...(request.mustUseSkills?.length ? { mustUseSkills: request.mustUseSkills } : {}),
             ...(accessLevel ? { accessLevel } : {}),
-            references,
+            references: [...(request.references || []),...references],
             params: {
               desktop: {
                 source: request.source || "copilot",
@@ -470,9 +469,8 @@ export class AssistantRunController {
           chatId: run.chatId,
           agentKey: request.agentKey?.trim() || undefined,
           message: request.message.trim(),
-          ...(request.mustUseSkills?.length ? { mustUseSkills: request.mustUseSkills } : {}),
           ...(accessLevel ? { accessLevel } : {}),
-          references,
+          references: [...(request.references || []),...references],
           params: {
             desktop: {
               source: request.source || "copilot",

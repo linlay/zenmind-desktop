@@ -1783,7 +1783,7 @@ test("WebApp assistant chat uses its configured Desktop agent and forwards the m
   assert.equal(helper.result.agentKey, "summary-agent");
   assert.equal(calls.completions.at(-1).agentKey, "summary-agent");
 
-  installedManifest.copilot = { agentKey: "fixed-writer", mustUseSkills: ["report-writer", "read-data"] };
+  installedManifest.copilot = { agentKey: "fixed-writer", references: (["report-writer", "read-data"]).map(id=>({type:"skill",id})) };
   fs.writeFileSync(manifestPath, JSON.stringify(installedManifest), "utf8");
   const fixed = await handleWebappPageActionRequest(options, id, {
     action: "assistant.chat", args: { message: "Use fixed Copilot", skillIds: ["report-writer"] }
@@ -1791,7 +1791,7 @@ test("WebApp assistant chat uses its configured Desktop agent and forwards the m
   assert.equal(fixed.ok, true);
   assert.equal(fixed.action, "assistant.chat");
   assert.equal(calls.completions.at(-1).agentKey, "fixed-writer");
-  assert.deepEqual(calls.completions.at(-1).mustUseSkills, ["report-writer"]);
+  assert.deepEqual(calls.completions.at(-1).references, [{type:"skill",id:"report-writer"}]);
   const forgedSkill = await handleWebappPageActionRequest(options, id, {
     action: "assistant.chat", args: { message: "hello", skillIds: ["unrelated-private-skill"] }
   });

@@ -1239,8 +1239,8 @@ export function AppShell() {
   const resolvedCopilotAgentKey = activeWebEntry
     ? activeWebEntry.copilotAgentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
     : currentCopilotPreference?.agentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
-  const resolvedCopilotMustUseSkills = activeWebEntry?.kind === "webapp"
-    ? activeWebEntry.copilotMustUseSkills ?? []
+  const resolvedCopilotReferences = activeWebEntry?.kind === "webapp"
+    ? activeWebEntry.copilotReferences ?? []
     : [];
   const isAgentWebclientMainRoute =
     location.pathname === ASSISTANT_TARGET_PATH ||
@@ -2222,8 +2222,8 @@ export function AppShell() {
     if (requestedChatId) {
       params.set("chatId", requestedChatId);
     }
-    for (const skillId of resolvedCopilotMustUseSkills) {
-      params.append("mustUseSkill", skillId);
+    for (const reference of resolvedCopilotReferences) {
+      params.append("reference", JSON.stringify(reference));
     }
     const embedPath = createAgentWebclientCopilotPath(requestedAgentKey, params);
     pendingAssistantDockOpenRequestRef.current = request
@@ -5267,7 +5267,7 @@ export function AppShell() {
           contextKey={currentCopilotContextKey}
           parentSurfaceId={currentCopilotParentSurfaceId}
           resolvedAgentKey={resolvedCopilotAgentKey}
-          mustUseSkills={resolvedCopilotMustUseSkills}
+          references={resolvedCopilotReferences}
           resize={assistantCopilotOpen && !copilotDockOverlayMode ? {
             active: isCopilotDockResizing,
             minWidth: COPILOT_DOCK_MIN_WIDTH,
