@@ -351,8 +351,8 @@ test("manifest v2 validates fixed Copilot agent and forced skill configuration",
     references: (["poster-studio"]).map(id=>({type:"skill",id}))
   });
 
-  for(const old of [null,[],["poster-studio"]]) {
-    assert.throws(()=>parseWebappManifest(manifest("old-copilot",{copilot:{agentKey:"webOperator",mustUseSkills:old}})));
+  for(const value of [null,[],["poster-studio"]]) {
+    assert.throws(()=>parseWebappManifest(manifest("unknown-copilot",{copilot:{agentKey:"webOperator",unexpectedOption:value}})));
   }
   assert.throws(() => parseWebappManifest(manifest("poster-conflict", {
     copilot: { agentKey: "webOperator", references: (["poster-studio"]).map(id=>({type:"skill",id})) },

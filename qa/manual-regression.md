@@ -1293,4 +1293,4 @@
 
 ## 统一资源引用
 
-WebApp copilot.references 仅声明 {type:"skill",id}，旧 mustUseSkills 即使空数组或 null 也拒绝。Copilot Dock URL 用 reference JSON 定位项，标签不可移除，前台和后台启动请求均发送 references，与上传文件合并。验证切换 Agent 不保留上一宿主引用；重新打开同一上下文仍有宿主预置标签。对话引用只发送 chatId，模型用 task-control 读取，PROXY 后端拒绝 Chat/kbase。
+WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使空数组或 null 也拒绝。Copilot Dock URL 用 reference JSON 定位项，标签不可移除，前台和后台启动请求均发送 references，与上传文件合并。验证切换 Agent 不保留上一宿主引用；重新打开同一上下文仍有宿主预置标签。对话引用只发送 chatId，模型用 task-control 读取，ACP/PROXY/CHANNEL 后端均拒绝 skill/kbase/chat；固定 Copilot 绑定这些后端时启动失败并显示服务端错误。
