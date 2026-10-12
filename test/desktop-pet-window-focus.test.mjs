@@ -25,10 +25,12 @@ test("macOS reply window accepts keyboard focus while the sprite stays non-activ
   assert.equal(editor.focusable, true);
   assert.equal(editor.type, undefined);
   assert.equal(editor.acceptFirstMouse, true);
+  assert.equal(editor.enableLargerThanScreen, undefined);
   assert.equal(editor.show, false, "opening a panel must not auto-focus it");
   const sprite = createWindow("darwin", false);
   assert.equal(sprite.focusable, false);
   assert.equal(sprite.type, "panel");
+  assert.equal(sprite.enableLargerThanScreen, true, "AppKit must preserve the sprite host across the side Dock");
 });
 
 test("Windows reply window remains focusable with explicit frameless configuration", () => {
@@ -37,5 +39,8 @@ test("Windows reply window remains focusable with explicit frameless configurati
   assert.equal(editor.thickFrame, false);
   assert.equal(editor.type, undefined);
   assert.equal(editor.acceptFirstMouse, undefined);
-  assert.equal(createWindow("win32", false).focusable, false);
+  assert.equal(editor.enableLargerThanScreen, undefined);
+  const sprite = createWindow("win32", false);
+  assert.equal(sprite.focusable, false);
+  assert.equal(sprite.enableLargerThanScreen, undefined);
 });
