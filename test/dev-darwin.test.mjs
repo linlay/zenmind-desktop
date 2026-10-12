@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { buildDarwinDevOpenArgs, prepareDarwinDevElectronApp, signDarwinDevElectronApp } from "../scripts/platform/dev-darwin.mjs";
-import { resolveDarwinDevSigningIdentity } from "../scripts/lib/mac-dev-signing.mjs";
+import { resolveDarwinDevSigningIdentity, withDarwinDevSigningKeychain } from "../scripts/lib/mac-dev-signing.mjs";
 import { brandIconDir } from "../scripts/lib/brand-config.mjs";
 
 const require = createRequire(import.meta.url);
@@ -314,4 +314,18 @@ test("macOS dev signing rejects ad hoc overrides and never replaces a damaged sa
     /Invalid development signing metadata/u.test(error.message) && !error.message.includes("must-not-appear"));
   fs.writeFileSync(metadata, saved);
   assert.deepEqual(resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", { signingRoot: input.signingRoot, env: {} }), first);
+});
+
+test("macOS dev signing removes its temporary search-list entry after failure", darwinOnly, t => {
+  const input = fixture(t);
+  const signing = resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", { signingRoot: input.signingRoot, env: {} });
+  const readSearchList = () => execFileSync("/usr/bin/security", ["list-keychains", "-d", "user"], { encoding: "utf8" });
+  const before = readSearchList();
+  const failure = new Error("signing failed");
+  assert.throws(() => withDarwinDevSigningKeychain(signing.keychain, () => {
+    const entries = readSearchList().trim().split("\n").map(line => JSON.parse(line.trim()));
+    assert.ok(entries.some(file => fs.realpathSync(file) === fs.realpathSync(signing.keychain)));
+    throw failure;
+  }), error => error === failure);
+  assert.equal(readSearchList(), before);
 });

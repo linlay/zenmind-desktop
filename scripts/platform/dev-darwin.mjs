@@ -15,7 +15,7 @@ import {
 import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-metadata.mjs";
 import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 import { macDocumentTypes } from "../lib/document-file-associations.mjs";
-import { resolveDarwinDevSigningIdentity } from "../lib/mac-dev-signing.mjs";
+import { resolveDarwinDevSigningIdentity, withDarwinDevSigningKeychain } from "../lib/mac-dev-signing.mjs";
 
 function escapePlistText(value) {
   return String(value)
@@ -125,11 +125,11 @@ export function signDarwinDevElectronApp(appRoot, { bundleId, signingRoot, env }
   // Re-seal the copied bundle after changing its identity, Helper metadata and
   // icons. A persistent certificate keeps the designated requirement stable
   // across bundle/version changes; ad hoc CDHashes cannot retain TCC grants.
-  execFileSync("/usr/bin/codesign", [
+  withDarwinDevSigningKeychain(signing.keychain, () => execFileSync("/usr/bin/codesign", [
     "--force", "--deep", "--sign", signing.identity,
     ...(signing.keychain ? ["--keychain", signing.keychain] : []),
     "--timestamp=none", "--preserve-metadata=entitlements", appRoot
-  ], { timeout: 60000, stdio: ["ignore", "pipe", "pipe"] });
+  ], { timeout: 60000, stdio: ["ignore", "pipe", "pipe"] }));
   execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", appRoot], {
     timeout: 60000,
     stdio: ["ignore", "pipe", "pipe"]

@@ -16,13 +16,33 @@ function run(program, args, options = {}) {
   }
 }
 
-function removeFromKeychainSearchList(keychainPath) {
-  const current = run("/usr/bin/security", ["list-keychains", "-d", "user"])
+function readKeychainSearchList() {
+  return run("/usr/bin/security", ["list-keychains", "-d", "user"])
     .split("\n").map(line => line.trim()).filter(Boolean).map(line => JSON.parse(line));
+}
+
+function removeFromKeychainSearchList(keychainPath) {
+  const current = readKeychainSearchList();
   const canonical = file => fs.existsSync(file) ? fs.realpathSync(file) : path.resolve(file);
   const remaining = current.filter(file => canonical(file) !== canonical(keychainPath));
   if (remaining.length !== current.length) {
     run("/usr/bin/security", ["list-keychains", "-d", "user", "-s", ...remaining]);
+  }
+}
+
+export function withDarwinDevSigningKeychain(keychainPath, sign) {
+  if (process.platform !== "darwin") throw new Error("Development keychain signing is only supported on macOS.");
+  if (!keychainPath) return sign();
+  const current = readKeychainSearchList();
+  const canonical = file => fs.existsSync(file) ? fs.realpathSync(file) : path.resolve(file);
+  if (current.some(file => canonical(file) === canonical(keychainPath))) return sign();
+  // codesign requires search-list membership even with an explicit --keychain.
+  // Expose the identity only for the synchronous signing operation.
+  run("/usr/bin/security", ["list-keychains", "-d", "user", "-s", ...current, keychainPath]);
+  try {
+    return sign();
+  } finally {
+    removeFromKeychainSearchList(keychainPath);
   }
 }
 
