@@ -5,6 +5,7 @@ import { resolveWebviewEditShortcut, runWebviewEditCommand, isWorkPanelFullscree
 import { toggleMainRendererDevTools } from "./main-window-options";
 import { isBlobSchemeUrl, normalizeWebviewBlobPopupForSource } from "../../../shared/webview-popup";
 import { normalizeChatWorkPanelUrl } from "../../../shared/chat-work-panel";
+import { configureDesktopHistoryGesture } from "./history-gesture";
 
 export function configureAttachedWebview<
   TMainWindow extends {
@@ -18,6 +19,7 @@ export function configureAttachedWebview<
   contents: TGuestContents,
   options: AttachedWebviewOptions<TMainWindow, TGuestContents>
 ) {
+  configureDesktopHistoryGesture(contents, options);
   const isHelpWebview = options.isHelpWebview?.(contents) === true;
   const downloadFromWebview = (url: string) => {
     try {

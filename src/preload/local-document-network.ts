@@ -1,3 +1,5 @@
+import { installDesktopHistoryGesture } from "./desktop-history-gesture";
+installDesktopHistoryGesture();
 import { contextBridge } from "electron";
 import { disableLocalDocumentNetworkTransports } from "../shared/local-document-network-policy";
 

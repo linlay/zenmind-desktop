@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useLayoutEffect,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { HistoryGestureOverlay } from "./navigation/HistoryGestureOverlay";
 import { forwardMainChatAwaitingDigit } from "../services/mainChatAwaitingShortcut";
 import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
@@ -5443,6 +5444,10 @@ export function AppShell() {
         />
       ) : null}
       <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
+      <HistoryGestureOverlay
+        canGoBack={Boolean(desktopNavigationBackStep)}
+        canGoForward={Boolean(desktopNavigationForwardStep)}
+      />
       </div>
     </DebugModeContext.Provider>
   );

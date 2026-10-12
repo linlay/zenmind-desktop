@@ -1,3 +1,6 @@
+import { installDesktopHistoryGesture } from "./desktop-history-gesture";
+import { DESKTOP_HISTORY_GESTURE_PROGRESS_CHANNEL, readDesktopHistoryGestureProgress } from "../shared/desktop-history-gesture";
+installDesktopHistoryGesture();
 import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { createMainNavigationSubscription } from "./main-navigation";
@@ -943,6 +946,14 @@ const api: DesktopApi = {
     };
     ipcRenderer.on("app.historyNavigation", handler);
     return () => { ipcRenderer.off("app.historyNavigation", handler); };
+  },
+  onHistoryGestureProgress: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      const progress = readDesktopHistoryGestureProgress(value);
+      if (progress !== undefined) listener(progress);
+    };
+    ipcRenderer.on(DESKTOP_HISTORY_GESTURE_PROGRESS_CHANNEL, handler);
+    return () => { ipcRenderer.off(DESKTOP_HISTORY_GESTURE_PROGRESS_CHANNEL, handler); };
   },
   onOpenGlobalSearch: (listener: () => void) => {
     const handleOpenGlobalSearch = () => {

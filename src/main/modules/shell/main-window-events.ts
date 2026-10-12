@@ -3,6 +3,7 @@ import type { DesktopPlatform } from "../../infrastructure/electron/platform-ada
 import type { DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
 import { toggleMainRendererDevTools } from "./main-window-options";
 import { isWorkPanelFullscreenExitShortcut, resolveDesktopHistoryNavigationShortcut } from "./webview-shortcuts";
+import { configureDesktopHistoryGesture } from "./history-gesture";
 
 export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLifecycleEventsLike>(
   targetWindow: TWindow,
@@ -67,15 +68,10 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
   targetWindow.on("maximize", sendWindowState);
   targetWindow.on("unmaximize", sendWindowState);
 
-  if (options.platform === "darwin") {
-    // Native three-finger page swipes are window events, including over embedded guests.
-    targetWindow.on("swipe", (_event, direction) => {
-      if (targetWindow.isDestroyed()) return;
-      if (direction === "right" || direction === "left") {
-        targetWindow.webContents.send("app.historyNavigation", direction === "right" ? "back" : "forward");
-      }
-    });
-  }
+  configureDesktopHistoryGesture(targetWindow.webContents, {
+    platform: options.platform,
+    getMainWindow: () => targetWindow,
+  });
 
   targetWindow.webContents.on("before-input-event", (event, input) => {
     const historyDirection = resolveDesktopHistoryNavigationShortcut(options.platform, input);

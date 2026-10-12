@@ -47,7 +47,7 @@ export type MainWindowLifecycleEventsLike = Pick<
   "focus" | "isDestroyed" | "isFullScreen" | "isMaximized" | "on" | "once" | "show"
 > & {
   webContents: MainRendererDevToolsContentsLike &
-    Pick<BrowserWindow["webContents"], "on" | "send">;
+    Pick<BrowserWindow["webContents"], "on" | "send" | "mainFrame">;
 };
 
 export type MainWindowWebContentsLike = {
@@ -105,6 +105,7 @@ export type WebviewAttachResult =
 
 export type AttachedWebviewLike = {
   id: number;
+  mainFrame?: BrowserWindow["webContents"]["mainFrame"];
   session?: unknown;
   getURL(): string;
   isFocused?(): boolean;

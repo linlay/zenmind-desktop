@@ -1,3 +1,5 @@
+import { installDesktopHistoryGesture } from "./desktop-history-gesture";
+installDesktopHistoryGesture();
 import { ipcRenderer, webFrame } from "electron";
 import { installConnectorAuthBrowser } from "./service-webview-connector-auth";
 installConnectorAuthBrowser();

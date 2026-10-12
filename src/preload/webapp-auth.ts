@@ -1,3 +1,5 @@
+import { installDesktopHistoryGesture } from "./desktop-history-gesture";
+installDesktopHistoryGesture();
 import { contextBridge, ipcRenderer } from "electron";
 import { WEBAPP_AUTH_CHANNEL, WEBAPP_AUTH_GLOBAL, type WebappAuthSessionInput } from "../shared/webapp-auth";
 

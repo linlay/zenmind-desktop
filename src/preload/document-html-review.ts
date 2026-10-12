@@ -1,3 +1,5 @@
+import { installDesktopHistoryGesture } from "./desktop-history-gesture";
+installDesktopHistoryGesture();
 import { ipcRenderer } from "electron";
 import { WORK_PANEL_DOCUMENT_HTML_PROTOCOL, WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL, WORK_PANEL_DOCUMENT_HTML_REVIEW_EVENT } from "../shared/work-panel-document-html";
 
