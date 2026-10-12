@@ -3855,26 +3855,30 @@
 }
 
 .chat-work-panel-resizer {
-  --work-panel-resizer-hitbox: 12px;
+  --work-panel-resizer-hitbox: 16px;
   position: relative;
-  z-index: 14;
   align-self: stretch;
   flex: 0 0 var(--work-panel-resizer-hitbox);
   width: var(--work-panel-resizer-hitbox);
   margin-right: calc(var(--work-panel-resizer-hitbox) / -2);
   margin-left: calc(var(--work-panel-resizer-hitbox) / -2);
-  cursor: col-resize;
+  cursor: ew-resize;
   touch-action: none;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
+.app-content > .chat-work-panel-resizer {
+  /* Keep the full hitbox above sibling surfaces and the canonical WebApp layer. */
+  z-index: 60;
+}
+
 .chat-work-panel-resizer-line {
   position: absolute;
   inset-block: 0;
   left: 50%;
-  width: 1px;
+  width: 2px;
   transform: translateX(-50%);
   background: rgba(83, 96, 112, 0.2);
   pointer-events: none;
@@ -3884,7 +3888,7 @@
 .chat-work-panel-resizer:hover .chat-work-panel-resizer-line,
 .chat-work-panel-resizer:focus-visible .chat-work-panel-resizer-line,
 .chat-work-panel-resizer.is-active .chat-work-panel-resizer-line {
-  width: 3px;
+  width: 4px;
   background: rgba(var(--accent-rgb), 0.42);
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.18);
 }
@@ -3902,6 +3906,10 @@
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+.chat-work-panel-resize-overlay {
+  cursor: ew-resize;
 }
 
 .app-shell.is-work-panel-resizing,

@@ -588,6 +588,7 @@
 
 ## WorkPanel 宽度折叠
 
+- macOS / Windows 分别在浅色与深色下检查 WorkPanel 分隔线：普通状态宽 2px，悬停、键盘聚焦与拖动时宽 4px；常规布局的可拖动范围宽 16px，悬停和拖动显示左右调整宽度的鼠标箭头。打开普通网页或 WebApp 后，分隔线两侧仍可完整命中，不得落到网页手型；主聊天折叠后两条分隔线仍可分别命中和拖动。
 - macOS 与 Windows 分别向左拖动 WorkPanel 分隔线：Main Chat 到达 420px 后继续向左拖动不足 96px 时保持最小宽度，达到 96px 缓冲阈值后才直接折叠为零宽；导航与 WorkPanel 两条线相距约 6px，且可分别拖动。
 - 从折叠位置向右拖动或按分隔线的右方向键，恢复 Main Chat 最小宽度并继续缩小 WorkPanel；验证 Home/End、窗口缩放、导航宽度调整、隐藏/恢复 WorkPanel 和进出全屏，聊天 guest 不重建。
 
