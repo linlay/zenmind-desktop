@@ -37,10 +37,11 @@ test(`generated update progress compiles and runs with plugin registration ${plu
     .find((dir) => fs.existsSync(path.join(dir, "StdUtils.dll")));
   assert.ok(plugins, "NSIS StdUtils resource bundle must be available");
   const require = createRequire(import.meta.url);
-  const { NsisScriptGenerator } = require("app-builder-lib/out/targets/nsis/nsisScriptGenerator.js");
+  const builderRequire = createRequire(require.resolve("electron-builder"));
+  const { NsisScriptGenerator } = builderRequire("app-builder-lib/out/targets/nsis/nsisScriptGenerator.js");
   const flags = new NsisScriptGenerator();
   flags.flags(["updated"]);
-  const templates = path.resolve("node_modules/app-builder-lib/templates/nsis");
+  const templates = path.join(path.dirname(builderRequire.resolve("app-builder-lib/package.json")), "templates", "nsis");
   const brand = { ...loadBrandConfig(process.cwd(), "cutej"), storageNamespace: path.basename(root) };
   writeInstallerInclude(root, brand);
   const source = path.join(root, "smoke.nsi");

@@ -6,6 +6,7 @@
 !ifndef BUILD_UNINSTALLER
 ; The custom include is loaded before electron-builder declares $appExe.
 !macro customHeader
+  !insertmacro DesktopMeasuredExtractorHeader
 Function DesktopRefreshShortcutDescription
   System::Store S
   Pop $9

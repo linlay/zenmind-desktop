@@ -1,4 +1,4 @@
-; Included by the brand installer. Normal installs and uninstallers keep their existing UI.
+; Update-specific launch and logging. Activity is shared with manual installs.
 !ifndef BUILD_UNINSTALLER
 Var /GLOBAL DesktopUpdateLog
 Var /GLOBAL DesktopUpdateMode
@@ -43,6 +43,7 @@ Var /GLOBAL DesktopUpdateMode
 
 ; Defer functions until electron-builder has loaded MUI and its common helpers.
 !macro customFinishPage
+!insertmacro DesktopExtractProgressFunction
 Function .onInstFailed
   !insertmacro DesktopUpdateStage "install-failed"
 FunctionEnd
@@ -57,8 +58,10 @@ Function .onGUIEnd
 FunctionEnd
 
 Function DesktopUpdateProgressShow
+  !insertmacro DesktopProgressStart
+  !insertmacro DesktopProgressStage "正在准备安装…"
   ${if} ${isUpdated}
-    !insertmacro MUI_HEADER_TEXT "正在安装更新" "正在替换程序文件，请勿关机。完成后将自动启动；首次启动可能需要几分钟。"
+    !insertmacro MUI_HEADER_TEXT "正在安装更新" "正在准备安装…完成后将自动启动；首次启动可能需要几分钟。"
     SetDetailsView show
     SetDetailsPrint both
     !insertmacro DesktopUpdateStage "progress-visible"
@@ -66,9 +69,14 @@ Function DesktopUpdateProgressShow
   ${endif}
 FunctionEnd
 
+Function DesktopInstallProgressEnd
+  !insertmacro DesktopProgressEnd
+FunctionEnd
+
 Function DesktopUpdateFinishPre
   ${if} ${isUpdated}
     !insertmacro DesktopUpdateStage "install-complete"
+    !insertmacro DesktopProgressStage "安装完成，正在启动应用…"
     !insertmacro DesktopUpdateStage "launch-requested"
     Call DesktopLaunchAfterInstall
     ; Skip the Finish wizard only after successful installation. Failure never launches.
