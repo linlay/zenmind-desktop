@@ -3280,6 +3280,12 @@ export const enUSMessages = {
   "service.builtinNotUninstallable": "Built-in services cannot be uninstalled.",
 
   "screenshot.permissionDeniedMac": "{appName} does not have Screen Recording permission. Allow {appName} in System Settings > Privacy & Security > Screen Recording, then try again.",
+  "screenshot.recoveryTitleMac": "Restore Screen Recording access for {appName}",
+  "screenshot.recoveryQuestionMac": "Request Screen Recording access for {appName} again?",
+  "screenshot.recoveryDetailMac": "macOS is currently denying access to the system screen. Even if the switch in System Settings is already on, the saved permission may still belong to the app identity from before the update.\n\nReauthorize clears only this {appName} application's old Screen Recording decision and asks macOS for access again. Allow the current app in System Settings. If macOS asks you to quit and reopen, save any unfinished work before confirming, then take the screenshot after reopening.",
+  "screenshot.reauthorizeMac": "Reauthorize",
+  "screenshot.recoveryPendingMac": "Screen Recording settings are open. Allow the current {appName} app, save your work and quit and reopen once if macOS requests it, then take the screenshot again.",
+  "screenshot.recoveryFailedMac": "Could not restore Screen Recording access automatically. In System Settings > Privacy & Security > Screen Recording, remove the old {appName} entry, add and allow the current app, then quit and reopen if macOS requests it.",
   "screenshot.unsupportedPlatform": "Screenshot questions are not supported on this platform yet.",
   "screenshot.emptySelection": "The screenshot area is empty. Select a larger area and try again.",
   "screenshot.noSourceWindows": "No system screenshot source was available, and Desktop could not capture that area from the current {appName} window. Select an area inside the window and try again.",

@@ -4,6 +4,7 @@ import process from "node:process";
 import { syncBrandArtifacts, resolveRequiredBrandId, electronBuilderConfigPath } from "./lib/brand-config.mjs";
 import { notarizeAndStapleDmg, resolveMacDmgArtifactPath } from "./lib/mac-notarize.mjs";
 import { npmCmd, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
+import { verifyMacReleaseApp } from "./lib/mac-app-signing.js";
 
 const MAC_SIGNING_CERTIFICATE_PREFIX = "Developer ID Application:";
 const DARWIN_BUILTIN_SIGN_ENV_KEYS = [
@@ -127,11 +128,11 @@ if (!shouldSkipNotarize()) {
 // Build the automatic-update archive from the same verified, signed application.
 // Keep the DMG metadata unchanged for existing manual-install/release validation.
 const updateAppPath = path.join(projectRoot, "dist", brand.id, "mac-arm64", `${brand.productName}.app`);
-await runAndWait("/usr/bin/codesign", ["--verify", "--deep", "--strict", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
 if (updateAppNotarized) {
   await runAndWait("xcrun", ["stapler", "staple", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait("xcrun", ["stapler", "validate", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
 }
+verifyMacReleaseApp(updateAppPath, { expectedBundleId: brand.appId });
 const updateVersion = fs.readFileSync(path.join(projectRoot, "VERSION"), "utf8").trim().replace(/^v/iu, "");
 const updateZipPath = path.join(projectRoot, "dist", brand.id, `${brand.productName}-${updateVersion}-arm64.zip`);
 fs.rmSync(updateZipPath, { force: true });

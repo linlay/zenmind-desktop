@@ -211,6 +211,7 @@ test("final app signing skips already finalized services and preserves other sig
   const events = [];
   const oldIgnore = (file) => file === "existing-ignore";
   await sign({ app: "Test.app", platform: "darwin", identity: "identity", keychain: "keychain", ignore: oldIgnore }, {
+    appInfo: { id: "cc.cutej.desktop" },
     prepareServices: async (dir, identity, options) => {
       assert.equal(dir, root);
       assert.equal(identity, "identity");
@@ -229,21 +230,29 @@ test("final app signing skips already finalized services and preserves other sig
       assert.equal(ignore(app), false);
       assert.equal(ignore(path.join(app, "Contents/MacOS/Electron")), false);
     },
+    verifyAppSignature: (file, options) => {
+      assert.equal(file, app);
+      assert.equal(options.expectedBundleId, "cc.cutej.desktop");
+      events.push("app identity verify");
+    },
     verifyServices: (dir) => { assert.equal(dir, root); events.push("final verify"); }
   });
-  assert.deepEqual(events, ["prepare", "outer sign", "final verify"]);
+  assert.deepEqual(events, ["prepare", "outer sign", "app identity verify", "final verify"]);
 });
 
 test("final packaging fails on bad inputs and on post-sign integrity failures", async () => {
   let signed = false;
   const options = { app: path.resolve("Test.app"), platform: "darwin", identity: "identity" };
   await assert.rejects(sign(options, {
+    appInfo: { id: "cc.cutej.desktop" },
     prepareServices: async () => { throw new Error("bad input"); },
     signAsync: async () => { signed = true; }
   }), /bad input/u);
   assert.equal(signed, false);
   await assert.rejects(sign(options, {
+    appInfo: { id: "cc.cutej.desktop" },
     prepareServices: async () => {}, signAsync: async () => {},
+    verifyAppSignature: () => {},
     verifyServices: () => { throw new Error("final checksum mismatch"); }
   }), /final checksum mismatch/u);
 });

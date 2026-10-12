@@ -14,7 +14,7 @@ function setup({
   externalX = -2560, externalY = -200, mainOnLaptop = false,
   singleDisplay = false, deferredLoads = false, failLoadId, failConstructorId,
   sourceMode = "identified", sameSize = false,
-  sourceError, screenPermission = "granted", emptyThumbnailId
+  sourceError, screenPermission = "granted", emptyThumbnailId, recoveryResult, grantOnRecovery = false
 } = {}) {
   const laptop = { id: 1, bounds: { x: 0, y: 0, width: 1440, height: 900 }, size: { width: 1440, height: 900 }, scaleFactor: 2 };
   const external = sameSize
@@ -28,6 +28,7 @@ function setup({
   const loads = [];
   const windowCaptures = [];
   const diagnostics = [];
+  const permissionRecoveries = [];
   const mainBounds = mainOnLaptop || singleDisplay
     ? { x: 100, y: 100, width: 800, height: 600 }
     : { x: externalX + 100, y: externalY + 100, width: 1800, height: 1000 };
@@ -124,13 +125,23 @@ function setup({
     if (id === "electron") return electron;
     if (id.endsWith("/brand")) return { PRODUCT_NAME: "Test" };
     if (id.endsWith("/main-i18n")) return { t: (key) => key };
+    if (id.endsWith("/screenshot-permission-recovery")) return {
+      recoverScreenshotPermission: async (request) => {
+        permissionRecoveries.push(request);
+        if (grantOnRecovery) {
+          screenPermission = "granted";
+          sourceError = undefined;
+        }
+        return recoveryResult ?? null;
+      }
+    };
     if (id.endsWith("/attachment-store")) return {
       createAssistantAttachmentFromImageBuffer: async (_app, _chatId, attachment) => ({ ok: true, attachments: [attachment] })
     };
     throw new Error(`Unexpected import: ${id}`);
   }, { warn: (...args) => diagnostics.push(args) });
   return {
-    ...module.exports, windows, captures, crops, matched, mainBounds, laptop, external, displays, screen, loads, windowCaptures, diagnostics,
+    ...module.exports, windows, captures, crops, matched, mainBounds, laptop, external, displays, screen, loads, windowCaptures, diagnostics, permissionRecoveries,
     options: {
       platform, getMainWindow: () => mainAvailable ? mainWindow : null,
       delay: async () => assert.ok(windows.every((window) => window.destroyed && !window.visible), "capture starts after every overlay is closed"),
@@ -505,4 +516,52 @@ test("macOS app-window mode remains available when screen-recording permission i
   assert.equal(h.captures.length, 0);
   assert.equal(h.windows.length, 0);
   assert.equal(h.windowCaptures.length, 1);
+});
+
+for (const entry of ["captureScreenshotForBridge", "captureAssistantScreenshot"]) {
+  test(`macOS ${entry}: denied system access inside the app offers recovery before window fallback`, async () => {
+    const h = setup({ platform: "darwin", mainOnLaptop: true, screenPermission: "denied", sourceError: new Error("Failed to get sources.") });
+    const pending = h[entry](h.options);
+    await new Promise(setImmediate);
+    h.windows.find(window => window.display.id === 1).finish({ x: 200, y: 200, width: 300, height: 250 });
+    const result = await pending;
+    assertNoCapturedImage(result);
+    assert.equal(result.message, "screenshot.permissionDeniedMac");
+    assert.equal(h.permissionRecoveries.length, 1);
+    assert.equal(h.permissionRecoveries[0].userSelectedRegion, true);
+    assert.equal(h.windowCaptures.length, 0);
+  });
+  test(`macOS ${entry}: system-granted recovery retries the selected real screen once`, async () => {
+    const h = setup({ platform: "darwin", mainOnLaptop: true, screenPermission: "denied", sourceError: new Error("Failed to get sources."),
+      recoveryResult: { granted: true }, grantOnRecovery: true });
+    const pending = h[entry](h.options);
+    await new Promise(setImmediate);
+    h.windows.find(window => window.display.id === 2).finish({ x: 100, y: 200, width: 300, height: 250 });
+    const result = await pending;
+    assert.equal(result.ok, true);
+    assert.equal(h.captures.length, 2);
+    assert.deepEqual(h.crops, [{ displayId: 2, x: 150, y: 300, width: 450, height: 375 }]);
+    assert.equal(h.windowCaptures.length, 0);
+    assert.equal(h.permissionRecoveries.length, 1);
+  });
+  test(`macOS ${entry}: recovery awaiting system approval returns guidance without a fake image`, async () => {
+    const h = setup({ platform: "darwin", mainOnLaptop: true, screenPermission: "denied", sourceError: new Error("Failed to get sources."),
+      recoveryResult: { granted: false, message: "screenshot.recoveryPendingMac" } });
+    const pending = h[entry](h.options);
+    await new Promise(setImmediate);
+    h.windows.find(window => window.display.id === 1).finish({ x: 200, y: 200, width: 300, height: 250 });
+    const result = await pending;
+    assertNoCapturedImage(result);
+    assert.equal(result.message, "screenshot.recoveryPendingMac");
+    assert.equal(h.captures.length, 1);
+    assert.equal(h.windowCaptures.length, 0);
+  });
+}
+
+test("macOS automatic desktop capture and window mode never open recovery UI", async () => {
+  for (const mode of ["desktop", "window"]) {
+    const h = setup({ platform: "darwin", screenPermission: "denied", sourceError: new Error("Failed to get sources.") });
+    await h.captureScreenshotForBridge(h.options, mode);
+    assert.equal(h.permissionRecoveries.length, 0);
+  }
 });

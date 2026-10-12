@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
 const { verifyPlatformBuiltinsInServices } = require("./lib/platform-builtins.js");
+const { verifyMacReleaseApp } = require("./lib/mac-app-signing.js");
 
 async function prepareDarwinAppServices(servicesRoot, identity, options = {}) {
   const { signDarwinServiceDirectory, computeAssetSignature } = await import("./lib/builtin-assets.mjs");
@@ -34,12 +35,17 @@ async function prepareDarwinAppServices(servicesRoot, identity, options = {}) {
 }
 
 async function signMacApp(options, {
+  appInfo,
   prepareServices = prepareDarwinAppServices,
   verifyServices = verifyPlatformBuiltinsInServices,
+  verifyAppSignature = verifyMacReleaseApp,
   signAsync
 } = {}) {
-  if (options.platform !== "darwin" || !options.identity) {
-    throw new Error("Desktop service signing requires a Darwin signing identity");
+  if (options.platform !== "darwin" || typeof options.identity !== "string" || !options.identity.trim() || options.identity.trim() === "-") {
+    throw new Error("Desktop release signing requires a Darwin Developer ID Application identity");
+  }
+  if (!appInfo?.id) {
+    throw new Error("Desktop release signing requires the brand bundle identifier");
   }
   // electron-builder may pass a relative app path, while osx-sign walks absolute
   // paths. Normalize before constructing the recursive-signing exclusion.
@@ -61,6 +67,7 @@ async function signMacApp(options, {
     app,
     ignore
   });
+  await verifyAppSignature(app, { expectedBundleId: appInfo.id });
   verifyServices(servicesRoot);
 }
 
