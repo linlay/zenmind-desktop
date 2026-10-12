@@ -81,6 +81,7 @@ export async function importConnectorBytes(bytes: Uint8Array, overwrite = false,
   }));
   const id = connectorId(response.id);
   if (response.installed !== true || !asString(response.version)) throw new Error("Invalid connector installation response");
+  if (expected && (id !== expected.id || response.version !== expected.version)) throw new Error(t("market.main.resolveIdentityMismatch"));
   return { id, version: asString(response.version), name: asString(response.name) };
 }
 
