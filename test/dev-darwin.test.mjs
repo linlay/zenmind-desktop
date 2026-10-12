@@ -6,7 +6,8 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { buildDarwinDevOpenArgs, prepareDarwinDevElectronApp } from "../scripts/platform/dev-darwin.mjs";
+import { buildDarwinDevOpenArgs, prepareDarwinDevElectronApp, signDarwinDevElectronApp } from "../scripts/platform/dev-darwin.mjs";
+import { resolveDarwinDevSigningIdentity } from "../scripts/lib/mac-dev-signing.mjs";
 import { brandIconDir } from "../scripts/lib/brand-config.mjs";
 
 const require = createRequire(import.meta.url);
@@ -15,7 +16,11 @@ const darwinOnly = { skip: process.platform !== "darwin" };
 
 function fixture(t, { declaredName, binaryName = "Electron Helper", background = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-dev-helper-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => {
+    const keychain = path.join(root, "signing", "development.keychain-db");
+    if (fs.existsSync(keychain)) spawnSync("/usr/bin/security", ["delete-keychain", keychain]);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   const brand = { id: "cutej", productName: "CuteJ", appId: "cc.cutej.desktop" };
   const contents = path.join(root, "Electron.app", "Contents");
   const main = path.join(contents, "MacOS", "Electron");
@@ -42,7 +47,9 @@ ${declaredName === undefined ? "" : `<key>CFBundleExecutable</key><string>${decl
   for (const name of ["icon.icns", "icon.png"]) fs.writeFileSync(path.join(icons, name), "icon");
   fs.writeFileSync(path.join(root, "VERSION"), "v0.4.16\n");
   const signingCalls = [];
-  const input = { root, brand, main, helper, plist, icons, signingCalls };
+  const signingRoot = path.join(root, "signing");
+  const input = { root, brand, main, helper, plist, icons, signingCalls, signingRoot, version: "0.4.16" };
+  input.nativeSignApp = appRoot => signDarwinDevElectronApp(appRoot, { signingRoot, env: {} });
   // These plain-text binaries exercise metadata validation, not native signing.
   input.signApp = appRoot => {
     signingCalls.push(appRoot);
@@ -91,7 +98,10 @@ function readSignatureIdentity(appRoot) {
   assert.ok(identity.codeDirectory);
   assert.match(identity.cdhash, /^[a-f0-9]{40}$/u);
   assert.ok(identity.designatedRequirement);
-  assert.match(output, /^Signature=adhoc$/mu);
+  assert.doesNotMatch(output, /^Signature=adhoc$/mu);
+  assert.match(output, /^Authority=Desktop Local Development cc\.cutej\.desktop\.dev$/mu);
+  assert.doesNotMatch(identity.designatedRequirement, /\bcdhash\b/u);
+  assert.match(identity.designatedRequirement, /certificate leaf = H"[a-f\d]{40}"/iu);
   return identity;
 }
 
@@ -104,8 +114,8 @@ function assertPreparedMetadata(appRoot, input) {
   assert.equal(info.CFBundleDisplayName, input.brand.productName);
   assert.equal(info.CFBundleIdentifier, `${input.brand.appId}.dev`);
   assert.equal(info.CFBundleExecutable, input.brand.productName);
-  assert.equal(info.CFBundleShortVersionString, "0.4.16");
-  assert.equal(info.CFBundleVersion, "0.4.16");
+  assert.equal(info.CFBundleShortVersionString, input.version);
+  assert.equal(info.CFBundleVersion, input.version);
   assert.ok(info.CFBundleDevelopmentRegion);
   assert.ok(info.CFBundleLocalizations.length > 0);
   assert.equal(Object.hasOwn(info, "LSEnvironment"), false);
@@ -241,7 +251,7 @@ test("macOS dev signing identity is stable across runtime PATH and Node changes"
     // Each preparation copies and re-signs the same dependency in the temp root.
     // Runtime paths must not alter its sealed contents or saved-permission identity.
     const result = withLaunchEnvironment(launchEnvironment,
-      () => prepareDarwinDevElectronApp(electronBinary, input.root, input.brand));
+      () => prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, input.nativeSignApp));
     assertPreparedMetadata(result.appRoot, input);
     const identity = readSignatureIdentity(result.appRoot);
     const plistPath = path.join(result.appRoot, "Contents", "Info.plist");
@@ -259,4 +269,49 @@ test("macOS dev signing identity is stable across runtime PATH and Node changes"
   assert.deepEqual(fs.readFileSync(sourcePlistPath), sourcePlist);
   assert.deepEqual(fs.readFileSync(sourceHelperPlistPath), sourceHelperPlist);
   assert.equal(createHash("sha256").update(fs.readFileSync(electronBinary)).digest("hex"), sourceBinaryHash);
+});
+
+test("macOS dev rebuilds retain the previous permission requirement across version and resource changes", darwinOnly, t => {
+  const input = fixture(t);
+  const electronBinary = require("electron");
+  const electronContents = path.dirname(path.dirname(electronBinary));
+  fs.copyFileSync(path.join(electronContents, "Resources", "electron.icns"), path.join(input.icons, "icon.icns"));
+  const beforeSearchList = execFileSync("/usr/bin/security", ["list-keychains", "-d", "user"], { encoding: "utf8" });
+  const first = prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, input.nativeSignApp);
+  const firstIdentity = readSignatureIdentity(first.appRoot);
+  input.version = "0.4.17";
+  fs.writeFileSync(path.join(input.root, "VERSION"), `v${input.version}\n`);
+  const next = prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, input.nativeSignApp);
+  fs.writeFileSync(path.join(next.appRoot, "Contents", "Resources", "new-resource.txt"), "a new signed resource");
+  input.nativeSignApp(next.appRoot);
+  const nextIdentity = readSignatureIdentity(next.appRoot);
+  assert.notEqual(nextIdentity.cdhash, firstIdentity.cdhash, "test must change actual signed content");
+  assert.equal(nextIdentity.designatedRequirement, firstIdentity.designatedRequirement);
+  execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R", `=${firstIdentity.designatedRequirement}`, next.appRoot], {
+    timeout: 60000, stdio: ["ignore", "pipe", "pipe"]
+  });
+  assert.equal(execFileSync("/usr/bin/security", ["list-keychains", "-d", "user"], { encoding: "utf8" }), beforeSearchList);
+  for (const file of ["identity.json", "development.keychain-db"]) {
+    assert.equal(fs.statSync(path.join(input.signingRoot, file)).mode & 0o777, 0o600);
+  }
+  assert.equal(fs.readdirSync(input.signingRoot).some(file => file.startsWith("prepare-") || /\.(pem|p12|cnf)$/u.test(file)), false,
+    "temporary exported private keys and certificates must be removed");
+});
+
+test("macOS dev signing rejects ad hoc overrides and never replaces a damaged saved identity", darwinOnly, t => {
+  const input = fixture(t);
+  assert.throws(() => resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", {
+    signingRoot: input.signingRoot, env: { DESKTOP_DEV_CODESIGN_IDENTITY: "-" }
+  }), /persistent certificate/u);
+  assert.equal(fs.existsSync(input.signingRoot), false);
+  const first = resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", { signingRoot: input.signingRoot, env: {} });
+  const second = resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", { signingRoot: input.signingRoot, env: {} });
+  assert.deepEqual(second, first);
+  const metadata = path.join(input.signingRoot, "identity.json");
+  const saved = fs.readFileSync(metadata);
+  fs.writeFileSync(metadata, '{"password":"must-not-appear-in-an-error",broken');
+  assert.throws(() => resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", { signingRoot: input.signingRoot, env: {} }), error =>
+    /Invalid development signing metadata/u.test(error.message) && !error.message.includes("must-not-appear"));
+  fs.writeFileSync(metadata, saved);
+  assert.deepEqual(resolveDarwinDevSigningIdentity("cc.cutej.desktop.dev", { signingRoot: input.signingRoot, env: {} }), first);
 });

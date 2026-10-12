@@ -3,6 +3,7 @@ const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { verifyPlatformBuiltinsInServices } = require("./lib/platform-builtins.js");
+const { verifyMacReleaseApp } = require("./lib/mac-app-signing.js");
 
 const MACHO_MAGICS = new Set([
   0xfeedface,
@@ -164,6 +165,10 @@ function verifyAppServices(appPath, options = {}) {
     throw new Error(`[verify-mac-services-signing] app bundle not found: ${appPath}`);
   }
 
+  // Service-only development overrides must never bypass the release app identity.
+  (options.verifyAppSignature || verifyMacReleaseApp)(appPath, {
+    expectedBundleId: options.expectedBundleId
+  });
   verifyMacPackageBranding(appPath, options);
 
   const servicesRoot = getServicesRoot(appPath);
@@ -205,15 +210,16 @@ exports.default = async function (context) {
 
   verifyAppServices(getAppPath(context), {
     projectRoot: context.packager?.projectDir || process.cwd(),
-    brandId: process.env.BRAND || ""
+    brandId: process.env.BRAND || "",
+    expectedBundleId: context.packager?.appInfo?.id
   });
 };
 
 if (require.main === module) {
   const appPath = process.argv[2] ? path.resolve(process.argv[2]) : "";
   if (!appPath || !appPath.endsWith(".app")) {
-    console.error("Usage: node scripts/verify-mac-services-signing.js /path/to/App.app");
+    console.error("Usage: node scripts/verify-mac-services-signing.js /path/to/App.app <brand-bundle-id>");
     process.exit(2);
   }
-  verifyAppServices(appPath);
+  verifyAppServices(appPath, { expectedBundleId: process.argv[3] || "" });
 }

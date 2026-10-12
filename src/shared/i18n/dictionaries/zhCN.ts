@@ -3280,6 +3280,12 @@ export const zhCNMessages = {
   "service.builtinNotUninstallable": "内置服务不可卸载。",
 
   "screenshot.permissionDeniedMac": "{appName} 没有屏幕录制权限。请在系统设置 > 隐私与安全性 > 屏幕录制中允许 {appName} 后重试。",
+  "screenshot.recoveryTitleMac": "恢复 {appName} 的屏幕录制授权",
+  "screenshot.recoveryQuestionMac": "是否重新确认 {appName} 的屏幕录制授权？",
+  "screenshot.recoveryDetailMac": "macOS 当前未允许读取系统屏幕。即使系统设置中的开关已经打开，已有授权也可能仍绑定更新前的应用身份。\n\n选择“重新授权”将只清除当前 {appName} 的旧录屏授权记录，并向 macOS 重新请求权限。请在系统设置允许当前应用；如果系统要求退出并重新打开，请先保存未完成的内容，再确认。重新打开后再截图。",
+  "screenshot.reauthorizeMac": "重新授权",
+  "screenshot.recoveryPendingMac": "已打开屏幕录制设置。请允许当前 {appName}，按系统提示保存内容并完全退出、重新打开一次，然后再截图。",
+  "screenshot.recoveryFailedMac": "无法自动恢复屏幕录制授权。请在系统设置 > 隐私与安全性 > 屏幕录制中移除旧的 {appName} 条目，添加当前应用并允许访问，再按系统提示完全退出并重新打开。",
   "screenshot.unsupportedPlatform": "当前平台暂不支持截屏提问。",
   "screenshot.emptySelection": "截屏区域为空，请重新选择更大的范围。",
   "screenshot.noSourceWindows": "没有获取到系统屏幕截图源，也无法从当前 {appName} 窗口截取该区域，请重新选择窗口内区域后重试。",

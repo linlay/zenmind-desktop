@@ -11,6 +11,7 @@ import {
 import { PRODUCT_NAME } from "../../../../shared/brand";
 import { t } from "../../../support/i18n/main-i18n";
 import { createAssistantAttachmentFromImageBuffer } from "../attachments/attachment-store";
+import { recoverScreenshotPermission } from "./screenshot-permission-recovery";
 
 export type BridgeScreenshotCaptureResult = {
   ok: boolean;
@@ -500,6 +501,30 @@ async function captureScreenshotImage(
     return cropped;
   } catch (error) {
     screenCaptureFailure = error instanceof Error ? error : new Error(String(error));
+  }
+
+  if (options.platform === "darwin" &&
+      (screenCaptureFailure.message === SCREENSHOT_SOURCE_UNAVAILABLE || screenCaptureFailure.message === SCREENSHOT_SOURCE_ENUMERATION_FAILED) &&
+      systemPreferences.getMediaAccessStatus("screen") === "denied") {
+    // A completed region selection is a user action. Do not hide denied system
+    // access behind capturePage success inside our own window on one monitor.
+    const recovery = await recoverScreenshotPermission({
+      platform: options.platform,
+      userSelectedRegion: true,
+      getMainWindow: options.getMainWindow
+    });
+    if (recovery?.granted && systemPreferences.getMediaAccessStatus("screen") === "granted") {
+      try {
+        const image = await captureDisplayImage(display);
+        const cropped = cropScreenshotImage(image, display.bounds, selection);
+        if (cropped.isEmpty()) throw new Error(t("screenshot.emptySelection"));
+        return cropped;
+      } catch (error) {
+        throw translateScreenCaptureError(error, options.platform);
+      }
+    }
+    if (recovery?.message) throw new Error(recovery.message);
+    throw translateScreenCaptureError(screenCaptureFailure, options.platform);
   }
 
   const fallback = await captureWindowSelectionFallback(display.bounds, selection, options);
