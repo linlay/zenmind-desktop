@@ -11,6 +11,36 @@ export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL =
   "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__" as const;
 export const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL =
   "__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__" as const;
+// Native share files are read only by the active Main Chat, scoped to the
+// Desktop-owned batch and one-shot new Chat identity. No paths cross the bridge.
+export const AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE = "desktop:native-share:read" as const;
+export const AGENT_WEBCLIENT_NATIVE_SHARE_READ_RESPONSE_TYPE = "desktop:native-share:read:response" as const;
+export const AGENT_WEBCLIENT_NATIVE_SHARE_CHUNK_BYTES = 1024 * 1024;
+export const AGENT_WEBCLIENT_NATIVE_SHARE_MAX_FILES = 16;
+export const AGENT_WEBCLIENT_NATIVE_SHARE_MAX_BYTES = 256 * 1024 * 1024;
+export type AgentWebclientNativeShareTarget = {
+  batchId: string;
+  newChat: string;
+  agentKey: string;
+};
+export type AgentWebclientNativeShareFileDescriptor = {
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+};
+export type AgentWebclientNativeShareErrorCode =
+  | "unsupported_platform" | "invalid_request" | "invalid_batch" | "changed_file"
+  | "not_open" | "not_active" | "stale_target" | "incomplete" | "already_completed" | "io_error";
+export type AgentWebclientNativeShareReadRequest = AgentWebclientNativeShareTarget & (
+  | { operation: "describe" }
+  | { operation: "read"; fileIndex: number; offset: number }
+  | { operation: "complete" }
+);
+export type AgentWebclientNativeShareReadResult =
+  | { ok: true; batchId: string; files: AgentWebclientNativeShareFileDescriptor[] }
+  | { ok: true; dataBase64: string; eof: boolean }
+  | { ok: true; completed: true }
+  | { ok: false; code: AgentWebclientNativeShareErrorCode; message: string };
 // Appearance has its own version and revision; it is never a navigation or
 // Platform Frame Port operation. No wallpaper bytes or filesystem paths cross it.
 export const AGENT_WEBCLIENT_APPEARANCE_GLOBAL = "__AGENT_WEBCLIENT_APPEARANCE__" as const;

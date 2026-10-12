@@ -21,7 +21,7 @@ function fixture(t, { declaredName, binaryName = "Electron Helper", background =
     if (fs.existsSync(keychain)) spawnSync("/usr/bin/security", ["delete-keychain", keychain]);
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const brand = { id: "cutej", productName: "CuteJ", appId: "cc.cutej.desktop" };
+  const brand = { id: "cutej", productName: "CuteJ", appId: "cc.cutej.desktop", protocols: { open: { scheme: "cutej" } } };
   const contents = path.join(root, "Electron.app", "Contents");
   const main = path.join(contents, "MacOS", "Electron");
   const helperContents = path.join(contents, "Frameworks", "Electron Helper.app", "Contents");
@@ -60,6 +60,13 @@ ${declaredName === undefined ? "" : `<key>CFBundleExecutable</key><string>${decl
 
 function readPlist(file) {
   return JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", file], { encoding: "utf8" }));
+}
+
+function prepareFixture(input, { electronBinary = input.main, signApp = input.signApp } = {}) {
+  // Metadata fixtures contain plain-text binaries and a mocked signer. Actual
+  // native signing regressions below build and verify the real sharing extension.
+  return prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, signApp,
+    signApp === input.nativeSignApp ? undefined : () => {});
 }
 
 function withLaunchEnvironment(values, run) {
@@ -113,6 +120,7 @@ function assertPreparedMetadata(appRoot, input) {
   assert.equal(info.CFBundleName, input.brand.productName);
   assert.equal(info.CFBundleDisplayName, input.brand.productName);
   assert.equal(info.CFBundleIdentifier, `${input.brand.appId}.dev`);
+  assert.deepEqual(info.CFBundleURLTypes[0].CFBundleURLSchemes, [input.brand.protocols.open.scheme]);
   assert.equal(info.CFBundleExecutable, input.brand.productName);
   assert.equal(info.CFBundleShortVersionString, input.version);
   assert.equal(info.CFBundleVersion, input.version);
@@ -134,7 +142,7 @@ test("macOS dev preparation fills stock Helper metadata and satisfies the runtim
   const input = fixture(t);
   const original = fs.readFileSync(input.plist, "utf8");
   await assert.rejects(embeddedNodeExecutable(input.main, "darwin"), /CFBundleExecutable/);
-  const result = prepareDarwinDevElectronApp(input.main, input.root, input.brand, input.signApp);
+  const result = prepareFixture(input);
   assert.deepEqual(input.signingCalls, [result.appRoot]);
   const helper = await embeddedNodeExecutable(result.binaryPath, "darwin");
   const info = readPlist(path.join(path.dirname(path.dirname(helper)), "Info.plist"));
@@ -144,14 +152,14 @@ test("macOS dev preparation fills stock Helper metadata and satisfies the runtim
   const rendererPlist = path.join(result.appRoot, "Contents/Frameworks/Electron Helper (Renderer).app/Contents/Info.plist");
   assert.equal(fs.readFileSync(rendererPlist, "utf8"), original);
   // A second dev launch rebuilds from the unchanged dependency and remains valid.
-  const rebuilt = prepareDarwinDevElectronApp(input.main, input.root, input.brand, input.signApp);
+  const rebuilt = prepareFixture(input);
   assert.deepEqual(input.signingCalls, [result.appRoot, rebuilt.appRoot]);
   assert.equal(await embeddedNodeExecutable(rebuilt.binaryPath, "darwin"), helper);
 });
 
 test("macOS dev preparation preserves an explicitly declared Helper executable", darwinOnly, async t => {
   const input = fixture(t, { declaredName: "Background Node", binaryName: "Background Node" });
-  const result = prepareDarwinDevElectronApp(input.main, input.root, input.brand, input.signApp);
+  const result = prepareFixture(input);
   assert.deepEqual(input.signingCalls, [result.appRoot]);
   const helper = await embeddedNodeExecutable(result.binaryPath, "darwin");
   assert.equal(path.basename(helper), "Background Node");
@@ -160,15 +168,15 @@ test("macOS dev preparation preserves an explicitly declared Helper executable",
 
 test("macOS dev preparation rejects foreground, missing and non-executable Helpers", darwinOnly, t => {
   const foreground = fixture(t, { background: false });
-  assert.throws(() => prepareDarwinDevElectronApp(foreground.main, foreground.root, foreground.brand, foreground.signApp), /LSUIElement/);
+  assert.throws(() => prepareFixture(foreground), /LSUIElement/);
   assert.deepEqual(foreground.signingCalls, []);
   const missing = fixture(t);
   fs.unlinkSync(missing.helper);
-  assert.throws(() => prepareDarwinDevElectronApp(missing.main, missing.root, missing.brand, missing.signApp), /ENOENT/);
+  assert.throws(() => prepareFixture(missing), /ENOENT/);
   assert.deepEqual(missing.signingCalls, []);
   const nonExecutable = fixture(t);
   fs.chmodSync(nonExecutable.helper, 0o644);
-  assert.throws(() => prepareDarwinDevElectronApp(nonExecutable.main, nonExecutable.root, nonExecutable.brand, nonExecutable.signApp), /EACCES/);
+  assert.throws(() => prepareFixture(nonExecutable), /EACCES/);
   assert.deepEqual(nonExecutable.signingCalls, []);
 });
 
@@ -177,10 +185,10 @@ test("macOS dev preparation propagates signing failure without returning a prepa
   const signingFailure = new Error("fixture codesign failed");
   let preparedApp;
   assert.throws(() => {
-    preparedApp = prepareDarwinDevElectronApp(input.main, input.root, input.brand, appRoot => {
+    preparedApp = prepareFixture(input, { signApp: appRoot => {
       input.signApp(appRoot);
       throw signingFailure;
-    });
+    } });
   }, error => error === signingFailure);
   assert.equal(preparedApp, undefined);
   assert.equal(input.signingCalls.length, 1);
@@ -251,7 +259,7 @@ test("macOS dev signing identity is stable across runtime PATH and Node changes"
     // Each preparation copies and re-signs the same dependency in the temp root.
     // Runtime paths must not alter its sealed contents or saved-permission identity.
     const result = withLaunchEnvironment(launchEnvironment,
-      () => prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, input.nativeSignApp));
+      () => prepareFixture(input, { electronBinary, signApp: input.nativeSignApp }));
     assertPreparedMetadata(result.appRoot, input);
     const identity = readSignatureIdentity(result.appRoot);
     const plistPath = path.join(result.appRoot, "Contents", "Info.plist");
@@ -277,11 +285,11 @@ test("macOS dev rebuilds retain the previous permission requirement across versi
   const electronContents = path.dirname(path.dirname(electronBinary));
   fs.copyFileSync(path.join(electronContents, "Resources", "electron.icns"), path.join(input.icons, "icon.icns"));
   const beforeSearchList = execFileSync("/usr/bin/security", ["list-keychains", "-d", "user"], { encoding: "utf8" });
-  const first = prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, input.nativeSignApp);
+  const first = prepareFixture(input, { electronBinary, signApp: input.nativeSignApp });
   const firstIdentity = readSignatureIdentity(first.appRoot);
   input.version = "0.4.17";
   fs.writeFileSync(path.join(input.root, "VERSION"), `v${input.version}\n`);
-  const next = prepareDarwinDevElectronApp(electronBinary, input.root, input.brand, input.nativeSignApp);
+  const next = prepareFixture(input, { electronBinary, signApp: input.nativeSignApp });
   fs.writeFileSync(path.join(next.appRoot, "Contents", "Resources", "new-resource.txt"), "a new signed resource");
   input.nativeSignApp(next.appRoot);
   const nextIdentity = readSignatureIdentity(next.appRoot);

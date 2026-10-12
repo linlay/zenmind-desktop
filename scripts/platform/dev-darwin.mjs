@@ -16,6 +16,7 @@ import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-met
 import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 import { macDocumentTypes } from "../lib/document-file-associations.mjs";
 import { resolveDarwinDevSigningIdentity } from "../lib/mac-dev-signing.mjs";
+import { buildMacShareExtension, signMacShareExtension, verifyMacShareExtension } from "../lib/mac-share-extension.mjs";
 
 function escapePlistText(value) {
   return String(value)
@@ -122,6 +123,12 @@ export function signDarwinDevElectronApp(appRoot, { bundleId, signingRoot, env }
     encoding: "utf8", timeout: 10000
   }));
   const signing = resolveDarwinDevSigningIdentity(bundleId || info.CFBundleIdentifier, { signingRoot, env });
+  // A sharing extension is sandboxed native code. Sign it with its own narrow
+  // entitlements before the Electron bundle is sealed.
+  signMacShareExtension({
+    appPath: appRoot, hostBundleId: info.CFBundleIdentifier,
+    identity: signing.identity, keychain: signing.keychain, development: true
+  });
   // Re-seal the copied bundle after changing its identity, Helper metadata and
   // icons. A persistent certificate keeps the designated requirement stable
   // across bundle/version changes; ad hoc CDHashes cannot retain TCC grants.
@@ -134,13 +141,15 @@ export function signDarwinDevElectronApp(appRoot, { bundleId, signingRoot, env }
     timeout: 60000,
     stdio: ["ignore", "pipe", "pipe"]
   });
+  verifyMacShareExtension(appRoot, { hostBundleId: info.CFBundleIdentifier, development: true });
 }
 
 export function prepareDarwinDevElectronApp(
   electronBinary,
   projectRoot,
   brand = loadBrandConfig(projectRoot, resolveBrandId()),
-  signApp = signDarwinDevElectronApp
+  signApp = signDarwinDevElectronApp,
+  prepareShareExtension = buildMacShareExtension
 ) {
   const devAppName = brand.productName;
   const devAppId = `${brand.appId}.dev`;
@@ -189,6 +198,11 @@ export function prepareDarwinDevElectronApp(
   plist = applyDarwinBundleLocalizationInfo(plist);
   const plistInfo = plistPackage.parse(plist);
   plistInfo.CFBundleDocumentTypes = macDocumentTypes(targetIconFileName);
+  plistInfo.CFBundleURLTypes = [{
+    CFBundleURLName: `${devAppId}.open`,
+    CFBundleURLSchemes: [brand.protocols.open.scheme],
+    CFBundleTypeRole: "Viewer"
+  }];
   plist = plistPackage.build(plistInfo);
   // Runtime paths and PATH can change between launches. Keep them outside the
   // signed bundle so a new terminal/session does not invalidate saved TCC grants.
@@ -213,6 +227,7 @@ export function prepareDarwinDevElectronApp(
     `require(${JSON.stringify(path.join(projectRoot, "dist-electron", "main", "index.js"))});`,
     ""
   ].join("\n"));
+  prepareShareExtension({ projectRoot, brand, appPath: targetAppRoot, hostBundleId: devAppId });
   signApp(targetAppRoot);
 
   return {

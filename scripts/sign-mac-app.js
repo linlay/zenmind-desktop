@@ -39,6 +39,8 @@ async function signMacApp(options, {
   prepareServices = prepareDarwinAppServices,
   verifyServices = verifyPlatformBuiltinsInServices,
   verifyAppSignature = verifyMacReleaseApp,
+  signExtension,
+  verifyExtension,
   signAsync
 } = {}) {
   if (options.platform !== "darwin" || typeof options.identity !== "string" || !options.identity.trim() || options.identity.trim() === "-") {
@@ -52,11 +54,18 @@ async function signMacApp(options, {
   const app = path.resolve(options.app);
   const servicesRoot = path.join(app, "Contents", "Resources", "services");
   await prepareServices(servicesRoot, options.identity, { keychain: options.keychain });
+  const { signMacShareExtension, verifyMacShareExtension, macShareExtensionPath } = await import("./lib/mac-share-extension.mjs");
+  await (signExtension || signMacShareExtension)({
+    appPath: app, hostBundleId: appInfo.id, identity: options.identity,
+    keychain: options.keychain, timestamp: options.timestamp
+  });
+  const extensionRoot = macShareExtensionPath(app);
   const previousIgnore = options.ignore == null ? [] : Array.isArray(options.ignore) ? options.ignore : [options.ignore];
   const ignoreServices = (file) => file === servicesRoot || file.startsWith(`${servicesRoot}${path.sep}`);
   // The installed osx-sign normalizer drops array-valued ignore options. A
   // single predicate preserves both the builder's exclusions and our boundary.
-  const ignore = (file) => ignoreServices(file) || previousIgnore.some((rule) =>
+  const ignoreExtension = (file) => file === extensionRoot || file.startsWith(`${extensionRoot}${path.sep}`);
+  const ignore = (file) => ignoreServices(file) || ignoreExtension(file) || previousIgnore.some((rule) =>
     typeof rule === "function" ? rule(file) : Boolean(file.match(rule))
   );
   // Service binaries and their manifest are final now. The outer app seals them
@@ -68,6 +77,7 @@ async function signMacApp(options, {
     ignore
   });
   await verifyAppSignature(app, { expectedBundleId: appInfo.id });
+  await (verifyExtension || verifyMacShareExtension)(app, { hostBundleId: appInfo.id });
   verifyServices(servicesRoot);
 }
 

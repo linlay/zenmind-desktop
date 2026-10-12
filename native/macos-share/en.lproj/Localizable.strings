@@ -1,0 +1,10 @@
+"receiving" = "Receiving shared content…";
+"opening" = "Opening a new conversation…";
+"transferring" = "Transferring shared content…";
+"retry" = "Try Again";
+"cancel" = "Cancel";
+"tooManyFiles" = "Select up to 16 files and share again.";
+"tooLarge" = "The shared files exceed 256 MB. Select fewer files and share again.";
+"unsupported" = "Share files, images, links or text with this app.";
+"failed" = "Could not receive all shared content. Your original content is still available. Try again.";
+"openFailed" = "Your shared content has been saved. The app could not open. Try again, or open the app yourself.";

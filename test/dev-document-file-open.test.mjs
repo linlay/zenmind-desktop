@@ -40,7 +40,7 @@ function fixture(t) {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-dev-document-"));
   t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   const root = path.join(temporaryRoot, 'project 中文 "quotes"');
-  const brand = { id: "cutej", productName: "CuteJ", appId: "cc.cutej.desktop", packageName: "desktop" };
+  const brand = { id: "cutej", productName: "CuteJ", appId: "cc.cutej.desktop", packageName: "desktop", protocols: { open: { scheme: "cutej" } } };
   const contents = path.join(root, "Electron.app", "Contents");
   const main = path.join(contents, "MacOS", "Electron");
   const helperContents = path.join(contents, "Frameworks", "Electron Helper.app", "Contents");
@@ -74,7 +74,7 @@ function fixture(t) {
     assert.ok(fs.existsSync(path.join(appRoot, "Contents", "Resources", "app", "index.cjs")));
     signingInputs.push(bundleFiles(appRoot));
   };
-  const prepare = () => prepareDarwinDevElectronApp(main, root, brand, signApp);
+  const prepare = () => prepareDarwinDevElectronApp(main, root, brand, signApp, () => {});
   return { temporaryRoot, root, brand, main, projectMain, prepare, signingInputs };
 }
 

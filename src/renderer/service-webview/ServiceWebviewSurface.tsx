@@ -1,5 +1,5 @@
 import { createSurfacePerformanceTrace, retainHostPerformanceMonitor } from "../services/performanceDiagnostics";
-import type { WorkPanelDocumentSource } from "../../shared/contracts/agent-webclient-bridge";
+import type { AgentWebclientNativeShareReadRequest, AgentWebclientNativeShareReadResult, WorkPanelDocumentSource } from "../../shared/contracts/agent-webclient-bridge";
 import {
   createElement,
   useCallback,
@@ -24,6 +24,7 @@ import {
   createAgentWebclientConnectorManagementPath,
   isAgentWebclientMainChatRouteAligned,
   readAgentWebclientAgentRouteKey,
+  readAgentWebclientNativeShareTarget,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientDesktopComposerRouteFromUrl,
@@ -2979,6 +2980,29 @@ export function ServiceWebviewSurface({
       agentWebclientCurrentResourceActionErrorMessage:
         t("chatWorkPanel.resourceActions.failed"),
       sendBridgeMessageToWebview,
+      readNativeShare: mainChatSurface && ownsActiveSurface ? async (
+        request: AgentWebclientNativeShareReadRequest,
+      ): Promise<AgentWebclientNativeShareReadResult> => {
+        const sourceWebContentsId = readWebviewContentsId(webviewRef.current);
+        const target = readAgentWebclientNativeShareTarget(currentRoute);
+        const guestTarget = readAgentWebclientNativeShareTarget(readCurrentPromotionGuestUrl());
+        const committed = committedMainChatIdentityRef.current;
+        if (!target || !guestTarget || !committed ||
+            committed.webContentsId !== sourceWebContentsId || committed.desiredKey !== desiredMainChatKey ||
+            target.batchId !== request.batchId || target.newChat !== request.newChat || target.agentKey !== request.agentKey ||
+            guestTarget.batchId !== target.batchId || guestTarget.newChat !== target.newChat || guestTarget.agentKey !== target.agentKey ||
+            !isAgentWebclientMainChatRouteAligned(currentRoute, readCurrentPromotionGuestUrl(), webviewSrcUrl)) {
+          return { ok: false, code: "not_active", message: "The shared files belong to another conversation" };
+        }
+        const result = await window.electronAPI.nativeShare.read(request);
+        const liveContext = webviewEventContextRef.current;
+        const liveTarget = readAgentWebclientNativeShareTarget(liveContext?.currentRoute || "");
+        if (!liveContext?.ownsActiveSurface || sourceWebContentsId !== readWebviewContentsId(webviewRef.current) ||
+            liveTarget?.batchId !== target.batchId || liveTarget?.newChat !== target.newChat || liveTarget?.agentKey !== target.agentKey) {
+          return { ok: false, code: "stale_target", message: "The conversation changed while receiving the shared files" };
+        }
+        return result;
+      } : undefined,
       prepareAgentWebclientNewChat,
       runAgentWebclientCurrentResourceAction: currentResourceActionRunner,
       setBridgeError,

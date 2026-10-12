@@ -5,6 +5,12 @@ import {
 } from "../../shared/auth-bridge";
 import type { PluginSettingsValues } from "../../shared/contracts";
 import {
+  AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE,
+  AGENT_WEBCLIENT_NATIVE_SHARE_READ_RESPONSE_TYPE,
+  type AgentWebclientNativeShareReadRequest,
+  type AgentWebclientNativeShareReadResult,
+} from "../../shared/contracts/agent-webclient-bridge";
+import {
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
@@ -48,6 +54,7 @@ export type ServiceWebviewBridgeHostContext = {
   bridgeProtocol?: ServiceWebviewAuthProtocol | null;
   desktopAuthContext?: string;
   sendBridgeMessageToWebview: (payload: ServiceWebviewBridgeMessage) => void;
+  readNativeShare?: (request: AgentWebclientNativeShareReadRequest) => Promise<AgentWebclientNativeShareReadResult>;
   prepareAgentWebclientNewChat?: (request: {
     requestId: string;
     agentKey: string;
@@ -96,6 +103,23 @@ export function handleServiceWebviewBridgeMessage(
 
   if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
+    return true;
+  }
+
+  if (payload.type === AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE) {
+    const reply = (result: AgentWebclientNativeShareReadResult) => context.sendBridgeMessageToWebview({
+      type: AGENT_WEBCLIENT_NATIVE_SHARE_READ_RESPONSE_TYPE,
+      requestId: payload.requestId,
+      nativeShareResult: result,
+    });
+    if (context.serviceId !== "agent-webclient" || !context.readNativeShare ||
+        !payload.nativeShareRequest || !payload.requestId || payload.requestId.length > 128) {
+      reply({ ok: false, code: "not_active", message: "Native sharing is unavailable for this surface" });
+      return true;
+    }
+    void context.readNativeShare(payload.nativeShareRequest).then(reply).catch(() => {
+      reply({ ok: false, code: "io_error", message: "Unable to read the shared files" });
+    });
     return true;
   }
 

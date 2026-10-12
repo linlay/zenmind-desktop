@@ -3,6 +3,7 @@ import {
   globalShortcut
 } from "electron";
 import type { ShutdownReport } from "../../../shared/shutdown";
+import type { NativeShareTransfer } from "../../../shared/native-share";
 import {
   getFocusedWebviewDevToolsShortcut
 } from "../../infrastructure/electron/platform-adapter";
@@ -35,6 +36,7 @@ export interface StartRuntimeEventsDependencies {
   readonly handleAppReady: () => Promise<void>;
   readonly showMainWindow: AppShellRuntime["showMainWindow"];
   readonly openLocalDocument: (filePath: string) => Promise<void> | void;
+  readonly openNativeShare?: (batchId: string, transfer?: NativeShareTransfer) => Promise<void> | void;
   readonly beginAppQuitWithoutConfirmation: () => void;
   readonly beginInstallerShutdown: (commandLine: string[]) => void;
   readonly appShellRuntime: Pick<AppShellRuntime, "isNativeDialogOpen">;
@@ -72,6 +74,7 @@ export function startRuntimeEvents(dependencies: StartRuntimeEventsDependencies)
     onReady: dependencies.handleAppReady,
     showMainWindow: dependencies.showMainWindow,
     openLocalDocument: dependencies.openLocalDocument,
+    openNativeShare: dependencies.openNativeShare,
     beginAppQuitWithoutConfirmation: dependencies.beginAppQuitWithoutConfirmation,
     beginInstallerShutdown: dependencies.beginInstallerShutdown,
     isNativeDialogOpen: () => dependencies.appShellRuntime.isNativeDialogOpen(),
@@ -92,4 +95,3 @@ export function startRuntimeEvents(dependencies: StartRuntimeEventsDependencies)
     stopEnterpriseChatRuntime: () => dependencies.enterpriseChatRuntime.stop()
   });
 }
-
