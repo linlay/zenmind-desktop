@@ -142,7 +142,12 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
         </svg>
       );
     case "websiteBridges":
-      return <svg {...iconProps}><path d="M3 17V7m18 10V7M3 10c5 7 13 7 18 0M3 17h18M8 14v3m8-3v3" /></svg>;
+      return (
+        <svg {...iconProps}>
+          <path d="M2 18v-2a10 10 0 0 1 20 0v2h-4a6 6 0 0 0-12 0H2Z" />
+          <path d="M3 22c3-2 6 2 9 0s6 2 9 0" />
+        </svg>
+      );
     case "websites":
       return (
         <svg {...iconProps}>

@@ -15,6 +15,7 @@
 .settings-page-single[data-settings-section="control"],
 .settings-page-single[data-settings-section="plugins"],
 .settings-page-single[data-settings-section="websites"],
+.settings-page-single[data-settings-section="websiteBridges"],
 .settings-page-single[data-settings-section="webapps"] {
   padding-top: 0;
 }
