@@ -2,6 +2,7 @@ import {
   decodeRoutePathSegment,
   encodeRoutePathSegment
 } from "./route-path";
+import type { AgentWebclientNativeShareTarget } from "./contracts/agent-webclient-bridge";
 import {
   readAgentWebclientCanonicalChatSource,
   readAgentWebclientNewChatSource
@@ -140,8 +141,24 @@ const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
 
 const AGENT_WEBCLIENT_ONE_SHOT_ROUTE_QUERY_PARAMS = new Set([
   "composerDraft",
-  "composerSkill"
+  "composerSkill",
+  "shareBatch"
 ]);
+
+/** A native share is scoped to one Desktop-issued, ownerless new Chat route. */
+export function readAgentWebclientNativeShareTarget(value: string): AgentWebclientNativeShareTarget | null {
+  try {
+    const url = new URL(value, "http://desktop.local");
+    const source = readAgentWebclientNewChatSource(value);
+    const values = url.searchParams.getAll("shareBatch");
+    const batchId = values[0] || "";
+    if (!source || !/^[1-9]\d{12}$/u.test(source.newChat) || values.length !== 1 ||
+        !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.test(batchId)) return null;
+    return { ...source, batchId };
+  } catch {
+    return null;
+  }
+}
 
 function isAgentWebclientPersistentBusinessRouteQueryParam(key: string) {
   return !AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS.has(key) &&

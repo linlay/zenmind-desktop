@@ -911,6 +911,7 @@ export const enUSMessages = {
   "chatWorkPanel.add.moveHere": "Move here",
   "dialog.workPanelLocalFiles.title": "Choose files for WorkPanel",
   "dialog.localDocument.openFailed": "Unable to open document",
+  "dialog.nativeShare.openFailed": "Unable to receive shared files",
   "dialog.localDocument.chooseTitle": "Open Markdown or HTML files",
   "dialog.localDocument.editingChatFailed": "Unable to prepare the assistant chat. Check that the assistant service is running and try again.",
   "dialog.localDocument.readFailed": "Unable to read the document. Check that the file still exists and is readable.",

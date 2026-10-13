@@ -52,6 +52,7 @@ import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_EVENT,
 } from "./service-webview-main-world";
 import {
+  AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
@@ -562,7 +563,8 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (
-    event.data.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE &&
+    (event.data.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE ||
+      event.data.type === AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE) &&
     (event.source !== window || event.origin !== window.location.origin)
   ) {
     return;

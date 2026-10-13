@@ -1,4 +1,5 @@
 import { app, dialog, clipboard, globalShortcut, ipcMain, protocol } from "electron";
+import path from "node:path";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
 import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE } from "../../shared/brand";
 import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
@@ -6,7 +7,7 @@ import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../
 import { getFocusedWebviewDevToolsShortcut } from "../infrastructure/electron/platform-adapter";
 import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
 import { bundledEnvZipExists, configureRuntimeEnvironmentTranslator, resolveRuntimeRoot, runtimeEnvExists, runtimeEnvNeedsBundledSeedRefresh, runtimeRootExists, shouldPromptEnvRootConflict, shouldRequireEnvZipImport, type EnvRootConflictDecision } from "../infrastructure/filesystem/runtime-environment";
-import { desktopDataRootExists, getDesktopConfigRoot } from "../infrastructure/filesystem/user-paths";
+import { desktopDataRootExists, getDesktopConfigRoot, getDesktopRoot } from "../infrastructure/filesystem/user-paths";
 import { RealtimeBroker } from "../modules/agent-platform";
 import { createDesktopAppearanceRuntime } from "../modules/settings";
 import { createArtifactRuntime } from "../modules/artifacts";
@@ -20,6 +21,8 @@ import { createServicesFacade, createServicesRuntime, type ServicesFacade } from
 import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
 import { createWebsFacade, registerWebappAuth, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
 import { LocalDocumentWorkspaceController, registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
+import { NativeShareController } from "../modules/native-share";
+import { isNativeShareTargetRoute, registerNativeShareIpc } from "./assembly/native-share";
 import { t } from "../support/i18n/main-i18n";
 import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
 import * as assistant from "./assembly/assistant";
@@ -215,6 +218,29 @@ export function createMainProcessRuntime() {
     get navigateMainWindow() { return navigateMainWindow; },
     get delay() { return delay; }
   });
+  const nativeShare = new NativeShareController({
+    platform: startupPlatform,
+    inbox: path.join(getDesktopRoot(app), "data", "native-share"),
+    onDiagnostic: diagnostic => console.warn("[native-share] access diagnostic", diagnostic),
+    getDefaultAgentKey: () => getAssistantSettings(app).chatDefaultAgentKey,
+    showMainWindow,
+    isTargetActive: target => {
+      const owner = getMainWindow();
+      if (!owner || owner.isDestroyed() || owner.webContents.isDestroyed() ||
+        !isNativeShareTargetRoute(owner.webContents.getURL(), target)) return false;
+      const registry = webSurfaceRuntime.browserSurfaceRegistry;
+      const surface = registry.listRegisteredSurfaces().find(item => item.surfaceId === MAIN_CHAT_SURFACE_ID);
+      if (!surface?.targetGeneration || !surface.webContentsId) return false;
+      const snapshot = registry.getRegisteredSurfaceSnapshot(MAIN_CHAT_SURFACE_ID, surface.targetGeneration, owner.webContents.id);
+      const registered = snapshot?.registered;
+      const guest = registry.findWebContentsById(surface.webContentsId);
+      return registered?.active === true && registered.serviceId === "agent-webclient" &&
+        registered.surfaceRole === "main-chat" && registered.surfaceLevel === "root" &&
+        Boolean(guest && !guest.isDestroyed() && isNativeShareTargetRoute(guest.getURL(), target));
+    },
+  });
+  registerNativeShareIpc({ platform: startupPlatform, ipcMain, getMainWindow, read: request => nativeShare.read(request) });
+  app.once("will-quit", () => nativeShare.dispose());
   let selectionExplainWindowController: SelectionExplainWindowController | null = null;
   const webviewContextMenuController = webSurfaces.assembleWebviewContextMenus({
     get startupPlatform() { return startupPlatform; },
@@ -851,6 +877,13 @@ export function createMainProcessRuntime() {
           await localDocuments.open(filePath);
         } catch (error) {
           dialog.showErrorBox(t("dialog.localDocument.openFailed"), error instanceof Error ? error.message : String(error));
+        }
+      },
+      async openNativeShare(batchId, transfer) {
+        try {
+          await nativeShare.open(batchId, transfer);
+        } catch (error) {
+          dialog.showErrorBox(t("dialog.nativeShare.openFailed"), error instanceof Error ? error.message : String(error));
         }
       },
       get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },

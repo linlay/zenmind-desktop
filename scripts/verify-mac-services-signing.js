@@ -213,6 +213,8 @@ exports.default = async function (context) {
     brandId: process.env.BRAND || "",
     expectedBundleId: context.packager?.appInfo?.id
   });
+  const { verifyMacShareExtension } = await import("./lib/mac-share-extension.mjs");
+  verifyMacShareExtension(getAppPath(context), { hostBundleId: context.packager?.appInfo?.id });
 };
 
 if (require.main === module) {
@@ -222,4 +224,7 @@ if (require.main === module) {
     process.exit(2);
   }
   verifyAppServices(appPath, { expectedBundleId: process.argv[3] || "" });
+  import("./lib/mac-share-extension.mjs")
+    .then(({ verifyMacShareExtension }) => verifyMacShareExtension(appPath, { hostBundleId: process.argv[3] || "" }))
+    .catch(error => { console.error(error.message); process.exitCode = 1; });
 }

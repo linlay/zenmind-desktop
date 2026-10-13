@@ -904,6 +904,9 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  nativeShare: {
+    read(request: import("../native-share").NativeShareReadRequest): Promise<import("../native-share").NativeShareReadResult>;
+  };
   localDocuments: LocalDocumentsApi;
   artifacts: {
     act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;

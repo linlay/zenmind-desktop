@@ -2,7 +2,8 @@ import type { App, GlobalShortcut } from "electron";
 import type { MainAppState } from "./state";
 import { hasInstallerShutdownArg } from "./lifecycle/single-instance";
 import type { ShutdownReport } from "../../shared/shutdown";
-import { findDesktopOpenDeepLink, isDesktopOpenDeepLink } from "./deep-link";
+import { findDesktopOpenDeepLink, isDesktopOpenDeepLink, readDesktopShareOpenRequest, type DesktopShareOpenRequest } from "./deep-link";
+import type { NativeShareTransfer } from "../../shared/native-share";
 import { findDesktopDocumentPaths, isSupportedDesktopDocumentPath } from "./open-file";
 
 export type MainAppEventsOptions = {
@@ -18,6 +19,7 @@ export type MainAppEventsOptions = {
   initialWorkingDirectory?: string;
   showMainWindow: (targetPath?: string) => void;
   openLocalDocument: (filePath: string) => Promise<void> | void;
+  openNativeShare?: (batchId: string, transfer?: NativeShareTransfer) => Promise<void> | void;
   beginAppQuitWithoutConfirmation: () => void;
   beginInstallerShutdown: (commandLine: string[]) => void;
   isNativeDialogOpen: () => boolean;
@@ -51,6 +53,15 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
   const pendingLocalDocuments = initialInstallerShutdown
     ? []
     : findDesktopDocumentPaths(options.initialCommandLine, options.platform, initialWorkingDirectory);
+  const pendingShares = new Map<string, DesktopShareOpenRequest>((options.platform === "darwin" && !initialInstallerShutdown
+    ? options.initialCommandLine.map(readDesktopShareOpenRequest).filter((request): request is DesktopShareOpenRequest => request !== null)
+    : []).map(request => [request.batchId, request]));
+  const openNativeShare = (request: DesktopShareOpenRequest) => {
+    if (!readyCompleted) { pendingShares.set(request.batchId, request); return; }
+    void Promise.resolve().then(() => options.openNativeShare?.(request.batchId, request.transfer)).catch(error => {
+      console.error("[main] native share open failed", error);
+    });
+  };
 
   const dispatchLocalDocument = (filePath: string) => {
     // Isolate each file's failure so a failed or slow preview cannot discard the
@@ -91,6 +102,12 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
       openLocalDocuments([filePath]);
     });
     options.app.on("open-url", (event, url) => {
+      const shareRequest = readDesktopShareOpenRequest(url);
+      if (shareRequest) {
+        event.preventDefault();
+        openNativeShare(shareRequest);
+        return;
+      }
       if (!isDesktopOpenDeepLink(url)) {
         return;
       }
@@ -103,6 +120,13 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     if (hasInstallerShutdownArg(commandLine, options.installerShutdownArgs)) {
       options.beginInstallerShutdown(commandLine);
       return;
+    }
+    if (options.platform === "darwin") {
+      const shares = commandLine.map(readDesktopShareOpenRequest).filter((request): request is DesktopShareOpenRequest => request !== null);
+      if (shares.length) {
+        for (const request of shares) openNativeShare(request);
+        return;
+      }
     }
     if (options.platform === "win32") {
       const desktopOpen = Boolean(findDesktopOpenDeepLink(commandLine));
@@ -136,6 +160,8 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     for (const filePath of pendingLocalDocuments.splice(0)) {
       dispatchLocalDocument(filePath);
     }
+    for (const request of pendingShares.values()) openNativeShare(request);
+    pendingShares.clear();
     options.app.on("activate", () => {
       if (options.isNativeDialogOpen()) {
         return;

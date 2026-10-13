@@ -115,6 +115,7 @@ test("a release signer rejects invalid outer identity even when its service chec
   await assert.rejects(sign({ platform: "darwin", app: "Fixture.app", identity: "publisher" }, {
     appInfo: { id: bundleId },
     prepareServices: () => calls.push("prepare"),
+    signExtension: async () => {}, verifyExtension: async () => {},
     signAsync: () => calls.push("sign"),
     verifyAppSignature: () => { throw new Error("ad-hoc outer app"); },
     verifyServices: () => calls.push("verify services")

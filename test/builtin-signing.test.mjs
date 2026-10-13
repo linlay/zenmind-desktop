@@ -218,6 +218,12 @@ test("final app signing skips already finalized services and preserves other sig
       assert.equal(options.keychain, "keychain");
       events.push("prepare");
     },
+    signExtension: async ({ appPath, hostBundleId, identity }) => {
+      assert.equal(appPath, app);
+      assert.equal(hostBundleId, "cc.cutej.desktop");
+      assert.equal(identity, "identity");
+      events.push("share sign");
+    },
     signAsync: async (options) => {
       events.push("outer sign");
       assert.equal(options.app, app);
@@ -229,15 +235,24 @@ test("final app signing skips already finalized services and preserves other sig
       assert.equal(ignore(`${root}-other/bin/rg`), false);
       assert.equal(ignore(app), false);
       assert.equal(ignore(path.join(app, "Contents/MacOS/Electron")), false);
+      const extension = path.join(app, "Contents/PlugIns/DesktopShare.appex");
+      assert.equal(ignore(extension), true);
+      assert.equal(ignore(path.join(extension, "Contents/MacOS/DesktopShare")), true);
+      assert.equal(ignore(`${extension}-other/Contents/MacOS/Other`), false);
     },
     verifyAppSignature: (file, options) => {
       assert.equal(file, app);
       assert.equal(options.expectedBundleId, "cc.cutej.desktop");
       events.push("app identity verify");
     },
+    verifyExtension: (file, options) => {
+      assert.equal(file, app);
+      assert.equal(options.hostBundleId, "cc.cutej.desktop");
+      events.push("share verify");
+    },
     verifyServices: (dir) => { assert.equal(dir, root); events.push("final verify"); }
   });
-  assert.deepEqual(events, ["prepare", "outer sign", "app identity verify", "final verify"]);
+  assert.deepEqual(events, ["prepare", "share sign", "outer sign", "app identity verify", "share verify", "final verify"]);
 });
 
 test("final packaging fails on bad inputs and on post-sign integrity failures", async () => {
@@ -251,7 +266,7 @@ test("final packaging fails on bad inputs and on post-sign integrity failures", 
   assert.equal(signed, false);
   await assert.rejects(sign(options, {
     appInfo: { id: "cc.cutej.desktop" },
-    prepareServices: async () => {}, signAsync: async () => {},
+    prepareServices: async () => {}, signExtension: async () => {}, verifyExtension: async () => {}, signAsync: async () => {},
     verifyAppSignature: () => {},
     verifyServices: () => { throw new Error("final checksum mismatch"); }
   }), /final checksum mismatch/u);

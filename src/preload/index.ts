@@ -4,6 +4,7 @@ installDesktopHistoryGesture();
 import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { createMainNavigationSubscription } from "./main-navigation";
+import { NATIVE_SHARE_READ_CHANNEL } from "../shared/native-share";
 import { LOCAL_DOCUMENT_CHANNELS, type LocalDocumentWorkspaceState } from "../shared/local-document";
 import { CONNECTOR_AUTH_BROWSER_EVENT, CONNECTOR_AUTH_BROWSER_HOST_EVENT, CONNECTOR_AUTH_BROWSER_HOST_CLOSE } from "../shared/contracts/agent-webclient-bridge";
 import type {
@@ -114,6 +115,7 @@ const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ??
 const onNavigate = createMainNavigationSubscription(ipcRenderer);
 
 const api: DesktopApi = {
+  nativeShare: { read: request => ipcRenderer.invoke(NATIVE_SHARE_READ_CHANNEL, request) },
   localDocuments: {
     select: () => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.select),
     bind: request => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.bind, request),

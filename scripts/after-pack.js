@@ -69,6 +69,16 @@ exports.default = async function (context) {
     path.join(getAppPath(context), "Contents", "Resources", "services")
   );
   contentAddressMacAppIcon(getAppPath(context));
+  const { loadBrandConfig, resolveBrandId } = await import("./lib/brand-config.mjs");
+  const { buildMacShareExtension } = await import("./lib/mac-share-extension.mjs");
+  const brand = loadBrandConfig(projectRoot, resolveBrandId());
+  if (brand.appId !== context.packager.appInfo.id) {
+    throw new Error("macOS sharing extension brand does not match the packaged app");
+  }
+  const arch = context.arch === 3 ? "arm64" : context.arch === 1 ? "x64" : context.arch;
+  buildMacShareExtension({
+    projectRoot, brand, appPath: getAppPath(context), hostBundleId: brand.appId, arch
+  });
 };
 
 exports.contentAddressMacAppIcon = contentAddressMacAppIcon;

@@ -56,6 +56,7 @@
 - [桌面协议与动作桥](桌面协议与动作桥.md)：协议入口、动作模型、授权和页面控制。
 - [统一文档与 WorkPanel](统一文档与WorkPanel.md)：文档来源、内容分类、原生/WebClient 路由、编辑批注与保存边界。
 - [智能助理集成](智能助理集成.md)：Agent Platform、WebClient、Main Assistant 与 Copilot。
+- [系统分享接收](系统分享接收.md)：macOS 共享扩展、微信文件接收与可编辑附件草稿。
 
 ### 扩展与业务域
 

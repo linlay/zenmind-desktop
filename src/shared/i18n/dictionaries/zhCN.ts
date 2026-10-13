@@ -911,6 +911,7 @@ export const zhCNMessages = {
   "chatWorkPanel.add.moveHere": "移到这里",
   "dialog.workPanelLocalFiles.title": "选择要在 WorkPanel 中打开的文件",
   "dialog.localDocument.openFailed": "无法打开文档",
+  "dialog.nativeShare.openFailed": "无法接收分享文件",
   "dialog.localDocument.chooseTitle": "打开 Markdown 或 HTML 文件",
   "dialog.localDocument.editingChatFailed": "暂时无法准备小君对话，请确认助理服务已启动后重试。",
   "dialog.localDocument.readFailed": "无法读取文档，请确认文件仍存在且有读取权限。",

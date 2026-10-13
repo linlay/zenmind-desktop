@@ -5,6 +5,7 @@ import { syncBrandArtifacts, resolveRequiredBrandId, electronBuilderConfigPath }
 import { notarizeAndStapleDmg, resolveMacDmgArtifactPath } from "./lib/mac-notarize.mjs";
 import { npmCmd, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 import { verifyMacReleaseApp } from "./lib/mac-app-signing.js";
+import { verifyMacShareExtension } from "./lib/mac-share-extension.mjs";
 
 const MAC_SIGNING_CERTIFICATE_PREFIX = "Developer ID Application:";
 const DARWIN_BUILTIN_SIGN_ENV_KEYS = [
@@ -133,6 +134,7 @@ if (updateAppNotarized) {
   await runAndWait("xcrun", ["stapler", "validate", updateAppPath], brandProcessOptions({ cwd: projectRoot }));
 }
 verifyMacReleaseApp(updateAppPath, { expectedBundleId: brand.appId });
+verifyMacShareExtension(updateAppPath, { hostBundleId: brand.appId });
 const updateVersion = fs.readFileSync(path.join(projectRoot, "VERSION"), "utf8").trim().replace(/^v/iu, "");
 const updateZipPath = path.join(projectRoot, "dist", brand.id, `${brand.productName}-${updateVersion}-arm64.zip`);
 fs.rmSync(updateZipPath, { force: true });

@@ -14,6 +14,7 @@ import {
 } from "../shared/auth-bridge";
 import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-monitor";
 import {
+  AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_TRANSPORT_VERSION,
   AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL,
@@ -53,6 +54,7 @@ export function buildServiceWebviewMainWorldScript() {
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL)};
   const AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE = ${JSON.stringify(AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE)};
+  const AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE = ${JSON.stringify(AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE)};
   const DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE = ${JSON.stringify(DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
@@ -404,7 +406,8 @@ export function buildServiceWebviewMainWorldScript() {
   // child-to-parent event.source semantics.
   window.addEventListener("message", (event) => {
     const workspaceArrowRequest =
-      event.data?.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE;
+      event.data?.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE ||
+      event.data?.type === AGENT_WEBCLIENT_NATIVE_SHARE_READ_REQUEST_TYPE;
     if (
       isDesktopBridgeRequest(event.data) &&
       (!workspaceArrowRequest || (
