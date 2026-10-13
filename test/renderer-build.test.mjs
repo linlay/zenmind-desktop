@@ -3410,8 +3410,10 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /setEnterpriseImEnabled: \(enabled: boolean\) => Promise<EnterpriseImSettings>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
-  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; pinnedWebEntryKeys: string\[\]; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
-  assert.match(contracts, /saveNavigationPreferences: \(input: \{ mainOrder\?: string\[\]; webOrder\?: string\[\]; pinnedWebEntryKeys\?: string\[\] \}\)/);
+  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<DesktopNavigationPreferences>/);
+  assert.match(contracts, /saveNavigationPreferences: \(input: DesktopNavigationPreferencesInput\)/);
+  assert.match(contracts, /setWebEntryPinned: \(input: DesktopSitePinInput\)/);
+  assert.match(preload, /ipcRenderer\.on\("settings\.navigationPreferencesChanged"/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);

@@ -185,6 +185,10 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
 
   registerSettingsIpcHandlers(ipcMain, {
     app,
+    onNavigationPreferencesChanged: (preferences) => {
+      const window = options.getMainWindow();
+      if (window && !window.isDestroyed()) window.webContents.send("settings.navigationPreferencesChanged", preferences);
+    },
     platform: options.platform,
     nativeTheme: options.nativeTheme,
     getDataRoot,

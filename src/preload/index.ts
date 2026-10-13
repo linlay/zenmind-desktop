@@ -667,6 +667,12 @@ const api: DesktopApi = {
     resetDesktopBackground: () => ipcRenderer.invoke("settings.resetDesktopBackground"),
     getNavigationPreferences: () => ipcRenderer.invoke("settings.getNavigationPreferences"),
     saveNavigationPreferences: (input) => ipcRenderer.invoke("settings.saveNavigationPreferences", input),
+    setWebEntryPinned: (input) => ipcRenderer.invoke("settings.setWebEntryPinned", input),
+    onNavigationPreferencesChanged: (listener) => {
+      const handle = (_event: Electron.IpcRendererEvent, value: Parameters<typeof listener>[0]) => listener(value);
+      ipcRenderer.on("settings.navigationPreferencesChanged", handle);
+      return () => ipcRenderer.off("settings.navigationPreferencesChanged", handle);
+    },
     setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode),
     getInitialLocale: () => ({ ...initialLocaleSettings }),
     getLocale: () => ipcRenderer.invoke("settings.getLocale"),

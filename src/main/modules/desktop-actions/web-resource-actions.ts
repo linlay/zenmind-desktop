@@ -36,6 +36,7 @@ import path from "node:path";
 import { verifyPreparedWebappArchive, type PreparedWebappInstall } from "./webapp-install-preflight";
 import { assertActionCanStart } from "./confirmation-dialog";
 import { t } from "../../support/i18n/main-i18n";
+import { readWebPinnedKeys } from "../webs";
 
 export function webappRoute(webappId: string) {
   return `/webs/webapp:${webappId}`;
@@ -249,7 +250,27 @@ export async function executeWebAction(
 ) {
   const action = request.action;
   if (action === "desktop.site.list") {
-    return ok(action, listWebEntries(options.app, options.webs.webappManager));
+    const result = listWebEntries(options.app, options.webs.webappManager);
+    const pinned = new Set(readWebPinnedKeys(options.app, options.platform));
+    return ok(action, { ...result, items: result.items.map((item) => ({ ...item, pinned: pinned.has(item.entryKey) })) });
+  }
+  if (action === "desktop.site.setPinned") {
+    if (invocation.kind !== "desktop" && invocation.kind !== "agentPlatform") {
+      return fail(action, "forbidden", "Navigation pinning is available only to Desktop and trusted Agent Platform calls.", {
+        stage: "authorization", executionState: "not_started"
+      });
+    }
+    const items = listWebEntries(options.app, options.webs.webappManager).items;
+    const command = options.siteNavigation.setPinned(args, items.map((item) => item.entryKey));
+    if (command.ok) return ok(action, command.result);
+    const error = command.error;
+    return fail(action, error.code, error.message, {
+      stage: error.code === "invalid_args" ? "arguments" : "execution",
+      executionState: error.executionState,
+      ...(error.field ? { field: error.field } : {}),
+      recovery: { strategy: error.code === "invalid_args" ? "fix_input" : "inspect",
+        message: error.code === "invalid_args" ? "Use the exact entryKey from site.list and a boolean pinned." : "Read site.list and current navigation state before retrying." }
+    });
   }
   if (action === "desktop.website.list") {
     return ok(action, listWebsiteItems(options.app));

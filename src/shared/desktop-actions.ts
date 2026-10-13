@@ -95,6 +95,11 @@ export interface DesktopWebsiteRemoveResult {
   websiteId: string;
 }
 
+export interface DesktopSitePinResult {
+  entryKey: string;
+  pinned: boolean;
+}
+
 export interface DesktopKanbanIssueResult {
   issue: KanbanIssue;
 }
@@ -339,7 +344,8 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.workpanel.activateTab", kind: "execute", category: "workpanel", description: "Activate a WorkPanel tab for the trusted source chat. Args: { tabId }. Returns: { workspace }, containing only that chat's complete workspace." },
   { name: "desktop.workpanel.closeTab", kind: "execute", category: "workpanel", description: "Close a closable WorkPanel tab for the trusted source chat. Args: { tabId }. Returns: { closedItemId, workspace }; workspace is null if it was destroyed." },
   { name: "desktop.workpanel.closeWorkpanel", kind: "execute", category: "workpanel", description: "Close the trusted source chat WorkPanel. Returns: { workspaceId, closed: true }." },
-  { name: "desktop.site.list", kind: "read", category: "web", description: "List Desktop website entries and webapps." },
+  { name: "desktop.site.list", kind: "read", category: "web", description: "List Desktop website entries and installed WebApps, including each entry's id, entryKey, label and pinned state." },
+  { name: "desktop.site.setPinned", kind: "execute", category: "web", description: "Pin or unpin an existing Website or WebApp in Desktop navigation. Args: { entryKey, pinned: boolean }. Use the exact entryKey from site.list. Returns: { entryKey, pinned }." },
   { name: "desktop.website.list", kind: "read", category: "web", description: "List Desktop website entries.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
   { name: "desktop.website.add", kind: "execute", category: "web", description: "Add one Desktop website entry. Args: { input: { label, url, copilotAgentKey? } } or top-level label/url; url is required. Do not send items/name-only batches. Returns: { item }.", outputSchema: WEBSITE_ITEM_OUTPUT_SCHEMA },
   { name: "desktop.website.update", kind: "execute", category: "web", description: "Update one Desktop website entry. Args: id or websiteId plus { input|patch: { label?, url?, copilotAgentKey? } }. Returns: { item }.", outputSchema: WEBSITE_ITEM_OUTPUT_SCHEMA },

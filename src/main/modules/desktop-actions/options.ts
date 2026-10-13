@@ -20,6 +20,7 @@ export interface DesktopActionRuntimeContext {
 }
 
 export interface DesktopActionContextDependencies {
+  siteNavigation: DesktopActionBridgeOptions["siteNavigation"];
   appearanceRuntime?: DesktopAppearancePort;
   assistantBridge: unknown;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
@@ -61,6 +62,7 @@ export function createDesktopActionOptions(
 ): any {
   return {
     app: context.app,
+    siteNavigation: dependencies.siteNavigation,
     appearanceRuntime: dependencies.appearanceRuntime,
     platform: context.platform,
     assistantBridge: dependencies.assistantBridge as any,

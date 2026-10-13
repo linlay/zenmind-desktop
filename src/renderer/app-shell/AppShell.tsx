@@ -737,6 +737,8 @@ export function AppShell() {
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const navigationRevisionRef = useRef(0);
   const [pinnedWebEntryKeys, setPinnedWebEntryKeys] = useState<string[]>([]);
   const [webPinMutationPending, setWebPinMutationPending] = useState(false);
   const webPinMutationPendingRef = useRef(false);
@@ -952,7 +954,10 @@ export function AppShell() {
     : resolveSidebarMode(location.pathname, sidebarNavOrder);
   function handleSidebarNavOrderChange(order: SidebarNavOrderItemKey[]) {
     setRetainedSidebarMode({ locationKey: location.key, mode: sidebarMode });
-    setSidebarNavOrder(order);
+    void saveNavigationOrder({ mainOrder: createPersistedSidebarNavOrder(order) });
+  }
+  function handleWebsiteNavOrderChange(order: SidebarNavOrderItemKey[]) {
+    void saveNavigationOrder({ webOrder: order });
   }
   useEffect(() => {
     setRetainedSidebarMode((current) => current?.locationKey === location.key ? current : null);
@@ -2149,32 +2154,40 @@ export function AppShell() {
     webPinMutationPendingRef.current = true;
     setWebPinMutationPending(true);
     try {
-      const nextKeys = pinned
-        ? [item.entryKey, ...pinnedWebEntryKeys.filter((key) => key !== item.entryKey)]
-        : pinnedWebEntryKeys.filter((key) => key !== item.entryKey);
-      const preferences = await window.electronAPI.settings.saveNavigationPreferences({
-        pinnedWebEntryKeys: nextKeys
-      });
-      setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys);
-      setSidebarNavOrder((current) => pinned
-        ? [item.entryKey as SidebarNavOrderItemKey, ...current.filter((key) => key !== item.entryKey)]
-        : current.filter((key) => key !== item.entryKey));
+      const preferences = await window.electronAPI.settings.setWebEntryPinned({ entryKey: item.entryKey, pinned });
+      applyNavigationPreferences(preferences);
+    } catch (error) {
+      await refreshNavigationPreferencesFromCanonical();
+      throw error;
     } finally {
       webPinMutationPendingRef.current = false;
       setWebPinMutationPending(false);
     }
   }
 
+  function applyNavigationPreferences(preferences: Awaited<ReturnType<typeof window.electronAPI.settings.getNavigationPreferences>>) {
+    if (preferences.revision < navigationRevisionRef.current) return;
+    navigationRevisionRef.current = preferences.revision;
+    setNavigationRevision(preferences.revision);
+    setSidebarNavOrder(preferences.mainOrder as SidebarNavOrderItemKey[]);
+    setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
+    setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys);
+  }
+
+  async function saveNavigationOrder(input: { mainOrder?: string[]; webOrder?: string[] }) {
+    if (!navigationRevision) return;
+    try {
+      const preferences = await window.electronAPI.settings.saveNavigationPreferences({ ...input, expectedRevision: navigationRevision });
+      applyNavigationPreferences(preferences);
+    } catch {
+      // A concurrent Action may have changed pins/order; never replay a stale whole-list save.
+      await refreshNavigationPreferencesFromCanonical();
+    }
+  }
+
   async function refreshNavigationPreferencesFromCanonical() {
     try {
-      const preferences = await window.electronAPI.settings.getNavigationPreferences();
-      if (Array.isArray(preferences?.mainOrder)) {
-        setSidebarNavOrder(preferences.mainOrder as SidebarNavOrderItemKey[]);
-      }
-      if (Array.isArray(preferences?.webOrder)) {
-        setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
-      }
-      setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys ?? []);
+      applyNavigationPreferences(await window.electronAPI.settings.getNavigationPreferences());
     } catch {
       // Keep the current navigation order if settings are temporarily unavailable.
     } finally {
@@ -2740,27 +2753,20 @@ export function AppShell() {
 
   useEffect(() => {
     let cancelled = false;
+    const unsubscribe = window.electronAPI.settings.onNavigationPreferencesChanged((preferences) => {
+      if (!cancelled) applyNavigationPreferences(preferences);
+    });
     window.electronAPI.settings.getNavigationPreferences()
       .then((preferences) => {
-        if (cancelled) {
-          return;
-        }
-        if (Array.isArray(preferences?.mainOrder)) {
-          setSidebarNavOrder(preferences.mainOrder as SidebarNavOrderItemKey[]);
-        }
-        if (Array.isArray(preferences?.webOrder)) {
-          setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
-        }
-        setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys ?? []);
+        if (!cancelled) applyNavigationPreferences(preferences);
       })
       .catch(() => undefined)
       .finally(() => {
-        if (!cancelled) {
-          setNavigationPreferencesLoaded(true);
-        }
+        if (!cancelled) setNavigationPreferencesLoaded(true);
       });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -2803,9 +2809,6 @@ export function AppShell() {
     } catch {
       // Ignore persistence failures and keep the in-memory navigation order usable.
     }
-    window.electronAPI.settings.saveNavigationPreferences({
-      mainOrder: persistedSidebarNavOrder
-    }).catch(() => undefined);
   }, [kanbanSettingsLoaded, navigationPreferencesLoaded, persistedSidebarNavOrder]);
 
   useEffect(() => {
@@ -2816,11 +2819,6 @@ export function AppShell() {
       );
     } catch {
       // Ignore persistence failures and keep the in-memory web order usable.
-    }
-    if (navigationPreferencesLoaded) {
-      window.electronAPI.settings.saveNavigationPreferences({
-        webOrder: normalizedWebGroupOrder
-      }).catch(() => undefined);
     }
   }, [navigationPreferencesLoaded, normalizedWebGroupOrder]);
 
@@ -4881,7 +4879,7 @@ export function AppShell() {
           sidebarNavOrder={normalizedSidebarNavOrder}
           onSidebarNavOrderChange={navigationPreferencesLoaded ? handleSidebarNavOrderChange : undefined}
           websiteNavOrder={normalizedWebGroupOrder}
-          onWebsiteNavOrderChange={setWebGroupOrder}
+          onWebsiteNavOrderChange={handleWebsiteNavOrderChange}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
           webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
           onSetWebItemPinned={handleSetWebItemPinned}
@@ -5056,7 +5054,7 @@ export function AppShell() {
                     isWindows={isWindows}
                     sidebarNavOrder={normalizedSidebarNavOrder}
                     availableSidebarNavOrderItems={availableSidebarNavOrderItems}
-                    onSidebarNavOrderChange={setSidebarNavOrder}
+                    onSidebarNavOrderChange={handleSidebarNavOrderChange}
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     webItems={webItems}

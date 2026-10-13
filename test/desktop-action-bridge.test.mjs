@@ -4399,3 +4399,48 @@ test("pet import validates paths and does not leak filesystem errors", async t =
   options.desktopPet.importPackage=async()=>{throw new PetPackageError('packageExists');};
   assert.equal((await handleAgentPlatformDesktopActionRequest(options,{action:'desktop.pet.import',args:{filePath:'/tmp/panda.zip'}})).error.code,'packageExists');
 });
+
+
+for (const platform of ["darwin", "win32"]) {
+  test("site Actions discover and pin Website/WebApp entries on " + platform, async (t) => {
+    const { options } = createDesktopActionOptions(t);
+    options.platform = platform;
+    const id = "webapp-0123456789abcdef";
+    options.webs = { ...options.webs, webappManager: { list: () => [{
+      id, entryKey: "webapp:" + id, kind: "webapp", key: "personal-workbench",
+      label: "个人工作台", schemaVersion: 2, version: "1.0.0", target: "any",
+      openMode: "workspace", createdAt: 1, updatedAt: 1
+    }] } };
+    const navigation = require("../dist-electron/main/modules/settings/navigation-preferences.js");
+    options.siteNavigation = { setPinned: (input, keys) => navigation.setSitePinned(options.app, input, keys, platform) };
+    const notifications = [];
+    navigation.setNavigationPreferencesChangedListener(options.app, (snapshot) => notifications.push(snapshot), platform);
+    let confirmations = 0;
+    options.confirmRendererAction = async () => { confirmations++; return { decision: "cancel" }; };
+    const invoke = (action, args = {}) => handleAgentPlatformDesktopActionRequest(options, { action, args });
+    const discovered = await invoke("desktop.site.list");
+    assert.equal(discovered.ok, true);
+    const item = discovered.result.items.find((entry) => entry.key === "personal-workbench");
+    assert.equal(item.label, "个人工作台");
+    assert.equal(item.pinned, false);
+    const result = await invoke("desktop.site.setPinned", { entryKey: item.entryKey, pinned: true });
+    assert.deepEqual(result, { action: "desktop.site.setPinned", ok: true, result: { entryKey: item.entryKey, pinned: true } });
+    assert.equal(confirmations, 0, "trusted Platform calls must not require a second confirmation");
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].mainOrder[0], item.entryKey);
+    assert.equal((await invoke("desktop.site.list")).result.items.find((entry) => entry.id === id).pinned, true);
+    await invoke("desktop.site.setPinned", { entryKey: item.entryKey, pinned: true });
+    assert.equal(notifications.length, 1, "repeated state does not reorder or notify");
+    const invalid = await invoke("desktop.site.setPinned", { entryKey: item.entryKey, pinned: "true" });
+    assert.equal(invalid.error.code, "invalid_args");
+    assert.equal(invalid.error.details.executionState, "not_started");
+    const missing = await invoke("desktop.site.setPinned", { entryKey: "website:missing", pinned: true });
+    assert.equal(missing.error.code, "site_not_found");
+    const forbidden = await require("../dist-electron/main/modules/desktop-actions/web-resource-actions.js").executeWebAction(
+      options, { action: "desktop.site.setPinned" }, { kind: "webappPage", webappId: id }, { entryKey: item.entryKey, pinned: false });
+    assert.equal(forbidden.error.code, "forbidden");
+    const unpinned = await invoke("desktop.site.setPinned", { entryKey: item.entryKey, pinned: false });
+    assert.equal(unpinned.result.pinned, false);
+    assert.equal((await invoke("desktop.site.list")).result.items.find((entry) => entry.id === id).pinned, false);
+  });
+}

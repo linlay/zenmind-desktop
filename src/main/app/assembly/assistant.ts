@@ -44,7 +44,7 @@ import {
   getResponsiveServiceState,
   type ServicesFacade
 } from "../../modules/services";
-import { type AppearanceRuntime, readHelpSettings } from "../../modules/settings";
+import { type AppearanceRuntime, readHelpSettings, setSitePinned } from "../../modules/settings";
 import { type AppShellRuntime } from "../../modules/shell";
 import {
   configureTunnelHubRegistrationController,
@@ -91,6 +91,7 @@ export function assembleAssistantIntegration(dependencies: AssembleAssistantInte
     stopDesktopWsServer,
     createDesktopActionOptions: (context, actionDependencies) => createDesktopActionOptions(context, {
       ...actionDependencies,
+      siteNavigation: { setPinned: (input, keys) => setSitePinned(context.app, input, keys, context.platform) },
       resolveWorkPanelActiveFile: dependencies.resolveWorkPanelActiveFile,
       waitForWorkPanelFilePresentation: dependencies.waitForWorkPanelFilePresentation,
       appearanceRuntime: dependencies.appearanceRuntime,

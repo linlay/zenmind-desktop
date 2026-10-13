@@ -398,6 +398,7 @@ export async function executeAction(
     case "desktop.controlCenter.restartService":
       return ok(action, await options.services.restartService(options.app, readServiceId(args)));
     case "desktop.site.list":
+    case "desktop.site.setPinned":
     case "desktop.website.list":
     case "desktop.website.add":
     case "desktop.website.update":

@@ -23,6 +23,9 @@ import type { LocalDocumentActiveFile } from "../work-panel";
 import { type DesktopActionSource, type DesktopActionError } from "../../../shared/desktop-actions";
 
 export type DesktopActionBridgeOptions = {
+  siteNavigation: {
+    setPinned: (input: unknown, existingEntryKeys: readonly string[]) => import("../../../shared/contracts/navigation").DesktopSitePinCommandResult;
+  };
   appearanceRuntime?: DesktopAppearancePort;
   app: App;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
@@ -163,6 +166,7 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
   "desktop.pet.import",
   "desktop.copilot.setPagePreference",
   // Website entries and Kanban.
+  "desktop.site.setPinned",
   "desktop.website.add",
   "desktop.website.update",
   "desktop.website.remove",

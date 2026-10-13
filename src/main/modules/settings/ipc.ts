@@ -1,4 +1,5 @@
-import { readNavigationOrder, writeNavigationOrder } from "./navigation-order-store";
+import { readNavigationPreferences, saveNavigationPreferences, setNavigationPreferencesChangedListener, setWebEntryPinned, parseSitePinInput } from "./navigation-preferences";
+import type { DesktopNavigationPreferences } from "../../../shared/contracts/navigation";
 import fs from "node:fs";
 import path from "node:path";
 import type {
@@ -31,12 +32,13 @@ import { getDesktopConfigRoot, getDesktopStateRoot } from "../../infrastructure/
 import { getDesktopDeviceInfo } from "../identity";
 import { getDesktopDeviceIdentityInfo } from "../identity";
 import { getDesktopUsageProfile } from "./usage-profile";
-import { readWebOrderKeys, writeWebOrderKeys, readWebPinnedKeys, writeWebPinnedKeys } from "../webs";
+import { listWebEntries } from "../webs";
 import { t } from "../../support/i18n/main-i18n";
 import { requireEpochMillis } from "../../../shared/time-contract";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
+  onNavigationPreferencesChanged?: (value: DesktopNavigationPreferences) => void;
   platform?: NodeJS.Platform;
   nativeTheme: { themeSource: string };
   getDataRoot: (app: any) => string;
@@ -187,14 +189,6 @@ function normalizeThemePreference(themeMode: unknown): DesktopThemePreference {
   return themeMode === "dark" || themeMode === "light" || themeMode === "system" ? themeMode : "system";
 }
 
-function normalizeStringArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((item) => typeof item === "string" ? item.trim() : "")
-    .filter(Boolean);
-}
 
 function defaultDesktopWsServerRuntimeState(): Omit<DesktopWsServerState, "enabled"> {
   return {
@@ -394,27 +388,14 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   ipcMain.handle("settings.getThemePreference", async () =>
     readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform)).appearance.theme
   );
-  ipcMain.handle("settings.getNavigationPreferences", async () => {
-    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
-    return {
-      ...profile.navigation,
-      mainOrder: readNavigationOrder(app, platform),
-      webOrder: readWebOrderKeys(app, [], platform),
-      pinnedWebEntryKeys: readWebPinnedKeys(app, platform)
-    };
-  });
-  ipcMain.handle("settings.saveNavigationPreferences", async (_event: any, input: any) => {
-    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
-    const mainOrder = Array.isArray(input?.mainOrder)
-      ? writeNavigationOrder(app, normalizeStringArray(input.mainOrder), platform)
-      : readNavigationOrder(app, platform);
-    const webOrder = Array.isArray(input?.webOrder)
-      ? writeWebOrderKeys(app, normalizeStringArray(input.webOrder), platform)
-      : readWebOrderKeys(app, [], platform);
-    const pinnedWebEntryKeys = Array.isArray(input?.pinnedWebEntryKeys)
-      ? writeWebPinnedKeys(app, normalizeStringArray(input.pinnedWebEntryKeys), platform)
-      : readWebPinnedKeys(app, platform);
-    return { ...profile.navigation, mainOrder, webOrder, pinnedWebEntryKeys };
+  setNavigationPreferencesChangedListener(app, options.onNavigationPreferencesChanged, platform);
+  ipcMain.handle("settings.getNavigationPreferences", async () => readNavigationPreferences(app, platform));
+  ipcMain.handle("settings.saveNavigationPreferences", async (_event: any, input: any) =>
+    saveNavigationPreferences(app, input ?? {}, platform)
+  );
+  ipcMain.handle("settings.setWebEntryPinned", async (_event: any, value: unknown) => {
+    const input = parseSitePinInput(value);
+    return setWebEntryPinned(app, input, listWebEntries(app).items.map((item) => item.entryKey), platform);
   });
   ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) => {
     const normalizedThemeMode = normalizeThemePreference(themeMode);

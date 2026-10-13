@@ -1,4 +1,5 @@
 import type { WebsiteBridgeResult } from "../website-bridge";
+import type { DesktopNavigationPreferences, DesktopNavigationPreferencesInput, DesktopSitePinInput } from "./navigation";
 import type { LocalDocumentsApi } from "../local-document";
 import type { BrowserWebclientState, BrowserWebclientResult } from "./services";
 import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
@@ -81,7 +82,6 @@ import type {
   WebviewSelectionToolbarExecuteResult,
   WebviewSelectionToolbarStateListener,
 } from "../webview-selection-toolbar";
-import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   SelectionExplainWindowState,
   SelectionExplainWindowStateListener,
@@ -1241,8 +1241,10 @@ export interface DesktopApi {
     removeDesktopSkinPackage: (skinId: DesktopSkinId) => Promise<DesktopSkinResult>;
     importDesktopBackground: () => Promise<DesktopSkinResult>;
     resetDesktopBackground: () => Promise<DesktopSkinResult>;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[]; pinnedWebEntryKeys?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getNavigationPreferences: () => Promise<DesktopNavigationPreferences>;
+    saveNavigationPreferences: (input: DesktopNavigationPreferencesInput) => Promise<DesktopNavigationPreferences>;
+    setWebEntryPinned: (input: DesktopSitePinInput) => Promise<DesktopNavigationPreferences>;
+    onNavigationPreferencesChanged: (listener: (value: DesktopNavigationPreferences) => void) => () => void;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
