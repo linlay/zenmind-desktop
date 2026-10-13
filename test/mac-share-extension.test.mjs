@@ -157,8 +157,20 @@ test("actual Swift extension compiles with extension-safe APIs, is cacheable and
   const signingRoot = path.join(root, "signing");
   const signing = resolveDarwinDevSigningIdentity(hostBundleId, { signingRoot, env: {} });
   t.after(() => spawnSync("/usr/bin/security", ["delete-keychain", path.join(signingRoot, "development.keychain-db")]));
+  const readSearchList = () => execFileSync("/usr/bin/security", ["list-keychains", "-d", "user"], { encoding: "utf8" });
+  const before = readSearchList();
   signMacShareExtension({ appPath: app, hostBundleId, ...signing, development: true });
   assert.equal(verifyMacShareExtension(app, { hostBundleId, development: true }), extension);
+  assert.equal(readSearchList(), before, "successful extension signing must restore the search list");
+  const failure = new Error("extension signing failed");
+  assert.throws(() => signMacShareExtension({ appPath: app, hostBundleId, ...signing, development: true,
+    run: () => {
+      const entries = readSearchList().trim().split("\n").map(line => JSON.parse(line.trim()));
+      assert.ok(entries.some(file => fs.realpathSync(file) === fs.realpathSync(signing.keychain)));
+      throw failure;
+    }
+  }), error => error === failure);
+  assert.equal(readSearchList(), before, "failed extension signing must restore the search list");
 });
 
 test("actual Swift inbox preserves ZIP bytes and enforces atomic, private, bounded and cancellable transfer", onlyDarwin, t => {

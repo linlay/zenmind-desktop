@@ -8,6 +8,7 @@ import nativeShareProtocol from "../../src/shared/native-share-protocol.json" wi
 import { brandBuildRoot, brandIconDir } from "./brand-config.mjs";
 import { readDesktopVersion } from "./build-metadata.mjs";
 import { verifyMacReleaseApp } from "./mac-app-signing.js";
+import { withDarwinDevSigningKeychain } from "./mac-dev-signing.mjs";
 
 export const MAC_SHARE_EXTENSION_NAME = "DesktopShare.appex";
 export const MAC_SHARE_EXTENSION_EXECUTABLE = "DesktopShare";
@@ -216,12 +217,16 @@ export function signMacShareExtension({ appPath, hostBundleId, identity, keychai
   assertExtensionInfo(extension, hostBundleId);
   const entitlements = plist.parse(fs.readFileSync(macShareExtensionEntitlementsPath, "utf8"));
   if (JSON.stringify(entitlements) !== JSON.stringify(EXTENSION_ENTITLEMENTS)) throw new Error("invalid macOS sharing sandbox entitlements");
-  run("/usr/bin/codesign", [
+  const sign = () => run("/usr/bin/codesign", [
     "--force", "--sign", identity,
     ...(keychain ? ["--keychain", keychain] : []),
     ...(development || timestamp === "none" ? ["--timestamp=none"] : timestamp ? [`--timestamp=${timestamp}`] : ["--timestamp"]),
     "--options", "runtime", "--entitlements", macShareExtensionEntitlementsPath, extension
   ]);
+  // Development identities live outside the normal search list. Both dev
+  // startup and standalone extension installation need this signing scope.
+  if (development) withDarwinDevSigningKeychain(keychain, sign);
+  else sign();
   run("/usr/bin/codesign", ["--verify", "--strict", extension]);
   assertExtensionEntitlements(extension, run);
   return extension;

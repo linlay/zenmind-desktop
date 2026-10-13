@@ -4,7 +4,7 @@ import path from "node:path";
 import plist from "plist";
 import { fileURLToPath } from "node:url";
 import { brandBuildRoot, loadBrandConfig, resolveRequiredBrandId } from "./lib/brand-config.mjs";
-import { resolveDarwinDevSigningIdentity } from "./lib/mac-dev-signing.mjs";
+import { resolveDarwinDevSigningIdentity, withDarwinDevSigningKeychain } from "./lib/mac-dev-signing.mjs";
 import { buildMacShareExtension, macNativeShareUrlTypes, macShareExtensionPath, signMacShareExtension, verifyMacShareExtension } from "./lib/mac-share-extension.mjs";
 
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
@@ -29,11 +29,11 @@ export function installDarwinDevShareExtension({ projectRoot, brand, appPath, re
   const previous = path.join(working, "Previous.appex");
   let changed = false;
   const sealApp = () => {
-    run("/usr/bin/codesign", [
+    withDarwinDevSigningKeychain(signing.keychain, () => run("/usr/bin/codesign", [
       "--force", "--sign", signing.identity,
       ...(signing.keychain ? ["--keychain", signing.keychain] : []),
       "--timestamp=none", "--preserve-metadata=entitlements", appPath
-    ]);
+    ]));
     run("/usr/bin/codesign", ["--verify", "--deep", "--strict", appPath]);
   };
   try {
