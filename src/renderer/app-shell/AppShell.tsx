@@ -1,7 +1,7 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
-import { AppSidebar } from "./navigation/AppSidebar";
+import { AppSidebar, type AppSidebarChatMenuHandle } from "./navigation/AppSidebar";
 import { HistoryGestureOverlay } from "./navigation/HistoryGestureOverlay";
 import { forwardMainChatAwaitingDigit } from "../services/mainChatAwaitingShortcut";
 import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
@@ -792,6 +792,7 @@ export function AppShell() {
     ? shellOverlay.activeOverlay
     : null;
   const chatHistoryDialogRequestIdRef = useRef(0);
+  const sidebarChatMenuRef = useRef<AppSidebarChatMenuHandle>(null);
   const [chatHistoryDialog, setChatHistoryDialog] =
     useState<ChatHistoryDialogRequest | null>(null);
   const agentChatFocusRequestIdRef = useRef(0);
@@ -4647,6 +4648,22 @@ export function AppShell() {
   };
   const mainChatHeaderActions = showMainChatWorkPanelToggle ? (
     <div className="main-chat-header-actions">
+      <Tooltip content={t("sidebar.chat.moreActions")} hoverOnly>
+        <button
+          type="button"
+          className="main-chat-header-action main-chat-more-button"
+          aria-label={t("sidebar.chat.moreActions")}
+          aria-haspopup="menu"
+          disabled={!desiredChatRouteChatId}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void sidebarChatMenuRef.current?.openCurrentChatMenu(event.currentTarget);
+          }}
+        >
+          <SidebarActionIcon kind="more_actions" className="main-chat-more-icon" />
+        </button>
+      </Tooltip>
       <Tooltip content={shareDisabledReason || t("sidebar.chat.shareTitle")}>
         <span
           className={`main-chat-share-tooltip-trigger${shareDisabledReason ? " is-disabled" : ""}`}
@@ -4865,6 +4882,7 @@ export function AppShell() {
       </div>
       <div className="app-sidebar-shell">
         <AppSidebar
+          chatMenuRef={sidebarChatMenuRef}
           isCollapsed={effectiveSidebarCollapsed}
           isMac={isMac}
           isWindows={isWindows}

@@ -1105,6 +1105,24 @@
   pointer-events: auto;
 }
 
+.main-chat-more-button {
+  position: absolute;
+  right: 56px;
+}
+
+.main-chat-more-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.app-shell.has-chat-work-panel .main-chat-more-button {
+  right: calc(var(--chat-work-panel-width, 360px) + 28px);
+}
+
+.app-shell.is-main-chat-collapsed-by-work-panel .main-chat-more-button {
+  display: none;
+}
+
 .app-shell.has-chat-work-panel .main-chat-share-tooltip-trigger {
   right: var(--chat-work-panel-width, 360px);
 }
