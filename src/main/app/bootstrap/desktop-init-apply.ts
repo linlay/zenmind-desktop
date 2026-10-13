@@ -100,7 +100,8 @@ export function applyDesktopInitBootstrap(
         if (!isRecord(defaults.websiteBridges)) throw new Error("websiteBridges must be an object.");
         return initializeWebsiteBridgeSeeds(
           getDesktopWebsiteBridgeStorage(app, platform),
-          path.join(path.dirname(initPath), "desktop-init", "website-bridges"),
+          // Bridge sources sit beside skills-center in the env root; they are read, never consumed.
+          path.join(path.dirname(initPath), "web-bridges-center"),
           defaults.websiteBridges.items
         );
       }),

@@ -6,6 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 const require = createRequire(import.meta.url);
 const { parseWebsiteBridgeManifest, matchWebsiteBridgePage } = require('../dist-electron/shared/website-bridge.js');
@@ -342,15 +343,27 @@ test('legacy hash directory is rejected without migration', async t => {
   assert.equal(fs.existsSync(path.join(target, 'bridge.json')), false);
 });
 
+// What a v1 Desktop left on disk: its normalized manifest, the page scripts, and the digest it committed.
+const legacyManifest = { schemaVersion: 1, id: 'sample', name: 'Old Sample', version: '0.9.0', origin: 'https://site.test', pages: [{ path: '/posts/:id', script: 'pages/post.js' }] };
+const legacyScript = 'globalThis.awcp = {};';
+const legacyDigest = createHash('sha256').update(JSON.stringify([legacyManifest, [['pages/post.js', legacyScript]]])).digest('hex');
+function writeLegacy(directory) {
+  fs.rmSync(directory, { recursive: true, force: true }); fs.mkdirSync(path.join(directory, 'pages'), { recursive: true });
+  fs.writeFileSync(path.join(directory, 'bridge.json'), JSON.stringify(legacyManifest, null, 2) + '\n');
+  fs.writeFileSync(path.join(directory, 'pages/post.js'), legacyScript);
+}
+function commitDigest(storage, id, digest) {
+  const file = path.join(storage.configRoot, 'website-bridges.json'); const catalog = JSON.parse(fs.readFileSync(file, 'utf8'));
+  catalog.items.find(item => item.id === id).digest = digest; fs.writeFileSync(file, JSON.stringify(catalog));
+}
+
 test('a package installed under the removed schema is listed as outdated, never injected, and replaced by importing its update', async t => {
   const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
   const other = { ...manifest, id: 'other', origins: { main: 'https://other.test' } };
   let manager = createWebsiteBridgeManager(storage);
   await manager.importFile(await zipAt(root)); await manager.importFile(await zipAt(root, other)); await manager.setEnabled('sample', false);
   const target = path.join(storage.packagesRoot, 'sample');
-  fs.rmSync(target, { recursive: true }); fs.mkdirSync(path.join(target, 'pages'), { recursive: true });
-  fs.writeFileSync(path.join(target, 'bridge.json'), JSON.stringify({ schemaVersion: 1, id: 'sample', name: 'Old Sample', version: '0.9.0', origin: 'https://site.test', pages: [{ path: '/posts/:id', script: 'pages/post.js' }] }));
-  fs.writeFileSync(path.join(target, 'pages/post.js'), 'globalThis.awcp = {};');
+  writeLegacy(target); commitDigest(storage, 'sample', legacyDigest);
   manager = createWebsiteBridgeManager(storage);
   const items = manager.list().items; const old = items.find(item => item.id === 'sample');
   assert.deepEqual([old.outdated, old.name, old.version, old.enabled, old.pages.length], [true, 'Old Sample', '0.9.0', false, 0]);
@@ -364,10 +377,30 @@ test('a package installed under the removed schema is listed as outdated, never 
   assert.equal(fs.existsSync(path.join(target, 'pages')), false);
 });
 
+test('old-schema recovery follows the committed digest: a stale backup never replaces the committed package', async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  await createWebsiteBridgeManager(storage).importFile(await zipAt(root));
+  const target = path.join(storage.packagesRoot, 'sample'); const backup = path.join(storage.packagesRoot, '.backup-sample');
+  const committed = JSON.parse(fs.readFileSync(path.join(storage.configRoot, 'website-bridges.json'), 'utf8')).items[0].digest;
+  // The catalogue committed the new package; it is damaged and an old backup was left behind.
+  writeLegacy(backup); fs.appendFileSync(path.join(target, 'features/post-read.js'), '\n// changed');
+  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'bridge.json'), 'utf8')).schemaVersion, 2);
+  assert.equal(fs.existsSync(path.join(backup, 'bridge.json')), true);
+  // An update interrupted before its commit: the catalogue still points at the old package in the backup.
+  commitDigest(storage, 'sample', legacyDigest);
+  assert.equal(createWebsiteBridgeManager(storage).list().items[0].outdated, true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'bridge.json'), 'utf8')).schemaVersion, 1); assert.equal(fs.existsSync(backup), false);
+  // A changed old package is not the committed one either.
+  fs.appendFileSync(path.join(target, 'pages/post.js'), '\n// changed');
+  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+  commitDigest(storage, 'sample', committed); assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+});
+
 test('seed validation rejects all packages before writing and never executes scripts', t => {
   const { initializeWebsiteBridgeSeeds } = require('../dist-electron/main/modules/web-surfaces/website-bridges/seed.js');
   const root = temporary(t);
-  const seeds = path.join(root, 'desktop-init/website-bridges');
+  const seeds = path.join(root, 'web-bridges-center');
   const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
   const write = (id, script) => {
     const dir = path.join(seeds, id);
@@ -393,7 +426,7 @@ test('seed validation rejects all packages before writing and never executes scr
 
 test('seed catalogue commit failure rolls back every newly installed package', t => {
   const { initializeWebsiteBridgeSeeds } = require('../dist-electron/main/modules/web-surfaces/website-bridges/seed.js');
-  const root = temporary(t); const seeds = path.join(root, 'desktop-init/website-bridges');
+  const root = temporary(t); const seeds = path.join(root, 'web-bridges-center');
   const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
   for (const id of ['first', 'second']) {
     const dir = path.join(seeds, id); fs.mkdirSync(path.join(dir, 'features'), { recursive: true });

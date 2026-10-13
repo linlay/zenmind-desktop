@@ -39,8 +39,8 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
           ids.add(entry.id);
           try { return { ...loadPackage(storage!, entry.id, entry.digest), digest: entry.digest, enabled: entry.enabled }; }
           catch (error) {
-            // Only a recognizable old-schema package degrades to "needs update"; anything else fails closed.
-            const legacy = readOutdatedPackage(storage!, entry.id);
+            // Only the committed old-schema package degrades to "needs update"; anything else fails closed.
+            const legacy = readOutdatedPackage(storage!, entry.id, entry.digest);
             if (!legacy) throw error;
             return { manifest: { schemaVersion: 2, id: entry.id, ...legacy, origins: {}, pages: [] }, scripts: new Map<string, string>(), digest: entry.digest, enabled: entry.enabled, outdated: true as const };
           }

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, WEBSITE_BRIDGE_SHARED_SCRIPT, type WebsiteBridgeManifest } from "../../../../shared/website-bridge";
+import { bridgeResourcePath, parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, WEBSITE_BRIDGE_SHARED_SCRIPT, type WebsiteBridgeManifest } from "../../../../shared/website-bridge";
 
 /** `scripts` is keyed by package-relative path: every `features/<name>.js` plus the optional shared helper. */
 export type WebsiteBridgePackage = { manifest: WebsiteBridgeManifest; scripts: Map<string, string> };
@@ -67,32 +67,44 @@ export function loadPackage(storage: WebsiteBridgeStorage, id: string, digest: s
 }
 
 /**
- * A package installed under a removed manifest schema stays listed so the user can
- * import its replacement; it is identified only, never verified, migrated or injected.
+ * A package installed under the removed v1 manifest stays listed so the user can
+ * import its replacement. It is never parsed as a package, migrated or injected,
+ * but it must still be the content the catalogue committed: the stored manifest is
+ * the normalized object the v1 digest was taken over, so the digest is recomputed as-is.
  */
-export function readOutdatedPackage(storage: WebsiteBridgeStorage, id: string) {
+export function readOutdatedPackage(storage: WebsiteBridgeStorage, id: string, digest: string) {
   const target = path.join(storage.packagesRoot, id);
   const backup = backupDir(storage, id);
-  const legacy = (directory: string) => {
+  const committed = (directory: string) => {
     try {
       if (!directoryExists(directory)) return null;
-      const file = path.join(directory, "bridge.json");
-      const stat = fs.lstatSync(file);
-      if (!stat.isFile() || stat.size > 65536) return null;
-      const value = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (value?.schemaVersion !== 1 || value.id !== id) return null;
+      const read = (name: string, limit: number) => {
+        let current = directory;
+        for (const part of bridgeResourcePath(name).split("/")) {
+          current = path.join(current, part);
+          if (fs.lstatSync(current).isSymbolicLink()) throw new Error("Invalid package");
+        }
+        const stat = fs.statSync(current);
+        if (!stat.isFile() || stat.size > limit) throw new Error("Invalid package");
+        return fs.readFileSync(current, "utf8");
+      };
+      const value = JSON.parse(read("bridge.json", 65536));
+      if (value?.schemaVersion !== 1 || value.id !== id || !Array.isArray(value.pages) || value.pages.length > 100) return null;
+      const scripts = new Map<string, string>(value.pages.map((page: { script: string }) => [page.script, read(page.script, 512 * 1024)]));
+      if (createHash("sha256").update(JSON.stringify([value, [...scripts].sort()])).digest("hex") !== digest) return null;
       return { name: typeof value.name === "string" && value.name.trim() ? value.name.trim().slice(0, 128) : id,
         version: typeof value.version === "string" && /^\d+\.\d+\.\d+$/.test(value.version) ? value.version : "0.0.0" };
     } catch { return null; }
   };
-  // An update interrupted before its catalogue commit leaves the old package in the backup.
-  const backedUp = legacy(backup);
-  if (backedUp) {
-    if (directoryExists(target)) fs.rmSync(target, { recursive: true });
-    fs.renameSync(backup, target);
-    return backedUp;
-  }
-  return legacy(target);
+  const installed = committed(target);
+  if (installed) return installed;
+  // An update interrupted before its catalogue commit leaves the committed package in the backup.
+  // A backup the catalogue does not point at is never restored over the installed directory.
+  const backedUp = committed(backup);
+  if (!backedUp) return null;
+  if (directoryExists(target)) fs.rmSync(target, { recursive: true });
+  fs.renameSync(backup, target);
+  return backedUp;
 }
 
 /** Rename to an absent destination on both Windows and macOS; never replace a populated directory. */

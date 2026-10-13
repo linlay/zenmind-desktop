@@ -1740,7 +1740,7 @@ for (const platform of ['darwin', 'win32']) {
     const { getDesktopWebsiteBridgeStorage } = require('../dist-electron/main/infrastructure/filesystem/user-paths.js');
     const { createWebsiteBridgeManager } = require('../dist-electron/main/modules/web-surfaces/website-bridges/manager.js');
     const initPath = writeDesktopInit(app, platform, { websiteBridges: { items: ['sample-forum'] } });
-    const staging = path.join(path.dirname(initPath), 'desktop-init', 'website-bridges');
+    const staging = path.join(path.dirname(initPath), 'web-bridges-center');
     const seed = path.join(staging, 'sample-forum');
     fs.mkdirSync(path.join(seed, 'features'), { recursive: true });
     fs.writeFileSync(path.join(seed, 'bridge.json'), JSON.stringify({ schemaVersion: 2, id: 'sample-forum', name: 'Sample Forum', version: '2.0.0',
@@ -1751,7 +1751,8 @@ for (const platform of ['darwin', 'win32']) {
     const manager = createWebsiteBridgeManager(storage); // Runtime is assembled before bootstrap.
     const result = applyDesktopInitBootstrap(app, platform);
     assert.equal(result.appliedResult.websiteBridges, 'applied');
-    assert.equal(fs.existsSync(staging), false);
+    // Like skills-center, the env source directory is kept; only Desktop's own install is managed.
+    assert.equal(fs.existsSync(path.join(staging, 'sample-forum', 'bridge.json')), true);
     assert.equal(manager.list().items[0].id, 'sample-forum');
     assert.equal(manager.list().items[0].shared, true);
     assert.equal((await manager.remove('sample-forum')).ok, true);
