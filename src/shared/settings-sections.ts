@@ -11,6 +11,7 @@ export type SettingsSectionId =
   | "plugins"
   | "navigation"
   | "websiteBridges"
+  | "websiteCredentials"
   | "websites"
   | "webapps"
   | "about"

@@ -641,6 +641,26 @@ const api: DesktopApi = {
     setWebsiteBridgeEnabled: (input) => ipcRenderer.invoke("settings.setWebsiteBridgeEnabled", input),
     removeWebsiteBridge: (id) => ipcRenderer.invoke("settings.removeWebsiteBridge", id),
     readWebsiteBridgeScript: (input) => ipcRenderer.invoke("settings.readWebsiteBridgeScript", input),
+    getWebsiteCredentials: () => ipcRenderer.invoke("settings.getWebsiteCredentials"),
+    setWebsiteCredentialCapture: (enabled) => ipcRenderer.invoke("settings.setWebsiteCredentialCapture", enabled),
+    addWebsiteCredential: (input) => ipcRenderer.invoke("settings.addWebsiteCredential", input),
+    updateWebsiteCredential: (patch) => ipcRenderer.invoke("settings.updateWebsiteCredential", patch),
+    removeWebsiteCredential: (id) => ipcRenderer.invoke("settings.removeWebsiteCredential", id),
+    revealWebsiteCredential: (id) => ipcRenderer.invoke("settings.revealWebsiteCredential", id),
+    setWebsiteCredentialNeverSave: (input) => ipcRenderer.invoke("settings.setWebsiteCredentialNeverSave", input),
+    resolveWebsiteCredentialSaveOffer: (input) => ipcRenderer.invoke("credentials.resolveSaveOffer", input),
+    onWebsiteCredentialSaveOffer: (listener) => {
+      const handleOffer = (_event: unknown, offer: any) => listener({ type: "offer", offer });
+      const handleWithdrawn = (_event: unknown, offerId: string) => listener({ type: "withdrawn", offerId });
+      ipcRenderer.on("credentials.saveOffer", handleOffer);
+      ipcRenderer.on("credentials.saveOfferWithdrawn", handleWithdrawn);
+      return () => {
+        ipcRenderer.off("credentials.saveOffer", handleOffer);
+        ipcRenderer.off("credentials.saveOfferWithdrawn", handleWithdrawn);
+      };
+    },
+    importWebsiteCredentials: (input) => ipcRenderer.invoke("settings.importWebsiteCredentials", input),
+    exportWebsiteCredentials: (input) => ipcRenderer.invoke("settings.exportWebsiteCredentials", input),
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     getAppInfo: () => ipcRenderer.invoke("settings.getAppInfo"),

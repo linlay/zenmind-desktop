@@ -1,5 +1,6 @@
 export { createBrowserSurfaceRegistry } from "./browser-surface-registry";
 export type { BrowserSurfaceRegistry, BrowserSurfaceRegistryOptions, RegisteredWebviewSurfaceTarget } from "./browser-surface-registry";
+export type { WebGuestObserver } from "./registry-contracts";
 export { AwcpGuestBridge } from "./awcp/guest-bridge";
 export type { AwcpActionResponse, AwcpInvokePayload, AwcpManualPayload, AwcpManualResponse } from "./awcp/guest-bridge";
 export { inspectCurrentPageCdpElement, readCurrentPageCdpLocation } from "./cdp/current-page-inspector";

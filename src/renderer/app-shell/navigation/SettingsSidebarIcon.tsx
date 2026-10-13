@@ -148,6 +148,13 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
           <path d="M3 22c3-2 6 2 9 0s6 2 9 0" />
         </svg>
       );
+    case "websiteCredentials":
+      return (
+        <svg {...iconProps}>
+          <circle cx="8" cy="15" r="4" />
+          <path d="m10.8 12.2 8.7-8.7M16 7l3 3M13.5 9.5l2 2" />
+        </svg>
+      );
     case "websites":
       return (
         <svg {...iconProps}>

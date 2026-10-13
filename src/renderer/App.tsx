@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
 import { AppErrorBoundary } from "./AppErrorBoundary";
+import { WebsiteCredentialSavePrompt } from "./components/WebsiteCredentialSavePrompt";
 import { AppShell } from "./app-shell/AppShell";
 import { ServicesProvider } from "./services/ServicesContext";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
@@ -88,6 +89,7 @@ export function App() {
         <ServicesProvider>
           <AppearanceProvider>
             <AppShell />
+            <WebsiteCredentialSavePrompt />
           </AppearanceProvider>
         </ServicesProvider>
       </AppErrorBoundary>

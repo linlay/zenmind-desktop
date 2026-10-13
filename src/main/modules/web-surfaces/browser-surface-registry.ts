@@ -8,6 +8,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   return {
     websiteBridges: store.guest.websiteBridges,
     ensureWebsiteBridge: store.guest.ensureWebsiteBridge,
+    observeWebGuests: store.guest.observeWebGuests,
     currentPageSnapshotMatchesSurface: projection.currentPageSnapshotMatchesSurface,
     builtinBrowserSurface: projection.builtinBrowserSurface,
     listBrowserContainers: projection.listBrowserContainers,
