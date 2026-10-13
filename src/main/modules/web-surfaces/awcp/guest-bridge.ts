@@ -3,7 +3,6 @@ import type { WebContents } from "electron";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { SiteControlScope } from "../cdp/site-scope";
 import { AwcpManualBindings } from "./discovery-binding";
-import { ensureAwcpAddon } from "./addons/injection";
 
 export const AWCP_PROTOCOL_VERSION = 1;
 export const AWCP_ACTION_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
@@ -192,7 +191,7 @@ export class AwcpGuestBridge {
   private async ensurePageProtocol(guest: WebContents, lifecycleFailure: Promise<never>) {
     // The first tool request may beat registration/dom-ready injection. Installation
     // is idempotent, URL-checked in both worlds, and runs only after scope validation.
-    await Promise.race([this.browserSurfaces.ensureWebsiteBridge ? this.browserSurfaces.ensureWebsiteBridge(guest) : ensureAwcpAddon(guest), lifecycleFailure]);
+    await Promise.race([this.browserSurfaces.ensureWebsiteBridge?.(guest), lifecycleFailure]);
     const probe = await Promise.race([
       guest.executeJavaScript(`(() => {
         const api = globalThis.awcp;

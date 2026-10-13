@@ -1739,22 +1739,23 @@ for (const platform of ['darwin', 'win32']) {
     const app = createApp(path.join(root, 'home'));
     const { getDesktopWebsiteBridgeStorage } = require('../dist-electron/main/infrastructure/filesystem/user-paths.js');
     const { createWebsiteBridgeManager } = require('../dist-electron/main/modules/web-surfaces/website-bridges/manager.js');
-    const { builtinForumBridge } = require('../dist-electron/main/modules/web-surfaces/website-bridges/builtin.js');
-    const initPath = writeDesktopInit(app, platform, { websiteBridges: { items: ['1024forum'] } });
+    const initPath = writeDesktopInit(app, platform, { websiteBridges: { items: ['sample-forum'] } });
     const staging = path.join(path.dirname(initPath), 'desktop-init', 'website-bridges');
-    const pkg = builtinForumBridge();
-    const seed = path.join(staging, pkg.manifest.id);
-    fs.mkdirSync(path.join(seed, 'pages'), { recursive: true });
-    fs.writeFileSync(path.join(seed, 'bridge.json'), JSON.stringify(pkg.manifest));
-    for (const [name, source] of pkg.scripts) fs.writeFileSync(path.join(seed, name), source);
+    const seed = path.join(staging, 'sample-forum');
+    fs.mkdirSync(path.join(seed, 'features'), { recursive: true });
+    fs.writeFileSync(path.join(seed, 'bridge.json'), JSON.stringify({ schemaVersion: 2, id: 'sample-forum', name: 'Sample Forum', version: '2.0.0',
+      origins: { forum: 'https://forum.example.test' }, pages: [{ path: '/forum', features: ['post-search'] }] }));
+    fs.writeFileSync(path.join(seed, 'features/post-search.js'), 'return { actions: {} };');
+    fs.writeFileSync(path.join(seed, 'shared.js'), 'return {};');
     const storage = getDesktopWebsiteBridgeStorage(app, platform);
     const manager = createWebsiteBridgeManager(storage); // Runtime is assembled before bootstrap.
     const result = applyDesktopInitBootstrap(app, platform);
     assert.equal(result.appliedResult.websiteBridges, 'applied');
     assert.equal(fs.existsSync(staging), false);
-    assert.equal(manager.list().items[0].id, '1024forum');
-    assert.equal((await manager.remove('1024forum')).ok, true);
-    writeDesktopInit(app, platform, { websiteBridges: { items: ['1024forum'] } });
+    assert.equal(manager.list().items[0].id, 'sample-forum');
+    assert.equal(manager.list().items[0].shared, true);
+    assert.equal((await manager.remove('sample-forum')).ok, true);
+    writeDesktopInit(app, platform, { websiteBridges: { items: ['sample-forum'] } });
     assert.equal(applyDesktopInitBootstrap(app, platform).appliedResult.websiteBridges, 'preserved');
     assert.deepEqual(createWebsiteBridgeManager(storage).list().items, []);
   });

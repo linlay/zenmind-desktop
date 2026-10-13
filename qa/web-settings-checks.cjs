@@ -126,11 +126,11 @@ app.whenReady().then(async () => {
   assert.equal(await js("getComputedStyle(document.querySelector('.settings-action-tooltip:not(.ant-tooltip-hidden)')).fontSize"), '11px');
   await js("document.querySelector('.website-bridges-list .web-icon-action').dispatchEvent(new FocusEvent('focusout', { bubbles: true })); document.querySelector('.website-bridges-search input').focus()");
   await js("document.querySelectorAll('.website-bridge-routes button')[1].click()");
-  await wait("document.querySelector('.website-bridge-source').value.includes('pages/new-post.js')");
+  await wait("document.querySelector('.website-bridge-source').value.includes('features/post-compose.js')");
   await js("document.querySelector('.website-bridge-heading .ant-switch').click()");
   await wait("window.webSettingsCalls.includes('bridge.enabled:false')");
   await js("document.querySelector('.website-bridge-heading button[aria-label=\"导入更新\"]').click()");
-  await wait("window.webSettingsCalls.includes('bridge.import:1024forum')");
+  await wait("window.webSettingsCalls.includes('bridge.import:sample-forum')");
   await js("document.querySelector('.website-bridges-list button[aria-label=\"导入 ZIP\"]').click()");
   await wait("window.webSettingsCalls.includes('bridge.import:new')");
   await js("document.querySelector('.website-bridge-heading button[aria-label=\"卸载\"]').click()");

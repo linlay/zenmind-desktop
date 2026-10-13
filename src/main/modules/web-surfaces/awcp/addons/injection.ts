@@ -1,40 +1,15 @@
 import type { WebContents } from "electron";
-import { installAwcpAddon } from "./page-runtime";
-import { forum1024Rule } from "./1024forum";
-import type { WebsiteBridgePackage } from "../../website-bridges/builtin";
+import type { WebsiteBridgePackage } from "../../website-bridges/storage";
 import { buildWebsiteBridgeScript, selectWebsiteBridgePage } from "../../website-bridges/injection-script";
-
-/** Reviewed, bundled rules; remote pages cannot supply scripts or widen matches. */
-export const AWCP_ADDON_RULES = [forum1024Rule] as const;
-
-export function matchAwcpAddon(rawUrl: string) {
-  try {
-    const url = new URL(rawUrl);
-    if (url.username || url.password) return null;
-    return AWCP_ADDON_RULES.find((rule) => url.origin === rule.origin &&
-      (url.pathname === rule.pathPrefix || url.pathname.startsWith(rule.pathPrefix + "/"))) ?? null;
-  } catch { return null; }
-}
-
-export function buildAwcpAddonScript(url: string, enabled = true) {
-  return `(${installAwcpAddon.toString()})(${JSON.stringify(enabled ? matchAwcpAddon(url) : null)},${JSON.stringify(url)})`;
-}
-
-export async function ensureAwcpAddon(guest: Pick<WebContents, "getURL" | "executeJavaScript" | "isDestroyed">) {
-  if (guest.isDestroyed()) return;
-  const url = guest.getURL();
-  if (!matchAwcpAddon(url)) return;
-  await guest.executeJavaScript(buildAwcpAddonScript(url));
-}
 
 /** Registration and navigation share one listener set per guest, including background tabs. */
 export class AwcpAddonInjection {
-  constructor(private readonly readPackages?: () => WebsiteBridgePackage[]) {}
+  constructor(private readonly readPackages: () => WebsiteBridgePackage[]) {}
   private script(url: string, enabled = true) {
-    return this.readPackages ? buildWebsiteBridgeScript(url, enabled ? this.readPackages() : []) : buildAwcpAddonScript(url, enabled);
+    return buildWebsiteBridgeScript(url, enabled ? this.readPackages() : []);
   }
   private matches(url: string) {
-    return this.readPackages ? !!selectWebsiteBridgePage(url, this.readPackages()) : !!matchAwcpAddon(url);
+    return !!selectWebsiteBridgePage(url, this.readPackages());
   }
   async ensure(guest: WebContents) {
     if (!guest.isDestroyed() && (this.matches(guest.getURL()) || this.guests.get(guest.id)?.installed())) await guest.executeJavaScript(this.script(guest.getURL()));

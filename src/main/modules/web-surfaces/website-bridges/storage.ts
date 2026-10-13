@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { parseWebsiteBridgeManifest } from "../../../../shared/website-bridge";
-import type { WebsiteBridgePackage } from "./builtin";
+import { parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, WEBSITE_BRIDGE_SHARED_SCRIPT, type WebsiteBridgeManifest } from "../../../../shared/website-bridge";
+
+/** `scripts` is keyed by package-relative path: every `features/<name>.js` plus the optional shared helper. */
+export type WebsiteBridgePackage = { manifest: WebsiteBridgeManifest; scripts: Map<string, string> };
 
 export class WebsiteBridgeRecoveryError extends Error {}
 
@@ -35,7 +37,8 @@ function readPackage(directory: string, id: string, digest: string): WebsiteBrid
   };
   const manifest = parseWebsiteBridgeManifest(JSON.parse(read("bridge.json", 65536)));
   if (manifest.id !== id) throw new Error("Invalid identity");
-  const scripts = new Map(manifest.pages.map(page => [page.script, read(page.script, 512 * 1024)]));
+  const scripts = new Map(websiteBridgeFeatureScripts(manifest).map(name => [name, read(name, 512 * 1024)]));
+  if (fs.existsSync(path.join(directory, WEBSITE_BRIDGE_SHARED_SCRIPT))) scripts.set(WEBSITE_BRIDGE_SHARED_SCRIPT, read(WEBSITE_BRIDGE_SHARED_SCRIPT, 512 * 1024));
   const pkg = { manifest, scripts };
   if (digestOf(pkg) !== digest) throw new Error("Package changed");
   return pkg;
@@ -61,6 +64,35 @@ export function loadPackage(storage: WebsiteBridgeStorage, id: string, digest: s
   }
   cleanup(backup);
   return loaded;
+}
+
+/**
+ * A package installed under a removed manifest schema stays listed so the user can
+ * import its replacement; it is identified only, never verified, migrated or injected.
+ */
+export function readOutdatedPackage(storage: WebsiteBridgeStorage, id: string) {
+  const target = path.join(storage.packagesRoot, id);
+  const backup = backupDir(storage, id);
+  const legacy = (directory: string) => {
+    try {
+      if (!directoryExists(directory)) return null;
+      const file = path.join(directory, "bridge.json");
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile() || stat.size > 65536) return null;
+      const value = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (value?.schemaVersion !== 1 || value.id !== id) return null;
+      return { name: typeof value.name === "string" && value.name.trim() ? value.name.trim().slice(0, 128) : id,
+        version: typeof value.version === "string" && /^\d+\.\d+\.\d+$/.test(value.version) ? value.version : "0.0.0" };
+    } catch { return null; }
+  };
+  // An update interrupted before its catalogue commit leaves the old package in the backup.
+  const backedUp = legacy(backup);
+  if (backedUp) {
+    if (directoryExists(target)) fs.rmSync(target, { recursive: true });
+    fs.renameSync(backup, target);
+    return backedUp;
+  }
+  return legacy(target);
 }
 
 /** Rename to an absent destination on both Windows and macOS; never replace a populated directory. */
