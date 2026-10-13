@@ -253,6 +253,15 @@ test("Windows extraction maps real bytes into the persistent total progress", { 
   assert.ok(samples.filter(s => s.phase !== "finished").every(s => s.position < 100));
 });
 
+test("Windows installation shows each stage only above the progress bar", { skip: process.platform !== "win32" }, (t) => {
+  const samples = runActivityFixture(t, { measured: true, update: false });
+  for (const phase of ["extracting", "extracted", "finalizing"]) {
+    const sample = samples.find(item => item.phase === phase);
+    assert.equal(sample.subtitle, "", `${phase} must not repeat the stage in the header`);
+    assert.ok(sample.status.startsWith("正在"), `${phase} must retain the progress status`);
+  }
+});
+
 test("Windows install failure stops activity without claiming completion", { skip: process.platform !== "win32" }, (t) => {
   const samples = runActivityFixture(t, { fail: true });
   assert.equal(samples.at(-1).phase, "finished");
@@ -284,19 +293,18 @@ test("Windows ordinary silent install does not show activity UI", { skip: proces
   assert.ok(samples.every(({ phase }) => phase !== "show"));
 });
 
-test("Windows update labels preparation honestly and preserves its stage while details change", { skip: process.platform !== "win32" }, (t) => {
+test("Windows update keeps preparation above the progress bar and leaves the header subtitle empty", { skip: process.platform !== "win32" }, (t) => {
   const samples = runActivityFixture(t);
-  assert.match(samples[0].subtitle, /^正在准备安装/u);
-  for (const sample of samples.filter(({ phase }) => phase === "retry")) {
-    assert.equal(sample.subtitle, samples[0].subtitle);
-  }
+  assert.equal(samples[0].status, "正在准备安装…");
+  assert.ok(samples.every(sample => sample.subtitle === ""));
 });
 
 test("Windows manual install keeps its total progress bar visible", { skip: process.platform !== "win32" }, (t) => {
   const samples = runActivityFixture(t, { update: false });
   assert.equal(samples[0].marquee, 0);
   assert.equal(samples[0].visible, true);
-  assert.equal(samples[0].subtitle, "正在准备安装…");
+  assert.equal(samples[0].subtitle, "");
+  assert.equal(samples[0].status, "正在准备安装…");
   assert.equal(samples.at(-1).marquee, 0);
   assert.equal(samples.at(-1).position, 100);
 });

@@ -109,12 +109,11 @@ desktopProgressEnded:
 !macroend
 
 !macro DesktopProgressStage TEXT
-  ; Update both labels so a measured percentage cannot outlive its stage.
-  ; The header still persists when NSIS prints subsequent file details.
+  ; Keep stage text only above the progress bar, not in the page subtitle.
   ${ifNot} ${Silent}
   Push $0
   GetDlgItem $0 $HWNDPARENT 1038
-  SendMessage $0 0x000C 0 "STR:${TEXT}" ; WM_SETTEXT
+  SendMessage $0 0x000C 0 "STR:" ; WM_SETTEXT
   ; Use the NSIS status API as well, so its next UI refresh keeps this stage.
   SetDetailsPrint textonly
   DetailPrint "${TEXT}"
