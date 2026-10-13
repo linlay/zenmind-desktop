@@ -59,14 +59,14 @@ FunctionEnd
 
 Function DesktopUpdateProgressShow
   !insertmacro DesktopProgressStart
-  !insertmacro DesktopProgressStage "正在准备安装…"
   ${if} ${isUpdated}
-    !insertmacro MUI_HEADER_TEXT "正在安装更新" "正在准备安装…完成后将自动启动；首次启动可能需要几分钟。"
+    !insertmacro MUI_HEADER_TEXT "正在安装更新" ""
     SetDetailsView show
     SetDetailsPrint both
     !insertmacro DesktopUpdateStage "progress-visible"
     DetailPrint "安装阶段日志：$DesktopUpdateLog"
   ${endif}
+  !insertmacro DesktopProgressStage "正在准备安装…"
 FunctionEnd
 
 Function DesktopInstallProgressEnd
