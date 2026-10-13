@@ -16,7 +16,7 @@
 .website-bridge-routes { display: flex; flex-direction: column; gap: 4px; }
 .website-bridge-routes button { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px; border: 0; border-radius: 6px; color: inherit; background: transparent; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
 .website-bridge-routes span { font-size: 12px; opacity: .7; }
-.website-bridge-source { box-sizing: border-box; width: 100%; min-height: 300px; max-height: 520px; resize: vertical; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--control-bg, transparent); font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+.website-bridge-source { box-sizing: border-box; width: 100%; min-height: 300px; max-height: 520px; resize: vertical; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--control-input-bg); font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
 .website-bridges-error { color: var(--danger, #bc3636); margin: 12px 0; }
 .website-bridge-empty { padding: 40px 12px; opacity: .7; }
 .website-bridges-settings button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

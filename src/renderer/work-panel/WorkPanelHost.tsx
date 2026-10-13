@@ -18,9 +18,9 @@ import {
   ProjectOutlined,
   RobotOutlined,
   RightOutlined,
-  CodeOutlined,
 } from "@ant-design/icons";
-import { Button, Modal } from "antd";
+import { Button } from "antd";
+import { useThemedDialogs } from "../components/useThemedDialogs";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal, flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
@@ -350,7 +350,7 @@ export function WorkPanelHost({
   launcher,
 }: WorkPanelHostProps) {
   const { t } = useI18n();
-  const [modal, modalContext] = Modal.useModal();
+  const { confirm, modal, contextHolder: modalContext } = useThemedDialogs();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const lastVisiblePanelSizes = useRef(new Map<string, { width: number; height: number }>());
   const stateRef = useRef(state);
@@ -378,6 +378,8 @@ export function WorkPanelHost({
   const [reviewHandoffBusyKeys, setReviewHandoffBusyKeys] = useState<Set<string>>(() => new Set());
   const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({});
   const [activeImageEditorItemIds, setActiveImageEditorItemIds] = useState<Record<string, string>>({});
+  const activeImageEditorItemIdsRef = useRef(activeImageEditorItemIds);
+  activeImageEditorItemIdsRef.current = activeImageEditorItemIds;
   const [webclientDocumentStates, setWebclientDocumentStates] = useState<Record<string, WebclientDocumentState>>({});
   const pendingReviewRequestsRef = useRef(new Map<string, PendingReviewRequest>());
   stateRef.current = state;
@@ -537,7 +539,7 @@ export function WorkPanelHost({
     closeAddMenu();
   };
 
-  const closeWorkPanelStep = (ownerChatId: string) => {
+  const closeWorkPanelStep = async (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
     if (!workspace) return false;
     const activeItem = workspace?.items.find((item) => item.itemId === workspace.activeItemId);
@@ -570,27 +572,48 @@ export function WorkPanelHost({
     | "chatWorkPanel.review.confirmDiscard"
     | "chatWorkPanel.review.confirmDiscardOthers"
     | "chatWorkPanel.review.confirmDiscardSession"
-  ) => window.confirm(t(messageKey));
+  ) => confirm(t(messageKey), { danger: true });
 
-  const closeItemWithReviewProtection = (ownerChatId: string, itemId: string, closeImplicitWorkspace = false) => {
-    const nativeImageBusy = rootRef.current?.querySelector<HTMLElement>(
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-saving="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-ai-busy="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-work-panel-document-busy="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"][data-webclient-document-busy="true"]`,
+  const readItemCloseState = (ownerChatId: string, itemId: string) => {
+    const item = stateRef.current.workspaces.find((workspace) => workspace.ownerChatId === ownerChatId)
+      ?.items.find((candidate) => candidate.itemId === itemId);
+    if (!item || !rootRef.current) return null;
+    const host = rootRef.current.querySelector<HTMLElement>(
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"]`,
     );
-    if (nativeImageBusy) return false;
-    const dirtyNativeImage = rootRef.current?.querySelector<HTMLElement>(
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-dirty="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-work-panel-document-dirty="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"][data-webclient-document-dirty="true"]`,
-    );
-    if (dirtyNativeImage && !window.confirm(t("chatWorkPanel.image.confirmDiscardDraft"))) return false;
-    const session = getWorkPanelReviewSession(stateRef.current.review, ownerChatId, itemId);
-    const force = hasWorkPanelReviewDraft(session)
-      ? confirmDiscardReview("chatWorkPanel.review.confirmDiscard")
-      : false;
-    if (hasWorkPanelReviewDraft(session) && !force) return false;
+    const busySelector = '[data-native-image-saving="true"], [data-native-image-ai-busy="true"], [data-work-panel-document-busy="true"], [data-webclient-document-busy="true"]';
+    const dirtySelector = '[data-native-image-dirty="true"], [data-work-panel-document-dirty="true"], [data-webclient-document-dirty="true"]';
+    return {
+      item,
+      session: getWorkPanelReviewSession(stateRef.current.review, ownerChatId, itemId),
+      host,
+      busy: Boolean(host?.matches(busySelector) || host?.querySelector(busySelector)),
+      dirty: Boolean(host?.matches(dirtySelector) || host?.querySelector(dirtySelector)),
+      // A themed dialog yields to React and guest events. Keep approval tied to
+      // the draft that was displayed, rather than closing a newer replacement.
+      draft: JSON.stringify({
+        imageRevision: host?.querySelector<HTMLElement>('[data-native-image-draft-revision]')?.dataset.nativeImageDraftRevision,
+        text: host?.textContent,
+        fields: Array.from(host?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea') ?? []).map((input) => input.value),
+      }),
+    };
+  };
+
+  const closeStateUnchanged = (ownerChatId: string, itemId: string, previous: ReturnType<typeof readItemCloseState>) => {
+    const current = readItemCloseState(ownerChatId, itemId);
+    return Boolean(previous && current && !current.busy && current.item === previous.item &&
+      current.session === previous.session && current.host === previous.host &&
+      current.dirty === previous.dirty && current.draft === previous.draft);
+  };
+
+  const closeItemWithReviewProtection = async (ownerChatId: string, itemId: string, closeImplicitWorkspace = false) => {
+    const snapshot = readItemCloseState(ownerChatId, itemId);
+    if (!snapshot || snapshot.busy) return false;
+    if (snapshot.dirty && !await confirm(t("chatWorkPanel.image.confirmDiscardDraft"), { danger: true })) return false;
+    if (!closeStateUnchanged(ownerChatId, itemId, snapshot)) return false;
+    const force = hasWorkPanelReviewDraft(snapshot.session);
+    if (force && !await confirmDiscardReview("chatWorkPanel.review.confirmDiscard")) return false;
+    if (!closeStateUnchanged(ownerChatId, itemId, snapshot)) return false;
     return dispatchCommand({
       type: "closeItem", ownerChatId, itemId,
       ...(force ? { force: true } : {}),
@@ -600,38 +623,33 @@ export function WorkPanelHost({
 
   useEffect(() => window.electronAPI.chatWorkPanelTabContextMenu.onWebDialogCloseRequested((transferId) => {
     const dialog = stateRef.current.dialogItems?.find((entry) => entry.transferId === transferId);
-    if (dialog) closeItemWithReviewProtection(dialog.ownerChatId, dialog.itemId);
-  }), [dispatchCommand, t]);
+    if (dialog) void closeItemWithReviewProtection(dialog.ownerChatId, dialog.itemId);
+  }), [confirm, dispatchCommand, t]);
 
-  const closeOtherItemsWithReviewProtection = (ownerChatId: string, itemId: string) => {
+  const closeOtherItemsWithReviewProtection = async (ownerChatId: string, itemId: string) => {
     const workspace = stateRef.current.workspaces.find((candidate) => candidate.ownerChatId === ownerChatId);
-    const removedIds = workspace?.items
+    const keptItem = workspace?.items.find((candidate) => candidate.itemId === itemId);
+    if (!workspace || !keptItem) return false;
+    const removedIds = workspace.items
       .filter((candidate) => candidate.itemId !== itemId && candidate.closable && !candidate.pinned)
-      .map((candidate) => candidate.itemId) ?? [];
-    const hasDrafts = removedIds.some((removedId) =>
-      hasWorkPanelReviewDraft(getWorkPanelReviewSession(stateRef.current.review, ownerChatId, removedId)),
-    );
-    const hasNativeDrafts = removedIds.some((removedId) => rootRef.current?.querySelector(
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-dirty="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-work-panel-document-dirty="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"][data-webclient-document-dirty="true"]`,
-    ));
-    const hasBusyNativeImages = removedIds.some((removedId) => rootRef.current?.querySelector(
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-saving="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-ai-busy="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-work-panel-document-busy="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"][data-webclient-document-busy="true"]`,
-    ));
-    if (hasBusyNativeImages) return false;
-    if (hasNativeDrafts && !window.confirm(t("chatWorkPanel.image.confirmDiscardDraft"))) return false;
-    const force = hasDrafts
-      ? confirmDiscardReview("chatWorkPanel.review.confirmDiscardOthers")
-      : false;
-    if (hasDrafts && !force) return false;
+      .map((candidate) => candidate.itemId);
+    const snapshots = removedIds.map((removedId) => readItemCloseState(ownerChatId, removedId));
+    const unchanged = () => {
+      const latest = stateRef.current.workspaces.find((candidate) => candidate.ownerChatId === ownerChatId);
+      const latestRemovedIds = latest?.items.filter((candidate) => candidate.itemId !== itemId && candidate.closable && !candidate.pinned).map((candidate) => candidate.itemId);
+      return latest?.items.find((candidate) => candidate.itemId === itemId) === keptItem &&
+        JSON.stringify(latestRemovedIds) === JSON.stringify(removedIds) &&
+        removedIds.every((removedId, index) => closeStateUnchanged(ownerChatId, removedId, snapshots[index]));
+    };
+    if (snapshots.some((snapshot) => !snapshot || snapshot.busy)) return false;
+    if (snapshots.some((snapshot) => snapshot?.dirty) &&
+        !await confirm(t("chatWorkPanel.image.confirmDiscardDraft"), { danger: true })) return false;
+    if (!unchanged()) return false;
+    const force = snapshots.some((snapshot) => hasWorkPanelReviewDraft(snapshot?.session));
+    if (force && !await confirmDiscardReview("chatWorkPanel.review.confirmDiscardOthers")) return false;
+    if (!unchanged()) return false;
     return dispatchCommand({
-      type: "closeOtherItems",
-      ownerChatId,
-      itemId,
+      type: "closeOtherItems", ownerChatId, itemId,
       ...(force ? { force: true } : {}),
     }).ok;
   };
@@ -1401,11 +1419,11 @@ export function WorkPanelHost({
       return;
     }
     if (result.actionId === "close-tab") {
-      closeItemWithReviewProtection(ownerChatId, item.itemId);
+      await closeItemWithReviewProtection(ownerChatId, item.itemId);
       return;
     }
     if (result.actionId === "close-other-tabs") {
-      closeOtherItemsWithReviewProtection(ownerChatId, item.itemId);
+      await closeOtherItemsWithReviewProtection(ownerChatId, item.itemId);
       return;
     }
     if (result.actionId === "toggle-fullscreen") {
@@ -2002,7 +2020,7 @@ export function WorkPanelHost({
       if (website) return false;
       if (guestId === null) {
         if (activeOwnerKey) {
-          closeWorkPanelStep(activeOwnerKey);
+          void closeWorkPanelStep(activeOwnerKey);
           return true;
         }
         return false;
@@ -2015,14 +2033,14 @@ export function WorkPanelHost({
       const itemId = itemHost?.dataset.workPanelItem || "";
       const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
       if (!workspace || workspace.ownerChatId !== activeOwnerKey || workspace.activeItemId !== itemId) return false;
-      closeWorkPanelStep(ownerChatId);
+      void closeWorkPanelStep(ownerChatId);
       return true;
     });
     return () => {
       disposeFullscreenExitShortcut();
       disposeGuestShortcut();
     };
-  }, [activeOwnerKey, dispatchCommand, fullscreenOwnerChatId, onFullscreenChange]);
+  }, [activeOwnerKey, confirm, dispatchCommand, fullscreenOwnerChatId, onFullscreenChange, t]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -2175,7 +2193,7 @@ export function WorkPanelHost({
                         </span>
                       ) : null}
                     closeLabel={t("chatWorkPanel.closeTab", { title: item.title })}
-                    onClose={closable ? () => closeItemWithReviewProtection(workspace.ownerChatId, item.itemId) : undefined}
+                    onClose={closable ? () => { void closeItemWithReviewProtection(workspace.ownerChatId, item.itemId); } : undefined}
                   />
                 );
               })}
@@ -2297,7 +2315,18 @@ export function WorkPanelHost({
                           itemId={item.itemId}
                           rendererGeneration={rendererGenerationRef.current}
                           resource={item.descriptor.context as unknown as import("../../shared/work-panel-resource-image").WorkPanelResourceImageSelection}
-                          onEditingChange={(editing) => {
+                          onEditingChange={async (editing) => {
+                            const ownerChatId = workspace.ownerChatId;
+                            const previousItemId = activeImageEditorItemIdsRef.current[ownerChatId];
+                            const target = readItemCloseState(ownerChatId, item.itemId);
+                            if (!target) return;
+                            const departingItemId = editing ? previousItemId : item.itemId;
+                            const departing = departingItemId ? readItemCloseState(ownerChatId, departingItemId) : null;
+                            if (departing?.busy) return;
+                            if (departing?.dirty && !await confirm(t("chatWorkPanel.image.confirmDiscardDraft"), { danger: true })) return;
+                            if (activeImageEditorItemIdsRef.current[ownerChatId] !== previousItemId ||
+                                !closeStateUnchanged(ownerChatId, item.itemId, target) ||
+                                (departingItemId && !closeStateUnchanged(ownerChatId, departingItemId, departing))) return;
                             setActiveImageEditorItemIds((current) => {
                               if (editing) return { ...current, [workspace.ownerChatId]: item.itemId };
                               if (current[workspace.ownerChatId] !== item.itemId) return current;
@@ -2557,8 +2586,12 @@ export function WorkPanelHost({
                               false,
                             );
                           }}
-                          onDiscard={() => {
-                            if (!confirmDiscardReview("chatWorkPanel.review.confirmDiscardSession")) return;
+                          onDiscard={async () => {
+                            const ownerChatId = workspace.ownerChatId;
+                            const itemId = item.itemId;
+                            const snapshot = readItemCloseState(ownerChatId, itemId);
+                            if (!snapshot || !await confirmDiscardReview("chatWorkPanel.review.confirmDiscardSession")) return;
+                            if (!closeStateUnchanged(ownerChatId, itemId, snapshot)) return;
                             dispatchCommand({
                               type: "discardReview",
                               ownerChatId: workspace.ownerChatId,
@@ -2669,11 +2702,6 @@ export function WorkPanelHost({
             </button>
           ) : (
             <>
-              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" disabled>
-                <CodeOutlined aria-hidden="true" />
-                <span>{t("chatWorkPanel.add.terminal")}</span>
-                <small>{t("chatWorkPanel.add.comingSoon")}</small>
-              </button>
               <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => setAddMenuView("web")}>
                 <GlobalOutlined aria-hidden="true" />
                 <span>{t("chatWorkPanel.add.web")}</span>

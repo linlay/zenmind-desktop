@@ -59,7 +59,7 @@ export function WorkPanelDocumentImageReadonly({
 
   return (
     <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", padding: 8, borderBottom: "1px solid var(--border-color)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", padding: 8, borderBottom: "1px solid var(--line)" }}>
         <span>{resource.fileName} · {resource.mimeType} · {t("chatWorkPanel.document.readOnly")}</span>
         <Space>
           <Button icon={<FolderOpenOutlined />} onClick={() => void open("choose")}>
@@ -71,7 +71,7 @@ export function WorkPanelDocumentImageReadonly({
         </Space>
       </div>
       {error ? <div role="alert" style={{ padding: 8, color: "#cf1322" }}>{error}</div> : null}
-      <div style={{ display: "grid", placeItems: "center", flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-secondary)" }}>
+      <div style={{ display: "grid", placeItems: "center", flex: 1, minHeight: 0, overflow: "auto", background: "var(--surface-soft)" }}>
         {url ? (
           <img
             src={url}

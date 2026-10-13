@@ -34,7 +34,7 @@
 .desktop-skin-status:empty { margin: 0; }
 .desktop-skin-status > * { display: block; }
 .desktop-skin-status button { margin-left: 8px; }
-.desktop-skin-error { color: var(--error, #dc4446); }
+.desktop-skin-error { color: var(--danger); }
 @container (max-width: 440px) {
   .desktop-skin-options { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .desktop-background-actions { flex-basis: 100%; }
@@ -67,4 +67,4 @@
 .desktop-installed-skin .desktop-skin-option-label { align-items: center; min-height: 24px; padding: 6px 32px 2px 6px; }
 .desktop-skin-option-label > .desktop-skin-package-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-skin-selected-mark { flex-shrink: 0; font-weight: 700; }
-.desktop-installed-skin .desktop-skin-remove:hover:not(:disabled) { color: var(--ant-color-error, #dc4446); }
+.desktop-installed-skin .desktop-skin-remove:hover:not(:disabled) { color: var(--danger); }

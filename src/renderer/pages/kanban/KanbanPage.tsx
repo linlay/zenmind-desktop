@@ -71,6 +71,7 @@ import {
 } from "../../assistantNavigation";
 import { useI18n } from "../../i18n/useI18n";
 import { Tooltip } from "../../components/Tooltip";
+import { useThemedDialogs } from "../../components/useThemedDialogs";
 import {
   flattenKanbanProjectTree,
   getKanbanIssueProjectName,
@@ -1444,11 +1445,15 @@ function resolveIssueAgentKey(issue: KanbanIssue, agents: AssistantNavAgentItem[
 
 export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const { locale, t } = useI18n();
+  const { confirm: confirmDialog, contextHolder: dialogContextHolder } = useThemedDialogs();
   const navigate = useNavigate();
   const [initialFilterPreferences] = useState(readKanbanFilterPreferences);
   const [localWorkflows, setLocalWorkflows] = useState<KanbanLocalWorkflow[]>([]);
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = useState(false);
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
+  const issuesRef = useRef(issues);
+  issuesRef.current = issues;
+  const deleteIssuePendingRef = useRef(false);
   const [cloudDetails, setCloudDetails] = useState<KanbanCloudDetailData>(EMPTY_KANBAN_CLOUD_DETAILS);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2194,23 +2199,36 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   const deleteIssue = useCallback(async (issue: KanbanIssue) => {
     setContextMenu(null);
+    if (busyIssueId || deleteIssuePendingRef.current || !canEditKanbanIssueBody(issue)) return false;
     const kanbanApi = readKanbanApi();
     if (!kanbanApi) {
       setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return false;
     }
-    if (!window.confirm(t("kanban.confirm.delete", { title: issue.title }))) {
+    deleteIssuePendingRef.current = true;
+    setBusyIssueId(issue.id);
+    try {
+      if (!await confirmDialog(t("kanban.confirm.delete", { title: issue.title }), {
+        okText: t("kanban.form.delete"), danger: true
+      })) return false;
+      const currentIssue = issuesRef.current.find((candidate) => candidate.id === issue.id);
+      if (!currentIssue || !canEditKanbanIssueBody(currentIssue)) return false;
+      const result = await kanbanApi.deleteIssue(issue.id);
+      setIssues(sortIssues(result.issues));
+      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
+      if (result.ok) {
+        setModal((current) => current?.issue?.id === issue.id ? null : current);
+        setDetailIssueId((current) => current === issue.id ? null : current);
+      }
+      return result.ok;
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : t("kanban.feedback.deleteFailed") });
       return false;
+    } finally {
+      deleteIssuePendingRef.current = false;
+      setBusyIssueId((current) => current === issue.id ? null : current);
     }
-    const result = await kanbanApi.deleteIssue(issue.id);
-    setIssues(sortIssues(result.issues));
-    setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
-    if (result.ok) {
-      setModal(null);
-      setDetailIssueId(null);
-    }
-    return result.ok;
-  }, [missingKanbanApiMessage, t]);
+  }, [busyIssueId, confirmDialog, missingKanbanApiMessage, t]);
 
   const openIssueContextMenu = useCallback((issue: KanbanIssue, event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
@@ -2451,6 +2469,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   return (
     <section className="kanban-page" aria-label={t("kanban.title")}>
+      {dialogContextHolder}
       {workflowSettingsOpen && <LocalWorkflowSettings workflows={localWorkflows} onClose={() => setWorkflowSettingsOpen(false)} onSaved={setLocalWorkflows} />}
       <div className="kanban-toolbar">
         <div className="kanban-toolbar-start">
@@ -2704,6 +2723,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               type="button"
               role="menuitem"
               className="issue-card-context-danger"
+              disabled={Boolean(busyIssueId)}
               onClick={() => void deleteIssue(issue)}
             >
               {t("kanban.context.delete")}
@@ -3149,6 +3169,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 <button
                   type="button"
                   className="kanban-danger-button"
+                  disabled={Boolean(busyIssueId)}
                   onClick={() => void deleteIssue(modal.issue!)}
                 >
                   {t("kanban.form.delete")}

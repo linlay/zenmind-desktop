@@ -4,8 +4,8 @@
   height: 100vh;
   overflow: hidden;
   grid-template-rows: 46px minmax(0, 1fr);
-  background: var(--app-bg, #fff);
-  color: var(--text-primary, #1f2329);
+  background: var(--bg-base);
+  color: var(--ink);
 }
 
 .selection-explain-window-header {
@@ -13,9 +13,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-color, rgba(31, 35, 41, 0.12));
+  border-bottom: 1px solid var(--line);
   padding-left: 16px;
-  background: var(--app-bg, #fff);
+  background: var(--bg-base);
   user-select: none;
 }
 
@@ -24,6 +24,11 @@
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.selection-explain-window.is-mac .selection-explain-window-header {
+  padding-left: var(--mac-traffic-light-safe-area);
+  padding-right: 16px;
 }
 
 .selection-explain-window-controls {
@@ -46,7 +51,7 @@
 
 .selection-explain-window-controls button:hover,
 .selection-explain-window-controls button:focus-visible {
-  background: rgba(127, 127, 127, 0.14);
+  background: var(--control-hover-bg);
   outline: none;
 }
 
@@ -72,7 +77,7 @@
   place-content: center;
   justify-items: center;
   gap: 12px;
-  color: var(--text-secondary, #646a73);
+  color: var(--ink-soft);
   text-align: center;
 }
 
@@ -88,8 +93,8 @@
 .selection-explain-window-spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid rgba(47, 84, 235, 0.18);
-  border-top-color: #2f54eb;
+  border: 2px solid var(--accent-fill-strong);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: selection-explain-spin 0.8s linear infinite;
 }

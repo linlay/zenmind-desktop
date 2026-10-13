@@ -21,7 +21,7 @@
 .sidebar-tool-menu-anchor { position: relative; }
 .sidebar-tool-menu-trigger.has-update .sidebar-tool-menu-trigger-settings-icon,
 .sidebar-tool-menu-trigger.has-update .sidebar-settings-icon-slot { visibility: hidden; }
-.sidebar-update-trigger:focus-visible { outline: 2px solid var(--ant-color-primary, #16828b); outline-offset: 2px; }
+.sidebar-update-trigger:focus-visible { outline: 2px solid var(--control-focus-outline); outline-offset: 2px; }
 .sidebar-update-trigger:disabled { cursor: default; opacity: .65; }
 .app-sidebar.is-collapsed .sidebar-update-trigger { right: 50%; transform: translate(50%, -50%); }
 

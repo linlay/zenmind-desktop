@@ -3,9 +3,9 @@
   --market-card-min: 238px;
   --market-card-height: 138px;
   --market-card-footer-height: 28px;
-  --market-store-accent: #2563eb;
-  --market-store-accent-strong: #1d4ed8;
-  --market-store-accent-soft: #eff6ff;
+  --market-store-accent: var(--accent);
+  --market-store-accent-strong: var(--accent-strong);
+  --market-store-accent-soft: var(--accent-soft);
   --market-store-text: #18181b;
   --market-store-muted: #667085;
   --market-store-faint: #98a2b3;
@@ -27,8 +27,8 @@
 /* ---------- toolbar ---------- */
 
 .market-store-header-tools {
-  --market-store-accent: #2563eb;
-  --market-store-accent-strong: #1d4ed8;
+  --market-store-accent: var(--accent);
+  --market-store-accent-strong: var(--accent-strong);
   --market-store-text: #18181b;
   --market-store-muted: #667085;
   --market-store-faint: #98a2b3;
@@ -72,7 +72,7 @@
 .market-store-search.ant-input-affix-wrapper:hover,
 .market-store-search.ant-input-affix-wrapper-focused {
   border-color: color-mix(in srgb, var(--market-store-accent) 34%, var(--market-store-line));
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.08);
 }
 
 .market-store-search svg {
@@ -1195,8 +1195,8 @@
 /* ---------- detail dialog ---------- */
 
 .market-store-detail-modal {
-  --market-store-accent: #2563eb;
-  --market-store-accent-soft: #eff6ff;
+  --market-store-accent: var(--accent);
+  --market-store-accent-soft: var(--accent-soft);
   --market-store-text: #18181b;
   --market-store-muted: #667085;
   --market-store-faint: #98a2b3;
@@ -1491,9 +1491,6 @@
 /* ---------- dark mode ---------- */
 
 :root[data-theme="dark"] .market-storefront {
-  --market-store-accent: #6ea8ff;
-  --market-store-accent-strong: #9bc2ff;
-  --market-store-accent-soft: rgba(110, 168, 255, 0.14);
   --market-store-text: #e7edf6;
   --market-store-muted: #9aa8ba;
   --market-store-faint: #718095;
@@ -1510,8 +1507,6 @@
 }
 
 :root[data-theme="dark"] .market-store-header-tools {
-  --market-store-accent: #6ea8ff;
-  --market-store-accent-strong: #9bc2ff;
   --market-store-text: #e7edf6;
   --market-store-muted: #9aa8ba;
   --market-store-faint: #718095;
@@ -1537,8 +1532,6 @@
 }
 
 :root[data-theme="dark"] .market-store-detail-modal {
-  --market-store-accent: #6ea8ff;
-  --market-store-accent-soft: rgba(110, 168, 255, 0.14);
   --market-store-text: #e7edf6;
   --market-store-muted: #9aa8ba;
   --market-store-faint: #718095;

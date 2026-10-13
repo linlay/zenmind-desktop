@@ -13,9 +13,19 @@ const ServiceWebviewSurface = lazy(() =>
 export function SelectionExplainWindowPage() {
   const { t } = useI18n();
   const [state, setState] = useState<SelectionExplainWindowState | null>(null);
+  const [platform, setPlatform] = useState(() => {
+    // Keep window controls usable before (or if) the platform IPC resolves.
+    // The trusted preload result remains authoritative once available.
+    if (/Mac|iPhone|iPad|iPod/i.test(navigator.userAgent)) return "darwin";
+    if (/Windows/i.test(navigator.userAgent)) return "win32";
+    return "linux";
+  });
   const hostTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   useEffect(() => {
     let active = true;
+    void window.electronAPI.settings.getPlatform().then((value) => {
+      if (active) setPlatform(value);
+    }).catch(() => undefined);
     void window.electronAPI.selectionExplain.getState().then((next) => {
       if (active && next) setState(next);
     });
@@ -33,10 +43,10 @@ export function SelectionExplainWindowPage() {
   }, [state]);
 
   return (
-    <main className="selection-explain-window">
+    <main className={`selection-explain-window${platform === "darwin" ? " is-mac" : platform === "win32" ? " is-windows" : ""}`}>
       <header className="selection-explain-window-header">
         <strong>{t("webviewSelectionToolbar.moreDetails")}</strong>
-        <div className="selection-explain-window-controls">
+        {platform && platform !== "darwin" ? <div className="selection-explain-window-controls">
           <button
             type="button"
             aria-label={t("window.minimize")}
@@ -51,7 +61,7 @@ export function SelectionExplainWindowPage() {
           >
             <span aria-hidden="true">×</span>
           </button>
-        </div>
+        </div> : null}
       </header>
       <section className="selection-explain-window-body">
         {!state || state.status === "pending" ? (

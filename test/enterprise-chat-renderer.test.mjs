@@ -131,7 +131,7 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   assert.match(panel, /className="enterprise-chat-agent-chat-picker"/);
   assert.match(
     panel,
-    /window\.confirm\(t\("enterpriseChat\.rawAgentChatConfirm"[\s\S]*enterpriseChat\.sendRawAgentChat/
+    /await confirmDialog\(t\("enterpriseChat\.rawAgentChatConfirm"[\s\S]*enterpriseChat\.sendRawAgentChat/
   );
   assert.match(panel, /sendRawAgentChat\(\{[\s\S]*?conversationId,/);
   assert.match(panel, /clientMessageId:\s*newClientMessageId\(\)/);
@@ -163,7 +163,7 @@ test("enterprise chat deletion remains a renderer-only sequence-aware hide", () 
   assert.match(panel, /lastSeq <= preference\.lastSeq/);
   assert.match(panel, /conversation\.lastSeq > hiddenAtSeq/);
   assert.match(panel, /restoreHiddenConversation\([\s\S]*next\.activeConversationId/);
-  assert.match(panel, /window\.confirm\(t\("enterpriseChat\.deleteConversationConfirm"/);
+  assert.match(panel, /await confirmDialog\(t\("enterpriseChat\.deleteConversationConfirm"/);
   assert.doesNotMatch(panel, /electronAPI\.enterpriseChat\.delete/);
   assert.doesNotMatch(preload, /enterpriseChat\.deleteConversation/);
 });

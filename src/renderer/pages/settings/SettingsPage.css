@@ -796,7 +796,7 @@
 .settings-page .webapp-user-config-heading p {
   max-width: 680px;
   margin: 4px 0 0;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -882,7 +882,7 @@
 .settings-page .webapp-user-config-empty {
   padding: 18px 16px;
   border-top: 1px solid var(--control-center-border);
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
 }
 
@@ -929,7 +929,7 @@
 
 .settings-page .webapp-import-empty span {
   max-width: 440px;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -986,7 +986,7 @@
   flex-wrap: wrap;
   gap: 12px;
   grid-column: 2;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .settings-page .web-settings-page .web-nav-card.ant-btn {
@@ -1000,7 +1000,7 @@
 }
 
 .settings-page .web-settings-page .web-nav-card.is-active .service-nav-version-status {
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .settings-page .web-settings-page .web-settings-detail {
@@ -1039,7 +1039,7 @@
   gap: 16px;
   margin-top: 6px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .settings-page .webapp-state-badge {
@@ -1085,7 +1085,7 @@
   grid-column: 2;
   min-width: 0;
   justify-content: flex-start;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .settings-page .is-websites .web-settings-catalog .service-group {
@@ -1122,7 +1122,7 @@
 
 .settings-page .is-websites .service-hero-copy p {
   overflow-wrap: anywhere;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 @media (max-width: 1000px) {
@@ -1195,7 +1195,7 @@
 
 .webapp-details-modal .webapp-details-toolbar-copy span,
 .webapp-details-modal .webapp-details-toolbar > span {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -1232,7 +1232,7 @@
 .settings-page .web-publish-panel .service-hero-copy p {
   max-width: 620px;
   margin: 4px 0 0;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -1245,7 +1245,7 @@
   border: 1px solid var(--control-center-border);
   border-radius: 999px;
   background: var(--surface-soft);
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -1301,7 +1301,7 @@
 .webapp-details-modal .web-publish-message {
   padding: 10px 16px;
   border-top: 1px solid var(--control-center-border);
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -1332,7 +1332,7 @@
   min-width: 0;
   flex-direction: column;
   gap: 7px;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -1443,7 +1443,7 @@
 }
 
 .settings-page .web-managed-note {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -1475,7 +1475,7 @@
 .settings-page .web-detail-row span,
 .webapp-details-modal .web-detail-row span {
   min-width: 0;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
 }
 
@@ -2111,7 +2111,7 @@
 }
 
 .settings-page .desktop-pet-appearance-delete:hover:not(:disabled) {
-  color: var(--ant-color-error, #dc4446);
+  color: var(--danger);
 }
 
 @media (hover: none) {

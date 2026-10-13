@@ -1381,7 +1381,7 @@ export const zhCNMessages = {
   "settings.appearance.packageImported": "皮肤已导入。点击对应卡片应用。",
   "settings.appearance.packageMissing": "已选皮肤包不可用，暂时使用默认外观。可重新导入或选择其他皮肤。",
   "settings.appearance.invalidPackage": "皮肤包无效。请检查 skin.json、图片资源和 ZIP 目录结构。",
-  "settings.appearance.unsupportedPackageVersion": "暂不支持此皮肤包的格式版本，请使用 schemaVersion 为 1 的皮肤包。",
+  "settings.appearance.unsupportedPackageVersion": "暂不支持此皮肤包的格式版本，请使用 schemaVersion 为 \"1.1\" 的皮肤包。",
   "settings.appearance.packageTooLarge": "皮肤包过大。ZIP 最大 32 MB，解压总量最大 48 MB，单个资源最大 16 MB，最多 64 个条目。",
   "settings.appearance.packageExists": "这个皮肤的相同版本已经导入，可直接选择已有皮肤。",
   "settings.appearance.tooManySkins": "最多保存 20 个皮肤包，请先删除不再使用的皮肤。",
@@ -4045,5 +4045,15 @@ export const zhCNMessages = {
   "logViewer.error.missingServiceId": "缺少服务 ID。",
   "logViewer.error.streamInterrupted": "日志流已中断。",
 
-  "errors.desktopSsoPreloadUnavailable": "桌面端单点登录预加载 API 不可用。"
+  "errors.desktopSsoPreloadUnavailable": "桌面端单点登录预加载 API 不可用。",
+  "settings.websites.deleteConfirmTitle": "删除网站",
+  "settings.websites.deleteConfirm": "确定删除「{name}」吗？该网站将从 Desktop 的网站列表中移除，不会删除网站本身。",
+  "settings.webapps.removeConfirmTitle": "卸载网页应用",
+  "settings.webapps.removeConfirmAction": "卸载",
+  "settings.webapps.removeConfirm": "确定卸载「{name}」吗？应用将停止运行、取消发布，并删除本机应用程序、数据和设置。请先备份需要保留的数据。",
+  "settings.webapps.unpublishConfirm": "确定取消发布「{name}」吗？现有公开链接将无法访问，应用会保留在本机。",
+  "shareManagement.revokeConfirmTitle": "撤销分享链接",
+  "shareManagement.revokeConfirm": "确定撤销下面这条分享链接吗？撤销后，其他人将无法通过此链接访问分享内容。原对话会保留。",
+  "chatWorkPanel.image.resizeSizeInvalid": "宽度和高度须为 1–8192 像素，且总像素不超过 4000 万。",
+  "kanban.feedback.deleteFailed": "删除问题失败。",
 } as const;

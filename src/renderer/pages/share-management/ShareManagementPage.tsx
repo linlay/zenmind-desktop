@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantConversationShareRecord } from "../../../shared/contracts";
 import { formatEpochMillis } from "../../../shared/time-contract";
 import { useI18n } from "../../i18n/useI18n";
+import { useThemedDialogs } from "../../components/useThemedDialogs";
 
 type ShareManagementStatus = "idle" | "loading" | "ready" | "error";
 
@@ -40,6 +41,8 @@ export function ShareManagementPage({
   onOpenChat,
 }: ShareManagementPageProps) {
   const { t } = useI18n();
+  const { confirm, contextHolder } = useThemedDialogs();
+  const revokePendingRef = useRef(false);
   const [status, setStatus] = useState<ShareManagementStatus>("idle");
   const [records, setRecords] = useState<AssistantConversationShareRecord[]>([]);
   const [chatDetails, setChatDetails] = useState<Record<string, ShareChatDetails>>({});
@@ -162,11 +165,18 @@ export function ShareManagementPage({
     }
   }
 
-  async function revokeShare(shareId: string) {
-    if (revokingShareId) return;
-    setRevokingShareId(shareId);
-    clearActionFeedback();
+  async function revokeShare(record: AssistantConversationShareRecord) {
+    if (revokePendingRef.current) return;
+    const { shareId, url } = record;
+    revokePendingRef.current = true;
     try {
+      if (!await confirm(<><p>{t("shareManagement.revokeConfirm")}</p><p style={{ overflowWrap: "anywhere" }}>{url}</p></>, {
+        title: t("shareManagement.revokeConfirmTitle"),
+        okText: t("sidebar.chat.shareRevokeAction"),
+        danger: true
+      })) return;
+      setRevokingShareId(shareId);
+      clearActionFeedback();
       const result = await window.electronAPI.assistant.revokeChatShare(shareId);
       if (!result.ok) {
         showActionFeedback("error", result.message || t("sidebar.chat.shareRevokeFailed"));
@@ -177,12 +187,14 @@ export function ShareManagementPage({
     } catch (error) {
       showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareRevokeFailed"));
     } finally {
+      revokePendingRef.current = false;
       setRevokingShareId("");
     }
   }
 
   return (
     <section className="share-management-page" aria-labelledby="share-management-title">
+      {contextHolder}
       {actionFeedback ? (
         <div className="share-management-action-toast" data-kind={actionFeedback.kind} role={actionFeedback.kind === "error" ? "alert" : "status"}>
           {actionFeedback.kind === "success" ? <CheckCircleOutlined aria-hidden="true" /> : <ExclamationCircleOutlined aria-hidden="true" />}
@@ -290,7 +302,7 @@ export function ShareManagementPage({
                           revoking={revokingShareId === record.shareId}
                           anotherRevokePending={Boolean(revokingShareId && revokingShareId !== record.shareId)}
                           onCopy={() => void copyShare(record)}
-                          onRevoke={() => void revokeShare(record.shareId)}
+                          onRevoke={() => void revokeShare(record)}
                         />
                       ))}
                     </div>

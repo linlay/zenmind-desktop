@@ -1778,7 +1778,7 @@
   overflow-wrap: anywhere;
   white-space: normal;
   user-select: text;
-  color: var(--text-secondary, #697386);
+  color: var(--ink-muted);
 }
 .enterprise-chat-download-error {
   color: var(--danger, #c03c3c);

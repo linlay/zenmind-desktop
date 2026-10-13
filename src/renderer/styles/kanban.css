@@ -876,7 +876,7 @@
   gap: 12px;
   min-width: 0;
   padding: 8px 0;
-  color: var(--kanban-text);
+  color: var(--kanban-ink);
   font-size: 12px;
 }
 
@@ -1759,7 +1759,7 @@
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--kanban-accent) 42%, var(--kanban-border));
   border-radius: 6px;
-  background: color-mix(in srgb, var(--kanban-accent) 10%, var(--issue-card-surface));
+  background: color-mix(in srgb, var(--kanban-accent) 10%, var(--issue-card));
   color: var(--kanban-accent);
   font: inherit;
   font-size: 11px;
@@ -1768,7 +1768,7 @@
 }
 
 .issue-card-cloud-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--kanban-accent) 17%, var(--issue-card-surface));
+  background: color-mix(in srgb, var(--kanban-accent) 17%, var(--issue-card));
 }
 
 .issue-card-cloud-action:disabled {
@@ -3702,7 +3702,7 @@
 .kanban-detail-mermaid { max-width: 100%; min-height: 72px; margin: 0 0 0.72em; overflow-x: auto; border: 1px solid var(--detail-line-subtle); border-radius: 7px; background: var(--detail-surface-soft); }
 .kanban-detail-mermaid.is-loading { display: grid; place-items: center; padding: 18px; color: var(--detail-muted); font-size: 10px; }
 .kanban-detail-mermaid.is-error { padding: 8px; }
-.kanban-detail-mermaid.is-error > p { margin: 0 0 7px; color: var(--detail-danger); font-size: 10px; line-height: 1.5; }
+.kanban-detail-mermaid.is-error > p { margin: 0 0 7px; color: var(--danger); font-size: 10px; line-height: 1.5; }
 .kanban-detail-mermaid.is-error > pre { margin: 0; }
 .kanban-detail-mermaid-svg { display: flex; min-width: max-content; justify-content: center; padding: 10px; }
 .kanban-detail-mermaid-svg svg { display: block; width: auto; max-width: none; height: auto; max-height: 560px; }
@@ -3958,25 +3958,25 @@
 .kanban-workflow-tabs { flex-wrap: wrap; }
 .kanban-workflow-editor { border: 0; padding: 0; min-width: 0; }
 .kanban-workflow-preview { display: flex; gap: 12px; overflow-x: auto; padding: 8px 0 20px; }
-.kanban-workflow-preview-stage { display: flex; flex-direction: column; gap: 8px; min-width: 150px; padding: 16px; border: 1px solid var(--border-color, #8886); border-radius: 10px; }
+.kanban-workflow-preview-stage { display: flex; flex-direction: column; gap: 8px; min-width: 150px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
 .kanban-workflow-preview-stage small { opacity: 0.65; }
 .kanban-workflow-stage-row .ant-input { flex: 1; min-width: 80px; }
 .kanban-workflow-stage-row label { white-space: nowrap; }
 .kanban-workflow-error { color: #d4380d; }
 .kanban-local-stage { display: block; padding: 6px 12px 0; opacity: 0.75; }
-.kanban-workflow-preview-stage[aria-current="step"] { border-color: var(--accent-color, #1677ff); background: color-mix(in srgb, var(--accent-color, #1677ff) 8%, transparent); }
+.kanban-workflow-preview-stage[aria-current="step"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .kanban-workflow-editor { max-height: 60vh; overflow-y: auto; }
 
-.kanban-workflow-stage-editor { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color, #8884); }
+.kanban-workflow-stage-editor { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .kanban-workflow-rollback-target { display: flex; align-items: center; gap: 12px; padding-left: 24px; }
-.kanban-workflow-rollback-target select { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color, #8886); background: var(--bg-base, transparent); color: inherit; }
+.kanban-workflow-rollback-target select { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg-base, transparent); color: inherit; }
 .kanban-workflow-rollback { margin-bottom: 16px; }
-.kanban-workflow-rollback-form { padding: 12px; border: 1px solid var(--border-color, #8886); border-radius: 8px; margin-top: 12px; }
+.kanban-workflow-rollback-form { padding: 12px; border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; }
 .kanban-workflow-rollback-form label, .kanban-workflow-rollback-form textarea { display: block; width: 100%; box-sizing: border-box; }
-.kanban-workflow-rollback-form textarea { margin: 8px 0 12px; padding: 8px; resize: vertical; color: inherit; background: var(--bg-base, transparent); border: 1px solid var(--border-color, #8886); border-radius: 6px; }
+.kanban-workflow-rollback-form textarea { margin: 8px 0 12px; padding: 8px; resize: vertical; color: inherit; background: var(--bg-base, transparent); border: 1px solid var(--line); border-radius: 6px; }
 .kanban-workflow-refresh p, .kanban-workflow-rollback-history small { opacity: 0.7; font-size: 12px; }
 .kanban-workflow-rollback-history { margin-top: 12px; }
-.kanban-workflow-rollback-history article { padding: 10px 0; border-bottom: 1px solid var(--border-color, #8884); }
+.kanban-workflow-rollback-history article { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .kanban-workflow-rollback-history small { display: block; margin-top: 4px; }
 .kanban-workflow-rollback-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -3994,7 +3994,7 @@
   height: 8px;
   margin-inline-start: 6px;
   border-radius: 50%;
-  background: var(--color-primary, #1677ff);
+  background: var(--kanban-accent);
 }
 
 .kanban-detail-empty-properties-toggle { display: inline-flex; align-items: center; min-height: 26px; margin-top: 6px; padding: 2px 0; border: 0; background: transparent; color: var(--detail-muted); font: inherit; font-size: 12px; cursor: pointer; }

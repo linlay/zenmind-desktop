@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, screen, type Rectangle } from "electron";
+import { BrowserWindow, ipcMain, nativeTheme, screen, type Rectangle } from "electron";
 import {
   SELECTION_EXPLAIN_WINDOW_CLOSE_CHANNEL,
   SELECTION_EXPLAIN_WINDOW_GET_STATE_CHANNEL,
@@ -129,6 +129,11 @@ export class SelectionExplainWindowController {
       width: SELECTION_EXPLAIN_WINDOW_WIDTH,
       height: SELECTION_EXPLAIN_WINDOW_HEIGHT,
     });
+    const windowChrome = this.options.platform === "darwin"
+      ? { frame: true, titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 15 } }
+      : this.options.platform === "win32"
+        ? { frame: false, autoHideMenuBar: true }
+        : { frame: false };
     const target = new BrowserWindow({
       width: SELECTION_EXPLAIN_WINDOW_WIDTH,
       height: SELECTION_EXPLAIN_WINDOW_HEIGHT,
@@ -136,7 +141,7 @@ export class SelectionExplainWindowController {
       minWidth: 520,
       minHeight: 420,
       show: false,
-      frame: false,
+      ...windowChrome,
       transparent: false,
       resizable: true,
       maximizable: true,
@@ -145,8 +150,7 @@ export class SelectionExplainWindowController {
       modal: false,
       skipTaskbar: false,
       title: this.options.title,
-      backgroundColor: "#ffffff",
-      ...(this.options.platform === "win32" ? { autoHideMenuBar: true } : {}),
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#181818" : "#ffffff",
       webPreferences: {
         preload: this.options.preloadPath,
         contextIsolation: true,

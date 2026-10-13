@@ -5,8 +5,8 @@
   --market-control-border: rgba(15, 23, 42, 0.1);
   --market-control-text: #18181b;
   --market-control-muted: #64748b;
-  --market-control-blue: #2563eb;
-  --market-control-blue-strong: #1d4ed8;
+  --market-control-blue: var(--accent);
+  --market-control-blue-strong: var(--accent-strong);
   min-height: calc(100vh - 64px);
   background: var(--market-control-bg);
   app-region: no-drag;
@@ -31,8 +31,6 @@
   --market-control-border: rgba(148, 163, 184, 0.16);
   --market-control-text: #e7edf6;
   --market-control-muted: #94a3b8;
-  --market-control-blue: #6ea8ff;
-  --market-control-blue-strong: #9bc2ff;
   background:
     linear-gradient(180deg, #151b24 0%, #10161e 42%, var(--market-control-bg) 100%);
 }

@@ -52,6 +52,7 @@ import type {
   EnterpriseChatUser
 } from "../../shared/contracts";
 import { Popover } from "../components/Popover";
+import { useThemedDialogs } from "../components/useThemedDialogs";
 import { useI18n } from "../i18n/useI18n";
 
 type EnterpriseChatFloatingPanelProps = {
@@ -300,6 +301,7 @@ export function EnterpriseChatFloatingPanel({
   desktopSsoStatus
 }: EnterpriseChatFloatingPanelProps) {
   const { locale, t } = useI18n();
+  const { confirm: confirmDialog, contextHolder: dialogContextHolder, cancelPending } = useThemedDialogs();
   const [snapshot, setSnapshot] = useState<EnterpriseChatSnapshot | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<PanelView>("chats");
@@ -359,6 +361,17 @@ export function EnterpriseChatFloatingPanel({
   const downloadGenerationRef = useRef(0);
   const signedIn = hasCompleteEnterpriseLogin(desktopSsoStatus);
   const preferenceScope = conversationPreferenceScope(snapshot);
+  const confirmationPendingRef = useRef(false);
+  const confirmationContext = JSON.stringify([
+    preferenceScope, desktopSsoStatus?.user?.sub, signedIn, snapshot?.enabled,
+    snapshot?.activeConversationId, open, view
+  ]);
+  const confirmationContextRef = useRef({ key: confirmationContext });
+  if (confirmationContextRef.current.key !== confirmationContext) {
+    // A confirmed send must still target the account and conversation shown before the dialog.
+    confirmationContextRef.current = { key: confirmationContext };
+  }
+  useEffect(() => () => cancelPending(), [cancelPending, confirmationContext]);
 
   useEffect(() => {
     let cancelled = false;
@@ -783,23 +796,31 @@ export function EnterpriseChatFloatingPanel({
     ));
   }
 
-  function hideConversation(conversation: EnterpriseChatConversation) {
+  async function hideConversation(conversation: EnterpriseChatConversation) {
     setOpenConversationMenuId("");
-    if (!preferenceScope || !window.confirm(t("enterpriseChat.deleteConversationConfirm", {
-      name: conversationTitle(conversation)
-    }))) {
-      return;
+    if (!preferenceScope || busy || confirmationPendingRef.current) return;
+    const confirmation = confirmationContextRef.current;
+    confirmationPendingRef.current = true;
+    setBusy("confirm-hide");
+    try {
+      if (!await confirmDialog(t("enterpriseChat.deleteConversationConfirm", {
+        name: conversationTitle(conversation)
+      }), { okText: t("enterpriseChat.deleteConversation"), danger: true }) ||
+        confirmation !== confirmationContextRef.current) return;
+      setHiddenConversationPreferences((current) => [
+        ...current.filter((preference) =>
+          preference.scope !== preferenceScope || preference.conversationId !== conversation.id
+        ),
+        {
+          scope: preferenceScope,
+          conversationId: conversation.id,
+          lastSeq: conversation.lastSeq
+        }
+      ]);
+    } finally {
+      confirmationPendingRef.current = false;
+      setBusy((current) => current === "confirm-hide" ? "" : current);
     }
-    setHiddenConversationPreferences((current) => [
-      ...current.filter((preference) =>
-        preference.scope !== preferenceScope || preference.conversationId !== conversation.id
-      ),
-      {
-        scope: preferenceScope,
-        conversationId: conversation.id,
-        lastSeq: conversation.lastSeq
-      }
-    ]);
   }
 
   async function refresh() {
@@ -916,24 +937,31 @@ export function EnterpriseChatFloatingPanel({
 
   async function sendSupportBundle() {
     const conversationId = snapshot?.activeConversationId ?? "";
-    if (!conversationId || busy) {
+    if (!conversationId || busy || confirmationPendingRef.current) {
       return;
     }
     setAttachmentMenuOpen(false);
-    if (!window.confirm(t("enterpriseChat.supportBundleConfirm"))) {
-      return;
-    }
-    setBusy("support-bundle");
-    setError("");
+    const confirmation = confirmationContextRef.current;
+    confirmationPendingRef.current = true;
+    setBusy("confirm-support-bundle");
     try {
-      setSnapshot(await window.electronAPI.enterpriseChat.sendSupportBundle({
+      if (!await confirmDialog(t("enterpriseChat.supportBundleConfirm"), {
+        title: t("enterpriseChat.sendSupportBundle"), okText: t("enterpriseChat.send")
+      }) || confirmation !== confirmationContextRef.current) return;
+      setBusy("support-bundle");
+      setError("");
+      const next = await window.electronAPI.enterpriseChat.sendSupportBundle({
         conversationId,
         clientMessageId: newClientMessageId()
-      }));
+      });
+      if (confirmation === confirmationContextRef.current) setSnapshot(next);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (confirmation === confirmationContextRef.current) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
     } finally {
-      setBusy("");
+      confirmationPendingRef.current = false;
+      setBusy((current) => current === "confirm-support-bundle" || current === "support-bundle" ? "" : current);
     }
   }
 
@@ -958,27 +986,34 @@ export function EnterpriseChatFloatingPanel({
 
   async function sendRawAgentChat(chat: AssistantChatSummary) {
     const conversationId = snapshot?.activeConversationId ?? "";
-    if (!conversationId || busy) {
+    if (!conversationId || busy || confirmationPendingRef.current) {
       return;
     }
     const chatName = chat.title.trim() || chat.id;
-    if (!window.confirm(t("enterpriseChat.rawAgentChatConfirm", { name: chatName }))) {
-      return;
-    }
-    setAgentChatPickerOpen(false);
-    setBusy("agent-chat");
-    setError("");
+    const confirmation = confirmationContextRef.current;
+    confirmationPendingRef.current = true;
+    setBusy("confirm-agent-chat");
     try {
-      setSnapshot(await window.electronAPI.enterpriseChat.sendRawAgentChat({
+      if (!await confirmDialog(t("enterpriseChat.rawAgentChatConfirm", { name: chatName }), {
+        title: t("enterpriseChat.sendAgentChat"), okText: t("enterpriseChat.send")
+      }) || confirmation !== confirmationContextRef.current) return;
+      setAgentChatPickerOpen(false);
+      setBusy("agent-chat");
+      setError("");
+      const next = await window.electronAPI.enterpriseChat.sendRawAgentChat({
         conversationId,
         chatId: chat.id,
         chatName,
         clientMessageId: newClientMessageId()
-      }));
+      });
+      if (confirmation === confirmationContextRef.current) setSnapshot(next);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (confirmation === confirmationContextRef.current) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
     } finally {
-      setBusy("");
+      confirmationPendingRef.current = false;
+      setBusy((current) => current === "confirm-agent-chat" || current === "agent-chat" ? "" : current);
     }
   }
 
@@ -1304,7 +1339,7 @@ export function EnterpriseChatFloatingPanel({
   }
 
   if (!visible || !snapshot) {
-    return null;
+    return <>{dialogContextHolder}</>;
   }
 
   const connectionLabel = snapshot.connectionState === "connected"
@@ -1449,6 +1484,7 @@ export function EnterpriseChatFloatingPanel({
       style={floatingStyle}
       aria-label={t("enterpriseChat.title")}
     >
+      {dialogContextHolder}
       {open ? (
         <section
           className="enterprise-chat-panel"
@@ -2018,7 +2054,7 @@ export function EnterpriseChatFloatingPanel({
                           <button
                             type="button"
                             role="menuitem"
-                            onClick={() => hideConversation(conversation)}
+                            onClick={() => void hideConversation(conversation)}
                           >
                             <DeleteOutlined />
                             <span>{t("enterpriseChat.deleteConversation")}</span>

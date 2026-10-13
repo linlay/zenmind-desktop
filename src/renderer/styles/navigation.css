@@ -4885,7 +4885,7 @@ div.sidebar-chats-group-popover {
   padding: 32px;
   overflow: hidden;
   background: var(--bg-base);
-  color: var(--text-primary);
+  color: var(--ink);
 }
 
 .empty-content-surface-content {
@@ -4907,7 +4907,7 @@ div.sidebar-chats-group-popover {
 
 .empty-content-surface h1 {
   margin: 0;
-  color: var(--text-primary);
+  color: var(--ink);
   font-size: 18px;
   font-weight: 600;
   line-height: 1.4;

@@ -1381,7 +1381,7 @@ export const enUSMessages = {
   "settings.appearance.packageImported": "Skin imported. Select its card to apply it.",
   "settings.appearance.packageMissing": "The selected skin package is unavailable. Using the default appearance. Import it again or select another skin.",
   "settings.appearance.invalidPackage": "Invalid skin package. Check skin.json, image assets, and the ZIP folder structure.",
-  "settings.appearance.unsupportedPackageVersion": "Unsupported skin package format. Use a package with schemaVersion 1.",
+  "settings.appearance.unsupportedPackageVersion": "Unsupported skin package format. Use a package with schemaVersion \"1.1\".",
   "settings.appearance.packageTooLarge": "Skin package is too large. Limits: 32 MB ZIP, 48 MB expanded, 16 MB per asset, and 64 entries.",
   "settings.appearance.packageExists": "This version of the skin is already imported. Select the existing skin.",
   "settings.appearance.tooManySkins": "Up to 20 skin packages can be saved. Remove an unused skin first.",
@@ -4045,5 +4045,15 @@ export const enUSMessages = {
   "logViewer.error.missingServiceId": "Missing service ID.",
   "logViewer.error.streamInterrupted": "Log stream interrupted.",
 
-  "errors.desktopSsoPreloadUnavailable": "Desktop SSO preload API unavailable."
+  "errors.desktopSsoPreloadUnavailable": "Desktop SSO preload API unavailable.",
+  "settings.websites.deleteConfirmTitle": "Delete website",
+  "settings.websites.deleteConfirm": "Delete “{name}”? This removes it from the Desktop website list, without deleting the website itself.",
+  "settings.webapps.removeConfirmTitle": "Uninstall web app",
+  "settings.webapps.removeConfirmAction": "Uninstall",
+  "settings.webapps.removeConfirm": "Uninstall “{name}”? The app will stop running and be unpublished. Its local program, data, and settings will be deleted. Back up any data you want to keep first.",
+  "settings.webapps.unpublishConfirm": "Unpublish “{name}”? Its existing public link will no longer work. The app will remain installed locally.",
+  "shareManagement.revokeConfirmTitle": "Revoke share link",
+  "shareManagement.revokeConfirm": "Revoke the share link below? Others will no longer be able to access its shared content through this link. The original conversation will be kept.",
+  "chatWorkPanel.image.resizeSizeInvalid": "Width and height must be 1–8192 px, with no more than 40 million pixels in total.",
+  "kanban.feedback.deleteFailed": "Failed to delete the issue.",
 } as const;

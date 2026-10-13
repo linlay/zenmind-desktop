@@ -21,7 +21,7 @@ import {
   ThunderboltOutlined,
   UndoOutlined,
 } from "@ant-design/icons";
-import { Popover, Tooltip } from "antd";
+import { Checkbox, InputNumber, Modal, Popover, Tooltip } from "antd";
 import {
   useCallback,
   useEffect,
@@ -39,6 +39,7 @@ import type {
   WorkPanelResourceImageSelection,
 } from "../../shared/work-panel-resource-image";
 import { useI18n } from "../i18n/useI18n";
+import { THEMED_DIALOG_Z_INDEX, useThemedDialogs } from "../components/useThemedDialogs";
 import { ImageZoomControl, IMAGE_ZOOM_STEPS } from "./ImageZoomControl";
 
 const HISTORY_LIMIT = 50;
@@ -49,6 +50,17 @@ type Snapshot = {
   height: number;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
 };
+
+type ImageDraftSnapshot = {
+  current: Snapshot | null;
+  annotations: ImageRegionAnnotation[];
+  handleRequest: { ownerChatId: string; rendererGeneration: string; handleId: string };
+  itemId: string;
+  sourceRevision: string;
+  resourceRevision: string;
+  editing: boolean;
+};
+type ResizeRequest = { draft: ImageDraftSnapshot; width: number | null; height: number | null };
 
 type SelectionTool = "rectangle" | "ellipse" | "lasso" | "brush";
 type SelectionMode = "add" | "subtract";
@@ -213,6 +225,7 @@ export function WorkPanelResourceImage({
   onHandoff,
 }: WorkPanelResourceImageProps) {
   const { t } = useI18n();
+  const { confirm, contextHolder } = useThemedDialogs();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -248,6 +261,8 @@ export function WorkPanelResourceImage({
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjust, setAdjust] = useState({ exposure: 0, contrast: 0, saturation: 0 });
   const [resizeAspectLocked, setResizeAspectLocked] = useState(true);
+  const [resizeRequest, setResizeRequest] = useState<ResizeRequest | null>(null);
+  const [resizeBusy, setResizeBusy] = useState(false);
   const [canvasSizeOpen, setCanvasSizeOpen] = useState(false);
   const [canvasTargetSize, setCanvasTargetSize] = useState({ width: 0, height: 0 });
   const [selectionTransform, setSelectionTransform] = useState<SelectionTransformState | null>(null);
@@ -301,6 +316,22 @@ export function WorkPanelResourceImage({
     rendererGeneration,
     handleId: resource.handleId,
   }), [ownerChatId, rendererGeneration, resource.handleId]);
+
+  const imageDraftRef = useRef<ImageDraftSnapshot>({ current, annotations, handleRequest, itemId, sourceRevision, resourceRevision: resource.revision, editing });
+  const imageDraftRevisionRef = useRef(0);
+  const previousDraft = imageDraftRef.current;
+  if (previousDraft.current !== current || previousDraft.annotations !== annotations ||
+      previousDraft.handleRequest !== handleRequest || previousDraft.sourceRevision !== sourceRevision || previousDraft.resourceRevision !== resource.revision) {
+    imageDraftRevisionRef.current += 1;
+  }
+  imageDraftRef.current = { current, annotations, handleRequest, itemId, sourceRevision, resourceRevision: resource.revision, editing };
+  const isCurrentDraft = useCallback((expected: ImageDraftSnapshot) => {
+    const latest = imageDraftRef.current;
+    return Boolean(rootRef.current?.isConnected && latest.current === expected.current &&
+      latest.annotations === expected.annotations && latest.handleRequest === expected.handleRequest &&
+      latest.itemId === expected.itemId && latest.sourceRevision === expected.sourceRevision && latest.resourceRevision === expected.resourceRevision &&
+      latest.editing === expected.editing);
+  }, []);
 
   const replaceHistory = useCallback((next: Snapshot) => {
     snapshotUrlsRef.current.add(next.url);
@@ -388,6 +419,7 @@ export function WorkPanelResourceImage({
     setAdjustOpen(false);
     setAdjust({ exposure: 0, contrast: 0, saturation: 0 });
     setResizeAspectLocked(true);
+    setResizeRequest(null);
     setCanvasSizeOpen(false);
     setCanvasTargetSize({ width: 0, height: 0 });
     setAiPromptOperation(null);
@@ -470,30 +502,38 @@ export function WorkPanelResourceImage({
     setHasSelection(false);
   }, [current]);
 
-  const requireAnnotationClear = useCallback(() => {
-    if (annotations.length === 0) return true;
-    if (!window.confirm(t("chatWorkPanel.image.confirmClearAnnotations"))) return false;
-    setAnnotations([]);
-    return true;
-  }, [annotations.length, t]);
+  const requireAnnotationClear = useCallback(async (expected: ImageDraftSnapshot) => {
+    if (!isCurrentDraft(expected)) return false;
+    if (expected.annotations.length > 0 &&
+        !await confirm(t("chatWorkPanel.image.confirmClearAnnotations"), { danger: true })) return false;
+    // Clear annotations only when the replacement pixels are ready to commit.
+    return isCurrentDraft(expected);
+  }, [confirm, isCurrentDraft, t]);
 
   const snapshotFromCanvas = useCallback(async (
     canvas: HTMLCanvasElement,
     mimeType: Snapshot["mimeType"] = "image/png",
+    expected?: ImageDraftSnapshot,
   ) => {
+    if (expected && !isCurrentDraft(expected)) return false;
     const blob = await canvasBlob(canvas, mimeType);
-    replaceHistory({
-      url: URL.createObjectURL(blob),
-      width: canvas.width,
-      height: canvas.height,
-      mimeType,
-    });
-  }, [replaceHistory]);
+    if (expected && !isCurrentDraft(expected)) return false;
+    const next = { url: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, mimeType };
+    replaceHistory(next);
+    if (expected) {
+      const cleared: ImageRegionAnnotation[] = [];
+      imageDraftRef.current = { ...imageDraftRef.current, current: next, annotations: cleared };
+      imageDraftRevisionRef.current += 1;
+      setAnnotations(cleared);
+    }
+    return true;
+  }, [isCurrentDraft, replaceHistory]);
 
   const transform = useCallback(async (
     operation: "rotate" | "flip-x" | "flip-y",
   ) => {
-    if (!current || !requireAnnotationClear()) return;
+    const draft = imageDraftRef.current;
+    if (!current || !await requireAnnotationClear(draft)) return;
     const image = await loadImage(current.url);
     const canvas = document.createElement("canvas");
     const rotated = operation === "rotate";
@@ -512,32 +552,57 @@ export function WorkPanelResourceImage({
       context.scale(1, -1);
     }
     context.drawImage(image, 0, 0);
-    await snapshotFromCanvas(canvas, current.mimeType);
+    if (!await snapshotFromCanvas(canvas, current.mimeType, draft)) return;
   }, [current, requireAnnotationClear, snapshotFromCanvas]);
 
-  const resizeImage = useCallback(async () => {
-    if (!current || !requireAnnotationClear()) return;
-    const widthText = window.prompt(t("chatWorkPanel.image.promptWidth"), String(current.width));
-    if (widthText === null) return;
-    const width = Math.round(Number(widthText));
-    if (!Number.isFinite(width) || width < 1 || width > 8_192) return;
-    const suggestedHeight = Math.round(current.height * width / current.width);
-    const heightText = resizeAspectLocked
-      ? String(suggestedHeight)
-      : window.prompt(t("chatWorkPanel.image.promptHeight"), String(suggestedHeight));
-    if (heightText === null) return;
-    const height = Math.round(Number(heightText));
-    if (!Number.isFinite(height) || height < 1 || height > 8_192 || width * height > 40_000_000) return;
-    const image = await loadImage(current.url);
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    canvas.getContext("2d")?.drawImage(image, 0, 0, width, height);
-    await snapshotFromCanvas(canvas, current.mimeType);
-  }, [current, requireAnnotationClear, resizeAspectLocked, snapshotFromCanvas, t]);
+  const resizeImage = () => {
+    if (!current || resizeBusy) return;
+    setResizeRequest({ draft: imageDraftRef.current, width: current.width, height: current.height });
+  };
+
+  const resizeWidth = Math.round(resizeRequest?.width ?? 0);
+  const resizeHeight = Math.round(resizeRequest?.height ?? 0);
+  const validResizeSize = Number.isFinite(resizeWidth) && Number.isFinite(resizeHeight) &&
+    resizeWidth >= 1 && resizeHeight >= 1 && resizeWidth <= 8_192 && resizeHeight <= 8_192 &&
+    resizeWidth * resizeHeight <= 40_000_000;
+
+  const changeResizeDimension = (dimension: "width" | "height", value: number | null) => {
+    setResizeRequest((request) => {
+      if (!request?.draft.current) return request;
+      const next = { ...request, [dimension]: value };
+      if (resizeAspectLocked && value !== null) {
+        const original = request.draft.current;
+        if (dimension === "width") next.height = Math.round(original.height * value / original.width);
+        else next.width = Math.round(original.width * value / original.height);
+      }
+      return next;
+    });
+  };
+
+  const applyImageResize = async () => {
+    if (!resizeRequest || !validResizeSize || resizeBusy) return;
+    const { draft } = resizeRequest;
+    if (!draft.current || !isCurrentDraft(draft)) { setResizeRequest(null); return; }
+    setResizeBusy(true);
+    try {
+      if (!await requireAnnotationClear(draft)) return;
+      const image = await loadImage(draft.current.url);
+      if (!isCurrentDraft(draft)) return;
+      const canvas = document.createElement("canvas");
+      canvas.width = resizeWidth;
+      canvas.height = resizeHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.drawImage(image, 0, 0, resizeWidth, resizeHeight);
+      if (await snapshotFromCanvas(canvas, draft.current.mimeType, draft)) setResizeRequest(null);
+    } finally {
+      if (rootRef.current) setResizeBusy(false);
+    }
+  };
 
   const applyCanvasSize = useCallback(async () => {
-    if (!current || !requireAnnotationClear()) return;
+    const draft = imageDraftRef.current;
+    if (!current || !await requireAnnotationClear(draft)) return;
     const width = Math.round(canvasTargetSize.width);
     const height = Math.round(canvasTargetSize.height);
     if (
@@ -555,12 +620,13 @@ export function WorkPanelResourceImage({
       context.fillRect(0, 0, width, height);
     }
     context.drawImage(image, Math.round((width - current.width) / 2), Math.round((height - current.height) / 2));
-    await snapshotFromCanvas(canvas, current.mimeType);
+    if (!await snapshotFromCanvas(canvas, current.mimeType, draft)) return;
     setCanvasSizeOpen(false);
   }, [canvasTargetSize.height, canvasTargetSize.width, current, requireAnnotationClear, snapshotFromCanvas]);
 
   const applyCrop = useCallback(async () => {
-    if (!current || !cropRect || !requireAnnotationClear()) return;
+    const draft = imageDraftRef.current;
+    if (!current || !cropRect || !await requireAnnotationClear(draft)) return;
     const image = await loadImage(current.url);
     const x = clamp(Math.round(cropRect.x), 0, current.width - 1);
     const y = clamp(Math.round(cropRect.y), 0, current.height - 1);
@@ -570,12 +636,13 @@ export function WorkPanelResourceImage({
     canvas.width = width;
     canvas.height = height;
     canvas.getContext("2d")?.drawImage(image, x, y, width, height, 0, 0, width, height);
-    await snapshotFromCanvas(canvas, current.mimeType);
+    if (!await snapshotFromCanvas(canvas, current.mimeType, draft)) return;
     setTool("pan");
   }, [cropRect, current, requireAnnotationClear, snapshotFromCanvas]);
 
   const applyAdjustments = useCallback(async () => {
-    if (!current || !requireAnnotationClear()) return;
+    const draft = imageDraftRef.current;
+    if (!current || !await requireAnnotationClear(draft)) return;
     const image = await loadImage(current.url);
     const canvas = document.createElement("canvas");
     canvas.width = current.width;
@@ -584,7 +651,7 @@ export function WorkPanelResourceImage({
     if (!context) return;
     context.filter = `brightness(${100 + adjust.exposure}%) contrast(${100 + adjust.contrast}%) saturate(${100 + adjust.saturation}%)`;
     context.drawImage(image, 0, 0);
-    await snapshotFromCanvas(canvas, current.mimeType);
+    if (!await snapshotFromCanvas(canvas, current.mimeType, draft)) return;
     setAdjust({ exposure: 0, contrast: 0, saturation: 0 });
     setAdjustOpen(false);
   }, [adjust, current, requireAnnotationClear, snapshotFromCanvas]);
@@ -830,7 +897,8 @@ export function WorkPanelResourceImage({
   };
 
   const applySelectionTransform = async () => {
-    if (!current || !selectionTransform || !requireAnnotationClear()) return;
+    const draft = imageDraftRef.current;
+    if (!current || !selectionTransform || !await requireAnnotationClear(draft)) return;
     const [base, content] = await Promise.all([
       loadImage(selectionTransform.baseUrl),
       loadImage(selectionTransform.contentUrl),
@@ -859,7 +927,7 @@ export function WorkPanelResourceImage({
       selectionTransform.height,
     );
     context.restore();
-    await snapshotFromCanvas(canvas, current.mimeType);
+    if (!await snapshotFromCanvas(canvas, current.mimeType, draft)) return;
     discardSelectionTransform();
     clearSelection();
   };
@@ -1015,9 +1083,9 @@ export function WorkPanelResourceImage({
     if (!current || aiBusy) return;
     const consumesAnnotations = operation === "inpaint";
     const requiresMask = consumesAnnotations || operation === "removeObject";
-    if (!consumesAnnotations && annotations.length > 0 && !window.confirm(t("chatWorkPanel.image.confirmClearAnnotations"))) {
-      return;
-    }
+    const draft = imageDraftRef.current;
+    if (!consumesAnnotations && !await requireAnnotationClear(draft)) return;
+    if (!isCurrentDraft(draft)) return;
     if (operation === "inpaint" && (
       annotations.length === 0 || annotations.some((annotation) => !annotation.requirement.trim())
     )) {
@@ -1091,6 +1159,7 @@ export function WorkPanelResourceImage({
       sourceContext.drawImage(sourceImage, 0, 0, current.width, current.height);
       const sourceBlob = await canvasBlob(sourceCanvas, current.mimeType);
       const sourceDataBase64 = await blobBase64(sourceBlob);
+      if (!isCurrentDraft(draft)) return;
       const result = await window.electronAPI.chatWorkPanel.resourceImages.ai({
         ...handleRequest,
         requestId,
@@ -1105,6 +1174,7 @@ export function WorkPanelResourceImage({
         preserveComposition: true,
         edgeMode: "soft",
       });
+      if (!isCurrentDraft(draft)) return;
       if (!result.ok || !result.image) {
         setError(t("chatWorkPanel.image.aiFailedOperation", {
           operation: aiOperationLabel(operation),
@@ -1118,9 +1188,11 @@ export function WorkPanelResourceImage({
         }
         return;
       }
+      if (!isCurrentDraft(draft)) return;
       const bytes = Uint8Array.from(atob(result.image.dataBase64), (char) => char.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: result.image.mimeType }));
       const image = await loadImage(url);
+      if (!isCurrentDraft(draft)) { URL.revokeObjectURL(url); return; }
       if (
         operation === "removeBackground" ||
         image.naturalWidth !== targetWidth || image.naturalHeight !== targetHeight
@@ -1142,7 +1214,7 @@ export function WorkPanelResourceImage({
           copyHeight,
         );
         URL.revokeObjectURL(url);
-        await snapshotFromCanvas(canvas, operation === "removeBackground" ? "image/png" : editableImageMime(result.image.mimeType));
+        if (!await snapshotFromCanvas(canvas, operation === "removeBackground" ? "image/png" : editableImageMime(result.image.mimeType), draft)) return;
       } else {
         replaceHistory({
           url,
@@ -1159,6 +1231,7 @@ export function WorkPanelResourceImage({
         operation: aiOperationLabel(operation),
       }));
     } catch (reason) {
+      if (!isCurrentDraft(draft)) return;
       const detail = reason instanceof Error ? reason.message.trim() : String(reason).trim();
       setError(t("chatWorkPanel.image.aiFailedOperation", {
         operation: aiOperationLabel(operation),
@@ -1173,7 +1246,7 @@ export function WorkPanelResourceImage({
         setAiPromptOperation(operation);
       }
     } finally {
-      setAiBusy(null);
+      setAiBusy((pending) => pending?.requestId === requestId ? null : pending);
     }
   };
 
@@ -1271,9 +1344,11 @@ export function WorkPanelResourceImage({
   };
 
   const openExternal = async (mode: "default" | "choose") => {
-    if (dirty && !window.confirm(t("chatWorkPanel.image.externalDraftWarning"))) return;
-    const result = await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...handleRequest, mode });
-    if (!result.ok && result.message) setError(result.message);
+    const draft = imageDraftRef.current;
+    if (dirty && !await confirm(t("chatWorkPanel.image.externalDraftWarning"))) return;
+    if (!isCurrentDraft(draft)) return;
+    const result = await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...draft.handleRequest, mode });
+    if (isCurrentDraft(draft) && !result.ok && result.message) setError(result.message);
   };
 
   const handoff = async () => {
@@ -1358,10 +1433,46 @@ export function WorkPanelResourceImage({
       ref={rootRef}
       className={`work-panel-resource-image${editing ? " is-editing" : ""}`}
       data-native-image-dirty={dirty ? "true" : "false"}
-      data-native-image-saving={saveBusy ? "true" : "false"}
+      data-native-image-draft-revision={imageDraftRevisionRef.current}
+      data-native-image-saving={saveBusy || resizeBusy ? "true" : "false"}
       data-native-image-ai-busy={aiBusy ? "true" : "false"}
       tabIndex={0}
     >
+      {contextHolder}
+      <Modal
+        open={Boolean(resizeRequest)}
+        zIndex={THEMED_DIALOG_Z_INDEX}
+        title={t("chatWorkPanel.image.resize")}
+        okText={t("chatWorkPanel.image.apply")}
+        cancelText={t("common.cancel")}
+        onOk={() => void applyImageResize()}
+        onCancel={() => setResizeRequest(null)}
+        confirmLoading={resizeBusy}
+        okButtonProps={{ disabled: !validResizeSize }}
+        cancelButtonProps={{ disabled: resizeBusy }}
+        closable={!resizeBusy}
+        keyboard={!resizeBusy}
+        maskClosable={false}
+        width={380}
+      >
+        <div style={{ display: "grid", gap: 14 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            {t("chatWorkPanel.image.promptWidth")}
+            <InputNumber aria-label={t("chatWorkPanel.image.width")} min={1} max={8192} precision={0} value={resizeRequest?.width} disabled={resizeBusy} onChange={(value) => changeResizeDimension("width", value)} style={{ width: "100%" }} />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            {t("chatWorkPanel.image.promptHeight")}
+            <InputNumber aria-label={t("chatWorkPanel.image.height")} min={1} max={8192} precision={0} value={resizeRequest?.height} disabled={resizeBusy} onChange={(value) => changeResizeDimension("height", value)} style={{ width: "100%" }} />
+          </label>
+          <Checkbox checked={resizeAspectLocked} disabled={resizeBusy} onChange={(event) => {
+            setResizeAspectLocked(event.target.checked);
+            if (event.target.checked) setResizeRequest((request) => request?.draft.current && request.width !== null
+              ? { ...request, height: Math.round(request.draft.current.height * request.width / request.draft.current.width) }
+              : request);
+          }}>{t("chatWorkPanel.image.lockAspect")}</Checkbox>
+          {!validResizeSize ? <div role="alert" style={{ color: "var(--danger)" }}>{t("chatWorkPanel.image.resizeSizeInvalid")}</div> : null}
+        </div>
+      </Modal>
       <div className={`work-panel-image-toolbar${editing ? " is-editing" : " is-preview"}`} role="toolbar" aria-label={t("chatWorkPanel.image.toolbar")}>
         {!editing ? (
           <>

@@ -1560,7 +1560,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     sidebarSource.match(/function handleAssistantRenameChat[\s\S]*?async function handleConfirmRenameChat/u)?.[0] ?? "";
   assert.match(exportChatHandler, /const result = await window\.electronAPI\.assistant\.exportChat\(chat\.chatId\)/u);
   assert.match(exportChatHandler, /if \(!result\.ok\)/u);
-  assert.match(exportChatHandler, /window\.alert/u);
+  assert.match(exportChatHandler, /notify\(result\.message \|\| t\("sidebar\.chat\.exportFailed"\), "error"\)/u);
+  assert.match(exportChatHandler, /notify\(t\("sidebar\.chat\.exportedTo", \{ path: result\.filePath \}\), "success"\)/u);
   assert.match(renameChatHandler, /setAssistantChatRenameDialog\(\{/u);
   assert.doesNotMatch(sidebarSource, /window\.prompt/u);
   const confirmRenameChatHandler =
@@ -1582,7 +1583,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.match(archiveChatHandler, /const result = await window\.electronAPI\.assistant\.archiveChat\(chat\.chatId\)/u);
   assert.match(archiveChatHandler, /if \(!result\?\.ok\)/u);
-  assert.match(archiveChatHandler, /window\.alert\(result\?\.message \|\| t\("sidebar\.chat\.archiveFailed"\)\)/u);
+  assert.match(archiveChatHandler, /notify\(result\?\.message \|\| t\("sidebar\.chat\.archiveFailed"\), "error"\)/u);
   assert.match(archiveChatHandler, /currentChatId === chat\.chatId/u);
   assert.match(archiveChatHandler, /candidate\.chatId !== chat\.chatId/u);
   assert.match(archiveChatHandler, /onRequestNavigate\?\.\(nextRoute\)/u);
@@ -2700,7 +2701,14 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /<Select<SupportedLocale>[\s\S]*?aria-label=\{t\("settings\.language\.label"\)\}/);
   assert.match(settingsPage, /activeSectionDescription[\s\S]*?activeSectionDefinition\.description\.trim\(\)/);
   assert.match(settingsPage, /activeSectionDescription \? <p className="page-copy">\{activeSectionDescription\}<\/p> : null/);
-  assert.match(settingsPage, /settings\.appearance\.interfaceFont[\s\S]*?<Select<string>[\s\S]*?disabled[\s\S]*?settings\.appearance\.interfaceFontSize[\s\S]*?<InputNumber[\s\S]*?disabled[\s\S]*?settings\.appearance\.codeFont[\s\S]*?<Select<string>[\s\S]*?disabled[\s\S]*?settings\.appearance\.codeFontSize[\s\S]*?<InputNumber[\s\S]*?disabled/);
+  const appearanceStart = settingsPage.indexOf('case "appearance":');
+  const appearanceEnd = settingsPage.indexOf('case "assistant":', appearanceStart);
+  assert.ok(appearanceStart >= 0 && appearanceEnd > appearanceStart);
+  const appearanceSection = settingsPage.slice(appearanceStart, appearanceEnd);
+  assert.doesNotMatch(appearanceSection, /settings\.appearance\.(?:interfaceFont|interfaceFontSize|codeFont|codeFontSize)\b/u);
+  assert.match(appearanceSection, /onThemeModeChange\(value\)/u);
+  assert.match(appearanceSection, /<SkinSettings\s*\/>/u);
+  assert.match(appearanceSection, /<Select<SupportedLocale>[\s\S]*?onChange=\{\(value\) => void handleLocaleChange\(value\)\}/u);
   assert.doesNotMatch(settingsPage, /settings\.appearance\.themeDescription|settings\.language\.uiDescription/);
   assert.doesNotMatch(enUS, /Switch theme mode and adjust the desktop workspace style|Use light, dark, or match your system setting|App UI language|settings\.appearance\.description|settings\.appearance\.themeDescription|settings\.language\.uiDescription/);
   assert.doesNotMatch(zhCN, /切换主题模式并调整桌面工作台的界面风格|使用浅色、深色，或匹配系统设置|应用界面语言|settings\.appearance\.description|settings\.appearance\.themeDescription|settings\.language\.uiDescription/);
@@ -5815,7 +5823,7 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?<strong>\{resource\.fileName\}<\/strong>/u);
   assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
   assert.match(source, /function ImageToolButton[\s\S]*?<Tooltip title=\{label\} placement="right" mouseEnterDelay=\{0\.15\}>/u);
-  assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
+  assert.doesNotMatch(source, /<(?:button|ImageToolButton)\b[^>]*title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
   assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\} className="is-return-to-preview"[\s\S]*?<ArrowLeftOutlined \/><\/ImageToolbarButton>/u);
   assert.match(source, /const discardEditingDraft = useCallback[\s\S]*?setHistory\(\[\]\)[\s\S]*?setError\(""\)[\s\S]*?setAnnotations\(\[\]\)[\s\S]*?void readResource\(\)/u);
   assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?wasEditing && !editing[\s\S]*?discardEditingDraft\(\)/u);
@@ -7088,7 +7096,7 @@ test("assistant static HTML export saves the complete document returned by the p
   assert.match(shareManagement, /formatEpochMillis/u);
 });
 
-test("assistant share actions create lazily and share management revokes directly", () => {
+test("assistant share actions create lazily and share management confirms revocation", () => {
   const appShell = readAppShellSource();
   const shareDialog = readSourceFile("src", "renderer", "app-shell", "conversation-share", "ConversationShareDialog.tsx");
   const shareQrDialog = readSourceFile("src", "renderer", "app-shell", "conversation-share", "ConversationShareQrDialog.tsx");
@@ -7124,7 +7132,7 @@ test("assistant share actions create lazily and share management revokes directl
   assert.doesNotMatch(shareDialog, /shareExpiration|shareConfirm|shareSettings/u);
   assert.match(shareManagement, /ShareManagementRecord/u);
   assert.match(shareManagement, /CopyOutlined[\s\S]*?DisconnectOutlined/u);
-  assert.match(shareManagement, /onRevoke=\{\(\) => void revokeShare\(record\.shareId\)\}/u);
+  assert.match(shareManagement, /onRevoke=\{\(\) => void revokeShare\(record\)\}/u);
   assert.doesNotMatch(shareManagement, /share-management-revoke-confirmation|shareRevokeConfirm/u);
   assert.match(shareManagement, /<section className="share-management-page"[\s\S]*?<div className="share-management-action-toast"[\s\S]*?<header className="share-management-page-header"/u);
   assert.match(shareManagement, /showActionFeedback\("success", result\.message \|\| t\("assistant\.chatShareRevoked"\)\)/u);
@@ -8487,7 +8495,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /<SidebarIllustration kind=\{kind\} \/>/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout-label"/);
-  assert.match(sidebarSource, /window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)/);
+  assert.match(sidebarSource, /await confirmDialog\(t\("sidebar\.sso\.confirmSignOut"\),/u);
   assert.match(sidebarSource, /onDesktopSsoLogout\?\.\(\)/);
   assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);

@@ -51,6 +51,7 @@ import {
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
 import { Favicon, type WebsiteFaviconCache } from "../../components/Favicon";
+import { useThemedDialogs } from "../../components/useThemedDialogs";
 import { buildWebsiteFaviconUrl } from "../../../shared/website-favicon";
 import type {
   AssistantChatOrderMutationRequest,
@@ -1162,6 +1163,11 @@ export function AppSidebar({
   onExitSecondarySidebarMode,
 }: AppSidebarProps) {
   const { t } = useI18n();
+  const { confirm: confirmDialog, notify, contextHolder: dialogContextHolder } = useThemedDialogs();
+  const [logoutConfirmationPending, setLogoutConfirmationPending] = useState(false);
+  const logoutConfirmationPendingRef = useRef(false);
+  const ssoActionRef = useRef({ desktopSsoStatus, desktopSsoBusy, onDesktopSsoLogout });
+  ssoActionRef.current = { desktopSsoStatus, desktopSsoBusy, onDesktopSsoLogout };
   const isPrimaryMode = sidebarMode === "primary";
   const isCapabilitiesMode = sidebarMode === "capabilities";
   const isSettingsMode = sidebarMode === "settings";
@@ -1265,6 +1271,7 @@ export function AppSidebar({
   const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
+  const webItemRemovePendingRef = useRef(false);
   const [webItemExportPendingId, setWebItemExportPendingId] = useState("");
   const [webappShareFeedback, setWebappShareFeedback] =
     useState<Omit<PageFeedbackItem, "onDismiss"> | null>(null);
@@ -2654,7 +2661,7 @@ export function AppSidebar({
           focusSidebarRovingItemById(focusId);
         });
       } catch {
-        window.alert(t("sidebar.web.pinFailed"));
+        notify(t("sidebar.web.pinFailed"), "error");
       }
     } else if (
       actionId === "web.close" &&
@@ -2678,13 +2685,13 @@ export function AppSidebar({
       try {
         const result = await window.electronAPI.webs.webapps.start(item.id);
         if (!result.ok || result.state?.status !== "running" || !result.state.webUrl) {
-          window.alert(result.message || t("sidebar.webapp.openInBrowserFailed"));
+          notify(result.message || t("sidebar.webapp.openInBrowserFailed"), "error");
           return;
         }
         const opened = await window.electronAPI.shell.openExternal(result.state.webUrl);
-        if (!opened.ok) window.alert(t("sidebar.webapp.openInBrowserFailed"));
+        if (!opened.ok) notify(t("sidebar.webapp.openInBrowserFailed"), "error");
       } catch {
-        window.alert(t("sidebar.webapp.openInBrowserFailed"));
+        notify(t("sidebar.webapp.openInBrowserFailed"), "error");
       }
     } else if (actionId === "web.copy-access-url" && item.kind === "webapp") {
       try {
@@ -3274,49 +3281,44 @@ export function AppSidebar({
     try {
       await onCloseWebItem(item);
     } catch (error) {
-      window.alert(
-        error instanceof Error
+      notify(error instanceof Error
           ? error.message
-          : t("sidebar.website.closeFailed"),
-      );
+          : t("sidebar.website.closeFailed"), "error");
     } finally {
       setWebClosePendingEntryKey("");
     }
   }
 
   async function removeWebappItem(item: WebEntry) {
-    if (item.kind !== "webapp" || webItemRemovePendingId) {
+    if (item.kind !== "webapp" || webItemRemovePendingRef.current) {
       return;
     }
     if (item.removable === false) {
-      window.alert(
-        t("sidebar.webapp.managedNotRemovable", { name: item.label }),
-      );
+      notify(t("sidebar.webapp.managedNotRemovable", { name: item.label }), "warning");
       return;
     }
-    if (
-      !window.confirm(t("sidebar.webapp.removeConfirm", { name: item.label }))
-    ) {
-      return;
-    }
-    if (!onRemoveWebappItem) {
-      window.alert(t("sidebar.webapp.removeFailed"));
-      return;
-    }
-
+    webItemRemovePendingRef.current = true;
     setWebItemRemovePendingId(item.id);
     try {
-      const result = await onRemoveWebappItem(item);
+      if (!await confirmDialog(t("sidebar.webapp.removeConfirm", { name: item.label }), {
+        okText: t("sidebar.webapp.remove"), danger: true
+      })) return;
+      const currentItem = webItemsRef.current.find((candidate) => candidate.entryKey === item.entryKey);
+      if (!currentItem || currentItem.kind !== "webapp" || currentItem.removable === false) return;
+      if (!onRemoveWebappItem) {
+        notify(t("sidebar.webapp.removeFailed"), "error");
+        return;
+      }
+      const result = await onRemoveWebappItem(currentItem);
       if (!result.ok) {
-        window.alert(result.message || t("sidebar.webapp.removeFailed"));
+        notify(result.message || t("sidebar.webapp.removeFailed"), "error");
       }
     } catch (error) {
-      window.alert(
-        error instanceof Error
+      notify(error instanceof Error
           ? error.message
-          : t("sidebar.webapp.removeFailed"),
-      );
+          : t("sidebar.webapp.removeFailed"), "error");
     } finally {
+      webItemRemovePendingRef.current = false;
       setWebItemRemovePendingId("");
     }
   }
@@ -3329,14 +3331,12 @@ export function AppSidebar({
     try {
       const result = await onExportWebappItem(item);
       if (!result.ok && result.path) {
-        window.alert(result.message || t("sidebar.webapp.exportFailed"));
+        notify(result.message || t("sidebar.webapp.exportFailed"), "error");
       }
     } catch (error) {
-      window.alert(
-        error instanceof Error
+      notify(error instanceof Error
           ? error.message
-          : t("sidebar.webapp.exportFailed"),
-      );
+          : t("sidebar.webapp.exportFailed"), "error");
     } finally {
       setWebItemExportPendingId("");
     }
@@ -3684,16 +3684,14 @@ export function AppSidebar({
     try {
       const result = await window.electronAPI.assistant.exportChat(chat.chatId);
       if (!result.ok) {
-        window.alert(result.message || t("sidebar.chat.exportFailed"));
+        notify(result.message || t("sidebar.chat.exportFailed"), "error");
         return;
       }
       if (result.filePath) {
-        window.alert(t("sidebar.chat.exportedTo", { path: result.filePath }));
+        notify(t("sidebar.chat.exportedTo", { path: result.filePath }), "success");
       }
     } catch (error) {
-      window.alert(
-        error instanceof Error ? error.message : t("sidebar.chat.exportFailed"),
-      );
+      notify(error instanceof Error ? error.message : t("sidebar.chat.exportFailed"), "error");
     }
   }
 
@@ -3701,18 +3699,16 @@ export function AppSidebar({
     try {
       const result = await window.electronAPI.assistant.exportChatHtml(chat.chatId);
       if (!result.ok) {
-        window.alert(result.message || t("sidebar.chat.exportHtmlFailed"));
+        notify(result.message || t("sidebar.chat.exportHtmlFailed"), "error");
         return;
       }
       if (result.filePath) {
-        window.alert(t("sidebar.chat.exportedTo", { path: result.filePath }));
+        notify(t("sidebar.chat.exportedTo", { path: result.filePath }), "success");
       }
     } catch (error) {
-      window.alert(
-        error instanceof Error
+      notify(error instanceof Error
           ? error.message
-          : t("sidebar.chat.exportHtmlFailed"),
-      );
+          : t("sidebar.chat.exportHtmlFailed"), "error");
     }
   }
 
@@ -3780,7 +3776,7 @@ export function AppSidebar({
   async function handleAssistantArchiveChat(chat: AssistantNavChatItem) {
     const result = await window.electronAPI.assistant.archiveChat(chat.chatId);
     if (!result?.ok) {
-      window.alert(result?.message || t("sidebar.chat.archiveFailed"));
+      notify(result?.message || t("sidebar.chat.archiveFailed"), "error");
       return;
     }
 
@@ -6115,7 +6111,7 @@ export function AppSidebar({
               type="button"
               className="sidebar-account-menu-logout"
               onClick={handleDesktopSsoLogoutClick}
-              disabled={desktopSsoBusy}
+              disabled={desktopSsoBusy || logoutConfirmationPending}
               role="menuitem"
               aria-label={desktopSsoLogoutLabel}
               title={desktopSsoLogoutLabel}
@@ -6189,17 +6185,28 @@ export function AppSidebar({
     closeToolMenu();
   }
 
-  function handleDesktopSsoLogoutClick(event: MouseEvent<HTMLButtonElement>) {
+  async function handleDesktopSsoLogoutClick(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (desktopSsoBusy) {
+    if (desktopSsoBusy || logoutConfirmationPendingRef.current) {
       return;
     }
-    if (!window.confirm(t("sidebar.sso.confirmSignOut"))) {
-      return;
+    const account = desktopSsoStatus?.user?.sub;
+    logoutConfirmationPendingRef.current = true;
+    setLogoutConfirmationPending(true);
+    try {
+      if (!await confirmDialog(t("sidebar.sso.confirmSignOut"), {
+        okText: t("sidebar.sso.signOut"), danger: true
+      })) return;
+      const current = ssoActionRef.current;
+      if (current.desktopSsoBusy || !current.desktopSsoStatus?.authenticated ||
+        current.desktopSsoStatus.user?.sub !== account) return;
+      current.onDesktopSsoLogout?.();
+      closeToolMenu();
+    } finally {
+      logoutConfirmationPendingRef.current = false;
+      setLogoutConfirmationPending(false);
     }
-    onDesktopSsoLogout?.();
-    closeToolMenu();
   }
 
   function handleToolMenuOpenChange(open: boolean) {
@@ -6782,6 +6789,7 @@ export function AppSidebar({
 
   return (
     <>
+      {dialogContextHolder}
       <SidebarFileDropTarget
         enabled={isPrimaryMode}
         projectDisabled={creatingProject || Boolean(createProjectDialog)}

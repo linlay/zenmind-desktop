@@ -14,6 +14,7 @@ import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutli
 import { Button, Input, InputNumber, Modal, Popconfirm, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
+import { useThemedDialogs } from "../../components/useThemedDialogs";
 import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
 import "./SettingsPage.css";
 import type {
@@ -2438,6 +2439,8 @@ export function SettingsPage({
   onCloseDebug
 }: SettingsPageProps) {
   const { locale, setLocale, t } = useI18n();
+  const { confirm, contextHolder } = useThemedDialogs();
+  const destructiveActionPendingRef = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { sectionId: sectionIdParam } = useParams();
@@ -3474,12 +3477,20 @@ export function SettingsPage({
   }
 
   async function handleDeleteWebsiteItem(item: WebsiteEntry) {
-    setDeletingWebsiteId(item.id);
+    if (destructiveActionPendingRef.current || deletingWebsiteId || websitePending) return;
+    const { id, label } = item;
+    destructiveActionPendingRef.current = true;
     try {
-      const result = await window.electronAPI.webs.websites.remove(item.id);
+      if (!await confirm(t("settings.websites.deleteConfirm", { name: label }), {
+        title: t("settings.websites.deleteConfirmTitle"),
+        okText: t("settings.websites.delete"),
+        danger: true
+      })) return;
+      setDeletingWebsiteId(id);
+      const result = await window.electronAPI.webs.websites.remove(id);
       showSectionResultNotice("websites", result);
       if (result.ok) {
-        const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
+        const nextItem = result.items.find((candidate) => candidate.id !== id) ?? result.items[0] ?? null;
         pendingWebsiteSelectionIdRef.current = "";
         pendingWebsiteSnapshotRef.current = null;
         setSelectedWebsiteId(nextItem?.id ?? WEBSITE_NEW_ID);
@@ -3493,6 +3504,7 @@ export function SettingsPage({
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
+      destructiveActionPendingRef.current = false;
       setDeletingWebsiteId("");
     }
   }
@@ -3703,15 +3715,24 @@ export function SettingsPage({
   }
 
   async function handleUnpublishWebapp(item: WebappEntry) {
-    setWebappPublishPendingId(item.id);
+    if (destructiveActionPendingRef.current || webappPublishPendingId || webappDeletingId) return;
+    const { id, label } = item;
+    destructiveActionPendingRef.current = true;
     try {
-      const result = await window.electronAPI.webs.webapps.unpublish(item.id);
-      setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      onWebappPublishStateChange?.(item.id, result.state);
+      if (!await confirm(t("settings.webapps.unpublishConfirm", { name: label }), {
+        title: t("settings.webapps.unpublishAction"),
+        okText: t("settings.webapps.unpublishAction"),
+        danger: true
+      })) return;
+      setWebappPublishPendingId(id);
+      const result = await window.electronAPI.webs.webapps.unpublish(id);
+      setWebappPublishInfoById((current) => ({ ...current, [id]: result.info }));
+      onWebappPublishStateChange?.(id, result.state);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
+      destructiveActionPendingRef.current = false;
       setWebappPublishPendingId("");
     }
   }
@@ -3811,13 +3832,21 @@ export function SettingsPage({
   }
 
   async function handleDeleteWebappItem(item: WebappEntry) {
-    setWebappDeletingId(item.id);
+    if (destructiveActionPendingRef.current || webappDeletingId || webappPending || item.removable === false) return;
+    const { id, label } = item;
+    destructiveActionPendingRef.current = true;
     try {
-      const result = await window.electronAPI.webs.webapps.uninstall(item.id);
+      if (!await confirm(t("settings.webapps.removeConfirm", { name: label }), {
+        title: t("settings.webapps.removeConfirmTitle"),
+        okText: t("settings.webapps.removeConfirmAction"),
+        danger: true
+      })) return;
+      setWebappDeletingId(id);
+      const result = await window.electronAPI.webs.webapps.uninstall(id);
       showSectionResultNotice("webapps", result);
       if (result.ok) {
-        onWebappRuntimeStateChange?.(item.id, null, result.message);
-        const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
+        onWebappRuntimeStateChange?.(id, null, result.message);
+        const nextItem = result.items.find((candidate) => candidate.id !== id) ?? result.items[0] ?? null;
         setSelectedWebappId(nextItem?.id ?? "");
         setWebappLogContent("");
         await refreshWebItemsFromSettings();
@@ -3825,6 +3854,7 @@ export function SettingsPage({
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
+      destructiveActionPendingRef.current = false;
       setWebappDeletingId("");
     }
   }
@@ -4189,13 +4219,16 @@ export function SettingsPage({
   }
 
   async function handleResetRuntimeEnv() {
-    if (!window.confirm(t("settings.reset.confirmMessage"))) {
-      return;
-    }
-
-    setRuntimeResetPending(true);
-    setRuntimeResetResult(null);
+    if (destructiveActionPendingRef.current || runtimeResetPending) return;
+    destructiveActionPendingRef.current = true;
     try {
+      if (!await confirm(t("settings.reset.confirmMessage"), {
+        title: t("settings.reset.title"),
+        okText: t("settings.reset.action"),
+        danger: true
+      })) return;
+      setRuntimeResetPending(true);
+      setRuntimeResetResult(null);
       const result = await window.electronAPI.settings.resetRuntimeEnv();
       if (!result.ok) {
         showSectionNotice("about", result.message || t("settings.reset.failed"), "error");
@@ -4207,6 +4240,7 @@ export function SettingsPage({
     } catch (reason) {
       showSectionNotice("about", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
+      destructiveActionPendingRef.current = false;
       setRuntimeResetPending(false);
     }
   }
@@ -4666,60 +4700,6 @@ export function SettingsPage({
                     { value: "zh-CN", label: t("settings.language.zhCN") },
                     { value: "en-US", label: t("settings.language.enUS") }
                   ]}
-                />
-              </div>
-              <div className="settings-appearance-row">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.appearance.interfaceFont")}</strong>
-                </div>
-                <Select<string>
-                  className="settings-appearance-control"
-                  classNames={SETTINGS_SELECT_CLASS_NAMES}
-                  value="systemDefault"
-                  aria-label={t("settings.appearance.interfaceFont")}
-                  disabled
-                  options={[
-                    { value: "systemDefault", label: t("settings.appearance.systemDefaultFont") }
-                  ]}
-                />
-              </div>
-              <div className="settings-appearance-row">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.appearance.interfaceFontSize")}</strong>
-                </div>
-                <InputNumber
-                  className="settings-appearance-control"
-                  value={13}
-                  aria-label={t("settings.appearance.interfaceFontSize")}
-                  disabled
-                  controls={false}
-                />
-              </div>
-              <div className="settings-appearance-row">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.appearance.codeFont")}</strong>
-                </div>
-                <Select<string>
-                  className="settings-appearance-control"
-                  classNames={SETTINGS_SELECT_CLASS_NAMES}
-                  value="systemMono"
-                  aria-label={t("settings.appearance.codeFont")}
-                  disabled
-                  options={[
-                    { value: "systemMono", label: t("settings.appearance.systemMonoFont") }
-                  ]}
-                />
-              </div>
-              <div className="settings-appearance-row">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.appearance.codeFontSize")}</strong>
-                </div>
-                <InputNumber
-                  className="settings-appearance-control"
-                  value={13}
-                  aria-label={t("settings.appearance.codeFontSize")}
-                  disabled
-                  controls={false}
                 />
               </div>
             </div>
@@ -5616,27 +5596,22 @@ export function SettingsPage({
                         <div className="web-detail-form-item">
                           <span className="web-detail-label-with-help">
                             {t("settings.webapps.authMode")}
-                            <Tooltip title={t("settings.webapps.authModeDescription")} trigger={["hover", "focus", "click"]}>
-                              <button
-                                type="button"
-                                className="webapp-user-config-help"
-                                aria-label={t("settings.webapps.authModeDescription")}
-                              >
-                                <QuestionCircleOutlined aria-hidden="true" />
-                              </button>
-                            </Tooltip>
                           </span>
                           <Select<WebappAuthMode>
                             className="settings-control-row-control"
                             value={webappAuthMode}
                             onChange={setWebappAuthMode}
                             aria-label={t("settings.webapps.authMode")}
+                            aria-describedby="webapp-auth-mode-description"
                             disabled={webappPending}
                             options={[
                               { value: "passthrough", label: t("settings.webapps.authModePassthrough") },
                               { value: "managed", label: t("settings.webapps.authModeManaged") }
                             ]}
                           />
+                          <p id="webapp-auth-mode-description" className="settings-inline-note">
+                            {t("settings.webapps.authModeDescription")}
+                          </p>
                         </div>
                       </div>
                       <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
@@ -5970,6 +5945,7 @@ export function SettingsPage({
       data-settings-section={activeSectionDefinition?.id ?? ""}
       data-settings-layout={activeSectionDefinition?.layout ?? "measure"}
     >
+      {contextHolder}
       <div className="settings-content-panel" ref={contentRef} style={settingsContentStyle}>
         <div className="settings-content-shell">
           {shouldShowSettingsPageHead ? (

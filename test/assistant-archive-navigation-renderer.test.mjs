@@ -16,7 +16,7 @@ test("archiving the active sidebar chat navigates away from its stale route", ()
 
   assert.match(handler, /const result = await window\.electronAPI\.assistant\.archiveChat\(chat\.chatId\)/u);
   assert.match(handler, /if \(!result\?\.ok\)/u);
-  assert.match(handler, /window\.alert\(result\?\.message \|\| t\("sidebar\.chat\.archiveFailed"\)\)/u);
+  assert.match(handler, /notify\(result\?\.message \|\| t\("sidebar\.chat\.archiveFailed"\), "error"\)/u);
   assert.match(handler, /currentChatId === chat\.chatId/u);
   assert.match(handler, /candidate\.chatId !== chat\.chatId/u);
   assert.match(handler, /onRequestNavigate\?\.\(nextRoute\)/u);
