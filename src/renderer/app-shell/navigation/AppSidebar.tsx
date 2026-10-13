@@ -1101,7 +1101,7 @@ export function AppSidebar({
   assistantChatPinningSupported = false,
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
-  assistantChatSortMode = "manual",
+  assistantChatSortMode = "recent",
   assistantChatOrderingSupported = false,
   chatWorkPanelOpenChatIds = [],
   assistantNavAgentsLoaded = true,

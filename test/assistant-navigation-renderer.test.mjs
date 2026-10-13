@@ -664,9 +664,9 @@ test("root-agent API projection keeps zenmi available for startup and Chats new 
   assert.deepEqual(resolveFirstInstallBootstrapNavigationTarget(options, [], { defaultChatAgentKey: "zenmi" }), { agentKey: "zenmi" });
 });
 
-test("chat sorting uses manual only when no recent preference was returned", () => {
+test("chat sorting defaults to recent and preserves the returned mode", () => {
   const result = { ok: true, items: [], message: "ok", updatedAt: TEST_EPOCH_MILLIS };
-  assert.equal(normalizeAssistantNavAgentItemsResult(result).chatSortMode, "manual");
+  assert.equal(normalizeAssistantNavAgentItemsResult(result).chatSortMode, "recent");
   assert.equal(normalizeAssistantNavAgentItemsResult({ ...result, chatSortMode: "recent" }).chatSortMode, "recent");
   assert.equal(normalizeAssistantNavAgentItemsResult({ ...result, chatSortMode: "manual" }).chatSortMode, "manual");
 });

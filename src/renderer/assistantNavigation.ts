@@ -390,7 +390,7 @@ export function normalizeAssistantNavAgentItemsResult(
     pinnedChatItems: normalizeAssistantNavChats(result.pinnedChatItems, { requireAgentKey: true }).filter((chat) => chat.pinned),
     chatPinningSupported: result.chatPinningSupported === true,
     chatItemsHasMore: result.chatItemsHasMore === true,
-    chatSortMode: result.chatSortMode === "recent" ? "recent" : "manual",
+    chatSortMode: result.chatSortMode === "manual" ? "manual" : "recent",
     chatOrderingSupported: result.chatOrderingSupported === true,
     ...(activityItems ? { activityItems } : {})
   };

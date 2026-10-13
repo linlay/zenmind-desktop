@@ -752,7 +752,7 @@ export function AppShell() {
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
   const [assistantChatSortMode, setAssistantChatSortMode] =
-    useState<AssistantChatSortMode>("manual");
+    useState<AssistantChatSortMode>("recent");
   const [assistantChatOrderingSupported, setAssistantChatOrderingSupported] =
     useState(false);
   const [projectFloatingWebviews, setProjectFloatingWebviews] =
@@ -1835,7 +1835,7 @@ export function AppShell() {
         setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
         setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
         setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
-        setAssistantChatSortMode(nextResult.chatSortMode ?? "manual");
+        setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
         setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
       }
     } catch {
@@ -1985,7 +1985,7 @@ export function AppShell() {
       setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
       setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
       setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
-      setAssistantChatSortMode(nextResult.chatSortMode ?? "manual");
+      setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
       setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
     });
 
