@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { TextDecoder } from "node:util";
 import {
   isNativeShareBatchId,
+  NATIVE_SHARE_TICKET_HEADER,
   type NativeShareTransfer
 } from "../../../shared/native-share";
 import { invalidBatch, changedFile, NativeShareInboxError } from "./errors";
@@ -139,7 +140,7 @@ async function request(
       socket.once("connect", resolve);
       socket.once("error", reject);
     });
-    socket.write(`${method} ${requestPath} HTTP/1.1\r\nHost: 127.0.0.1:${transfer.port}\r\nConnection: close\r\nX-CuteJ-Share-Ticket: ${transfer.ticket}\r\n${method === "POST" ? "Content-Length: 0\r\n" : ""}\r\n`);
+    socket.write(`${method} ${requestPath} HTTP/1.1\r\nHost: 127.0.0.1:${transfer.port}\r\nConnection: close\r\n${NATIVE_SHARE_TICKET_HEADER}: ${transfer.ticket}\r\n${method === "POST" ? "Content-Length: 0\r\n" : ""}\r\n`);
     let header = Buffer.alloc(0);
     let expected: number | undefined;
     let received = 0;

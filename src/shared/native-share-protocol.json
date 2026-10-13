@@ -1,0 +1,5 @@
+{
+  "urlScheme": "native-share",
+  "urlHost": "receive",
+  "ticketHeader": "X-Native-Share-Ticket"
+}

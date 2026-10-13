@@ -14,7 +14,7 @@ const { NATIVE_SHARE_MAX_BYTES, NATIVE_SHARE_MAX_FILES } = require(path.join(com
 const batchId = "12345678-1234-4234-8234-123456789abc";
 
 function workspace(t) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cutej-share-receive-")));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "native-share-receive-")));
   const inbox = path.join(root, "owned", "data", "native-share");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, inbox, batch: path.join(inbox, batchId) };
@@ -49,7 +49,7 @@ async function extension(t, options = {}) {
           `HTTP/1.1 ${status} response`, `Content-Type: ${type}`, `Content-Length: ${content.length}`, "Connection: close", ...extra, "", ""
         ].join("\r\n")), content]));
       };
-      if (headers["x-cutej-share-ticket"] !== ticket) { respond(403, ""); return; }
+      if (headers["x-native-share-ticket"] !== ticket) { respond(403, ""); return; }
       if (options.respond?.({ socket, method, path: requestPath, headers, respond, files, manifest })) return;
       if (requestPath === `/v1/share/${batchId}/manifest` && method === "GET") {
         respond(200, Buffer.from(JSON.stringify(manifest)), "application/json");
@@ -92,10 +92,26 @@ test("loopback transfers bounded bytes to Desktop-owned storage and acknowledges
   assert.deepEqual(peer.requests.map(({ method, path: requestPath }) => `${method} ${requestPath}`), [
     `GET /v1/share/${batchId}/manifest`, `GET /v1/share/${batchId}/file/0`, `GET /v1/share/${batchId}/file/1`, `POST /v1/share/${batchId}/complete`
   ]);
-  assert.ok(peer.requests.every(request => request.address === "127.0.0.1" && request.headers["x-cutej-share-ticket"] === peer.transfer.ticket));
+  assert.ok(peer.requests.every(request => request.address === "127.0.0.1" && request.headers["x-native-share-ticket"] === peer.transfer.ticket));
   assert.equal(fs.statSync(f.batch).mode & 0o777, 0o700);
   for (const file of ["manifest.json", ...files.map(item => item.name)]) assert.equal(fs.statSync(path.join(f.batch, file)).mode & 0o777, 0o600);
   assert.equal(fs.existsSync(path.join(f.batch, ".completed.json")), false, "transport receipt does not submit or mark the chat draft as sent");
+});
+
+test("source-specific chat exports share the same transport without content parsing or source-specific protocol fields", async t => {
+  // Synthetic formats exercise the shared transport contract, not real vendor integration.
+  const files = [
+    { name: "wechat.zip", bytes: Buffer.from([0x50, 0x4b, 0x03, 0x04]) },
+    { name: "feishu.json", bytes: Buffer.from('{"messages":[{"text":"sample"}]}') },
+    { name: "wecom.html", bytes: Buffer.from("<p>sample message</p>") },
+    { name: "qq.txt", bytes: Buffer.from("sample message") }
+  ];
+  const f = workspace(t);
+  const peer = await extension(t, { files });
+  assert.deepEqual(await receiveNativeShare(peer.transfer, f.inbox), { reused: false, acknowledged: true });
+  for (const file of files) assert.deepEqual(fs.readFileSync(path.join(f.batch, file.name)), file.bytes);
+  assert.ok(peer.requests.every(request => request.headers["x-native-share-ticket"] === peer.transfer.ticket));
+  assert.ok(peer.requests.every(request => !("x-cutej-share-ticket" in request.headers)));
 });
 
 test("a controller uses received files as a draft and repeats a new handoff without replacing its nonce or bytes", async t => {

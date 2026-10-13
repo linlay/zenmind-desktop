@@ -162,7 +162,6 @@ export class NativeShareInbox {
     }
     const batch = { id, root, directory, manifest, files };
     await this.assertStable(batch, allowCompleted);
-    if (allowCompleted) await this.hasReceipt(batch);
     return batch;
   }
 
@@ -175,6 +174,7 @@ export class NativeShareInbox {
     await assertDirectory(batch.root);
     await assertDirectory(batch.directory);
     if (!allowCompleted) await assertNotCompleted(batch);
+    else await this.hasReceipt(batch);
   }
 
   private async hasReceipt(batch: ValidatedShareBatch): Promise<boolean> {
@@ -196,14 +196,14 @@ export class NativeShareInbox {
     return true;
   }
 
-  async read(batch: ValidatedShareBatch, fileIndex: number, offset: number): Promise<Buffer> {
-    await this.assertStable(batch);
+  async read(batch: ValidatedShareBatch, fileIndex: number, offset: number, allowCompleted = false): Promise<Buffer> {
+    await this.assertStable(batch, allowCompleted);
     const file = batch.files[fileIndex];
     const handle = await openSnapshot(file);
     try {
       const bytes = await readExact(handle, offset, Math.min(NATIVE_SHARE_CHUNK_BYTES, file.sizeBytes - offset));
       if (!sameFile(await handle.stat(), file.stat)) throw changedFile();
-      await this.assertStable(batch);
+      await this.assertStable(batch, allowCompleted);
       return bytes;
     } finally { await handle.close(); }
   }

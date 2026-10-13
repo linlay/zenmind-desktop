@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { loadBrandConfig, brandIconDir } from "../scripts/lib/brand-config.mjs";
 import { resolveDarwinDevSigningIdentity } from "../scripts/lib/mac-dev-signing.mjs";
 import {
-  buildMacShareExtension, macShareExtensionInfo, macShareExtensionPath,
+  buildMacShareExtension, macNativeShareUrlTypes, macShareExtensionInfo, macShareExtensionPath,
   macShareExtensionSourceRoot, macShareExtensionModuleCachePath, signMacShareExtension, verifyMacShareExtension
 } from "../scripts/lib/mac-share-extension.mjs";
 
@@ -36,25 +36,37 @@ function fixture(t) {
 function writeMetadataFixture(app, hostBundleId = brand.appId) {
   const extension = macShareExtensionPath(app);
   const contents = path.join(extension, "Contents");
-  const info = macShareExtensionInfo({ hostBundleId, productName: brand.productName, scheme: brand.protocols.open.scheme, version: "0.4.45" });
+  const info = macShareExtensionInfo({ hostBundleId, productName: brand.productName, version: "0.4.45" });
   fs.mkdirSync(path.join(contents, "MacOS"), { recursive: true });
   fs.writeFileSync(path.join(contents, "Info.plist"), plist.build(info));
   fs.writeFileSync(path.join(contents, "MacOS", info.CFBundleExecutable), "fixture", { mode: 0o755 });
   return extension;
 }
 
-test("sharing metadata derives dev/release identities, name and URL protocol from the containing brand", () => {
-  for (const hostBundleId of [brand.appId, `${brand.appId}.dev`]) {
-    const info = macShareExtensionInfo({ hostBundleId, productName: brand.productName, scheme: "cutej", version: "v0.4.45" });
-    assert.equal(info.CFBundleIdentifier, `${hostBundleId}.share`);
-    assert.equal(info.DesktopShareHostBundleIdentifier, hostBundleId);
-    assert.equal(info.DesktopShareURLScheme, "cutej");
-    assert.equal(info.CFBundleDisplayName, "CuteJ");
-    assert.equal(info.NSExtension.NSExtensionPointIdentifier, "com.apple.share-services");
-    assert.equal(info.NSExtension.NSExtensionActivationRule, undefined);
-    assert.equal(info.NSExtension.NSExtensionAttributes.NSExtensionActivationRule.NSExtensionActivationSupportsFileWithMaxCount, 16);
+test("both brands derive dev/release application identities while sharing one brand-neutral protocol", () => {
+  for (const brandId of ["cutej", "zenmind"]) {
+    const configured = loadBrandConfig(process.cwd(), brandId);
+    for (const hostBundleId of [configured.appId, `${configured.appId}.dev`]) {
+      const info = macShareExtensionInfo({ hostBundleId, productName: configured.productName, version: "v0.4.45" });
+      assert.equal(info.CFBundleIdentifier, `${hostBundleId}.share`);
+      assert.equal(info.DesktopShareHostBundleIdentifier, hostBundleId);
+      assert.equal(info.DesktopShareURLScheme, "native-share");
+      assert.equal(info.DesktopShareURLHost, "receive");
+      assert.equal(info.DesktopShareTicketHeader, "X-Native-Share-Ticket");
+      assert.equal(info.CFBundleDisplayName, configured.productName);
+      assert.equal(info.NSExtension.NSExtensionPointIdentifier, "com.apple.share-services");
+      assert.equal(info.NSExtension.NSExtensionActivationRule, undefined);
+      assert.equal(info.NSExtension.NSExtensionAttributes.NSExtensionActivationRule.NSExtensionActivationSupportsFileWithMaxCount, 16);
+    }
   }
-  assert.throws(() => macShareExtensionInfo({ hostBundleId: brand.appId, productName: "CuteJ", version: "0.4.45" }), /explicit open URL scheme/u);
+});
+
+test("sharing protocol registration is brand-neutral and preserves the existing containing app's URL registrations", () => {
+  const prior = [{ CFBundleURLName: "existing.application", CFBundleURLSchemes: ["existing-open"], CFBundleTypeRole: "Viewer" }];
+  const registered = macNativeShareUrlTypes(prior);
+  assert.deepEqual(registered[0], prior[0]);
+  assert.deepEqual(registered[1], { CFBundleURLName: "native-share", CFBundleURLSchemes: ["native-share"], CFBundleTypeRole: "Viewer" });
+  assert.deepEqual(macNativeShareUrlTypes(registered), registered);
 });
 
 test("Windows packaging never invokes the native macOS sharing build", async () => {

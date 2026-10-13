@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 const { registerMainAppEvents } = await import("../dist-electron/main/app/app-events.js");
 const { readDesktopShareDeepLink, readDesktopShareOpenRequest } = await import("../dist-electron/main/app/deep-link.js");
-const { DESKTOP_OPEN_PROTOCOL_SCHEME: scheme } = await import("../dist-electron/shared/brand.js");
+const { NATIVE_SHARE_PROTOCOL_SCHEME: scheme, NATIVE_SHARE_PROTOCOL_HOST: host } = await import("../dist-electron/shared/native-share.js");
 const { isNativeShareTargetRoute, registerNativeShareIpc } = await import("../dist-electron/main/app/assembly/native-share.js");
 const batchId = "bb9e2948-a17a-4ca3-a4c1-8f21ba90b351";
-const link = `${scheme}://share?batch=${batchId}`;
+const link = `${scheme}://${host}?batch=${batchId}`;
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture(platform, gate = Promise.resolve()) {
   const app = new EventEmitter(); app.whenReady = () => gate;
@@ -26,7 +26,8 @@ function emit(app, url) {
 test("share deep links carry only a canonical opaque batch; paths and extra authority are rejected", () => {
   assert.equal(readDesktopShareDeepLink(link), batchId);
   for (const invalid of [` ${link}`, `${link}&file=/private/file`, `${link}#fragment`, link.replace(batchId, "../../private"),
-    link.replace(batchId, batchId.toUpperCase()), link.replace("//share", "//user@share"), "file:///private/chat.zip"]) {
+    link.replace(batchId, batchId.toUpperCase()), link.replace(`//${host}`, `//user@${host}`), "file:///private/chat.zip",
+    `cutej://share?batch=${batchId}`, `zenmind://share?batch=${batchId}`]) {
     assert.equal(readDesktopShareDeepLink(invalid), null, invalid);
   }
 });

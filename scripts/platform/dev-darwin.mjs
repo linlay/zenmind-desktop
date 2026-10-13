@@ -16,7 +16,7 @@ import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-met
 import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 import { macDocumentTypes } from "../lib/document-file-associations.mjs";
 import { resolveDarwinDevSigningIdentity, withDarwinDevSigningKeychain } from "../lib/mac-dev-signing.mjs";
-import { buildMacShareExtension, signMacShareExtension, verifyMacShareExtension } from "../lib/mac-share-extension.mjs";
+import { buildMacShareExtension, macNativeShareUrlTypes, signMacShareExtension, verifyMacShareExtension } from "../lib/mac-share-extension.mjs";
 
 function escapePlistText(value) {
   return String(value)
@@ -198,11 +198,11 @@ export function prepareDarwinDevElectronApp(
   plist = applyDarwinBundleLocalizationInfo(plist);
   const plistInfo = plistPackage.parse(plist);
   plistInfo.CFBundleDocumentTypes = macDocumentTypes(targetIconFileName);
-  plistInfo.CFBundleURLTypes = [{
+  plistInfo.CFBundleURLTypes = macNativeShareUrlTypes([{
     CFBundleURLName: `${devAppId}.open`,
     CFBundleURLSchemes: [brand.protocols.open.scheme],
     CFBundleTypeRole: "Viewer"
-  }];
+  }]);
   plist = plistPackage.build(plistInfo);
   // Runtime paths and PATH can change between launches. Keep them outside the
   // signed bundle so a new terminal/session does not invalidate saved TCC grants.

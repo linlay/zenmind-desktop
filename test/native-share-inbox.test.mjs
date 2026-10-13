@@ -126,7 +126,8 @@ test("a batch cannot complete by jumping to EOF; every file must be read and ori
   assert.equal(typeof receipt.completedAt, "number");
   assert.deepEqual(fs.readFileSync(path.join(source.directory, "large.zip")), bytes);
   assert.deepEqual(fs.readdirSync(source.directory).sort(), [".completed.json", "empty.txt", "large.zip", "manifest.json"]);
-  assertFailure(await f.request("read", { fileIndex: 0, offset: 0 }), "already_completed");
+  assert.equal((await f.request("describe")).ok, true, "the original active draft can recover after a lost acknowledgement");
+  assert.deepEqual(await f.request("read", { fileIndex: 0, offset: 0 }), first);
   await assert.rejects(f.controller.open(batchId), { code: "already_completed" });
   const restarted = new NativeShareController(f.options);
   t.after(() => restarted.dispose());
@@ -362,7 +363,10 @@ test("a receipt committed before an acknowledgement failure can be confirmed aga
   try { assertFailure(await f.request("complete"), "io_error"); }
   finally { fs.promises.open = originalOpen; }
   assert.equal(fs.existsSync(path.join(source.directory, ".completed.json")), true);
-  assertFailure(await f.request("describe"), "already_completed");
+  assert.equal((await f.request("describe")).ok, true, "a refreshed guest can restore files after receipt sync failure");
+  assert.deepEqual(await f.request("read", { fileIndex: 0, offset: 0 }), {
+    ok: true, dataBase64: Buffer.from("shared chat").toString("base64"), eof: true
+  });
   assert.deepEqual(await f.request("complete"), { ok: true, completed: true });
   assert.deepEqual(await f.request("complete"), { ok: true, completed: true });
   assert.equal(fs.readFileSync(path.join(source.directory, "微信聊天记录.zip"), "utf8"), "shared chat");

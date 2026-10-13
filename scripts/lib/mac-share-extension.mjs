@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import plist from "plist";
+import nativeShareProtocol from "../../src/shared/native-share-protocol.json" with { type: "json" };
 import { brandBuildRoot, brandIconDir } from "./brand-config.mjs";
 import { readDesktopVersion } from "./build-metadata.mjs";
 import { verifyMacReleaseApp } from "./mac-app-signing.js";
@@ -29,14 +30,18 @@ export function macShareExtensionPath(appPath) {
   return path.join(appPath, "Contents", "PlugIns", MAC_SHARE_EXTENSION_NAME);
 }
 
-export function macShareExtensionInfo({ hostBundleId, productName, scheme, version }) {
+export function macNativeShareUrlTypes(existing = []) {
+  return [
+    ...existing.filter(entry => !entry.CFBundleURLSchemes?.includes(nativeShareProtocol.urlScheme)),
+    { CFBundleURLName: "native-share", CFBundleURLSchemes: [nativeShareProtocol.urlScheme], CFBundleTypeRole: "Viewer" }
+  ];
+}
+
+export function macShareExtensionInfo({ hostBundleId, productName, version }) {
   if (typeof hostBundleId !== "string" || !/^[a-z\d][a-z\d.-]*$/iu.test(hostBundleId) || !hostBundleId.includes(".")) {
     throw new Error("macOS sharing requires the containing app's bundle identifier");
   }
   if (typeof productName !== "string" || !productName.trim()) throw new Error("macOS sharing requires the brand name");
-  if (typeof scheme !== "string" || !/^[a-z][a-z\d+.-]*$/iu.test(scheme)) {
-    throw new Error("macOS sharing requires the brand's explicit open URL scheme");
-  }
   const normalizedVersion = String(version || "").replace(/^v/iu, "");
   if (!/^\d+\.\d+\.\d+(?:[-+][a-z\d.+-]+)?$/iu.test(normalizedVersion)) {
     throw new Error("macOS sharing requires the Desktop version");
@@ -54,7 +59,9 @@ export function macShareExtensionInfo({ hostBundleId, productName, scheme, versi
     CFBundleLocalizations: ["zh-Hans", "en"],
     CFBundleIconFile: "icon.icns",
     LSMinimumSystemVersion: "12.0",
-    DesktopShareURLScheme: scheme,
+    DesktopShareURLScheme: nativeShareProtocol.urlScheme,
+    DesktopShareURLHost: nativeShareProtocol.urlHost,
+    DesktopShareTicketHeader: nativeShareProtocol.ticketHeader,
     DesktopShareHostBundleIdentifier: hostBundleId,
     NSExtension: {
       NSExtensionPointIdentifier: "com.apple.share-services",
@@ -110,7 +117,7 @@ export function buildMacShareExtension({
   if (platform !== "darwin") throw new Error("macOS sharing extensions can only be built on macOS");
   if (arch !== "arm64" && arch !== "x64") throw new Error(`unsupported macOS sharing architecture: ${arch}`);
   const info = macShareExtensionInfo({
-    hostBundleId, productName: brand?.productName, scheme: brand?.protocols?.open?.scheme,
+    hostBundleId, productName: brand?.productName,
     version: version ?? readDesktopVersion(projectRoot)
   });
   const icon = path.join(brandIconDir(projectRoot, brand), "icon.icns");
@@ -182,6 +189,9 @@ function assertExtensionInfo(extension, hostBundleId) {
   const info = readExtensionInfo(extension);
   if (info.CFBundleIdentifier !== `${hostBundleId}.share` ||
       info.DesktopShareHostBundleIdentifier !== hostBundleId ||
+      info.DesktopShareURLScheme !== nativeShareProtocol.urlScheme ||
+      info.DesktopShareURLHost !== nativeShareProtocol.urlHost ||
+      info.DesktopShareTicketHeader !== nativeShareProtocol.ticketHeader ||
       info.CFBundleExecutable !== MAC_SHARE_EXTENSION_EXECUTABLE ||
       info.NSExtension?.NSExtensionPointIdentifier !== "com.apple.share-services") {
     throw new Error("macOS sharing extension does not match its containing app");

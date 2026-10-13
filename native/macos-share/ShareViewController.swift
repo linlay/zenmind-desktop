@@ -257,6 +257,8 @@ final class ShareViewController: NSViewController {
         handoffLog.info("Preparing handoff from extension bundle \(self.extensionBundle.bundleURL.path, privacy: .public)")
         guard !finished,
               let scheme = extensionBundle.object(forInfoDictionaryKey: "DesktopShareURLScheme") as? String,
+              let urlHost = extensionBundle.object(forInfoDictionaryKey: "DesktopShareURLHost") as? String,
+              let ticketHeader = extensionBundle.object(forInfoDictionaryKey: "DesktopShareTicketHeader") as? String,
               let expectedID = extensionBundle.object(forInfoDictionaryKey: "DesktopShareHostBundleIdentifier") as? String else {
             handoffLog.error("Cannot open containing app: missing extension handoff metadata")
             spinner.stopAnimation(nil)
@@ -280,7 +282,7 @@ final class ShareViewController: NSViewController {
         transfer = nil
         guard let current = batch else { return }
         let server: ShareLoopbackServer
-        do { server = try ShareLoopbackServer(batch: current) }
+        do { server = try ShareLoopbackServer(batch: current, ticketHeader: ticketHeader) }
         catch {
             handoffLog.error("Could not start the loopback sharing listener")
             spinner.stopAnimation(nil)
@@ -310,7 +312,7 @@ final class ShareViewController: NSViewController {
         })
         var components = URLComponents()
         components.scheme = scheme
-        components.host = "share"
+        components.host = urlHost
         components.queryItems = [
             URLQueryItem(name: "batch", value: id),
             URLQueryItem(name: "port", value: String(server.port)),
@@ -324,7 +326,7 @@ final class ShareViewController: NSViewController {
         configuration.activates = true
         configuration.addsToRecentItems = false
         handoffLog.info("Opening containing app \(appURL.path, privacy: .public), bundle \(expectedID, privacy: .public), scheme \(scheme, privacy: .public)")
-        // Select the containing app explicitly: dev and release share a scheme.
+        // The protocol is shared across brands; select this containing app explicitly.
         NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration) { [weak self] app, error in
             DispatchQueue.main.async {
                 guard let self, !self.finished else { return }

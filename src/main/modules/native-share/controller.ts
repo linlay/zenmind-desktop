@@ -165,13 +165,12 @@ export class NativeShareController {
 
   private async readPending(pending: PendingShare, request: NativeShareReadRequest): Promise<NativeShareReadResult> {
     this.assertActive(pending);
-    if (pending.completed) {
-      if (request.operation === "complete") return { ok: true, completed: true };
-      throw alreadyCompleted();
-    }
+    if (pending.completed && request.operation === "complete") return { ok: true, completed: true };
     const inbox = this.inbox!;
     if (request.operation === "describe") {
-      await inbox.assertStable(pending.batch);
+      // A lost acknowledgement can leave a receipt before the guest submits its query.
+      // The same active, Desktop-issued target may restore its original files.
+      await inbox.assertStable(pending.batch, true);
       this.assertActive(pending);
       pending.progress = freshProgress(pending.batch);
       return { ok: true, batchId: pending.target.batchId, files: pending.batch.files.map(({ name, sizeBytes, mimeType }) => ({ name, sizeBytes, mimeType })) };
@@ -189,7 +188,7 @@ export class NativeShareController {
         (request.offset !== progress.nextOffset && request.offset !== progress.previousOffset)) {
       throw new NativeShareInboxError("invalid_request", "The shared file read position is invalid.");
     }
-    const bytes = await inbox.read(pending.batch, request.fileIndex, request.offset);
+    const bytes = await inbox.read(pending.batch, request.fileIndex, request.offset, true);
     this.assertActive(pending);
     const nextOffset = request.offset + bytes.length;
     progress.previousOffset = request.offset;

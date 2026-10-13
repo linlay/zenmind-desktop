@@ -6,9 +6,11 @@
 
 原始文件通过有界流式复制写入沙盒 `Library/Application Support/ShareInbox/.staging-<uuid>`。所有附件成功后写入版本化 `manifest.json`，再原子发布为 `<uuid>` 目录。一次最多 16 个文件、合计 256 MiB。ZIP 保持原始字节，不在原生扩展内解压。失败或取消清理未发布批次；已发布内容在宿主启动或传输失败时保留，重试为同一原始批次重新建立传输并唤起宿主。
 
-原子发布后，扩展在 `127.0.0.1` 上监听临时 TCP 端口，生成 32 字节随机一次性 ticket。它仅按快照提供当前批次的 manifest 和按序号读取的原始附件；所有请求都必须携带 `X-CuteJ-Share-Ticket`，拒绝未知路径、请求体、chunked 请求及重复认证头，不接受任何调用方传入的文件路径。传输顺序处理连接，120 秒到期自动停止。Electron 主进程将文件流复制到自身受控 inbox，完整校验并原子发布后才发出完成确认；确认后扩展停止监听、失效 ticket 并关闭分享窗口。取消、失败或超时保留原始包，重试重新生成端口与 ticket。
+原子发布后，扩展在 `127.0.0.1` 上监听临时 TCP 端口，生成 32 字节随机一次性 ticket。它仅按快照提供当前批次的 manifest 和按序号读取的原始附件；所有请求都必须携带 `X-Native-Share-Ticket`，拒绝未知路径、请求体、chunked 请求及重复认证头，不接受任何调用方传入的文件路径。传输顺序处理连接，120 秒到期自动停止。Electron 主进程将文件流复制到自身受控 inbox，完整校验并原子发布后才发出完成确认；确认后扩展停止监听、失效 ticket 并关闭分享窗口。取消、失败或超时保留原始包，重试重新生成端口与 ticket。
 
-`NSWorkspace.open(_:withApplicationAt:configuration:completionHandler:)` 显式选择包含当前扩展的 `.app`，发送品牌协议的 `share?batch=<uuid>&port=<port>&ticket=<capability>`。参数不包含文件路径或正文，ticket 只用于当前本机传输，不写入日志或持久化元数据。扩展身份与宿主标识来自自身已签名的构建元数据，不在沙盒内读取宿主 Info.plist。开发 App 与正式 App 的 bundle 标识分别派生其自己的 `.share` 标识；接收端固定只连接 `127.0.0.1`，不跟随重定向。
+`NSWorkspace.open(_:withApplicationAt:configuration:completionHandler:)` 显式选择包含当前扩展的 `.app`，发送统一的 `native-share://receive?batch=<uuid>&port=<port>&ticket=<capability>`。参数不包含文件路径或正文，ticket 只用于当前本机传输，不写入日志或持久化元数据。扩展身份与宿主标识来自自身已签名的构建元数据，不在沙盒内读取宿主 Info.plist。开发 App 与正式 App 的 bundle 标识分别派生其自己的 `.share` 标识；接收端固定只连接 `127.0.0.1`，不跟随重定向。协议命名由 `src/shared/native-share-protocol.json` 统一维护，所有品牌共用；品牌归属由指定 App、签名和自身数据目录决定。
+
+传输和附件草稿必须保持来源无关，以便后续接入飞书、企业微信、QQ。专用入口与聊天格式解析按来源独立实现；本次扩展只取得、保存和交付原始内容，不声明这些应用已经完成接入。
 
 构建脚本 `scripts/lib/mac-share-extension.mjs` 用已安装的 Swift 编译器产生实际 Mach-O `.appex`，编译启用 `-application-extension`。SDK 模块缓存在仓库 `build/macos-share-module-cache` 下跨临时项目复用；产物按品牌、架构、宿主身份、源码、图标、版本及编译器指纹分别缓存。macOS 开发准备与正式 `afterPack` 都会包含扩展，Windows 不执行原生构建。首次使用未缓存的 SDK 时，Swift 可能需要先构建系统框架模块。
 

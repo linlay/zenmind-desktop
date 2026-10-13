@@ -1,3 +1,4 @@
+import nativeShareProtocol from "./native-share-protocol.json";
 import type {
   AgentWebclientNativeShareReadRequest,
   AgentWebclientNativeShareReadResult,
@@ -10,6 +11,9 @@ import {
 } from "./contracts/agent-webclient-bridge";
 
 export const NATIVE_SHARE_READ_CHANNEL = "nativeShare.read";
+export const NATIVE_SHARE_PROTOCOL_SCHEME = nativeShareProtocol.urlScheme;
+export const NATIVE_SHARE_PROTOCOL_HOST = nativeShareProtocol.urlHost;
+export const NATIVE_SHARE_TICKET_HEADER = nativeShareProtocol.ticketHeader;
 export const NATIVE_SHARE_CHUNK_BYTES = AGENT_WEBCLIENT_NATIVE_SHARE_CHUNK_BYTES;
 export const NATIVE_SHARE_MAX_BYTES = AGENT_WEBCLIENT_NATIVE_SHARE_MAX_BYTES;
 export const NATIVE_SHARE_MAX_FILES = AGENT_WEBCLIENT_NATIVE_SHARE_MAX_FILES;

@@ -5,7 +5,7 @@ import plist from "plist";
 import { fileURLToPath } from "node:url";
 import { brandBuildRoot, loadBrandConfig, resolveRequiredBrandId } from "./lib/brand-config.mjs";
 import { resolveDarwinDevSigningIdentity } from "./lib/mac-dev-signing.mjs";
-import { buildMacShareExtension, macShareExtensionPath, signMacShareExtension, verifyMacShareExtension } from "./lib/mac-share-extension.mjs";
+import { buildMacShareExtension, macNativeShareUrlTypes, macShareExtensionPath, signMacShareExtension, verifyMacShareExtension } from "./lib/mac-share-extension.mjs";
 
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 function run(program, args) {
@@ -44,10 +44,10 @@ export function installDarwinDevShareExtension({ projectRoot, brand, appPath, re
     changed = true;
     fs.renameSync(stagedExtension, extension);
     const scheme = brand.protocols.open.scheme;
-    info.CFBundleURLTypes = [
+    info.CFBundleURLTypes = macNativeShareUrlTypes([
       ...(info.CFBundleURLTypes || []).filter(entry => !entry.CFBundleURLSchemes?.includes(scheme)),
       { CFBundleURLName: `${hostBundleId}.open`, CFBundleURLSchemes: [scheme], CFBundleTypeRole: "Viewer" }
-    ];
+    ]);
     fs.writeFileSync(infoPath, plist.build(info));
     sealApp();
     verifyMacShareExtension(appPath, { hostBundleId, development: true });

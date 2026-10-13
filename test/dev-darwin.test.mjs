@@ -121,6 +121,7 @@ function assertPreparedMetadata(appRoot, input) {
   assert.equal(info.CFBundleDisplayName, input.brand.productName);
   assert.equal(info.CFBundleIdentifier, `${input.brand.appId}.dev`);
   assert.deepEqual(info.CFBundleURLTypes[0].CFBundleURLSchemes, [input.brand.protocols.open.scheme]);
+  assert.deepEqual(info.CFBundleURLTypes[1].CFBundleURLSchemes, ["native-share"]);
   assert.equal(info.CFBundleExecutable, input.brand.productName);
   assert.equal(info.CFBundleShortVersionString, input.version);
   assert.equal(info.CFBundleVersion, input.version);

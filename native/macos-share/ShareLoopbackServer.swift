@@ -15,6 +15,7 @@ final class ShareLoopbackServer {
     let port: Int
     let ticket: String
     private let ticketBytes: [UInt8]
+    private let ticketHeader: String
     private let batchID: String
     private let directory: URL
     private let files: [ShareInboxFile]
@@ -29,7 +30,8 @@ final class ShareLoopbackServer {
     private var completed: (() -> Void)?
     private var failed: ((ShareTransferError) -> Void)?
 
-    init(batch: ShareInboxBatch) throws {
+    init(batch: ShareInboxBatch, ticketHeader: String) throws {
+        self.ticketHeader = ticketHeader.lowercased()
         let snapshot = try batch.publishedSnapshot()
         directory = snapshot.directory
         files = snapshot.manifest.files
@@ -221,7 +223,7 @@ final class ShareLoopbackServer {
 
     private func respond(to socket: Int32) -> Bool {
         guard let request = request(socket) else { _ = header(400, to: socket); return false }
-        guard authenticates(request.headers["x-cutej-share-ticket"]) else { _ = header(403, to: socket); return false }
+        guard authenticates(request.headers[ticketHeader]) else { _ = header(403, to: socket); return false }
         let prefix = "/v1/share/\(batchID)"
         if request.method == "GET", request.path == "\(prefix)/manifest" {
             if header(200, type: "application/json", length: Int64(manifestData.count), to: socket) {
