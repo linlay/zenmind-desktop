@@ -2,6 +2,7 @@ import { PetAppearancePreview } from "./PetAppearancePreview";
 import { PetImportControls } from "./PetImportControls";
 import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
+import { SettingsActionButton } from "./SettingsActionButton";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
@@ -10,7 +11,7 @@ import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
+import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined, CloudUploadOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, Popconfirm, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
@@ -5506,56 +5507,50 @@ export function SettingsPage({
                         </div>
                       </div>
                       <div className="service-title-actions service-primary-actions">
-                        <Button
-                          className="webapp-publish-action"
-                          disabled={webappPublishPendingId !== ""}
-                          loading={webappPublishPendingId === selectedWebapp.id}
-                          onClick={() => void handlePublishWebapp(selectedWebapp)}
-                        >
-                          {webappPublishPendingId === selectedWebapp.id
+                        <SettingsActionButton
+                          icon={<CloudUploadOutlined />}
+                          label={webappPublishPendingId === selectedWebapp.id
                             ? t("settings.webapps.publishing")
                             : publishState?.active
                               ? t("settings.webapps.publishUpdateAction")
                               : t("settings.webapps.publishAction")}
-                        </Button>
-                        <Button
-                          type="primary"
+                          disabled={webappPublishPendingId !== ""}
+                          loading={webappPublishPendingId === selectedWebapp.id}
+                          onClick={() => void handlePublishWebapp(selectedWebapp)}
+                        />
+                        <SettingsActionButton
+                          label={t("settings.webapps.start")}
+                          tone="primary"
                           icon={<PlayCircleOutlined />}
                           disabled={webappRuntimePendingId !== "" || runtimeState?.status === "running" || runtimeState?.status === "starting"}
                           loading={webappRuntimePendingId === `start:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("start", selectedWebapp)}
-                        >
-                          {t("settings.webapps.start")}
-                        </Button>
-                        <Button
+                        />
+                        <SettingsActionButton
+                          label={t("settings.webapps.stop")}
                           icon={<PauseCircleOutlined />}
                           disabled={webappRuntimePendingId !== "" || !runtimeState || runtimeState.status === "stopped"}
                           loading={webappRuntimePendingId === `stop:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("stop", selectedWebapp)}
-                        >
-                          {t("settings.webapps.stop")}
-                        </Button>
-                        <Button
+                        />
+                        <SettingsActionButton
+                          label={t("settings.webapps.restart")}
                           icon={<ReloadOutlined />}
                           disabled={webappRuntimePendingId !== "" || runtimeState?.status !== "running"}
                           loading={webappRuntimePendingId === `restart:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("restart", selectedWebapp)}
-                        >
-                          {t("settings.webapps.restart")}
-                        </Button>
+                        />
                         {selectedWebapp.removable !== false ? (
-                          <Button
-                            danger
+                          <SettingsActionButton
+                            label={webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
+                            icon={<DeleteOutlined />}
+                            tone="danger"
                             disabled={webappDeletingId === selectedWebapp.id || webappPending}
                             loading={webappDeletingId === selectedWebapp.id}
                             onClick={() => void handleDeleteWebappItem(selectedWebapp)}
-                          >
-                            {webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
-                          </Button>
+                          />
                         ) : null}
-                        <Button onClick={() => setWebappDetailsOpen(true)}>
-                          {t("settings.webapps.detailsAction")}
-                        </Button>
+                        <SettingsActionButton label={t("settings.webapps.detailsAction")} icon={<InfoCircleOutlined />} onClick={() => setWebappDetailsOpen(true)} />
                       </div>
                     </div>
                     {publishState?.active && publishState.url ? (
@@ -5904,16 +5899,6 @@ export function SettingsPage({
                   <div className="loading-box control-center-empty webapp-import-empty">
                     <strong>{t("settings.webapps.empty")}</strong>
                     <span>{t("settings.webapps.importHint")}</span>
-                    <Button
-                      type="primary"
-                      loading={webappImportPending}
-                      disabled={webappImportPending}
-                      onClick={() => void handleImportWebappItem()}
-                    >
-                      {webappImportPending
-                        ? t("settings.webapps.importing")
-                        : t("settings.webapps.importAction")}
-                    </Button>
                   </div>
                 </article>
               )}

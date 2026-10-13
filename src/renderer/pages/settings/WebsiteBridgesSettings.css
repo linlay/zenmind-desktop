@@ -1,38 +1,60 @@
-.control-center-page.website-bridges-settings {
-  height: auto;
-  max-height: none;
-  overflow: visible;
+.website-bridges-search { padding: 0 16px 10px; }
+.website-bridge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--control-center-radius);
+  background: transparent;
+  color: var(--control-center-muted);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
 }
-.website-bridges-header, .website-bridge-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.website-bridges-header h1, .website-bridge-heading h2 { margin: 0 0 6px; }
-.website-bridges-header p, .website-bridge-hint { color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
-.website-bridges-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.website-bridges-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; gap: 20px; }
-.settings-page .website-bridges-list.service-catalog {
-  min-height: 0;
-  max-height: none;
-  padding: 16px;
+.website-bridge-item strong { color: var(--control-center-text); font-size: 13px; font-weight: 600; }
+.website-bridge-item span, .website-bridge-item small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--control-center-muted);
+  font-size: 11px;
 }
-.website-bridge-item { display: flex; flex-direction: column; gap: 5px; text-align: left; width: 100%; border: 0; border-radius: 8px; background: transparent; color: inherit; padding: 12px; margin-top: 6px; cursor: pointer; }
-.website-bridge-item span, .website-bridge-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; font-size: 12px; color: var(--ink-soft); }
 .website-bridge-item:hover, .website-bridge-routes button:hover { background: var(--control-hover-bg); }
-.website-bridge-item.is-selected { background: var(--control-active-bg); color: var(--ink); }
-.website-bridge-routes .is-selected { background: var(--control-active-bg); color: var(--accent-strong); }
-.website-bridge-detail { min-width: 0; padding: 24px; }
-.settings-page .website-bridges-settings .website-bridge-heading h2 { font-size: 20px; line-height: 1.5; }
-.website-bridge-heading > div > span { color: var(--ink-soft); }
-.website-bridge-detail h3 { font-size: 13px; margin: 22px 0 8px; }
-.website-bridge-detail dl { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
-.website-bridge-detail dd { margin: 0; overflow-wrap: anywhere; }
-.website-bridge-routes { display: flex; flex-direction: column; gap: 4px; }
-.website-bridge-routes button { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px; border: 0; border-radius: 6px; color: inherit; background: transparent; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
-.website-bridge-routes span { font-size: 12px; color: var(--ink-soft); }
-.website-bridge-source { box-sizing: border-box; width: 100%; min-height: 300px; max-height: 520px; resize: vertical; padding: 12px; border: 1px solid var(--control-border); border-radius: 8px; color: var(--ink); background: var(--control-input-bg); font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
-.website-bridges-error { color: var(--danger, #bc3636); margin: 12px 0; }
-.website-bridge-empty { padding: 40px 24px; color: var(--ink-soft); }
-.website-bridges-settings button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 850px) {
-  .website-bridges-header { align-items: flex-start; flex-direction: column; }
-  .website-bridges-layout { grid-template-columns: minmax(0, 1fr); }
-  .settings-page .website-bridges-list.service-catalog { max-height: 240px; overflow-y: auto; }
+.website-bridge-item.is-selected, .website-bridge-routes .is-selected { background: var(--control-active-bg); color: var(--control-center-text); }
+.website-bridge-icon :is(svg, img) { display: block; width: 20px; height: 20px; }
+.website-bridge-description { margin: 0; padding: 10px 16px 0; color: var(--control-center-muted); }
+.website-bridge-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 16px; }
+.website-bridge-meta dt { color: var(--control-center-subtle); }
+.website-bridge-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.website-bridge-hint { margin: 0; padding: 6px 16px 10px; color: var(--control-center-muted); font-size: 12px; line-height: 1.45; }
+.website-bridge-routes { display: flex; flex-direction: column; gap: 2px; padding: 0 12px 4px; }
+.website-bridge-routes button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--control-center-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
+.settings-page .website-bridges-settings .website-bridge-routes code { padding: 0; background: transparent; color: inherit; font-size: 12px; }
+.website-bridge-routes span { color: var(--control-center-muted); font-size: 11px; }
+.website-bridge-code { display: flex; flex-direction: column; }
+.website-bridge-source.config-editor { min-height: 260px; }
+.website-bridge-code > .website-bridge-hint { border-top: 1px solid var(--control-center-border); font-size: 11px; }
+.website-bridges-error { margin: 0; padding: 6px 16px; color: var(--danger); }
+.website-bridge-empty { padding: 16px; color: var(--control-center-muted); }
+.website-bridges-settings button:focus-visible { outline: 2px solid var(--control-focus-outline); outline-offset: 2px; }

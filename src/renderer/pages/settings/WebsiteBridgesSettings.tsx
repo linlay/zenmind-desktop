@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Input, Modal, Switch } from "antd";
-import { ImportOutlined, ExportOutlined, ReloadOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Modal, Switch } from "antd";
+import { ImportOutlined, ExportOutlined, ReloadOutlined, DeleteOutlined, CloseOutlined } from "@ant-design/icons";
 import type { WebsiteBridgeResult, WebsiteBridgeView } from "../../../shared/website-bridge";
 import { useI18n } from "../../i18n/useI18n";
+import { SettingsSidebarIcon } from "../../app-shell/navigation/SettingsSidebarIcon";
+import { SettingsActionButton } from "./SettingsActionButton";
 import "./WebsiteBridgesSettings.css";
 
 export function WebsiteBridgesSettings() {
@@ -20,6 +22,7 @@ export function WebsiteBridgesSettings() {
   const [removeOpen, setRemoveOpen] = useState(false);
   const alive = useRef(true);
   const locked = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const selected = items.find(item => item.id === selectedId);
   const page = selected?.pages.find(page => page.path === pagePath) ?? selected?.pages[0];
   const api = window.electronAPI.settings;
@@ -52,47 +55,75 @@ export function WebsiteBridgesSettings() {
     return () => { cancelled = true; };
   }, [selected, page?.script, t]);
   const filtered = items.filter(item => `${item.name} ${item.origin} ${item.id}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <section className="control-center-page workspace-wide web-settings-page is-website-bridges website-bridges-settings" aria-label={t("settings.websiteBridges.label")}>
+  return <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-website-bridges website-bridges-settings" aria-label={t("settings.websiteBridges.label")}>
     <header className="page-head control-center-hero website-bridges-header">
       <div className="control-center-hero-copy"><h1>{t("settings.websiteBridges.label")}</h1><p>{t("settings.websiteBridges.description")}</p></div>
-      <div className="website-bridges-actions">
-        <Button icon={<ReloadOutlined />} disabled={busy} onClick={() => void perform(() => api.listWebsiteBridges())}>{t("settings.websiteBridges.refresh")}</Button>
-        <Button type="primary" icon={<ImportOutlined />} loading={busy} onClick={() => void perform(() => api.importWebsiteBridge(), t("settings.websiteBridges.imported"))}>{t("settings.websiteBridges.import")}</Button>
-      </div>
     </header>
     {error && <div role="alert" className="website-bridges-error">{error}</div>}
     {notice && <div role="status">{notice}</div>}
-    <div className="website-bridges-layout">
+    <div className="control-center-shell web-settings-shell website-bridges-layout">
       <aside className="service-sider service-catalog web-settings-catalog website-bridges-list" aria-label={t("settings.websiteBridges.packages")}>
-        <Input.Search aria-label={t("settings.websiteBridges.search")} placeholder={t("settings.websiteBridges.search")} value={query} onChange={event => setQuery(event.target.value)} allowClear />
+        <div className="management-group-scroll">
+        <div className="service-group-head">
+          <div className="service-group-copy"><h2>{t("settings.websiteBridges.packages")}</h2></div>
+          <div className="service-title-actions">
+            <SettingsActionButton label={t("settings.websiteBridges.refresh")} icon={<ReloadOutlined />} disabled={busy} onClick={() => void perform(() => api.listWebsiteBridges())} />
+            <SettingsActionButton label={t("settings.websiteBridges.import")} icon={<ImportOutlined />} tone="primary" loading={busy} onClick={() => void perform(() => api.importWebsiteBridge(), t("settings.websiteBridges.imported"))} />
+          </div>
+        </div>
+        <div className="website-bridges-search">
+          <div className="sidebar-settings-search">
+            <input ref={searchInputRef} type="search" aria-label={t("settings.websiteBridges.search")} placeholder={t("settings.websiteBridges.search")} value={query} onChange={event => setQuery(event.target.value)} />
+            {query && <button type="button" className="sidebar-settings-search-clear" aria-label={t("common.clear")} onClick={() => { setQuery(""); searchInputRef.current?.focus(); }}><CloseOutlined /></button>}
+          </div>
+        </div>
+        <div className="service-nav-list">
         {filtered.map(item => <button key={item.id} type="button" className={`website-bridge-item${item.id === selectedId ? " is-selected" : ""}`} aria-pressed={item.id === selectedId}
           onClick={() => { setSelectedId(item.id); setPagePath(""); }}>
           <strong>{item.name}</strong><span>{item.origin}</span><small>{item.version} · {t(item.enabled ? "settings.websiteBridges.enabled" : "settings.websiteBridges.disabled")}</small>
         </button>)}
-        {!filtered.length && <p>{t(busy ? "settings.websiteBridges.loading" : "settings.websiteBridges.empty")}</p>}
+        {!filtered.length && <p className="service-group-empty">{t(busy ? "settings.websiteBridges.loading" : "settings.websiteBridges.empty")}</p>}
+        </div>
+        </div>
       </aside>
-      {selected ? <main className="service-card web-detail-card website-bridge-detail">
-        <div className="website-bridge-heading"><div><h2>{selected.name}</h2><span>{selected.id} · {selected.version}</span></div>
-          <Switch checked={selected.enabled} disabled={busy} aria-label={t("settings.websiteBridges.enabled")} onChange={enabled => void perform(() => api.setWebsiteBridgeEnabled({ id: selected.id, enabled }), t("settings.websiteBridges.applied"))} />
-        </div>
-        {selected.description && <p>{selected.description}</p>}
-        <dl><dt>{t("settings.websiteBridges.origin")}</dt><dd>{selected.origin}</dd></dl>
-        <div className="website-bridges-actions">
-          <Button icon={<ImportOutlined />} disabled={busy} onClick={() => void perform(() => api.importWebsiteBridge(selected.id), t("settings.websiteBridges.imported"))}>{t("settings.websiteBridges.update")}</Button>
-          <Button icon={<ExportOutlined />} disabled={busy} onClick={() => void perform(() => api.exportWebsiteBridge(selected.id), t("settings.websiteBridges.exported"))}>{t("settings.websiteBridges.export")}</Button>
-          <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={() => setRemoveOpen(true)}>{t("settings.websiteBridges.remove")}</Button>
-        </div>
-        <h3>{t("settings.websiteBridges.pages")}</h3><p className="website-bridge-hint">{t("settings.websiteBridges.pathHint")}</p>
+      {selected ? <article className="control-center-detail management-detail-group web-settings-detail website-bridge-detail">
+        <div className="management-group-scroll service-detail-scroll">
+        <section className="service-card control-center-service-hero">
+          <div className="control-center-service-head website-bridge-heading">
+            <div className="control-center-service-main">
+              <div className="service-hero-icon website-bridge-icon" aria-hidden="true"><SettingsSidebarIcon kind="websiteBridges" /></div>
+              <div className="service-hero-copy">
+                <div className="service-hero-title-line"><h2>{selected.name}</h2></div>
+                <p title={`${selected.id} · ${selected.version}`}>{selected.id} · {selected.version}</p>
+              </div>
+            </div>
+            <div className="service-title-actions">
+              <Switch size="small" checked={selected.enabled} disabled={busy} aria-label={t("settings.websiteBridges.enabled")} onChange={enabled => void perform(() => api.setWebsiteBridgeEnabled({ id: selected.id, enabled }), t("settings.websiteBridges.applied"))} />
+              <SettingsActionButton label={t("settings.websiteBridges.update")} icon={<ImportOutlined />} disabled={busy} onClick={() => void perform(() => api.importWebsiteBridge(selected.id), t("settings.websiteBridges.imported"))} />
+              <SettingsActionButton label={t("settings.websiteBridges.export")} icon={<ExportOutlined />} disabled={busy} onClick={() => void perform(() => api.exportWebsiteBridge(selected.id))} />
+              <SettingsActionButton label={t("settings.websiteBridges.remove")} icon={<DeleteOutlined />} tone="danger" disabled={busy} onClick={() => setRemoveOpen(true)} />
+            </div>
+          </div>
+          {selected.description && <p className="website-bridge-description">{selected.description}</p>}
+          <dl className="website-bridge-meta"><dt>{t("settings.websiteBridges.origin")}</dt><dd>{selected.origin}</dd></dl>
+        </section>
+        <section className="service-card">
+        <div className="config-head"><h3>{t("settings.websiteBridges.pages")}</h3></div>
+        <p className="website-bridge-hint">{t("settings.websiteBridges.pathHint")}</p>
         <div className="website-bridge-routes" role="group" aria-label={t("settings.websiteBridges.pages")}>
           {selected.pages.map(route => <button type="button" key={route.path} aria-pressed={page?.path === route.path} onClick={() => setPagePath(route.path)} className={page?.path === route.path ? "is-selected" : ""}>
             <code>{route.path}</code><span>{route.script}</span>
           </button>)}
         </div>
-        <h3>{page?.script}</h3>
+        </section>
+        <section className="service-card config-panel website-bridge-code">
+        <div className="config-head"><h3>{t("settings.websiteBridges.script")}</h3><span>{page?.script}</span></div>
         {sourceError && <p role="alert" className="website-bridges-error">{sourceError}</p>}
-        {sourceLoading ? <p role="status">{t("settings.websiteBridges.loading")}</p> : <textarea className="website-bridge-source" readOnly spellCheck={false} aria-label={t("settings.websiteBridges.script")} value={source} />}
+        {sourceLoading ? <p role="status">{t("settings.websiteBridges.loading")}</p> : <textarea className="config-editor website-bridge-source" readOnly spellCheck={false} aria-label={t("settings.websiteBridges.script")} value={source} />}
         <p className="website-bridge-hint">{t("settings.websiteBridges.scriptHint")}</p>
-      </main> : <div className="service-card web-detail-card website-bridge-empty">{t("settings.websiteBridges.start")}</div>}
+        </section>
+        </div>
+      </article> : <div className="service-card control-center-detail control-center-empty website-bridge-empty">{t("settings.websiteBridges.start")}</div>}
     </div>
     <Modal title={t("settings.websiteBridges.remove")} open={removeOpen} onCancel={() => setRemoveOpen(false)} okButtonProps={{ danger: true, disabled: busy }}
       okText={t("settings.websiteBridges.remove")} cancelText={t("settings.websiteBridges.cancel")}

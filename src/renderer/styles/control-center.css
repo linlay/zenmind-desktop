@@ -259,9 +259,8 @@
 }
 
 :root[data-theme="dark"] .service-nav-card:hover,
-:root[data-theme="dark"] .service-nav-card:focus-visible,
-:root[data-theme="dark"] .service-nav-card.is-active {
-  background: #232323;
+:root[data-theme="dark"] .service-nav-card:focus-visible {
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .control-center-page .loading-box.control-center-empty,
@@ -604,14 +603,14 @@
 
 .service-nav-card:hover,
 .service-nav-card:focus-visible {
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--control-hover-bg);
   color: var(--control-center-text);
   outline: none;
 }
 
 .service-nav-card.is-active,
 :root[data-theme="dark"] .service-nav-card.is-active {
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--control-active-bg);
   color: var(--control-center-text);
   box-shadow: none;
 }

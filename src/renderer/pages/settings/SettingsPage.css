@@ -1,7 +1,36 @@
 .settings-page {
+  /* Fade the panel surface only; text and controls retain their own contrast. */
+  --settings-panel-bg: color-mix(in srgb, var(--surface-soft) 72%, transparent);
   font-family: inherit;
   font-size: 12px;
   line-height: 1.45;
+}
+
+:root[data-theme="dark"] .settings-page {
+  --settings-panel-bg: color-mix(in srgb, var(--surface-soft) 80%, transparent);
+}
+
+.settings-page .control-center-page.workspace-wide,
+:root[data-theme="dark"] .settings-page .control-center-page.workspace-wide {
+  --control-center-card: var(--settings-panel-bg);
+}
+
+/* Override the legacy solid dark cards without adding another reading layer. */
+.settings-page .control-center-page :is(.service-card, .config-panel, .plugin-settings-panel, .management-detail-group, .control-center-empty) {
+  background: var(--settings-panel-bg);
+}
+
+:root[data-theme="dark"] .settings-page .control-center-page :is(.service-card, .config-panel, .plugin-settings-panel, .management-detail-group, .control-center-empty) {
+  background: var(--settings-panel-bg);
+}
+
+.settings-page .control-center-page .management-detail-group .service-card,
+:root[data-theme="dark"] .settings-page .control-center-page .management-detail-group .service-card {
+  background: transparent;
+}
+
+.settings-page .desktop-update-card.is-settings {
+  background: var(--settings-panel-bg);
 }
 
 .settings-page-single {
@@ -50,7 +79,7 @@
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-soft);
+  background: var(--settings-panel-bg);
   overflow: hidden;
 }
 
@@ -580,6 +609,7 @@
   padding: 0 12px;
   border-radius: var(--control-radius);
   font-size: 12px;
+  font-family: inherit;
   font-weight: 600;
   line-height: 1;
   box-shadow: none;
@@ -624,26 +654,24 @@
 
 .settings-page .web-nav-card.ant-btn:hover,
 .settings-page .web-nav-card.ant-btn:focus-visible {
-  background: var(--accent-fill-subtle);
+  background: var(--control-hover-bg);
   color: var(--control-center-text);
 }
 
 .settings-page .web-nav-card.ant-btn.is-active {
-  background:
-    linear-gradient(90deg, var(--accent-fill-soft), var(--accent-fill-subtle));
+  background: var(--control-active-bg);
   color: var(--control-center-text);
   box-shadow: none;
 }
 
 .settings-page .web-nav-card.ant-btn.is-active:hover,
 .settings-page .web-nav-card.ant-btn.is-active:focus-visible {
-  background:
-    linear-gradient(90deg, var(--accent-fill-strong), var(--accent-fill-muted));
+  background: var(--control-active-bg);
   color: var(--control-center-text);
 }
 
 .settings-page .web-nav-card.ant-btn + .web-nav-card.ant-btn {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .settings-page .web-nav-card.ant-btn .service-nav-card-head {
@@ -670,8 +698,8 @@
 }
 
 .settings-page .web-nav-card.is-active .service-nav-card-title {
-  color: var(--ink);
-  font-weight: 700;
+  color: var(--control-center-text);
+  font-weight: 600;
 }
 
 .settings-page .web-nav-card.is-active .service-nav-version-status {
@@ -702,7 +730,7 @@
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:hover,
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:focus-visible {
-  background: var(--control-hover-bg);
+  background: var(--control-active-bg);
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.is-active .service-nav-version-status {
@@ -716,10 +744,6 @@
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 2px;
-}
-
-:root[data-theme="dark"] .settings-page .web-settings-detail {
-  background: #232323;
 }
 
 .settings-page .web-detail-card {
@@ -752,7 +776,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 24px;
+  padding: 10px 16px;
   border-top: 1px solid var(--control-center-border);
 }
 
@@ -944,20 +968,20 @@
 }
 
 .settings-page .web-settings-page .web-settings-shell {
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: minmax(240px, 304px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
 }
 
 .settings-page .web-settings-page .web-settings-catalog {
   min-height: 420px;
-  border-radius: 12px;
+  border-radius: var(--control-center-radius);
 }
 
 .settings-page .web-settings-page .web-nav-card .service-nav-card-head {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 6px 12px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 4px 8px;
   align-items: center;
 }
 
@@ -968,35 +992,35 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  color: var(--accent-strong);
-  background: var(--accent-fill-subtle);
-  border: 1px solid var(--accent-border-subtle);
-  border-radius: 10px;
+  color: var(--control-center-subtle);
+  background: var(--control-center-card-muted);
+  border: 1px solid var(--control-center-border);
+  border-radius: var(--control-center-radius);
 }
 
 .settings-page .website-catalog-icon,
 .settings-page .webapp-catalog-icon {
   grid-row: span 2;
-  width: 36px;
-  height: 36px;
-  font-size: 19px;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
 }
 
 .settings-page .web-settings-page .webapp-nav-statuses {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   grid-column: 2;
   color: var(--muted);
 }
 
 .settings-page .web-settings-page .web-nav-card.ant-btn {
-  padding: 14px 12px;
-  border-radius: 9px;
+  padding: 8px 10px;
+  border-radius: var(--control-center-radius);
 }
 
 .settings-page .web-settings-page .web-nav-card.ant-btn.is-active {
-  background: var(--accent-fill-subtle);
+  background: var(--control-active-bg);
   box-shadow: none;
 }
 
@@ -1004,41 +1028,41 @@
   color: var(--muted);
 }
 
-.settings-page .web-settings-page .web-settings-detail {
+.settings-page .web-settings-page .control-center-detail.web-settings-detail:not(.management-detail-group) {
   background: transparent;
 }
 
 .settings-page .web-settings-page .web-detail-card {
-  border-radius: 12px;
+  border-radius: var(--control-center-radius);
 }
 
 .settings-page .web-settings-page .control-center-service-head {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 22px;
-  padding: 24px;
+  gap: 12px;
+  padding: 14px 16px 10px;
 }
 
 .settings-page .website-detail-icon,
 .settings-page .webapp-detail-icon {
-  width: 52px;
-  height: 52px;
-  font-size: 26px;
-  border-radius: 14px;
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  border-radius: var(--control-center-radius);
 }
 
 .settings-page .web-settings-page .service-hero-title-line h2 {
-  font-size: 20px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .settings-page .webapp-detail-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  margin-top: 6px;
+  gap: 8px;
+  margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -1052,34 +1076,29 @@
 .settings-page .web-settings-page .service-primary-actions {
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
-}
-
-.settings-page .web-settings-page .webapp-publish-action {
-  order: 1;
-  margin-left: auto;
+  gap: 6px;
 }
 
 .settings-page .web-settings-page .webapp-user-config-heading {
-  padding: 22px 24px 8px;
+  padding: 12px 16px 6px;
 }
 
 .settings-page .web-settings-page .web-detail-form-item {
   grid-template-columns: 112px minmax(0, 480px);
   border: 0;
-  padding: 16px 24px;
+  padding: 8px 16px;
 }
 
 .settings-page .web-settings-page .webapp-user-config-empty {
-  margin: 4px 24px 24px;
-  padding: 16px;
-  border: 1px dashed var(--control-center-border);
-  border-radius: 8px;
-  background: var(--control-center-card-muted);
+  margin: 0 16px 12px;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .settings-page .web-settings-page .web-detail-actions {
-  padding: 16px 24px;
+  padding: 12px 16px;
 }
 
 .settings-page .is-websites .service-nav-version-status {
@@ -1111,9 +1130,9 @@
 }
 
 .settings-page .is-websites .website-copilot-field {
-  margin-top: 8px;
-  padding-top: 24px;
-  padding-bottom: 24px;
+  margin-top: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
   border-top: 1px solid var(--control-center-border);
 }
 
@@ -2181,7 +2200,7 @@
 }
 
 :root[data-theme="dark"] .settings-pet-card {
-  background: var(--surface-soft);
+  background: var(--settings-panel-bg);
   border-color: var(--line);
 }
 
@@ -2800,12 +2819,12 @@
   margin-bottom: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-soft);
+  background: var(--settings-panel-bg);
   box-shadow: none;
 }
 
 :root[data-theme="dark"] .settings-page .data-root-card {
-  background: var(--surface-soft);
+  background: var(--settings-panel-bg);
   border-color: var(--line);
   box-shadow: none;
 }
@@ -2960,7 +2979,7 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-soft);
+  background: var(--settings-panel-bg);
   overflow: hidden;
 }
 
@@ -3097,7 +3116,7 @@
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--control-select-bg);
+  background: var(--settings-panel-bg);
 }
 
 .settings-page .usage-billing-panel strong {
@@ -3226,7 +3245,7 @@
 .settings-appearance-panel {
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
-  background: var(--surface-soft);
+  background: var(--settings-panel-bg);
   overflow: hidden;
 }
 
@@ -3518,11 +3537,11 @@
 
 /* The app catalog fills the available workspace, including its empty state. */
 @media (min-width: 761px) {
-  .settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+  .settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-shell {
     align-items: stretch;
   }
 
-  .settings-page :is(.is-websites, .is-webapps) .web-settings-catalog {
+  .settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-catalog {
     min-height: 0;
     max-height: none;
     height: 100%;
@@ -3575,14 +3594,14 @@
 }
 
 /* Propagate available height through settings wrappers instead of using viewport offsets. */
-.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) {
+.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="websiteBridges"], [data-settings-section="webapps"]) {
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="webapps"]) :is(
+.settings-page-single:is([data-settings-section="control"], [data-settings-section="plugins"], [data-settings-section="websites"], [data-settings-section="websiteBridges"], [data-settings-section="webapps"]) :is(
   .settings-content-panel,
   .settings-content-shell,
   .settings-section-body,
@@ -3594,7 +3613,7 @@
   min-height: 0;
 }
 
-.app-main .control-center-page:is(.is-control, .is-plugins, .is-websites, .is-webapps) {
+.app-main .control-center-page:is(.is-control, .is-plugins, .is-websites, .is-website-bridges, .is-webapps) {
   height: 100%;
   max-height: 100%;
   flex: 1 1 0;
@@ -3614,13 +3633,97 @@
   row-gap: 12px;
   max-width: 672px;
   box-sizing: border-box;
-  padding: 8px 24px;
+  padding: 8px 16px;
 }
 
 .settings-page .web-settings-page .webapp-system-access-row .web-detail-form-item {
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 12px;
   padding: 0;
+}
+
+/* Resource details use the same typography and action surfaces as control center. */
+.settings-page .web-settings-page :is(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select, .ant-select-selector, .ant-input-number) {
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.settings-page .web-settings-page .web-icon-action.ant-btn {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
+  padding: 0;
+  border: 1px solid var(--control-center-border);
+  border-radius: 6px;
+  background: var(--control-center-card-muted);
+  color: var(--control-center-subtle);
+  box-shadow: none;
+}
+
+.settings-page .web-icon-action .anticon svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.settings-action-tooltip.ant-tooltip {
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.settings-action-tooltip .ant-tooltip-inner {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.35;
+  box-shadow: var(--panel-shadow);
+}
+
+.settings-page .web-settings-page .web-icon-action.ant-btn:hover:not(:disabled),
+.settings-page .web-settings-page .web-icon-action.ant-btn:focus-visible:not(:disabled) {
+  border-color: var(--control-center-border);
+  background: color-mix(in srgb, var(--control-center-subtle) 12%, transparent);
+  color: var(--control-center-text);
+}
+
+.settings-page .web-settings-page .web-icon-action.is-primary:hover:not(:disabled),
+.settings-page .web-settings-page .web-icon-action.is-primary:focus-visible:not(:disabled) {
+  border-color: var(--accent-border-subtle);
+  background: var(--accent-fill-subtle);
+  color: var(--accent);
+}
+
+.settings-page .web-settings-page .web-icon-action.is-danger:hover:not(:disabled),
+.settings-page .web-settings-page .web-icon-action.is-danger:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.settings-page .web-settings-page .web-detail-form-item > span:first-child {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--control-center-muted);
+}
+
+.settings-page .web-settings-page .settings-control-row-control.ant-input {
+  min-height: 32px;
+  height: 32px;
+}
+
+.settings-page .web-settings-page .web-detail-actions .ant-btn,
+.settings-page .web-settings-page .webapp-page-header-actions > .ant-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--control-radius);
 }
 
 .settings-page .webapp-system-access-row .web-detail-label-with-help {
@@ -3642,25 +3745,26 @@
 }
 
 /* Keep scrolling inside each rounded group, inset from its outer border. */
-.settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+.settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-shell {
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
-.settings-page :is(.is-websites, .is-webapps) :is(.web-settings-catalog, .web-settings-detail) {
+.settings-page :is(.is-websites, .is-website-bridges, .is-webapps) :is(.web-settings-catalog, .web-settings-detail) {
   min-height: 0;
   max-height: none;
   overflow: hidden;
-  padding-right: 0;
 }
 
-.settings-page :is(.is-websites, .is-webapps) .web-settings-catalog,
-.settings-page :is(.is-websites, .is-webapps) .web-settings-detail > .web-detail-card {
+.settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-detail:not(.management-detail-group) { padding-right: 0; }
+
+.settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-catalog,
+.settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-detail > .web-detail-card {
   padding: 4px;
 }
 
-.settings-page :is(.is-websites, .is-webapps) .web-settings-detail > .web-detail-card {
+.settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-detail > .web-detail-card {
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
@@ -3698,13 +3802,22 @@
 }
 
 @media (max-width: 760px) {
-  .settings-page :is(.is-websites, .is-webapps) .web-settings-shell {
+  .settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-shell {
     grid-template-rows: minmax(0, 0.4fr) minmax(0, 1fr);
   }
 
-  .settings-page :is(.is-websites, .is-webapps) .web-settings-catalog {
+  .settings-page :is(.is-websites, .is-website-bridges, .is-webapps) .web-settings-catalog {
     height: auto;
   }
+}
+
+@container control-center-page (max-width: 920px) {
+  .settings-page .web-settings-page .web-settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 0.4fr) minmax(0, 1fr);
+  }
+
+  .settings-page .web-settings-page .web-settings-catalog { height: auto; }
 }
 
 /* Transparent pet gallery using the same selection color as skin options. */
