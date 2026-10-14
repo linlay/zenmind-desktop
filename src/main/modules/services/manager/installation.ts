@@ -47,6 +47,26 @@ import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 import { applyEnvBindings, getServicePortForEnvSync } from "./environment-bindings";
 import { writeEnvFileUpdates } from "./env-content";
 import { resolveDesktopCapability } from "./capabilities";
+import { setTimeout as delay } from "node:timers/promises";
+
+async function cleanupBuiltinExtraction(tempRoot: string, serviceId: ServiceId) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.promises.rm(tempRoot, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform === "win32" &&
+          ["EPERM", "EACCES", "EBUSY", "ENOTEMPTY"].includes(code ?? "") && attempt < 4) {
+        await delay(100 * 2 ** attempt);
+        continue;
+      }
+      // Temporary cleanup cannot replace the install result or its original error.
+      console.warn(`[service-manager] retained extraction directory for ${serviceId} at ${tempRoot}`, error);
+      return;
+    }
+  }
+}
 
 export function createBuiltinInstallKey(app: App, service: ServiceDefinition, options: InstallBuiltinServiceOptions) {
   const appScope = (() => {
@@ -234,7 +254,7 @@ export async function installBuiltinServiceInternal(
       }
       return finalInstallDir;
     } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      await cleanupBuiltinExtraction(tempRoot, serviceId);
     }
   } finally {
     timing.end({ extracted: didExtract });

@@ -86,6 +86,6 @@ test("public release verification downloads and verifies the bytes actually serv
 test("key generation refuses repository paths so private keys cannot enter build archives", t => {
   const directory = path.resolve("tmp", `forbidden-signing-key-${Date.now()}`);
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  assert.throws(() => generateSigningKey(directory, "cutej", "test-passphrase-only"), /outside/i);
+  assert.throws(() => generateSigningKey(directory, "cutej"), /outside/i);
   assert.equal(fs.existsSync(directory), false);
 });
