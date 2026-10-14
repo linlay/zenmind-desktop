@@ -29,7 +29,7 @@ createRoot(document.getElementById('root')).render(<App/>);`, resolveDir: repo, 
   define: { 'process.env.NODE_ENV': '"production"', __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(loadBrandConfig(repo, resolveBrandId([], process.env)))) } });
 fs.writeFileSync(path.join(temp, 'index.html'), '<meta charset="UTF-8"><link rel="stylesheet" href="ui.css"><style>body{font-family:system-ui;background:var(--bg-base);margin:0;padding:24px}*{box-sizing:border-box}</style><div id="root"></div><script src="ui.js"></script>');
 const methods = ['getWebsiteCredentials', 'setWebsiteCredentialCapture', 'addWebsiteCredential', 'updateWebsiteCredential', 'removeWebsiteCredential', 'revealWebsiteCredential', 'setWebsiteCredentialNeverSave', 'importWebsiteCredentials', 'exportWebsiteCredentials'];
-fs.writeFileSync(path.join(temp, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron'); contextBridge.exposeInMainWorld('electronAPI',{settings:{${methods.map(name => `${name}:(arg)=>ipcRenderer.invoke('settings.${name}',arg)`).join(',')}}});`);
+fs.writeFileSync(path.join(temp, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron'); contextBridge.exposeInMainWorld('electronAPI',{settings:{${methods.map(name => `${name}:(arg)=>ipcRenderer.invoke('settings.${name}',arg)`).join(',')},onWebsiteCredentialsLocked:(listener)=>{const handle=()=>listener();ipcRenderer.on('credentials.locked',handle);return()=>ipcRenderer.off('credentials.locked',handle)}}});`);
 
 fs.writeFileSync(path.join(temp, 'main.cjs'), `
 const {app,BrowserWindow,ipcMain,dialog}=require('electron');const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
@@ -88,12 +88,19 @@ outcome='authenticated';await click('显示');await until('!!Array.from(document
 assert.deepEqual(await detail(),['alice@example.com','correct horse battery staple']);
 await shot('revealed');
 await click('隐藏');assert.deepEqual(await detail(),['al***@example.com','••••••••']);
+// Locking the screen hides a revealed password at once.
+await click('显示');await until('!!Array.from(document.querySelectorAll("button")).find(b=>b.getAttribute("aria-label")==="隐藏")');
+win.webContents.send('credentials.locked');await until('!Array.from(document.querySelectorAll("button")).find(b=>b.getAttribute("aria-label")==="隐藏")');
+assert.deepEqual(await detail(),['al***@example.com','••••••••']);
 
 // Toggles and edits are authenticated changes that persist.
 outcome='failed';await js('document.querySelectorAll(".service-card .website-credential-option [role=switch]")[0].click()');await status('系统认证未通过');assert.equal(store.state().credentials[0].agentAllowed,true);
 outcome='authenticated';await js('document.querySelectorAll(".service-card .website-credential-option [role=switch]")[0].click()');await status('已保存');assert.equal(store.state().credentials[0].agentAllowed,false);
 await js('document.querySelectorAll(".service-card .website-credential-option [role=switch]")[1].click()');await until('document.querySelector(".website-credential-item small")?.textContent.includes("默认账号")');
 assert.equal(await js('document.querySelector(".website-credential-item small").textContent'),'默认账号 · 禁止智能体使用');
+// Locking the screen also discards an edit that holds the revealed password.
+await click('编辑');await until('document.querySelectorAll(".website-credential-form input").length===4');
+win.webContents.send('credentials.locked');await until('!document.querySelector(".ant-modal-wrap:not([style*=none]) .website-credential-form")');
 await click('编辑');await until('document.querySelectorAll(".website-credential-form input").length===4');
 assert.equal(await js('document.querySelectorAll(".website-credential-form input")[2].value'),'correct horse battery staple');
 await type(2,'new password');await save();await until('!document.querySelector(".ant-modal-wrap:not([style*=none]) .website-credential-form")');
@@ -106,6 +113,10 @@ const csv=path.join(__dirname,'passwords.csv'),backupFile=path.join(__dirname,'e
 fs.writeFileSync(csv,'name,url,username,password,note\\nA,https://accounts.example.com/x,alice@example.com,ignored because it exists,\\nB,https://shop.example.com/login,bob,"pw,1",\\nC,android://x@com.app/,carol,pw,\\n');
 dialog.showOpenDialog=async()=>({canceled:false,filePaths:[openPath]});dialog.showSaveDialog=async()=>({canceled:false,filePath:backupFile});
 const backupInputs=async(...values)=>{await until('document.querySelectorAll(".website-credential-form input").length==='+values.length);for(let i=0;i<values.length;i++)await type(i,values[i])};
+// The file dialog may stay open through a lock: authentication is checked again once a file is chosen.
+dialog.showOpenDialog=async()=>{outcome='failed';return {canceled:false,filePaths:[openPath]}};
+await click('导入');await status('系统认证未通过');assert.equal(store.state().credentials.length,1);
+outcome='authenticated';dialog.showOpenDialog=async()=>({canceled:false,filePaths:[openPath]});
 await click('导入');await status('已导入 1 个账号，跳过 1 个已存在的，1 行无法导入');assert.equal(store.state().credentials.length,2);
 await click('导出备份');await backupInputs('export password','export password');await save();await status('加密备份已导出');
 const exported=fs.readFileSync(backupFile,'utf8');for(const secret of ['new password','pw,1','alice','shop.example.com'])assert.equal(exported.includes(secret),false,'backup leaks '+secret);

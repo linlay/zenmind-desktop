@@ -1226,6 +1226,8 @@ export interface DesktopApi {
     revealWebsiteCredential: (id: string) => Promise<WebsiteCredentialRevealResult>;
     setWebsiteCredentialNeverSave: (input: { origin: string; never: boolean }) => Promise<WebsiteCredentialResult>;
     resolveWebsiteCredentialSaveOffer: (input: { offerId: string; decision: WebsiteCredentialSaveDecision }) => Promise<boolean>;
+    /** The screen locked or the device slept: forget any password that is on screen. */
+    onWebsiteCredentialsLocked: (listener: () => void) => () => void;
     onWebsiteCredentialSaveOffer: (listener: (event: { type: "offer"; offer: WebsiteCredentialSaveOffer } | { type: "withdrawn"; offerId: string }) => void) => () => void;
     /** Without a password: choose a CSV or backup file. With one: decrypt the backup just chosen. */
     importWebsiteCredentials: (input?: { password: string }) => Promise<WebsiteCredentialResult>;

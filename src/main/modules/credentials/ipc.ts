@@ -5,7 +5,7 @@ import { t } from "../../support/i18n/main-i18n";
 import type { WebsiteCredentialStore } from "./store";
 import type { AuthenticationGate } from "./system-auth";
 import type { LoginCapture } from "./capture/controller";
-import { decryptWebsiteCredentialBackup, encryptWebsiteCredentialBackup, isWebsiteCredentialBackup, parseWebsiteCredentialCsv, WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES } from "./transfer";
+import { decryptWebsiteCredentialBackup, encryptWebsiteCredentialBackup, isWebsiteCredentialBackup, parseWebsiteCredentialCsv, WEBSITE_CREDENTIAL_BACKUP_MAX_BYTES, WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES } from "./transfer";
 
 const BACKUP_EXTENSION = "pwbackup";
 type OperationResult = WebsiteCredentialState & { cancelled?: boolean; imported?: WebsiteCredentialImportSummary };
@@ -71,8 +71,11 @@ export function registerWebsiteCredentialIpc(ipcMain: IpcMain, options: {
   let pendingBackupPath: string | null = null;
   function readImportFile(file: string) {
     const stat = fs.statSync(file);
-    if (!stat.isFile() || stat.size > WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES * 2) throw new WebsiteCredentialError("importTooLarge");
-    return fs.readFileSync(file);
+    if (!stat.isFile() || stat.size > WEBSITE_CREDENTIAL_BACKUP_MAX_BYTES) throw new WebsiteCredentialError("importTooLarge");
+    const bytes = fs.readFileSync(file);
+    // Only an encrypted backup may be larger than a browser CSV export.
+    if (bytes.length > WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES && !isWebsiteCredentialBackup(bytes)) throw new WebsiteCredentialError("importTooLarge");
+    return bytes;
   }
   register("settings.importWebsiteCredentials", async (event, input) => {
     await authenticated(event);
@@ -89,6 +92,8 @@ export function registerWebsiteCredentialIpc(ipcMain: IpcMain, options: {
     });
     requireOwner(event);
     if (selected.canceled || !selected.filePaths[0]) return { ...store.state(), cancelled: true };
+    // A dialog can stay open indefinitely, through a lock or sleep: authenticate again before touching the vault.
+    await authenticated(event);
     const bytes = readImportFile(selected.filePaths[0]);
     if (isWebsiteCredentialBackup(bytes)) {
       pendingBackupPath = selected.filePaths[0];
@@ -106,11 +111,20 @@ export function registerWebsiteCredentialIpc(ipcMain: IpcMain, options: {
     });
     requireOwner(event);
     if (selected.canceled || !selected.filePath) return { ...store.state(), cancelled: true };
+    // A dialog can stay open indefinitely, through a lock or sleep: authenticate again before writing the backup.
+    await authenticated(event);
     fs.writeFileSync(selected.filePath, bytes, { mode: 0o600 });
     return store.state();
   });
 
-  const clear = () => { gate.clear(); capture.clearPending(); };
+  const clear = () => {
+    gate.clear();
+    capture.clearPending();
+    pendingBackupPath = null;
+    // The settings page drops any password it is showing or editing.
+    const window = options.getMainWindow();
+    if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send("credentials.locked");
+  };
   powerMonitor.on("lock-screen", clear);
   powerMonitor.on("suspend", clear);
 }

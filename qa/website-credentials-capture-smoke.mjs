@@ -37,6 +37,12 @@ const pages={
   '/reveal':'<form method="post" action="/home"><input name="email" type="email"><input name="pw" type="password"><button type="button" id="eye">Show</button><button id="submit">Sign in</button></form><script>eye.onclick=()=>{const pw=document.querySelector("[name=pw]");pw.type=pw.type==="password"?"text":"password"}</script>',
   // A framework-style page: it only trusts values it received through input events.
   '/controlled':'<div id="view"><input id="account" autocomplete="username"><input id="secret" type="password"><button id="go">Log in</button></div><script>const state={u:"",p:""};account.addEventListener("input",e=>state.u=e.target.value);secret.addEventListener("input",e=>state.p=e.target.value);go.onclick=()=>{view.innerHTML="<h1 id=who>"+state.u+"/"+state.p.length+"</h1>"}</script>',
+  // After "logging in" the page hides the password field, or turns it into plain text, but keeps the element and its value.
+  '/hide':'<div id="view"><input id="account" autocomplete="username"><input id="secret" type="password"><button id="go">Log in</button></div><h1 id="done" hidden>Welcome</h1><script>window.keep=secret;go.onclick=()=>{setTimeout(()=>{secret.style.display="none";account.style.display="none";go.style.display="none";done.hidden=false},50)}</script>',
+  '/totext':'<div id="view"><input id="account" autocomplete="username"><input id="secret" type="password"><button id="go">Log in</button></div><script>window.keep=secret;go.onclick=()=>{setTimeout(()=>{secret.type="text"},50)}</script>',
+  // Sign-up and reset with a single password field: never filled.
+  '/signup-single':'<form method="post" action="/home"><input name="email" type="email"><input name="pw" type="password" autocomplete="new-password"><button>Create account</button></form>',
+  '/reset':'<form method="post" action="/reset-password"><input name="email" type="email"><input name="pw" type="password"><button>Reset password</button></form>',
   // Not a login: a search box must never produce anything.
   '/search':'<form action="/home"><input name="q" type="text"><button>Search</button></form>',
 };
@@ -141,6 +147,15 @@ await wait(400);assert.equal(new URL(win.webContents.getURL()).pathname,'/step2'
 filled(await access.fill(target,{origin,accountId:accountId('c'),submit:true}),{status:'submitted',loginFormVisible:false},'two-step, password page');
 await wait(200);assert.equal(posts[0],'pw=two-step-secret');
 
+await open('/hide');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'submitted',loginFormVisible:false},'field hidden after login');
+assert.equal(await js('window.keep.value'),'','a hidden field is erased before automation resumes');
+await open('/totext');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true,sleep:()=>wait(60)}),{status:'submitted',loginFormVisible:false},'field switched to plain text');
+assert.equal(await js('window.keep.type+":"+window.keep.value'),'text:','a plain-text field is erased before automation resumes');
+for(const route of ['/signup-single','/reset']){await open(route);posts.length=0;
+  filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'signup_or_reset'},route+' refused');
+  assert.equal(await js('document.querySelector("[name=pw]").value+document.querySelector("[name=email]").value'),'');await wait(200);assert.equal(posts.length,0)}
 await open('/signup');
 filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'several_password_fields'},'sign-up form refused');
 await open('/search');

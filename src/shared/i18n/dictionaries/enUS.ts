@@ -100,6 +100,7 @@ export const enUSMessages = {
   "settings.websiteCredentials.error.authenticationFailed": "System authentication did not succeed. The action was cancelled.",
   "settings.websiteCredentials.error.authenticationUnavailable": "This device does not support system authentication yet, so saved passwords cannot be viewed or changed.",
   "settings.websiteCredentials.error.storageFailed": "Passwords could not be read or saved. Try again later.",
+  "settings.websiteCredentials.error.vaultFull": "Too many saved passwords to store more. Nothing was changed.",
   "settings.websiteCredentials.import": "Import",
   "settings.websiteCredentials.export": "Export backup",
   "settings.websiteCredentials.imported": "Imported {added} accounts, skipped {skipped} that already exist, and could not import {invalid} rows.",

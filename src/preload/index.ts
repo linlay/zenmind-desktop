@@ -649,6 +649,11 @@ const api: DesktopApi = {
     revealWebsiteCredential: (id) => ipcRenderer.invoke("settings.revealWebsiteCredential", id),
     setWebsiteCredentialNeverSave: (input) => ipcRenderer.invoke("settings.setWebsiteCredentialNeverSave", input),
     resolveWebsiteCredentialSaveOffer: (input) => ipcRenderer.invoke("credentials.resolveSaveOffer", input),
+    onWebsiteCredentialsLocked: (listener) => {
+      const handleLocked = () => listener();
+      ipcRenderer.on("credentials.locked", handleLocked);
+      return () => { ipcRenderer.off("credentials.locked", handleLocked); };
+    },
     onWebsiteCredentialSaveOffer: (listener) => {
       const handleOffer = (_event: unknown, offer: any) => listener({ type: "offer", offer });
       const handleWithdrawn = (_event: unknown, offerId: string) => listener({ type: "withdrawn", offerId });

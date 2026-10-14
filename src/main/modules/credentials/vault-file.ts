@@ -20,6 +20,11 @@ const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 
+/** Writing beyond what `openVaultFile` accepts would leave a vault that can no longer be opened. */
+export class VaultCapacityError extends Error {
+  constructor() { super("The vault would exceed its size limit."); }
+}
+
 type OpenedVault =
   | { status: { state: "ready" }; key: Buffer | null; vaultId: string | null; plaintext: Buffer | null }
   | { status: Extract<WebsiteCredentialVaultStatus, { state: "unavailable" }> };
@@ -127,6 +132,8 @@ export function writeVaultFile(
   opened: { key: Buffer | null; vaultId: string | null },
   plaintext: Buffer
 ) {
+  // Base64 grows the ciphertext by a third; refuse before creating a key for a vault that cannot be written.
+  if (Math.ceil(plaintext.length / 3) * 4 + 1024 > MAX_FILE_BYTES) throw new VaultCapacityError();
   let { key, vaultId } = opened;
   if (!key || !vaultId) {
     key = randomBytes(KEY_BYTES);
@@ -146,5 +153,7 @@ export function writeVaultFile(
     ciphertext: ciphertext.toString("base64"),
     tag: cipher.getAuthTag().toString("base64")
   };
-  writeFileAtomic(path.join(directory, VAULT_FILE), `${JSON.stringify(stored)}\n`, "replace");
+  const content = `${JSON.stringify(stored)}\n`;
+  if (Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) throw new VaultCapacityError();
+  writeFileAtomic(path.join(directory, VAULT_FILE), content, "replace");
 }

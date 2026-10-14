@@ -3,6 +3,11 @@ import { WEBSITE_CREDENTIAL_BACKUP_PASSWORD_MIN_LENGTH, WebsiteCredentialError, 
 
 export const WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 export const WEBSITE_CREDENTIAL_IMPORT_MAX_ROWS = 5000;
+/**
+ * A backup holds a whole vault, so it is bounded by the vault's own size limit rather than
+ * the CSV row limit: every backup Desktop writes can be restored into an empty vault.
+ */
+export const WEBSITE_CREDENTIAL_BACKUP_MAX_BYTES = 24 * 1024 * 1024;
 
 export type WebsiteCredentialTransferEntry = WebsiteCredentialInput & { agentAllowed?: boolean };
 
@@ -119,6 +124,6 @@ export function decryptWebsiteCredentialBackup(bytes: Buffer, password: unknown)
     throw new WebsiteCredentialError("backupPasswordIncorrect");
   }
   const entries = (JSON.parse(plaintext) as { credentials?: unknown }).credentials;
-  if (!Array.isArray(entries) || entries.length > WEBSITE_CREDENTIAL_IMPORT_MAX_ROWS) throw new WebsiteCredentialError("importUnrecognized");
+  if (!Array.isArray(entries)) throw new WebsiteCredentialError("importUnrecognized");
   return entries.map(entry => ({ origin: entry?.origin, username: entry?.username, password: entry?.password, note: entry?.note, agentAllowed: entry?.agentAllowed }));
 }

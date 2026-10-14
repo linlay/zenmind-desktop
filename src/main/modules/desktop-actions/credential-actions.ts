@@ -83,16 +83,22 @@ export async function executeCredentialAction(
       await target.validate();
     }
 
-    const result = await access.fill(target, { origin, accountId: account.accountId, submit });
+    const result = await access.fill(target, {
+      origin, accountId: account.accountId, submit,
+      // The fill may wait behind other commands on this page: re-check the Run and the page right before writing.
+      authorize: async () => { assertActionCanStart(options); await target.validate(); }
+    });
     switch (result.status) {
       case "filled":
       case "submitted":
       case "username_only":
         return ok(action, { origin, account: account.username, ...result });
       case "no_login_form":
-        return fail(action, "no_login_form", result.reason === "several_password_fields"
-          ? "The page shows several password fields, which is not a login form."
-          : "The page shows no login form.", { ...notStarted, origin });
+        return fail(action, "no_login_form", {
+          several_password_fields: "The page shows several password fields, which is not a login form.",
+          signup_or_reset: "The page creates an account or sets a new password. Saved passwords are only filled into login forms.",
+          no_password_field: "The page shows no login form."
+        }[result.reason], { ...notStarted, origin, reason: result.reason });
       case "account_unavailable":
         return fail(action, "account_not_found", "That account is no longer available to agents.", { ...notStarted, origin });
       case "page_changed":

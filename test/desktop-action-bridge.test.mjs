@@ -4466,7 +4466,7 @@ test("credential actions serve only a trusted Run, on the page's real site, and 
     return {
       surfaceId: "page:1", containerId: "container:1", surfaceKind: "chat-work-panel",
       contents: { id: 7, isDestroyed: () => false, getURL: () => url,
-        executeJavaScriptInIsolatedWorld: async (_world, [{ code }]) => { scripts.push(code); return code.includes("function fillLogin") ? { status: "submitted" } : { visible: false, pending: false }; } },
+        executeJavaScriptInIsolatedWorld: async (_world, [{ code }]) => { scripts.push(code); return code.includes("function fillLogin") ? { status: "submitted" } : { document: "replaced", formVisible: false }; } },
       validate: async () => {},
       holdAutomation: (execute) => execute(() => {})
     };

@@ -88,6 +88,11 @@ export function WebsiteCredentialsSettings() {
     return () => window.clearTimeout(timer);
   }, [revealed]);
   useEffect(() => { setRevealed(null); }, [selectedId]);
+  // Locking the screen hides a revealed password and discards an edit that holds one.
+  useEffect(() => api.onWebsiteCredentialsLocked(() => {
+    setRevealed(null);
+    setDraft(current => current?.id ? null : current);
+  }), []);
 
   async function copyPassword(id: string) {
     const value = secret ?? await reveal(id);

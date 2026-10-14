@@ -19,7 +19,9 @@ export type WebsiteCredentialErrorCode =
   | "importTooLarge"
   | "backupPasswordRequired"
   | "backupPasswordIncorrect"
-  | "storageFailed";
+  | "storageFailed"
+  /** The change would make the vault larger than Desktop can open again; nothing was written. */
+  | "vaultFull";
 
 export class WebsiteCredentialError extends Error {
   constructor(readonly code: WebsiteCredentialErrorCode) {

@@ -28,19 +28,31 @@ export function createAgentCredentialAccess(store: Pick<WebsiteCredentialStore, 
 
     async fill(
       target: LoginFillTarget & { contents: Pick<WebContents, "getURL" | "isDestroyed" | "executeJavaScriptInIsolatedWorld"> },
-      request: { origin: string; accountId: string; submit: boolean; sleep?: (ms: number) => Promise<void> }
-    ): Promise<LoginFillResult | { status: "account_unavailable" }> {
-      const secret = store.resolveForOrigin(request.origin, { agentOnly: true, id: request.accountId });
-      if (!secret) return { status: "account_unavailable" };
+      request: {
+        origin: string;
+        accountId: string;
+        submit: boolean;
+        /** Re-checks page authorization and cancellation; runs after any queueing, right before the write. */
+        authorize?: () => Promise<void>;
+        sleep?: (ms: number) => Promise<void>;
+      }
+    ): Promise<LoginFillResult> {
+      let usedId = "";
       const result = await fillLoginForm(target, {
-        username: secret.username,
-        password: secret.password,
         submit: request.submit,
         isPageCurrent: () => pageOrigin(target.contents) === request.origin,
+        // The account is read only now, so turning off agent use while the request waited still stops it.
+        async prepare() {
+          await request.authorize?.();
+          const secret = store.resolveForOrigin(request.origin, { agentOnly: true, id: request.accountId });
+          if (!secret) return null;
+          usedId = secret.id;
+          return { username: secret.username, password: secret.password };
+        },
         ...(request.sleep ? { sleep: request.sleep } : {})
       });
-      if (result.status === "filled" || result.status === "submitted") {
-        try { store.markUsed(secret.id); } catch { /* Bookkeeping only; the fill already happened. */ }
+      if (usedId && (result.status === "filled" || result.status === "submitted")) {
+        try { store.markUsed(usedId); } catch { /* Bookkeeping only; the fill already happened. */ }
       }
       return result;
     }

@@ -100,6 +100,7 @@ export const zhCNMessages = {
   "settings.websiteCredentials.error.authenticationFailed": "系统认证未通过，操作已取消。",
   "settings.websiteCredentials.error.authenticationUnavailable": "这台设备暂不支持系统认证，无法查看或修改已保存的密码。",
   "settings.websiteCredentials.error.storageFailed": "无法读取或保存密码，请稍后重试。",
+  "settings.websiteCredentials.error.vaultFull": "已保存的密码太多，无法再写入。没有做任何修改。",
   "settings.websiteCredentials.import": "导入",
   "settings.websiteCredentials.export": "导出备份",
   "settings.websiteCredentials.imported": "已导入 {added} 个账号，跳过 {skipped} 个已存在的，{invalid} 行无法导入。",

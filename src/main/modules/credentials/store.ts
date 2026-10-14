@@ -17,7 +17,7 @@ import {
   type WebsiteCredentialVaultStatus
 } from "../../../shared/website-credentials";
 import type { EpochMilliseconds } from "../../../shared/time-contract";
-import { openVaultFile, writeVaultFile, type VaultKeyProtector } from "./vault-file";
+import { openVaultFile, VaultCapacityError, writeVaultFile, type VaultKeyProtector } from "./vault-file";
 
 type StoredCredential = {
   id: string;
@@ -103,8 +103,8 @@ export function createWebsiteCredentialStore(options: WebsiteCredentialStoreOpti
             fs.mkdirSync(options.vaultDirectory, { recursive: true });
             options.hardenDirectory(options.vaultDirectory);
             writeVaultFile(options.vaultDirectory, options.protector, opened, Buffer.from(JSON.stringify(payload), "utf8"));
-          } catch {
-            throw new WebsiteCredentialError("storageFailed");
+          } catch (error) {
+            throw new WebsiteCredentialError(error instanceof VaultCapacityError ? "vaultFull" : "storageFailed");
           }
         }
       }
