@@ -100,7 +100,7 @@ export function moveExtractedBuiltinRoot(extractedRoot: string, finalInstallDir:
   }
 
   fs.cpSync(extractedRoot, finalInstallDir, { recursive: true, force: true });
-  fs.rmSync(extractedRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  // The install caller cleans the whole temporary tree after publication.
 }
 
 function readSyncedBuiltinAssetManifest(app: App) {

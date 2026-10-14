@@ -7,7 +7,9 @@ import { validateTrust, verifySignedManifest } from "../src/main/modules/updates
 
 export function signingOptionsFromEnvironment(env = process.env) {
   if (!env.DESKTOP_UPDATE_PRIVATE_KEY_FILE || !env.DESKTOP_UPDATE_TRUST_FILE) throw new Error("DESKTOP_UPDATE_PRIVATE_KEY_FILE and DESKTOP_UPDATE_TRUST_FILE are required");
-  const privateKey = createPrivateKey({ key: fs.readFileSync(env.DESKTOP_UPDATE_PRIVATE_KEY_FILE), passphrase: env.DESKTOP_UPDATE_KEY_PASSPHRASE });
+  const pem = fs.readFileSync(env.DESKTOP_UPDATE_PRIVATE_KEY_FILE);
+  if (pem.toString('utf8').includes('BEGIN ENCRYPTED PRIVATE KEY')) throw new Error('Encrypted private key: convert the existing key to unencrypted PKCS8 before signing; do not generate a replacement key');
+  const privateKey = createPrivateKey(pem);
   if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("Ed25519 private key required");
   return { privateKey, trust: validateTrust(JSON.parse(fs.readFileSync(env.DESKTOP_UPDATE_TRUST_FILE, "utf8"))) };
 }
@@ -44,7 +46,7 @@ export async function verifyRelease(directory, trust, productId, artifacts) {
   if (JSON.stringify(computed.artifacts) !== JSON.stringify(value.artifacts)) throw new Error("Final artifacts do not match signed metadata");
   return value;
 }
-export function generateSigningKey(directory, productId, passphrase) {
+export function generateSigningKey(directory, productId) {
   const repository = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
   const target = path.resolve(directory);
   let ancestor = target;
@@ -54,17 +56,16 @@ export function generateSigningKey(directory, productId, passphrase) {
   if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
     throw new Error("Signing keys must be generated outside the repository");
   }
-  if (!passphrase || passphrase.length < 12) throw new Error("Set DESKTOP_UPDATE_KEY_PASSPHRASE to at least 12 characters");
   const pair = generateKeyPairSync("ed25519");
   const trust = validateTrust({ keys: [{ productId, publicKey: pair.publicKey.export({ type: "spki", format: "pem" }) }] });
   fs.mkdirSync(directory, { mode: 0o700 });
-  fs.writeFileSync(path.join(directory, "private-key.pem"), pair.privateKey.export({ type: "pkcs8", format: "pem", cipher: "aes-256-cbc", passphrase }), { flag: "wx", mode: 0o600 });
+  fs.writeFileSync(path.join(directory, "private-key.pem"), pair.privateKey.export({ type: "pkcs8", format: "pem" }), { flag: "wx", mode: 0o600 });
   fs.writeFileSync(path.join(directory, "public-trust.json"), JSON.stringify(trust, null, 2) + "\n", { flag: "wx" });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     const [command, first, second, third] = process.argv.slice(2);
-    if (command === "keygen" && first && second) generateSigningKey(first, second, process.env.DESKTOP_UPDATE_KEY_PASSPHRASE);
+    if (command === "keygen" && first && second) generateSigningKey(first, second);
     else if (command === "sign" && first && second) await createSignedRelease(JSON.parse(fs.readFileSync(first, "utf8")), second, signingOptionsFromEnvironment());
     else if (command === "verify" && first && second && third) {
       const input = JSON.parse(fs.readFileSync(third, "utf8"));
