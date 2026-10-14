@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MarketItem } from "@shared/contracts";
 import type { MarketConnectorAuthSession, MarketConnectorConnection, MarketConnectorTokenSchema } from "@shared/contracts/market-connector-state";
-import { connectorIsUsable, openConnectorAuthorization, connectorAuthorizationUrl, connectorSessionActive, sameConnectorAuthorization, runMarketConnectorFlow, type ConnectorFlowPhase } from "./connectorFlow";
+import { connectorAuthenticationError, connectorIsUsable, openConnectorAuthorization, connectorAuthorizationUrl, connectorSessionActive, sameConnectorAuthorization, runMarketConnectorFlow, type ConnectorFlowPhase } from "./connectorFlow";
 
 interface FlowState { item: MarketItem; connectorId: string; phase: ConnectorFlowPhase; session?: MarketConnectorAuthSession; schema?: MarketConnectorTokenSchema; mountAgent: boolean; openChat: boolean; draft?: string }
 export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKey: string, draft?: string) => void) {
@@ -178,9 +178,9 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
         if (credentials && credentialSchema) {
           change({ phase: "credentials", schema: credentialSchema });
           const reason = cause instanceof Error ? cause.message : String(cause);
-          setError(reason.includes("saved credentials were preserved")
+          setError(connectorAuthenticationError(cause) || (reason.includes("saved credentials were preserved")
             ? "market.connector.flow.credentialCheckFailed"
-            : "market.connector.flow.credentialSaveFailed");
+            : "market.connector.flow.credentialSaveFailed"));
         } else setError(cause instanceof Error ? cause.message : String(cause));
       }
     }
@@ -219,7 +219,8 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     setFlow(null); latest.current = null;
     const abort = new AbortController(); controller.current = abort; revision.current++; setBusy(true); setFailure(null); setNotice("");
     setMutation({ itemId: item.id, action });
-    try { const id = getId(item);
+    const id = getId(item);
+    try {
       if (action === "update") {
         const result = await window.electronAPI.market.update(item.id);
         if (!result.ok) throw new Error(result.message);
@@ -227,7 +228,18 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       }
       else if (action === "check") { const result = await window.electronAPI.market.checkConnectorConnection(id); if (!abort.signal.aborted) { updateConnection(result); if (["failed", "unauthorized"].includes(result.authentication.status)) throw new Error(result.authentication.message || "market.connector.flow.notReady"); if (result.authentication.pendingVerification || result.readiness === "pending_verification") setNotice("market.connector.flow.pendingVerification"); } }
       else { const result = await window.electronAPI.market.disconnectConnector(id); if (abort.signal.aborted) return; updateConnection(await window.electronAPI.market.getConnectorConnection(id)); if (result.warnings?.length) setNotice(result.warnings.join("\n")); }
-    } catch (cause) { if (mounted.current && !abort.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) {
+      if (mounted.current && !abort.signal.aborted) {
+        const authError = connectorAuthenticationError(cause);
+        setError(authError || (cause instanceof Error ? cause.message : String(cause)));
+        // Failed checks return an API error rather than a connection DTO. Read
+        // the local snapshot so an old success badge cannot mask that result.
+        if (action === "check" && authError) {
+          try { const result = await window.electronAPI.market.getConnectorConnection(id); if (mounted.current && !abort.signal.aborted) updateConnection(result); }
+          catch { /* Keep the original failure; later snapshot reads can recover. */ }
+        }
+      }
+    }
     finally {
       if (controller.current === abort) {
         controller.current = null;

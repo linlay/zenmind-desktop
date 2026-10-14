@@ -1,6 +1,6 @@
 import type { MarketConnectorConnection } from "@shared/contracts/market-connector-state";
 import type { TranslationKey } from "../../../shared/i18n";
-import { connectorIsUsable } from "./connectorFlow";
+import { connectorAwaitingVerification, connectorIsUsable } from "./connectorFlow";
 
 interface ConnectorPresentation {
   labelKey: TranslationKey;
@@ -19,6 +19,7 @@ export function connectorPresentation(
   if (!connection) return { labelKey: installed ? "market.connector.flow.stateUnavailable" : "market.connector.flow.notInstalled", tone: installed ? "unavailable" : "idle" };
 
   const status = connection.authentication.status;
+  if (connectorAwaitingVerification(connection)) return { labelKey: "market.connector.flow.state.pending_verification", tone: "pending", tagColor: "warning" };
   if (status === "unauthorized" && connection.configured) return { labelKey: "market.connector.flow.state.authorization_required", tone: "pending", tagColor: "warning" };
   if (status === "failed" || connection.readiness === "unavailable") return { labelKey: "market.connector.flow.state.unavailable", tone: "unavailable", tagColor: "warning" };
   if (connectorIsUsable(connection)) {

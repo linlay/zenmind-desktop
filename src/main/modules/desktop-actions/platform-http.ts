@@ -78,6 +78,13 @@ export async function fetchAgentPlatformWithAuth<T>(
       ...(requestBody === undefined ? {} : { body: requestBody })
     });
     const { text, payload } = await readAgentPlatformResponse(response);
+    const record = readObject(payload);
+    const connectorAuthCode = readObject(record.data).code;
+    // A connector service rejecting its own account is distinct from the
+    // Desktop app token expiring. Keep only its stable code across Electron IPC.
+    if (!response.ok && (connectorAuthCode === "connector_authentication_denied" || connectorAuthCode === "connector_auth_required")) {
+      throw Object.assign(new Error(connectorAuthCode), { status: response.status, platformCode: connectorAuthCode });
+    }
     const unauthorized = response.status === 401 || isUnauthorizedPayload(payload);
     if (unauthorized) {
       if (reason === "missing") {
@@ -86,7 +93,6 @@ export async function fetchAgentPlatformWithAuth<T>(
       throw new Error(agentPlatformAuthFailureMessage());
     }
     if (!response.ok) {
-      const record = readObject(payload);
       // Preserve the response identity so callers can distinguish a missing
       // resource from a failed request or an unsupported HTTP route.
       throw Object.assign(new Error(text || `agent-platform returned HTTP ${response.status}`), {

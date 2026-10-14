@@ -17,7 +17,7 @@ function setup(onChanged, onChat) {
     getConnectorConnections: async () => [],
     update: async id => { calls.push(['update', id]); throw new Error('update failed'); },
   }, connectorAuthBrowser: {}, assistant: { getSettings: async () => ({ chatDefaultAgentKey: 'cutej' }) } };
-  const flow = { connectorIsUsable: flowModule.exports.connectorIsUsable, runMarketConnectorFlow: async intent => { calls.push(['connect', intent.item.id]); throw new Error('command for darwin is required'); } };
+  const flow = { connectorIsUsable: flowModule.exports.connectorIsUsable, connectorAuthenticationError: flowModule.exports.connectorAuthenticationError, runMarketConnectorFlow: async intent => { calls.push(['connect', intent.item.id]); throw new Error('command for darwin is required'); } };
   const module = { exports: {} };
   const source = fs.readFileSync(new URL('../src/renderer/pages/functional-market/useMarketConnectorFlow.ts', import.meta.url), 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
