@@ -2,6 +2,7 @@ import { ConnectorIcon } from "./ConnectorIcon";
 import { connectorIsUsable, connectorRequiresConfiguration } from "./connectorFlow";
 import { Alert, Button, Modal, Tag } from "antd";
 import { MessageOutlined } from "@ant-design/icons";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MarketItem } from "@shared/contracts";
@@ -18,7 +19,7 @@ export function ConnectorStateTag({ connection, installed, checking = false }: {
   const label = checking ? t("market.connector.flow.checking") : connection ? t(`market.connector.flow.state.${connection.readiness}` as TranslationKey) : t(installed ? "market.connector.flow.stateUnavailable" : "market.connector.flow.notInstalled");
   return <><Tag color={connectorIsUsable(connection) ? "success" : connection?.readiness === "authorization_required" ? "warning" : undefined}>{label}</Tag>{connection?.authentication.pendingVerification && connection.readiness === "ready" && <Tag color="warning">{t("market.connector.flow.state.pending_verification")}</Tag>}</>;
 }
-export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, onConfigure }: { item: MarketItem | null; runtime: MarketConnectorFlowRuntime; onClose: () => void; onDisconnect: (item: MarketItem) => void; onConfigure: (item: MarketItem) => void }) {
+export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, onConfigure, children }: { item: MarketItem | null; runtime: MarketConnectorFlowRuntime; onClose: () => void; onDisconnect: (item: MarketItem) => void; onConfigure: (item: MarketItem) => void; children?: ReactNode }) {
   const { t } = useI18n();
   if (!item) return null;
   const connection = runtime.getConnection(item);
@@ -80,5 +81,6 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, on
       </details>
       </div>
     </div>
+    {children}
   </Modal>;
 }
