@@ -30,7 +30,25 @@ export function connectorIsUsable(connection?: MarketConnectorConnection) {
   return connection.readiness === "no_auth"
     ? !connectorRequiresConfiguration(connection) && !connection.configured && connection.capabilities.authMode === "no_auth" && connection.authentication.status === "no_auth"
       && (!connection.capabilities.hasCli || connection.preparation?.status === "ready")
-    : connection.configured && connection.readiness === "ready";
+    : connection.configured && connection.readiness === "ready"
+      && !["unauthorized", "failed", "canceled", "setup_required", "pending", "preparing", "pending_verification"].includes(connection.authentication?.status || "");
+}
+/** A saved candidate is distinct from both a usable account and an empty form. */
+export function connectorAwaitingVerification(connection?: MarketConnectorConnection) {
+  return !!connection && (connection.readiness === "pending_verification" || connection.authentication?.status === "pending_verification"
+    || !connectorIsUsable(connection) && connection.authentication?.pendingVerification === true);
+}
+/** Only machine codes from the Platform/IPC boundary carry auth failure meaning. */
+export function connectorAuthenticationError(cause: unknown) {
+  const raw = typeof cause === "object" && cause !== null ? cause as { code?: unknown; platformCode?: unknown; message?: unknown } : {};
+  let code = typeof raw.platformCode === "string" ? raw.platformCode : raw.code;
+  if (code !== "connector_authentication_denied" && code !== "connector_auth_required") {
+    const message = typeof raw.message === "string" ? raw.message : typeof cause === "string" ? cause : "";
+    code = message.replace(/^Error invoking remote method 'market\.(?:saveConnectorCredentials|checkConnectorConnection)': (?:Error: )?/, "").trim();
+  }
+  if (code === "connector_authentication_denied") return "market.connector.flow.authenticationDenied";
+  if (code === "connector_auth_required") return "market.connector.flow.credentialRejected";
+  return undefined;
 }
 export function connectorAuthorizationUrl(value?: string): string | null {
   if (!value || /[\s\u0000-\u001f\u007f]/.test(value)) return null;
@@ -103,6 +121,9 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
   }
   const read = async () => { check(); const state = await api.getConnectorConnection(id); check(); if (state.connectorId !== id) throw new Error("market.connector.flow.missingId"); onConnection(state); return state; };
   let current = await read();
+  // Older Platform snapshots may still report configuration_required while
+  // acknowledging a stored candidate. Do not collect or overwrite it again.
+  if (!intent.credentials && connectorAwaitingVerification(current)) return { connectorId: id, result: "pending_verification" };
   if (current.capabilities.hasCli && ((current.capabilities.authMode === "no_auth" && current.preparation?.status !== "ready") || (connectorRequiresConfiguration(current) && !current.configured) || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
     onPhase("preparing"); check();
     let preparation = await api.prepareConnector(id); check();
@@ -144,7 +165,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
       await onSession(session); check(); await wait(signal);
     }
   }
-  if (current.readiness === "pending_verification" || (intent.credentials && current.authentication.pendingVerification)) return { connectorId: id, result: "pending_verification" };
+  if (connectorAwaitingVerification(current) || (intent.credentials && current.authentication.pendingVerification)) return { connectorId: id, result: "pending_verification" };
   if (!connectorIsUsable(current)) throw new Error(current.authentication.message || "market.connector.flow.notReady");
   if (intent.mountAgent) {
     if (intent.agentKey) {
