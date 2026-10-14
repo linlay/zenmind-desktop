@@ -94,12 +94,12 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
     }, {
       getConnectorConnection: state.readConnectorConnection, connectConnector: state.startConnectorConnection,
       cancelConnectorConnection: state.cancelConnectorConnection, checkConnector: state.checkConnectorConnection,
-      setConnectorAgent: async request => {
-        const snapshot = await state.setConnectorAgent(request);
-        const current = snapshot.mcp.filter(component => component.connectorId === id);
-        observedPendingDiscovery = current.length > 0 && current.every(component => component.status !== 'ready' && component.toolCount === 0);
+      setConnectorAgent: state.setConnectorAgent, getConnectorAgent: state.readConnectorAgent,
+      getConnectorAgentTools: async request => {
+        const snapshot = await state.readConnectorAgentTools(request);
+        if (!snapshot.reloadPending && snapshot.mcp.length > 0 && snapshot.mcp.every(component => component.status !== 'ready' && component.toolCount === 0)) observedPendingDiscovery = true;
         return snapshot;
-      }, getConnectorAgent: state.readConnectorAgent,
+      },
     });
     assert.equal(result.result, 'complete');
     assert.ok(phases.includes('mounting'));
@@ -108,8 +108,9 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
     const agent = await state.readConnectorAgent('mock-agent');
     assert.ok(agent.activeConnectorIds.includes(id));
     assert.equal(agent.reloadPending, false);
-    assert.ok(agent.runtimeRevision);
-    const components = agent.mcp.filter(component => component.connectorId === id);
+    const tools = await state.readConnectorAgentTools({ connectorId: id, agentKey: 'mock-agent' });
+    assert.equal(tools.reloadPending, false);
+    const components = tools.mcp;
     assert.equal(components.length, 1);
     assert.equal(components[0].status, 'ready');
     assert.equal(components[0].toolCount, 1);

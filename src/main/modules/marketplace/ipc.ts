@@ -3,7 +3,7 @@ import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesyste
 import { readMarketSkillContent } from "./skill-detail";
 import { readMarketSkillPins, saveMarketSkillPins } from "./skill-market";
 import { createCustomConnector, importConnectorArchive } from "./connector-custom";
-import { readConnectorConnections, readConnectorConnection, prepareConnectorConnection, startConnectorConnection, cancelConnectorConnection, checkConnectorConnection, disconnectConnectorConnection, readConnectorTokenSchema, saveConnectorCredentials, setConnectorAgent, readConnectorAgent } from "./connector-state";
+import { readConnectorConnections, readConnectorConnection, prepareConnectorConnection, startConnectorConnection, cancelConnectorConnection, checkConnectorConnection, disconnectConnectorConnection, readConnectorTokenSchema, saveConnectorCredentials, setConnectorAgent, readConnectorAgent, readConnectorAgentTools } from "./connector-state";
 
 export interface MarketplaceIpcHandlerOptions {
   app: any;
@@ -112,7 +112,8 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     getConnectorTokenSchema: readConnectorTokenSchema,
     saveConnectorCredentials,
     setConnectorAgent,
-    getConnectorAgent: readConnectorAgent
+    getConnectorAgent: readConnectorAgent,
+    getConnectorAgentTools: readConnectorAgentTools
   };
   for (const [name, handle] of Object.entries(connectorHandlers)) {
     ipcMain.handle(`market.${name}`, async (event: any, input: unknown) => { assertPinSender(event); return handle(input); });

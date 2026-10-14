@@ -183,14 +183,15 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
       if (current.capabilities.hasMcp) {
         onPhase("syncing"); check();
         const syncDeadline = Date.now() + 60_000;
+        const target = { connectorId: id, agentKey: intent.agentKey };
+        let tools = await api.getConnectorAgentTools(target); check();
         while (true) {
-          // Only the target Agent's current published snapshot is readiness evidence.
-          // A retained Run or another connector's tools must not complete this flow.
-          const mounted = isMounted();
-          if (!Array.isArray(agent.mcp)) throw new Error("market.connector.flow.mcpStateRequired");
-          if (mounted) {
-            const components = agent.mcp.filter(component => component.connectorId === id);
-            if (!components.length) throw new Error("market.connector.flow.toolsMissing");
+          // The usage directory reports only the target Agent's current published
+          // version, so a retained Run or another connector cannot complete this flow.
+          if (tools.agentKey !== intent.agentKey || tools.connectorId !== id) throw new Error("market.connector.flow.agentStateMismatch");
+          if (!tools.reloadPending) {
+            const components = tools.mcp;
+            if (!components.length || components.some(component => component.status === "unmounted")) throw new Error("market.connector.flow.toolsMissing");
             if (components.some(component => component.status === "unavailable")) throw new Error("market.connector.flow.toolsUnavailable");
             if (components.every(component => component.status === "ready")) {
               if (!components.some(component => component.toolCount > 0)) throw new Error("market.connector.flow.toolsEmpty");
@@ -198,7 +199,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
             }
           }
           if (Date.now() > syncDeadline) throw new Error("market.connector.flow.toolsSyncTimeout");
-          await wait(signal); check(); agent = await api.getConnectorAgent(intent.agentKey); check();
+          await wait(signal); check(); tools = await api.getConnectorAgentTools(target); check();
         }
       }
     }

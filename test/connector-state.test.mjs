@@ -90,7 +90,7 @@ test('connector IPC rejects foreign windows/frames before file selection or muta
  const handlers=new Map(),frame={},webContents={mainFrame:frame,isDestroyed:()=>false};
  let dialogs=0;
  registerMarketplaceIpcHandlers({handle:(name,fn)=>handlers.set(name,fn)},{app:{},mainWindow:{webContents,isDestroyed:()=>false},showArchiveDialog:async()=>{dialogs++;return {canceled:true,filePaths:[]};},t:key=>key});
- for(const key of ['market.getCustomMcpConfig','market.saveCustomMcpConfig','market.importConnector','market.createConnector','market.connectConnector','market.checkConnectorConnection','market.saveConnectorCredentials','market.setConnectorAgent']) {
+ for(const key of ['market.getCustomMcpConfig','market.saveCustomMcpConfig','market.importConnector','market.createConnector','market.connectConnector','market.checkConnectorConnection','market.saveConnectorCredentials','market.setConnectorAgent','market.getConnectorAgentTools']) {
   await assert.rejects(handlers.get(key)({sender:{},senderFrame:frame},{}),/forbidden/);
   await assert.rejects(handlers.get(key)({sender:webContents,senderFrame:{}},{}),/forbidden/);
  }
@@ -119,34 +119,49 @@ test('market import rejects returned identities and versions that contradict its
   }
 });
 
-test('Agent MCP projection preserves only validated public synchronization metadata', async t => {
-  const component = { connectorId: 'example.office', serverKey: 'example.office/main@current', status: 'syncing', toolCount: 0 };
-  const raw = { agentKey: 'ResearchAgent', connectorIds: ['example.office'], activeConnectorIds: ['example.office'], reloadPending: false,
-    mcp: [{ ...component, internalPath: '/private' }], runtimeRevision: 'current-revision', privateState: 'private' };
-  market.configureConnectorMarketPlatformCaller(async () => raw);
+test('Agent mount state carries only mount fields', async t => {
+  market.configureConnectorMarketPlatformCaller(async () => ({ agentKey: 'ResearchAgent', connectorIds: ['example.office'], activeConnectorIds: ['example.office'],
+    reloadPending: false, mcp: [{ connectorId: 'example.office', serverKey: 'example.office', status: 'ready', toolCount: 1 }], runtimeRevision: 'r' }));
   t.after(() => market.configureConnectorMarketPlatformCaller(null));
-  const result = await state.readConnectorAgent('ResearchAgent');
-  assert.deepEqual(result.mcp, [component]);
-  assert.equal(result.runtimeRevision, 'current-revision');
-  assert.equal(result.privateState, undefined);
-  delete raw.mcp; delete raw.runtimeRevision;
-  assert.equal((await state.readConnectorAgent('ResearchAgent')).mcp, undefined, 'old APIs remain readable for CLI/native');
+  assert.deepEqual(await state.readConnectorAgent('ResearchAgent'),
+    { agentKey: 'ResearchAgent', connectorIds: ['example.office'], activeConnectorIds: ['example.office'], reloadPending: false });
 });
 
-test('Agent MCP response rejects foreign Agents, invalid components, duplicates and malformed revisions', async t => {
-  const component = { connectorId: 'example.office', serverKey: 'example.office/main@current', status: 'ready', toolCount: 1 };
-  const raw = { agentKey: 'ResearchAgent', connectorIds: ['example.office'], activeConnectorIds: ['example.office'], reloadPending: false, mcp: [component] };
+test('Agent tool state reads the usage directory for one connector of the current published version', async t => {
+  const calls = [];
+  const raw = { agentKey: 'ResearchAgent', reloadPending: false, connectors: [
+    { id: 'other.office', readiness: 'ready', mcp: [{ agentKey: 'ResearchAgent', serverKey: 'other.office', status: 'ready', toolCount: 9 }] },
+    { id: 'example.office', readiness: 'ready', mcp: [{ agentKey: 'ResearchAgent', serverKey: 'example.office', status: 'syncing', toolCount: 0, internalPath: '/private' }] },
+  ] };
+  market.configureConnectorMarketPlatformCaller(async path => { calls.push(path); return raw; });
+  t.after(() => market.configureConnectorMarketPlatformCaller(null));
+  assert.deepEqual(await state.readConnectorAgentTools({ connectorId: 'example.office', agentKey: 'ResearchAgent' }),
+    { agentKey: 'ResearchAgent', connectorId: 'example.office', reloadPending: false, mcp: [{ serverKey: 'example.office', status: 'syncing', toolCount: 0 }] });
+  assert.deepEqual(calls, ['/api/connectors?agentKey=ResearchAgent']);
+  raw.connectors[1].mcp = [{ serverKey: 'example.office', status: 'unmounted', toolCount: 0 }];
+  assert.equal((await state.readConnectorAgentTools({ connectorId: 'example.office', agentKey: 'ResearchAgent' })).mcp[0].status, 'unmounted');
+  delete raw.connectors[1].mcp;
+  assert.deepEqual((await state.readConnectorAgentTools({ connectorId: 'example.office', agentKey: 'ResearchAgent' })).mcp, []);
+  assert.deepEqual((await state.readConnectorAgentTools({ connectorId: 'missing.office', agentKey: 'ResearchAgent' })).mcp, []);
+});
+
+test('Agent tool state rejects foreign Agents, invalid components and duplicates', async t => {
+  const component = { agentKey: 'ResearchAgent', serverKey: 'example.office', status: 'ready', toolCount: 1 };
+  const response = connectors => ({ agentKey: 'ResearchAgent', reloadPending: false, connectors: [{ id: 'example.office', readiness: 'ready', mcp: connectors }] });
   const invalid = [
-    { agentKey: 'AnotherAgent' }, { mcp: null }, { mcp: {} },
-    ...[{ connectorId: '../escape' }, { serverKey: '' }, { serverKey: 'x\u0000y' }, { status: 'connected' },
-      { toolCount: -1 }, { toolCount: 0.5 }, { toolCount: '1' }].map(patch => ({ mcp: [{ ...component, ...patch }] })),
-    { mcp: [component, component] }, { runtimeRevision: '' }, { runtimeRevision: ' ' }, { runtimeRevision: 7 },
+    { agentKey: 'AnotherAgent', reloadPending: false, connectors: [] }, { agentKey: 'ResearchAgent', connectors: [] },
+    { agentKey: 'ResearchAgent', reloadPending: false, connectors: {} }, response({}),
+    ...[{ agentKey: 'AnotherAgent' }, { agentKey: undefined }, { serverKey: '' }, { serverKey: 'x\u0000y' }, { status: 'connected' },
+      { status: 'unmounted' }, { toolCount: -1 }, { toolCount: 0.5 }, { toolCount: '1' }].map(patch => response([{ ...component, ...patch }])),
+    response([component, component]),
   ];
   t.after(() => market.configureConnectorMarketPlatformCaller(null));
-  for (const patch of invalid) {
-    market.configureConnectorMarketPlatformCaller(async () => ({ ...raw, ...patch }));
-    await assert.rejects(state.readConnectorAgent('ResearchAgent'));
+  for (const raw of invalid) {
+    market.configureConnectorMarketPlatformCaller(async () => raw);
+    await assert.rejects(state.readConnectorAgentTools({ connectorId: 'example.office', agentKey: 'ResearchAgent' }));
   }
+  await assert.rejects(state.readConnectorAgentTools({ connectorId: '../escape', agentKey: 'ResearchAgent' }));
+  await assert.rejects(state.readConnectorAgentTools({ connectorId: 'example.office', agentKey: '../escape' }));
 });
 
  test('explicit check uses POST check and preserves pending candidate alongside active credentials', async(t) => {

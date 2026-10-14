@@ -1,5 +1,5 @@
 import type {
-  MarketConnectorAgentState, MarketConnectorAuthSession, MarketConnectorConnection,
+  MarketConnectorAgentState, MarketConnectorAgentToolState, MarketConnectorAuthSession, MarketConnectorConnection,
   MarketConnectorDisconnectResult, MarketConnectorPreparation, MarketConnectorTokenSchema
 } from "../../../shared/contracts/market-connector-state";
 import { asObject, asString } from "./common";
@@ -118,24 +118,27 @@ export async function saveConnectorCredentials(value: unknown) {
 function normalizeAgentState(value: unknown, agentKey: string): MarketConnectorAgentState {
   const raw = asObject(value);
   if (raw.agentKey !== agentKey || typeof raw.reloadPending !== "boolean" || !Array.isArray(raw.connectorIds) || !Array.isArray(raw.activeConnectorIds)) throw new Error("Invalid connector Agent state");
-  let mcp: MarketConnectorAgentState["mcp"];
-  if (raw.mcp !== undefined) {
-    if (!Array.isArray(raw.mcp) || raw.mcp.length > 4096) throw new Error("Invalid connector Agent MCP state");
-    const seen = new Set<string>();
-    mcp = raw.mcp.map(value => {
-      const component = asObject(value), id = connectorId(component.connectorId);
-      if (typeof component.serverKey !== "string" || !component.serverKey.trim() || component.serverKey.length > 2048 || /[\u0000-\u001f\u007f]/u.test(component.serverKey)
-        || !["pending", "syncing", "ready", "unavailable"].includes(asString(component.status))
-        || !Number.isSafeInteger(component.toolCount) || (component.toolCount as number) < 0) throw new Error("Invalid connector Agent MCP component");
-      const identity = JSON.stringify([id, component.serverKey]);
-      if (seen.has(identity)) throw new Error("Duplicate connector Agent MCP component");
-      seen.add(identity);
-      return { connectorId: id, serverKey: component.serverKey, status: component.status as NonNullable<MarketConnectorAgentState["mcp"]>[number]["status"], toolCount: component.toolCount as number };
-    });
-  }
-  if (raw.runtimeRevision !== undefined && (typeof raw.runtimeRevision !== "string" || !raw.runtimeRevision.trim())) throw new Error("Invalid connector Agent runtime revision");
-  return { agentKey, connectorIds: raw.connectorIds.map(connectorId), activeConnectorIds: raw.activeConnectorIds.map(connectorId), reloadPending: raw.reloadPending,
-    ...(mcp !== undefined ? { mcp } : {}), ...(raw.runtimeRevision !== undefined ? { runtimeRevision: raw.runtimeRevision as string } : {}) };
+  return { agentKey, connectorIds: raw.connectorIds.map(connectorId), activeConnectorIds: raw.activeConnectorIds.map(connectorId), reloadPending: raw.reloadPending };
+}
+const toolStatuses = new Set(["pending", "syncing", "ready", "unavailable", "unmounted"]);
+/** Platform's usage directory reports only the Agent's current published version. */
+function normalizeAgentToolState(value: unknown, agentKey: string, id: string): MarketConnectorAgentToolState {
+  const raw = asObject(value);
+  if (raw.agentKey !== agentKey || typeof raw.reloadPending !== "boolean" || !Array.isArray(raw.connectors)) throw new Error("Invalid connector Agent tool state");
+  const item = raw.connectors.map(asObject).find(entry => entry.id === id);
+  const components = item?.mcp === undefined ? [] : item.mcp;
+  if (!Array.isArray(components) || components.length > 4096) throw new Error("Invalid connector Agent MCP state");
+  const seen = new Set<string>();
+  const mcp = components.map(value => {
+    const component = asObject(value), status = asString(component.status);
+    if (typeof component.serverKey !== "string" || !component.serverKey.trim() || component.serverKey.length > 2048 || /[\u0000-\u001f\u007f]/u.test(component.serverKey)
+      || !toolStatuses.has(status) || (status === "unmounted" ? component.agentKey !== undefined : component.agentKey !== agentKey)
+      || !Number.isSafeInteger(component.toolCount) || (component.toolCount as number) < 0) throw new Error("Invalid connector Agent MCP component");
+    if (seen.has(component.serverKey)) throw new Error("Duplicate connector Agent MCP component");
+    seen.add(component.serverKey);
+    return { serverKey: component.serverKey, status: status as MarketConnectorAgentToolState["mcp"][number]["status"], toolCount: component.toolCount as number };
+  });
+  return { agentKey, connectorId: id, reloadPending: raw.reloadPending, mcp };
 }
 function agentIdentity(value: unknown) {
   if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value) || value.includes("..")) throw new Error("Invalid Agent identity");
@@ -149,4 +152,8 @@ export async function setConnectorAgent(value: unknown) {
 export async function readConnectorAgent(value: unknown) {
   const agentKey = agentIdentity(value);
   return normalizeAgentState(await callConnectorPlatform(`/api/admin/agents/connectors?agentKey=${encodeURIComponent(agentKey)}`), agentKey);
+}
+export async function readConnectorAgentTools(value: unknown) {
+  const raw = asObject(value), id = connectorId(raw.connectorId), agentKey = agentIdentity(raw.agentKey);
+  return normalizeAgentToolState(await callConnectorPlatform(`/api/connectors?agentKey=${encodeURIComponent(agentKey)}`), agentKey, id);
 }

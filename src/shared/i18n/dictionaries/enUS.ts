@@ -260,7 +260,6 @@ export const enUSMessages = {
   "market.connector.flow.installFailed": "Connector installation failed. Retry.",
   "market.connector.flow.missingId": "Installation returned no connector identity. Refresh and retry.",
   "market.connector.flow.agentStateMismatch": "The mount state belongs to a different agent. Refresh and retry.",
-  "market.connector.flow.mcpStateRequired": "This Agent Platform version does not report tool synchronization status. Upgrade and retry.",
   "market.connector.flow.toolsMissing": "No tool status was found for this agent's mounted connector. Refresh and retry.",
   "market.connector.flow.toolsUnavailable": "Connector tool synchronization failed. Check the service address, authorization and network, then retry.",
   "market.connector.flow.toolsEmpty": "The connector is connected but has no available tools. Check the service's tool configuration and retry.",

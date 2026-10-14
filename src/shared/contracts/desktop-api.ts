@@ -12,7 +12,7 @@ import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, S
 import type { PluginInstallResult } from "./manifest";
 import type { MarketSkillContentResult } from "./market-skill-detail";
 import type { MarketSkillPins, MarketSkillPinUpdate } from "./market-skill-pins";
-import type { MarketConnectorConnection, MarketConnectorAuthSession, MarketConnectorPreparation, MarketConnectorDisconnectResult, MarketConnectorTokenSchema, MarketConnectorAgentState } from "./market-connector-state";
+import type { MarketConnectorConnection, MarketConnectorAuthSession, MarketConnectorPreparation, MarketConnectorDisconnectResult, MarketConnectorTokenSchema, MarketConnectorAgentState, MarketConnectorAgentToolState } from "./market-connector-state";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetRemoveResult, DesktopPetImportResult, DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
@@ -1149,6 +1149,7 @@ export interface DesktopApi {
     saveConnectorCredentials(input: { connectorId: string; credentials: Record<string, string> }): Promise<MarketConnectorConnection>;
     setConnectorAgent(input: { connectorId: string; agentKey: string; enabled: boolean }): Promise<MarketConnectorAgentState>;
     getConnectorAgent(agentKey: string): Promise<MarketConnectorAgentState>;
+    getConnectorAgentTools(input: { connectorId: string; agentKey: string }): Promise<MarketConnectorAgentToolState>;
     readSkillContent: (id: string) => Promise<MarketSkillContentResult>;
     getSkillPins: () => Promise<MarketSkillPins>;
     saveSkillPins: (update: MarketSkillPinUpdate) => Promise<MarketSkillPins>;

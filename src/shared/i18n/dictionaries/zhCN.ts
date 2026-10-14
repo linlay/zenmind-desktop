@@ -260,7 +260,6 @@ export const zhCNMessages = {
   "market.connector.flow.installFailed": "连接器安装失败，请重试。",
   "market.connector.flow.missingId": "安装完成但未返回连接器标识，请刷新后重试。",
   "market.connector.flow.agentStateMismatch": "智能体挂载状态与目标不匹配，请刷新后重试。",
-  "market.connector.flow.mcpStateRequired": "当前 Agent Platform 不提供工具同步状态，请升级后重试。",
   "market.connector.flow.toolsMissing": "未找到此智能体已挂载连接器的工具状态，请刷新后重试。",
   "market.connector.flow.toolsUnavailable": "连接器工具同步失败，请检查服务地址、授权和网络后重试。",
   "market.connector.flow.toolsEmpty": "连接器已连接，但未发现可用工具。请检查服务的工具配置后重试。",

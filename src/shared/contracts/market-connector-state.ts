@@ -45,14 +45,19 @@ export interface MarketConnectorAgentState {
   connectorIds: string[];
   activeConnectorIds: string[];
   reloadPending: boolean;
-  /** Absent only on older Platform versions; never implies that MCP tools are ready. */
-  mcp?: Array<{
-    connectorId: string;
+}
+/** One connector's MCP tool state in an Agent's current published version. */
+export interface MarketConnectorAgentToolState {
+  agentKey: string;
+  connectorId: string;
+  /** The saved Agent configuration has not been published to new Runs yet. */
+  reloadPending: boolean;
+  /** `unmounted` means the published version does not include this connector. */
+  mcp: Array<{
     serverKey: string;
-    status: "pending" | "syncing" | "ready" | "unavailable";
+    status: "pending" | "syncing" | "ready" | "unavailable" | "unmounted";
     toolCount: number;
   }>;
-  runtimeRevision?: string;
 }
 export interface MarketConnectorDisconnectResult {
   connectorId: string;

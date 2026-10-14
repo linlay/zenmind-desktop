@@ -508,6 +508,7 @@ const api: DesktopApi = {
     saveConnectorCredentials: input => ipcRenderer.invoke("market.saveConnectorCredentials", input),
     setConnectorAgent: input => ipcRenderer.invoke("market.setConnectorAgent", input),
     getConnectorAgent: key => ipcRenderer.invoke("market.getConnectorAgent", key),
+    getConnectorAgentTools: input => ipcRenderer.invoke("market.getConnectorAgentTools", input),
     readSkillContent: (id: string) => ipcRenderer.invoke("market.readSkillContent", id),
     getSkillPins: () => ipcRenderer.invoke("market.getSkillPins"),
     saveSkillPins: (pins) => ipcRenderer.invoke("market.saveSkillPins", pins),
