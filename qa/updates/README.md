@@ -14,15 +14,15 @@ Windows 使用 v2：Ed25519 签名原始清单，安装包校验大小和 SHA-25
 
 ## 1. 准备密钥与构建信任
 
-生产和测试分别生成密钥；私钥存放于仓库、`dist` 和构建管理器归档目录之外的受限发布目录。Windows 上应限制该目录 ACL，仅发布账户可访问。工具创建的私钥使用口令加密；POSIX 同时设置私有文件权限。不要将私钥提交 Git、传入命令行参数或打印到日志。
+生产和测试分别生成密钥；私钥存放于仓库、`dist` 和构建管理器归档目录之外的受限发布目录。Windows 上应限制该目录 ACL，仅发布账户可访问。工具创建未加密 PKCS8 私钥，无需口令；POSIX 同时设置私有文件权限。不要将私钥提交 Git、传入命令行参数或打印到日志。
 
-在安全终端设置 `DESKTOP_UPDATE_KEY_PASSPHRASE`（至少 12 字符）后，执行：
+执行：
 
 ```powershell
 node scripts/update-signing.mjs keygen C:/SigningKeys/CuteJProduction cutej
 ```
 
-目标必须为不存在的新目录。输出 `private-key.pem` 与 `public-trust.json`。私钥需加密离线备份；生产私钥不会由开发测试自动生成。
+目标必须为不存在的新目录。输出 `private-key.pem` 与 `public-trust.json`。已有加密私钥需使用 Build Manager 的一次性迁移工具解密导出，保留同一密钥；不重新生成，既有客户端公钥无需调整。私钥需加密离线备份；生产私钥不会由开发测试自动生成。
 
 打包时指定公钥文件：
 
@@ -48,7 +48,6 @@ Windows 也可把仅含公钥的配置放到 `brands/<brand>/update-trust.json`�
 $env:DESKTOP_UPDATE_PRIVATE_KEY_FILE = 'C:/SigningKeys/CuteJProduction/private-key.pem'
 $env:DESKTOP_UPDATE_TRUST_FILE = 'C:/SigningKeys/CuteJProduction/public-trust.json'
 $env:DESKTOP_UPDATE_RELEASE_INPUT = 'C:/ReleaseInputs/cutej-production.json'
-# 在安全环境中提供 DESKTOP_UPDATE_KEY_PASSPHRASE
 npm run dist:win
 ```
 
