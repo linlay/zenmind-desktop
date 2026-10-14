@@ -1,6 +1,7 @@
 import { ConnectorMessages } from "./ConnectorMessages";
 import { ConnectorIcon } from "./ConnectorIcon";
 import { connectorIsUsable } from "./connectorFlow";
+import { connectorPresentation } from "./connectorPresentation";
 import { useState, type ReactNode } from "react";
 import { CheckOutlined, LoadingOutlined, MessageOutlined, PlusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { Modal } from "antd";
@@ -57,8 +58,9 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
           const connection = runtime.getConnection(item), installed = runtime.isInstalled(item);
           const ready = connectorIsUsable(connection);
           const checking = runtime.loading && !connection;
-          const statusLabel = checking ? t("market.connector.flow.checking") : connection ? t(`market.connector.flow.state.${connection.readiness}` as TranslationKey) : t(installed ? "market.connector.flow.stateUnavailable" : "market.connector.flow.notInstalled");
-          const statusTone = ready ? "ready" : installed || checking ? "pending" : "idle";
+          const presentation = connectorPresentation(connection, installed, { checking, stateUnavailable: !!runtime.stateError });
+          const statusLabel = t(presentation.labelKey);
+          const statusTone = presentation.tone;
           const actionLabel = t(checking ? "market.connector.flow.checking" : runtime.stateError ? "market.connector.flow.retry" : ready ? "market.connector.flow.try" : installed ? "market.connector.flow.installedAwaitingConnection" : "market.connector.flow.connect");
           const unavailable = runtime.loading || (!installed && item.state === "incompatible");
           const disabled = runtime.busy || unavailable;

@@ -83,6 +83,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     const visible = () => { if (document.visibilityState === "visible") void refresh(); };
     const timer = window.setInterval(visible, 15_000);
     document.addEventListener("visibilitychange", visible);
+    window.addEventListener("focus", visible);
     const unsubscribe = window.electronAPI.connectorAuthBrowser.onClosed(identity => {
       if (opened.current?.connectorId === identity.connectorId && opened.current.sessionId === identity.sessionId) void cancelRef.current();
     });
@@ -95,7 +96,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
         void window.electronAPI.market.cancelConnectorConnection({ connectorId: session.connectorId, sessionId: session.sessionId })
           .catch(() => console.warn("[connector-market] Failed to cancel the abandoned authorization session"));
       }
-      clearInterval(timer); document.removeEventListener("visibilitychange", visible); unsubscribe(); void dismiss().catch(() => {});
+      clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", visible); unsubscribe(); void dismiss().catch(() => {});
     };
   }, [refresh, dismiss]);
   const getId = (item: MarketItem) => snapshot.current.aliases[item.id] || item.connectorId || item.id;
@@ -189,6 +190,28 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       if (controller.current === abort) { controller.current = null; if (mounted.current) { setBusy(false); if (!cancellationFailed && latest.current) { const value = { ...latest.current, session: undefined }; latest.current = value; setFlow(value); } } try { await dismiss(); } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause), false); } void refresh(); callbacks.current.onChanged?.(); }
     }
   };
+  const beginCredentialUpdate = async (item: MarketItem) => {
+    if (!mounted.current || controller.current || !isInstalled(item) || getConnection(item)?.capabilities.authMode !== "token") return;
+    const abort = new AbortController(); controller.current = abort; revision.current++;
+    setBusy(true); setMutation(null); setFailure(null); setNotice("");
+    const initial: FlowState = { item, connectorId: getId(item), phase: "credentials", mountAgent: false, openChat: false };
+    latest.current = initial; setFlow(initial);
+    try {
+      const schema = await window.electronAPI.market.getConnectorTokenSchema(initial.connectorId);
+      if (!mounted.current || abort.signal.aborted || controller.current !== abort) return;
+      // Re-enter all fields. Schema defaults are public, but this update form
+      // intentionally starts empty and never requests stored credential values.
+      const emptySchema = { ...schema, fields: schema.fields.map(({ defaultValue: _defaultValue, ...field }) => field) };
+      const value = { ...initial, schema: emptySchema }; latest.current = value; setFlow(value);
+    } catch (cause) {
+      if (mounted.current && !abort.signal.aborted && controller.current === abort) {
+        latest.current = null; setFlow(null);
+        setFailure({ item, message: cause instanceof Error ? cause.message : String(cause), retry: () => beginCredentialUpdate(item) });
+      }
+    } finally {
+      if (controller.current === abort) { controller.current = null; if (mounted.current) setBusy(false); }
+    }
+  };
   const mutate = async (item: MarketItem, action: "check" | "disconnect" | "update") => {
     if (!mounted.current || controller.current) return;
     const setError = (message: string) => setFailure({ item, message, retry: () => mutate(item, action) });
@@ -216,7 +239,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
   };
   return { connections, loading, stateError, error, errorItem: failure?.item, dismissError: () => setFailure(null),
     getError: (item: MarketItem) => failure && getId(failure.item) === getId(item) ? failure.message : "",
-    notice, dismissNotice, flow, busy, mutation, refresh, getConnection, getConnectorId: getId, isInstalled, start, cancel, mutate,
+    notice, dismissNotice, flow, busy, mutation, refresh, getConnection, getConnectorId: getId, isInstalled, start, cancel, mutate, beginCredentialUpdate,
     retry: (item?: MarketItem) => { if (failure && (!item || getId(failure.item) === getId(item))) return failure.retry(); },
     submitCredentials: (credentials: Record<string, string>) => { const value = latest.current; return value ? start(value.item, value.mountAgent, value.openChat, value.draft, credentials) : Promise.resolve(); },
     openingAuth, authRedirectKey,

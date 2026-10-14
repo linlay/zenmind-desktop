@@ -30,7 +30,8 @@ export function connectorIsUsable(connection?: MarketConnectorConnection) {
   return connection.readiness === "no_auth"
     ? !connectorRequiresConfiguration(connection) && !connection.configured && connection.capabilities.authMode === "no_auth" && connection.authentication.status === "no_auth"
       && (!connection.capabilities.hasCli || connection.preparation?.status === "ready")
-    : connection.configured && connection.readiness === "ready";
+    : connection.configured && connection.readiness === "ready"
+      && !["unauthorized", "failed", "canceled", "setup_required", "pending", "preparing", "pending_verification"].includes(connection.authentication?.status || "");
 }
 export function connectorAuthorizationUrl(value?: string): string | null {
   if (!value || /[\s\u0000-\u001f\u007f]/.test(value)) return null;
