@@ -99,7 +99,7 @@ Transit Hub 使用受信任公钥验证身份，以签发方、稳定用户 ID �
 
 Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用同一枚 canonical token。Cookie SSO 通过官网会话换回的结果直接发布为 canonical token；Desktop 不再启动额外 site-token bridge，也不持久化 `sso-site-token.json`。各消费者可以在 401 后请求 Main 刷新 canonical token 一次，但不能自行登录、换取或保存另一枚 Desktop access token。
 
-Tunnel 的开启设置表达用户意愿，与当前认证状态分离。初始化导入和设置保存只校验地址与设备配置，不要求登录；未登录或认证暂不可用时保留开启设置，停止连接与重试，正常登录或认证恢复后自动连接。退出登录不改写开启设置，用户显式关闭后登录也不得自动开启。停止连接必须使在途注册与连接失效，迟到结果不能重新建立旧身份连接。
+Tunnel 的开启设置表达用户意愿，与当前认证状态分离。初始化导入和设置保存只校验地址与设备配置，不要求登录；未登录或认证暂不可用时保留开启设置，停止连接与重试，正常登录或认证恢复后自动连接。退出登录不改写开启设置，用户显式关闭后登录也不得自动开启。停止连接必须使在途注册与连接失效，迟到结果不能重新建立旧身份连接。账号电脑退出应先尝试远端撤销；网络或权威服务失败不能阻断本地会话、Tunnel 和身份 Cookie 的退出清理，界面须说明撤销尚未完成，由设备管理重试。未完成的远端撤销不得伪装成成功。
 
 Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secret。Main 使用当前 canonical SSO JWT 调用设备注册 API，并通过加密 WebSocket 的首个 `tunnel.open` 帧提交同一身份和 `deviceId`；Relay 必须验证 JWT 签名、issuer、audience、有效期、`tunnel` scope，以及该用户对设备的所有权。普通 Agent 的独立 bearer token 协议不受此约束影响。
 
@@ -167,3 +167,13 @@ Main 在独立网络 session 中提交当前 canonical SSO Bearer，省略 Cooki
 Identity 清空 canonical 凭据时同步通知会话交换模块取消在途请求，异步清理本能力拥有的 Cookie；新交换等待清理完成。Cookie 名、origin 和受控 partition 写入清理 journal，不写 Cookie 值；启动先清理遗留记录以避免跨进程账号串用。网站后端仍负责会话撤销及其他设备的退出。正常 token 续期不因 token 字符串变化主动撤销网站 Cookie。
 
 发布后的 SDK 由访问者自己的 preload 执行，禁止向发布者 gateway 请求访问者凭据。独立浏览器不拥有此能力；Help、Service、普通 WorkPanel 和子 frame 也不获得会话交换权限。Windows/macOS 使用相同 Chromium Cookie 和网络语义，preload 的平台路径由既有 bundle path 规则提供。
+
+## 同账号手机访问 Desktop
+
+Identity 只负责手机账号登录会话；Hub 管理 Desktop 归属、名称、撤销和在线状态，并签发两分钟以内的随机连接票据。远端入口根据明确的 `tr_` 格式选择 Hub 验证，不接受本地 app token、旧扫码凭证或已废弃的 `desktop-route` JWT。Main 用 canonical SSO 向 HTTPS Hub 验证账号、来源会话、目标和撤销状态；Hub 通过 Identity `/me` 复验来源会话。注册 ID 由 Desktop 持久保存，新注册使用 UUID，已有有效 ID 保留；本地机器身份和 Platform 主体不变。
+
+每次 WS 建连/认证刷新消费一次 JTI；已消费的 JTI 仅保留至到期，并设容量上限。WebApp HTTP 请求重新校验同一短期凭证但不消费 WS JTI。连接内验证复用最近十秒的有效结果并单飞，三十秒心跳再次校验；过期立即拒绝业务帧和推送。撤销在下一次验证时仅关闭该手机连接，最迟一个心跳周期，不取消远端任务。手机必须自行换取新凭证再提交 `auth.refresh`，Desktop 不向远端签发本地 app token。
+
+Desktop 用户退出先请求 Hub 撤销账号电脑，再停止 Tunnel 并清理本地 SSO；远端失败仍完成本地退出并提示。本地聊天主体与任务保持不变。Hub 只在内存中按摘要保存最多 4096 条票据，重启后失效，由手机获取新票据；无新增签名密钥、票据数据库或 Redis。
+
+账号电脑注册只在 Tunnel 设置保存服务端确认的账号及原注册 ID，不持久化额外 Token。尚未登记时退出不发撤销请求；无论远端结果如何，本地释放登记、旧公网 host 和注册 ID，保留开启意愿与本地 Platform 身份，下次显式登录使用新 UUID。注册响应必须匹配请求设备并返回账号；迟到响应复验 canonical token、设备和 relay 后才写入设置。

@@ -1363,3 +1363,14 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 开发版与正式版同时安装时，入口唤起包含该扩展的应用；重复唤起同一待处理批次不创建新的草稿身份。
 - 验证损坏清单、符号链接、身份/大小不符与超限文件拒绝导入；切换 Chat 或销毁 guest 后原请求不能继续读取。
 - Windows 打包与普通启动不构建或注册 macOS 扩展，不消费 macOS 分享协议；现有文件打开行为保持可用。
+
+## Desktop WS 配对认证依赖
+
+- 本地 WS 与隧道分别用有效 token 完成握手及 `session.hello`；用无效 token 确认返回正常认证错误，不出现 `ensureIdentityCenterJwk is not a function`。两条入口均使用 assistant runtime 组装的认证配置。自动回归：`node --test test/assistant-ws-auth-wiring.test.mjs test/desktop-ws-server.test.mjs test/tunnel-hub-runtime.test.mjs`（先编译 Main）。
+- Desktop 重启后用当前二维码重新配对：核对返回的 deviceId 与二维码一致。旧地址不可用时移动端保留绑定与历史，但显示 Desktop 未连接；默认源连接状态独立显示。
+# 账号设备职责收敛验收
+
+- 密码与扫码登录保留；账号页确认扫码，电脑管理只展示 Hub Desktop，不显示手机或信任等级。
+- 两个账号互不访问电脑；设备改名、解绑、离线选择与服务故障保持来源边界。
+- 验证随机票据、WS JTI 防重放、HTTP 复验、到期及 Hub 重启恢复；旧路由 JWT 不可访问远端。
+- 解绑关闭 Tunnel，自动重连被拒绝；退出失败仍完成本地退出并提示，下次显式登录使用新注册 UUID，本地身份与任务不变。

@@ -90,13 +90,59 @@ export async function verifyDesktopAccessToken(
   };
 }
 
-export function authenticateDesktopWsProtocolSession(
+const consumedRouteIds = new Map<string, number>();
+
+export async function authenticateDesktopWsProtocolSession(
   options: DesktopWsServerOptions,
   token: string,
-  subprotocol?: string
-) {
-  return (options.verifyToken ?? ((nextToken, nextSubprotocol) =>
-    verifyDesktopAccessToken(options.app, nextToken, options.ensureIdentityCenterJwk, nextSubprotocol)))(token, subprotocol);
+  subprotocol?: string,
+  requireAccountRoute = false,
+  consumeRoute = true
+): Promise<DesktopWsAuthSession> {
+  const routeToken = /^tr_[A-Za-z0-9_-]{43}$/.test(token);
+  if (!routeToken) {
+    if (requireAccountRoute) throw new Error("account route credential required");
+    return (options.verifyToken ?? ((nextToken, nextSubprotocol) =>
+      verifyDesktopAccessToken(options.app, nextToken, options.ensureIdentityCenterJwk, nextSubprotocol)))(token, subprotocol);
+  }
+  if (!options.verifyAccountRoute || !options.issueAccessToken) throw new Error("account route verifier unavailable");
+  const route = await options.verifyAccountRoute(token);
+  const expiresAt = Date.parse(route.expiresAt);
+  const issuedAt = Date.parse(route.issuedAt);
+  if (route.schemaVersion !== 1 || !route.accountId || !route.sourceDeviceId || !route.targetDesktopId ||
+      !route.jti || !route.requestId || !Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) ||
+      issuedAt > Date.now() || expiresAt <= Date.now() || expiresAt - issuedAt > 120_000) {
+    throw new Error("invalid account route context");
+  }
+  const key = JSON.stringify([route.accountId, route.targetDesktopId, route.jti]);
+  if (consumeRoute) {
+    for (const [id, expiry] of consumedRouteIds) if (expiry <= Date.now()) consumedRouteIds.delete(id);
+    if (consumedRouteIds.has(key) || consumedRouteIds.size >= 4096) throw new Error("route credential already consumed or capacity exceeded");
+    consumedRouteIds.set(key, expiresAt);
+  }
+  // Remote account authorization does not replace the local Platform subject.
+  const local = await options.issueAccessToken(options.app, "missing");
+  if (!local.ok || !local.token) throw new Error("local Platform credential unavailable");
+  const auth = await (options.verifyToken ?? ((nextToken: string) =>
+    verifyDesktopAccessToken(options.app, nextToken, options.ensureIdentityCenterJwk)))(local.token);
+  return { ...auth, expiresAt, subprotocol, accountRoute: { ...route, credential: token } };
+}
+
+export function validateDesktopWsConnectionRoute(options: DesktopWsServerOptions, connection: DesktopWsConnection): Promise<void> {
+  if (connection.closed || connection.auth.expiresAt <= Date.now()) return Promise.reject(new Error("session expired"));
+  const auth = connection.auth;
+  if (!auth.accountRoute || Date.now() - connection.routeValidatedAt < 10_000) return Promise.resolve();
+  if (!connection.routeValidation) {
+    connection.routeValidation = (async () => {
+      if (!options.verifyAccountRoute) throw new Error("account route verifier unavailable");
+      const route = await options.verifyAccountRoute(auth.accountRoute!.credential);
+      if (connection.closed || connection.auth !== auth || route.accountId !== auth.accountRoute!.accountId ||
+          route.sourceDeviceId !== auth.accountRoute!.sourceDeviceId || route.targetDesktopId !== auth.accountRoute!.targetDesktopId ||
+          route.jti !== auth.accountRoute!.jti || Date.parse(route.expiresAt) <= Date.now()) throw new Error("account route changed");
+      connection.routeValidatedAt = Date.now();
+    })().finally(() => { connection.routeValidation = null; });
+  }
+  return connection.routeValidation;
 }
 
 export function readAuthRefreshReason(payload: Record<string, unknown>): AgentAuthRefreshReason {
@@ -108,6 +154,7 @@ export async function issueDesktopWsRefreshAuth(
   connection: DesktopWsConnection,
   reason: AgentAuthRefreshReason
 ): Promise<DesktopWsIssuedAuthRefresh> {
+  if (connection.auth.accountRoute) throw new Error("fresh account route credential required");
   if (!options.issueAccessToken) {
     throw new Error("Desktop WS token issuer is not configured");
   }

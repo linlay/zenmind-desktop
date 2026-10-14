@@ -1,9 +1,12 @@
+import type { DesktopAccountRoute } from "../desktop-protocol";
 import type { App } from "electron";
 import {
   ensureTunnelHubDeviceId,
   normalizeRelayUrl,
   readTunnelHubSettings,
   readTunnelHubRegistrationBearerToken,
+  hasTunnelHubAccountRegistration,
+  resetTunnelHubAccountRegistration,
   recordTunnelHubRegistrationResult
 } from "./settings";
 import { getDesktopDeviceInfo } from "../identity";
@@ -13,6 +16,8 @@ type FetchLike = (url: string, init: {
   method: string;
   headers: Record<string, string>;
   body: string;
+  redirect?: "error";
+  signal?: AbortSignal;
 }) => Promise<{
   ok: boolean;
   status: number;
@@ -21,6 +26,7 @@ type FetchLike = (url: string, init: {
 }>;
 
 type TunnelHubRegistrationResponse = {
+  accountId?: unknown;
   deviceId?: unknown;
   relayUrl?: unknown;
   publicHost?: unknown;
@@ -132,11 +138,19 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     if (response.status === 405) {
       throw new Error(t("tunnelHub.registrationApiUnavailable"));
     }
-    throw new Error(`Tunnel Hub registration failed (${response.status} ${response.statusText}): ${raw}`);
+    throw new Error(`Tunnel Hub registration failed (${response.status} ${response.statusText})`);
+  }
+  const current = readTunnelHubSettings(app);
+  if (identityToken !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== deviceId || current.relayUrl !== settings.relayUrl) {
+    throw new Error("Tunnel registration superseded");
   }
   const data = parseRegistrationResponse(raw);
+  if (!readText(data.accountId) || readText(data.deviceId) !== deviceId) {
+    throw new Error("Tunnel Hub account or device identity mismatch");
+  }
   const registrationRecord = {
-    deviceId: readText(data.deviceId) || deviceId,
+    accountId: readText(data.accountId),
+    deviceId,
     relayUrl: readText(data.relayUrl) || settings.relayUrl
   };
   const publicHost = readText(data.publicHost);
@@ -164,3 +178,42 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
 export const __testInternals = {
   parseRegistrationResponse
 };
+
+async function requestAccountRoute(app: App, path: string, body: Record<string, unknown>) {
+  const settings = readTunnelHubSettings(app);
+  const token = readTunnelHubRegistrationBearerToken(app);
+  const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
+  const endpoint = new URL(origin);
+  if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("account route requires HTTPS");
+  if (!token || !settings.deviceId) throw new Error("Desktop account unavailable");
+  const fetchImpl = controllerOptions?.fetch ?? globalThis.fetch as unknown as FetchLike;
+  const response = await fetchImpl(`${origin}${path}`, {
+    method: "POST", redirect: "error", signal: AbortSignal.timeout(8_000),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, targetDesktopId: settings.deviceId })
+  });
+  if (!response.ok) throw new Error(`account route rejected (${response.status})`);
+  const data = response.status === 204 ? {} : JSON.parse(await response.text()) as Record<string, unknown>;
+  const current = readTunnelHubSettings(app);
+  if (token !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== settings.deviceId || current.relayUrl !== settings.relayUrl) throw new Error("Desktop account changed");
+  return { data, targetDesktopId: settings.deviceId };
+}
+
+export async function validateTunnelAccountRouteCredential(app: App, credential: string): Promise<DesktopAccountRoute> {
+  if (!/^tr_[A-Za-z0-9_-]{43}$/.test(credential)) throw new Error("account route ticket required");
+  const { data, targetDesktopId } = await requestAccountRoute(app, "/api/desktop/route-credentials/validate", { credential });
+  const route = data.routeContext as DesktopAccountRoute | undefined;
+  if (!route || route.schemaVersion !== 1 || route.targetDesktopId !== targetDesktopId) throw new Error("account route target mismatch");
+  return route;
+}
+
+export async function revokeTunnelAccountDevice(app: App): Promise<void> {
+  const settings = readTunnelHubSettings(app);
+  try {
+    if (settings.deviceId && hasTunnelHubAccountRegistration(app) && readTunnelHubRegistrationBearerToken(app)) {
+      await requestAccountRoute(app, "/api/desktop/account-device/revoke", {});
+    }
+  } finally {
+    resetTunnelHubAccountRegistration(app);
+  }
+}

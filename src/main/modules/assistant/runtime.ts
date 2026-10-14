@@ -18,6 +18,7 @@ import { AssistantNavigationStatusClient } from "./navigation-status-client";
 import type { AssistantIntegrationPorts } from "./integration-ports";
 import type { AssistantRunWakeLock } from "./wake-lock";
 import type { RealtimeBroker } from "../agent-platform";
+import type { DesktopWsServerOptions } from "../desktop-protocol";
 
 export type AssistantBridgeRuntimeOptions = {
   integrationPorts: AssistantIntegrationPorts;
@@ -159,8 +160,10 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     awcpInvoke: (requestId, request, scope, signal, surfaceId) => awcpGuestBridge.invoke(requestId, request, scope, signal, surfaceId),
   });
 
-  const desktopWsServerOptions = {
+  const desktopWsServerOptions: DesktopWsServerOptions = {
     app: options.app,
+    ensureIdentityCenterJwk: integration.ensureIdentityCenterJwk,
+    verifyAccountRoute: credential => integration.validateTunnelAccountRouteCredential(options.app, credential),
     desktopActionOptions,
     assistantBridge,
     getKanbanRuntime: () => kanbanRuntime,

@@ -22,6 +22,15 @@ const {
 } = require("../dist-electron/shared/desktop-ws.js");
 const { RealtimeBroker } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.js");
 
+
+function accountRouteToken(localToken) {
+  return `tr_${crypto.createHash("sha256").update(localToken).digest("base64url")}`;
+}
+function accountRouteOptions(localToken) {
+  const route = { schemaVersion: 1, accountId: "account", sourceDeviceId: "phone", targetDesktopId: "device-1", requestId: crypto.randomUUID(), jti: crypto.randomUUID(), issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString() };
+  return { issueAccessToken: async () => ({ok: true, token: localToken}), verifyAccountRoute: async credential => { assert.equal(credential, accountRouteToken(localToken)); return route; } };
+}
+
 function createApp(homePath) {
   return {
     getPath(name) {
@@ -682,6 +691,7 @@ test("only authenticated live Tunnel sessions subscribed to webapp.changed count
       startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
     getKanbanRuntime: () => null,
+    ...accountRouteOptions("mobile-token"),
     verifyToken: async () => ({
       subject: "app",
       deviceId: "device-1",
@@ -691,7 +701,7 @@ test("only authenticated live Tunnel sessions subscribed to webapp.changed count
     logger: { log() {}, warn() {}, error() {} }
   };
   const session = await createDesktopWsProtocolSession(options, {
-    authToken: "mobile-token",
+    authToken: accountRouteToken("mobile-token"),
     source: "react-app",
     clientDeviceId: "phone-1",
     transport: {
@@ -1040,6 +1050,7 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
         message: "issued"
       })
     },
+    ...accountRouteOptions("mobile-token"),
     verifyToken: async () => ({
       subject: "app",
       deviceId: "device-1",

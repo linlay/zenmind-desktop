@@ -265,7 +265,7 @@ export async function handleRequest(
         namespaceField: DESKTOP_WS_NAMESPACE_FIELD,
         defaultNamespace: DESKTOP_WS_NAMESPACE_DESKTOP,
         namespaces: DESKTOP_WS_NAMESPACES,
-        deviceId: getDesktopDeviceId(options.app),
+        deviceId: connection.auth.accountRoute?.targetDesktopId || getDesktopDeviceId(options.app),
         auth: {
           subject: connection.auth.subject,
           deviceId: connection.auth.deviceId,
@@ -281,7 +281,14 @@ export async function handleRequest(
       const token = readText(payloadRecord.token);
       if (token) {
         try {
-          connection.auth = await authenticateDesktopWsProtocolSession(options, token, connection.auth.subprotocol);
+          const auth = await authenticateDesktopWsProtocolSession(options, token, connection.auth.subprotocol, Boolean(connection.auth.accountRoute));
+          const previousRoute = connection.auth.accountRoute;
+          if (previousRoute && (auth.accountRoute?.accountId !== previousRoute.accountId ||
+              auth.accountRoute.sourceDeviceId !== previousRoute.sourceDeviceId ||
+              auth.accountRoute.targetDesktopId !== previousRoute.targetDesktopId)) throw new Error("account route caller changed");
+          if (connection.closed) return;
+          connection.auth = auth;
+          connection.routeValidatedAt = Date.now();
           sendResponse(connection, namespace, type, id, { token, expiresAt: connection.auth.expiresAt });
         } catch {
           sendError(connection, namespace, id, "unauthorized", 401, "invalid token");
@@ -351,7 +358,10 @@ export async function handleRequest(
         sendError(connection, namespace, id, "webapp_catalog_unavailable", 503, "WebApp catalog is not available.");
         return;
       }
-      sendResponse(connection, namespace, type, id, options.listMobileWebapps());
+      sendResponse(connection, namespace, type, id, {
+        ...options.listMobileWebapps(),
+        ...(connection.auth.accountRoute ? { desktopDeviceId: connection.auth.accountRoute.targetDesktopId } : {})
+      });
       return;
     case "issue.create":
       sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).createIssue(readIssueCreateInput(payload)));
@@ -369,7 +379,7 @@ export async function handleRequest(
       return;
     case "device.status":
       sendResponse(connection, namespace, type, id, {
-        deviceId: getDesktopDeviceId(options.app),
+        deviceId: connection.auth.accountRoute?.targetDesktopId || getDesktopDeviceId(options.app),
         serverTime: nowIso(),
         connectionCount: connection.server.connections.size
       });

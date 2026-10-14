@@ -25,6 +25,15 @@ const {
   saveTunnelHubSettings
 } = require("../dist-electron/main/modules/tunnel/settings.js");
 
+
+function accountRouteToken(localToken) {
+  return `tr_${crypto.createHash("sha256").update(localToken).digest("base64url")}`;
+}
+function accountRouteOptions(localToken) {
+  const route = { schemaVersion: 1, accountId: "account", sourceDeviceId: "phone", targetDesktopId: "device-1", requestId: crypto.randomUUID(), jti: crypto.randomUUID(), issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString() };
+  return { issueAccessToken: async () => ({ok: true, token: localToken}), verifyAccountRoute: async credential => { assert.equal(credential, accountRouteToken(localToken)); return route; } };
+}
+
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const FRAME_OPEN = 1;
 const FRAME_DATA = 2;
@@ -519,7 +528,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
       });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
-        deviceId: "mac-mini-office",
+        accountId: "account", deviceId: "mac-mini-office",
         publicHost: "mac-mini-office.relay.example.test",
         publicUrl: "https://mac-mini-office.relay.example.test",
         webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
@@ -628,7 +637,7 @@ test("Tunnel Hub runtime reconnects tunnel when network signature changes", asyn
         statusText: "OK",
         async text() {
           return JSON.stringify({
-            deviceId: "mac-mini-office",
+            accountId: "account", deviceId: "mac-mini-office",
             relayUrl: "wss://relay.example.test/tunnel"
           });
         }
@@ -682,7 +691,7 @@ test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", a
       type: "desktop.websocket.open",
       id: "open-desktop-1",
       payload: {
-        authToken: "test-token",
+        authToken: accountRouteToken("test-token"),
         source: "test-relay",
         clientDeviceId: "browser-1"
       }
@@ -737,6 +746,7 @@ test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", a
         startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
       },
       getKanbanRuntime: () => null,
+      ...accountRouteOptions("test-token"),
       verifyToken: async (token) => {
         assert.equal(token, "test-token");
         return {
@@ -911,7 +921,7 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
       type: "desktop.websocket.open",
       id: "open-ap-1",
       payload: {
-        authToken: "test-token",
+        authToken: accountRouteToken("test-token"),
         source: "test-relay"
       }
     }));
@@ -948,6 +958,7 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
         }),
         issueAccessToken: async () => ({ ok: true, token: "platform-token", message: "issued" })
       },
+      ...accountRouteOptions("test-token"),
       verifyToken: async (token) => {
         assert.equal(token, "test-token");
         return { subject: "app", deviceId: "device-1", expiresAt: Date.now() + 600_000, scope: "app" };
@@ -1089,7 +1100,7 @@ test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying"
       id: "req_mobile_http",
       payload: {
         source: "mobile",
-        authToken: "paired-mobile-token",
+        authToken: accountRouteToken("paired-mobile-token"),
         public: {
           method: "GET",
           path: "/",
@@ -1133,6 +1144,7 @@ test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying"
           availability: "available"
         }]
       }),
+      ...accountRouteOptions("paired-mobile-token"),
       verifyToken: async (token) => {
         verified += 1;
         assert.equal(token, "paired-mobile-token");
@@ -1594,7 +1606,7 @@ test("Tunnel enable waits for trusted SSO, reconnects after login and respects e
   configureTunnelHubRegistrationController({
     fetch: async () => {
       registrations++;
-      return { ok: true, status: 200, text: async () => "{}" };
+      return { ok: true, status: 200, text: async () => JSON.stringify({accountId: "account", deviceId: readTunnelHubSettings(app).deviceId}) };
     }
   });
   const runtime = new TunnelHubRuntime({
@@ -1648,7 +1660,7 @@ for (const pendingStage of ["registration", "connection"]) {
     let authenticated = true;
     configureTunnelHubRegistrationController({ fetch: async () => {
       if (pendingStage === "registration") { entered(); await pending; }
-      return { ok: true, status: 200, text: async () => "{}" };
+      return { ok: true, status: 200, text: async () => JSON.stringify({accountId: "account", deviceId: readTunnelHubSettings(app).deviceId}) };
     } });
     const runtime = new TunnelHubRuntime({
       app,

@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type {
@@ -13,7 +12,6 @@ import {
   getDesktopSsoAccessTokenFilePath,
   getSecretsRoot
 } from "../../infrastructure/filesystem/user-paths";
-import { getDesktopDeviceId } from "../identity";
 import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname,
@@ -32,6 +30,7 @@ const DEVICE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const RESERVED_DEVICE_IDS = new Set(["admin", "api", "www", "tunnel", "relay"]);
 
 type StoredTunnelHubSettings = {
+  accountId?: unknown;
   enabled?: unknown;
   relayUrl?: unknown;
   deviceId?: unknown;
@@ -44,6 +43,7 @@ type StoredTunnelHubSettings = {
 };
 
 type WritableTunnelHubSettings = {
+  accountId?: string;
   enabled: boolean;
   relayUrl: string;
   deviceId?: string;
@@ -54,6 +54,7 @@ type WritableTunnelHubSettings = {
 };
 
 export type TunnelHubRegistrationRecord = {
+  accountId?: string;
   deviceId: string;
   relayUrl?: string;
   publicHost?: string;
@@ -157,24 +158,8 @@ export function isValidTunnelHubDeviceId(deviceId: string) {
     !RESERVED_DEVICE_IDS.has(deviceId);
 }
 
-function slugifyDeviceId(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/gu, "-")
-    .replace(/-+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, DEVICE_ID_MAX_LENGTH)
-    .replace(/-+$/gu, "");
-}
-
-function createDefaultDeviceId(app: App) {
-  const hostname = slugifyDeviceId(os.hostname());
-  if (isValidTunnelHubDeviceId(hostname)) {
-    return hostname;
-  }
-  const desktopId = getDesktopDeviceId(app).replace(/-/gu, "").slice(0, 12);
-  return `desktop-${desktopId || crypto.randomBytes(6).toString("hex")}`.slice(0, DEVICE_ID_MAX_LENGTH);
+function createDefaultDeviceId() {
+  return crypto.randomUUID();
 }
 
 function isValidRelayUrl(relayUrl: string) {
@@ -253,7 +238,7 @@ export function readTunnelHubSettings(
   clearLegacyTunnelHubSecrets(app, platform);
   const stored = readStoredSettings(app, platform);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
-  const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
+  const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId();
   const publicHost = readStoredPublicHost(stored);
   const complete = isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
@@ -310,7 +295,7 @@ export function saveTunnelHubSettings(
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
     ? normalizeTunnelHubDeviceId(input.deviceId)
-    : current.deviceId || createDefaultDeviceId(app);
+    : current.deviceId || createDefaultDeviceId();
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
   const issues: string[] = [];
@@ -328,6 +313,7 @@ export function saveTunnelHubSettings(
     enabled: requestedEnabled && issues.length === 0,
     relayUrl,
     deviceId,
+    accountId: deviceIdChanged ? "" : String(readStoredSettings(app, platform).accountId || "").trim(),
     publicHost: deviceIdChanged ? "" : current.publicHost,
     lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
     tlsInsecureSkipVerify: false,
@@ -358,7 +344,7 @@ export function ensureTunnelHubDeviceId(app: App) {
     return current;
   }
   const currentSettings = readTunnelHubSettings(app);
-  const deviceId = currentSettings.deviceId || createDefaultDeviceId(app);
+  const deviceId = currentSettings.deviceId || createDefaultDeviceId();
   writeStoredSettings(app, {
     enabled: currentSettings.enabled,
     relayUrl: currentSettings.relayUrl,
@@ -373,7 +359,7 @@ export function ensureTunnelHubDeviceId(app: App) {
 
 export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubRegistrationRecord) {
   const current = readTunnelHubSettings(app);
-  const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId || createDefaultDeviceId(app);
+  const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId || createDefaultDeviceId();
   const publicHost = normalizePublicHost(record.publicHost) ||
     normalizePublicHost(record.publicUrl) ||
     normalizePublicHost(record.webSocketUrl) ||
@@ -383,10 +369,25 @@ export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubReg
     relayUrl: normalizeRelayUrl(record.relayUrl ?? current.relayUrl),
     deviceId,
     publicHost,
+    accountId: record.accountId?.trim() || "",
     lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
     tlsInsecureSkipVerify: false,
     reconnectSeconds: current.reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);
   return readTunnelHubSettings(app);
+}
+
+
+export function hasTunnelHubAccountRegistration(app: App): boolean {
+  return Boolean(String(readStoredSettings(app).accountId || "").trim());
+}
+
+export function resetTunnelHubAccountRegistration(app: App): void {
+  const current = readTunnelHubSettings(app);
+  writeStoredSettings(app, {
+    enabled: current.enabled, relayUrl: current.relayUrl,
+    accountId: "", deviceId: createDefaultDeviceId(), publicHost: "", lastRegisteredAt: "",
+    tlsInsecureSkipVerify: false, reconnectSeconds: current.reconnectSeconds
+  });
 }

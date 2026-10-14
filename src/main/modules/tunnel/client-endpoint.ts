@@ -645,7 +645,9 @@ export class TunnelClientEndpoint extends EventEmitter {
         await authenticateDesktopWsProtocolSession(
           this.options.desktopWsServerOptions,
           authToken,
-          readText(payload.subprotocol) || undefined
+          readText(payload.subprotocol) || undefined,
+          true,
+          false
         );
       } catch (error) {
         await writeWebAppError(stream, envelope, 401, error);

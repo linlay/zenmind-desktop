@@ -20,7 +20,20 @@ import { type KanbanRuntime } from "../kanban";
 import http from "node:http";
 import { type DesktopActionDefinition } from "../../../shared/desktop-actions";
 
+export type DesktopAccountRoute = {
+  schemaVersion: 1;
+  accountId: string;
+  sourceDeviceId: string;
+  targetDesktopId: string;
+  requestId: string;
+  jti: string;
+  issuedAt: string;
+  expiresAt: string;
+};
+
 export type DesktopWsAuthSession = {
+  accountRoute?: DesktopAccountRoute & { credential: string };
+
   subject: string;
   deviceId: string;
   expiresAt: number;
@@ -97,6 +110,7 @@ export type DesktopWsServerOptions = {
   listMobileWebapps?: () => DesktopMobileWebappCatalog;
   issueAccessToken?: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
   agentPlatformBridge?: AgentPlatformBridgeOptions;
+  verifyAccountRoute?: (credential: string) => Promise<DesktopAccountRoute>;
   verifyToken?: (token: string, subprotocol?: string) => Promise<DesktopWsAuthSession>;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
@@ -128,6 +142,8 @@ export type DesktopWsConnection = {
   closed: boolean;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
   authRefresh: Promise<DesktopWsIssuedAuthRefresh> | null;
+  routeValidation: Promise<void> | null;
+  routeValidatedAt: number;
   agentPlatformBridge: { forwardRequest(req: DesktopWsRequestFrame): Promise<void>; close(): void } | null;
   transport: DesktopWsProtocolTransport;
 };
