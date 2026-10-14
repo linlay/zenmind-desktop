@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const fixturePath = process.env.DESKTOP_CONNECTOR_BRIDGE_FILE;
 
-// Start Platform's TestDesktopConnectorBridgeLocal with the same file variable.
+// Start the fixture's TestDesktopConnectorFirstBatchBridgeLocal with the same file variable.
 // Both the upstream MCP server and Platform state are isolated test fixtures.
 test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP', { skip: !fixturePath }, async () => {
   const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
@@ -86,19 +86,33 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
     vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
       { module: output, exports: output.exports, URL, Date, Promise, Error, setTimeout, clearTimeout });
     const phases = [];
+    await fetch(fixture.url + '/fixture/slow-sync', { method: 'POST' });
+    let observedPendingDiscovery = false;
     const result = await output.exports.runMarketConnectorFlow({
       item: { id }, installed: true, connectorId: id, mountAgent: true, agentKey: 'mock-agent', signal: new AbortController().signal,
       onPhase: phase => phases.push(phase), onConnection() {}, onInstalled() {}, async onSession() {}, onTokenSchema() {},
     }, {
       getConnectorConnection: state.readConnectorConnection, connectConnector: state.startConnectorConnection,
       cancelConnectorConnection: state.cancelConnectorConnection, checkConnector: state.checkConnectorConnection,
-      setConnectorAgent: state.setConnectorAgent, getConnectorAgent: state.readConnectorAgent,
+      setConnectorAgent: async request => {
+        const snapshot = await state.setConnectorAgent(request);
+        const current = snapshot.mcp.filter(component => component.connectorId === id);
+        observedPendingDiscovery = current.length > 0 && current.every(component => component.status !== 'ready' && component.toolCount === 0);
+        return snapshot;
+      }, getConnectorAgent: state.readConnectorAgent,
     });
     assert.equal(result.result, 'complete');
     assert.ok(phases.includes('mounting'));
+    assert.ok(phases.includes('syncing'));
+    assert.equal(observedPendingDiscovery, true, 'a published mount must not skip pending MCP discovery');
     const agent = await state.readConnectorAgent('mock-agent');
     assert.ok(agent.activeConnectorIds.includes(id));
     assert.equal(agent.reloadPending, false);
+    assert.ok(agent.runtimeRevision);
+    const components = agent.mcp.filter(component => component.connectorId === id);
+    assert.equal(components.length, 1);
+    assert.equal(components[0].status, 'ready');
+    assert.equal(components[0].toolCount, 1);
     await state.disconnectConnectorConnection(id);
     assert.equal((await state.readConnectorConnection(id)).configured, false);
   } finally {

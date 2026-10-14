@@ -45,6 +45,14 @@ export interface MarketConnectorAgentState {
   connectorIds: string[];
   activeConnectorIds: string[];
   reloadPending: boolean;
+  /** Absent only on older Platform versions; never implies that MCP tools are ready. */
+  mcp?: Array<{
+    connectorId: string;
+    serverKey: string;
+    status: "pending" | "syncing" | "ready" | "unavailable";
+    toolCount: number;
+  }>;
+  runtimeRevision?: string;
 }
 export interface MarketConnectorDisconnectResult {
   connectorId: string;

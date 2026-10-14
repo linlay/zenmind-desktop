@@ -1050,6 +1050,10 @@
 
 ### 当前 Platform 连接器契约
 
+- macOS / Windows 分别从市场安装身份或版本不符的 Connector ZIP：Platform 发布前拒绝，Desktop 也拒绝不匹配的导入成功响应，原包与其他市场记录保留，不新增 installed 记录。
+- macOS / Windows × 中英文：让 MCP 工具同步慢于 Agent 挂载，市场显示“正在同步可用工具”，只在目标 Agent 当前发布版本的全部启用组件 ready 且合计工具数大于零后打开新对话；此时发起首个查询可以看到同步工具。其他 Agent、其他连接器及旧 Run 保留的 ready 状态不能提前放行。
+- 同步 unavailable、所有组件 ready 但零工具、缺少目标组件、旧 Platform 缺少同步状态均显示可重试原因并释放按钮，不无限轮询；账户仍 ready 的后台刷新不能清除工具同步错误。纯 CLI/native 在旧 Platform 未提供 MCP 状态时仍按原流程完成。
+- MCP 同步中取消或离开市场，再让在途状态返回 ready：不迟到导航、不发送查询，已安装与已完成挂载保留。重进页面并显式重试后回读当前状态；列表浏览和状态轮询不主动验证第三方服务。
 - 状态读取消费 configured/canCheck；连接器详情不提供独立启停，不向 connection 发送 PUT。Agent 挂载仍使用独立的 enabled 参数。
 - 首次 Token 待验证不能进入可用对话；旧凭据仍可用、新凭据待验证时同时展示两者。显式检查完成后刷新状态，取消/超时后不得继续挂载。
 - 解绑遇到 CLI 无法完成退出时显示后端 warnings；不显示已成功撤销远端授权。

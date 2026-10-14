@@ -21,7 +21,7 @@ export async function openConnectorAuthorization(
   return browser;
 }
 
-export type ConnectorFlowPhase = "installing" | "preparing" | "authorizing" | "credentials" | "mounting" | "complete";
+export type ConnectorFlowPhase = "installing" | "preparing" | "authorizing" | "credentials" | "mounting" | "syncing" | "complete";
 export function connectorRequiresConfiguration(connection: MarketConnectorConnection) {
   return connection.configurationRequired !== false;
 }
@@ -150,10 +150,35 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
     if (intent.agentKey) {
       onPhase("mounting"); check();
       let agent = await api.setConnectorAgent({ connectorId: id, agentKey: intent.agentKey, enabled: true }); check();
+      const isMounted = () => {
+        if (agent.agentKey !== intent.agentKey) throw new Error("market.connector.flow.agentStateMismatch");
+        return !agent.reloadPending && agent.activeConnectorIds.includes(id);
+      };
       const deadline = Date.now() + 60_000;
-      while (agent.reloadPending || !agent.activeConnectorIds.includes(id)) {
+      while (!isMounted()) {
         if (Date.now() > deadline) throw new Error("market.connector.flow.timeout");
         await wait(signal); check(); agent = await api.getConnectorAgent(intent.agentKey); check();
+      }
+      if (current.capabilities.hasMcp) {
+        onPhase("syncing"); check();
+        const syncDeadline = Date.now() + 60_000;
+        while (true) {
+          // Only the target Agent's current published snapshot is readiness evidence.
+          // A retained Run or another connector's tools must not complete this flow.
+          const mounted = isMounted();
+          if (!Array.isArray(agent.mcp)) throw new Error("market.connector.flow.mcpStateRequired");
+          if (mounted) {
+            const components = agent.mcp.filter(component => component.connectorId === id);
+            if (!components.length) throw new Error("market.connector.flow.toolsMissing");
+            if (components.some(component => component.status === "unavailable")) throw new Error("market.connector.flow.toolsUnavailable");
+            if (components.every(component => component.status === "ready")) {
+              if (!components.some(component => component.toolCount > 0)) throw new Error("market.connector.flow.toolsEmpty");
+              break;
+            }
+          }
+          if (Date.now() > syncDeadline) throw new Error("market.connector.flow.toolsSyncTimeout");
+          await wait(signal); check(); agent = await api.getConnectorAgent(intent.agentKey); check();
+        }
       }
     }
   }
