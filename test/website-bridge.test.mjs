@@ -229,10 +229,13 @@ test('the runtime selects one page by exact hash query, title or visible text, a
   const pkg = packageOf(flow, { 'pages/flow.js': script('flow'), 'pages/stock.js': script('stock'), 'pages/media.js': script('media'), ...modules });
   const p = page('https://site.test/flow/#/2772.40?bizkey=A/Stock&bizversion=-1');
   // A visible element whose own text equals the value; other text and hidden elements do not count.
-  const element = (text, visible = true) => ({ tagName: 'DIV', childNodes: [{ nodeType: 3, textContent: text }], getClientRects: () => visible ? [{}] : [] });
+  const node = ({ attributes = {}, style = {}, parent = null, hidden = false } = {}) => ({ parentElement: parent, hidden, style,
+    hasAttribute: name => Object.hasOwn(attributes, name), getAttribute: name => attributes[name] ?? null });
+  const element = (text, visible = true, options = {}) => Object.assign(node(options), { tagName: 'DIV', childNodes: [{ nodeType: 3, textContent: text }],
+    getClientRects: () => visible ? [{}] : [], ...(options.checkVisibility ? { checkVisibility: options.checkVisibility } : {}) });
   let elements = [];
   p.context.document = { title: '...', body: {}, createTreeWalker: () => { let i = 0; return { nextNode: () => elements[i] ? { parentElement: elements[i++] } : null }; } };
-  p.context.getComputedStyle = () => ({ visibility: 'visible' });
+  p.context.getComputedStyle = target => ({ display: 'block', visibility: 'visible', opacity: '1', ...target.style });
   p.run([pkg]);
   const sections = () => Array.from(p.context.awcp.manual().sections, item => item.section);
   assert.deepEqual(sections(), ['stock.read']);
@@ -253,6 +256,14 @@ test('the runtime selects one page by exact hash query, title or visible text, a
   // Text matches exactly and only when visible.
   p.context.document.title = '...'; elements = [element('Media header', false), element('About Media header')];
   assert.deepEqual(sections(), ['flow.read']);
+  // Text inside a hidden, inert, aria-hidden or transparent region, or one the browser reports as not visible, does not count.
+  for (const parent of [node({ hidden: true }), node({ attributes: { inert: '' } }), node({ attributes: { 'aria-hidden': 'true' } }), node({ style: { opacity: '0' } }),
+    node({ style: { visibility: 'hidden' } }), node({ parent: node({ style: { display: 'none' } }) })]) {
+    elements = [element('Media header', true, { parent })];
+    assert.deepEqual(sections(), ['flow.read']);
+  }
+  elements = [element('Media header', true, { checkVisibility: () => false })];
+  assert.deepEqual(sections(), ['flow.read']);
   elements = [element('  Media\n header ')];
   assert.deepEqual(sections(), ['media.read']);
   // Two pages matching is ambiguous: neither loads and the fallback reports why.
@@ -264,12 +275,60 @@ test('the runtime selects one page by exact hash query, title or visible text, a
   q.run([packageOf({ ...flow, pages: { stock: flow.pages.stock } }, { 'pages/stock.js': script('stock'), ...modules })]);
   assert.deepEqual(Array.from(q.context.awcp.manual().sections), []);
   q.context.document.title = 'Stock'; assert.equal(q.context.awcp.manual().sections[0].section, 'stock.read');
+  // An invalid declaration after a switch unloads that page, modules and listeners included, and is not retried until the selection changes.
+  const unstable = `globalThis.stockLoads = (globalThis.stockLoads || 0) + 1;
+    return { actions: () => globalThis.breakStock ? { 'bad name!': {} } : { 'stock.read': { title: 'Stock', description: 'Read.', inputSchema: { type: 'object', properties: {} }, run: () => ({ ok: true, result: 1 }) } },
+      dispose() { globalThis.stockDisposed = (globalThis.stockDisposed || 0) + 1; } };`;
+  const u = page('https://site.test/flow/#/2772.51?id=9'); u.context.document = { title: '' };
+  u.run([packageOf(flow, { 'pages/flow.js': script('flow'), 'pages/stock.js': unstable, 'pages/media.js': script('media'),
+    'shared/core.js': 'return { dispose() { globalThis.coreDisposed = (globalThis.coreDisposed || 0) + 1; } };', 'shared/portal/picker.js': 'return {};' })]);
+  u.context.document.title = 'Stock'; u.context.breakStock = true;
+  assert.deepEqual(Array.from(u.context.awcp.manual().sections), []);
+  assert.deepEqual([u.context.stockDisposed, u.context.coreDisposed], [1, 1]);
+  assert.match(u.context.awcp.manual().site.description, /Page stock failed to load: Bridge page "stock" declares an invalid action\./);
+  u.context.breakStock = false; u.context.awcp.manual(); u.context.awcp.manual();
+  assert.equal(u.context.stockLoads, 1);
+  u.context.document.title = ''; assert.equal(u.context.awcp.manual().sections[0].section, 'flow.read');
+  u.context.document.title = 'Stock'; assert.equal(u.context.awcp.manual().sections[0].section, 'stock.read'); assert.equal(u.context.stockLoads, 2);
   // A page that fails after a switch reports the failure and exposes nothing.
   const r = page('https://site.test/flow/#/x'); r.context.document = { title: '' };
   r.run([packageOf(flow, { 'pages/flow.js': script('flow'), 'pages/stock.js': 'throw Error("broken stock");', 'pages/media.js': script('media'), ...modules })]);
   r.context.document.title = 'Stock';
   assert.deepEqual(Array.from(r.context.awcp.manual().sections), []);
   assert.match(r.context.awcp.manual().site.description, /Page stock failed to load: broken stock/);
+});
+
+for (const leaving of ['unmatched', 'ambiguous']) test(`a failed conditional page recovers after ${leaving} recognition without a fallback`, async () => {
+  const conditional = { ...manifest, pages: {
+    stock: { path: '/flow', match: [{ title: 'Stock' }] },
+    other: { path: '/flow', match: [{ hashQuery: { other: '1' } }] },
+  } };
+  const unstable = `globalThis.stockLoads = (globalThis.stockLoads || 0) + 1;
+    return { actions: () => globalThis.breakStock ? { broken: { title: 'Broken' } } : {
+      'stock.read': { title: 'Stock', description: 'Read.', inputSchema: { type: 'object', properties: {} }, run: () => ({ ok: true, result: 'recovered' }) }
+    } };`;
+  const p = page('https://site.test/flow/#/record');
+  p.run([packageOf(conditional, { 'pages/stock.js': unstable, 'pages/other.js': 'return { actions: {} };' })]);
+  p.context.document.title = 'Stock'; p.context.breakStock = true;
+  assert.match(p.context.awcp.manual().site.description, /Page stock failed to load/);
+  p.context.breakStock = false;
+  assert.deepEqual(Array.from(p.context.awcp.manual().sections), []);
+  assert.equal(p.context.stockLoads, 1);
+
+  p.context.document.title = leaving === 'unmatched' ? 'Other' : 'Stock';
+  p.context.location = new URL(`https://site.test/flow/#/record${leaving === 'ambiguous' ? '?other=1' : ''}`);
+  const left = p.context.awcp.manual();
+  assert.deepEqual(Array.from(left.sections), []);
+  assert.match(left.site.description, leaving === 'unmatched' ? /No registered page matched/ : /Several pages matched/);
+  assert.doesNotMatch(left.site.description, /failed to load/);
+  assert.equal(p.context.stockLoads, 1);
+
+  p.context.document.title = 'Stock'; p.context.location = new URL('https://site.test/flow/#/record');
+  const recovered = p.context.awcp.manual();
+  assert.deepEqual(Array.from(recovered.sections, item => item.section), ['stock.read']);
+  assert.doesNotMatch(recovered.site.description, /failed to load/);
+  assert.equal(p.context.stockLoads, 2);
+  assert.equal((await p.context.awcp.invoke({ requestId: 'recovered', revision: recovered.revision, action: 'stock.read', args: {} })).result, 'recovered');
 });
 
 test('runtime owns the protocol: progressive manual, request replay, cancellation and leaving the page rule', async () => {

@@ -168,7 +168,7 @@ export function installWebsiteBridgeRuntime(config: WebsiteBridgeRuntimeConfig, 
   }
   const reason = (error: unknown) => error instanceof Error && error.message ? error.message.slice(0, 500) : "Page script failed.";
   /** A broken page is unloaded and stays unloaded until recognition selects a different page; it is never retried in a loop. */
-  function fail(page: WebsiteBridgeRuntimePage, error: unknown) {
+  function unload(page: WebsiteBridgeRuntimePage, error: unknown) {
     if (active?.page.id === page.id) deactivate();
     failure = { id: page.id, message: reason(error) };
   }
@@ -177,12 +177,13 @@ export function installWebsiteBridgeRuntime(config: WebsiteBridgeRuntimeConfig, 
     const next = choose();
     choice = next;
     const target = next.page?.id ?? null;
-    if ((active?.page.id ?? null) === target || (!active && failure?.id === target) || (!next.page && !active)) return;
+    // A failed page still owns the selection; leaving it for no match must clear its failure, too.
+    if ((active?.page.id ?? failure?.id ?? null) === target) return;
     deactivate();
     failure = null;
     if (!next.page) return;
     try { activate(next.page, next.via); }
-    catch (error) { fail(next.page, error); }
+    catch (error) { unload(next.page, error); }
   }
   function hash(input: string) {
     let n = 2166136261;
@@ -213,7 +214,7 @@ export function installWebsiteBridgeRuntime(config: WebsiteBridgeRuntimeConfig, 
       try { actions = declaredActions(active); }
       catch (error) {
         if (strict) throw error;
-        fail(active.page, error);
+        unload(active.page, error);
       }
     }
     const fingerprint = JSON.stringify([active?.page.id ?? null, choice.status, choice.candidates, failure,
