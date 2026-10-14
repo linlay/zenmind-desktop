@@ -43,6 +43,12 @@ const pages={
   // Sign-up and reset with a single password field: never filled.
   '/signup-single':'<form method="post" action="/home"><input name="email" type="email"><input name="pw" type="password" autocomplete="new-password"><button>Create account</button></form>',
   '/reset':'<form method="post" action="/reset-password"><input name="email" type="email"><input name="pw" type="password"><button>Reset password</button></form>',
+  // The page swaps one login form for another after a first fill was left for the user.
+  '/swap':'<div id="a"><input id="ua" autocomplete="username"><input id="pa" type="password"><button id="ga">Log in</button></div><div id="b" style="display:none"><input id="ub" autocomplete="username"><input id="pb" type="password"><button id="gb">Log in</button></div><script>window.keepA=pa;function swap(){a.style.display="none";b.style.display=""}</script>',
+  // A form-less login page that also offers sign-up: the plain "Log in" button makes it a login.
+  '/login-or-signup':'<div id="view"><input id="account" autocomplete="username"><input id="secret" type="password"><button id="go">Log in</button><button>Create account</button></div><script>go.onclick=()=>{view.innerHTML="<h1>Hi</h1>"}</script>',
+  // Sign-up without a <form>: the only button creates an account.
+  '/signup-noform':'<div><input id="email" type="email"><input id="pw" type="password"><button id="go">Create account</button></div>',
   // Not a login: a search box must never produce anything.
   '/search':'<form action="/home"><input name="q" type="text"><button>Search</button></form>',
 };
@@ -156,6 +162,20 @@ assert.equal(await js('window.keep.type+":"+window.keep.value'),'text:','a plain
 for(const route of ['/signup-single','/reset']){await open(route);posts.length=0;
   filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'signup_or_reset'},route+' refused');
   assert.equal(await js('document.querySelector("[name=pw]").value+document.querySelector("[name=email]").value'),'');await wait(200);assert.equal(posts.length,0)}
+await open('/signup-noform');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'signup_or_reset'},'sign-up without a form refused');
+assert.equal(await js('pw.value+email.value'),'');
+await open('/login-or-signup');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'submitted',loginFormVisible:false},'form-less login page that also offers sign-up');
+await open('/swap');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:false,sleep:()=>wait(20)}),{status:'filled'},'first fill left for the user');
+await js('swap()');
+const overlap=await access.fill(target,{origin,accountId:accountId('al'),submit:true}).then(result=>({result}),error=>({code:error.code}));
+assert.deepEqual(overlap,{code:'credential_fill_in_progress'},'a second fill on the same page must wait for the first: '+JSON.stringify(overlap));
+for(let i=0;i<150&&queue.isPageAutomationHeld(win.webContents.id);i++)await wait(100);
+assert.equal(queue.isPageAutomationHeld(win.webContents.id),false);
+assert.equal(await js('window.keepA.value'),'','the first form is erased before automation resumes');
+console.log('  ok  fill: overlapping fill refused, first form erased');
 await open('/signup');
 filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'several_password_fields'},'sign-up form refused');
 await open('/search');

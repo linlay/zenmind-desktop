@@ -600,3 +600,31 @@ test('a backup of more accounts than a CSV import allows still restores, and the
   assert.equal(code(() => empty.store.importMany(huge)), 'vaultFull');
   assert.equal(fs.existsSync(empty.options.vaultDirectory) ? vaultFiles(empty.options.vaultDirectory).length : 0, 0);
 });
+
+test('a backup larger than any CSV import restores in full', t => {
+  const { encryptWebsiteCredentialBackup, decryptWebsiteCredentialBackup, WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES } = require('../dist-electron/main/modules/credentials/transfer.js');
+  const { store, reopen } = setup(t);
+  const entries = Array.from({ length: 6500 }, (_, index) => ({ origin: `https://site${index}.example.com`, username: `user${index}-${'u'.repeat(90)}`, password: 'p'.repeat(1000), note: 'n'.repeat(200) }));
+  assert.equal(store.importMany(entries).added, entries.length);
+  assert.equal(reopen().state().vault.state, 'ready');
+  const backup = encryptWebsiteCredentialBackup(store.exportAll(), 'backup password');
+  assert.ok(backup.length > WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES * 2, `backup is ${backup.length} bytes`);
+  assert.equal(setup(t).store.importMany(decryptWebsiteCredentialBackup(backup, 'backup password')).added, entries.length);
+});
+
+test('a second fill on a page that is still paused is refused, not allowed to end the first pause', async t => {
+  const { store } = setup(t);
+  const id = store.add(account()).credentials[0].id;
+  const access = createAgentCredentialAccess(store);
+  const origin = 'https://accounts.example.com';
+  let finishWaiting;
+  const waiting = new Promise(resolve => { finishWaiting = resolve; });
+  const page = loginPage(51, `${origin}/login`, { outcome: { status: 'filled' } });
+  assert.deepEqual(await access.fill(page, { origin, accountId: id, submit: false, sleep: () => waiting }), { status: 'filled' });
+  await assert.rejects(access.fill(page, { origin, accountId: id, submit: true, sleep }), error => error.code === 'credential_fill_in_progress');
+  assert.deepEqual(page.ran.filter(step => step === 'fill'), ['fill']);
+  assert.equal(isPageAutomationHeld(51), true);
+  finishWaiting();
+  await settleHold(51);
+  assert.equal(page.page.field.value, '');
+});

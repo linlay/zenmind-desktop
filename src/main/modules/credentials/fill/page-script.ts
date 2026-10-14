@@ -24,7 +24,8 @@ export type LoginFillFieldState =
   | { document: "replaced"; formVisible: boolean }
   | { document: "same"; formVisible: boolean; pending: boolean; fieldShown: boolean };
 
-type FillRecord = { token: string; fields: HTMLInputElement[] };
+/** Every fill on this document, by token; a later fill never replaces an earlier one's record. */
+type FillRecords = Map<string, HTMLInputElement[]>;
 
 function fillLogin(token: string, username: string, password: string, submit: boolean): LoginFillOutcome {
   const visible = (element: Element): element is HTMLInputElement => {
@@ -79,9 +80,19 @@ function fillLogin(token: string, username: string, password: string, submit: bo
     if (/new-password/u.test(field.autocomplete)) return true;
     if (field.type === "password" && /new|confirm|repeat|retype|register|signup|reset/iu.test(`${field.name} ${field.id}`)) return true;
     const form = field.form;
-    const context = form
-      ? `${form.id} ${form.name} ${form.getAttribute("action") ?? ""} ${label(submitButton(form))}`
-      : label(loginButton());
+    let context: string;
+    if (form) {
+      context = `${form.id} ${form.name} ${form.getAttribute("action") ?? ""} ${label(submitButton(form))}`;
+    } else {
+      // Without a form, a plain "log in" button marks a login page even if it also offers sign-up.
+      // Otherwise every visible button and the page headings decide: "Create account" means sign-up.
+      const login = loginButton();
+      context = login ? label(login) : [
+        document.title,
+        ...Array.from(document.querySelectorAll("h1, h2, button, [role=button], input[type=button], input[type=submit]"))
+          .filter(element => element.getBoundingClientRect().width >= 2).map(label)
+      ].join(" ");
+    }
     return /register|sign[\s_-]*up|create[\s_-]*(an[\s_-]*)?account|join|reset|forgot|recover|\u6ce8\u518c|\u91cd\u7f6e|\u627e\u56de|\u521b\u5efa/iu.test(context);
   };
 
@@ -102,10 +113,14 @@ function fillLogin(token: string, username: string, password: string, submit: bo
   const identifier = candidates.find(input => /username|email/u.test(input.autocomplete)) ?? before[before.length - 1];
 
   // Remember the field before writing, so a failure halfway still leaves it to be erased.
-  const record: FillRecord = { token, fields: [passwordField] };
-  (globalThis as unknown as { __desktopLoginFill?: FillRecord }).__desktopLoginFill = record;
-  // Leaving the page (including into the back/forward cache) erases the field; a form POST has already read it.
-  addEventListener("pagehide", () => { for (const field of record.fields) setter.call(field, ""); }, { capture: true });
+  const scope = globalThis as unknown as { __desktopLoginFills?: FillRecords };
+  if (!scope.__desktopLoginFills) {
+    const records: FillRecords = new Map();
+    scope.__desktopLoginFills = records;
+    // Leaving the page (including into the back/forward cache) erases every filled field; a form POST has already read them.
+    addEventListener("pagehide", () => { for (const fields of records.values()) for (const field of fields) setter.call(field, ""); }, { capture: true });
+  }
+  scope.__desktopLoginFills.set(token, [passwordField]);
 
   if (identifier) type(identifier, username);
   type(passwordField, password);
@@ -120,8 +135,9 @@ function visiblePasswordForm() {
 }
 
 function fillFieldState(token: string, formVisible: boolean): LoginFillFieldState {
-  const record = (globalThis as unknown as { __desktopLoginFill?: FillRecord }).__desktopLoginFill;
-  if (!record || record.token !== token) return { document: "replaced", formVisible };
+  // The records live in this document's isolated world: a new document starts without them.
+  const fields = (globalThis as unknown as { __desktopLoginFills?: FillRecords }).__desktopLoginFills?.get(token);
+  if (!fields) return { document: "replaced", formVisible };
   const shown = (field: HTMLInputElement) => {
     if (!field.isConnected) return false;
     const rect = field.getBoundingClientRect();
@@ -132,17 +148,17 @@ function fillFieldState(token: string, formVisible: boolean): LoginFillFieldStat
     document: "same",
     formVisible,
     // Whatever its type, visibility or place in the tree, the field Desktop wrote still holds a value.
-    pending: record.fields.some(field => field.value !== ""),
-    fieldShown: record.fields.some(shown)
+    pending: fields.some(field => field.value !== ""),
+    fieldShown: fields.some(shown)
   };
 }
 
 /** Empties the field Desktop wrote, wherever it is now, then reports what is left. */
 function clearFill(token: string): LoginFillFieldState {
-  const record = (globalThis as unknown as { __desktopLoginFill?: FillRecord }).__desktopLoginFill;
-  if (!record || record.token !== token) return { document: "replaced", formVisible: false };
+  const fields = (globalThis as unknown as { __desktopLoginFills?: FillRecords }).__desktopLoginFills?.get(token);
+  if (!fields) return { document: "replaced", formVisible: false };
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-  for (const field of record.fields) {
+  for (const field of fields) {
     if (field.value === "") continue;
     setter.call(field, "");
     if (field.isConnected) {
@@ -150,7 +166,7 @@ function clearFill(token: string): LoginFillFieldState {
       field.dispatchEvent(new Event("change", { bubbles: true }));
     }
   }
-  return { document: "same", formVisible: false, pending: record.fields.some(field => field.value !== ""), fieldShown: false };
+  return { document: "same", formVisible: false, pending: fields.some(field => field.value !== ""), fieldShown: false };
 }
 
 export const buildLoginFillScript = (input: { token: string; username: string; password: string; submit: boolean }) =>

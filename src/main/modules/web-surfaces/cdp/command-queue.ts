@@ -24,9 +24,11 @@ const held = new Map<number, symbol>();
 /**
  * Pauses CDP and AWCP on one page while Desktop has a saved password in its form, so
  * no tool can read the field. Commands already queued finish first; new ones are refused
- * until the returned release function runs.
+ * until the returned release function runs. A page holds one pause at a time: a second
+ * fill is refused rather than allowed to end the first one's pause early.
  */
 export function holdPageAutomation(guestId: number) {
+  assertPageAutomationNotHeld(guestId);
   const token = Symbol("page-automation-hold");
   held.set(guestId, token);
   return () => { if (held.get(guestId) === token) held.delete(guestId); };

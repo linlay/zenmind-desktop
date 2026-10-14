@@ -99,7 +99,7 @@ export function encryptWebsiteCredentialBackup(entries: WebsiteCredentialTransfe
 }
 
 export function decryptWebsiteCredentialBackup(bytes: Buffer, password: unknown): WebsiteCredentialTransferEntry[] {
-  if (bytes.length > WEBSITE_CREDENTIAL_IMPORT_MAX_BYTES * 2) throw new WebsiteCredentialError("importTooLarge");
+  if (bytes.length > WEBSITE_CREDENTIAL_BACKUP_MAX_BYTES) throw new WebsiteCredentialError("importTooLarge");
   if (typeof password !== "string" || !password) throw new WebsiteCredentialError("backupPasswordIncorrect");
   let stored: any;
   try {
