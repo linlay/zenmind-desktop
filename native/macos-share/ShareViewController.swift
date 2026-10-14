@@ -329,7 +329,7 @@ final class ShareViewController: NSViewController {
         // The protocol is shared across brands; select this containing app explicitly.
         NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration) { [weak self] app, error in
             DispatchQueue.main.async {
-                guard let self, !self.finished else { return }
+                guard let self, !self.finished, self.transfer === server else { return }
                 self.spinner.stopAnimation(nil)
                 if error != nil || app == nil {
                     server.stop()
