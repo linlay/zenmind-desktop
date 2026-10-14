@@ -15,18 +15,18 @@ const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
 const url = 'https://site.test/forum';
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const manifest = { schemaVersion: 2, id: 'sample', name: 'Sample Forum', version: '1.0.0', description: 'Sample site guide.',
-  origins: { main: 'https://site.test' }, pages: [{ path: '/forum', features: ['post-search'] }] };
+  origins: { main: 'https://site.test' }, pages: { forum: { path: '/forum' } } };
 const search = `return { actions: { 'forum.posts.list': { title: 'Search posts', description: 'Reads the visible list.',
   inputSchema: { type: 'object', properties: { keyword: { type: 'string', maxLength: 64 } } },
   async run(args) { globalThis.calls = (globalThis.calls || 0) + 1; return { ok: true, result: { items: [], keyword: args.keyword ?? null } }; } } } };`;
 function page() {
   const events = new EventTarget();
-  const context = vm.createContext({ location: new URL(url), URL, AbortController, Event, setTimeout, clearTimeout,
+  const context = vm.createContext({ location: new URL(url), URL, URLSearchParams, AbortController, Event, setTimeout, clearTimeout,
     addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events), dispatchEvent: events.dispatchEvent.bind(events) });
   context.window = context; context.top = context;
   return { context };
 }
-const packages = () => [{ manifest: parseWebsiteBridgeManifest(manifest), scripts: new Map([['features/post-search.js', search]]) }];
+const packages = () => [{ manifest: parseWebsiteBridgeManifest(manifest), scripts: new Map([['pages/forum.js', search]]) }];
 
 test('guest lifecycle installs once, handles SPA entry/exit and removes listeners on detach', async () => {
   const p = page(); p.context.location = new URL('https://site.test/');
@@ -43,7 +43,7 @@ test('guest lifecycle installs once, handles SPA entry/exit and removes listener
 test('Desktop bridge reads injected manuals and invokes through an authorized Run', async t => {
   const h = createSiteHarness();
   const zip = new JSZip();
-  zip.file('bridge.json', JSON.stringify(manifest)); zip.file('features/post-search.js', search);
+  zip.file('bridge.json', JSON.stringify(manifest)); zip.file('pages/forum.js', search);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'awcp-addon-import-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const archive = path.join(directory, 'bridge.zip');

@@ -8,16 +8,17 @@ import JSZip from 'jszip';
 import { loadBrandConfig, resolveBrandId, runtimeBrandPayload } from '../scripts/lib/brand-model.mjs';
 const require = createRequire(import.meta.url);
 const repo = process.cwd(); const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'website-bridges-ui-'));
-// A two-origin sample: features are one business capability per file, hosts appear only in `origins`.
-const action = name => `return { actions: { ${JSON.stringify(name)}: { title: ${JSON.stringify(name)}, description: 'Sample.', inputSchema: { type: 'object', properties: {} }, run: () => ({ ok: true, result: context.shared.page() }) } } };`;
+// A two-origin sample: one script per page, shared modules per system, hosts appear only in `origins`.
+const action = name => `return { actions: { ${JSON.stringify(name)}: { title: ${JSON.stringify(name)}, description: 'Sample.', inputSchema: { type: 'object', properties: {} }, run: () => ({ ok: true, result: context.shared.core.page() }) } } };`;
 const example = { manifest: { schemaVersion: 2, id: 'sample-forum', name: 'Sample Forum', version: '1.0.0', description: 'Sample package for the settings smoke.',
-  origins: { forum: 'https://forum.example.test', archive: 'https://archive.example.test' }, pages: [
-    { origin: 'forum', path: '/forum', features: ['post-search'] },
-    { origin: 'forum', path: '/forum/new', features: ['post-compose'] },
-    { origin: 'forum', path: '/forum/posts/:postId', features: ['post-read', 'comment-write'] },
-    { origin: 'archive', path: '/posts/:postId', features: ['post-read'] },
-  ] }, scripts: new Map([['features/post-search.js', action('forum.posts.list')], ['features/post-compose.js', action('forum.compose.fill')],
-    ['features/post-read.js', action('forum.posts.get')], ['features/comment-write.js', action('forum.comments.create')], ['shared.js', 'return { page: () => context.pathname };']]) };
+  origins: { forum: { url: 'https://forum.example.test', name: 'Forum', description: 'Forum system.' }, archive: 'https://archive.example.test' }, pages: {
+    search: { origin: 'forum', path: '/forum', shared: ['core'] },
+    compose: { origin: 'forum', path: '/forum/new', name: 'Compose' },
+    post: { origin: 'forum', path: '/forum/posts/:postId', shared: ['core', 'forum/comment'] },
+    'archive-post': { origin: 'archive', path: '/posts/:postId', match: [{ title: 'Archived post' }], shared: ['core'] },
+  } }, scripts: new Map([['pages/search.js', action('forum.posts.list')], ['pages/compose.js', action('forum.compose.fill')],
+    ['pages/post.js', action('forum.posts.get')], ['pages/archive-post.js', action('forum.posts.get')],
+    ['shared/core.js', 'return { page: () => context.pathname };'], ['shared/forum/comment.js', "return { action: 'forum.comments.create' };"]]) };
 const zip = new JSZip();
 zip.file('bridge.json', JSON.stringify(example.manifest));
 for (const [name, source] of example.scripts) zip.file(name, source);
@@ -60,9 +61,10 @@ await until('document.querySelector(".website-bridge-source")?.value.includes("f
 assert.equal(await js('document.querySelector(".website-bridge-source").value.includes("forum.comments.create")'),false);
 await js('Array.from(document.querySelectorAll(".website-bridge-routes button")).find(b=>b.textContent.includes("forum /forum/posts/:postId")).click()');
 await until('document.querySelectorAll(".website-bridge-features button").length===3');
-await js('Array.from(document.querySelectorAll(".website-bridge-features button")).find(b=>b.textContent==="comment-write").click()');
+assert.equal(await js('Array.from(document.querySelectorAll(".website-bridge-routes button")).find(b=>b.textContent.includes("archive-post")).textContent.includes("Archived post")'),true);
+await js('Array.from(document.querySelectorAll(".website-bridge-features button")).find(b=>b.textContent==="shared/forum/comment").click()');
 await until('document.querySelector(".website-bridge-source")?.value.includes("forum.comments.create")');
-await js('Array.from(document.querySelectorAll(".website-bridge-features button")).find(b=>b.textContent==="shared.js").click()');
+await js('Array.from(document.querySelectorAll(".website-bridge-features button")).find(b=>b.textContent==="shared/core").click()');
 await until('document.querySelector(".website-bridge-source")?.value.includes("context.pathname")');
 fs.writeFileSync(path.join(__dirname,'light.png'),(await win.webContents.capturePage()).toPNG());
 await js('document.querySelector("[role=switch]").click()');await until('document.querySelector("[role=switch]").getAttribute("aria-checked")==="false"');assert.equal(manager.list().items[0].enabled,false);
@@ -71,7 +73,7 @@ await click('导出 ZIP');for(let i=0;i<100&&!fs.existsSync(path.join(__dirname,
 await js('document.documentElement.dataset.theme="dark";window.setDark(true)');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(__dirname,'dark.png'),(await win.webContents.capturePage()).toPNG());
 win.setSize(600,920);await new Promise(r=>setTimeout(r,100));assert.equal(await js('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(__dirname,'narrow.png'),(await win.webContents.capturePage()).toPNG());
 await click('卸载');await until('!!document.querySelector(".ant-modal-confirm-btns, .ant-modal-footer")');await js('document.querySelector(".ant-modal-footer .ant-btn-primary").click()');await until('document.querySelectorAll(".website-bridge-item").length===0');assert.equal(manager.list().items.length,0);
-clearTimeout(timer);console.log('Website bridge UI smoke passed: import/update, export, disable persistence, origins, page features and scripts, uninstall, narrow layout. Screenshots: '+__dirname);win.destroy();app.exit(0);
+clearTimeout(timer);console.log('Website bridge UI smoke passed: import/update, export, disable persistence, origins, pages with match conditions, shared and page scripts, uninstall, narrow layout. Screenshots: '+__dirname);win.destroy();app.exit(0);
 })().catch(e=>{console.error(e);app.exit(1)});`);
 const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
 const result = spawnSync(require('electron'), [path.join(temp, 'main.cjs')], { env, stdio: 'inherit', timeout: 40000 });

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
-import { WebsiteBridgeError, websiteBridgeOriginsOverlap, WEBSITE_BRIDGE_SHARED_SCRIPT, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
+import { WebsiteBridgeError, websiteBridgeOriginsOverlap, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
 import { readWebsiteBridgeArchive } from "./archive";
 import { digestOf, loadPackage, readOutdatedPackage, savePackage, WebsiteBridgeRecoveryError, type WebsiteBridgePackage, type WebsiteBridgeStorage } from "./storage";
 export type { WebsiteBridgeStorage } from "./storage";
@@ -42,14 +42,13 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
             // Only the committed old-schema package degrades to "needs update"; anything else fails closed.
             const legacy = readOutdatedPackage(storage!, entry.id, entry.digest);
             if (!legacy) throw error;
-            return { manifest: { schemaVersion: 2, id: entry.id, ...legacy, origins: {}, pages: [] }, scripts: new Map<string, string>(), digest: entry.digest, enabled: entry.enabled, outdated: true as const };
+            return { manifest: { schemaVersion: 2, id: entry.id, ...legacy, origins: {}, pages: {} }, scripts: new Map<string, string>(), digest: entry.digest, enabled: entry.enabled, outdated: true as const };
           }
         });
       }
     } catch { installed = []; failed = true; }
   }
-  const views = (): WebsiteBridgeView[] => installed.map(({ manifest, scripts, enabled, outdated }) => ({ ...JSON.parse(JSON.stringify(manifest)), enabled,
-    ...(scripts.has(WEBSITE_BRIDGE_SHARED_SCRIPT) ? { shared: true as const } : {}), ...(outdated ? { outdated } : {}) }));
+  const views = (): WebsiteBridgeView[] => installed.map(({ manifest, enabled, outdated }) => ({ ...JSON.parse(JSON.stringify(manifest)), enabled, ...(outdated ? { outdated } : {}) }));
   const conflicts = (item: WebsiteBridgePackage) => installed.some(other => other.enabled && other.manifest.id !== item.manifest.id && websiteBridgeOriginsOverlap(other.manifest, item.manifest));
   function changed(next: Installed[], pkg?: WebsiteBridgePackage) {
     if (storage && pkg) savePackage(storage, pkg, () => persist(next));
