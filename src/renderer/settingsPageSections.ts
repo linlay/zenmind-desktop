@@ -107,6 +107,10 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "websiteCredentials",
+      group: "integrations", label: "websiteCredentials", description: "", layout: "wide", visible: true
+    },
+    {
       id: "websites",
       group: "integrations",
       label: "websites",
@@ -117,10 +121,6 @@ export function createSettingsSectionDefinitions({
     {
       id: "websiteBridges",
       group: "integrations", label: "websiteBridges", description: "", layout: "wide", visible: true
-    },
-    {
-      id: "websiteCredentials",
-      group: "integrations", label: "websiteCredentials", description: "", layout: "wide", visible: true
     },
     {
       id: "webapps",

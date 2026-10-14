@@ -17,13 +17,16 @@ const source = name => JSON.stringify(path.join(repo, 'src/renderer', name));
 
 await build({ stdin: { contents: `
 import React from 'react'; import {createRoot} from 'react-dom/client';
+import ${source('styles/theme.css')};
+import ${source('styles/control-center.css')};
+import ${source('styles/navigation.css')};
+import ${source('pages/settings/SettingsPage.css')};
 import {WebsiteCredentialsSettings} from ${source('pages/settings/WebsiteCredentialsSettings.tsx')};
 import {RendererI18nContext} from ${source('i18n/i18n-context.ts')};
 import {createTranslator} from ${JSON.stringify(path.join(repo, 'src/shared/i18n/index.ts'))};
 import {ConfigProvider,theme} from 'antd';
-import ${source('styles/theme.css')};
-function App(){ const [dark,setDark]=React.useState(false);window.setDark=setDark;
-return <RendererI18nContext.Provider value={{locale:'zh-CN',source:'default',t:createTranslator('zh-CN'),setLocale:async()=>{}}}><ConfigProvider theme={{algorithm:dark?theme.darkAlgorithm:theme.defaultAlgorithm}}><WebsiteCredentialsSettings/></ConfigProvider></RendererI18nContext.Provider>; }
+function App(){ const [dark,setDark]=React.useState(false);window.setDark=setDark;const [locale,setLocale]=React.useState('zh-CN');window.setLocale=setLocale;
+return <RendererI18nContext.Provider value={{locale,source:'default',t:createTranslator(locale),setLocale:async()=>{}}}><ConfigProvider theme={{algorithm:dark?theme.darkAlgorithm:theme.defaultAlgorithm}}><div className="settings-page"><WebsiteCredentialsSettings/></div></ConfigProvider></RendererI18nContext.Provider>; }
 createRoot(document.getElementById('root')).render(<App/>);`, resolveDir: repo, loader: 'tsx' },
   outfile: path.join(temp, 'ui.js'), bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', loader: { '.png': 'dataurl', '.svg': 'dataurl', '.jpg': 'dataurl' },
   define: { 'process.env.NODE_ENV': '"production"', __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(loadBrandConfig(repo, resolveBrandId([], process.env)))) } });
@@ -58,11 +61,13 @@ const type=async(index,value)=>{await js('(()=>{const input=document.querySelect
 const status=text=>until('Array.from(document.querySelectorAll("[role=status],[role=alert]")).some(node=>node.textContent.includes('+JSON.stringify(text)+'))');
 const detail=()=>js('Array.from(document.querySelectorAll(".website-credential-meta code")).map(node=>node.textContent)');
 // Screenshots are for human review only; headless environments may not be able to capture.
-const shot=async name=>{try{fs.writeFileSync(path.join(__dirname,name+'.png'),(await win.webContents.capturePage()).toPNG())}catch(error){console.warn('Screenshot '+name+' skipped: '+error.message)}};
+const shot=async name=>{try{await new Promise(resolve=>setTimeout(resolve,300));fs.writeFileSync(path.join(__dirname,name+'.png'),(await win.webContents.capturePage()).toPNG())}catch(error){console.warn('Screenshot '+name+' skipped: '+error.message)}};
 const save=()=>js('document.querySelector(".ant-modal-footer .ant-btn-primary").click()');
 
 await win.loadFile(path.join(__dirname,'index.html'));await until('!!document.querySelector(".website-credential-empty")');
 await shot('empty');
+const checkHeader=async()=>assert.equal(await js('(()=>{const header=document.querySelector(".settings-page-head").getBoundingClientRect(),toggle=document.querySelector(".website-credential-capture [role=switch]").getBoundingClientRect();return header.right-toggle.right<2&&Math.abs(toggle.top-header.top)<10})()'),true,'save-password switch stays at the top right');
+await checkHeader();
 
 // Recording is opt-in.
 assert.equal(store.isCaptureEnabled(),false);await js('document.querySelector(".website-credential-capture [role=switch]").click()');await until('document.querySelector(".website-credential-capture [role=switch]").getAttribute("aria-checked")==="true"');assert.equal(store.isCaptureEnabled(),true);
@@ -75,6 +80,7 @@ await type(0,'http://accounts.example.com');await type(1,'alice@example.com');aw
 await type(0,'https://accounts.example.com/login');await type(3,'工作账号');await save();await status('已保存');
 await until('document.querySelectorAll(".website-credential-item").length===1');assert.equal(prompts,0);
 assert.deepEqual(await detail(),['al***@example.com','••••••••']);
+await shot('accounts');
 
 // Real system protection: nothing readable on disk, and the directory is owner-only.
 for(const name of fs.readdirSync(vaultDirectory)){const content=fs.readFileSync(path.join(vaultDirectory,name),'utf8');for(const secret of ['correct horse','alice','example.com','工作账号'])assert.equal(content.includes(secret),false,name+' leaks '+secret);}
@@ -106,7 +112,9 @@ assert.equal(await js('document.querySelectorAll(".website-credential-form input
 await type(2,'new password');await save();await until('!document.querySelector(".ant-modal-wrap:not([style*=none]) .website-credential-form")');
 assert.equal(store.reveal(store.state().credentials[0].id).password,'new password');
 await js('document.documentElement.dataset.theme="dark";window.setDark(true)');await new Promise(r=>setTimeout(r,150));await shot('dark');
-win.setSize(600,820);await new Promise(r=>setTimeout(r,150));assert.equal(await js('document.documentElement.scrollWidth<=innerWidth'),true);await shot('narrow');
+win.setSize(600,820);await new Promise(r=>setTimeout(r,150));assert.equal(await js('document.documentElement.scrollWidth<=innerWidth'),true);await checkHeader();await shot('narrow');
+await js('window.setLocale("en-US")');await until('document.querySelector("h1")?.textContent==="Passwords & sign-in"');await checkHeader();await shot('narrow-en');
+await js('window.setLocale("zh-CN")');await until('document.querySelector("h1")?.textContent==="密码与登录"');
 
 // Import a browser CSV, export an encrypted backup, then restore it after deleting everything.
 const csv=path.join(__dirname,'passwords.csv'),backupFile=path.join(__dirname,'export.pwbackup');let openPath=csv;

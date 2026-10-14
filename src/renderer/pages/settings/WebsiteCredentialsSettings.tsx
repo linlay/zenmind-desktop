@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Input, Modal, Switch } from "antd";
+import { Input, Modal, Switch, Tooltip } from "antd";
 import { CloseOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, EyeInvisibleOutlined, EyeOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
   WEBSITE_CREDENTIAL_BACKUP_PASSWORD_MIN_LENGTH,
@@ -126,19 +126,17 @@ export function WebsiteCredentialsSettings() {
   const filtered = items.filter(item => `${item.origin} ${item.maskedUsername} ${item.note}`.toLowerCase().includes(needle));
   const draftValid = Boolean(draft && draft.origin.trim() && draft.username && draft.password);
   return <section className="control-center-page workspace-wide service-workspace-page web-settings-page website-credentials-settings" aria-label={t("settings.websiteCredentials.label")}>
-    <header className="page-head control-center-hero">
-      <div className="control-center-hero-copy"><h1>{t("settings.websiteCredentials.label")}</h1><p>{t("settings.websiteCredentials.description")}</p></div>
+    <header className="settings-page-head">
+      <div className="settings-page-head-copy"><h1>{t("settings.websiteCredentials.label")}</h1><p className="page-copy">{t("settings.websiteCredentials.description")}</p></div>
+      <div className="settings-page-head-action website-credential-capture">
+        <Tooltip title={t("settings.websiteCredentials.capture")}>
+          <Switch checked={captureEnabled} disabled={busy || !available} aria-label={t("settings.websiteCredentials.capture")} onChange={enabled => void perform(() => api.setWebsiteCredentialCapture(enabled), t("settings.websiteCredentials.saved"))} />
+        </Tooltip>
+      </div>
     </header>
     {vault.state === "unavailable" && <div role="alert" className="website-credentials-error">{t(`settings.websiteCredentials.unavailable.${vault.reason}`)}</div>}
     {error && <div role="alert" className="website-credentials-error">{error}</div>}
     {notice && <div role="status">{notice}</div>}
-    <div className="website-credential-option website-credential-capture">
-      <div><strong>{t("settings.websiteCredentials.capture")}</strong><p>{t("settings.websiteCredentials.captureHint")}</p></div>
-      <div className="service-title-actions">
-        {neverSaveOrigins.length > 0 && <button type="button" className="website-credential-link" onClick={() => setNeverSaveOpen(true)}>{t("settings.websiteCredentials.neverSave", { count: neverSaveOrigins.length })}</button>}
-        <Switch size="small" checked={captureEnabled} disabled={busy || !available} aria-label={t("settings.websiteCredentials.capture")} onChange={enabled => void perform(() => api.setWebsiteCredentialCapture(enabled), t("settings.websiteCredentials.saved"))} />
-      </div>
-    </div>
     <div className="control-center-shell web-settings-shell">
       <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.websiteCredentials.accounts")}>
         <div className="management-group-scroll">
@@ -156,6 +154,7 @@ export function WebsiteCredentialsSettings() {
             <input ref={searchInputRef} type="search" aria-label={t("settings.websiteCredentials.search")} placeholder={t("settings.websiteCredentials.search")} value={query} onChange={event => setQuery(event.target.value)} />
             {query && <button type="button" className="sidebar-settings-search-clear" aria-label={t("common.clear")} onClick={() => { setQuery(""); searchInputRef.current?.focus(); }}><CloseOutlined /></button>}
           </div>
+          {neverSaveOrigins.length > 0 && <button type="button" className="website-credential-link website-credential-exclusions" onClick={() => setNeverSaveOpen(true)}>{t("settings.websiteCredentials.neverSave", { count: neverSaveOrigins.length })}</button>}
         </div>
         <div className="service-nav-list">
         {filtered.map(item => <button key={item.id} type="button" className={`website-credential-item${item.id === selectedId ? " is-selected" : ""}`} aria-pressed={item.id === selectedId} onClick={() => setSelectedId(item.id)}>
@@ -191,15 +190,15 @@ export function WebsiteCredentialsSettings() {
             <SettingsActionButton label={t("settings.websiteCredentials.copyPassword")} icon={<CopyOutlined />} disabled={busy} onClick={() => void copyPassword(selected.id)} />
           </dd></dl>
           {selected.note && <dl className="website-credential-meta"><dt>{t("settings.websiteCredentials.note")}</dt><dd>{selected.note}</dd></dl>}
-          <p className="website-credential-hint">{t("settings.websiteCredentials.authHint")}</p>
+          {secret && <p className="website-credential-hint">{t("settings.websiteCredentials.authHint")}</p>}
         </section>
         <section className="service-card">
           <div className="website-credential-option">
-            <div><strong>{t("settings.websiteCredentials.agentAllowed")}</strong><p>{t("settings.websiteCredentials.agentAllowedHint")}</p></div>
+            <strong>{t("settings.websiteCredentials.agentAllowed")}</strong>
             <Switch size="small" checked={selected.agentAllowed} disabled={busy} aria-label={t("settings.websiteCredentials.agentAllowed")} onChange={agentAllowed => void perform(() => api.updateWebsiteCredential({ id: selected.id, agentAllowed }), t("settings.websiteCredentials.saved"))} />
           </div>
           <div className="website-credential-option">
-            <div><strong>{t("settings.websiteCredentials.siteDefault")}</strong><p>{t("settings.websiteCredentials.siteDefaultHint")}</p></div>
+            <strong>{t("settings.websiteCredentials.siteDefault")}</strong>
             <Switch size="small" checked={selected.isSiteDefault} disabled={busy} aria-label={t("settings.websiteCredentials.siteDefault")} onChange={isSiteDefault => void perform(() => api.updateWebsiteCredential({ id: selected.id, isSiteDefault }), t("settings.websiteCredentials.saved"))} />
           </div>
         </section>
