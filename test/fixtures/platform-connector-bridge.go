@@ -13,11 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"agent-platform/internal/llm"
 	platformmcp "agent-platform/internal/mcp"
+	"agent-platform/internal/reload"
+	"agent-platform/internal/tools"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestDesktopConnectorBridgeLocal(t *testing.T) {
+func TestDesktopConnectorFirstBatchBridgeLocal(t *testing.T) {
 	output := os.Getenv("DESKTOP_CONNECTOR_BRIDGE_FILE")
 	if output == "" {
 		t.Skip("opt-in Desktop integration fixture")
@@ -29,7 +32,11 @@ func TestDesktopConnectorBridgeLocal(t *testing.T) {
 	handler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return sdk }, &sdkmcp.StreamableHTTPOptions{JSONResponse: true})
 	var tokenProbes atomic.Int64
 	var candidateAvailable atomic.Bool
+	var slowDiscovery atomic.Bool
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if slowDiscovery.Load() && r.URL.Path == "/mcp" && r.Method == http.MethodPost {
+			time.Sleep(1500 * time.Millisecond)
+		}
 		if r.URL.Path == "/token-mcp" {
 			tokenProbes.Add(1)
 			key := r.Header.Get("X-API-Key")
@@ -72,14 +79,36 @@ func TestDesktopConnectorBridgeLocal(t *testing.T) {
 			}
 		}
 	}
-	registry, err := platformmcp.NewRegistryWithSources(fixture.server.connectorSources())
+	registry, err := platformmcp.NewAgentRegistry(fixture.server.connectorSources())
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := platformmcp.NewClientWithGate(registry, upstream.Client(), platformmcp.NewAvailabilityGate())
+	if err = registry.BindAgents(fixture.registry.(platformmcp.AgentConnectorSource)); err != nil {
+		t.Fatal(err)
+	}
+	gate := platformmcp.NewAvailabilityGate()
+	client := platformmcp.NewClientWithGate(registry, upstream.Client(), gate)
 	defer client.Close()
+	syncer := platformmcp.NewToolSync(registry, client)
+	coordinator := platformmcp.NewSyncCoordinator(registry, syncer, gate, 100*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	coordinator.Start(ctx)
+	router, err := tools.NewToolRouter(fixture.tools, client, syncer, llm.NewInteractionSubmitCoordinator(fixture.interactions))
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture.server.deps.MCP = client
+	fixture.server.deps.Tools = router
+	fixture.server.deps.MCPToolSyncStatus = syncer
+	fixture.server.deps.CatalogReloader = reload.NewRuntimeCatalogReloader(fixture.registry, fixture.modelRegistry,
+		platformmcp.NewRegistryReloader(registry, syncer, coordinator), router, fixture.cfg.Paths.ToolsDir, fixture.server.deps.Notifications)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fixture/slow-sync" && r.Method == http.MethodPost {
+			slowDiscovery.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.URL.Path == "/fixture/probes" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"count": tokenProbes.Load()})
 			return

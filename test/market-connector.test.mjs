@@ -4,10 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const { normalizeCatalog, marketRoute, upsertInstalledRecord, readInstalledRecords } = require("../dist-electron/main/modules/marketplace/common.js");
 const { listMarketItems, installMarketItem, uninstallMarketItem } = require("../dist-electron/main/modules/marketplace/runtime.js");
+const { configureConnectorMarketPlatformCaller } = require("../dist-electron/main/modules/marketplace/connector-market.js");
 
 const asset = {
   url: "https://market.example.test/connector/wecom-cli-connector/1.0.0/connector.zip",
@@ -94,6 +96,25 @@ test("connector catalog failures have their own section status", async (t) => {
   assert.equal(result.connectorOffline, true);
   assert.match(result.connectorMessage, /503/);
   assert.equal(result.mcpOffline, false);
+});
+
+test("market identity mismatch cannot commit or replace Desktop installation records", async t => {
+  const app = fixture(t), bytes = Buffer.from('isolated ZIP transport fixture');
+  const item = { ...connector, metadata: { connectorId: 'example.office' }, assets: { universal: {
+    ...asset, sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex')
+  } } };
+  const previous = { id: 'untouched', type: 'connector', resourceKey: 'untouched.office', version: '1.0.0', source: 'cloud', installedAt: '2026-09-01T00:00:00.000Z' };
+  upsertInstalledRecord(app, previous);
+  const before = readInstalledRecords(app);
+  t.after(() => configureConnectorMarketPlatformCaller(null));
+  for (const response of [
+    { installed: true, id: 'other.office', version: '1.0.0' },
+    { installed: true, id: 'example.office', version: '2.0.0' },
+  ]) {
+    configureConnectorMarketPlatformCaller(async endpoint => endpoint === '/api/admin/connectors' ? { connectors: [] } : response);
+    await assert.rejects(installMarketItem(app, item.id, { catalog: { items: [item] }, fetchImpl: async () => new Response(bytes) }), /不匹配|does not match/);
+    assert.deepEqual(readInstalledRecords(app), before);
+  }
 });
 
 

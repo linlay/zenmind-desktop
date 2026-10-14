@@ -2,9 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Script } from "node:vm";
-import { parseWebsiteBridgeManifest, WEBSITE_BRIDGE_LIMITS as limits } from "../../../../shared/website-bridge";
-import type { WebsiteBridgePackage } from "./builtin";
-import { digestOf, savePackage, type WebsiteBridgeStorage } from "./storage";
+import { parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, websiteBridgeOriginsOverlap, WEBSITE_BRIDGE_LIMITS as limits, WEBSITE_BRIDGE_SHARED_SCRIPT } from "../../../../shared/website-bridge";
+import { digestOf, savePackage, type WebsiteBridgePackage, type WebsiteBridgeStorage } from "./storage";
 
 /** Reads inert source files only; seed scripts are never executed in Main. */
 function readSeed(root: string, id: string): WebsiteBridgePackage {
@@ -23,13 +22,14 @@ function readSeed(root: string, id: string): WebsiteBridgePackage {
   if (manifest.id !== id) throw new Error("Website bridge seed identity mismatch.");
   const scripts = new Map<string, string>();
   let size = 0;
-  for (const page of manifest.pages) {
-    if (scripts.has(page.script)) continue;
-    const source = read(`${id}/${page.script}`, limits.fileBytes);
+  const names = websiteBridgeFeatureScripts(manifest);
+  if (fs.existsSync(path.join(root, id, WEBSITE_BRIDGE_SHARED_SCRIPT))) names.push(WEBSITE_BRIDGE_SHARED_SCRIPT);
+  for (const name of names) {
+    const source = read(`${id}/${name}`, limits.fileBytes);
     size += Buffer.byteLength(source);
     if (size > limits.expandedBytes) throw new Error("Website bridge seed is too large.");
     new Script(`(function(context) {\n${source}\n})`);
-    scripts.set(page.script, source);
+    scripts.set(name, source);
   }
   return { manifest, scripts };
 }
@@ -50,7 +50,7 @@ export function initializeWebsiteBridgeSeeds(storage: WebsiteBridgeStorage, root
     }
   }
   const packages = ids.map(id => readSeed(root, id));
-  if (new Set(packages.map(pkg => pkg.manifest.origin)).size !== packages.length) throw new Error("Conflicting website bridge seed origins.");
+  if (packages.some((pkg, index) => packages.slice(index + 1).some(other => websiteBridgeOriginsOverlap(pkg.manifest, other.manifest)))) throw new Error("Conflicting website bridge seed origins.");
   for (const id of ids) {
     if (fs.existsSync(path.join(storage.packagesRoot, id))) throw new Error("Website bridge seed would overwrite existing package data.");
   }

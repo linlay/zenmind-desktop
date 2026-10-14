@@ -108,6 +108,47 @@ test('market package expectations are passed to Platform before activation',asyn
  await assert.rejects(market.importConnectorBytes(Buffer.from('ZIP'),false,{id:'example.office',version:'1.0.0'}),/identity mismatch/);
 });
 
+test('market import rejects returned identities and versions that contradict its expectations', async t => {
+  t.after(() => market.configureConnectorMarketPlatformCaller(null));
+  for (const response of [
+    { installed: true, id: 'another-package', version: '1.0.0' },
+    { installed: true, id: 'example.office', version: '1.1.0' },
+  ]) {
+    market.configureConnectorMarketPlatformCaller(async () => response);
+    await assert.rejects(market.importConnectorBytes(Buffer.from('ZIP'), false, { id: 'example.office', version: '1.0.0' }), /不匹配|does not match/);
+  }
+});
+
+test('Agent MCP projection preserves only validated public synchronization metadata', async t => {
+  const component = { connectorId: 'example.office', serverKey: 'example.office/main@current', status: 'syncing', toolCount: 0 };
+  const raw = { agentKey: 'ResearchAgent', connectorIds: ['example.office'], activeConnectorIds: ['example.office'], reloadPending: false,
+    mcp: [{ ...component, internalPath: '/private' }], runtimeRevision: 'current-revision', privateState: 'private' };
+  market.configureConnectorMarketPlatformCaller(async () => raw);
+  t.after(() => market.configureConnectorMarketPlatformCaller(null));
+  const result = await state.readConnectorAgent('ResearchAgent');
+  assert.deepEqual(result.mcp, [component]);
+  assert.equal(result.runtimeRevision, 'current-revision');
+  assert.equal(result.privateState, undefined);
+  delete raw.mcp; delete raw.runtimeRevision;
+  assert.equal((await state.readConnectorAgent('ResearchAgent')).mcp, undefined, 'old APIs remain readable for CLI/native');
+});
+
+test('Agent MCP response rejects foreign Agents, invalid components, duplicates and malformed revisions', async t => {
+  const component = { connectorId: 'example.office', serverKey: 'example.office/main@current', status: 'ready', toolCount: 1 };
+  const raw = { agentKey: 'ResearchAgent', connectorIds: ['example.office'], activeConnectorIds: ['example.office'], reloadPending: false, mcp: [component] };
+  const invalid = [
+    { agentKey: 'AnotherAgent' }, { mcp: null }, { mcp: {} },
+    ...[{ connectorId: '../escape' }, { serverKey: '' }, { serverKey: 'x\u0000y' }, { status: 'connected' },
+      { toolCount: -1 }, { toolCount: 0.5 }, { toolCount: '1' }].map(patch => ({ mcp: [{ ...component, ...patch }] })),
+    { mcp: [component, component] }, { runtimeRevision: '' }, { runtimeRevision: ' ' }, { runtimeRevision: 7 },
+  ];
+  t.after(() => market.configureConnectorMarketPlatformCaller(null));
+  for (const patch of invalid) {
+    market.configureConnectorMarketPlatformCaller(async () => ({ ...raw, ...patch }));
+    await assert.rejects(state.readConnectorAgent('ResearchAgent'));
+  }
+});
+
  test('explicit check uses POST check and preserves pending candidate alongside active credentials', async(t) => {
  const calls=[];
  market.configureConnectorMarketPlatformCaller(async(path, options)=>{

@@ -2,13 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
-import { WebsiteBridgeError, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
-import { type WebsiteBridgePackage } from "./builtin";
+import { WebsiteBridgeError, websiteBridgeOriginsOverlap, WEBSITE_BRIDGE_SHARED_SCRIPT, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../../shared/website-bridge";
 import { readWebsiteBridgeArchive } from "./archive";
-import { digestOf, loadPackage, savePackage, WebsiteBridgeRecoveryError, type WebsiteBridgeStorage } from "./storage";
+import { digestOf, loadPackage, readOutdatedPackage, savePackage, WebsiteBridgeRecoveryError, type WebsiteBridgePackage, type WebsiteBridgeStorage } from "./storage";
 export type { WebsiteBridgeStorage } from "./storage";
 
-type Installed = WebsiteBridgePackage & { enabled: boolean; digest: string };
+type Installed = WebsiteBridgePackage & { enabled: boolean; digest: string; outdated?: true };
 /** Stable ID directories with staged replacement and catalogue-based recovery. */
 export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
   let installed: Installed[] = [];
@@ -38,13 +37,20 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
         installed = data.items.map((entry: { id: string; digest: string; enabled: boolean }) => {
           if (typeof entry.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.id) || ids.has(entry.id) || !/^[a-f0-9]{64}$/.test(entry.digest) || typeof entry.enabled !== "boolean") throw new Error("Invalid catalogue");
           ids.add(entry.id);
-          const pkg = loadPackage(storage!, entry.id, entry.digest);
-          return { ...pkg, digest: entry.digest, enabled: entry.enabled };
+          try { return { ...loadPackage(storage!, entry.id, entry.digest), digest: entry.digest, enabled: entry.enabled }; }
+          catch (error) {
+            // Only the committed old-schema package degrades to "needs update"; anything else fails closed.
+            const legacy = readOutdatedPackage(storage!, entry.id, entry.digest);
+            if (!legacy) throw error;
+            return { manifest: { schemaVersion: 2, id: entry.id, ...legacy, origins: {}, pages: [] }, scripts: new Map<string, string>(), digest: entry.digest, enabled: entry.enabled, outdated: true as const };
+          }
         });
       }
     } catch { installed = []; failed = true; }
   }
-  const views = (): WebsiteBridgeView[] => installed.map(({ manifest, enabled }) => ({ ...JSON.parse(JSON.stringify(manifest)), enabled }));
+  const views = (): WebsiteBridgeView[] => installed.map(({ manifest, scripts, enabled, outdated }) => ({ ...JSON.parse(JSON.stringify(manifest)), enabled,
+    ...(scripts.has(WEBSITE_BRIDGE_SHARED_SCRIPT) ? { shared: true as const } : {}), ...(outdated ? { outdated } : {}) }));
+  const conflicts = (item: WebsiteBridgePackage) => installed.some(other => other.enabled && other.manifest.id !== item.manifest.id && websiteBridgeOriginsOverlap(other.manifest, item.manifest));
   function changed(next: Installed[], pkg?: WebsiteBridgePackage) {
     if (storage && pkg) savePackage(storage, pkg, () => persist(next));
     else persist(next);
@@ -70,7 +76,7 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
   }
   return {
     list: (): WebsiteBridgeResult => { ensureLoaded(); return failed ? { ok: false, error: "storageFailed" } : { ok: true, items: views() }; },
-    runtimePackages: () => { ensureLoaded(); return installed.filter(item => item.enabled); },
+    runtimePackages: () => { ensureLoaded(); return installed.filter(item => item.enabled && !item.outdated); },
     subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
     importFile(file: string, checkOwner: () => void = () => {}, expectedId?: string) { return run(async () => {
       const pkg = await readWebsiteBridgeArchive(file); checkOwner();
@@ -78,7 +84,7 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
       const existing = installed.find(item => item.manifest.id === pkg.manifest.id);
       if (!existing && installed.length >= 50) throw new WebsiteBridgeError("packageTooLarge");
       const enabled = existing?.enabled ?? true;
-      if (enabled && installed.some(item => item.enabled && item.manifest.id !== pkg.manifest.id && item.manifest.origin === pkg.manifest.origin)) throw new WebsiteBridgeError("conflict");
+      if (enabled && conflicts(pkg)) throw new WebsiteBridgeError("conflict");
       const item = { ...pkg, enabled, digest: digestOf(pkg) };
       changed(existing ? installed.map(old => old === existing ? item : old) : [...installed, item], pkg);
       return { selectedId: pkg.manifest.id };
@@ -86,7 +92,7 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
     setEnabled(id: string, enabled: boolean, checkOwner: () => void = () => {}) { return run(() => {
       checkOwner();
       const item = find(id); if (typeof enabled !== "boolean") throw new WebsiteBridgeError("invalidPackage");
-      if (enabled && installed.some(other => other !== item && other.enabled && other.manifest.origin === item.manifest.origin)) throw new WebsiteBridgeError("conflict");
+      if (enabled && conflicts(item)) throw new WebsiteBridgeError("conflict");
       changed(installed.map(old => old === item ? { ...old, enabled } : old)); return { selectedId: id };
     }); },
     remove(id: string, checkOwner: () => void = () => {}) { return run(() => { checkOwner(); find(id); changed(installed.filter(item => item.manifest.id !== id)); return {}; }); },
@@ -94,7 +100,8 @@ export function createWebsiteBridgeManager(storage?: WebsiteBridgeStorage) {
     async exportBytes(id: string) {
       ensureLoaded();
       if (failed) throw new WebsiteBridgeError("storageFailed");
-      const item = find(id); const zip = new JSZip(); zip.file("bridge.json", JSON.stringify(item.manifest, null, 2));
+      const item = find(id); if (item.outdated) throw new WebsiteBridgeError("notFound");
+      const zip = new JSZip(); zip.file("bridge.json", JSON.stringify(item.manifest, null, 2));
       for (const [name, source] of item.scripts) zip.file(name, source);
       return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
     },

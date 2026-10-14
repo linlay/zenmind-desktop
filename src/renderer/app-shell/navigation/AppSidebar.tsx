@@ -9,6 +9,7 @@ import { SortableNavEntries } from "./SortableNavEntries";
 import {
   Fragment,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -175,6 +176,15 @@ type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
 
 type SidebarGroupId = "assistants" | "chats" | "webs" | "pinned";
 
+type AssistantChatMenuItem = Pick<
+  AssistantNavChatItem,
+  "chatId" | "chatName" | "agentKey" | "pinned"
+>;
+
+export type AppSidebarChatMenuHandle = {
+  openCurrentChatMenu: (element: HTMLElement) => Promise<void>;
+};
+
 type SidebarContextMenuSubject =
   | {
       kind: "group";
@@ -182,7 +192,7 @@ type SidebarContextMenuSubject =
       menuScope?: "sort";
     }
   | { kind: "agent"; agentKey: string }
-  | { kind: "chat"; chatId: string }
+  | { kind: "chat"; chatId: string; chat?: AssistantChatMenuItem }
   | { kind: "web"; entryKey: string };
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
@@ -237,14 +247,14 @@ type SidebarFloatingMenuPosition = {
 };
 
 type AssistantChatRenameDialogState = {
-  chat: AssistantNavChatItem;
+  chat: AssistantChatMenuItem;
   value: string;
   pending: boolean;
   error: string;
 };
 
 type AssistantChatDeleteDialogState = {
-  chat: AssistantNavChatItem;
+  chat: AssistantChatMenuItem;
   pending: boolean;
   error: string;
 };
@@ -985,6 +995,7 @@ function SortableAssistantChat({
 }
 
 type AppSidebarProps = {
+  chatMenuRef?: Ref<AppSidebarChatMenuHandle>;
   isCollapsed: boolean;
   isMac: boolean;
   isWindows: boolean;
@@ -1077,6 +1088,7 @@ type AppSidebarProps = {
 };
 
 export function AppSidebar({
+  chatMenuRef,
   isCollapsed,
   isMac,
   isWindows,
@@ -1297,9 +1309,11 @@ export function AppSidebar({
   const chatDefaultAgentPickerRef = useRef<HTMLDivElement | null>(null);
   const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarContextMenuRequestIdRef = useRef(0);
+  const currentRouteRef = useRef(currentRoute);
   const assistantNavAgentsRef = useRef(assistantNavAgents);
   const webItemsRef = useRef(webItems);
   assistantNavAgentsRef.current = assistantNavAgents;
+  currentRouteRef.current = currentRoute;
   webItemsRef.current = webItems;
 
   useEffect(() => {
@@ -2412,7 +2426,7 @@ export function AppSidebar({
         : null;
     }
     if (subject.kind === "chat") {
-      const chat = findAssistantNavChat(subject.chatId);
+      const chat = findAssistantNavChat(subject.chatId) ?? subject.chat;
       return chat
         ? {
             kind: "chat",
@@ -2612,7 +2626,7 @@ export function AppSidebar({
     }
 
     if (subject.kind === "chat") {
-      const chat = findAssistantNavChat(subject.chatId);
+      const chat = findAssistantNavChat(subject.chatId) ?? subject.chat;
       if (!chat) return;
       if (actionId === "chat.export") {
         await handleAssistantExportChat(chat);
@@ -2757,6 +2771,7 @@ export function AppSidebar({
     };
     const requestId = sidebarContextMenuRequestIdRef.current + 1;
     sidebarContextMenuRequestIdRef.current = requestId;
+    const menuRoute = currentRouteRef.current;
     void window.electronAPI.sidebarContextMenu
       .popup({
         x: anchorPoint.x,
@@ -2766,6 +2781,7 @@ export function AppSidebar({
       .then((result) => {
         if (
           requestId !== sidebarContextMenuRequestIdRef.current ||
+          (subject.kind === "chat" && subject.chat && currentRouteRef.current !== menuRoute) ||
           !result.actionId
         ) {
           return;
@@ -2777,6 +2793,44 @@ export function AppSidebar({
       });
     return true;
   }
+
+  async function openCurrentChatMenu(element: HTMLElement) {
+    if (!currentChatId || currentChatId.startsWith("file-draft:")) return;
+    const route = currentRoute;
+    const requestId = ++sidebarContextMenuRequestIdRef.current;
+    try {
+      let chat: AssistantChatMenuItem | null = findAssistantNavChat(currentChatId);
+      // Older history chats may be outside the sidebar's navigation window.
+      if (!chat) {
+        const info = await window.electronAPI.assistant.getChatInfo(currentChatId);
+        chat = info
+          ? { chatId: info.chatId, chatName: info.chatName, agentKey: info.agentKey }
+          : null;
+      }
+      if (
+        requestId !== sidebarContextMenuRequestIdRef.current ||
+        currentRouteRef.current !== route ||
+        !element.isConnected
+      ) return;
+      if (!chat) {
+        window.alert(t("sidebar.chat.infoNotFound"));
+        return;
+      }
+      openNativeSidebarContextMenu(
+        { kind: "chat", chatId: chat.chatId, chat },
+        element,
+      );
+    } catch (error) {
+      if (
+        requestId === sidebarContextMenuRequestIdRef.current &&
+        currentRouteRef.current === route
+      ) {
+        window.alert(error instanceof Error ? error.message : t("sidebar.chat.infoLoadFailed"));
+      }
+    }
+  }
+
+  useImperativeHandle(chatMenuRef, () => ({ openCurrentChatMenu }));
 
   function openSidebarRovingContextMenu(element: HTMLElement) {
     const kind = element.dataset.sidebarNavKind;
@@ -3680,7 +3734,7 @@ export function AppSidebar({
     );
   }
 
-  async function handleAssistantExportChat(chat: AssistantNavChatItem) {
+  async function handleAssistantExportChat(chat: AssistantChatMenuItem) {
     try {
       const result = await window.electronAPI.assistant.exportChat(chat.chatId);
       if (!result.ok) {
@@ -3697,7 +3751,7 @@ export function AppSidebar({
     }
   }
 
-  async function handleAssistantExportChatHtml(chat: AssistantNavChatItem) {
+  async function handleAssistantExportChatHtml(chat: AssistantChatMenuItem) {
     try {
       const result = await window.electronAPI.assistant.exportChatHtml(chat.chatId);
       if (!result.ok) {
@@ -3716,7 +3770,7 @@ export function AppSidebar({
     }
   }
 
-  function handleAssistantRenameChat(chat: AssistantNavChatItem) {
+  function handleAssistantRenameChat(chat: AssistantChatMenuItem) {
     setAssistantChatRenameDialog({
       chat,
       value: chat.chatName,
@@ -3777,7 +3831,7 @@ export function AppSidebar({
     }
   }
 
-  async function handleAssistantArchiveChat(chat: AssistantNavChatItem) {
+  async function handleAssistantArchiveChat(chat: AssistantChatMenuItem) {
     const result = await window.electronAPI.assistant.archiveChat(chat.chatId);
     if (!result?.ok) {
       window.alert(result?.message || t("sidebar.chat.archiveFailed"));
@@ -3807,7 +3861,7 @@ export function AppSidebar({
     await onRefreshAssistantNavAgents?.();
   }
 
-  async function handleAssistantDeleteChat(chat: AssistantNavChatItem) {
+  async function handleAssistantDeleteChat(chat: AssistantChatMenuItem) {
     setAssistantChatDeleteDialog({
       chat,
       pending: false,
@@ -3979,7 +4033,7 @@ export function AppSidebar({
     );
   }
 
-  async function setChatPinned(chat: AssistantNavChatItem, pinned: boolean) {
+  async function setChatPinned(chat: AssistantChatMenuItem, pinned: boolean) {
     if (
       chatOrderMutationPending ||
       !assistantChatPinningSupported ||

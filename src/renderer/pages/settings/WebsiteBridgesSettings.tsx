@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal, Switch } from "antd";
 import { ImportOutlined, ExportOutlined, ReloadOutlined, DeleteOutlined, CloseOutlined } from "@ant-design/icons";
-import type { WebsiteBridgeResult, WebsiteBridgeView } from "../../../shared/website-bridge";
+import { WEBSITE_BRIDGE_SHARED_SCRIPT, websiteBridgeFeatureScript, type WebsiteBridgePage, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../shared/website-bridge";
 import { useI18n } from "../../i18n/useI18n";
 import { SettingsSidebarIcon } from "../../app-shell/navigation/SettingsSidebarIcon";
 import { SettingsActionButton } from "./SettingsActionButton";
 import "./WebsiteBridgesSettings.css";
+
+// The same path may exist on several origins of one bridge.
+const pageKey = (page: WebsiteBridgePage) => `${page.origin} ${page.path}`;
 
 export function WebsiteBridgesSettings() {
   const { t } = useI18n();
@@ -16,6 +19,7 @@ export function WebsiteBridgesSettings() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pagePath, setPagePath] = useState("");
+  const [scriptPath, setScriptPath] = useState("");
   const [source, setSource] = useState("");
   const [sourceError, setSourceError] = useState("");
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -24,7 +28,10 @@ export function WebsiteBridgesSettings() {
   const locked = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selected = items.find(item => item.id === selectedId);
-  const page = selected?.pages.find(page => page.path === pagePath) ?? selected?.pages[0];
+  const page = selected?.pages.find(page => pageKey(page) === pagePath) ?? selected?.pages[0];
+  const scripts = page ? [...page.features.map(websiteBridgeFeatureScript), ...(selected?.shared ? [WEBSITE_BRIDGE_SHARED_SCRIPT] : [])] : [];
+  const script = scripts.includes(scriptPath) ? scriptPath : scripts[0];
+  const origins = Object.entries(selected?.origins ?? {});
   const api = window.electronAPI.settings;
   async function perform(operation: () => Promise<WebsiteBridgeResult>, message?: string) {
     if (locked.current) return;
@@ -46,15 +53,15 @@ export function WebsiteBridgesSettings() {
   }, []);
   useEffect(() => {
     let cancelled = false;
-    setSource(""); setSourceError(""); setSourceLoading(Boolean(selected && page));
-    if (selected && page) void api.readWebsiteBridgeScript({ id: selected.id, script: page.script }).then(result => {
+    setSource(""); setSourceError(""); setSourceLoading(Boolean(selected && script));
+    if (selected && script) void api.readWebsiteBridgeScript({ id: selected.id, script }).then(result => {
       if (cancelled) return;
       if (result.ok) setSource(result.script ?? ""); else setSourceError(t(`settings.websiteBridges.error.${result.error}`));
     }).catch(() => { if (!cancelled) setSourceError(t("settings.websiteBridges.error.storageFailed")); })
       .finally(() => { if (!cancelled) setSourceLoading(false); });
     return () => { cancelled = true; };
-  }, [selected, page?.script, t]);
-  const filtered = items.filter(item => `${item.name} ${item.origin} ${item.id}`.toLowerCase().includes(query.trim().toLowerCase()));
+  }, [selected, script, t]);
+  const filtered = items.filter(item => `${item.name} ${Object.values(item.origins).join(" ")} ${item.id}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-website-bridges website-bridges-settings" aria-label={t("settings.websiteBridges.label")}>
     <header className="page-head control-center-hero website-bridges-header">
       <div className="control-center-hero-copy"><h1>{t("settings.websiteBridges.label")}</h1><p>{t("settings.websiteBridges.description")}</p></div>
@@ -80,7 +87,7 @@ export function WebsiteBridgesSettings() {
         <div className="service-nav-list">
         {filtered.map(item => <button key={item.id} type="button" className={`website-bridge-item${item.id === selectedId ? " is-selected" : ""}`} aria-pressed={item.id === selectedId}
           onClick={() => { setSelectedId(item.id); setPagePath(""); }}>
-          <strong>{item.name}</strong><span>{item.origin}</span><small>{item.version} · {t(item.enabled ? "settings.websiteBridges.enabled" : "settings.websiteBridges.disabled")}</small>
+          <strong>{item.name}</strong><span>{item.outdated ? t("settings.websiteBridges.outdated") : Object.values(item.origins).join(" · ")}</span><small>{item.version} · {t(item.enabled ? "settings.websiteBridges.enabled" : "settings.websiteBridges.disabled")}</small>
         </button>)}
         {!filtered.length && <p className="service-group-empty">{t(busy ? "settings.websiteBridges.loading" : "settings.websiteBridges.empty")}</p>}
         </div>
@@ -98,30 +105,34 @@ export function WebsiteBridgesSettings() {
               </div>
             </div>
             <div className="service-title-actions">
-              <Switch size="small" checked={selected.enabled} disabled={busy} aria-label={t("settings.websiteBridges.enabled")} onChange={enabled => void perform(() => api.setWebsiteBridgeEnabled({ id: selected.id, enabled }), t("settings.websiteBridges.applied"))} />
+              <Switch size="small" checked={selected.enabled} disabled={busy || selected.outdated} aria-label={t("settings.websiteBridges.enabled")} onChange={enabled => void perform(() => api.setWebsiteBridgeEnabled({ id: selected.id, enabled }), t("settings.websiteBridges.applied"))} />
               <SettingsActionButton label={t("settings.websiteBridges.update")} icon={<ImportOutlined />} disabled={busy} onClick={() => void perform(() => api.importWebsiteBridge(selected.id), t("settings.websiteBridges.imported"))} />
-              <SettingsActionButton label={t("settings.websiteBridges.export")} icon={<ExportOutlined />} disabled={busy} onClick={() => void perform(() => api.exportWebsiteBridge(selected.id))} />
+              <SettingsActionButton label={t("settings.websiteBridges.export")} icon={<ExportOutlined />} disabled={busy || selected.outdated} onClick={() => void perform(() => api.exportWebsiteBridge(selected.id))} />
               <SettingsActionButton label={t("settings.websiteBridges.remove")} icon={<DeleteOutlined />} tone="danger" disabled={busy} onClick={() => setRemoveOpen(true)} />
             </div>
           </div>
           {selected.description && <p className="website-bridge-description">{selected.description}</p>}
-          <dl className="website-bridge-meta"><dt>{t("settings.websiteBridges.origin")}</dt><dd>{selected.origin}</dd></dl>
+          {selected.outdated ? <p role="status" className="website-bridge-hint">{t("settings.websiteBridges.outdatedHint")}</p>
+            : origins.map(([key, origin]) => <dl key={key} className="website-bridge-meta"><dt>{t("settings.websiteBridges.origin")}{origins.length > 1 ? ` · ${key}` : ""}</dt><dd>{origin}</dd></dl>)}
         </section>
-        <section className="service-card">
+        {!selected.outdated && <><section className="service-card">
         <div className="config-head"><h3>{t("settings.websiteBridges.pages")}</h3></div>
         <p className="website-bridge-hint">{t("settings.websiteBridges.pathHint")}</p>
         <div className="website-bridge-routes" role="group" aria-label={t("settings.websiteBridges.pages")}>
-          {selected.pages.map(route => <button type="button" key={route.path} aria-pressed={page?.path === route.path} onClick={() => setPagePath(route.path)} className={page?.path === route.path ? "is-selected" : ""}>
-            <code>{route.path}</code><span>{route.script}</span>
+          {selected.pages.map(route => <button type="button" key={pageKey(route)} aria-pressed={page === route} onClick={() => setPagePath(pageKey(route))} className={page === route ? "is-selected" : ""}>
+            <code>{origins.length > 1 ? `${route.origin} ` : ""}{route.path}</code><span>{route.features.join(" · ")}</span>
           </button>)}
         </div>
         </section>
         <section className="service-card config-panel website-bridge-code">
-        <div className="config-head"><h3>{t("settings.websiteBridges.script")}</h3><span>{page?.script}</span></div>
+        <div className="config-head"><h3>{t("settings.websiteBridges.script")}</h3><span>{script}</span></div>
+        <div className="website-bridge-features" role="group" aria-label={t("settings.websiteBridges.script")}>
+          {scripts.map(name => <button type="button" key={name} aria-pressed={script === name} onClick={() => setScriptPath(name)} className={script === name ? "is-selected" : ""}>{name === WEBSITE_BRIDGE_SHARED_SCRIPT ? name : name.slice("features/".length, -".js".length)}</button>)}
+        </div>
         {sourceError && <p role="alert" className="website-bridges-error">{sourceError}</p>}
         {sourceLoading ? <p role="status">{t("settings.websiteBridges.loading")}</p> : <textarea className="config-editor website-bridge-source" readOnly spellCheck={false} aria-label={t("settings.websiteBridges.script")} value={source} />}
         <p className="website-bridge-hint">{t("settings.websiteBridges.scriptHint")}</p>
-        </section>
+        </section></>}
         </div>
       </article> : <div className="service-card control-center-detail control-center-empty website-bridge-empty">{t("settings.websiteBridges.start")}</div>}
     </div>

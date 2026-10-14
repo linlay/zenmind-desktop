@@ -107,6 +107,10 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "websiteCredentials",
+      group: "integrations", label: "websiteCredentials", description: "", layout: "wide", visible: true
+    },
+    {
       id: "websites",
       group: "integrations",
       label: "websites",
@@ -169,6 +173,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   plugins: { label: "settings.plugins.label", description: "settings.plugins.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
   websiteBridges: { label: "settings.websiteBridges.label", description: "settings.websiteBridges.description" },
+  websiteCredentials: { label: "settings.websiteCredentials.label", description: "settings.websiteCredentials.description" },
   websites: { label: "settings.websites.label", description: "settings.websites.description" },
   webapps: { label: "settings.webapps.label", description: "settings.webapps.description" },
   about: { label: "settings.about.label", description: "settings.about.description" },

@@ -24,8 +24,8 @@
   color: var(--control-center-muted);
   font-size: 11px;
 }
-.website-bridge-item:hover, .website-bridge-routes button:hover { background: var(--control-hover-bg); }
-.website-bridge-item.is-selected, .website-bridge-routes .is-selected { background: var(--control-active-bg); color: var(--control-center-text); }
+.website-bridge-item:hover, .website-bridge-routes button:hover, .website-bridge-features button:hover { background: var(--control-hover-bg); }
+.website-bridge-item.is-selected, .website-bridge-routes .is-selected, .website-bridge-features .is-selected { background: var(--control-active-bg); color: var(--control-center-text); }
 .website-bridge-icon :is(svg, img) { display: block; width: 20px; height: 20px; }
 .website-bridge-description { margin: 0; padding: 10px 16px 0; color: var(--control-center-muted); }
 .website-bridge-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 16px; }
@@ -52,6 +52,18 @@
 }
 .settings-page .website-bridges-settings .website-bridge-routes code { padding: 0; background: transparent; color: inherit; font-size: 12px; }
 .website-bridge-routes span { color: var(--control-center-muted); font-size: 11px; }
+.website-bridge-features { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 8px; }
+.website-bridge-features button {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--control-center-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
 .website-bridge-code { display: flex; flex-direction: column; }
 .website-bridge-source.config-editor { min-height: 260px; }
 .website-bridge-code > .website-bridge-hint { border-top: 1px solid var(--control-center-border); font-size: 11px; }

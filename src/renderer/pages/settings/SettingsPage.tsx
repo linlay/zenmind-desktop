@@ -2,6 +2,7 @@ import { PetAppearancePreview } from "./PetAppearancePreview";
 import { PetImportControls } from "./PetImportControls";
 import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
+import { WebsiteCredentialsSettings } from "./WebsiteCredentialsSettings";
 import { SettingsActionButton } from "./SettingsActionButton";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
@@ -4502,6 +4503,7 @@ export function SettingsPage({
   function renderActiveSection() {
     switch (activeSection) {
       case "websiteBridges": return <WebsiteBridgesSettings />;
+      case "websiteCredentials": return <WebsiteCredentialsSettings />;
       case "usage":
         return (
           <UsageSettingsPanel
@@ -5944,7 +5946,8 @@ export function SettingsPage({
     activeSection !== "plugins" &&
     activeSection !== "websites" &&
     activeSection !== "webapps" &&
-    activeSection !== "websiteBridges";
+    activeSection !== "websiteBridges" &&
+    activeSection !== "websiteCredentials";
   const activeSectionDescription = activeSectionDefinition
     ? activeSectionDefinition.description.trim()
     : t("settings.description");

@@ -32,6 +32,12 @@ export type WebContentsAccess = {
   fromId(id: number): WebContents | undefined;
 };
 
+/** Notified when a Website or WorkPanel web guest joins or leaves the registry. */
+export type WebGuestObserver = {
+  attach(contents: WebContents): void;
+  detach(webContentsId: number): void;
+};
+
 export type BrowserSurfaceRegistryOptions = {
   websiteBridgeStorage?: import("./website-bridges/manager").WebsiteBridgeStorage;
   webContents: WebContentsAccess;

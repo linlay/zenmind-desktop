@@ -1105,6 +1105,24 @@
   pointer-events: auto;
 }
 
+.main-chat-more-button {
+  position: absolute;
+  right: 56px;
+}
+
+.main-chat-more-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.app-shell.has-chat-work-panel .main-chat-more-button {
+  right: calc(var(--chat-work-panel-width, 360px) + 28px);
+}
+
+.app-shell.is-main-chat-collapsed-by-work-panel .main-chat-more-button {
+  display: none;
+}
+
 .app-shell.has-chat-work-panel .main-chat-share-tooltip-trigger {
   right: var(--chat-work-panel-width, 360px);
 }
@@ -3862,15 +3880,11 @@
   width: var(--work-panel-resizer-hitbox);
   margin-right: calc(var(--work-panel-resizer-hitbox) / -2);
   margin-left: calc(var(--work-panel-resizer-hitbox) / -2);
-  cursor: grab;
+  cursor: ew-resize;
   touch-action: none;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
-}
-
-.chat-work-panel-resizer.is-active {
-  cursor: grabbing;
 }
 
 .app-content > .chat-work-panel-resizer {
@@ -3913,7 +3927,7 @@
 }
 
 .chat-work-panel-resize-overlay {
-  cursor: grabbing;
+  cursor: ew-resize;
 }
 
 .app-shell.is-work-panel-resizing,

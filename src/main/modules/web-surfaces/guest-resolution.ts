@@ -1,6 +1,6 @@
 import { EmbeddedCdpSurfaceKind, EmbeddedCdpSurfaceRegistration } from "../../../shared/embedded-cdp";
 import { type SurfaceIdentity, type SurfaceRole } from "../../../shared/surface-identity";
-import type { BrowserSurfaceRegistryOptions, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, ResolvedSurface } from "./registry-contracts";
+import type { BrowserSurfaceRegistryOptions, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, ResolvedSurface, WebGuestObserver } from "./registry-contracts";
 import { AwcpAddonInjection } from "./awcp/addons/injection";
 import { createWebsiteBridgeManager } from "./website-bridges/manager";
 
@@ -26,6 +26,24 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
   const websiteBridges = createWebsiteBridgeManager(options.websiteBridgeStorage);
   const awcpAddons = new AwcpAddonInjection(websiteBridges.runtimePackages);
   websiteBridges.subscribe(() => awcpAddons.refresh());
+  // Website and WorkPanel web guests: the pages a user signs in to. Other domains observe them without owning the index.
+  const webGuests = new Map<number, Electron.WebContents>();
+  const webGuestObservers = new Set<WebGuestObserver>();
+  function attachWebGuest(contents: Electron.WebContents) {
+    awcpAddons.attach(contents);
+    if (webGuests.has(contents.id)) return;
+    webGuests.set(contents.id, contents);
+    for (const observer of webGuestObservers) observer.attach(contents);
+  }
+  function detachWebGuest(webContentsId: number) {
+    awcpAddons.detach(webContentsId);
+    if (webGuests.delete(webContentsId)) for (const observer of webGuestObservers) observer.detach(webContentsId);
+  }
+  function observeWebGuests(observer: WebGuestObserver) {
+    webGuestObservers.add(observer);
+    for (const contents of webGuests.values()) if (!contents.isDestroyed()) observer.attach(contents);
+    return () => { webGuestObservers.delete(observer); };
+  }
 
   function settleGuestTargetWaiters(webContentsId: number, target: RegisteredWebviewSurfaceTarget | null): void {
     const waiters = pendingGuestTargetWaiters.get(webContentsId);
@@ -46,7 +64,7 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
     for (const [webContentsId, target] of registeredGuestTargets) {
       if (target.surfaceId === surfaceId) {
         registeredGuestTargets.delete(webContentsId);
-        awcpAddons.detach(webContentsId);
+        detachWebGuest(webContentsId);
         if (settleWaiters)
           settleGuestTargetWaiters(webContentsId, null);
       }
@@ -92,15 +110,15 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
       registeredGuestTargets.set(tab.webContentsId, target);
       const contents = findWebContentsById(tab.webContentsId);
       if (contents && (surface.surfaceKind === "website" || surface.surfaceRole === "workpanel-web")) {
-        awcpAddons.attach(contents);
+        attachWebGuest(contents);
       } else {
-        awcpAddons.detach(tab.webContentsId);
+        detachWebGuest(tab.webContentsId);
       }
       settleGuestTargetWaiters(tab.webContentsId, target);
     }
     for (const webContentsId of previousWebContentsIds) {
       if (!nextWebContentsIds.has(webContentsId)) {
-        awcpAddons.detach(webContentsId);
+        detachWebGuest(webContentsId);
         settleGuestTargetWaiters(webContentsId, null);
       }
     }
@@ -240,5 +258,5 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
 
   function findGuestClaim(webContentsId: number) { return registeredGuestTargets.get(webContentsId); }
 
-  return { websiteBridges, ensureWebsiteBridge: (contents: Electron.WebContents) => awcpAddons.ensure(contents), removeGuestTargetsForSurface, indexRegisteredSurface, findRegisteredSurfaceWebContents, findWebContentsById, resolveWebviewSurfaceTarget, waitForWebviewSurfaceTarget, waitForWebviewSurfaceTargetMatching, findWebContentsForSurfaceUrl, findGuestClaim };
+  return { websiteBridges, observeWebGuests, ensureWebsiteBridge: (contents: Electron.WebContents) => awcpAddons.ensure(contents), removeGuestTargetsForSurface, indexRegisteredSurface, findRegisteredSurfaceWebContents, findWebContentsById, resolveWebviewSurfaceTarget, waitForWebviewSurfaceTarget, waitForWebviewSurfaceTargetMatching, findWebContentsForSurfaceUrl, findGuestClaim };
 }

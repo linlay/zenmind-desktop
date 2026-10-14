@@ -3,6 +3,7 @@ import { connectorAwaitingVerification, connectorIsUsable, connectorRequiresConf
 import { connectorPresentation } from "./connectorPresentation";
 import { Alert, Button, Modal, Tag } from "antd";
 import { MessageOutlined } from "@ant-design/icons";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MarketItem } from "@shared/contracts";
@@ -19,7 +20,7 @@ export function ConnectorStateTag({ connection, installed, checking = false, sta
   const presentation = connectorPresentation(connection, installed, { checking, stateUnavailable });
   return <><Tag color={presentation.tagColor}>{t(presentation.labelKey)}</Tag>{!stateUnavailable && connection?.authentication.pendingVerification && connection.readiness === "ready" && <Tag color="warning">{t("market.connector.flow.state.pending_verification")}</Tag>}</>;
 }
-export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, onConfigure }: { item: MarketItem | null; runtime: MarketConnectorFlowRuntime; onClose: () => void; onDisconnect: (item: MarketItem) => void; onConfigure: (item: MarketItem) => void }) {
+export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, onConfigure, children }: { item: MarketItem | null; runtime: MarketConnectorFlowRuntime; onClose: () => void; onDisconnect: (item: MarketItem) => void; onConfigure: (item: MarketItem) => void; children?: ReactNode }) {
   const { t } = useI18n();
   if (!item) return null;
   const connection = runtime.getConnection(item);
@@ -86,5 +87,6 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, on
       </details>
       </div>
     </div>
+    {children}
   </Modal>;
 }

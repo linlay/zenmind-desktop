@@ -41,7 +41,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     const request = ++revision.current;
     try { const list = await window.electronAPI.market.getConnectorConnections(); if (!mounted.current || request !== revision.current) return;
       setConnections(Object.fromEntries(list.map(item => [item.connectorId, item]))); setStateError("");
-      // Ready only proves recovery of preparation/auth failures, not update or Agent mounting failures.
+      // Account readiness only recovers preparation/auth failures, not updates, Agent mounting or MCP synchronization.
       setFailure(previous => previous?.recoveredByReady && list.some(connection => connection.connectorId === previous.recoveredByReady && connectorIsUsable(connection)) ? null : previous);
     } catch (cause) { if (mounted.current && request === revision.current) setStateError(cause instanceof Error ? cause.message : String(cause)); }
     finally { if (mounted.current && request === revision.current) setLoading(false); }
@@ -115,15 +115,15 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     latest.current = initial; setFlow(initial);
     const change = (patch: Partial<FlowState>) => { if (!abort.signal.aborted && mounted.current && latest.current) { const value = { ...latest.current, ...patch }; latest.current = value; setFlow(value); } };
     let cancellationFailed = false;
-    let authorizationTimedOut = false;
-    let authorizationTimer: number | undefined;
-    let rejectAuthorizationTimeout: (reason: Error) => void = () => {};
-    const authorizationTimeout = new Promise<never>((_, reject) => { rejectAuthorizationTimeout = reject; });
-    const clearAuthorizationTimer = () => {
-      if (authorizationTimer !== undefined) window.clearTimeout(authorizationTimer);
-      authorizationTimer = undefined;
+    let timeoutMessage: string | undefined;
+    let phaseTimer: number | undefined;
+    let rejectPhaseTimeout: (reason: Error) => void = () => {};
+    const phaseTimeout = new Promise<never>((_, reject) => { rejectPhaseTimeout = reject; });
+    const clearPhaseTimer = () => {
+      if (phaseTimer !== undefined) window.clearTimeout(phaseTimer);
+      phaseTimer = undefined;
     };
-    abort.signal.addEventListener("abort", clearAuthorizationTimer, { once: true });
+    abort.signal.addEventListener("abort", clearPhaseTimer, { once: true });
     try {
       if (snapshot.current.stateError) {
         // A failed status read must be retried before deciding whether to install.
@@ -149,31 +149,32 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       const result = await Promise.race([runMarketConnectorFlow({ item, installed, connectorId: initial.connectorId, mountAgent, agentKey, credentials, signal: abort.signal,
         onPhase: phase => {
           change({ phase });
-          if (phase !== "authorizing") { clearAuthorizationTimer(); return; }
-          if (authorizationTimer !== undefined || abort.signal.aborted) return;
-          authorizationTimer = window.setTimeout(() => {
+          clearPhaseTimer();
+          if ((phase !== "authorizing" && phase !== "syncing") || abort.signal.aborted) return;
+          const message = phase === "authorizing" ? "market.connector.flow.authorizationTimeout" : "market.connector.flow.toolsSyncTimeout";
+          phaseTimer = window.setTimeout(() => {
             if (!mounted.current || controller.current !== abort) return;
-            authorizationTimedOut = true;
-            const reason = new Error("market.connector.flow.authorizationTimeout");
-            rejectAuthorizationTimeout(reason);
+            timeoutMessage = message;
+            const reason = new Error(message);
+            rejectPhaseTimeout(reason);
             abort.abort(reason);
-          }, 3 * 60_000);
+          }, phase === "authorizing" ? 3 * 60_000 : 60_000);
         }, onConnection: updateConnection,
         onInstalled: connectorId => { change({ connectorId }); setAliases(previous => ({ ...previous, [item.id]: connectorId })); callbacks.current.onChanged?.(); },
         onSession: async session => { change({ session }); if (!abort.signal.aborted) await showSession(session); },
         onTokenSchema: schema => change({ schema }),
         onCancellationError: () => {
           cancellationFailed = true;
-          if (mounted.current && controller.current === abort && !authorizationTimedOut) { setNotice(""); setError("market.connector.flow.cancelFailed", false); }
+          if (mounted.current && controller.current === abort && !timeoutMessage) { setNotice(""); setError("market.connector.flow.cancelFailed", false); }
           else console.warn("[connector-market] Failed to cancel the abandoned authorization session");
         },
-      }, window.electronAPI.market), authorizationTimeout]);
+      }, window.electronAPI.market), phaseTimeout]);
       if (abort.signal.aborted || !mounted.current) return;
       if (result.result === "pending_verification") { setFlow(null); latest.current = null; setNotice("market.connector.flow.pendingVerification"); }
       if (result.result === "complete") { setFlow(null); latest.current = null; setNotice("market.connector.flow.phase.complete"); if (openChat && agentKey) callbacks.current.onChat?.(agentKey, draft); }
     } catch (cause) {
-      if (authorizationTimedOut && mounted.current && controller.current === abort) {
-        setError("market.connector.flow.authorizationTimeout", false);
+      if (timeoutMessage && mounted.current && controller.current === abort) {
+        setError(timeoutMessage, false);
       } else if (!abort.signal.aborted && mounted.current) {
         if (credentials && credentialSchema) {
           change({ phase: "credentials", schema: credentialSchema });
@@ -185,8 +186,8 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
       }
     }
     finally {
-      clearAuthorizationTimer();
-      abort.signal.removeEventListener("abort", clearAuthorizationTimer);
+      clearPhaseTimer();
+      abort.signal.removeEventListener("abort", clearPhaseTimer);
       if (controller.current === abort) { controller.current = null; if (mounted.current) { setBusy(false); if (!cancellationFailed && latest.current) { const value = { ...latest.current, session: undefined }; latest.current = value; setFlow(value); } } try { await dismiss(); } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause), false); } void refresh(); callbacks.current.onChanged?.(); }
     }
   };

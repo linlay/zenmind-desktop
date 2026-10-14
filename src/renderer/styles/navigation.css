@@ -40,15 +40,11 @@
   margin-left: calc(var(--sidebar-resizer-hitbox) / -2);
   margin-right: calc(var(--sidebar-resizer-hitbox) / -2);
   z-index: 6;
-  cursor: grab;
+  cursor: col-resize;
   touch-action: none;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
-}
-
-.app-sidebar-resizer.is-active {
-  cursor: grabbing;
 }
 
 .app-sidebar-resizer-line {
@@ -70,7 +66,7 @@
 
 .app-sidebar-resizer:hover .app-sidebar-resizer-line,
 .app-sidebar-resizer.is-active .app-sidebar-resizer-line {
-  width: 3px;
+  width: 4px;
   background: rgba(var(--accent-rgb), 0.3);
   box-shadow:
     0 0 0 1px rgba(var(--accent-rgb), 0.08),
@@ -81,7 +77,7 @@
   position: absolute;
   inset: 0;
   z-index: 40;
-  cursor: grabbing;
+  cursor: col-resize;
   background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;

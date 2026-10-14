@@ -1,4 +1,5 @@
 import { registerArtifactActionIpc } from "../modules/artifacts";
+import { createWebsiteCredentials, registerWebsiteCredentialIpc } from "../modules/credentials";
 import { shell } from "electron";
 import { callAgentPlatform } from "../modules/desktop-actions";
 import { resolvePreferredAgentPlatformRuntimeRoot } from "../modules/services";
@@ -39,6 +40,10 @@ export function registerShellWorkPanelIpc(options: MainIpcRegistrationOptions) {
   });
 
   registerWebsiteBridgeIpc(ipcMain, { getMainWindow: options.getMainWindow, browserSurfaces: options.browserSurfaces, platform: options.platform });
+
+  const websiteCredentials = createWebsiteCredentials(app, { platform: options.platform, getMainWindow: options.getMainWindow });
+  registerWebsiteCredentialIpc(ipcMain, { getMainWindow: options.getMainWindow, ...websiteCredentials });
+  options.browserSurfaces.observeWebGuests(websiteCredentials.capture);
 
   registerSidebarContextMenuIpcHandlers(ipcMain, {
     getMainWindow: options.getMainWindow

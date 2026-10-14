@@ -244,7 +244,7 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
           : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);
       }
       else if (isDesktopAction) {
-        result = await provider.action(actionRequest as Record<string, unknown>, type.startsWith("desktop.web.") ? deps.siteControlGrants.resolve(actionSource) : undefined, controller.signal, deadlineAt);
+        result = await provider.action(actionRequest as Record<string, unknown>, (type.startsWith("desktop.web.") || type.startsWith("desktop.credentials.")) ? deps.siteControlGrants.resolve(actionSource) : undefined, controller.signal, deadlineAt);
       }
       else {
         const scope = deps.siteControlGrants.resolve(cdpSource);

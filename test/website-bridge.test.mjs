@@ -6,27 +6,36 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 const require = createRequire(import.meta.url);
 const { parseWebsiteBridgeManifest, matchWebsiteBridgePage } = require('../dist-electron/shared/website-bridge.js');
 const { createWebsiteBridgeManager } = require('../dist-electron/main/modules/web-surfaces/website-bridges/manager.js');
 const { readWebsiteBridgeArchive } = require('../dist-electron/main/modules/web-surfaces/website-bridges/archive.js');
 const { buildWebsiteBridgeScript } = require('../dist-electron/main/modules/web-surfaces/website-bridges/injection-script.js');
-const { builtinForumBridge } = require('../dist-electron/main/modules/web-surfaces/website-bridges/builtin.js');
 const { AwcpAddonInjection } = require('../dist-electron/main/modules/web-surfaces/awcp/addons/injection.js');
-const manifest = { schemaVersion: 1, id: 'sample', name: 'Sample', version: '1.0.0', origin: 'https://site.test', pages: [
-  { path: '/posts/:id', script: 'pages/post.js' }, { path: '/posts/new', script: 'pages/new.js' },
+const manifest = { schemaVersion: 2, id: 'sample', name: 'Sample', version: '1.0.0', origins: { main: 'https://site.test' }, pages: [
+  { path: '/posts/:id', features: ['post-read'] }, { path: '/posts/new', features: ['post-compose'] },
 ] };
-const source = 'globalThis.awcp = { protocolVersion: 1, page: context.params.id ?? "new" }; return () => { globalThis.cleaned = (globalThis.cleaned || 0) + 1; };';
+// A feature is a function body: it receives `context` and returns its business actions.
+const feature = (action, cleanup = 'globalThis.cleaned = (globalThis.cleaned || 0) + 1;') => `return { actions: { ${JSON.stringify(action)}: {
+  title: 'Page ' + (context.params.id ?? 'new'), description: 'Sample action.',
+  inputSchema: { type: 'object', properties: { note: { type: 'string', maxLength: 8 } } },
+  async run(args) { return { ok: true, result: { id: context.params.id ?? null, args, shared: context.shared ?? null } }; },
+} }, dispose() { ${cleanup} } };`;
+const source = feature('post.read');
+const sources = { 'features/post-read.js': source, 'features/post-compose.js': feature('post.compose') };
+const packageOf = (value = manifest, files = sources) => ({ manifest: parseWebsiteBridgeManifest(value), scripts: new Map(Object.entries(files)) });
+const pageId = p => p.context.awcp.manual().sections[0].title;
 function temporary(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'website-bridge-test-')); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; }
-async function zipAt(root, value = manifest, files = { 'pages/post.js': source, 'pages/new.js': source }) {
+async function zipAt(root, value = manifest, files = sources) {
   const zip = new JSZip(); zip.file('bridge.json', JSON.stringify(value));
   for (const [name, content] of Object.entries(files)) zip.file(name, content);
   const file = path.join(root, 'bridge.zip'); fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })); return file;
 }
 function page(url = 'https://site.test/posts/1') {
   const events = new EventTarget(); const requests = [];
-  const context = vm.createContext({ URL, AbortController, Event, location: new URL(url), setTimeout, clearTimeout,
+  const context = vm.createContext({ URL, AbortController, Event, location: new URL(url), setTimeout, clearTimeout, crypto,
     fetch: async (...args) => { requests.push(args); return new Response('{"post":{"id":19},"items":[]}', { headers: { 'content-type': 'application/json' } }); },
     addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events), dispatchEvent: events.dispatchEvent.bind(events) });
   context.window = context; context.top = context;
@@ -35,28 +44,51 @@ function page(url = 'https://site.test/posts/1') {
 
 test('page rules use pathname and exact origin, with literal routes before parameters', () => {
   const value = parseWebsiteBridgeManifest(manifest);
-  assert.equal(matchWebsiteBridgePage(value, 'https://site.test/posts/new?draft=1').page.script, 'pages/new.js');
+  assert.deepEqual(matchWebsiteBridgePage(value, 'https://site.test/posts/new?draft=1').page.features, ['post-compose']);
   assert.equal(matchWebsiteBridgePage(value, 'https://site.test/posts/19#comments').params.id, '19');
+  assert.equal(value.pages[0].origin, 'main');
   for (const url of ['https://site.test/api/posts/19', 'https://site.test/posts/19/edit', 'https://site.test.evil/posts/19', 'http://site.test/posts/19']) assert.equal(matchWebsiteBridgePage(value, url), null);
-  for (const pages of [[{ path: '/x/*', script: 'x.js' }], [{ path: '/x', script: '../x.js' }], [{ path: '/:id', script: 'a.js' }, { path: '/:name', script: 'b.js' }]]) assert.throws(() => parseWebsiteBridgeManifest({ ...manifest, pages }));
+  for (const pages of [[{ path: '/x/*', features: ['x'] }], [{ path: '/x', features: ['../x'] }], [{ path: '/x', features: [] }], [{ path: '/x', features: ['x', 'x'] }],
+    [{ path: '/x', script: 'features/x.js' }], [{ path: '/x', origin: 'other', features: ['x'] }],
+    [{ path: '/:id', features: ['a'] }, { path: '/:name', features: ['b'] }]]) assert.throws(() => parseWebsiteBridgeManifest({ ...manifest, pages }));
+});
+
+test('hosts are declared once as keyed origins; one bridge spans several and pages stay root-relative', () => {
+  const shop = { ...manifest, id: 'shop', origins: { store: 'https://store.example.test', mall: 'https://mall.example.test:8443/' }, pages: [
+    { origin: 'store', path: '/item.htm', features: ['product-read'] },
+    { origin: 'mall', path: '/item.htm', description: 'Mall detail.', features: ['product-read', 'cart-add'] },
+  ] };
+  const value = parseWebsiteBridgeManifest(shop);
+  assert.equal(value.origins.mall, 'https://mall.example.test:8443');
+  const mallPage = matchWebsiteBridgePage(value, 'https://mall.example.test:8443/item.htm?id=1');
+  assert.deepEqual([mallPage.originKey, mallPage.origin, mallPage.page.features], ['mall', 'https://mall.example.test:8443', ['product-read', 'cart-add']]);
+  assert.deepEqual(matchWebsiteBridgePage(value, 'https://store.example.test/item.htm').page.features, ['product-read']);
+  assert.equal(matchWebsiteBridgePage(value, 'https://www.example.test/item.htm'), null);
+  // Switching environment is one edit at the top; page rules are untouched.
+  const moved = parseWebsiteBridgeManifest({ ...manifest, origins: { main: 'http://localhost:5173' } });
+  assert.deepEqual(matchWebsiteBridgePage(moved, 'http://localhost:5173/posts/new').page, parseWebsiteBridgeManifest(manifest).pages[1]);
+  for (const invalid of [{ ...shop, pages: [{ path: '/item.htm', features: ['x'] }] }, { ...shop, origins: { a: 'https://same.test', b: 'https://same.test/' } },
+    { ...shop, origins: { Taobao: 'https://store.example.test' } }, { ...shop, origins: { store: 'https://store.example.test/path' } }, { ...shop, origins: {} },
+    { ...manifest, schemaVersion: 1, origin: 'https://site.test' }, { ...manifest, origin: 'https://site.test', origins: undefined }]) assert.throws(() => parseWebsiteBridgeManifest(invalid));
 });
 
 test('ZIP import validates scripts without executing code in Main', async t => {
-  const root = temporary(t); const file = await zipAt(root, manifest, { 'pages/post.js': source, 'pages/new.js': 'globalThis.__websiteBridgeMainExecuted = true;' });
-  const pkg = await readWebsiteBridgeArchive(file); assert.equal(pkg.scripts.size, 2); assert.equal(globalThis.__websiteBridgeMainExecuted, undefined);
-  await zipAt(root, manifest, { 'pages/post.js': 'syntax (', 'pages/new.js': source });
+  const root = temporary(t); const file = await zipAt(root, manifest, { 'features/post-read.js': source, 'features/post-compose.js': 'globalThis.__websiteBridgeMainExecuted = true;', 'shared.js': 'return {};' });
+  const pkg = await readWebsiteBridgeArchive(file); assert.equal(pkg.scripts.size, 3); assert.equal(globalThis.__websiteBridgeMainExecuted, undefined);
+  await zipAt(root, manifest, { 'features/post-read.js': 'syntax (', 'features/post-compose.js': source });
   await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidScript' });
-  await zipAt(root, manifest, { 'pages/post.js': source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidPackage' });
-  await zipAt(root, manifest, { 'pages/post.js': source, 'pages/new.js': source, '../escape.js': source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidPackage' });
-  await zipAt(root, manifest, { 'pages/post.js': ' '.repeat(600 * 1024), 'pages/new.js': source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'packageTooLarge' });
+  await zipAt(root, manifest, { 'features/post-read.js': source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidPackage' });
+  await zipAt(root, manifest, { 'features/post-read.js': source, 'features/post-compose.js': source, '../escape.js': source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidPackage' });
+  for (const extra of ['features/unused.js', 'pages/post.js', 'README.md']) { await zipAt(root, manifest, { ...sources, [extra]: source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidPackage' }); }
+  await zipAt(root, manifest, { 'features/post-read.js': ' '.repeat(600 * 1024), 'features/post-compose.js': source }); await assert.rejects(readWebsiteBridgeArchive(file), { code: 'packageTooLarge' });
 });
 
 test('ZIP rejects symlinks and case-colliding paths on both platforms', async t => {
   const root = temporary(t); const zip = new JSZip(); zip.file('bridge.json', JSON.stringify(manifest));
-  zip.file('pages/post.js', source, { unixPermissions: 0o120777 }); zip.file('pages/new.js', source);
+  zip.file('features/post-read.js', source, { unixPermissions: 0o120777 }); zip.file('features/post-compose.js', source);
   const file = path.join(root, 'link.zip'); fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer', platform: 'UNIX' }));
   await assert.rejects(readWebsiteBridgeArchive(file), { code: 'invalidPackage' });
-  await zipAt(root, manifest, { 'pages/post.js': source, 'pages/new.js': source, 'pages/POST.js': source });
+  await zipAt(root, manifest, { 'features/post-read.js': source, 'features/post-compose.js': source, 'features/POST-READ.js': source });
   await assert.rejects(readWebsiteBridgeArchive(path.join(root, 'bridge.zip')), { code: 'invalidPackage' });
 });
 
@@ -68,7 +100,7 @@ test('packages persist, update atomically, retain disabled state and do not resu
   await zipAt(root, { ...manifest, version: '1.1.0' }); assert.equal((await manager.importFile(zip)).ok, true);
   manager = createWebsiteBridgeManager(storage); const item = manager.list().items.find(item => item.id === 'sample');
   assert.equal(item.version, '1.1.0'); assert.equal(item.enabled, false);
-  await zipAt(root, { ...manifest, version: '2.0.0' }, { 'pages/post.js': '(', 'pages/new.js': source });
+  await zipAt(root, { ...manifest, version: '2.0.0' }, { 'features/post-read.js': '(', 'features/post-compose.js': source });
   assert.equal((await manager.importFile(zip)).ok, false); assert.equal(manager.list().items.find(item => item.id === 'sample').version, '1.1.0');
   const exported = await manager.exportBytes('sample'); fs.writeFileSync(zip, exported); assert.equal((await readWebsiteBridgeArchive(zip)).manifest.version, '1.1.0');
   await manager.remove('sample'); manager = createWebsiteBridgeManager(storage); assert.deepEqual(manager.list().items, []);
@@ -78,9 +110,13 @@ test('conflicting site packages, wrong update identity and lost owner do not cha
   const root = temporary(t); const manager = createWebsiteBridgeManager(); const file = await zipAt(root);
   await manager.importFile(file);
   await zipAt(root, { ...manifest, id: 'other' }); assert.equal((await manager.importFile(file)).error, 'conflict');
+  // Any shared origin conflicts, even when the other package also claims new ones.
+  await zipAt(root, { ...manifest, id: 'other', origins: { extra: 'https://extra.test', main: 'https://site.test' }, pages: manifest.pages.map(page => ({ ...page, origin: 'extra' })) });
+  assert.equal((await manager.importFile(file)).error, 'conflict');
   assert.equal((await manager.importFile(file, () => {}, 'sample')).error, 'invalidPackage');
   assert.equal((await manager.setEnabled('sample', false, () => { throw new Error('Owner closed'); })).ok, false);
   assert.equal(manager.list().items.find(item => item.id === 'sample').enabled, true);
+  await zipAt(root, { ...manifest, id: 'other', origins: { main: 'https://other.test' } }); assert.equal((await manager.importFile(file)).ok, true);
 });
 
 test('corrupt persisted state fails closed without replacing files or enabling builtins', t => {
@@ -91,31 +127,88 @@ test('corrupt persisted state fails closed without replacing files or enabling b
 });
 
 test('same page installs once; route parameters, disable and native AWCP preserve lifecycle boundaries', () => {
-  const pkg = { manifest, scripts: new Map([['pages/post.js', source], ['pages/new.js', source]]) };
-  const p = page(); p.run([pkg]); const first = p.context.awcp; assert.equal(first.page, '1'); p.run([pkg]); assert.equal(p.context.awcp, first);
-  p.context.location = new URL('https://site.test/posts/2'); p.run([pkg]); assert.equal(p.context.awcp.page, '2'); assert.equal(p.context.cleaned, 1);
+  const pkg = packageOf();
+  const p = page(); p.run([pkg]); const first = p.context.awcp; assert.equal(pageId(p), 'Page 1'); p.run([pkg]); assert.equal(p.context.awcp, first);
+  p.context.location = new URL('https://site.test/posts/1?tab=comments'); p.run([pkg]); assert.equal(p.context.awcp, first);
+  p.context.location = new URL('https://site.test/posts/2'); p.run([pkg]); assert.equal(pageId(p), 'Page 2'); assert.equal(p.context.cleaned, 1);
   p.run([]); assert.equal(p.context.awcp, undefined); assert.equal(p.context.cleaned, 2);
   p.context.awcp = { protocolVersion: 99 }; const native = p.context.awcp; p.run([pkg]); assert.equal(p.context.awcp, native);
 });
 
-test('forum pages expose only relevant actions and bind post IDs from the page', async () => {
-  const pkg = builtinForumBridge(); const p = page('https://1024.qiuer.net/forum/new'); p.run([pkg]);
-  let index = p.context.awcp.manual(); assert.deepEqual(Array.from(index.sections, item => item.section), ['forum.compose.fill', 'forum.compose.publish']); assert.ok(!index.sections.some(item => item.section === 'forum.comments.create'));
-  p.context.location = new URL('https://1024.qiuer.net/forum/posts/19'); p.run([pkg]); index = p.context.awcp.manual();
-  assert.ok(!index.sections.some(item => item.section === 'forum.compose.fill'));
-  const manual = p.context.awcp.manual({ section: 'forum.posts.get', revision: index.revision }); assert.equal(manual.inputSchema.properties.postId, undefined);
-  const result = await p.context.awcp.invoke({ requestId: 'read', revision: index.revision, action: 'forum.posts.get', args: {} }); assert.equal(result.ok, true);
-  assert.equal(p.requests[0][0], 'https://1024.qiuer.net/forum/api/v1/posts/19');
-  p.context.location = new URL('https://1024.qiuer.net/forum/posts/20'); p.run([pkg]); assert.notEqual(p.context.awcp.manual().revision, index.revision);
-  p.context.location = new URL('https://1024.qiuer.net/forum/api/v1/posts'); p.run([pkg]); assert.equal(p.context.awcp, undefined);
+test('a page composes its features into one AWCP; shared helper, relative paths and origin keys come from the host', async () => {
+  const shop = { ...manifest, id: 'shop', name: 'Shop', description: 'Site guide.', origins: { store: 'https://store.example.test', mall: 'https://mall.example.test' }, pages: [
+    { origin: 'store', path: '/item.htm', features: ['product-read'] },
+    { origin: 'mall', path: '/item.htm', description: 'Mall detail.', features: ['product-read', 'cart-add'] },
+  ] };
+  const read = `return { actions: { 'product.read': { title: 'Read', description: 'Read product.', inputSchema: { type: 'object', properties: {} },
+    run: () => ({ ok: true, result: { key: context.originKey, origin: context.origin, bridge: context.bridge, tool: context.shared.tool(),
+      same: context.resolve('/cart?id=1'), other: context.resolve('/item.htm?id=2', 'store') } }) } } };`;
+  const cart = `return { actions: { 'cart.add': { title: 'Add', description: 'Add to cart.', inputSchema: { type: 'object', required: ['sku'], properties: { sku: { type: 'object', required: ['id'], properties: { id: { type: 'integer', minimum: 1 } } } } },
+    run: args => ({ ok: true, result: args }) } } };`;
+  const files = { 'features/product-read.js': read, 'features/cart-add.js': cart, 'shared.js': 'return { tool: () => context.origin + context.pathname, dispose() { globalThis.sharedCleaned = true; } };' };
+  const pkg = packageOf(shop, files);
+  const p = page('https://mall.example.test/item.htm?id=9'); p.run([pkg]);
+  const index = p.context.awcp.manual();
+  assert.deepEqual(Array.from(index.sections, item => item.section), ['cart.add', 'product.read']);
+  assert.equal(index.site.name, 'Shop'); assert.equal(index.site.description, 'Site guide.\n\nMall detail.\n\nOrigins by key: store=https://store.example.test, mall=https://mall.example.test. This page: mall.');
+  const call = (action, args = {}, requestId = action) => p.context.awcp.invoke({ requestId, revision: index.revision, action, args });
+  assert.deepEqual(JSON.parse(JSON.stringify((await call('product.read')).result)), { key: 'mall', origin: 'https://mall.example.test', bridge: { id: 'shop', version: '1.0.0' },
+    tool: 'https://mall.example.test/item.htm', same: 'https://mall.example.test/cart?id=1', other: 'https://store.example.test/item.htm?id=2' });
+  assert.deepEqual(JSON.parse(JSON.stringify((await call('cart.add', { sku: { id: 0 } })).error.details.fieldErrors)), [{ path: ['sku', 'id'], messages: ['Expected a number in the declared range.'] }]);
+  assert.equal((await call('cart.add', { sku: { id: 3 }, url: 'https://evil.test' }, 'extra')).error.code, 'invalid_arguments');
+  assert.equal((await call('cart.add', { sku: { id: 3 } }, 'ok')).ok, true);
+  // The same feature file serves the other origin, where the cart feature is not loaded.
+  p.context.location = new URL('https://store.example.test/item.htm'); p.run([pkg]); assert.equal(p.context.sharedCleaned, true);
+  assert.deepEqual(Array.from(p.context.awcp.manual().sections, item => item.section), ['product.read']);
+  // A feature cannot turn a relative path into another host.
+  const q = page('https://store.example.test/item.htm'); q.run([packageOf(shop, { ...files, 'features/product-read.js': read.replace("'/cart?id=1'", "'//evil.test/'") })]);
+  assert.equal((await q.context.awcp.invoke({ requestId: 'evil', revision: q.context.awcp.manual().revision, action: 'product.read', args: {} })).error.code, 'execution_failed');
+});
+
+test('duplicate action names, non-feature results and async setup fail the whole page without leaving partial state', () => {
+  const both = { ...manifest, pages: [{ path: '/posts/:id', features: ['post-read', 'post-compose'] }] };
+  for (const second of [feature('post.read'), 'return 1;', 'return Promise.resolve({ actions: {} });', "return { actions: { 'x': { title: 'X' } } };", 'throw Error("setup");']) {
+    const p = page(); assert.throws(() => p.run([packageOf(both, { 'features/post-read.js': source, 'features/post-compose.js': second })]));
+    assert.equal(p.context.awcp, undefined); assert.equal(p.context.__zenmindWebsiteBridge, undefined); assert.ok(p.context.cleaned >= 1);
+  }
+});
+
+test('runtime owns the protocol: progressive manual, request replay, cancellation and leaving the page rule', async () => {
+  const slow = `return { actions: { 'post.read': { title: 'Read', description: 'Slow.', inputSchema: { type: 'object', properties: {} },
+    run: (args, signal) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(Error('aborted')))) } } };`;
+  const p = page(); p.run([packageOf(manifest, { ...sources, 'features/post-read.js': slow })]);
+  const api = p.context.awcp; const index = api.manual();
+  assert.deepEqual(Object.keys(index.sections[0]).sort(), ['section', 'title']);
+  const section = api.manual({ section: 'post.read', revision: index.revision }); section.inputSchema.type = 'changed';
+  assert.equal(api.manual({ section: 'post.read', revision: index.revision }).inputSchema.type, 'object');
+  assert.equal(api.manual({ section: 'post.read', revision: 'old' }).error.code, 'stale_revision');
+  assert.equal(api.manual({ section: 'missing', revision: index.revision }).error.code, 'section_not_found');
+  await assert.rejects(api.invoke({ requestId: 'x', revision: index.revision, action: 'post.read' }), { name: 'TypeError' });
+  const pending = api.invoke({ requestId: 'cancel-me', revision: index.revision, action: 'post.read', args: {} });
+  assert.equal(api.cancel('cancel-me'), true); assert.equal((await pending).error.code, 'cancelled'); assert.equal(api.cancel('cancel-me'), false);
+  assert.equal((await api.invoke({ requestId: 'cancel-me', revision: index.revision, action: 'post.read', args: {} })).error.code, 'duplicate_request');
+  assert.equal((await api.invoke({ requestId: 'missing', revision: index.revision, action: 'post.none', args: {} })).error.code, 'action_not_found');
+  p.context.location = new URL('https://site.test/other');
+  assert.equal((await api.invoke({ requestId: 'outside', revision: index.revision, action: 'post.read', args: {} })).error.code, 'stale_revision');
+  assert.throws(() => api.manual());
+});
+
+test('features may derive actions from the visible page; the revision follows what they declare', async () => {
+  const dynamic = `return { actions: () => Object.fromEntries((globalThis.buttons || []).map(name => ['ui.' + name, { title: name, description: 'Click ' + name, inputSchema: { type: 'object', properties: {} }, run: () => ({ ok: true, result: name }) }])) };`;
+  const p = page(); p.run([packageOf(manifest, { ...sources, 'features/post-read.js': dynamic })]);
+  const empty = p.context.awcp.manual(); assert.deepEqual(Array.from(empty.sections), []);
+  p.context.buttons = ['save']; const index = p.context.awcp.manual(); assert.notEqual(index.revision, empty.revision); assert.ok(index.revision.length <= 128);
+  assert.equal(p.context.awcp.manual().revision, index.revision);
+  assert.equal((await p.context.awcp.invoke({ requestId: 'old', revision: empty.revision, action: 'ui.save', args: {} })).error.code, 'stale_revision');
+  assert.equal((await p.context.awcp.invoke({ requestId: 'new', revision: index.revision, action: 'ui.save', args: {} })).result, 'save');
 });
 
 test('manager enable and uninstall refresh already open guests', async t => {
   const root = temporary(t); const manager = createWebsiteBridgeManager(); await manager.importFile(await zipAt(root));
   const p = page(); const guest = Object.assign(new EventEmitter(), { id: 8, isDestroyed: () => false, getURL: () => p.context.location.href, executeJavaScript: async script => vm.runInContext(script, p.context) });
-  const injection = new AwcpAddonInjection(manager.runtimePackages); manager.subscribe(() => injection.refresh()); injection.attach(guest); assert.equal(p.context.awcp.page, '1');
+  const injection = new AwcpAddonInjection(manager.runtimePackages); manager.subscribe(() => injection.refresh()); injection.attach(guest); assert.equal(pageId(p), 'Page 1');
   await manager.setEnabled('sample', false); assert.equal(p.context.awcp, undefined);
-  await manager.setEnabled('sample', true); assert.equal(p.context.awcp.page, '1');
+  await manager.setEnabled('sample', true); assert.equal(pageId(p), 'Page 1');
   await manager.remove('sample'); assert.equal(p.context.awcp, undefined); injection.detach(8); assert.equal(guest.listenerCount('dom-ready'), 0);
 });
 
@@ -132,25 +225,25 @@ test('management IPC rejects foreign windows and child frames, and uses explicit
   assert.equal((await list({ sender: contents, senderFrame: frame })).ok, true);
 });
 
-test('minified production package remains self-contained in the page world', async t => {
+test('minified production runtime remains self-contained in the page world', async () => {
   const { build } = await import('esbuild');
-  const output = await build({ entryPoints: ['src/main/modules/web-surfaces/website-bridges/builtin.ts'], bundle: true, platform: 'node', format: 'cjs', minify: true, write: false });
+  const output = await build({ entryPoints: ['src/main/modules/web-surfaces/website-bridges/injection-script.ts'], bundle: true, platform: 'node', format: 'cjs', minify: true, write: false });
   const mod = { exports: {} };
-  vm.runInNewContext(output.outputFiles[0].text, { module: mod, exports: mod.exports, require });
-  const pkg = mod.exports.builtinForumBridge();
-  const p = page('https://1024.qiuer.net/forum/new'); p.run([pkg]);
-  assert.ok(p.context.awcp.manual().sections.some(item => item.section === 'forum.compose.fill'));
-  p.context.location = new URL('https://1024.qiuer.net/forum/posts/19'); p.run([pkg]);
-  const result = await p.context.awcp.invoke({ requestId: 'minified', revision: p.context.awcp.manual().revision, action: 'forum.posts.get', args: {} });
-  assert.equal(result.ok, true); assert.equal(p.requests[0][0], 'https://1024.qiuer.net/forum/api/v1/posts/19');
+  vm.runInNewContext(output.outputFiles[0].text, { module: mod, exports: mod.exports, require, URL });
+  const p = page('https://site.test/posts/19'); vm.runInContext(mod.exports.buildWebsiteBridgeScript(p.context.location.href, [packageOf()]), p.context);
+  const result = await p.context.awcp.invoke({ requestId: 'minified', revision: p.context.awcp.manual().revision, action: 'post.read', args: { note: 'hi' } });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.result)), { id: '19', args: { note: 'hi' }, shared: null });
 });
 
-test('invalid guest URL and throwing user cleanup do not block subsequent bridges', () => {
+test('invalid guest URL, child frames, late injection and throwing cleanup do not block subsequent bridges', () => {
   assert.equal(buildWebsiteBridgeScript('', []), 'void 0');
-  const pkg = { manifest, scripts: new Map([['pages/post.js', source.replace('globalThis.cleaned = (globalThis.cleaned || 0) + 1;', 'throw Error("bad cleanup");')], ['pages/new.js', source]]) };
+  const pkg = packageOf(manifest, { ...sources, 'features/post-read.js': feature('post.read', 'throw Error("bad cleanup");') });
   const p = page(); p.run([pkg]);
   p.context.location = new URL('https://site.test/posts/2'); p.run([pkg]);
-  assert.equal(p.context.awcp.page, '2');
+  assert.equal(pageId(p), 'Page 2');
+  const late = page(); const script = buildWebsiteBridgeScript(late.context.location.href, [pkg]);
+  late.context.location = new URL('https://site.test/posts/3'); vm.runInContext(script, late.context); assert.equal(late.context.awcp, undefined);
+  const framed = page(); framed.context.top = {}; framed.run([pkg]); assert.equal(framed.context.awcp, undefined);
 });
 
 test('stable ID directory retains identity and disabled state across updates', async t => {
@@ -206,7 +299,7 @@ for (const phase of ['backed-up', 'promoted', 'committed']) test(`interrupted ${
 test('tampered stable package fails closed', async t => {
   const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
   const manager = createWebsiteBridgeManager(storage); await manager.importFile(await zipAt(root));
-  fs.appendFileSync(path.join(storage.packagesRoot, 'sample/pages/post.js'), '\n// changed');
+  fs.appendFileSync(path.join(storage.packagesRoot, 'sample/features/post-read.js'), '\n// changed');
   assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
 });
 
@@ -250,16 +343,70 @@ test('legacy hash directory is rejected without migration', async t => {
   assert.equal(fs.existsSync(path.join(target, 'bridge.json')), false);
 });
 
+// What a v1 Desktop left on disk: its normalized manifest, the page scripts, and the digest it committed.
+const legacyManifest = { schemaVersion: 1, id: 'sample', name: 'Old Sample', version: '0.9.0', origin: 'https://site.test', pages: [{ path: '/posts/:id', script: 'pages/post.js' }] };
+const legacyScript = 'globalThis.awcp = {};';
+const legacyDigest = createHash('sha256').update(JSON.stringify([legacyManifest, [['pages/post.js', legacyScript]]])).digest('hex');
+function writeLegacy(directory) {
+  fs.rmSync(directory, { recursive: true, force: true }); fs.mkdirSync(path.join(directory, 'pages'), { recursive: true });
+  fs.writeFileSync(path.join(directory, 'bridge.json'), JSON.stringify(legacyManifest, null, 2) + '\n');
+  fs.writeFileSync(path.join(directory, 'pages/post.js'), legacyScript);
+}
+function commitDigest(storage, id, digest) {
+  const file = path.join(storage.configRoot, 'website-bridges.json'); const catalog = JSON.parse(fs.readFileSync(file, 'utf8'));
+  catalog.items.find(item => item.id === id).digest = digest; fs.writeFileSync(file, JSON.stringify(catalog));
+}
+
+test('a package installed under the removed schema is listed as outdated, never injected, and replaced by importing its update', async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  const other = { ...manifest, id: 'other', origins: { main: 'https://other.test' } };
+  let manager = createWebsiteBridgeManager(storage);
+  await manager.importFile(await zipAt(root)); await manager.importFile(await zipAt(root, other)); await manager.setEnabled('sample', false);
+  const target = path.join(storage.packagesRoot, 'sample');
+  writeLegacy(target); commitDigest(storage, 'sample', legacyDigest);
+  manager = createWebsiteBridgeManager(storage);
+  const items = manager.list().items; const old = items.find(item => item.id === 'sample');
+  assert.deepEqual([old.outdated, old.name, old.version, old.enabled, old.pages.length], [true, 'Old Sample', '0.9.0', false, 0]);
+  assert.equal(items.find(item => item.id === 'other').outdated, undefined);
+  assert.deepEqual(manager.runtimePackages().map(item => item.manifest.id), ['other']);
+  await manager.setEnabled('sample', true); assert.deepEqual(manager.runtimePackages().map(item => item.manifest.id), ['other']);
+  await assert.rejects(manager.exportBytes('sample'), { code: 'notFound' });
+  assert.equal((await manager.importFile(await zipAt(root), () => {}, 'sample')).ok, true);
+  manager = createWebsiteBridgeManager(storage); const updated = manager.list().items.find(item => item.id === 'sample');
+  assert.deepEqual([updated.outdated, updated.version, updated.enabled], [undefined, '1.0.0', true]);
+  assert.equal(fs.existsSync(path.join(target, 'pages')), false);
+});
+
+test('old-schema recovery follows the committed digest: a stale backup never replaces the committed package', async t => {
+  const root = temporary(t); const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
+  await createWebsiteBridgeManager(storage).importFile(await zipAt(root));
+  const target = path.join(storage.packagesRoot, 'sample'); const backup = path.join(storage.packagesRoot, '.backup-sample');
+  const committed = JSON.parse(fs.readFileSync(path.join(storage.configRoot, 'website-bridges.json'), 'utf8')).items[0].digest;
+  // The catalogue committed the new package; it is damaged and an old backup was left behind.
+  writeLegacy(backup); fs.appendFileSync(path.join(target, 'features/post-read.js'), '\n// changed');
+  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'bridge.json'), 'utf8')).schemaVersion, 2);
+  assert.equal(fs.existsSync(path.join(backup, 'bridge.json')), true);
+  // An update interrupted before its commit: the catalogue still points at the old package in the backup.
+  commitDigest(storage, 'sample', legacyDigest);
+  assert.equal(createWebsiteBridgeManager(storage).list().items[0].outdated, true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'bridge.json'), 'utf8')).schemaVersion, 1); assert.equal(fs.existsSync(backup), false);
+  // A changed old package is not the committed one either.
+  fs.appendFileSync(path.join(target, 'pages/post.js'), '\n// changed');
+  assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+  commitDigest(storage, 'sample', committed); assert.equal(createWebsiteBridgeManager(storage).list().error, 'storageFailed');
+});
+
 test('seed validation rejects all packages before writing and never executes scripts', t => {
   const { initializeWebsiteBridgeSeeds } = require('../dist-electron/main/modules/web-surfaces/website-bridges/seed.js');
   const root = temporary(t);
-  const seeds = path.join(root, 'desktop-init/website-bridges');
+  const seeds = path.join(root, 'web-bridges-center');
   const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
   const write = (id, script) => {
     const dir = path.join(seeds, id);
-    fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'bridge.json'), JSON.stringify({ ...manifest, id, origin: `https://${id}.test` }));
-    for (const name of ['post', 'new']) fs.writeFileSync(path.join(dir, `pages/${name}.js`), script);
+    fs.mkdirSync(path.join(dir, 'features'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bridge.json'), JSON.stringify({ ...manifest, id, origins: { main: `https://${id}.test` } }));
+    for (const name of ['post-read', 'post-compose']) fs.writeFileSync(path.join(dir, `features/${name}.js`), script);
   };
   write('sample', 'globalThis.__seedExecuted = true;');
   write('broken', 'syntax (');
@@ -267,8 +414,8 @@ test('seed validation rejects all packages before writing and never executes scr
   assert.equal(fs.existsSync(storage.packagesRoot), false);
   assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['../sample']));
   assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['sample', 'sample']));
-  const scriptPath = path.join(seeds, 'sample/pages/post.js');
-  fs.unlinkSync(scriptPath); fs.symlinkSync(path.join(seeds, 'sample/pages/new.js'), scriptPath);
+  const scriptPath = path.join(seeds, 'sample/features/post-read.js');
+  fs.unlinkSync(scriptPath); fs.symlinkSync(path.join(seeds, 'sample/features/post-compose.js'), scriptPath);
   assert.throws(() => initializeWebsiteBridgeSeeds(storage, seeds, ['sample']));
   fs.unlinkSync(scriptPath); fs.writeFileSync(scriptPath, 'globalThis.__seedExecuted = true;');
   assert.equal(initializeWebsiteBridgeSeeds(storage, seeds, ['sample']), 'applied');
@@ -279,12 +426,12 @@ test('seed validation rejects all packages before writing and never executes scr
 
 test('seed catalogue commit failure rolls back every newly installed package', t => {
   const { initializeWebsiteBridgeSeeds } = require('../dist-electron/main/modules/web-surfaces/website-bridges/seed.js');
-  const root = temporary(t); const seeds = path.join(root, 'desktop-init/website-bridges');
+  const root = temporary(t); const seeds = path.join(root, 'web-bridges-center');
   const storage = { packagesRoot: path.join(root, 'data'), configRoot: path.join(root, 'config') };
   for (const id of ['first', 'second']) {
-    const dir = path.join(seeds, id); fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'bridge.json'), JSON.stringify({ ...manifest, id, origin: `https://${id}.test` }));
-    for (const page of manifest.pages) fs.writeFileSync(path.join(dir, page.script), source);
+    const dir = path.join(seeds, id); fs.mkdirSync(path.join(dir, 'features'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bridge.json'), JSON.stringify({ ...manifest, id, origins: { main: `https://${id}.test` } }));
+    for (const [name, content] of Object.entries(sources)) fs.writeFileSync(path.join(dir, name), content);
   }
   const rename = fs.renameSync;
   t.mock.method(fs, 'renameSync', (from, to) => {

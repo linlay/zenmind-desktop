@@ -88,11 +88,12 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
       setLocalItems(previous => [...previous.filter(value => value.connectorId !== item.connectorId), item]); setDetailItem(item); props.onChanged?.(); void runtime.refresh();
       if (connect) void runtime.start(item, true, true);
     }} />
-    <ConnectorDetailDialog item={detailItem} runtime={runtime} onClose={() => setDetailItem(null)} onDisconnect={setDisconnectItem} onConfigure={configureConnector} />
+    <ConnectorDetailDialog item={detailItem} runtime={runtime} onClose={() => { setDetailItem(null); setDisconnectItem(null); }} onDisconnect={setDisconnectItem} onConfigure={configureConnector}>
+      <Modal open={!!disconnectItem} centered title={t("market.connector.flow.disconnectTitle")} okText={t("market.connector.flow.disconnect")} okButtonProps={{ danger: true }} confirmLoading={runtime.busy}
+        onCancel={() => setDisconnectItem(null)} onOk={() => { if (disconnectItem) { void runtime.mutate(disconnectItem, "disconnect"); setDisconnectItem(null); } }}>
+        <p>{t("market.connector.flow.disconnectDescription")}</p>
+      </Modal>
+    </ConnectorDetailDialog>
     <ConnectorCredentialsDialog connectorName={runtime.flow?.item.name || ""} schema={runtime.flow?.phase === "credentials" ? runtime.flow.schema || null : null} busy={runtime.busy} error={runtime.error ? message(runtime.error) : undefined} onSubmit={runtime.submitCredentials} onCancel={() => void runtime.cancel()} />
-    <Modal open={!!disconnectItem} centered title={t("market.connector.flow.disconnectTitle")} okText={t("market.connector.flow.disconnect")} okButtonProps={{ danger: true }} confirmLoading={runtime.busy}
-      onCancel={() => setDisconnectItem(null)} onOk={() => { if (disconnectItem) { void runtime.mutate(disconnectItem, "disconnect"); setDisconnectItem(null); } }}>
-      <p>{t("market.connector.flow.disconnectDescription")}</p>
-    </Modal>
   </MarketPageFrame>;
 }

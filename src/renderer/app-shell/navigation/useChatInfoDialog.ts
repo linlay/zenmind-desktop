@@ -1,8 +1,5 @@
 import { useRef, useState } from "react";
-import type {
-  AssistantChatInfo,
-  AssistantNavChatItem,
-} from "../../../shared/contracts";
+import type { AssistantChatInfo } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 import type { ChatInfoSummary } from "../../../shared/chat-info";
 
@@ -54,7 +51,7 @@ export function useChatInfoDialog(t: TranslateFunction) {
     }
   }
 
-  function open(chat: AssistantNavChatItem) {
+  function open(chat: ChatInfoSummary) {
     const chatId = chat.chatId.trim();
     if (!chatId) return;
     const summary = {

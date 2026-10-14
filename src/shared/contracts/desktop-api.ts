@@ -1,4 +1,5 @@
 import type { WebsiteBridgeResult } from "../website-bridge";
+import type { WebsiteCredentialInput, WebsiteCredentialPatch, WebsiteCredentialResult, WebsiteCredentialRevealResult, WebsiteCredentialSaveDecision, WebsiteCredentialSaveOffer } from "../website-credentials";
 import type { DesktopNavigationPreferences, DesktopNavigationPreferencesInput, DesktopSitePinInput } from "./navigation";
 import type { LocalDocumentsApi } from "../local-document";
 import type { BrowserWebclientState, BrowserWebclientResult } from "./services";
@@ -1217,6 +1218,20 @@ export interface DesktopApi {
     setWebsiteBridgeEnabled: (input: { id: string; enabled: boolean }) => Promise<WebsiteBridgeResult>;
     removeWebsiteBridge: (id: string) => Promise<WebsiteBridgeResult>;
     readWebsiteBridgeScript: (input: { id: string; script: string }) => Promise<WebsiteBridgeResult>;
+    getWebsiteCredentials: () => Promise<WebsiteCredentialResult>;
+    setWebsiteCredentialCapture: (enabled: boolean) => Promise<WebsiteCredentialResult>;
+    addWebsiteCredential: (input: WebsiteCredentialInput) => Promise<WebsiteCredentialResult>;
+    updateWebsiteCredential: (patch: WebsiteCredentialPatch) => Promise<WebsiteCredentialResult>;
+    removeWebsiteCredential: (id: string) => Promise<WebsiteCredentialResult>;
+    revealWebsiteCredential: (id: string) => Promise<WebsiteCredentialRevealResult>;
+    setWebsiteCredentialNeverSave: (input: { origin: string; never: boolean }) => Promise<WebsiteCredentialResult>;
+    resolveWebsiteCredentialSaveOffer: (input: { offerId: string; decision: WebsiteCredentialSaveDecision }) => Promise<boolean>;
+    /** The screen locked or the device slept: forget any password that is on screen. */
+    onWebsiteCredentialsLocked: (listener: () => void) => () => void;
+    onWebsiteCredentialSaveOffer: (listener: (event: { type: "offer"; offer: WebsiteCredentialSaveOffer } | { type: "withdrawn"; offerId: string }) => void) => () => void;
+    /** Without a password: choose a CSV or backup file. With one: decrypt the backup just chosen. */
+    importWebsiteCredentials: (input?: { password: string }) => Promise<WebsiteCredentialResult>;
+    exportWebsiteCredentials: (input: { password: string }) => Promise<WebsiteCredentialResult>;
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;

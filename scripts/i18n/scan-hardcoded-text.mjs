@@ -16,16 +16,6 @@ const allowedFiles = new Set([
 
 const allowedLinePatterns = [
   {
-    file: "src/main/modules/web-surfaces/awcp/addons/forum-compose.ts",
-    pattern: /textContent\?\.trim\(\) === 'Markdown 源码'|input\[placeholder\^="最多 5 个"\]/u,
-    reason: "selectors match literal labels on the external Chinese website"
-  },
-  {
-    file: "src/main/modules/web-surfaces/website-bridges/builtin.ts",
-    pattern: /^\s*(?:compose\("(?:fill|publish)"|rule\.site =|if \(page\.path === "\/forum"\) rule\.site =)/u,
-    reason: "versioned AI-facing AWCP manual for the Chinese forum"
-  },
-  {
     file: "src/main/modules/webs/webapps/lan-access.ts",
     pattern: /^\s*if \(platform === "win32"\) return \/.*\/iu\.test\(name\) \? 0 : 1;$/u,
     reason: "localized Windows network interface names used for matching"
@@ -75,12 +65,6 @@ const allowedBlocks = [
     start: /^\s*const columnLabels = new Set\(\[/u,
     end: /^\s*\]\);/u,
     reason: "server status aliases used to suppress duplicate labels, not display"
-  },
-  {
-    file: "src/main/modules/web-surfaces/awcp/addons/1024forum.ts",
-    start: /^export const forum1024Rule:/u,
-    end: /^\};/u,
-    reason: "versioned AI-facing AWCP manual for the Chinese forum, not Desktop UI labels"
   },
   {
     file: "src/renderer/pages/functional-market/skillDiscovery.ts",

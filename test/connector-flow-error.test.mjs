@@ -208,7 +208,7 @@ test('no-auth examples carry their draft to chat only after the real flow succee
  const state=()=>({connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness,authentication:{status},capabilities:{authMode:'no_auth',hasCli:true},preparation:{connectorId:'wecom-cli',status:'ready'}});
  s.api.market.getConnectorConnections=async()=>[state()];
  s.api.market.getConnectorConnection=async()=>state();
- s.api.market.setConnectorAgent=async()=>{calls.push('mount');return {activeConnectorIds:['wecom-cli'],reloadPending:false};};
+ s.api.market.setConnectorAgent=async()=>{calls.push('mount');return {agentKey:'cutej',connectorIds:['wecom-cli'],activeConnectorIds:['wecom-cli'],reloadPending:false};};
  s.flow.runMarketConnectorFlow=intent=>flowModule.exports.runMarketConnectorFlow(intent,s.api.market,async()=>{});
  await s.render().refresh();
  const prompt='请介绍这个连接器需要哪些权限。';
@@ -230,11 +230,72 @@ test('no-auth CLI with missing or failed preparation prepares first and never ju
   s.api.market.getConnectorConnections=async()=>[state];
   s.api.market.getConnectorConnection=async()=>state;
   s.api.market.prepareConnector=async()=>{calls.push('prepare');return {status:'failed',message:'CLI not ready'};};
-  s.api.market.setConnectorAgent=async()=>{calls.push('mount');return {activeConnectorIds:['wecom-cli'],reloadPending:false};};
+  s.api.market.setConnectorAgent=async()=>{calls.push('mount');return {agentKey:'cutej',connectorIds:['wecom-cli'],activeConnectorIds:['wecom-cli'],reloadPending:false};};
   s.flow.runMarketConnectorFlow=intent=>flowModule.exports.runMarketConnectorFlow(intent,s.api.market,async()=>{});
   await s.render().refresh();
   await s.render().start(wecom,true,true,'请使用这个连接器。');
   assert.deepEqual(calls,['prepare']);assert.deepEqual(chats,[]);
   assert.equal(s.render().getError(wecom),'CLI not ready');
  }
+});
+
+test('MCP flow opens the draft only after synchronization and cancellation suppresses a late handoff', async () => {
+  for (const cancel of [false, true]) {
+    const chats = [], s = setup(undefined, (agentKey, draft) => chats.push([agentKey, draft]));
+    const connection = { connectorId: 'wecom-cli', configured: false, configurationRequired: false, readiness: 'no_auth',
+      authentication: { status: 'no_auth' }, capabilities: { authMode: 'no_auth', hasCli: false, hasMcp: true } };
+    const agent = status => ({ agentKey: 'cutej', connectorIds: ['wecom-cli'], activeConnectorIds: ['wecom-cli'], reloadPending: false,
+      mcp: [{ connectorId: 'wecom-cli', serverKey: 'wecom-cli/main@current', status, toolCount: status === 'ready' ? 1 : 0 }] });
+    let finish, entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    s.api.market.getConnectorConnections = async () => [connection];
+    s.api.market.getConnectorConnection = async () => connection;
+    s.api.market.setConnectorAgent = async () => agent('pending');
+    s.api.market.getConnectorAgent = () => { entered(); return new Promise(resolve => { finish = resolve; }); };
+    s.flow.runMarketConnectorFlow = intent => flowModule.exports.runMarketConnectorFlow(intent, s.api.market, async () => {});
+    await s.render().refresh();
+    const operation = s.render().start(wecom, true, true, 'Use the available tools.');
+    await started;
+    assert.equal(s.render().flow.phase, 'syncing');
+    assert.deepEqual(chats, [], 'a new query must not be possible before the target tool snapshot is ready');
+    if (cancel) await s.render().cancel();
+    finish(agent('ready')); await operation;
+    assert.deepEqual(chats, cancel ? [] : [['cutej', 'Use the available tools.']]);
+  }
+});
+
+test('MCP synchronization failures retain their error on the same page despite a ready account snapshot', async () => {
+  const chats = [], s = setup(undefined, (agentKey, draft) => chats.push([agentKey, draft]));
+  const connection = { connectorId: 'wecom-cli', configured: true, readiness: 'ready',
+    authentication: { status: 'authorized' }, capabilities: { hasCli: false, hasMcp: true } };
+  s.api.market.getConnectorConnections = async () => [connection];
+  s.api.market.getConnectorConnection = async () => connection;
+  s.api.market.setConnectorAgent = async () => ({ agentKey: 'cutej', connectorIds: ['wecom-cli'], activeConnectorIds: ['wecom-cli'], reloadPending: false,
+    mcp: [{ connectorId: 'wecom-cli', serverKey: 'wecom-cli/main@current', status: 'ready', toolCount: 0 }] });
+  s.flow.runMarketConnectorFlow = intent => flowModule.exports.runMarketConnectorFlow(intent, s.api.market, async () => {});
+  await s.render().refresh(); await s.render().start(wecom, true, true);
+  assert.match(s.render().getError(wecom), /toolsEmpty/);
+  await s.render().refresh();
+  assert.match(s.render().getError(wecom), /toolsEmpty/);
+  assert.deepEqual(chats, []);
+  assert.equal(s.render().busy, false);
+});
+
+test('MCP synchronization watchdog releases loading even when the status request never settles', async () => {
+  const chats = [], s = setup(undefined, (agentKey, draft) => chats.push([agentKey, draft]));
+  let finish, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  s.flow.runMarketConnectorFlow = intent => {
+    intent.onPhase('syncing'); entered();
+    return new Promise(resolve => { finish = resolve; });
+  };
+  const operation = s.render().start(wecom, true, true);
+  await started;
+  const watchdog = [...s.timers.values()].find(timer => timer.ms === 60_000);
+  assert.ok(watchdog); watchdog.fn(); await operation;
+  assert.equal(s.render().busy, false);
+  assert.equal(s.render().error, 'market.connector.flow.toolsSyncTimeout');
+  assert.equal(s.timers.size, 0);
+  finish({ result: 'complete' }); await Promise.resolve();
+  assert.deepEqual(chats, []);
 });

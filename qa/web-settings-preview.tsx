@@ -19,11 +19,11 @@ let mode = "light";
 let skinId = "default";
 let withPhoto = false;
 const appearanceResult = () => ({ ok: true, settings: { skinId, background: withPhoto ? { id: "a".repeat(32), name: "lake.png", width: 1586, height: 992 } : null, backgroundDataUrl: withPhoto ? photo : null } });
-const websites = [{ kind: "website", id: "forum", entryKey: "website:forum", label: "1024 论坛", url: "https://1024.qiuer.net", copilotAgentKey: "", order: 0 }];
+const websites = [{ kind: "website", id: "forum", entryKey: "website:forum", label: "示例站点", url: "https://forum.example.test", copilotAgentKey: "", order: 0 }];
 const webapps = [{ kind: "webapp", id: "notes", entryKey: "webapp:notes", label: "便签", key: "notes", schemaVersion: 2, version: "1.3.0", target: "desktop", openMode: "workspace", removable: true, frontend: { root: "frontend", index: "index.html", routeConfig: { backendPrefixes: [] } }, appConfig: {}, userConfig: { fields: [] } }];
-let bridgeItems = [{ schemaVersion: 1, id: "1024forum", name: "1024 Forum", version: "1.3.0", origin: "https://1024.qiuer.net", enabled: true,
-  description: "为论坛页面提供查询和原生操作。",
-  pages: [{ path: "/forum", script: "pages/forum.js" }, { path: "/forum/new", script: "pages/new-post.js" }, { path: "/forum/posts/:postId", script: "pages/post.js" }] }];
+let bridgeItems = [{ schemaVersion: 2, id: "sample-forum", name: "Sample Forum", version: "2.0.0", origins: { forum: "https://forum.example.test" }, enabled: true,
+  description: "为示例页面提供查询和原生操作。",
+  pages: [{ origin: "forum", path: "/forum", features: ["post-search"] }, { origin: "forum", path: "/forum/new", features: ["post-compose"] }, { origin: "forum", path: "/forum/posts/:postId", features: ["post-read", "comment-write"] }] }];
 let runtime = { id: "notes", status: "running", version: "1.3.0", target: "desktop", launcher: "static", webUrl: "http://127.0.0.1:19080", prerequisiteIssues: [], ownership: null };
 const result = () => ({ ok: true, items: [...websites, ...webapps], state: runtime, message: "" });
 const bridgeResult = () => ({ ok: true, items: bridgeItems });

@@ -1900,3 +1900,28 @@ test("ordinary Desktop Action receives trusted tool deadline and upstream cancel
   await nextTurn();
   assert.equal(socket("primary").sent.some(frame => frame.id === "action-cancel"), false);
 });
+
+test("credential actions receive the Run's Website/WebApp page authorization like webpage actions", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
+  broker.siteControlGrants.bind({ runId: "run-1", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" } }, scope);
+  const received = new Map();
+  broker.setDesktopBridgeProvider({
+    action: async (request, actionScope) => {
+      received.set(request.action, actionScope);
+      return { ok: true, action: request.action, result: {} };
+    },
+    cdp: async (request) => ({ ok: true, method: request.method, result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  const source = { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" };
+  const actions = ["desktop.credentials.list", "desktop.credentials.fill", "desktop.web.listSurfaces", "desktop.theme.get"];
+  for (const type of actions) {
+    socket("primary").emit({ frame: "request", type, id: type, source, payload: { surfaceId: "page:1" } });
+  }
+  await waitUntil(() => actions.every((id) => socket("primary").sent.some((frame) => frame.frame === "response" && frame.id === id)));
+  assert.equal(received.get("desktop.credentials.list"), scope);
+  assert.equal(received.get("desktop.credentials.fill"), scope);
+  assert.equal(received.get("desktop.web.listSurfaces"), scope);
+  assert.equal(received.get("desktop.theme.get"), undefined);
+});

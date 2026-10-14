@@ -3,7 +3,7 @@ export type { EmbeddedCdpContainer, EmbeddedCdpSurfaceTab } from "./containers";
 import { targetDescriptor, targetInfoDescriptor } from "./surface-descriptors";
 import { createWebSurfaceId, type WebContainer } from "../../../../shared/web-surface";
 import { executeClick } from "./click";
-import { withCdpCommandQueue } from "./command-queue";
+import { assertPageAutomationNotHeld, holdPageAutomation, withCdpCommandQueue } from "./command-queue";
 import type { DesktopClickParams } from "../../../../shared/desktop-click";
 import { validateDesktopCdpParams, DesktopCdpParamsError } from "./params";
 import { requireSiteControlScope, type SiteControlScope } from "./site-scope";
@@ -381,6 +381,11 @@ export class EmbeddedCdpGateway {
           throw new EmbeddedCdpTargetError("target_not_found", "The page was closed or replaced.");
         }
       },
+      /** Refuses new CDP/AWCP commands for this page until released, then runs `execute` behind the ones already queued. */
+      holdAutomation: <T>(execute: (release: () => void) => Promise<T>) => {
+        const release = holdPageAutomation(contents.id);
+        return withCdpCommandQueue(contents.id, () => execute(release)).catch((error) => { release(); throw error; });
+      },
     };
   }
 
@@ -440,6 +445,7 @@ export class EmbeddedCdpGateway {
     }
     const { surface, tab, surfaceId } = await this.resolveCommandTarget(request, scope);
     validateDesktopCdpParams(method, request.params);
+    assertPageAutomationNotHeld(tab.webContentsId);
     const ownedScope = !scope && surface.surfaceKind === "chat-work-panel" && request.source?.chatId
       ? this.options.acquireWorkPanelScope?.(surface.id, request.source.chatId) : undefined;
     scope ??= ownedScope;
@@ -600,6 +606,7 @@ export class EmbeddedCdpGateway {
         }
       }
       const target = await this.resolveCommandTarget({ method, surfaceId });
+      assertPageAutomationNotHeld(target.tab.webContentsId);
       const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click"
         ? this.handleWebContentsCommandOnce(target.surface, target.tab, surfaceId, method, command.params ?? {})
         : this.handleWebContentsCommand(connection, target, method, command.params ?? {}));
