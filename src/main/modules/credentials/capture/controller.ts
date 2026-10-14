@@ -27,7 +27,7 @@ const OFFER_TTL_MS = 120_000;
 const MAX_OPEN_OFFERS = 4;
 
 type Timers = { set(callback: () => void, ms: number): unknown; clear(handle: unknown): void };
-type PendingOffer = WebsiteCredentialSaveOffer & { password: string; expiry: unknown };
+type PendingOffer = WebsiteCredentialSaveOffer & { password: string; expiry: unknown; guestId: number };
 
 export type LoginCaptureOptions = {
   store: Pick<WebsiteCredentialStore, "isCaptureEnabled" | "classifyCaptured" | "saveCaptured" | "setNeverSave">;
@@ -49,7 +49,7 @@ export function createLoginCapture(options: LoginCaptureOptions) {
   const timers: Timers = options.timers ?? { set: (callback, ms) => setTimeout(callback, ms), clear: handle => clearTimeout(handle as NodeJS.Timeout) };
   const installScript = buildLoginObserverInstallScript({ maxUsername: WEBSITE_CREDENTIAL_USERNAME_MAX_LENGTH, maxPassword: WEBSITE_CREDENTIAL_PASSWORD_MAX_LENGTH });
   const offers = new Map<string, PendingOffer>();
-  const guests = new Map<number, { start(): void; dispose(): void }>();
+  const guests = new Map<number, { start(): void; forget(): void; dispose(): void }>();
 
   function dropOffer(offerId: string, withdraw: boolean) {
     const offer = offers.get(offerId);
@@ -60,7 +60,7 @@ export function createLoginCapture(options: LoginCaptureOptions) {
     if (withdraw) options.withdrawOffer(offerId);
   }
 
-  function offer(candidate: { origin: string; username: string; password: string }, verified: boolean) {
+  function offer(guestId: number, candidate: { origin: string; username: string; password: string }, verified: boolean) {
     const relation = options.store.classifyCaptured(candidate.origin, candidate.username, candidate.password);
     if (relation !== "new" && relation !== "changed") return;
     // A repeated attempt for the same account replaces its earlier prompt.
@@ -71,7 +71,7 @@ export function createLoginCapture(options: LoginCaptureOptions) {
     const offerId = randomUUID();
     const summary: WebsiteCredentialSaveOffer = { offerId, origin: candidate.origin, username: candidate.username, kind: relation === "new" ? "save" : "update", verified };
     if (!options.presentOffer(summary)) return;
-    offers.set(offerId, { ...summary, password: candidate.password, expiry: timers.set(() => dropOffer(offerId, true), OFFER_TTL_MS) });
+    offers.set(offerId, { ...summary, guestId, password: candidate.password, expiry: timers.set(() => dropOffer(offerId, true), OFFER_TTL_MS) });
   }
 
   function attach(guest: WebContents) {
@@ -81,11 +81,20 @@ export function createLoginCapture(options: LoginCaptureOptions) {
     let generation = 0;
     let pendingUsername: { value: string; at: number } | null = null;
     let outcomeTimer: unknown = null;
+    // Bumped whenever unsaved candidates must be forgotten; a probe already in flight then discards its candidate.
+    let candidateEpoch = 0;
+    const forget = () => {
+      candidateEpoch += 1;
+      pendingUsername = null;
+      if (outcomeTimer !== null) timers.clear(outcomeTimer);
+      outcomeTimer = null;
+    };
 
     const inWorld = (code: string) => guest.executeJavaScriptInIsolatedWorld(LOGIN_OBSERVER_WORLD_ID, [{ code }]);
 
     /** Chrome's rule of thumb: the login worked if the page moved on and no longer shows a password field. */
     function judge(candidate: { origin: string; username: string; password: string }, probe: number) {
+      const epoch = candidateEpoch;
       outcomeTimer = timers.set(async () => {
         outcomeTimer = null;
         if (disposed || guest.isDestroyed() || !options.store.isCaptureEnabled()) return;
@@ -95,11 +104,11 @@ export function createLoginCapture(options: LoginCaptureOptions) {
         } catch {
           // The page is mid-navigation; probe again.
         }
-        if (disposed) return;
-        if (passwordFieldVisible === false) return offer(candidate, true);
+        if (disposed || epoch !== candidateEpoch) return;
+        if (passwordFieldVisible === false) return offer(guest.id, candidate, true);
         // Still on a password form: most likely a rejected login. Wait in case the page is slow, then give up.
         if (probe + 1 < OUTCOME_MAX_PROBES) return judge(candidate, probe + 1);
-        if (passwordFieldVisible === null) offer(candidate, false);
+        if (passwordFieldVisible === null) offer(guest.id, candidate, false);
       }, probe === 0 ? OUTCOME_SETTLE_MS : OUTCOME_RETRY_MS);
     }
 
@@ -117,7 +126,7 @@ export function createLoginCapture(options: LoginCaptureOptions) {
       const username = event.username || remembered;
       // Without an account identifier there is nothing to match the password to later.
       if (!username) return;
-      if (outcomeTimer !== null) timers.clear(outcomeTimer);
+      forget();
       judge({ origin, username, password: event.password }, 0);
     }
 
@@ -145,11 +154,11 @@ export function createLoginCapture(options: LoginCaptureOptions) {
     guest.once("destroyed", destroyed);
     guests.set(guest.id, {
       start,
+      forget,
       dispose() {
         disposed = true;
         generation += 1;
-        pendingUsername = null;
-        if (outcomeTimer !== null) timers.clear(outcomeTimer);
+        forget();
         guest.off("dom-ready", start);
         guest.off("destroyed", destroyed);
       }
@@ -162,6 +171,8 @@ export function createLoginCapture(options: LoginCaptureOptions) {
     if (!entry) return;
     guests.delete(webContentsId);
     entry.dispose();
+    // Closing the page withdraws its unanswered save prompts along with their passwords.
+    for (const pending of [...offers.values()]) if (pending.guestId === webContentsId) dropOffer(pending.offerId, true);
   }
 
   return {
@@ -189,6 +200,7 @@ export function createLoginCapture(options: LoginCaptureOptions) {
 
     /** Lock screen, sleep, or recording switched off: forget everything not yet saved. */
     clearPending() {
+      for (const entry of guests.values()) entry.forget();
       for (const offerId of [...offers.keys()]) dropOffer(offerId, true);
     },
 

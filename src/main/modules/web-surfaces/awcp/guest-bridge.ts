@@ -1,6 +1,7 @@
 import { createWebSurfaceId } from "../../../../shared/web-surface";
 import type { WebContents } from "electron";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
+import { PAGE_AUTOMATION_HELD_CODE, isPageAutomationHeld } from "../cdp/command-queue";
 import type { SiteControlScope } from "../cdp/site-scope";
 import { AwcpManualBindings } from "./discovery-binding";
 
@@ -252,6 +253,9 @@ export class AwcpGuestBridge {
     const guest = this.browserSurfaces.findWebContentsById(tab.webContentsId);
     if (!guest || guest.isDestroyed()) {
       throw awcpHostError("awcp_target_unavailable", "The authorized page guest is unavailable.");
+    }
+    if (isPageAutomationHeld(guest.id)) {
+      throw awcpHostError(PAGE_AUTOMATION_HELD_CODE, "Desktop is filling a saved password into this page. Wait and retry.");
     }
 
     let rejectLifecycle!: (error: Error) => void;

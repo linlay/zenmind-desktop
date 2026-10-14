@@ -372,3 +372,145 @@ test('capture is off by default, HTTPS only, and forgets pending passwords', asy
   guest.emit$(login()); await tick(); capture.detach(guest.id); await settle();
   assert.equal(shown.length, 2, 'a closed page does not produce an offer');
 });
+
+test('lock and page close drop every unsaved candidate', async t => {
+  const { capture, store, shown, withdrawn, settle, tick } = captureSetup(t);
+  const guest = fakeGuest(); capture.attach(guest); await tick();
+
+  // Locked while the login outcome is still being judged: the captured password is forgotten.
+  guest.emit$(login()); await tick(); capture.clearPending(); await settle();
+  assert.equal(shown.length, 0);
+  // Locked between the two steps of a login: the remembered identifier is forgotten too.
+  guest.emit$({ type: 'username', origin: 'https://accounts.example.com', username: 'bob@example.com' }); await tick();
+  capture.clearPending(); guest.emit$(login('')); await settle();
+  assert.equal(shown.length, 0);
+  // Locked while the page probe is in flight.
+  let release; guest.executeJavaScriptInIsolatedWorld = (original => async (world, scripts) =>
+    scripts[0].code === pageScript.LOGIN_OBSERVER_PASSWORD_FIELD_SCRIPT ? new Promise(resolve => { release = () => resolve(false); }) : original(world, scripts))(guest.executeJavaScriptInIsolatedWorld);
+  guest.emit$(login()); const settled = settle(); await tick(); await tick(); capture.clearPending(); release(); await settled;
+  assert.equal(shown.length, 0, 'a probe that finishes after the lock offers nothing');
+
+  // Closing the page withdraws a prompt that is already showing.
+  const other = Object.assign(fakeGuest(), { id: 8 }); capture.attach(other); await tick();
+  other.emit$(login('carol')); await settle();
+  assert.equal(shown.length, 1);
+  capture.detach(guest.id); assert.deepEqual(withdrawn, [], 'another page closing leaves it alone');
+  capture.detach(other.id); assert.deepEqual(withdrawn, [shown[0].offerId]);
+  assert.equal(capture.resolveOffer(shown[0].offerId, 'save'), false);
+  assert.equal(store.state().credentials.length, 0);
+});
+
+const { createAgentCredentialAccess } = require('../dist-electron/main/modules/credentials/fill/agent-access.js');
+const { holdPageAutomation, withCdpCommandQueue, isPageAutomationHeld, assertPageAutomationNotHeld } = require('../dist-electron/main/modules/web-surfaces/cdp/command-queue.js');
+
+// A guest page as the fill sees it: scripted answers, and a record of what was run in it.
+function loginPage(id, url, script = {}) {
+  const ran = [];
+  const states = [...(script.states ?? [])];
+  const contents = {
+    id,
+    isDestroyed: () => false,
+    getURL: () => url,
+    async executeJavaScriptInIsolatedWorld(_world, [{ code }]) {
+      if (code.includes('function fillLogin')) { ran.push('fill'); contents.filledWith = code; if (script.fillThrows) throw new Error('gone'); return script.outcome ?? { status: 'submitted' }; }
+      if (code.includes('function clearPasswords')) { ran.push('clear'); return undefined; }
+      ran.push('state');
+      return states.length > 1 ? states.shift() : states[0] ?? { visible: false, pending: false };
+    },
+  };
+  // Mirrors the web-surfaces gateway: refuse new commands, run behind the queued ones.
+  const holdAutomation = execute => {
+    const release = holdPageAutomation(id);
+    return withCdpCommandQueue(id, () => execute(release)).catch(error => { release(); throw error; });
+  };
+  return { contents, holdAutomation, ran };
+}
+const sleep = async () => {};
+
+test('agents see only masked accounts of the page origin that the user allows', t => {
+  const { store } = setup(t);
+  store.add(account('alice@example.com'));
+  const state = store.add(account('bob@example.com'));
+  store.add(account('carol@example.com', 'https://other.example.com'));
+  const access = createAgentCredentialAccess(store);
+  const page = loginPage(11, 'https://accounts.example.com/login');
+  assert.equal(access.pageOrigin(page.contents), 'https://accounts.example.com');
+  assert.equal(access.pageOrigin(loginPage(12, 'http://accounts.example.com/').contents), null);
+
+  const listed = access.list('https://accounts.example.com');
+  assert.deepEqual(listed.map(item => item.username).sort(), ['al***@example.com', 'bo***@example.com']);
+  assert.deepEqual(Object.keys(listed[0]).sort(), ['accountId', 'isDefault', 'username']);
+  assert.equal(listed.filter(item => item.isDefault).length, 1);
+  assert.ok(!JSON.stringify(listed).includes('correct horse'));
+
+  const bob = state.credentials.find(item => item.maskedUsername === 'bo***@example.com');
+  store.update({ id: bob.id, agentAllowed: false });
+  assert.deepEqual(access.list('https://accounts.example.com').map(item => item.username), ['al***@example.com']);
+  assert.deepEqual(access.list('https://unknown.example.com'), []);
+});
+
+test('fill writes the chosen account, pauses page automation, and reports only a status', async t => {
+  const { store } = setup(t);
+  const state = store.add(account('alice@example.com'));
+  const other = store.add(account('carol@example.com', 'https://other.example.com')).credentials.find(item => item.origin === 'https://other.example.com');
+  const access = createAgentCredentialAccess(store);
+  const origin = 'https://accounts.example.com';
+  const id = state.credentials[0].id;
+
+  const page = loginPage(21, `${origin}/login`, { outcome: { status: 'submitted' }, states: [{ visible: false, pending: false }] });
+  let heldDuringFill = false;
+  const original = page.contents.executeJavaScriptInIsolatedWorld;
+  page.contents.executeJavaScriptInIsolatedWorld = (...args) => { heldDuringFill ||= isPageAutomationHeld(21); return original(...args); };
+  const result = await access.fill(page, { origin, accountId: id, submit: true, sleep });
+  assert.deepEqual(result, { status: 'submitted', loginFormVisible: false });
+  assert.ok(heldDuringFill);
+  assert.equal(isPageAutomationHeld(21), false);
+  assert.ok(page.contents.filledWith.includes('"alice@example.com"') && page.contents.filledWith.includes('"correct horse battery staple"'));
+  assert.ok(!JSON.stringify(result).includes('correct horse'));
+  assert.notEqual(store.state().credentials[0].lastUsedAt, null);
+
+  // An account of another site, or one the user closed to agents, cannot be filled here.
+  assert.deepEqual(await access.fill(loginPage(22, `${origin}/login`), { origin, accountId: other.id, submit: true, sleep }), { status: 'account_unavailable' });
+  store.update({ id, agentAllowed: false });
+  const closed = loginPage(23, `${origin}/login`);
+  assert.deepEqual(await access.fill(closed, { origin, accountId: id, submit: true, sleep }), { status: 'account_unavailable' });
+  assert.deepEqual(closed.ran, []);
+});
+
+test('fill never leaves a readable password behind when the pause ends', async t => {
+  const { store } = setup(t);
+  const id = store.add(account()).credentials[0].id;
+  const access = createAgentCredentialAccess(store);
+  const origin = 'https://accounts.example.com';
+
+  // Rejected login: the form still holds the password after the wait, so it is erased before automation resumes.
+  const rejected = loginPage(31, `${origin}/login`, { outcome: { status: 'submitted' }, states: [{ visible: true, pending: true }] });
+  assert.deepEqual(await access.fill(rejected, { origin, accountId: id, submit: true, sleep }), { status: 'submitted', loginFormVisible: true });
+  assert.equal(rejected.ran.at(-1), 'clear');
+  assert.equal(isPageAutomationHeld(31), false);
+
+  // Filled without submitting: automation stays paused for the user, then the password is erased.
+  let finishWaiting;
+  const waiting = new Promise(resolve => { finishWaiting = resolve; });
+  const manual = loginPage(32, `${origin}/login`, { outcome: { status: 'filled' }, states: [{ visible: true, pending: true }] });
+  assert.deepEqual(await access.fill(manual, { origin, accountId: id, submit: false, sleep: () => waiting }), { status: 'filled' });
+  assert.equal(isPageAutomationHeld(32), true);
+  assert.throws(() => assertPageAutomationNotHeld(32), error => error.code === 'credential_fill_in_progress');
+  finishWaiting();
+  for (let turn = 0; turn < 2000 && isPageAutomationHeld(32); turn += 1) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(isPageAutomationHeld(32), false);
+  assert.equal(manual.ran.at(-1), 'clear');
+
+  // The page moved to another site between approval and fill: nothing is written.
+  const moved = loginPage(33, 'https://evil.example.net/login');
+  assert.deepEqual(await access.fill(moved, { origin, accountId: id, submit: true, sleep }), { status: 'page_changed' });
+  assert.deepEqual(moved.ran, []);
+  // A page that disappears mid-write is treated as possibly written and erased.
+  const gone = loginPage(34, `${origin}/login`, { fillThrows: true });
+  assert.deepEqual(await access.fill(gone, { origin, accountId: id, submit: true, sleep }), { status: 'page_changed' });
+  assert.deepEqual(gone.ran, ['fill', 'clear']);
+  // No login form: nothing to hold.
+  const plain = loginPage(35, `${origin}/home`, { outcome: { status: 'no_login_form', reason: 'no_password_field' } });
+  assert.deepEqual(await access.fill(plain, { origin, accountId: id, submit: true, sleep }), { status: 'no_login_form', reason: 'no_password_field' });
+  assert.equal(isPageAutomationHeld(35), false);
+});

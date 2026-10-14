@@ -5,6 +5,7 @@ import { asRecord, fail, readString, ok, readServiceId, preview, readMarketListO
 import { WEBAPP_PAGE_ONLY_ACTIONS, executeNativeWebappAction } from "./webapp-native-actions";
 import { t } from "../../support/i18n/main-i18n";
 import { executeWebSurfaceAction } from "./web-surface-actions";
+import { executeCredentialAction } from "./credential-actions";
 import {
   webappImageRunKey,
   activeWebappImageRuns,
@@ -81,6 +82,10 @@ export async function executeAction(
         t("desktopDisplay.targetUnavailable")
       );
     }
+  }
+
+  if (action === "desktop.credentials.list" || action === "desktop.credentials.fill") {
+    return executeCredentialAction(options, request);
   }
 
   if (action.startsWith("desktop.web.")) {

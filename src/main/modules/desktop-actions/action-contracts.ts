@@ -101,7 +101,10 @@ export type DesktopActionBridgeOptions = {
   confirmRendererAction?: (request: DesktopActionConfirmationRequest, context?: { signal?: AbortSignal; timeoutMs?: number; deadlineAt?: number }) => Promise<DesktopActionConfirmationResponse>;
   resolveWebSurface?: (request: EmbeddedCdpCommandRequest) => Promise<{
     surfaceId: string; containerId: string; surfaceKind: string; contents: WebContents; validate(): Promise<void>;
+    holdAutomation<T>(execute: (release: () => void) => Promise<T>): Promise<T>;
   }>;
+  /** Saved website passwords as agents may use them; defaults to the vault created at startup. */
+  agentCredentials?: import("../credentials").AgentCredentialAccess;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteControlScope, signal?: AbortSignal) => Promise<{
     surfaceId?: string;
     result: unknown;
@@ -199,6 +202,9 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
 ]);
 
 export const AGENT_PLATFORM_ONLY_ACTIONS = new Set([
+  // Saved passwords are filled only for a trusted Run on its own authorized page.
+  "desktop.credentials.list",
+  "desktop.credentials.fill",
   "desktop.workpanel.openLocalFile",
   "desktop.webapp.package.init",
   "desktop.webapp.package.validate",

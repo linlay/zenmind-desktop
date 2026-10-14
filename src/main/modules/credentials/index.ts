@@ -3,12 +3,22 @@ import type { App, BrowserWindow } from "electron";
 import { getDesktopConfigRoot, getSecretsRoot } from "../../infrastructure/filesystem/user-paths";
 import { restrictDirectoryToCurrentUser } from "./access-control";
 import { createLoginCapture } from "./capture/controller";
+import { createAgentCredentialAccess, type AgentCredentialAccess } from "./fill/agent-access";
 import { createSystemVaultKeyProtector } from "./key-protector";
 import { createWebsiteCredentialStore } from "./store";
 import { createAuthenticationGate, createSystemAuthenticator } from "./system-auth";
 
 export { registerWebsiteCredentialIpc } from "./ipc";
 export type { WebsiteCredentialStore } from "./store";
+export { createAgentCredentialAccess } from "./fill/agent-access";
+export type { AgentCredentialAccess, AgentCredentialAccount } from "./fill/agent-access";
+
+let agentAccess: AgentCredentialAccess | null = null;
+
+/** The vault as agents may use it; null until the vault has been created. */
+export function getAgentCredentialAccess() {
+  return agentAccess;
+}
 
 /**
  * Builds the website password vault under `<desktop-data-root>/secrets` and the login
@@ -39,5 +49,6 @@ export function createWebsiteCredentials(app: App, options: { platform?: NodeJS.
     presentOffer: offer => sendToMainWindow("credentials.saveOffer", offer),
     withdrawOffer: offerId => { sendToMainWindow("credentials.saveOfferWithdrawn", offerId); }
   });
+  agentAccess = createAgentCredentialAccess(store);
   return { store, capture, gate: createAuthenticationGate({ authenticator: createSystemAuthenticator(platform) }) };
 }

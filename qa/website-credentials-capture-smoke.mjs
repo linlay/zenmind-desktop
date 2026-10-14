@@ -17,6 +17,8 @@ const {app,BrowserWindow,protocol,session}=require('electron');const path=requir
 app.setPath('userData',path.join(__dirname,'profile')); app.on('window-all-closed',()=>{});
 const {createWebsiteCredentialStore}=require(${modulePath('store.js')});
 const {createLoginCapture}=require(${modulePath('capture/controller.js')});
+const {createAgentCredentialAccess}=require(${modulePath('fill/agent-access.js')});
+const queue=require(${modulePath('../web-surfaces/cdp/command-queue.js')});
 const page=body=>new Response('<!doctype html><meta charset="utf-8"><body>'+body,{headers:{'content-type':'text/html'}});
 const pages={
   // Classic form: a full-page POST that lands on a page without a password field.
@@ -33,12 +35,15 @@ const pages={
   '/signup':'<form method="post" action="/home"><input name="email" type="email"><input name="pw1" type="password"><input name="pw2" type="password"><input name="trap" type="password" style="display:none" value="decoy"><button>Create</button></form>',
   // A "show password" eye button switches the field to plain text without submitting anything.
   '/reveal':'<form method="post" action="/home"><input name="email" type="email"><input name="pw" type="password"><button type="button" id="eye">Show</button><button id="submit">Sign in</button></form><script>eye.onclick=()=>{const pw=document.querySelector("[name=pw]");pw.type=pw.type==="password"?"text":"password"}</script>',
+  // A framework-style page: it only trusts values it received through input events.
+  '/controlled':'<div id="view"><input id="account" autocomplete="username"><input id="secret" type="password"><button id="go">Log in</button></div><script>const state={u:"",p:""};account.addEventListener("input",e=>state.u=e.target.value);secret.addEventListener("input",e=>state.p=e.target.value);go.onclick=()=>{view.innerHTML="<h1 id=who>"+state.u+"/"+state.p.length+"</h1>"}</script>',
   // Not a login: a search box must never produce anything.
   '/search':'<form action="/home"><input name="q" type="text"><button>Search</button></form>',
 };
-const timer=setTimeout(()=>{console.error('Capture smoke timed out');app.exit(1)},60000);
+const timer=setTimeout(()=>{console.error('Capture smoke timed out');app.exit(1)},130000);
 (async()=>{await app.whenReady();
-session.defaultSession.protocol.handle('https',request=>{const {pathname}=new URL(request.url);return pages[pathname]?page(pages[pathname]):new Response('missing',{status:404})});
+const posts=[];
+session.defaultSession.protocol.handle('https',request=>{const {pathname}=new URL(request.url);if(request.method==='POST')request.text().then(body=>posts.push(body),()=>{});return pages[pathname]?page(pages[pathname]):new Response('missing',{status:404})});
 const store=createWebsiteCredentialStore({vaultDirectory:path.join(__dirname,'vault'),policyFile:path.join(__dirname,'policy.json'),hardenDirectory(){},
   protector:{available:()=>true,protect:key=>Buffer.from(key),unprotect:blob=>Buffer.from(blob)}});
 store.setCaptureEnabled(true);
@@ -58,6 +63,8 @@ const outcome=async(expected,label)=>{const before=shown.length;for(let i=0;i<90
   assert.equal(shown.length,before+1,label+': no offer');const {offerId,...offer}=shown[shown.length-1];assert.deepEqual(offer,expected,label);console.log('  ok  '+label+' -> '+offer.kind+' '+offer.username)};
 const origin='https://login.test';
 
+// SMOKE_ONLY=fill skips login recognition and seeds the accounts it would have saved.
+if(process.env.SMOKE_ONLY==='fill'){store.add({origin,username:'alice@example.com',password:'hunter2!'});store.add({origin,username:'dave@example.com',password:'brand-new'})}else{
 await open('/classic');await fill('[name=email]','alice@example.com');await fill('[name=pw]','hunter2!');await click('button');
 await outcome({origin,username:'alice@example.com',kind:'save',verified:true},'classic form POST with navigation');
 assert.equal(win.webContents.getURL(),origin+'/home');
@@ -96,8 +103,53 @@ await outcome({origin,username:'erin@example.com',kind:'save',verified:true},'su
 await open('/search');await fill('[name=q]','alice@example.com');await click('button');
 await outcome(null,'search form');
 
+}
+// --- Agent fill: Desktop writes a saved login into the real page; only a status comes back. ---
+store.add({origin,username:'bob',password:'spa-secret'});store.add({origin,username:'carol@example.com',password:'two-step-secret'});
+const access=createAgentCredentialAccess(store);
+const target={contents:win.webContents,holdAutomation:execute=>{const release=queue.holdPageAutomation(win.webContents.id);return queue.withCdpCommandQueue(win.webContents.id,()=>execute(release)).catch(error=>{release();throw error})}};
+const accountId=prefix=>access.list(origin).find(item=>item.username.startsWith(prefix)).accountId;
+const filled=(result,expected,label)=>{assert.deepEqual(result,expected,label);assert.ok(!JSON.stringify(result).includes('hunter2'));console.log('  ok  fill: '+label+' -> '+result.status)};
+const offersBefore=shown.length;
+
+await open('/classic');posts.length=0;
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'submitted',loginFormVisible:false},'classic form, submitted');
+assert.equal(win.webContents.getURL(),origin+'/home');
+await wait(200);assert.equal(posts[0],'email=alice%40example.com&pw=hunter2%21');
+assert.equal(queue.isPageAutomationHeld(win.webContents.id),false);
+
+await open('/controlled');
+filled(await access.fill(target,{origin,accountId:accountId('b'),submit:true}),{status:'submitted',loginFormVisible:false},'framework page that listens for input events');
+assert.equal(await js('document.querySelector("#who").textContent'),'bob/10');
+
+await open('/classic');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:false,sleep:()=>wait(10)}),{status:'filled'},'filled without submitting');
+assert.equal(await js('document.querySelector("[name=pw]").value'),'hunter2!');
+assert.equal(queue.isPageAutomationHeld(win.webContents.id),true);
+for(let i=0;i<100&&queue.isPageAutomationHeld(win.webContents.id);i++)await wait(100);
+assert.equal(queue.isPageAutomationHeld(win.webContents.id),false,'automation stays paused');
+assert.equal(await js('document.querySelector("[name=pw]").value'),'','an unsubmitted password is erased before automation resumes');
+console.log('  ok  fill: unsubmitted password erased when the pause ends');
+
+await open('/rejected');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true,sleep:()=>wait(60)}),{status:'submitted',loginFormVisible:true},'rejected login keeps the form');
+assert.equal(await js('document.querySelector("[name=pw]").value'),'');
+
+await open('/step1');
+filled(await access.fill(target,{origin,accountId:accountId('c'),submit:true}),{status:'username_only',submitted:true},'two-step, first page');
+await wait(400);assert.equal(new URL(win.webContents.getURL()).pathname,'/step2');posts.length=0;
+filled(await access.fill(target,{origin,accountId:accountId('c'),submit:true}),{status:'submitted',loginFormVisible:false},'two-step, password page');
+await wait(200);assert.equal(posts[0],'pw=two-step-secret');
+
+await open('/signup');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'several_password_fields'},'sign-up form refused');
+await open('/search');
+filled(await access.fill(target,{origin,accountId:accountId('al'),submit:true}),{status:'no_login_form',reason:'no_password_field'},'search box refused');
+assert.equal(await js('document.querySelector("[name=q]").value'),'');
+await wait(4500);assert.equal(shown.length,offersBefore,'filling a saved login must not prompt to save it again');
+
 clearTimeout(timer);console.log('Login capture smoke passed.');win.destroy();app.exit(0);
 })().catch(e=>{console.error(e);app.exit(1)});`);
 const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
-const result = spawnSync(require('electron'), [path.join(temp, 'main.cjs')], { env, stdio: 'inherit', timeout: 90000 });
+const result = spawnSync(require('electron'), [path.join(temp, 'main.cjs')], { env, stdio: 'inherit', timeout: 150000 });
 if (result.status !== 0) process.exit(result.status ?? 1);

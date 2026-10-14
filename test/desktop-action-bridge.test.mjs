@@ -4444,3 +4444,78 @@ for (const platform of ["darwin", "win32"]) {
     assert.equal((await invoke("desktop.site.list")).result.items.find((entry) => entry.id === id).pinned, false);
   });
 }
+
+test("credential actions serve only a trusted Run, on the page's real site, and never return a password", async (t) => {
+  const { createWebsiteCredentialStore } = require("../dist-electron/main/modules/credentials/store.js");
+  const { createAgentCredentialAccess } = require("../dist-electron/main/modules/credentials/fill/agent-access.js");
+  const { options } = createDesktopActionOptions(t);
+  const root = path.join(options.app.getPath("home"), "credential-vault");
+  const store = createWebsiteCredentialStore({
+    vaultDirectory: path.join(root, "vault"), policyFile: path.join(root, "policy.json"), hardenDirectory() {},
+    protector: { available: () => true, protect: (key) => Buffer.from(key), unprotect: (blob) => Buffer.from(blob) }
+  });
+  store.add({ origin: "https://accounts.example.com", username: "alice@example.com", password: "s3cret-value" });
+  store.add({ origin: "https://other.example.com", username: "carol@example.com", password: "another-secret" });
+  options.agentCredentials = createAgentCredentialAccess(store);
+  let url = "https://accounts.example.com/login";
+  const scripts = [];
+  const resolved = [];
+  options.resolveWebSurface = async (request) => {
+    resolved.push(request);
+    if (request.surfaceId !== "page:1") throw Object.assign(new Error("The target does not belong to this Run."), { code: "target_not_in_current_surface" });
+    return {
+      surfaceId: "page:1", containerId: "container:1", surfaceKind: "chat-work-panel",
+      contents: { id: 7, isDestroyed: () => false, getURL: () => url,
+        executeJavaScriptInIsolatedWorld: async (_world, [{ code }]) => { scripts.push(code); return code.includes("function fillLogin") ? { status: "submitted" } : { visible: false, pending: false }; } },
+      validate: async () => {},
+      holdAutomation: (execute) => execute(() => {})
+    };
+  };
+  const confirmations = [];
+  let decision = "confirm";
+  options.confirmRendererAction = async (request) => { confirmations.push(request); return { requestId: request.requestId, decision }; };
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" };
+  const call = (action, args, extra = {}) => handleAgentPlatformDesktopActionRequest(options, { action, source, args, ...extra });
+
+  // Public callers (local HTTP, Desktop UI, WebApps) cannot reach the vault at all.
+  const outsider = await handleDesktopActionRequest(options, { action: "desktop.credentials.list", args: { surfaceId: "page:1" } });
+  assert.equal(outsider.error.code, "forbidden");
+
+  const listed = await call("desktop.credentials.list", { surfaceId: "page:1" });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.result.origin, "https://accounts.example.com");
+  assert.deepEqual(listed.result.accounts.map(({ username, isDefault }) => ({ username, isDefault })), [{ username: "al***@example.com", isDefault: true }]);
+  assert.deepEqual(resolved[0].source, source);
+  assert.equal(confirmations.length, 0);
+  // The site comes from the page; an agent cannot name one, nor reach a page it does not own.
+  assert.equal((await call("desktop.credentials.list", { surfaceId: "page:1", origin: "https://other.example.com" })).error.code, "invalid_args");
+  assert.equal((await call("desktop.credentials.list", { surfaceId: "page:9" })).error.code, "target_not_in_current_surface");
+
+  const filled = await call("desktop.credentials.fill", { surfaceId: "page:1" });
+  assert.deepEqual(filled.result, { origin: "https://accounts.example.com", account: "al***@example.com", status: "submitted", loginFormVisible: false });
+  assert.equal(confirmations.length, 1);
+  assert.deepEqual(confirmations[0].fields.map((field) => field.value), ["https://accounts.example.com", "al***@example.com"]);
+  assert.ok(scripts.some((code) => code.includes("s3cret-value")));
+  assert.ok(!JSON.stringify([listed, filled, confirmations]).includes("s3cret-value"));
+
+  // Declining leaves the page untouched; full access skips the prompt like other Desktop actions.
+  scripts.length = 0;
+  decision = "cancel";
+  const declined = await call("desktop.credentials.fill", { surfaceId: "page:1" });
+  assert.equal(declined.error.code, "user_cancelled");
+  assert.deepEqual(scripts, []);
+  const unattended = await call("desktop.credentials.fill", { surfaceId: "page:1", submit: true }, { permissionMode: "full_access" });
+  assert.equal(unattended.result.status, "submitted");
+  assert.equal(confirmations.length, 2);
+
+  // An account id from another site, a site without saved accounts, and plain HTTP all fill nothing.
+  scripts.length = 0;
+  decision = "confirm";
+  const foreign = store.state().credentials.find((item) => item.origin === "https://other.example.com").id;
+  assert.equal((await call("desktop.credentials.fill", { surfaceId: "page:1", accountId: foreign })).error.code, "account_not_found");
+  url = "https://unknown.example.org/login";
+  assert.equal((await call("desktop.credentials.fill", { surfaceId: "page:1" })).error.code, "no_saved_account");
+  url = "http://accounts.example.com/login";
+  assert.equal((await call("desktop.credentials.list", { surfaceId: "page:1" })).error.code, "page_not_eligible");
+  assert.deepEqual(scripts, []);
+});

@@ -31,8 +31,12 @@ function loginObserver(maxUsername: number, maxPassword: number) {
     return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0.05;
   };
   const inputs = (root: ParentNode, selector: string) => Array.from(root.querySelectorAll(selector)).filter(visible);
-  const passwordFields = (root: ParentNode) => inputs(root, "input[type=password]");
-  const identifierFields = (root: ParentNode) => inputs(root, "input").filter(input => ["text", "email", "tel", ""].includes(input.type));
+  // A "show password" control turns the field into type=text. Once seen as a password field it stays one,
+  // so revealing it is neither mistaken for the form going away nor read as an account name.
+  const knownPasswordFields = new WeakSet<Element>();
+  const remember = (root: ParentNode) => { for (const input of Array.from(root.querySelectorAll("input[type=password]"))) knownPasswordFields.add(input); };
+  const passwordFields = (root: ParentNode) => { remember(root); return inputs(root, "input").filter(input => knownPasswordFields.has(input)); };
+  const identifierFields = (root: ParentNode) => inputs(root, "input").filter(input => ["text", "email", "tel", ""].includes(input.type) && !knownPasswordFields.has(input));
   const looksLikeIdentifier = (input: HTMLInputElement) =>
     /username|email|tel/u.test(input.autocomplete) || input.type === "email"
     || /user|login|account|email|phone|mobile|identifier/iu.test(`${input.name} ${input.id}`);
@@ -79,6 +83,9 @@ function loginObserver(maxUsername: number, maxPassword: number) {
     emit({ type: "credential", origin: location.origin, username, password: chosen.value });
   }
 
+  remember(document);
+  // Fields rendered later are noticed when the user starts typing in them, before any reveal toggle.
+  addEventListener("focusin", event => { if (event.target instanceof HTMLInputElement && event.target.type === "password") knownPasswordFields.add(event.target); }, true);
   // Capture phase: read the values before the page clears the form or navigates.
   addEventListener("submit", event => capture(event.target), true);
   addEventListener("click", event => {
