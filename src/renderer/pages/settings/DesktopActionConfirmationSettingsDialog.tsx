@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Alert, Checkbox, Input, Modal } from "antd";
 import {
-  DESKTOP_CONFIRMABLE_ACTIONS,
+  DESKTOP_EXEMPTIBLE_ACTIONS,
   normalizeDesktopActionConfirmationExemptActions
 } from "../../../shared/desktop-action-confirmation";
 import { useI18n } from "../../i18n/useI18n";
@@ -25,8 +25,8 @@ export function DesktopActionConfirmationSettingsDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const query = search.trim().toLocaleLowerCase();
-  const groups = new Map<string, typeof DESKTOP_CONFIRMABLE_ACTIONS>();
-  for (const action of DESKTOP_CONFIRMABLE_ACTIONS) {
+  const groups = new Map<string, typeof DESKTOP_EXEMPTIBLE_ACTIONS>();
+  for (const action of DESKTOP_EXEMPTIBLE_ACTIONS) {
     const label = t(actionConfirmationLabels[action.name]);
     const category = t(actionConfirmationCategoryLabels[action.category]);
     if (query && !`${label} ${category} ${action.name}`.toLocaleLowerCase().includes(query)) continue;
@@ -80,14 +80,14 @@ export function DesktopActionConfirmationSettingsDialog({
         />
         <div className="desktop-action-settings-toolbar">
           <Checkbox
-            checked={selected.size === DESKTOP_CONFIRMABLE_ACTIONS.length}
-            indeterminate={selected.size > 0 && selected.size < DESKTOP_CONFIRMABLE_ACTIONS.length}
+            checked={selected.size === DESKTOP_EXEMPTIBLE_ACTIONS.length}
+            indeterminate={selected.size > 0 && selected.size < DESKTOP_EXEMPTIBLE_ACTIONS.length}
             disabled={saving}
-            onChange={(event) => setSelected(new Set(event.target.checked ? DESKTOP_CONFIRMABLE_ACTIONS.map(({ name }) => name) : []))}
+            onChange={(event) => setSelected(new Set(event.target.checked ? DESKTOP_EXEMPTIBLE_ACTIONS.map(({ name }) => name) : []))}
           >
             {t("settings.actionConfirmation.exemptAll")}
           </Checkbox>
-          <span aria-live="polite">{t("settings.actionConfirmation.count", { count: selected.size, total: DESKTOP_CONFIRMABLE_ACTIONS.length })}</span>
+          <span aria-live="polite">{t("settings.actionConfirmation.count", { count: selected.size, total: DESKTOP_EXEMPTIBLE_ACTIONS.length })}</span>
         </div>
         <div className="desktop-action-settings-list">
           {[...groups].map(([category, actions]) => (

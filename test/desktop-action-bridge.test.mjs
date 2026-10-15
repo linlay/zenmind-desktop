@@ -4326,7 +4326,7 @@ test("Platform management exemptions preserve public and heavy-action confirmati
   assert.equal(created, 1);
 });
 
-test("exact action exemptions skip confirmation for both entries without exempting other actions", async (t) => {
+test("always-tier exemptions skip confirmation for both entries but cannot exempt external-tier actions", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const confirmations = [];
   let restarted = 0;
@@ -4345,9 +4345,11 @@ test("exact action exemptions skip confirmation for both entries without exempti
   ] } });
   assert.equal((await handleAgentPlatformDesktopActionRequest(options, restart)).ok, true);
   assert.equal((await handleDesktopActionRequest(options, restart)).ok, true);
-  assert.equal((await handleDesktopActionRequest(options, { action: "desktop.theme.set", args: { themeMode: "dark" } })).ok, true);
   assert.equal(restarted, 2);
   assert.equal(confirmations.length, 0);
+  // Even a previously saved external-tier selection must not bypass its confirmation.
+  const theme = await handleDesktopActionRequest(options, { action: "desktop.theme.set", args: { themeMode: "dark" } });
+  assert.equal(theme.error.code, "user_cancelled");
   const stop = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.controlCenter.stopService", source });
   assert.equal(stop.error.code, "user_cancelled");
   const locale = await handleDesktopActionRequest(options, { action: "desktop.locale.set", args: { locale: "en-US" } });
@@ -4355,25 +4357,34 @@ test("exact action exemptions skip confirmation for both entries without exempti
   updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [] } });
   assert.equal((await handleAgentPlatformDesktopActionRequest(options, restart)).error.code, "user_cancelled");
   assert.equal(restarted, 2);
-  assert.equal(confirmations.length, 3);
+  assert.equal(confirmations.length, 4);
 });
 
-test("selecting all confirmable actions bypasses their dialogs and clearing restores confirmation", async (t) => {
-  const { DESKTOP_CONFIRMABLE_ACTIONS } = require("../dist-electron/shared/desktop-action-confirmation.js");
+test("selecting all exemptible actions covers only the always tier and clearing restores confirmation", async (t) => {
+  const { DESKTOP_EXEMPTIBLE_ACTIONS } = require("../dist-electron/shared/desktop-action-confirmation.js");
   const { calls, options } = createDesktopActionOptions(t);
   const profileRoot = getDesktopConfigRoot(options.app);
-  const selected = DESKTOP_CONFIRMABLE_ACTIONS.map(({ name }) => name);
+  const selected = DESKTOP_EXEMPTIBLE_ACTIONS.map(({ name }) => name);
+  assert.equal(selected.length, 17);
+  assert.ok(DESKTOP_EXEMPTIBLE_ACTIONS.every(({ confirmation }) => confirmation === "always"));
+  let restarted = 0;
+  options.services.restartService = async () => { restarted++; return { status: "running" }; };
+  const restart = { action: "desktop.controlCenter.restartService", args: { serviceId: "agent-platform" } };
   updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: selected } });
   options.getMainWindow = () => null;
   options.confirmRendererAction = () => assert.fail("an exempt action must not request confirmation");
-  const result = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  const result = await handleAgentPlatformDesktopActionRequest(options, restart);
   assert.equal(result.ok, true);
-  assert.equal(calls.runtimeDiagnostics, 1);
+  assert.equal(restarted, 1);
+  options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "cancel" });
+  const external = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  assert.equal(external.error.code, "user_cancelled");
+  assert.equal(calls.runtimeDiagnostics, 0);
   updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [] } });
   delete options.confirmRendererAction;
-  const gated = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  const gated = await handleAgentPlatformDesktopActionRequest(options, restart);
   assert.equal(gated.error.code, "confirmation_unavailable");
-  assert.equal(calls.runtimeDiagnostics, 1);
+  assert.equal(restarted, 1);
 });
 
 test("permissionMode inside action args cannot skip Desktop confirmation", async (t) => {

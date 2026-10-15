@@ -93,9 +93,9 @@ for (const platform of ["darwin", "win32"]) {
       stopDesktopWsServer: async () => runtimeState(false),
       onGeneralSettingsChanged: (settings) => changed.push(settings)
     });
-    const selected = ["desktop.theme.set", "desktop.credentials.fill"];
+    const selected = ["desktop.credentials.fill", "desktop.controlCenter.restartService"];
     const saved = await ipc.invoke("settings.saveGeneralSettings", {
-      desktopActionConfirmationExemptActions: [...selected, "desktop.*", "unknown"]
+      desktopActionConfirmationExemptActions: [...selected, "desktop.theme.set", "desktop.*", "unknown"]
     });
     assert.deepEqual(saved.desktopActionConfirmationExemptActions, selected);
     assert.deepEqual(changed.at(-1).desktopActionConfirmationExemptActions, selected);
