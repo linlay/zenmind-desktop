@@ -135,8 +135,7 @@ export interface DesktopActionRendererResponse {
 
 export type DesktopActionCallListener = (request: DesktopActionRendererRequest) => void;
 
-export type DesktopActionConfirmationDecision = "confirm" | "grant" | "once" | "cancel";
-export type DesktopActionConfirmationKind = "action" | "page_control";
+export type DesktopActionConfirmationDecision = "confirm" | "cancel";
 export type DesktopActionConfirmationButtonVariant = "primary" | "secondary" | "cancel";
 
 export interface DesktopActionConfirmationField {
@@ -152,7 +151,6 @@ export interface DesktopActionConfirmationButton {
 
 export interface DesktopActionConfirmationRequest {
   requestId: string;
-  kind: DesktopActionConfirmationKind;
   title: string;
   summary: string;
   description: string;

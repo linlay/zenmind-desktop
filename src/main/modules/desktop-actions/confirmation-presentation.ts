@@ -155,7 +155,7 @@ export function buildDesktopActionConfirmationDetail(
   options: { permissionMode?: string; target?: string; prefixLines?: string[] } = {}
 ) {
   const action = request.action || "unknown";
-  const permissionMode = options.permissionMode || readRequestPermissionMode(request, args);
+  const permissionMode = options.permissionMode || readRequestPermissionMode(request);
   return [
     ...(options.prefixLines?.filter(Boolean) ?? []),
     ...(options.prefixLines?.length ? [""] : []),
@@ -197,7 +197,7 @@ export function normalizeConfirmationDecision(
   value: unknown,
   fallback: DesktopActionConfirmationDecision
 ): DesktopActionConfirmationDecision {
-  return value === "confirm" || value === "grant" || value === "once" || value === "cancel"
+  return value === "confirm" || value === "cancel"
     ? value
     : fallback;
 }

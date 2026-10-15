@@ -25,18 +25,6 @@ export const WEBAPP_EXTERNAL_RATE_LIMIT = 5;
 
 export const WEBAPP_NOTIFICATION_RATE_LIMIT = 5;
 
-export const WEBAPP_PAGE_ONLY_ACTIONS = new Set([
-  "desktop.capabilities.list",
-  "desktop.native.browser.openExternal",
-  "desktop.native.dialog.selectFiles",
-  "desktop.native.dialog.selectDirectory",
-  "desktop.native.dialog.selectSavePath",
-  "desktop.native.microphone.getPermission",
-  "desktop.native.microphone.requestAccess",
-  "desktop.native.clipboard.writeText",
-  "desktop.native.notification.show"
-]);
-
 export class WebappActionRateLimiter {
   private readonly attempts = new Map<string, number[]>();
 

@@ -1195,7 +1195,7 @@
 - 弹窗显示倒计时，到期自动关闭；超时回报 confirmation_timeout，点击取消/Esc 回报 user_cancelled，两者明确动作未执行。
 - 工具期限比确认配置短时使用较短期限；Platform 中止 Run、连接断开或窗口重载后关闭弹窗，迟到确认不得执行动作。
 - 新旧确认切换时双击、过期瞬间点击、窗口后台或休眠后恢复，均不能重复执行，也不能关闭后续请求。
-- 敏感读取、普通动作及页面授权均复用上述生命周期；确认窗口不可用回报 confirmation_unavailable。
+- 运行时诊断、保存密码填充与普通动作均复用上述生命周期；确认窗口只有取消与执行两个选择；确认窗口不可用回报 confirmation_unavailable。
 
 ## 网页应用运行环境独立设置
 
@@ -1322,10 +1322,13 @@ macOS 与 Windows 分别执行；Windows 的密钥保护、目录权限和系统
 - 设置页显示明文或正在编辑时锁屏：明文立即隐藏、编辑框关闭。导入时文件对话框打开期间锁屏再解锁选择文件：重新要求认证。
 - 让智能体直接读取 `secrets/` 下的文件：任何权限档位都被拒绝。
 
-## Platform 动作确认豁免
+## Desktop Action 确认档位（内部入口 / 外部入口）
 
 - Windows/macOS 分别开启 Desktop 动作确认，通过可信 Platform 调用换主题、增改网站条目和看板动作，确认不会再弹 Desktop confirm action dialog；Platform 若配置审阅，仅显示 Platform 的 viewport。
-- 同样动作由普通 Desktop Action 入口调用仍要求确认，伪造 source 不豁免；基础服务重启、WebApp 安装/卸载/发布、市场安装和镜像删除仍进入原确认策略。
+- 同样动作由外部入口（Desktop WebSocket、本地 HTTP、调试工作台以非 full_access 调用）仍要求确认，伪造 source 不豁免；基础服务重启、WebApp 安装/卸载/发布、市场安装和镜像删除在内部入口也弹确认。
+- Windows/macOS：可信 Platform Run 使用保存密码填充登录，每次都弹“填入已保存的密码”确认，显示真实网站与脱敏账号；取消后不填写。
+- Windows/macOS：外部入口执行网页填写或点击时只弹通用“确认桌面端动作”，不再出现“仅执行这一步 / 允许本次页面操作”；外部入口读取运行时诊断同样使用通用确认。
+- Windows/macOS：WebApp 页面调用文件选择、剪贴板写入、通知和图片生成不弹 Desktop 动作确认；从调试工作台或 Desktop WebSocket 调用 `desktop.native.*`、`desktop.assistant.image` 直接返回 unknown_action，不弹确认。
 - Windows/macOS 分别开启 Desktop 动作确认，以默认权限从可信 Platform Run 执行网页填写、选择、聚焦、滚动、点击、脚本、导航、刷新、新建标签、切换及关闭标签，确认 `desktop.web.*` 与 CDP/AWCP 均不弹 Desktop 二次确认；切换 Chat、隐藏 WorkPanel 或最小化主窗口后仍只能操作原 Run 授权的网页，跨 Chat、已关闭 Surface 与终态 Run 拒绝执行。
 - Windows/macOS：可信 Platform 调用 WorkPanel 打开/激活/关闭标签、关闭面板，以及智能体/技能文本更新，确认不弹 Desktop 动作确认；资源校验、版本冲突及编辑器丢弃未保存草稿的独立确认仍生效。同样动作从普通 Desktop Action 入口调用仍确认，公开请求伪造 Run/Chat source 不豁免。
 - Windows/macOS：让网页 Action 在 CDP 队列等待期间取消 Run，确认等待中的动作不执行、不弹确认、不转到当前前台页；操作已经开始时取消不声称业务副作用已回滚。

@@ -3,7 +3,6 @@ import {
   type DesktopActionInvocationContext,
   AGENT_PLATFORM_ONLY_ACTIONS,
   ARGUMENT_FREE_RUNTIME_ACTIONS,
-  AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS,
   type AgentWebclientWorkPanelAction,
   AGENT_WEBCLIENT_WORKPANEL_ACTIONS,
   AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS
@@ -12,13 +11,13 @@ import {
   type DesktopActionCallRequest,
   type DesktopActionCallResponse,
   getDesktopActionDefinition,
-  isDesktopActionMutating
+  getDesktopActionConfirmation
 } from "../../../shared/desktop-actions";
 import { fail, asRecord, readString } from "./action-values";
-import { CURRENT_PAGE_WEB_ACTIONS } from "./page-control-policy";
 import { t } from "../../support/i18n/main-i18n";
 import { ConfirmationEndedError, assertActionCanStart } from "./confirmation-dialog";
-import { confirmDesktopActionIfNeeded } from "./confirmation-policy";
+import { buildActionConfirmationRequest, confirmDesktopActionIfNeeded } from "./confirmation-policy";
+import { buildCredentialFillConfirmationRequest, fillPreparedCredential, prepareCredentialFill, type PreparedCredentialFill } from "./credential-actions";
 import { executeAction } from "./action-dispatch";
 import { normalizeActionBridgeTimePayload, ActionBridgeTimeContractError } from "./time-normalizer";
 import { executeWebappKanban } from "./webapp-kanban";
@@ -27,6 +26,31 @@ import { isWebappConnectorAction, executeWebappConnector } from "./webapp-connec
 import { resolveWebappAction } from "../../../shared/webapp-bridge";
 import { prepareWebappInstall, type PreparedWebappInstall } from "./webapp-install-preflight";
 import { installWebapp } from "./web-resource-actions";
+import { WEBAPP_PAGE_METHODS, executeWebappPageMethod } from "./webapp-page-methods";
+
+// Actions that act on the Desktop current page and honor expectedPageKey.
+const CURRENT_PAGE_WEB_ACTIONS = new Set([
+  "desktop.web.interactElement",
+  "desktop.web.executeScript",
+  "desktop.web.exportArtifact"
+]);
+
+function findReservedArgField(args: Record<string, unknown>) {
+  return ["source", ["confirmation", "Summary"].join("")]
+    .find((field) => Object.prototype.hasOwnProperty.call(args, field));
+}
+
+// External entries (Desktop WebSocket, local HTTP, Desktop's own UI) confirm "external" and "always"
+// actions; the internal entry, a built-in Agent Platform Run, confirms only "always" ones.
+// WebApp and Agent WebClient bridges are authorized by their own capability checks instead.
+function requiresDesktopConfirmation(
+  confirmation: ReturnType<typeof getDesktopActionConfirmation>,
+  invocation: DesktopActionInvocationContext
+) {
+  if (invocation.kind === "desktop") return confirmation !== "none";
+  if (invocation.kind === "agentPlatform") return confirmation === "always";
+  return false;
+}
 
 export async function handleActionCallRaw(
   options: DesktopActionBridgeOptions,
@@ -43,10 +67,9 @@ export async function handleActionCallRaw(
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
-  for (const reservedField of ["source", ["confirmation", "Summary"].join("")]) {
-    if (Object.prototype.hasOwnProperty.call(args, reservedField)) {
-      return fail(action, "invalid_args", `${reservedField} is reserved.`);
-    }
+  const reservedField = findReservedArgField(args);
+  if (reservedField) {
+    return fail(action, "invalid_args", `${reservedField} is reserved.`);
   }
   if (ARGUMENT_FREE_RUNTIME_ACTIONS.has(action) && Object.keys(args).length > 0) {
     return fail(action, "invalid_args", `${action} does not accept args.`);
@@ -64,14 +87,9 @@ export async function handleActionCallRaw(
       });
     }
   }
-  const confirmationEligibleInvocation = invocation.kind === "desktop" || invocation.kind === "agentPlatform";
-  // Authorized webpage control follows CDP/AWCP policy, including future web actions.
-  // This exemption does not replace Broker Run grants or CDP Surface authorization.
-  const agentPlatformConfirmationExempt = invocation.kind === "agentPlatform" &&
-    (action.startsWith("desktop.web.") || AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action));
-  const requiresConfirmation = definition.confirmation !== "none" &&
-    (isDesktopActionMutating(action) || definition.confirmation === "sensitive-read");
+  const requiresConfirmation = requiresDesktopConfirmation(getDesktopActionConfirmation(definition), invocation);
   let preparedInstall: PreparedWebappInstall | undefined;
+  let preparedCredentialFill: PreparedCredentialFill | undefined;
   try {
     assertActionCanStart(options);
     if (action === "desktop.webapp.install") {
@@ -80,13 +98,21 @@ export async function handleActionCallRaw(
       preparedInstall = preflight.prepared;
       assertActionCanStart(options);
     }
-    if (requiresConfirmation && confirmationEligibleInvocation && !agentPlatformConfirmationExempt) {
+    if (action === "desktop.credentials.fill") {
+      const preflight = await prepareCredentialFill(options, normalizedRequest);
+      if (!preflight.ok) return preflight.response;
+      preparedCredentialFill = preflight.prepared;
+      assertActionCanStart(options);
+    }
+    if (requiresConfirmation) {
+      const confirmationArgs = preparedInstall ? { archivePath: preparedInstall.archivePath, webappId: preparedInstall.expectedId,
+        label: preparedInstall.label, version: preparedInstall.version } : args;
       const confirmationResponse = await confirmDesktopActionIfNeeded(
         options,
         normalizedRequest,
-        preparedInstall ? { archivePath: preparedInstall.archivePath, webappId: preparedInstall.expectedId,
-          label: preparedInstall.label, version: preparedInstall.version } : args,
-        definition.confirmation
+        () => preparedCredentialFill
+          ? buildCredentialFillConfirmationRequest(normalizedRequest, preparedCredentialFill)
+          : buildActionConfirmationRequest(normalizedRequest, confirmationArgs, options.getCurrentPageSnapshot())
       );
       if (confirmationResponse) {
         return confirmationResponse;
@@ -99,6 +125,7 @@ export async function handleActionCallRaw(
   }
   try {
     if (preparedInstall) return await installWebapp(options, normalizedRequest, preparedInstall);
+    if (preparedCredentialFill) return await fillPreparedCredential(options, normalizedRequest, preparedCredentialFill);
     return await executeAction(options, normalizedRequest, invocation);
   } catch (error) {
     if (error instanceof ConfirmationEndedError) return { ok: false, action, error: error.toActionError() };
@@ -145,10 +172,38 @@ export async function handleActionCall(
   if (request.action === "assistant.events" || request.action === "assistant.stop") return executeWebappAssistant(options, request.action, asRecord(request.args), invocation);
   if (isWebappConnectorAction(request.action)) return executeWebappConnector(options, request.action, asRecord(request.args), invocation);
   const action = isWebapp ? resolveWebappAction(request.action) : request.action;
+  if (isWebapp && WEBAPP_PAGE_METHODS.has(action)) {
+    return { ...await handleWebappPageMethod(options, { ...request, action }, invocation), action: request.action };
+  }
   const response = normalizeActionResponseTimePayload(
     await handleActionCallRaw(options, { ...request, action }, invocation)
   );
   return isWebapp ? { ...response, action: request.action } : response;
+}
+
+// WebApp Bridge page methods are not Desktop Actions: no registry entry and no Desktop confirmation.
+async function handleWebappPageMethod(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest,
+  invocation: DesktopActionInvocationContext
+): Promise<DesktopActionCallResponse> {
+  const action = request.action;
+  if (invocation.kind !== "webappPage") {
+    return fail(action, "forbidden", "This method is available only to an authorized local WebApp page.");
+  }
+  const args = asRecord(request.args);
+  const reservedField = findReservedArgField(args);
+  if (reservedField) {
+    return fail(action, "invalid_args", `${reservedField} is reserved.`);
+  }
+  try {
+    return await executeWebappPageMethod(options, action, args, invocation.webappId);
+  } catch (error) {
+    return fail(action, "action_failed", error instanceof Error ? error.message : "Unexpected WebApp method exception.", {
+      stage: "execution", executionState: "unknown",
+      cause: error instanceof Error ? { name: error.name, message: error.message, code: (error as NodeJS.ErrnoException).code } : { message: "Non-Error exception" },
+    });
+  }
 }
 
 export async function handleDesktopActionRequest(
