@@ -100,6 +100,8 @@ ${documentFileHandlersNsis(brand)}
 
 ${fs.readFileSync(new URL("./windows-shortcut-identity.nsh", import.meta.url), "utf8")}
 
+${fs.readFileSync(new URL("./windows-folder-picker.nsh", import.meta.url), "utf8")}
+
 !macro DesktopMeasuredExtractorHeader
   !ifndef BUILD_UNINSTALLER
     ; The current directory takes priority over NSIS include search directories.
@@ -382,9 +384,13 @@ FunctionEnd
 
 Function ${nsisPrefix}BrowseDataDirectory
   \${NSD_GetText} $DesktopDataRootInput $DesktopDataParent
-  nsDialogs::SelectFolderDialog "选择 ${productName} 数据存放位置" "$DesktopDataParent"
+  Push "$DesktopDataParent"
+  Push "选择 ${productName} 数据存放位置"
+  Call DesktopSelectDataFolder
   Pop $0
-  \${if} $0 != "error"
+  \${if} $0 == "error"
+    MessageBox MB_ICONEXCLAMATION "无法打开目录选择窗口，请在安装页直接填写完整的数据目录。"
+  \${elseIf} $0 != "cancel"
     \${GetFileName} "$0" $R3
     \${if} $R3 == "${runtimeRootDirName}"
       StrCpy $DesktopDataParent "$0"
