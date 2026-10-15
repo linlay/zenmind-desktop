@@ -76,7 +76,7 @@ test('compiled Desktop adapters and UI flow interoperate with real Platform HTTP
 
     const id = `bridge-import-${Date.now()}`;
     const imported = await custom.createCustomConnector({
-      connectorJson: JSON.stringify({ id, name: 'Desktop integration fixture', version: '1.0.0', type: 'mcp', auth_mode: null }),
+      connectorJson: JSON.stringify({ id, name: 'Desktop integration fixture', version: '1.0.0', type: 'mcp', authMode: 'self' }),
       mcpJson: JSON.stringify({ mcpServers: { main: { type: 'streamableHttp', url: fixture.upstream + '/mcp' } } }),
     });
     assert.equal(imported.connectorId, id);

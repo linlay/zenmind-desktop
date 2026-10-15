@@ -11,7 +11,7 @@ const { runMarketConnectorFlow, createConnectorSessionOwner, connectorAuthorizat
 function setup() {
   const calls = []; let configured = false;
   const session = status => ({ connectorId: 'actual-id', sessionId: 'first', status, expiresAt: '', authBrowser: 'embedded', authorizationUrl: 'https://work.weixin.qq.com/step1' });
-  const state = () => ({ connectorId: 'actual-id', configured, readiness: configured ? 'ready' : 'configuration_required', authentication: session(configured ? 'authorized' : 'unauthorized'), capabilities: { hasCli: false, authMode: null } });
+  const state = () => ({ connectorId: 'actual-id', configured, readiness: configured ? 'ready' : 'configuration_required', authentication: session(configured ? 'authorized' : 'unauthorized'), capabilities: { hasCli: false, authMode: 'self' } });
   const api = {
     install: async () => { calls.push('install'); return { ok: true, connectorId: 'actual-id' }; },
     getConnectorConnection: async () => state(),
@@ -25,7 +25,7 @@ function setup() {
   return { calls, api, intent, controller, session, state };
 }
 function noAuthState(extra={}) {
- return {connectorId:'actual-id',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'actual-id',status:'no_auth',sessionId:'',expiresAt:''},capabilities:{authMode:'no_auth',authBrowser:'',hasCli:true,canConnect:false,canCheck:false,canDisconnect:false},preparation:{connectorId:'actual-id',status:'ready'},...extra};
+ return {connectorId:'actual-id',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'actual-id',status:'no_auth',sessionId:'',expiresAt:''},capabilities:{authMode:'none',authBrowser:'',hasCli:true,canConnect:false,canCheck:false,canDisconnect:false},preparation:{connectorId:'actual-id',status:'ready'},...extra};
 }
 test('no-auth connector installs and mounts without authentication or redundant CLI preparation',async()=>{
  const s=setup();s.api.getConnectorConnection=async()=>noAuthState();
@@ -67,7 +67,7 @@ test('canceling no-auth CLI preparation prevents a late mount',async()=>{
 });
 test('unavailable no-auth connector without CLI cannot report success',async()=>{
  const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';s.intent.mountAgent=false;
- s.api.getConnectorConnection=async()=>noAuthState({readiness:'unavailable',capabilities:{authMode:'no_auth',hasCli:false}});
+ s.api.getConnectorConnection=async()=>noAuthState({readiness:'unavailable',capabilities:{authMode:'none',hasCli:false}});
  await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}),/notReady/);
  assert.deepEqual(s.calls,[]);
 });
@@ -199,7 +199,7 @@ test('explicit replacement credentials are submitted even when existing credenti
 function mcpSetup() {
   const s = setup();
   s.intent.installed = true; s.intent.connectorId = 'actual-id';
-  s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'no_auth', hasCli: false, hasMcp: true } });
+  s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'none', hasCli: false, hasMcp: true } });
   s.agent = () => ({ agentKey: 'xiaojun', connectorIds: ['actual-id'], activeConnectorIds: ['actual-id'], reloadPending: false });
   s.api.setConnectorAgent = async () => s.agent();
   s.api.getConnectorAgent = async () => s.agent();
@@ -262,7 +262,7 @@ test('MCP missing, unmounted, unavailable and ready-with-zero-tools states fail 
 test('CLI and native flows do not read MCP tool state', async () => {
   for (const hasCli of [true, false]) {
     const s = setup(); const phases = [];
-    s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'no_auth', hasCli, hasMcp: false } });
+    s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'none', hasCli, hasMcp: false } });
     s.intent.onPhase = phase => phases.push(phase);
     s.api.getConnectorAgentTools = async () => assert.fail('pure CLI/native must not poll MCP');
     await runMarketConnectorFlow(s.intent, s.api, async () => {});

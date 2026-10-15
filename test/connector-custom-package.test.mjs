@@ -11,16 +11,20 @@ const { createBasicConnectorPackage, validateConnectorPackage, createConnectorDi
 const basic = { id: 'custom-docs', name: 'Documents', url: 'https://mcp.example.test/api', authMode: 'none' };
 test('basic remote MCP produces protocol declarations with no direct execution', () => {
   const result = createBasicConnectorPackage(basic);
-  assert.equal(JSON.parse(result.connectorJson).auth_mode, null);
+  assert.equal(JSON.parse(result.connectorJson).authMode, 'none');
+  assert.equal(result.tokenSchemaJson, undefined);
   assert.equal(JSON.parse(result.mcpJson).mcpServers.main.type, 'streamableHttp');
   assert.equal(validateConnectorPackage(result).id, basic.id);
 });
 test('API key mode writes only the placeholder and a required password schema', () => {
   const result = createBasicConnectorPackage({ ...basic, authMode: 'token' });
   const manifest = JSON.parse(result.connectorJson);
-  assert.equal(manifest.token_schema.fields[0].type, 'password');
-  assert.equal(manifest.token_schema.fields[0].required, true);
-  assert.equal(manifest.token_schema.fields[0].defaultValue, undefined);
+  const schema = JSON.parse(result.tokenSchemaJson);
+  assert.equal(manifest.authMode, 'token');
+  assert.equal(manifest.tokenSchema, undefined, 'the credential form lives in token-schema.json');
+  assert.equal(schema.fields[0].type, 'password');
+  assert.equal(schema.fields[0].required, true);
+  assert.equal(schema.fields[0].defaultValue, undefined);
   assert.equal(JSON.parse(result.mcpJson).mcpServers.main.headers.Authorization, 'Bearer ${API_KEY}');
 });
 test('literal credentials in query strings and static headers are rejected before package creation', () => {

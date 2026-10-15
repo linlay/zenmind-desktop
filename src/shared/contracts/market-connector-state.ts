@@ -1,4 +1,4 @@
-export type ConnectorAuthMode = "no_auth" | "token" | "oneid-token" | "oauth" | "mcp" | null;
+export type ConnectorAuthMode = "none" | "self" | "token" | "oauth" | "mcp" | "oneid";
 export type ConnectorAuthStatus = "no_auth" | "pending_verification" | "not_required" | "delegated" | "configured" | "setup_required" | "unauthorized" | "preparing" | "pending" | "authorized" | "failed" | "canceled";
 export interface MarketConnectorAuthSession {
   connectorId: string;
@@ -6,6 +6,9 @@ export interface MarketConnectorAuthSession {
   status: ConnectorAuthStatus;
   authBrowser?: "system" | "embedded";
   authorizationUrl?: string;
+  /** CLI device-flow code the user confirms or enters at the authorization page. */
+  userCode?: string;
+  userCodeExpiresAt?: string;
   message?: string;
   expiresAt: string;
   pendingVerification?: boolean;

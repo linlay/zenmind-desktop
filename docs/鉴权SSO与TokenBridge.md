@@ -59,7 +59,7 @@ Desktop 为 Agent Platform 签发 app token 时始终使用本地 Identity Cente
 
 官网登录、退出、恢复、切换账号不轮换本地聊天连接，也不清空 Root Observer、运行订阅、页面操作授权或 WebApp grant。本地 endpoint、设备或服务凭据身份真正改变时，原有连接失效与授权校验仍生效。WebApp 的本地应用身份与页面/runtime 归属校验保留；未登录官网不妨碍本地 WebApp 调用。
 
-Tunnel Hub、企业聊天、云看板和市场的用户态业务继续使用 canonical SSO token。显式 oneid-token 连接器按自己的外部凭据规则工作；Provider 登录领取 Key 的启动/停止门禁保持原有策略。这些功能不能改变本地 Platform 调用主体。
+Tunnel Hub、企业聊天、云看板和市场的用户态业务继续使用 canonical SSO token。显式 `authMode: oneid` 连接器按自己的外部凭据规则工作；Provider 登录领取 Key 的启动/停止门禁保持原有策略。这些功能不能改变本地 Platform 调用主体。
 
 Desktop 与 Platform 应一起发布：Platform 的宿主入口验证已签名的 app token、设备和非空本地主体，不再要求官网个人主体前缀。已有持久 Run 的控制身份不在 Desktop 中改写，服务端不因本变更放宽不同运行身份间的控制权限。
 

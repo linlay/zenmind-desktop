@@ -196,7 +196,7 @@ test('no-auth preparation recovery clears only the corresponding preparation fai
  const s = setup();
  s.flow.runMarketConnectorFlow = async intent => { intent.onPhase('preparing'); throw new Error('CLI not ready'); };
  await s.render().start(wecom);
- s.api.market.getConnectorConnections = async () => [{ connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{status:'no_auth'},capabilities:{authMode:'no_auth'} }];
+ s.api.market.getConnectorConnections = async () => [{ connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{status:'no_auth'},capabilities:{authMode:'none'} }];
  await s.render().refresh(); assert.equal(s.render().error,'');
  s.flow.runMarketConnectorFlow = async intent => { intent.onPhase('mounting'); throw new Error('mount failed'); };
  await s.render().start(wecom); await s.render().refresh();
@@ -205,7 +205,7 @@ test('no-auth preparation recovery clears only the corresponding preparation fai
 test('no-auth examples carry their draft to chat only after the real flow succeeds', async () => {
  const chats=[];const calls=[];const s=setup(undefined,(agentKey,draft)=>chats.push([agentKey,draft]));
  let readiness='no_auth',status='no_auth';
- const state=()=>({connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness,authentication:{status},capabilities:{authMode:'no_auth',hasCli:true},preparation:{connectorId:'wecom-cli',status:'ready'}});
+ const state=()=>({connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness,authentication:{status},capabilities:{authMode:'none',hasCli:true},preparation:{connectorId:'wecom-cli',status:'ready'}});
  s.api.market.getConnectorConnections=async()=>[state()];
  s.api.market.getConnectorConnection=async()=>state();
  s.api.market.setConnectorAgent=async()=>{calls.push('mount');return {agentKey:'cutej',connectorIds:['wecom-cli'],activeConnectorIds:['wecom-cli'],reloadPending:false};};
@@ -226,7 +226,7 @@ test('no-auth examples carry their draft to chat only after the real flow succee
 test('no-auth CLI with missing or failed preparation prepares first and never jumps after failure', async () => {
  for(const preparation of [undefined,{connectorId:'wecom-cli',status:'failed'}]) {
   const chats=[];const calls=[];const s=setup(undefined,(agentKey,draft)=>chats.push([agentKey,draft]));
-  const state={connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{status:'no_auth'},capabilities:{authMode:'no_auth',hasCli:true},preparation};
+  const state={connectorId:'wecom-cli',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{status:'no_auth'},capabilities:{authMode:'none',hasCli:true},preparation};
   s.api.market.getConnectorConnections=async()=>[state];
   s.api.market.getConnectorConnection=async()=>state;
   s.api.market.prepareConnector=async()=>{calls.push('prepare');return {status:'failed',message:'CLI not ready'};};
@@ -243,7 +243,7 @@ test('MCP flow opens the draft only after synchronization and cancellation suppr
   for (const cancel of [false, true]) {
     const chats = [], s = setup(undefined, (agentKey, draft) => chats.push([agentKey, draft]));
     const connection = { connectorId: 'wecom-cli', configured: false, configurationRequired: false, readiness: 'no_auth',
-      authentication: { status: 'no_auth' }, capabilities: { authMode: 'no_auth', hasCli: false, hasMcp: true } };
+      authentication: { status: 'no_auth' }, capabilities: { authMode: 'none', hasCli: false, hasMcp: true } };
     const tools = status => ({ agentKey: 'cutej', connectorId: 'wecom-cli', reloadPending: false,
       mcp: [{ serverKey: 'wecom-cli', status, toolCount: status === 'ready' ? 1 : 0 }] });
     let finish, entered;

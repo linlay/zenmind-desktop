@@ -17,7 +17,7 @@ test('connection projection preserves configured status without leaking private 
  assert.throws(()=>state.normalizeConnectorConnection(connection({configured:undefined,bound:true,enabled:true}),'example.office'));
 });
 test('mixed connection list preserves no-auth and delegated states without authenticating', async t => {
- const noAuth = connection({connectorId:'builtin.desktop',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'builtin.desktop',status:'no_auth',authBrowser:''},capabilities:{canConnect:false,canDisconnect:false,canCheck:false,hasCli:false,hasMcp:false,authMode:'no_auth',authBrowser:''}});
+ const noAuth = connection({connectorId:'builtin.desktop',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'builtin.desktop',status:'no_auth',authBrowser:''},capabilities:{canConnect:false,canDisconnect:false,canCheck:false,hasCli:false,hasMcp:false,authMode:'none',authBrowser:''}});
  const calls=[];
  market.configureConnectorMarketPlatformCaller(async path => { calls.push(path); return {connections:[connection(),noAuth]}; });
  t.after(()=>market.configureConnectorMarketPlatformCaller(null));
@@ -46,7 +46,7 @@ test('a terminal unavailable snapshot with no browser stays readable without ena
  assert.equal(result.authentication.message,'Authorization status unavailable');
 });
 test('inconsistent no-auth capabilities and failed authentication are rejected', () => {
- const raw=connection({configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'example.office',status:'no_auth',authBrowser:''},capabilities:{canConnect:false,canDisconnect:false,canCheck:false,hasCli:false,hasMcp:true,authMode:'no_auth',authBrowser:''}});
+ const raw=connection({configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'example.office',status:'no_auth',authBrowser:''},capabilities:{canConnect:false,canDisconnect:false,canCheck:false,hasCli:false,hasMcp:true,authMode:'none',authBrowser:''}});
  for(const patch of [{configured:true},{authentication:{...raw.authentication,status:'failed'}},...['canConnect','canDisconnect','canCheck'].map(key=>({capabilities:{...raw.capabilities,[key]:true}}))]) assert.throws(()=>state.normalizeConnectorConnection({...raw,...patch},'example.office'),/inconsistent no_auth/);
 });
 test('authorization rejects mismatched, expired or non-web sessions and drops terminal URLs', () => {
@@ -54,6 +54,10 @@ test('authorization rejects mismatched, expired or non-web sessions and drops te
  assert.equal(state.normalizeConnectorAuth(auth,'example.office').authorizationUrl,auth.authorizationUrl);
  for(const override of [{connectorId:'other'},{sessionId:''},{expiresAt:'2000-01-01'},{authorizationUrl:'file:///etc/passwd'},{authorizationUrl:'https://user:secret@example.test/'}]) assert.throws(()=>state.normalizeConnectorAuth({...auth,...override},'example.office'));
  assert.equal(state.normalizeConnectorAuth({...auth,status:'authorized'},'example.office').authorizationUrl,undefined);
+ const device=state.normalizeConnectorAuth({...auth,userCode:'AB-12',userCodeExpiresAt:new Date(Date.now()+60000).toISOString()},'example.office');
+ assert.equal(device.userCode,'AB-12'); assert.ok(device.userCodeExpiresAt);
+ assert.equal(state.normalizeConnectorAuth({...auth,userCode:'bad code\n'},'example.office').userCode,undefined);
+ assert.equal(state.normalizeConnectorAuth({...auth,status:'authorized',userCode:'AB-12'},'example.office').userCode,undefined);
 });
 test('exact cancellation and explicit check use bounded structured inputs', async(t)=>{
  const calls=[]; market.configureConnectorMarketPlatformCaller(async(path,options)=>{calls.push([path,options]);return connection();});

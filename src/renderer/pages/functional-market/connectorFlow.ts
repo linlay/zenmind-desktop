@@ -2,7 +2,7 @@ import type { DesktopApi } from "@shared/contracts/desktop-api";
 import type { MarketItem } from "@shared/contracts";
 import type { MarketConnectorAuthSession, MarketConnectorConnection, MarketConnectorTokenSchema } from "@shared/contracts/market-connector-state";
 
-/** Platform projects connector.json auth_browser into session.authBrowser. */
+/** Platform projects connector.json authBrowser into session.authBrowser. */
 export async function openConnectorAuthorization(
   session: MarketConnectorAuthSession,
   api: Pick<DesktopApi, "connectorAuthBrowser" | "shell">,
@@ -28,7 +28,7 @@ export function connectorRequiresConfiguration(connection: MarketConnectorConnec
 export function connectorIsUsable(connection?: MarketConnectorConnection) {
   if (!connection) return false;
   return connection.readiness === "no_auth"
-    ? !connectorRequiresConfiguration(connection) && !connection.configured && connection.capabilities.authMode === "no_auth" && connection.authentication.status === "no_auth"
+    ? !connectorRequiresConfiguration(connection) && !connection.configured && connection.capabilities.authMode === "none" && connection.authentication.status === "no_auth"
       && (!connection.capabilities.hasCli || connection.preparation?.status === "ready")
     : connection.configured && connection.readiness === "ready"
       && !["unauthorized", "failed", "canceled", "setup_required", "pending", "preparing", "pending_verification"].includes(connection.authentication?.status || "");
@@ -124,7 +124,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
   // Older Platform snapshots may still report configuration_required while
   // acknowledging a stored candidate. Do not collect or overwrite it again.
   if (!intent.credentials && connectorAwaitingVerification(current)) return { connectorId: id, result: "pending_verification" };
-  if (current.capabilities.hasCli && ((current.capabilities.authMode === "no_auth" && current.preparation?.status !== "ready") || (connectorRequiresConfiguration(current) && !current.configured) || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
+  if (current.capabilities.hasCli && ((current.capabilities.authMode === "none" && current.preparation?.status !== "ready") || (connectorRequiresConfiguration(current) && !current.configured) || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
     onPhase("preparing"); check();
     let preparation = await api.prepareConnector(id); check();
     // Platform preparation has a 15-minute limit; do not abandon a valid

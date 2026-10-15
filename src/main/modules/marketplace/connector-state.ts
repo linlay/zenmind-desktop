@@ -27,6 +27,8 @@ export function normalizeConnectorAuth(value: unknown, id: string, noAuth = fals
   return { connectorId: id, sessionId, status: raw.status as MarketConnectorAuthSession["status"],
     ...(!emptyBrowser && raw.authBrowser !== undefined ? { authBrowser: raw.authBrowser as MarketConnectorAuthSession["authBrowser"] } : {}), expiresAt,
     ...(active && raw.authorizationUrl ? { authorizationUrl: safeUrl(raw.authorizationUrl) } : {}),
+    ...(active && typeof raw.userCode === "string" && /^[\x21-\x7e]{1,128}$/.test(raw.userCode) ? { userCode: raw.userCode } : {}),
+    ...(active && typeof raw.userCode === "string" && typeof raw.userCodeExpiresAt === "string" && Date.parse(raw.userCodeExpiresAt) > 0 ? { userCodeExpiresAt: raw.userCodeExpiresAt } : {}),
     ...(raw.message ? { message: shortText(raw.message) } : {}),
     ...(raw.pendingVerification === true ? { pendingVerification: true } : {}) };
 }
@@ -40,14 +42,14 @@ export function normalizeConnectorConnection(value: unknown, id: string): Market
   if (raw.connectorId !== id) throw new Error(`Invalid connector connection response for ${id}: connectorId mismatch`);
   if (typeof raw.configured !== "boolean") throw new Error(`Invalid connector connection response for ${id}: configured must be boolean`);
   if (!["no_auth", "configuration_required", "pending_verification", "preparing", "authorization_required", "ready", "unavailable"].includes(asString(raw.readiness))) throw new Error(`Invalid connector connection response for ${id}: unsupported readiness`);
-  const noAuth = cap.authMode === "no_auth";
+  const noAuth = cap.authMode === "none";
   if ((raw.configurationRequired !== undefined && typeof raw.configurationRequired !== "boolean")
       || (noAuth && raw.configurationRequired !== false)
       || (!noAuth && (raw.configurationRequired === false || raw.readiness === "no_auth" || asObject(raw.authentication).status === "no_auth"))) throw new Error(`Invalid connector connection response for ${id}: inconsistent configurationRequired`);
   for (const key of ["canConnect", "canDisconnect", "canCheck", "hasCli", "hasMcp"]) if (typeof cap[key] !== "boolean") throw new Error("Invalid connector capabilities");
   if (noAuth && (raw.configured !== false || cap.canConnect || cap.canDisconnect || cap.canCheck
       || (raw.readiness === "no_auth" && asObject(raw.authentication).status !== "no_auth"))) throw new Error(`Invalid connector connection response for ${id}: inconsistent no_auth state`);
-  if (cap.authMode !== null && !["no_auth", "token", "oneid-token", "oauth", "mcp"].includes(asString(cap.authMode))) throw new Error(`Invalid connector authentication mode for ${id}`);
+  if (!["none", "self", "token", "oauth", "mcp", "oneid"].includes(asString(cap.authMode))) throw new Error(`Invalid connector authentication mode for ${id}`);
   if (noAuth ? cap.authBrowser !== "" : cap.authBrowser !== "system" && cap.authBrowser !== "embedded") throw new Error(`Invalid connector browser policy for ${id}`);
   return { connectorId: id, configured: raw.configured,
     ...(raw.configurationRequired !== undefined ? { configurationRequired: raw.configurationRequired as boolean } : {}),
@@ -95,8 +97,8 @@ export async function disconnectConnectorConnection(value: unknown): Promise<Mar
 export async function readConnectorTokenSchema(value: unknown): Promise<MarketConnectorTokenSchema> {
   const id = connectorId(value), raw = asObject(await callConnectorPlatform("/api/admin/connectors"));
   const item = Array.isArray(raw.connectors) ? raw.connectors.map(asObject).find(item => item.id === id) : undefined;
-  const schema = asObject(item?.token_schema);
-  if (item?.auth_mode !== "token" || !Array.isArray(schema.fields) || !schema.fields.length || schema.fields.length > 64) throw new Error("Invalid connector credential schema");
+  const schema = asObject(item?.tokenSchema);
+  if (item?.authMode !== "token" || !Array.isArray(schema.fields) || !schema.fields.length || schema.fields.length > 64) throw new Error("Invalid connector credential schema");
   const seen = new Set<string>();
   const fields = schema.fields.map(value => {
     const field = asObject(value), key = asString(field.key);

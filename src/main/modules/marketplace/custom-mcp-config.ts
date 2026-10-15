@@ -58,17 +58,17 @@ export function normalizeCustomMcpConfig(input: unknown): string {
       const url = new URL(server.url);
       if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("MCP URL must use HTTP(S), without credentials, query parameters or fragment");
     }
-    for (const field of ["env", "staticEnv", "headers", "staticHeaders"]) {
+    for (const field of ["env", "headers"]) {
       if (server[field] === undefined) continue;
       if (!server[field] || typeof server[field] !== "object" || Array.isArray(server[field])) throw new Error(`${field} must be an object`);
       for (const [fieldKey, value] of Object.entries(server[field] as Record<string, unknown>)) {
         if (typeof value !== "string") throw new Error(`${field} values must be strings`);
-        if (/\$\{/.test(value)) throw new Error("Credential templates require an authentication schema. Use a connector package with token_schema instead.");
+        if (/\$\{/.test(value)) throw new Error("Credential templates require an authentication schema. Use a connector package with token-schema.json instead.");
         if (/(token|secret|password|passwd|authorization|cookie|api[_-]?key|credential)/i.test(fieldKey)) throw new Error("Do not put credentials in MCP JSON. Use an authenticated connector package and its credential form.");
       }
     }
     if (/(?:\bbearer\s|--(?:password|token|api-key|secret)(?:=|\s|$))/i.test([server.command, ...(Array.isArray(server.args) ? server.args : [])].join(" "))) throw new Error("Do not put credentials in command arguments");
-    const allowed = new Set(["type", "url", "command", "args", "env", "staticEnv", "headers", "staticHeaders", "timeout", "startupTimeout"]);
+    const allowed = new Set(["type", "url", "command", "args", "env", "headers", "timeout", "startupTimeout"]);
     if (Object.keys(server).some(field => !allowed.has(field))) throw new Error("Unsupported MCP setting; use a full connector package for advanced authentication");
   }
   return JSON.stringify({ mcpServers: servers }, null, 2);
@@ -80,7 +80,7 @@ async function installed(app: App): Promise<boolean> {
   if (!Array.isArray(catalog.connectors)) throw new Error("Invalid connector catalog response");
   const item = catalog.connectors.map(asObject).find(value => value.id === CUSTOM_MCP_ID);
   if (!item) return false;
-  if (item.name !== name || item.description !== description || item.version !== "1.0.0" || item.type !== "mcp" || item.auth_mode !== null) throw new Error("The custom MCP ID is occupied by another connector; it will not be overwritten");
+  if (item.name !== name || item.description !== description || item.version !== "1.0.0" || item.type !== "mcp" || item.authMode !== "self") throw new Error("The custom MCP ID is occupied by another connector; it will not be overwritten");
   return true;
 }
 
@@ -99,7 +99,7 @@ export function saveCustomMcpConfig(app: App, value: unknown): Promise<CustomMcp
     const content = normalizeCustomMcpConfig(input.content);
     const overwrite = await installed(app);
     const zip = new JSZip();
-    zip.file("connector.json", JSON.stringify({ id: CUSTOM_MCP_ID, name, description, version: "1.0.0", type: "mcp", auth_mode: null }));
+    zip.file("connector.json", JSON.stringify({ id: CUSTOM_MCP_ID, name, description, version: "1.0.0", type: "mcp", authMode: "self" }));
     zip.file("mcp.json", content);
     await importConnectorBytes(await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }), overwrite, { id: CUSTOM_MCP_ID, version: "1.0.0" });
     return getCustomMcpConfig(app);

@@ -30,7 +30,7 @@ test('saved credentials and delegated login remain usable without claiming a ver
   }
   assert.equal(connectorPresentation(connection('authorized'), true).tone, 'ready');
   assert.equal(connectorPresentation(connection('authorized'), true).labelKey, 'market.connector.flow.state.verified');
-  const noAuth = connection('no_auth', { configured: false, configurationRequired: false, readiness: 'no_auth', capabilities: { authMode: 'no_auth', hasCli: false } });
+  const noAuth = connection('no_auth', { configured: false, configurationRequired: false, readiness: 'no_auth', capabilities: { authMode: 'none', hasCli: false } });
   assert.equal(connectorPresentation(noAuth, true).labelKey, 'market.connector.flow.state.no_auth');
   assert.equal(connectorPresentation(noAuth, true).tone, 'ready');
 });

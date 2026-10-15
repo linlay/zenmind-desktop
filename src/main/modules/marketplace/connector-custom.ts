@@ -22,9 +22,9 @@ export async function importConnectorArchive(archivePath: string): Promise<Marke
 export async function createCustomConnector(value: unknown): Promise<MarketCommandResult> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid connector package input");
   const raw = value as Record<string, unknown>;
-  if (Object.keys(raw).some(key => !["connectorJson", "mcpJson", "cliJson"].includes(key))) throw new Error("Invalid connector package input");
+  if (Object.keys(raw).some(key => !["connectorJson", "tokenSchemaJson", "mcpJson", "cliJson"].includes(key))) throw new Error("Invalid connector package input");
   const zip = new JSZip();
-  for (const [field, filename] of [["connectorJson", "connector.json"], ["mcpJson", "mcp.json"], ["cliJson", "cli.json"]]) {
+  for (const [field, filename] of [["connectorJson", "connector.json"], ["tokenSchemaJson", "token-schema.json"], ["mcpJson", "mcp.json"], ["cliJson", "cli.json"]]) {
     const content = raw[field];
     if (content === undefined && field !== "connectorJson") continue;
     if (typeof content !== "string" || !content.trim() || Buffer.byteLength(content) > 1024 * 1024) throw new Error("Invalid connector JSON input");

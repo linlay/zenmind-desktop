@@ -1,4 +1,4 @@
-export interface ConnectorPackageInput { connectorJson: string; mcpJson?: string; cliJson?: string }
+export interface ConnectorPackageInput { connectorJson: string; tokenSchemaJson?: string; mcpJson?: string; cliJson?: string }
 export interface BasicConnectorInput { id: string; name: string; url: string; authMode: "none" | "mcp" | "token" }
 const secretKey = /^(?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|authToken|token|secret)$/i;
 const variable = /^(?:Bearer\s+)?\$\{[A-Z][A-Z0-9_]*\}$/i;
@@ -34,11 +34,12 @@ export function createBasicConnectorPackage(input: BasicConnectorInput): Connect
   let endpoint: URL;
   try { endpoint = new URL(input.url.trim()); } catch { throw new Error("market.connector.customForm.invalid"); }
   if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.hash || endpoint.username || endpoint.password) throw new Error("market.connector.customForm.invalid");
-  const connector = { id: input.id.trim(), name: input.name.trim(), version: "1.0.0", type: "mcp", auth_mode: input.authMode === "none" ? null : input.authMode,
-    ...(input.authMode === "token" ? { token_schema: { fields: [{ key: "API_KEY", label: "API Key", type: "password", required: true }] } } : {}) };
+  const connector = { id: input.id.trim(), name: input.name.trim(), version: "1.0.0", type: "mcp", authMode: input.authMode };
+  const tokenSchema = { fields: [{ key: "API_KEY", label: "API Key", type: "password", required: true }] };
   const mcp = { mcpServers: { main: { type: "streamableHttp", url: endpoint.href,
     ...(input.authMode === "token" ? { headers: { Authorization: "Bearer ${API_KEY}" } } : {}) } } };
-  const result = { connectorJson: JSON.stringify(connector, null, 2), mcpJson: JSON.stringify(mcp, null, 2) };
+  const result: ConnectorPackageInput = { connectorJson: JSON.stringify(connector, null, 2), mcpJson: JSON.stringify(mcp, null, 2),
+    ...(input.authMode === "token" ? { tokenSchemaJson: JSON.stringify(tokenSchema, null, 2) } : {}) };
   validateConnectorPackage(result); return result;
 }
 
