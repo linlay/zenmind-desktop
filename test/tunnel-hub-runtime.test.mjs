@@ -26,14 +26,6 @@ const {
 } = require("../dist-electron/main/modules/tunnel/settings.js");
 
 
-function accountRouteToken(localToken) {
-  return `tr_${crypto.createHash("sha256").update(localToken).digest("base64url")}`;
-}
-function accountRouteOptions(localToken) {
-  const route = { schemaVersion: 1, accountId: "account", sourceDeviceId: "phone", targetDesktopId: "device-1", requestId: crypto.randomUUID(), jti: crypto.randomUUID(), issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString() };
-  return { issueAccessToken: async () => ({ok: true, token: localToken}), verifyAccountRoute: async credential => { assert.equal(credential, accountRouteToken(localToken)); return route; } };
-}
-
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const FRAME_OPEN = 1;
 const FRAME_DATA = 2;
@@ -72,6 +64,8 @@ function writeDesktopSsoAccessToken(homePath, token = "runtime-sso-access-token"
 function createDesktopWsServerOptions(app, overrides = {}) {
   return {
     app,
+    issueAccessToken: async () => ({ ok: true, token: "test-token" }),
+    verifyToken: async () => ({ subject: "local-user", deviceId: "local-device", scope: "app", expiresAt: Date.now() + 3600000 }),
     desktopActionOptions: {},
     assistantBridge: {
       listAgents: async () => [],
@@ -480,6 +474,8 @@ test("Tunnel Hub runtime requires SSO and clears legacy tunnel secrets", async (
     app,
     desktopWsServerOptions: {
       app,
+      issueAccessToken: async () => ({ ok: true, token: "test-token" }),
+      verifyToken: async () => ({ subject: "local-user", deviceId: "local-device", scope: "app", expiresAt: Date.now() + 3600000 }),
       desktopActionOptions: {},
       assistantBridge: {
         listAgents: async () => [],
@@ -559,6 +555,8 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
     app,
     desktopWsServerOptions: {
       app,
+      issueAccessToken: async () => ({ ok: true, token: "test-token" }),
+      verifyToken: async () => ({ subject: "local-user", deviceId: "local-device", scope: "app", expiresAt: Date.now() + 3600000 }),
       desktopActionOptions: {},
       assistantBridge: {
         listAgents: async () => [],
@@ -589,7 +587,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(connectCalls[0].identityToken, "runtime-registration-secret");
   assert.equal(connectCalls[0].deviceId, "mac-mini-office");
   assert.equal(connectCalls[0].tlsInsecureSkipVerify, false);
-  assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "undefined");
+  assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "function");
   assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
   await runtime.stop();
 });
@@ -691,7 +689,7 @@ test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", a
       type: "desktop.websocket.open",
       id: "open-desktop-1",
       payload: {
-        authToken: accountRouteToken("test-token"),
+        authToken: "test-token",
         source: "test-relay",
         clientDeviceId: "browser-1"
       }
@@ -740,13 +738,14 @@ test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", a
     deviceId: "mac-mini-office",
     desktopWsServerOptions: {
       app,
+      issueAccessToken: async () => ({ ok: true, token: "test-token" }),
+      verifyToken: async () => ({ subject: "local-user", deviceId: "local-device", scope: "app", expiresAt: Date.now() + 3600000 }),
       desktopActionOptions: {},
       assistantBridge: {
         listAgents: async () => [],
         startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
       },
       getKanbanRuntime: () => null,
-      ...accountRouteOptions("test-token"),
       verifyToken: async (token) => {
         assert.equal(token, "test-token");
         return {
@@ -921,7 +920,7 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
       type: "desktop.websocket.open",
       id: "open-ap-1",
       payload: {
-        authToken: accountRouteToken("test-token"),
+        authToken: "test-token",
         source: "test-relay"
       }
     }));
@@ -958,7 +957,6 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
         }),
         issueAccessToken: async () => ({ ok: true, token: "platform-token", message: "issued" })
       },
-      ...accountRouteOptions("test-token"),
       verifyToken: async (token) => {
         assert.equal(token, "test-token");
         return { subject: "app", deviceId: "device-1", expiresAt: Date.now() + 600_000, scope: "app" };
@@ -1100,7 +1098,7 @@ test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying"
       id: "req_mobile_http",
       payload: {
         source: "mobile",
-        authToken: accountRouteToken("paired-mobile-token"),
+        authToken: "paired-mobile-token",
         public: {
           method: "GET",
           path: "/",
@@ -1144,7 +1142,6 @@ test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying"
           availability: "available"
         }]
       }),
-      ...accountRouteOptions("paired-mobile-token"),
       verifyToken: async (token) => {
         verified += 1;
         assert.equal(token, "paired-mobile-token");
@@ -1687,3 +1684,88 @@ for (const pendingStage of ["registration", "connection"]) {
     assert.equal(readTunnelHubSettings(app).enabled, true);
   });
 }
+
+async function credentialSyncFixture(t, options = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-credential-sync-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopSsoAccessToken(homePath);
+  saveTunnelHubSettings(app, { enabled: true, relayUrl: "wss://relay.example.test/tunnel", deviceId: "registered-desktop" });
+  const requests = [];
+  let issues = 0;
+  let connections = 0;
+  let closes = 0;
+  configureTunnelHubRegistrationController({ fetch: async (url, init) => {
+    const body = JSON.parse(init.body);
+    requests.push({ url, body, headers: init.headers });
+    if (body.platformCredential && options.failUpdate) throw new Error("temporary network failure");
+    return { ok: true, status: 200, text: async () => JSON.stringify({ accountId: "account", deviceId: "registered-desktop" }) };
+  } });
+  const runtime = new TunnelHubRuntime({
+    app,
+    desktopWsServerOptions: createDesktopWsServerOptions(app, {
+      issueAccessToken: async () => {
+        issues++;
+        if (issues > 1) await options.beforeRefresh?.();
+        return { ok: true, token: `platform-${issues}` };
+      },
+      verifyToken: async () => ({ subject: "local-user", deviceId: "local-identity-device", scope: "app", expiresAt: Date.now() + (issues === 1 ? 100_000 : 3_600_000) })
+    }),
+    createTunnelClient: input => ({
+      sessionId: "live-session", platformCredential: input.platformCredential,
+      connect: async () => { connections++; }, close: () => { closes++; }, on() {}
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => { await runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  assert.equal((await runtime.start()).ok, true);
+  return { runtime, requests, issues: () => issues, connections: () => connections, closes: () => closes };
+}
+
+const flushPromises = () => new Promise(resolve => setImmediate(resolve));
+
+test("Platform credential refresh updates only the live session without restarting a healthy tunnel", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const f = await credentialSyncFixture(t);
+  t.mock.timers.tick(50_000);
+  await flushPromises();
+  const updates = f.requests.filter(request => request.body.platformCredential);
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].body, {
+    deviceId: "registered-desktop", tunnelSessionId: "live-session",
+    platformCredential: { token: "platform-2", platformDeviceId: "local-identity-device", expiresAt: new Date(Date.now() + 3_600_000).toISOString() }
+  });
+  assert.equal(f.connections(), 1);
+  assert.equal(f.closes(), 0);
+  assert.equal(f.runtime.getStatus().phase, "connected");
+  await f.runtime.stop();
+  t.mock.timers.tick(4_000_000);
+  await flushPromises();
+  assert.equal(f.issues(), 2);
+});
+
+test("Platform synchronization retries are bounded and do not replace a healthy tunnel", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const f = await credentialSyncFixture(t, { failUpdate: true });
+  t.mock.timers.tick(50_000);
+  await flushPromises();
+  for (let index = 0; index < 5; index++) { t.mock.timers.tick(5_000); await flushPromises(); }
+  assert.equal(f.requests.filter(request => request.body.platformCredential).length, 4);
+  assert.equal(f.connections(), 1);
+  assert.equal(f.runtime.getStatus().lastError, "Platform credential synchronization failed");
+});
+
+test("logout discards a late token refresh before any upload", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const f = await credentialSyncFixture(t, { beforeRefresh: () => pending });
+  t.mock.timers.tick(50_000);
+  await flushPromises();
+  assert.equal(f.issues(), 2);
+  await f.runtime.stop();
+  release();
+  await flushPromises();
+  assert.equal(f.requests.filter(request => request.body.platformCredential).length, 0);
+  assert.equal(f.runtime.getStatus().phase, "stopped");
+});

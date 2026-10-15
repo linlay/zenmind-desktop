@@ -8,7 +8,7 @@ import {
 import { handleTextMessage } from "./ws-action-routing";
 import { createSessionId, readText } from "./ws-values";
 import { sendPush } from "./ws-wire";
-import { AUTH_EXPIRING_WINDOW_MS, AUTH_EXPIRING_THROTTLE_MS, authenticateDesktopWsProtocolSession, validateDesktopWsConnectionRoute } from "./ws-authentication";
+import { AUTH_EXPIRING_WINDOW_MS, AUTH_EXPIRING_THROTTLE_MS, authenticateDesktopWsProtocolSession } from "./ws-authentication";
 import { tunnelSessionGroup } from "./ws-server-state";
 
 export const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -36,14 +36,11 @@ export class DesktopWsProtocolSession {
 
   receiveTextFrame(text: string) {
     if (this.connection.closed) return;
-    if (!this.connection.auth.accountRoute) {
-      handleTextMessage(this.options, this.connection, text);
+    if (this.connection.auth.expiresAt <= Date.now()) {
+      this.close(1008, "session expired");
       return;
     }
-    const auth = this.connection.auth;
-    void validateDesktopWsConnectionRoute(this.options, this.connection).then(() => {
-      if (!this.connection.closed && this.connection.auth === auth) handleTextMessage(this.options, this.connection, text);
-    }).catch(() => closeConnection(this.connection, 1008, "account route invalid"));
+    handleTextMessage(this.options, this.connection, text);
   }
 
   close(code = 1000, reason = "closed") {
@@ -72,19 +69,22 @@ export function bindProtocolSession(
     closed: false,
     heartbeatTimer: null,
     authRefresh: null,
-    routeValidation: null,
-    routeValidatedAt: Date.now(),
     agentPlatformBridge: null,
     transport: input.transport
   };
   group.connections.add(connection);
   sendPush(connection, "connected", { sessionId: connection.id });
   let lastAuthExpiringAt = 0;
+  const remote = connection.source === "tunnel-hub";
+  const expiringWindow = remote ? 45_000 : AUTH_EXPIRING_WINDOW_MS;
+  const expiringThrottle = remote ? 15_000 : AUTH_EXPIRING_THROTTLE_MS;
   connection.heartbeatTimer = setInterval(() => {
-    if (connection.auth.expiresAt <= Date.now()) { closeConnection(connection, 1008, "session expired"); return; }
-    void validateDesktopWsConnectionRoute(options, connection).catch(() => closeConnection(connection, 1008, "account route invalid"));
+    if (connection.auth.expiresAt <= Date.now()) {
+      closeConnection(connection, 1008, "session expired");
+      return;
+    }
     sendPush(connection, "heartbeat", { timestamp: new Date().toISOString() });
-    if (connection.auth.expiresAt <= Date.now() + (connection.auth.accountRoute ? 30_000 : AUTH_EXPIRING_WINDOW_MS) && Date.now() - lastAuthExpiringAt > (connection.auth.accountRoute ? 15_000 : AUTH_EXPIRING_THROTTLE_MS)) {
+    if (connection.auth.expiresAt <= Date.now() + expiringWindow && Date.now() - lastAuthExpiringAt > expiringThrottle) {
       lastAuthExpiringAt = Date.now();
       sendPush(connection, "auth.expiring", { expiresAt: connection.auth.expiresAt });
     }
@@ -103,7 +103,7 @@ export async function createDesktopWsProtocolSession(
   if (!authToken) {
     throw new Error("authToken is required");
   }
-  const auth = await authenticateDesktopWsProtocolSession(options, authToken, input.subprotocol, true);
+  const auth = await authenticateDesktopWsProtocolSession(options, authToken, input.subprotocol);
   await input.onAuthenticated?.(auth);
   return bindProtocolSession(tunnelSessionGroup, options, {
     auth,

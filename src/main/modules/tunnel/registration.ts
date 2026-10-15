@@ -1,4 +1,4 @@
-import type { DesktopAccountRoute } from "../desktop-protocol";
+import type { PlatformCredential } from "./client-endpoint";
 import type { App } from "electron";
 import {
   ensureTunnelHubDeviceId,
@@ -179,12 +179,12 @@ export const __testInternals = {
   parseRegistrationResponse
 };
 
-async function requestAccountRoute(app: App, path: string, body: Record<string, unknown>) {
+async function requestAccountDevice(app: App, path: string, body: Record<string, unknown>) {
   const settings = readTunnelHubSettings(app);
   const token = readTunnelHubRegistrationBearerToken(app);
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
   const endpoint = new URL(origin);
-  if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("account route requires HTTPS");
+  if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("account device requires HTTPS");
   if (!token || !settings.deviceId) throw new Error("Desktop account unavailable");
   const fetchImpl = controllerOptions?.fetch ?? globalThis.fetch as unknown as FetchLike;
   const response = await fetchImpl(`${origin}${path}`, {
@@ -192,26 +192,46 @@ async function requestAccountRoute(app: App, path: string, body: Record<string, 
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, targetDesktopId: settings.deviceId })
   });
-  if (!response.ok) throw new Error(`account route rejected (${response.status})`);
+  if (!response.ok) throw new Error(`account device rejected (${response.status})`);
   const data = response.status === 204 ? {} : JSON.parse(await response.text()) as Record<string, unknown>;
   const current = readTunnelHubSettings(app);
   if (token !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== settings.deviceId || current.relayUrl !== settings.relayUrl) throw new Error("Desktop account changed");
   return { data, targetDesktopId: settings.deviceId };
 }
 
-export async function validateTunnelAccountRouteCredential(app: App, credential: string): Promise<DesktopAccountRoute> {
-  if (!/^tr_[A-Za-z0-9_-]{43}$/.test(credential)) throw new Error("account route ticket required");
-  const { data, targetDesktopId } = await requestAccountRoute(app, "/api/desktop/route-credentials/validate", { credential });
-  const route = data.routeContext as DesktopAccountRoute | undefined;
-  if (!route || route.schemaVersion !== 1 || route.targetDesktopId !== targetDesktopId) throw new Error("account route target mismatch");
-  return route;
+export async function updateTunnelPlatformCredential(
+  app: App, tunnelSessionId: string, platformCredential: PlatformCredential
+) {
+  const settings = readTunnelHubSettings(app);
+  const token = readTunnelHubRegistrationBearerToken(app);
+  const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
+  const fetchImpl = controllerOptions?.fetch ?? globalThis.fetch as unknown as FetchLike;
+  if (!token || !settings.deviceId) throw new Error("Desktop account unavailable");
+  const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(8_000),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ deviceId: settings.deviceId, tunnelSessionId, platformCredential })
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`Platform credential update rejected (${response.status})`);
+  const updated = parseRegistrationResponse(body);
+  if (readText(updated.deviceId) !== settings.deviceId || !readText(updated.accountId)) {
+    throw new Error("Invalid Platform credential update receipt");
+  }
+  const current = readTunnelHubSettings(app);
+  if (token !== readTunnelHubRegistrationBearerToken(app) ||
+    settings.deviceId !== current.deviceId || settings.relayUrl !== current.relayUrl) {
+    throw new Error("Platform credential update superseded");
+  }
 }
 
 export async function revokeTunnelAccountDevice(app: App): Promise<void> {
   const settings = readTunnelHubSettings(app);
   try {
     if (settings.deviceId && hasTunnelHubAccountRegistration(app) && readTunnelHubRegistrationBearerToken(app)) {
-      await requestAccountRoute(app, "/api/desktop/account-device/revoke", {});
+      await requestAccountDevice(app, "/api/desktop/account-device/revoke", {});
     }
   } finally {
     resetTunnelHubAccountRegistration(app);

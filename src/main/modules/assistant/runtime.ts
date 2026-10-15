@@ -163,7 +163,6 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
   const desktopWsServerOptions: DesktopWsServerOptions = {
     app: options.app,
     ensureIdentityCenterJwk: integration.ensureIdentityCenterJwk,
-    verifyAccountRoute: credential => integration.validateTunnelAccountRouteCredential(options.app, credential),
     desktopActionOptions,
     assistantBridge,
     getKanbanRuntime: () => kanbanRuntime,

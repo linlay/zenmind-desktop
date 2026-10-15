@@ -47,7 +47,6 @@ import {
 import { type AppearanceRuntime, readHelpSettings, setSitePinned } from "../../modules/settings";
 import { type AppShellRuntime } from "../../modules/shell";
 import {
-  validateTunnelAccountRouteCredential,
   configureTunnelHubRegistrationController,
   configureTunnelHubRuntime
 } from "../../modules/tunnel";
@@ -102,7 +101,6 @@ export function assembleAssistantIntegration(dependencies: AssembleAssistantInte
       webs: dependencies.websFacade
     }),
     createKanbanRuntime,
-    validateTunnelAccountRouteCredential,
     configureTunnelHubRegistrationController,
     configureTunnelHubRuntime,
     createDesktopMobileWebappCatalog: dependencies.websFacade.createDesktopMobileWebappCatalog,

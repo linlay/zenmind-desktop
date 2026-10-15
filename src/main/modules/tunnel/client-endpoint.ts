@@ -36,7 +36,10 @@ type TunnelStreamEnvelope = {
   clientDeviceId?: unknown;
 };
 
+export type PlatformCredential = { token: string; platformDeviceId: string; expiresAt: string };
+
 export type TunnelClientEndpointOptions = {
+  platformCredential?: PlatformCredential;
   relayUrl: string;
   identityToken: string;
   deviceId: string;
@@ -358,13 +361,14 @@ async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClie
     id,
     payload: {
       identityToken: options.identityToken,
+      platformCredential: options.platformCredential,
       deviceId: options.deviceId,
       client: TUNNEL_CLIENT_NAME,
       capabilities: TUNNEL_CLIENT_CAPABILITIES
     }
   }), "utf8"));
 
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     let settled = false;
     const fail = (error: Error) => {
       if (settled) {
@@ -406,7 +410,12 @@ async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClie
       ) {
         settled = true;
         cleanup();
-        resolve();
+        const sessionId = isRecord(response.data) ? readText(response.data.sessionId) : "";
+        if (!sessionId) {
+          reject(new Error("Tunnel sessionId is required"));
+          return;
+        }
+        resolve(sessionId);
         return;
       }
       fail(new Error(readText(response.msg) || `tunnel.open failed with code ${Number.isFinite(code) ? code : "unknown"}`));
@@ -480,6 +489,7 @@ function writeWebAppError(stream: TunnelHubYamuxStream, envelope: TunnelStreamEn
 }
 
 export class TunnelClientEndpoint extends EventEmitter {
+  sessionId = "";
   private ws: TunnelHubWebSocketClient | null = null;
   private session: TunnelHubYamuxSession | null = null;
   private closed = false;
@@ -496,7 +506,18 @@ export class TunnelClientEndpoint extends EventEmitter {
       tlsInsecureSkipVerify: this.options.tlsInsecureSkipVerify,
       timeoutMs: 10_000
     });
-    await writeTunnelOpen(ws, this.options);
+    this.ws = ws;
+    try {
+      this.sessionId = await writeTunnelOpen(ws, this.options);
+    } catch (error) {
+      ws.close();
+      this.ws = null;
+      throw error;
+    }
+    if (this.closed) {
+      ws.close();
+      throw new Error("Tunnel connect cancelled");
+    }
     const session = new TunnelHubYamuxSession(ws);
     this.ws = ws;
     this.session = session;
@@ -512,6 +533,7 @@ export class TunnelClientEndpoint extends EventEmitter {
 
   close() {
     this.closed = true;
+    this.sessionId = "";
     this.session?.close();
     this.ws?.close(1000, "tunnel client endpoint stopping");
     this.session = null;
@@ -645,9 +667,7 @@ export class TunnelClientEndpoint extends EventEmitter {
         await authenticateDesktopWsProtocolSession(
           this.options.desktopWsServerOptions,
           authToken,
-          readText(payload.subprotocol) || undefined,
-          true,
-          false
+          readText(payload.subprotocol) || undefined
         );
       } catch (error) {
         await writeWebAppError(stream, envelope, 401, error);

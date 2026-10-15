@@ -10,9 +10,9 @@ import type {
   TunnelHubRuntimePhase,
   TunnelHubRuntimeStatus
 } from "../../../shared/contracts";
-import type { DesktopWsServerOptions } from "../desktop-protocol";
+import { verifyDesktopAccessToken, type DesktopWsServerOptions } from "../desktop-protocol";
 import {
-  ensureTunnelHubRegistrationReady
+  updateTunnelPlatformCredential, ensureTunnelHubRegistrationReady
 } from "./registration";
 import {
   clearLegacyTunnelHubSecrets,
@@ -20,11 +20,12 @@ import {
   readTunnelHubRegistrationBearerToken,
   saveTunnelHubSettings
 } from "./settings";
-import { TunnelClientEndpoint } from "./client-endpoint";
+import { TunnelClientEndpoint, type PlatformCredential } from "./client-endpoint";
 
 type Logger = Pick<typeof console, "log" | "warn" | "error">;
 
 type TunnelClientFactoryInput = {
+  platformCredential: PlatformCredential;
   relayUrl: string;
   identityToken: string;
   deviceId: string;
@@ -34,6 +35,7 @@ type TunnelClientFactoryInput = {
 };
 
 type TunnelClient = {
+  sessionId?: string;
   connect: () => Promise<void>;
   close: () => void;
   on: (event: "close" | "error", listener: (...args: any[]) => void) => unknown;
@@ -116,6 +118,7 @@ export class TunnelHubRuntime {
   private phase: TunnelHubRuntimePhase = "disabled";
   private lastError = "";
   private lastConnectedAt = "";
+  private credentialRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private networkMonitorTimer: ReturnType<typeof setInterval> | null = null;
   private networkSignature = "";
@@ -141,7 +144,7 @@ export class TunnelHubRuntime {
     }
     let runtimeResult: TunnelHubRuntimeCommandResult | null = null;
     if (result.settings.enabled) {
-      runtimeResult = await this.start();
+      runtimeResult = await this.restart();
     } else {
       runtimeResult = await this.stop();
     }
@@ -169,6 +172,7 @@ export class TunnelHubRuntime {
     this.generation += 1;
     this.startPromise = null;
     this.stopping = true;
+    this.clearCredentialRefreshTimer();
     this.clearReconnectTimer();
     this.stopNetworkMonitor();
     this.setPhase("stopping");
@@ -232,6 +236,7 @@ export class TunnelHubRuntime {
         : "Tunnel Hub is disabled.");
     }
     this.stopping = false;
+    this.clearCredentialRefreshTimer();
     this.clearReconnectTimer();
     this.startNetworkMonitor();
     const previousClient = this.client;
@@ -253,7 +258,10 @@ export class TunnelHubRuntime {
       const nextSettings = readTunnelHubSettings(this.options.app);
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
-      await this.connectTunnel(relayUrl, ready.identityToken, nextSettings.deviceId);
+      const credential = await this.issuePlatformCredential();
+      if (generation !== this.generation || !this.canConnect()) return this.commandResult(true, "Tunnel start superseded");
+      await this.connectTunnel(relayUrl, readTunnelHubRegistrationBearerToken(this.options.app), nextSettings.deviceId, credential);
+      if (generation === this.generation && this.client) this.scheduleCredentialRefresh(this.client, credential, generation);
       if (generation !== this.generation) return this.commandResult(true, "Tunnel Hub start cancelled.");
       if (!this.canConnect()) {
         await this.stop();
@@ -276,11 +284,12 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, identityToken: string, deviceId: string) {
+  private async connectTunnel(relayUrl: string, identityToken: string, deviceId: string, platformCredential: PlatformCredential) {
     const client = this.createTunnelClient({
       relayUrl,
       identityToken,
       deviceId,
+      platformCredential,
       desktopWsServerOptions: this.options.desktopWsServerOptions,
       tlsInsecureSkipVerify: false,
       logger: this.options.logger ?? console
@@ -307,11 +316,62 @@ export class TunnelHubRuntime {
     }
   }
 
+  private async issuePlatformCredential(): Promise<PlatformCredential> {
+    const options = this.options.desktopWsServerOptions;
+    if (!options.issueAccessToken) throw new Error("Platform token issuer unavailable");
+    const result = await options.issueAccessToken(this.options.app, "missing");
+    if (!result.ok || !result.token) throw new Error("Platform token unavailable");
+    const verify = options.verifyToken ?? ((token: string) =>
+      verifyDesktopAccessToken(this.options.app, token, options.ensureIdentityCenterJwk));
+    const auth = await verify(result.token);
+    if (!auth.deviceId || auth.expiresAt <= Date.now()) throw new Error("Platform credential expired");
+    return {
+      token: result.token,
+      platformDeviceId: auth.deviceId,
+      expiresAt: new Date(auth.expiresAt).toISOString()
+    };
+  }
+
+  private clearCredentialRefreshTimer() {
+    if (this.credentialRefreshTimer) clearTimeout(this.credentialRefreshTimer);
+    this.credentialRefreshTimer = null;
+  }
+
+  private scheduleCredentialRefresh(
+    client: TunnelClient, credential: PlatformCredential, generation: number, attempt = 0
+  ) {
+    this.clearCredentialRefreshTimer();
+    if (!client.sessionId) return;
+    const relayUrl = readTunnelHubSettings(this.options.app).relayUrl;
+    const current = () => generation === this.generation && this.client === client &&
+      this.canConnect() && relayUrl === readTunnelHubSettings(this.options.app).relayUrl;
+    this.credentialRefreshTimer = setTimeout(async () => {
+      this.credentialRefreshTimer = null;
+      if (!current()) return;
+      try {
+        const next = await this.issuePlatformCredential();
+        if (!current()) return;
+        await updateTunnelPlatformCredential(this.options.app, client.sessionId!, next);
+        if (current()) {
+          if (this.lastError === "Platform credential synchronization failed") this.lastError = "";
+          this.scheduleCredentialRefresh(client, next, generation);
+        }
+      } catch {
+        if (!current()) return;
+        this.lastError = "Platform credential synchronization failed";
+        this.log(this.lastError);
+        if (attempt < 3) this.scheduleCredentialRefresh(client, credential, generation, attempt + 1);
+      }
+    }, attempt ? 5_000 : Math.max(1_000, Date.parse(credential.expiresAt) - Date.now() - 50_000));
+    this.credentialRefreshTimer.unref?.();
+  }
+
   private createTunnelClient(input: TunnelClientFactoryInput) {
     return this.options.createTunnelClient?.(input) ?? new TunnelClientEndpoint(input);
   }
 
   private handleClientClosed(client: TunnelClient) {
+    if (this.client === client) this.clearCredentialRefreshTimer();
     if (this.client !== client) {
       return;
     }
@@ -379,6 +439,7 @@ export class TunnelHubRuntime {
       return;
     }
     this.log("network changed; reconnecting tunnel");
+    this.clearCredentialRefreshTimer();
     this.clearReconnectTimer();
     const previousClient = this.client;
     this.client = null;
@@ -391,6 +452,7 @@ export class TunnelHubRuntime {
   }
 
   private scheduleReconnect() {
+    this.clearCredentialRefreshTimer();
     this.clearReconnectTimer();
     const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled || this.stopping) {

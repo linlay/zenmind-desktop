@@ -32,7 +32,6 @@ import type {
   WebappRuntimeState,
   WebappRuntimeSettings,
   WebsiteEntry,
-  DesktopAppPairingPayloadResult,
   DesktopAppInfo,
   DesktopDeviceInfo,
   DesktopDeviceIdentityInfo,
@@ -267,23 +266,6 @@ function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction
     default:
       return t("settings.debug.categories.other");
   }
-}
-
-function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp) || timestamp <= 0) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(locale, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(timestamp);
-}
-
-function maskPairingPayloadText(value: string) {
-  return value ? "zmpair:v2:********" : "";
 }
 
 function dateKeyUTC(date: Date) {
@@ -2540,8 +2522,6 @@ export function SettingsPage({
   const [savedTunnelHubSettings, setSavedTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [tunnelHubRuntimeStatus, setTunnelHubRuntimeStatus] = useState<TunnelHubRuntimeStatus | null>(null);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
-  const [appPairingPending, setAppPairingPending] = useState(false);
-  const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
@@ -2602,8 +2582,6 @@ export function SettingsPage({
   const controlConfigDirty = controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl;
   const marketSettingsDirty = marketSettings.apiBaseUrl !== savedMarketSettings.apiBaseUrl;
   const tunnelHubSettingsDirty = tunnelHubSettings.relayUrl !== savedTunnelHubSettings.relayUrl;
-  const appPairingDisabled =
-    appPairingPending || tunnelHubSaving || tunnelHubSettingsDirty || !tunnelHubRuntimeStatus?.connected;
 
   function applyWebsiteDraftSnapshot(snapshot: WebsiteDraftSnapshot) {
     setWebsiteLabel(snapshot.label);
@@ -4104,7 +4082,7 @@ export function SettingsPage({
         setTunnelHubRuntimeStatus(result.runtimeStatus);
       }
       if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
-        setAppPairingResult(null);
+
       }
       if (!result.ok) {
         throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.saveFailed"));
@@ -4143,7 +4121,7 @@ export function SettingsPage({
           : nextSettings;
       });
       if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
-        setAppPairingResult(null);
+
       }
       if (!result.ok) {
         throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.enableIncomplete"));
@@ -4158,35 +4136,6 @@ export function SettingsPage({
       showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setTunnelHubSaving(false);
-    }
-  }
-
-  async function handleCreateAppPairingPayload() {
-    setAppPairingPending(true);
-    try {
-      const result = await window.electronAPI.settings.createAppPairingPayload();
-      setAppPairingResult(result);
-      if (!result.ok) {
-        showSectionNotice("tunnelHub", result.message || t("settings.mobilePairing.failed"), "error");
-        return;
-      }
-      setReadErrorSections(["tunnelHub"], "");
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : String(reason);
-      setAppPairingResult({ ok: false, message });
-      showSectionNotice("tunnelHub", message, "error");
-    } finally {
-      setAppPairingPending(false);
-    }
-  }
-
-  async function handleCopyAppPairingPayload() {
-    if (!appPairingResult?.ok) {
-      return;
-    }
-    const result = await window.electronAPI.clipboard.writeText(appPairingResult.payloadText);
-    if (!result.ok) {
-      showSectionNotice("tunnelHub", result.message || t("settings.mobilePairing.copyFailed"), "error");
     }
   }
 
@@ -4914,8 +4863,6 @@ export function SettingsPage({
           </div>
         );
       case "tunnelHub": {
-        const pairingPayloadResult = appPairingResult?.ok ? appPairingResult : null;
-        const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
           <div className="settings-control-config-stack">
             <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
@@ -4950,65 +4897,7 @@ export function SettingsPage({
                 </div>
               </form>
             </div>
-            <div className="settings-item-card settings-mobile-pairing-card">
-              <div className="settings-item-header settings-mobile-pairing-header">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.mobilePairing.title")}</strong>
-                  <span>{t("settings.mobilePairing.description")}</span>
-                </div>
-                <div className="settings-mobile-pairing-actions">
-                  <Button
-                    type="primary"
-                    disabled={appPairingDisabled}
-                    loading={appPairingPending}
-                    onClick={() => void handleCreateAppPairingPayload()}
-                  >
-                    {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
-                  </Button>
-                </div>
-              </div>
-              {pairingErrorMessage ? (
-                <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
-                  {pairingErrorMessage}
-                </div>
-              ) : null}
-              {pairingPayloadResult ? (
-                <div className="settings-mobile-pairing-body">
-                  <div className="settings-mobile-pairing-qr" aria-label={t("settings.mobilePairing.qrCode")}>
-                    <QRCode
-                      value={pairingPayloadResult.payloadText}
-                      size={196}
-                      bordered={false}
-                      errorLevel="M"
-                    />
-                  </div>
-                  <div className="settings-mobile-pairing-details">
-                    <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.wsUrl")}</span>
-                      <code>{pairingPayloadResult.display.wsUrl}</code>
-                    </div>
-                    <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.expiresAt")}</span>
-                      <code>{formatPairingExpiresAt(pairingPayloadResult.display.expiresAt, locale)}</code>
-                    </div>
-                    <div className="settings-mobile-pairing-meta settings-mobile-pairing-payload">
-                      <span>{t("settings.mobilePairing.payload")}</span>
-                      <code>{maskPairingPayloadText(pairingPayloadResult.payloadText)}</code>
-                    </div>
-                    <div className="settings-control-actions">
-                      <Button
-                        type="primary"
-                        onClick={() => void handleCopyAppPairingPayload()}
-                      >
-                        {t("settings.mobilePairing.copy")}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="settings-item-empty">{t("settings.mobilePairing.empty")}</div>
-              )}
-            </div>
+
           </div>
         );
       }

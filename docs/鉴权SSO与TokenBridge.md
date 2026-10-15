@@ -170,10 +170,12 @@ Identity 清空 canonical 凭据时同步通知会话交换模块取消在途请
 
 ## 同账号手机访问 Desktop
 
-Identity 只负责手机账号登录会话；Hub 管理 Desktop 归属、名称、撤销和在线状态，并签发两分钟以内的随机连接票据。远端入口根据明确的 `tr_` 格式选择 Hub 验证，不接受本地 app token、旧扫码凭证或已废弃的 `desktop-route` JWT。Main 用 canonical SSO 向 HTTPS Hub 验证账号、来源会话、目标和撤销状态；Hub 通过 Identity `/me` 复验来源会话。注册 ID 由 Desktop 持久保存，新注册使用 UUID，已有有效 ID 保留；本地机器身份和 Platform 主体不变。
+手机邮箱登录复用官网已有会话接口，官网 JWT 仅用于 Hub 识别用户和检查电脑归属。Identity Center 继续提供原本地 App Token；其本地设备、主体、密钥与官网账号分开。Hub 注册 ID 不等于本地 Identity 设备 ID。
 
-每次 WS 建连/认证刷新消费一次 JTI；已消费的 JTI 仅保留至到期，并设容量上限。WebApp HTTP 请求重新校验同一短期凭证但不消费 WS JTI。连接内验证复用最近十秒的有效结果并单飞，三十秒心跳再次校验；过期立即拒绝业务帧和推送。撤销在下一次验证时仅关闭该手机连接，最迟一个心跳周期，不取消远端任务。手机必须自行换取新凭证再提交 `auth.refresh`，Desktop 不向远端签发本地 app token。
+已登录并开启 Tunnel 的 Desktop 复用既有票据签发缓存取得本地 App Token，验证后在 tunnel.open 上传给 Hub。当前连接保留握手 sessionId，到期前通过既有注册 API 更新同一在线连接的内存票据；不重注册电脑、不为票据更新重启健康 Tunnel。更新、重连和退出沿用同一 generation 与有界重试，迟到结果不得写入新会话。关闭 Tunnel 即释放 Hub 内存票据。
 
-Desktop 用户退出先请求 Hub 撤销账号电脑，再停止 Tunnel 并清理本地 SSO；远端失败仍完成本地退出并提示。本地聊天主体与任务保持不变。Hub 只在内存中按摘要保存最多 4096 条票据，重启后失效，由手机获取新票据；无新增签名密钥、票据数据库或 Redis。
+Hub 验证官网证明和目标归属后，手机取回所选电脑的原 App Token；业务 WS/HTTP 仍由 Desktop 验证本地 Identity 签名、scope、设备与期限。远端连接用手机新取得的票据执行 auth.refresh，Desktop 不替远端签发票据。WS、上传与资源请求同时携带独立官网证明，Hub 不把官网身份透传给 Platform。WebApp 通过受控请求取得短期、同源 HttpOnly 不透明 Cookie，业务 Token 不进入 WebView URL 或页面 header；Cookie 随在线连接消失，到期或关闭后失效。
+
+旧随机路由票据、JTI 消费/轮询验证与配对码生成 UI/IPC 已移除。Hub 不签发业务 Token，不将其写入数据库。Desktop 退出先请求撤销电脑，随后停止 Tunnel 并清理 SSO；远端失败仍完成本地退出，本地任务与 Platform 主体保持原生命周期。
 
 账号电脑注册只在 Tunnel 设置保存服务端确认的账号及原注册 ID，不持久化额外 Token。尚未登记时退出不发撤销请求；无论远端结果如何，本地释放登记、旧公网 host 和注册 ID，保留开启意愿与本地 Platform 身份，下次显式登录使用新 UUID。注册响应必须匹配请求设备并返回账号；迟到响应复验 canonical token、设备和 relay 后才写入设置。

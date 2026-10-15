@@ -3215,7 +3215,6 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.match(tunnelHubCaseBody, /settings\.tunnelHub\.panelAria[\s\S]*handleSaveTunnelHubSettings[\s\S]*settings\.tunnelHub\.relayUrl[\s\S]*t\("common\.save"\)/);
   assert.match(tunnelHubCaseBody, /<label className="settings-control-row">[\s\S]*settings-control-row-label[\s\S]*settings\.tunnelHub\.relayUrl[\s\S]*className="settings-control-row-control"/);
   assert.doesNotMatch(tunnelHubCaseBody, /settings\.tunnelHub\.loginRequired|tunnelHubSsoStatus/);
-  assert.match(tunnelHubCaseBody, /settings\.mobilePairing\.title[\s\S]*handleCreateAppPairingPayload[\s\S]*settings\.mobilePairing\.qrCode[\s\S]*handleCopyAppPairingPayload/);
   assert.doesNotMatch(tunnelHubCaseBody, /settings\.mobilePairing\.targetMode|APP_PAIRING_TARGET_MODES|appPairingTargetMode/);
   assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
   assert.match(settingsPage, /import \{[^}]*\bControlCenterPage\b[^}]*\} from "\.\.\/control-center\/ControlCenterPage";/);
@@ -3236,9 +3235,6 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.doesNotMatch(zhCN, /重连间隔|settings\.tunnelHub\.reconnect/);
   assert.doesNotMatch(enUS, /Sign in to .* before enabling Tunnel|settings\.tunnelHub\.loginRequired/);
   assert.doesNotMatch(zhCN, /请先登录 .*再开启隧道|settings\.tunnelHub\.loginRequired/);
-  assert.match(settingsPage, /settings\.createAppPairingPayload/);
-  assert.match(settingsPage, /handleCreateAppPairingPayload[\s\S]*showSectionNotice\("tunnelHub"[\s\S]*setReadErrorSections\(\["tunnelHub"\]/);
-  assert.match(settingsPage, /handleCopyAppPairingPayload[\s\S]*showSectionNotice\("tunnelHub"/);
   assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);
   assert.match(settingsPage, /shouldReadControlData = activeSection === "kanban"/);
   assert.match(settingsPage, /shouldReadTunnelHubData = activeSection === "tunnelHub"/);

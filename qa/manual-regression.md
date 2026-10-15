@@ -1368,13 +1368,12 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 验证损坏清单、符号链接、身份/大小不符与超限文件拒绝导入；切换 Chat 或销毁 guest 后原请求不能继续读取。
 - Windows 打包与普通启动不构建或注册 macOS 扩展，不消费 macOS 分享协议；现有文件打开行为保持可用。
 
-## Desktop WS 配对认证依赖
+## 手机官网账号与 Desktop Identity 票据同步
 
-- 本地 WS 与隧道分别用有效 token 完成握手及 `session.hello`；用无效 token 确认返回正常认证错误，不出现 `ensureIdentityCenterJwk is not a function`。两条入口均使用 assistant runtime 组装的认证配置。自动回归：`node --test test/assistant-ws-auth-wiring.test.mjs test/desktop-ws-server.test.mjs test/tunnel-hub-runtime.test.mjs`（先编译 Main）。
-- Desktop 重启后用当前二维码重新配对：核对返回的 deviceId 与二维码一致。旧地址不可用时移动端保留绑定与历史，但显示 Desktop 未连接；默认源连接状态独立显示。
-# 账号设备职责收敛验收
-
-- 密码与扫码登录保留；账号页确认扫码，电脑管理只展示 Hub Desktop，不显示手机或信任等级。
-- 两个账号互不访问电脑；设备改名、解绑、离线选择与服务故障保持来源边界。
-- 验证随机票据、WS JTI 防重放、HTTP 复验、到期及 Hub 重启恢复；旧路由 JWT 不可访问远端。
-- 解绑关闭 Tunnel，自动重连被拒绝；退出失败仍完成本地退出并提示，下次显式登录使用新注册 UUID，本地身份与任务不变。
+- macOS / Windows 分别验证本地 WS 和 Tunnel 使用原 Identity App Token；签名、scope、设备或期限不正确时拒绝。设置页不再提供手机配对码。
+- Desktop 官网登录并启用 Tunnel 后，手机原生邮箱登录并选择所属电脑；核对 Hub 注册 ID 与本地 Identity 设备 ID 各自用途，目录不包含业务凭据。
+- 等待票据更新期间保持长任务/流式会话；当前 Tunnel 不重启，手机用 auth.refresh 更新同一主体。断网恢复、Hub 重启和 Desktop 重连重新上传；停止、退出及切号不接收旧 generation 的迟到结果。
+- 两个账号、同账号两台电脑分别验证列表、取票、WS、上传、资源和 WebApp；越权必须由服务端拒绝。资源只在 401 重取一次，403 不循环重试；两种凭据均不能经重定向、日志或 URL 泄露。
+- iOS / Android WebApp 验证 Cookie 与 WebView 共享、子资源/WS、刷新、到期、关闭/切号撤销及 App 重启。页面只能看到干净 URL，不能取得 Identity Token 或官网证明。公开 WebApp 与默认云端保持各自原行为。
+- 撤销电脑关闭 Tunnel 且自动注册不能恢复；退出失败仍完成本地退出，下次显式登录使用新注册 ID，本地任务和 Identity 主体不变。
+- 自动回归以 test/platform-credential-auth.test.mjs、test/tunnel-hub-runtime.test.mjs、test/desktop-ws-server.test.mjs 为入口；模拟测试不代替上述双平台真实环境验收。

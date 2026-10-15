@@ -1,4 +1,3 @@
-import { createAppPairingPayload } from "../modules/identity";
 import {
   cancelDesktopSsoLogin,
   failDesktopSsoFlow,
@@ -202,8 +201,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     refreshTrayContextMenu: options.refreshTrayContextMenu,
     refreshMainWindowAppearance: options.refreshMainWindowAppearance,
     emitLocaleChanged: options.emitLocaleChanged,
-    createAppPairingPayload: (targetApp, pairingOptions) =>
-      createAppPairingPayload(targetApp, { ...pairingOptions, issueAccessToken: options.issueAgentAccessToken }),
     onGeneralSettingsChanged: () => {
       assistantRunWakeLock.sync();
       assistantBridgeRuntime.refreshKanbanDeviceInfo();

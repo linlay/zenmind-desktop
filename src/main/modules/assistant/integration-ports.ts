@@ -12,7 +12,6 @@ export type AssistantIntegrationPorts = {
   stopDesktopActionBridge: () => unknown;
   emitDesktopWsPush: (type: any, payload: any) => unknown;
   getDesktopWsServerRuntimeState: () => any;
-  validateTunnelAccountRouteCredential: (app: App, credential: string) => ReturnType<NonNullable<DesktopWsServerOptions["verifyAccountRoute"]>>;
   ensureIdentityCenterJwk: DesktopWsServerOptions["ensureIdentityCenterJwk"];
   startDesktopWsServer: typeof startDesktopWsServer;
   stopDesktopWsServer: () => Promise<unknown>;
