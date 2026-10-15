@@ -82,6 +82,39 @@ function registerSettingsHandlers(app, overrides = {}) {
 }
 
 for (const platform of ["darwin", "win32"]) {
+  test(`action confirmation exemptions save independently and survive WebSocket toggles on ${platform}`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-action-exempt-settings-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createApp(root);
+    const changed = [];
+    let releaseStart;
+    const ipc = registerSettingsHandlers(app, { platform,
+      startDesktopWsServer: () => new Promise(resolve => { releaseStart = () => resolve(runtimeState(true)); }),
+      stopDesktopWsServer: async () => runtimeState(false),
+      onGeneralSettingsChanged: (settings) => changed.push(settings)
+    });
+    const selected = ["desktop.theme.set", "desktop.credentials.fill"];
+    const saved = await ipc.invoke("settings.saveGeneralSettings", {
+      desktopActionConfirmationExemptActions: [...selected, "desktop.*", "unknown"]
+    });
+    assert.deepEqual(saved.desktopActionConfirmationExemptActions, selected);
+    assert.deepEqual(changed.at(-1).desktopActionConfirmationExemptActions, selected);
+    const starting = ipc.invoke("settings.setDesktopWsServerEnabled", true);
+    // Starting the server yields. Its eventual profile update must not overwrite a newer selection.
+    await ipc.invoke("settings.saveGeneralSettings", { desktopActionConfirmationExemptActions: [selected[0]] });
+    releaseStart();
+    await starting;
+    await ipc.invoke("settings.setDesktopWsServerEnabled", false);
+    await ipc.invoke("settings.saveGeneralSettings", { deviceName: "Updated name" });
+    const reread = await ipc.invoke("settings.getGeneralSettings");
+    assert.deepEqual(reread.desktopActionConfirmationExemptActions, [selected[0]]);
+    assert.equal(reread.desktopActionConfirmationEnabled, true);
+    const reset = await ipc.invoke("settings.saveGeneralSettings", { desktopActionConfirmationExemptActions: [] });
+    assert.deepEqual(reset.desktopActionConfirmationExemptActions, []);
+  });
+}
+
+for (const platform of ["darwin", "win32"]) {
   test(`theme save failure preserves native chrome and confirmed skin on ${platform}`, async (t) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-theme-commit-"));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));

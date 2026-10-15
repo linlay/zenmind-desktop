@@ -1,0 +1,79 @@
+.desktop-action-settings-dialog .ant-modal-content,
+.desktop-action-settings-dialog .ant-modal-header {
+  background: var(--desktop-ui-bg);
+}
+
+.desktop-action-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.desktop-action-settings-description,
+.desktop-action-settings-empty {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.desktop-action-settings-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.desktop-action-settings-list {
+  max-height: min(48vh, 440px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-block: 1px solid var(--line);
+  padding: 4px 2px;
+}
+
+.desktop-action-settings-group {
+  padding: 10px 0;
+}
+
+.desktop-action-settings-group + .desktop-action-settings-group {
+  border-top: 1px solid var(--line);
+}
+
+.desktop-action-settings-group h3 {
+  margin: 0 0 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desktop-action-settings-item.ant-checkbox-wrapper {
+  display: flex;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-action-settings-item:hover {
+  background: var(--control-hover-bg);
+}
+
+.desktop-action-settings-empty {
+  padding: 28px 0;
+  text-align: center;
+}
+
+.settings-action-confirmation-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}

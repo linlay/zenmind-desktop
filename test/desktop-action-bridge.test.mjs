@@ -4326,6 +4326,56 @@ test("Platform management exemptions preserve public and heavy-action confirmati
   assert.equal(created, 1);
 });
 
+test("exact action exemptions skip confirmation for both entries without exempting other actions", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const confirmations = [];
+  let restarted = 0;
+  options.services.restartService = async () => { restarted++; return { status: "running" }; };
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.callRendererAction = async request => ({ requestId: request.requestId, action: request.action, ok: true, result: {} });
+  options.confirmRendererAction = async request => {
+    confirmations.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  const profileRoot = getDesktopConfigRoot(options.app);
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "helper" };
+  const restart = { action: "desktop.controlCenter.restartService", source, args: { serviceId: "agent-platform" } };
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [
+    "desktop.controlCenter.restartService", "desktop.theme.set"
+  ] } });
+  assert.equal((await handleAgentPlatformDesktopActionRequest(options, restart)).ok, true);
+  assert.equal((await handleDesktopActionRequest(options, restart)).ok, true);
+  assert.equal((await handleDesktopActionRequest(options, { action: "desktop.theme.set", args: { themeMode: "dark" } })).ok, true);
+  assert.equal(restarted, 2);
+  assert.equal(confirmations.length, 0);
+  const stop = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.controlCenter.stopService", source });
+  assert.equal(stop.error.code, "user_cancelled");
+  const locale = await handleDesktopActionRequest(options, { action: "desktop.locale.set", args: { locale: "en-US" } });
+  assert.equal(locale.error.code, "user_cancelled");
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [] } });
+  assert.equal((await handleAgentPlatformDesktopActionRequest(options, restart)).error.code, "user_cancelled");
+  assert.equal(restarted, 2);
+  assert.equal(confirmations.length, 3);
+});
+
+test("selecting all confirmable actions bypasses their dialogs and clearing restores confirmation", async (t) => {
+  const { DESKTOP_CONFIRMABLE_ACTIONS } = require("../dist-electron/shared/desktop-action-confirmation.js");
+  const { calls, options } = createDesktopActionOptions(t);
+  const profileRoot = getDesktopConfigRoot(options.app);
+  const selected = DESKTOP_CONFIRMABLE_ACTIONS.map(({ name }) => name);
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: selected } });
+  options.getMainWindow = () => null;
+  options.confirmRendererAction = () => assert.fail("an exempt action must not request confirmation");
+  const result = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  assert.equal(result.ok, true);
+  assert.equal(calls.runtimeDiagnostics, 1);
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [] } });
+  delete options.confirmRendererAction;
+  const gated = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  assert.equal(gated.error.code, "confirmation_unavailable");
+  assert.equal(calls.runtimeDiagnostics, 1);
+});
+
 test("permissionMode inside action args cannot skip Desktop confirmation", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const confirmations = [];
@@ -4495,6 +4545,16 @@ test("credential actions serve only a trusted Run, on the page's real site, and 
   const unattended = await call("desktop.credentials.fill", { surfaceId: "page:1", submit: true }, { permissionMode: "full_access" });
   assert.equal(unattended.result.status, "submitted");
   assert.equal(confirmations.length, 2);
+
+  // A user-saved exemption skips only the dialog, not site, account or Run validation.
+  updateDesktopProfileInRoot(getDesktopConfigRoot(options.app), {
+    general: { desktopActionConfirmationExemptActions: ["desktop.credentials.fill"] }
+  });
+  const exemptFill = await call("desktop.credentials.fill", { surfaceId: "page:1" });
+  assert.equal(exemptFill.result.status, "submitted");
+  assert.equal(confirmations.length, 2);
+  const invalidSurface = await call("desktop.credentials.fill", { surfaceId: "page:9" });
+  assert.equal(invalidSurface.error.code, "target_not_in_current_surface");
 
   // An account id from another site, a site without saved accounts, and plain HTTP all fill nothing.
   scripts.length = 0;

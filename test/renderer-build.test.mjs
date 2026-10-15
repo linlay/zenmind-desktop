@@ -5524,7 +5524,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /summarizeConfirmationArgs/);
   assert.match(bridge, /confirmDetailRedacted/);
   assert.doesNotMatch(bridge, /providedSummary/);
-  assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)\.general\.desktopActionConfirmationEnabled/);
+  assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)[\s\S]*?general\.desktopActionConfirmationEnabled/);
   assert.match(trustedWorkPanelHandler, /AGENT_WEBCLIENT_WORKPANEL_ACTIONS\.has\(method\)/);
   assert.match(trustedWorkPanelHandler, /source: \{ chatId: ownerChatId \}/);
   assert.match(trustedWorkPanelHandler, /kind: "agentWebclientWorkPanel"/);

@@ -796,6 +796,7 @@ export interface DesktopGeneralSettings {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
+  desktopActionConfirmationExemptActions: string[];
   desktopActionConfirmationTimeoutSeconds: number;
 }
 
@@ -803,6 +804,7 @@ export interface DesktopGeneralSettingsInput {
   deviceName?: string;
   preventSleepWhileRunning?: boolean;
   desktopActionConfirmationEnabled?: boolean;
+  desktopActionConfirmationExemptActions?: string[];
   desktopActionConfirmationTimeoutSeconds?: number;
 }
 

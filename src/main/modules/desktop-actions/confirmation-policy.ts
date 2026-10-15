@@ -57,7 +57,8 @@ export async function confirmDesktopActionIfNeeded(
   request: DesktopActionCallRequest,
   buildConfirmation: () => DesktopActionConfirmationRequest
 ): Promise<DesktopActionCallResponse | null> {
-  if (!readDesktopProfileFromRoot(getDesktopConfigRoot(options.app)).general.desktopActionConfirmationEnabled) {
+  const { general } = readDesktopProfileFromRoot(getDesktopConfigRoot(options.app));
+  if (!general.desktopActionConfirmationEnabled || general.desktopActionConfirmationExemptActions.includes(request.action)) {
     return null;
   }
   if (readRequestPermissionMode(request) === "full_access") {
