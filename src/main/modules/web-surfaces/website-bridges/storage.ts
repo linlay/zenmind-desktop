@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { bridgeResourcePath, parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, WEBSITE_BRIDGE_SHARED_SCRIPT, type WebsiteBridgeManifest } from "../../../../shared/website-bridge";
+import { bridgeResourcePath, parseWebsiteBridgeManifest, websiteBridgeScripts, type WebsiteBridgeManifest } from "../../../../shared/website-bridge";
 
-/** `scripts` is keyed by package-relative path: every `features/<name>.js` plus the optional shared helper. */
+/** `scripts` is keyed by package-relative path: every `pages/<id>.js` and every referenced `shared/<name>.js`. */
 export type WebsiteBridgePackage = { manifest: WebsiteBridgeManifest; scripts: Map<string, string> };
 
 export class WebsiteBridgeRecoveryError extends Error {}
@@ -37,8 +37,7 @@ function readPackage(directory: string, id: string, digest: string): WebsiteBrid
   };
   const manifest = parseWebsiteBridgeManifest(JSON.parse(read("bridge.json", 65536)));
   if (manifest.id !== id) throw new Error("Invalid identity");
-  const scripts = new Map(websiteBridgeFeatureScripts(manifest).map(name => [name, read(name, 512 * 1024)]));
-  if (fs.existsSync(path.join(directory, WEBSITE_BRIDGE_SHARED_SCRIPT))) scripts.set(WEBSITE_BRIDGE_SHARED_SCRIPT, read(WEBSITE_BRIDGE_SHARED_SCRIPT, 512 * 1024));
+  const scripts = new Map(websiteBridgeScripts(manifest).map(name => [name, read(name, 512 * 1024)]));
   const pkg = { manifest, scripts };
   if (digestOf(pkg) !== digest) throw new Error("Package changed");
   return pkg;
@@ -67,11 +66,20 @@ export function loadPackage(storage: WebsiteBridgeStorage, id: string, digest: s
 }
 
 /**
- * A package installed under the removed v1 manifest stays listed so the user can
+ * A package installed under a removed manifest layout stays listed so the user can
  * import its replacement. It is never parsed as a package, migrated or injected,
  * but it must still be the content the catalogue committed: the stored manifest is
- * the normalized object the v1 digest was taken over, so the digest is recomputed as-is.
+ * the normalized object the old digest was taken over, so the digest is recomputed as-is.
+ * Removed layouts: v1 `pages[].script`, and the feature layout (`pages` array, `features/*.js`, optional `shared.js`).
  */
+function legacyScripts(value: Record<string, unknown>, exists: (name: string) => boolean): string[] | null {
+  if (!Array.isArray(value.pages) || value.pages.length > 100) return null;
+  const pages = value.pages as Array<Record<string, unknown>>;
+  if (value.schemaVersion === 1) return pages.map(page => String(page?.script));
+  if (value.schemaVersion !== 2) return null;
+  const names = [...new Set(pages.flatMap(page => Array.isArray(page?.features) ? page.features.map(feature => `features/${String(feature)}.js`) : []))];
+  return exists("shared.js") ? [...names, "shared.js"] : names;
+}
 export function readOutdatedPackage(storage: WebsiteBridgeStorage, id: string, digest: string) {
   const target = path.join(storage.packagesRoot, id);
   const backup = backupDir(storage, id);
@@ -89,8 +97,10 @@ export function readOutdatedPackage(storage: WebsiteBridgeStorage, id: string, d
         return fs.readFileSync(current, "utf8");
       };
       const value = JSON.parse(read("bridge.json", 65536));
-      if (value?.schemaVersion !== 1 || value.id !== id || !Array.isArray(value.pages) || value.pages.length > 100) return null;
-      const scripts = new Map<string, string>(value.pages.map((page: { script: string }) => [page.script, read(page.script, 512 * 1024)]));
+      if (!value || typeof value !== "object" || value.id !== id) return null;
+      const names = legacyScripts(value, name => fs.existsSync(path.join(directory, name)));
+      if (!names) return null;
+      const scripts = new Map<string, string>(names.map(name => [name, read(name, 512 * 1024)]));
       if (createHash("sha256").update(JSON.stringify([value, [...scripts].sort()])).digest("hex") !== digest) return null;
       return { name: typeof value.name === "string" && value.name.trim() ? value.name.trim().slice(0, 128) : id,
         version: typeof value.version === "string" && /^\d+\.\d+\.\d+$/.test(value.version) ? value.version : "0.0.0" };

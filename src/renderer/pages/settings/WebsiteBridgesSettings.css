@@ -52,6 +52,8 @@
 }
 .settings-page .website-bridges-settings .website-bridge-routes code { padding: 0; background: transparent; color: inherit; font-size: 12px; }
 .website-bridge-routes span { color: var(--control-center-muted); font-size: 11px; }
+.website-bridge-routes small { flex-basis: 100%; color: var(--control-center-subtle); font-size: 11px; overflow-wrap: anywhere; }
+.website-bridge-meta dd small { display: block; color: var(--control-center-subtle); font-size: 11px; }
 .website-bridge-features { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 8px; }
 .website-bridge-features button {
   min-height: 24px;

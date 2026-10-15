@@ -11,7 +11,7 @@ const { runMarketConnectorFlow, createConnectorSessionOwner, connectorAuthorizat
 function setup() {
   const calls = []; let configured = false;
   const session = status => ({ connectorId: 'actual-id', sessionId: 'first', status, expiresAt: '', authBrowser: 'embedded', authorizationUrl: 'https://work.weixin.qq.com/step1' });
-  const state = () => ({ connectorId: 'actual-id', configured, readiness: configured ? 'ready' : 'configuration_required', authentication: session(configured ? 'authorized' : 'unauthorized'), capabilities: { hasCli: false, authMode: null } });
+  const state = () => ({ connectorId: 'actual-id', configured, readiness: configured ? 'ready' : 'configuration_required', authentication: session(configured ? 'authorized' : 'unauthorized'), capabilities: { hasCli: false, authMode: 'self' } });
   const api = {
     install: async () => { calls.push('install'); return { ok: true, connectorId: 'actual-id' }; },
     getConnectorConnection: async () => state(),
@@ -25,7 +25,7 @@ function setup() {
   return { calls, api, intent, controller, session, state };
 }
 function noAuthState(extra={}) {
- return {connectorId:'actual-id',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'actual-id',status:'no_auth',sessionId:'',expiresAt:''},capabilities:{authMode:'no_auth',authBrowser:'',hasCli:true,canConnect:false,canCheck:false,canDisconnect:false},preparation:{connectorId:'actual-id',status:'ready'},...extra};
+ return {connectorId:'actual-id',configured:false,configurationRequired:false,readiness:'no_auth',authentication:{connectorId:'actual-id',status:'no_auth',sessionId:'',expiresAt:''},capabilities:{authMode:'none',authBrowser:'',hasCli:true,canConnect:false,canCheck:false,canDisconnect:false},preparation:{connectorId:'actual-id',status:'ready'},...extra};
 }
 test('no-auth connector installs and mounts without authentication or redundant CLI preparation',async()=>{
  const s=setup();s.api.getConnectorConnection=async()=>noAuthState();
@@ -67,7 +67,7 @@ test('canceling no-auth CLI preparation prevents a late mount',async()=>{
 });
 test('unavailable no-auth connector without CLI cannot report success',async()=>{
  const s=setup();s.intent.installed=true;s.intent.connectorId='actual-id';s.intent.mountAgent=false;
- s.api.getConnectorConnection=async()=>noAuthState({readiness:'unavailable',capabilities:{authMode:'no_auth',hasCli:false}});
+ s.api.getConnectorConnection=async()=>noAuthState({readiness:'unavailable',capabilities:{authMode:'none',hasCli:false}});
  await assert.rejects(runMarketConnectorFlow(s.intent,s.api,async()=>{}),/notReady/);
  assert.deepEqual(s.calls,[]);
 });
@@ -199,19 +199,21 @@ test('explicit replacement credentials are submitted even when existing credenti
 function mcpSetup() {
   const s = setup();
   s.intent.installed = true; s.intent.connectorId = 'actual-id';
-  s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'no_auth', hasCli: false, hasMcp: true } });
-  s.agent = mcp => ({ agentKey: 'xiaojun', connectorIds: ['actual-id'], activeConnectorIds: ['actual-id'], reloadPending: false, mcp });
-  s.component = (status, toolCount = 0, serverKey = 'current/main') => ({ connectorId: 'actual-id', serverKey, status, toolCount });
+  s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'none', hasCli: false, hasMcp: true } });
+  s.agent = () => ({ agentKey: 'xiaojun', connectorIds: ['actual-id'], activeConnectorIds: ['actual-id'], reloadPending: false });
+  s.api.setConnectorAgent = async () => s.agent();
+  s.api.getConnectorAgent = async () => s.agent();
+  s.tools = (mcp, extra = {}) => ({ agentKey: 'xiaojun', connectorId: 'actual-id', reloadPending: false, mcp, ...extra });
+  s.component = (status, toolCount = 0, serverKey = 'actual-id') => ({ serverKey, status, toolCount });
   return s;
 }
 
 test('mounted MCP waits for every current component before completing the new-chat handoff', async () => {
   const s = mcpSetup(); const phases = []; let polls = 0, completed = false;
   s.intent.onPhase = phase => { phases.push(phase); if (phase === 'complete') completed = true; };
-  s.api.setConnectorAgent = async () => s.agent([s.component('ready', 2), s.component('pending', 0, 'current/secondary')]);
-  s.api.getConnectorAgent = async agentKey => {
-    assert.equal(agentKey, 'xiaojun'); polls++;
-    return s.agent([s.component('ready', 2), s.component(polls < 3 ? 'syncing' : 'ready', 0, 'current/secondary')]);
+  s.api.getConnectorAgentTools = async target => {
+    assert.equal(target.connectorId, 'actual-id'); assert.equal(target.agentKey, 'xiaojun'); polls++;
+    return s.tools([s.component('ready', 2), s.component(polls < 3 ? 'syncing' : 'ready', 0, 'actual-id.secondary')]);
   };
   await runMarketConnectorFlow(s.intent, s.api, async () => {
     assert.equal(completed, false, 'mount and account readiness do not release the new-chat window');
@@ -223,48 +225,46 @@ test('mounted MCP waits for every current component before completing the new-ch
 
 test('reload during MCP synchronization requires the newly published Agent snapshot', async () => {
   const s = mcpSetup(); let polls = 0;
-  s.api.setConnectorAgent = async () => ({ ...s.agent([s.component('pending')]), runtimeRevision: 'before-update' });
-  s.api.getConnectorAgent = async () => {
+  s.api.getConnectorAgentTools = async () => {
     polls++;
-    if (polls === 1) return { ...s.agent([s.component('ready', 5)]), reloadPending: true, runtimeRevision: 'before-update' };
-    return { ...s.agent([s.component(polls === 2 ? 'pending' : 'ready', polls === 2 ? 0 : 1, 'new-version/main')]), runtimeRevision: 'after-update' };
+    if (polls === 1) return s.tools([s.component('ready', 5)], { reloadPending: true });
+    return s.tools([s.component(polls === 2 ? 'pending' : 'ready', polls === 2 ? 0 : 1)]);
   };
   await runMarketConnectorFlow(s.intent, s.api, async () => {});
   assert.equal(polls, 3, 'a ready component while the old publication is being replaced cannot complete');
 });
 
 test('other connectors or a different Agent cannot supply MCP readiness', async () => {
-  const s = mcpSetup(); let polls = 0;
-  const other = { connectorId: 'other-id', serverKey: 'other/main', status: 'ready', toolCount: 9 };
-  s.api.setConnectorAgent = async () => s.agent([other, s.component('pending')]);
-  s.api.getConnectorAgent = async () => { polls++; return s.agent([other, s.component('ready', 1)]); };
-  await runMarketConnectorFlow(s.intent, s.api, async () => {});
-  assert.equal(polls, 1);
-  s.api.setConnectorAgent = async () => ({ ...s.agent([s.component('ready', 3)]), agentKey: 'another-agent' });
+  const s = mcpSetup();
+  for (const extra of [{ connectorId: 'other-id' }, { agentKey: 'another-agent' }]) {
+    s.api.getConnectorAgentTools = async () => s.tools([s.component('ready', 3)], extra);
+    await assert.rejects(runMarketConnectorFlow(s.intent, s.api, async () => {}), /agentStateMismatch/);
+  }
+  s.api.setConnectorAgent = async () => ({ ...s.agent(), agentKey: 'another-agent' });
+  s.api.getConnectorAgentTools = async () => assert.fail('a foreign mount must not reach tool synchronization');
   await assert.rejects(runMarketConnectorFlow(s.intent, s.api, async () => {}), /agentStateMismatch/);
 });
 
-test('MCP missing, unavailable and ready-with-zero-tools states fail without polling forever', async () => {
+test('MCP missing, unmounted, unavailable and ready-with-zero-tools states fail without polling forever', async () => {
   const s = mcpSetup();
   const cases = [
-    [undefined, /mcpStateRequired/],
     [[], /toolsMissing/],
-    [[{ connectorId: 'other-id', serverKey: 'other/main', status: 'ready', toolCount: 7 }], /toolsMissing/],
-    [[s.component('syncing'), s.component('unavailable', 0, 'current/secondary')], /toolsUnavailable/],
-    [[s.component('ready'), s.component('ready', 0, 'current/secondary')], /toolsEmpty/],
+    [[s.component('unmounted')], /toolsMissing/],
+    [[s.component('syncing'), s.component('unavailable', 0, 'actual-id.secondary')], /toolsUnavailable/],
+    [[s.component('ready'), s.component('ready', 0, 'actual-id.secondary')], /toolsEmpty/],
   ];
   for (const [mcp, reason] of cases) {
-    s.api.setConnectorAgent = async () => s.agent(mcp);
+    s.api.getConnectorAgentTools = async () => s.tools(mcp);
     await assert.rejects(runMarketConnectorFlow(s.intent, s.api, async () => assert.fail('terminal state must not wait')), reason);
   }
 });
 
-test('CLI and native flows remain compatible with older Agent responses without MCP status', async () => {
+test('CLI and native flows do not read MCP tool state', async () => {
   for (const hasCli of [true, false]) {
     const s = setup(); const phases = [];
-    s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'no_auth', hasCli, hasMcp: false } });
+    s.api.getConnectorConnection = async () => noAuthState({ capabilities: { authMode: 'none', hasCli, hasMcp: false } });
     s.intent.onPhase = phase => phases.push(phase);
-    s.api.getConnectorAgent = async () => assert.fail('pure CLI/native must not poll MCP');
+    s.api.getConnectorAgentTools = async () => assert.fail('pure CLI/native must not poll MCP');
     await runMarketConnectorFlow(s.intent, s.api, async () => {});
     assert.deepEqual(phases, ['installing', 'mounting', 'complete']);
   }
@@ -274,10 +274,9 @@ test('cancel during MCP polling rejects a late ready response without completing
   const s = mcpSetup(); const phases = []; let finish, entered;
   const started = new Promise(resolve => { entered = resolve; });
   s.intent.onPhase = phase => phases.push(phase);
-  s.api.setConnectorAgent = async () => s.agent([s.component('pending')]);
-  s.api.getConnectorAgent = () => { entered(); return new Promise(resolve => { finish = resolve; }); };
+  s.api.getConnectorAgentTools = () => { entered(); return new Promise(resolve => { finish = resolve; }); };
   const operation = runMarketConnectorFlow(s.intent, s.api, async () => {});
-  await started; s.controller.abort(); finish(s.agent([s.component('ready', 3)]));
+  await started; s.controller.abort(); finish(s.tools([s.component('ready', 3)]));
   await assert.rejects(operation);
   assert.deepEqual(phases, ['mounting', 'syncing']);
 });
@@ -288,6 +287,6 @@ test('MCP synchronization timeout is bounded even when published components rema
   const timed = { exports: {} };
   vm.runInNewContext(compiled, { module: timed, exports: timed.exports, URL, Date: clock, Promise, Error, setTimeout, clearTimeout });
   const s = mcpSetup();
-  s.api.setConnectorAgent = s.api.getConnectorAgent = async () => s.agent([s.component('pending')]);
+  s.api.getConnectorAgentTools = async () => s.tools([s.component('pending')]);
   await assert.rejects(timed.exports.runMarketConnectorFlow(s.intent, s.api, async () => { now += 61000; }), /toolsSyncTimeout/);
 });

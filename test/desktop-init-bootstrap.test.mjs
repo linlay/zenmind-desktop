@@ -1742,11 +1742,12 @@ for (const platform of ['darwin', 'win32']) {
     const initPath = writeDesktopInit(app, platform, { websiteBridges: { items: ['sample-forum'] } });
     const staging = path.join(path.dirname(initPath), 'web-bridges-center');
     const seed = path.join(staging, 'sample-forum');
-    fs.mkdirSync(path.join(seed, 'features'), { recursive: true });
+    fs.mkdirSync(path.join(seed, 'pages'), { recursive: true }); fs.mkdirSync(path.join(seed, 'shared/forum'), { recursive: true });
     fs.writeFileSync(path.join(seed, 'bridge.json'), JSON.stringify({ schemaVersion: 2, id: 'sample-forum', name: 'Sample Forum', version: '2.0.0',
-      origins: { forum: 'https://forum.example.test' }, pages: [{ path: '/forum', features: ['post-search'] }] }));
-    fs.writeFileSync(path.join(seed, 'features/post-search.js'), 'return { actions: {} };');
-    fs.writeFileSync(path.join(seed, 'shared.js'), 'return {};');
+      origins: { forum: 'https://forum.example.test' }, pages: { search: { path: '/forum', shared: ['core', 'forum/list'] } } }));
+    fs.writeFileSync(path.join(seed, 'pages/search.js'), 'return { actions: {} };');
+    fs.writeFileSync(path.join(seed, 'shared/core.js'), 'return {};');
+    fs.writeFileSync(path.join(seed, 'shared/forum/list.js'), 'return {};');
     const storage = getDesktopWebsiteBridgeStorage(app, platform);
     const manager = createWebsiteBridgeManager(storage); // Runtime is assembled before bootstrap.
     const result = applyDesktopInitBootstrap(app, platform);
@@ -1754,7 +1755,7 @@ for (const platform of ['darwin', 'win32']) {
     // Like skills-center, the env source directory is kept; only Desktop's own install is managed.
     assert.equal(fs.existsSync(path.join(staging, 'sample-forum', 'bridge.json')), true);
     assert.equal(manager.list().items[0].id, 'sample-forum');
-    assert.equal(manager.list().items[0].shared, true);
+    assert.deepEqual(manager.list().items[0].pages.search.shared, ['core', 'forum/list']);
     assert.equal((await manager.remove('sample-forum')).ok, true);
     writeDesktopInit(app, platform, { websiteBridges: { items: ['sample-forum'] } });
     assert.equal(applyDesktopInitBootstrap(app, platform).appliedResult.websiteBridges, 'preserved');

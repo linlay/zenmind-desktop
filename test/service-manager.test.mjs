@@ -3867,6 +3867,96 @@ test("installBuiltinService repairs damaged install and preserves deploy-owned e
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+async function withBuiltinExtractionFault({ copyFallback = false, publishError, cleanupFailures = Infinity } = {}, check) {
+  const fixture = createBuiltinRestoreFixture();
+  // Isolate the Windows registry's configured runtime root from this fixture.
+  const runtimeRoot = require("../dist-electron/main/infrastructure/filesystem/runtime-root.js");
+  const originalResolveRoot = runtimeRoot.resolveRuntimeRootPath;
+  runtimeRoot.resolveRuntimeRootPath = options => originalResolveRoot({ ...options, registryDataRootPath: "" });
+  const { app, restore } = loadBuiltinsForTest(path.join(fixture.tempRoot, "user-data"), fixture.assetsRoot);
+  const originalRmSync = fs.rmSync;
+  const originalRm = fs.promises.rm;
+  const originalRename = fs.renameSync;
+  const originalWarn = console.warn;
+  const retained = new Set();
+  const warnings = [];
+  const denyCleanup = (target) => {
+    const root = path.basename(String(target)).startsWith("custom-builtin-extract-")
+      ? String(target) : path.dirname(String(target));
+    if (path.basename(root).startsWith("custom-builtin-extract-")) {
+      retained.add(root);
+      if (cleanupFailures-- <= 0) return;
+      throw Object.assign(new Error("temporary extraction directory is locked"), { code: "EPERM", syscall: "rm" });
+    }
+  };
+  try {
+    fs.rmSync = (target, options) => { denyCleanup(target); return originalRmSync(target, options); };
+    fs.promises.rm = async (target, options) => { denyCleanup(target); return originalRm(target, options); };
+    fs.renameSync = (source, destination) => {
+      if (path.basename(path.dirname(String(source))).startsWith("custom-builtin-extract-")) {
+        if (publishError) throw publishError;
+        if (copyFallback) throw Object.assign(new Error("cross-device publication"), { code: "EXDEV" });
+      }
+      return originalRename(source, destination);
+    };
+    console.warn = (...args) => { warnings.push(args); };
+    await check({ app, retained, warnings });
+  } finally {
+    fs.rmSync = originalRmSync;
+    fs.promises.rm = originalRm;
+    fs.renameSync = originalRename;
+    console.warn = originalWarn;
+    restore();
+    runtimeRoot.resolveRuntimeRootPath = originalResolveRoot;
+    for (const target of retained) {
+      assert.equal(path.dirname(path.resolve(target)), path.resolve(os.tmpdir()));
+      originalRmSync(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+    originalRmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+}
+
+test("builtin installation succeeds when only temporary extraction cleanup is denied", async () => {
+  await withBuiltinExtractionFault({}, async ({ app, retained, warnings }) => {
+    const installed = await installBuiltinService(app, "custom-builtin");
+    const service = getService("custom-builtin");
+    assert.equal(installed, getInstallDir(app, service));
+    assert.ok(service.runtime.requiredPaths.every(relative => fs.existsSync(path.join(installed, relative))));
+    const layout = require("../dist-electron/main/modules/services/manager/layout.js").getServiceLayout(app, service);
+    assert.equal(__testInternals.readInitializationState(layout)?.status, "succeeded");
+    assert.ok(warnings.some(args => [...retained].some(target => String(args[0]).includes(target))), "retained temporary directory must be reported");
+  });
+});
+
+test("builtin installation survives locked source cleanup after Windows copy fallback", { skip: process.platform !== "win32" }, async () => {
+  await withBuiltinExtractionFault({ copyFallback: true }, async ({ app }) => {
+    const installed = await installBuiltinService(app, "custom-builtin", { skipInitialize: true });
+    const service = getService("custom-builtin");
+    assert.equal(installed, getInstallDir(app, service));
+    assert.ok(service.runtime.requiredPaths.every(relative => fs.existsSync(path.join(installed, relative))));
+    const layout = require("../dist-electron/main/modules/services/manager/layout.js").getServiceLayout(app, service);
+    assert.equal(__testInternals.readInitializationState(layout), null);
+  });
+});
+
+test("builtin installation preserves its publication error when temporary cleanup also fails", async () => {
+  const publishError = Object.assign(new Error("service publication failed"), { code: "EIO" });
+  await withBuiltinExtractionFault({ publishError }, async ({ app, warnings }) => {
+    await assert.rejects(installBuiltinService(app, "custom-builtin"), error => error === publishError);
+    assert.equal(fs.existsSync(getInstallDir(app, getService("custom-builtin"))), false);
+    assert.ok(warnings.length > 0, "cleanup failure must still be reported separately");
+  });
+});
+
+test("Windows builtin installation retries transient temporary locks without a cleanup warning", { skip: process.platform !== "win32" }, async () => {
+  await withBuiltinExtractionFault({ cleanupFailures: 2 }, async ({ app, retained, warnings }) => {
+    await installBuiltinService(app, "custom-builtin", { skipInitialize: true });
+    assert.ok(retained.size > 0);
+    assert.ok([...retained].every(target => !fs.existsSync(target)), "temporary directories are removed after the lock clears");
+    assert.equal(warnings.length, 0);
+  });
+});
+
 test("readBuiltinAssetSignature uses the synced builtin asset manifest when available", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-asset-signature-"));
   const userDataRoot = path.join(tempRoot, "user-data");

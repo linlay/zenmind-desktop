@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Script } from "node:vm";
-import { parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, websiteBridgeOriginsOverlap, WEBSITE_BRIDGE_LIMITS as limits, WEBSITE_BRIDGE_SHARED_SCRIPT } from "../../../../shared/website-bridge";
+import { parseWebsiteBridgeManifest, websiteBridgeOriginsOverlap, websiteBridgeScripts, WEBSITE_BRIDGE_LIMITS as limits } from "../../../../shared/website-bridge";
 import { digestOf, savePackage, type WebsiteBridgePackage, type WebsiteBridgeStorage } from "./storage";
 
 /** Reads inert source files only; seed scripts are never executed in Main. */
@@ -22,9 +22,7 @@ function readSeed(root: string, id: string): WebsiteBridgePackage {
   if (manifest.id !== id) throw new Error("Website bridge seed identity mismatch.");
   const scripts = new Map<string, string>();
   let size = 0;
-  const names = websiteBridgeFeatureScripts(manifest);
-  if (fs.existsSync(path.join(root, id, WEBSITE_BRIDGE_SHARED_SCRIPT))) names.push(WEBSITE_BRIDGE_SHARED_SCRIPT);
-  for (const name of names) {
+  for (const name of websiteBridgeScripts(manifest)) {
     const source = read(`${id}/${name}`, limits.fileBytes);
     size += Buffer.byteLength(source);
     if (size > limits.expandedBytes) throw new Error("Website bridge seed is too large.");

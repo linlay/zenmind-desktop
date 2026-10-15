@@ -1,4 +1,4 @@
-export type ConnectorAuthMode = "no_auth" | "token" | "oneid-token" | "oauth" | "mcp" | null;
+export type ConnectorAuthMode = "none" | "self" | "token" | "oauth" | "mcp" | "oneid";
 export type ConnectorAuthStatus = "no_auth" | "pending_verification" | "not_required" | "delegated" | "configured" | "setup_required" | "unauthorized" | "preparing" | "pending" | "authorized" | "failed" | "canceled";
 export interface MarketConnectorAuthSession {
   connectorId: string;
@@ -6,6 +6,9 @@ export interface MarketConnectorAuthSession {
   status: ConnectorAuthStatus;
   authBrowser?: "system" | "embedded";
   authorizationUrl?: string;
+  /** CLI device-flow code the user confirms or enters at the authorization page. */
+  userCode?: string;
+  userCodeExpiresAt?: string;
   message?: string;
   expiresAt: string;
   pendingVerification?: boolean;
@@ -45,14 +48,19 @@ export interface MarketConnectorAgentState {
   connectorIds: string[];
   activeConnectorIds: string[];
   reloadPending: boolean;
-  /** Absent only on older Platform versions; never implies that MCP tools are ready. */
-  mcp?: Array<{
-    connectorId: string;
+}
+/** One connector's MCP tool state in an Agent's current published version. */
+export interface MarketConnectorAgentToolState {
+  agentKey: string;
+  connectorId: string;
+  /** The saved Agent configuration has not been published to new Runs yet. */
+  reloadPending: boolean;
+  /** `unmounted` means the published version does not include this connector. */
+  mcp: Array<{
     serverKey: string;
-    status: "pending" | "syncing" | "ready" | "unavailable";
+    status: "pending" | "syncing" | "ready" | "unavailable" | "unmounted";
     toolCount: number;
   }>;
-  runtimeRevision?: string;
 }
 export interface MarketConnectorDisconnectResult {
   connectorId: string;

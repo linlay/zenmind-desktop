@@ -2,7 +2,7 @@ import JSZip from "jszip";
 import fs from "node:fs";
 import { Script } from "node:vm";
 
-import { WEBSITE_BRIDGE_LIMITS as limits, WebsiteBridgeError, bridgeResourcePath, parseWebsiteBridgeManifest, websiteBridgeFeatureScripts, WEBSITE_BRIDGE_SHARED_SCRIPT } from "../../../../shared/website-bridge";
+import { WEBSITE_BRIDGE_LIMITS as limits, WebsiteBridgeError, bridgeResourcePath, parseWebsiteBridgeManifest, websiteBridgeScripts } from "../../../../shared/website-bridge";
 
 const invalid = () => new WebsiteBridgeError("invalidPackage");
 // Check the central-directory count before JSZip creates its name map, so
@@ -98,9 +98,8 @@ export async function readWebsiteBridgeArchive(filePath: string) {
     if (manifests.length !== 1) throw invalid();
     const root = manifests[0].slice(0, -"bridge.json".length);
     const manifest = parseWebsiteBridgeManifest(JSON.parse((await readEntry(files.get(manifests[0])!, limits.manifestBytes)).toString("utf8")));
-    // The layout is fixed: bridge.json, features/<name>.js for every referenced feature, optional shared.js.
-    const resources = new Set(websiteBridgeFeatureScripts(manifest));
-    if (files.has(root + WEBSITE_BRIDGE_SHARED_SCRIPT)) resources.add(WEBSITE_BRIDGE_SHARED_SCRIPT);
+    // The layout is fixed: bridge.json, pages/<id>.js for every page and shared/<name>.js for every referenced module.
+    const resources = new Set(websiteBridgeScripts(manifest));
     const allowed = new Set([manifests[0], ...[...resources].map((name) => root + name)]);
     if ([...files.keys()].some((name) => !allowed.has(name))) throw invalid();
     const scripts = new Map<string, string>();

@@ -2,7 +2,7 @@ import type { DesktopApi } from "@shared/contracts/desktop-api";
 import type { MarketItem } from "@shared/contracts";
 import type { MarketConnectorAuthSession, MarketConnectorConnection, MarketConnectorTokenSchema } from "@shared/contracts/market-connector-state";
 
-/** Platform projects connector.json auth_browser into session.authBrowser. */
+/** Platform projects connector.json authBrowser into session.authBrowser. */
 export async function openConnectorAuthorization(
   session: MarketConnectorAuthSession,
   api: Pick<DesktopApi, "connectorAuthBrowser" | "shell">,
@@ -28,7 +28,7 @@ export function connectorRequiresConfiguration(connection: MarketConnectorConnec
 export function connectorIsUsable(connection?: MarketConnectorConnection) {
   if (!connection) return false;
   return connection.readiness === "no_auth"
-    ? !connectorRequiresConfiguration(connection) && !connection.configured && connection.capabilities.authMode === "no_auth" && connection.authentication.status === "no_auth"
+    ? !connectorRequiresConfiguration(connection) && !connection.configured && connection.capabilities.authMode === "none" && connection.authentication.status === "no_auth"
       && (!connection.capabilities.hasCli || connection.preparation?.status === "ready")
     : connection.configured && connection.readiness === "ready"
       && !["unauthorized", "failed", "canceled", "setup_required", "pending", "preparing", "pending_verification"].includes(connection.authentication?.status || "");
@@ -124,7 +124,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
   // Older Platform snapshots may still report configuration_required while
   // acknowledging a stored candidate. Do not collect or overwrite it again.
   if (!intent.credentials && connectorAwaitingVerification(current)) return { connectorId: id, result: "pending_verification" };
-  if (current.capabilities.hasCli && ((current.capabilities.authMode === "no_auth" && current.preparation?.status !== "ready") || (connectorRequiresConfiguration(current) && !current.configured) || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
+  if (current.capabilities.hasCli && ((current.capabilities.authMode === "none" && current.preparation?.status !== "ready") || (connectorRequiresConfiguration(current) && !current.configured) || ["authorization_required", "unavailable", "preparing"].includes(current.readiness))) {
     onPhase("preparing"); check();
     let preparation = await api.prepareConnector(id); check();
     // Platform preparation has a 15-minute limit; do not abandon a valid
@@ -183,14 +183,15 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
       if (current.capabilities.hasMcp) {
         onPhase("syncing"); check();
         const syncDeadline = Date.now() + 60_000;
+        const target = { connectorId: id, agentKey: intent.agentKey };
+        let tools = await api.getConnectorAgentTools(target); check();
         while (true) {
-          // Only the target Agent's current published snapshot is readiness evidence.
-          // A retained Run or another connector's tools must not complete this flow.
-          const mounted = isMounted();
-          if (!Array.isArray(agent.mcp)) throw new Error("market.connector.flow.mcpStateRequired");
-          if (mounted) {
-            const components = agent.mcp.filter(component => component.connectorId === id);
-            if (!components.length) throw new Error("market.connector.flow.toolsMissing");
+          // The usage directory reports only the target Agent's current published
+          // version, so a retained Run or another connector cannot complete this flow.
+          if (tools.agentKey !== intent.agentKey || tools.connectorId !== id) throw new Error("market.connector.flow.agentStateMismatch");
+          if (!tools.reloadPending) {
+            const components = tools.mcp;
+            if (!components.length || components.some(component => component.status === "unmounted")) throw new Error("market.connector.flow.toolsMissing");
             if (components.some(component => component.status === "unavailable")) throw new Error("market.connector.flow.toolsUnavailable");
             if (components.every(component => component.status === "ready")) {
               if (!components.some(component => component.toolCount > 0)) throw new Error("market.connector.flow.toolsEmpty");
@@ -198,7 +199,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
             }
           }
           if (Date.now() > syncDeadline) throw new Error("market.connector.flow.toolsSyncTimeout");
-          await wait(signal); check(); agent = await api.getConnectorAgent(intent.agentKey); check();
+          await wait(signal); check(); tools = await api.getConnectorAgentTools(target); check();
         }
       }
     }
