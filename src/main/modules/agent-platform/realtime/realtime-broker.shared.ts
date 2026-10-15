@@ -111,6 +111,8 @@ export type BrokerRun = {
   query: QueryTransaction | null;
   replay: ReplayEvent[];
   replayBytes: number;
+  /** Current native waits keyed by `taskId + toolId`; projected to late subscribers, never part of replay. */
+  activeWaits: Map<string, { event: Record<string, unknown>; path: string }>;
   subscribers: Set<string>;
   rootObserverTokens: Set<string>;
   baseUrl: string;

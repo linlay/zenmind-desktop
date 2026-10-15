@@ -285,6 +285,7 @@ export function createSubscriptions(deps: SubscriptionsPort) {
         query: null,
         replay: [],
         replayBytes: 0,
+        activeWaits: new Map(),
         subscribers: new Set(),
         rootObserverTokens: new Set(),
         baseUrl: options.baseUrl,

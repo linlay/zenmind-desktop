@@ -71,6 +71,8 @@ export function createRunAttachment(deps: RunAttachmentPort) {
       void transaction.eventQueue.then(() => transaction.completed.resolve(result), (error) => transaction.completed.reject(error));
     }
     run.suspended = true;
+    // Waits may finish while unobserved; only the next attach may reconfirm them.
+    run.activeWaits.clear();
     run.lastRestoreResult = `observer_released:${reason}`;
     deps.diagnostics.observerReleaseCount += 1;
   }

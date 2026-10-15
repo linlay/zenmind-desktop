@@ -301,6 +301,8 @@ export function createConnection(deps: ConnectionPort) {
       if (run.lane !== lane || run.terminal) continue;
       run.suspended = true;
       run.upstreamRequestId = null;
+      // Waits may finish while disconnected; only the next attach may reconfirm them.
+      run.activeWaits.clear();
     }
   }
 
