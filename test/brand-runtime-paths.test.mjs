@@ -1068,7 +1068,10 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(customPages, /Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave/u);
   assert.match(installerInclude, /StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
   assert.match(installerInclude, /\$INSTDIR != \$DesktopDefaultInstallDir/u);
-  assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
+  assert.doesNotMatch(installerInclude, /nsDialogs::SelectFolderDialog/u);
+  assert.match(installerInclude, /Call DesktopSelectDataFolder/u);
+  assert.match(installerInclude, /\$0->3\(p \$HWNDPARENT\)/u);
+  assert.match(installerInclude, /IntOp \$4 \$4 \| 0x00000860/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\cutej-desktop" "DataRoot"/u);
   assert.match(installerInclude, /WriteRegDWORD HKCU "Software\\cutej-desktop" "DataRootLayoutVersion" 2/u);
   assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$0\\\.cutej"/u);
