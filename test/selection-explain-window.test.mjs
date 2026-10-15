@@ -25,7 +25,7 @@ test("selection explanation window is singleton, temporary and never always-on-t
 test("selection explanation renderer hands only Chat and Run ids to the WebClient route", () => {
   const page = read("src", "renderer", "pages", "SelectionExplainWindowPage.tsx");
   const contract = read("src", "shared", "selection-explain-window.ts");
-  assert.match(page, /\/selection-explain\/\$\{encodeURIComponent\(state\.chatId\)\}\?runId=/u);
+  assert.match(page, /\/explain\/\$\{encodeURIComponent\(state\.chatId\)\}\?runId=/u);
   assert.match(page, /createSurfaceIdentity\("selection-explain"/u);
   assert.match(page, /ownerChatId: state\.chatId/u);
   assert.doesNotMatch(contract, /selectedText|\btext:\s*string|prompt/u);

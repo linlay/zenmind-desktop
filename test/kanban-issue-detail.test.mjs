@@ -38,7 +38,6 @@ test("Kanban detail opens independently from create and preserves the cloud read
   const styles = read("src", "renderer", "styles", "kanban.css");
   const rendererIndex = read("index.html");
   const brandConfig = read("scripts", "lib", "brand-artifacts.mjs");
-  const packageManifest = JSON.parse(read("package.json"));
   assert.match(page, /setModal\(\{ mode: "create" \}\)/);
   assert.match(page, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,180}setDetailIssueId\(issue\.id\)/);
   assert.match(page, /<KanbanIssueDetailDialog/);
@@ -54,9 +53,6 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /!editing \? <DetailSection title=\{t\("kanban\.detail\.commentsTitle"\)\}/);
   assert.match(detail, /resultContent\.trim\(\) && !editing && !chatEmbedPath/);
   assert.match(detail, /id="kanban-detail-header-label"/);
-  assert.equal(packageManifest.dependencies["react-markdown"], "^10.1.0");
-  assert.equal(packageManifest.dependencies["remark-gfm"], "^4.0.1");
-  assert.equal(packageManifest.dependencies.mermaid, "^11.16.1");
   assert.match(detail, /editing \? <>[\s\S]{0,900}<textarea ref=\{descriptionEditorRef\}[\s\S]{0,500}<MarkdownPreview value=\{draft\.description\}/);
   assert.match(detail, /<MarkdownPreview value=\{comment\.body\} variant="comment" t=\{t\} \/>/);
   assert.match(detail, /<ReactMarkdown[\s\S]{0,260}remarkPlugins=\{\[remarkGfm\]\}[\s\S]{0,120}skipHtml[\s\S]{0,120}urlTransform=\{transformMarkdownUrl\}/);

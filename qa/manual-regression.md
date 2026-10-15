@@ -1,5 +1,7 @@
 # Desktop 手工回归清单
 
+本清单只描述当前版本的预期行为，不记录历史通过率或发布结论。自动验收入口见 [QA 索引](README.md)；架构边界见 [设计文档](../docs/README.md)，精确接口与行为以源码、契约和测试为准。用户可见流程在 macOS 与 Windows 分别验证，平台专属项目按标注执行。
+
 ## Windows 安装与卸载阶段进度
 
 - CuteJ / ZenMind 分别验证全新安装、覆盖安装和在线更新：总进度条全程可见，阶段整体估算单向推进；解压按真实字节进度映射整体 15–85%，不单独显示解压百分比，解压结束继续显示复制和收尾的总进度，进度条上方同步切换为当前阶段文字，不残留“解压程序文件：100%”。等待、文件占用和重试不得回退。在线更新仍跳过数据目录选择和完成向导，成功后自动启动一次。
@@ -772,12 +774,12 @@
 - 本地默认项目和各问题归属项目平铺展示、独立多选，不显示路径缩进或联动子项目；云端保留树形层级及父子勾选。验证两种来源项目 ID 相同时不会串选。
 - 搜索本地项目名称和 ID、云端项目名称和路径，核对无结果提示、项目计数、触发器摘要和多选提示；仅选择本地时不得显示云端问题。
 
-### Kanban Chat Preview 与唯一 live observer
+### Kanban Chat 与唯一常规 live observer
 
-- macOS 与 Windows：打开本机进行中的 issue card，确认左侧为 `/chat-preview/:chatId`，完整历史与增量正常，无输入框；右侧运行记录可切换关联 Chat。
-- Main Chat → Kanban 预览 → Copilot → Main Chat，Inspector 始终只有一个活动 Root Observer，均复用 desktop-main Primary WS；旧 detach 完成后才发新 attach/query，不产生 interrupt。
+- macOS 与 Windows：打开本机进行中的 issue card，确认左侧通过 `/agent/:agentKey?chatId=` 展示当前 Run 绑定的可交互 Chat，可处理等待审批；右侧运行记录可切换关联 Chat，其他设备或不可用 Chat 不提供打开入口。
+- Main Chat → Kanban Chat → Copilot → Main Chat，Inspector 始终只有一个活动的常规 Root Observer，均复用 desktop-main Primary WS；详细解释的辅助 observer 独立使用 Selection Explain lane。旧 detach 完成后才发新 attach/query，不产生 interrupt。
 - 快速切换运行记录、返回 Issue 正文、关闭详情及离开 Kanban：旧 guest 注销，旧流不再交付；重新打开从历史游标 attach，后台 Run 继续。
-- 预览拒绝 query、BTW、submit、steer、interrupt、access-level、终端写入/关闭与其他 Chat 请求；其他设备 Chat 不可打开。
+- 对非进行中任务的 `/chat-preview/:chatId` 只读入口单独检查：只允许当前已登记 Chat 的读取、attach 与 detach，拒绝 query、BTW、submit、steer、interrupt、access-level、终端写入/关闭及其他 Chat 请求；不把这一限制应用到上述可交互 `/agent` 页面。
 
 ## 看板终态结果阅读
 

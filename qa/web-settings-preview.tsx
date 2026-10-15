@@ -7,7 +7,7 @@ import { ServicesProvider } from "../src/renderer/services/ServicesContext";
 import { AppearanceProvider, useAppearance } from "../src/renderer/appearance/AppearanceProvider";
 import { DesktopBackground } from "../src/renderer/appearance/DesktopBackground";
 import { SettingsSidebarIcon } from "../src/renderer/app-shell/navigation/SettingsSidebarIcon";
-import type { WebEntry } from "../src/shared/contracts";
+import type { WebsiteEntry, WebappEntry, WebappRuntimeState } from "../src/shared/contracts";
 import { createTranslator, DEFAULT_LOCALE, type SupportedLocale } from "../src/shared/i18n";
 import { RendererI18nContext, defaultRendererI18nContextValue } from "../src/renderer/i18n/i18n-context";
 import "../src/renderer/styles.css";
@@ -19,12 +19,17 @@ let mode = "light";
 let skinId = "default";
 let withPhoto = false;
 const appearanceResult = () => ({ ok: true, settings: { skinId, background: withPhoto ? { id: "a".repeat(32), name: "lake.png", width: 1586, height: 992 } : null, backgroundDataUrl: withPhoto ? photo : null } });
-const websites = [{ kind: "website", id: "forum", entryKey: "website:forum", label: "示例站点", url: "https://forum.example.test", copilotAgentKey: "", order: 0 }];
-const webapps = [{ kind: "webapp", id: "notes", entryKey: "webapp:notes", label: "便签", key: "notes", schemaVersion: 2, version: "1.3.0", target: "desktop", openMode: "workspace", removable: true, frontend: { root: "frontend", index: "index.html", routeConfig: { backendPrefixes: [] } }, appConfig: {}, userConfig: { fields: [] } }];
+const previewTime = Date.UTC(2026, 9, 14);
+const websites: WebsiteEntry[] = [{ kind: "website", id: "forum", entryKey: "website:forum", label: "示例站点", url: "https://forum.example.test", copilotAgentKey: "", createdAt: previewTime, updatedAt: previewTime }];
+const webapps: WebappEntry[] = [{ kind: "webapp", id: "notes", entryKey: "webapp:notes", label: "便签", key: "notes", schemaVersion: 2, version: "1.3.0", target: "any", openMode: "workspace", removable: true, frontend: { root: "frontend", index: "index.html", routeConfig: { backendPrefixes: [] } }, appConfig: {}, userConfig: { fields: [] }, createdAt: previewTime, updatedAt: previewTime }];
 let bridgeItems = [{ schemaVersion: 2, id: "sample-forum", name: "Sample Forum", version: "2.0.0", origins: { forum: { url: "https://forum.example.test", name: "示例论坛" } }, enabled: true,
   description: "为示例页面提供查询和原生操作。",
   pages: { search: { origin: "forum", path: "/forum" }, compose: { origin: "forum", path: "/forum/new", name: "发帖" }, post: { origin: "forum", path: "/forum/posts/:postId", match: [{ title: "帖子详情" }], shared: ["core", "forum/comment"] } } }];
-let runtime = { id: "notes", status: "running", version: "1.3.0", target: "desktop", launcher: "static", webUrl: "http://127.0.0.1:19080", prerequisiteIssues: [], ownership: null };
+let runtime: WebappRuntimeState = {
+  id: "notes", entryKey: "webapp:notes", kind: "webapp", status: "running", version: "1.3.0", target: "any", launcher: "none",
+  webUrl: "http://127.0.0.1:19080", backendUrl: "", frontendPort: 19080, backendPort: null, pid: null,
+  runtimeVersion: "", externalId: "", prerequisiteIssues: [], ownership: null, message: "", updatedAt: new Date(previewTime).toISOString()
+};
 const result = () => ({ ok: true, items: [...websites, ...webapps], state: runtime, message: "" });
 const bridgeResult = () => ({ ok: true, items: bridgeItems });
 const services = ["identity-center", "agent-platform", "agent-webclient", "agent-container-hub"].map(id => ({
@@ -105,9 +110,9 @@ function Preview() {
     <div className="app-content"><main className="app-main">
       <RendererI18nContext.Provider value={{locale,source:defaultRendererI18nContextValue.source,t,setLocale:async value=>setLocale(value)}}>
       <Routes><Route path="/settings/:sectionId" element={<SettingsPage
-        themeMode={appearance.themeMode} onThemeModeChange={appearance.setThemeMode} isMac={platform === "mac"} isWindows={platform === "windows"}
+        themeMode={appearance.themeMode} onThemeModeChange={async mode => { await appearance.setThemeMode(mode); }} isMac={platform === "mac"} isWindows={platform === "windows"}
         sidebarNavOrder={[]} availableSidebarNavOrderItems={[]} onSidebarNavOrderChange={noop} marketEnabled={false}
-        webItems={(empty ? [] : [...websites, ...webapps]) as WebEntry[]} webOpenEntryKeys={[]} runningWebappCount={1}
+        webItems={empty ? [] : [...websites, ...webapps]} webOpenEntryKeys={[]} runningWebappCount={1}
         copilotAgentOptions={[]} onRefreshCopilotAgentOptions={asyncNoop} webappPublishStateById={{}} onWebItemsRefresh={asyncNoop} debugVisible={true} onCloseDebug={noop}
       />} /></Routes>
       </RendererI18nContext.Provider>

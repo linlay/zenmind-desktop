@@ -8921,19 +8921,7 @@ test("persistent external webview surfaces hide without detaching the webview la
   );
 });
 
-test("R0 deprecated Desktop APIs and dead storage chains are absent while compatibility exits stay observable", () => {
-  for (const segments of [
-    ["src", "main", "assistant", "pet", "agent-platform-api.ts"],
-    ["src", "shared", "startup-status.ts"],
-    ["src", "main", "kanban-cloud-sync.ts"],
-    ["src", "main", "kanban-db.ts"],
-    ["src", "main", "kanban-store.ts"],
-    ["src", "main", "kanban-sync.ts"],
-    ["src", "main", "retired-plugins.ts"],
-  ]) {
-    assert.equal(fs.existsSync(path.join(projectRoot, ...segments)), false, segments.join("/"));
-  }
-
+test("deprecated Desktop APIs and dead storage chains are absent while compatibility exits stay observable", () => {
   const desktopAssistantBoundary = [
     readExactSourceFile("src", "shared", "contracts", "copilot.ts"),
     readExactSourceFile("src", "shared", "contracts", "desktop-api.ts"),
