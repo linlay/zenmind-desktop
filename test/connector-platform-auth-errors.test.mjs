@@ -12,13 +12,20 @@ vm.runInNewContext(output, { module, exports: module.exports, Error, URL, ArrayB
 });
 const { fetchAgentPlatformWithAuth } = module.exports;
 
+// Match Platform's writeAgentHTTPResponse -> api.Failure envelope.
+function platformFailure(status, code, message) {
+  return new Response(JSON.stringify({
+    code: status, msg: message, data: { error: { code, message, status } },
+  }), { status });
+}
+
 test('a connector authentication code reaches IPC without renewing the Desktop app token', async () => {
   for (const [status, code] of [[403, 'connector_authentication_denied'], [401, 'connector_auth_required']]) {
     const reasons = [], requests = [];
     await assert.rejects(fetchAgentPlatformWithAuth('http://127.0.0.1:17078', '/api/admin/connectors/auth', {
       method: 'PUT', body: { credentials: { API_KEY: 'fixture-only' } },
       issueToken: async reason => { reasons.push(reason); return { ok: true, token: 'fixture-app-token' }; },
-      fetchImpl: async (_url, request) => { requests.push(request.method); return new Response(JSON.stringify({ code: -1, msg: 'safe service message', data: { code } }), { status }); },
+      fetchImpl: async (_url, request) => { requests.push(request.method); return platformFailure(status, code, 'safe service message'); },
     }), error => error.message === code && error.platformCode === code && error.status === status);
     assert.deepEqual(reasons, ['missing']);
     assert.deepEqual(requests, ['PUT']);
@@ -29,7 +36,7 @@ test('ordinary Desktop authentication still refreshes once and connector words i
   const reasons = [];
   await assert.rejects(fetchAgentPlatformWithAuth('http://127.0.0.1:17078', '/api/connectors/check', {
     issueToken: async reason => { reasons.push(reason); return { ok: true, token: 'fixture-app-token' }; },
-    fetchImpl: async () => new Response(JSON.stringify({ code: -1, msg: 'connector_auth_required', data: { code: 'unauthorized' } }), { status: 401 }),
+    fetchImpl: async () => platformFailure(401, 'unauthorized', 'connector_auth_required'),
   }), /desktopAction\.agentPlatformAuthFailed/);
   assert.deepEqual(reasons, ['missing', 'unauthorized']);
 });
@@ -39,8 +46,8 @@ test('permission and temporary errors keep their original category without becom
     const reasons = [];
     await assert.rejects(fetchAgentPlatformWithAuth('http://127.0.0.1:17078', '/api/connectors/check', {
       issueToken: async reason => { reasons.push(reason); return { ok: true, token: 'fixture-app-token' }; },
-      fetchImpl: async () => new Response(JSON.stringify({ code: -1, msg: 'connector_authentication_denied', data: { code } }), { status }),
-    }), error => error.status === status && error.platformCode === -1 && JSON.parse(error.message).data.code === code);
+      fetchImpl: async () => platformFailure(status, code, 'connector_authentication_denied'),
+    }), error => error.status === status && error.platformCode === status && JSON.parse(error.message).data.error.code === code);
     assert.deepEqual(reasons, ['missing']);
   }
 });

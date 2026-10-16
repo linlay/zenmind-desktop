@@ -79,7 +79,7 @@ export async function fetchAgentPlatformWithAuth<T>(
     });
     const { text, payload } = await readAgentPlatformResponse(response);
     const record = readObject(payload);
-    const connectorAuthCode = readObject(record.data).code;
+    const connectorAuthCode = readObject(readObject(record.data).error).code;
     // A connector service rejecting its own account is distinct from the
     // Desktop app token expiring. Keep only its stable code across Electron IPC.
     if (!response.ok && (connectorAuthCode === "connector_authentication_denied" || connectorAuthCode === "connector_auth_required")) {
