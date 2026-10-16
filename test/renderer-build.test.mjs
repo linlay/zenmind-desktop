@@ -5441,7 +5441,8 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /getConfiguredDesktopActionBridgePort\(options\.app\)/);
   assert.match(bridge, /server\.listen\(bridgePort, DESKTOP_ACTION_BRIDGE_HOST/);
   assert.doesNotMatch(bridge, /server\.listen\(DESKTOP_ACTION_BRIDGE_PORT/);
-  assert.match(actionCatalog, /page_control/);
+  assert.doesNotMatch(actionCatalog, /page_control/);
+  assert.match(actionCatalog, /DesktopActionConfirmation = "none" \| "external" \| "always"/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
   assert.match(actionCatalog, /desktop\.general\.deviceName/);
   assert.match(actionCatalog, /desktop\.theme\.get/);
@@ -5508,10 +5509,10 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(bridge, /case "desktop\.help\.(?:getCurrentTopic|searchTopics|explainCurrentPage|suggestNextAction|navigateToRelatedPage)/);
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
-  assert.match(bridge, /confirmMutatingAction/);
+  assert.match(bridge, /confirmDesktopActionIfNeeded/);
   assert.match(bridge, /buildDesktopActionConfirmationDetail/);
-  assert.match(bridge, /buildMutatingActionConfirmationRequest/);
-  assert.match(bridge, /buildPageControlActionConfirmationRequest/);
+  assert.match(bridge, /buildActionConfirmationRequest/);
+  assert.doesNotMatch(bridge, /PageControl|page_control/);
   assert.doesNotMatch(bridge, /desktop\.page\./);
   assert.doesNotMatch(bridge, /desktop\.web\.(?:getPageContext|readPageData|extractStructured)/);
   assert.match(bridge, /case "desktop\.web\.interactElement"/);
@@ -5519,9 +5520,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /summarizeConfirmationArgs/);
   assert.match(bridge, /confirmDetailRedacted/);
   assert.doesNotMatch(bridge, /providedSummary/);
-  assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)\.general\.desktopActionConfirmationEnabled/);
-  assert.match(bridge, /PageControlGrantStore/);
-  assert.match(bridge, /t\("desktopAction\.pageControlGrant"\)/);
+  assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)[\s\S]*?general\.desktopActionConfirmationEnabled/);
   assert.match(trustedWorkPanelHandler, /AGENT_WEBCLIENT_WORKPANEL_ACTIONS\.has\(method\)/);
   assert.match(trustedWorkPanelHandler, /source: \{ chatId: ownerChatId \}/);
   assert.match(trustedWorkPanelHandler, /kind: "agentWebclientWorkPanel"/);
@@ -5593,19 +5592,17 @@ test("desktop action confirmation detail keeps debug context and redaction keys"
   const enUS = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"), "utf8");
 
   assert.match(bridge, /function buildDesktopActionConfirmationDetail/);
-  assert.match(bridge, /function buildMutatingActionConfirmationRequest/);
-  assert.match(bridge, /function buildPageControlActionConfirmationRequest/);
+  assert.match(bridge, /function buildActionConfirmationRequest/);
   assert.match(bridge, /function summarizeConfirmationArgs/);
   assert.match(bridge, /function sanitizeConfirmationUrl/);
   assert.match(bridge, /Object\.entries\(record\)\.slice/);
-  assert.match(bridge, /confirmMutatingAction\(\s*options,\s*request,\s*args,\s*snapshot/);
-  assert.match(bridge, /confirmPageControlAction\(\s*options,\s*scope,\s*request,\s*args/);
+  assert.match(bridge, /buildActionConfirmationRequest\(normalizedRequest, confirmationArgs, options\.getCurrentPageSnapshot\(\)\)/);
   assert.match(bridge, /buildDesktopActionConfirmationDetail\(request, args/);
   assert.match(bridge, /buildNativeConfirmationDetail/);
   assert.match(bridge, /desktopAction\.confirmDetailRedacted/);
   assert.match(bridge, /desktopAction\.confirmDetailMore/);
   assert.match(bridge, /__testInternals[\s\S]*buildDesktopActionConfirmationDetail/);
-  assert.match(bridge, /__testInternals[\s\S]*buildMutatingActionConfirmationRequest/);
+  assert.match(bridge, /__testInternals[\s\S]*buildActionConfirmationRequest/);
 
   for (const dictionary of [zhCN, enUS]) {
     assert.match(dictionary, /desktopAction\.confirmFieldAction/);
@@ -5624,7 +5621,7 @@ test("desktop action confirmation detail keeps debug context and redaction keys"
     assert.match(dictionary, /desktopAction\.confirmDetailRedacted/);
     assert.match(dictionary, /desktopAction\.confirmDetailMore/);
     assert.match(dictionary, /desktopAction\.confirmDetailFooter/);
-    assert.match(dictionary, /desktopAction\.pageControlCompactDescription/);
+    assert.doesNotMatch(dictionary, /desktopAction\.pageControl/);
   }
 });
 
@@ -8917,19 +8914,7 @@ test("persistent external webview surfaces hide without detaching the webview la
   );
 });
 
-test("R0 deprecated Desktop APIs and dead storage chains are absent while compatibility exits stay observable", () => {
-  for (const segments of [
-    ["src", "main", "assistant", "pet", "agent-platform-api.ts"],
-    ["src", "shared", "startup-status.ts"],
-    ["src", "main", "kanban-cloud-sync.ts"],
-    ["src", "main", "kanban-db.ts"],
-    ["src", "main", "kanban-store.ts"],
-    ["src", "main", "kanban-sync.ts"],
-    ["src", "main", "retired-plugins.ts"],
-  ]) {
-    assert.equal(fs.existsSync(path.join(projectRoot, ...segments)), false, segments.join("/"));
-  }
-
+test("deprecated Desktop APIs and dead storage chains are absent while compatibility exits stay observable", () => {
   const desktopAssistantBoundary = [
     readExactSourceFile("src", "shared", "contracts", "copilot.ts"),
     readExactSourceFile("src", "shared", "contracts", "desktop-api.ts"),

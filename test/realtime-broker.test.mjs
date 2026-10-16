@@ -1084,6 +1084,139 @@ test("last Root Observer release detaches once, keeps the Run dormant, then reat
   assert.equal(requestOfType(socket("primary"), "/api/query").length, 1);
 });
 
+test("attach wait snapshot with seq 0 reaches subscribers without moving the cursor or replay", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const rootEvents = [];
+  const restored = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    lane: "primary",
+    runId: "run-wait",
+    chatId: "chat-1",
+    lastSeq: 145,
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface",
+    role: "root_observer",
+    observerToken: observer.token,
+    consumerId: "main-chat",
+    onEvent: (event) => rootEvents.push(event),
+  });
+  await restored.ready;
+  const attach = requestOfType(socket("primary"), "/api/attach")[0];
+  assert.equal(attach.payload.lastSeq, 145);
+  const wait = { toolId: "wait-1", startedAt: EPOCH_MS, deadlineAt: EPOCH_MS + 30_000, attachSnapshot: true };
+  socket("primary").emit({ frame: "stream", id: attach.id, event: runEvent("tool.wait.update", "run-wait", "chat-1", 0, wait) });
+  await nextTurn();
+
+  assert.deepEqual(rootEvents.map((event) => [event.type, event.seq, event.toolId]), [["tool.wait.update", 0, "wait-1"]]);
+  const channel = () => broker.getDiagnostics().replay.find((run) => run.runId === "run-wait");
+  assert.equal(channel().lastSeq, 145);
+  assert.equal(channel().eventCount, 0);
+
+  socket("primary").emit({ frame: "stream", id: attach.id, event: runEvent("tool.output", "run-wait", "chat-1", 146, { toolId: "other" }) });
+  await nextTurn();
+  assert.deepEqual(rootEvents.map((event) => event.seq), [0, 146]);
+
+  const lateEvents = [];
+  const late = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080", token, runId: "run-wait", chatId: "chat-1", lastSeq: 146,
+    owner: { kind: "agent", agentKey: "agent-1" }, kind: "internal", role: "internal", consumerId: "late-reader",
+    onEvent: (event) => lateEvents.push(event),
+  });
+  assert.deepEqual(lateEvents.map((event) => [event.type, event.seq, event.toolId, event.attachSnapshot]),
+    [["tool.wait.update", 0, "wait-1", true]]);
+  late.unsubscribe();
+
+  socket("primary").emit({ frame: "stream", id: attach.id, event: runEvent("tool.result", "run-wait", "chat-1", 147, { toolId: "wait-1" }) });
+  await nextTurn();
+  const afterResult = [];
+  broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080", token, runId: "run-wait", chatId: "chat-1", lastSeq: 147,
+    owner: { kind: "agent", agentKey: "agent-1" }, kind: "internal", role: "internal", consumerId: "after-result",
+    onEvent: (event) => afterResult.push(event),
+  }).unsubscribe();
+  assert.deepEqual(afterResult, [], "a completed wait must not be revived");
+  assert.equal(channel().lastSeq, 147);
+  assert.equal(requestOfType(socket("primary"), "/api/attach").length, 1);
+});
+
+test("live tool.wait is projected to late subscribers until its tool.result", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080", token, id: "wait-query", runId: "run-live-wait", chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" }, observerToken: observer.token, consumerId: "main-chat",
+    payload: { runId: "run-live-wait", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-live-wait", "chat-1", 1) });
+  await query.accepted;
+  socket("primary").emit({ frame: "stream", id: upstream.id,
+    event: runEvent("tool.wait", "run-live-wait", "chat-1", 2, { toolId: "wait-1", deadlineAt: EPOCH_MS + 30_000 }) });
+  await nextTurn();
+
+  const subscribe = (consumerId, lastSeq) => {
+    const events = [];
+    broker.subscribeRun({
+      baseUrl: "http://127.0.0.1:8080", token, runId: "run-live-wait", chatId: "chat-1", lastSeq,
+      owner: { kind: "agent", agentKey: "agent-1" }, kind: "internal", role: "internal", consumerId,
+      onEvent: (event) => events.push([event.type, event.seq, event.attachSnapshot === true]),
+    }).unsubscribe();
+    return events;
+  };
+  assert.deepEqual(subscribe("reader-1", 2), [["tool.wait.update", 0, true]]);
+
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.complete", "run-live-wait", "chat-1", 3) });
+  await nextTurn();
+  assert.deepEqual(subscribe("reader-2", 3), []);
+});
+
+for (const loss of ["detach", "disconnect"]) {
+test(`wait cache is not projected after ${loss} until upstream reconfirms it`, async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080", token, id: `stale-wait-${loss}`, runId: "run-stale-wait", chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" }, observerToken: observer.token, consumerId: "main-chat",
+    payload: { runId: "run-stale-wait", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-stale-wait", "chat-1", 1) });
+  await query.accepted;
+  socket("primary").emit({ frame: "stream", id: upstream.id,
+    event: runEvent("tool.wait", "run-stale-wait", "chat-1", 2, { toolId: "wait-1", deadlineAt: EPOCH_MS + 30_000 }) });
+  await nextTurn();
+
+  if (loss === "detach") {
+    broker.releaseRootObserver(observer.token);
+    await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 1);
+    const detach = requestOfType(socket("primary"), "/api/detach")[0];
+    socket("primary").emit({ frame: "response", id: detach.id, data: { accepted: true, streamRequestId: upstream.id, lastSeq: 2 } });
+    await query.completed;
+  } else {
+    socket("primary").disconnect();
+  }
+  await nextTurn();
+
+  // The wait finished in the background at seq 3; this reader already loaded history through seq 4.
+  const events = [];
+  broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080", token, runId: "run-stale-wait", chatId: "chat-1", lastSeq: 4,
+    owner: { kind: "agent", agentKey: "agent-1" }, kind: "internal", role: "internal", consumerId: "history-reader",
+    onEvent: (event) => events.push([event.type, event.seq]),
+  }).unsubscribe();
+  assert.deepEqual(events, [], "an unconfirmed wait cache must not be projected");
+});
+}
+
 test("a replacement observer before detach write cancels the old detach", async (t) => {
   const { broker, socket, token } = createHarness(t);
   const first = rootObserver();

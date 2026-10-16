@@ -91,7 +91,7 @@ test("primary artifact.publish records every valid item without a gateway upload
   const broker = { options: { onArtifactPublished: value => store.ingestPublished(value), onDiagnostic: value => errors.push(value) },
     diagnostics: { seqRegressionCount: 0, seqGapCount: 0 }, runSubscriptions: new Map() };
   const channels = createRunChannels(broker);
-  const run = { lane: 'primary', chatId: 'chat-1', runId: 'run-1', lastSeq: 0, subscribers: new Set(), replay: [], replayBytes: 0 };
+  const run = { lane: 'primary', chatId: 'chat-1', runId: 'run-1', lastSeq: 0, subscribers: new Set(), replay: [], replayBytes: 0, activeWaits: new Map() };
   channels.consumeRunEvent(run, published, null);
   assert.equal(store.list().total, 2);
   channels.consumeRunEvent(run, published, null);

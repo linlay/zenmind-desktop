@@ -144,63 +144,6 @@ export const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWor
   closeItem: "desktop.workpanel.closeTab"
 };
 
-// Only the trusted Agent Platform invocation context uses this list.
-// Webpage actions also have a namespace exemption in action-handlers.ts.
-// Keep action definitions and public Desktop confirmation intact.
-// Platform owns any review/auto-approval policy.
-export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
-  // Trusted WorkPanel navigation and lifecycle.
-  "desktop.workpanel.openTab",
-  "desktop.workpanel.activateTab",
-  "desktop.workpanel.closeTab",
-  "desktop.workpanel.closeWorkpanel",
-  "desktop.workpanel.openWeb",
-  "desktop.workpanel.openLocalFile",
-  "desktop.workpanel.refreshWeb",
-  // Appearance and preferences.
-  "desktop.theme.set",
-  "desktop.locale.set",
-  "desktop.skin.import",
-  "desktop.skin.set",
-  "desktop.skin.remove",
-  "desktop.pet.show",
-  "desktop.pet.hide",
-  "desktop.pet.set",
-  "desktop.pet.import",
-  "desktop.copilot.setPagePreference",
-  // Website entries and Kanban.
-  "desktop.site.setPinned",
-  "desktop.website.add",
-  "desktop.website.update",
-  "desktop.website.remove",
-  "desktop.kanban.createIssue",
-  "desktop.kanban.updateIssue",
-  "desktop.kanban.deleteIssue",
-  "desktop.kanban.moveIssue",
-  // Individual WebApp operation and exports.
-  "desktop.webapp.start",
-  "desktop.webapp.stop",
-  "desktop.webapp.restart",
-  "desktop.webapp.open",
-  "desktop.webapp.updatePreferences",
-  "desktop.webapp.unpublish",
-  "desktop.web.exportArtifact",
-  // Navigation, catalog refresh, and diagnostic review.
-  "desktop.navigate.toRoute",
-  "desktop.help.openTopic",
-  "desktop.agent.open",
-  "desktop.agent.update",
-  "desktop.skill.open",
-  "desktop.skill.update",
-  "desktop.assistant.chat",
-  "desktop.website.open",
-  "desktop.controlCenter.openService",
-  "desktop.controlCenter.openLogViewer",
-  "desktop.market.openItem",
-  "desktop.market.refresh",
-  "desktop.runtime.diagnostics",
-]);
-
 export const AGENT_PLATFORM_ONLY_ACTIONS = new Set([
   // Saved passwords are filled only for a trusted Run on its own authorized page.
   "desktop.credentials.list",

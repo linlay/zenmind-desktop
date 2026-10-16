@@ -1149,12 +1149,6 @@ test("browser surface registry keeps Copilot Dock live-active while excluding it
   assert.equal(exported.find((surface) => surface.surfaceId === dockIdentity.surfaceId).active, false);
 });
 
-test("current page cdp inspector uses the shared command helper", () => {
-  const source = fs.readFileSync(path.join(process.cwd(), "src", "main", "modules", "web-surfaces", "cdp", "current-page-inspector.ts"), "utf8");
-
-  assert.match(source, /sendDesktopCdpCommand/u);
-});
-
 test("Surface discovery and selection share Chat ownership and exclude file previews", async () => {
   const make = (id, chatId, url) => ({
     id, surfaceId: id, targetGeneration: 'generation-1', surfaceKind: 'chat-work-panel',

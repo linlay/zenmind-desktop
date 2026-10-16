@@ -98,6 +98,14 @@ export function createRunChannels(deps: RunChannelsPort) {
     if (eventChatId && eventChatId !== run.chatId) {
       throw brokerError("protocol_error", "stream chatId conflicts with registered Run");
     }
+    if (isWaitAttachSnapshot(type, event)) {
+      // Platform attach projects current waits with seq 0: deliver them, but keep
+      // the resume cursor and replay log unchanged.
+      trackActiveWait(run, type, event, path);
+      for (const id of run.subscribers)
+        deps.runSubscriptions.get(id)?.onEvent(event, path);
+      return;
+    }
     const seq = typeof event.seq === "number" && Number.isSafeInteger(event.seq)
       ? event.seq
       : null;
@@ -110,6 +118,7 @@ export function createRunChannels(deps: RunChannelsPort) {
         deps.diagnostics.seqGapCount += 1;
       run.lastSeq = seq;
     }
+    trackActiveWait(run, type, event, path);
     if (transaction && !transaction.acceptedValue) {
       if (type !== "run.start") {
         if (isTerminalEvent(type)) {
@@ -150,6 +159,21 @@ export function createRunChannels(deps: RunChannelsPort) {
     }
   }
 
+  function isWaitAttachSnapshot(type: string, event: Record<string, unknown>): boolean {
+    return type === "tool.wait.update" && event.seq === 0 && event.attachSnapshot === true;
+  }
+
+  /** Mirrors Platform RunEventBus active-wait bookkeeping. */
+  function trackActiveWait(run: BrokerRun, type: string, event: Record<string, unknown>, path: string): void {
+    const key = `${readText(event.taskId)}\u0000${readText(event.toolId)}`;
+    if (type === "tool.wait" || type === "tool.wait.update")
+      run.activeWaits.set(key, { event, path });
+    else if (type === "tool.result")
+      run.activeWaits.delete(key);
+    else if (isTerminalEvent(type))
+      run.activeWaits.clear();
+  }
+
   function appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null, path?: string): void {
     const bytes = Buffer.byteLength(JSON.stringify(event));
     run.replay.push({ event, bytes, seq, ...(path ? { path } : {}) });
@@ -185,6 +209,11 @@ export function createRunChannels(deps: RunChannelsPort) {
         subscription.lastSeq = entry.seq;
       subscription.onEvent(entry.event, entry.path);
     }
+    // Local subscribers share one upstream attach, so they never see its
+    // snapshots; project current waits the same way Platform attach does.
+    for (const { event, path } of run.activeWaits.values()) {
+      subscription.onEvent({ ...event, seq: 0, type: "tool.wait.update", attachSnapshot: true }, path);
+    }
   }
 
   function completeRun(run: BrokerRun, result: RealtimeQueryCompleted, source: NonNullable<BrokerRun["terminalSource"]>): void {
@@ -196,6 +225,7 @@ export function createRunChannels(deps: RunChannelsPort) {
     run.terminalReason = result.reason;
     run.terminalSource = source;
     run.suspended = false;
+    run.activeWaits.clear();
     deps.revokeRunActionGrant(run.runId);
     deps.siteControlGrants.revoke(run.runId);
     if (run.upstreamRequestId) {

@@ -4,6 +4,7 @@ import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, t
 import { WebsiteBridgesSettings } from "./WebsiteBridgesSettings";
 import { WebsiteCredentialsSettings } from "./WebsiteCredentialsSettings";
 import { SettingsActionButton } from "./SettingsActionButton";
+import { DesktopActionConfirmationSettingsDialog } from "./DesktopActionConfirmationSettingsDialog";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
@@ -509,7 +510,8 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
   desktopActionConfirmationTimeoutSeconds: DEFAULT_CONFIRMATION_TIMEOUT_SECONDS,
-  desktopActionConfirmationEnabled: true
+  desktopActionConfirmationEnabled: true,
+  desktopActionConfirmationExemptActions: []
 };
 
 const defaultEnterpriseImSettings: EnterpriseImSettings = {
@@ -2451,6 +2453,7 @@ export function SettingsPage({
   const [usageHeatmapMode, setUsageHeatmapMode] = useState<UsageHeatmapMode>("day");
   const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
   const [confirmationTimeoutDraft, setConfirmationTimeoutDraft] = useState<number | null>(DEFAULT_CONFIRMATION_TIMEOUT_SECONDS);
+  const [actionConfirmationSettingsOpen, setActionConfirmationSettingsOpen] = useState(false);
   useEffect(() => {
     setConfirmationTimeoutDraft(generalSettings.desktopActionConfirmationTimeoutSeconds);
   }, [generalSettings.desktopActionConfirmationTimeoutSeconds]);
@@ -3334,6 +3337,17 @@ export function SettingsPage({
     } catch (reason) {
       setConfirmationTimeoutDraft(generalSettings.desktopActionConfirmationTimeoutSeconds);
       showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
+  async function saveActionConfirmationExemptions(actions: string[]) {
+    setGeneralSettingsSaving(true);
+    try {
+      const saved = await window.electronAPI.settings.saveGeneralSettings({ desktopActionConfirmationExemptActions: actions });
+      setGeneralSettings({ ...defaultGeneralSettings, ...saved });
+      showSectionNotice("general", t("settings.actionConfirmation.saved"), "success");
     } finally {
       setGeneralSettingsSaving(false);
     }
@@ -4530,12 +4544,17 @@ export function SettingsPage({
                 <strong>{t("settings.general.desktopActionConfirmation")}</strong>
                 <span>{t("settings.general.desktopActionConfirmationDescription")}</span>
               </div>
-              <Switch
-                checked={generalSettings.desktopActionConfirmationEnabled}
-                aria-label={t("settings.general.desktopActionConfirmation")}
-                disabled={generalSettingsSaving}
-                onChange={() => void handleToggleDesktopActionConfirmation()}
-              />
+              <div className="settings-action-confirmation-controls">
+                <Button disabled={generalSettingsSaving} onClick={() => setActionConfirmationSettingsOpen(true)}>
+                  {t("settings.actionConfirmation.manage")}
+                </Button>
+                <Switch
+                  checked={generalSettings.desktopActionConfirmationEnabled}
+                  aria-label={t("settings.general.desktopActionConfirmation")}
+                  disabled={generalSettingsSaving}
+                  onChange={() => void handleToggleDesktopActionConfirmation()}
+                />
+              </div>
             </div>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
@@ -5883,6 +5902,14 @@ export function SettingsPage({
           </div>
         </div>
       </div>
+      {actionConfirmationSettingsOpen ? (
+        <DesktopActionConfirmationSettingsDialog
+          exemptActions={generalSettings.desktopActionConfirmationExemptActions}
+          confirmationEnabled={generalSettings.desktopActionConfirmationEnabled}
+          onSave={saveActionConfirmationExemptions}
+          onClose={() => setActionConfirmationSettingsOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }

@@ -2449,13 +2449,15 @@ test("WebApp Bridge native actions require page scope and enforce their public c
     false
   );
 
+  // WebApp Bridge page methods are not Desktop Actions: other entries see an unknown action, without confirmation.
+  assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name.startsWith("desktop.native.")), false);
   const forbidden = await handleDesktopActionRequest(options, {
     action: "desktop.native.browser.openExternal",
-    args: { url: "https://example.com/docs" },
-    permissionMode: "full_access"
+    args: { url: "https://example.com/docs" }
   });
   assert.equal(forbidden.ok, false);
-  assert.equal(forbidden.error.code, "forbidden");
+  assert.equal(forbidden.error.code, "unknown_action");
+  assert.deepEqual(calls.externalUrls, []);
 
   const opened = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.browser.openExternal",
@@ -2776,7 +2778,7 @@ test("Desktop Action Bridge keeps WebApp page and backend token scopes separate"
     { text: "forged" }
   );
   assert.equal(forgedDesktop.status, 400);
-  assert.equal(forgedDesktop.body.error.code, "forbidden");
+  assert.equal(forgedDesktop.body.error.code, "unknown_action");
 
   const wrongScope = await call(
     "/webapps/actions/call",
@@ -3291,7 +3293,7 @@ test("runtime actions publish stable read contracts and info uses startup-cached
 
   assert.deepEqual(definitions.map(({ name, kind, confirmation }) => ({ name, kind, confirmation })), [
     { name: "desktop.runtime.info", kind: "read", confirmation: undefined },
-    { name: "desktop.runtime.diagnostics", kind: "read", confirmation: "sensitive-read" }
+    { name: "desktop.runtime.diagnostics", kind: "read", confirmation: "external" }
   ]);
 
   const response = await handleDesktopActionRequest(options, {
@@ -3342,8 +3344,7 @@ test("runtime diagnostics confirms before reading and honors confirmation bypass
   assert.equal(cancelled.error.code, "user_cancelled");
   assert.equal(calls.runtimeDiagnostics, 0);
   assert.equal(confirmationCalls.length, 1);
-  assert.equal(confirmationCalls[0].fields.length, 1);
-  assert.match(confirmationCalls[0].fields[0].value, /SSO/u);
+  assert.equal(confirmationCalls[0].fields[0].value, "desktop.runtime.diagnostics");
   assert.doesNotMatch(JSON.stringify(confirmationCalls[0]), /runtime-host|runtime-user|\/Applications/u);
 
   options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
@@ -4020,13 +4021,13 @@ test("desktop action confirmation detail exposes debug context with redacted arg
     epsilon: "e",
     zeta: "z"
   }, {
-    permissionMode: "page_control",
+    permissionMode: "default",
     target: "Agent Webclient | https://example.test/path/to/page?token=secret#fragment"
   });
 
   assert.match(detail, /desktop\.web\.navigate/u);
   assert.match(detail, /request-123/u);
-  assert.match(detail, /page_control/u);
+  assert.match(detail, /default/u);
   assert.match(detail, /run-abc/u);
   assert.match(detail, /chat-def/u);
   assert.match(detail, /zenmi/u);
@@ -4064,7 +4065,7 @@ test("desktop action confirmation detail preserves Team run identity", () => {
 });
 
 test("desktop action confirmation request keeps compact fields free of debug context", () => {
-  const payload = __testInternals.buildMutatingActionConfirmationRequest({
+  const payload = __testInternals.buildActionConfirmationRequest({
     requestId: "request-123",
     action: "desktop.website.add",
     source: {
@@ -4093,7 +4094,6 @@ test("desktop action confirmation request keeps compact fields free of debug con
     fields: payload.fields
   });
 
-  assert.equal(payload.kind, "action");
   assert.equal(payload.title, "确认桌面端动作");
   assert.equal(payload.description, "该动作由本地桌面端动作桥发起。请确认目标和影响后再执行。");
   assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "confirm"]);
@@ -4112,41 +4112,6 @@ test("desktop action confirmation request keeps compact fields free of debug con
   assert.match(payload.details, /chat-def/u);
   assert.doesNotMatch(payload.details, /secret-token/u);
   assert.doesNotMatch(payload.details, /token=secret/u);
-});
-
-test("page control confirmation request exposes grant once cancel decisions", () => {
-  const payload = __testInternals.buildPageControlActionConfirmationRequest({
-    chatId: "chat-def",
-    agentKey: "zenmi",
-    webContentsId: 12,
-    origin: "https://example.test",
-    surfaceLabel: "Agent Webclient",
-    pageTitle: "Example"
-  }, {
-    requestId: "request-page",
-    action: "desktop.web.interactElement",
-    permissionMode: "page_control",
-    source: {
-      runId: "run-page",
-      chatId: "chat-def",
-      agentKey: "zenmi"
-    }
-  }, {
-    action: "click",
-    selector: "#name",
-    password: "hidden-password"
-  });
-
-  assert.equal(payload.kind, "page_control");
-  assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "once", "grant"]);
-  assert.equal(payload.defaultDecision, "once");
-  assert.equal(payload.cancelDecision, "cancel");
-  assert.match(JSON.stringify(payload.fields), /page_control/u);
-  assert.match(payload.details, /request-page/u);
-  assert.match(payload.details, /run-page/u);
-  assert.match(payload.details, /Agent Webclient/u);
-  assert.match(payload.details, /\[已隐藏\]/u);
-  assert.doesNotMatch(payload.details, /hidden-password/u);
 });
 
 for (const platform of ["darwin", "win32"]) {
@@ -4361,6 +4326,90 @@ test("Platform management exemptions preserve public and heavy-action confirmati
   assert.equal(created, 1);
 });
 
+test("always-tier exemptions skip confirmation for both entries but cannot exempt external-tier actions", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const confirmations = [];
+  let restarted = 0;
+  options.services.restartService = async () => { restarted++; return { status: "running" }; };
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.callRendererAction = async request => ({ requestId: request.requestId, action: request.action, ok: true, result: {} });
+  options.confirmRendererAction = async request => {
+    confirmations.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  const profileRoot = getDesktopConfigRoot(options.app);
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "helper" };
+  const restart = { action: "desktop.controlCenter.restartService", source, args: { serviceId: "agent-platform" } };
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [
+    "desktop.controlCenter.restartService", "desktop.theme.set"
+  ] } });
+  assert.equal((await handleAgentPlatformDesktopActionRequest(options, restart)).ok, true);
+  assert.equal((await handleDesktopActionRequest(options, restart)).ok, true);
+  assert.equal(restarted, 2);
+  assert.equal(confirmations.length, 0);
+  // Even a previously saved external-tier selection must not bypass its confirmation.
+  const theme = await handleDesktopActionRequest(options, { action: "desktop.theme.set", args: { themeMode: "dark" } });
+  assert.equal(theme.error.code, "user_cancelled");
+  const stop = await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.controlCenter.stopService", source });
+  assert.equal(stop.error.code, "user_cancelled");
+  const locale = await handleDesktopActionRequest(options, { action: "desktop.locale.set", args: { locale: "en-US" } });
+  assert.equal(locale.error.code, "user_cancelled");
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [] } });
+  assert.equal((await handleAgentPlatformDesktopActionRequest(options, restart)).error.code, "user_cancelled");
+  assert.equal(restarted, 2);
+  assert.equal(confirmations.length, 4);
+});
+
+test("selecting all exemptible actions covers only the always tier and clearing restores confirmation", async (t) => {
+  const { DESKTOP_EXEMPTIBLE_ACTIONS } = require("../dist-electron/shared/desktop-action-confirmation.js");
+  const { calls, options } = createDesktopActionOptions(t);
+  const profileRoot = getDesktopConfigRoot(options.app);
+  const selected = DESKTOP_EXEMPTIBLE_ACTIONS.map(({ name }) => name);
+  assert.equal(selected.length, 17);
+  assert.ok(DESKTOP_EXEMPTIBLE_ACTIONS.every(({ confirmation }) => confirmation === "always"));
+  let restarted = 0;
+  options.services.restartService = async () => { restarted++; return { status: "running" }; };
+  const restart = { action: "desktop.controlCenter.restartService", args: { serviceId: "agent-platform" } };
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: selected } });
+  options.getMainWindow = () => null;
+  options.confirmRendererAction = () => assert.fail("an exempt action must not request confirmation");
+  const result = await handleAgentPlatformDesktopActionRequest(options, restart);
+  assert.equal(result.ok, true);
+  assert.equal(restarted, 1);
+  options.confirmRendererAction = async request => ({ requestId: request.requestId, decision: "cancel" });
+  const external = await handleDesktopActionRequest(options, { action: "desktop.runtime.diagnostics" });
+  assert.equal(external.error.code, "user_cancelled");
+  assert.equal(calls.runtimeDiagnostics, 0);
+  updateDesktopProfileInRoot(profileRoot, { general: { desktopActionConfirmationExemptActions: [] } });
+  delete options.confirmRendererAction;
+  const gated = await handleAgentPlatformDesktopActionRequest(options, restart);
+  assert.equal(gated.error.code, "confirmation_unavailable");
+  assert.equal(restarted, 1);
+});
+
+test("permissionMode inside action args cannot skip Desktop confirmation", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const confirmations = [];
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async request => {
+    confirmations.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "helper" };
+  const internal = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.controlCenter.restartService", source, args: { serviceId: "agent-platform", permissionMode: "full_access" }
+  });
+  assert.equal(internal.requiresConfirmation, true);
+  assert.equal(internal.error.code, "user_cancelled");
+  const external = await handleDesktopActionRequest(options, {
+    action: "desktop.theme.set", args: { themeMode: "dark", permissionMode: "full_access" }
+  });
+  assert.equal(external.requiresConfirmation, true);
+  assert.equal(external.error.code, "user_cancelled");
+  assert.equal(confirmations.length, 2);
+  assert.ok(confirmations.every((request) => request.fields.some((field) => field.value === "default")));
+});
+
 test("pet import returns only identity, preserves selection, and only Platform bypasses host confirmation", async t => {
   const { options, calls } = createDesktopActionOptions(t);
   options.platform = 'darwin';
@@ -4507,6 +4556,16 @@ test("credential actions serve only a trusted Run, on the page's real site, and 
   const unattended = await call("desktop.credentials.fill", { surfaceId: "page:1", submit: true }, { permissionMode: "full_access" });
   assert.equal(unattended.result.status, "submitted");
   assert.equal(confirmations.length, 2);
+
+  // A user-saved exemption skips only the dialog, not site, account or Run validation.
+  updateDesktopProfileInRoot(getDesktopConfigRoot(options.app), {
+    general: { desktopActionConfirmationExemptActions: ["desktop.credentials.fill"] }
+  });
+  const exemptFill = await call("desktop.credentials.fill", { surfaceId: "page:1" });
+  assert.equal(exemptFill.result.status, "submitted");
+  assert.equal(confirmations.length, 2);
+  const invalidSurface = await call("desktop.credentials.fill", { surfaceId: "page:9" });
+  assert.equal(invalidSurface.error.code, "target_not_in_current_surface");
 
   // An account id from another site, a site without saved accounts, and plain HTTP all fill nothing.
   scripts.length = 0;

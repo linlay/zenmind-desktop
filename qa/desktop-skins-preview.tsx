@@ -8,6 +8,8 @@ import { SkinSettings } from "../src/renderer/appearance/SkinSettings";
 import "../src/renderer/pages/settings/SettingsPage.css";
 import { DesktopBackground } from "../src/renderer/appearance/DesktopBackground";
 import { bootstrapAppearance } from "../src/renderer/appearance/browser";
+import type { ThemePreference } from "../src/renderer/appearance/model";
+import type { DesktopSkinId, DesktopSkinView } from "../src/shared/desktop-appearance";
 import { Popover } from "../src/renderer/components/Popover";
 import "../src/renderer/styles.css";
 import "./desktop-skins-preview.css";
@@ -16,16 +18,16 @@ import alpineLake from "./assets/alpine-lake.png";
 const inElectron = Boolean(window.electronAPI);
 if (!inElectron) {
   // Browser-only preview bridge. Production renderer always uses real preload.
-  let themeMode = "light";
+  let themeMode: ThemePreference = "light";
   const photoDemo = new URLSearchParams(location.search).get("background") === "photo";
-  let settings = photoDemo
+  let settings: DesktopSkinView = photoDemo
     ? { skinId: "mist", background: { id: "0123456789abcdef0123456789abcdef", name: "山湖照片.png", width: 1586, height: 992 }, backgroundDataUrl: alpineLake }
     : { skinId: "default", background: null, backgroundDataUrl: null };
   const result = () => ({ ok: true, settings });
   Object.defineProperty(window, "electronAPI", { value: { settings: {
     getThemePreference: async () => themeMode,
     getDesktopSkin: async () => result(),
-    setDesktopSkin: async (skinId) => { settings = { ...settings, skinId }; return result(); },
+    setDesktopSkin: async (skinId: DesktopSkinId) => { settings = { ...settings, skinId }; return result(); },
     resetDesktopBackground: async () => { settings = { ...settings, background: null, backgroundDataUrl: null }; return result(); },
     // A temporary browser demo: production import validation and durable storage
     // live in Main. No browser demo files are written to Desktop's profile.
@@ -54,11 +56,12 @@ if (!inElectron) {
       };
       input.click();
     }),
-    setNativeThemeSource: async (theme: string) => { themeMode = theme; return { ok: true, themeSource: theme }; }
+    setNativeThemeSource: async (theme: ThemePreference) => { themeMode = theme; return { ok: true, themeSource: theme }; }
   } } });
 }
 bootstrapAppearance();
-window.skinPreview = { mounts: 0 };
+const skinPreview = { mounts: 0 };
+Object.assign(window, { skinPreview });
 const guestUrl = new URL("./guest.html", window.location.href).href;
 
 function SkinPreview() {
@@ -69,8 +72,8 @@ function SkinPreview() {
   const [brokenBackground, setBrokenBackground] = useState(false);
   const [selected, setSelected] = useState("工作台");
   const [draft, setDraft] = useState("");
-  useLayoutEffect(() => { Object.assign(window.skinPreview, { api: appearance, setPlatform, setEmbedded, setCollapsed, setBrokenBackground, setSelected }); });
-  useEffect(() => { window.skinPreview.mounts++; }, []);
+  useLayoutEffect(() => { Object.assign(skinPreview, { api: appearance, setPlatform, setEmbedded, setCollapsed, setBrokenBackground, setSelected }); });
+  useEffect(() => { skinPreview.mounts++; }, []);
   const background = appearance.background;
   return (
     <div className="skin-preview-page">
@@ -78,7 +81,7 @@ function SkinPreview() {
         <div><strong>Desktop · 图片背景与皮肤</strong><span>预览选择不会保存到 Desktop</span></div>
         <div className="skin-preview-options">
           <Segmented aria-label="皮肤" value={appearance.skin.id} onChange={(id) => void appearance.setSkinId(id).catch(() => undefined)} options={[{value:"default",label:"默认"},{value:"mist",label:"雾林"},{value:"ocean",label:"晴海"},{value:"violet",label:"暮紫"}]} />
-          <Segmented aria-label="明暗" value={appearance.themeMode} onChange={(mode) => void appearance.setThemeMode(mode)} options={[{value:"light",label:"浅色"},{value:"dark",label:"深色"},{value:"system",label:"系统"}]} />
+          <Segmented<ThemePreference> aria-label="明暗" value={appearance.themeMode} onChange={(mode) => void appearance.setThemeMode(mode)} options={[{value:"light",label:"浅色"},{value:"dark",label:"深色"},{value:"system",label:"系统"}]} />
           <Segmented aria-label="平台布局" value={platform} onChange={setPlatform} options={[{value:"mac",label:"macOS"},{value:"windows",label:"Windows"}]} />
           <label className="skin-preview-guest-switch"><Switch checked={embedded} onChange={setEmbedded} size="small" /> 嵌入页面</label>
           {!inElectron && <a href="?background=photo">山湖照片示例</a>}

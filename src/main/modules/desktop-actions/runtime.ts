@@ -1,18 +1,12 @@
 import { buildDesktopActionConfirmationDetail, sanitizeConfirmationUrl, summarizeConfirmationArgs } from "./confirmation-presentation";
-import {
-  buildMutatingActionConfirmationRequest,
-  buildSensitiveReadConfirmationRequest,
-  buildPageControlActionConfirmationRequest
-} from "./confirmation-policy";
+import { buildActionConfirmationRequest } from "./confirmation-policy";
 import { normalizeActionResponseTimePayload } from "./action-handlers";
 import { fetchAgentPlatformWithAuth } from "./platform-http";
 import { webappActionRateLimiter } from "./webapp-native-actions";
 
 export const __testInternals = {
   buildDesktopActionConfirmationDetail,
-  buildMutatingActionConfirmationRequest,
-  buildSensitiveReadConfirmationRequest,
-  buildPageControlActionConfirmationRequest,
+  buildActionConfirmationRequest,
   normalizeActionResponseTimePayload,
   sanitizeConfirmationUrl,
   summarizeConfirmationArgs,
@@ -22,7 +16,6 @@ export const __testInternals = {
 export * from "./action-http-server";
 export * from "./action-contracts";
 export * from "./webapp-native-actions";
-export * from "./page-control-policy";
 export * from "./web-export-actions";
 export * from "./confirmation-presentation";
 export * from "./webapp-image-input";

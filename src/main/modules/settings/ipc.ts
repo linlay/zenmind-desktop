@@ -317,6 +317,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
           ? input.preventSleepWhileRunning
           : current.general.preventSleepWhileRunning,
         desktopActionConfirmationTimeoutSeconds: input?.desktopActionConfirmationTimeoutSeconds ?? current.general.desktopActionConfirmationTimeoutSeconds,
+        desktopActionConfirmationExemptActions: input?.desktopActionConfirmationExemptActions ?? current.general.desktopActionConfirmationExemptActions,
         desktopActionConfirmationEnabled: typeof input?.desktopActionConfirmationEnabled === "boolean"
           ? input.desktopActionConfirmationEnabled
           : current.general.desktopActionConfirmationEnabled,

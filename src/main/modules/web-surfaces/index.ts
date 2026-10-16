@@ -3,8 +3,6 @@ export type { BrowserSurfaceRegistry, BrowserSurfaceRegistryOptions, RegisteredW
 export type { WebGuestObserver } from "./registry-contracts";
 export { AwcpGuestBridge } from "./awcp/guest-bridge";
 export type { AwcpActionResponse, AwcpInvokePayload, AwcpManualPayload, AwcpManualResponse } from "./awcp/guest-bridge";
-export { inspectCurrentPageCdpElement, readCurrentPageCdpLocation } from "./cdp/current-page-inspector";
-export type { CurrentPageCdpElementSnapshot } from "./cdp/current-page-inspector";
 export { DESKTOP_CDP_TARGET_TIMEOUT_CODE, isDesktopCdpTimeoutError, readDesktopCdpErrorDetails } from "./cdp/debugger";
 export type { EmbeddedCdpCommandRequest } from "./cdp/gateway";
 export { createCdpIntegration } from "./cdp/integration";

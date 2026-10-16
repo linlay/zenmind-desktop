@@ -19,7 +19,26 @@ test("desktop profile enables Desktop Action confirmation by default", (t) => {
   const profile = readDesktopProfileFromRoot(root);
 
   assert.equal(profile.general.desktopActionConfirmationEnabled, true);
+  assert.deepEqual(profile.general.desktopActionConfirmationExemptActions, []);
   assert.equal("enterpriseChatEnabled" in profile.general, false);
+});
+
+test("action confirmation exemptions persist only always-tier names and survive other profile edits", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-action-exempt-profile-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // Old profiles may contain external-tier entries from the earlier, broader dialog.
+  fs.writeFileSync(path.join(root, "profile.json"), JSON.stringify({ general: { desktopActionConfirmationExemptActions: [
+    "desktop.controlCenter.restartService", "desktop.theme.set", "desktop.theme.set",
+    "desktop.*", "desktop.controlCenter.*", "desktop.runtime.info", "desktop.native.clipboard.writeText", 1
+  ] } }));
+  assert.deepEqual(readDesktopProfileFromRoot(root).general.desktopActionConfirmationExemptActions,
+    ["desktop.controlCenter.restartService"]);
+  updateDesktopProfileInRoot(root, { general: { deviceName: "Personal desktop", desktopActionConfirmationEnabled: false } });
+  updateDesktopProfileInRoot(root, { general: { desktopActionConfirmationEnabled: true } });
+  assert.deepEqual(readDesktopProfileFromRoot(root).general.desktopActionConfirmationExemptActions,
+    ["desktop.controlCenter.restartService"]);
+  updateDesktopProfileInRoot(root, { general: { desktopActionConfirmationExemptActions: [] } });
+  assert.deepEqual(readDesktopProfileFromRoot(root).general.desktopActionConfirmationExemptActions, []);
 });
 
 test("desktop profile ignores the retired enterprise chat enable field", (t) => {

@@ -1,6 +1,10 @@
 # Desktop 手工回归清单
 
+本清单只描述当前版本的预期行为，不记录历史通过率或发布结论。自动验收入口见 [QA 索引](README.md)；架构边界见 [设计文档](../docs/README.md)，精确接口与行为以源码、契约和测试为准。用户可见流程在 macOS 与 Windows 分别验证，平台专属项目按标注执行。
+
 ## Windows 安装与卸载阶段进度
+
+- CuteJ / ZenMind 安装页的“浏览”使用现代 Windows 目录选择器。在 2520×1680、200% 缩放及 100%/150%/200% 混合 DPI 显示器上验证完整窗口和底部选择／取消按钮可见；选择现存父目录自动补齐品牌目录名，选择品牌目录不重复追加，取消保留原路径。初始目录不存在时仍可浏览，窗口打开失败时可直接输入路径；macOS 安装流程不变。
 
 - CuteJ / ZenMind 分别验证全新安装、覆盖安装和在线更新：总进度条全程可见，阶段整体估算单向推进；解压按真实字节进度映射整体 15–85%，不单独显示解压百分比，解压结束继续显示复制和收尾的总进度，进度条上方同步切换为当前阶段文字，不残留“解压程序文件：100%”。等待、文件占用和重试不得回退。在线更新仍跳过数据目录选择和完成向导，成功后自动启动一次。
 - 卸载分别选择保留、删除应用数据：总进度条始终可见，显示停止应用和服务、删除程序文件、确认数据选项、所选数据删除与收尾阶段；应用退出确认和受管服务停止提示均为中文，不被英文内部日志覆盖；进程退出后到 20%，程序文件处理后到 60%，数据清理阶段保持 65%，收尾到 95%，成功到 100%。长时间删除及重复重试不能回退；数据保留与目录所有权检查行为不变。
@@ -772,12 +776,12 @@
 - 本地默认项目和各问题归属项目平铺展示、独立多选，不显示路径缩进或联动子项目；云端保留树形层级及父子勾选。验证两种来源项目 ID 相同时不会串选。
 - 搜索本地项目名称和 ID、云端项目名称和路径，核对无结果提示、项目计数、触发器摘要和多选提示；仅选择本地时不得显示云端问题。
 
-### Kanban Chat Preview 与唯一 live observer
+### Kanban Chat 与唯一常规 live observer
 
-- macOS 与 Windows：打开本机进行中的 issue card，确认左侧为 `/chat-preview/:chatId`，完整历史与增量正常，无输入框；右侧运行记录可切换关联 Chat。
-- Main Chat → Kanban 预览 → Copilot → Main Chat，Inspector 始终只有一个活动 Root Observer，均复用 desktop-main Primary WS；旧 detach 完成后才发新 attach/query，不产生 interrupt。
+- macOS 与 Windows：打开本机进行中的 issue card，确认左侧通过 `/agent/:agentKey?chatId=` 展示当前 Run 绑定的可交互 Chat，可处理等待审批；右侧运行记录可切换关联 Chat，其他设备或不可用 Chat 不提供打开入口。
+- Main Chat → Kanban Chat → Copilot → Main Chat，Inspector 始终只有一个活动的常规 Root Observer，均复用 desktop-main Primary WS；详细解释的辅助 observer 独立使用 Selection Explain lane。旧 detach 完成后才发新 attach/query，不产生 interrupt。
 - 快速切换运行记录、返回 Issue 正文、关闭详情及离开 Kanban：旧 guest 注销，旧流不再交付；重新打开从历史游标 attach，后台 Run 继续。
-- 预览拒绝 query、BTW、submit、steer、interrupt、access-level、终端写入/关闭与其他 Chat 请求；其他设备 Chat 不可打开。
+- 对非进行中任务的 `/chat-preview/:chatId` 只读入口单独检查：只允许当前已登记 Chat 的读取、attach 与 detach，拒绝 query、BTW、submit、steer、interrupt、access-level、终端写入/关闭及其他 Chat 请求；不把这一限制应用到上述可交互 `/agent` 页面。
 
 ## 看板终态结果阅读
 
@@ -1193,7 +1197,7 @@
 - 弹窗显示倒计时，到期自动关闭；超时回报 confirmation_timeout，点击取消/Esc 回报 user_cancelled，两者明确动作未执行。
 - 工具期限比确认配置短时使用较短期限；Platform 中止 Run、连接断开或窗口重载后关闭弹窗，迟到确认不得执行动作。
 - 新旧确认切换时双击、过期瞬间点击、窗口后台或休眠后恢复，均不能重复执行，也不能关闭后续请求。
-- 敏感读取、普通动作及页面授权均复用上述生命周期；确认窗口不可用回报 confirmation_unavailable。
+- 运行时诊断、保存密码填充与普通动作均复用上述生命周期；确认窗口只有取消与执行两个选择；确认窗口不可用回报 confirmation_unavailable。
 
 ## 网页应用运行环境独立设置
 
@@ -1320,10 +1324,16 @@ macOS 与 Windows 分别执行；Windows 的密钥保护、目录权限和系统
 - 设置页显示明文或正在编辑时锁屏：明文立即隐藏、编辑框关闭。导入时文件对话框打开期间锁屏再解锁选择文件：重新要求认证。
 - 让智能体直接读取 `secrets/` 下的文件：任何权限档位都被拒绝。
 
-## Platform 动作确认豁免
+## Desktop Action 确认档位（内部入口 / 外部入口）
 
+- Windows/macOS：在“设置 / 常规 / 桌面端动作确认”打开“管理豁免”，确认列表只包含必须确认的 `always` 档动作，当前共 17 项；不显示主题、语言、导航等 `external` 档动作。逐项勾选、搜索、全部勾选与全部取消后保存，再次打开及重启应用后保持选择；取消、Esc 或关闭弹框不保存草稿。
+- Windows/macOS：只豁免“重启服务”后，可信 Platform 与外部入口的重启动作均不弹确认，停止服务仍确认；即使旧配置曾选择“切换明暗主题”，外部调用切换主题仍确认。密码填充可单独豁免，但错误 Surface、其他网站账号和失效 Run 仍拒绝。
+- Windows/macOS：搜索状态下“全部豁免”仍覆盖当前完整列表；全部取消恢复原有确认策略；总开关关闭时显示全部免确认说明，重新开启后恢复逐项策略。后续新增动作不继承已保存的批量豁免，已经排队的确认不会因修改设置自动批准。
 - Windows/macOS 分别开启 Desktop 动作确认，通过可信 Platform 调用换主题、增改网站条目和看板动作，确认不会再弹 Desktop confirm action dialog；Platform 若配置审阅，仅显示 Platform 的 viewport。
-- 同样动作由普通 Desktop Action 入口调用仍要求确认，伪造 source 不豁免；基础服务重启、WebApp 安装/卸载/发布、市场安装和镜像删除仍进入原确认策略。
+- 同样动作由外部入口（Desktop WebSocket、本地 HTTP、调试工作台以非 full_access 调用）仍要求确认，伪造 source 不豁免；基础服务重启、WebApp 安装/卸载/发布、市场安装和镜像删除在内部入口也弹确认。
+- Windows/macOS：可信 Platform Run 使用保存密码填充登录，每次都弹“填入已保存的密码”确认，显示真实网站与脱敏账号；取消后不填写。
+- Windows/macOS：外部入口执行网页填写或点击时只弹通用“确认桌面端动作”，不再出现“仅执行这一步 / 允许本次页面操作”；外部入口读取运行时诊断同样使用通用确认。
+- Windows/macOS：WebApp 页面调用文件选择、剪贴板写入、通知和图片生成不弹 Desktop 动作确认；从调试工作台或 Desktop WebSocket 调用 `desktop.native.*`、`desktop.assistant.image` 直接返回 unknown_action，不弹确认。
 - Windows/macOS 分别开启 Desktop 动作确认，以默认权限从可信 Platform Run 执行网页填写、选择、聚焦、滚动、点击、脚本、导航、刷新、新建标签、切换及关闭标签，确认 `desktop.web.*` 与 CDP/AWCP 均不弹 Desktop 二次确认；切换 Chat、隐藏 WorkPanel 或最小化主窗口后仍只能操作原 Run 授权的网页，跨 Chat、已关闭 Surface 与终态 Run 拒绝执行。
 - Windows/macOS：可信 Platform 调用 WorkPanel 打开/激活/关闭标签、关闭面板，以及智能体/技能文本更新，确认不弹 Desktop 动作确认；资源校验、版本冲突及编辑器丢弃未保存草稿的独立确认仍生效。同样动作从普通 Desktop Action 入口调用仍确认，公开请求伪造 Run/Chat source 不豁免。
 - Windows/macOS：让网页 Action 在 CDP 队列等待期间取消 Run，确认等待中的动作不执行、不弹确认、不转到当前前台页；操作已经开始时取消不声称业务副作用已回滚。

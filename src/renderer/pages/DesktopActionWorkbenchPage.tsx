@@ -79,7 +79,6 @@ function parseRequest(
   }
   if (
     input.permissionMode === "default" ||
-    input.permissionMode === "page_control" ||
     input.permissionMode === "full_access"
   ) {
     request.permissionMode = input.permissionMode;

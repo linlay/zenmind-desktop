@@ -6,7 +6,7 @@
 
 ## 运行
 
-准备本 PR 的 Desktop checkout，以及使用 `configured` / `canCheck` 契约的最新 Platform checkout。
+准备当前 Desktop checkout，以及使用 `configured` / `canCheck` 与认证状态契约的匹配 Platform checkout。
 将下面路径替换成自己的目录。需要 Node.js、Go 和项目依赖。
 
 ```sh
@@ -15,12 +15,12 @@ export PLATFORM_REPO=/path/to/agent-platform
 export DESKTOP_CONNECTOR_BRIDGE_FILE="$(mktemp -u /tmp/desktop-connector-bridge.XXXXXX)"
 ```
 
-把本 PR 提供的 fixture 放进 Platform 的测试包。若目标文件已有本地改动，先备份它，测试后还原。
+把仓库中的 fixture 放进 Platform 的测试包。若目标文件已有本地改动，先备份它，测试后还原。
 
 ```sh
 cp "$DESKTOP_REPO/test/fixtures/platform-connector-bridge.go" "$PLATFORM_REPO/internal/server/desktop_bridge_local_test.go"
 cd "$PLATFORM_REPO"
-go test ./internal/server -run '^TestDesktopConnectorBridgeLocal$' -count=1 -v
+go test ./internal/server -run '^TestDesktopConnectorFirstBatchBridgeLocal$' -count=1 -v
 ```
 
 等到输出 `Desktop bridge ready` 后，在另一个终端设置相同的 `DESKTOP_CONNECTOR_BRIDGE_FILE`，运行：
@@ -47,5 +47,6 @@ fixture 最长运行 20 分钟，退出后 Go 会清理临时业务数据。此�
 - 状态与列表读取不探测第三方；显式检查成功后新凭据生效。
 - OAuth 按 `embedded` 策略产生授权会话，并可取消。
 - 自定义连接器 ZIP 经真实导入接口安装，市场连接流程完成 Agent 挂载，运行时列表同步。
+- Agent 挂载后等待 MCP 工具发现完成；只有组件就绪、工具可用且 reload 已结束时才报告连接完成。
 
 这里验证接口与流程，不替代真实 Electron 弹窗交互或 Windows 原生执行验收。

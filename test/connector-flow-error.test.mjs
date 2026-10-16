@@ -29,7 +29,7 @@ const jira = { id: 'jira', name: 'Jira' };
 
 test('card retry reads fresh state before retrying installation on the same page', async () => {
   const s = setup(); const actions = []; let listFailed = false; let installCalls = 0;
-  const ready = { connectorId: 'wecom-cli', configured: true, readiness: 'ready', authentication: { status: 'delegated' }, capabilities: { hasCli: false, authMode: 'oauth' } };
+  const ready = { connectorId: 'wecom-cli', configured: true, readiness: 'ready', authentication: { status: 'delegated' }, capabilities: { hasCli: false, authMode: 'mcp' } };
   s.api.market.getConnectorConnections = async () => {
     actions.push('read');
     if (listFailed) throw new Error('Connection status unavailable');
@@ -76,7 +76,7 @@ test('card retry releases the button when state recovery still fails without ins
 test('card retry uses the current installed alias and avoids installing an existing connector again', async () => {
   const s = setup(); const item = { id: 'market-wecom', name: '企业微信' };
   let installCalls = 0; let connectionFailed = true; let listFailed = false; const ids = [];
-  const ready = { connectorId: 'runtime-wecom', configured: true, readiness: 'ready', authentication: { status: 'delegated' }, capabilities: { hasCli: false, authMode: 'oauth' } };
+  const ready = { connectorId: 'runtime-wecom', configured: true, readiness: 'ready', authentication: { status: 'delegated' }, capabilities: { hasCli: false, authMode: 'mcp' } };
   s.api.market.getConnectorConnections = async () => {
     if (listFailed) throw new Error('Connection status unavailable');
     return installCalls ? [ready] : [];

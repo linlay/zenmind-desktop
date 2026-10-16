@@ -334,6 +334,7 @@ export function createQuery(deps: QueryPort) {
       query: transaction,
       replay: [],
       replayBytes: 0,
+      activeWaits: new Map(),
       subscribers: new Set(),
       rootObserverTokens: new Set(),
       baseUrl: transaction.baseUrl,

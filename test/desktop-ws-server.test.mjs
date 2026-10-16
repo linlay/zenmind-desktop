@@ -526,7 +526,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("runtime.diagnostics"));
   assert.equal(
     actionList.data.actions.find((action) => action.action === "runtime.diagnostics").confirmation,
-    "sensitive-read"
+    "external"
   );
   client.send({
     frame: "request",
