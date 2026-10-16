@@ -983,13 +983,13 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
           });
         }
         if (frame.type === "/api/query") {
-          this.emitMessage({
-            frame: "stream",
-            id: frame.id,
-            streamId: "run-1",
-            event: { type: "content.delta", delta: "hi" },
-            lastSeq: 12
-          });
+          for (const event of [
+            { type: "request.query", message: "hi", seq: 1 },
+            { type: "run.start", seq: 2 },
+            { type: "content.delta", delta: "hi", seq: 12 },
+          ]) this.emitMessage({ frame: "stream", id: frame.id, streamId: "run-1", event: {
+            ...event, runId: "run-1", chatId: "chat-1", agentKey: "demo", timestamp: 1_788_000_000_000 + event.seq,
+          }, lastSeq: event.seq });
         }
       });
     }
@@ -1084,7 +1084,7 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
   assert.equal(client.drain().some((message) => message.ns === "ap" && message.type === "heartbeat"), false);
 
   client.send({ ns: "ap", frame: "request", type: "/api/query", id: "ap-query-1", payload: { message: "hi" } });
-  const stream = await client.waitFor((message) => message.ns === "ap" && message.frame === "stream" && message.id === "ap-query-1");
+  const stream = await client.waitFor((message) => message.ns === "ap" && message.frame === "stream" && message.id === "ap-query-1" && message.event?.type === "content.delta");
   assert.equal(stream.streamId, "run-1");
   assert.equal(stream.lastSeq, 12);
   assert.equal(stream.event.delta, "hi");

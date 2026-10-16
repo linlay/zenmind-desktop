@@ -19,7 +19,6 @@ export { WebappToolingError } from "./webapps/tooling/errors";
 export type { WebappToolingTask } from "./webapps/tooling/service";
 export { resolveExistingWorkspacePath, normalizeWorkspaceRelativePath } from "./webapps/tooling/workspace";
 export { executeWebappToolingInWorker } from "./webapps/tooling/worker";
-export { createDesktopMobileWebappCatalog, readDesktopMobileWebappItem } from "./webapps/mobile-catalog";
 export { restorePublishedWebapps } from "./webapps/publication-runtime";
 export { getWebappPublishStatus, publishWebapp, unpublishWebapp } from "./webapps/publisher";
 export { webappRuntime } from "./webapps/runtime";

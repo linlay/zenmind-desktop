@@ -131,17 +131,16 @@ export function createConnection(deps: ConnectionPort) {
     if (detachedQuery && (lane !== "primary" || options.stream)) {
       throw brokerError("invalid_request", "detached queries are plain Primary lane requests");
     }
-    const opensRunStream = !detachedQuery && ["/api/query", "/api/btw", "/api/attach"].includes(type);
+    if (!detachedQuery && ["/api/query", "/api/btw", "/api/attach"].includes(type)) {
+      throw brokerError("invalid_request", "Run streams must use query or subscribeRun");
+    }
     const upstreamId = `desktop-forward-${randomUUID()}`;
-    const timer = options.stream
-      ? null
-      : unrefTimer(setTimeout(() => {
-        const pending = deps.pendingRequests.get(upstreamId);
-        if (!pending)
-          return;
-        deps.pendingRequests.delete(upstreamId);
-        pending.onError(brokerError("connection_unavailable", `${type} timed out`));
-      }, REQUEST_TIMEOUT_MS));
+    const timer = unrefTimer(setTimeout(() => {
+      const pending = deps.pendingRequests.get(upstreamId);
+      if (!pending) return;
+      deps.pendingRequests.delete(upstreamId);
+      pending.onError(brokerError("connection_unavailable", `${type} timed out`));
+    }, REQUEST_TIMEOUT_MS));
     deps.pendingRequests.set(upstreamId, {
       lane,
       consumerId: options.consumerId,
@@ -155,22 +154,9 @@ export function createConnection(deps: ConnectionPort) {
     });
     try {
       await ensureConnected(options.baseUrl, options.token, lane);
-      if (opensRunStream) {
-        await Promise.all([...deps.runChannels.values()].filter((run) => run.lane === lane).map((run) => run.detachInFlight));
-        await deps.laneStreams.waitForEnding(lane);
-        if (!deps.pendingRequests.has(upstreamId)) throw brokerError("connection_unavailable", "request expired before stream delivery");
-      }
-      const send = opensRunStream
-        ? (frame: AgentPlatformRealtimeFrame) => sendRunRequest(lane, frame, options.consumerId)
-        : (frame: AgentPlatformRealtimeFrame) => deps.clients[lane].send(frame);
-      send({
-        frame: "request",
-        type: type === "/api/btw" ? "/api/query" : type,
-        id: upstreamId,
-        payload: options.payload ?? {},
-      });
-    }
-    catch (error) {
+      if (!deps.pendingRequests.has(upstreamId)) throw brokerError("connection_unavailable", "request expired before delivery");
+      deps.clients[lane].send({ frame: "request", type, id: upstreamId, payload: options.payload ?? {} });
+    } catch (error) {
       cleanupPending(upstreamId);
       throw error;
     }

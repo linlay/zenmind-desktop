@@ -109,7 +109,7 @@ export class LaneStreams {
 
   async waitForEnding(lane: RealtimeLane): Promise<void> {
     const slot = this.slots.get(lane);
-    if (!slot || (slot.state !== "ending" && ![...this.deps.runs.values()].some((run) => run.lane === lane && run.runId === slot.runId && run.terminal))) return;
+    if (!slot || (slot.state !== "ending" && slot.state !== "detaching" && ![...this.deps.runs.values()].some((run) => run.lane === lane && run.runId === slot.runId && run.terminal))) return;
     // A completion event/Push may precede the transport end. Bound the wait;
     // reservation still rejects with the occupant if no end confirmation arrives.
     await new Promise<void>((resolve) => {

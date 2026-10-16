@@ -2058,3 +2058,135 @@ test("credential actions receive the Run's Website/WebApp page authorization lik
   assert.equal(received.get("desktop.web.listSurfaces"), scope);
   assert.equal(received.get("desktop.theme.get"), undefined);
 });
+
+
+test("raw Run forwarding is rejected so all consumers use the channel lifecycle", async (t) => {
+  const h = createHarness(t);
+  for (const type of ["/api/query", "/api/attach"]) {
+    await assert.rejects(h.broker.forwardRequest({ baseUrl: "http://127.0.0.1:8080", token: h.token,
+      localId: "raw", consumerId: "mobile", type, stream: true, onFrame() {}, onError() {} }), /query or subscribeRun/);
+  }
+  assert.equal(h.sockets.length, 0);
+});
+
+const { AgentPlatformWsBridge } = require("../dist-electron/main/modules/desktop-protocol/ws-platform-adapter.js");
+function mobile(h, id = "mobile") {
+  const frames = [];
+  const connection = { id, closed: false, transport: { sendText(text) { frames.push(JSON.parse(text)); } } };
+  const bridge = new AgentPlatformWsBridge({ app: { getPath: () => os.tmpdir() }, agentPlatformBridge: {
+    realtimeBroker: h.broker,
+    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:8080" } }),
+    issueAccessToken: async () => ({ ok: true, token: h.token }),
+  } }, connection, console);
+  return { bridge, frames, request(type, payload) {
+    return bridge.forwardRequest({ ns: "ap", frame: "request", type, id: `${id}-request`, payload });
+  } };
+}
+
+test("mobile query and an early PC subscriber share one stream through replay, reconnect and peer closure", async (t) => {
+  const h = createHarness(t), m = mobile(h), observer = rootObserver();
+  t.after(() => m.bridge.close());
+  h.broker.activateRootObserver(observer);
+  await m.request("/api/query", { requestId: "mobile-message", chatId: "chat-1", agentKey: "agent-1", message: "报告" });
+  await waitUntil(() => requestOfType(h.socket("primary"), "/api/query").length === 1);
+  let socket = h.socket("primary");
+  const upstream = requestOfType(socket, "/api/query")[0];
+  socket.emit({ frame: "push", type: "run.started", data: { chatId: "chat-1", runId: "run-mobile", agentKey: "agent-1", startedAt: EPOCH_MS } });
+  const pc = [];
+  const subscription = h.broker.subscribeRun({ baseUrl: "http://127.0.0.1:8080", token: h.token, runId: "run-mobile", chatId: "chat-1",
+    agentKey: "agent-1", kind: "surface", consumerId: "pc", observerToken: observer.token, onEvent: event => pc.push(event) });
+  socket.emit({ frame: "stream", id: upstream.id, event: runEvent("request.query", "run-mobile", "chat-1", 1,
+    { requestId: "mobile-message", message: "报告" }) });
+  socket.emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-mobile", "chat-1", 2) });
+  await subscription.ready;
+  socket.emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "run-mobile", "chat-1", 3, { delta: "一" }) });
+  await nextTurn();
+  assert.equal(pc.filter(e => e.type === "content.delta").length, 1);
+  assert.equal(m.frames.filter(f => f.event?.type === "content.delta").length, 1);
+  assert.equal(m.frames.find(f => f.event?.type === "request.query").id, "mobile-request");
+  assert.equal(requestOfType(socket, "/api/attach").length, 0);
+  assert.equal(h.diagnostics.some(d => d.includes("active_stream_exists")), false);
+  socket.disconnect();
+  await waitUntil(() => h.sockets.length === 2);
+  socket = h.sockets.at(-1);
+  await waitUntil(() => requestOfType(socket, "/api/attach").length === 1);
+  const attach = requestOfType(socket, "/api/attach")[0];
+  assert.equal(attach.payload.lastSeq, 3);
+  socket.emit({ frame: "stream", id: attach.id, event: runEvent("content.delta", "run-mobile", "chat-1", 4, { delta: "二" }) });
+  await nextTurn();
+  assert.deepEqual(pc.filter(e => e.type === "content.delta").map(e => e.delta), ["一", "二"]);
+  assert.equal(h.sockets.flatMap(s => requestOfType(s, "/api/query")).length, 1);
+  const seen = m.frames.length;
+  m.bridge.close();
+  await nextTurn();
+  assert.equal(requestOfType(socket, "/api/detach").length, 0);
+  socket.emit({ frame: "stream", id: attach.id, event: runEvent("content.delta", "run-mobile", "chat-1", 5, { delta: "三" }) });
+  await nextTurn();
+  assert.equal(m.frames.length, seen);
+  assert.equal(pc.at(-1).delta, "三");
+  subscription.unsubscribe();
+  await waitUntil(() => requestOfType(socket, "/api/detach").length === 1);
+  assert.equal(requestOfType(socket, "/api/interrupt").length, 0);
+});
+
+test("mobile attach joins the PC query, replays once and does not interrupt the surviving peer", async (t) => {
+  const h = createHarness(t), observer = rootObserver(); h.broker.activateRootObserver(observer);
+  const pc = [];
+  const run = await acceptedRun(h, { lane: "primary", runId: "run-pc", observerToken: observer.token, onEvent: e => pc.push(e) });
+  const m = mobile(h); t.after(() => m.bridge.close());
+  await m.request("/api/attach", { runId: "run-pc", chatId: "chat-1", agentKey: "agent-1", lastSeq: 0 });
+  run.socket.emit({ frame: "stream", id: run.request.id, event: runEvent("content.delta", "run-pc", "chat-1", 2, { delta: "共享" }) });
+  await nextTurn();
+  assert.equal(m.frames.filter(f => f.event?.type === "run.start").length, 1);
+  assert.equal(m.frames.filter(f => f.event?.delta === "共享").length, 1);
+  assert.equal(pc.filter(e => e.delta === "共享").length, 1);
+  assert.equal(requestOfType(run.socket, "/api/attach").length, 0);
+  h.broker.releaseRootObserver(observer.token);
+  await nextTurn();
+  assert.equal(requestOfType(run.socket, "/api/detach").length, 0);
+  m.bridge.close();
+  await waitUntil(() => requestOfType(run.socket, "/api/detach").length === 1);
+  assert.equal(requestOfType(run.socket, "/api/interrupt").length, 0);
+});
+
+test("closing a mobile query before Run acceptance waits for its canonical identity and detaches once", async (t) => {
+  const h = createHarness(t), m = mobile(h); t.after(() => m.bridge.close());
+  await m.request("/api/query", { chatId: "chat-1", agentKey: "agent-1", message: "工作" });
+  await waitUntil(() => requestOfType(h.socket("primary"), "/api/query").length === 1);
+  const socket = h.socket("primary"), query = requestOfType(socket, "/api/query")[0];
+  m.bridge.close();
+  socket.emit({ frame: "stream", id: query.id, event: runEvent("request.query", "run-late", "chat-1", 1, { message: "工作" }) });
+  socket.emit({ frame: "stream", id: query.id, event: runEvent("run.start", "run-late", "chat-1", 2) });
+  await waitUntil(() => requestOfType(socket, "/api/detach").length === 1);
+  assert.equal(m.frames.filter(f => f.frame === "stream").length, 0);
+  assert.equal(requestOfType(socket, "/api/interrupt").length, 0);
+});
+
+test("closing the mobile connection during availability checks never submits a query", async (t) => {
+  const h = createHarness(t), m = mobile(h); t.after(() => m.bridge.close());
+  const sending = m.request("/api/query", { chatId: "chat-1", agentKey: "agent-1", message: "工作" });
+  m.bridge.close();
+  await sending;
+  assert.equal(h.sockets.length, 0);
+});
+
+test("mobile detach releases only the named connection consumer and is idempotent", async (t) => {
+  const h = createHarness(t), observer = rootObserver(); h.broker.activateRootObserver(observer);
+  const pc = [];
+  const run = await acceptedRun(h, { lane: "primary", runId: "run-detach", observerToken: observer.token, onEvent: e => pc.push(e) });
+  const m = mobile(h); t.after(() => m.bridge.close());
+  await m.request("/api/attach", { runId: "run-detach", chatId: "chat-1", agentKey: "agent-1" });
+  const count = m.frames.length;
+  for (const id of ["release-1", "release-2"]) await m.bridge.forwardRequest({ ns: "ap", frame: "request", type: "/api/detach", id,
+    payload: { streamRequestId: "mobile-request", runId: "run-detach" } });
+  assert.equal(m.frames.find(f => f.id === "release-1").data.accepted, true);
+  assert.equal(m.frames.find(f => f.id === "release-2").data.accepted, false);
+  const ended = m.frames.length;
+  run.socket.emit({ frame: "stream", id: run.request.id, event: runEvent("content.delta", "run-detach", "chat-1", 2, { delta: "继续" }) });
+  await nextTurn();
+  assert.equal(m.frames.length, ended);
+  assert.ok(ended > count);
+  assert.equal(pc.at(-1).delta, "继续");
+  assert.equal(requestOfType(run.socket, "/api/detach").length, 0);
+  assert.equal(requestOfType(run.socket, "/api/interrupt").length, 0);
+});
