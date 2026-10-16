@@ -1,4 +1,5 @@
-export type ConnectorAuthMode = "none" | "self" | "token" | "oauth" | "mcp" | "oneid";
+/** Platform reads the aliases `oauth` (mcp) and `oneid-token` (oneid) and returns canonical values. */
+export type ConnectorAuthMode = "none" | "self" | "token" | "mcp" | "oneid";
 export type ConnectorAuthStatus = "no_auth" | "pending_verification" | "not_required" | "delegated" | "configured" | "setup_required" | "unauthorized" | "preparing" | "pending" | "authorized" | "failed" | "canceled";
 export interface MarketConnectorAuthSession {
   connectorId: string;

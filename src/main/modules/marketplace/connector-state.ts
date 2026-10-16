@@ -49,7 +49,7 @@ export function normalizeConnectorConnection(value: unknown, id: string): Market
   for (const key of ["canConnect", "canDisconnect", "canCheck", "hasCli", "hasMcp"]) if (typeof cap[key] !== "boolean") throw new Error("Invalid connector capabilities");
   if (noAuth && (raw.configured !== false || cap.canConnect || cap.canDisconnect || cap.canCheck
       || (raw.readiness === "no_auth" && asObject(raw.authentication).status !== "no_auth"))) throw new Error(`Invalid connector connection response for ${id}: inconsistent no_auth state`);
-  if (!["none", "self", "token", "oauth", "mcp", "oneid"].includes(asString(cap.authMode))) throw new Error(`Invalid connector authentication mode for ${id}`);
+  if (!["none", "self", "token", "mcp", "oneid"].includes(asString(cap.authMode))) throw new Error(`Invalid connector authentication mode for ${id}`);
   if (noAuth ? cap.authBrowser !== "" : cap.authBrowser !== "system" && cap.authBrowser !== "embedded") throw new Error(`Invalid connector browser policy for ${id}`);
   return { connectorId: id, configured: raw.configured,
     ...(raw.configurationRequired !== undefined ? { configurationRequired: raw.configurationRequired as boolean } : {}),
