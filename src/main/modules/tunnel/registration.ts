@@ -1,12 +1,9 @@
 import type { PlatformCredential } from "./client-endpoint";
 import type { App } from "electron";
 import {
-  ensureTunnelHubDeviceId,
   normalizeRelayUrl,
   readTunnelHubSettings,
   readTunnelHubRegistrationBearerToken,
-  hasTunnelHubAccountRegistration,
-  resetTunnelHubAccountRegistration,
   recordTunnelHubRegistrationResult
 } from "./settings";
 import { getDesktopDeviceInfo } from "../identity";
@@ -76,7 +73,7 @@ export function configureTunnelHubRegistrationController(options: TunnelHubRegis
   controllerOptions = options;
 }
 
-export async function ensureTunnelHubRegistrationReady(app: App) {
+export async function ensureTunnelHubRegistrationReady(app: App, signal?: AbortSignal) {
   const settings = readTunnelHubSettings(app);
   if (!settings.enabled) {
     return {
@@ -100,7 +97,7 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     };
   }
 
-  const deviceId = ensureTunnelHubDeviceId(app);
+  const deviceId = settings.deviceId;
   const deviceInfo = getDesktopDeviceInfo(app);
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
   const fetchImpl = controllerOptions.fetch ?? globalThis.fetch as unknown as FetchLike | undefined;
@@ -109,8 +106,10 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
   }
 
   const requestRegistration = async (identityToken: string) => {
+    signal?.throwIfAborted();
     const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
       method: "POST",
+      signal,
       headers: {
         "Authorization": `Bearer ${identityToken}`,
         "Content-Type": "application/json"
@@ -127,7 +126,7 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
   };
   let identityToken = canonicalToken;
   let { response, raw } = await requestRegistration(identityToken);
-  if (response.status === 401 && controllerOptions.refreshIdentityToken) {
+  if (response.status === 401 && !signal?.aborted && controllerOptions.refreshIdentityToken) {
     const refreshedIdentityToken = (await controllerOptions.refreshIdentityToken()).trim();
     if (refreshedIdentityToken) {
       identityToken = refreshedIdentityToken;
@@ -141,7 +140,7 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     throw new Error(`Tunnel Hub registration failed (${response.status} ${response.statusText})`);
   }
   const current = readTunnelHubSettings(app);
-  if (identityToken !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== deviceId || current.relayUrl !== settings.relayUrl) {
+  if (signal?.aborted || identityToken !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== deviceId || current.relayUrl !== settings.relayUrl) {
     throw new Error("Tunnel registration superseded");
   }
   const data = parseRegistrationResponse(raw);
@@ -149,7 +148,6 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     throw new Error("Tunnel Hub account or device identity mismatch");
   }
   const registrationRecord = {
-    accountId: readText(data.accountId),
     deviceId,
     relayUrl: readText(data.relayUrl) || settings.relayUrl
   };
@@ -179,29 +177,11 @@ export const __testInternals = {
   parseRegistrationResponse
 };
 
-async function requestAccountDevice(app: App, path: string, body: Record<string, unknown>) {
-  const settings = readTunnelHubSettings(app);
-  const token = readTunnelHubRegistrationBearerToken(app);
-  const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
-  const endpoint = new URL(origin);
-  if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("account device requires HTTPS");
-  if (!token || !settings.deviceId) throw new Error("Desktop account unavailable");
-  const fetchImpl = controllerOptions?.fetch ?? globalThis.fetch as unknown as FetchLike;
-  const response = await fetchImpl(`${origin}${path}`, {
-    method: "POST", redirect: "error", signal: AbortSignal.timeout(8_000),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, targetDesktopId: settings.deviceId })
-  });
-  if (!response.ok) throw new Error(`account device rejected (${response.status})`);
-  const data = response.status === 204 ? {} : JSON.parse(await response.text()) as Record<string, unknown>;
-  const current = readTunnelHubSettings(app);
-  if (token !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== settings.deviceId || current.relayUrl !== settings.relayUrl) throw new Error("Desktop account changed");
-  return { data, targetDesktopId: settings.deviceId };
-}
-
 export async function updateTunnelPlatformCredential(
-  app: App, tunnelSessionId: string, platformCredential: PlatformCredential
+  app: App, tunnelSessionId: string, platformCredential: PlatformCredential, signal: AbortSignal
 ) {
+  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(8_000)]);
+  requestSignal.throwIfAborted();
   const settings = readTunnelHubSettings(app);
   const token = readTunnelHubRegistrationBearerToken(app);
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
@@ -210,11 +190,12 @@ export async function updateTunnelPlatformCredential(
   const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
     method: "POST",
     redirect: "error",
-    signal: AbortSignal.timeout(8_000),
+    signal: requestSignal,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ deviceId: settings.deviceId, tunnelSessionId, platformCredential })
   });
   const body = await response.text();
+  requestSignal.throwIfAborted();
   if (!response.ok) throw new Error(`Platform credential update rejected (${response.status})`);
   const updated = parseRegistrationResponse(body);
   if (readText(updated.deviceId) !== settings.deviceId || !readText(updated.accountId)) {
@@ -224,16 +205,5 @@ export async function updateTunnelPlatformCredential(
   if (token !== readTunnelHubRegistrationBearerToken(app) ||
     settings.deviceId !== current.deviceId || settings.relayUrl !== current.relayUrl) {
     throw new Error("Platform credential update superseded");
-  }
-}
-
-export async function revokeTunnelAccountDevice(app: App): Promise<void> {
-  const settings = readTunnelHubSettings(app);
-  try {
-    if (settings.deviceId && hasTunnelHubAccountRegistration(app) && readTunnelHubRegistrationBearerToken(app)) {
-      await requestAccountDevice(app, "/api/desktop/account-device/revoke", {});
-    }
-  } finally {
-    resetTunnelHubAccountRegistration(app);
   }
 }

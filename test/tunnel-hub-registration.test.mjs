@@ -12,7 +12,8 @@ const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const {
   configureTunnelHubRegistrationController,
   deriveTunnelHubRegistrationApiOrigin,
-  ensureTunnelHubRegistrationReady
+  ensureTunnelHubRegistrationReady,
+  updateTunnelPlatformCredential
 } = require("../dist-electron/main/modules/tunnel/registration.js");
 const {
   readTunnelHubSettings,
@@ -58,6 +59,51 @@ function listen(server) {
 function closeServer(server) {
   return new Promise((resolve) => server.close(() => resolve()));
 }
+
+for (const cancellation of ["runtime", "timeout"]) {
+  test(`credential update rejects a late response body after ${cancellation} cancellation`, async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-update-cancel-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    writeDesktopSsoAccessToken(homePath);
+    saveTunnelHubSettings(app, { deviceId: "stable-device", relayUrl: "wss://relay.example.test/tunnel" });
+    const runtime = new AbortController();
+    const timeout = new AbortController();
+    t.mock.method(AbortSignal, "timeout", milliseconds => {
+      assert.equal(milliseconds, 8_000);
+      return timeout.signal;
+    });
+    let release;
+    const body = new Promise(resolve => { release = resolve; });
+    let requestSignal;
+    configureTunnelHubRegistrationController({ fetch: async (_url, init) => {
+      requestSignal = init.signal;
+      return { ok: true, status: 200, text: () => body };
+    } });
+    const update = updateTunnelPlatformCredential(app, "session", {
+      token: "platform-token", platformDeviceId: "local-device", expiresAt: new Date(Date.now() + 60_000).toISOString()
+    }, runtime.signal);
+    await Promise.resolve();
+    const rejected = assert.rejects(update, { name: "AbortError" });
+    (cancellation === "runtime" ? runtime : timeout).abort();
+    assert.equal(requestSignal.aborted, true);
+    release(JSON.stringify({ accountId: "account", deviceId: "stable-device" }));
+    await rejected;
+    assert.equal(readTunnelHubSettings(app).lastRegisteredAt, undefined);
+  });
+}
+
+test("credential update does not send a request after runtime cancellation", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-update-aborted-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  configureTunnelHubRegistrationController({ fetch: async () => assert.fail("cancelled request must not be sent") });
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(updateTunnelPlatformCredential(createApp(root), "session", {
+    token: "platform-token", platformDeviceId: "local-device", expiresAt: new Date(Date.now() + 60_000).toISOString()
+  }, controller.signal), { name: "AbortError" });
+});
 
 test("deriveTunnelHubRegistrationApiOrigin maps relay websocket URLs to HTTP API origins", () => {
   assert.equal(
@@ -297,32 +343,59 @@ test("Tunnel Hub registration reports an unavailable Desktop API without exposin
   );
 });
 
-test("account logout skips unregistered Desktop and releases UUID for the next login", async (t) => {
+for (const platform of ["darwin", "win32"]) {
+  test(`Tunnel device identity is persisted on first read on ${platform}`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-device-identity-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createApp(path.join(root, "home"));
+    const first = readTunnelHubSettings(app, platform);
+    assert.match(first.deviceId, /^[0-9a-f-]{36}$/u);
+    assert.equal(readTunnelHubSettings(app, platform).deviceId, first.deviceId);
+    assert.equal(readTunnelHubSettings(createApp(path.join(root, "home")), platform).deviceId, first.deviceId);
+  });
+}
+
+test("logout, offline logout, repeated login and account switching reuse the installation identity", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "account-registration-"));
-  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-  const homePath = path.join(root, "home"); const app = createApp(homePath);
-  const {revokeTunnelAccountDevice} = require("../dist-electron/main/modules/tunnel/registration.js");
-  const {hasTunnelHubAccountRegistration} = require("../dist-electron/main/modules/tunnel/settings.js");
-  writeDesktopSsoAccessToken(homePath);
-  saveTunnelHubSettings(app, { enabled: true, relayUrl: "wss://relay.example.test/tunnel", deviceId: "unregistered-device" });
-  const calls = [];
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const { clearTunnelHubRegistrationCache } = require("../dist-electron/main/modules/tunnel/settings.js");
+  saveTunnelHubSettings(app, { enabled: true, relayUrl: "wss://relay.example.test/tunnel", deviceId: "existing-device" });
+  const devices = new Map();
   configureTunnelHubRegistrationController({ fetch: async (url, init) => {
-    calls.push({url, body: JSON.parse(init.body)});
-    return {ok: true, status: url.endsWith("/register") ? 200 : 204, statusText: "OK", text: async () => JSON.stringify(url.endsWith("/register") ? {accountId: "account", deviceId: JSON.parse(init.body).deviceId, publicHost: "device.example.test"} : {})};
+    assert.ok(url.endsWith("/devices/register"), "logout must not call a revocation endpoint");
+    const account = init.headers.Authorization;
+    const { deviceId } = JSON.parse(init.body);
+    const key = `${account}:${deviceId}`;
+    if (!devices.has(key)) devices.set(key, `${devices.size + 1}.m.example.test`);
+    return { ok: true, status: 200, text: async () => JSON.stringify({ accountId: account, deviceId, publicHost: devices.get(key) }) };
   } });
-  await revokeTunnelAccountDevice(app); assert.equal(calls.length, 0);
-  await ensureTunnelHubRegistrationReady(app); assert.equal(hasTunnelHubAccountRegistration(app), true);
-  const target = readTunnelHubSettings(app).deviceId;
-  saveTunnelHubSettings(app, {enabled: false}); assert.equal(hasTunnelHubAccountRegistration(app), true);
-  await revokeTunnelAccountDevice(app);
-  assert.equal(calls[1].body.targetDesktopId, target);
-  assert.equal(hasTunnelHubAccountRegistration(app), false);
-  assert.notEqual(readTunnelHubSettings(app).deviceId, target);
-  assert.equal(readTunnelHubSettings(app).publicHost, "");
-  assert.equal(readTunnelHubSettings(app).enabled, false);
-  saveTunnelHubSettings(app, {enabled: true}); writeDesktopSsoAccessToken(homePath, "next-login");
+  let originalHost;
+  for (let i = 0; i < 10; i++) {
+    writeDesktopSsoAccessToken(homePath, "account-a");
+    await ensureTunnelHubRegistrationReady(app);
+    const settings = readTunnelHubSettings(app);
+    originalHost ??= settings.publicHost;
+    assert.equal(settings.deviceId, "existing-device");
+    assert.equal(settings.publicHost, originalHost);
+    clearTunnelHubRegistrationCache(app);
+    assert.equal(readTunnelHubSettings(app).deviceId, "existing-device");
+    assert.equal(readTunnelHubSettings(app).publicHost, "");
+    assert.equal(readTunnelHubSettings(app).enabled, true);
+  }
+  writeDesktopSsoAccessToken(homePath, "account-b");
   await ensureTunnelHubRegistrationReady(app);
-  assert.notEqual(calls[2].body.deviceId, target);
+  assert.notEqual(readTunnelHubSettings(app).publicHost, originalHost);
+  clearTunnelHubRegistrationCache(app);
+  writeDesktopSsoAccessToken(homePath, "account-a");
+  await ensureTunnelHubRegistrationReady(createApp(homePath));
+  assert.equal(readTunnelHubSettings(app).publicHost, originalHost);
+  assert.equal(devices.size, 2, "each account keeps one record for this installation");
+  saveTunnelHubSettings(app, { enabled: false });
+  clearTunnelHubRegistrationCache(app);
+  assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(readTunnelHubSettings(app).deviceId, "existing-device");
 });
 
 test("late account registration cannot overwrite a changed canonical session", async (t) => {

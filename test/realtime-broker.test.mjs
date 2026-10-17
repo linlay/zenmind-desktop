@@ -2083,6 +2083,31 @@ function mobile(h, id = "mobile") {
   } };
 }
 
+test("query cancellation settles its caller while a PC subscriber keeps receiving the shared stream", { timeout: 2_000 }, async (t) => {
+  const h = createHarness(t), controller = new AbortController(), observer = rootObserver();
+  h.broker.activateRootObserver(observer);
+  const source = [];
+  const run = await acceptedRun(h, { lane: "primary", runId: "run-cancelled-source", signal: controller.signal, onEvent: event => source.push(event) });
+  const pc = [];
+  const subscription = h.broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080", token: h.token, runId: "run-cancelled-source", chatId: "chat-1",
+    agentKey: "agent-1", kind: "surface", consumerId: "pc", observerToken: observer.token, onEvent: event => pc.push(event)
+  });
+  await subscription.ready;
+  const cancelled = assert.rejects(run.query.completed, /query aborted/);
+  controller.abort();
+  await cancelled;
+  await nextTurn();
+  const sourceCount = source.length;
+  run.socket.emit({ frame: "stream", id: run.request.id, event: runEvent("content.delta", "run-cancelled-source", "chat-1", 2, { delta: "still streaming" }) });
+  await nextTurn();
+  assert.equal(pc.at(-1).delta, "still streaming");
+  assert.equal(source.length, sourceCount);
+  assert.equal(requestOfType(run.socket, "/api/detach").length, 0);
+  assert.equal(requestOfType(run.socket, "/api/interrupt").length, 0);
+  subscription.unsubscribe();
+});
+
 test("mobile query and an early PC subscriber share one stream through replay, reconnect and peer closure", async (t) => {
   const h = createHarness(t), m = mobile(h), observer = rootObserver();
   t.after(() => m.bridge.close());

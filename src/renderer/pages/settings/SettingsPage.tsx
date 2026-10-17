@@ -4095,9 +4095,6 @@ export function SettingsPage({
       if (result.runtimeStatus) {
         setTunnelHubRuntimeStatus(result.runtimeStatus);
       }
-      if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
-
-      }
       if (!result.ok) {
         throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.saveFailed"));
       }
@@ -4134,9 +4131,6 @@ export function SettingsPage({
             }
           : nextSettings;
       });
-      if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
-
-      }
       if (!result.ok) {
         throw new Error(result.message ? localizeTunnelHubSettingsError(result.message, t) : t("settings.tunnelHub.enableIncomplete"));
       }

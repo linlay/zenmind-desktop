@@ -3652,7 +3652,6 @@ export const enUSMessages = {
   "sso.closeBrowserPage": "You can close this browser page.",
   "sso.logoutReturnedTitle": "Signed out",
   "sso.logoutReturnedMessage": "IAM logout returned to Desktop.",
-  "sso.accountDeviceRevocationPending": "Signed out locally. Account device revocation could not be completed; retry in device management.",
   "sso.logoutProxyFailedTitle": "Signed out locally",
   "sso.logoutProxyFailedMessage": "The local sign-in state was cleared, but the IAM logout page could not be opened. You can close this page and continue using Desktop.",
   "sso.loginSuccessTitle": "Login successful",

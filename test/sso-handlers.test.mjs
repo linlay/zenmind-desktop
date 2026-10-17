@@ -169,8 +169,7 @@ function createHarness(startResult, options = {}) {
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
     refreshKanbanConnection: () => { calls.kanbanRefreshes += 1; },
-    revokeAccountDesktop: options.revokeAccountDesktop,
-    stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; },
+    stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; return options.stopTunnelHubRuntime?.(); },
 
   });
   return { handlers, calls };
@@ -259,9 +258,9 @@ test("desktop sso logout stops Tunnel Hub runtime", async () => {
   assert.equal(calls.openBrowserUrl.length, 0);
 });
 
-test("failed account device revocation still clears the local session and both cookie stores", async () => {
+test("Tunnel stop failure still clears the local session and both cookie stores", async () => {
   const { handlers, calls } = createHarness({ ok: true, status: createStatus(false) }, {
-    revokeAccountDesktop: async () => { throw new Error("authority unavailable"); }
+    stopTunnelHubRuntime: async () => { throw new Error("tunnel unavailable"); }
   });
   const result = await handlers.get("sso.logout")();
   assert.equal(result.ok, true);
@@ -270,9 +269,6 @@ test("failed account device revocation still clears the local session and both c
   assert.equal(calls.localLogouts, 1);
   assert.deepEqual(calls.clearBrowserCookies, [true]);
   assert.deepEqual(calls.clearWebSessionCookies, [true]);
-  assert.match(result.message, /撤销未完成|revocation could not be completed/u);
-  assert.equal(result.status.message, result.message);
-  assert.equal(calls.broadcasts.at(-1).message, result.message);
 });
 
 test("desktop sso OIDC logout still opens the configured system-browser endpoint", async () => {

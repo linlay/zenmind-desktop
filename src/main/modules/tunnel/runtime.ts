@@ -119,6 +119,9 @@ export class TunnelHubRuntime {
   private lastError = "";
   private lastConnectedAt = "";
   private credentialRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private credentialExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private credentialSyncController: AbortController | null = null;
+  private registrationController: AbortController | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private networkMonitorTimer: ReturnType<typeof setInterval> | null = null;
   private networkSignature = "";
@@ -170,9 +173,11 @@ export class TunnelHubRuntime {
 
   async stop(): Promise<TunnelHubRuntimeCommandResult> {
     this.generation += 1;
+    this.registrationController?.abort();
+    this.registrationController = null;
     this.startPromise = null;
     this.stopping = true;
-    this.clearCredentialRefreshTimer();
+    this.clearCredentialSync();
     this.clearReconnectTimer();
     this.stopNetworkMonitor();
     this.setPhase("stopping");
@@ -236,7 +241,7 @@ export class TunnelHubRuntime {
         : "Tunnel Hub is disabled.");
     }
     this.stopping = false;
-    this.clearCredentialRefreshTimer();
+    this.clearCredentialSync();
     this.clearReconnectTimer();
     this.startNetworkMonitor();
     const previousClient = this.client;
@@ -245,7 +250,14 @@ export class TunnelHubRuntime {
     this.lastError = "";
     this.setPhase("starting");
     try {
-      const ready = await ensureTunnelHubRegistrationReady(this.options.app);
+      const registration = new AbortController();
+      this.registrationController = registration;
+      let ready: Awaited<ReturnType<typeof ensureTunnelHubRegistrationReady>>;
+      try {
+        ready = await ensureTunnelHubRegistrationReady(this.options.app, registration.signal);
+      } finally {
+        if (this.registrationController === registration) this.registrationController = null;
+      }
       if (generation !== this.generation) return this.commandResult(true, "Tunnel Hub start cancelled.");
       if (!this.canConnect()) {
         await this.stop();
@@ -332,38 +344,68 @@ export class TunnelHubRuntime {
     };
   }
 
-  private clearCredentialRefreshTimer() {
+  private clearCredentialSync() {
     if (this.credentialRefreshTimer) clearTimeout(this.credentialRefreshTimer);
+    if (this.credentialExpiryTimer) clearTimeout(this.credentialExpiryTimer);
     this.credentialRefreshTimer = null;
+    this.credentialExpiryTimer = null;
+    this.credentialSyncController?.abort();
+    this.credentialSyncController = null;
   }
 
   private scheduleCredentialRefresh(
-    client: TunnelClient, credential: PlatformCredential, generation: number, attempt = 0
+    client: TunnelClient, credential: PlatformCredential, generation: number
   ) {
-    this.clearCredentialRefreshTimer();
-    if (!client.sessionId) return;
+    this.clearCredentialSync();
+    const sessionId = client.sessionId;
+    if (!sessionId) return;
+    const controller = new AbortController();
+    this.credentialSyncController = controller;
+    const expiresAt = Date.parse(credential.expiresAt);
     const relayUrl = readTunnelHubSettings(this.options.app).relayUrl;
-    const current = () => generation === this.generation && this.client === client &&
+    const ownsSession = () => !controller.signal.aborted && generation === this.generation &&
+      this.client === client && client.sessionId === sessionId;
+    const current = () => ownsSession() &&
       this.canConnect() && relayUrl === readTunnelHubSettings(this.options.app).relayUrl;
-    this.credentialRefreshTimer = setTimeout(async () => {
+    const expire = () => {
+      if (!ownsSession()) return;
+      this.clearCredentialSync();
+      this.client = null;
+      this.lastError = "Platform credential expired";
+      this.log(this.lastError);
+      client.close();
+      this.scheduleReconnect();
+    };
+    const scheduleRefresh = (delayMs: number) => {
+      this.credentialRefreshTimer = setTimeout(refresh, delayMs);
+      this.credentialRefreshTimer.unref?.();
+    };
+    const refresh = async () => {
       this.credentialRefreshTimer = null;
       if (!current()) return;
+      if (Date.now() >= expiresAt) return expire();
       try {
         const next = await this.issuePlatformCredential();
         if (!current()) return;
-        await updateTunnelPlatformCredential(this.options.app, client.sessionId!, next);
+        if (Date.now() >= expiresAt) return expire();
+        await updateTunnelPlatformCredential(this.options.app, sessionId, next, controller.signal);
         if (current()) {
+          if (Date.now() >= expiresAt) return expire();
           if (this.lastError === "Platform credential synchronization failed") this.lastError = "";
           this.scheduleCredentialRefresh(client, next, generation);
         }
       } catch {
         if (!current()) return;
+        if (Date.now() >= expiresAt) return expire();
         this.lastError = "Platform credential synchronization failed";
         this.log(this.lastError);
-        if (attempt < 3) this.scheduleCredentialRefresh(client, credential, generation, attempt + 1);
+        scheduleRefresh(5_000);
       }
-    }, attempt ? 5_000 : Math.max(1_000, Date.parse(credential.expiresAt) - Date.now() - 50_000));
-    this.credentialRefreshTimer.unref?.();
+    };
+    // Only credentials acknowledged by the Hub may extend the session deadline.
+    this.credentialExpiryTimer = setTimeout(expire, Math.max(0, expiresAt - Date.now()));
+    this.credentialExpiryTimer.unref?.();
+    scheduleRefresh(Math.max(0, expiresAt - Date.now() - 50_000));
   }
 
   private createTunnelClient(input: TunnelClientFactoryInput) {
@@ -371,7 +413,7 @@ export class TunnelHubRuntime {
   }
 
   private handleClientClosed(client: TunnelClient) {
-    if (this.client === client) this.clearCredentialRefreshTimer();
+    if (this.client === client) this.clearCredentialSync();
     if (this.client !== client) {
       return;
     }
@@ -439,7 +481,7 @@ export class TunnelHubRuntime {
       return;
     }
     this.log("network changed; reconnecting tunnel");
-    this.clearCredentialRefreshTimer();
+    this.clearCredentialSync();
     this.clearReconnectTimer();
     const previousClient = this.client;
     this.client = null;
@@ -452,7 +494,7 @@ export class TunnelHubRuntime {
   }
 
   private scheduleReconnect() {
-    this.clearCredentialRefreshTimer();
+    this.clearCredentialSync();
     this.clearReconnectTimer();
     const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled || this.stopping) {

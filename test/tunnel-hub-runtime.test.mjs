@@ -1654,8 +1654,10 @@ for (const pendingStage of ["registration", "connection"]) {
     const started = new Promise(resolve => { entered = resolve; });
     let connections = 0;
     let connectedHooks = 0;
+    let registrationSignal;
     let authenticated = true;
-    configureTunnelHubRegistrationController({ fetch: async () => {
+    configureTunnelHubRegistrationController({ fetch: async (_url, init) => {
+      registrationSignal = init.signal;
       if (pendingStage === "registration") { entered(); await pending; }
       return { ok: true, status: 200, text: async () => JSON.stringify({accountId: "account", deviceId: readTunnelHubSettings(app).deviceId}) };
     } });
@@ -1682,6 +1684,10 @@ for (const pendingStage of ["registration", "connection"]) {
     assert.equal(runtime.getStatus().phase, "stopped");
     assert.equal(runtime.getStatus().lastError, undefined);
     assert.equal(readTunnelHubSettings(app).enabled, true);
+    if (pendingStage === "registration") {
+      assert.equal(registrationSignal.aborted, true);
+      assert.equal(readTunnelHubSettings(app).lastRegisteredAt, undefined, "late registration must not restore account cache");
+    }
   });
 }
 
@@ -1695,31 +1701,48 @@ async function credentialSyncFixture(t, options = {}) {
   let issues = 0;
   let connections = 0;
   let closes = 0;
+  const clients = [];
+  let signedIn = true;
+  let networkSignature = "network-1";
   configureTunnelHubRegistrationController({ fetch: async (url, init) => {
     const body = JSON.parse(init.body);
-    requests.push({ url, body, headers: init.headers });
-    if (body.platformCredential && options.failUpdate) throw new Error("temporary network failure");
+    const request = { url, body, headers: init.headers, signal: init.signal };
+    requests.push(request);
+    if (body.platformCredential) await options.update?.(request);
     return { ok: true, status: 200, text: async () => JSON.stringify({ accountId: "account", deviceId: "registered-desktop" }) };
   } });
   const runtime = new TunnelHubRuntime({
     app,
+    canUseDesktopSsoCredentials: () => signedIn,
+    readNetworkSignature: () => networkSignature,
     desktopWsServerOptions: createDesktopWsServerOptions(app, {
       issueAccessToken: async () => {
-        issues++;
+        const issue = ++issues;
         if (issues > 1) await options.beforeRefresh?.();
-        return { ok: true, token: `platform-${issues}` };
+        return { ok: true, token: `platform-${issue}` };
       },
       verifyToken: async () => ({ subject: "local-user", deviceId: "local-identity-device", scope: "app", expiresAt: Date.now() + (issues === 1 ? 100_000 : 3_600_000) })
     }),
-    createTunnelClient: input => ({
-      sessionId: "live-session", platformCredential: input.platformCredential,
-      connect: async () => { connections++; }, close: () => { closes++; }, on() {}
-    }),
+    createTunnelClient: input => {
+      const client = Object.assign(new EventEmitter(), {
+        sessionId: `live-session-${clients.length + 1}`, platformCredential: input.platformCredential,
+        connect: async () => { connections++; },
+        close: () => { closes++; client.emit("close"); }
+      });
+      clients.push(client);
+      return client;
+    },
     logger: { log() {}, warn() {}, error() {} }
   });
   t.after(async () => { await runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
   assert.equal((await runtime.start()).ok, true);
-  return { runtime, requests, issues: () => issues, connections: () => connections, closes: () => closes };
+  return {
+    runtime, requests, clients,
+    issues: () => issues, connections: () => connections, closes: () => closes,
+    signOut: () => { signedIn = false; },
+    switchAccount: () => writeDesktopSsoAccessToken(homePath, "second-account-token"),
+    changeNetwork: () => { networkSignature = "network-2"; }
+  };
 }
 
 const flushPromises = () => new Promise(resolve => setImmediate(resolve));
@@ -1732,28 +1755,162 @@ test("Platform credential refresh updates only the live session without restarti
   const updates = f.requests.filter(request => request.body.platformCredential);
   assert.equal(updates.length, 1);
   assert.deepEqual(updates[0].body, {
-    deviceId: "registered-desktop", tunnelSessionId: "live-session",
+    deviceId: "registered-desktop", tunnelSessionId: "live-session-1",
     platformCredential: { token: "platform-2", platformDeviceId: "local-identity-device", expiresAt: new Date(Date.now() + 3_600_000).toISOString() }
   });
   assert.equal(f.connections(), 1);
   assert.equal(f.closes(), 0);
   assert.equal(f.runtime.getStatus().phase, "connected");
+  t.mock.timers.tick(50_000);
+  await flushPromises();
+  assert.equal(f.closes(), 0, "successful refresh invalidates the previous expiry guard");
+  t.mock.timers.tick(3_499_999);
+  await flushPromises();
+  assert.equal(f.issues(), 2);
+  t.mock.timers.tick(1);
+  await flushPromises();
+  assert.equal(f.issues(), 3, "new credential refresh starts 50 seconds before its expiry");
   await f.runtime.stop();
   t.mock.timers.tick(4_000_000);
   await flushPromises();
-  assert.equal(f.issues(), 2);
+  assert.equal(f.issues(), 3);
 });
 
-test("Platform synchronization retries are bounded and do not replace a healthy tunnel", async t => {
+test("Platform synchronization recovers after more than four failures without replacing a healthy tunnel", async t => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
-  const f = await credentialSyncFixture(t, { failUpdate: true });
+  let attempts = 0;
+  const f = await credentialSyncFixture(t, { update: async () => {
+    if (++attempts <= 5) throw new Error("temporary network failure");
+  } });
   t.mock.timers.tick(50_000);
   await flushPromises();
-  for (let index = 0; index < 5; index++) { t.mock.timers.tick(5_000); await flushPromises(); }
-  assert.equal(f.requests.filter(request => request.body.platformCredential).length, 4);
-  assert.equal(f.connections(), 1);
   assert.equal(f.runtime.getStatus().lastError, "Platform credential synchronization failed");
+  for (let index = 0; index < 5; index++) { t.mock.timers.tick(5_000); await flushPromises(); }
+  assert.equal(attempts, 6);
+  assert.equal(f.connections(), 1);
+  assert.equal(f.closes(), 0);
+  assert.equal(f.runtime.getStatus().lastError, undefined);
+  t.mock.timers.tick(25_000);
+  await flushPromises();
+  assert.equal(f.runtime.getStatus().connected, true);
 });
+
+test("continuous refresh failures expire the confirmed credential and reconnect exactly once", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const f = await credentialSyncFixture(t, { update: async () => { throw new Error("offline"); } });
+  t.mock.timers.tick(50_000);
+  await flushPromises();
+  for (let index = 0; index < 9; index++) { t.mock.timers.tick(5_000); await flushPromises(); }
+  assert.equal(f.requests.filter(request => request.body.platformCredential).length, 10);
+  t.mock.timers.tick(5_000);
+  await flushPromises();
+  assert.equal(f.closes(), 1);
+  assert.equal(f.runtime.getStatus().connected, false);
+  assert.equal(f.runtime.getStatus().phase, "reconnecting");
+  assert.equal(f.runtime.getStatus().lastError, "Platform credential expired");
+  t.mock.timers.tick(f.runtime.getStatus().reconnectSeconds * 1000 - 1);
+  await flushPromises();
+  assert.equal(f.connections(), 1);
+  t.mock.timers.tick(1);
+  await flushPromises();
+  assert.equal(f.connections(), 2);
+  assert.equal(f.closes(), 1);
+  assert.equal(f.runtime.getStatus().connected, true);
+  assert.equal(f.runtime.getStatus().lastError, undefined);
+});
+
+test("a late update cannot extend an expired credential before its expiry callback runs", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const f = await credentialSyncFixture(t, { update: () => pending });
+  t.mock.timers.tick(50_000);
+  await flushPromises();
+  t.mock.timers.setTime(Date.now() + 50_000);
+  release();
+  await flushPromises();
+  assert.equal(f.closes(), 1);
+  assert.equal(f.runtime.getStatus().connected, false);
+  assert.equal(f.runtime.getStatus().phase, "reconnecting");
+  t.mock.timers.tick(1);
+  await flushPromises();
+  assert.equal(f.closes(), 1);
+});
+
+for (const stage of ["issuance", "request"]) {
+  test(`expiry closes a tunnel with hung ${stage} and ignores its late completion`, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+    let release;
+    let entered = false;
+    const pending = new Promise(resolve => { release = resolve; });
+    const hangOnce = () => { if (!entered) { entered = true; return pending; } };
+    const f = await credentialSyncFixture(t, stage === "issuance" ? { beforeRefresh: hangOnce } : { update: hangOnce });
+    t.mock.timers.tick(50_000);
+    await flushPromises();
+    assert.equal(entered, true);
+    t.mock.timers.tick(49_999);
+    await flushPromises();
+    assert.equal(f.closes(), 0);
+    assert.equal(f.issues(), 2, "pending refreshes cannot overlap");
+    t.mock.timers.tick(1);
+    await flushPromises();
+    assert.equal(f.closes(), 1);
+    assert.equal(f.runtime.getStatus().connected, false);
+    if (stage === "request") assert.equal(f.requests.at(-1).signal.aborted, true);
+    t.mock.timers.tick(f.runtime.getStatus().reconnectSeconds * 1000);
+    await flushPromises();
+    assert.equal(f.connections(), 2);
+    release();
+    await flushPromises();
+    t.mock.timers.tick(100_000);
+    await flushPromises();
+    assert.equal(f.requests.filter(request => request.body.platformCredential).length, stage === "request" ? 1 : 0);
+    assert.equal(f.connections(), 2);
+    assert.equal(f.closes(), 1);
+    assert.equal(f.runtime.getStatus().connected, true);
+    assert.equal(f.runtime.getStatus().lastError, undefined);
+  });
+}
+
+for (const action of ["logout", "account switch", "disable", "disconnect", "replacement", "network change"]) {
+  for (const rejected of [false, true]) {
+    test(`${action} cancels credential updates and ignores late ${rejected ? "failure" : "success"}`, async t => {
+      t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: Date.now() });
+      let release;
+      const pending = new Promise(resolve => { release = resolve; });
+      const f = await credentialSyncFixture(t, { update: async () => {
+        await pending;
+        if (rejected) throw new Error("late failure");
+      } });
+      t.mock.timers.tick(50_000);
+      await flushPromises();
+      const update = f.requests.at(-1);
+      assert.equal(update.body.tunnelSessionId, "live-session-1");
+      assert.equal(update.signal.aborted, false);
+      if (action === "logout") { f.signOut(); await f.runtime.stop(); }
+      if (action === "account switch") { f.switchAccount(); await f.runtime.restart(); }
+      if (action === "disable") await f.runtime.applySettings({ enabled: false });
+      if (action === "disconnect") f.clients[0].emit("close");
+      if (action === "replacement") await f.runtime.start();
+      if (action === "network change") { f.changeNetwork(); t.mock.timers.tick(5_000); await flushPromises(); }
+      assert.equal(update.signal.aborted, true);
+      release();
+      await flushPromises();
+      t.mock.timers.tick(100_000);
+      await flushPromises();
+      assert.equal(f.requests.filter(request => request.body.platformCredential).length, 1);
+      assert.equal(f.runtime.getStatus().lastError, undefined);
+      const stopped = action === "logout" || action === "disable";
+      assert.equal(f.connections(), stopped ? 1 : 2);
+      assert.equal(f.runtime.getStatus().connected, !stopped);
+      await f.runtime.stop();
+      const issues = f.issues();
+      t.mock.timers.tick(4_000_000);
+      await flushPromises();
+      assert.equal(f.issues(), issues, "stopped runtime leaves no credential or reconnect timers");
+    });
+  }
+}
 
 test("logout discards a late token refresh before any upload", async t => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });

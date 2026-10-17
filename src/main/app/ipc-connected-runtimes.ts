@@ -9,7 +9,7 @@ import { callAgentPlatform } from "../modules/desktop-actions";
 import { getDataRoot } from "../infrastructure/filesystem/user-paths";
 import { t, initializeMainI18n, setMainLocale } from "../support/i18n/main-i18n";
 import { isSupportedLocale } from "../../shared/i18n";
-import { revokeTunnelAccountDevice, applyTunnelHubSettings, getTunnelHubRuntimeStatus, stopTunnelHubRuntime } from "../modules/tunnel";
+import { applyTunnelHubSettings, clearTunnelHubRegistrationCache, getTunnelHubRuntimeStatus, stopTunnelHubRuntime } from "../modules/tunnel";
 import { registerDesktopPetIpcHandlers } from "../modules/pet";
 import { registerAppearanceIpcHandlers, registerSettingsIpcHandlers } from "../modules/settings";
 import { registerSsoIpcHandlers } from "../modules/identity";
@@ -38,8 +38,13 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     cancelDesktopSsoLogin,
     issueAgentAccessToken: options.issueAgentAccessToken,
     refreshKanbanConnection: assistantBridgeRuntime.refreshKanbanDeviceInfo,
-    revokeAccountDesktop: () => revokeTunnelAccountDevice(app),
-    stopTunnelHubRuntime,
+    stopTunnelHubRuntime: async () => {
+      try {
+        await stopTunnelHubRuntime();
+      } finally {
+        clearTunnelHubRegistrationCache(app);
+      }
+    },
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
     stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
   });

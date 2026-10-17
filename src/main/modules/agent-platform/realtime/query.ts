@@ -168,6 +168,8 @@ export function createQuery(deps: QueryPort) {
     if (options.signal) {
       transaction.abortListener = () => {
         transaction.sourceDetached = true;
+        // Settle the cancelled caller while other subscribers keep the Run stream.
+        transaction.completed.reject(brokerError("connection_unavailable", "query aborted"));
         const run = transaction.runId ? deps.getRunChannel(transaction.runId, transaction.lane) : null;
         if (transaction.subscriptionId) deps.unsubscribe(transaction.subscriptionId);
         if (run) void deps.detachRunIfUnobserved(run, "consumer_destroyed");

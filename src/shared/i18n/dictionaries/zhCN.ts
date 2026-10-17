@@ -3652,7 +3652,6 @@ export const zhCNMessages = {
   "sso.closeBrowserPage": "可以关闭此浏览器页面。",
   "sso.logoutReturnedTitle": "已退出登录",
   "sso.logoutReturnedMessage": "IAM 会话登出已返回 Desktop。",
-  "sso.accountDeviceRevocationPending": "已退出本地登录，账号设备撤销未完成，请在设备管理中重试。",
   "sso.logoutProxyFailedTitle": "已退出本地登录",
   "sso.logoutProxyFailedMessage": "本地登录状态已清除，IAM 登出页面暂时无法打开。可以关闭此页面后继续使用 Desktop。",
   "sso.loginSuccessTitle": "登录成功",

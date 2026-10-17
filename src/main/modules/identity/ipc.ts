@@ -46,7 +46,6 @@ export interface SsoIpcHandlerOptions {
   cancelDesktopSsoLogin: (app: any) => any;
   issueAgentAccessToken: (app: any, reason: any) => Promise<any> | any;
   refreshKanbanConnection?: () => void;
-  revokeAccountDesktop?: () => Promise<void>;
   stopTunnelHubRuntime?: () => Promise<unknown> | unknown;
   refreshEnterpriseChat?: () => Promise<unknown> | unknown;
   stopEnterpriseChat?: () => Promise<unknown> | unknown;
@@ -140,17 +139,10 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
   });
 
   ipcMain.handle("sso.logout", async () => {
-    let accountDeviceRevokeFailed = false;
-    try {
-      await options.revokeAccountDesktop?.();
-    } catch (error) {
-      accountDeviceRevokeFailed = true;
-      safeConsoleError("failed to revoke account device during desktop sso logout", error);
-    }
     try {
       await options.stopTunnelHubRuntime?.();
     } catch (error) {
-      safeConsoleError("failed to stop Tunnel Hub after account device revocation", error);
+      safeConsoleError("failed to stop Tunnel Hub during desktop sso logout", error);
     }
     try {
       await desktopSsoController.logoutWebSession?.();
@@ -192,12 +184,6 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
           message
         };
       }
-    }
-    if (result.ok && accountDeviceRevokeFailed) {
-      const message = t("sso.accountDeviceRevocationPending");
-      const status = { ...result.status, message };
-      desktopSsoController.broadcastStatus(status);
-      return { ...result, status, message };
     }
     return result;
   });
