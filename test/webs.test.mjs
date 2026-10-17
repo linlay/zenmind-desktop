@@ -510,6 +510,56 @@ test("store requires exact manifest id and installation directory identity", (t)
   assert.equal(canonical.schemaVersion, 2);
 });
 
+test("mobile catalog and change lookup share the injected manager and its running runtime", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-mobile-catalog-"));
+  const app = createApp(path.join(root, "home"));
+  let tunnelConnected = true;
+  const facade = createWebsFacade({
+    ...websIntegrationPorts,
+    readInstalledRecords: () => [],
+    readTunnelHubSettings: () => ({ publicUrl: "https://catalog-device.m.example.test" }),
+    getTunnelHubRuntimeStatus: () => ({ connected: tunnelConnected })
+  });
+  t.after(async () => {
+    try {
+      await facade.webappRuntime.stopAll(app);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+  assert.equal(facade.webappManager.runtime, facade.webappRuntime);
+  assert.deepEqual(facade.createDesktopMobileWebappCatalog(app).items, []);
+
+  const runningId = webappId("mobile-running");
+  const stoppedId = webappId("mobile-stopped");
+  writeWebapp(webappsRoot(app.getPath("home")), "mobile-running", { label: "Running app" });
+  writeWebapp(webappsRoot(app.getPath("home")), "mobile-stopped", { label: "Stopped app" });
+  const { writeWebOrderKeys } = require("../dist-electron/main/modules/webs/order-store.js");
+  writeWebOrderKeys(app, [`webapp:${stoppedId}`, `webapp:${runningId}`]);
+  const started = await facade.webappRuntime.start(app, runningId);
+  assert.equal(started.ok, true);
+
+  const catalog = facade.createDesktopMobileWebappCatalog(app);
+  assert.equal(catalog.desktopDeviceId, "webs-test-device");
+  assert.equal(catalog.tunnelConnected, true);
+  assert.deepEqual(catalog.items.map((item) => [item.id, item.order]), [[stoppedId, 0], [runningId, 1]]);
+  assert.equal(catalog.items[0].runtimeStatus, "stopped");
+  assert.equal(catalog.items[0].availability, "webapp-stopped");
+  const running = catalog.items[1];
+  assert.equal(running.runtimeStatus, "running");
+  assert.equal(running.available, true);
+  assert.equal(running.publicUrl, `https://catalog-device-${started.state.frontendPort}.m.example.test/`);
+  assert.deepEqual(facade.readDesktopMobileWebappItem(app, runningId), running);
+  assert.equal(facade.readDesktopMobileWebappItem(app, "missing"), null);
+
+  tunnelConnected = false;
+  const offline = facade.readDesktopMobileWebappItem(app, runningId);
+  assert.equal(offline.runtimeStatus, "running");
+  assert.equal(offline.availability, "desktop-offline");
+  assert.equal(offline.available, false);
+  assert.equal(offline.publicUrl, running.publicUrl);
+});
+
 test("local display preferences do not mutate webapp.json", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-preferences-v1-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

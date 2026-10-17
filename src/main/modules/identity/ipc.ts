@@ -140,6 +140,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
 
   ipcMain.handle("sso.logout", async () => {
     try {
+      await options.stopTunnelHubRuntime?.();
+    } catch (error) {
+      safeConsoleError("failed to stop Tunnel Hub during desktop sso logout", error);
+    }
+    try {
       await desktopSsoController.logoutWebSession?.();
     } catch (error) {
       safeConsoleError("failed to logout desktop sso web session", error);
@@ -152,11 +157,6 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
         await options.stopEnterpriseChat?.();
       } catch (error) {
         safeConsoleError("failed to stop enterprise chat after desktop sso logout", error);
-      }
-      try {
-        await options.stopTunnelHubRuntime?.();
-      } catch (error) {
-        safeConsoleError("failed to stop Tunnel Hub after desktop sso logout", error);
       }
     }
     await desktopSsoController.clearBrowserCookies();

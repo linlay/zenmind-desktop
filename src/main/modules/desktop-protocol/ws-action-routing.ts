@@ -281,7 +281,12 @@ export async function handleRequest(
       const token = readText(payloadRecord.token);
       if (token) {
         try {
-          connection.auth = await authenticateDesktopWsProtocolSession(options, token, connection.auth.subprotocol);
+          const auth = await authenticateDesktopWsProtocolSession(options, token, connection.auth.subprotocol);
+          if (auth.deviceId !== connection.auth.deviceId || auth.subject !== connection.auth.subject) {
+            throw new Error("Platform identity changed");
+          }
+          if (connection.closed) return;
+          connection.auth = auth;
           sendResponse(connection, namespace, type, id, { token, expiresAt: connection.auth.expiresAt });
         } catch {
           sendError(connection, namespace, id, "unauthorized", 401, "invalid token");
@@ -351,7 +356,9 @@ export async function handleRequest(
         sendError(connection, namespace, id, "webapp_catalog_unavailable", 503, "WebApp catalog is not available.");
         return;
       }
-      sendResponse(connection, namespace, type, id, options.listMobileWebapps());
+      sendResponse(connection, namespace, type, id, {
+        ...options.listMobileWebapps(),
+      });
       return;
     case "issue.create":
       sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).createIssue(readIssueCreateInput(payload)));

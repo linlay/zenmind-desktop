@@ -1,4 +1,3 @@
-import type { App } from "electron";
 import type {
   DesktopMobileWebappAvailability,
   DesktopMobileWebappItem,
@@ -7,12 +6,6 @@ import type {
   WebappRuntimeState,
   WebappRuntimeStatus
 } from "../../../../shared/contracts";
-import { applyWebOrder } from "../order-store";
-import { readWebItems } from "../store";
-
-export function readOrderedWebappItems(app: App) {
-  return applyWebOrder(app, readWebItems(app)).filter((item): item is WebappEntry => item.kind === "webapp");
-}
 
 function resolveMobileStatus(input: {
   runtimeStatus: WebappRuntimeStatus;
@@ -85,10 +78,4 @@ export function createDesktopMobileWebappItem(input: {
     publicUrl,
     availability
   };
-}
-
-export function findOrderedWebapp(app: App, id: string) {
-  const items = readOrderedWebappItems(app);
-  const order = items.findIndex((item) => item.id === id.trim());
-  return order < 0 ? null : { entry: items[order], order };
 }

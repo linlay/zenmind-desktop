@@ -560,8 +560,7 @@
   background: var(--surface-soft);
 }
 
-.settings-page .settings-control-card + .settings-control-card,
-.settings-page .settings-control-card + .settings-mobile-pairing-card {
+.settings-page .settings-control-card + .settings-control-card {
   margin-top: 10px;
 }
 
@@ -1528,75 +1527,6 @@
 .settings-page .settings-control-config-stack {
   width: min(100%, var(--settings-control-config-max, 700px));
   margin-top: 0;
-}
-
-.settings-page .settings-mobile-pairing-header {
-  align-items: flex-start;
-}
-
-.settings-page .settings-mobile-pairing-actions {
-  display: flex;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.settings-page
-  .settings-mobile-pairing-header
-  .settings-control-primary-button {
-  flex-shrink: 0;
-}
-
-.settings-page .settings-mobile-pairing-body {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px;
-}
-
-.settings-page .settings-mobile-pairing-qr {
-  display: grid;
-  width: 220px;
-  min-height: 220px;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.settings-page .settings-mobile-pairing-details {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.settings-page .settings-mobile-pairing-meta,
-.settings-page .settings-mobile-pairing-payload {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.settings-page .settings-mobile-pairing-meta code {
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
-  color: var(--ink);
-  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.settings-page .settings-mobile-pairing-error {
-  color: var(--danger);
 }
 
 .settings-page .settings-control-primary-button {
@@ -3505,27 +3435,17 @@
     width: 100%;
   }
 
-  .settings-page .settings-debug-card,
-  .settings-page .settings-mobile-pairing-header {
+  .settings-page .settings-debug-card {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .settings-page .settings-mobile-pairing-actions {
-    justify-content: flex-start;
-  }
 
   .settings-page .settings-debug-card .text-button {
     align-self: flex-end;
   }
 
-  .settings-page .settings-mobile-pairing-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
-  .settings-page .settings-mobile-pairing-qr {
-    width: 100%;
-  }
 
   .settings-page-head h1 {
     font-size: 16px;

@@ -153,7 +153,7 @@ export function getDesktopWsServerRuntimeState() {
 export function emitDesktopWsPush(type: DesktopWsPushType | string, data?: unknown) {
   for (const record of [...activeServers.values(), tunnelSessionGroup]) {
     for (const connection of record.connections) {
-      if (connection.subscriptions.has(type)) {
+      if (!connection.closed && connection.auth.expiresAt > Date.now() && connection.subscriptions.has(type)) {
         sendPush(connection, type, data);
       }
     }

@@ -58,9 +58,6 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
-  createAppPairingPayload?: (app: any, options?: {
-    getTunnelHubRuntimeStatus?: () => TunnelHubRuntimeStatus;
-  }) => Promise<any>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
   onEnterpriseImSettingsChanged?: (settings: EnterpriseImSettings) => void;
@@ -228,7 +225,6 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     refreshTrayContextMenu,
     refreshMainWindowAppearance,
     emitLocaleChanged,
-    createAppPairingPayload,
     getUsageProfile,
     onGeneralSettingsChanged,
     onEnterpriseImSettingsChanged,
@@ -421,13 +417,5 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     refreshTrayContextMenu();
     emitLocaleChanged(settings);
     return settings;
-  });
-  ipcMain.handle("settings.createAppPairingPayload", async () => {
-    if (!createAppPairingPayload) {
-      return { ok: false, message: t("settings.mobilePairing.unavailable") };
-    }
-    return createAppPairingPayload(app, {
-      getTunnelHubRuntimeStatus
-    });
   });
 }

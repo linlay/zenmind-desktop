@@ -1,6 +1,5 @@
 export { issueAgentAccessToken } from "./agent-auth";
 export type { IdentityCapabilityResolver } from "./agent-auth";
-export { createAppPairingPayload } from "./app-pairing";
 export { registerDesktopSsoAvatarProtocol, registerDesktopSsoAvatarProtocolScheme } from "./avatar-protocol";
 export { getDesktopDeviceId, getDesktopDeviceIdentityInfo } from "./device-identity";
 export { getDesktopDeviceInfo } from "./device-info";

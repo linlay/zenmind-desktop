@@ -1,60 +1,56 @@
 import type { App } from "electron";
 import type {
   DesktopMobileWebappCatalog,
-  DesktopMobileWebappItem
+  DesktopMobileWebappItem,
+  WebappEntry
 } from "../../../../shared/contracts";
-import { requireWebsIntegrationPorts, type WebsIntegrationPorts } from "../integration-ports";
+import type { WebsIntegrationPorts } from "../integration-ports";
+import { applyWebOrder } from "../order-store";
+import type { WebappManager } from "./manager";
 import { createMobileTunnelWebappUrl } from "./mobile-access";
-import { webappRuntime, type WebappRuntime } from "./runtime";
-import {
-  createDesktopMobileWebappItem,
-  findOrderedWebapp,
-  readOrderedWebappItems
-} from "./mobile-view";
+import { createDesktopMobileWebappItem } from "./mobile-view";
 
-function tunnelConnected(ports?: WebsIntegrationPorts) {
-  try {
-    return requireWebsIntegrationPorts(ports).getTunnelHubRuntimeStatus().connected === true;
-  } catch {
-    return false;
-  }
+function readOrderedWebappItems(app: App, manager: WebappManager): WebappEntry[] {
+  return applyWebOrder(app, manager.list(app)) as WebappEntry[];
 }
 
 export function readDesktopMobileWebappItem(
   app: App,
   id: string,
-  ports?: WebsIntegrationPorts,
-  runtimeFacade: WebappRuntime = webappRuntime
+  ports: WebsIntegrationPorts,
+  manager: WebappManager
 ): DesktopMobileWebappItem | null {
-  const ordered = findOrderedWebapp(app, id);
-  if (!ordered) {
+  const items = readOrderedWebappItems(app, manager);
+  const order = items.findIndex((item) => item.id === id.trim());
+  if (order < 0) {
     return null;
   }
-  const runtime = runtimeFacade.getStatus(app, ordered.entry.id);
-  const settings = requireWebsIntegrationPorts(ports).readTunnelHubSettings(app);
+  const entry = items[order];
+  const runtime = manager.runtime.getStatus(app, entry.id);
+  const settings = ports.readTunnelHubSettings(app);
   return createDesktopMobileWebappItem({
-    ...ordered,
+    entry,
+    order,
     runtime,
     mobileConfigured: Boolean(settings.publicUrl),
     mobilePublicUrl: createMobileTunnelWebappUrl(app, runtime, ports),
-    tunnelConnected: tunnelConnected(ports)
+    tunnelConnected: ports.getTunnelHubRuntimeStatus().connected === true
   });
 }
 
 export function createDesktopMobileWebappCatalog(
   app: App,
-  ports?: WebsIntegrationPorts,
-  runtimeFacade: WebappRuntime = webappRuntime
+  ports: WebsIntegrationPorts,
+  manager: WebappManager
 ): DesktopMobileWebappCatalog {
-  const integration = requireWebsIntegrationPorts(ports);
-  const connected = tunnelConnected(ports);
-  const settings = integration.readTunnelHubSettings(app);
+  const connected = ports.getTunnelHubRuntimeStatus().connected === true;
+  const settings = ports.readTunnelHubSettings(app);
   return {
-    desktopDeviceId: integration.getDesktopDeviceId(app),
+    desktopDeviceId: ports.getDesktopDeviceId(app),
     tunnelConnected: connected,
     generatedAt: new Date().toISOString(),
-    items: readOrderedWebappItems(app).map((entry, order) => {
-      const runtime = runtimeFacade.getStatus(app, entry.id);
+    items: readOrderedWebappItems(app, manager).map((entry, order) => {
+      const runtime = manager.runtime.getStatus(app, entry.id);
       return createDesktopMobileWebappItem({
         entry,
         order,

@@ -1,5 +1,7 @@
 import type { SiteControlScope } from "../web-surfaces";
 import type { App } from "electron";
+import type { DesktopWsServerOptions, startDesktopWsServer } from "../desktop-protocol";
+import type { configureTunnelHubRuntime } from "../tunnel";
 
 export type AssistantIntegrationPorts = {
   callDesktopActionConfirmation: (request: any, options: any) => Promise<any>;
@@ -10,12 +12,13 @@ export type AssistantIntegrationPorts = {
   stopDesktopActionBridge: () => unknown;
   emitDesktopWsPush: (type: any, payload: any) => unknown;
   getDesktopWsServerRuntimeState: () => any;
-  startDesktopWsServer: (options: any) => Promise<any>;
+  ensureIdentityCenterJwk: DesktopWsServerOptions["ensureIdentityCenterJwk"];
+  startDesktopWsServer: typeof startDesktopWsServer;
   stopDesktopWsServer: () => Promise<unknown>;
   createDesktopActionOptions: (context: any, dependencies: any) => any;
   createKanbanRuntime: (options: any) => any;
   configureTunnelHubRegistrationController: (options: any) => unknown;
-  configureTunnelHubRuntime: (options: any) => unknown;
+  configureTunnelHubRuntime: typeof configureTunnelHubRuntime;
   createDesktopMobileWebappCatalog: (app: App) => any;
   readDesktopMobileWebappItem: (app: App, webappId: string) => any;
   setWebappPublicationChangeListener: (listener: any) => void;

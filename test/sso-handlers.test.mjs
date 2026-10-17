@@ -112,6 +112,8 @@ function createHarness(startResult, options = {}) {
     canonicalTokenExchanges: 0,
     webSessionExchanges: 0,
     clearBrowserCookies: [],
+    clearWebSessionCookies: [],
+    localLogouts: 0,
     broadcasts: [],
     kanbanRefreshes: 0,
     tunnelHubStops: 0,
@@ -135,7 +137,7 @@ function createHarness(startResult, options = {}) {
         return false;
       },
       clearBrowserCookies: async () => { calls.clearBrowserCookies.push(true); },
-      clearWebSessionCookies: async () => undefined,
+      clearWebSessionCookies: async () => { calls.clearWebSessionCookies.push(true); },
       openBrowserUrl: async (input) => {
         calls.openBrowserUrl.push(input);
         return { ok: true };
@@ -159,12 +161,15 @@ function createHarness(startResult, options = {}) {
       }
       return startResult;
     },
-    logoutDesktopSso: async () => options.logoutResult ?? ({ ok: true, status: createStatus(false) }),
+    logoutDesktopSso: async () => {
+      calls.localLogouts += 1;
+      return options.logoutResult ?? ({ ok: true, status: createStatus(false) });
+    },
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
     refreshKanbanConnection: () => { calls.kanbanRefreshes += 1; },
-    stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; },
+    stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; return options.stopTunnelHubRuntime?.(); },
 
   });
   return { handlers, calls };
@@ -251,6 +256,19 @@ test("desktop sso logout stops Tunnel Hub runtime", async () => {
   assert.deepEqual(calls.clearBrowserCookies, [true]);
   assert.equal(calls.openSystemBrowserUrl.length, 0);
   assert.equal(calls.openBrowserUrl.length, 0);
+});
+
+test("Tunnel stop failure still clears the local session and both cookie stores", async () => {
+  const { handlers, calls } = createHarness({ ok: true, status: createStatus(false) }, {
+    stopTunnelHubRuntime: async () => { throw new Error("tunnel unavailable"); }
+  });
+  const result = await handlers.get("sso.logout")();
+  assert.equal(result.ok, true);
+  assert.equal(result.status.authenticated, false);
+  assert.equal(calls.tunnelHubStops, 1);
+  assert.equal(calls.localLogouts, 1);
+  assert.deepEqual(calls.clearBrowserCookies, [true]);
+  assert.deepEqual(calls.clearWebSessionCookies, [true]);
 });
 
 test("desktop sso OIDC logout still opens the configured system-browser endpoint", async () => {

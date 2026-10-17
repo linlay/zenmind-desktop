@@ -90,13 +90,14 @@ export async function verifyDesktopAccessToken(
   };
 }
 
-export function authenticateDesktopWsProtocolSession(
+export async function authenticateDesktopWsProtocolSession(
   options: DesktopWsServerOptions,
   token: string,
   subprotocol?: string
-) {
-  return (options.verifyToken ?? ((nextToken, nextSubprotocol) =>
-    verifyDesktopAccessToken(options.app, nextToken, options.ensureIdentityCenterJwk, nextSubprotocol)))(token, subprotocol);
+): Promise<DesktopWsAuthSession> {
+  const verify = options.verifyToken ?? ((nextToken: string, nextSubprotocol?: string) =>
+    verifyDesktopAccessToken(options.app, nextToken, options.ensureIdentityCenterJwk, nextSubprotocol));
+  return verify(token, subprotocol);
 }
 
 export function readAuthRefreshReason(payload: Record<string, unknown>): AgentAuthRefreshReason {
@@ -108,6 +109,9 @@ export async function issueDesktopWsRefreshAuth(
   connection: DesktopWsConnection,
   reason: AgentAuthRefreshReason
 ): Promise<DesktopWsIssuedAuthRefresh> {
+  if (connection.source === "tunnel-hub" || connection.source === "mobile") {
+    throw new Error("fresh Platform credential required");
+  }
   if (!options.issueAccessToken) {
     throw new Error("Desktop WS token issuer is not configured");
   }

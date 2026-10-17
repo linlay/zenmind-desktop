@@ -167,7 +167,12 @@ export function createQuery(deps: QueryPort) {
     deps.queriesByRequestId.set(upstreamRequestId, transaction);
     if (options.signal) {
       transaction.abortListener = () => {
-        failQuery(transaction, brokerError("connection_unavailable", "query aborted"));
+        transaction.sourceDetached = true;
+        // Settle the cancelled caller while other subscribers keep the Run stream.
+        transaction.completed.reject(brokerError("connection_unavailable", "query aborted"));
+        const run = transaction.runId ? deps.getRunChannel(transaction.runId, transaction.lane) : null;
+        if (transaction.subscriptionId) deps.unsubscribe(transaction.subscriptionId);
+        if (run) void deps.detachRunIfUnobserved(run, "consumer_destroyed");
       };
       options.signal.addEventListener("abort", transaction.abortListener, { once: true });
     }
@@ -213,6 +218,7 @@ export function createQuery(deps: QueryPort) {
           bindQuerySubscription(run, transaction);
         }
         deps.consumeRunEvent(run, frame.event, transaction);
+        if (transaction.sourceDetached) void deps.detachRunIfUnobserved(run, "consumer_destroyed");
       }
       catch (error) {
         failQuery(transaction, error);
@@ -361,6 +367,7 @@ export function createQuery(deps: QueryPort) {
   }
 
   function bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction): void {
+    if (transaction.sourceDetached) return;
     const observerToken = transaction.rootObserverToken;
     const role: RunSubscription["role"] = observerToken ? "root_observer" : "internal";
     if (observerToken && !deps.findRootObserver(observerToken)) {
@@ -396,7 +403,6 @@ export function createQuery(deps: QueryPort) {
   }
 
   function failQuery(transaction: QueryTransaction, error: unknown): void {
-    if (transaction.sourceDetached) return;
     transaction.siteControlScope?.release("The source query failed.");
     if (transaction.runId) deps.siteControlGrants.revoke(transaction.runId);
     deps.queriesByRequestId.delete(transaction.upstreamRequestId);

@@ -828,32 +828,6 @@ export interface DesktopWsServerStartOptions {
   host?: string;
 }
 
-export interface MobilePairingPayloadV2 {
-  v: 2;
-  kind: "desktop-ws";
-  targetMode: "tunnel";
-  wsUrl: string;
-  tokenMode: "query" | "subprotocol";
-  token: string;
-  expiresAtMs: number;
-  desktopDeviceId: string;
-}
-
-export interface DesktopAppPairingDisplay {
-  targetMode: "tunnel";
-  wsUrl: string;
-  expiresAt: string;
-}
-
-export type DesktopAppPairingPayloadResult =
-  | {
-      ok: true;
-      payload: MobilePairingPayloadV2;
-      payloadText: string;
-      display: DesktopAppPairingDisplay;
-    }
-  | { ok: false; message: string };
-
 export type NativeDialogVisibilityListener = (state: { open: boolean; platform: string }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
@@ -1267,7 +1241,6 @@ export interface DesktopApi {
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
-    createAppPairingPayload: () => Promise<DesktopAppPairingPayloadResult>;
     onLocaleChanged: (listener: LocaleChangedListener) => () => void;
     onDesktopConfigChanged: (listener: DesktopConfigChangedListener) => () => void;
   };
