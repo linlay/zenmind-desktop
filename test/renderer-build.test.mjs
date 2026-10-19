@@ -4500,7 +4500,7 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(appSidebar, /t\("sidebar\.website\.name"\)[\s\S]*?t\("sidebar\.website\.url"\)[\s\S]*?t\("sidebar\.website\.sideAssistant"\)/);
   assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?copilotAgentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /onCloseWebItem\(item\)/);
-  assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
+  assert.match(appSidebar, /requestNavigate\(buildWebEntryPath\(result\.item\.entryKey\)\)/);
 
 
   // Favicon component and caching
@@ -4679,7 +4679,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.doesNotMatch(enUS, /:\s*"[^"]*(?:Webapp|Webapps|website apps?|Website Apps?)/u);
   assert.match(appShell, /handleOpenWebappWorkspace/);
   assert.match(appShell, /\{ openMode: "workspace" \}/);
-  assert.match(appShell, /requestSidebarNavigation\(`\/webs\/\$\{item\.entryKey\}`\)/);
+  assert.match(appShell, /requestSidebarNavigation\(buildWebEntryPath\(item\.entryKey\)\)/);
   assert.match(webappStartEffect, /\.finally\(\(\) => \{[\s\S]*?webappStartInFlightRef\.current\.delete\(item\.id\)/);
   assert.doesNotMatch(webappStartEffect, /let cancelled = false/);
   assert.match(externalWebviewPage, /chrome\?: "browser" \| "app"/);

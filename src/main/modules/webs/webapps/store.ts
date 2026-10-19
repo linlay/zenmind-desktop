@@ -32,6 +32,8 @@ import {
   sortWebEntries
 } from "../common";
 import { withWebappManagementMetadata } from "./metadata";
+import { assertInstalledWebappId, isInstalledWebappId } from "./identity";
+import { parseInstalledWebappManifest } from "./installed-manifest";
 import type { WebsIntegrationPorts } from "../integration-ports";
 
 const { validateWebappPackageDirectory } = packageValidation;
@@ -93,7 +95,7 @@ export function webappTargetMatchesCurrentPlatform(
 }
 
 export function getWebappDir(app: App, id: string, platform: NodeJS.Platform = process.platform) {
-  return path.join(getDesktopWebappsDataRoot(app, platform), assertWebappId(id));
+  return path.join(getDesktopWebappsDataRoot(app, platform), assertInstalledWebappId(id));
 }
 
 function getPreferencesPath(app: App) {
@@ -108,7 +110,7 @@ function readPreferences(app: App): WebappPreferenceStore {
     }
     const result: WebappPreferenceStore = {};
     for (const [id, raw] of Object.entries(value)) {
-      if (!WEBAPP_ID_PATTERN.test(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) {
+      if (!isInstalledWebappId(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) {
         continue;
       }
       const candidate = raw as Record<string, unknown>;
@@ -140,7 +142,7 @@ function writePreferences(app: App, preferences: WebappPreferenceStore) {
 }
 
 export function getWebappUserConfigPath(app: App, id: string) {
-  return path.join(getDesktopWebappDataRoot(app, assertWebappId(id)), "config", "user-config.json");
+  return path.join(getDesktopWebappDataRoot(app, assertInstalledWebappId(id)), "config", "user-config.json");
 }
 
 function readStoredUserConfigValues(app: App, id: string): WebappUserConfigValues {
@@ -236,8 +238,8 @@ function normalizeWebappUserConfigValues(
 }
 
 export function readWebappUserConfigState(app: App, id: string) {
-  const webappId = assertWebappId(id);
-  const manifest = readManifestFile(getWebappDir(app, webappId));
+  const webappId = assertInstalledWebappId(id);
+  const manifest = readWebappManifestFromDir(getWebappDir(app, webappId));
   const stored = readStoredUserConfigValues(app, webappId);
   return normalizeWebappUserConfigValues(manifest, stored, {
     includeDefaults: true,
@@ -264,8 +266,8 @@ export function writeWebappUserConfigValues(
   id: string,
   input: unknown
 ) {
-  const webappId = assertWebappId(id);
-  const manifest = readManifestFile(getWebappDir(app, webappId));
+  const webappId = assertInstalledWebappId(id);
+  const manifest = readWebappManifestFromDir(getWebappDir(app, webappId));
   const normalized = validateWebappUserConfigValues(manifest, input);
   if (normalized.issues.length > 0) {
     return {
@@ -308,7 +310,7 @@ export function writeWebappUserConfigValues(
 }
 
 export function removeWebappPreferences(app: App, id: string) {
-  const webappId = assertWebappId(id);
+  const webappId = assertInstalledWebappId(id);
   const preferences = readPreferences(app);
   if (!Object.hasOwn(preferences, webappId)) {
     return;
@@ -317,7 +319,10 @@ export function removeWebappPreferences(app: App, id: string) {
   writePreferences(app, preferences);
 }
 
-function readManifestFile(webappDir: string): WebappManifest {
+function readManifestFile(
+  webappDir: string,
+  parseManifest = parseWebappManifest
+): WebappManifest {
   const manifestPath = path.join(webappDir, WEBAPP_FILE);
   const stat = fs.statSync(manifestPath);
   if (!stat.isFile()) {
@@ -326,7 +331,7 @@ function readManifestFile(webappDir: string): WebappManifest {
   if (stat.size > WEBAPP_MANIFEST_MAX_BYTES) {
     throw new Error(`webapp.json must not exceed ${WEBAPP_MANIFEST_MAX_BYTES} bytes.`);
   }
-  return parseWebappManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown);
+  return parseManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown);
 }
 
 function manifestToEntry(
@@ -347,6 +352,7 @@ function manifestToEntry(
     allowLanAccess: preference.allowLanAccess === true,
     authMode: preference.authMode ?? "passthrough",
     id: manifest.id,
+    installPath: webappDir,
     entryKey: createWebappEntryKey(manifest.id),
     kind: "webapp",
     ...(manifest.copilot
@@ -362,8 +368,13 @@ function manifestToEntry(
   };
 }
 
-export function readWebappManifestFromDir(webappDir: string) {
-  return readManifestFile(webappDir);
+export function readWebappManifestFromDir(webappDir: string, expectedId = path.basename(webappDir)) {
+  const manifest = readManifestFile(webappDir, parseInstalledWebappManifest);
+  const directoryId = assertInstalledWebappId(expectedId);
+  if (manifest.id !== directoryId) {
+    throw new Error(`webapp id must match its installation directory: ${directoryId}.`);
+  }
+  return manifest;
 }
 
 export function readWebappItemFromDir(webappDir: string, expectedId = "") {
@@ -403,15 +414,15 @@ export function readInstalledWebappItems(app: App, platform: NodeJS.Platform = p
   const preferences = readPreferences(app);
   const items: WebappEntry[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !WEBAPP_ID_PATTERN.test(entry.name)) {
+    if (!entry.isDirectory() || !isInstalledWebappId(entry.name)) {
       continue;
     }
     const webappDir = path.join(root, entry.name);
+    if (!fs.existsSync(path.join(webappDir, WEBAPP_FILE))) {
+      continue;
+    }
     try {
-      const manifest = readManifestFile(webappDir);
-      if (manifest.id !== entry.name) {
-        throw new Error(`webapp id must match its installation directory: ${entry.name}.`);
-      }
+      const manifest = readWebappManifestFromDir(webappDir);
       const userConfigValues = readWebappUserConfigValues(app, manifest.id);
       items.push(manifestToEntry(manifest, webappDir, preferences[manifest.id], userConfigValues));
     } catch (error) {
@@ -437,9 +448,9 @@ export function writeWebappPreferenceFields(
   platform: NodeJS.Platform = process.platform,
   ports?: WebsIntegrationPorts
 ) {
-  const webappId = assertWebappId(id);
+  const webappId = assertInstalledWebappId(id);
   const webappDir = getWebappDir(app, webappId, platform);
-  const manifest = readManifestFile(webappDir);
+  const manifest = readWebappManifestFromDir(webappDir);
   if (manifest.id !== webappId) {
     throw new Error(`webapp id mismatch: expected ${webappId}, received ${manifest.id}.`);
   }

@@ -548,11 +548,8 @@ export async function uninstallWebsiteAppMarketItem(
   const marketRecord = readInstalledRecords(app).find((record) =>
     record.id === itemId && record.type === "website-app"
   );
-  const safeWebappDirName = validateWebappId(marketRecord?.resourceKey || itemId);
-  if (!safeWebappDirName) {
-    throw new Error(t("market.websiteApp.invalidId"));
-  }
-  const target = readInstalledWebappItems(app).find((item) => item.id === safeWebappDirName);
+  const webappId = marketRecord?.resourceKey || itemId;
+  const target = readInstalledWebappItems(app).find((item) => item.id === webappId);
   if (!target) {
     throw new Error(t("webapp.notFound"));
   }

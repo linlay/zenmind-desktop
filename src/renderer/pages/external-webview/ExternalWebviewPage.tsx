@@ -15,6 +15,7 @@ import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
 import type { DesktopWebActionStateResult } from "../../../shared/desktop-actions";
 import type { EmbeddedCdpSurfaceKind } from "../../../shared/embedded-cdp";
+import { buildWebEntryPath } from "../../../shared/web-entry-routes";
 import { retainForegroundFocusForBackgroundSites, controlBackgroundSiteFocus } from "../../services/backgroundSiteFocus";
 import {
   createChatChildSurfaceIdentity,
@@ -613,7 +614,7 @@ export function ExternalWebviewPage({
     : surfaceId === BUILTIN_BROWSER_SURFACE_ID
       ? BUILTIN_BROWSER_ROUTE
       : surfaceId
-        ? `/webs/${surfaceId}`
+        ? buildWebEntryPath(surfaceId)
         : currentRoute);
   const faviconReportedRef = useRef(false);
   const initialFaviconTabIdRef = useRef("");
