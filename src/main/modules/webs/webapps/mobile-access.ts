@@ -1,6 +1,6 @@
 import type { App } from "electron";
 import type { WebappRuntimeState } from "../../../../shared/contracts";
-import { requireWebsIntegrationPorts, type WebsIntegrationPorts } from "../integration-ports";
+import type { WebsIntegrationPorts } from "../integration-ports";
 
 function isMobileTunnelHost(hostname: string) {
   return /(?:^|\.)m\./iu.test(hostname.trim().toLowerCase());
@@ -34,9 +34,9 @@ function readRuntimeFrontendPort(runtime: WebappRuntimeState | null) {
 export function createMobileTunnelWebappUrl(
   app: App,
   runtime: WebappRuntimeState | null,
-  ports?: WebsIntegrationPorts
+  ports: WebsIntegrationPorts
 ) {
-  const settings = requireWebsIntegrationPorts(ports).readTunnelHubSettings(app);
+  const settings = ports.readTunnelHubSettings(app);
   const frontendPort = readRuntimeFrontendPort(runtime);
   if (!settings.publicUrl || !frontendPort) {
     return "";

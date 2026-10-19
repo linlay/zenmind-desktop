@@ -23,9 +23,9 @@ export function createWebsFacade(ports: WebsIntegrationPorts) {
     webappRuntime,
     webappWindowManager,
     createDesktopMobileWebappCatalog: (app: App) =>
-      createDesktopMobileWebappCatalog(app, ports, webappRuntime),
+      createDesktopMobileWebappCatalog(app, ports, webappManager),
     readDesktopMobileWebappItem: (app: App, id: string) =>
-      readDesktopMobileWebappItem(app, id, ports, webappRuntime),
+      readDesktopMobileWebappItem(app, id, ports, webappManager),
     restorePublishedWebapps: (app: App) =>
       restorePublishedWebapps(app, ports, webappRuntime),
     getWebappPublishStatus: (app: App, id: string) =>

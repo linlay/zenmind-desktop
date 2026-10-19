@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type {
@@ -13,7 +12,6 @@ import {
   getDesktopSsoAccessTokenFilePath,
   getSecretsRoot
 } from "../../infrastructure/filesystem/user-paths";
-import { getDesktopDeviceId } from "../identity";
 import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname,
@@ -157,26 +155,6 @@ export function isValidTunnelHubDeviceId(deviceId: string) {
     !RESERVED_DEVICE_IDS.has(deviceId);
 }
 
-function slugifyDeviceId(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/gu, "-")
-    .replace(/-+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, DEVICE_ID_MAX_LENGTH)
-    .replace(/-+$/gu, "");
-}
-
-function createDefaultDeviceId(app: App) {
-  const hostname = slugifyDeviceId(os.hostname());
-  if (isValidTunnelHubDeviceId(hostname)) {
-    return hostname;
-  }
-  const desktopId = getDesktopDeviceId(app).replace(/-/gu, "").slice(0, 12);
-  return `desktop-${desktopId || crypto.randomBytes(6).toString("hex")}`.slice(0, DEVICE_ID_MAX_LENGTH);
-}
-
 function isValidRelayUrl(relayUrl: string) {
   try {
     const parsed = new URL(relayUrl);
@@ -207,7 +185,11 @@ function normalizeReconnectSeconds(value: unknown) {
 export function clearLegacyTunnelHubSecrets(app: App, platform: NodeJS.Platform = process.platform) {
   const secretsRoot = getSecretsRoot(app, platform);
   for (const fileName of LEGACY_TUNNEL_SECRET_FILE_NAMES) {
-    writeSecretFile(path.join(secretsRoot, fileName), "");
+    try {
+      fs.rmSync(path.join(secretsRoot, fileName), { force: true });
+    } catch {
+      // Best effort cleanup only.
+    }
   }
 }
 
@@ -253,13 +235,13 @@ export function readTunnelHubSettings(
   clearLegacyTunnelHubSecrets(app, platform);
   const stored = readStoredSettings(app, platform);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
-  const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
+  const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || crypto.randomUUID();
   const publicHost = readStoredPublicHost(stored);
   const complete = isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
     : complete;
-  return {
+  const settings: TunnelHubSettings = {
     enabled,
     relayUrl,
     deviceId,
@@ -270,6 +252,15 @@ export function readTunnelHubSettings(
     tlsInsecureSkipVerify: false,
     reconnectSeconds: normalizeReconnectSeconds(stored.reconnectSeconds)
   };
+  if (!normalizeTunnelHubDeviceId(stored.deviceId)) {
+    writeStoredSettings(app, {
+      enabled, relayUrl, deviceId, publicHost,
+      lastRegisteredAt: settings.lastRegisteredAt,
+      tlsInsecureSkipVerify: false,
+      reconnectSeconds: settings.reconnectSeconds
+    }, platform);
+  }
+  return settings;
 }
 
 function writeStoredSettings(
@@ -282,24 +273,6 @@ function writeStoredSettings(
   fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
-function writeSecretFile(secretPath: string, token: string) {
-  if (!token) {
-    try {
-      fs.rmSync(secretPath, { force: true });
-    } catch {
-      // Best effort cleanup only.
-    }
-    return;
-  }
-  ensureDir(path.dirname(secretPath));
-  fs.writeFileSync(secretPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
-  try {
-    fs.chmodSync(secretPath, 0o600);
-  } catch {
-    // Windows does not honor POSIX file modes.
-  }
-}
-
 export function saveTunnelHubSettings(
   app: App,
   input: TunnelHubSettingsInput,
@@ -310,7 +283,7 @@ export function saveTunnelHubSettings(
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
     ? normalizeTunnelHubDeviceId(input.deviceId)
-    : current.deviceId || createDefaultDeviceId(app);
+    : current.deviceId;
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
   const issues: string[] = [];
@@ -351,29 +324,9 @@ export function saveTunnelHubSettings(
   };
 }
 
-export function ensureTunnelHubDeviceId(app: App) {
-  const stored = readStoredSettings(app);
-  const current = normalizeTunnelHubDeviceId(stored.deviceId);
-  if (isValidTunnelHubDeviceId(current)) {
-    return current;
-  }
-  const currentSettings = readTunnelHubSettings(app);
-  const deviceId = currentSettings.deviceId || createDefaultDeviceId(app);
-  writeStoredSettings(app, {
-    enabled: currentSettings.enabled,
-    relayUrl: currentSettings.relayUrl,
-    deviceId,
-    publicHost: currentSettings.publicHost,
-    lastRegisteredAt: currentSettings.lastRegisteredAt,
-    tlsInsecureSkipVerify: false,
-    reconnectSeconds: currentSettings.reconnectSeconds
-  });
-  return deviceId;
-}
-
 export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubRegistrationRecord) {
   const current = readTunnelHubSettings(app);
-  const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId || createDefaultDeviceId(app);
+  const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId;
   const publicHost = normalizePublicHost(record.publicHost) ||
     normalizePublicHost(record.publicUrl) ||
     normalizePublicHost(record.webSocketUrl) ||
@@ -389,4 +342,14 @@ export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubReg
   };
   writeStoredSettings(app, nextSettings);
   return readTunnelHubSettings(app);
+}
+
+// Clear account-derived addresses without changing the installation's identity or settings.
+export function clearTunnelHubRegistrationCache(app: App): void {
+  const current = readTunnelHubSettings(app);
+  writeStoredSettings(app, {
+    enabled: current.enabled, relayUrl: current.relayUrl, deviceId: current.deviceId,
+    publicHost: "", lastRegisteredAt: "", tlsInsecureSkipVerify: false,
+    reconnectSeconds: current.reconnectSeconds
+  });
 }

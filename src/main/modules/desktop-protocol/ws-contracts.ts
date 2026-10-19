@@ -21,6 +21,7 @@ import http from "node:http";
 import { type DesktopActionDefinition } from "../../../shared/desktop-actions";
 
 export type DesktopWsAuthSession = {
+
   subject: string;
   deviceId: string;
   expiresAt: number;

@@ -35,6 +35,11 @@ export class DesktopWsProtocolSession {
   ) {}
 
   receiveTextFrame(text: string) {
+    if (this.connection.closed) return;
+    if (this.connection.auth.expiresAt <= Date.now()) {
+      this.close(1008, "session expired");
+      return;
+    }
     handleTextMessage(this.options, this.connection, text);
   }
 
@@ -70,9 +75,16 @@ export function bindProtocolSession(
   group.connections.add(connection);
   sendPush(connection, "connected", { sessionId: connection.id });
   let lastAuthExpiringAt = 0;
+  const remote = connection.source === "tunnel-hub";
+  const expiringWindow = remote ? 45_000 : AUTH_EXPIRING_WINDOW_MS;
+  const expiringThrottle = remote ? 15_000 : AUTH_EXPIRING_THROTTLE_MS;
   connection.heartbeatTimer = setInterval(() => {
+    if (connection.auth.expiresAt <= Date.now()) {
+      closeConnection(connection, 1008, "session expired");
+      return;
+    }
     sendPush(connection, "heartbeat", { timestamp: new Date().toISOString() });
-    if (connection.auth.expiresAt <= Date.now() + AUTH_EXPIRING_WINDOW_MS && Date.now() - lastAuthExpiringAt > AUTH_EXPIRING_THROTTLE_MS) {
+    if (connection.auth.expiresAt <= Date.now() + expiringWindow && Date.now() - lastAuthExpiringAt > expiringThrottle) {
       lastAuthExpiringAt = Date.now();
       sendPush(connection, "auth.expiring", { expiresAt: connection.auth.expiresAt });
     }

@@ -260,6 +260,25 @@ export function createSubscriptions(deps: SubscriptionsPort) {
         throw brokerError("protocol_error", "Run Chat does not match the active Main Chat context");
       }
     }
+    const pendingQuery = [...deps.queriesByRequestId.values()].find((query) => !query.acceptedValue &&
+      query.lane === lane && query.expectedChatId === chatId &&
+      (!query.expectedRunId || query.expectedRunId === runId) &&
+      (!query.expectedOwner || !options.agentKey || query.expectedOwner.agentKey === options.agentKey));
+    if (!deps.getRunChannel(runId, lane) && pendingQuery) {
+      let released = false;
+      let subscribed: ReturnType<typeof subscribeRun> | undefined;
+      const ready = pendingQuery.accepted.promise.then(async (accepted) => {
+        if (released) return;
+        if (accepted.runId !== runId || accepted.chatId !== chatId)
+          throw brokerError("protocol_error", "query acceptance conflicts with requested Run");
+        subscribed = subscribeRun(options);
+        await subscribed.ready;
+      }, (error) => { if (!released) options.onError?.(error); throw error; });
+      return { subscriptionId: id, ready, unsubscribe: () => {
+        released = true;
+        return subscribed ? subscribed.unsubscribe() : true;
+      } };
+    }
     let run = deps.getRunChannel(runId, lane);
     if (!run) {
       if (deps.getRunChannel(runId)) {
@@ -365,6 +384,9 @@ export function createSubscriptions(deps: SubscriptionsPort) {
         observer?.overviewLease?.runIds.delete(subscribedRun.runId);
         void deps.detachRunIfUnobserved(subscribedRun, "surface_inactive");
       }
+    }
+    if (subscribedRun && runSubscription.role === "internal") {
+      void deps.detachRunIfUnobserved(subscribedRun, "consumer_destroyed");
     }
     return true;
   }
