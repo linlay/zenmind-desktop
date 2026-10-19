@@ -7,7 +7,6 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
-  MAX_CONVERSATION_HTML_BYTES,
   conversationHtmlFilename,
   saveConversationHtmlExport,
 } = require("../dist-electron/main/modules/conversation-share/html-export.js");
@@ -78,22 +77,22 @@ test("conversation HTML export avoids overwriting an existing file", async (t) =
   assert.equal(fs.readFileSync(result.filePath, "utf8"), "new");
 });
 
-test("conversation HTML export rejects a defense-in-depth response above 20 MiB", async (t) => {
+test("conversation HTML export saves rendered output above the former limit", async (t) => {
   const { app, downloads } = createFixture(t);
   const bridge = {
     async renderChatHtml() {
       return {
         ok: true,
         filename: "Transcript.html",
-        bytes: Buffer.alloc(MAX_CONVERSATION_HTML_BYTES + 1)
+        bytes: Buffer.alloc(20 * 1024 * 1024 + 1)
       };
     }
   };
 
   const result = await saveConversationHtmlExport(app, bridge, "chat-1", "darwin");
 
-  assert.equal(result.ok, false);
-  assert.equal(fs.existsSync(downloads), false);
+  assert.equal(result.ok, true);
+  assert.equal(fs.statSync(result.filePath).size, 20 * 1024 * 1024 + 1);
 });
 
 test("conversation HTML export keeps only rendered HTML filenames", () => {

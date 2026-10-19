@@ -32,6 +32,19 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+test("Tunnel quota lookup uses authentication and accepts only safe positive byte limits", async () => {
+  for (const maximum of [1024, 2048, 0, "50", Number.MAX_SAFE_INTEGER]) {
+    const client = new TunnelConversationShareClient(async (url, init) => {
+      assert.equal(url, target.origin + "/api/desktop/shares/limits");
+      assert.equal(init.headers.Authorization, "Bearer " + target.accessToken);
+      assert.equal(init.cache, "no-store");
+      return jsonResponse({ maxSnapshotBytes: maximum, maxResourceBytes: 1024 });
+    });
+    if (maximum === 1024 || maximum === 2048) assert.equal((await client.limits(target)).maxSnapshotBytes, maximum);
+    else await assert.rejects(client.limits(target), { kind: "invalid_response" });
+  }
+});
+
 function snapshot(attachments = []) {
   return Buffer.from(JSON.stringify({
     version: 1,

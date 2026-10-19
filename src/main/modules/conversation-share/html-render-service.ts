@@ -10,7 +10,7 @@ import {
 } from "../tunnel";
 import {
   CONVERSATION_EXPORT_TEMPLATE_PATH,
-  MAX_CONVERSATION_HTML_BYTES,
+  type ConversationShareLimits,
   type ConversationExportWorkerRequest,
   type ConversationHtmlRenderResult,
   type ConversationHtmlWorkerErrorCode,
@@ -34,7 +34,6 @@ type PendingRender = {
 class ConversationHtmlWorkerError extends Error {
   constructor(
     readonly code: ConversationHtmlWorkerErrorCode,
-    readonly actualBytes?: number,
     readonly limitBytes?: number
   ) {
     super(code);
@@ -102,7 +101,6 @@ export class ConversationHtmlRenderService {
         }
         throw new ConversationHtmlWorkerError(
           response.code,
-          response.actualBytes,
           response.limitBytes
         );
       }
@@ -117,7 +115,7 @@ export class ConversationHtmlRenderService {
     }
   }
 
-  async readChatSnapshot(chatId: string): Promise<ConversationSnapshotReadResult> {
+  async readChatSnapshot(chatId: string, limits: ConversationShareLimits): Promise<ConversationSnapshotReadResult> {
     const normalizedChatId = chatId.trim();
     if (!normalizedChatId) {
       return { ok: false, message: t("assistant.chatIdRequired") };
@@ -128,6 +126,7 @@ export class ConversationHtmlRenderService {
     try {
       const response = await this.renderInWorker({
         kind: "snapshot",
+        limits,
         requestId: randomUUID(),
         snapshotUrl: snapshotRequest.snapshotUrl,
         bearerToken: snapshotRequest.bearerToken
@@ -136,7 +135,6 @@ export class ConversationHtmlRenderService {
         if (response.type === "error") {
           throw new ConversationHtmlWorkerError(
             response.code,
-            response.actualBytes,
             response.limitBytes
           );
         }
@@ -156,7 +154,7 @@ export class ConversationHtmlRenderService {
       if (error instanceof ConversationHtmlWorkerError && error.code === "snapshot_unauthorized") {
         return { ok: false, message: t("assistant.chatShareSourceUnauthorized") };
       }
-      return { ok: false, message: t("assistant.chatShareRequestFailed") };
+      return { ok: false, message: mapRenderError(error) };
     }
   }
 
@@ -217,10 +215,11 @@ function isValidAssetOrigin(value: string): boolean {
 }
 
 function mapRenderError(error: unknown): string {
+  if (error instanceof ConversationHtmlWorkerError && error.code === "resource_exhausted") return t("assistant.chatHtmlExportResourceExhausted");
+  if (error instanceof ConversationHtmlWorkerError && error.code === "export_too_large") return t("assistant.chatExportSnapshotTooLarge");
   if (error instanceof ConversationHtmlWorkerError && error.code === "too_large") {
     return t("assistant.chatHtmlExportTooLarge", {
-      actual: error.actualBytes ?? MAX_CONVERSATION_HTML_BYTES + 1,
-      limit: error.limitBytes ?? MAX_CONVERSATION_HTML_BYTES
+      limit: error.limitBytes
     });
   }
   if (error instanceof ConversationHtmlWorkerError &&

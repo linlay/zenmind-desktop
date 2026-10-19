@@ -67,6 +67,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
     }
   };
   const client = {
+    async limits() { return { maxSnapshotBytes: 4096, maxResourceBytes: 1024 }; },
     async create(input) {
       calls.push({ method: "create", input });
       return shareRecord();
@@ -89,7 +90,8 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
 
 test("createConversationShare keeps the link and reports observed attachment omissions", async (t) => {
   const app = createFixture(t);
-  const client = { async create() { return shareRecord(); } };
+  const client = { async limits() { return { maxSnapshotBytes: 4096, maxResourceBytes: 1024 }; },
+    async create() { return shareRecord(); } };
   for (const unauthorized of [false, true]) {
     const result = await createConversationShare(app, {
       async readChatSnapshot() {
@@ -121,6 +123,7 @@ test("createConversationShare resolves login and Tunnel before reading Snapshot"
       return { ok: true, bytes: Buffer.from('{"version":1}') };
     }
   }, {
+    async limits() { return { maxSnapshotBytes: 4096, maxResourceBytes: 1024 }; },
     async create() {
       created = true;
       return shareRecord();
@@ -140,6 +143,7 @@ test("createConversationShare does not call Tunnel when Snapshot reading fails",
       return { ok: false, message: "snapshot failed" };
     }
   }, {
+    async limits() { return { maxSnapshotBytes: 4096, maxResourceBytes: 1024 }; },
     async create() {
       created = true;
       return shareRecord();
@@ -159,6 +163,7 @@ test("createConversationShare rejects an invalid conversation id before reading"
       return { ok: true, bytes: Buffer.from('{"version":1}') };
     }
   }, {
+    async limits() { return { maxSnapshotBytes: 4096, maxResourceBytes: 1024 }; },
     async create() {
       called = true;
       return shareRecord();
@@ -182,7 +187,8 @@ test("development allows canonical loopback Tunnel origins while packaged Deskto
         return { ok: true, bytes: Buffer.from('{"version":1}') };
       }
     };
-    const client = { async create() { return shareRecord(); } };
+    const client = { async limits() { return { maxSnapshotBytes: 4096, maxResourceBytes: 1024 }; },
+    async create() { return shareRecord(); } };
     const developmentResult = await createConversationShare(
       developmentApp,
       reader,
@@ -232,7 +238,7 @@ test("controller maps typed Tunnel failures without exposing secrets", async (t)
   const app = createFixture(t);
   const cases = [
     [new TunnelConversationShareError("rejected", 401), /权限|credential|permission/iu],
-    [new TunnelConversationShareError("rejected", 413), /过大|too large/iu],
+    [new TunnelConversationShareError("rejected", 413), /网关|gateway/iu],
     [new TunnelConversationShareError("invalid_response"), /无效|invalid/iu],
     [new TunnelConversationShareError("timeout"), /不可用|unavailable/iu],
     [new TunnelConversationShareError("rejected", 503), /不可用|unavailable/iu]

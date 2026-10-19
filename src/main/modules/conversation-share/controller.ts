@@ -35,9 +35,10 @@ export async function createConversationShare(
 
   let snapshot: Awaited<ReturnType<ConversationSnapshotReader["readChatSnapshot"]>>;
   try {
-    snapshot = await snapshotReader.readChatSnapshot(conversationId);
-  } catch {
-    return { ok: false, message: t("assistant.chatShareRequestFailed") };
+    const limits = await shareCreator.limits(target.target);
+    snapshot = await snapshotReader.readChatSnapshot(conversationId, limits);
+  } catch (error) {
+    return { ok: false, message: mapTunnelShareError(error, "create") };
   }
   if (!snapshot.ok) {
     return { ok: false, message: snapshot.message };
@@ -117,7 +118,9 @@ function mapTunnelShareError(
     return t("assistant.chatShareUnauthorized");
   }
   if (error.status === 413) {
-    return t("assistant.chatShareSnapshotTooLarge");
+    if (error.code === "snapshot_too_large") return t("assistant.chatShareSnapshotTooLarge");
+    if (error.code === "resources_too_large") return t("assistant.chatShareResourcesTooLarge");
+    return t("assistant.chatShareUploadRejected");
   }
   if (error.status === 404 && action === "revoke") {
     return t("assistant.chatShareMissing");

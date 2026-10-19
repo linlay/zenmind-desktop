@@ -79,7 +79,7 @@ test("conversation HTML worker aborts a timed-out response with a structured cod
     setTimeout(() => {
       if (res.destroyed) return;
       res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
+        "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json; charset=utf-8",
         "Content-Length": "2"
       });
       res.end("{}");
@@ -148,7 +148,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
         return;
       }
       if (snapshotMode === "missing-length") {
-        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.writeHead(200, { "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json; charset=utf-8" });
         res.write(snapshot);
         res.end();
         return;
@@ -161,7 +161,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
         );
         setTimeout(() => {
           res.writeHead(200, {
-            "Content-Type": "application/json; charset=utf-8",
+            "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json; charset=utf-8",
             "Content-Length": String(snapshot.length),
             "Content-Disposition": snapshotContentDisposition
           });
@@ -172,7 +172,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
         return;
       }
       res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
+        "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json; charset=utf-8",
         "Content-Length": String(snapshot.length),
         "Content-Disposition": snapshotContentDisposition
       });
@@ -182,7 +182,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
     if (url.pathname === "/redirected") {
       redirectedRequests += 1;
       res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
+        "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json; charset=utf-8",
         "Content-Length": String(snapshot.length)
       });
       res.end(snapshot);
@@ -234,7 +234,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   assert.equal(maximumActiveSnapshotRequests, 1);
 
   snapshotMode = "normal";
-  const snapshotOnly = await renderer.readChatSnapshot("chat_1");
+  const snapshotOnly = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 });
   assert.equal(snapshotOnly.ok, true);
   assert.equal(Buffer.compare(snapshotOnly.bytes, snapshot), 0);
   assert.deepEqual(snapshotOnly.attachments, []);
@@ -285,7 +285,7 @@ test("conversation snapshot freezes available resources and omits a changed arti
         { id: "abcdef0123456789abcdef01", name: "报告.pdf", mimeType: "application/pdf",
           sourceRef: "artifacts/run-1/report.pdf" }
       ] }));
-      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
+      res.writeHead(200, { "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json", "Content-Length": snapshot.length });
       res.end(snapshot);
       return;
     }
@@ -325,7 +325,7 @@ test("conversation snapshot freezes available resources and omits a changed arti
   renderer.start();
   t.after(() => renderer.dispose());
 
-  const valid = await renderer.readChatSnapshot("chat_1");
+  const valid = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 });
   assert.equal(valid.ok, true);
   assert.deepEqual(valid.attachments.map((item) => [item.name, item.mimeType]), [
     ["报告.html", "text/html"], ["报告.pdf", "application/pdf"]
@@ -337,8 +337,16 @@ test("conversation snapshot freezes available resources and omits a changed arti
   assert.equal(JSON.parse(valid.bytes.toString()).attachments[1].sha256, pdfHash);
   assert.equal(JSON.parse(valid.bytes.toString()).attachments[1].size, pdf.length);
 
+  for (const delta of [0, -1]) {
+    const limited = await renderer.readChatSnapshot("chat_1", {
+      maxSnapshotBytes: valid.bytes.length + delta, maxResourceBytes: published.length + pdf.length,
+    });
+    assert.equal(limited.ok, true);
+    assert.equal(limited.attachments.length, delta === 0 ? 2 : 1);
+    assert.equal(JSON.parse(limited.bytes.toString()).attachments.length, limited.attachments.length);
+  }
   served = changed;
-  const partial = await renderer.readChatSnapshot("chat_1");
+  const partial = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 });
   assert.equal(partial.ok, true);
   assert.deepEqual(partial.attachments.map((item) => item.name), ["报告.pdf"]);
   assert.equal(partial.attachmentsOmitted, true);
@@ -371,16 +379,16 @@ test("conversation snapshot omits unavailable and inconsistent attachments", asy
         sourceRef: "artifacts/run-1/missing.html"
       }];
       if (scenario === "limit") attachments = [
-        { ...descriptor, size: 20 * 1024 * 1024 + 1 },
+        { ...descriptor, size: 1024 + 1 },
         { ...descriptor, id: "abcdef0123456789abcdef01", sourceRef: "artifacts/run-1/small.html" }
       ];
       if (scenario === "near-limit") attachments = [{
         id: descriptor.id, name: descriptor.name, mimeType: descriptor.mimeType, sourceRef: descriptor.sourceRef
       }];
       const value = { version: 1, turns: [], attachments };
-      if (scenario === "near-limit") value.padding = "x".repeat(20 * 1024 * 1024 - JSON.stringify(value).length - 16);
+      if (scenario === "near-limit") value.padding = "x".repeat(1024 - JSON.stringify(value).length - 16);
       const snapshot = Buffer.from(JSON.stringify(value));
-      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
+      res.writeHead(200, { "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json", "Content-Length": snapshot.length });
       res.end(snapshot);
       return;
     }
@@ -431,7 +439,7 @@ test("conversation snapshot omits unavailable and inconsistent attachments", asy
   t.after(() => renderer.dispose());
 
   for (scenario of ["mime", "length", "hash", "duplicate", "missing", "limit", "near-limit", "unauthorized", "timeout"]) {
-    const result = await renderer.readChatSnapshot("chat_1");
+    const result = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 1024, maxResourceBytes: 1024 });
     assert.equal(result.ok, true, scenario);
     const expected = ["duplicate", "missing", "limit"].includes(scenario) ? 1 : 0;
     assert.equal(result.attachments.length, expected, scenario);
