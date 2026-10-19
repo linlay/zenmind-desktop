@@ -1,3 +1,4 @@
+import type { ConversationShareLimits } from "./export-contract";
 import type { AssistantConversationShareRecord } from "../../../shared/contracts";
 import { requireEpochMillis } from "../../../shared/time-contract";
 import {
@@ -30,6 +31,7 @@ export class TunnelConversationShareError extends Error {
   constructor(
     readonly kind: TunnelConversationShareErrorKind,
     readonly status?: number,
+    readonly code?: string,
   ) {
     super(`Tunnel conversation share request failed: ${kind}`);
     this.name = "TunnelConversationShareError";
@@ -44,6 +46,7 @@ export type ConversationShareCreateInput = {
 };
 
 export interface ConversationShareCreator {
+  limits(target: ConversationShareTarget): Promise<ConversationShareLimits>;
   create(input: ConversationShareCreateInput): Promise<AssistantConversationShareRecord>;
 }
 
@@ -60,6 +63,22 @@ export class TunnelConversationShareClient implements
   ConversationShareReader,
   ConversationShareRevoker {
   constructor(private readonly fetchImpl: typeof globalThis.fetch = globalThis.fetch) {}
+
+  async limits(target: ConversationShareTarget): Promise<ConversationShareLimits> {
+    requireValidTarget(target);
+    const response = await this.request(`${target.origin}${CONVERSATION_SHARES_PATH}/limits`, {
+      method: "GET", headers: authorizationHeaders(target), cache: "no-store"
+    }, READ_TIMEOUT_MS);
+    await requireStatus(response, 200);
+    const value = await readLimitedJson(response);
+    if (!isRecord(value) || !hasOnlyKeys(value, ["maxSnapshotBytes", "maxResourceBytes"]) ||
+      typeof value.maxSnapshotBytes !== "number" || !Number.isSafeInteger(value.maxSnapshotBytes) || value.maxSnapshotBytes <= 0 ||
+      typeof value.maxResourceBytes !== "number" || !Number.isSafeInteger(value.maxResourceBytes) || value.maxResourceBytes <= 0 ||
+      !Number.isSafeInteger(value.maxSnapshotBytes + value.maxResourceBytes + 1024 * 1024)) {
+      throw new TunnelConversationShareError("invalid_response");
+    }
+    return { maxSnapshotBytes: value.maxSnapshotBytes, maxResourceBytes: value.maxResourceBytes };
+  }
 
   async create(input: ConversationShareCreateInput): Promise<AssistantConversationShareRecord> {
     requireValidTarget(input.target);
@@ -86,7 +105,7 @@ export class TunnelConversationShareClient implements
       },
       CREATE_TIMEOUT_MS,
     );
-    requireStatus(response, 201);
+    await requireStatus(response, 201);
     const record = readConversationShareRecord(await readLimitedJson(response));
     if (
       record.chatId !== input.conversationId ||
@@ -110,7 +129,7 @@ export class TunnelConversationShareClient implements
       },
       READ_TIMEOUT_MS,
     );
-    requireStatus(response, 200);
+    await requireStatus(response, 200);
     const payload = await readLimitedJson(response);
     if (!isRecord(payload) || !hasOnlyKeys(payload, ["items"]) || !Array.isArray(payload.items)) {
       throw new TunnelConversationShareError("invalid_response");
@@ -139,7 +158,7 @@ export class TunnelConversationShareClient implements
       },
       READ_TIMEOUT_MS,
     );
-    requireStatus(response, 204);
+    await requireStatus(response, 204);
     await discardResponseBody(response);
   }
 
@@ -190,12 +209,20 @@ function isValidTunnelApiOrigin(value: string): boolean {
   }
 }
 
-function requireStatus(response: Response, expectedStatus: number): void {
+async function requireStatus(response: Response, expectedStatus: number): Promise<void> {
   if (response.status === expectedStatus) {
     return;
   }
-  void discardResponseBody(response);
-  throw new TunnelConversationShareError("rejected", response.status);
+  let code: string | undefined;
+  if (response.status === 413) {
+    try {
+      const value = await readLimitedJson(response);
+      if (isRecord(value) && typeof value.code === "string" &&
+        ["snapshot_too_large", "resources_too_large", "request_body_too_large"].includes(value.code)) code = value.code;
+    } catch { /* Unknown gateway responses use the generic upload error. */ }
+  }
+  await discardResponseBody(response);
+  throw new TunnelConversationShareError("rejected", response.status, code);
 }
 
 async function discardResponseBody(response: Response): Promise<void> {

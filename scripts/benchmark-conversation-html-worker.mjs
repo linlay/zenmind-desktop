@@ -13,7 +13,7 @@ const MAX_P95_WORKER_MS = 30;
 const MAX_MAIN_TIMER_GAP_MS = 10;
 const ASSET_ORIGIN = "http://127.0.0.1:11961";
 const TEMPLATE = Buffer.from(
-  '<link href="__CONVERSATION_EXPORT_ASSET_ORIGIN__/runtime.css"><script type="application/json">__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__</script><script src="__CONVERSATION_EXPORT_ASSET_ORIGIN__/runtime.js"></script>'
+  '<meta name="conversation-export-local-brand" content="__CONVERSATION_EXPORT_LOCAL_BRAND_ID__"><link href="__CONVERSATION_EXPORT_ASSET_ORIGIN__/runtime.css"><script type="application/json">__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__</script><script src="__CONVERSATION_EXPORT_ASSET_ORIGIN__/runtime.js"></script>'
 );
 
 if (!isMainThread) {
@@ -22,16 +22,12 @@ if (!isMainThread) {
     assembleConversationHtml,
     parseConversationHtmlTemplate
   } = require("../dist-electron/main/modules/conversation-share/html-worker.js");
-  const {
-    MAX_CONVERSATION_HTML_BYTES
-  } = require("../dist-electron/main/modules/conversation-share/export-contract.js");
   const parsed = parseConversationHtmlTemplate(Buffer.from(workerData.template));
-  const snapshotSize = MAX_CONVERSATION_HTML_BYTES - parsed.staticBytes -
-    parsed.assetOriginMarkers * Buffer.byteLength(ASSET_ORIGIN);
+  const snapshotSize = 25 * 1024 * 1024; // Benchmark input, independent of server policy.
   const snapshot = Buffer.alloc(snapshotSize, 0x61);
   parentPort.on("message", (id) => {
     const started = performance.now();
-    const html = assembleConversationHtml(parsed, snapshot, ASSET_ORIGIN);
+    const html = assembleConversationHtml(parsed, snapshot, ASSET_ORIGIN, "benchmark");
     const workerMs = performance.now() - started;
     parentPort.postMessage({ id, html, workerMs }, [html]);
   });

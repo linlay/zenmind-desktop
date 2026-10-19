@@ -1,5 +1,5 @@
-export const MAX_CONVERSATION_HTML_BYTES = 20 * 1024 * 1024;
-export const MAX_CONVERSATION_SNAPSHOT_BYTES = 20 * 1024 * 1024;
+export type ConversationShareLimits = { maxSnapshotBytes: number; maxResourceBytes: number };
+
 export const MAX_CONVERSATION_TEMPLATE_BYTES = 256 * 1024;
 export const CONVERSATION_EXPORT_TEMPLATE_PATH = "/assets/conversation-export/conversation.template.html";
 export const CONVERSATION_EXPORT_SNAPSHOT_MARKER = "__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__";
@@ -14,6 +14,8 @@ export type ConversationHtmlWorkerErrorCode =
   | "template_unavailable"
   | "template_invalid"
   | "too_large"
+  | "export_too_large"
+  | "resource_exhausted"
   | "worker_failed";
 
 export type ConversationHtmlRenderResult =
@@ -25,7 +27,7 @@ export type ConversationSnapshotReadResult =
   | { ok: false; message: string };
 
 export type ConversationSnapshotReader = {
-  readChatSnapshot(chatId: string): Promise<ConversationSnapshotReadResult>;
+  readChatSnapshot(chatId: string, limits: ConversationShareLimits): Promise<ConversationSnapshotReadResult>;
 };
 
 export type ConversationHtmlRenderer = {
@@ -48,6 +50,7 @@ export type RenderConversationHtmlRequest = {
 
 export type ReadConversationSnapshotRequest = {
   kind: "snapshot";
+  limits: ConversationShareLimits;
   requestId: string;
   snapshotUrl: string;
   bearerToken: string;
@@ -77,7 +80,6 @@ export type RenderConversationHtmlFailure = {
   type: "error";
   requestId: string;
   code: ConversationHtmlWorkerErrorCode;
-  actualBytes?: number;
   limitBytes?: number;
 };
 

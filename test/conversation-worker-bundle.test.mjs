@@ -21,7 +21,7 @@ test("release conversation Worker reads a snapshot without development dependenc
   const server = http.createServer((request, response) => {
     assert.equal(request.url, "/api/chat/export?chatId=packaged&format=snapshot");
     assert.equal(request.headers.authorization, "Bearer test-token");
-    response.writeHead(200, { "Content-Type": "application/json", "Content-Length": snapshot.length });
+    response.writeHead(200, { "X-Conversation-Export-Max-Bytes": "52428800", "Content-Type": "application/json", "Content-Length": snapshot.length });
     response.end(snapshot);
   });
   server.listen(0, "127.0.0.1");
@@ -31,7 +31,7 @@ test("release conversation Worker reads a snapshot without development dependenc
   t.after(() => worker.terminate());
   const result = once(worker, "message");
   worker.postMessage({
-    kind: "snapshot", requestId: "packaged",
+    kind: "snapshot", limits: { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 }, requestId: "packaged",
     snapshotUrl: `http://127.0.0.1:${server.address().port}/api/chat/export?chatId=packaged&format=snapshot`,
     bearerToken: "test-token"
   });

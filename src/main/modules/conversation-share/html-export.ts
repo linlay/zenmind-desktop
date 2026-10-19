@@ -3,13 +3,8 @@ import type { App } from "electron";
 import type { AssistantNavActionResult } from "../../../shared/contracts";
 import { getAssistantExportDefaultPath, getAvailableFilePath, getPlatformPath } from "../../infrastructure/filesystem/download-paths";
 import { t } from "../../support/i18n/main-i18n";
-import {
-  MAX_CONVERSATION_HTML_BYTES,
-  type ConversationHtmlRenderer
-} from "./export-contract";
+import type { ConversationHtmlRenderer } from "./export-contract";
 import { resolveConversationAssetOrigin } from "./target";
-
-export { MAX_CONVERSATION_HTML_BYTES } from "./export-contract";
 
 export async function saveConversationHtmlExport(
   app: App,
@@ -26,16 +21,6 @@ export async function saveConversationHtmlExport(
   if (!assetOrigin.ok) return assetOrigin;
   const result = await renderer.renderChatHtml(normalizedChatId, assetOrigin.origin);
   if (!result.ok) return { ok: false, message: result.message };
-  if (result.bytes.byteLength > MAX_CONVERSATION_HTML_BYTES) {
-    return {
-      ok: false,
-      message: t("assistant.chatHtmlExportTooLarge", {
-        actual: result.bytes.byteLength,
-        limit: MAX_CONVERSATION_HTML_BYTES
-      })
-    };
-  }
-
   const filename = conversationHtmlFilename(result.filename, normalizedChatId);
   const exportPath = await getAvailableFilePath(getAssistantExportDefaultPath(app, filename, platform), { platform });
   try {

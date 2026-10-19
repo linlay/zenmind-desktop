@@ -11,8 +11,6 @@ import {
   CONVERSATION_EXPORT_LOCAL_BRAND_ID_MARKER,
   CONVERSATION_EXPORT_SNAPSHOT_MARKER,
   CONVERSATION_EXPORT_TEMPLATE_PATH,
-  MAX_CONVERSATION_HTML_BYTES,
-  MAX_CONVERSATION_SNAPSHOT_BYTES,
   MAX_CONVERSATION_TEMPLATE_BYTES,
   type ConversationHtmlWorkerErrorCode,
   type ConversationExportWorkerRequest,
@@ -55,7 +53,6 @@ type SnapshotResponse = {
 class ConversationHtmlRenderFailure extends Error {
   constructor(
     readonly code: ConversationHtmlWorkerErrorCode,
-    readonly actualBytes?: number,
     readonly limitBytes?: number
   ) {
     super(code);
@@ -74,7 +71,7 @@ const ESCAPES = [
 let cachedTemplate: CachedTemplate | null = null;
 
 export function parseConversationHtmlTemplate(bytes: Buffer): ParsedConversationHtmlTemplate {
-  if (bytes.length === 0 || bytes.length > MAX_CONVERSATION_TEMPLATE_BYTES) {
+  if (bytes.length === 0) {
     throw new ConversationHtmlRenderFailure("template_invalid");
   }
   try {
@@ -129,22 +126,11 @@ export function assembleConversationHtml(
   const normalizedBrandId = requireBrandId(brandId);
   const assetOriginBytes = Buffer.from(normalizedAssetOrigin);
   const brandIdBytes = Buffer.from(normalizedBrandId);
-  const escapedSnapshotBytes = measureEscapedSnapshotBytes(
-    snapshot,
-    MAX_CONVERSATION_HTML_BYTES - template.staticBytes -
-      template.assetOriginMarkers * assetOriginBytes.length -
-      template.brandIdMarkers * brandIdBytes.length
-  );
+  const escapedSnapshotBytes = measureEscapedSnapshotBytes(snapshot);
   const finalSize = template.staticBytes + escapedSnapshotBytes +
     template.assetOriginMarkers * assetOriginBytes.length +
     template.brandIdMarkers * brandIdBytes.length;
-  if (finalSize <= 0 || finalSize > MAX_CONVERSATION_HTML_BYTES) {
-    throw new ConversationHtmlRenderFailure(
-      "too_large",
-      finalSize,
-      MAX_CONVERSATION_HTML_BYTES
-    );
-  }
+  if (!Number.isSafeInteger(finalSize)) throw new RangeError("HTML allocation size is unsafe");
 
   const output = new ArrayBuffer(finalSize);
   const outputBytes = Buffer.from(output);
@@ -179,7 +165,7 @@ export async function fetchLimitedResponse(input: {
   body?: string;
   headers: Record<string, string>;
   timeoutMs: number;
-  maxBytes: number;
+  maxBytes: number | "snapshot";
   expectedContentType: string;
   unavailableCode: ConversationHtmlWorkerErrorCode;
   invalidCode: ConversationHtmlWorkerErrorCode;
@@ -201,6 +187,7 @@ export async function fetchLimitedResponse(input: {
         (response.status === 401 || response.status === 403)) {
         throw new ConversationHtmlRenderFailure("snapshot_unauthorized");
       }
+      if (input.maxBytes === "snapshot" && response.status === 413) throw new ConversationHtmlRenderFailure("export_too_large");
       throw new ConversationHtmlRenderFailure(input.unavailableCode);
     }
     const contentType = response.headers.get("content-type")
@@ -210,6 +197,13 @@ export async function fetchLimitedResponse(input: {
     if (contentType !== input.expectedContentType) {
       throw new ConversationHtmlRenderFailure(input.invalidCode);
     }
+    const rawMaximum = input.maxBytes === "snapshot"
+      ? response.headers.get("X-Conversation-Export-Max-Bytes") : String(input.maxBytes);
+    if (rawMaximum === null || !/^(?:0|[1-9]\d*)$/u.test(rawMaximum) ||
+      !Number.isSafeInteger(Number(rawMaximum)) || (input.maxBytes === "snapshot" && Number(rawMaximum) === 0)) {
+      throw new ConversationHtmlRenderFailure(input.invalidCode);
+    }
+    const maximum = Number(rawMaximum);
     const rawLength = response.headers.get("content-length")?.trim() || "";
     if (!/^(?:0|[1-9]\d*)$/u.test(rawLength)) {
       throw new ConversationHtmlRenderFailure(input.invalidCode);
@@ -218,19 +212,19 @@ export async function fetchLimitedResponse(input: {
     if (!Number.isSafeInteger(declaredLength)) {
       throw new ConversationHtmlRenderFailure(input.invalidCode);
     }
-    if (declaredLength > input.maxBytes) {
-      throw new ConversationHtmlRenderFailure("too_large", declaredLength, input.maxBytes);
+    if (declaredLength > maximum) {
+      throw new ConversationHtmlRenderFailure("too_large", maximum);
     }
     const bytes = await readExactResponseBody(
       response,
       declaredLength,
-      input.maxBytes,
       input.invalidCode
     );
     return { response, bytes };
   } catch (error) {
     controller.abort();
     if (error instanceof ConversationHtmlRenderFailure) throw error;
+    if (error instanceof RangeError) throw new ConversationHtmlRenderFailure("resource_exhausted");
     throw new ConversationHtmlRenderFailure(input.unavailableCode);
   } finally {
     clearTimeout(timeout);
@@ -240,7 +234,6 @@ export async function fetchLimitedResponse(input: {
 async function readExactResponseBody(
   response: Response,
   declaredLength: number,
-  maximumLength: number,
   invalidCode: ConversationHtmlWorkerErrorCode
 ): Promise<Buffer> {
   if (!response.body) {
@@ -256,9 +249,6 @@ async function readExactResponseBody(
       const { done, value } = await reader.read();
       if (done) break;
       const nextLength = actualLength + value.byteLength;
-      if (nextLength > maximumLength) {
-        throw new ConversationHtmlRenderFailure("too_large", nextLength, maximumLength);
-      }
       if (nextLength > declaredLength) {
         throw new ConversationHtmlRenderFailure(invalidCode);
       }
@@ -266,8 +256,10 @@ async function readExactResponseBody(
       actualLength = nextLength;
     }
   } catch (error) {
-    void reader.cancel().catch(() => undefined);
+    await reader.cancel().catch(() => undefined);
     throw error;
+  } finally {
+    reader.releaseLock();
   }
   if (actualLength !== declaredLength) {
     throw new ConversationHtmlRenderFailure(invalidCode);
@@ -291,7 +283,7 @@ async function loadSnapshot(request: ConversationExportWorkerRequest): Promise<S
       Authorization: `Bearer ${request.bearerToken}`
     },
     timeoutMs: SNAPSHOT_TIMEOUT_MS,
-    maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES,
+    maxBytes: "snapshot",
     expectedContentType: "application/json",
     unavailableCode: "snapshot_unavailable",
     invalidCode: "snapshot_invalid"
@@ -369,6 +361,8 @@ async function readConversationSnapshot(
     if (!request.requestId?.trim()) {
       throw new ConversationHtmlRenderFailure("request_invalid");
     }
+    if (request.kind !== "snapshot") throw new ConversationHtmlRenderFailure("request_invalid");
+    const { maxSnapshotBytes, maxResourceBytes } = request.limits;
     const snapshot = await loadSnapshot(request);
     let parsed: Record<string, unknown>;
     try {
@@ -382,14 +376,20 @@ async function readConversationSnapshot(
     const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
     const chatId = snapshotURL.searchParams.get("chatId") || "";
     const attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }> = [];
-    const frozen: Array<{ id: string; name: string; mimeType: string; sourceRef: string;
-      size: number; sha256: string }> = [];
+    // Serialize the body once; attachment fallback only adjusts its small metadata budget.
+    const { attachments: sourceAttachments, ...body } = parsed;
+    const bodyJson = JSON.stringify(body);
+    const attachmentsPrefix = bodyJson.slice(0, -1) + ",\"attachments\":[";
+    const metadataBudget = maxSnapshotBytes - Buffer.byteLength(attachmentsPrefix) - 2;
+    if (metadataBudget < 0) throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
+    const frozen: string[] = [];
+    let metadataBytes = 0;
     let totalBytes = 0;
     let attachmentsOmitted = false;
     let attachmentUnauthorized = false;
     const seen = new Set<string>();
     const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
-    for (const raw of parsed.attachments) {
+    for (const raw of sourceAttachments) {
       if (Date.now() >= deadline) {
         attachmentsOmitted = true;
         break;
@@ -414,7 +414,7 @@ async function readConversationSnapshot(
         (descriptor.sha256 !== undefined &&
           (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(descriptor.sha256))) ||
         (typeof descriptor.size === "number" &&
-          descriptor.size > MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes)) {
+          descriptor.size > maxResourceBytes - totalBytes)) {
         attachmentsOmitted = true;
         continue;
       }
@@ -429,7 +429,7 @@ async function readConversationSnapshot(
             "Content-Type": "application/json"
           },
           timeoutMs: Math.max(1, deadline - Date.now()),
-          maxBytes: MAX_CONVERSATION_SNAPSHOT_BYTES - totalBytes,
+          maxBytes: maxResourceBytes - totalBytes,
           expectedContentType: mediaType,
           unavailableCode: "snapshot_unavailable",
           invalidCode: "snapshot_invalid"
@@ -443,7 +443,9 @@ async function readConversationSnapshot(
         }
         seen.add(id);
         totalBytes += bytes.length;
-        frozen.push({ id, name, mimeType: mediaType, sourceRef, size: bytes.length, sha256 });
+        const json = JSON.stringify({ id, name, mimeType: mediaType, sourceRef, size: bytes.length, sha256 });
+        metadataBytes += Buffer.byteLength(json) + (frozen.length ? 1 : 0);
+        frozen.push(json);
         attachments.push({
           id, name, mimeType: mediaType,
           bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
@@ -456,16 +458,12 @@ async function readConversationSnapshot(
         }
       }
     }
-    let encoded = Buffer.from(JSON.stringify({ ...parsed, attachments: frozen }));
-    while (encoded.length > MAX_CONVERSATION_SNAPSHOT_BYTES && frozen.length) {
-      frozen.pop();
+    while (metadataBytes > metadataBudget && frozen.length) {
+      metadataBytes -= Buffer.byteLength(frozen.pop()!) + (frozen.length ? 1 : 0);
       attachments.pop();
       attachmentsOmitted = true;
-      encoded = Buffer.from(JSON.stringify({ ...parsed, attachments: frozen }));
     }
-    if (encoded.length > MAX_CONVERSATION_SNAPSHOT_BYTES) {
-      throw new ConversationHtmlRenderFailure("too_large", encoded.length, MAX_CONVERSATION_SNAPSHOT_BYTES);
-    }
+    const encoded = Buffer.from(attachmentsPrefix + frozen.join(",") + "]}");
     const transferred = encoded.buffer.slice(
       encoded.byteOffset, encoded.byteOffset + encoded.byteLength
     ) as ArrayBuffer;
@@ -524,20 +522,14 @@ function requireBrandId(value: string): string {
   return normalized;
 }
 
-function measureEscapedSnapshotBytes(snapshot: Buffer, maximum: number): number {
+function measureEscapedSnapshotBytes(snapshot: Buffer): number {
   let escapedBytes = snapshot.length;
-  if (escapedBytes > maximum) {
-    throw new ConversationHtmlRenderFailure("too_large", escapedBytes, MAX_CONVERSATION_HTML_BYTES);
-  }
   for (const escape of ESCAPES) {
     let cursor = 0;
     while (cursor < snapshot.length) {
       const offset = snapshot.indexOf(escape.needle, cursor);
       if (offset < 0) break;
       escapedBytes += escape.replacement.length - escape.needle.length;
-      if (escapedBytes > maximum) {
-        throw new ConversationHtmlRenderFailure("too_large", escapedBytes, MAX_CONVERSATION_HTML_BYTES);
-      }
       cursor = offset + escape.needle.length;
     }
   }
@@ -590,12 +582,11 @@ function htmlFilename(contentDisposition: string | null, fallbackChatID: string)
 function failureResponse(requestId: string, error: unknown): RenderConversationHtmlFailure {
   const failure = error instanceof ConversationHtmlRenderFailure
     ? error
-    : new ConversationHtmlRenderFailure("worker_failed");
+    : new ConversationHtmlRenderFailure(error instanceof RangeError ? "resource_exhausted" : "worker_failed");
   return {
     type: "error",
     requestId: typeof requestId === "string" ? requestId : "",
     code: failure.code,
-    ...(failure.actualBytes === undefined ? {} : { actualBytes: failure.actualBytes }),
     ...(failure.limitBytes === undefined ? {} : { limitBytes: failure.limitBytes })
   };
 }
