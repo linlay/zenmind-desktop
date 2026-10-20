@@ -591,8 +591,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           // A late refresh must not sign out a newly logged-in account.
           if (!isCurrentSession()) return "";
           const definitive = isDefinitiveRestoreFailure(error);
-          // A failed proactive refresh may keep using a token that is still valid.
-          if (!definitive && !force && !desktopSsoAccessTokenNeedsRefresh(options.app, 0)) throw error;
+          // A business 401 can request renewal without proving the Desktop identity invalid.
+          // Force bypasses the refresh schedule, not the validity of the current session.
+          if (!definitive && !desktopSsoAccessTokenNeedsRefresh(options.app, 0)) throw error;
           const nextStatus = definitive
             ? clearDesktopSsoLocalSession(options.app, t("sso.restoreSessionExpired"))
             : markDesktopSsoRestoreTemporarilyUnavailable(options.app, t("sso.restoreTemporarilyUnavailable"));
