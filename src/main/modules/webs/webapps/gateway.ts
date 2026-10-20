@@ -569,7 +569,7 @@ export async function startWebappGateway(options: {
   backendUrl: string;
   pageActionToken: string;
 }): Promise<WebappGateway> {
-  const installedManifest = readWebappManifestFromDir(options.webappDir);
+  const installedManifest = readWebappManifestFromDir(options.webappDir, options.item.id);
   const sockets = new Set<net.Socket>();
   const server = http.createServer((req, res) => {
     const requestPath = getRequestPath(req.url);

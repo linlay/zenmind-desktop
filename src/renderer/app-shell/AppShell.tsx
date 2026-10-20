@@ -176,6 +176,7 @@ import {
   type AgentWebclientResolvedRoute
 } from "../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../shared/route-path";
+import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../shared/web-entry-routes";
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { WorkPanelHost } from "../work-panel/WorkPanelHost";
@@ -1462,7 +1463,7 @@ export function AppShell() {
     } else {
       if (wasActive) moveWebappPresentationToMain(item);
       if (wasActive) {
-        requestSidebarNavigation(`/webs/${item.entryKey}`);
+        requestSidebarNavigation(buildWebEntryPath(item.entryKey));
       }
     }
     await refreshWebItems().catch(() => undefined);
@@ -1684,7 +1685,7 @@ export function AppShell() {
       }
 
       moveWebappPresentationToMain(item);
-      requestSidebarNavigation(`/webs/${item.entryKey}`);
+      requestSidebarNavigation(buildWebEntryPath(item.entryKey));
     } catch (error) {
       setWebappRuntimeById((current) => {
         const existing = current[item.id];
@@ -3348,7 +3349,7 @@ export function AppShell() {
       void handleOpenWebappWindow(item);
       return;
     }
-    requestSidebarNavigation(`/webs/${item.entryKey}`);
+    requestSidebarNavigation(buildWebEntryPath(item.entryKey));
   }
 
   // Project the existing router timeline; do not persist a second browsing history.
@@ -3358,7 +3359,7 @@ export function AppShell() {
       ...assistantNavAgents.flatMap((agent) => [...agent.recentChats, ...(agent.projectChats ?? [])])];
     const seen = new Set<string>();
     for (const entry of desktopNavigationTimeline.entries.slice(0, desktopNavigationTimeline.index + 1).reverse()) {
-      const site = webItems.find((item) => resolveNavigationPathname(entry.route) === `/webs/${item.entryKey}`);
+      const site = webItems.find((item) => resolveWebRouteEntryKey(resolveNavigationPathname(entry.route)) === item.entryKey);
       const identity = readAgentRouteInfo(entry.route);
       const chat = identity.chatId && chats.find((item) => item.chatId === identity.chatId && item.agentKey === identity.agentKey);
       const key = site?.entryKey ?? (chat ? createAgentChatRoute(chat.agentKey, chat.chatId) : "");
@@ -3586,7 +3587,7 @@ export function AppShell() {
           kind: item.kind,
           label: item.label,
           url: item.url,
-          route: `/webs/${entryKey}`,
+          route: buildWebEntryPath(entryKey),
           active: activeWebEntryKey === entryKey
         })),
         ...serviceSurfaces
@@ -5632,13 +5633,4 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string): Age
     kind: "chat",
     mode: "embedded"
   };
-}
-
-function isWebEntryKey(value: string): value is WebEntryKey {
-  return value.startsWith("website:") || value.startsWith("webapp:");
-}
-
-function resolveWebRouteEntryKey(pathname: string): WebEntryKey | null {
-  const entryKey = matchPath("/webs/:entryKey", pathname)?.params.entryKey ?? "";
-  return isWebEntryKey(entryKey) ? entryKey : null;
 }

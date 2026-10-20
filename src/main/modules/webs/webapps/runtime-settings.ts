@@ -5,9 +5,7 @@ import type {
   WebappRuntimeSettings,
   WebappRuntimeSettingsInput
 } from "../../../../shared/contracts";
-import {
-  WEBAPP_ID_PATTERN
-} from "../../../../shared/webapp-manifest";
+import { isInstalledWebappId } from "./identity";
 import { getDesktopWebsConfigRoot } from "../../../infrastructure/filesystem/user-paths";
 
 const DEFAULT_SETTINGS: WebappRuntimeSettings = {
@@ -21,7 +19,7 @@ export function getWebappRuntimeSettingsPath(app: App) {
 }
 
 export function getRuntimeExecutableBindingKey(webappId: string, runtime: string) {
-  if (!WEBAPP_ID_PATTERN.test(webappId) || !WEBAPP_RUNTIME_PATTERN.test(runtime)) {
+  if (!isInstalledWebappId(webappId) || !WEBAPP_RUNTIME_PATTERN.test(runtime)) {
     throw new Error("invalid WebApp runtime executable binding key.");
   }
   return `${webappId}:${runtime}`;
@@ -41,7 +39,7 @@ function normalizeBindings(value: unknown) {
     const runtime = separator > 0 ? key.slice(separator + 1) : "";
     const executablePath = rawPath.trim();
     if (
-      WEBAPP_ID_PATTERN.test(webappId) &&
+      isInstalledWebappId(webappId) &&
       WEBAPP_RUNTIME_PATTERN.test(runtime) &&
       executablePath &&
       path.isAbsolute(executablePath)

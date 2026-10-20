@@ -17,7 +17,6 @@ import {
 } from "../../infrastructure/filesystem/user-paths";
 import { disposeWebappInstallation } from "../webs";
 import {
-  getWebappDir,
   readInstalledWebappItems,
   readWebappItemFromDir
 } from "../webs";
@@ -188,34 +187,19 @@ function calculateDirectoryDigest(rootPath: string) {
 }
 
 function listLocalWebsiteApps(app: App): MarketItem[] {
-  return fs.existsSync(getDesktopWebappsDataRoot(app))
-    ? fs.readdirSync(getDesktopWebappsDataRoot(app), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .flatMap((entry) => {
-        const installPath = getWebappDir(app, entry.name);
-        try {
-          const item = readWebappItemFromDir(installPath, entry.name);
-          if (!item) {
-            return [];
-          }
-          return {
-            id: item.id,
-            type: "website-app" as const,
-            name: item.label,
-            version: item.version,
-            description: "",
-            tags: [],
-            state: "local-imported" as const,
-            source: "local" as const,
-            installedVersion: item.version,
-            installPath,
-            websiteKind: "local-app" as const
-          };
-        } catch {
-          return [];
-        }
-      })
-    : [];
+  return readInstalledWebappItems(app).map((item) => ({
+    id: item.id,
+    type: "website-app",
+    name: item.label,
+    version: item.version,
+    description: "",
+    tags: [],
+    state: "local-imported",
+    source: "local",
+    installedVersion: item.version,
+    installPath: item.installPath,
+    websiteKind: "local-app"
+  }));
 }
 
 export async function listWebsiteAppMarketItems(
@@ -564,11 +548,8 @@ export async function uninstallWebsiteAppMarketItem(
   const marketRecord = readInstalledRecords(app).find((record) =>
     record.id === itemId && record.type === "website-app"
   );
-  const safeWebappDirName = validateWebappId(marketRecord?.resourceKey || itemId);
-  if (!safeWebappDirName) {
-    throw new Error(t("market.websiteApp.invalidId"));
-  }
-  const target = readInstalledWebappItems(app).find((item) => item.id === safeWebappDirName);
+  const webappId = marketRecord?.resourceKey || itemId;
+  const target = readInstalledWebappItems(app).find((item) => item.id === webappId);
   if (!target) {
     throw new Error(t("webapp.notFound"));
   }

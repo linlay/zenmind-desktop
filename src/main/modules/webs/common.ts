@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { WebEntryKey, WebsiteEntry } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
+import { assertInstalledWebappId, isInstalledWebappId } from "./webapps/identity";
 
 const MAX_LABEL_LENGTH = 24;
 const MAX_WEB_ID_LENGTH = 80;
@@ -55,7 +56,7 @@ export function createWebsiteEntryKey(id: string): `website:${string}` {
 }
 
 export function createWebappEntryKey(id: string): `webapp:${string}` {
-  return `webapp:${normalizeWebId(id)}`;
+  return `webapp:${assertInstalledWebappId(id)}`;
 }
 
 export function normalizeWebEntryKey(value: unknown): WebEntryKey | null {
@@ -64,7 +65,9 @@ export function normalizeWebEntryKey(value: unknown): WebEntryKey | null {
     return createWebsiteEntryKey(raw.slice("website:".length));
   }
   if (raw.startsWith("webapp:")) {
-    return createWebappEntryKey(raw.slice("webapp:".length));
+    if (value !== raw) return null;
+    const id = raw.slice("webapp:".length);
+    return isInstalledWebappId(id) ? createWebappEntryKey(id) : null;
   }
   if (raw.startsWith("custom:")) {
     return createWebsiteEntryKey(raw.slice("custom:".length));

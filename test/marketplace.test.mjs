@@ -2716,6 +2716,62 @@ test("installMarketItem installs pet packages into desktop pet data", async (t) 
   });
 });
 
+test("market listing ignores unrelated WebApp directories and keeps skills and installed apps visible", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-list-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const installedId = webappId("installed-list-app");
+  const archivePath = await writeWebappArchive(root, {
+    id: installedId,
+    key: "installed-list-app",
+    label: "Installed app"
+  });
+  await installWebsiteAppArchiveFromPath(app, archivePath);
+
+  const webappsRoot = getDesktopWebappsDataRoot(app);
+  for (const directoryName of [".staging", "legacy-webapp", "webapp-placeholder"]) {
+    fs.mkdirSync(path.join(webappsRoot, directoryName), { recursive: true });
+  }
+  const invalidPackagePath = path.join(webappsRoot, webappId("invalid-list-app"));
+  fs.mkdirSync(invalidPackagePath, { recursive: true });
+  fs.writeFileSync(path.join(invalidPackagePath, "webapp.json"), "invalid json", "utf8");
+
+  const result = await listMarketItems(app, {
+    sections: ["skills", "websiteApps"],
+    catalog: {
+      schemaVersion: 1,
+      items: [{
+        id: "visible-skill",
+        type: "skill",
+        name: "Visible skill",
+        version: "1.0.0",
+        description: "",
+        tags: [],
+        assets: {
+          universal: { url: "https://example.test/skill.zip", sizeBytes: 1, archiveType: "zip" }
+        }
+      }, {
+        id: "calendar-product",
+        type: "website-app",
+        name: "Calendar",
+        version: "1.0.0",
+        description: "",
+        tags: [],
+        websiteKind: "local-app",
+        assets: {
+          universal: { url: "https://example.test/calendar.zip", sizeBytes: 1, archiveType: "zip" }
+        }
+      }]
+    }
+  });
+
+  assert.equal(result.items.find((item) => item.id === "visible-skill")?.type, "skill");
+  assert.equal(result.items.find((item) => item.id === "calendar-product")?.state, "not-installed");
+  assert.equal(result.items.find((item) => item.id === installedId)?.state, "installed");
+  assert.equal(result.items.filter((item) => item.type === "website-app").length, 2);
+});
+
 test("installMarketItem installs and uninstalls website app packages into desktop webapps data", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-install-"));
   const app = createApp(root);
