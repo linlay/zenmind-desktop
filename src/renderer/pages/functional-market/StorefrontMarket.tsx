@@ -31,6 +31,7 @@ import type { MenuProps } from "antd";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { createAgentWebclientAgentPath } from "../../../shared/agent-webclient-routes";
+import { buildWebEntryPath } from "../../../shared/web-entry-routes";
 import { useNavigate } from "react-router-dom";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import { SidebarIllustration } from "../../components/BrandMark";
@@ -925,7 +926,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
     if (!started.ok || !started.state?.webUrl) {
       throw new Error(started.message || t("market.websiteApp.openFailed"));
     }
-    navigate(`/webs/${webapp.entryKey}`);
+    navigate(buildWebEntryPath(webapp.entryKey));
   }
 
   async function openWebsiteAppFromMarket(item: MarketItem) {

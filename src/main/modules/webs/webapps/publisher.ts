@@ -137,10 +137,10 @@ function stableWebappName(id: string) {
     .replace(/-+/gu, "-")
     .replace(/^-+|-+$/gu, "");
   const base = normalized || `webapp-${crypto.createHash("sha256").update(id).digest("hex").slice(0, 12)}`;
-  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(base)) {
+  if (base === id && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(base)) {
     return base;
   }
-  const digest = crypto.createHash("sha256").update(base).digest("hex").slice(0, 8);
+  const digest = crypto.createHash("sha256").update(id).digest("hex").slice(0, 8);
   return `${base.slice(0, 54).replace(/-+$/u, "")}-${digest}`;
 }
 

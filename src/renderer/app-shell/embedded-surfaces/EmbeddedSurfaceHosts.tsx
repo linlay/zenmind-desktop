@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { PlaceholderPage } from "../../pages/PlaceholderPage";
 import { setActiveServiceSurfaceId } from "../../services/serviceSurfaceWebviewRefs";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../../../shared/agent-webclient-routes";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import type { WebEntryKey } from "../../../shared/contracts/webs";
+import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../../shared/web-entry-routes";
 import { useI18n } from "../../i18n/useI18n";
 import {
   MAIN_CHAT_SURFACE_ID,
@@ -302,7 +303,7 @@ export function WebSurfaceHost({
             active={activeEntryKey === entryKey}
             surfaceIdentity={createWebEntrySurfaceIdentity(item.kind ?? "website", entryKey)}
             surfaceIdentityKey={entryKey}
-            surfaceRoute={`/webs/${entryKey}`}
+            surfaceRoute={buildWebEntryPath(entryKey)}
             surfaceKind={item.kind}
             surfaceLabel={item.label}
             title={item.label}
@@ -407,7 +408,7 @@ function CanonicalWebappSurface({
           cdpActive={owner.scope === "main-workspace" && visible}
           surfaceIdentity={createWebEntrySurfaceIdentity("webapp", entryKey)}
           surfaceIdentityKey={entryKey}
-          surfaceRoute={`/webs/${entryKey}`}
+          surfaceRoute={buildWebEntryPath(entryKey)}
           surfaceKind="webapp"
           surfaceLabel={item.label}
           title={item.label}
@@ -521,7 +522,7 @@ export function ExternalItemRoute({
         surfaceIdentity={item.kind ? createWebEntrySurfaceIdentity(item.kind, itemId) : undefined}
         surfaceIdentityKey={item.kind ? itemId : undefined}
         surfaceKind={item.kind}
-        surfaceRoute={`/webs/${itemId}`}
+        surfaceRoute={buildWebEntryPath(itemId)}
         surfaceLabel={item.label}
         title={item.label}
         url={item.url}
@@ -543,8 +544,9 @@ export function WebRouteFallback({
   itemMap: Map<string, EmbeddedSidebarItem>;
 }) {
   const { t } = useI18n();
-  const { entryKey = "" } = useParams<{ entryKey: string }>();
-  if (itemMap.has(entryKey)) {
+  const { pathname } = useLocation();
+  const entryKey = resolveWebRouteEntryKey(pathname);
+  if (entryKey && itemMap.has(entryKey)) {
     return null;
   }
 

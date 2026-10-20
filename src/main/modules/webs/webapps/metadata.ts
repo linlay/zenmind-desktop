@@ -5,7 +5,7 @@ import type { WebappEntry, WebappSourceKind } from "../../../../shared/contracts
 import { requireWebsIntegrationPorts, type WebsIntegrationPorts } from "../integration-ports";
 import { getAllServices } from "../../services";
 import { getDesktopWebappsDataRoot, getServiceStateRoot } from "../../../infrastructure/filesystem/user-paths";
-import { normalizeWebId } from "../common";
+import { assertInstalledWebappId } from "./identity";
 
 type PluginResourceOwnership = {
   webapps?: Record<string, { updatedAt: string }>;
@@ -59,7 +59,7 @@ export function resolveWebappManagementMetadata(
   item: Pick<WebappEntry, "id">,
   ports?: WebsIntegrationPorts
 ) {
-  const installPath = path.join(getDesktopWebappsDataRoot(app), normalizeWebId(item.id));
+  const installPath = path.join(getDesktopWebappsDataRoot(app), assertInstalledWebappId(item.id));
   const pluginOwner = findPluginOwner(app, item.id);
   if (pluginOwner) {
     return createMetadata("plugin", installPath, {

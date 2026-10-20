@@ -19,11 +19,14 @@ const {
   getWebappDir,
   getWebappUserConfigPath,
   readWebappUserConfigState,
+  readWebappManifestFromDir,
   readWebappItemFromDir,
   readWebappItems: readWebappItemsRaw,
   writeWebappUserConfigValues,
   writeCanonicalWebappManifest
 } = require("../dist-electron/main/modules/webs/webapps/store.js");
+const { isInstalledWebappId } = require("../dist-electron/main/modules/webs/webapps/identity.js");
+const { normalizeWebEntryKey } = require("../dist-electron/main/modules/webs/common.js");
 const {
   removeWebappItem: removeWebappItemRaw,
   updateWebappItem: updateWebappItemRaw
@@ -508,6 +511,93 @@ test("store requires exact manifest id and installation directory identity", (t)
   assert.throws(() => readWebappItemFromDir(validDir, "Needs-Normalizing"), /invalid/u);
   const canonical = writeCanonicalWebappManifest(validDir, validId);
   assert.equal(canonical.schemaVersion, 2);
+});
+
+test("installed WebApp IDs preserve safe directory identities on macOS and Windows", () => {
+  for (const id of ["legacy-notes", "Legacy Notes # %2F", "便签工具", "a".repeat(90)]) {
+    assert.equal(isInstalledWebappId(id), true, id);
+    assert.equal(normalizeWebEntryKey(`webapp:${id}`), `webapp:${id}`);
+    for (const paths of [path.posix, path.win32]) {
+      assert.equal(paths.basename(paths.join("apps", id)), id);
+    }
+  }
+  for (const id of ["", ".", "..", "../outside", "..\\outside", "/tmp/app", "C:app", " notes", "notes ", "notes.", "NUL", "con.txt", "COM1", "LPT2.log", "__proto__", "constructor", "prototype", "app\u0000id"]) {
+    assert.equal(isInstalledWebappId(id), false, id);
+    assert.equal(normalizeWebEntryKey(`webapp:${id}`), null, id);
+  }
+});
+
+test("settings can discover and read installed WebApps with non-generated IDs without rewriting manifests", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-legacy-settings-"));
+  const home = path.join(root, "home");
+  const app = createApp(home);
+  const runtime = new WebappRuntime();
+  t.after(async () => {
+    await runtime.stopAll(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const id = "Legacy Notes # %2F";
+  const appDir = writeWebapp(webappsRoot(home), "legacy-notes", {
+    id,
+    label: "旧版便签",
+    userConfig: { fields: [{ name: "note", type: "text", label: "Note", default: "default" }] }
+  });
+  writeWebapp(webappsRoot(home), "legacy-notes-other", { id: "legacy-notes", label: "Another app" });
+  writeWebapp(webappsRoot(home), "legacy-chinese", { id: "便签工具", label: "中文应用" });
+  const manifestPath = path.join(appDir, "webapp.json");
+  const originalManifest = fs.readFileSync(manifestPath, "utf8");
+
+  const listed = websFacade.webappManager.listResult(app);
+  assert.equal(listed.ok, true);
+  assert.equal(listed.items.length, 3);
+  const item = listed.items.find((item) => item.id === id);
+  assert.equal(item.entryKey, `webapp:${id}`);
+  assert.equal(item.label, "旧版便签");
+  assert.equal(item.installPath, appDir);
+  assert.equal(runtime.getStatus(app, id).status, "stopped");
+  assert.equal(runtime.checkRuntime(app, id).ready, true);
+  assert.equal((await websFacade.getWebappPublishStatus(app, id)).info.provider, "tunnel");
+  assert.deepEqual(websFacade.webappManager.readUserConfigState(app, id).values, { note: "default" });
+  assert.equal(websFacade.webappManager.saveUserConfig(app, id, { note: "saved" }).ok, true);
+  assert.deepEqual(websFacade.webappManager.readUserConfigState(app, id).values, { note: "saved" });
+
+  const updated = await websFacade.webappManager.update(app, id, { label: "我的便签", openMode: "dialog" });
+  assert.equal(updated.ok, true);
+  assert.equal(readWebappItems(app).find((item) => item.id === id).label, "我的便签");
+  assert.equal(readWebappItems(app).find((item) => item.id === "legacy-notes").label, "Another app");
+  const bindings = { [`${id}:python`]: process.execPath };
+  assert.deepEqual(writeWebappRuntimeSettings(app, { runtimeExecutables: bindings }).runtimeExecutables, bindings);
+  assert.deepEqual(readWebappRuntimeSettings(app).runtimeExecutables, bindings);
+
+  const started = await runtime.start(app, id);
+  assert.equal(started.ok, true, started.message);
+  assert.equal((await readUrl(started.state.webUrl)).status, 200);
+  assert.equal((await runtime.stop(app, id)).ok, true);
+  assert.equal(fs.readFileSync(manifestPath, "utf8"), originalManifest);
+  assert.throws(() => parseWebappManifest(JSON.parse(originalManifest)));
+  assert.throws(() => readWebappItemFromDir(appDir));
+  assert.throws(() => writeCanonicalWebappManifest(appDir));
+  assert.equal(fs.readFileSync(manifestPath, "utf8"), originalManifest);
+});
+
+test("installed WebApp compatibility keeps manifest refinements and directory identity checks", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-legacy-validation-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const appDir = writeWebapp(webappsRoot(app.getPath("home")), "legacy-check", { id: "legacy-check" });
+  const manifestPath = path.join(appDir, "webapp.json");
+  const original = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  for (const value of [
+    { ...original, id: "different-id" },
+    { ...original, id: "../outside" },
+    { ...original, frontend: { ...original.frontend, routeConfig: { backendPrefixes: ["/api"] } } },
+    { ...original, appConfig: { api_token: "secret" } },
+    { ...original, version: "invalid" }
+  ]) {
+    writeJson(manifestPath, value);
+    assert.throws(() => readWebappManifestFromDir(appDir));
+    assert.deepEqual(readWebappItems(app), []);
+  }
 });
 
 test("mobile catalog and change lookup share the injected manager and its running runtime", async (t) => {

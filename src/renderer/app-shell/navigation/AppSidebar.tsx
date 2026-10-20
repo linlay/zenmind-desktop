@@ -124,6 +124,7 @@ import {
   createAgentWebclientRoute,
 } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
+import { buildWebEntryPath } from "../../../shared/web-entry-routes";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import type {
@@ -1651,7 +1652,7 @@ export function AppSidebar({
     return webItems
       .map((item) => ({
         orderKey: createWebNavOrderKey(item.entryKey),
-        to: `/webs/${item.entryKey}`,
+        to: buildWebEntryPath(item.entryKey),
         label: item.label,
         icon: "website" as const,
         webItem: item,
@@ -3255,7 +3256,7 @@ export function AppSidebar({
       }
       closeWebsiteDialog();
       setSidebarGroupState((current) => ({ ...current, webs: true }));
-      requestNavigate(`/webs/${result.item.entryKey}`);
+      requestNavigate(buildWebEntryPath(result.item.entryKey));
     } catch (error) {
       setWebsiteCreateError(
         error instanceof Error ? error.message : String(error),
@@ -3283,7 +3284,7 @@ export function AppSidebar({
         return;
       }
       setSidebarGroupState((current) => ({ ...current, webs: true }));
-      requestNavigate(`/webs/${result.item.entryKey}`);
+      requestNavigate(buildWebEntryPath(result.item.entryKey));
     } catch (error) {
       setWebappImportFailure({
         message: error instanceof Error ? error.message : t("sidebar.webapp.importFailed"),
