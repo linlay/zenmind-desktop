@@ -52,6 +52,7 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       reviewMode?: "unavailable" | "inactive" | "active";
       documentPathAvailable?: boolean;
       nativeHtml?: { localOriginal: boolean };
+      nativeImage?: { localOriginal: boolean };
       canClose: boolean;
       canCloseOthers: boolean;
     };

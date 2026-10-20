@@ -1286,6 +1286,7 @@ export interface DesktopApi {
       claim: (input: WorkPanelResourceImageClaimRequest) => Promise<WorkPanelResourceImageClaimResult>;
       read: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageReadResult>;
       release: (input: WorkPanelResourceImageReleaseRequest) => Promise<WorkPanelResourceImageActionResult>;
+      reveal: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageActionResult>;
       openExternal: (input: WorkPanelResourceImageExternalOpenRequest) => Promise<WorkPanelResourceImageActionResult>;
       ai: (input: WorkPanelResourceImageAiRequest) => Promise<WorkPanelResourceImageAiResult>;
       cancelAi: (input: WorkPanelResourceImageAiCancelRequest) => Promise<WorkPanelResourceImageActionResult>;

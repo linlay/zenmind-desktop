@@ -83,6 +83,8 @@ type ResourceCommitResponse = {
 };
 
 type RegistryRuntime = {
+  platform?: NodeJS.Platform;
+  fileShell?: Pick<typeof shell, "showItemInFolder">;
   app: App;
   assistantBridge: AgentPlatformAssistantBridge;
   showFileDialog: (
@@ -555,6 +557,22 @@ export class WorkPanelResourceImageRegistry {
     return { ok: true };
   }
 
+  reveal(request: WorkPanelResourceImageHandleRequest, sender: WebContents): WorkPanelResourceImageActionResult {
+    const handle = this.ownedHandle(request, sender);
+    const fail = () => ({ ok: false, message: t("chatWorkPanel.resourceActions.failed") });
+    if (!handle || !handle.localOriginal || handle.temporary) return fail();
+    try {
+      // Never reveal a replacement symlink or a missing original.
+      if (fs.realpathSync(handle.filePath) !== handle.filePath || !fs.statSync(handle.filePath).isFile()) return fail();
+      const platform = this.runtime?.platform ?? process.platform;
+      const fileShell = this.runtime?.fileShell ?? shell;
+      if (platform === "darwin") fileShell.showItemInFolder(handle.filePath);
+      else if (platform === "win32") fileShell.showItemInFolder(handle.filePath);
+      else return fail();
+      return { ok: true };
+    } catch { return fail(); }
+  }
+
   async openExternal(
     request: WorkPanelResourceImageExternalOpenRequest,
     sender: WebContents,
@@ -859,6 +877,11 @@ export function registerChatWorkPanelResourceImageIpcHandlers(
   ipcMain.handle("chatWorkPanel.resourceImages.release", (event, request) =>
     isMainRenderer(event.sender)
       ? workPanelResourceImageRegistry.release(request, event.sender)
+      : { ok: false, message: "Unauthorized renderer." },
+  );
+  ipcMain.handle("chatWorkPanel.resourceImages.reveal", (event, request) =>
+    isMainRenderer(event.sender)
+      ? workPanelResourceImageRegistry.reveal(request, event.sender)
       : { ok: false, message: "Unauthorized renderer." },
   );
   ipcMain.handle("chatWorkPanel.resourceImages.openExternal", (event, request) =>

@@ -77,10 +77,10 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   }
   if (
     value.mode === "work-panel" &&
-    keys.length >= 7 && keys.length <= 10 &&
+    keys.length >= 7 && keys.length <= 11 &&
     keys.every((key) => [
       "mode", "x", "y", "profile", "isFullscreen", "reviewMode",
-      "documentPathAvailable", "nativeHtml", "canClose", "canCloseOthers",
+      "documentPathAvailable", "nativeHtml", "nativeImage", "canClose", "canCloseOthers",
     ].includes(key)) &&
     keys.includes("mode") &&
     keys.includes("x") &&
@@ -95,6 +95,7 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
     (value.reviewMode === undefined || value.reviewMode === "unavailable" || value.reviewMode === "inactive" || value.reviewMode === "active") &&
     (value.documentPathAvailable === undefined || typeof value.documentPathAvailable === "boolean") &&
     (value.nativeHtml === undefined || (isPlainRecord(value.nativeHtml) && Object.keys(value.nativeHtml).length === 1 && typeof value.nativeHtml.localOriginal === "boolean")) &&
+    (value.nativeImage === undefined || (isPlainRecord(value.nativeImage) && Object.keys(value.nativeImage).length === 1 && typeof value.nativeImage.localOriginal === "boolean")) &&
     typeof value.canClose === "boolean" &&
     typeof value.canCloseOthers === "boolean"
   ) {
@@ -109,6 +110,7 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
         : {}),
       ...(value.documentPathAvailable === true ? { documentPathAvailable: true } : {}),
       ...(isPlainRecord(value.nativeHtml) ? { nativeHtml: { localOriginal: value.nativeHtml.localOriginal === true } } : {}),
+      ...(isPlainRecord(value.nativeImage) ? { nativeImage: { localOriginal: value.nativeImage.localOriginal === true } } : {}),
       canClose: value.canClose,
       canCloseOthers: value.canCloseOthers
     };
@@ -123,7 +125,7 @@ function buildWorkPanelTemplate(
 ) {
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
   const resourceProfile = request.profile === "artifact" || request.profile === "reference";
-  const fileActionsAvailable = resourceProfile || Boolean(request.nativeHtml);
+  const fileActionsAvailable = resourceProfile || Boolean(request.nativeHtml) || Boolean(request.nativeImage);
   const currentTabItems = [
     ...(!request.reviewMode || request.reviewMode === "unavailable"
       ? []
@@ -170,14 +172,14 @@ function buildWorkPanelTemplate(
   ];
   const crossEnvironmentItems = fileActionsAvailable
     ? [
-        {
+        ...(!request.nativeImage ? [{
           id: "download-resource",
           label: t(request.profile === "artifact"
             ? "chatWorkPanel.tabContextMenu.downloadArtifact"
             : request.profile === "reference" ? "chatWorkPanel.tabContextMenu.downloadReference"
               : "chatWorkPanel.tabContextMenu.saveCopy"),
           click: click("download-resource")
-        },
+        }] : []),
         ...(request.nativeHtml ? [{ id: "open-resource-browser", label: t("chatWorkPanel.tabContextMenu.openInBrowser"), click: click("open-resource-browser") }] : []),
         {
           id: "open-resource-default-app",
@@ -186,7 +188,7 @@ function buildWorkPanelTemplate(
         },
         {
           id: "reveal-resource",
-          enabled: request.nativeHtml ? request.nativeHtml.localOriginal : true,
+          enabled: request.nativeImage ? request.nativeImage.localOriginal : request.nativeHtml ? request.nativeHtml.localOriginal : true,
           label: t(platform === "darwin"
             ? "chatWorkPanel.tabContextMenu.revealInFinder"
             : platform === "win32"

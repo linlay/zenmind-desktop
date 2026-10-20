@@ -1207,6 +1207,15 @@
 - 覆盖读取中、读取失败及重试、保存失败、没有适用应用的空状态；失败保留输入并可重试，读取未完成时不能保存。保存期间禁止关闭、重复提交、切换分类或适用应用；退出页面后迟到的读取或保存结果不能覆盖新页面、关闭后来打开的设置窗口。
 - 分别检查中英文、浅深色、宽屏及窄窗口，页头按钮和统计不裁切，弹窗中的长路径不撑破布局；键盘切换页签与应用，Enter 保存、Esc 取消和关闭后焦点返回入口可用。Windows 路径分支测试不替代 Windows 真机验收。
 
+## 运行中切换访问级别
+
+- macOS 与 Windows 分别让 Chat A 保持运行，依次切换默认、自动审批和完全访问；每次切到 Chat B 再返回 A，确认仍显示已选档位。覆盖首次切换、连续切换和后台工具执行期间返回，不能恢复成 Run 启动时的档位。
+- 重新加载 A 时，`/api/chat` 的 `activeRun.accessLevel` 和 `accessLevelVersion` 应与权限修改响应一致；旧 `request.query` 或迟到的低版本事件不能覆盖当前权限。Run 结束后继续确认各 Chat 的下次运行偏好互不影响。
+
+## 重启后恢复 Chat 模型
+
+- macOS 与 Windows 分别用两个不同模型运行 Chat A/B，再将 Agent 的 New Chat 默认模型设为第三个模型。退出并重启 Desktop 后打开 A/B，模型与思考强度应各自从最近主 Run 的顶层 `request.query.model` 恢复；New Chat 仍保留 Agent 默认模型。同时覆盖最后一次 Run 没有 usage 或因错误中止的情况。
+
 ## Lane 单流占用与诊断
 
 - macOS/Windows：主聊天、旁聊、详细解释可分别运行；同 lane 第二个 query/attach 不发送，错误显示占用请求、Run 与来源。
@@ -1262,6 +1271,10 @@ Desktop 不内置任何站点的桥；以下用环境携带或手动导入的任
 - macOS/Windows 全新运行根导入含 websiteBridges seed 的 env.zip，确认设置中出现环境选择的桥包，匹配页面可读取 AWCP。
 - 不含桥选择的环境首次启动不出现任何网站桥；卸载桥后重启、重新应用 desktop-init 或升级不恢复。
 - seed 含非法脚本、身份不一致或重复 origin 时整组拒绝，不产生部分安装；在 bootstrap 状态中记录失败。
+
+## WorkPanel 图片标签文件操作
+
+- macOS / Windows 分别右键 WorkPanel 的原生图片标签（可编辑 PNG/JPEG/WebP 与只读图片）：显示“使用默认应用打开”、Finder / 资源管理器定位及复制文件名。默认应用打开原文件；远端图片先另存，取消不打开，定位项禁用。切换 Chat、关闭标签、删除原件后旧菜单不能继续定位；中英文、中文与空格文件名均覆盖。
 
 ## WorkPanel 沉浸式全屏
 

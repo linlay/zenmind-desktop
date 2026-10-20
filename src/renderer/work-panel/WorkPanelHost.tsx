@@ -1292,6 +1292,9 @@ export function WorkPanelHost({
     const reviewActive = stateRef.current.review.activeItemIdsByOwnerChatId[ownerChatId] === item.itemId;
     const documentPath = workPanelDocumentPath(ownerChatId, item);
     const nativeHtml = item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html" ? item.descriptor.context : null;
+    const nativeImage = item.descriptor.kind === "native" &&
+      (item.descriptor.surfaceKey === "resource-image" || item.descriptor.surfaceKey === "document-image")
+      ? item.descriptor.context : null;
     const htmlController = nativeHtmlControllers.current.get(itemRuntimeKey(ownerChatId, item.itemId));
     const result = await window.electronAPI.chatWorkPanelTabContextMenu.popup({
       mode: "work-panel",
@@ -1300,6 +1303,7 @@ export function WorkPanelHost({
       profile: tabContextMenuProfile(item),
       isFullscreen: fullscreenOwnerChatId === ownerChatId,
       reviewMode: htmlController ? (htmlController.isAnnotating() ? "active" : "inactive") : reviewSource ? (reviewActive ? "active" : "inactive") : "unavailable",
+      ...(nativeImage ? { nativeImage: { localOriginal: nativeImage.localOriginal === true } } : {}),
       ...(nativeHtml ? { nativeHtml: { localOriginal: nativeHtml.localOriginal === true } } : {}),
       ...(documentPath ? { documentPathAvailable: true } : {}),
       canClose: item.closable && !item.pinned,
@@ -1309,6 +1313,20 @@ export function WorkPanelHost({
     });
     const currentItem = stateRef.current.workspaces.find((candidate) => candidate.ownerChatId === ownerChatId)?.items.find((candidate) => candidate.itemId === item.itemId && candidate.stableKey === item.stableKey);
     if (!currentItem) return;
+    if (nativeImage) {
+      if (currentItem.descriptor.kind !== "native" || currentItem.descriptor.context.handleId !== nativeImage.handleId) return;
+      if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app") {
+        const request = { ownerChatId, rendererGeneration: rendererGenerationRef.current, handleId: String(nativeImage.handleId) };
+        try {
+          const outcome = result.actionId === "reveal-resource"
+            ? await window.electronAPI.chatWorkPanel.resourceImages.reveal(request)
+            : await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...request, mode: "default" });
+          if (!outcome.ok && outcome.message) modal.error({ content: outcome.message });
+        } catch { modal.error({ content: t("chatWorkPanel.resourceActions.failed") }); }
+        return;
+      }
+      if (result.actionId === "copy-title") { await window.electronAPI.clipboard.writeText(String(nativeImage.fileName)); return; }
+    }
     if (nativeHtml) {
       if (currentItem.descriptor.kind !== "native" || currentItem.descriptor.surfaceKey !== "document-html" || currentItem.descriptor.context.handleId !== nativeHtml.handleId) return;
       const currentController = nativeHtmlControllers.current.get(itemRuntimeKey(ownerChatId, item.itemId));
