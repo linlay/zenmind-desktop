@@ -204,6 +204,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
             "--ai-vision-general-model-key", "explicit-vision-general",
             "--ai-vision-ocr-model-key", "explicit-vision-ocr",
             "--ai-web-fetch-model-key", "explicit-web-fetch",
+            "--general-model-key", "explicit-general-model",
             "--coder-model-key", "explicit-coder-model",
             "--coder-reasoning-effort", "HIGH",
             "--platform-deploy"
@@ -312,6 +313,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
             "--ai-vision-general-model-key", "explicit-vision-general",
             "--ai-vision-ocr-model-key", "explicit-vision-ocr",
             "--ai-web-fetch-model-key", "explicit-web-fetch",
+            "--general-model-key", "explicit-general-model",
             "--coder-model-key", "explicit-coder-model",
             "--coder-reasoning-effort", "HIGH"
           ]

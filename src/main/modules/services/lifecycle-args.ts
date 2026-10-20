@@ -29,6 +29,7 @@ const AGENT_PLATFORM_DEPLOY_VALUE_FLAGS = [
   "--ai-vision-ocr-model-key",
   "--ai-web-fetch-model-key",
   "--ai-image-generate-model-key",
+  "--general-model-key",
   "--coder-model-key",
   "--coder-reasoning-effort",
   "--kbase-model-key",
