@@ -2384,7 +2384,7 @@ function AboutAppCard({
         ) : null}
         <div className="settings-reset-actions">
           <Button
-            type="link"
+            type="default"
             danger
             className="settings-reset-button"
             disabled={runtimeResetPending}
