@@ -24,6 +24,8 @@ node scripts/install-mac-share-extension.mjs --brand=cutej
 
 该命令不重建整个开发 App、不启动 App、不终止进程；为封存新增扩展，需要更新外层 App 的签名，应在 App 已退出时运行。可用 `--app=/absolute/path/CuteJ.app` 显式指定开发 App。若本机选中的 Xcode 尚不可用，构建会使用已独立安装的 Command Line Tools，不修改 `xcode-select` 或接受许可协议。
 
+正式 App 启动和后续窗口激活会异步刷新同品牌、同发布身份的最新版本及其扩展登记；版本直接读取包内 `CFBundleShortVersionString`，每次发布不需要修改登记逻辑。自动登记不执行 `pluginkit -e use`，保留用户选择。旧 App 的系统登记可被定向注销，但只要旧文件仍在磁盘上，macOS 后续自动发现仍可能加回，最新 App 再次激活时会重新收敛。开发 App 不执行这项正式应用清理。
+
 macOS 首次安装后可能需要在系统共享扩展设置中启用 CuteJ。开发验收也可以显式选择本机扩展：
 
 ```sh
