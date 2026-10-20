@@ -17,12 +17,10 @@ import {
   PictureOutlined,
   ProjectOutlined,
   RobotOutlined,
-  RightOutlined,
-  CodeOutlined,
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { createPortal, flushSync } from "react-dom";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
   isLocalDocumentDraftOwnerKey,
@@ -82,6 +80,7 @@ import { WorkPanelFullscreenControls } from "./WorkPanelFullscreenControls";
 import { WorkPanelResourceImage } from "./WorkPanelResourceImage";
 import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController } from "./WorkPanelDocumentHtml";
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
+import { WorkPanelNewTab } from "./WorkPanelNewTab";
 import { WorkPanelTab } from "./WorkPanelTab";
 import { WorkPanelLocalDocument, type WorkPanelLocalDocumentData } from "./WorkPanelLocalDocument";
 
@@ -359,14 +358,12 @@ export function WorkPanelHost({
   const previousDocumentHtmlHandlesRef = useRef(new Map<string, string>());
   const previousSystemDocumentIdsRef = useRef(new Set<string>());
   const rendererGenerationRef = useRef(globalThis.crypto.randomUUID());
-  const addButtonRef = useRef<HTMLButtonElement | null>(null);
-  const addMenuRef = useRef<HTMLDivElement | null>(null);
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
-  const [addMenuOwnerChatId, setAddMenuOwnerChatId] = useState<string | null>(null);
-  const [addMenuView, setAddMenuView] = useState<"root" | "web" | "webapp">("root");
-  const [addMenuStyle, setAddMenuStyle] = useState<CSSProperties>({});
-  const [webUrlInput, setWebUrlInput] = useState("");
-  const [webUrlError, setWebUrlError] = useState("");
+  // Launchers are renderer-only tabs: they never create a guest or acquire Run permissions.
+  const [newTabs, setNewTabs] = useState<Array<{ id: string; ownerChatId: string; urlDraft: string }>>([]);
+  const [selectedNewTabs, setSelectedNewTabs] = useState<Record<string, { id: string; anchor: string | null }>>({});
+  const selectedNewTabsRef = useRef(selectedNewTabs);
+  selectedNewTabsRef.current = selectedNewTabs;
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
   const [reviewPreloadUrl, setReviewPreloadUrl] = useState("");
   const webControllers = useRef(new Map<string, ExternalWebviewController>());
@@ -389,77 +386,34 @@ export function WorkPanelHost({
     revealLocalResourceLabel = t("chatWorkPanel.tabContextMenu.revealInExplorer");
   }
 
-  const closeAddMenu = () => {
-    setAddMenuOwnerChatId(null);
-    setAddMenuView("root");
-    setWebUrlInput("");
-    setWebUrlError("");
+  const closeNewTabSelection = (ownerChatId: string) => {
+    setSelectedNewTabs(current => {
+      const next = { ...current };
+      delete next[ownerChatId];
+      return next;
+    });
+  };
+
+  const closeNewTab = (ownerChatId: string, id: string) => {
+    setNewTabs(current => current.filter(tab => tab.id !== id));
+    if (selectedNewTabsRef.current[ownerChatId]?.id === id) closeNewTabSelection(ownerChatId);
+  };
+
+  const openNewTab = (ownerChatId: string) => {
+    const id = globalThis.crypto.randomUUID();
+    const anchor = stateRef.current.workspaces.find(workspace => workspace.ownerChatId === ownerChatId)?.activeItemId ?? null;
+    setNewTabs(current => [...current, { id, ownerChatId, urlDraft: "" }]);
+    setSelectedNewTabs(current => ({ ...current, [ownerChatId]: { id, anchor } }));
     void window.electronAPI.webs.webapps.listOpenWindows()
-      .then((ids) => setOpenWebappWindowIds(new Set(ids)))
+      .then(ids => setOpenWebappWindowIds(new Set(ids)))
       .catch(() => setOpenWebappWindowIds(new Set()));
   };
 
-  const updateAddMenuPosition = () => {
-    const button = addButtonRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const width = 248;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    setAddMenuStyle({ left, top: rect.bottom + 6, width });
-  };
-
-  const openAddMenu = (ownerChatId: string) => {
-    if (addMenuOwnerChatId === ownerChatId) {
-      closeAddMenu();
-      return;
-    }
-    setAddMenuOwnerChatId(ownerChatId);
-    setAddMenuView("root");
-    setWebUrlInput("");
-    setWebUrlError("");
-    requestAnimationFrame(updateAddMenuPosition);
-  };
-
-  const focusMenuItem = (direction: "first" | "last" | "next" | "previous") => {
-    const menuItems = Array.from(
-      addMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [],
-    );
-    if (menuItems.length === 0) return;
-    const currentIndex = menuItems.indexOf(document.activeElement as HTMLButtonElement);
-    if (direction === "first") menuItems[0].focus();
-    else if (direction === "last") menuItems[menuItems.length - 1].focus();
-    else if (direction === "next") menuItems[(currentIndex + 1 + menuItems.length) % menuItems.length].focus();
-    else menuItems[(currentIndex - 1 + menuItems.length) % menuItems.length].focus();
-  };
-
-  const handleAddMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeAddMenu();
-      addButtonRef.current?.focus();
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      focusMenuItem("next");
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      focusMenuItem("previous");
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      focusMenuItem("first");
-    } else if (event.key === "End") {
-      event.preventDefault();
-      focusMenuItem("last");
-    }
-  };
-
-  const openWebFromMenu = (ownerChatId: string) => {
-    const url = normalizeWorkPanelWebUrl(webUrlInput);
-    if (!url) {
-      setWebUrlError(t("chatWorkPanel.add.webInvalid"));
-      return;
-    }
-    dispatchCommand({ type: "openItem", ownerChatId, descriptor: { kind: "web", url } });
-    closeAddMenu();
+  const openWebFromNewTab = (ownerChatId: string, url: string) => {
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const result = dispatchCommand({ type: "openItem", ownerChatId, descriptor: { kind: "web", url },
+      webInstanceId: selected?.id ?? globalThis.crypto.randomUUID() });
+    if (result.ok && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const openSideChatFromMenu = (ownerChatId: string) => {
@@ -477,7 +431,7 @@ export function WorkPanelHost({
         title: t("chatWorkPanel.add.sideChat"),
       },
     });
-    closeAddMenu();
+    closeNewTabSelection(ownerChatId);
   };
 
   const openProjectFromMenu = (ownerChatId: string) => {
@@ -504,7 +458,7 @@ export function WorkPanelHost({
         title: t("chatWorkPanel.add.project"),
       },
     });
-    closeAddMenu();
+    closeNewTabSelection(ownerChatId);
   };
 
   const openFilesFromMenu = async (ownerChatId: string) => {
@@ -513,7 +467,7 @@ export function WorkPanelHost({
     if (isLocalDocumentDraftOwnerKey(ownerChatId) || originalFiles) {
       // Main reads the trusted current nonce/Chat; a UI draft key is never an API Chat ID.
       await window.electronAPI.localDocuments.select();
-      closeAddMenu();
+      closeNewTabSelection(ownerChatId);
       return;
     }
     const result = await window.electronAPI.chatWorkPanel.localFiles.select({
@@ -534,12 +488,17 @@ export function WorkPanelHost({
         },
       });
     }
-    closeAddMenu();
+    closeNewTabSelection(ownerChatId);
   };
 
   const closeWorkPanelStep = (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
     if (!workspace) return false;
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    if (selected && selected.anchor === workspace.activeItemId) {
+      closeNewTab(ownerChatId, selected.id);
+      return true;
+    }
     const activeItem = workspace?.items.find((item) => item.itemId === workspace.activeItemId);
     const closableItems = workspace.items.filter((item) => item.closable && !item.pinned);
     const itemToClose = activeItem?.closable && !activeItem.pinned
@@ -1628,23 +1587,15 @@ export function WorkPanelHost({
   }, []);
 
   useEffect(() => {
-    if (!addMenuOwnerChatId) return undefined;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && (addMenuRef.current?.contains(target) || addButtonRef.current?.contains(target))) return;
-      closeAddMenu();
-    };
-    const handleWindowChange = () => updateAddMenuPosition();
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("resize", handleWindowChange);
-    window.addEventListener("scroll", handleWindowChange, true);
-    requestAnimationFrame(() => focusMenuItem("first"));
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("resize", handleWindowChange);
-      window.removeEventListener("scroll", handleWindowChange, true);
-    };
-  }, [addMenuOwnerChatId, addMenuView]);
+    const owners = new Set(state.workspaces.map(workspace => workspace.ownerChatId));
+    setNewTabs(current => current.every(tab => owners.has(tab.ownerChatId))
+      ? current : current.filter(tab => owners.has(tab.ownerChatId)));
+    setSelectedNewTabs(current => {
+      const entries = Object.entries(current).filter(([owner, selection]) =>
+        state.workspaces.some(workspace => workspace.ownerChatId === owner && workspace.activeItemId === selection.anchor));
+      return entries.length === Object.keys(current).length ? current : Object.fromEntries(entries);
+    });
+  }, [state.workspaces]);
 
   async function moveWebToDialog(ownerChatId: string, item: WorkPanelItem) {
     if (item.descriptor.kind !== "web") return;
@@ -2137,6 +2088,9 @@ export function WorkPanelHost({
       )}
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeOwnerKey;
+        const selectedNewTab = selectedNewTabs[workspace.ownerChatId];
+        const newTabActive = Boolean(selectedNewTab && selectedNewTab.anchor === workspace.activeItemId);
+        const localOnly = isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId);
         // A background Run keeps operating its own Chat's web pages, so a
         // hidden workspace with web items retains a non-zero viewport.
         const hasBackgroundWeb = !visible && workspace.items.some(isWorkPanelBackgroundWebItem);
@@ -2154,7 +2108,7 @@ export function WorkPanelHost({
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
               {workspace.items.map((item) => {
                 if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
-                const active = workspace.activeItemId === item.itemId;
+                const active = !newTabActive && workspace.activeItemId === item.itemId;
                 const closable = item.closable && !item.pinned;
                 const overview = item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
                 const itemLoading = loadingWebItems.has(itemRuntimeKey(workspace.ownerChatId, item.itemId));
@@ -2177,11 +2131,10 @@ export function WorkPanelHost({
                       if (isLocalDocumentDraftOwnerKey(workspace.ownerChatId)) return;
                       void handleTabContextMenu(event, workspace.ownerChatId, item).catch(() => undefined);
                     }}
-                    onActivate={() => dispatchCommand({
-                      type: "activateItem",
-                      ownerChatId: workspace.ownerChatId,
-                      itemId: item.itemId,
-                    })}
+                    onActivate={() => {
+                      closeNewTabSelection(workspace.ownerChatId);
+                      dispatchCommand({ type: "activateItem", ownerChatId: workspace.ownerChatId, itemId: item.itemId });
+                    }}
                     badge={reviewSession?.annotations.length ? (
                         <span
                           className="chat-work-panel-tab-review-count"
@@ -2197,21 +2150,40 @@ export function WorkPanelHost({
                   />
                 );
               })}
+              {newTabs.filter(tab => tab.ownerChatId === workspace.ownerChatId).map(tab => (
+                <WorkPanelTab key={tab.id} title={t("chatWorkPanel.newTab.title")}
+                  active={newTabActive && selectedNewTab?.id === tab.id} icon={<GlobalOutlined />}
+                  onActivate={() => setSelectedNewTabs(current => ({ ...current,
+                    [workspace.ownerChatId]: { id: tab.id, anchor: workspace.activeItemId } }))}
+                  closeLabel={t("chatWorkPanel.closeTab", { title: t("chatWorkPanel.newTab.title") })}
+                  closeShortcut={isMac ? "⌘W" : isWindows ? "Ctrl+W" : undefined}
+                  onClose={() => closeNewTab(workspace.ownerChatId, tab.id)} />
+              ))}
               <div className="chat-work-panel-add-tab" role="presentation">
-                <button
-                  ref={visible ? addButtonRef : undefined}
-                  type="button"
-                  className={`chat-work-panel-add-button${addMenuOwnerChatId === workspace.ownerChatId ? " is-open" : ""}`}
+                <button type="button" className="chat-work-panel-add-button"
                   aria-label={t("chatWorkPanel.add.openMenu")}
-                  aria-haspopup="menu"
-                  aria-expanded={addMenuOwnerChatId === workspace.ownerChatId}
-                  onClick={() => openAddMenu(workspace.ownerChatId)}
-                >
-                  <PlusOutlined />
-                </button>
+                  onClick={() => openNewTab(workspace.ownerChatId)}><PlusOutlined /></button>
               </div>
             </div>
             <div className="chat-work-panel-body">
+              {visible && newTabActive && <WorkPanelNewTab key={selectedNewTab?.id}
+                urlDraft={newTabs.find(tab => tab.id === selectedNewTab?.id)?.urlDraft ?? ""}
+                onUrlDraftChange={urlDraft => setNewTabs(current => current.map(tab =>
+                  tab.id === selectedNewTab?.id ? { ...tab, urlDraft } : tab))}
+                localOnly={localOnly} projectVisible={launcher.projectVisible} projectEnabled={launcher.projectEnabled}
+                projectDisabledReason={launcher.projectDisabledReason}
+                webapps={launcher.webapps} openWebappWindowIds={openWebappWindowIds}
+                websites={workspace.items.flatMap(item => item.descriptor.kind === "web"
+                  ? [{ id: item.itemId, title: item.title, url: item.descriptor.url }] : [])}
+                onOpenWeb={url => openWebFromNewTab(workspace.ownerChatId, url)}
+                onOpenFiles={() => openFilesFromMenu(workspace.ownerChatId)}
+                onOpenSideChat={() => openSideChatFromMenu(workspace.ownerChatId)}
+                onOpenProject={() => openProjectFromMenu(workspace.ownerChatId)}
+                onOpenWebapp={webapp => {
+                  if (openWebappWindowIds.has(webapp.id)) launcher.onFocusWebappWindow(webapp.id);
+                  else launcher.onOpenWebapp(workspace.ownerChatId, webapp);
+                  closeNewTabSelection(workspace.ownerChatId);
+                }} />}
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
                   if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
@@ -2221,7 +2193,7 @@ export function WorkPanelHost({
                       state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId) &&
                       !webControllers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId)) &&
                       !failedWebDialogTransfers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId))) return null;
-                  const active = visible && workspace.activeItemId === item.itemId;
+                  const active = visible && !newTabActive && workspace.activeItemId === item.itemId;
                   if (item.descriptor.kind === "webclient" &&
                       (isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId))) return null;
                   // Read-only observers belong to the visible, committed Main Chat.
@@ -2619,121 +2591,6 @@ export function WorkPanelHost({
           </aside>
         );
       })}
-      {addMenuOwnerChatId ? createPortal(
-        <div
-          ref={addMenuRef}
-          className="chat-work-panel-add-menu sidebar-operation-menu-popover"
-          style={addMenuStyle}
-          role="menu"
-          aria-label={t("chatWorkPanel.add.menu")}
-          onKeyDown={handleAddMenuKeyDown}
-        >
-          {addMenuView === "web" ? (
-            <form
-              className="chat-work-panel-add-web-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                openWebFromMenu(addMenuOwnerChatId);
-              }}
-            >
-              <button type="button" className="chat-work-panel-add-menu-back" onClick={() => setAddMenuView("root")}>
-                {t("chatWorkPanel.add.back")}
-              </button>
-              <label htmlFor="chat-work-panel-web-url">{t("chatWorkPanel.add.webPrompt")}</label>
-              <input
-                id="chat-work-panel-web-url"
-                autoFocus
-                value={webUrlInput}
-                placeholder="example.com"
-                onChange={(event) => {
-                  setWebUrlInput(event.target.value);
-                  setWebUrlError("");
-                }}
-              />
-              {webUrlError ? <span className="chat-work-panel-add-error">{webUrlError}</span> : null}
-              <Button type="primary" htmlType="submit" disabled={!webUrlInput.trim()}>
-                {t("chatWorkPanel.add.open")}
-              </Button>
-            </form>
-          ) : addMenuView === "webapp" ? (
-            <div className="chat-work-panel-add-webapp-list">
-              <button type="button" className="chat-work-panel-add-menu-back" onClick={() => setAddMenuView("root")}>
-                {t("chatWorkPanel.add.back")}
-              </button>
-              {launcher.webapps.length === 0 ? (
-                <span className="chat-work-panel-add-empty">{t("chatWorkPanel.add.noWebapps")}</span>
-              ) : launcher.webapps.map((webapp) => (
-                <button
-                  key={webapp.id}
-                  type="button"
-                  role="menuitem"
-                  className="chat-work-panel-add-menu-item"
-                  onClick={() => {
-                    if (openWebappWindowIds.has(webapp.id)) launcher.onFocusWebappWindow(webapp.id);
-                    else launcher.onOpenWebapp(addMenuOwnerChatId, webapp);
-                    closeAddMenu();
-                  }}
-                >
-                  <AppstoreOutlined aria-hidden="true" />
-                  <span>{webapp.label}</span>
-                  <small>{openWebappWindowIds.has(webapp.id) ? t("chatWorkPanel.add.webappInWindow") : t("chatWorkPanel.add.moveHere")}</small>
-                </button>
-              ))}
-            </div>
-          ) : isLocalDocumentDraftOwnerKey(addMenuOwnerChatId) || (addMenuOwnerChatId === activeOwnerKey && !activeChatId) ? (
-            <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => void openFilesFromMenu(addMenuOwnerChatId)}>
-              <FolderOpenOutlined aria-hidden="true" />
-              <span>{t("chatWorkPanel.add.files")}</span>
-            </button>
-          ) : (
-            <>
-              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" disabled>
-                <CodeOutlined aria-hidden="true" />
-                <span>{t("chatWorkPanel.add.terminal")}</span>
-                <small>{t("chatWorkPanel.add.comingSoon")}</small>
-              </button>
-              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => setAddMenuView("web")}>
-                <GlobalOutlined aria-hidden="true" />
-                <span>{t("chatWorkPanel.add.web")}</span>
-              </button>
-              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => void openFilesFromMenu(addMenuOwnerChatId)}>
-                <FolderOpenOutlined aria-hidden="true" />
-                <span>{t("chatWorkPanel.add.files")}</span>
-              </button>
-              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => openSideChatFromMenu(addMenuOwnerChatId)}>
-                <MessageOutlined aria-hidden="true" />
-                <span>{t("chatWorkPanel.add.sideChat")}</span>
-              </button>
-              {launcher.projectVisible ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="chat-work-panel-add-menu-item"
-                  disabled={!launcher.projectEnabled}
-                  title={launcher.projectDisabledReason}
-                  onClick={() => openProjectFromMenu(addMenuOwnerChatId)}
-                >
-                  <ProjectOutlined aria-hidden="true" />
-                  <span>{t("chatWorkPanel.add.project")}</span>
-                  {!launcher.projectEnabled ? <small>{launcher.projectDisabledReason}</small> : null}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                className="chat-work-panel-add-menu-item"
-                disabled={launcher.webapps.length === 0}
-                onClick={() => setAddMenuView("webapp")}
-              >
-                <AppstoreOutlined aria-hidden="true" />
-                <span>{t("chatWorkPanel.add.webapp")}</span>
-                <RightOutlined className="chat-work-panel-add-menu-chevron" aria-hidden="true" />
-              </button>
-            </>
-          )}
-        </div>,
-        document.body,
-      ) : null}
     </div>
   );
 }

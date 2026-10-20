@@ -2813,8 +2813,22 @@
 }
 
 .settings-page .settings-reset-button {
-  min-height: 34px;
+  min-height: 32px;
 }
+
+.settings-page .settings-reset-button.ant-btn-dangerous:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.settings-page .settings-reset-button.ant-btn-dangerous:not(:disabled):is(:hover, :focus-visible),
+:root[data-theme="dark"] .settings-page .settings-reset-button.ant-btn-default.ant-btn-dangerous:not(.ant-btn-link):not(.ant-btn-text):is(:hover, :focus-visible):not(:disabled) {
+  color: var(--danger) !important;
+  border-color: var(--danger) !important;
+  background: var(--control-hover-bg) !important;
+  box-shadow: none;
+}
+
 
 .settings-page .usage-settings-stack {
   display: flex;

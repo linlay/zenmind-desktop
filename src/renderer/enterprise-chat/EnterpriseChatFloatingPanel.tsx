@@ -160,15 +160,16 @@ function newClientMessageId() {
 
 function clampLauncherPosition(
   position: LauncherPosition,
-  viewport = { width: window.innerWidth, height: window.innerHeight }
+  viewport = { width: window.innerWidth, height: window.innerHeight },
+  panelSize?: { width: number; height: number }
 ) {
   return {
     x: Math.max(
-      CHAT_LAUNCHER_MARGIN,
+      panelSize ? panelSize.width - CHAT_LAUNCHER_SIZE + CHAT_LAUNCHER_MARGIN : CHAT_LAUNCHER_MARGIN,
       Math.min(position.x, viewport.width - CHAT_LAUNCHER_SIZE - CHAT_LAUNCHER_MARGIN)
     ),
     y: Math.max(
-      CHAT_LAUNCHER_MARGIN,
+      panelSize ? panelSize.height + 12 + CHAT_LAUNCHER_MARGIN : CHAT_LAUNCHER_MARGIN,
       Math.min(position.y, viewport.height - CHAT_LAUNCHER_SIZE - CHAT_LAUNCHER_MARGIN)
     )
   };
@@ -669,29 +670,16 @@ export function EnterpriseChatFloatingPanel({
 
   const panelWidth = Math.min(CHAT_PANEL_WIDTH, viewport.width - 24);
   const panelHeight = Math.min(CHAT_PANEL_HEIGHT, viewport.height - 82);
-  const panelLeft = Math.max(
-    12,
-    Math.min(
-      launcherPosition.x + CHAT_LAUNCHER_SIZE - panelWidth,
-      viewport.width - panelWidth - 12
-    )
+  const floatingPosition = clampLauncherPosition(
+    launcherPosition, viewport, open ? { width: panelWidth, height: panelHeight } : undefined
   );
-  const panelTop = launcherPosition.y >= panelHeight + 20
-    ? launcherPosition.y - panelHeight - 12
-    : Math.max(
-        12,
-        Math.min(
-          launcherPosition.y + CHAT_LAUNCHER_SIZE + 12,
-          viewport.height - panelHeight - 12
-        )
-      );
   const floatingStyle = {
-    left: launcherPosition.x,
-    top: launcherPosition.y
+    left: floatingPosition.x,
+    top: floatingPosition.y
   } satisfies CSSProperties;
   const panelStyle = {
-    left: panelLeft,
-    top: panelTop,
+    left: floatingPosition.x + CHAT_LAUNCHER_SIZE - panelWidth,
+    top: floatingPosition.y - panelHeight - 12,
     width: panelWidth,
     height: panelHeight
   } satisfies CSSProperties;
@@ -1229,19 +1217,26 @@ export function EnterpriseChatFloatingPanel({
     void sendPastedFiles(files);
   }
 
-  function handleLauncherPointerDown(event: PointerEvent<HTMLButtonElement>) {
+  function handlePanelPointerDown(event: PointerEvent<HTMLElement>) {
+    if ((event.target as Element).closest("button, a, input, textarea, select, [role='button']")) return;
+    handleLauncherPointerDown(event);
+    event.preventDefault();
+  }
+
+  function handleLauncherPointerDown(event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originX: launcherPosition.x,
-      originY: launcherPosition.y,
+      originX: floatingPosition.x,
+      originY: floatingPosition.y,
       moved: false
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function handleLauncherPointerMove(event: PointerEvent<HTMLButtonElement>) {
+  function handleLauncherPointerMove(event: PointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
@@ -1255,16 +1250,16 @@ export function EnterpriseChatFloatingPanel({
       setLauncherPosition(clampLauncherPosition({
         x: drag.originX + deltaX,
         y: drag.originY + deltaY
-      }, viewport));
+      }, viewport, open ? { width: panelWidth, height: panelHeight } : undefined));
     }
   }
 
-  function handleLauncherPointerEnd(event: PointerEvent<HTMLButtonElement>) {
+  function handleLauncherPointerEnd(event: PointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
-    suppressLauncherClickRef.current = drag.moved;
+    suppressLauncherClickRef.current = event.currentTarget.classList.contains("enterprise-chat-launcher") && drag.moved;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -1456,7 +1451,13 @@ export function EnterpriseChatFloatingPanel({
           role="dialog"
           aria-label={t("enterpriseChat.title")}
         >
-          <header className="enterprise-chat-header">
+          <header className="enterprise-chat-header"
+            onPointerDown={handlePanelPointerDown}
+            onPointerMove={handleLauncherPointerMove}
+            onPointerUp={handleLauncherPointerEnd}
+            onPointerCancel={handleLauncherPointerEnd}
+            onLostPointerCapture={() => { dragRef.current = null; }}
+          >
             {view === "conversation" ? (
               renderConversationHeader()
             ) : view === "new-group" ? (

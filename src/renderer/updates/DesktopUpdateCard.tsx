@@ -33,7 +33,7 @@ export function DesktopUpdateCard({ compact = false, onViewAbout, onDownload }: 
     ? <p role="alert">{t(`updates.error.${requestFailed ? "operationFailed" : (state.error ?? "operationFailed")}`)}</p> : null;
   const confirm = <DesktopUpdateConfirm open={confirmOpen} pending={pending} canInstall={state.canInstall && action === "install"}
     onConfirm={() => void install()} onCancel={() => setConfirmOpen(false)} />;
-  const installButton = action === "install" ? <Button size={compact ? "small" : "middle"} type="primary" disabled={!state.canInstall} onClick={() => setConfirmOpen(true)}>{t(state.error ? "updates.retryInstall" : "updates.install")}</Button> : null;
+  const installButton = action === "install" ? <Button size="small" type="primary" disabled={!state.canInstall} onClick={() => setConfirmOpen(true)}>{t(state.error ? "updates.retryInstall" : "updates.install")}</Button> : null;
   if (compact) return <section className="desktop-update-card is-compact" aria-label={t("updates.title")}>
     <div className="desktop-update-menu-title">{state.phase === "available"
       ? t("updates.menuVersion", { version: state.version ?? "" })
@@ -47,23 +47,29 @@ export function DesktopUpdateCard({ compact = false, onViewAbout, onDownload }: 
       <Button size="small" type="link" onClick={onViewAbout}>{t("updates.viewAbout")}</Button>
     </div>
   </section>;
-  return <section className={`desktop-update-card${compact ? " is-compact" : " is-settings"}`} aria-label={t("updates.title")}>
-    <div className="desktop-update-heading">
-      <strong>{compact ? t(`updates.phase.${state.phase}`) : t(state.source === "test" ? "updates.test.title" : "updates.title")}</strong>
-      {state.version ? <span className="desktop-update-version">{compact ? `v${state.version}` : `v${state.currentVersion} → v${state.version}`}</span> : null}
+  return <section className="desktop-update-card is-settings" data-update-phase={state.phase} aria-label={t("updates.title")}>
+    <div className="desktop-update-summary">
+      <div className="desktop-update-content">
+        <div className="desktop-update-heading">
+          <strong>{t(state.source === "test" ? "updates.test.title" : "updates.title")}</strong>
+          {state.version ? <span className="desktop-update-version">{`v${state.version}`}</span> : null}
+          {!(state.phase === "error" && error) ? <p className="desktop-update-status" aria-live="polite">{t(`updates.phase.${state.phase}`)}</p> : null}
+        </div>
+        {state.phase === "ready" || state.phase === "installing" ? <p>{t("updates.restartHint")}</p> : null}
+        {state.phase === "downloading" ? <Progress percent={state.progress} size="small" /> : null}
+        {error}
+        {state.restartRequired ? <p>{t("updates.restartRequired")}</p> : null}
+        {!state.canInstall && state.phase === "ready" ? <p>{t("updates.developmentHint")}</p> : null}
+      </div>
+      {installButton || action === "download" || ((action === "check" || state.phase === "checking") && state.source !== "test") ? (
+        <div className="desktop-update-actions">
+          {installButton}
+          {action === "download" ? <Button size="small" type="primary" onClick={() => void run(() => window.electronAPI.updates.download())}>{t("updates.download")}</Button> : null}
+          {(action === "check" || state.phase === "checking") && state.source !== "test" ? <Button size="small" disabled={busy} loading={busy} onClick={() => void run(() => window.electronAPI.updates.check())}>{t(state.phase === "error" ? "updates.retry" : "updates.check")}</Button> : null}
+        </div>
+      ) : null}
     </div>
-    {!compact ? <p className="desktop-update-status" aria-live="polite">{t(`updates.phase.${state.phase}`)}</p> : null}
-    {state.phase === "ready" || state.phase === "installing" ? <p>{t("updates.restartHint")}</p> : null}
-    {state.phase === "downloading" ? <Progress percent={state.progress} size="small" /> : null}
-    {error}
-    {state.restartRequired ? <p>{t("updates.restartRequired")}</p> : null}
     {confirm}
-    <div className="desktop-update-actions">
-      {installButton}
-      {action === "download" ? <Button type="primary" onClick={() => void run(() => window.electronAPI.updates.download())}>{t("updates.download")}</Button> : null}
-      {action === "check" && state.source !== "test" ? <Button size={compact ? "small" : "middle"} disabled={busy} loading={busy} onClick={() => void run(() => window.electronAPI.updates.check())}>{t(state.phase === "error" ? "updates.retry" : "updates.check")}</Button> : null}
-    </div>
-    {!state.canInstall && state.phase === "ready" ? <p>{t("updates.developmentHint")}</p> : null}
-    {!compact && state.source !== "test" && state.phase !== "disabled" ? <label className="desktop-update-preference"><Switch size="small" checked={state.autoDownload} disabled={busy} onChange={(value) => void run(() => window.electronAPI.updates.setAutoDownload(value))} />{t("updates.autoDownload")}</label> : null}
+    {state.source !== "test" && state.phase !== "disabled" ? <label className="desktop-update-preference"><span>{t("updates.autoDownload")}</span><Switch size="small" aria-label={t("updates.autoDownload")} checked={state.autoDownload} disabled={busy} onChange={(value) => void run(() => window.electronAPI.updates.setAutoDownload(value))} /></label> : null}
   </section>;
 }

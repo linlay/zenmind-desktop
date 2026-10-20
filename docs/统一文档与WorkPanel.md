@@ -107,6 +107,8 @@ Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展�
 
 ## 状态、标题与兼容
 
+右侧「+」打开宿主 renderer 内的新标签启动页，提供网址、工具和当前 Chat 的网页／应用入口。启动页按 owner Chat 隔离，未提交网址由宿主按启动标签 ID 保存，切换标签或 Chat 不清空，关闭该标签时回收；仅保存本次界面生命周期内的临时标签状态，不注册 Surface、不创建 guest，也不进入公开 WorkPanel item 与 Run 授权目录。从新标签启动页提交网址时使用宿主生成的标签实例身份，同一网址允许多个独立网页标签并存，重试同一实例仍幂等；未指定实例的既有打开入口继续按规范化来源去重。此身份只属于宿主内部命令，不扩展公开 descriptor 或 Run 权限。打开实际内容时继续走既有命令与安全边界；切换启动页保留普通文档和网页 guest，Overview/Debug 仍按只读观察页规则回收。关闭启动页优先于关闭原内容，不能触发原文档的丢弃操作。
+
 Overview 与 Debug 是只读实时观察页，仅在所属 Main Chat 完成可信登记、WorkPanel 可见且对应 tab 激活时挂载 guest。隐藏面板、切换 Chat 或切换 tab 时回收这两类 guest 与 Frame Port，下次激活重新创建，避免后台初始化被父 Chat 归属校验拒绝后永久复用已关闭的 Port。item 与 workspace 身份继续保留；Broker 的 Main Chat Overview lease 不随 UI guest 回收而释放。普通网页、文档编辑与批注仍遵循各自的保活和草稿保护规则。
 
 WebClient 文档和 Desktop 原生 Surface 都向 WorkPanel 提交当前 item 绑定的 dirty、busy 和 annotation count。关闭当前、关闭其他、切换原生编辑器和 WorkPanel 全屏生命周期共用同一未保存保护规则。

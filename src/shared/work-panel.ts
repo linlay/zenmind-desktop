@@ -48,7 +48,7 @@ export type WorkPanelState = {
 export type WorkPanelCommand =
   | { type: "adoptLocalDocumentWorkspace"; ownerChatId: string; draftOwnerKey: string; documents: LocalDocumentItem[] }
   | { type: "setDialogPresentation"; ownerChatId: string; itemId: string; dialog: WorkPanelDialogPresentation | null; restoreUrl?: string }
-  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; explicitlyOpened?: boolean }
+  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; explicitlyOpened?: boolean; webInstanceId?: string }
   | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
   | { type: "closeItem"; ownerChatId: string; itemId: string; force?: boolean; closeImplicitWorkspace?: boolean }
@@ -905,6 +905,10 @@ function reduceWorkPanelCommandCore(
       items: [],
       activeItemId: null,
     };
+    // Host-created browser tabs own their identity even when the URL is identical.
+    // This field is internal to the command, never part of the public descriptor.
+    const webInstanceId = normalized.descriptor.kind === "web" ? cleanIdentity(command.webInstanceId) : "";
+    if (webInstanceId) normalized.stableKey = `web-instance:${webInstanceId}`;
     const existing = workspace.items.find((item) => item.stableKey === normalized.stableKey);
     const isOverview = normalized.descriptor.kind === "webclient" &&
       normalized.descriptor.module === "overview";
