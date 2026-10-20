@@ -1,6 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { TextDecoder } from "node:util";
 import { createHash } from "node:crypto";
+import type { ConversationShareOmittedResource, ConversationShareOmissionReason } from "../../../shared/contracts";
 import { isLoopbackHostname } from "../../infrastructure/network/loopback-url";
 import {
   isTunnelHubForbiddenHostname,
@@ -57,6 +58,12 @@ class ConversationHtmlRenderFailure extends Error {
   ) {
     super(code);
     this.name = "ConversationHtmlRenderFailure";
+  }
+}
+
+class ResourceReadFailure extends Error {
+  constructor(readonly reason: ConversationShareOmissionReason) {
+    super(reason);
   }
 }
 
@@ -169,6 +176,7 @@ export async function fetchLimitedResponse(input: {
   expectedContentType: string;
   unavailableCode: ConversationHtmlWorkerErrorCode;
   invalidCode: ConversationHtmlWorkerErrorCode;
+  resource?: boolean;
 }): Promise<{ response: Response; bytes: Buffer }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
@@ -183,6 +191,13 @@ export async function fetchLimitedResponse(input: {
       signal: controller.signal
     });
     if (!response.ok) {
+      if (input.resource) {
+        const reasons: Record<number, ConversationShareOmissionReason> = {
+          400: "invalid", 401: "forbidden", 403: "forbidden", 404: "not_found",
+          409: "changed", 413: "too_large", 415: "unsupported"
+        };
+        throw new ResourceReadFailure(reasons[response.status] ?? "read_failed");
+      }
       if (input.unavailableCode === "snapshot_unavailable" &&
         (response.status === 401 || response.status === 403)) {
         throw new ConversationHtmlRenderFailure("snapshot_unauthorized");
@@ -195,6 +210,7 @@ export async function fetchLimitedResponse(input: {
       ?.trim()
       .toLowerCase();
     if (contentType !== input.expectedContentType) {
+      if (input.resource) throw new ResourceReadFailure("changed");
       throw new ConversationHtmlRenderFailure(input.invalidCode);
     }
     const rawMaximum = input.maxBytes === "snapshot"
@@ -222,7 +238,16 @@ export async function fetchLimitedResponse(input: {
     );
     return { response, bytes };
   } catch (error) {
+    const timedOut = controller.signal.aborted;
     controller.abort();
+    if (input.resource) {
+      if (error instanceof ResourceReadFailure) throw error;
+      if (timedOut) throw new ResourceReadFailure("timeout");
+      if (error instanceof ConversationHtmlRenderFailure) {
+        throw new ResourceReadFailure(error.code === "too_large" ? "too_large" : "invalid");
+      }
+      if (!(error instanceof RangeError)) throw new ResourceReadFailure("read_failed");
+    }
     if (error instanceof ConversationHtmlRenderFailure) throw error;
     if (error instanceof RangeError) throw new ConversationHtmlRenderFailure("resource_exhausted");
     throw new ConversationHtmlRenderFailure(input.unavailableCode);
@@ -376,53 +401,111 @@ async function readConversationSnapshot(
     const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
     const chatId = snapshotURL.searchParams.get("chatId") || "";
     const attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }> = [];
-    // Serialize the body once; attachment fallback only adjusts its small metadata budget.
-    const { attachments: sourceAttachments, ...body } = parsed;
-    const bodyJson = JSON.stringify(body);
-    const attachmentsPrefix = bodyJson.slice(0, -1) + ",\"attachments\":[";
-    const metadataBudget = maxSnapshotBytes - Buffer.byteLength(attachmentsPrefix) - 2;
-    if (metadataBudget < 0) throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
-    const frozen: string[] = [];
-    let metadataBytes = 0;
-    let totalBytes = 0;
-    let attachmentsOmitted = false;
-    let attachmentUnauthorized = false;
-    const seen = new Set<string>();
-    const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
+    // The large conversation body is serialized once. Only resource metadata changes below.
+    const { attachments: sourceAttachments, omittedResources: sourceOmissions, ...body } = parsed;
+    const bodyPrefix = JSON.stringify(body).slice(0, -1);
+    const bodyBytes = Buffer.byteLength(bodyPrefix);
+    const omittedResources: ConversationShareOmittedResource[] = [];
+    const identities = new Map<string, ResourceIdentity>();
+    const sourceIDs = new Map<string, string>();
+    const omissionKeys = new Set<string>();
+    const addOmission = (item: ConversationShareOmittedResource) => {
+      const key = item.id ?? `${item.name}:${item.reason}`;
+      if (!omissionKeys.has(key)) {
+        omissionKeys.add(key);
+        omittedResources.push(item);
+      }
+    };
+    const register = (identity: ResourceIdentity) => {
+      const existing = identities.get(identity.id);
+      if ((existing && existing.sourceRef !== identity.sourceRef) ||
+        (sourceIDs.has(identity.sourceRef) && sourceIDs.get(identity.sourceRef) !== identity.id)) {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+      identities.set(identity.id, identity);
+      sourceIDs.set(identity.sourceRef, identity.id);
+      return Boolean(existing);
+    };
+    if (sourceOmissions !== undefined && !Array.isArray(sourceOmissions)) {
+      throw new ConversationHtmlRenderFailure("snapshot_invalid");
+    }
+    for (const raw of sourceOmissions ?? []) {
+      const item = resourceObject(raw);
+      if (!item || !validResourceName(item.name) || !isOmissionReason(item.reason)) {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+      const identity = resourceIdentity(item);
+      if ((item.id !== undefined || item.sourceRef !== undefined) && !identity) {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+      if (identity) register(identity);
+      addOmission({ ...identity, name: item.name, reason: item.reason });
+    }
+    const candidates: Array<{ raw: Record<string, unknown>; identity: ResourceIdentity }> = [];
     for (const raw of sourceAttachments) {
+      const descriptor = resourceObject(raw);
+      const identity = descriptor && resourceIdentity(descriptor);
+      if (!identity) {
+        addOmission({ name: descriptor && validResourceName(descriptor.name) ? descriptor.name : "resource", reason: "invalid" });
+        continue;
+      }
+      if (register(identity)) continue;
+      candidates.push({ raw: descriptor!, identity });
+    }
+    // All links must resolve even when the referenced file will be omitted.
+    for (const { raw } of candidates) {
+      if (raw.mediaRefs === undefined) continue;
+      const refs = resourceObject(raw.mediaRefs);
+      if (raw.mimeType !== "text/html" || !refs || Object.entries(refs).some(([url, id]) =>
+        !url.trim() || typeof id !== "string" || !identities.has(id))) {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+    }
+    for (const rawTurn of Array.isArray(body.turns) ? body.turns : []) {
+      const turn = resourceObject(rawTurn);
+      for (const rawNode of Array.isArray(turn?.nodes) ? turn.nodes : []) {
+        const refs = resourceObject(rawNode)?.attachmentIds;
+        if (refs !== undefined && (!Array.isArray(refs) || new Set(refs).size !== refs.length ||
+          refs.some((id) => typeof id !== "string" || !identities.has(id)))) {
+          throw new ConversationHtmlRenderFailure("snapshot_invalid");
+        }
+      }
+    }
+    for (const { raw } of candidates) {
+      for (const id of Object.values(resourceObject(raw.mediaRefs) ?? {})) {
+        const target = candidates.find((candidate) => candidate.identity.id === id);
+        if (target && typeof target.raw.mimeType === "string" &&
+          !/^(?:image|audio|video)\//u.test(target.raw.mimeType)) {
+          throw new ConversationHtmlRenderFailure("snapshot_invalid");
+        }
+      }
+    }
+    const frozen: Array<ResourceIdentity & { mimeType: string; size: number; sha256: string; mediaRefs?: Record<string, string> }> = [];
+    let totalBytes = 0;
+    const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
+    for (const { raw: descriptor, identity } of candidates) {
+      const omit = (reason: ConversationShareOmissionReason) => addOmission({ ...identity, reason });
       if (Date.now() >= deadline) {
-        attachmentsOmitted = true;
-        break;
-      }
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-        attachmentsOmitted = true;
+        omit("timeout");
         continue;
       }
-      const descriptor = raw as Record<string, unknown>;
-      const { id, name, sourceRef, mimeType } = descriptor;
-      if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
-        typeof name !== "string" || !name || Buffer.byteLength(name, "utf8") > 255 ||
-        /[\\/\u0000-\u001f\u007f]/u.test(name) || typeof sourceRef !== "string" ||
-        !sourceRef || sourceRef.length > 2_048 || typeof mimeType !== "string") {
-        attachmentsOmitted = true;
-        continue;
-      }
-      const mediaType = mimeType.split(";", 1)[0].trim().toLowerCase();
+      const mediaType = typeof descriptor.mimeType === "string" ? descriptor.mimeType : "";
       if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mediaType) ||
-        (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) ||
-          (descriptor.size as number) < 0)) ||
+        (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) || (descriptor.size as number) < 0)) ||
         (descriptor.sha256 !== undefined &&
-          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(descriptor.sha256))) ||
-        (typeof descriptor.size === "number" &&
-          descriptor.size > maxResourceBytes - totalBytes)) {
-        attachmentsOmitted = true;
+          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(descriptor.sha256)))) {
+        omit("invalid");
+        continue;
+      }
+      if ((descriptor.size as number) > maxResourceBytes - totalBytes) {
+        omit("too_large");
         continue;
       }
       try {
         const { bytes } = await fetchLimitedResponse({
-          url: new URL("/api/chat/artifacts/read", snapshotURL).toString(),
+          url: new URL("/api/chat/export/resources/read", snapshotURL).toString(),
           method: "POST",
-          body: JSON.stringify({ chatId, sourceRef }),
+          body: JSON.stringify({ chatId, sourceRef: identity.sourceRef }),
           headers: {
             Accept: mediaType,
             Authorization: "Bearer " + request.bearerToken,
@@ -432,52 +515,90 @@ async function readConversationSnapshot(
           maxBytes: maxResourceBytes - totalBytes,
           expectedContentType: mediaType,
           unavailableCode: "snapshot_unavailable",
-          invalidCode: "snapshot_invalid"
+          invalidCode: "snapshot_invalid",
+          resource: true
         });
         const sha256 = createHash("sha256").update(bytes).digest("hex");
         if ((descriptor.size !== undefined && descriptor.size !== bytes.length) ||
-          (descriptor.sha256 !== undefined &&
-            (descriptor.sha256 as string).toLowerCase() !== sha256)) {
-          attachmentsOmitted = true;
+          (descriptor.sha256 !== undefined && descriptor.sha256 !== sha256)) {
+          omit("changed");
           continue;
         }
-        seen.add(id);
         totalBytes += bytes.length;
-        const json = JSON.stringify({ id, name, mimeType: mediaType, sourceRef, size: bytes.length, sha256 });
-        metadataBytes += Buffer.byteLength(json) + (frozen.length ? 1 : 0);
-        frozen.push(json);
+        frozen.push({ ...identity, mimeType: mediaType, size: bytes.length, sha256,
+          ...(descriptor.mediaRefs === undefined ? {} : { mediaRefs: descriptor.mediaRefs as Record<string, string> }) });
         attachments.push({
-          id, name, mimeType: mediaType,
-          bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+          id: identity.id, name: identity.name, mimeType: mediaType,
+          // readExactResponseBody allocates one exact ArrayBuffer, transferred to main without a copy.
+          bytes: bytes.buffer as ArrayBuffer
         });
       } catch (error) {
-        // An optional resource may disappear or become unreadable after the snapshot was made.
-        attachmentsOmitted = true;
-        if (error instanceof ConversationHtmlRenderFailure && error.code === "snapshot_unauthorized") {
-          attachmentUnauthorized = true;
-        }
+        if (!(error instanceof ResourceReadFailure)) throw error;
+        omit(error.reason);
       }
     }
-    while (metadataBytes > metadataBudget && frozen.length) {
-      metadataBytes -= Buffer.byteLength(frozen.pop()!) + (frozen.length ? 1 : 0);
+    const encodeMetadata = () => `,"attachments":${JSON.stringify(frozen)}` +
+      (omittedResources.length ? `,"omittedResources":${JSON.stringify(omittedResources)}` : "") + "}";
+    let metadata = encodeMetadata();
+    while (bodyBytes + Buffer.byteLength(metadata) > maxSnapshotBytes && frozen.length) {
+      const removed = frozen.pop()!;
       attachments.pop();
-      attachmentsOmitted = true;
+      addOmission({ id: removed.id, sourceRef: removed.sourceRef, name: removed.name, reason: "too_large" });
+      metadata = encodeMetadata();
     }
-    const encoded = Buffer.from(attachmentsPrefix + frozen.join(",") + "]}");
-    const transferred = encoded.buffer.slice(
-      encoded.byteOffset, encoded.byteOffset + encoded.byteLength
-    ) as ArrayBuffer;
-    return {
-      type: "snapshot",
-      requestId: request.requestId,
-      snapshot: transferred,
-      attachments,
-      attachmentsOmitted,
-      attachmentUnauthorized
-    };
+    if (bodyBytes + Buffer.byteLength(metadata) > maxSnapshotBytes) {
+      throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
+    }
+    const encoded = Buffer.from(bodyPrefix + metadata);
+    const transferred = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+    return { type: "snapshot", requestId: request.requestId, snapshot: transferred, attachments, omittedResources };
   } catch (error) {
     return failureResponse(request.requestId, error);
   }
+}
+
+type ResourceIdentity = { id: string; sourceRef: string; name: string };
+
+function resourceObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : null;
+}
+
+function validResourceName(value: unknown): value is string {
+  return typeof value === "string" && value.trim() === value && Boolean(value) &&
+    Buffer.byteLength(value) <= 255 && !/[\\/\u0000-\u001f\u007f]/u.test(value);
+}
+
+function resourceIdentity(value: Record<string, unknown>): ResourceIdentity | null {
+  const { id, name, sourceRef } = value;
+  if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || !validResourceName(name) ||
+    typeof sourceRef !== "string" || !sourceRef || sourceRef.length > 2_048 ||
+    /[\\?#:\s]/u.test(sourceRef)) return null;
+  try {
+    for (const part of sourceRef.split("/")) {
+      let decoded = decodeURIComponent(part);
+      const canonical = encodeURIComponent(decoded).replace(/[!'()*]/gu, (char) =>
+        "%" + char.charCodeAt(0).toString(16).toUpperCase()).replace(/%(24|26|2B|3D|3A|40)/gu, decodeURIComponent);
+      if (canonical !== part) return null;
+      for (let depth = 0; ; depth += 1) {
+        if (!decoded || decoded === "." || decoded === ".." ||
+          [".tools", ".btw", ".explain"].includes(decoded) ||
+          /[\\/:\u0000-\u001f\u007f]/u.test(decoded)) return null;
+        if (!decoded.includes("%")) break;
+        if (depth >= 4) return null;
+        let next: string;
+        try { next = decodeURIComponent(decoded); } catch { break; }
+        if (next === decoded) break;
+        decoded = next;
+      }
+    }
+  } catch { return null; }
+  return { id, sourceRef, name };
+}
+
+function isOmissionReason(value: unknown): value is ConversationShareOmissionReason {
+  return typeof value === "string" &&
+    ["not_found", "forbidden", "unsupported", "too_large", "timeout", "changed", "invalid", "read_failed"].includes(value);
 }
 
 function requireLoopbackURL(value: string, expectedPath: string): URL {

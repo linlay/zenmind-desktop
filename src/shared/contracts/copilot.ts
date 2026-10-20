@@ -485,8 +485,19 @@ export interface AssistantConversationShareRecord {
   singleUse: boolean;
 }
 
+export type ConversationShareOmissionReason =
+  | "not_found" | "forbidden" | "unsupported" | "too_large"
+  | "timeout" | "changed" | "invalid" | "read_failed";
+
+export type ConversationShareOmittedResource = {
+  id?: string;
+  sourceRef?: string;
+  name: string;
+  reason: ConversationShareOmissionReason;
+};
+
 export type AssistantConversationShareCreateResult =
-  | { ok: true; message: string; record: AssistantConversationShareRecord; warning?: string }
+  | { ok: true; message: string; record: AssistantConversationShareRecord; omittedResources: ConversationShareOmittedResource[] }
   | { ok: false; message: string };
 
 export type AssistantConversationShareListResult =

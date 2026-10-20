@@ -63,7 +63,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   const reader = {
     async readChatSnapshot(chatId) {
       calls.push({ method: "read", chatId });
-      return { ok: true, bytes: snapshot, attachments: [], attachmentsOmitted: false, attachmentUnauthorized: false };
+      return { ok: true, bytes: snapshot, attachments: [], omittedResources: [] };
     }
   };
   const client = {
@@ -77,7 +77,7 @@ test("createConversationShare reads once, then forwards the same Snapshot Buffer
   const result = await createConversationShare(app, reader, client, { chatId: " chat-1 " });
 
   assert.equal(result.ok, true);
-  assert.equal(result.warning, undefined);
+  assert.deepEqual(result.omittedResources, []);
   assert.deepEqual(calls.map((call) => call.method), ["read", "create"]);
   assert.equal(calls[0].chatId, "chat-1");
   assert.equal(calls[1].input.snapshot, snapshot);
@@ -99,14 +99,13 @@ test("createConversationShare keeps the link and reports observed attachment omi
           ok: true,
           bytes: Buffer.from('{"version":1,"turns":[],"attachments":[]}'),
           attachments: [],
-          attachmentsOmitted: true,
-          attachmentUnauthorized: unauthorized
+          omittedResources: [{ name: "missing.png", reason: unauthorized ? "forbidden" : "not_found" }]
         };
       }
     }, client, { chatId: "chat-1" });
     assert.equal(result.ok, true);
     assert.equal(result.record.url, shareRecord().url);
-    assert.match(result.warning, unauthorized ? /身份/u : /部分附件/u);
+    assert.deepEqual(result.omittedResources, [{ name: "missing.png", reason: unauthorized ? "forbidden" : "not_found" }]);
   }
 });
 

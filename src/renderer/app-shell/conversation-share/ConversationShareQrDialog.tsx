@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCode, Spin } from "antd";
+import type { ConversationShareOmittedResource } from "../../../shared/contracts";
+import { ConversationShareOmissions } from "./ConversationShareOmissions";
 import type { TranslateFunction } from "../../../shared/i18n";
 
 declare const __DESKTOP_BRAND_ICON_DATA_URL__: string;
@@ -13,7 +15,7 @@ type ConversationShareQrDialogProps = {
   url: string;
   chatId: string;
   chatName: string;
-  warning: string;
+  omittedResources: ConversationShareOmittedResource[];
   t: TranslateFunction;
   onClose: () => void;
   onFeedback: (feedback: ShareFeedback) => void;
@@ -64,7 +66,7 @@ export function ConversationShareQrDialog({
   url,
   chatId,
   chatName,
-  warning,
+  omittedResources,
   t,
   onClose,
   onFeedback,
@@ -136,7 +138,7 @@ export function ConversationShareQrDialog({
           <button type="button" disabled={Boolean(qrAction)} onClick={() => void exportQr("copy")}>{qrAction === "copy" ? <Spin size="small" /> : null}{t("sidebar.chat.shareQrCopy")}</button>
           <button type="button" disabled={Boolean(qrAction)} onClick={() => void exportQr("save")}>{qrAction === "save" ? <Spin size="small" /> : null}{t("sidebar.chat.shareQrSave")}</button>
         </div>
-        {warning ? <p className="conversation-share-warning" role="note">{warning}</p> : null}
+        <ConversationShareOmissions items={omittedResources} t={t} />
       </div>
     </section>
   );
