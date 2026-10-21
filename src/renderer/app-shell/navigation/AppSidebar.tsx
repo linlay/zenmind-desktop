@@ -5392,16 +5392,10 @@ export function AppSidebar({
                     }
                   />
                 ) : null}
-                {awaitingChatsCount > 0 ? (
-                  <span className="chat-awaiting-status">
-                    {awaitingChatsCount}
-                  </span>
-                ) : null}
-                {unreadCount > 0 ? (
-                  <div className="assistant-worker-badge">
-                    {formatUnreadCount(unreadCount)}
-                  </div>
-                ) : null}
+                {renderStatusBadges({
+                  pendingCount: awaitingChatsCount,
+                  unreadCount,
+                })}
               </Flex>
             </Flex>
           </Flex>
