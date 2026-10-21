@@ -276,7 +276,6 @@ export const zhCNMessages = {
   "market.connector.customForm.title": "自定义连接器",
   "market.connector.customForm.basic": "远程 MCP",
   "market.connector.customForm.advanced": "高级 JSON",
-  "market.connector.customForm.importZip": "导入 ZIP",
   "market.connector.customForm.name": "名称",
   "market.connector.customForm.id": "连接器标识",
   "market.connector.customForm.url": "MCP 服务地址",
