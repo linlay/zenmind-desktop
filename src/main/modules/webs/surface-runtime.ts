@@ -21,6 +21,7 @@ export type WebSurfaceRuntimeOptions = {
   getMainWindow: () => BrowserWindow | null;
   webContents: BrowserSurfaceRegistryOptions["webContents"];
   reportRegistrationDiagnostic?: BrowserSurfaceRegistryOptions["reportRegistrationDiagnostic"];
+  isWorkPanelHtmlPreviewGuest?: BrowserSurfaceRegistryOptions["isWorkPanelHtmlPreviewGuest"];
   navigateMainWindow: (targetPath: string) => void;
   delay: (ms: number) => Promise<void>;
   t: (key: any, values?: any) => string;
@@ -73,6 +74,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
     listWebEntries: listBrowserRegistryWebItems,
     getCurrentPageSnapshot: () => currentPageSnapshot,
     reportRegistrationDiagnostic: options.reportRegistrationDiagnostic,
+    isWorkPanelHtmlPreviewGuest: options.isWorkPanelHtmlPreviewGuest,
   });
 
   async function openBrowserUrl(input: {

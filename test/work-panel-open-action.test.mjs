@@ -4,6 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { EMPTY_WORK_PANEL_STATE, reduceWorkPanelCommand } from "../dist-electron/shared/work-panel.js";
+import * as workPanelSurface from "../dist-electron/shared/work-panel-surface.js";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -49,6 +50,9 @@ function harness({ existing = false, loading = true, close = false, timeout = fa
     t: (key) => key,
     actionError: (code, message) => ({ ok: false, error: { code, message } }),
     itemRuntimeKey: (owner, item) => `${owner}:${item}`,
+    ...workPanelSurface,
+    htmlFileControllers: { current: new Map() },
+    nativeHtmlControllers: { current: new Map() },
     webControllers: { current: { get: () => ticks && !timeout ? {
       getState: async () => ({ containerId: "container-a", activeTabId: "tab-a",
         tabs: [{ tabId: "tab-a", surfaceId: "page:a", isLoading: loading }] }),

@@ -1,4 +1,4 @@
-import { acquireWorkPanelControlScope, type SiteControlScope } from "./site-scope";
+import { acquireWorkPanelControlScope, workPanelContainerContent, type SiteControlScope } from "./site-scope";
 import type { WebContents } from "electron";
 import type { DesktopPageContextSnapshot, ServiceState } from "../../../../shared/contracts";
 import {
@@ -183,6 +183,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     embeddedCdpGateway = new EmbeddedCdpGateway({
       getSurfaces: listSurfaces,
       acquireWorkPanelScope: (containerId, chatId) => acquireWorkPanelControlScope(options.browserSurfaces, containerId, chatId),
+      classifyWorkPanelContainer: (surface) => workPanelContainerContent(options.browserSurfaces, surface),
       resolveWebContents,
       activateTarget,
       closeTarget,

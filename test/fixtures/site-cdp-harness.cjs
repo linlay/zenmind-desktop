@@ -11,7 +11,10 @@ function createSiteHarness() {
   let nextId = 100;
   const entries = [];
   const commands = [];
+  // Guests verified as an HTML file preview, by webContentsId -> owner Chat.
+  const previews = new Map();
   const registry = createBrowserSurfaceRegistry({
+    isWorkPanelHtmlPreviewGuest: (value, ownerChatId) => previews.get(value.id) === ownerChatId,
     webContents: { fromId: (id) => contents.get(id), getAllWebContents: () => [...contents.values()] },
     listWebEntries: () => ({ items: entries }),
     getCurrentPageSnapshot: () => snapshot,
@@ -26,6 +29,8 @@ function createSiteHarness() {
       getBackgroundThrottling() { return this.throttle; },
       setBackgroundThrottling(value) { this.throttle = value; this.throttleChanges.push(value); },
       reload() { commands.push({ id: this.id, method: 'Page.reload' }); },
+      enableDeviceEmulation(params) { commands.push({ id: this.id, method: 'enableDeviceEmulation', params }); },
+      disableDeviceEmulation() { commands.push({ id: this.id, method: 'disableDeviceEmulation' }); },
       debugger: {
         isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; },
         sendCommand: async (method, params) => { commands.push({ id: value.id, method, params }); return { value: value.id }; },
@@ -83,6 +88,6 @@ function createSiteHarness() {
     else { registry.unregisterSurface(value, 7); registrations.delete(value.surfaceId); }
     if (closed) { const target = contents.get(closed.webContentsId); target.destroyed = true; target.emit('destroyed'); }
   }
-  return { registry, contents, registrations, commands, site, guest, tab, register, foreground, capture, addTab, closeTab };
+  return { registry, contents, registrations, commands, previews, site, guest, tab, register, foreground, capture, addTab, closeTab };
 }
 module.exports = { createSiteHarness };

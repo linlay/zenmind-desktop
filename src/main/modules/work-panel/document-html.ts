@@ -233,6 +233,12 @@ export class WorkPanelDocumentHtmlRegistry {
     });
   }
 
+  /** True only for the configured guest of this Chat's native HTML preview. */
+  isHtmlPreviewGuest(guest: WebContents, ownerChatId: string) {
+    const handle = this.handles.get(this.previews.handleIdForGuest(guest));
+    return Boolean(ownerChatId && handle && handle.ownerChatId === ownerChatId);
+  }
+
   private ownedHandle(request: WorkPanelDocumentHtmlHandleRequest, sender: WebContents) {
     const handle = this.handles.get(cleanText(request?.handleId, 256));
     return handle &&

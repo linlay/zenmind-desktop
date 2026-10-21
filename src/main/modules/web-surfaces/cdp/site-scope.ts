@@ -6,6 +6,27 @@ import { createWebSurfaceId } from "../../../../shared/web-surface";
 const issuedScopes = new WeakSet<object>();
 const throttleLeases = new WeakMap<WebContents, { count: number; previous: boolean }>();
 
+export type WorkPanelContainerContent = "web" | "html-file";
+
+type WorkPanelContainerLike = {
+  url: string;
+  surfaceRole?: string;
+  ownerChatId?: string;
+  tabs?: Array<{ webContentsId: number }>;
+};
+
+/**
+ * A WorkPanel page is controllable when it is an HTTP(S) webpage, or the
+ * single guest of this Chat's HTML file preview verified by its session.
+ * Every other local URL stays outside page automation.
+ */
+export function workPanelContainerContent(registry: Pick<BrowserSurfaceRegistry, "isWorkPanelHtmlPreview">, container: WorkPanelContainerLike): WorkPanelContainerContent | null {
+  if (container.surfaceRole !== "workpanel-web") return null;
+  if (/^https?:/u.test(container.url)) return "web";
+  const tabs = container.tabs ?? [];
+  return tabs.length === 1 && registry.isWorkPanelHtmlPreview(tabs[0].webContentsId, container.ownerChatId) ? "html-file" : null;
+}
+
 function scopeError(message: string) {
   return Object.assign(new Error(message), { code: "site_control_unavailable" });
 }
@@ -46,6 +67,7 @@ class SiteControlScope {
     private readonly kind: "website" | "webapp" | "chat-work-panel",
     private readonly initialGuestId: number,
     private readonly ownerChatId?: string,
+    readonly workPanelContent?: WorkPanelContainerContent,
   ) {
     issuedScopes.add(this);
     this.unsubscribe = registry.subscribeLifecycle((event) => {
@@ -92,8 +114,10 @@ class SiteControlScope {
     const tabs = snapshot?.tabs.filter((tab) => !this.failedGuests.has(tab.webContentsId)) ?? [];
     if (!snapshot || snapshot.registered.surfaceKind !== this.kind || !tabs.length ||
       (this.kind === "chat-work-panel" && (snapshot.registered.ownerChatId !== this.ownerChatId ||
-        tabs.some((tab) => !/^https?:/u.test(tab.currentUrl) ||
-          !/^https?:/u.test(this.registry.findWebContentsById(tab.webContentsId)?.getURL() || "")))) ||
+        tabs.some((tab) => this.workPanelContent === "html-file"
+          ? !this.registry.isWorkPanelHtmlPreview(tab.webContentsId, this.ownerChatId)
+          : !/^https?:/u.test(tab.currentUrl) ||
+            !/^https?:/u.test(this.registry.findWebContentsById(tab.webContentsId)?.getURL() || "")))) ||
       (this.kind !== "website" && (tabs.length !== 1 || tabs[0].webContentsId !== this.initialGuestId))) {
       this.release("The application page instance was closed or replaced.");
       throw scopeError(this.revoked);
@@ -171,13 +195,14 @@ export function captureCopilotSiteControlScope(registry: BrowserSurfaceRegistry,
 /** Short-lived execution lease, issued only after owner Chat authorization. */
 export function acquireWorkPanelControlScope(registry: BrowserSurfaceRegistry, containerId: string, chatId: string) {
   const container = registry.listWorkPanelContainers().find((entry) => entry.id === containerId);
-  if (!container || container.ownerChatId !== chatId || container.surfaceRole !== "workpanel-web" || !/^https?:/u.test(container.url)) {
+  const content = container && workPanelContainerContent(registry, container);
+  if (!container || container.ownerChatId !== chatId || !content) {
     throw scopeError("The page does not belong to the calling Chat.");
   }
   const tab = container.tabs[0];
   const guest = tab && registry.resolveWebviewSurfaceTarget(tab.webContentsId);
   if (!guest) throw scopeError("The page is unavailable.");
-  const scope = new SiteControlScope(registry, container.id, container.targetGeneration || "", guest.ownerWebContentsId, "chat-work-panel", tab.webContentsId, chatId);
+  const scope = new SiteControlScope(registry, container.id, container.targetGeneration || "", guest.ownerWebContentsId, "chat-work-panel", tab.webContentsId, chatId, content);
   scope.activate();
   return scope;
 }
@@ -189,6 +214,13 @@ export function acquireWorkPanelAwcpScope(registry: BrowserSurfaceRegistry, surf
     /^https?:/u.test(entry.url) && entry.tabs.some((tab) =>
       /^https?:/u.test(tab.currentUrl) &&
       createWebSurfaceId(entry.id, entry.targetGeneration || "", tab.tabId) === surfaceId));
-  if (!container) throw scopeError("The webpage is unavailable or does not belong to the calling Chat.");
+  if (!container) {
+    const preview = registry.listWorkPanelContainers().find((entry) => entry.ownerChatId === chatId &&
+      entry.tabs.some((tab) => createWebSurfaceId(entry.id, entry.targetGeneration || "", tab.tabId) === surfaceId));
+    if (preview && workPanelContainerContent(registry, preview) === "html-file") {
+      throw Object.assign(new Error("An HTML file preview publishes no AWCP interface. Read and operate it with the surface tools."), { code: "capability_denied" });
+    }
+    throw scopeError("The webpage is unavailable or does not belong to the calling Chat.");
+  }
   return acquireWorkPanelControlScope(registry, container.id, chatId);
 }

@@ -34,6 +34,7 @@ import {
   type ServicesFacade
 } from "../../modules/services";
 import { configureMainWindowWebContents, SelectionExplainWindowController, type AppShellRuntime } from "../../modules/shell";
+import { workPanelDocumentHtmlRegistry, workPanelLocalFileRegistry } from "../../modules/work-panel";
 import {
   deriveTunnelHubRegistrationApiOrigin,
   getTunnelHubRuntimeStatus,
@@ -95,6 +96,9 @@ export function assembleWebSurfaceRuntime(dependencies: AssembleWebSurfaceRuntim
     reportRegistrationDiagnostic: (diagnostic) => {
       safeConsoleError("[surface-registration]", diagnostic);
     },
+    isWorkPanelHtmlPreviewGuest: (contents, ownerChatId) =>
+      workPanelLocalFileRegistry.isHtmlPreviewGuest(contents, ownerChatId) ||
+      workPanelDocumentHtmlRegistry.isHtmlPreviewGuest(contents, ownerChatId),
     navigateMainWindow: dependencies.navigateMainWindow,
     delay: dependencies.delay,
     t
