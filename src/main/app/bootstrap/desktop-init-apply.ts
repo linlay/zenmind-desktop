@@ -1,3 +1,4 @@
+import { writeTransitHubSettings } from "../../modules/settings";
 import { type App } from "electron";
 import {
   resolveDesktopInitPath,
@@ -75,6 +76,11 @@ export function applyDesktopInitBootstrap(
       updates: runBootstrapSection("updates", errors, () => {
         if (defaults.updates === undefined) return "absent";
         writeUpdateConfig(app, defaults.updates, platform);
+        return "applied";
+      }),
+      transitHub: runBootstrapSection("transitHub", errors, () => {
+        if (defaults.transitHub === undefined) return "absent";
+        writeTransitHubSettings(app, defaults.transitHub, platform);
         return "applied";
       }),
       profile: runBootstrapSection("profile", errors, () => applyProfileDefaults(app, defaults.profile, platform)),

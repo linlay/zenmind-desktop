@@ -58,6 +58,7 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
+  refreshUsageAccessToken?: (force: boolean) => Promise<string>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
   onEnterpriseImSettingsChanged?: (settings: EnterpriseImSettings) => void;
@@ -247,7 +248,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     getDesktopStateSnapshot(app, platform)
   );
   ipcMain.handle("settings.getUsageProfile", async () =>
-    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app)
+    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app, { platform: options.platform, getAccessToken: options.refreshUsageAccessToken })
   );
   ipcMain.handle("settings.getDesktopDeviceInfo", async () => getDesktopDeviceInfo(app));
   ipcMain.handle("settings.getGeneralSettings", async () =>

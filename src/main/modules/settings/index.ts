@@ -6,3 +6,5 @@ export { registerSettingsIpcHandlers } from "./ipc";
 export { registerAppearanceIpcHandlers, createDesktopAppearanceRuntime } from "./appearance-ipc";
 export { createSettingsRuntime } from "./runtime";
 export { createAppearanceRuntime, type AppearanceRuntime } from "./appearance-runtime";
+
+export { getTransitHubSettingsPath, normalizeTransitHubSettings, readTransitHubSettings, writeTransitHubSettings } from "./transit-hub-settings";

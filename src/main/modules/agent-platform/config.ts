@@ -12,19 +12,13 @@ type ProviderConfig = {
   key?: string;
   baseUrl?: string;
   apiKey?: string;
+  useAccessToken?: boolean;
   defaultModel?: string;
   protocols?: {
     OPENAI?: {
       endpointPath?: string;
     };
   };
-};
-
-type ModelConfig = {
-  key?: string;
-  provider?: string;
-  protocol?: string;
-  modelId?: string;
 };
 
 function readTextIfExists(filePath: string) {
@@ -64,15 +58,6 @@ function loadYamlFile<T>(filePath: string): T | null {
   return yaml.load(content) as T;
 }
 
-function joinURLPath(baseURL: string, endpointPath: string) {
-  return `${baseURL.replace(/\/+$/u, "")}/${endpointPath.replace(/^\/+/u, "")}`;
-}
-
-function endpointToBaseURL(baseURL: string, endpointPath: string) {
-  const endpoint = joinURLPath(baseURL, endpointPath || "/v1/chat/completions");
-  return endpoint.replace(/\/chat\/completions$/u, "");
-}
-
 const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
 const PROVIDER_API_KEY_CODE_PART = `${APP_BRAND.storageNamespace}:provider`;
 const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
@@ -87,17 +72,13 @@ export type AgentPlatformUsageProviderCandidate = {
   sourcePath: string;
 };
 
-function readAgentPlatformEnv(app: App) {
-  const envPath = path.join(getServiceConfigRoot(app, "agent-platform", "builtin"), ".env");
+function readAgentPlatformEnv(app: App, platform: NodeJS.Platform = process.platform) {
+  const envPath = path.join(getServiceConfigRoot(app, "agent-platform", "builtin", platform), ".env");
   const env = new Map<string, string>();
   for (const [key, value] of parseEnv(readTextIfExists(envPath))) {
     env.set(key, value);
   }
   return env;
-}
-
-function resolveRegistriesDirs(app: App, _env: Map<string, string>) {
-  return [path.join(resolveRuntimeRoot(app), "registries")];
 }
 
 function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string, string>) {
@@ -154,95 +135,24 @@ function looksLikePlaceholderProviderAPIKey(apiKey: string) {
   return /(?:your|example|demo|placeholder|replace[-_\s]*me|change[-_\s]*me|xxx)/iu.test(normalized);
 }
 
-function listProviderConfigFiles(registriesDir: string) {
-  const providerDir = path.join(registriesDir, "providers");
-  try {
-    return fs.readdirSync(providerDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.ya?ml$/iu.test(entry.name))
-      .map((entry) => path.join(providerDir, entry.name))
-      .sort((left, right) => left.localeCompare(right, "en-US"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-    throw error;
+export function readAgentPlatformUsageProvider(app: App, providerKey: string, platform: NodeJS.Platform = process.platform): AgentPlatformUsageProviderCandidate {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(providerKey)) throw new Error("Invalid Transit Hub providerKey.");
+  const providerDir = path.join(resolveRuntimeRoot(app, platform), "registries", "providers");
+  const paths = ["yml", "yaml"].map((ext) => path.join(providerDir, `${providerKey}.${ext}`)).filter((file) => fs.existsSync(file));
+  if (paths.length !== 1) throw new Error("Transit Hub provider is missing or ambiguous.");
+  const provider = loadYamlFile<ProviderConfig>(paths[0]);
+  if (!provider?.baseUrl || !provider.apiKey || provider.useAccessToken || (provider.key && provider.key !== providerKey)) {
+    throw new Error("Transit Hub provider must supply an API key and must not use access-token authentication.");
   }
-}
-
-function readModelId(modelDirs: string[], modelKey: string) {
-  if (!modelKey) {
-    return "";
-  }
-  const modelPath = modelDirs
-    .map((modelDir) => path.join(modelDir, `${modelKey}.yml`))
-    .find((candidate) => fs.existsSync(candidate));
-  if (!modelPath) {
-    return "";
-  }
-  return loadYamlFile<ModelConfig>(modelPath)?.modelId || "";
-}
-
-function usageProviderPriority(providerKey: string) {
-  if (providerKey === "openai") {
-    return 0;
-  }
-  if (providerKey === "minimax") {
-    return 1;
-  }
-  if (/transit|hub|^th[-_]/iu.test(providerKey)) {
-    return 2;
-  }
-  return 3;
-}
-
-export function listAgentPlatformUsageProviderCandidates(app: App): AgentPlatformUsageProviderCandidate[] {
-  const env = readAgentPlatformEnv(app);
-  const seenPaths = new Set<string>();
-  const candidates: AgentPlatformUsageProviderCandidate[] = [];
-  for (const registriesDir of resolveRegistriesDirs(app, env)) {
-    const modelDirs = [path.join(registriesDir, "models")];
-    for (const providerPath of listProviderConfigFiles(registriesDir)) {
-      if (seenPaths.has(providerPath)) {
-        continue;
-      }
-      seenPaths.add(providerPath);
-      const provider = loadYamlFile<ProviderConfig>(providerPath);
-      if (!provider?.baseUrl || !provider.apiKey) {
-        continue;
-      }
-      const fileKey = path.basename(providerPath).replace(/\.ya?ml$/iu, "");
-      const providerKey = provider.key?.trim() || fileKey;
-      const defaultModel = provider.defaultModel?.trim() || "";
-      const endpointPath = provider.protocols?.OPENAI?.endpointPath || "/v1/chat/completions";
-      const apiKey = resolveProviderAPIKey(providerKey, provider.apiKey, env);
-      if (looksLikePlaceholderProviderAPIKey(apiKey)) {
-        continue;
-      }
-      candidates.push({
-        providerKey,
-        providerName: providerKey,
-        baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
-        model: readModelId(modelDirs, defaultModel) || defaultModel,
-        apiKey,
-        sourcePath: providerPath
-      });
-    }
-  }
-  return candidates.sort((left, right) => {
-    const priorityDelta = usageProviderPriority(left.providerKey) - usageProviderPriority(right.providerKey);
-    if (priorityDelta !== 0) {
-      return priorityDelta;
-    }
-    return left.providerKey.localeCompare(right.providerKey, "en-US");
-  });
+  const apiKey = resolveProviderAPIKey(providerKey, provider.apiKey, readAgentPlatformEnv(app, platform));
+  if (looksLikePlaceholderProviderAPIKey(apiKey)) throw new Error("Transit Hub provider API key is not configured.");
+  return { providerKey, providerName: providerKey, baseURL: provider.baseUrl, model: provider.defaultModel || "", apiKey, sourcePath: paths[0] };
 }
 
 export const __testInternals = {
-  endpointToBaseURL,
   parseEnv,
   readAgentPlatformEnv,
-  resolveRegistriesDirs,
   resolveProviderAPIKey,
   looksLikePlaceholderProviderAPIKey,
-  listAgentPlatformUsageProviderCandidates
+  readAgentPlatformUsageProvider
 };

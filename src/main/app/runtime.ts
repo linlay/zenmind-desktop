@@ -803,6 +803,7 @@ export function createMainProcessRuntime() {
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
       registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+        get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
         promoteLocalDocumentDraft: input => localDocuments.promoteDraftChat(input),
