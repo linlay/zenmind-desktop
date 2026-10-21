@@ -3231,10 +3231,8 @@ export const enUSMessages = {
   "containerHub.httpError": "Container Hub {path} returned HTTP {status}",
   "containerHub.httpErrorWithMessage": "Container Hub {path} returned HTTP {status}: {message}",
 
-  "providerRegister.modeInvalid": "provider-register.json mode must be access-token or grant-jwt.",
-  "providerRegister.secureEndpointRequired": "Access token registration requires an HTTPS endpoint without URL credentials, query or fragment.",
+  "providerRegister.modeInvalid": "provider-register.json mode must be grant-jwt.",
   "providerRegister.loginRequired": "Sign in before starting model services.",
-  "providerRegister.identityChanged": "Login identity or provider registration changed; retry with the current account.",
   "providerRegister.loginAction": "Sign in",
   "providerRegister.invalidFormat": "{file} format is invalid: {message}",
   "providerRegister.endpointInvalid": "{file} endpoint is not a valid URL.",

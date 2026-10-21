@@ -1,5 +1,0 @@
-{
-  "mode": "access-token",
-  "endpoint": "https://transit-hub.example.com/api/bind-apikey",
-  "providers": ["th-deepseek", "th-minimax"]
-}

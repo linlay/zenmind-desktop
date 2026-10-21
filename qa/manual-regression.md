@@ -630,17 +630,15 @@
 - 使用带有效 IM 地址的普通环境，验证开关、登录连接、消息收发与关闭流程正常；既有配置不因导入缺少 IM 字段的新环境包而被隐式删除。
 
 
-## Provider 登记双模式
+## Provider 登记与登录身份直调
 
 - macOS 与 Windows 分别检查：无 provider-register.json 时不发送登记请求、不清除已有 Key。
 - 旧格式和显式 grant-jwt 均可申请，成功后按原有一次性策略清理；网络失败保留材料。
 - macOS / Windows 分别从已消费 Grant（登记文件已删除）的旧版本升级：新 env 包的 Provider Key 为空且包含新登记文件时，deploy 后应申请并写入 Key，再启动模型服务及提交版本。模拟申请断网，确认不提交版本，重试成功；模拟申请成功后其他核心服务失败，确认续跑仍能恢复登记输入，原始备份不被覆盖。同版本普通重启不重放 Grant。
 - 已完成版本因缺少登记文件而无法对话时，通过手工导入同版本 env 包并启动服务恢复；新包不含登记文件时不复用旧登记策略，也不额外清除已有 Key。
-- access-token 模式下未登录且 Provider 已有 Key：只清除选定 Key，Platform/WebClient 正常启动，界面和历史记录仍可用，其他 Provider 不变。
-- 登录完成后直接登记而不重启服务；请求仅带 canonical access token 和当前 device_id，选定 Provider 热更新后使用返回 Key，登记配置保留。
-- 同用户同设备重复启动返回同一 Key；退出再登录、切换账号期间不停止 Platform/WebClient，旧响应不能覆盖新账号凭据；已运行任务允许完成，新任务在热更新后不能使用已清除的 Key。
-- 启动前残留的 Agent Platform 进程保持运行，选定 Key 按当前登录状态更新；控制中心手动启动同样不设置登录门禁。非 access-token 模式退出登录不清除 Key，也不影响模型使用。
-- 401 最多刷新一次；403/409/429/5xx 和网络错误保留配置并记录脱敏失败，不降级使用 Grant 或旧账号 Key，也不因 access-token 登记失败停止或阻止服务启动。
+- 保留已退役 `"mode": "access-token"` 登记文件启动：不发送任何登记请求、不修改 Provider YAML，Platform/WebClient 正常启动，日志只有脱敏警告。
+- `useAccessToken: true` 的 Provider（如 th-main）：未登录时 Platform/WebClient 正常启动，对话报“需要登录”，不使用 YAML 中残留的 apiKey；登录后无需重启服务即可对话，OPENAI、OPENAI_RESPONSES、ANTHROPIC、TTS、图片与 embedding 请求均只带 `Authorization: Bearer <canonical access token>`，Transit Hub 后台计入对应员工。
+- 长任务跨越 token 续期（或手动触发续期）后，下一次模型请求使用新 token，不出现 401；退出登录后新的模型请求立即失败，已在途的单次请求允许结束。macOS 合盖睡眠、Windows 睡眠超过 token 有效期后唤醒，记录首次对话结果：Desktop 5 分钟续期周期内恢复可用即符合当前设计。
 - 登录弹窗显示时不被启动进度卡遮挡；取消登录后可以再次登录或打开控制中心。
 - macOS / Windows × 明 / 暗主题：登录弹窗与登录结果弹窗的关闭按钮使用统一关闭图标，图标居中，悬停颜色和皮肤一致；Tab 聚焦有清晰焦点轮廓，Enter / Space 可取消登录或关闭结果，窄窗口下不遮挡标题。
 - HTTPS、系统代理、请求超时和禁止重定向在两个平台分别验证。
@@ -1122,7 +1120,7 @@
 - 三条 lane 都有活动 Run 时登录、退出、切换官网账号，验证输出、stop/submit、旁聊及详细解释继续工作，不重复 query、不丢 observer。
 - 未登录官网时 WebApp 可发起前台/后台 Assistant、管理本机连接器和读取授权产物；官网状态变化不撤销其 grant。应用退出/重启、本地服务身份变化仍使旧授权失效。
 - 确认新 Chat 的 HTTP 资源、附件和 Run 控制均使用同一本地主体。旧版个人主体的持久 Run 控制记录仍按原所有权校验，不通过改写本地数据或冒用旧账号恢复。
-- Tunnel Hub、企业聊天、云看板、市场及显式 oneid-token 连接器保持自身登录联动；access-token Provider 模式退出后的 Key 清理和消费者停服门禁保持，不承诺该模式退出后模型继续可用。
+- Tunnel Hub、企业聊天、云看板、市场及显式 oneid-token 连接器保持自身登录联动；`useAccessToken` Provider 退出后不再可用，不承诺退出后模型继续可用。
 
 ### Chats 默认更新优先与手动排序
 
