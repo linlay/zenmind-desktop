@@ -44,14 +44,6 @@ export function ConnectorCustomDialog({ open, onClose, onSaved, onManage }: { op
     } catch (reason) { if (current()) setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if (pending.current === operation) { pending.current = null; if (current()) setBusy(false); } }
   };
-  const importZip = async () => {
-    const current = scope.current.capture();
-    if (!current() || pending.current) return;
-    const operation = Symbol(); pending.current = operation; setBusy(true); setError("");
-    try { await runConnectorDialogRequest(current, () => window.electronAPI.market.importConnector(), result => { if (!result.canceled) accept(result, false); }); }
-    catch (reason) { if (current()) setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { if (pending.current === operation) { pending.current = null; if (current()) setBusy(false); } }
-  };
   const field = (key: "id" | "name" | "url") => <label className="connector-token-field"><span>{t(`market.connector.customForm.${key}` as TranslationKey)}</span><Input value={basic[key]} disabled={busy} onChange={event => setBasic(previous => ({ ...previous, [key]: event.target.value }))} /></label>;
   return <Modal open={open} centered width={660} title={t("market.connector.customForm.title")} maskClosable={false} closable={!busy} onCancel={() => { if (!busy) onClose(); }} footer={null} destroyOnClose>
     <p>{t("market.connector.customForm.hint")}</p>
@@ -71,7 +63,7 @@ export function ConnectorCustomDialog({ open, onClose, onSaved, onManage }: { op
       </div> },
     ]} />
     {error && <Alert showIcon type="error" message={error.startsWith("market.") ? t(error as TranslationKey) : error} />}
-    <div className="connector-detail-actions"><Button disabled={busy} onClick={() => void importZip()}>{t("market.connector.customForm.importZip")}</Button><Button type="link" disabled={busy} onClick={() => { onClose(); onManage(); }}>{t("market.connector.customForm.manage")}</Button></div>
+    <div className="connector-detail-actions"><Button type="link" disabled={busy} onClick={() => { onClose(); onManage(); }}>{t("market.connector.customForm.manage")}</Button></div>
     <div className="connector-detail-actions"><Button disabled={busy} onClick={() => void save(false)}>{t("market.connector.customForm.save")}</Button><Button type="primary" loading={busy} onClick={() => void save(true)}>{t("market.connector.customForm.saveConnect")}</Button></div>
   </Modal>;
 }

@@ -276,7 +276,6 @@ export const enUSMessages = {
   "market.connector.customForm.title": "Custom connector",
   "market.connector.customForm.basic": "Remote MCP",
   "market.connector.customForm.advanced": "Advanced JSON",
-  "market.connector.customForm.importZip": "Import ZIP",
   "market.connector.customForm.name": "Name",
   "market.connector.customForm.id": "Connector ID",
   "market.connector.customForm.url": "MCP server URL",
