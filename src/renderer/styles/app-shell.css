@@ -3872,6 +3872,54 @@
   display: inline-block;
 }
 
+.desktop-global-search-history {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 8px;
+  font-size: 12px;
+}
+
+.desktop-global-search-history-label {
+  flex: none;
+  color: var(--ink-muted);
+}
+
+.desktop-global-search-history-tags {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.desktop-global-search-history-tag {
+  flex: none;
+  max-width: 160px;
+  padding: 2px 8px;
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.desktop-global-search-history-tag:hover,
+.desktop-global-search-history-tag:focus-visible {
+  background: var(--control-active-bg);
+  color: var(--ink);
+}
+
+.desktop-global-search-history-tag:focus-visible {
+  outline: 1px solid var(--ink-muted);
+  outline-offset: -2px;
+}
+
 .desktop-global-search-results {
   flex: 1 1 auto;
   min-height: 0;

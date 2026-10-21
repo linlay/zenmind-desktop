@@ -263,6 +263,28 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
             </kbd>
           ) : null}
         </div>
+        {queryHistoryRef.current.length > 0 ? (
+          <div className="desktop-global-search-history">
+            <span className="desktop-global-search-history-label">{props.t("desktop.globalSearch.history")}</span>
+            <div className="desktop-global-search-history-tags">
+              {queryHistoryRef.current.map((entry, index) => (
+                <button
+                  key={entry}
+                  type="button"
+                  className="desktop-global-search-history-tag"
+                  title={entry}
+                  onClick={() => {
+                    historyIndexRef.current = index;
+                    setQuery(entry);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {entry}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="desktop-global-search-results" role="listbox" aria-label={props.t("desktop.globalSearch.results")}>
           {sections.length > 0 ? sections.map((section) => (
             <div className="desktop-global-search-section" key={section.id}>

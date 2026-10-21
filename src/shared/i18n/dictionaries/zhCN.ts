@@ -4093,6 +4093,7 @@ export const zhCNMessages = {
   "desktop.globalSearch.placeholder": "搜索智能体、对话或运行命令",
   "desktop.globalSearch.shortcutHint": "打开 Desktop 综合搜索",
   "desktop.globalSearch.results": "搜索结果",
+  "desktop.globalSearch.history": "历史搜索",
   "desktop.globalSearch.searching": "正在搜索对话...",
   "desktop.globalSearch.empty.default": "暂无最近智能体或对话。",
   "desktop.globalSearch.empty.query": "没有匹配的动作、智能体或对话。",

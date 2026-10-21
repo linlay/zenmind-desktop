@@ -4093,6 +4093,7 @@ export const enUSMessages = {
   "desktop.globalSearch.placeholder": "Search agents, chats, or run commands",
   "desktop.globalSearch.shortcutHint": "Open Desktop Search",
   "desktop.globalSearch.results": "Search results",
+  "desktop.globalSearch.history": "Recent searches",
   "desktop.globalSearch.searching": "Searching chats...",
   "desktop.globalSearch.empty.default": "No recent agents or chats yet.",
   "desktop.globalSearch.empty.query": "No matching actions, agents, or chats.",
