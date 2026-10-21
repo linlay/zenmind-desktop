@@ -1764,3 +1764,30 @@ for (const platform of ['darwin', 'win32']) {
     assert.deepEqual(createWebsiteBridgeManager(storage).list().items, []);
   });
 }
+
+for (const platform of ["darwin", "win32"]) {
+  test(`speech profile survives initialization, upgrade and deploy command on ${platform}`, (t) => {
+    const { appendConfiguredServiceLifecycleArgs } = require("../dist-electron/main/modules/services/lifecycle-args.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-init-speech-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    const configPath = path.join(desktopRoot(homePath, platform), "config", "desktop", "service-lifecycle-args.json");
+    const service = { id: "agent-platform", kind: "builtin" };
+    const command = platform === "win32" ? ["deploy.ps1"] : ["deploy.sh"];
+    const defaults = (profile) => ({ services: { "agent-platform": { lifecycleArgs: {
+      deploy: ["--ai-speech-generate-model-key", profile]
+    } } } });
+    const assertProfile = (profile) => {
+      const expected = ["--ai-speech-generate-model-key", profile];
+      assert.deepEqual(readJson(configPath).services["agent-platform"].lifecycleArgs.deploy, expected);
+      assert.deepEqual(appendConfiguredServiceLifecycleArgs(app, service, command, "deploy", platform), [...command, ...expected]);
+      assert.deepEqual(appendConfiguredServiceLifecycleArgs(app, service, command, "start", platform), command);
+    };
+    writeDesktopInit(app, platform, defaults("th-minimax-speech-2_8-hd"));
+    assert.equal(applyDesktopInitBootstrap(app, platform).appliedResult.services, "applied");
+    assertProfile("th-minimax-speech-2_8-hd");
+    applyDesktopInitVersionUpgrade(app, defaults("qwen-flash"), path.join(root, "backup"), platform);
+    assertProfile("qwen-flash");
+  });
+}
