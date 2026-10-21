@@ -113,6 +113,7 @@ test("legacy config is reset in fixed order and Desktop-owned config is strictly
         lifecycleArgs: {
           deploy: [
             "--runtime-dir", "/old/runtime",
+            "--general-model-key", "general-current",
             "--coder-model-key", "coder-current",
             "--coder-reasoning-effort", "low",
             "--unknown", "old"
@@ -181,6 +182,7 @@ test("legacy config is reset in fixed order and Desktop-owned config is strictly
       "agent-platform": {
         lifecycleArgs: {
           deploy: [
+            "--general-model-key", "general-current",
             "--coder-model-key", "coder-current",
             "--coder-reasoning-effort", "LOW"
           ]

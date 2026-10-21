@@ -41,11 +41,13 @@ function attachment(state, ownerChatId = "chat-a", handleId = "attachment") {
   });
 }
 
-function host(state, { dirty = false, busy = false, confirm = true } = {}) {
+function host(state, { dirty = false, busy = false, confirm = true, launcherTab = false } = {}) {
   const stateRef = { current: state };
   const commands = [];
   const context = vm.createContext({
     stateRef,
+    selectedNewTabsRef: { current: launcherTab ? { "chat-a": { id: "new-tab", anchor: state.workspaces[0].activeItemId } } : {} },
+    closeNewTab: (ownerChatId, id) => commands.push({ type: "closeNewTab", ownerChatId, id }),
     rootRef: { current: { querySelector: (selector) =>
       (busy && selector.includes("busy")) || (dirty && selector.includes("dirty")) ? {} : null } },
     CSS: { escape: (value) => value },
@@ -259,4 +261,12 @@ test("real AppShell automatic window restoration does not promote an implicit pa
   assert.equal(deferred.pending.current.explicitlyOpened, false);
   deferred.commitPending();
   assert.deepEqual(deferred.state().explicitlyOpenedOwnerChatIds, []);
+});
+
+test("closing a launcher tab preserves the selected document and its dirty state", () => {
+  const opened = attachment(overview().nextState);
+  const harness = host(opened.nextState, { dirty: true, launcherTab: true });
+  assert.equal(harness.close(), true);
+  assert.deepEqual(harness.commands, [{ type: "closeNewTab", ownerChatId: "chat-a", id: "new-tab" }]);
+  assert.equal(harness.state(), opened.nextState);
 });

@@ -987,3 +987,41 @@ test("WorkPanel Web URL normalization adds HTTPS while still refusing credential
   assert.equal(normalizeWorkPanelWebUrl("example.test/path"), "https://example.test/path");
   assert.equal(normalizeWorkPanelWebUrl("https://user:secret@example.test"), "");
 });
+
+test("host new tabs keep identical web URLs independent while ordinary opens still deduplicate", () => {
+  const original = open(EMPTY_WORK_PANEL_STATE, "chat-duplicate", { kind: "web", url: "https://www.baidu.com/" });
+  const create = (state, webInstanceId) => reduceWorkPanelCommand(state, {
+    type: "openItem", ownerChatId: "chat-duplicate", webInstanceId,
+    descriptor: { kind: "web", url: "https://www.baidu.com/" },
+  });
+  const started = reduceWorkPanelCommand(original.nextState, {
+    type: "startReview", ownerChatId: "chat-duplicate", itemId: original.item.itemId, kind: "html",
+    source: { sourceKind: "web", fileName: "Baidu", revision: "https://www.baidu.com/", url: "https://www.baidu.com/" },
+  });
+  const annotated = reduceWorkPanelCommand(started.nextState, {
+    type: "addHtmlReviewAnnotation", ownerChatId: "chat-duplicate", itemId: original.item.itemId,
+    annotation: { id: "note-1", fullXPath: "/html/body/main", cssSelector: "main", tagName: "main",
+      textExcerpt: "Original", rect: { x: 10, y: 10, width: 100, height: 30 } },
+  });
+  assert.equal(annotated.ok, true);
+  const first = create(annotated.nextState, "launcher-a");
+  const second = create(first.nextState, "launcher-b");
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.notEqual(first.item.itemId, original.item.itemId);
+  assert.notEqual(second.item.itemId, first.item.itemId);
+  assert.equal(second.state.items.length, 3);
+  assert.deepEqual(second.nextState.review.sessionsByKey, annotated.nextState.review.sessionsByKey);
+  assert.equal(second.state.activeItemId, second.item.itemId);
+  const retried = create(second.nextState, "launcher-b");
+  assert.equal(retried.item.itemId, second.item.itemId);
+  assert.equal(retried.state.items.length, 3);
+  const ordinary = open(retried.nextState, "chat-duplicate", { kind: "web", url: "https://www.baidu.com/" });
+  assert.equal(ordinary.item.itemId, original.item.itemId);
+  assert.equal(ordinary.state.items.length, 3);
+  const closed = reduceWorkPanelCommand(ordinary.nextState, {
+    type: "closeItem", ownerChatId: "chat-duplicate", itemId: first.item.itemId,
+  });
+  assert.equal(closed.ok, true);
+  assert.deepEqual(closed.state.items.map(item => item.itemId), [original.item.itemId, second.item.itemId]);
+});

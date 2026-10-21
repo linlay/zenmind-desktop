@@ -801,6 +801,7 @@ const api: DesktopApi = {
       claim: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.claim", input),
       read: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.read", input),
       release: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.release", input),
+      reveal: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.reveal", input),
       openExternal: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.openExternal", input),
       ai: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.ai", input),
       cancelAi: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.cancelAi", input),

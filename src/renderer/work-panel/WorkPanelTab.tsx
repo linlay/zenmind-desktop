@@ -12,6 +12,7 @@ type WorkPanelTabProps = {
   onActivate: () => void;
   onClose?: () => void;
   closeLabel?: string;
+  closeShortcut?: string;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
   triggerRef?: Ref<HTMLButtonElement>;
@@ -23,11 +24,11 @@ type WorkPanelTabProps = {
 /** The common WorkPanel tab chrome; its owner retains activation and close state. */
 export function WorkPanelTab({
   title, tooltip, active, overview, loading, icon, badge, onActivate, onClose,
-  closeLabel, onContextMenu, onKeyDown, triggerRef, id, controls, tabIndex,
+  closeLabel, closeShortcut, onContextMenu, onKeyDown, triggerRef, id, controls, tabIndex,
 }: WorkPanelTabProps) {
   return (
     <div
-      className={`chat-work-panel-tab${active ? " is-active" : ""}${overview ? " is-overview" : ""}${onClose ? " has-close" : ""}`}
+      className={`chat-work-panel-tab${active ? " is-active" : ""}${overview ? " is-overview" : ""}${onClose ? " has-close" : ""}${badge ? " has-badge" : ""}`}
       role="presentation"
       onContextMenu={onContextMenu}
     >
@@ -55,6 +56,7 @@ export function WorkPanelTab({
           type="button"
           className="chat-work-panel-tab-close"
           aria-label={closeLabel}
+          title={closeShortcut ? `${closeLabel} (${closeShortcut})` : closeLabel}
           onClick={(event) => {
             event.stopPropagation();
             onClose();

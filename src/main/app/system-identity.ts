@@ -12,6 +12,7 @@ import {
   isDesktopDevelopmentRuntime,
   resolveEffectiveAppId
 } from "../infrastructure/electron/development-runtime";
+import { refreshMacSystemIntegration } from "../infrastructure/electron/mac-system-integration";
 
 export type SystemIdentityRuntimeOptions = {
   app: App;
@@ -48,6 +49,27 @@ export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
   applyPlatformAppInit(options.platform, options.app, effectiveAppId);
   const desktopAppInfo = resolveDesktopAppInfo(options.app);
   configureNativeAboutPanel(options.platform, options.app, desktopAppInfo);
+  let systemIntegrationPending = false;
+  let lastSystemIntegrationRefresh = -Infinity;
+
+  function refreshSystemIntegration() {
+    if (options.platform !== "darwin" || !options.app.isPackaged || effectiveAppId !== options.appId ||
+        systemIntegrationPending || Date.now() - lastSystemIntegrationRefresh < 60_000) return;
+    systemIntegrationPending = true;
+    lastSystemIntegrationRefresh = Date.now();
+    // Startup and later window activations reconcile versions asynchronously;
+    // LaunchServices/PlugInKit failures cannot block the shell or its services.
+    void Promise.resolve().then(() => refreshMacSystemIntegration({
+      platform: options.platform, isPackaged: options.app.isPackaged, bundleId: options.appId,
+      executablePath: options.app.getPath("exe"), homePath: options.app.getPath("home")
+    })).then(result => {
+      if (result.selectedPath) console.info("[system-integration] macOS registration refreshed", result);
+    }).catch(error => {
+      options.safeConsoleError("failed to refresh macOS file and sharing registrations", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }).finally(() => { systemIntegrationPending = false; });
+  }
 
   function getDarwinDockIconCandidatePaths() {
     const pathApi = pathApiForPlatform(options.platform);
@@ -114,6 +136,7 @@ export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
       return;
     }
 
+    refreshSystemIntegration();
     options.app.setActivationPolicy("regular");
     const dock = options.app.dock;
     if (!dock) {
