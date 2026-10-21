@@ -149,6 +149,8 @@ export async function runDesktopServiceConfigUpgradePreparation(
         );
       }
 
+      options.validateDesktopConfigurationUpgrade?.(app, validated.desktopInit, process.platform);
+
       if (isDevelopmentApp) {
         validated = await stageValidatedDesktopVersionUpgradeInput(
           validated,

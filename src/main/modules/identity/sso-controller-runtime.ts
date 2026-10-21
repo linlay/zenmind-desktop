@@ -421,7 +421,8 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     }) {
       const ssoSession = options.session.defaultSession;
       const userAgent = getDesktopSsoBrowserUserAgent(options.platform);
-      await ssoSession.setProxy({ proxyRules: "direct://" });
+      // Both macOS and Windows may require their system proxy/PAC to reach SSO.
+      await ssoSession.setProxy({ mode: "system" });
       return options.openBrowserUrl({
         ...input,
         url: input.resolveRedirect === false
@@ -446,7 +447,8 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
       const ssoSession = options.session.defaultSession;
       const userAgent = getDesktopSsoBrowserUserAgent(options.platform);
-      await ssoSession.setProxy({ proxyRules: "direct://" });
+      // The login guest shares the default session with ordinary websites.
+      await ssoSession.setProxy({ mode: "system" });
       const url = input.resolveRedirect === false
         ? rewriteDesktopSsoUrlOrigin(input.url, input.browserOrigin)
         : await resolveDesktopSsoNavigationUrl(ssoSession, input.url, userAgent, input.browserOrigin);

@@ -42,6 +42,11 @@ export type StartupPreparationOptions = {
   onModeResolved?: (mode: StartupRestoreMode) => void;
   onStarting?: (serviceId: ServiceId) => void;
   onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
+  validateDesktopConfigurationUpgrade?: (
+    app: App,
+    defaultsValue: unknown,
+    platform: NodeJS.Platform
+  ) => void;
   applyDesktopConfiguration?: (
     app: App,
     defaultsValue: unknown,

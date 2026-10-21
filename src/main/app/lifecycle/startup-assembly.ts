@@ -39,7 +39,8 @@ import { initializeMainI18n, setMainLocale, t } from "../../support/i18n/main-i1
 import { safeConsoleError } from "../../support/logging/safe-console";
 import {
   applyDesktopInitBootstrap,
-  applyDesktopInitVersionUpgrade
+  applyDesktopInitVersionUpgrade,
+  validateDesktopInitSsoEnvironmentUpgrade
 } from "../bootstrap/desktop-init";
 import { createStartupEnvironmentRuntime } from "../bootstrap/startup-environment";
 import { cleanupProgramDataForVersion } from "../lifecycle/program-data-cleanup";
@@ -120,6 +121,7 @@ export function assembleStartupPipeline(dependencies: AssembleStartupPipelineDep
     runServiceMutation: dependencies.servicesRuntime.runServiceMutation,
     runStartupPreparation: (targetApp, callbacks) => dependencies.servicesFacade.runStartupPreparation(targetApp, {
       ...callbacks,
+      validateDesktopConfigurationUpgrade: validateDesktopInitSsoEnvironmentUpgrade,
       applyDesktopConfiguration: applyDesktopInitVersionUpgrade
     }),
     t,

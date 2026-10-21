@@ -108,6 +108,8 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## Session 与页面隔离
 
+- macOS 与 Windows 的应用内登录沿用系统代理和 PAC，不强制直连，也不因登录改变网站的网络隔离边界。系统代理不能替代企业 DNS、VPN 或零信任访问；上游不可达时不得自动更换认证域名、绕过证书校验或发布未验证身份。
+- 内嵌登录页的主文档加载失败、超时或渲染进程退出必须显示可读错误和重试入口，不能留下空白弹窗。重试只重建同一登录尝试的页面，不签发新状态、不清理其他网站 Cookie；取消与认证终态继续由原有 SSO 流程管理。错误页面只展示安全错误类别与编号，不泄露完整导航 URL 或凭据。
 - 登录页面、Website 与普通 WorkPanel Web 使用 Electron 持久化默认 session，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
 - 浏览器 profile 在 Electron ready 前固定；登录、恢复、换票与退出必须等待 Cookie store 完成写入或删除，不能以 DOM Storage 刷盘替代 Cookie 持久化。Cookie 的上游有效期保持不变，不把会话 Cookie 擅自延长为持久 Cookie。
 - 品牌隔离由外层数据根承担。Chromium 状态归 Desktop state 层管理，SSO 不创建命名 partition，Cookie 直接保存在默认 session 的数据根。升级时仅在新 Chromium 根尚不存在的情况下，于任何 Session 打开前将旧 SSO 存储整体提升为默认 session，并保留其他命名 partition；已存在的新存储不被旧数据覆盖或合并。

@@ -1,0 +1,33 @@
+.desktop-sso-login-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.desktop-sso-login-surface > webview {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.desktop-sso-login-surface[data-load-state="failed"] > webview {
+  visibility: hidden;
+}
+
+.desktop-sso-login-surface-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--embedded-surface-frame-bg);
+}
+
+.desktop-sso-login-surface-loading {
+  display: grid;
+  place-content: center;
+  padding: 24px;
+  color: var(--ink-muted);
+  pointer-events: none;
+}

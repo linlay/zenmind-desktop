@@ -8,5 +8,8 @@ export { registerSsoIpcHandlers } from "./ipc";
 export { cancelDesktopSsoLogin, completeDesktopSsoCookieLogin, desktopSsoAccessTokenNeedsRefresh, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, getDesktopSsoAccessToken, getDesktopSsoStatus, isDesktopSsoCredentialRuntimeReady, isDesktopSsoLoginCompletionUrl, logoutDesktopSso, readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser, resolveDesktopSsoConfigPath, startDesktopSsoLogin } from "./oidc-sso";
 export { createDesktopSsoController } from "./sso-controller";
 export type { DesktopSsoRestoreResult } from "./sso-controller";
+export { buildOidcConfigFromRecord, parseDesktopSsoConfigContent } from "./sso-config";
+export { isConfigEnabled } from "./sso-config-values";
+export type { OidcConfig } from "./sso-model";
 
 export { subscribeDesktopSsoCredentialRevocation } from "./sso-state";

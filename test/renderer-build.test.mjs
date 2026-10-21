@@ -8372,14 +8372,21 @@ test("desktop pet visual states stay local to renderer priority", () => {
 
 test("desktop sso waits for a user click and keeps pending login recoverable", () => {
   const appShell = readAppShellSource();
+  const loginSurface = readSourceFile("src", "renderer", "identity", "DesktopSsoLoginSurface.tsx");
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const oidcSso = readSourceFile("src", "main", "modules", "identity", "oidc-sso.ts");
-  const ssoController = readSourceFile("src", "main", "modules", "identity", "sso-controller.ts");
+  const readSsoModule = (filename) => {
+    const source = readSourceFile("src", "main", "modules", "identity", filename);
+    const implementations = [...source.matchAll(/^export \* from "\.\/([^"]+)";/gmu)]
+      .map((match) => readSourceFile("src", "main", "modules", "identity", `${match[1]}.ts`));
+    return [source, ...implementations].join("\n");
+  };
+  const oidcSso = readSsoModule("oidc-sso.ts");
+  const ssoController = readSsoModule("sso-controller.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const globalStyles = readRendererStyles();
   const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
@@ -8410,15 +8417,19 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(ssoWebviewCompletionHandler, /SiteTokenBridge|siteTokenBridge|sso-site-token/u);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
-  assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
+  const ssoEffect = appShell.match(/useEffect\(\(\) => \{\s*let cancelled = false;\s*const ssoApi = getDesktopSsoApi\(\);[\s\S]*?disposeEmbeddedLoginOpen\(\);[\s\S]*?\}, \[\]\);/u)?.[0];
+  assert.ok(ssoEffect, "read the SSO startup/status effect rather than explicit click handlers");
+  assert.doesNotMatch(ssoEffect, /handleDesktopSsoLogin\(|ssoApi\.startLogin\(/u);
+  assert.match(appShell, /onLogin=\{\(\) => \{ void handleDesktopSsoLogin\(\); \}\}/u);
   assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);
   assert.match(appShell, /desktopSsoBusy=\{desktopSsoBusy\}/);
   assert.match(appShell, /onEmbeddedLoginOpen/);
   assert.match(appShell, /desktop-sso-login-modal/);
   assert.match(appShell, /role="dialog"/);
-  assert.match(appShell, /partition: desktopSsoLoginDialog\.partition/);
-  assert.match(appShell, /useragent: desktopSsoLoginDialog\.userAgent/);
-  assert.doesNotMatch(appShell, /desktop-sso-login-webview[\s\S]{0,220}allowpopups/);
+  assert.match(appShell, /<DesktopSsoLoginSurface[\s\S]*?request=\{desktopSsoLoginDialog\}/);
+  assert.match(loginSurface, /partition: request\.partition/);
+  assert.match(loginSurface, /useragent: request\.userAgent/);
+  assert.doesNotMatch(loginSurface, /allowpopups|preload:|nodeintegration|webpreferences:/);
   assert.match(appShell, /onDesktopSsoLogin=\{handleDesktopSsoLogin\}/);
   assert.match(appShell, /startLogin\(\)/);
   assert.match(appShell, /isCompleteDesktopSsoLogin\(status\)/);

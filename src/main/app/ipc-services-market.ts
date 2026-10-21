@@ -28,7 +28,7 @@ import {
   updateMarketItem
 } from "../modules/marketplace";
 import { ContainerHubClient } from "../modules/assistant";
-import { applyDesktopInitBootstrap, applyDesktopInitVersionUpgrade } from "./bootstrap/desktop-init";
+import { applyDesktopInitBootstrap, applyDesktopInitVersionUpgrade, validateDesktopInitSsoEnvironmentUpgrade } from "./bootstrap/desktop-init";
 import {
   generateBackupDirName,
   importEnvZipToRuntime,
@@ -144,6 +144,7 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     onStartupPreparationBlocked: options.onStartupPreparationBlocked,
     runStartupPreparation: (targetApp, callbacks) => services.runStartupPreparation(targetApp, {
       ...callbacks,
+      validateDesktopConfigurationUpgrade: validateDesktopInitSsoEnvironmentUpgrade,
       applyDesktopConfiguration: applyDesktopInitVersionUpgrade
     }),
     desktopVersion: options.desktopAppInfo.version,
