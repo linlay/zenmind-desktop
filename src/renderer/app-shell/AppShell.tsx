@@ -873,6 +873,25 @@ export function AppShell() {
     : null;
   const currentRoute = `${location.pathname}${location.search}`;
   const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
+  const previousShareRouteRef = useRef({ pathname: location.pathname, ...activeChatRouteInfo });
+  useLayoutEffect(() => {
+    const previous = previousShareRouteRef.current;
+    const next = {
+      pathname: location.pathname,
+      agentKey: activeChatRouteInfo.agentKey,
+      chatId: activeChatRouteInfo.chatId,
+    };
+    previousShareRouteRef.current = next;
+    // End the whole share session before painting a different main page.
+    if (conversationShareOverlay && (
+      previous.pathname !== next.pathname ||
+      previous.agentKey !== next.agentKey ||
+      previous.chatId !== next.chatId
+    )) {
+      shellOverlay.closeConversationShare(conversationShareOverlay);
+    }
+  }, [location.pathname, activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId,
+    conversationShareOverlay, shellOverlay.closeConversationShare]);
   const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId && !activeChatRouteInfo.chatId.startsWith("file-draft:")
     ? activeChatRouteInfo.chatId
     : null;

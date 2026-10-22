@@ -126,6 +126,9 @@ export function ConversationShareQrDialog({
               value={url}
               type="canvas"
               size={QR_CODE_SIZE}
+              // Keep the canvas and exported PNG readable on the white QR card in every theme.
+              color="#000"
+              bgColor="#fff"
               bordered={false}
               icon={__DESKTOP_BRAND_ICON_DATA_URL__}
               iconSize={QR_BRAND_ICON_SIZE}

@@ -95,20 +95,32 @@ function encodeClientFrame(opcode: number, payload: Buffer = Buffer.alloc(0)) {
 }
 
 export class TunnelHubWebSocketClient extends EventEmitter {
-  private buffer = Buffer.alloc(0);
+  private buffer: Buffer;
   private closed = false;
+  private receiveStarted = false;
+  private fragmentedMessage: { type: number; buffer: Buffer; length: number } | null = null;
 
-  constructor(private readonly socket: net.Socket) {
+  constructor(private readonly socket: net.Socket, initialData: Buffer = Buffer.alloc(0)) {
     super();
+    this.buffer = initialData;
+    socket.pause();
     socket.on("data", (chunk) => this.handleData(chunk));
     socket.on("close", () => this.handleClose());
     socket.on("end", () => this.handleClose());
-    socket.on("error", (error) => this.emit("error", error));
+    socket.on("error", (error) => {
+      this.clearReceivedData();
+      this.emit("error", error);
+    });
   }
 
-  pushInitialData(chunk: Buffer) {
-    if (chunk.byteLength > 0) {
-      this.handleData(chunk);
+  startReceiving() {
+    if (this.closed || this.receiveStarted) {
+      return;
+    }
+    this.receiveStarted = true;
+    this.handleData(Buffer.alloc(0));
+    if (!this.closed) {
+      this.socket.resume();
     }
   }
 
@@ -125,6 +137,7 @@ export class TunnelHubWebSocketClient extends EventEmitter {
       return;
     }
     this.closed = true;
+    this.clearReceivedData();
     const reasonBuffer = Buffer.from(reason, "utf8");
     const payload = Buffer.alloc(2 + reasonBuffer.byteLength);
     payload.writeUInt16BE(code, 0);
@@ -138,7 +151,13 @@ export class TunnelHubWebSocketClient extends EventEmitter {
 
   destroy() {
     this.closed = true;
+    this.clearReceivedData();
     this.socket.destroy();
+  }
+
+  private clearReceivedData() {
+    this.buffer = Buffer.alloc(0);
+    this.fragmentedMessage = null;
   }
 
   private writeFrame(opcode: number, payload: Buffer) {
@@ -152,74 +171,124 @@ export class TunnelHubWebSocketClient extends EventEmitter {
     if (this.closed) {
       return;
     }
-    this.buffer = Buffer.concat([this.buffer, chunk]);
+    if (chunk.byteLength > 0) {
+      this.buffer = this.buffer.byteLength === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
+    }
+    if (!this.receiveStarted) {
+      return;
+    }
     try {
       this.parseFrames();
     } catch (error) {
-      this.emit("error", error);
-      this.close(1002, "protocol error");
+      this.clearReceivedData();
+      try {
+        this.emit("error", error);
+      } finally {
+        this.close(1002, "protocol error");
+      }
     }
   }
 
   private parseFrames() {
-    let offset = 0;
-    while (offset + 2 <= this.buffer.byteLength) {
-      const first = this.buffer[offset];
-      const second = this.buffer[offset + 1];
+    while (!this.closed && this.buffer.byteLength >= 2) {
+      const first = this.buffer[0];
+      const second = this.buffer[1];
       const fin = (first & 0x80) !== 0;
       const opcode = first & 0x0f;
       const masked = (second & 0x80) !== 0;
       let payloadLength = second & 0x7f;
       let headerLength = 2;
-      if (!fin) {
-        throw new Error("fragmented websocket frames are not supported");
-      }
       if (payloadLength === 126) {
-        if (offset + 4 > this.buffer.byteLength) {
+        if (this.buffer.byteLength < 4) {
           break;
         }
-        payloadLength = this.buffer.readUInt16BE(offset + 2);
+        payloadLength = this.buffer.readUInt16BE(2);
         headerLength = 4;
       } else if (payloadLength === 127) {
-        if (offset + 10 > this.buffer.byteLength) {
+        if (this.buffer.byteLength < 10) {
           break;
         }
-        const longLength = this.buffer.readBigUInt64BE(offset + 2);
+        const longLength = this.buffer.readBigUInt64BE(2);
         if (longLength > BigInt(MAX_WEBSOCKET_FRAME_BYTES)) {
           throw new Error(`websocket frame too large: ${longLength.toString()}`);
         }
         payloadLength = Number(longLength);
         headerLength = 10;
       }
+      if (opcode === 0x8 || opcode === 0x9 || opcode === 0xA) {
+        if (!fin || payloadLength > 125) {
+          throw new Error("invalid websocket control frame");
+        }
+      } else if (opcode === 0x0) {
+        if (!this.fragmentedMessage) {
+          throw new Error("unexpected websocket continuation frame");
+        }
+        if (this.fragmentedMessage.length + payloadLength > MAX_WEBSOCKET_FRAME_BYTES) {
+          throw new Error("websocket message too large");
+        }
+      } else if (opcode === 0x1 || opcode === 0x2) {
+        if (this.fragmentedMessage) {
+          throw new Error("interleaved websocket data messages");
+        }
+      } else {
+        throw new Error(`unsupported websocket opcode: ${opcode}`);
+      }
       const maskLength = masked ? 4 : 0;
       const frameLength = headerLength + maskLength + payloadLength;
-      if (offset + frameLength > this.buffer.byteLength) {
+      if (frameLength > this.buffer.byteLength) {
         break;
       }
-      let payload = this.buffer.subarray(offset + headerLength + maskLength, offset + frameLength);
-      if (payloadLength > MAX_WEBSOCKET_FRAME_BYTES) {
-        throw new Error(`websocket frame too large: ${payloadLength}`);
-      }
+      let payload = this.buffer.subarray(headerLength + maskLength, frameLength);
       if (masked) {
-        const mask = this.buffer.subarray(offset + headerLength, offset + headerLength + 4);
+        const mask = this.buffer.subarray(headerLength, headerLength + 4);
         payload = Buffer.from(payload);
         for (let index = 0; index < payload.byteLength; index += 1) {
           payload[index] ^= mask[index % 4];
         }
       }
-      this.handleFrame(opcode, payload);
-      offset += frameLength;
+      this.buffer = frameLength === this.buffer.byteLength ? Buffer.alloc(0) : this.buffer.subarray(frameLength);
+      this.handleFrame(opcode, payload, fin);
     }
-    this.buffer = this.buffer.subarray(offset);
   }
 
-  private handleFrame(opcode: number, payload: Buffer) {
+  private appendFragment(payload: Buffer) {
+    const message = this.fragmentedMessage!;
+    const length = message.length + payload.byteLength;
+    if (length > message.buffer.byteLength) {
+      const capacity = Math.min(MAX_WEBSOCKET_FRAME_BYTES, Math.max(length, message.buffer.byteLength * 2));
+      const buffer = Buffer.allocUnsafe(capacity);
+      message.buffer.copy(buffer, 0, 0, message.length);
+      message.buffer = buffer;
+    }
+    payload.copy(message.buffer, message.length);
+    message.length = length;
+  }
+
+  private handleFrame(opcode: number, payload: Buffer, fin: boolean) {
     if (opcode === 0x1 || opcode === 0x2) {
-      this.emit("message", { type: opcode, payload } satisfies TunnelHubWebSocketMessage);
+      if (fin) {
+        this.emit("message", { type: opcode, payload } satisfies TunnelHubWebSocketMessage);
+      } else {
+        this.fragmentedMessage = { type: opcode, buffer: Buffer.alloc(0), length: 0 };
+        this.appendFragment(payload);
+      }
+      return;
+    }
+    if (opcode === 0x0) {
+      this.appendFragment(payload);
+      if (fin) {
+        const message = this.fragmentedMessage!;
+        this.fragmentedMessage = null;
+        this.emit("message", {
+          type: message.type,
+          payload: message.buffer.subarray(0, message.length)
+        } satisfies TunnelHubWebSocketMessage);
+      }
       return;
     }
     if (opcode === 0x8) {
       this.closed = true;
+      this.clearReceivedData();
       this.socket.end();
       this.emit("close");
       return;
@@ -231,7 +300,6 @@ export class TunnelHubWebSocketClient extends EventEmitter {
     if (opcode === 0xA) {
       return;
     }
-    throw new Error(`unsupported websocket opcode: ${opcode}`);
   }
 
   private handleClose() {
@@ -239,6 +307,7 @@ export class TunnelHubWebSocketClient extends EventEmitter {
       return;
     }
     this.closed = true;
+    this.clearReceivedData();
     this.emit("close");
   }
 }
@@ -279,12 +348,14 @@ export function connectTunnelHubWebSocket(
         return;
       }
       settled = true;
+      cleanup();
       socket.destroy();
       reject(error);
     };
     const timer = setTimeout(() => fail(new Error("websocket handshake timed out")), timeoutMs);
     const cleanup = () => {
       clearTimeout(timer);
+      socket.off("connect", handleConnect);
       socket.off("data", handleData);
       socket.off("error", handleError);
       socket.off("close", handleClose);
@@ -311,13 +382,12 @@ export function connectTunnelHubWebSocket(
       }
       settled = true;
       cleanup();
-      const client = new TunnelHubWebSocketClient(socket);
-      client.pushInitialData(remaining);
-      resolve(client);
+      resolve(new TunnelHubWebSocketClient(socket, remaining));
     };
-    socket.once("connect", () => {
+    const handleConnect = () => {
       socket.write(request);
-    });
+    };
+    socket.once("connect", handleConnect);
     socket.on("data", handleData);
     socket.on("error", handleError);
     socket.on("close", handleClose);

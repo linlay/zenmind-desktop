@@ -123,7 +123,7 @@ export interface WebsChangedEvent {
   changedAt: string;
   phase?: "changed" | "disposing";
   webappId?: string;
-  reason?: DesktopWebappChangedReason;
+  reason?: DesktopWebappChangedReason | "tunnel-status-changed";
 }
 
 export type WebsChangedListener = (event: WebsChangedEvent) => void;

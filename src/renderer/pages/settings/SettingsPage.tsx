@@ -8,6 +8,7 @@ import { SettingsActionButton } from "./SettingsActionButton";
 import { DesktopActionConfirmationSettingsDialog } from "./DesktopActionConfirmationSettingsDialog";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
+import { getWebappPublishPresentation, useWebappPublishStatus } from "./useWebappPublishStatus";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
@@ -28,7 +29,6 @@ import type {
   WebappLogTarget,
   WebappOpenMode,
   WebappAuthMode,
-  WebappPublishInfo,
   WebappPublishState,
   WebappRuntimeCheckResult,
   WebappRuntimeState,
@@ -2484,7 +2484,6 @@ export function SettingsPage({
   });
   const [webappRuntimeSettingsTarget, setWebappRuntimeSettingsTarget] = useState<{ webappId?: string } | null>(null);
   const webappRuntimeSettingsRevisionRef = useRef(0);
-  const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
   const [webappDetailsOpen, setWebappDetailsOpen] = useState(false);
   const [webappLogTarget, setWebappLogTarget] = useState<WebappLogTarget>("main");
@@ -2556,6 +2555,12 @@ export function SettingsPage({
     () => webItems.filter(isWebappEntry),
     [webItems]
   );
+  const {
+    infoById: webappPublishInfoById,
+    refresh: refreshWebappPublishStatus,
+    accept: acceptWebappPublishStatus
+  } = useWebappPublishStatus(activeSection === "webapps", webappItems, onWebappPublishStateChange,
+    (message) => showSectionNotice("webapps", message, "error"));
   const selectedWebsite = selectedWebsiteId === WEBSITE_NEW_ID
     ? null
     : websiteItems.find((item) => item.id === selectedWebsiteId) ?? null;
@@ -2753,7 +2758,6 @@ export function SettingsPage({
     void refreshSelectedWebappStatus(selectedWebapp.id);
     void refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     void refreshSelectedWebappUserConfig(selectedWebapp.id);
-    void refreshWebappPublishStatus(selectedWebapp.id);
   }, [activeSection, selectedWebapp?.id]);
 
   useEffect(() => {
@@ -3666,20 +3670,6 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
 
-  async function refreshWebappPublishStatus(webappId = selectedWebapp?.id ?? "") {
-    const id = webappId.trim();
-    if (!id) {
-      return;
-    }
-    try {
-      const result = await window.electronAPI.webs.webapps.getPublishStatus(id);
-      setWebappPublishInfoById((current) => ({ ...current, [id]: result.info }));
-      onWebappPublishStateChange?.(id, result.state);
-    } catch (reason) {
-      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
-    }
-  }
-
   async function handlePublishWebapp(item: WebappEntry) {
     setWebappPublishPendingId(item.id);
     try {
@@ -3691,8 +3681,7 @@ export function SettingsPage({
         return;
       }
       const result = await window.electronAPI.webs.webapps.publish(item.id);
-      setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      onWebappPublishStateChange?.(item.id, result.state);
+      acceptWebappPublishStatus(item.id, result);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3705,8 +3694,7 @@ export function SettingsPage({
     setWebappPublishPendingId(item.id);
     try {
       const result = await window.electronAPI.webs.webapps.unpublish(item.id);
-      setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      onWebappPublishStateChange?.(item.id, result.state);
+      acceptWebappPublishStatus(item.id, result);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -4443,13 +4431,13 @@ export function SettingsPage({
   }
 
   function getWebappPublishStatusLabel(state: WebappPublishState | null | undefined) {
-    return state?.active
-      ? t("settings.webapps.publishStatusPublished")
-      : t("settings.webapps.publishStatusNotPublished");
+    return t(getWebappPublishPresentation(state, state ? webappPublishInfoById[state.id] : undefined,
+      state ? webappRuntimeById[state.id] : undefined).label);
   }
 
   function getWebappPublishStatusClass(state: WebappPublishState | null | undefined) {
-    return state?.active ? "running" : "idle";
+    return getWebappPublishPresentation(state, state ? webappPublishInfoById[state.id] : undefined,
+      state ? webappRuntimeById[state.id] : undefined).className;
   }
 
   function renderWebDetailRow(label: string, value: ReactNode) {
@@ -5291,7 +5279,7 @@ export function SettingsPage({
           : publishState?.status === "publishing"
             ? t("settings.webapps.publishing")
             : publishState?.status === "published"
-              ? t("settings.webapps.publishVerified")
+              ? publishStatusLabel
               : publishState?.status === "unpublished"
                 ? t("settings.webapps.publishStopped")
               : publishHint;

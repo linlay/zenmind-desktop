@@ -367,8 +367,8 @@ export async function syncPublishedWebappRoute(
   if (!previous?.active || runtime.status !== "running" || !runtime.webUrl) {
     return previous;
   }
+  if (!readRuntimeStatus(ports)?.connected) return null;
   try {
-    await ensureTunnelConnected(app, ports);
     const route = await registerTunnelRoute(app, item, runtime.webUrl, true, ports);
     const state = createState(item, {
       status: "published",

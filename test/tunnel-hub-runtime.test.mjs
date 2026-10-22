@@ -106,22 +106,37 @@ function websocketAccept(key) {
   return crypto.createHash("sha1").update(`${key}${WS_GUID}`).digest("base64");
 }
 
-function encodeServerWsFrame(opcode, payload) {
+function encodeServerWsFrame(opcode, payload, fin = true) {
   let header;
   if (payload.byteLength < 126) {
-    header = Buffer.from([0x80 | opcode, payload.byteLength]);
+    header = Buffer.from([0, payload.byteLength]);
   } else if (payload.byteLength <= 0xffff) {
     header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
     header[1] = 126;
     header.writeUInt16BE(payload.byteLength, 2);
   } else {
     header = Buffer.alloc(10);
-    header[0] = 0x80 | opcode;
     header[1] = 127;
     header.writeBigUInt64BE(BigInt(payload.byteLength), 2);
   }
+  header[0] = (fin ? 0x80 : 0) | opcode;
   return Buffer.concat([header, payload]);
+}
+
+function encodeServerWsMessage(opcode, payload, fragmented) {
+  if (!fragmented) return encodeServerWsFrame(opcode, payload);
+  const split = Math.floor(payload.byteLength / 2);
+  return Buffer.concat([
+    encodeServerWsFrame(opcode, payload.subarray(0, split), false),
+    encodeServerWsFrame(0x9, Buffer.from("fragment-ping")),
+    encodeServerWsFrame(0x0, payload.subarray(split))
+  ]);
+}
+
+function testTransport(name, scenario) {
+  for (const fragmented of [false, true]) {
+    test(`${name} (fragmented=${fragmented})`, t => scenario(t, fragmented));
+  }
 }
 
 function parseClientWsFrames(buffer) {
@@ -303,7 +318,7 @@ function createStreamReader() {
   };
 }
 
-function createFakeRelay(runScenario) {
+function createFakeRelay(runScenario, { fragmentMessages = false, coalesceOpen = false } = {}) {
   const streamId = 2;
   const streamReader = createStreamReader();
   let socket = null;
@@ -323,11 +338,14 @@ function createFakeRelay(runScenario) {
   });
 
   function sendWsBinary(payload) {
-    socket.write(encodeServerWsFrame(0x2, payload));
+    socket.write(encodeServerWsMessage(0x2, payload, fragmentMessages));
   }
 
   function sendWsText(value) {
-    socket.write(encodeServerWsFrame(0x1, Buffer.from(JSON.stringify(value), "utf8")));
+    socket.write(Buffer.concat([
+      encodeServerWsMessage(0x1, Buffer.from(JSON.stringify(value), "utf8"), fragmentMessages),
+      coalesceOpen ? encodeServerWsMessage(0x2, encodeTunnelFrame(FRAME_OPEN, streamId), fragmentMessages) : Buffer.alloc(0)
+    ]));
   }
 
   function sendWsPing(payload) {
@@ -355,7 +373,9 @@ function createFakeRelay(runScenario) {
   }
 
   function sendStreamData(payload) {
-    sendTunnelFrame(FRAME_DATA, streamId, payload);
+    for (let offset = 0; offset < payload.byteLength; offset += 1 << 20) {
+      sendTunnelFrame(FRAME_DATA, streamId, payload.subarray(offset, offset + (1 << 20)));
+    }
   }
 
   const server = http.createServer();
@@ -395,6 +415,9 @@ function createFakeRelay(runScenario) {
           continue;
         }
         if (frame.opcode === 0xa) {
+          if (frame.payload.toString() === "fragment-ping") {
+            continue;
+          }
           const waiter = pongWaiters.shift();
           if (waiter) {
             clearTimeout(waiter.timer);
@@ -434,7 +457,7 @@ function createFakeRelay(runScenario) {
     async start() {
       await upgraded;
       await tunnelOpened;
-      sendTunnelFrame(FRAME_OPEN, streamId);
+      if (!coalesceOpen) sendTunnelFrame(FRAME_OPEN, streamId);
       return runScenario({
         streamReader,
         readPong,
@@ -672,7 +695,7 @@ test("Tunnel Hub runtime reconnects tunnel when network signature changes", asyn
   await runtime.stop();
 });
 
-test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", async (t) => {
+testTransport("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", async (t, fragmented) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-protocol-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -730,7 +753,7 @@ test("Tunnel Client endpoint answers relay Ping and keeps ns=d stream usable", a
         return { desktopResponse, webappResponse: frame };
       }
     }
-  });
+  }, { fragmentMessages: fragmented, coalesceOpen: true });
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
@@ -980,7 +1003,7 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
   assert.equal(new URL(FakeAgentPlatformWebSocket.sockets[0].url).searchParams.get("token"), "platform-token");
 });
 
-test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream metadata and raw body", async (t) => {
+testTransport("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream metadata and raw body", async (t, fragmented) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-http-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -995,7 +1018,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
         url: req.url,
         host: req.headers.host,
         forwardedHost: req.headers["x-forwarded-host"],
-        body: Buffer.concat(chunks).toString("utf8")
+        body: Buffer.concat(chunks)
       };
       res.writeHead(201, {
         "Content-Type": "text/plain",
@@ -1006,7 +1029,8 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
     });
   });
   const localAddress = await listen(local);
-  const requestBody = Buffer.from("hello world");
+  const requestBody = Buffer.alloc((1 << 20) + 97);
+  for (let i = 0; i < requestBody.length; i += 1) requestBody[i] = i % 256;
   const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
     sendStreamData(encodeTunnelJson({
       v: 1,
@@ -1039,7 +1063,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
     const head = await streamReader.readJson();
     const body = await streamReader.readRaw(head.data.bodyLength);
     return { head, body: body.toString("utf8") };
-  });
+  }, { fragmentMessages: fragmented, coalesceOpen: true });
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
@@ -1074,7 +1098,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
     url: "/app/api/foo?x=1",
     host: "demo-wa.zenmind.cc",
     forwardedHost: "demo-wa.zenmind.cc",
-    body: "hello world"
+    body: requestBody
   });
 });
 
@@ -1208,7 +1232,7 @@ test("Tunnel Client endpoint rejects unauthenticated mobile ns=wa streams", asyn
   assert.equal(response.msg, "mobile authToken is required");
 });
 
-test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body length", async (t) => {
+testTransport("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body length", async (t, fragmented) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-http-stream-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -1246,7 +1270,7 @@ test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body leng
     const head = await streamReader.readJson();
     const body = await streamReader.readUntilClosed();
     return { head, body: body.toString("utf8") };
-  });
+  }, { fragmentMessages: fragmented, coalesceOpen: true });
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
@@ -1274,7 +1298,7 @@ test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body leng
   assert.equal(response.body, "event: one\n\nevent: two\n\n");
 });
 
-test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", async (t) => {
+testTransport("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", async (t, fragmented) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-ws-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -1286,14 +1310,17 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
     socket.on("close", () => localSockets.delete(socket));
     capturedHost = String(req.headers.host ?? "");
     const key = String(req.headers["sec-websocket-key"] ?? "");
-    socket.write([
-      "HTTP/1.1 101 Switching Protocols",
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      `Sec-WebSocket-Accept: ${websocketAccept(key)}`,
-      "",
-      ""
-    ].join("\r\n"));
+    socket.write(Buffer.concat([
+      Buffer.from([
+        "HTTP/1.1 101 Switching Protocols",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        `Sec-WebSocket-Accept: ${websocketAccept(key)}`,
+        "",
+        ""
+      ].join("\r\n")),
+      encodeServerWsMessage(0x1, Buffer.from("welcome"), fragmented)
+    ]));
     let buffer = Buffer.alloc(0);
     socket.on("data", (chunk) => {
       buffer = Buffer.concat([buffer, chunk]);
@@ -1301,10 +1328,10 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
       buffer = parsed.rest;
       for (const frame of parsed.frames) {
         if (frame.opcode === 0x1) {
-          socket.write(encodeServerWsFrame(0x1, Buffer.from(`echo:${frame.payload.toString("utf8")}`)));
+          socket.write(encodeServerWsMessage(0x1, Buffer.from(`echo:${frame.payload.toString("utf8")}`), fragmented));
         }
         if (frame.opcode === 0x2) {
-          socket.write(encodeServerWsFrame(0x2, Buffer.concat([Buffer.from([9]), frame.payload])));
+          socket.write(encodeServerWsMessage(0x2, Buffer.concat([Buffer.from([9]), frame.payload]), fragmented));
         }
       }
     });
@@ -1345,12 +1372,15 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
     assert.equal(upgrade.id, "req_ws");
     assert.equal(upgrade.code, 0);
     assert.equal(upgrade.data.statusCode, 101);
+    const greeting = await streamReader.readWsFrame();
+    assert.equal(greeting.type, 1);
+    assert.equal(greeting.payload.toString(), "welcome");
     sendStreamData(encodeTunnelWsFrame(1, Buffer.from("hello")));
     const text = await streamReader.readWsFrame();
     sendStreamData(encodeTunnelWsFrame(2, Buffer.from([1, 2, 3])));
     const binary = await streamReader.readWsFrame();
     return { text, binary };
-  });
+  }, { fragmentMessages: fragmented, coalesceOpen: true });
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
@@ -1715,13 +1745,14 @@ async function credentialSyncFixture(t, options = {}) {
     app,
     canUseDesktopSsoCredentials: () => signedIn,
     readNetworkSignature: () => networkSignature,
+    onConnectionChanged: options.onConnectionChanged,
     desktopWsServerOptions: createDesktopWsServerOptions(app, {
       issueAccessToken: async () => {
         const issue = ++issues;
         if (issues > 1) await options.beforeRefresh?.();
         return { ok: true, token: `platform-${issue}` };
       },
-      verifyToken: async () => ({ subject: "local-user", deviceId: "local-identity-device", scope: "app", expiresAt: Date.now() + (issues === 1 ? 100_000 : 3_600_000) })
+      verifyToken: async () => ({ subject: "local-user", deviceId: "local-identity-device", scope: "app", expiresAt: Date.now() + (options.ttl ?? (issues === 1 ? 100_000 : 3_600_000)) })
     }),
     createTunnelClient: input => {
       const client = Object.assign(new EventEmitter(), {
@@ -1746,6 +1777,66 @@ async function credentialSyncFixture(t, options = {}) {
 }
 
 const flushPromises = () => new Promise(resolve => setImmediate(resolve));
+
+for (const ttl of [3_600_000, 2_147_483_647, 2_147_483_648, 365 * 86_400_000]) {
+  test(`credential lifetime ${ttl}ms waits until the real refresh deadline without overflowing timers`, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+    const delays = [];
+    const schedule = globalThis.setTimeout;
+    t.mock.method(globalThis, "setTimeout", (callback, delay, ...args) => {
+      delays.push(delay);
+      return schedule(callback, delay, ...args);
+    });
+    const refreshAt = Date.now() + ttl - 50_000;
+    const f = await credentialSyncFixture(t, { ttl });
+    while (Date.now() < refreshAt - 1) {
+      t.mock.timers.tick(Math.min(2_147_483_647, refreshAt - Date.now() - 1));
+      await flushPromises();
+      assert.equal(f.issues(), 1, "intermediate wakeups must not refresh early");
+      assert.equal(f.closes(), 0, "intermediate wakeups must not expire a valid credential");
+    }
+    t.mock.timers.tick(1);
+    await flushPromises();
+    assert.equal(f.issues(), 2);
+    assert.equal(f.connections(), 1);
+    assert.equal(f.closes(), 0);
+    assert.ok(delays.every(delay => delay >= 0 && delay <= 2_147_483_647));
+    await f.runtime.stop();
+    t.mock.timers.tick(2_147_483_647);
+    await flushPromises();
+    assert.equal(f.issues(), 2, "stopping cancels both long-lived timers");
+  });
+}
+
+test("native timers keep a 365-day credential connected without overflow warnings", async t => {
+  const warnings = [];
+  const onWarning = warning => warnings.push(warning);
+  process.on("warning", onWarning);
+  t.after(() => process.off("warning", onWarning));
+  const f = await credentialSyncFixture(t, { ttl: 365 * 86_400_000 });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(f.connections(), 1);
+  assert.equal(f.issues(), 1);
+  assert.equal(f.closes(), 0);
+  assert.equal(f.runtime.getStatus().connected, true);
+  assert.equal(warnings.filter(warning => warning.name === "TimeoutOverflowWarning").length, 0);
+});
+
+test("connection notifications only follow actual connected state transitions", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  let notifications = 0;
+  const f = await credentialSyncFixture(t, { onConnectionChanged: () => notifications++ });
+  assert.equal(notifications, 1);
+  f.clients[0].emit("close");
+  assert.equal(notifications, 2);
+  t.mock.timers.tick(f.runtime.getStatus().reconnectSeconds * 1000);
+  await flushPromises();
+  assert.equal(notifications, 3);
+  await f.runtime.stop();
+  assert.equal(notifications, 4);
+  await f.runtime.stop();
+  assert.equal(notifications, 4, "intermediate and repeated stopped phases do not notify");
+});
 
 test("Platform credential refresh updates only the live session without restarting a healthy tunnel", async t => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });

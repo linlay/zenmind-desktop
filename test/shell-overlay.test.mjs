@@ -33,9 +33,32 @@ function loadShellOverlayModule(react) {
   return mod.exports;
 }
 
-function createHookHarness() {
+function loadShareNavigation(react) {
+  const file = path.join(process.cwd(), "src/renderer/app-shell/AppShell.tsx");
+  const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const appShell = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "AppShell");
+  const statements = appShell.body.statements.filter((node) =>
+    (ts.isVariableStatement(node) && node.declarationList.declarations.some((item) => item.name.getText(source) === "previousShareRouteRef")) ||
+    (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression) &&
+      node.expression.expression.getText(source) === "useLayoutEffect" && node.getText(source).includes("previousShareRouteRef")),
+  );
+  assert.equal(statements.length, 2, "Exercise AppShell's actual navigation lifecycle");
+  const { outputText } = ts.transpileModule(statements.map((node) => node.getText(source)).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  });
+  const render = new Function("useRef", "useLayoutEffect", "location", "activeChatRouteInfo", "conversationShareOverlay", "shellOverlay", outputText);
+  return (route, shellOverlay) => render(
+    react.useRef, react.useLayoutEffect, route, route,
+    shellOverlay.activeOverlay?.kind === "conversationShare" ? shellOverlay.activeOverlay : null,
+    shellOverlay,
+  );
+}
+
+function createHookHarness({ navigation = false } = {}) {
   const slots = [];
+  const layoutEffects = [];
   let cursor = 0;
+  let currentRoute = { pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-1" };
   const react = {
     useReducer(reducer, initialState) {
       const index = cursor++;
@@ -60,13 +83,25 @@ function createHookHarness() {
     useEffect() {
       cursor += 1;
     },
+    useLayoutEffect(effect, deps) {
+      const index = cursor++;
+      const previous = slots[index];
+      if (previous && deps.every((value, offset) => Object.is(value, previous.deps[offset]))) return;
+      slots[index] = { deps };
+      layoutEffects.push(effect);
+    },
   };
   const module = loadShellOverlayModule(react);
+  const renderNavigation = navigation ? loadShareNavigation(react) : null;
   return {
     module,
-    render() {
+    render(route = currentRoute) {
+      currentRoute = route;
       cursor = 0;
-      return module.useShellOverlay();
+      const overlay = module.useShellOverlay();
+      renderNavigation?.(route, overlay);
+      for (const effect of layoutEffects.splice(0)) effect();
+      return overlay;
     },
   };
 }
@@ -191,4 +226,55 @@ test("bootstrap auto-open does not replace an active or pending overlay", async 
   refresh.resolve();
   await pendingOpen;
   assert.deepEqual(harness.render().activeOverlay, { kind: "globalSearch" });
+});
+
+test("main-page navigation ends the share session and returning does not restore it", () => {
+  for (const next of [
+    { pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-2" },
+    { pathname: "/agent/agent-2", agentKey: "agent-2", chatId: "chat-1" },
+    { pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "" },
+    { pathname: "/settings/tunnelHub", agentKey: "", chatId: "" },
+  ]) {
+    const harness = createHookHarness({ navigation: true });
+    const initial = { pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-1" };
+    harness.render(initial).openConversationShare("chat-1", "First");
+    assert.equal(harness.render().activeOverlay.kind, "conversationShare");
+    harness.render(next);
+    assert.equal(harness.render().activeOverlay, null);
+    harness.render(initial);
+    assert.equal(harness.render().activeOverlay, null);
+  }
+});
+
+test("sharing another chat and presentation-only navigation keep the share session", () => {
+  const harness = createHookHarness({ navigation: true });
+  harness.render().openConversationShare("chat-2", "Other chat");
+  const share = harness.render().activeOverlay;
+  harness.render({
+    pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-1",
+    search: "?theme=dark&chatId=chat-1&locale=en-US", key: "new-location-key",
+  });
+  assert.equal(harness.render().activeOverlay, share);
+});
+
+test("share navigation cleanup leaves other shell overlays alone", () => {
+  for (const open of [(overlay) => overlay.openGlobalSearch(), (overlay) => overlay.openToolMenuIfIdle()]) {
+    const harness = createHookHarness({ navigation: true });
+    open(harness.render());
+    const overlay = harness.render().activeOverlay;
+    harness.render({ pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-2" });
+    assert.equal(harness.render().activeOverlay, overlay);
+  }
+});
+
+test("a callback from the share closed by navigation cannot close a new share", () => {
+  const harness = createHookHarness({ navigation: true });
+  harness.render().openConversationShare("chat-1", "First");
+  const first = harness.render().activeOverlay;
+  harness.render({ pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-2" });
+  harness.render().openConversationShare("chat-2", "Second");
+  const second = harness.render().activeOverlay;
+  assert.ok(second.sessionId > first.sessionId);
+  harness.render().closeConversationShare(first);
+  assert.equal(harness.render().activeOverlay, second);
 });
