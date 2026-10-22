@@ -25,6 +25,7 @@ export type BootstrapApplyResult = {
   updates: BootstrapSectionResult;
   sso: BootstrapSectionResult;
   tunnelHub: BootstrapSectionResult;
+  transitHub: BootstrapSectionResult;
   webs: BootstrapSectionResult;
   websiteBridges: BootstrapSectionResult;
   assistant: BootstrapAssistantResult;

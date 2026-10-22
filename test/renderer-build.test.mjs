@@ -2688,7 +2688,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /<UserOutlined aria-hidden="true" \/>/);
   assert.doesNotMatch(settingsPage, /settings\.usage\.profile\.guestName|settings\.usage\.profile\.accountFallback|settings\.usage\.profile\.statusSignedOut/);
   assert.match(zhCN, /"settings\.usage\.profile\.guestMode":\s*"访客模式"/);
-  assert.match(zhCN, /"settings\.usage\.profile\.apiKeyContext":\s*"使用数据按当前接口密钥统计"/);
+  assert.match(zhCN, /"settings\.usage\.profile\.apiKeyContext":\s*"用量按已配置的计量身份统计"/);
   assert.match(enUS, /"settings\.usage\.profile\.guestMode":\s*"Guest mode"/);
   assert.match(enUS, /"settings\.usage\.profile\.statusUnavailable":\s*"Account status unavailable"/);
   assert.match(settingsStyles, /\.settings-page \.usage-profile-card\.is-signed-in\s*\{[\s\S]*?grid-template-columns:\s*48px minmax\(0, 1fr\) auto;/);
@@ -8550,7 +8550,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(globalStyles, /\.app-sso-status/);
 });
 
-test("usage settings condense signed-out account context without changing API-key usage", () => {
+test("usage settings preserve account context and explicitly label metering identity", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
@@ -8567,7 +8567,7 @@ test("usage settings condense signed-out account context without changing API-ke
   assert.match(settingsPage, /window\.electronAPI\.settings\.getUsageProfile\(\)/);
   assert.doesNotMatch(settingsPage, /settings\.usage\.profile\.guestName|settings\.usage\.profile\.accountFallback|settings\.usage\.profile\.statusSignedOut/);
   assert.match(zhCN, /"settings\.usage\.profile\.guestMode":\s*"访客模式"/);
-  assert.match(zhCN, /"settings\.usage\.profile\.apiKeyContext":\s*"使用数据按当前接口密钥统计"/);
+  assert.match(zhCN, /"settings\.usage\.profile\.apiKeyContext":\s*"用量按已配置的计量身份统计"/);
   assert.match(enUS, /"settings\.usage\.profile\.guestMode":\s*"Guest mode"/);
   assert.match(enUS, /"settings\.usage\.profile\.statusUnavailable":\s*"Account status unavailable"/);
   assert.match(settingsStyles, /\.settings-page \.usage-profile-card\s*\{[\s\S]*?grid-template-columns:\s*40px minmax\(0, 1fr\) auto;/);

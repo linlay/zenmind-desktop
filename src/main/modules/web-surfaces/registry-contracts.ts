@@ -52,6 +52,8 @@ export type BrowserSurfaceRegistryOptions = {
     }>;
   };
   getCurrentPageSnapshot(): DesktopPageContextSnapshot | null;
+  /** Verifies a WorkPanel guest is the live HTML file preview owned by this Chat. */
+  isWorkPanelHtmlPreviewGuest?(contents: WebContents, ownerChatId: string): boolean;
   reportRegistrationDiagnostic?: (diagnostic: SurfaceRegistrationDiagnostic) => void;
   registrationDiagnosticDedupWindowMs?: number;
 };

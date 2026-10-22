@@ -189,6 +189,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
   registerAppearanceIpcHandlers(ipcMain, { runtime: options.appearanceRuntime, app, platform: options.platform, getMainWindow: options.getMainWindow });
 
   registerSettingsIpcHandlers(ipcMain, {
+    refreshUsageAccessToken: (force) => options.refreshDesktopSsoIdentityToken(force),
     app,
     onNavigationPreferencesChanged: (preferences) => {
       const window = options.getMainWindow();

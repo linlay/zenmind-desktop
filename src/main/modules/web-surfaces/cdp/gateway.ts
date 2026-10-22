@@ -6,7 +6,12 @@ import { executeClick } from "./click";
 import { assertPageAutomationNotHeld, holdPageAutomation, withCdpCommandQueue } from "./command-queue";
 import type { DesktopClickParams } from "../../../../shared/desktop-click";
 import { validateDesktopCdpParams, DesktopCdpParamsError } from "./params";
-import { requireSiteControlScope, type SiteControlScope } from "./site-scope";
+import { requireSiteControlScope, type SiteControlScope, type WorkPanelContainerContent } from "./site-scope";
+import {
+  WORK_PANEL_HTML_FILE_CAPABILITIES,
+  WORK_PANEL_HTML_FILE_CDP_METHODS,
+  WORK_PANEL_WEB_CAPABILITIES,
+} from "../../../../shared/work-panel-surface";
 import { withSiteCdpFocus } from "./site-focus";
 import crypto from "node:crypto";
 import http from "node:http";
@@ -35,6 +40,8 @@ type EmbeddedCdpGatewayOptions = {
   openPage?: (container: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, url: string, scope?: SiteControlScope) => Promise<unknown>;
   closeTarget?: (surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope?: SiteControlScope) => Promise<unknown>;
   controlSiteFocus?: (surface: EmbeddedCdpContainer, tab: EmbeddedCdpSurfaceTab, scope: SiteControlScope, phase: "capture" | "restore" | "input") => Promise<unknown>;
+  /** Classifies a WorkPanel container; without it only HTTP(S) pages are controllable. */
+  classifyWorkPanelContainer?: (surface: EmbeddedCdpContainer) => WorkPanelContainerContent | null;
   version?: string;
   commandTimeoutMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
@@ -77,6 +84,10 @@ const DEFAULT_CDP_TIMEOUT_MS = 15_000;
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 export class EmbeddedCdpInvalidArgsError extends Error {
   readonly code = "invalid_args";
+}
+
+export class EmbeddedCdpCapabilityError extends Error {
+  readonly code = "capability_denied";
 }
 
 export class EmbeddedCdpTargetError extends Error {
@@ -158,6 +169,46 @@ function activeSurfaceTab(surface: EmbeddedCdpContainer) {
       : null;
   }
   return tabs[0] ?? null;
+}
+
+const VIEWPORT_MIN_PX = 120;
+const VIEWPORT_MAX_PX = 8192;
+
+/**
+ * Emulates a device viewport on the page's own guest without a debugger
+ * session, so the override survives individual commands. `reset: true`
+ * restores the panel size. The page stays the same surface.
+ */
+export function setWebContentsViewport(contents: Pick<WebContents, "enableDeviceEmulation" | "disableDeviceEmulation">, params: Record<string, unknown>) {
+  const keys = Object.keys(params);
+  if (params.reset === true) {
+    if (keys.length !== 1) throw new EmbeddedCdpInvalidArgsError("Surface.setViewport with reset accepts no other params.");
+    contents.disableDeviceEmulation();
+    return { reset: true };
+  }
+  if (keys.some((key) => !["width", "height", "deviceScaleFactor", "mobile"].includes(key))) {
+    throw new EmbeddedCdpInvalidArgsError("Surface.setViewport accepts width, height, deviceScaleFactor and mobile, or reset: true alone.");
+  }
+  const size = (value: unknown) => Number.isInteger(value) && (value as number) >= VIEWPORT_MIN_PX && (value as number) <= VIEWPORT_MAX_PX;
+  if (!size(params.width) || !size(params.height)) {
+    throw new EmbeddedCdpInvalidArgsError(`Surface.setViewport width and height must be integers from ${VIEWPORT_MIN_PX} to ${VIEWPORT_MAX_PX}.`);
+  }
+  const deviceScaleFactor = params.deviceScaleFactor ?? 1;
+  if (typeof deviceScaleFactor !== "number" || !Number.isFinite(deviceScaleFactor) || deviceScaleFactor < 0.5 || deviceScaleFactor > 4) {
+    throw new EmbeddedCdpInvalidArgsError("Surface.setViewport deviceScaleFactor must be a number from 0.5 to 4.");
+  }
+  const mobile = params.mobile === true;
+  const width = params.width as number;
+  const height = params.height as number;
+  contents.enableDeviceEmulation({
+    screenPosition: mobile ? "mobile" : "desktop",
+    screenSize: { width, height },
+    viewPosition: { x: 0, y: 0 },
+    deviceScaleFactor,
+    viewSize: { width, height },
+    scale: 1,
+  });
+  return { width, height, deviceScaleFactor, mobile };
 }
 
 function createWebSocketAccept(key: string) {
@@ -429,7 +480,9 @@ export class EmbeddedCdpGateway {
           })),
           surfaces: visible.flatMap((container) => surfaceTabs(container).map((tab) => {
             const id = createEmbeddedWebSurfaceId(container, tab);
-            return targetInfoDescriptor(container, tab, id, id === surfaceId);
+            const capabilities = container.surfaceKind === "chat-work-panel" && this.workPanelContent(container) === "html-file"
+              ? WORK_PANEL_HTML_FILE_CAPABILITIES : WORK_PANEL_WEB_CAPABILITIES;
+            return { ...targetInfoDescriptor(container, tab, id, id === surfaceId), capabilities: [...capabilities] };
           })),
           currentSurface: targetInfo,
           currentSurfaceId: surfaceId,
@@ -445,6 +498,10 @@ export class EmbeddedCdpGateway {
     }
     const { surface, tab, surfaceId } = await this.resolveCommandTarget(request, scope);
     validateDesktopCdpParams(method, request.params);
+    if (surface.surfaceKind === "chat-work-panel" && this.workPanelContent(surface) === "html-file" &&
+      !WORK_PANEL_HTML_FILE_CDP_METHODS.has(method)) {
+      throw new EmbeddedCdpCapabilityError(`${method} is unavailable for an HTML file preview. It cannot navigate, reach the network, use AWCP or saved logins.`);
+    }
     assertPageAutomationNotHeld(tab.webContentsId);
     const ownedScope = !scope && surface.surfaceKind === "chat-work-panel" && request.source?.chatId
       ? this.options.acquireWorkPanelScope?.(surface.id, request.source.chatId) : undefined;
@@ -670,6 +727,9 @@ export class EmbeddedCdpGateway {
     if (method === "Page.reload") {
       return this.reloadWebContents(target.surface, target.surfaceId, contents, params);
     }
+    if (method === "Surface.setViewport") {
+      return setWebContentsViewport(contents, params);
+    }
     const session = this.ensureDebuggerSession(connection, target.surfaceId, contents);
     return sendDesktopCdpCommand(session.debuggerRef, method, params, this.buildCommandDebugContext(target.surface, target.surfaceId, contents));
   }
@@ -698,6 +758,9 @@ export class EmbeddedCdpGateway {
     }
     if (method === "Page.reload") {
       return this.reloadWebContents(surface, surfaceId, contents, params);
+    }
+    if (method === "Surface.setViewport") {
+      return setWebContentsViewport(contents, params);
     }
     const debuggerRef = contents.debugger;
     const ownsAttach = !debuggerRef.isAttached();
@@ -881,9 +944,13 @@ export class EmbeddedCdpGateway {
     const chatId = request.source?.chatId?.trim();
     return containers.filter((container) => (!chatId && container === current) || (
       Boolean(chatId) && container.surfaceKind === "chat-work-panel" &&
-      container.surfaceRole === "workpanel-web" && container.ownerChatId === chatId &&
-      /^https?:/u.test(container.url)
+      container.ownerChatId === chatId && this.workPanelContent(container) !== null
     ));
+  }
+
+  private workPanelContent(container: EmbeddedCdpContainer): WorkPanelContainerContent | null {
+    if (this.options.classifyWorkPanelContainer) return this.options.classifyWorkPanelContainer(container);
+    return container.surfaceRole === "workpanel-web" && /^https?:/u.test(container.url) ? "web" : null;
   }
 
   private resolveCurrentSurface(surfaces: EmbeddedCdpContainer[]) {
@@ -931,7 +998,7 @@ export class EmbeddedCdpGateway {
       .find((target) => target.surfaceId === surfaceId) ?? null;
     if (matchingTarget?.surface.surfaceKind === "chat-work-panel") {
       if (requestedChatId && matchingTarget.surface.ownerChatId === requestedChatId &&
-          matchingTarget.surface.surfaceRole === "workpanel-web" && /^https?:/u.test(matchingTarget.surface.url)) {
+          this.workPanelContent(matchingTarget.surface) !== null) {
         return matchingTarget;
       }
       if (requestedChatId) {

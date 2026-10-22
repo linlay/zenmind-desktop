@@ -3,6 +3,7 @@ import { forwardRef, useImperativeHandle, useCallback, useEffect, useMemo, useRe
 import { Button, Input, Modal, Popover } from "antd";
 import { WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL, WORK_PANEL_DOCUMENT_HTML_REVIEW_EVENT, type WorkPanelDocumentHtmlSelection, type WorkPanelDocumentHtmlPreviewResult } from "../../shared/work-panel-document-html";
 import { WORK_PANEL_REVIEW_MAX_REQUIREMENT_CHARS } from "../../shared/work-panel-review";
+import { createChatChildSurfaceIdentity } from "../../shared/surface-identity";
 import { useI18n } from "../i18n/useI18n";
 
 
@@ -18,9 +19,18 @@ export type HtmlAnnotation = {
 
 type PendingHtmlAnnotation = Omit<HtmlAnnotation, "id" | "note">;
 
-export type HtmlDocumentController = { reload(): void; toggleReview(): void; isAnnotating(): boolean };
+export type HtmlDocumentController = {
+  reload(): void;
+  toggleReview(): void;
+  isAnnotating(): boolean;
+  /** The page's public surfaceId once its guest is registered for page automation. */
+  readSurfaceId(): Promise<string | null>;
+};
 type Props = {
   ownerChatId: string;
+  /** WorkPanel item stable key; the preview registers as this item's page surface. */
+  surfaceIdentityKey: string;
+  label: string;
   rendererGeneration: string;
   document: WorkPanelDocumentHtmlSelection;
   active: boolean;
@@ -29,7 +39,7 @@ type Props = {
 };
 
 export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(function WorkPanelDocumentHtml({
-  ownerChatId, rendererGeneration, document, active, preloadUrl, onHandoff,
+  ownerChatId, surfaceIdentityKey, label, rendererGeneration, document, active, preloadUrl, onHandoff,
 }, ref) {
   const { t } = useI18n();
   const [modal, modalContext] = Modal.useModal();
@@ -214,6 +224,68 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
     };
   }, [preview?.url, preloadUrl, pendingAnnotation, annotating, annotations, active, sendReview, t]);
 
+  // The preview is an ordinary WorkPanel page surface for the owning Chat. Main
+  // only grants automation after it verifies the guest is this Chat's preview.
+  const [surfaceRegistrationId] = useState(() => `work-panel-document-html-${globalThis.crypto.randomUUID()}`);
+  const surfaceIdentity = useMemo(
+    () => createChatChildSurfaceIdentity("workpanel-web", surfaceIdentityKey, ownerChatId),
+    [ownerChatId, surfaceIdentityKey],
+  );
+  useEffect(() => {
+    const guest = frameRef.current;
+    const embeddedCdp = window.electronAPI?.embeddedCdp;
+    const previewUrl = preview?.url;
+    if (!guest || !previewUrl || typeof embeddedCdp?.registerSurface !== "function") return;
+    const tabId = `document-html:${surfaceIdentityKey}`;
+    const sync = () => {
+      try {
+        const webContentsId = guest.getWebContentsId();
+        if (!Number.isSafeInteger(webContentsId) || webContentsId <= 0) return;
+        void embeddedCdp.registerSurface({
+          registrationId: surfaceRegistrationId,
+          ...surfaceIdentity,
+          surfaceIdentityKey,
+          surfaceKind: "chat-work-panel",
+          surfaceType: "chat-work-panel",
+          pageRoute: "",
+          ownerChatId,
+          label,
+          url: previewUrl,
+          active: false,
+          tabs: [{
+            tabId,
+            currentUrl: guest.getURL() || previewUrl,
+            title: guest.getTitle() || label,
+            webContentsId,
+            canGoBack: false,
+            canGoForward: false,
+            isLoading: guest.isLoading(),
+          }],
+          activeTabId: tabId,
+        }).catch(() => undefined);
+      } catch {
+        // The guest is not attached yet or is being replaced.
+      }
+    };
+    const events = ["dom-ready", "did-start-loading", "did-stop-loading"];
+    for (const eventName of events) guest.addEventListener(eventName, sync);
+    sync();
+    return () => {
+      for (const eventName of events) guest.removeEventListener(eventName, sync);
+      void embeddedCdp.unregisterSurface({ registrationId: surfaceRegistrationId, surfaceId: surfaceIdentity.surfaceId }).catch(() => undefined);
+    };
+  }, [label, ownerChatId, preview?.url, surfaceIdentity, surfaceIdentityKey, surfaceRegistrationId]);
+
+  const readSurfaceId = useCallback(async () => {
+    const embeddedCdp = window.electronAPI?.embeddedCdp;
+    if (typeof embeddedCdp?.getSurfaceTargetState !== "function") return null;
+    const state = await embeddedCdp.getSurfaceTargetState({
+      registrationId: surfaceRegistrationId,
+      surfaceId: surfaceIdentity.surfaceId,
+    }).catch(() => null);
+    return state?.ok ? state.targets?.[0]?.surfaceId ?? null : null;
+  }, [surfaceIdentity.surfaceId, surfaceRegistrationId]);
+
   const cancelPendingAnnotation = () => {
     setPendingAnnotation(null);
     setPendingNote("");
@@ -246,6 +318,7 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
     reload: refreshCurrentPreview,
     toggleReview: () => { if (!loading && !error) setAnnotating((current) => !current); },
     isAnnotating: () => annotating,
+    readSurfaceId,
   }));
 
   const annotationList = (

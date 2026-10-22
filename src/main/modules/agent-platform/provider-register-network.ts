@@ -19,10 +19,6 @@ export type ProviderRegisterFetch = (
   }
 ) => Promise<ProviderRegisterFetchResponse>;
 
-
-export class ProviderRegisterHttpError extends Error {
- constructor(public readonly status: number, message: string) { super(message); }
-}
 function redactSensitiveText(value: string) {
   return value
     .replace(/\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, "<redacted-jwt>")
@@ -67,7 +63,6 @@ export async function requestApiKey(input: {
   token: string;
   deviceId: string;
   fetchImpl: ProviderRegisterFetch;
-  bind?: boolean;
 }) {
   let response: ProviderRegisterFetchResponse;
   let responseText: string;
@@ -81,7 +76,7 @@ export async function requestApiKey(input: {
         Authorization: `Bearer ${input.token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ name: input.deviceId, ...(input.bind ? { device_id: input.deviceId } : {}) })
+      body: JSON.stringify({ name: input.deviceId })
     });
     responseText = await response.text();
   } catch (error) {
@@ -89,8 +84,8 @@ export async function requestApiKey(input: {
   }
 
   if (!response.ok) {
-    const suffix = input.bind ? "" : summarizeResponseBody(responseText.split(input.token).join("<redacted-token>"));
-    throw new ProviderRegisterHttpError(response.status,
+    const suffix = summarizeResponseBody(responseText.split(input.token).join("<redacted-token>"));
+    throw new Error(
       t("providerRegister.httpFailed", {
         status: response.status,
         statusText: response.statusText ? ` ${response.statusText}` : "",

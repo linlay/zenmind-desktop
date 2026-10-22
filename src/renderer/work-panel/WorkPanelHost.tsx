@@ -65,6 +65,13 @@ import {
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 import { useI18n } from "../i18n/useI18n";
 import { MAIN_CHAT_SURFACE_ID, createChatChildSurfaceIdentity } from "../../shared/surface-identity";
+import {
+  WORK_PANEL_HTML_FILE_CAPABILITIES,
+  WORK_PANEL_WEB_CAPABILITIES,
+  createWorkPanelItemSurfaceId,
+  workPanelItemCapabilities,
+  type WorkPanelSurfaceCapability,
+} from "../../shared/work-panel-surface";
 import { getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
 import {
   createAgentWebclientBtwPath,
@@ -370,6 +377,7 @@ export function WorkPanelHost({
   const webDialogTransfers = useRef(new Set<string>());
   const failedWebDialogTransfers = useRef(new Set<string>());
   const nativeHtmlControllers = useRef(new Map<string, HtmlDocumentController>());
+  const htmlFileControllers = useRef(new Map<string, ExternalWebviewController>());
   const [resourceReviewCapabilities, setResourceReviewCapabilities] = useState<Record<string, ResourceReviewCapability>>({});
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
   const [reviewHandoffBusyKeys, setReviewHandoffBusyKeys] = useState<Set<string>>(() => new Set());
@@ -1712,6 +1720,46 @@ export function WorkPanelHost({
     ].filter((key) => key in args);
     if (forbidden.length > 0) return actionError("invalid_request", `WorkPanel does not accept: ${forbidden.join(", ")}.`);
     const current = () => stateRef.current.workspaces.find((workspace) => workspace.ownerChatId === ownerChatId) ?? null;
+    // Every tab has one surfaceId for Agent tools. Webpages and HTML file
+    // previews use their live page surfaceId; other tabs only have an item
+    // identity that can be activated or closed. Main enforces page capabilities.
+    const describeItemSurface = async (ownerChatId: string, item: WorkPanelItem, waitMs: number): Promise<{
+      surfaceId: string | null;
+      capabilities: WorkPanelSurfaceCapability[];
+    }> => {
+      const key = itemRuntimeKey(ownerChatId, item.itemId);
+      const descriptor = item.descriptor;
+      const htmlFile = (descriptor.kind === "local-file" && descriptor.previewKind === "html") ||
+        (descriptor.kind === "native" && descriptor.surfaceKey === "document-html");
+      if (descriptor.kind !== "web" && !htmlFile) {
+        return { surfaceId: createWorkPanelItemSurfaceId(item.itemId), capabilities: workPanelItemCapabilities(item.closable) };
+      }
+      const readPageSurfaceId = async () => {
+        if (descriptor.kind === "native") return nativeHtmlControllers.current.get(key)?.readSurfaceId() ?? null;
+        const controller = (descriptor.kind === "web" ? webControllers : htmlFileControllers).current.get(key);
+        const page = controller ? await controller.getState().catch(() => null) : null;
+        return page?.tabs.find((tab) => tab.tabId === page.activeTabId)?.surfaceId ?? null;
+      };
+      const deadline = Date.now() + waitMs;
+      let surfaceId = await readPageSurfaceId().catch(() => null);
+      while (!surfaceId && Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        surfaceId = await readPageSurfaceId().catch(() => null);
+      }
+      const capabilities = descriptor.kind === "web" ? WORK_PANEL_WEB_CAPABILITIES : WORK_PANEL_HTML_FILE_CAPABILITIES;
+      return { surfaceId, capabilities: item.closable ? [...capabilities] : capabilities.filter((name) => name !== "close") };
+    };
+    const withItemSurfaces = async <T,>(response: T, waitForItemId = ""): Promise<T> => {
+      const record = response as { ok?: boolean; result?: { item?: WorkPanelItem; state?: { ownerChatId: string; items: WorkPanelItem[] } } };
+      const state = record?.ok ? record.result?.state : undefined;
+      if (!state || !Array.isArray(state.items) || state.items.length === 0) return response;
+      const items = await Promise.all(state.items.map(async (item) => ({
+        ...item,
+        ...await describeItemSurface(state.ownerChatId, item, item.itemId === waitForItemId ? 8_000 : 0),
+      })));
+      const item = record.result?.item && items.find((candidate) => candidate.itemId === record.result!.item!.itemId);
+      return { ...record, result: { ...record.result, state: { ...state, items }, ...(item ? { item } : {}) } } as T;
+    };
     const execute = (command: WorkPanelCommand) => {
       const result = dispatchCommand(command);
       // Dispatch has committed; React props may still contain the previous state.
@@ -1749,7 +1797,7 @@ export function WorkPanelHost({
     switch (request.action) {
       case "desktop.workpanel.getState": {
         const workspace = current();
-        return { ok: true, result: { ok: true, workspaceId: workspace?.workspaceId || "", state: workspace ?? undefined } };
+        return withItemSurfaces({ ok: true, result: { ok: true, workspaceId: workspace?.workspaceId || "", state: workspace ?? undefined } });
       }
       case "desktop.workpanel.openTab": {
         const descriptor = args.descriptor as { kind?: unknown } | undefined;
@@ -1852,7 +1900,10 @@ export function WorkPanelHost({
           if (controller) {
             const state = await controller.getState();
             const page = state.tabs.find((tab) => tab.tabId === state.activeTabId);
-            if (page) return { ok: true, result: { ...opened.result, containerId: state.containerId, surfaceId: page.surfaceId, status: page.isLoading ? "loading" : "ready" } };
+            if (page) {
+              const described = await withItemSurfaces(opened);
+              return { ok: true, result: { ...described.result, containerId: state.containerId, surfaceId: page.surfaceId, status: page.isLoading ? "loading" : "ready" } };
+            }
           }
           await new Promise((resolve) => window.setTimeout(resolve, 50));
         }
@@ -1916,7 +1967,7 @@ export function WorkPanelHost({
             }
           }
         }
-        return opened;
+        return withItemSurfaces(opened, file.previewKind === "html" ? opened.result.item?.itemId : "");
       }
       case "desktop.workpanel.refreshWeb": {
         const url = normalizeWorkPanelWebUrl(args.url);
@@ -2263,6 +2314,8 @@ export function WorkPanelHost({
                           active={active}
                           preloadUrl={reviewPreloadUrl.replace(/work-panel-preview\.js$/u, "document-html-review.js")}
                           ownerChatId={workspace.ownerChatId}
+                          surfaceIdentityKey={item.stableKey}
+                          label={item.title}
                           rendererGeneration={rendererGenerationRef.current}
                           document={item.descriptor.context as unknown as import("../../shared/work-panel-document-html").WorkPanelDocumentHtmlSelection}
                           onHandoff={(annotations) => handoffNativeHtmlReview(
@@ -2393,6 +2446,10 @@ export function WorkPanelHost({
                             const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
                             if (controller) webControllers.current.set(key, controller);
                             else webControllers.current.delete(key);
+                          } : item.descriptor.previewKind === "html" ? (controller) => {
+                            const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
+                            if (controller) htmlFileControllers.current.set(key, controller);
+                            else htmlFileControllers.current.delete(key);
                           } : undefined}
                           onCloseSurface={() => dispatchCommand({ type: "closeItem", ownerChatId: workspace.ownerChatId, itemId: item.itemId })}
                           chrome="browser"

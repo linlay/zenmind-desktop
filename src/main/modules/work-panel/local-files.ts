@@ -280,6 +280,18 @@ export class WorkPanelLocalFileRegistry {
     this.clearScheduled = options.clearScheduled ?? clearTimeout;
   }
 
+  /** True only for the live guest of this Chat's HTML preview: its session is the handle's own partition. */
+  isHtmlPreviewGuest(guest: WebContents, ownerChatId: string) {
+    if (!ownerChatId || guest.isDestroyed()) return false;
+    let url = "";
+    try { url = guest.getURL(); } catch { return false; }
+    if (!url.startsWith(`${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}://`)) return false;
+    for (const handle of this.handles.values()) {
+      if (handle.session === guest.session && handle.ownerChatId === ownerChatId && handle.previewKind === "html") return true;
+    }
+    return false;
+  }
+
   isReviewableUrl(value: string) {
     try {
       const parsed = new URL(value);

@@ -13,6 +13,7 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
   "Surface.goBack",
   "Surface.open",
   "Surface.close",
+  "Surface.setViewport",
   "Page.bringToFront",
   "Page.enable",
   "Page.navigate",

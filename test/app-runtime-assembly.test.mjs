@@ -12,14 +12,17 @@ function loadUnit(unit, mocks = {}) {
   return module.exports;
 }
 
-test("service assembly defers cyclic wiring reads and uses the current token refresher", async () => {
+test("service assembly defers cyclic wiring reads and delegates grant registration", async () => {
   const calls = [];
+  const registrations = [];
   const { assembleServicesIntegration } = loadUnit("assembly/services", {
     "../../modules/agent-platform": {
-      getProviderRegisterMode: () => "grant",
-      ensureProviderRegisterApiKey: async (_app, options) => options.refreshAccessToken()
+      ensureProviderRegisterApiKey: async (_app, options) => {
+        registrations.push([options.preparation, options.getDesktopDeviceId()]);
+        return { status: "skipped", reason: "missing" };
+      }
     },
-    "../../modules/identity": { isDesktopSsoCredentialRuntimeReady: () => true, getDesktopSsoAccessToken: () => "token" },
+    "../../modules/identity": { getDesktopDeviceId: () => "device-1" },
     "../../modules/plugins": { stopPluginResources: (_app, _service, manager) => calls.push(manager) }
   });
   // These getters deliberately reference declarations still in their temporal dead zone.
@@ -27,110 +30,60 @@ test("service assembly defers cyclic wiring reads and uses the current token ref
     issueAgentAccessToken: () => "local-token",
     get servicesFacade() { return services; },
     get websFacade() { return webs; },
-    get refreshDesktopSsoIdentityToken() { return refresh; },
     get startupRestoreController() { return restore; }
   });
   const services = {};
   let webs = { webappManager: "first" };
   const restore = {};
-  let refresh = async () => "first-token";
-  assert.equal(await ports.ensureProviderRegisterApiKey({}), "first-token");
+  assert.deepEqual(await ports.ensureProviderRegisterApiKey({}, true), { status: "skipped", reason: "missing" });
+  await ports.ensureProviderRegisterApiKey({});
+  assert.deepEqual(registrations, [[true, "device-1"], [undefined, "device-1"]]);
   await ports.stopPluginResources({}, {});
   webs = { webappManager: "replacement" };
-  refresh = async () => "renewed-token";
-  assert.equal(await ports.ensureProviderRegisterApiKey({}), "renewed-token");
   await ports.stopPluginResources({}, {});
   assert.deepEqual(calls, ["first", "replacement"]);
 });
 
-for (const mode of ["access-token", "grant-jwt", "disabled"]) {
-  test(`service registration preserves availability and mode boundaries (${mode})`, async () => {
-    const events = [];
-    let token = null;
-    let failure = false;
-    const { assembleServicesIntegration } = loadUnit("assembly/services", {
-      "../../modules/agent-platform": {
-        getProviderRegisterMode: () => mode,
-        clearAccessTokenProviderKeys: () => events.push("clear"),
-        ensureProviderRegisterApiKey: async (_app, options) => {
-          events.push(options.preparation ? "prepare" : "register");
-          if (failure) throw new Error("synthetic registration failure");
-          return { status: options.preparation ? "skipped" : "applied" };
-        }
-      },
-      "../../modules/identity": {
-        isDesktopSsoCredentialRuntimeReady: () => Boolean(token),
-        getDesktopSsoAccessToken: () => token
-      },
-      "../../support/logging/safe-console": { safeConsoleError: () => events.push("error") }
-    });
-    const ports = assembleServicesIntegration({
-      // Any attempted service stop or login gate access fails this test.
-      get servicesFacade() { assert.fail("Provider registration must not stop services"); },
-      get startupRestoreController() { assert.fail("Provider registration must not gate startup"); }
-    });
-    await ports.ensureProviderRegisterApiKey({}, true);
-    assert.deepEqual(events, ["prepare"]);
-    events.length = 0;
-    await ports.ensureProviderRegisterApiKey({});
-    assert.deepEqual(events, mode === "access-token" ? ["clear"] : ["register"]);
-    events.length = 0;
-    token = "current-access-token";
-    await ports.ensureProviderRegisterApiKey({});
-    assert.deepEqual(events, mode === "access-token" ? ["clear", "register"] : ["register"]);
-    events.length = 0;
-    failure = true;
-    token = "new-access-token";
-    if (mode === "access-token") {
-      assert.equal((await ports.ensureProviderRegisterApiKey({})).reason, "unavailable");
-      assert.deepEqual(events, ["clear", "register", "error"]);
-    } else {
-      await assert.rejects(ports.ensureProviderRegisterApiKey({}), /synthetic registration failure/);
-      assert.deepEqual(events, ["register"]);
+test("grant registration failures still propagate to the startup pipeline", async () => {
+  const { assembleServicesIntegration } = loadUnit("assembly/services", {
+    "../../modules/agent-platform": {
+      ensureProviderRegisterApiKey: async () => { throw new Error("synthetic registration failure"); }
     }
   });
-}
+  const ports = assembleServicesIntegration({
+    get servicesFacade() { assert.fail("Provider registration must not stop services"); },
+    get startupRestoreController() { assert.fail("Provider registration must not gate startup"); }
+  });
+  await assert.rejects(ports.ensureProviderRegisterApiKey({}), /synthetic registration failure/);
+});
 
-for (const platform of ["darwin", "win32"]) for (const mode of ["access-token", "grant-jwt", "disabled"]) {
-  test(`${platform}: SSO updates only selected Provider Keys without restarting services (${mode})`, async () => {
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: SSO changes never edit Provider Keys or restart services`, async () => {
     const events = [];
-    let pendingMutation = Promise.resolve();
     const { applyDesktopSsoRestoreResult } = loadUnit("assembly/identity", {
       electron: { app: {} },
-      "../../modules/agent-platform": {
-        getProviderRegisterMode: () => mode,
-        invalidateProviderRegistration: (_app, targetPlatform) => { assert.equal(targetPlatform, platform); events.push("invalidate"); },
-        clearAccessTokenProviderKeys: (_app, targetPlatform) => { assert.equal(targetPlatform, platform); events.push("clear"); }
-      },
+      "../../modules/agent-platform": new Proxy({}, { get: (_target, name) => assert.fail(`SSO must not call agent-platform.${String(name)}`) }),
       "../../modules/identity": { isDesktopSsoCredentialRuntimeReady: () => true },
-      "../../modules/services": { stopBrowserWebclient: async () => {} },
+      "../../modules/services": { stopBrowserWebclient: async () => events.push("stop-browser") },
       "../../modules/marketplace": { refreshMarketCatalog: async () => {} },
-      "../lifecycle/startup-phases": { isStartupPhaseAtLeast: () => true },
       "../../support/logging/safe-console": { safeConsoleError: () => events.push("error") }
     });
     const dependencies = {
       desktopSsoRestoreState: "authenticated",
-      appState: { startupPhase: "core-ready" },
-      startupPlatform: platform,
-      servicesRuntime: { runServiceMutation: fn => { pendingMutation = pendingMutation.then(fn); return pendingMutation; } },
-      servicesIntegrationPorts: { ensureProviderRegisterApiKey: async () => events.push("register") },
       ssoCredentialDependentRuntimesStarted: true,
       nonCoreDesktopRuntimeStarted: false,
       startSsoCredentialDependentRuntimes: () => { dependencies.ssoCredentialDependentRuntimesStarted = true; },
       enterpriseChatRuntime: { refresh: async () => {} },
+      get servicesRuntime() { assert.fail("SSO must not queue Provider mutations"); },
       get servicesFacade() { assert.fail("SSO must not stop Platform/WebClient"); },
       get startupPipeline() { assert.fail("SSO must not rerun service startup"); },
       get startupRestoreController() { assert.fail("SSO must not set a startup login gate"); }
     };
     applyDesktopSsoRestoreResult(dependencies, { state: "signed_out" });
-    // Invalidate immediately, before the queued write, then serialize the new binding behind it.
-    assert.deepEqual(events, mode === "access-token" ? ["invalidate"] : []);
+    assert.equal(dependencies.desktopSsoRestoreState, "signed_out");
     applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
-    await pendingMutation;
-    assert.deepEqual(events, mode === "access-token" ? ["invalidate", "clear", "register"] : []);
-    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
-    await pendingMutation;
-    assert.deepEqual(events, mode === "access-token" ? ["invalidate", "clear", "register"] : []);
+    assert.equal(dependencies.desktopSsoRestoreState, "authenticated");
+    assert.deepEqual(events, ["stop-browser"]);
   });
 }
 

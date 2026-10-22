@@ -92,6 +92,7 @@
 
 ## 主窗口外观基础
 
+- macOS / Windows 分别在默认皮肤、圆形和方形徽章皮肤的浅深色下收起“对话”“项目”栏目及具体项目：等待批准与未读数字徽章使用相同尺寸、形状、字号、内边距和缩放，仅以颜色区分；用 1/8、11/88 及多位计数检查同位数等宽、不同位数自然撑宽。窄侧栏不挤压单个徽章；展开具体项目后隐藏汇总徽章，切回默认皮肤无残留。
 - 设置所有页面的外观、普通设置卡片、用量、关于与更新、控制中心、插件及网站资源面板均应透出背景；浅色与深色分别检查皮肤、自定义照片和默认无图片状态。只降低面板背景的不透明度，正文和按钮不淡化；详情内的子分组不叠加同一层背景，输入框、代码编辑器及浮层仍保持各自的阅读表面。
 - macOS 的 Cmd+K / Windows 的 Ctrl+K 搜索浮层中，等待提交、等待审批等标签的背景和文字颜色跟随皮肤，与导航栏同类标签一致；分别检查浅色、深色和浮层打开时切换皮肤，切回默认皮肤后恢复原有配色，布局与快捷键保持正常。
 - Windows / macOS 分别在浅色、深色及图片皮肤下往返切换 Chat、Website 和 Kanban：侧栏整体底色保持一致，进入 Kanban 不新增白色衬底或遮罩；macOS 原生透明效果保持。
@@ -416,6 +417,7 @@
 - 在 macOS 与 Windows 的展开侧栏分别点击全局 Chats 和某个 Project 内的 Chat，确认焦点留在所点行；逐次按 `↑` / `↓` 时只在当前可见 Chat 列表内切换并同步选中态与页面，跳过分组标题、“查看更多”和“查看历史”，首尾不循环，长按不连续切换。按 `Enter` 后焦点进入 Main Chat WebView；键盘拖拽排序期间方向键只用于排序，不触发 Chat 导航。Cmd+K、历史弹窗和新建 Chat 仍在导航后聚焦 Main Chat。
 - macOS 与 Windows 分别在 Chats、Pinned 和 Project 内选择含 awaiting 的 Chat，不按 Enter，直接用主键盘或小键盘 `1–9` 选择选项，行为与 Chat 内相同；答题及多题翻页后焦点仍留在侧栏，`↑/↓` 可继续切换。覆盖快速 A→B 切换并立即按数字、页面加载中、无 awaiting、选项越界、提交中重复按键、提交失败重试和远端已回答：不得回答旧 Chat、重复提交或延迟补发。编辑输入框、打开弹窗、拖拽、组合键、输入法组合和长按均不触发；按 Enter 主动进入 Chat 后数字与方向键维持原有行为。
 
+- macOS Cmd+K / Windows Ctrl+K 分别输入不同关键词并关闭，再打开空搜索框按 ↑：按最近使用顺序回填历史关键词，继续 ↑ 到最早一项后不循环，↓ 返回较新记录并最终恢复空输入。重复关键词去重，空白不记录，历史仅保留当前窗口会话最近 50 项；手动修改关键词后退出历史翻查，上下键恢复结果选择，Enter 和鼠标仍正常打开结果。无历史时上下键保持原有结果选择；中文输入法选词时方向键与 Enter 不触发历史或导航。
 - 从已有 Chat 打开 Cmd+K，分别通过鼠标、Enter、macOS Option+数字与 Windows Alt+数字选择当前 Agent 和其他 Agent；确认每次都进入所选 Agent 的 `/agent/:agentKey?newChat=<13 位 nonce>`，现有 Cmd+K “New Chat” 仍选择当前或默认 Agent。Desktop route、Main Chat guest URL、WebClient Router 与 Registry ownerless identity 必须一致，`webContentsId` 保持不变；立即发送第一条消息时 `/api/query` 只到达 Platform 一次，并正常以 `chat.start/run.start` 将同一 generation 提升为 canonical `chatId`。快速连续选择多个 Agent 时只允许最后一个目标提交，Chat 搜索结果仍打开原 canonical Chat。
 - macOS `Cmd+K` / Windows `Ctrl+K` 未输入关键词时，等待、未读对话和最近对话保持单行；中文未读分组名称为“未读对话”。输入关键词后，仅对话搜索结果显示两行：第一行保留图标、标题、助理名称、状态与快捷键，第二行与标题左对齐显示 `lastRunContent`。运行状态只显示标题前的转圈图标，右侧不重复显示“运行中”；等待提交、等待审批等具体等待标签继续保留，读屏仍可识别运行状态。覆盖本地与仅远端命中的对话、命中较早 Run 的搜索、多行/长文本、空内容、浅深色与窄窗口；第二行合并换行、单行省略，空内容仍保留相同行高，选中背景覆盖整项。清空关键词后恢复单行，鼠标与键盘打开对话正常。
 - 准备一个不在 WebClient 当前列表缓存中的 unread Chat，分别从 Cmd+K、Sidebar 和桌宠打开。确认目标内容提交显示后只有 WebClient 经 Frame Port 发出一次单 Chat `/api/read`，Desktop 没有 `assistant.markChatRead` IPC、Sidebar fallback 或桌宠直写；Platform 的 `chat.read` 到达前 Sidebar 圆点保持，到达后全局 Chats、Project recentChats、activity 和 Agent 计数同时更新。让 read Push 在 Navigation 刷新旧快照期间到达，确认快照完成后仍为 read；再注入同 Run/旧 Run 的晚到 unread，确认被忽略，而更新 Run 的 unread 能恢复圆点。点击“全部标为已读”时确认 Desktop 只发送 Agent 级请求，UI 等待 `chat.read_all` Push，不做本地乐观清除。
@@ -630,17 +632,15 @@
 - 使用带有效 IM 地址的普通环境，验证开关、登录连接、消息收发与关闭流程正常；既有配置不因导入缺少 IM 字段的新环境包而被隐式删除。
 
 
-## Provider 登记双模式
+## Provider 登记与登录身份直调
 
 - macOS 与 Windows 分别检查：无 provider-register.json 时不发送登记请求、不清除已有 Key。
 - 旧格式和显式 grant-jwt 均可申请，成功后按原有一次性策略清理；网络失败保留材料。
 - macOS / Windows 分别从已消费 Grant（登记文件已删除）的旧版本升级：新 env 包的 Provider Key 为空且包含新登记文件时，deploy 后应申请并写入 Key，再启动模型服务及提交版本。模拟申请断网，确认不提交版本，重试成功；模拟申请成功后其他核心服务失败，确认续跑仍能恢复登记输入，原始备份不被覆盖。同版本普通重启不重放 Grant。
 - 已完成版本因缺少登记文件而无法对话时，通过手工导入同版本 env 包并启动服务恢复；新包不含登记文件时不复用旧登记策略，也不额外清除已有 Key。
-- access-token 模式下未登录且 Provider 已有 Key：只清除选定 Key，Platform/WebClient 正常启动，界面和历史记录仍可用，其他 Provider 不变。
-- 登录完成后直接登记而不重启服务；请求仅带 canonical access token 和当前 device_id，选定 Provider 热更新后使用返回 Key，登记配置保留。
-- 同用户同设备重复启动返回同一 Key；退出再登录、切换账号期间不停止 Platform/WebClient，旧响应不能覆盖新账号凭据；已运行任务允许完成，新任务在热更新后不能使用已清除的 Key。
-- 启动前残留的 Agent Platform 进程保持运行，选定 Key 按当前登录状态更新；控制中心手动启动同样不设置登录门禁。非 access-token 模式退出登录不清除 Key，也不影响模型使用。
-- 401 最多刷新一次；403/409/429/5xx 和网络错误保留配置并记录脱敏失败，不降级使用 Grant 或旧账号 Key，也不因 access-token 登记失败停止或阻止服务启动。
+- 保留已退役 `"mode": "access-token"` 登记文件启动：不发送任何登记请求、不修改 Provider YAML，Platform/WebClient 正常启动，日志只有脱敏警告。
+- `useAccessToken: true` 的 Provider（如 th-main）：未登录时 Platform/WebClient 正常启动，对话报“需要登录”，不使用 YAML 中残留的 apiKey；登录后无需重启服务即可对话，OPENAI、OPENAI_RESPONSES、ANTHROPIC、TTS、图片与 embedding 请求均只带 `Authorization: Bearer <canonical access token>`，Transit Hub 后台计入对应员工。
+- 长任务跨越 token 续期（或手动触发续期）后，下一次模型请求使用新 token，不出现 401；退出登录后新的模型请求立即失败，已在途的单次请求允许结束。macOS 合盖睡眠、Windows 睡眠超过 token 有效期后唤醒，记录首次对话结果：Desktop 5 分钟续期周期内恢复可用即符合当前设计。
 - 登录弹窗显示时不被启动进度卡遮挡；取消登录后可以再次登录或打开控制中心。
 - macOS / Windows × 明 / 暗主题：登录弹窗与登录结果弹窗的关闭按钮使用统一关闭图标，图标居中，悬停颜色和皮肤一致；Tab 聚焦有清晰焦点轮廓，Enter / Space 可取消登录或关闭结果，窄窗口下不遮挡标题。
 - HTTPS、系统代理、请求超时和禁止重定向在两个平台分别验证。
@@ -1122,7 +1122,7 @@
 - 三条 lane 都有活动 Run 时登录、退出、切换官网账号，验证输出、stop/submit、旁聊及详细解释继续工作，不重复 query、不丢 observer。
 - 未登录官网时 WebApp 可发起前台/后台 Assistant、管理本机连接器和读取授权产物；官网状态变化不撤销其 grant。应用退出/重启、本地服务身份变化仍使旧授权失效。
 - 确认新 Chat 的 HTTP 资源、附件和 Run 控制均使用同一本地主体。旧版个人主体的持久 Run 控制记录仍按原所有权校验，不通过改写本地数据或冒用旧账号恢复。
-- Tunnel Hub、企业聊天、云看板、市场及显式 oneid-token 连接器保持自身登录联动；access-token Provider 模式退出后的 Key 清理和消费者停服门禁保持，不承诺该模式退出后模型继续可用。
+- Tunnel Hub、企业聊天、云看板、市场及显式 oneid-token 连接器保持自身登录联动；`useAccessToken` Provider 退出后不再可用，不承诺退出后模型继续可用。
 
 ### Chats 默认更新优先与手动排序
 
@@ -1437,3 +1437,16 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 已有网页带批注时，在两个新标签分别输入相同网址回车，应得到三个独立网页标签，各自批注、导航、关闭互不影响；通过既有自动打开入口重复打开同一网址仍按原规则复用。
 
 - 带批注数字与不带批注的标签统一使用流式关闭按钮占位，标题／数字末端到关闭按钮间距一致；悬停、聚焦时关闭按钮显隐不改变标签宽度。
+
+## Transit Hub 使用情况
+
+- macOS / Windows 分别导入显式计量地址与 access-token 配置，未登录时提示身份不可用；登录后查询当前账号，切换账号或退出立即清除旧数据，在途旧响应不回填。续期后的下一次刷新使用当前 token。
+- 使用 apikey 配置引用经 Grant 发放 Key 的 Provider，无需登录即可查询该 Key 的用量；登录其他账号不改变 Key 计量归属。缺少配置、Provider 缺失、占位 Key、同名双扩展名文件或地址不同源时明确失败，不扫描其他 Provider、不回退到登录身份、不发送凭据到其他 origin。
+- 检查累计消费、总额度和负剩余额度以 Credits 展示，大整数与六位小数不丢精度。总额度与周期额度分别展示，不相加；请求数、Token、金额任一限额耗尽均反映在进度中。5h/7d 待使用和过期窗口显示待使用，不继续显示旧用量，活动窗口显示准确起止时间。
+- 分别模拟用量、日志、设备、价格、限额、余额接口失败，确认仅对应区域显示不可用，其他可用数据继续展示；旧金额协议不得显示为零消费或无限额度。模拟 telemetry 降级仍显示有效余额和降级提示。
+- 中英文、浅色/深色和窄窗口检查原有紧凑布局；价格区分 Token、按张、按字符与免费模式，常用模型注明最近日志的统计范围。
+- 验证首次初始化、显式重新导入与版本升级均应用计量配置，普通启动读取 canonical 配置；非法升级输入不覆盖旧配置，升级备份可还原原计量地址及认证方式。
+## 项目创建选项预加载
+
+- 运行 `node qa/project-creation-dialog-smoke.mjs`：首次冷读取完成后关闭重开，表单立即出现且不重复请求创建选项；侧栏预加载完成后首次点击也应直接显示表单。
+- 选项过期时打开仍保留表单，后台刷新不重置用户新选的模型；刷新失败时表单不消失、创建被禁用，点击重试成功后恢复。切换语言不复用另一语言的选项；首次读取失败后可重试，不永久缓存失败。

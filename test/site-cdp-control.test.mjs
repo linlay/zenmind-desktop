@@ -624,3 +624,52 @@ test('WorkPanel AWCP probes ordinary websites and revokes access after a non-net
   a.guest.url = 'file:///private/test.html';
   assert.throws(() => scope.readContainer(), /closed|replaced/);
 });
+
+test('verified HTML file previews are WorkPanel surfaces with file capabilities only', async () => {
+  const { acquireWorkPanelAwcpScope, acquireWorkPanelControlScope, workPanelContainerContent } = require('../dist-electron/main/modules/web-surfaces/cdp/site-scope.js');
+  const { WORK_PANEL_HTML_FILE_CAPABILITIES } = require('../dist-electron/shared/work-panel-surface.js');
+  const h = createSiteHarness(); const parent = h.site('html-parent');
+  const file = workPanelPage(h, parent, 'html-file', 'chat-a', 'zenmind-work-panel-file://handle-a/game.html');
+  const forged = workPanelPage(h, parent, 'html-forged', 'chat-a', 'zenmind-work-panel-file://handle-x/game.html');
+  const other = workPanelPage(h, parent, 'html-other', 'chat-b', 'zenmind-work-panel-file://handle-b/game.html');
+  h.previews.set(file.guest.id, 'chat-a');
+  h.previews.set(other.guest.id, 'chat-b');
+  const gateway = gatewayFor(h, {
+    classifyWorkPanelContainer: (surface) => workPanelContainerContent(h.registry, surface),
+    acquireWorkPanelScope: (containerId, chatId) => acquireWorkPanelControlScope(h.registry, containerId, chatId),
+  });
+  const owner = { chatId: 'chat-a' };
+
+  const listed = await gateway.executeCommand({ method: 'Surface.list', source: owner });
+  const ids = listed.result.surfaces.map((surface) => surface.surfaceId);
+  assert.ok(ids.includes(file.id));
+  assert.ok(!ids.includes(forged.id), 'an unverified local page is not listed');
+  assert.ok(!ids.includes(other.id), 'another Chat preview is not listed');
+  assert.deepEqual(listed.result.surfaces.find((surface) => surface.surfaceId === file.id).capabilities, [...WORK_PANEL_HTML_FILE_CAPABILITIES]);
+
+  await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: file.id, params: { expression: 'document.title' }, source: owner });
+  assert.ok(h.commands.some((command) => command.id === file.guest.id && command.method === 'Runtime.evaluate'));
+  for (const [method, params] of [['Page.navigate', { url: 'https://elsewhere.example/' }], ['Network.enable', {}], ['Surface.goBack', {}]]) {
+    await assert.rejects(gateway.executeCommand({ method, surfaceId: file.id, params, source: owner }),
+      (error) => error.code === 'capability_denied', method);
+  }
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: forged.id, params: { expression: '1' }, source: owner }),
+    (error) => error.code === 'target_not_owned_by_chat');
+  await assert.rejects(gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: other.id, params: { expression: '1' }, source: owner }),
+    (error) => error.code === 'target_not_owned_by_chat');
+  assert.throws(() => acquireWorkPanelAwcpScope(h.registry, file.id, 'chat-a'), (error) => error.code === 'capability_denied');
+
+  const viewport = await gateway.executeCommand({ method: 'Surface.setViewport', surfaceId: file.id, params: { width: 390, height: 844, mobile: true }, source: owner });
+  assert.deepEqual(viewport.result, { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  const emulation = h.commands.find((command) => command.method === 'enableDeviceEmulation');
+  assert.equal(emulation.params.screenPosition, 'mobile');
+  assert.deepEqual(emulation.params.viewSize, { width: 390, height: 844 });
+  await assert.rejects(gateway.executeCommand({ method: 'Surface.setViewport', surfaceId: file.id, params: { width: 10, height: 844 }, source: owner }),
+    (error) => error.code === 'invalid_args');
+  assert.deepEqual((await gateway.executeCommand({ method: 'Surface.setViewport', surfaceId: file.id, params: { reset: true }, source: owner })).result, { reset: true });
+
+  // A released preview handle revokes control of the same guest.
+  const scope = acquireWorkPanelControlScope(h.registry, file.page.surfaceId, 'chat-a');
+  h.previews.delete(file.guest.id);
+  assert.throws(() => scope.readContainer(), /closed|replaced/);
+});

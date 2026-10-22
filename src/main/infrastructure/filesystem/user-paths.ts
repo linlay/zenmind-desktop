@@ -186,8 +186,8 @@ export function getAssistantSettingsRoot(app: App, platform: NodeJS.Platform = p
   return getDesktopConfigRoot(app, platform);
 }
 
-export function getServiceConfigRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
-  return path.join(getDataRoot(app), "config", kindDirectoryName(kind), serviceId);
+export function getServiceConfigRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin", platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "config", kindDirectoryName(kind), serviceId);
 }
 
 export function getRuntimeDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
