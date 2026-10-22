@@ -41,7 +41,7 @@ export interface QueryPort {
   readonly options: { acceptanceTimeoutMs?: number; };
   clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
   consumeRunEvent(run: BrokerRun, event: Record<string, unknown>, transaction: QueryTransaction | null): void;
-  releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
+  handleUpstreamDetached(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
   completeRun(run: BrokerRun, result: RealtimeQueryCompleted, source: NonNullable<BrokerRun["terminalSource"]>): void;
   diagnostics: BrokerDiagnosticsCounters;
   appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null, path?: string): void;
@@ -237,7 +237,7 @@ export function createQuery(deps: QueryPort) {
       return;
     }
     if (isObserverDetachReason(reason)) {
-      deps.releaseRunObserver(run, transaction.upstreamRequestId, reason, frame.lastSeq);
+      deps.handleUpstreamDetached(run, transaction.upstreamRequestId, reason, frame.lastSeq);
       return;
     }
     deps.completeRun(run, {

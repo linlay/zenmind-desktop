@@ -186,6 +186,7 @@ export class RealtimeBroker {
       handleInboundRequest: (...args) => this.handleInboundRequest(...args),
       handleQueryStream: (...args) => this.handleQueryStream(...args),
       handleRunStream: (...args) => this.handleRunStream(...args),
+      expireAttachStream: (...args) => this.expireAttachStream(...args),
       completeRun: (...args) => this.completeRun(...args),
     });
     this.rootObserversController = createRootObservers({
@@ -216,7 +217,7 @@ export class RealtimeBroker {
       get options() { return broker.options; },
       get clients() { return broker.clients; },
       consumeRunEvent: (...args) => this.consumeRunEvent(...args),
-      releaseRunObserver: (...args) => this.releaseRunObserver(...args),
+      handleUpstreamDetached: (...args) => this.handleUpstreamDetached(...args),
       completeRun: (...args) => this.completeRun(...args),
       get diagnostics() { return broker.diagnostics; },
       appendReplay: (...args) => this.appendReplay(...args),
@@ -233,7 +234,7 @@ export class RealtimeBroker {
     this.runChannelsController = createRunChannels({
       get runChannels() { return broker.runChannels; },
       get runSubscriptions() { return broker.runSubscriptions; },
-      releaseRunObserver: (...args) => this.releaseRunObserver(...args),
+      handleUpstreamDetached: (...args) => this.handleUpstreamDetached(...args),
       get diagnostics() { return broker.diagnostics; },
       get siteControlGrants() { return broker.siteControlGrants; },
       get options() { return broker.options; },
@@ -254,6 +255,8 @@ export class RealtimeBroker {
       ensureConnected: (...args) => this.ensureConnected(...args),
       get runChannels() { return broker.runChannels; },
       hasSystemRunLease: (...args) => this.hasSystemRunLease(...args),
+      get runSubscriptions() { return broker.runSubscriptions; },
+      onDiagnostic: (message) => broker.options.onDiagnostic?.(message),
       get clients() { return broker.clients; },
       forwardRequest: (...args) => this.forwardRequest(...args),
     });
@@ -460,12 +463,14 @@ export class RealtimeBroker {
 
   private handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame) { return this.runChannelsController.handleRunStream(run, frame); }
 
-  private releaseRunObserver(
+  private handleUpstreamDetached(
     run: BrokerRun,
     requestId: string,
     reason: string,
     lastSeq: unknown,
-  ) { return this.runAttachmentController.releaseRunObserver(run, requestId, reason, lastSeq); }
+  ) { return this.runAttachmentController.handleUpstreamDetached(run, requestId, reason, lastSeq); }
+
+  private expireAttachStream(run: BrokerRun, requestId: string, error: Error) { return this.runAttachmentController.expireAttachStream(run, requestId, error); }
 
   private consumeRunEvent(
     run: BrokerRun,

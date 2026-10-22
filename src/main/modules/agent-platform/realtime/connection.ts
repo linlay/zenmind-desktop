@@ -62,6 +62,7 @@ export interface ConnectionPort {
   handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame): void;
   handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame): void;
   completeRun(run: BrokerRun, result: RealtimeQueryCompleted, source: NonNullable<BrokerRun["terminalSource"]>): void;
+  expireAttachStream(run: BrokerRun, requestId: string, error: Error): void;
 }
 
 export function createConnection(deps: ConnectionPort) {
@@ -348,6 +349,11 @@ export function createConnection(deps: ConnectionPort) {
     }
     if (run && kind === "error") {
       const error = frameError(frame);
+      if (error.name === "seq_expired" && run.upstreamSource === "attach_stream") {
+        // Only the resume cursor expired; the Run is still live on Platform.
+        deps.expireAttachStream(run, id, error);
+        return;
+      }
       const subscriptions = [...run.subscribers].flatMap((subscriptionId) => {
         const subscription = deps.runSubscriptions.get(subscriptionId);
         deps.runSubscriptions.delete(subscriptionId);

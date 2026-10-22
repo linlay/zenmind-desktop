@@ -320,6 +320,8 @@ export function createSubscriptions(deps: SubscriptionsPort) {
     else if (options.owner && run.owner && !sameRunOwner(run.owner, options.owner)) {
       throw brokerError("invalid_request", "runId belongs to a different Run owner");
     }
+    if (options.lastSeq !== undefined)
+      rebaseDormantRun(run, subscription.lastSeq);
     deps.replayToSubscriber(run, subscription);
     if (run.terminal) {
       queueMicrotask(() => options.onComplete?.({
@@ -357,6 +359,24 @@ export function createSubscriptions(deps: SubscriptionsPort) {
       unsubscribe: () => unsubscribe(id),
       ready,
     };
+  }
+
+  /**
+   * A dormant Channel keeps the cursor it had when its last observer left, but
+   * Platform only retains a bounded window. When the local replay cannot serve
+   * the new subscriber's cursor, resume upstream from that cursor instead.
+   */
+  function rebaseDormantRun(run: BrokerRun, cursor: number): void {
+    if (run.terminal || run.upstreamRequestId || run.detachInFlight || run.subscribers.size > 0 || cursor === run.lastSeq)
+      return;
+    const firstSeq = run.replay.find((entry) => entry.seq !== null)?.seq ?? null;
+    if (firstSeq !== null && cursor < run.lastSeq && cursor + 1 >= firstSeq)
+      return;
+    run.lastRestoreResult = `rebased:${run.lastSeq}->${cursor}`;
+    run.replay = [];
+    run.replayBytes = 0;
+    run.activeWaits.clear();
+    run.lastSeq = cursor;
   }
 
   function unsubscribe(subscriptionId: string): boolean {

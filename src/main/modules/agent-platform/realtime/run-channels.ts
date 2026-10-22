@@ -28,7 +28,7 @@ import { type RunSiteControlGrants } from "./run-site-control-grants";
 export interface RunChannelsPort {
   runChannels: Map<string, BrokerRun>;
   runSubscriptions: Map<string, RunSubscription>;
-  releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
+  handleUpstreamDetached(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
   diagnostics: BrokerDiagnosticsCounters;
   siteControlGrants: RunSiteControlGrants;
   readonly options: { onArtifactPublished?(event: Record<string, unknown>): void; onDiagnostic?(message: string): void; };
@@ -73,7 +73,7 @@ export function createRunChannels(deps: RunChannelsPort) {
     if (!reason)
       return;
     if (isObserverDetachReason(reason)) {
-      deps.releaseRunObserver(run, readText(frame.id), reason, frame.lastSeq);
+      deps.handleUpstreamDetached(run, readText(frame.id), reason, frame.lastSeq);
       return;
     }
     completeRun(run, {

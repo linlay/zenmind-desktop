@@ -119,6 +119,8 @@ export type BrokerRun = {
   accessToken: string;
   detachInFlight: Promise<void> | null;
   operationGeneration: number;
+  /** lastSeq at the previous unsolicited upstream detach; a repeat without progress stops auto-resume. */
+  upstreamLossSeq?: number;
 };
 
 export type QueryTransaction = {

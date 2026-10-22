@@ -1347,6 +1347,168 @@ test("replay window reports seq_expired instead of fabricating a prefix", async 
   }), (error) => error.name === "seq_expired" && error.details.firstAvailableSeq > 1);
 });
 
+function observeRun(h, observer, { lastSeq, onEvent = () => {}, onComplete, onError, consumerId = "main-chat-frame-port" } = {}) {
+  return h.broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080", token: h.token, runId: "run-long", chatId: "chat-1", agentKey: "agent-1",
+    kind: "surface", role: "root_observer", observerToken: observer.token, consumerId,
+    ...(lastSeq === undefined ? {} : { lastSeq }), onEvent, onComplete, onError,
+  });
+}
+
+async function dormantRunAt(h, lastSeq) {
+  const observer = rootObserver();
+  h.broker.activateRootObserver(observer);
+  await observeRun(h, observer, { lastSeq: 0 }).ready;
+  const attach = requestOfType(h.socket("primary"), "/api/attach")[0];
+  for (let seq = 1; seq <= lastSeq; seq += 1) {
+    h.socket("primary").emit({ frame: "stream", id: attach.id, event: runEvent("reasoning.delta", "run-long", "chat-1", seq, { delta: "x" }) });
+  }
+  h.broker.releaseRootObserver(observer.token, "surface_inactive");
+  await waitUntil(() => requestOfType(h.socket("primary"), "/api/detach").length === 1);
+  const detach = requestOfType(h.socket("primary"), "/api/detach")[0];
+  h.socket("primary").emit({ frame: "stream", id: attach.id, reason: "detached", lastSeq });
+  h.socket("primary").emit({ frame: "response", id: detach.id, type: "/api/detach", data: { accepted: true, streamRequestId: attach.id, lastSeq } });
+  await nextTurn();
+  assert.equal(h.broker.getDiagnostics().replay.find((run) => run.runId === "run-long").state, "dormant");
+  const back = rootObserver({ token: "main-chat:g2:1:101", generation: "g2" });
+  h.broker.activateRootObserver(back);
+  return back;
+}
+
+test("a dormant Run resumes from the returning observer's newer cursor instead of its stale Channel seq", async (t) => {
+  const h = createHarness(t);
+  const back = await dormantRunAt(h, 1_087);
+  const events = [];
+  await observeRun(h, back, { lastSeq: 13_000, onEvent: (event) => events.push(event) }).ready;
+  const attach = requestOfType(h.socket("primary"), "/api/attach")[1];
+  assert.equal(attach.payload.lastSeq, 13_000);
+  h.socket("primary").emit({ frame: "stream", id: attach.id, event: runEvent("awaiting.ask", "run-long", "chat-1", 13_001, { awaitingId: "aw-1" }) });
+  await nextTurn();
+  assert.deepEqual(events.map((event) => `${event.type}@${event.seq}`), ["awaiting.ask@13001"]);
+  const run = h.broker.getDiagnostics().replay.find((item) => item.runId === "run-long");
+  assert.equal(run.state, "observed");
+  assert.equal(run.upstreamState, "attached");
+});
+
+test("a dormant Run resumes upstream when the observer cursor predates its local replay", async (t) => {
+  const h = createHarness(t);
+  const back = await dormantRunAt(h, 2_100);
+  await observeRun(h, back, { lastSeq: 50 }).ready;
+  assert.equal(requestOfType(h.socket("primary"), "/api/attach")[1].payload.lastSeq, 50);
+});
+
+test("an expired Platform resume cursor suspends the Channel without ending the Run", async (t) => {
+  const h = createHarness(t);
+  const back = await dormantRunAt(h, 1_087);
+  const errors = [];
+  const completions = [];
+  await observeRun(h, back, { lastSeq: 900, onError: (error) => errors.push(error.name), onComplete: (result) => completions.push(result) }).ready;
+  const expired = requestOfType(h.socket("primary"), "/api/attach")[1];
+  assert.equal(expired.payload.lastSeq, 1_087);
+  h.socket("primary").emit({ frame: "error", id: expired.id, type: "seq_expired", code: 409, msg: "SEQ_EXPIRED",
+    data: { runId: "run-long", chatId: "chat-1", lastSeq: 1_087, oldestSeq: 3_138, latestSeq: 13_137 } });
+  await nextTurn();
+  assert.deepEqual(errors, ["seq_expired"]);
+  assert.deepEqual(completions, []);
+  const run = h.broker.getDiagnostics().replay.find((item) => item.runId === "run-long");
+  assert.notEqual(run.state, "terminal");
+  assert.equal(run.upstreamState, "detached");
+  assert.match(h.diagnostics.join("\n"), /attach_cursor_expired/u);
+
+  const events = [];
+  await observeRun(h, back, { lastSeq: 13_137, onEvent: (event) => events.push(event.type) }).ready;
+  const resumed = requestOfType(h.socket("primary"), "/api/attach")[2];
+  assert.equal(resumed.payload.lastSeq, 13_137);
+  h.socket("primary").emit({ frame: "stream", id: resumed.id, event: runEvent("awaiting.ask", "run-long", "chat-1", 13_138, { awaitingId: "aw-1" }) });
+  await nextTurn();
+  assert.deepEqual(events, ["awaiting.ask"]);
+});
+
+test("replacing the active Root Observer ends its live Run streams locally as detached", async (t) => {
+  const h = createHarness(t);
+  const observer = rootObserver();
+  h.broker.activateRootObserver(observer);
+  const completions = [];
+  const errors = [];
+  await observeRun(h, observer, { onComplete: (result) => completions.push(result), onError: (error) => errors.push(error) }).ready;
+  const attach = requestOfType(h.socket("primary"), "/api/attach")[0];
+  h.socket("primary").emit({ frame: "stream", id: attach.id, event: runEvent("content.delta", "run-long", "chat-1", 1) });
+  await nextTurn();
+  h.broker.activateRootObserver(rootObserver({ token: "copilot-dock:g9:1:202", kind: "copilot_dock", surfaceId: "copilot-dock",
+    generation: "g9", contextId: "dock:chat-9", webContentsId: 202 }));
+  assert.deepEqual(completions, [{ reason: "detached", lastSeq: 1 }]);
+  assert.deepEqual(errors, []);
+  await waitUntil(() => requestOfType(h.socket("primary"), "/api/detach").length === 1);
+});
+
+test("an unsolicited upstream detach of an observed attach stream resumes from the last delivered seq", async (t) => {
+  const h = createHarness(t);
+  const observer = rootObserver();
+  h.broker.activateRootObserver(observer);
+  const events = [];
+  const completions = [];
+  await observeRun(h, observer, { onEvent: (event) => events.push(event.type), onComplete: (result) => completions.push(result) }).ready;
+  const first = requestOfType(h.socket("primary"), "/api/attach")[0];
+  for (let seq = 1; seq <= 5; seq += 1) {
+    h.socket("primary").emit({ frame: "stream", id: first.id, event: runEvent("content.delta", "run-long", "chat-1", seq) });
+  }
+  // Platform drops its slow observer and ends the stream on its own.
+  h.socket("primary").emit({ frame: "stream", id: first.id, reason: "detached", lastSeq: 5 });
+  await nextTurn();
+  assert.equal(requestOfType(h.socket("primary"), "/api/detach").length, 0);
+  const resumed = requestOfType(h.socket("primary"), "/api/attach")[1];
+  assert.equal(resumed.payload.lastSeq, 5);
+  assert.match(h.diagnostics.join("\n"), /upstream_stream_lost/u);
+  h.socket("primary").emit({ frame: "stream", id: resumed.id, event: runEvent("awaiting.ask", "run-long", "chat-1", 6, { awaitingId: "aw-1" }) });
+  await nextTurn();
+  assert.equal(events.at(-1), "awaiting.ask");
+  assert.deepEqual(completions, []);
+});
+
+test("a repeated unsolicited upstream detach without progress stops auto-resume", async (t) => {
+  const h = createHarness(t);
+  const observer = rootObserver();
+  h.broker.activateRootObserver(observer);
+  await observeRun(h, observer).ready;
+  const first = requestOfType(h.socket("primary"), "/api/attach")[0];
+  h.socket("primary").emit({ frame: "stream", id: first.id, event: runEvent("content.delta", "run-long", "chat-1", 1) });
+  h.socket("primary").emit({ frame: "stream", id: first.id, reason: "detached", lastSeq: 1 });
+  await nextTurn();
+  const resumed = requestOfType(h.socket("primary"), "/api/attach")[1];
+  h.socket("primary").emit({ frame: "stream", id: resumed.id, reason: "detached", lastSeq: 1 });
+  await nextTurn();
+  assert.equal(requestOfType(h.socket("primary"), "/api/attach").length, 2);
+  const run = h.broker.getDiagnostics().replay.find((item) => item.runId === "run-long");
+  assert.equal(run.upstreamState, "detached");
+  assert.equal(run.lastRestoreResult, "observer_released:detached");
+});
+
+test("an unsolicited upstream detach of an observed query stream keeps the query open on a resumed attach", async (t) => {
+  const h = createHarness(t);
+  const observer = rootObserver();
+  h.broker.activateRootObserver(observer);
+  const events = [];
+  const query = h.broker.query({
+    baseUrl: "http://127.0.0.1:8080", token: h.token, id: "op-lost", runId: "run-lost", chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" }, observerToken: observer.token,
+    payload: { runId: "run-lost", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: (event) => events.push(event.type),
+  });
+  await waitUntil(() => requestOfType(h.socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(h.socket("primary"), "/api/query")[0];
+  h.socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-lost", "chat-1", 1) });
+  await query.accepted;
+  h.socket("primary").emit({ frame: "stream", id: upstream.id, reason: "detached", lastSeq: 1 });
+  await nextTurn();
+  const resumed = requestOfType(h.socket("primary"), "/api/attach")[0];
+  assert.equal(resumed.payload.lastSeq, 1);
+  h.socket("primary").emit({ frame: "stream", id: resumed.id, event: runEvent("awaiting.ask", "run-lost", "chat-1", 2, { awaitingId: "aw-1" }) });
+  h.socket("primary").emit({ frame: "stream", id: resumed.id, event: runEvent("run.complete", "run-lost", "chat-1", 3) });
+  h.socket("primary").emit({ frame: "stream", id: resumed.id, reason: "done", lastSeq: 3 });
+  assert.deepEqual(await query.completed, { reason: "done", lastSeq: 3 });
+  assert.deepEqual(events, ["run.start", "awaiting.ask", "run.complete"]);
+});
+
 test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
   assert.equal(getDesktopActionDefinition("desktop.awcp.manual"), null);
   assert.equal(getDesktopActionDefinition("desktop.awcp.invoke"), null);
