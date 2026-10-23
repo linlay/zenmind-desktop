@@ -1,26 +1,23 @@
+import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import test from "node:test";
 import { createRequire } from "node:module";
+import ts from "typescript";
 
 const require = createRequire(import.meta.url);
-const ts = require("typescript");
-const sourcePath = path.join(process.cwd(), "src/renderer/pages/settings/useWebappPublishStatus.ts");
+const sourcePath = path.resolve("src/renderer/pages/settings/webappPublishPresentation.ts");
 const source = ts.transpileModule(fs.readFileSync(sourcePath, "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, fileName: sourcePath
 }).outputText;
-function load(react = require("react")) {
-  const mod = { exports: {} };
-  new Function("exports", "require", "module", source)(mod.exports, name => name === "react" ? react : require(name), mod);
-  return mod.exports;
-}
-const { getWebappPublishPresentation } = load();
+const mod = { exports: {} };
+new Function("exports", "require", "module", source)(mod.exports, require, mod);
+const { getWebappPublishPresentation } = mod.exports;
 
 test("publication labels distinguish configuration, app runtime, and Tunnel connectivity", () => {
   const published = { id: "app", active: true, status: "published" };
   const running = { status: "running" };
-  const cases = [
+  for (const [state, info, runtime, label] of [
     [undefined, undefined, undefined, "publishStatusChecking"],
     [null, undefined, undefined, "publishStatusNotPublished"],
     [published, { tunnelConnected: true }, undefined, "publishStatusChecking"],
@@ -28,10 +25,7 @@ test("publication labels distinguish configuration, app runtime, and Tunnel conn
     [published, undefined, running, "publishStatusChecking"],
     [published, { tunnelConnected: false }, running, "publishTunnelOffline"],
     [published, { tunnelConnected: true }, running, "publishStatusTunnelConnected"]
-  ];
-  for (const [state, info, runtime, label] of cases) {
-    assert.equal(getWebappPublishPresentation(state, info, runtime).label, `settings.webapps.${label}`);
-  }
+  ]) assert.equal(getWebappPublishPresentation(state, info, runtime).label, `settings.webapps.${label}`);
 });
 
 function deferred() {
@@ -39,83 +33,133 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-const flush = () => new Promise(resolve => setImmediate(resolve));
-function mount(t, active = true) {
-  let state;
-  let cleanup;
-  let listener;
-  let unsubscribed = 0;
-  const pending = [];
-  const changes = [];
-  const errors = [];
-  const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  Object.defineProperty(globalThis, "window", { configurable: true, value: { electronAPI: { webs: {
-    webapps: { getPublishStatus: () => { const request = deferred(); pending.push(request); return request.promise; } },
-    onChanged: callback => { listener = callback; return () => { unsubscribed++; }; }
-  } } } });
-  const hooks = {
-    useState: initial => { state = initial; return [initial, update => { state = update(state); }]; },
-    useRef: current => ({ current }),
-    useCallback: callback => callback,
-    useEffect: effect => { cleanup = effect(); }
+
+// Execute the actual AppShell owner functions without mounting unrelated desktop services.
+const shellSource = fs.readFileSync(path.resolve("src/renderer/app-shell/AppShell.tsx"), "utf8");
+const shell = ts.createSourceFile("AppShell.tsx", shellSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const names = ["refreshWebItems", "refreshWebappPublishState", "handleWebappPublishStatusChange",
+  "refreshWebappRuntimeState", "handleWebappRuntimeStateChange"];
+const functions = [];
+function collect(node) {
+  if (ts.isFunctionDeclaration(node) && names.includes(node.name?.text)) functions.push(node.getText(shell));
+  else ts.forEachChild(node, collect);
+}
+collect(shell);
+assert.equal(functions.length, names.length);
+const ownerSource = ts.transpileModule(functions.join("\n"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+}).outputText;
+
+function fixture() {
+  let state = {}, info = null, runtime = {};
+  const publishReads = [], runtimeReads = [], listReads = [], disposed = [];
+  const items = { current: ["app", "other"].map(id => ({ id, kind: "webapp" })) };
+  const context = {
+    window: { electronAPI: { webs: {
+      list: () => { const r = deferred(); listReads.push(r); return r.promise; },
+      webapps: {
+        getPublishStatus: id => { const r = deferred(); publishReads.push({ id, ...r }); return r.promise; },
+        getStatus: id => { const r = deferred(); runtimeReads.push({ id, ...r }); return r.promise; }
+      }
+    } } },
+    webItemsRef: items,
+    webItemsRefreshIdRef: { current: 0 },
+    webappPublishRefreshIdRef: { current: {} },
+    webappPublishInfoRefreshIdRef: { current: 0 },
+    webappRuntimeRefreshIdRef: { current: {} },
+    webappStartInFlightRef: { current: new Set() }, webappStopInFlightRef: { current: new Set() },
+    setWebappPublishStateById: update => { state = update(state); },
+    setWebappPublishInfo: value => { info = value; },
+    setWebappRuntimeById: update => { runtime = update(runtime); },
+    disposeWebappPresentation: item => disposed.push(item.id),
+    updateWebItems: next => { items.current = next; }
   };
-  const { useWebappPublishStatus } = load(hooks);
-  const api = useWebappPublishStatus(active, [{ id: "app" }], (id, next) => changes.push([id, next]), message => errors.push(message));
-  const unmount = () => { cleanup?.(); cleanup = undefined; };
-  t.after(() => { unmount(); if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow); else delete globalThis.window; });
-  return { api, pending, changes, errors, state: () => state, event: event => listener?.(event), unmount, unsubscribed: () => unsubscribed };
+  const owner = new Function(...Object.keys(context), `${ownerSource}\nreturn { ${names.join(",")} };`)(...Object.values(context));
+  return { ...owner, items, publishReads, runtimeReads, listReads, disposed, info: () => info, state: () => state, runtime: () => runtime };
 }
 const response = connected => ({ info: { tunnelConnected: connected }, state: { id: "app", active: true } });
 
-test("Tunnel changes refresh publication status and a delayed read cannot restore stale connectivity", async t => {
-  const h = mount(t);
-  h.event({ reason: "tunnel-status-changed" });
-  assert.equal(h.pending.length, 2);
-  h.pending[1].resolve(response(false));
-  await flush();
-  h.pending[0].resolve(response(true));
-  await flush();
-  assert.equal(h.state().app.tunnelConnected, false);
-  assert.equal(h.changes.length, 1);
-  h.event({ webappId: "unrelated", reason: "route-synced" });
-  assert.equal(h.pending.length, 2);
+test("one Tunnel status read updates shared connectivity and a delayed response cannot restore it", async () => {
+  const h = fixture();
+  const old = h.refreshWebappPublishState("app");
+  const latest = h.refreshWebappPublishState("other");
+  h.publishReads[1].resolve(response(false));
+  await latest;
+  h.publishReads[0].resolve(response(true));
+  await old;
+  assert.equal(h.info().tunnelConnected, false);
+  assert.deepEqual(Object.keys(h.state()).sort(), ["app", "other"]);
 });
 
-test("an explicit publish result invalidates an older status read", async t => {
-  const h = mount(t);
-  h.api.accept("app", response(true));
-  h.pending[0].resolve(response(false));
-  await flush();
-  assert.equal(h.state().app.tunnelConnected, true);
-  assert.equal(h.changes.length, 1);
+test("an explicit publish result invalidates an older read and catalog snapshot", async () => {
+  const h = fixture();
+  const read = h.refreshWebappPublishState("app");
+  const catalog = h.refreshWebItems();
+  h.handleWebappPublishStatusChange("app", response(true));
+  h.publishReads[0].resolve(response(false));
+  await read;
+  assert.equal(h.info().tunnelConnected, true);
+  h.listReads[0].resolve({ ok: true, items: [{ id: "app", kind: "webapp" }], webappPublishStates: { app: null } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.state().app.active, true);
+  h.publishReads[1].resolve(response(true));
+  h.runtimeReads[0].resolve({ ok: true, state: { status: "running" } });
+  await catalog;
 });
 
-test("a current read failure cannot keep displaying a previous connected status", async t => {
-  const h = mount(t);
-  h.pending[0].resolve(response(true));
-  await flush();
-  h.event({ reason: "tunnel-status-changed" });
-  h.pending[1].reject(new Error("status unavailable"));
-  await flush();
-  assert.equal(h.state().app, null);
-  assert.deepEqual(h.errors, ["status unavailable"]);
+test("a current failure clears shared connectivity; removed applications ignore late reads", async () => {
+  const h = fixture();
+  h.handleWebappPublishStatusChange("app", response(true));
+  const read = h.refreshWebappPublishState("app");
+  h.publishReads[0].reject(new Error("unavailable"));
+  await assert.rejects(read, /unavailable/);
+  assert.equal(h.info(), null);
+  const removed = h.refreshWebappPublishState("app");
+  h.items.current = [];
+  h.publishReads[1].resolve(response(true));
+  await removed;
+  assert.equal(h.info(), null);
 });
 
-test("unmount unsubscribes and ignores delayed success and failure", async t => {
-  const h = mount(t);
-  h.event({ reason: "tunnel-status-changed" });
-  h.unmount();
-  h.pending[0].resolve(response(true));
-  h.pending[1].reject(new Error("late read failure"));
-  await flush();
-  assert.equal(h.unsubscribed(), 1);
-  assert.equal(h.changes.length, 0);
-  assert.equal(h.errors.length, 0);
-  assert.deepEqual(h.state(), {});
+test("stop and uninstall commit once, dispose presentation and invalidate older runtime reads", async () => {
+  const h = fixture();
+  for (const state of [{ status: "stopped", webUrl: "", message: "stopped" }, null]) {
+    const read = h.refreshWebappRuntimeState("app");
+    h.handleWebappRuntimeStateChange("app", state);
+    h.runtimeReads.at(-1).resolve({ ok: true, state: { status: "running", webUrl: "http://stale" } });
+    await read;
+    assert.equal(h.runtime().app?.state ?? null, state);
+  }
+  assert.deepEqual(h.disposed, ["app", "app"]);
 });
 
-test("inactive settings do not subscribe or read publication state", t => {
-  const h = mount(t, false);
-  assert.equal(h.pending.length, 0);
-  assert.equal(h.unsubscribed(), 0);
+test("Settings consumes owner state and has no catalog status reads or duplicate subscriptions", () => {
+  const settings = fs.readFileSync(path.resolve("src/renderer/pages/settings/SettingsPage.tsx"), "utf8");
+  assert.doesNotMatch(settings, /setWebappRuntimeById|infoById|useWebappPublishStatus|webapps\.getStatus|webapps\.getPublishStatus/);
+  assert.match(shellSource, /event\.reason === "tunnel-status-changed"[\s\S]*?refreshWebappPublishState\(\)/);
+  assert.match(shellSource, /webappRuntimeById=\{webappRuntimeStates\}/);
+});
+
+
+test("a failed start with no runtime stays in error instead of triggering an automatic start loop", async () => {
+  const h = fixture();
+  const read = h.refreshWebappRuntimeState("app");
+  h.handleWebappRuntimeStateChange("app", null, "failed to start", "error");
+  h.runtimeReads[0].resolve({ ok: true, state: { status: "running" } });
+  await read;
+  assert.equal(h.runtime().app.status, "error");
+  assert.equal(h.runtime().app.message, "failed to start");
+});
+
+
+test("shared status retains the exact installed application identity, including spaces", async () => {
+  const h = fixture();
+  const id = " 中文 app ";
+  h.items.current = [{ id, kind: "webapp" }];
+  const read = h.refreshWebappRuntimeState(id);
+  h.runtimeReads[0].resolve({ ok: true, state: { status: "running" } });
+  await read;
+  assert.deepEqual(Object.keys(h.runtime()), [id]);
+  h.handleWebappPublishStatusChange(id, response(true));
+  assert.deepEqual(Object.keys(h.state()), [id]);
 });

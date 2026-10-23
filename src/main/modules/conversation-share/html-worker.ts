@@ -400,30 +400,31 @@ async function readConversationSnapshot(
     }
     const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
     const chatId = snapshotURL.searchParams.get("chatId") || "";
-    const attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }> = [];
     // The large conversation body is serialized once. Only resource metadata changes below.
     const { attachments: sourceAttachments, omittedResources: sourceOmissions, ...body } = parsed;
     const bodyPrefix = JSON.stringify(body).slice(0, -1);
     const bodyBytes = Buffer.byteLength(bodyPrefix);
     const omittedResources: ConversationShareOmittedResource[] = [];
-    const identities = new Map<string, ResourceIdentity>();
-    const sourceIDs = new Map<string, string>();
+    const identities = new Map<string, string>();
+    const encodedOmissions: string[] = [];
+    let omissionBytes = 0;
     const omissionKeys = new Set<string>();
     const addOmission = (item: ConversationShareOmittedResource) => {
       const key = item.id ?? `${item.name}:${item.reason}`;
       if (!omissionKeys.has(key)) {
         omissionKeys.add(key);
         omittedResources.push(item);
+        const encoded = JSON.stringify(item);
+        encodedOmissions.push(encoded);
+        omissionBytes += Buffer.byteLength(encoded);
       }
     };
     const register = (identity: ResourceIdentity) => {
       const existing = identities.get(identity.id);
-      if ((existing && existing.sourceRef !== identity.sourceRef) ||
-        (sourceIDs.has(identity.sourceRef) && sourceIDs.get(identity.sourceRef) !== identity.id)) {
+      if (existing && existing !== identity.sourceRef) {
         throw new ConversationHtmlRenderFailure("snapshot_invalid");
       }
-      identities.set(identity.id, identity);
-      sourceIDs.set(identity.sourceRef, identity.id);
+      identities.set(identity.id, identity.sourceRef);
       return Boolean(existing);
     };
     if (sourceOmissions !== undefined && !Array.isArray(sourceOmissions)) {
@@ -452,35 +453,20 @@ async function readConversationSnapshot(
       if (register(identity)) continue;
       candidates.push({ raw: descriptor!, identity });
     }
-    // All links must resolve even when the referenced file will be omitted.
-    for (const { raw } of candidates) {
-      if (raw.mediaRefs === undefined) continue;
-      const refs = resourceObject(raw.mediaRefs);
-      if (raw.mimeType !== "text/html" || !refs || Object.entries(refs).some(([url, id]) =>
-        !url.trim() || typeof id !== "string" || !identities.has(id))) {
-        throw new ConversationHtmlRenderFailure("snapshot_invalid");
-      }
+    // Platform owns resource discovery and reference semantics; Tunnel validates the
+    // final graph. Desktop freezes bytes and keeps each declaration with its upload.
+    const frozen: Array<{
+      identity: ResourceIdentity;
+      metadata: string;
+      attachment: { id: string; name: string; mimeType: string; bytes: ArrayBuffer };
+    }> = [];
+    let attachmentBytes = 0;
+    const metadataBytes = () => Buffer.byteLength(',"attachments":[]}') + attachmentBytes +
+      Math.max(0, frozen.length - 1) + (encodedOmissions.length
+        ? Buffer.byteLength(',"omittedResources":[]') + omissionBytes + encodedOmissions.length - 1 : 0);
+    if (bodyBytes + metadataBytes() > maxSnapshotBytes) {
+      throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
     }
-    for (const rawTurn of Array.isArray(body.turns) ? body.turns : []) {
-      const turn = resourceObject(rawTurn);
-      for (const rawNode of Array.isArray(turn?.nodes) ? turn.nodes : []) {
-        const refs = resourceObject(rawNode)?.attachmentIds;
-        if (refs !== undefined && (!Array.isArray(refs) || new Set(refs).size !== refs.length ||
-          refs.some((id) => typeof id !== "string" || !identities.has(id)))) {
-          throw new ConversationHtmlRenderFailure("snapshot_invalid");
-        }
-      }
-    }
-    for (const { raw } of candidates) {
-      for (const id of Object.values(resourceObject(raw.mediaRefs) ?? {})) {
-        const target = candidates.find((candidate) => candidate.identity.id === id);
-        if (target && typeof target.raw.mimeType === "string" &&
-          !/^(?:image|audio|video)\//u.test(target.raw.mimeType)) {
-          throw new ConversationHtmlRenderFailure("snapshot_invalid");
-        }
-      }
-    }
-    const frozen: Array<ResourceIdentity & { mimeType: string; size: number; sha256: string; mediaRefs?: Record<string, string> }> = [];
     let totalBytes = 0;
     const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
     for (const { raw: descriptor, identity } of candidates) {
@@ -525,31 +511,30 @@ async function readConversationSnapshot(
           continue;
         }
         totalBytes += bytes.length;
-        frozen.push({ ...identity, mimeType: mediaType, size: bytes.length, sha256,
-          ...(descriptor.mediaRefs === undefined ? {} : { mediaRefs: descriptor.mediaRefs as Record<string, string> }) });
-        attachments.push({
+        const metadata = JSON.stringify({ ...identity, mimeType: mediaType, size: bytes.length, sha256,
+          ...(descriptor.mediaRefs === undefined ? {} : { mediaRefs: descriptor.mediaRefs }) });
+        attachmentBytes += Buffer.byteLength(metadata);
+        frozen.push({ identity, metadata, attachment: {
           id: identity.id, name: identity.name, mimeType: mediaType,
-          // readExactResponseBody allocates one exact ArrayBuffer, transferred to main without a copy.
+          // The exact response ArrayBuffer transfers to main without a copy.
           bytes: bytes.buffer as ArrayBuffer
-        });
+        } });
       } catch (error) {
         if (!(error instanceof ResourceReadFailure)) throw error;
         omit(error.reason);
       }
     }
-    const encodeMetadata = () => `,"attachments":${JSON.stringify(frozen)}` +
-      (omittedResources.length ? `,"omittedResources":${JSON.stringify(omittedResources)}` : "") + "}";
-    let metadata = encodeMetadata();
-    while (bodyBytes + Buffer.byteLength(metadata) > maxSnapshotBytes && frozen.length) {
+    while (bodyBytes + metadataBytes() > maxSnapshotBytes && frozen.length) {
       const removed = frozen.pop()!;
-      attachments.pop();
-      addOmission({ id: removed.id, sourceRef: removed.sourceRef, name: removed.name, reason: "too_large" });
-      metadata = encodeMetadata();
+      attachmentBytes -= Buffer.byteLength(removed.metadata);
+      addOmission({ ...removed.identity, reason: "too_large" });
     }
-    if (bodyBytes + Buffer.byteLength(metadata) > maxSnapshotBytes) {
+    if (bodyBytes + metadataBytes() > maxSnapshotBytes) {
       throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
     }
-    const encoded = Buffer.from(bodyPrefix + metadata);
+    const encoded = Buffer.from(bodyPrefix + ',"attachments":[' + frozen.map((item) => item.metadata).join(",") + "]" +
+      (encodedOmissions.length ? ',"omittedResources":[' + encodedOmissions.join(",") + "]" : "") + "}");
+    const attachments = frozen.map((item) => item.attachment);
     const transferred = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
     return { type: "snapshot", requestId: request.requestId, snapshot: transferred, attachments, omittedResources };
   } catch (error) {
@@ -565,7 +550,7 @@ function resourceObject(value: unknown): Record<string, unknown> | null {
 }
 
 function validResourceName(value: unknown): value is string {
-  return typeof value === "string" && value.trim() === value && Boolean(value) &&
+  return typeof value === "string" && Boolean(value) &&
     Buffer.byteLength(value) <= 255 && !/[\\/\u0000-\u001f\u007f]/u.test(value);
 }
 
@@ -573,26 +558,7 @@ function resourceIdentity(value: Record<string, unknown>): ResourceIdentity | nu
   const { id, name, sourceRef } = value;
   if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || !validResourceName(name) ||
     typeof sourceRef !== "string" || !sourceRef || sourceRef.length > 2_048 ||
-    /[\\?#:\s]/u.test(sourceRef)) return null;
-  try {
-    for (const part of sourceRef.split("/")) {
-      let decoded = decodeURIComponent(part);
-      const canonical = encodeURIComponent(decoded).replace(/[!'()*]/gu, (char) =>
-        "%" + char.charCodeAt(0).toString(16).toUpperCase()).replace(/%(24|26|2B|3D|3A|40)/gu, decodeURIComponent);
-      if (canonical !== part) return null;
-      for (let depth = 0; ; depth += 1) {
-        if (!decoded || decoded === "." || decoded === ".." ||
-          [".tools", ".btw", ".explain"].includes(decoded) ||
-          /[\\/:\u0000-\u001f\u007f]/u.test(decoded)) return null;
-        if (!decoded.includes("%")) break;
-        if (depth >= 4) return null;
-        let next: string;
-        try { next = decodeURIComponent(decoded); } catch { break; }
-        if (next === decoded) break;
-        decoded = next;
-      }
-    }
-  } catch { return null; }
+    /[\u0000-\u001f\u007f]/u.test(sourceRef)) return null;
   return { id, sourceRef, name };
 }
 

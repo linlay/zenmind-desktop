@@ -1467,3 +1467,13 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 使用模拟 Hub 和本地上游发送普通消息与分片消息，包含空最终续片、跨片中文和分片间 Ping；HTTP 流式响应与 WebSocket 文本、二进制的内容和顺序一致。
 - 握手响应附带欢迎消息，以及 tunnel.open 响应紧接复用流时，首条消息和首个流均不丢失，WebApp 升级响应先于业务消息。
 - 分片未完成时关闭或断开连接，确认无残留消息交付；一次协议错误只触发一次重连，主动关闭、退出登录和切换账号仍遵循原有策略。
+
+### 2026-10-22 Desktop 精简自动回归记录
+
+- 改造前对照为 `3ef8468ea85ba560ab813c98b413ab242c94384d`，远端 main 基线为 `491fa465be2c9eb1672f1c472e08458ad018b83b`。实现与回归只涉及 Desktop；工作区根锁文件保持原样。
+- Main / renderer 类型检查、架构检查、WebApp 与 WebClient 契约检查、4095 个国际化键检查通过；ZenMind、CuteJ 两个品牌的完整生产构建通过。
+- 最终定向回归 170 项全部通过，覆盖 Tunnel 各 namespace、分片与 Ping、首帧顺序、主动关闭、64 MiB 边界、冻结资源与额度、省略提示、状态竞争及含空格的应用身份。使用打包后的 WebSocket 适配层并限制其只能加载 Node 内置模块；分享 Worker 使用真实生产 bundle。
+- 广泛回归首轮共 3767 项：3634 通过、95 失败、38 跳过。补齐隔离目录中缺失的既有依赖与品牌生成文件后复跑全部失败项，剩余 80 项均在改造前 HEAD 复现，未发现新增失败。既有失败主要来自过期 renderer 源码断言，以及项目目录、服务恢复、皮肤确认、设置与时间契约夹具；不据此改写无关业务。
+- 首轮因依赖缺失而未加载的三个 macOS 构建测试文件另行完整补跑：20 通过、2 项因没有 NSIS 工具链跳过。Docker / Podman 探测用例存在超时波动，最终实现侧复跑通过。
+- 生产源码 `src/` 相对改造前净减少 457 行，相对 main 净减少 62 行；WebSocket 客户端从 395 行减为 112 行。独立传输 bundle 增加 43117 字节（约 42.1 KiB），无新增原生运行依赖。
+- 全量命令使用 `node --test --test-concurrency=1 --test-skip-pattern='real macOS registrations|macOS region screenshot' test/*.test.mjs`，并关闭 opt-in Electron GUI 测试。所有构建、依赖链接与夹具数据均置于独立临时目录，未启动或重启用户桌面实例；Windows 真机、图形交互及系统应用注册未在本次执行。

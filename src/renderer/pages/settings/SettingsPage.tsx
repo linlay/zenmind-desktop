@@ -8,7 +8,7 @@ import { SettingsActionButton } from "./SettingsActionButton";
 import { DesktopActionConfirmationSettingsDialog } from "./DesktopActionConfirmationSettingsDialog";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
-import { getWebappPublishPresentation, useWebappPublishStatus } from "./useWebappPublishStatus";
+import { getWebappPublishPresentation } from "./webappPublishPresentation";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
@@ -29,8 +29,11 @@ import type {
   WebappLogTarget,
   WebappOpenMode,
   WebappAuthMode,
+  WebappPublishInfo,
   WebappPublishState,
+  WebappPublishStatusResult,
   WebappRuntimeCheckResult,
+  WebappStatusResult,
   WebappRuntimeState,
   WebappRuntimeSettings,
   WebsiteEntry,
@@ -130,10 +133,14 @@ type SettingsPageProps = {
   runningWebappCount: number;
   copilotAgentOptions: AssistantNavAgentItem[];
   onRefreshCopilotAgentOptions: () => Promise<void>;
-  webappPublishStateById: Record<string, WebappPublishState | null>;
+  webappPublishStateById: Readonly<Record<string, WebappPublishState | null>>;
+  webappPublishInfo: WebappPublishInfo | null;
+  webappRuntimeById: Readonly<Record<string, WebappRuntimeState | null>>;
+  onWebappPublishRefresh: (id: string) => Promise<void>;
+  onWebappRuntimeRefresh: (id: string) => Promise<WebappStatusResult>;
   onWebItemsRefresh: () => void | Promise<unknown>;
-  onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
-  onWebappPublishStateChange?: (id: string, state: WebappPublishState | null) => void;
+  onWebappRuntimeStateChange: (id: string, state: WebappRuntimeState | null, message?: string) => void;
+  onWebappPublishStatusChange: (id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   onTunnelHubEnabledChange?: (enabled: boolean) => void;
   debugVisible: boolean;
@@ -2407,9 +2414,13 @@ export function SettingsPage({
   copilotAgentOptions,
   onRefreshCopilotAgentOptions,
   webappPublishStateById,
+  webappPublishInfo,
+  webappRuntimeById,
+  onWebappPublishRefresh,
+  onWebappRuntimeRefresh,
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
-  onWebappPublishStateChange,
+  onWebappPublishStatusChange,
   onAssistantSettingsChange,
   onTunnelHubEnabledChange,
   debugVisible,
@@ -2476,7 +2487,6 @@ export function SettingsPage({
   const webappImportBusyRef = useRef(false);
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
-  const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
   const [webappRuntimeCheckById, setWebappRuntimeCheckById] = useState<Record<string, WebappRuntimeCheckResult | null>>({});
   const [webappRuntimeSettings, setWebappRuntimeSettings] = useState<WebappRuntimeSettings>({
     schemaVersion: 1,
@@ -2555,12 +2565,6 @@ export function SettingsPage({
     () => webItems.filter(isWebappEntry),
     [webItems]
   );
-  const {
-    infoById: webappPublishInfoById,
-    refresh: refreshWebappPublishStatus,
-    accept: acceptWebappPublishStatus
-  } = useWebappPublishStatus(activeSection === "webapps", webappItems, onWebappPublishStateChange,
-    (message) => showSectionNotice("webapps", message, "error"));
   const selectedWebsite = selectedWebsiteId === WEBSITE_NEW_ID
     ? null
     : websiteItems.find((item) => item.id === selectedWebsiteId) ?? null;
@@ -2739,23 +2743,9 @@ export function SettingsPage({
   ]);
 
   useEffect(() => {
-    if (activeSection !== "webapps") return;
-    let cancelled = false;
-    // Populate the whole catalog on entry, rather than revealing status on selection.
-    void Promise.allSettled(webappItems.map(async (item) => {
-      const result = await window.electronAPI.webs.webapps.getStatus(item.id);
-      if (!cancelled) {
-        setWebappRuntimeById((current) => ({ ...current, [item.id]: result.state }));
-      }
-    }));
-    return () => { cancelled = true; };
-  }, [activeSection, webappItems]);
-
-  useEffect(() => {
     if (activeSection !== "webapps" || !selectedWebapp) {
       return;
     }
-    void refreshSelectedWebappStatus(selectedWebapp.id);
     void refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     void refreshSelectedWebappUserConfig(selectedWebapp.id);
   }, [activeSection, selectedWebapp?.id]);
@@ -3568,23 +3558,6 @@ export function SettingsPage({
     }
   }
 
-  async function refreshSelectedWebappStatus(webappId = selectedWebapp?.id ?? "") {
-    const id = webappId.trim();
-    if (!id) {
-      return;
-    }
-    try {
-      const result = await window.electronAPI.webs.webapps.getStatus(id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [id]: result.state
-      }));
-      onWebappRuntimeStateChange?.(id, result.state, result.message);
-    } catch (reason) {
-      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
-    }
-  }
-
   async function refreshSelectedWebappRuntimeCheck(webappId = selectedWebapp?.id ?? "") {
     const id = webappId.trim();
     if (!id) {
@@ -3674,14 +3647,13 @@ export function SettingsPage({
     setWebappPublishPendingId(item.id);
     try {
       const startResult = await window.electronAPI.webs.webapps.start(item.id);
-      setWebappRuntimeById((current) => ({ ...current, [item.id]: startResult.state }));
-      onWebappRuntimeStateChange?.(item.id, startResult.state, startResult.message);
+      onWebappRuntimeStateChange(item.id, startResult.state, startResult.message);
       if (!startResult.ok || !startResult.state) {
         showSectionResultNotice("webapps", startResult);
         return;
       }
       const result = await window.electronAPI.webs.webapps.publish(item.id);
-      acceptWebappPublishStatus(item.id, result);
+      onWebappPublishStatusChange(item.id, result);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3694,7 +3666,7 @@ export function SettingsPage({
     setWebappPublishPendingId(item.id);
     try {
       const result = await window.electronAPI.webs.webapps.unpublish(item.id);
-      acceptWebappPublishStatus(item.id, result);
+      onWebappPublishStatusChange(item.id, result);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3749,7 +3721,7 @@ export function SettingsPage({
       }
 
       await refreshWebItemsFromSettings();
-      await refreshSelectedWebappStatus(selectedWebapp.id);
+      await onWebappRuntimeRefresh(selectedWebapp.id);
       await refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3764,17 +3736,13 @@ export function SettingsPage({
     setWebappRuntimePendingId(pendingKey);
     try {
       const result = action === "refresh"
-        ? await window.electronAPI.webs.webapps.getStatus(item.id)
+        ? await onWebappRuntimeRefresh(item.id)
         : action === "start"
           ? await window.electronAPI.webs.webapps.start(item.id)
           : action === "stop"
             ? await window.electronAPI.webs.webapps.stop(item.id)
             : await window.electronAPI.webs.webapps.restart(item.id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [item.id]: result.state
-      }));
-      onWebappRuntimeStateChange?.(item.id, result.state, result.message);
+      if (action !== "refresh") onWebappRuntimeStateChange(item.id, result.state, result.message);
       await refreshSelectedWebappRuntimeCheck(item.id);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
@@ -3803,7 +3771,7 @@ export function SettingsPage({
       const result = await window.electronAPI.webs.webapps.uninstall(item.id);
       showSectionResultNotice("webapps", result);
       if (result.ok) {
-        onWebappRuntimeStateChange?.(item.id, null, result.message);
+        onWebappRuntimeStateChange(item.id, null, result.message);
         const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
         setSelectedWebappId(nextItem?.id ?? "");
         setWebappLogContent("");
@@ -4431,12 +4399,12 @@ export function SettingsPage({
   }
 
   function getWebappPublishStatusLabel(state: WebappPublishState | null | undefined) {
-    return t(getWebappPublishPresentation(state, state ? webappPublishInfoById[state.id] : undefined,
+    return t(getWebappPublishPresentation(state, webappPublishInfo,
       state ? webappRuntimeById[state.id] : undefined).label);
   }
 
   function getWebappPublishStatusClass(state: WebappPublishState | null | undefined) {
-    return getWebappPublishPresentation(state, state ? webappPublishInfoById[state.id] : undefined,
+    return getWebappPublishPresentation(state, webappPublishInfo,
       state ? webappRuntimeById[state.id] : undefined).className;
   }
 
@@ -5261,7 +5229,7 @@ export function SettingsPage({
       case "webapps": {
         const runtimeState = selectedWebapp ? webappRuntimeById[selectedWebapp.id] : null;
         const runtimeCheck = selectedWebapp ? webappRuntimeCheckById[selectedWebapp.id] : null;
-        const publishInfo = selectedWebapp ? webappPublishInfoById[selectedWebapp.id] : null;
+        const publishInfo = webappPublishInfo;
         const publishState = selectedWebapp ? webappPublishStateById[selectedWebapp.id] : null;
         const publishReady = publishInfo?.configured === true;
         const publishHint = !publishInfo
@@ -5600,7 +5568,8 @@ export function SettingsPage({
                                 </div>
                                 <Button
                                   disabled={webappPublishPendingId !== ""}
-                                  onClick={() => void refreshWebappPublishStatus(selectedWebapp.id)}
+                                  onClick={() => void onWebappPublishRefresh(selectedWebapp.id).catch((reason) =>
+                                    showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error"))}
                                 >
                                   {t("settings.webapps.publishRefresh")}
                                 </Button>

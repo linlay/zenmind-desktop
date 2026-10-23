@@ -454,3 +454,49 @@ test("conversation snapshot omits unavailable and inconsistent attachments", asy
     assert.equal(JSON.parse(result.bytes.toString()).attachments.length, expected, scenario);
   }
 });
+
+test("freezing preserves spaced names, optional V1 metadata, graph references and platform omissions", async t => {
+  const resource = { id: "1".repeat(24), name: " image.png ", sourceRef: "artifacts/run/%20image.png%20", mimeType: "image/png" };
+  const missing = { id: "2".repeat(24), name: "lost.png", sourceRef: "artifacts/run/lost.png", reason: "not_found" };
+  const value = { version: 1, turns: [{ nodes: [{ attachmentIds: [resource.id, missing.id] }] }],
+    attachments: [resource], omittedResources: [missing] };
+  let reads = 0;
+  const server = http.createServer(async (req, res) => {
+    if (req.url.startsWith("/api/chat/export?")) {
+      const bytes = Buffer.from(JSON.stringify(value));
+      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": bytes.length, "X-Conversation-Export-Max-Bytes": "52428800" });
+      res.end(bytes);
+    } else {
+      reads++;
+      assert.deepEqual(await readRequestJson(req), { chatId: "chat_1", sourceRef: resource.sourceRef });
+      res.writeHead(200, { "Content-Type": resource.mimeType, "Content-Length": "0" });
+      res.end();
+    }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const renderer = new ConversationHtmlRenderService({ snapshotProvider: {
+    async createChatSnapshotRequest() {
+      return { ok: true, snapshotUrl: `http://127.0.0.1:${server.address().port}/api/chat/export?chatId=chat_1&format=snapshot`, bearerToken: "desktop-token" };
+    }
+  } });
+  renderer.start();
+  t.after(() => renderer.dispose());
+  const result = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 1024 });
+  assert.equal(result.ok, true);
+  const snapshot = JSON.parse(result.bytes);
+  assert.deepEqual(snapshot.turns, value.turns);
+  assert.deepEqual(result.omittedResources, [missing]);
+  assert.deepEqual(snapshot.omittedResources, [missing]);
+  assert.equal(snapshot.attachments[0].name, resource.name);
+  assert.equal(snapshot.attachments[0].sha256, createHash("sha256").update("").digest("hex"));
+  assert.equal(snapshot.attachments[0].size, 0);
+  assert.equal(result.attachments[0].bytes.length, 0);
+  assert.equal(reads, 1);
+
+  // A body that cannot fit is rejected before any file is read.
+  value.padding = "x".repeat(2000);
+  const large = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 1024, maxResourceBytes: 1024 });
+  assert.equal(large.ok, false);
+  assert.equal(reads, 1);
+});

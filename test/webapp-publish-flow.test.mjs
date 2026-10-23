@@ -44,7 +44,7 @@ test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing sepa
     "desktop.webapp.uninstall"
   ]) {
     assert.match(catalog, new RegExp(action.replaceAll(".", "\\."), "u"));
-    assert.match(bridge, new RegExp(action.replaceAll(".", "\\."), "u"));
+    assert.match(bridge + read("src/main/modules/desktop-actions/action-handlers.ts"), new RegExp(action.replaceAll(".", "\\."), "u"));
   }
   for (const removedAction of [
     "desktop.webapp.installAndOpen",
