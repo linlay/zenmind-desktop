@@ -269,7 +269,8 @@ test("conversation HTML render service keeps template fetch and assembly inside 
 
 test("conversation snapshot freezes available resources and omits a changed artifact", async (t) => {
   const published = Buffer.from("<h1>报告</h1>");
-  const pdf = Buffer.from("%PDF-1.7\nresource");
+  const pdf = Buffer.alloc(0);
+  const missing = { name: "lost.png", reason: "not_found" };
   const changed = Buffer.from("<h1>已修改</h1>");
   const expectedHash = createHash("sha256").update(published).digest("hex");
   const pdfHash = createHash("sha256").update(pdf).digest("hex");
@@ -278,9 +279,9 @@ test("conversation snapshot freezes available resources and omits a changed arti
     const url = new URL(req.url || "/", "http://127.0.0.1");
     assert.equal(req.headers.authorization, "Bearer desktop-token");
     if (url.pathname === "/api/chat/export") {
-      const snapshot = Buffer.from(JSON.stringify({ version: 1, turns: [], attachments: [
-        { id: "0123456789abcdef01234567", name: "报告.html", mimeType: "text/html",
-          sourceRef: "artifacts/run-1/report.html", size: published.length, sha256: expectedHash },
+      const snapshot = Buffer.from(JSON.stringify({ version: 1, turns: [{ attachmentIds: ["0123456789abcdef01234567"] }], omittedResources: [missing], attachments: [
+        { id: "0123456789abcdef01234567", name: " 报告.html ", mimeType: "Text/HTML; charset=utf-8", mediaRefs: {},
+          sourceRef: "artifacts/run-1/report.html", size: published.length, sha256: expectedHash.toUpperCase() },
         { id: "abcdef0123456789abcdef01", name: "报告.pdf", mimeType: "application/pdf",
           sourceRef: "artifacts/run-1/report.pdf" }
       ] }));
@@ -327,11 +328,13 @@ test("conversation snapshot freezes available resources and omits a changed arti
   const valid = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 });
   assert.equal(valid.ok, true);
   assert.deepEqual(valid.attachments.map((item) => [item.name, item.mimeType]), [
-    ["报告.html", "text/html"], ["报告.pdf", "application/pdf"]
+    [" 报告.html ", "text/html"], ["报告.pdf", "application/pdf"]
   ]);
   assert.equal(Buffer.compare(valid.attachments[0].bytes, published), 0);
   assert.equal(Buffer.compare(valid.attachments[1].bytes, pdf), 0);
-  assert.deepEqual(valid.omittedResources, []);
+  assert.deepEqual(valid.omittedResources, [missing]);
+  assert.deepEqual(JSON.parse(valid.bytes).attachments[0].mediaRefs, {});
+  assert.deepEqual(JSON.parse(valid.bytes).turns, [{ attachmentIds: ["0123456789abcdef01234567"] }]);
   assert.equal(JSON.parse(valid.bytes.toString()).attachments[1].sha256, pdfHash);
   assert.equal(JSON.parse(valid.bytes.toString()).attachments[1].size, pdf.length);
 
@@ -347,7 +350,7 @@ test("conversation snapshot freezes available resources and omits a changed arti
   const partial = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 });
   assert.equal(partial.ok, true);
   assert.deepEqual(partial.attachments.map((item) => item.name), ["报告.pdf"]);
-  assert.deepEqual(partial.omittedResources.map((item) => item.reason), ["changed"]);
+  assert.deepEqual(partial.omittedResources.map((item) => item.reason), ["not_found", "changed"]);
   assert.deepEqual(JSON.parse(partial.bytes.toString()).attachments.map((item) => item.name), ["报告.pdf"]);
 });
 
@@ -453,50 +456,4 @@ test("conversation snapshot omits unavailable and inconsistent attachments", asy
     assert.deepEqual(JSON.parse(result.bytes.toString()).omittedResources ?? [], result.omittedResources);
     assert.equal(JSON.parse(result.bytes.toString()).attachments.length, expected, scenario);
   }
-});
-
-test("freezing preserves spaced names, optional V1 metadata, graph references and platform omissions", async t => {
-  const resource = { id: "1".repeat(24), name: " image.png ", sourceRef: "artifacts/run/%20image.png%20", mimeType: "image/png" };
-  const missing = { id: "2".repeat(24), name: "lost.png", sourceRef: "artifacts/run/lost.png", reason: "not_found" };
-  const value = { version: 1, turns: [{ nodes: [{ attachmentIds: [resource.id, missing.id] }] }],
-    attachments: [resource], omittedResources: [missing] };
-  let reads = 0;
-  const server = http.createServer(async (req, res) => {
-    if (req.url.startsWith("/api/chat/export?")) {
-      const bytes = Buffer.from(JSON.stringify(value));
-      res.writeHead(200, { "Content-Type": "application/json", "Content-Length": bytes.length, "X-Conversation-Export-Max-Bytes": "52428800" });
-      res.end(bytes);
-    } else {
-      reads++;
-      assert.deepEqual(await readRequestJson(req), { chatId: "chat_1", sourceRef: resource.sourceRef });
-      res.writeHead(200, { "Content-Type": resource.mimeType, "Content-Length": "0" });
-      res.end();
-    }
-  });
-  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise(resolve => server.close(resolve)));
-  const renderer = new ConversationHtmlRenderService({ snapshotProvider: {
-    async createChatSnapshotRequest() {
-      return { ok: true, snapshotUrl: `http://127.0.0.1:${server.address().port}/api/chat/export?chatId=chat_1&format=snapshot`, bearerToken: "desktop-token" };
-    }
-  } });
-  renderer.start();
-  t.after(() => renderer.dispose());
-  const result = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 1024 });
-  assert.equal(result.ok, true);
-  const snapshot = JSON.parse(result.bytes);
-  assert.deepEqual(snapshot.turns, value.turns);
-  assert.deepEqual(result.omittedResources, [missing]);
-  assert.deepEqual(snapshot.omittedResources, [missing]);
-  assert.equal(snapshot.attachments[0].name, resource.name);
-  assert.equal(snapshot.attachments[0].sha256, createHash("sha256").update("").digest("hex"));
-  assert.equal(snapshot.attachments[0].size, 0);
-  assert.equal(result.attachments[0].bytes.length, 0);
-  assert.equal(reads, 1);
-
-  // A body that cannot fit is rejected before any file is read.
-  value.padding = "x".repeat(2000);
-  const large = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 1024, maxResourceBytes: 1024 });
-  assert.equal(large.ok, false);
-  assert.equal(reads, 1);
 });

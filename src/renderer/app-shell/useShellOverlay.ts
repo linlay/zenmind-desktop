@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 
 export type ShellOverlay =
   | { kind: "toolMenu" }
@@ -28,13 +28,12 @@ export function reduceShellOverlay(
   return current === action.overlay ? null : current;
 }
 
-export function useShellOverlay() {
+export function useShellOverlay(routeKey = "") {
   const [activeOverlay, dispatch] = useReducer(reduceShellOverlay, null);
   const activeOverlayRef = useRef<ShellOverlay>(null);
   const toolMenuRequestIdRef = useRef(0);
   const toolMenuRequestPendingRef = useRef(false);
   const shareSessionIdRef = useRef(0);
-  activeOverlayRef.current = activeOverlay;
 
   const cancelPendingToolMenuOpen = useCallback(() => {
     toolMenuRequestIdRef.current += 1;
@@ -140,6 +139,15 @@ export function useShellOverlay() {
     },
     [cancelPendingToolMenuOpen],
   );
+
+  const previousRouteRef = useRef(routeKey);
+  useLayoutEffect(() => {
+    const overlay = activeOverlayRef.current;
+    if (previousRouteRef.current !== routeKey && overlay?.kind === "conversationShare") {
+      closeConversationShare(overlay);
+    }
+    previousRouteRef.current = routeKey;
+  }, [routeKey, closeConversationShare]);
 
   return {
     activeOverlay,

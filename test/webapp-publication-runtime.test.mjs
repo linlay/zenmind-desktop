@@ -60,59 +60,59 @@ function publicationFixture(t) {
   return { app, ports, items, requests, starts: () => starts, disconnect: () => { connected = false; } };
 }
 
-test("passive route synchronization preserves publication while offline without starting Tunnel", async t => {
-  const f = publicationFixture(t);
+test("publication recovery uses the live connection; only explicit publishing can connect", async t => {
+  const f = publicationFixture(t), item = f.items[0], queried = [], started = [];
+  const runtime = {
+    getStatus: (_app, id) => { queried.push(id); return { id, status: id === item.id ? "running" : "stopped", webUrl: "http://127.0.0.1:51001/" }; },
+    start: async (_app, id) => { started.push(id); }
+  };
+  const file = path.join(getDesktopWebappStateRoot(f.app, item.id), "publish.json");
+  const before = fs.readFileSync(file, "utf8");
   f.disconnect();
-  const item = f.items[0];
-  const stateFile = path.join(getDesktopWebappStateRoot(f.app, item.id), "publish.json");
-  const before = fs.readFileSync(stateFile, "utf8");
-  const state = await syncPublishedWebappRoute(f.app, item, { id: item.id, status: "running", webUrl: "http://127.0.0.1:51001/" }, f.ports);
-  assert.equal(state, null, "skipped synchronization must not emit route-synced");
-  assert.equal(f.starts(), 0);
+  assert.equal(await syncPublishedWebappRoute(f.app, item, runtime.getStatus(f.app, item.id), f.ports), null);
+  queried.length = 0;
+  await restorePublishedWebapps(f.app, f.ports, runtime);
+  assert.deepEqual(queried, []);
   assert.equal(f.requests.length, 0);
-  assert.equal(fs.readFileSync(stateFile, "utf8"), before);
-});
-
-test("restoring published apps stops after a disconnect without starting the next app or Tunnel", async t => {
-  const f = publicationFixture(t);
-  let appStarts = 0;
+  assert.equal(f.starts(), 0);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  const published = await publishWebapp(f.app, item.id, runtime.getStatus(f.app, item.id), f.ports);
+  assert.equal(published.ok, true);
+  assert.equal(published.state.routeId, "same-route");
+  assert.equal(f.starts(), 1);
+  f.requests.length = 0;
+  await restorePublishedWebapps(f.app, f.ports, runtime);
+  assert.equal(f.requests.length, 1);
+  assert.deepEqual(started, [f.items[1].id]);
+  queried.length = started.length = 0;
   t.mock.method(globalThis, "fetch", async () => {
     f.disconnect();
     return { ok: true, text: async () => JSON.stringify({ routeId: "same-route", publicHost: "same-wa.example.test" }) };
   });
-  const secondStateFile = path.join(getDesktopWebappStateRoot(f.app, f.items[1].id), "publish.json");
-  const before = fs.readFileSync(secondStateFile, "utf8");
-  const queried = [];
-  await restorePublishedWebapps(f.app, f.ports, {
-    getStatus: (_app, id) => { queried.push(id); return { id, status: "running", webUrl: "http://127.0.0.1:51001/" }; },
-    start: async () => { appStarts++; }
-  });
-  assert.equal(queried.length, 1);
-  assert.equal(appStarts, 0);
-  assert.equal(f.starts(), 0);
-  assert.equal(fs.readFileSync(secondStateFile, "utf8"), before);
-});
-
-test("connected restore synchronizes running apps and preserves stopped-app recovery", async t => {
-  const f = publicationFixture(t);
-  const started = [];
-  await restorePublishedWebapps(f.app, f.ports, {
-    getStatus: (_app, id) => ({ id, status: id === f.items[0].id ? "running" : "stopped", webUrl: "http://127.0.0.1:51001/" }),
-    start: async (_app, id) => { started.push(id); }
-  });
-  assert.equal(f.requests.length, 1);
-  assert.deepEqual(started, [f.items[1].id]);
-  assert.equal(f.starts(), 0);
-});
-
-test("explicit publishing can connect Tunnel before registering the route", async t => {
-  const f = publicationFixture(t);
-  f.disconnect();
-  const item = f.items[0];
-  const result = await publishWebapp(f.app, item.id, { id: item.id, status: "running", webUrl: "http://127.0.0.1:51001/" }, f.ports);
-  assert.equal(result.ok, true);
+  await restorePublishedWebapps(f.app, f.ports, runtime);
+  assert.deepEqual(queried, [item.id]);
+  assert.deepEqual(started, []);
   assert.equal(f.starts(), 1);
-  assert.equal(f.requests.length, 1);
-  assert.equal(result.state.id, item.id);
-  assert.equal(result.state.routeId, "same-route");
+});
+
+test("webs.list reads current runtime and global publish information in one IPC response", t => {
+  const f = publicationFixture(t);
+  const { createWebsFacade } = require("../dist-electron/main/modules/webs/facade.js");
+  const { registerWebIpcHandlers } = require("../dist-electron/main/modules/webs/ipc.js");
+  const facade = createWebsFacade(f.ports), handlers = new Map();
+  let status = "running";
+  t.mock.method(facade.webappRuntime, "getStatus", (_app, id) => ({ id, status }));
+  registerWebIpcHandlers({ handle: (name, handler) => handlers.set(name, handler) }, { app: f.app, websFacade: facade });
+  const read = handlers.get("webs.list");
+  const initial = read();
+  assert.equal(initial.webappRuntimeStates[f.items[0].id].status, "running");
+  assert.equal(initial.webappPublishInfo.tunnelConnected, true);
+  status = "error";
+  f.disconnect();
+  const refreshed = read();
+  assert.equal(refreshed.webappRuntimeStates[f.items[0].id].status, "error");
+  assert.equal(refreshed.webappPublishInfo.tunnelConnected, false);
+  t.mock.method(facade.webappRuntime, "getStatus", () => { throw new Error("unreadable runtime"); });
+  assert.equal(read().items.length, 2);
+  assert.deepEqual(read().webappRuntimeStates, {});
 });

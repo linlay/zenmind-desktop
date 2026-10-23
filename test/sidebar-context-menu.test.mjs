@@ -190,7 +190,7 @@ test("AppShell owns the shared chat dialog while the sidebar only forwards chat 
   assert.doesNotMatch(sidebarSource, /shareAvailable|conversationShareAvailable/u);
   assert.match(sidebarSource, /onShareChat\(chat\.chatId, chat\.chatName\)/u);
   assert.doesNotMatch(sidebarSource, /ConversationShareDialog|useConversationShareDialog/u);
-  assert.match(appShellSource, /const shellOverlay = useShellOverlay\(\)/u);
+  assert.match(appShellSource, /const shellOverlay = useShellOverlay\(/u);
   assert.match(appShellSource, /<ConversationShareDialog/u);
   assert.match(appShellSource, /className="main-chat-header-action main-chat-share-button"/u);
 });

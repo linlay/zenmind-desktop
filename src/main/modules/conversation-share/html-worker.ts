@@ -54,16 +54,11 @@ type SnapshotResponse = {
 class ConversationHtmlRenderFailure extends Error {
   constructor(
     readonly code: ConversationHtmlWorkerErrorCode,
-    readonly limitBytes?: number
+    readonly limitBytes?: number,
+    readonly responseFailure?: number | "timeout" | "content_type"
   ) {
     super(code);
     this.name = "ConversationHtmlRenderFailure";
-  }
-}
-
-class ResourceReadFailure extends Error {
-  constructor(readonly reason: ConversationShareOmissionReason) {
-    super(reason);
   }
 }
 
@@ -176,7 +171,6 @@ export async function fetchLimitedResponse(input: {
   expectedContentType: string;
   unavailableCode: ConversationHtmlWorkerErrorCode;
   invalidCode: ConversationHtmlWorkerErrorCode;
-  resource?: boolean;
 }): Promise<{ response: Response; bytes: Buffer }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
@@ -191,27 +185,19 @@ export async function fetchLimitedResponse(input: {
       signal: controller.signal
     });
     if (!response.ok) {
-      if (input.resource) {
-        const reasons: Record<number, ConversationShareOmissionReason> = {
-          400: "invalid", 401: "forbidden", 403: "forbidden", 404: "not_found",
-          409: "changed", 413: "too_large", 415: "unsupported"
-        };
-        throw new ResourceReadFailure(reasons[response.status] ?? "read_failed");
-      }
       if (input.unavailableCode === "snapshot_unavailable" &&
         (response.status === 401 || response.status === 403)) {
-        throw new ConversationHtmlRenderFailure("snapshot_unauthorized");
+        throw new ConversationHtmlRenderFailure("snapshot_unauthorized", undefined, response.status);
       }
       if (input.maxBytes === "snapshot" && response.status === 413) throw new ConversationHtmlRenderFailure("export_too_large");
-      throw new ConversationHtmlRenderFailure(input.unavailableCode);
+      throw new ConversationHtmlRenderFailure(input.unavailableCode, undefined, response.status);
     }
     const contentType = response.headers.get("content-type")
       ?.split(";", 1)[0]
       ?.trim()
       .toLowerCase();
     if (contentType !== input.expectedContentType) {
-      if (input.resource) throw new ResourceReadFailure("changed");
-      throw new ConversationHtmlRenderFailure(input.invalidCode);
+      throw new ConversationHtmlRenderFailure(input.invalidCode, undefined, "content_type");
     }
     const rawMaximum = input.maxBytes === "snapshot"
       ? response.headers.get("X-Conversation-Export-Max-Bytes") : String(input.maxBytes);
@@ -240,17 +226,9 @@ export async function fetchLimitedResponse(input: {
   } catch (error) {
     const timedOut = controller.signal.aborted;
     controller.abort();
-    if (input.resource) {
-      if (error instanceof ResourceReadFailure) throw error;
-      if (timedOut) throw new ResourceReadFailure("timeout");
-      if (error instanceof ConversationHtmlRenderFailure) {
-        throw new ResourceReadFailure(error.code === "too_large" ? "too_large" : "invalid");
-      }
-      if (!(error instanceof RangeError)) throw new ResourceReadFailure("read_failed");
-    }
     if (error instanceof ConversationHtmlRenderFailure) throw error;
     if (error instanceof RangeError) throw new ConversationHtmlRenderFailure("resource_exhausted");
-    throw new ConversationHtmlRenderFailure(input.unavailableCode);
+    throw new ConversationHtmlRenderFailure(input.unavailableCode, undefined, timedOut ? "timeout" : undefined);
   } finally {
     clearTimeout(timeout);
   }
@@ -405,27 +383,13 @@ async function readConversationSnapshot(
     const bodyPrefix = JSON.stringify(body).slice(0, -1);
     const bodyBytes = Buffer.byteLength(bodyPrefix);
     const omittedResources: ConversationShareOmittedResource[] = [];
-    const identities = new Map<string, string>();
     const encodedOmissions: string[] = [];
     let omissionBytes = 0;
-    const omissionKeys = new Set<string>();
     const addOmission = (item: ConversationShareOmittedResource) => {
-      const key = item.id ?? `${item.name}:${item.reason}`;
-      if (!omissionKeys.has(key)) {
-        omissionKeys.add(key);
-        omittedResources.push(item);
-        const encoded = JSON.stringify(item);
-        encodedOmissions.push(encoded);
-        omissionBytes += Buffer.byteLength(encoded);
-      }
-    };
-    const register = (identity: ResourceIdentity) => {
-      const existing = identities.get(identity.id);
-      if (existing && existing !== identity.sourceRef) {
-        throw new ConversationHtmlRenderFailure("snapshot_invalid");
-      }
-      identities.set(identity.id, identity.sourceRef);
-      return Boolean(existing);
+      omittedResources.push(item);
+      const encoded = JSON.stringify(item);
+      encodedOmissions.push(encoded);
+      omissionBytes += Buffer.byteLength(encoded);
     };
     if (sourceOmissions !== undefined && !Array.isArray(sourceOmissions)) {
       throw new ConversationHtmlRenderFailure("snapshot_invalid");
@@ -435,23 +399,7 @@ async function readConversationSnapshot(
       if (!item || !validResourceName(item.name) || !isOmissionReason(item.reason)) {
         throw new ConversationHtmlRenderFailure("snapshot_invalid");
       }
-      const identity = resourceIdentity(item);
-      if ((item.id !== undefined || item.sourceRef !== undefined) && !identity) {
-        throw new ConversationHtmlRenderFailure("snapshot_invalid");
-      }
-      if (identity) register(identity);
-      addOmission({ ...identity, name: item.name, reason: item.reason });
-    }
-    const candidates: Array<{ raw: Record<string, unknown>; identity: ResourceIdentity }> = [];
-    for (const raw of sourceAttachments) {
-      const descriptor = resourceObject(raw);
-      const identity = descriptor && resourceIdentity(descriptor);
-      if (!identity) {
-        addOmission({ name: descriptor && validResourceName(descriptor.name) ? descriptor.name : "resource", reason: "invalid" });
-        continue;
-      }
-      if (register(identity)) continue;
-      candidates.push({ raw: descriptor!, identity });
+      addOmission(item as ConversationShareOmittedResource);
     }
     // Platform owns resource discovery and reference semantics; Tunnel validates the
     // final graph. Desktop freezes bytes and keeps each declaration with its upload.
@@ -469,17 +417,26 @@ async function readConversationSnapshot(
     }
     let totalBytes = 0;
     const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
-    for (const { raw: descriptor, identity } of candidates) {
+    const seen = new Set(omittedResources.flatMap((item) => item.id ? [item.id] : []));
+    for (const raw of sourceAttachments) {
+      const descriptor = resourceObject(raw);
+      const identity = descriptor && resourceIdentity(descriptor);
+      if (!descriptor || !identity) {
+        addOmission({ name: descriptor && validResourceName(descriptor.name) ? descriptor.name : "resource", reason: "invalid" });
+        continue;
+      }
+      if (seen.has(identity.id)) continue;
+      seen.add(identity.id);
       const omit = (reason: ConversationShareOmissionReason) => addOmission({ ...identity, reason });
       if (Date.now() >= deadline) {
         omit("timeout");
         continue;
       }
-      const mediaType = typeof descriptor.mimeType === "string" ? descriptor.mimeType : "";
+      const mediaType = typeof descriptor.mimeType === "string" ? descriptor.mimeType.split(";", 1)[0].trim().toLowerCase() : "";
       if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mediaType) ||
         (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) || (descriptor.size as number) < 0)) ||
         (descriptor.sha256 !== undefined &&
-          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(descriptor.sha256)))) {
+          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(descriptor.sha256)))) {
         omit("invalid");
         continue;
       }
@@ -501,12 +458,11 @@ async function readConversationSnapshot(
           maxBytes: maxResourceBytes - totalBytes,
           expectedContentType: mediaType,
           unavailableCode: "snapshot_unavailable",
-          invalidCode: "snapshot_invalid",
-          resource: true
+          invalidCode: "snapshot_invalid"
         });
         const sha256 = createHash("sha256").update(bytes).digest("hex");
         if ((descriptor.size !== undefined && descriptor.size !== bytes.length) ||
-          (descriptor.sha256 !== undefined && descriptor.sha256 !== sha256)) {
+          (descriptor.sha256 !== undefined && (descriptor.sha256 as string).toLowerCase() !== sha256)) {
           omit("changed");
           continue;
         }
@@ -520,8 +476,13 @@ async function readConversationSnapshot(
           bytes: bytes.buffer as ArrayBuffer
         } });
       } catch (error) {
-        if (!(error instanceof ResourceReadFailure)) throw error;
-        omit(error.reason);
+        if (!(error instanceof ConversationHtmlRenderFailure) || error.code === "resource_exhausted") throw error;
+        const reasons: Record<string, ConversationShareOmissionReason> = {
+          400: "invalid", 401: "forbidden", 403: "forbidden", 404: "not_found", 409: "changed",
+          413: "too_large", 415: "unsupported", content_type: "changed", timeout: "timeout"
+        };
+        omit(reasons[error.responseFailure ?? ""] ??
+          (error.code === "too_large" ? "too_large" : error.code === "snapshot_invalid" ? "invalid" : "read_failed"));
       }
     }
     while (bodyBytes + metadataBytes() > maxSnapshotBytes && frozen.length) {
@@ -557,8 +518,7 @@ function validResourceName(value: unknown): value is string {
 function resourceIdentity(value: Record<string, unknown>): ResourceIdentity | null {
   const { id, name, sourceRef } = value;
   if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || !validResourceName(name) ||
-    typeof sourceRef !== "string" || !sourceRef || sourceRef.length > 2_048 ||
-    /[\u0000-\u001f\u007f]/u.test(sourceRef)) return null;
+    typeof sourceRef !== "string" || !sourceRef || sourceRef.length > 2_048) return null;
   return { id, sourceRef, name };
 }
 

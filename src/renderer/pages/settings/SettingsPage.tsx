@@ -32,8 +32,8 @@ import type {
   WebappPublishInfo,
   WebappPublishState,
   WebappPublishStatusResult,
+  WebListResult,
   WebappRuntimeCheckResult,
-  WebappStatusResult,
   WebappRuntimeState,
   WebappRuntimeSettings,
   WebsiteEntry,
@@ -136,9 +136,7 @@ type SettingsPageProps = {
   webappPublishStateById: Readonly<Record<string, WebappPublishState | null>>;
   webappPublishInfo: WebappPublishInfo | null;
   webappRuntimeById: Readonly<Record<string, WebappRuntimeState | null>>;
-  onWebappPublishRefresh: (id: string) => Promise<void>;
-  onWebappRuntimeRefresh: (id: string) => Promise<WebappStatusResult>;
-  onWebItemsRefresh: () => void | Promise<unknown>;
+  onWebItemsRefresh: () => Promise<WebListResult>;
   onWebappRuntimeStateChange: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onWebappPublishStatusChange: (id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
@@ -2416,8 +2414,6 @@ export function SettingsPage({
   webappPublishStateById,
   webappPublishInfo,
   webappRuntimeById,
-  onWebappPublishRefresh,
-  onWebappRuntimeRefresh,
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
   onWebappPublishStatusChange,
@@ -2741,6 +2737,12 @@ export function SettingsPage({
     webappAllowLanAccess,
     webappAuthMode
   ]);
+
+  useEffect(() => {
+    if (activeSection !== "webapps") return;
+    void onWebItemsRefresh().catch((reason) =>
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error"));
+  }, [activeSection, selectedWebapp?.id]);
 
   useEffect(() => {
     if (activeSection !== "webapps" || !selectedWebapp) {
@@ -3410,10 +3412,6 @@ export function SettingsPage({
     }
   }
 
-  async function refreshWebItemsFromSettings() {
-    await onWebItemsRefresh();
-  }
-
   function beginAddWebsiteItem() {
     pendingWebsiteSelectionIdRef.current = "";
     pendingWebsiteSnapshotRef.current = null;
@@ -3457,7 +3455,7 @@ export function SettingsPage({
           pendingWebsiteSelectionIdRef.current = nextSelectedId;
           setSelectedWebsiteId(nextSelectedId);
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3481,7 +3479,7 @@ export function SettingsPage({
         } else {
           clearWebsiteDraft();
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3505,7 +3503,7 @@ export function SettingsPage({
         } else {
           clearWebsiteDraft();
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3524,7 +3522,7 @@ export function SettingsPage({
         result.ok ? "success" : "error"
       );
       if (result.ok) {
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3547,7 +3545,7 @@ export function SettingsPage({
         if (result.item) {
           setSelectedWebappId(result.item.id);
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
         if (result.item) navigate(buildWebappSettingsPath(result.item.id));
       }
     } catch (reason) {
@@ -3720,8 +3718,7 @@ export function SettingsPage({
         }
       }
 
-      await refreshWebItemsFromSettings();
-      await onWebappRuntimeRefresh(selectedWebapp.id);
+      await onWebItemsRefresh();
       await refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3736,13 +3733,13 @@ export function SettingsPage({
     setWebappRuntimePendingId(pendingKey);
     try {
       const result = action === "refresh"
-        ? await onWebappRuntimeRefresh(item.id)
+        ? await onWebItemsRefresh()
         : action === "start"
           ? await window.electronAPI.webs.webapps.start(item.id)
           : action === "stop"
             ? await window.electronAPI.webs.webapps.stop(item.id)
             : await window.electronAPI.webs.webapps.restart(item.id);
-      if (action !== "refresh") onWebappRuntimeStateChange(item.id, result.state, result.message);
+      if ("state" in result) onWebappRuntimeStateChange(item.id, result.state, result.message);
       await refreshSelectedWebappRuntimeCheck(item.id);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
@@ -3775,7 +3772,7 @@ export function SettingsPage({
         const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
         setSelectedWebappId(nextItem?.id ?? "");
         setWebappLogContent("");
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -5568,7 +5565,7 @@ export function SettingsPage({
                                 </div>
                                 <Button
                                   disabled={webappPublishPendingId !== ""}
-                                  onClick={() => void onWebappPublishRefresh(selectedWebapp.id).catch((reason) =>
+                                  onClick={() => void onWebItemsRefresh().catch((reason) =>
                                     showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error"))}
                                 >
                                   {t("settings.webapps.publishRefresh")}

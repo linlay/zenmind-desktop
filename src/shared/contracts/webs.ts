@@ -115,7 +115,9 @@ export interface WebappRuntimeState {
 export interface WebListResult {
   ok: boolean;
   items: WebEntry[];
+  webappRuntimeStates: Record<string, WebappRuntimeState | null>;
   webappPublishStates: Record<string, WebappPublishState | null>;
+  webappPublishInfo: WebappPublishInfo;
   message: string;
 }
 

@@ -1808,20 +1808,6 @@ for (const ttl of [3_600_000, 2_147_483_647, 2_147_483_648, 365 * 86_400_000]) {
   });
 }
 
-test("native timers keep a 365-day credential connected without overflow warnings", async t => {
-  const warnings = [];
-  const onWarning = warning => warnings.push(warning);
-  process.on("warning", onWarning);
-  t.after(() => process.off("warning", onWarning));
-  const f = await credentialSyncFixture(t, { ttl: 365 * 86_400_000 });
-  await new Promise(resolve => setTimeout(resolve, 30));
-  assert.equal(f.connections(), 1);
-  assert.equal(f.issues(), 1);
-  assert.equal(f.closes(), 0);
-  assert.equal(f.runtime.getStatus().connected, true);
-  assert.equal(warnings.filter(warning => warning.name === "TimeoutOverflowWarning").length, 0);
-});
-
 test("connection notifications only follow actual connected state transitions", async t => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
   let notifications = 0;
@@ -2016,4 +2002,37 @@ test("logout discards a late token refresh before any upload", async t => {
   await flushPromises();
   assert.equal(f.requests.filter(request => request.body.platformCredential).length, 0);
   assert.equal(f.runtime.getStatus().phase, "stopped");
+});
+
+// Test our activation/opcode adapter; ws owns frame parsing and protocol validation.
+test("WebSocket adapter queues Upgrade messages, preserves opcodes and cancels queued delivery", () => {
+  const { TunnelHubWebSocketClient } = require("../dist-electron/main/modules/tunnel/websocket-client.js");
+  for (const method of ["close", "destroy"]) {
+    const sent = [], received = [];
+    const socket = Object.assign(new EventEmitter(), {
+      readyState: 1, resume() {}, close() {}, terminate() {},
+      send(payload, options, done) { sent.push([payload.toString(), options.binary]); done(); }
+    });
+    const client = new TunnelHubWebSocketClient(socket);
+    client.on("message", message => received.push(message));
+    socket.emit("message", Buffer.from("welcome"), false);
+    socket.emit("message", Buffer.from("bytes"), true);
+    assert.deepEqual(received, []);
+    client.startReceiving();
+    client.startReceiving();
+    assert.deepEqual(received.map(message => [message.payload.toString(), message.type]), [["welcome", 1], ["bytes", 2]]);
+    client.sendMessage(1, Buffer.from("json"));
+    client.sendBinary(Buffer.from("stream"));
+    assert.deepEqual(sent, [["json", false], ["stream", true]]);
+    assert.throws(() => client.sendBinary(Buffer.alloc((64 << 20) + 1)), /too large/);
+    client[method]();
+    socket.emit("message", Buffer.from("late"), false);
+    assert.equal(received.length, 2);
+    assert.throws(() => client.sendBinary(Buffer.alloc(0)), /closed/);
+    const pending = new TunnelHubWebSocketClient(socket);
+    pending.on("message", () => assert.fail("closed adapter delivered queued data"));
+    socket.emit("message", Buffer.from("queued"), false);
+    pending[method]();
+    pending.startReceiving();
+  }
 });

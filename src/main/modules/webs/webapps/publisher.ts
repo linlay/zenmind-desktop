@@ -92,7 +92,7 @@ function readRuntimeStatus(ports?: WebsIntegrationPorts) {
   }
 }
 
-function inspectPublishInfo(app: App, ports?: WebsIntegrationPorts): WebappPublishInfo {
+export function inspectPublishInfo(app: App, ports?: WebsIntegrationPorts): WebappPublishInfo {
   const integration = requireWebsIntegrationPorts(ports);
   const settings = integration.readTunnelHubSettings(app);
   const status = readRuntimeStatus(ports);

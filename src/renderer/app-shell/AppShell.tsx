@@ -233,13 +233,6 @@ type ExternalExperimentalItem = {
 };
 
 const EMPTY_WEB_SURFACE_ROUTE = "/webs";
-const WEBAPP_PUBLISH_CHANGE_REASONS = new Set([
-  "published",
-  "unpublished",
-  "route-synced",
-  "publish-failed"
-]);
-
 function resolveAssistantNavDisplayItems(result: AssistantNavAgentItemsResult) {
   const activityItems = Array.isArray(result.activityItems) ? result.activityItems : [];
   return activityItems.length > 0 ? activityItems : result.items;
@@ -584,8 +577,9 @@ function resolveWindowDragTarget(target: Element | null) {
 
 export function AppShell() {
   const { locale, setLocale, t } = useI18n();
-  const shellOverlay = useShellOverlay();
   const location = useLocation();
+  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
+  const shellOverlay = useShellOverlay(JSON.stringify([location.pathname, activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId]));
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
@@ -789,9 +783,6 @@ export function AppShell() {
   const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
   const [webappPublishInfo, setWebappPublishInfo] = useState<WebappPublishInfo | null>(null);
   const webItemsRefreshIdRef = useRef(0);
-  const webappPublishRefreshIdRef = useRef<Record<string, number>>({});
-  const webappPublishInfoRefreshIdRef = useRef(0);
-  const webappRuntimeRefreshIdRef = useRef<Record<string, number>>({});
   const webappRuntimeStates = useMemo(() => Object.fromEntries(
     Object.entries(webappRuntimeById).map(([id, runtime]) => [id, runtime.state])
   ), [webappRuntimeById]);
@@ -856,26 +847,6 @@ export function AppShell() {
     ? activeAgentWebclientRoute
     : null;
   const currentRoute = `${location.pathname}${location.search}`;
-  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
-  const previousShareRouteRef = useRef({ pathname: location.pathname, ...activeChatRouteInfo });
-  useLayoutEffect(() => {
-    const previous = previousShareRouteRef.current;
-    const next = {
-      pathname: location.pathname,
-      agentKey: activeChatRouteInfo.agentKey,
-      chatId: activeChatRouteInfo.chatId,
-    };
-    previousShareRouteRef.current = next;
-    // End the whole share session before painting a different main page.
-    if (conversationShareOverlay && (
-      previous.pathname !== next.pathname ||
-      previous.agentKey !== next.agentKey ||
-      previous.chatId !== next.chatId
-    )) {
-      shellOverlay.closeConversationShare(conversationShareOverlay);
-    }
-  }, [location.pathname, activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId,
-    conversationShareOverlay, shellOverlay.closeConversationShare]);
   const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId && !activeChatRouteInfo.chatId.startsWith("file-draft:")
     ? activeChatRouteInfo.chatId
     : null;
@@ -1334,58 +1305,25 @@ export function AppShell() {
   );
   async function refreshWebItems() {
     const revision = ++webItemsRefreshIdRef.current;
-    const publishRevisions = { ...webappPublishRefreshIdRef.current };
     const result = await window.electronAPI.webs.list();
     if (result.ok && revision === webItemsRefreshIdRef.current) {
       updateWebItems(result.items);
-      setWebappPublishStateById((current) => Object.fromEntries(
-        Object.entries(result.webappPublishStates).map(([id, state]) => [id,
-          publishRevisions[id] === webappPublishRefreshIdRef.current[id] ? state : current[id] ?? null])
-      ));
-      await Promise.allSettled([
-        ...result.items.filter((item) => item.kind === "webapp").map((item) => refreshWebappRuntimeState(item.id)),
-        refreshWebappPublishState()
-      ]);
+      setWebappPublishStateById(result.webappPublishStates);
+      setWebappPublishInfo(result.webappPublishInfo);
+      for (const [id, state] of Object.entries(result.webappRuntimeStates)) {
+        if (!webappStartInFlightRef.current.has(id) && !webappStopInFlightRef.current.has(id)) {
+          handleWebappRuntimeStateChange(id, state);
+        }
+      }
     }
     return result;
   }
 
   function handleWebappPublishStatusChange(id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) {
     if (!webItemsRef.current.some((item) => item.kind === "webapp" && item.id === id)) return;
-    webappPublishRefreshIdRef.current[id] = (webappPublishRefreshIdRef.current[id] ?? 0) + 1;
-    webappPublishInfoRefreshIdRef.current++;
+    webItemsRefreshIdRef.current++;
     setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
     setWebappPublishInfo(result.info);
-  }
-
-  async function refreshWebappPublishState(id = webItemsRef.current.find((item) => item.kind === "webapp")?.id ?? "") {
-    if (!id) return;
-    const revision = (webappPublishRefreshIdRef.current[id] ?? 0) + 1;
-    webappPublishRefreshIdRef.current[id] = revision;
-    const infoRevision = ++webappPublishInfoRefreshIdRef.current;
-    try {
-      const result = await window.electronAPI.webs.webapps.getPublishStatus(id);
-      if (!webItemsRef.current.some((item) => item.kind === "webapp" && item.id === id)) return;
-      if (webappPublishRefreshIdRef.current[id] === revision) {
-        setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
-      }
-      if (webappPublishInfoRefreshIdRef.current === infoRevision) setWebappPublishInfo(result.info);
-    } catch (error) {
-      if (webappPublishInfoRefreshIdRef.current === infoRevision) setWebappPublishInfo(null);
-      throw error;
-    }
-  }
-
-  async function refreshWebappRuntimeState(id: string) {
-    const revision = (webappRuntimeRefreshIdRef.current[id] ?? 0) + 1;
-    webappRuntimeRefreshIdRef.current[id] = revision;
-    const result = await window.electronAPI.webs.webapps.getStatus(id);
-    if (result.ok && result.state && webappRuntimeRefreshIdRef.current[id] === revision &&
-      webItemsRef.current.some((item) => item.kind === "webapp" && item.id === id) &&
-      !webappStartInFlightRef.current.has(id) && !webappStopInFlightRef.current.has(id)) {
-      handleWebappRuntimeStateChange(id, result.state, result.message);
-    }
-    return result;
   }
 
   async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
@@ -1450,14 +1388,8 @@ export function AppShell() {
     for (const item of webItemsRef.current) {
       if (item.kind === "webapp" && !ids.has(item.id)) {
         handleWebappRuntimeStateChange(item.id, null);
-        webappPublishRefreshIdRef.current[item.id] = (webappPublishRefreshIdRef.current[item.id] ?? 0) + 1;
-        webappPublishInfoRefreshIdRef.current++;
       }
     }
-    setWebappPublishStateById((current) => Object.fromEntries(
-      Object.entries(current).filter(([id]) => ids.has(id))
-    ));
-    if (ids.size === 0) setWebappPublishInfo(null);
     webItemsRef.current = items;
     setWebItems(items);
     setWebItemsLoaded(true);
@@ -1549,6 +1481,10 @@ export function AppShell() {
       const result = await window.electronAPI.webs.webapps.start(item.id);
       handleWebappRuntimeStateChange(item.id, result.state, result.message,
         result.ok && result.state?.webUrl ? "running" : "error");
+    } catch (error) {
+      handleWebappRuntimeStateChange(item.id, null,
+        error instanceof Error ? error.message : String(error), "error");
+      throw error;
     } finally {
       webappStartInFlightRef.current.delete(item.id);
     }
@@ -1763,7 +1699,7 @@ export function AppShell() {
     id: string, state: WebappRuntimeState | null, message = "", status?: WebappRuntimeViewState["status"]
   ) {
     if (!id) return;
-    webappRuntimeRefreshIdRef.current[id] = (webappRuntimeRefreshIdRef.current[id] ?? 0) + 1;
+    webItemsRefreshIdRef.current++;
     if (!state || state.status === "stopped") {
       const item = webItemsRef.current.find(
         (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === id,
@@ -2541,6 +2477,7 @@ export function AppShell() {
       .catch(() => undefined);
     const dispose = ssoApi.onStatusChanged((status) => {
       setDesktopSsoStatus(status);
+      void refreshWebItems().catch(() => undefined);
       if (status.pending) {
         setDesktopSsoLoginSettled(false);
       } else if (isCompleteDesktopSsoLogin(status)) {
@@ -2606,18 +2543,6 @@ export function AppShell() {
         setMountedWebEntryKeys((current) =>
           current.filter((currentEntryKey) => currentEntryKey !== entryKey)
         );
-        return;
-      }
-      if (event.reason === "tunnel-status-changed") {
-        void refreshWebappPublishState().catch(() => undefined);
-        return;
-      }
-      if (
-        event.webappId &&
-        event.reason &&
-        WEBAPP_PUBLISH_CHANGE_REASONS.has(event.reason)
-      ) {
-        void refreshWebappPublishState(event.webappId).catch(() => undefined);
         return;
       }
       refreshWebItems().catch(() => undefined);
@@ -2999,46 +2924,8 @@ export function AppShell() {
     if (!item || item.kind !== "webapp") {
       return;
     }
-    const runtime = webappRuntimeById[item.id];
-    if (runtime?.status === "starting" || runtime?.status === "running" || runtime?.status === "error") {
-      return;
-    }
-    if (webappStartInFlightRef.current.has(item.id)) {
-      return;
-    }
-    if (webappStopInFlightRef.current.has(item.id)) {
-      return;
-    }
-
-    webappStartInFlightRef.current.add(item.id);
-    setWebappRuntimeById((current) => ({
-      ...current,
-      [item.id]: {
-        status: "starting",
-        webUrl: current[item.id]?.webUrl ?? "",
-        message: t("webapp.starting"),
-        state: current[item.id]?.state ?? null
-      }
-    }));
-    window.electronAPI.webs.webapps.start(item.id)
-      .then((result) => {
-        handleWebappRuntimeStateChange(item.id, result.state, result.message,
-          result.ok && result.state?.webUrl ? "running" : "error");
-      })
-      .catch((error) => {
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: "error",
-            webUrl: "",
-            message: error instanceof Error ? error.message : String(error),
-            state: null
-          }
-        }));
-      })
-      .finally(() => {
-        webappStartInFlightRef.current.delete(item.id);
-      });
+    if (webappRuntimeById[item.id]?.status === "error") return;
+    void ensureWebappRuntimeStarted(item).catch(() => undefined);
   }, [activeWebEntryKey, webItems, webappRuntimeById]);
 
   useEffect(() => {
@@ -5046,8 +4933,6 @@ export function AppShell() {
                     webappPublishStateById={webappPublishStateById}
                     webappPublishInfo={webappPublishInfo}
                     webappRuntimeById={webappRuntimeStates}
-                    onWebappPublishRefresh={refreshWebappPublishState}
-                    onWebappRuntimeRefresh={refreshWebappRuntimeState}
                     onWebItemsRefresh={refreshWebItems}
                     onWebappRuntimeStateChange={handleWebappRuntimeStateChange}
                     onWebappPublishStatusChange={handleWebappPublishStatusChange}
