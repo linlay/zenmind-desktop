@@ -55,11 +55,7 @@ export async function createConversationShare(
       ok: true,
       message: t("assistant.chatShareCreated"),
       record,
-      ...(snapshot.attachmentsOmitted ? {
-        warning: t(snapshot.attachmentUnauthorized
-          ? "assistant.chatShareSourceUnauthorized"
-          : "assistant.chatShareAttachmentsOmitted"),
-      } : {}),
+      omittedResources: snapshot.omittedResources,
     };
   } catch (error) {
     return { ok: false, message: mapTunnelShareError(error, "create") };

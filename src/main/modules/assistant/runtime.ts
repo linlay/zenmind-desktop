@@ -224,6 +224,15 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       app: options.app,
       desktopWsServerOptions,
       onConnected: options.onTunnelConnected,
+      onConnectionChanged: () => {
+        const window = options.getMainWindow();
+        if (window && !window.isDestroyed()) {
+          window.webContents.send("webs.changed", {
+            changedAt: new Date().toISOString(),
+            reason: "tunnel-status-changed"
+          });
+        }
+      },
       canUseDesktopSsoCredentials: options.canUseDesktopSsoCredentials,
       logger: console
     });

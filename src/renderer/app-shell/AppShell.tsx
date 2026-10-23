@@ -74,7 +74,7 @@ import {
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
 import { dispatchDesktopCloseShortcut } from "../services/desktopCloseShortcutRegistry";
-import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationPresentation, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationPresentation, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishInfo, WebappPublishStatusResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -233,37 +233,6 @@ type ExternalExperimentalItem = {
 };
 
 const EMPTY_WEB_SURFACE_ROUTE = "/webs";
-const WEBAPP_PUBLISH_CHANGE_REASONS = new Set([
-  "published",
-  "unpublished",
-  "route-synced",
-  "publish-failed"
-]);
-
-function sameWebappPublishState(
-  left: WebappPublishState | null | undefined,
-  right: WebappPublishState | null | undefined
-) {
-  if (!left || !right) {
-    return left === right;
-  }
-  return left.id === right.id &&
-    left.updatedAt === right.updatedAt &&
-    left.active === right.active &&
-    left.status === right.status &&
-    left.url === right.url;
-}
-
-function sameWebappPublishStateMap(
-  left: Record<string, WebappPublishState | null>,
-  right: Record<string, WebappPublishState | null>
-) {
-  const leftIds = Object.keys(left);
-  const rightIds = Object.keys(right);
-  return leftIds.length === rightIds.length &&
-    rightIds.every((id) => sameWebappPublishState(left[id], right[id]));
-}
-
 function resolveAssistantNavDisplayItems(result: AssistantNavAgentItemsResult) {
   const activityItems = Array.isArray(result.activityItems) ? result.activityItems : [];
   return activityItems.length > 0 ? activityItems : result.items;
@@ -608,8 +577,9 @@ function resolveWindowDragTarget(target: Element | null) {
 
 export function AppShell() {
   const { locale, setLocale, t } = useI18n();
-  const shellOverlay = useShellOverlay();
   const location = useLocation();
+  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
+  const shellOverlay = useShellOverlay(JSON.stringify([location.pathname, activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId]));
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
@@ -811,6 +781,11 @@ export function AppShell() {
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
   const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
+  const [webappPublishInfo, setWebappPublishInfo] = useState<WebappPublishInfo | null>(null);
+  const webItemsRefreshIdRef = useRef(0);
+  const webappRuntimeStates = useMemo(() => Object.fromEntries(
+    Object.entries(webappRuntimeById).map(([id, runtime]) => [id, runtime.state])
+  ), [webappRuntimeById]);
   const [faviconCache, setFaviconCache] = useState<WebsiteFaviconCache>({});
   const webItemsRef = useRef<WebEntry[]>([]);
   const activeWebEntryKeyRef = useRef<WebEntryKey | null>(null);
@@ -872,7 +847,6 @@ export function AppShell() {
     ? activeAgentWebclientRoute
     : null;
   const currentRoute = `${location.pathname}${location.search}`;
-  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
   const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId && !activeChatRouteInfo.chatId.startsWith("file-draft:")
     ? activeChatRouteInfo.chatId
     : null;
@@ -1330,83 +1304,26 @@ export function AppShell() {
     [webGroupOrder, webItems]
   );
   async function refreshWebItems() {
+    const revision = ++webItemsRefreshIdRef.current;
     const result = await window.electronAPI.webs.list();
-    if (result.ok) {
+    if (result.ok && revision === webItemsRefreshIdRef.current) {
       updateWebItems(result.items);
-      setWebappPublishStateById((current) =>
-        sameWebappPublishStateMap(current, result.webappPublishStates)
-          ? current
-          : result.webappPublishStates
-      );
-      await refreshWebappRuntimeStates(result.items);
+      setWebappPublishStateById(result.webappPublishStates);
+      setWebappPublishInfo(result.webappPublishInfo);
+      for (const [id, state] of Object.entries(result.webappRuntimeStates)) {
+        if (!webappStartInFlightRef.current.has(id) && !webappStopInFlightRef.current.has(id)) {
+          handleWebappRuntimeStateChange(id, state);
+        }
+      }
     }
     return result;
   }
 
-  async function refreshWebappPublishState(webappId: string) {
-    const normalizedId = webappId.trim();
-    if (!normalizedId) {
-      return;
-    }
-    const result = await window.electronAPI.webs.webapps.getPublishStatus(normalizedId);
-    setWebappPublishStateById((current) => {
-      if (sameWebappPublishState(current[normalizedId], result.state)) {
-        return current;
-      }
-      return { ...current, [normalizedId]: result.state };
-    });
-  }
-
-  function handleSettingsWebappPublishStateChange(id: string, state: WebappPublishState | null) {
-    const webappId = id.trim();
-    if (!webappId) {
-      return;
-    }
-    setWebappPublishStateById((current) =>
-      sameWebappPublishState(current[webappId], state)
-        ? current
-        : { ...current, [webappId]: state }
-    );
-  }
-
-  async function refreshWebappRuntimeStates(items: WebEntry[]) {
-    const webapps = items.filter((item) => item.kind === "webapp");
-    if (webapps.length === 0) {
-      return;
-    }
-
-    const statuses = await Promise.all(webapps.map(async (item) => ({
-      id: item.id,
-      result: await window.electronAPI.webs.webapps.getStatus(item.id)
-    })));
-
-    setWebappRuntimeById((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const { id, result } of statuses) {
-        if (!result.ok || !result.state) {
-          continue;
-        }
-        const status = result.state.status === "stopped" ? "idle" : result.state.status;
-        const previous = current[id];
-        if (
-          previous?.status === status &&
-          previous.webUrl === result.state.webUrl &&
-          previous.message === result.message &&
-          previous.state?.updatedAt === result.state.updatedAt
-        ) {
-          continue;
-        }
-        changed = true;
-        next[id] = {
-          status,
-          webUrl: result.state.webUrl,
-          message: result.message || result.state.message,
-          state: result.state
-        };
-      }
-      return changed ? next : current;
-    });
+  function handleWebappPublishStatusChange(id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) {
+    if (!webItemsRef.current.some((item) => item.kind === "webapp" && item.id === id)) return;
+    webItemsRefreshIdRef.current++;
+    setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
+    setWebappPublishInfo(result.info);
   }
 
   async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
@@ -1455,11 +1372,7 @@ export function AppShell() {
 
     const result = await window.electronAPI.webs.webapps.uninstall(item.id);
     if (result.ok) {
-      setWebappRuntimeById((current) => {
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
+      handleWebappRuntimeStateChange(item.id, null);
     } else {
       if (wasActive) moveWebappPresentationToMain(item);
       if (wasActive) {
@@ -1471,6 +1384,12 @@ export function AppShell() {
   }
 
   function updateWebItems(items: WebEntry[]) {
+    const ids = new Set(items.filter((item) => item.kind === "webapp").map((item) => item.id));
+    for (const item of webItemsRef.current) {
+      if (item.kind === "webapp" && !ids.has(item.id)) {
+        handleWebappRuntimeStateChange(item.id, null);
+      }
+    }
     webItemsRef.current = items;
     setWebItems(items);
     setWebItemsLoaded(true);
@@ -1560,15 +1479,12 @@ export function AppShell() {
     }));
     try {
       const result = await window.electronAPI.webs.webapps.start(item.id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [item.id]: {
-          status: result.ok && result.state?.webUrl ? "running" : "error",
-          webUrl: result.state?.webUrl ?? "",
-          message: result.message,
-          state: result.state,
-        },
-      }));
+      handleWebappRuntimeStateChange(item.id, result.state, result.message,
+        result.ok && result.state?.webUrl ? "running" : "error");
+    } catch (error) {
+      handleWebappRuntimeStateChange(item.id, null,
+        error instanceof Error ? error.message : String(error), "error");
+      throw error;
     } finally {
       webappStartInFlightRef.current.delete(item.id);
     }
@@ -1583,15 +1499,7 @@ export function AppShell() {
       webappStopInFlightRef.current.add(item.id);
       try {
         const result = await window.electronAPI.webs.webapps.stop(item.id);
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: result.ok ? "idle" : "error",
-            webUrl: result.state?.webUrl ?? "",
-            message: result.message,
-            state: result.state
-          }
-        }));
+        handleWebappRuntimeStateChange(item.id, result.state, result.message, result.ok ? "idle" : "error");
         if (!result.ok) {
           throw new Error(result.message);
         }
@@ -1642,15 +1550,8 @@ export function AppShell() {
       }));
 
       const result = await window.electronAPI.webs.webapps.openWindow(item.id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [item.id]: {
-          status: result.ok && result.state?.webUrl ? "running" : "error",
-          webUrl: result.state?.webUrl ?? "",
-          message: result.message,
-          state: result.state
-        }
-      }));
+      handleWebappRuntimeStateChange(item.id, result.state, result.message,
+        result.ok && result.state?.webUrl ? "running" : "error");
     } catch (error) {
       setWebappRuntimeById((current) => ({
         ...current,
@@ -1794,29 +1695,29 @@ export function AppShell() {
       });
   }
 
-  function handleSettingsWebappRuntimeStateChange(id: string, state: WebappRuntimeState | null, message = "") {
-    const webappId = id.trim();
-    if (!webappId) {
-      return;
-    }
+  function handleWebappRuntimeStateChange(
+    id: string, state: WebappRuntimeState | null, message = "", status?: WebappRuntimeViewState["status"]
+  ) {
+    if (!id) return;
+    webItemsRefreshIdRef.current++;
     if (!state || state.status === "stopped") {
       const item = webItemsRef.current.find(
-        (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === webappId,
+        (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === id,
       );
       if (item) disposeWebappPresentation(item);
     }
     setWebappRuntimeById((current) => {
-      if (!state) {
+      if (!state && !status) {
         const next = { ...current };
-        delete next[webappId];
+        delete next[id];
         return next;
       }
       return {
         ...current,
-        [webappId]: {
-          status: state.status === "stopped" ? "idle" : state.status,
-          webUrl: state.webUrl,
-          message: message || state.message,
+        [id]: {
+          status: status ?? (state?.status === "stopped" ? "idle" : state?.status ?? "error"),
+          webUrl: state?.webUrl ?? "",
+          message: message || state?.message || "",
           state
         }
       };
@@ -2576,6 +2477,7 @@ export function AppShell() {
       .catch(() => undefined);
     const dispose = ssoApi.onStatusChanged((status) => {
       setDesktopSsoStatus(status);
+      void refreshWebItems().catch(() => undefined);
       if (status.pending) {
         setDesktopSsoLoginSettled(false);
       } else if (isCompleteDesktopSsoLogin(status)) {
@@ -2641,14 +2543,6 @@ export function AppShell() {
         setMountedWebEntryKeys((current) =>
           current.filter((currentEntryKey) => currentEntryKey !== entryKey)
         );
-        return;
-      }
-      if (
-        event.webappId &&
-        event.reason &&
-        WEBAPP_PUBLISH_CHANGE_REASONS.has(event.reason)
-      ) {
-        void refreshWebappPublishState(event.webappId).catch(() => undefined);
         return;
       }
       refreshWebItems().catch(() => undefined);
@@ -3030,53 +2924,8 @@ export function AppShell() {
     if (!item || item.kind !== "webapp") {
       return;
     }
-    const runtime = webappRuntimeById[item.id];
-    if (runtime?.status === "starting" || runtime?.status === "running" || runtime?.status === "error") {
-      return;
-    }
-    if (webappStartInFlightRef.current.has(item.id)) {
-      return;
-    }
-    if (webappStopInFlightRef.current.has(item.id)) {
-      return;
-    }
-
-    webappStartInFlightRef.current.add(item.id);
-    setWebappRuntimeById((current) => ({
-      ...current,
-      [item.id]: {
-        status: "starting",
-        webUrl: current[item.id]?.webUrl ?? "",
-        message: t("webapp.starting"),
-        state: current[item.id]?.state ?? null
-      }
-    }));
-    window.electronAPI.webs.webapps.start(item.id)
-      .then((result) => {
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: result.ok && result.state?.webUrl ? "running" : "error",
-            webUrl: result.state?.webUrl ?? "",
-            message: result.message,
-            state: result.state
-          }
-        }));
-      })
-      .catch((error) => {
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: "error",
-            webUrl: "",
-            message: error instanceof Error ? error.message : String(error),
-            state: null
-          }
-        }));
-      })
-      .finally(() => {
-        webappStartInFlightRef.current.delete(item.id);
-      });
+    if (webappRuntimeById[item.id]?.status === "error") return;
+    void ensureWebappRuntimeStarted(item).catch(() => undefined);
   }, [activeWebEntryKey, webItems, webappRuntimeById]);
 
   useEffect(() => {
@@ -5082,9 +4931,11 @@ export function AppShell() {
                     copilotAgentOptions={copilotAgentOptions}
                     onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
                     webappPublishStateById={webappPublishStateById}
+                    webappPublishInfo={webappPublishInfo}
+                    webappRuntimeById={webappRuntimeStates}
                     onWebItemsRefresh={refreshWebItems}
-                    onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
-                    onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
+                    onWebappRuntimeStateChange={handleWebappRuntimeStateChange}
+                    onWebappPublishStatusChange={handleWebappPublishStatusChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     onTunnelHubEnabledChange={setTunnelHubEnabled}
                     debugVisible={debugSettingsUnlocked}

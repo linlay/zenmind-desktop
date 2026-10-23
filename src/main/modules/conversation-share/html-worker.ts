@@ -1,6 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { TextDecoder } from "node:util";
 import { createHash } from "node:crypto";
+import type { ConversationShareOmittedResource, ConversationShareOmissionReason } from "../../../shared/contracts";
 import { isLoopbackHostname } from "../../infrastructure/network/loopback-url";
 import {
   isTunnelHubForbiddenHostname,
@@ -53,7 +54,8 @@ type SnapshotResponse = {
 class ConversationHtmlRenderFailure extends Error {
   constructor(
     readonly code: ConversationHtmlWorkerErrorCode,
-    readonly limitBytes?: number
+    readonly limitBytes?: number,
+    readonly responseFailure?: number | "timeout" | "content_type"
   ) {
     super(code);
     this.name = "ConversationHtmlRenderFailure";
@@ -185,17 +187,17 @@ export async function fetchLimitedResponse(input: {
     if (!response.ok) {
       if (input.unavailableCode === "snapshot_unavailable" &&
         (response.status === 401 || response.status === 403)) {
-        throw new ConversationHtmlRenderFailure("snapshot_unauthorized");
+        throw new ConversationHtmlRenderFailure("snapshot_unauthorized", undefined, response.status);
       }
       if (input.maxBytes === "snapshot" && response.status === 413) throw new ConversationHtmlRenderFailure("export_too_large");
-      throw new ConversationHtmlRenderFailure(input.unavailableCode);
+      throw new ConversationHtmlRenderFailure(input.unavailableCode, undefined, response.status);
     }
     const contentType = response.headers.get("content-type")
       ?.split(";", 1)[0]
       ?.trim()
       .toLowerCase();
     if (contentType !== input.expectedContentType) {
-      throw new ConversationHtmlRenderFailure(input.invalidCode);
+      throw new ConversationHtmlRenderFailure(input.invalidCode, undefined, "content_type");
     }
     const rawMaximum = input.maxBytes === "snapshot"
       ? response.headers.get("X-Conversation-Export-Max-Bytes") : String(input.maxBytes);
@@ -222,10 +224,11 @@ export async function fetchLimitedResponse(input: {
     );
     return { response, bytes };
   } catch (error) {
+    const timedOut = controller.signal.aborted;
     controller.abort();
     if (error instanceof ConversationHtmlRenderFailure) throw error;
     if (error instanceof RangeError) throw new ConversationHtmlRenderFailure("resource_exhausted");
-    throw new ConversationHtmlRenderFailure(input.unavailableCode);
+    throw new ConversationHtmlRenderFailure(input.unavailableCode, undefined, timedOut ? "timeout" : undefined);
   } finally {
     clearTimeout(timeout);
   }
@@ -375,54 +378,77 @@ async function readConversationSnapshot(
     }
     const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
     const chatId = snapshotURL.searchParams.get("chatId") || "";
-    const attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }> = [];
-    // Serialize the body once; attachment fallback only adjusts its small metadata budget.
-    const { attachments: sourceAttachments, ...body } = parsed;
-    const bodyJson = JSON.stringify(body);
-    const attachmentsPrefix = bodyJson.slice(0, -1) + ",\"attachments\":[";
-    const metadataBudget = maxSnapshotBytes - Buffer.byteLength(attachmentsPrefix) - 2;
-    if (metadataBudget < 0) throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
-    const frozen: string[] = [];
-    let metadataBytes = 0;
+    // The large conversation body is serialized once. Only resource metadata changes below.
+    const { attachments: sourceAttachments, omittedResources: sourceOmissions, ...body } = parsed;
+    const bodyPrefix = JSON.stringify(body).slice(0, -1);
+    const bodyBytes = Buffer.byteLength(bodyPrefix);
+    const omittedResources: ConversationShareOmittedResource[] = [];
+    const encodedOmissions: string[] = [];
+    let omissionBytes = 0;
+    const addOmission = (item: ConversationShareOmittedResource) => {
+      omittedResources.push(item);
+      const encoded = JSON.stringify(item);
+      encodedOmissions.push(encoded);
+      omissionBytes += Buffer.byteLength(encoded);
+    };
+    if (sourceOmissions !== undefined && !Array.isArray(sourceOmissions)) {
+      throw new ConversationHtmlRenderFailure("snapshot_invalid");
+    }
+    for (const raw of sourceOmissions ?? []) {
+      const item = resourceObject(raw);
+      if (!item || !validResourceName(item.name) || !isOmissionReason(item.reason)) {
+        throw new ConversationHtmlRenderFailure("snapshot_invalid");
+      }
+      addOmission(item as ConversationShareOmittedResource);
+    }
+    // Platform owns resource discovery and reference semantics; Tunnel validates the
+    // final graph. Desktop freezes bytes and keeps each declaration with its upload.
+    const frozen: Array<{
+      identity: ResourceIdentity;
+      metadata: string;
+      attachment: { id: string; name: string; mimeType: string; bytes: ArrayBuffer };
+    }> = [];
+    let attachmentBytes = 0;
+    const metadataBytes = () => Buffer.byteLength(',"attachments":[]}') + attachmentBytes +
+      Math.max(0, frozen.length - 1) + (encodedOmissions.length
+        ? Buffer.byteLength(',"omittedResources":[]') + omissionBytes + encodedOmissions.length - 1 : 0);
+    if (bodyBytes + metadataBytes() > maxSnapshotBytes) {
+      throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
+    }
     let totalBytes = 0;
-    let attachmentsOmitted = false;
-    let attachmentUnauthorized = false;
-    const seen = new Set<string>();
     const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
+    const seen = new Set(omittedResources.flatMap((item) => item.id ? [item.id] : []));
     for (const raw of sourceAttachments) {
+      const descriptor = resourceObject(raw);
+      const identity = descriptor && resourceIdentity(descriptor);
+      if (!descriptor || !identity) {
+        addOmission({ name: descriptor && validResourceName(descriptor.name) ? descriptor.name : "resource", reason: "invalid" });
+        continue;
+      }
+      if (seen.has(identity.id)) continue;
+      seen.add(identity.id);
+      const omit = (reason: ConversationShareOmissionReason) => addOmission({ ...identity, reason });
       if (Date.now() >= deadline) {
-        attachmentsOmitted = true;
-        break;
-      }
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-        attachmentsOmitted = true;
+        omit("timeout");
         continue;
       }
-      const descriptor = raw as Record<string, unknown>;
-      const { id, name, sourceRef, mimeType } = descriptor;
-      if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
-        typeof name !== "string" || !name || Buffer.byteLength(name, "utf8") > 255 ||
-        /[\\/\u0000-\u001f\u007f]/u.test(name) || typeof sourceRef !== "string" ||
-        !sourceRef || sourceRef.length > 2_048 || typeof mimeType !== "string") {
-        attachmentsOmitted = true;
-        continue;
-      }
-      const mediaType = mimeType.split(";", 1)[0].trim().toLowerCase();
+      const mediaType = typeof descriptor.mimeType === "string" ? descriptor.mimeType.split(";", 1)[0].trim().toLowerCase() : "";
       if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mediaType) ||
-        (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) ||
-          (descriptor.size as number) < 0)) ||
+        (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) || (descriptor.size as number) < 0)) ||
         (descriptor.sha256 !== undefined &&
-          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(descriptor.sha256))) ||
-        (typeof descriptor.size === "number" &&
-          descriptor.size > maxResourceBytes - totalBytes)) {
-        attachmentsOmitted = true;
+          (typeof descriptor.sha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(descriptor.sha256)))) {
+        omit("invalid");
+        continue;
+      }
+      if ((descriptor.size as number) > maxResourceBytes - totalBytes) {
+        omit("too_large");
         continue;
       }
       try {
         const { bytes } = await fetchLimitedResponse({
-          url: new URL("/api/chat/artifacts/read", snapshotURL).toString(),
+          url: new URL("/api/chat/export/resources/read", snapshotURL).toString(),
           method: "POST",
-          body: JSON.stringify({ chatId, sourceRef }),
+          body: JSON.stringify({ chatId, sourceRef: identity.sourceRef }),
           headers: {
             Accept: mediaType,
             Authorization: "Bearer " + request.bearerToken,
@@ -436,48 +462,69 @@ async function readConversationSnapshot(
         });
         const sha256 = createHash("sha256").update(bytes).digest("hex");
         if ((descriptor.size !== undefined && descriptor.size !== bytes.length) ||
-          (descriptor.sha256 !== undefined &&
-            (descriptor.sha256 as string).toLowerCase() !== sha256)) {
-          attachmentsOmitted = true;
+          (descriptor.sha256 !== undefined && (descriptor.sha256 as string).toLowerCase() !== sha256)) {
+          omit("changed");
           continue;
         }
-        seen.add(id);
         totalBytes += bytes.length;
-        const json = JSON.stringify({ id, name, mimeType: mediaType, sourceRef, size: bytes.length, sha256 });
-        metadataBytes += Buffer.byteLength(json) + (frozen.length ? 1 : 0);
-        frozen.push(json);
-        attachments.push({
-          id, name, mimeType: mediaType,
-          bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-        });
+        const metadata = JSON.stringify({ ...identity, mimeType: mediaType, size: bytes.length, sha256,
+          ...(descriptor.mediaRefs === undefined ? {} : { mediaRefs: descriptor.mediaRefs }) });
+        attachmentBytes += Buffer.byteLength(metadata);
+        frozen.push({ identity, metadata, attachment: {
+          id: identity.id, name: identity.name, mimeType: mediaType,
+          // The exact response ArrayBuffer transfers to main without a copy.
+          bytes: bytes.buffer as ArrayBuffer
+        } });
       } catch (error) {
-        // An optional resource may disappear or become unreadable after the snapshot was made.
-        attachmentsOmitted = true;
-        if (error instanceof ConversationHtmlRenderFailure && error.code === "snapshot_unauthorized") {
-          attachmentUnauthorized = true;
-        }
+        if (!(error instanceof ConversationHtmlRenderFailure) || error.code === "resource_exhausted") throw error;
+        const reasons: Record<string, ConversationShareOmissionReason> = {
+          400: "invalid", 401: "forbidden", 403: "forbidden", 404: "not_found", 409: "changed",
+          413: "too_large", 415: "unsupported", content_type: "changed", timeout: "timeout"
+        };
+        omit(reasons[error.responseFailure ?? ""] ??
+          (error.code === "too_large" ? "too_large" : error.code === "snapshot_invalid" ? "invalid" : "read_failed"));
       }
     }
-    while (metadataBytes > metadataBudget && frozen.length) {
-      metadataBytes -= Buffer.byteLength(frozen.pop()!) + (frozen.length ? 1 : 0);
-      attachments.pop();
-      attachmentsOmitted = true;
+    while (bodyBytes + metadataBytes() > maxSnapshotBytes && frozen.length) {
+      const removed = frozen.pop()!;
+      attachmentBytes -= Buffer.byteLength(removed.metadata);
+      addOmission({ ...removed.identity, reason: "too_large" });
     }
-    const encoded = Buffer.from(attachmentsPrefix + frozen.join(",") + "]}");
-    const transferred = encoded.buffer.slice(
-      encoded.byteOffset, encoded.byteOffset + encoded.byteLength
-    ) as ArrayBuffer;
-    return {
-      type: "snapshot",
-      requestId: request.requestId,
-      snapshot: transferred,
-      attachments,
-      attachmentsOmitted,
-      attachmentUnauthorized
-    };
+    if (bodyBytes + metadataBytes() > maxSnapshotBytes) {
+      throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
+    }
+    const encoded = Buffer.from(bodyPrefix + ',"attachments":[' + frozen.map((item) => item.metadata).join(",") + "]" +
+      (encodedOmissions.length ? ',"omittedResources":[' + encodedOmissions.join(",") + "]" : "") + "}");
+    const attachments = frozen.map((item) => item.attachment);
+    const transferred = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+    return { type: "snapshot", requestId: request.requestId, snapshot: transferred, attachments, omittedResources };
   } catch (error) {
     return failureResponse(request.requestId, error);
   }
+}
+
+type ResourceIdentity = { id: string; sourceRef: string; name: string };
+
+function resourceObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : null;
+}
+
+function validResourceName(value: unknown): value is string {
+  return typeof value === "string" && Boolean(value) &&
+    Buffer.byteLength(value) <= 255 && !/[\\/\u0000-\u001f\u007f]/u.test(value);
+}
+
+function resourceIdentity(value: Record<string, unknown>): ResourceIdentity | null {
+  const { id, name, sourceRef } = value;
+  if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || !validResourceName(name) ||
+    typeof sourceRef !== "string" || !sourceRef || sourceRef.length > 2_048) return null;
+  return { id, sourceRef, name };
+}
+
+function isOmissionReason(value: unknown): value is ConversationShareOmissionReason {
+  return typeof value === "string" &&
+    ["not_found", "forbidden", "unsupported", "too_large", "timeout", "changed", "invalid", "read_failed"].includes(value);
 }
 
 function requireLoopbackURL(value: string, expectedPath: string): URL {
