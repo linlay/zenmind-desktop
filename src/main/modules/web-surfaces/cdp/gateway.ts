@@ -8,6 +8,8 @@ import type { DesktopClickParams } from "../../../../shared/desktop-click";
 import { validateDesktopCdpParams, DesktopCdpParamsError } from "./params";
 import { requireSiteControlScope, type SiteControlScope } from "./site-scope";
 import { withSiteCdpFocus } from "./site-focus";
+import { SurfaceObservationRegistry } from "./observation";
+import type { SurfaceObserveParams, SurfaceClickParams, SurfaceInteractParams } from "./observation-params";
 import crypto from "node:crypto";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
@@ -301,6 +303,7 @@ export class EmbeddedCdpGateway {
   private readonly version: string;
   private server: http.Server | null = null;
   private readonly sessions = new Map<CdpWebSocketConnection, CdpConnectionSession>();
+  private readonly observations = new SurfaceObservationRegistry();
 
   constructor(private readonly options: EmbeddedCdpGatewayOptions) {
     this.host = options.host ?? EMBEDDED_CDP_GATEWAY_HOST;
@@ -338,6 +341,7 @@ export class EmbeddedCdpGateway {
   }
 
   stop() {
+    this.observations.dispose();
     for (const connection of [...this.sessions.keys()]) {
       connection.close();
     }
@@ -607,7 +611,7 @@ export class EmbeddedCdpGateway {
       }
       const target = await this.resolveCommandTarget({ method, surfaceId });
       assertPageAutomationNotHeld(target.tab.webContentsId);
-      const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click"
+      const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click" || ["Surface.observe", "Surface.click", "Surface.interact"].includes(method)
         ? this.handleWebContentsCommandOnce(target.surface, target.tab, surfaceId, method, command.params ?? {})
         : this.handleWebContentsCommand(connection, target, method, command.params ?? {}));
       connection.sendJSON({ id, result });
@@ -687,10 +691,12 @@ export class EmbeddedCdpGateway {
     if (!contents || contents.isDestroyed()) {
       throw new Error("Embedded webContents target is unavailable.");
     }
+    if (signal?.aborted) throw new Error("canceled");
     scope?.validateTab(tab);
-    if (scope && method.startsWith("Input.")) {
+    if (scope && (method.startsWith("Input.") || method === "Surface.click" || method === "Surface.interact")) {
       await this.options.controlSiteFocus?.(surface, tab, scope, "input");
       scope.validateTab(tab);
+      if (signal?.aborted) throw new Error("canceled");
     }
     if (method === "Page.bringToFront") {
       await this.options.activateTarget?.(surface, tab, scope);
@@ -718,6 +724,18 @@ export class EmbeddedCdpGateway {
         if (!previous) throw new EmbeddedCdpInvalidArgsError("The page has no previous history entry.");
         return await sendDesktopCdpCommand(debuggerRef, "Page.navigateToHistoryEntry", { entryId: previous.id }, debugContext);
       }
+      if (["Surface.observe", "Surface.click", "Surface.interact"].includes(method)) {
+        const validate = async () => {
+          scope?.validateTab(tab);
+          const current = await this.resolveCommandTarget({ method, surfaceId, source: { chatId: surface.ownerChatId } }, scope);
+          if (current.tab.webContentsId !== contents.id || current.surface.targetGeneration !== surface.targetGeneration) throw new Error("target_replaced");
+        };
+        const send = (name: string, args: Record<string, unknown>, timeoutMs: number) => sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs });
+        if (method === "Surface.observe") return await this.observations.observe(surfaceId, params as SurfaceObserveParams, contents, send, validate, signal);
+        if (method === "Surface.click") return await this.observations.click(surfaceId, params as SurfaceClickParams, contents, send, validate, signal);
+        return await this.observations.interact(surfaceId, params as SurfaceInteractParams, contents, send, validate, signal,
+          (phase, evidence) => (debugContext.logger ?? console).debug?.("[desktop-cdp] semantic-input-focus", { surfaceId, phase, ...evidence }));
+      }
       if (method === "Input.click") {
         return await executeClick(params as DesktopClickParams, contents,
           (name, args, timeoutMs) => sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs }),
@@ -735,7 +753,7 @@ export class EmbeddedCdpGateway {
         }
       } finally {
         if (ownsAttach && debuggerRef.isAttached()) {
-          try { debuggerRef.detach(); } catch { /* Target is closing. */ }
+          try { this.observations.detachOwnedDebugger(contents, () => debuggerRef.detach()); } catch { /* Target is closing. */ }
         }
       }
     }

@@ -1928,6 +1928,146 @@ test("ordinary Chat AWCP requires live Run ownership and reuses the exact page s
   assert.equal(released, 1); assert.equal(calls, 3);
 });
 
+async function createChatAwcpRoutingHarness(t, options = {}) {
+  const h = createHarness(t);
+  const source = { chatId: 'chat-chrome-awcp', runId: 'run-chrome-awcp', agentKey: 'agent-1' };
+  const calls = { browser: [], acquired: [], native: [] };
+  const scope = { release() {}, activate() {}, readContainer() { return { tabs: [] }; } };
+  h.broker.setDesktopBridgeProvider({
+    action: async () => assert.fail('AWCP must not become a desktop action'),
+    cdp: async () => assert.fail('AWCP must not become raw CDP'),
+    acquireWorkPanelAwcpScope(surfaceId, chatId) {
+      calls.acquired.push({ surfaceId, chatId });
+      assert.equal(options.workpanel, true, 'a Chrome rejection must not fall back to a WorkPanel scope');
+      return scope;
+    },
+    async awcpManual(requestId, payload, granted, signal, surfaceId) {
+      calls.native.push({ requestId, payload, granted, signal, surfaceId });
+      return { ok: true, method: 'AWCP.getManual', revision: 'v1', site: { name: 'Orders', description: 'Fixture' }, sections: [] };
+    },
+    async awcpInvoke() { assert.fail('Chrome invoke must not use the native provider'); },
+    async browserAwcp(requestId, method, payload, caller, signal, surfaceId) {
+      calls.browser.push({ requestId, method, payload, source: caller, signal, surfaceId });
+      if (options.browserAwcp) return options.browserAwcp(requestId, method, payload, caller, signal, surfaceId);
+      if (surfaceId !== 'chrome:selected') throw Object.assign(new Error('The selected Chrome page is unavailable.'), { code: 'target_not_found', statusCode: 409 });
+      return { handled: true, result: method === 'AWCP.invoke'
+        ? { ok: false, requestId, action: payload.action, error: { code: 'invalid_arguments', message: 'A fixture field is invalid.' } }
+        : { ok: true, method, revision: 'v1', site: { name: 'Orders', description: 'Fixture' }, sections: [] } };
+    },
+  });
+  h.broker.registerRunActionGrant({ sourceId: 'main-chat:chrome-awcp', ...source,
+    owner: { kind: 'agent', agentKey: source.agentKey }, ready: options.ready ?? Promise.resolve() });
+  await h.broker.ensureConnected('http://127.0.0.1:8080', h.token, 'primary');
+  let sequence = 0;
+  const send = async (type = 'desktop.awcp.manual', payload = { surfaceId: 'chrome:selected' }, caller = source) => {
+    const id = `chrome-awcp-route-${++sequence}`;
+    h.socket('primary').emit({ frame: 'request', id, type, source: caller, payload });
+    await waitUntil(() => h.socket('primary').sent.some(frame => frame.id === id));
+    return h.socket('primary').sent.find(frame => frame.id === id);
+  };
+  return { ...h, source, calls, scope, send };
+}
+
+test('Chrome AWCP routing waits for canonical readiness and preserves business failure responses', async t => {
+  let ready;
+  const h = await createChatAwcpRoutingHarness(t, { ready: new Promise(resolve => { ready = resolve; }) });
+  const manual = h.send();
+  await nextTurn();
+  assert.equal(h.calls.browser.length, 0);
+  assert.equal(h.calls.acquired.length, 0);
+  ready();
+  assert.equal((await manual).frame, 'response');
+  const first = h.calls.browser[0];
+  assert.equal(first.method, 'AWCP.getManual');
+  assert.deepEqual(first.payload, {}, 'surfaceId is a host selector, not a page parameter');
+  assert.deepEqual(first.source, h.source);
+  assert.equal(first.surfaceId, 'chrome:selected');
+  const failed = await h.send('desktop.awcp.invoke', { surfaceId: 'chrome:selected', revision: 'v1', action: 'orders.read', args: {} });
+  assert.equal(failed.frame, 'response');
+  assert.equal(failed.data.ok, false);
+  assert.equal(failed.data.error.code, 'invalid_arguments');
+  assert.equal(h.calls.browser[1].method, 'AWCP.invoke');
+  assert.deepEqual(h.calls.browser[1].payload, { revision: 'v1', action: 'orders.read', args: {} });
+  assert.equal(h.calls.acquired.length, 0);
+  assert.equal(h.calls.native.length, 0);
+});
+
+test('Chrome AWCP rejects unowned sources, missing exact surfaces and malformed envelopes before page execution', async t => {
+  const h = await createChatAwcpRoutingHarness(t);
+  for (const caller of [{ ...h.source, chatId: 'other-chat' }, { ...h.source, agentKey: 'other-agent' },
+    { ...h.source, runId: 'unknown-run' }, { chatId: h.source.chatId, runId: h.source.runId }]) {
+    assert.equal((await h.send(undefined, undefined, caller)).frame, 'error');
+  }
+  for (const payload of [{}, { surfaceId: '' }, { surfaceId: null }, { surfaceId: 'chrome:selected', targetId: 'forged' }]) {
+    assert.equal((await h.send('desktop.awcp.manual', payload)).type, 'protocol_error');
+  }
+  for (const payload of [{ surfaceId: 'chrome:selected', revision: 'v1', action: 'orders.read', args: '', },
+    { surfaceId: 'chrome:selected', revision: 'v1', action: 'orders.read', args: {}, script: 'forged' }]) {
+    assert.equal((await h.send('desktop.awcp.invoke', payload)).type, 'awcp_invalid_request');
+  }
+  assert.equal(h.calls.browser.length, 0);
+  assert.equal((await h.send('desktop.awcp.manual', { surfaceId: 'chrome:other-chat' })).type, 'target_not_found');
+  assert.equal(h.calls.browser.length, 1);
+  assert.equal(h.calls.acquired.length, 0);
+  assert.equal(h.calls.native.length, 0);
+});
+
+test('failed canonical readiness rejects Chrome AWCP before either browser or WorkPanel can execute', async t => {
+  let failReady;
+  const h = await createChatAwcpRoutingHarness(t, { ready: new Promise((_resolve, reject) => { failReady = reject; }) });
+  const reply = h.send();
+  await nextTurn();
+  failReady(new Error('The source Chat is unavailable.'));
+  assert.equal((await reply).type, 'source_chat_not_ready');
+  assert.equal(h.calls.browser.length, 0); assert.equal(h.calls.acquired.length, 0); assert.equal(h.calls.native.length, 0);
+});
+
+test('Chrome AWCP host failures retain the original AGW error and cannot acquire a native fallback', async t => {
+  const proof = { stage: 'desktop_preflight', executionStarted: false, reason: 'page_changed' };
+  const h = await createChatAwcpRoutingHarness(t, { browserAwcp: async () => {
+    throw Object.assign(new Error('The AWCP page changed.'), { code: 'awcp_preflight_rejected', statusCode: 409, details: proof });
+  } });
+  const frame = await h.send('desktop.awcp.invoke', { surfaceId: 'chrome:selected', revision: 'v1', action: 'orders.read', args: {} });
+  assert.equal(frame.frame, 'error'); assert.equal(frame.type, 'awcp_preflight_rejected'); assert.equal(frame.code, 409);
+  assert.deepEqual(frame.data, proof); assert.equal(frame.data.details, undefined);
+  assert.equal(h.calls.acquired.length, 0); assert.equal(h.calls.native.length, 0);
+});
+
+test('explicit non-Chrome AWCP dispatch keeps the exact WorkPanel path while native app scopes bypass the browser hook', async t => {
+  const h = await createChatAwcpRoutingHarness(t, { workpanel: true, browserAwcp: async () => ({ handled: false }) });
+  assert.equal((await h.send('desktop.awcp.manual', { surfaceId: 'page:workpanel' })).frame, 'response');
+  assert.deepEqual(h.calls.acquired, [{ surfaceId: 'page:workpanel', chatId: h.source.chatId }]);
+  assert.equal(h.calls.native[0].granted, h.scope);
+  h.broker.siteControlGrants.bind({ ...h.source, owner: { kind: 'agent', agentKey: h.source.agentKey } }, h.scope);
+  assert.equal((await h.send('desktop.awcp.manual', {})).frame, 'response');
+  assert.equal(h.calls.browser.length, 1, 'an existing app grant must not enter Chrome routing');
+  assert.equal(h.calls.acquired.length, 1);
+  assert.equal(h.calls.native.length, 2);
+});
+
+for (const phase of ['readiness', 'browser']) {
+test(`Chrome AWCP cancellation during ${phase} cannot return a late result or acquire WorkPanel`, async t => {
+  let releaseReady;
+  let invocationSignal;
+  const ready = phase === 'readiness' ? new Promise(resolve => { releaseReady = resolve; }) : Promise.resolve();
+  const h = await createChatAwcpRoutingHarness(t, { ready, browserAwcp: async (_id, _method, _payload, _source, signal) => {
+    invocationSignal = signal;
+    return new Promise(resolve => signal.addEventListener('abort', () => resolve({ handled: false }), { once: true }));
+  } });
+  const id = 'chrome-awcp-route-cancel';
+  h.socket('primary').emit({ frame: 'request', id, type: 'desktop.awcp.manual', source: h.source, payload: { surfaceId: 'chrome:selected' } });
+  if (phase === 'browser') await waitUntil(() => invocationSignal);
+  else await nextTurn();
+  h.socket('primary').emit({ frame: 'push', type: 'desktop.bridge.cancel', payload: { requestId: id } });
+  releaseReady?.();
+  await nextTurn();
+  if (phase === 'browser') assert.equal(invocationSignal.aborted, true);
+  else assert.equal(h.calls.browser.length, 0);
+  assert.equal(h.socket('primary').sent.some(frame => frame.id === id), false);
+  assert.equal(h.calls.acquired.length, 0); assert.equal(h.calls.native.length, 0);
+});
+}
+
 for (const lane of ["primary", "btw", "selection-explain"]) {
   test(`${lane} unified query preserves current selection annotations through acceptance and steer`, async (t) => {
     const h = createHarness(t);

@@ -59,6 +59,7 @@ import { t } from "../../support/i18n/main-i18n";
 import { createLogsRuntime } from "../../support/logging/runtime";
 import type { LocalDocumentWorkspaceController } from "../../modules/work-panel";
 import { safeConsoleError } from "../../support/logging/safe-console";
+import type { BrowserUseRuntime } from "../../modules/browser-use";
 export interface AssembleAssistantIntegrationDependencies {
   readonly appearanceRuntime: AppearanceRuntime;
   readonly servicesFacade: ServicesFacade;
@@ -111,6 +112,7 @@ export function assembleAssistantIntegration(dependencies: AssembleAssistantInte
 }
 
 export interface AssembleAssistantRuntimeDependencies {
+  readonly browserUse: BrowserUseRuntime;
   readonly assistantIntegrationPorts: ReturnType<typeof createAssistantIntegrationPorts>;
   readonly desktopAppInfo: DesktopAppInfo;
   readonly startupPlatform: NodeJS.Platform;
@@ -146,6 +148,7 @@ export function assembleAssistantRuntime(dependencies: AssembleAssistantRuntimeD
     assistantRunWakeLock: dependencies.assistantRunWakeLock,
     cdpIntegration: dependencies.cdpIntegration,
     browserSurfaces: dependencies.webSurfaceRuntime.browserSurfaceRegistry,
+    browserUse: dependencies.browserUse,
     getResponsiveServiceState,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
     realtimeBroker: dependencies.realtimeBroker,

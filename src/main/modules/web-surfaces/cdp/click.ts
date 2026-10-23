@@ -6,7 +6,8 @@ type Send = (method: string, params: Record<string, unknown>, timeoutMs: number)
 
 /** One input transaction, not a rollback transaction. Never retries a press. */
 export async function executeClick(p: DesktopClickParams, contents: WebContents, send: Send,
-  validate: () => Promise<void>, signal?: AbortSignal): Promise<DesktopClickResult> {
+  validate: () => Promise<void>, signal?: AbortSignal,
+  probe?: (mode: "locate" | "verify" | "wait") => Promise<Record<string, any>>): Promise<DesktopClickResult> {
   const start = Date.now(), deadline = start + (p.timeoutMs ?? 3000);
   let navigation = false, attempted = false, releaseAttempted = false;
   let point: { x: number; y: number } | undefined;
@@ -24,6 +25,7 @@ export async function executeClick(p: DesktopClickParams, contents: WebContents,
   };
   const evaluate = async (mode: "locate" | "verify" | "wait") => {
     await check();
+    if (probe) return probe(mode);
     const response = await send("Runtime.evaluate", { expression: clickProbeExpression(p, mode), returnByValue: true }, Math.max(1, deadline - Date.now()));
     if (response.exceptionDetails) throw new Error("page_evaluation_failed");
     const value = response.result?.value;

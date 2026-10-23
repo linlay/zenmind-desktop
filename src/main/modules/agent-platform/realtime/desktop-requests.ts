@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { type AgentWebclientRunOwner } from "../../../../shared/contracts";
 import { desktopActionErrorStatus } from "../../../../shared/desktop-action-diagnostics";
 import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
+import { AWCP_LIMITS, assertToken, validateInvokePayload, validateManualPayload } from "../../awcp";
 import { AgentPlatformRealtimeClient, type AgentPlatformRealtimeFrame } from "./agent-platform-realtime-client";
 import {
   BrokerRun,
@@ -37,7 +38,18 @@ export interface DesktopRequestsPort {
 
 export function createDesktopRequests(deps: DesktopRequestsPort) {
   function setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null): void {
+    for (const grant of deps.runActionGrants.values()) {
+      deps.desktopBridgeProvider?.onRunReleased?.(grant.runId);
+    }
     deps.desktopBridgeProvider = provider;
+    for (const grant of deps.runActionGrants.values()) {
+      if (grant.state !== "failed") provider?.onRunPrepared?.({
+        chatId: grant.chatId, runId: grant.runId, agentKey: grant.owner.agentKey,
+      });
+      if (grant.state === "ready") provider?.onRunGranted?.({
+        chatId: grant.chatId, runId: grant.runId, agentKey: grant.owner.agentKey,
+      });
+    }
   }
 
   function registerRunActionGrant(input: {
@@ -84,17 +96,20 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
         return;
       current.state = "ready";
       current.failureMessage = "";
+      deps.desktopBridgeProvider?.onRunGranted?.({ chatId, runId, agentKey: input.owner.agentKey });
     }, (error) => {
       const current = deps.runActionGrants.get(runId);
       if (current === grant && current.generation === generation) {
         current.state = "failed";
         current.failureMessage = error instanceof Error ? error.message : String(error);
+        deps.desktopBridgeProvider?.onRunReleased?.(runId);
       }
       throw error;
     });
     void grant.ready.catch(() => undefined);
     existing?.supersede();
     deps.runActionGrants.set(runId, grant);
+    deps.desktopBridgeProvider?.onRunPrepared?.({ chatId, runId, agentKey: input.owner.agentKey });
     while (deps.runActionGrants.size > 2000) {
       const oldest = deps.runActionGrants.keys().next().value as string | undefined;
       if (!oldest)
@@ -111,15 +126,14 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
     if (!grant)
       return false;
     deps.runActionGrants.delete(runId);
+    deps.desktopBridgeProvider?.onRunReleased?.(runId);
     grant.supersede();
     return true;
   }
 
   function clearRunActionGrants(): void {
     deps.siteControlGrants.revokeAll();
-    for (const grant of deps.runActionGrants.values())
-      grant.supersede();
-    deps.runActionGrants.clear();
+    for (const runId of [...deps.runActionGrants.keys()]) revokeRunActionGrant(runId);
   }
 
   function handleInboundRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame): void {
@@ -232,16 +246,34 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
         let scope = deps.siteControlGrants.resolve(actionSource);
         const { surfaceId, ...awcpPayload } = frame.payload;
         if (surfaceId !== undefined && (typeof surfaceId !== "string" || !surfaceId.trim())) throw brokerError("protocol_error", "Invalid AWCP surfaceId");
+        let browserHandled = false;
         if (!scope) {
           await awaitRunActionReadiness("desktop.workpanel.getState", actionSource, controller.signal);
           if (controller.signal.aborted) return;
-          if (typeof surfaceId !== "string" || !surfaceId.trim()) throw brokerError("protocol_error", "WorkPanel AWCP requires an exact surfaceId");
-          scope = deps.siteControlGrants.resolveWorkPanel(actionSource, surfaceId,
-            () => provider.acquireWorkPanelAwcpScope(surfaceId, readText(actionSource.chatId)));
+          if (typeof surfaceId !== "string" || !surfaceId.trim()) throw brokerError("protocol_error", "Ordinary Chat AWCP requires an exact surfaceId");
+          assertToken("requestId", id, AWCP_LIMITS.maxRequestIdLength);
+          if (isAwcpManual) validateManualPayload(awcpPayload);
+          else validateInvokePayload(id, awcpPayload);
+          const browser = provider.browserAwcp
+            ? await provider.browserAwcp(id, isAwcpManual ? "AWCP.getManual" : "AWCP.invoke", awcpPayload, actionSource, controller.signal, surfaceId)
+            : { handled: false as const };
+          if (controller.signal.aborted) return;
+          if (browser.handled === true) {
+            browserHandled = true;
+            result = browser.result;
+          } else if (browser.handled === false) {
+            scope = deps.siteControlGrants.resolveWorkPanel(actionSource, surfaceId,
+              () => provider.acquireWorkPanelAwcpScope(surfaceId, readText(actionSource.chatId)));
+          } else {
+            throw brokerError("invalid_desktop_response", "Browser AWCP routing returned an invalid result");
+          }
         }
-        result = isAwcpManual
-          ? await provider.awcpManual(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined)
-          : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);
+        if (!browserHandled) {
+          if (!scope) throw brokerError("site_control_unavailable", "The AWCP page scope is unavailable");
+          result = isAwcpManual
+            ? await provider.awcpManual(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined)
+            : await provider.awcpInvoke(id, awcpPayload, scope, controller.signal, surfaceId as string | undefined);
+        }
       }
       else if (isDesktopAction) {
         result = await provider.action(actionRequest as Record<string, unknown>, (type.startsWith("desktop.web.") || type.startsWith("desktop.credentials.")) ? deps.siteControlGrants.resolve(actionSource) : undefined, controller.signal, deadlineAt);

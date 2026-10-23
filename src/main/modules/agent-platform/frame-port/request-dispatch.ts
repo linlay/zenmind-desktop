@@ -22,6 +22,7 @@ import {
 import { beginPlatformLoadDiagnostic } from "../load-diagnostic";
 import { resolveSelectionExplainTransport } from "../selection-explain-transport";
 import { updateBindingFromFrame } from "./query-binding";
+import type { RealtimeQueryAccepted } from "../realtime/realtime-broker.shared";
 import {
   authorizeSurface,
   createRootObserverToken,
@@ -45,6 +46,7 @@ export interface RequestDispatchPort {
   availability: () => Promise<{ baseUrl: string; token: string; }>;
   sendRunEvent: (session: LogicalSession, binding: StreamBinding, runEvent: Record<string, unknown>) => void;
   processQueryBootstrapFrame: (binding: StreamBinding, upstreamFrame: PlatformFrameRecord) => void;
+  commitAcceptedRun: (binding: StreamBinding, accepted: RealtimeQueryAccepted) => void;
   finishRetiringSession: (session: LogicalSession) => void;
 }
 
@@ -534,13 +536,26 @@ export function createRequestDispatch(deps: RequestDispatchPort) {
             };
             if (!siteControlScope) deps.processQueryBootstrapFrame(binding, upstreamFrame);
             updateBindingFromFrame(binding, upstreamFrame);
-            if (binding.canonicalChatReady)
-              await binding.canonicalChatReady;
-            if (!binding.suppressed)
+            if (binding.canonicalChatReady) {
+              try {
+                await binding.canonicalChatReady;
+              } catch {
+                // The original promise still fails the Run action grant. Do not
+                // poison the accepted query's event queue as well: its own guest
+                // needs chat.start and the later error/terminal to reconcile UI.
+              }
+            }
+            if (!binding.suppressed && !binding.detachSent && !session.closed)
               deps.sendFrame(session, upstreamFrame);
           },
         });
         void handle.accepted.then((accepted) => {
+          if (!siteControlScope && binding.type === "/api/query") {
+            // accepted resolves before the queued onEvent callback. Commit the
+            // canonical grant here instead of marking an ungranted Run started.
+            deps.commitAcceptedRun(binding, accepted);
+            return;
+          }
           binding.chatId = accepted.chatId;
           binding.runId = accepted.runId;
           binding.owner = accepted.owner;

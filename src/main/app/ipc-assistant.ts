@@ -22,6 +22,7 @@ export function registerAssistantRuntimeIpc(options: MainIpcRegistrationOptions)
     assistantBridge,
     conversationShare: options.conversationShareFacade,
     assistantNavigationStatusClient: assistantBridgeRuntime.getNavigationStatusClient(),
+    releaseBrowserChat: assistantBridgeRuntime.releaseBrowserChat,
     desktopActionRendererRequests: assistantBridgeRuntime.desktopActionRendererRequests,
     desktopActionConfirmationRequests: assistantBridgeRuntime.desktopActionConfirmationRequests,
     desktopActionOptions,

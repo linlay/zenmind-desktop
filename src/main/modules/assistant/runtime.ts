@@ -19,6 +19,7 @@ import type { AssistantIntegrationPorts } from "./integration-ports";
 import type { AssistantRunWakeLock } from "./wake-lock";
 import type { RealtimeBroker } from "../agent-platform";
 import type { DesktopWsServerOptions } from "../desktop-protocol";
+import { browserUseError, type BrowserUseRuntime } from "../browser-use";
 
 export type AssistantBridgeRuntimeOptions = {
   integrationPorts: AssistantIntegrationPorts;
@@ -30,6 +31,7 @@ export type AssistantBridgeRuntimeOptions = {
   assistantRunWakeLock: AssistantRunWakeLock;
   cdpIntegration: any;
   browserSurfaces: BrowserSurfaceRegistry;
+  browserUse?: BrowserUseRuntime;
   getResponsiveServiceState: (app: App, serviceId: string) => Promise<any>;
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
   realtimeBroker: RealtimeBroker;
@@ -147,17 +149,33 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
+    onRunPrepared: source => options.browserUse?.prepareRun(source),
+    onRunGranted: source => options.browserUse?.registerRun(source),
+    onRunReleased: runId => options.browserUse?.releaseRun(runId),
     acquireWorkPanelAwcpScope: (surfaceId, chatId) => acquireWorkPanelAwcpScope(options.browserSurfaces, surfaceId, chatId),
-    action: (request, scope, signal, deadlineAt) => integration.handleAgentPlatformDesktopActionRequest({
-      ...desktopActionOptions,
-      actionSignal: signal,
-      actionDeadlineAt: deadlineAt,
-      resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request, scope),
-      executeCdpCommand: (command: any) => options.cdpIntegration.start().executeCommand(command, scope, signal),
-    }, request as any),
-    cdp: (request, scope, signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, signal, true),
+    action: (request, scope, signal, deadlineAt) => {
+      const execute = (actionSignal = signal) => integration.handleAgentPlatformDesktopActionRequest({
+        ...desktopActionOptions,
+        actionSignal,
+        actionDeadlineAt: deadlineAt,
+        resolveWebSurface: (request: any) => options.cdpIntegration.start().resolveWebSurface(request, scope),
+        executeCdpCommand: (command: any) => options.cdpIntegration.start().executeCommand(command, scope, actionSignal),
+      }, request as any);
+      return options.browserUse && !scope
+        ? options.browserUse.action(request, signal, execute).catch(error => ({ ok: false, action: request.action, error: browserUseError(error) }))
+        : execute();
+    },
+    cdp: (request, scope, signal) => {
+      const execute = (actionSignal = signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, actionSignal, true);
+      return options.browserUse && !scope
+        ? options.browserUse.cdp(request, signal, execute).catch(error => ({ ok: false, method: request.method, error: browserUseError(error) }))
+        : execute();
+    },
     awcpManual: (requestId, request, scope, signal, surfaceId) => awcpGuestBridge.manual(requestId, request, scope, signal, surfaceId),
     awcpInvoke: (requestId, request, scope, signal, surfaceId) => awcpGuestBridge.invoke(requestId, request, scope, signal, surfaceId),
+    browserAwcp: (requestId, method, request, source, signal, surfaceId) => options.browserUse
+      ? options.browserUse.awcp(requestId, method, request, source, signal, surfaceId)
+      : Promise.resolve({ handled: false }),
   });
 
   const desktopWsServerOptions: DesktopWsServerOptions = {
@@ -196,6 +214,9 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       realtimeBroker: options.realtimeBroker,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
       onPushEvent: (event) => {
+        if (event.chatId && (event.type === "chat.deleted" || event.type === "chat.archived")) {
+          void options.browserUse?.releaseChat(event.chatId).catch(() => undefined);
+        }
         if (event.type === "run.started" || event.type === "run.finished" || event.type === "chat.updated") {
           kanbanRuntime?.sendNavigationPushEvent(event);
         }
@@ -251,6 +272,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
   return {
     assistantBridge,
     realtimeBroker: options.realtimeBroker,
+    releaseBrowserChat: (chatId: string) => options.browserUse?.releaseChat(chatId) ?? Promise.resolve(),
     desktopActionOptions,
     desktopWsServerOptions,
     getKanbanRuntime: () => kanbanRuntime,
@@ -285,6 +307,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     refreshDesktopActionBridge,
     stop() {
       options.realtimeBroker.setDesktopBridgeProvider(null);
+      options.browserUse?.dispose();
       awcpGuestBridge.dispose();
       integration.setWebappPublicationChangeListener(null);
       void options.cdpIntegration.stop();

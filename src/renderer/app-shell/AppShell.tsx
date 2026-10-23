@@ -180,6 +180,7 @@ import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../shared/web-ent
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { WorkPanelHost } from "../work-panel/WorkPanelHost";
+import { BrowserUseControl } from "../work-panel/BrowserUseControl";
 import {
   ProjectFloatingWebviews,
   type ProjectFloatingWebviewEntry,
@@ -4649,6 +4650,7 @@ export function AppShell() {
   };
   const mainChatHeaderActions = showMainChatWorkPanelToggle ? (
     <div className="main-chat-header-actions">
+      <BrowserUseControl chatId={desiredChatRouteChatId || null} />
       <Tooltip content={t("sidebar.chat.moreActions")} hoverOnly>
         <button
           type="button"

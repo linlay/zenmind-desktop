@@ -1,0 +1,30 @@
+{
+  "upstream": "Microsoft Playwright",
+  "license": "Apache-2.0",
+  "coreGitHead": "e8149b8257d32dcf8f72573ecc43e72439da7080",
+  "coreBundleSha256": "cd6730be1bbcff00771a0fc1390f200306d28428ce68e305420ca623cb39cdeb",
+  "extension": {
+    "sourceVersion": "0.4.0",
+    "relayProtocol": 2,
+    "id": "mmlmfjhmonkocbjadbfplnigmagldckm",
+    "storeDownloadUrl": "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=155.0.0.0&acceptformat=crx3&x=id%3Dmmlmfjhmonkocbjadbfplnigmagldckm%26installsource%3Dondemand%26uc",
+    "storeCrxSha256": "e012b45f6170f627d275588ca1a37dffe5919c2635bbac512f11b74930e63835"
+  },
+  "packages": {
+    "@playwright/mcp": {
+      "version": "0.0.83",
+      "tarball": "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.83.tgz",
+      "integrity": "sha512-oNcl+Ae2/IAjhfPeP46BfIkSakfmprY+aOtkv5MjrQ4lPav4/yNtPhL0iq8SlIM90oApWgBDUxaNKvktazUKOg=="
+    },
+    "playwright": {
+      "version": "1.64.0-alpha-1790635538000",
+      "tarball": "https://registry.npmjs.org/playwright/-/playwright-1.64.0-alpha-1790635538000.tgz",
+      "integrity": "sha512-/5XDUMxpOd/9AojJtWDFIRV3EJZNQ0AwvK69wgt3CPzy8wTgiBG9pX45VfxtqtvIRGwfWzMhrvawNKreG69Snw=="
+    },
+    "playwright-core": {
+      "version": "1.64.0-alpha-1790635538000",
+      "tarball": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.0-alpha-1790635538000.tgz",
+      "integrity": "sha512-pNwaXirhXMRLaRQs4NQ18EpTdtDoFwyPH9FOaaDC7YXG4hpwE2xmwCic/1srbuExVQC7zT9LJSJpDBAru+Vo9A=="
+    }
+  }
+}

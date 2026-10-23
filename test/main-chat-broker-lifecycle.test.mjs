@@ -11,6 +11,7 @@ const { RealtimeBroker } = require("../dist-electron/main/modules/agent-platform
 const { createBrowserSurfaceRegistry } = require("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
 const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/modules/agent-platform/ipc.js");
 const { createSurfaceIdentity } = require("../dist-electron/shared/surface-identity.js");
+const { BrowserUseRuntime, browserUseError } = require("../dist-electron/main/modules/browser-use/runtime.js");
 const {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL: OPEN,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL: SEND,
@@ -101,7 +102,10 @@ async function harness(t) {
     issueAccessToken: async () => ({ ok: true, token: "test-token", message: "" }),
     syncCanonicalChat: async (_owner, input) => {
       syncs.push(input);
-      if (beforeCanonicalSync) await beforeCanonicalSync(input);
+      if (beforeCanonicalSync) {
+        const result = await beforeCanonicalSync(input);
+        if (result) return result;
+      }
       const route = new URL(sender.url);
       if (route.searchParams.get("newChat") !== input.newChat) {
         return { requestId: "sync", ok: false, code: "stale_source", message: "source changed" };
@@ -292,4 +296,193 @@ test("mismatched new-chat source fails locally with a diagnostic and never repai
   assert.equal(trace.data.sourceMatches, false);
   assert.equal(trace.data.contextMatches, true);
   assert.equal(JSON.stringify(trace.data).includes("test-token"), false);
+});
+
+function attachBrowserUse(h, t) {
+  const lifecycle = [], actions = [];
+  const runtime = new BrowserUseRuntime({ createClient: () => { throw new Error('WorkPanel needs no Chrome client'); } });
+  t.after(() => runtime.dispose());
+  h.broker.setDesktopBridgeProvider({
+    onRunPrepared(source) { lifecycle.push(['prepared', source]); runtime.prepareRun(source); },
+    onRunGranted(source) { lifecycle.push(['ready', source]); runtime.registerRun(source); },
+    onRunReleased(runId) { lifecycle.push(['released', runId]); runtime.releaseRun(runId); },
+    action: (request, _scope, signal) => runtime.action(request, signal, async () => {
+      actions.push(request);
+      return { ok: true, action: request.action, result: { workspaceId: 'fixture-workspace' } };
+    }).catch(error => ({ ok: false, error: browserUseError(error) })),
+    cdp: (request, _scope, signal) => runtime.cdp(request, signal, async () => ({ ok: true, method: request.method, result: { surfaces: [] } }))
+      .catch(error => ({ ok: false, error: browserUseError(error) })),
+  });
+  const reverse = async (id, type, source, payload) => {
+    h.sockets[0].emit({ frame: 'request', type, id, source, payload });
+    await until(() => h.sockets[0].sent.some(frame => frame.id === id));
+    return h.sockets[0].sent.find(frame => frame.id === id);
+  };
+  return { runtime, lifecycle, actions, reverse };
+}
+
+test('real WebClient FramePort query acceptance registers the browser Run before reverse tools execute', async t => {
+  const h = await harness(t);
+  const browser = attachBrowserUse(h, t);
+  h.register('/agent/agent-1?newChat=1788000000100');
+  await h.open();
+  await h.accept(await h.query('browser-query'), 'browser-chat', 'browser-run');
+  const source = { chatId: 'browser-chat', runId: 'browser-run', agentKey: 'agent-1' };
+  assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]], 'accepted.then must not mark run.start processed before its browser grant exists');
+  assert.throws(() => browser.runtime.select('browser-chat', 'chrome'), { code: 'browser_busy' });
+  const open = await browser.reverse('browser-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  assert.equal(open.frame, 'response', JSON.stringify(open));
+  const list = await browser.reverse('browser-list', 'desktop.cdp.call', undefined, { method: 'Surface.list', source });
+  assert.equal(list.frame, 'response', JSON.stringify(list));
+  const chrome = await browser.reverse('browser-wrong-provider', 'desktop.cdp.call', undefined, { method: 'Surface.openChrome', params: { url: 'https://fixture.test/' }, source });
+  assert.equal(chrome.type, 'browser_connection_required', JSON.stringify(chrome));
+  const wrongOwner = await browser.reverse('browser-wrong-owner', 'desktop.cdp.call', undefined, { method: 'Surface.list', source: { ...source, agentKey: 'other-agent' } });
+  assert.equal(wrongOwner.type, 'protocol_error');
+  const wrongChat = await browser.reverse('browser-wrong-chat', 'desktop.cdp.call', undefined, { method: 'Surface.list', source: { ...source, chatId: 'other-chat' } });
+  assert.equal(wrongChat.type, 'protocol_error');
+  h.sockets[0].emit({ frame: 'push', type: 'run.finished', data: { ...source, status: 'completed', finishReason: 'complete', finishedAt: EPOCH + 10 } });
+  const ended = await browser.reverse('browser-ended', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  assert.equal(ended.type, 'source_chat_not_ready');
+  assert.equal(browser.actions.length, 1);
+});
+
+test('real FramePort browser grant is prepared on acceptance and waits for pending canonical route synchronization', async t => {
+  const h = await harness(t);
+  const browser = attachBrowserUse(h, t);
+  h.register('/agent/agent-1?newChat=1788000000101');
+  let release;
+  h.beforeSync(() => new Promise(resolve => { release = resolve; }));
+  await h.open();
+  await h.accept(await h.query('browser-pending-query'), 'pending-browser-chat', 'pending-browser-run');
+  const source = { chatId: 'pending-browser-chat', runId: 'pending-browser-run', agentKey: 'agent-1' };
+  assert.deepEqual(browser.lifecycle, [['prepared', source]], 'acceptance freezes the environment while canonical synchronization remains pending');
+  const response = browser.reverse('browser-pending-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  await flush();
+  assert.equal(browser.actions.length, 0);
+  assert.equal(h.sockets[0].sent.some(frame => frame.id === 'browser-pending-open'), false);
+  release();
+  assert.equal((await response).frame, 'response');
+  assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]]);
+});
+
+test('existing Chat FramePort query also registers its browser grant exactly once', async t => {
+  const h = await harness(t);
+  const browser = attachBrowserUse(h, t);
+  h.register('/agent/agent-1?chatId=existing-browser-chat', 'existing-browser-chat');
+  await h.open();
+  const request = await h.query('existing-browser-query', { chatId: 'existing-browser-chat' });
+  h.sockets[0].emit({ frame: 'stream', id: request.id, event: { type: 'run.start', timestamp: EPOCH, seq: 1,
+    chatId: 'existing-browser-chat', runId: 'existing-browser-run', agentKey: 'agent-1' } });
+  await flush();
+  const source = { chatId: 'existing-browser-chat', runId: 'existing-browser-run', agentKey: 'agent-1' };
+  assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]]);
+  assert.equal((await browser.reverse('existing-browser-list', 'desktop.cdp.call', undefined, { method: 'Surface.list', source })).frame, 'response');
+});
+
+test('replaced pending FramePort bindings cannot grant browser control from late acceptance', async t => {
+  const h = await harness(t);
+  const browser = attachBrowserUse(h, t);
+  h.register('/agent/agent-1?newChat=1788000000102');
+  await h.open();
+  const request = await h.query('stale-browser-query');
+  h.register('/agent/agent-1?newChat=1788000000103');
+  await h.accept(request, 'stale-browser-chat', 'stale-browser-run');
+  assert.deepEqual(browser.lifecycle, []);
+  const source = { chatId: 'stale-browser-chat', runId: 'stale-browser-run', agentKey: 'agent-1' };
+  const response = await browser.reverse('stale-browser-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  assert.equal(response.frame, 'error');
+  assert.equal(browser.actions.length, 0);
+});
+
+test('failed canonical synchronization revokes a prepared browser grant instead of making it ready', async t => {
+  const h = await harness(t);
+  const browser = attachBrowserUse(h, t);
+  h.register('/agent/agent-1?newChat=1788000000104');
+  let reject;
+  h.beforeSync(() => new Promise((_resolve, fail) => { reject = fail; }));
+  await h.open();
+  await h.accept(await h.query('failed-browser-query'), 'failed-browser-chat', 'failed-browser-run');
+  const source = { chatId: 'failed-browser-chat', runId: 'failed-browser-run', agentKey: 'agent-1' };
+  assert.deepEqual(browser.lifecycle, [['prepared', source]]);
+  reject(new Error('canonical route changed'));
+  await flush();
+  assert.equal(browser.lifecycle.some(([type]) => type === 'ready'), false);
+  assert.equal(browser.runtime.state(source.chatId).activeRunIds.length, 0);
+  const response = await browser.reverse('failed-browser-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  assert.equal(response.frame, 'error');
+  assert.equal(browser.actions.length, 0);
+});
+
+for (const terminal of ['complete', 'error']) {
+test(`canonical ACK timeout preserves the accepted guest stream and its ${terminal} terminal without granting browser control`, async t => {
+  const h = await harness(t);
+  const browser = attachBrowserUse(h, t);
+  h.register('/agent/agent-1?newChat=1788000000105');
+  let expire;
+  h.beforeSync(() => new Promise(resolve => {
+    expire = () => resolve({ requestId: 'delayed-ack', ok: false, code: 'surface_registration_failure',
+      message: 'canonical Chat surface synchronization timed out' });
+  }));
+  await h.open();
+  const request = await h.query('delayed-ack-query');
+  await h.accept(request, 'delayed-ack-chat', 'delayed-ack-run');
+  const source = { chatId: 'delayed-ack-chat', runId: 'delayed-ack-run', agentKey: 'agent-1' };
+  assert.deepEqual(browser.lifecycle, [['prepared', source]]);
+  assert.equal(h.frames().some(frame => frame.event?.type === 'chat.start'), false);
+  expire();
+  await flush();
+  assert.equal(browser.lifecycle.some(([type]) => type === 'ready'), false);
+  assert.equal(browser.runtime.state(source.chatId).activeRunIds.length, 0);
+  const denied = await browser.reverse('delayed-ack-browser-open', 'desktop.workpanel.openWeb', source,
+    { url: 'https://fixture.test/' });
+  assert.equal(denied.type, 'source_chat_not_ready');
+  assert.equal(browser.actions.length, 0);
+  await until(() => h.frames().some(frame => frame.event?.type === 'run.start'));
+  assert.deepEqual(h.frames().filter(frame => frame.event).map(frame => frame.event.type),
+    ['chat.start', 'request.query', 'run.start']);
+  if (terminal === 'complete') {
+    for (const [index, type] of ['tool.result', 'run.complete'].entries()) {
+      h.sockets[0].emit({ frame: 'stream', id: request.id, event: { type, timestamp: EPOCH + 10 + index,
+        seq: 4 + index, ...source, ...(type === 'tool.result' ? { tool: 'surface_open', ok: false,
+          error: { code: 'source_chat_not_ready' } } : {}) } });
+    }
+    h.sockets[0].emit({ frame: 'stream', id: request.id, reason: 'complete', lastSeq: 5 });
+    await until(() => h.frames().some(frame => frame.id === 'delayed-ack-query' && frame.reason === 'complete'));
+    assert.deepEqual(h.frames().filter(frame => frame.event).map(frame => frame.event.type),
+      ['chat.start', 'request.query', 'run.start', 'tool.result', 'run.complete']);
+    assert.equal(h.frames().some(frame => frame.frame === 'error'), false);
+  } else {
+    h.sockets[0].emit({ frame: 'error', id: request.id, type: 'fixture_provider_unavailable', code: 503,
+      msg: 'Fixture provider is unavailable.' });
+    await until(() => h.frames().some(frame => frame.id === 'delayed-ack-query' && frame.frame === 'error'));
+    const error = h.frames().find(frame => frame.id === 'delayed-ack-query' && frame.frame === 'error');
+    assert.match(error.msg, /Fixture provider is unavailable/u);
+    assert.doesNotMatch(error.msg, /canonical Chat surface synchronization timed out/u);
+  }
+});
+}
+
+test('a late canonical ACK failure cannot deliver bootstrap or terminal frames into a replacement Chat', async t => {
+  const h = await harness(t);
+  h.register('/agent/agent-1?newChat=1788000000106');
+  let expire;
+  h.beforeSync(() => new Promise(resolve => {
+    expire = () => resolve({ requestId: 'stale-ack', ok: false, code: 'surface_registration_failure', message: 'ACK timed out' });
+  }));
+  await h.open();
+  const old = await h.query('stale-ack-query');
+  await h.accept(old, 'stale-ack-chat', 'stale-ack-run');
+  const replacement = h.register('/agent/agent-1?newChat=1788000000107');
+  expire();
+  await flush();
+  h.sockets[0].emit({ frame: 'stream', id: old.id, event: { type: 'run.complete', timestamp: EPOCH + 10,
+    seq: 4, chatId: 'stale-ack-chat', runId: 'stale-ack-run', agentKey: 'agent-1' } });
+  h.sockets[0].emit({ frame: 'stream', id: old.id, reason: 'complete', lastSeq: 4 });
+  await flush();
+  assert.equal(h.frames().some(frame => frame.id === 'stale-ack-query' &&
+    (frame.event || frame.frame === 'error' || frame.reason === 'complete')), false);
+  assert.equal(h.broker.getMainChatRootObserver().token, replacement.token);
+  h.beforeSync(null);
+  await h.accept(await h.query('replacement-query'), 'replacement-chat', 'replacement-run');
+  assert.equal(h.frames().some(frame => frame.id === 'replacement-query' && frame.event?.type === 'run.start'), true);
 });

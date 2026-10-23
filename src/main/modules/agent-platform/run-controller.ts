@@ -400,6 +400,37 @@ export class AssistantRunController {
     return { ok: true, message: t("agentPlatform.stopRequested") };
   }
 
+  /** The trusted Main caller supplies the frozen root owner of its broker Run.
+   * Never fall back to HTTP: Platform deliberately rejects transport changes. */
+  async stopMainRun(runId: string, frozenAgentKey: string): Promise<AssistantStopRunResult> {
+    const id = runId.trim();
+    const activeRun = this.activeRuns.get(id);
+    const agentKey = activeRun?.agentKey || frozenAgentKey.trim();
+    if (!id || !agentKey) return { ok: false, message: "The Main Run identity is unavailable." };
+    activeRun?.controller.abort();
+    if (this.activeRuns.delete(id)) this.releaseWakeLockIfIdle();
+    const availability = await this.platform.resolvePlatform();
+    if (!availability.ok) return { ok: false, message: availability.message };
+    return new Promise(resolve => {
+      const failed = (error: unknown) => resolve({ ok: false, message: error instanceof Error ? error.message : String(error) });
+      void this.realtimeBroker.forwardRequest({
+        baseUrl: availability.baseUrl, token: availability.token, lane: "primary",
+        localId: `browser-stop:${id}:${createRunId()}`, consumerId: `browser-stop:${id}`,
+        type: "/api/interrupt", stream: false,
+        payload: { runId: id, agentKey, message: "Desktop requested stop." },
+        onFrame: frame => {
+          if (frame.frame === "error" || frame.code !== 0) { failed(frameError(frame)); return; }
+          const response = framePayload(frame);
+          if (frame.frame !== "response" || response.accepted !== true) {
+            failed(readText(response.detail) || "The Main Run stop request was not accepted."); return;
+          }
+          resolve({ ok: true, message: t("agentPlatform.stopRequested") });
+        },
+        onError: failed,
+      }).catch(failed);
+    });
+  }
+
   async submitAwaiting(request: AssistantSubmitAwaitingRequest): Promise<AssistantSubmitAwaitingResult> {
     const runId = request.runId?.trim() || "";
     if (!runId) {

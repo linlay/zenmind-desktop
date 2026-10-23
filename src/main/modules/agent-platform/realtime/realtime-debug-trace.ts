@@ -35,6 +35,7 @@ const SENSITIVE_FIELD_NAMES = new Set([
   "token",
   "workspace_root",
   "workspaceroot",
+  "chunk",
 ]);
 
 type SanitizeState = {
@@ -107,10 +108,13 @@ function sanitizeValue(
 
     const output: Record<string, unknown> = {};
     const entries = Object.entries(value as Record<string, unknown>);
+    const binaryRecord = typeof (value as Record<string, unknown>).mimeType === "string"
+      || typeof (value as Record<string, unknown>).sha256 === "string";
     for (const [key, item] of entries.slice(0, MAX_OBJECT_KEYS)) {
       // Apply at every nesting depth, including upstream frames and replayed references.
-      output[key] = (value as Record<string, unknown>).type === "selection" &&
-        (key === "text" || key === "annotation")
+      output[key] = (binaryRecord && key === "data" && typeof item === "string")
+        || ((value as Record<string, unknown>).type === "selection" &&
+        (key === "text" || key === "annotation"))
         ? REDACTED_VALUE
         : sanitizeValue(item, state, depth + 1, key);
     }

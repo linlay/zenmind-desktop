@@ -1,4 +1,5 @@
 export { createBrowserSurfaceRegistry } from "./browser-surface-registry";
+export { buildWebsiteBridgeScript } from "./website-bridges/injection-script";
 export type { BrowserSurfaceRegistry, BrowserSurfaceRegistryOptions, RegisteredWebviewSurfaceTarget } from "./browser-surface-registry";
 export type { WebGuestObserver } from "./registry-contracts";
 export { AwcpGuestBridge } from "./awcp/guest-bridge";

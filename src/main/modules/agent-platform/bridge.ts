@@ -106,6 +106,9 @@ export class AgentPlatformAssistantBridge {
 
   async stopRun(runId: string): Promise<AssistantStopRunResult> { return this.runs.stopRun(runId); }
 
+  /** Main-only Runs retain their immutable Primary WebSocket control identity. */
+  async stopMainRun(runId: string, agentKey: string): Promise<AssistantStopRunResult> { return this.runs.stopMainRun(runId, agentKey); }
+
   async submitAwaiting(request: AssistantSubmitAwaitingRequest): Promise<AssistantSubmitAwaitingResult> { return this.runs.submitAwaiting(request); }
 
   async listAgents(): Promise<DesktopPetAgentOption[]> { return this.directory.listAgents(); }

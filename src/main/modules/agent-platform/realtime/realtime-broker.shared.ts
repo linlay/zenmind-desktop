@@ -240,11 +240,15 @@ export type RunActionGrant = {
 };
 
 export type DesktopBridgeRequestProvider = {
+  onRunPrepared?(source: { chatId: string; runId: string; agentKey: string }): void;
+  onRunGranted?(source: { chatId: string; runId: string; agentKey: string }): void;
+  onRunReleased?(runId: string): void;
   acquireWorkPanelAwcpScope(surfaceId: string, chatId: string): SiteControlScope;
   action(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal, deadlineAt?: number): Promise<unknown>;
   cdp(request: Record<string, unknown>, scope?: SiteControlScope, signal?: AbortSignal): Promise<unknown>;
   awcpManual(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;
   awcpInvoke(requestId: string, request: Record<string, unknown>, scope: SiteControlScope, signal: AbortSignal, surfaceId?: string): Promise<unknown>;
+  browserAwcp?(requestId: string, method: "AWCP.getManual" | "AWCP.invoke", request: Record<string, unknown>, source: Record<string, unknown>, signal: AbortSignal, surfaceId?: string): Promise<{ handled: false } | { handled: true; result: unknown }>;
 };
 
 export type RealtimeQueryAccepted = {

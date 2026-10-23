@@ -6,6 +6,7 @@ export type SettingsSectionId =
   | "assistant"
   | "market"
   | "control"
+  | "browser"
   | "localServices"
   | "tunnelHub"
   | "plugins"

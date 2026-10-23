@@ -1,0 +1,36 @@
+.browser-use-controls {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  color: var(--ink);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+.browser-use-help { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
+.browser-use-status { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.browser-use-pages { display: flex; flex-direction: column; flex-shrink: 0; gap: 6px; max-height: 260px; overflow-y: auto; }
+.browser-use-page-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.browser-use-page-button:hover { background: var(--control-hover-bg); }
+.browser-use-page-button[aria-pressed="true"] { background: var(--control-hover-bg); font-weight: 600; }
+.browser-use-page-button > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-use-error { margin: 0; font-size: 12px; color: var(--color-error, #c83c3c); overflow-wrap: anywhere; }
+.browser-use-request-help { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--control-hover-bg); font-size: 12px; line-height: 1.6; }
+.browser-use-settings-link { align-self: flex-start; padding-inline: 0; }
+.browser-use-page-button:disabled { cursor: default; opacity: 0.55; }
+.browser-use-trigger { position: relative; }
+.browser-use-dot { position: absolute; width: 5px; height: 5px; border-radius: 50%; right: 4px; bottom: 4px; background: #8b8b8b; }
+.browser-use-dot.is-connected { background: #389e0d; }
+.browser-use-dot.is-connecting { background: #d48806; }

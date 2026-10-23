@@ -1,4 +1,5 @@
 import { stageNpmRuntime } from "./stage-npm-runtime.mjs";
+import { patchBrowserUseUpstream, stageBrowserUseRuntime } from "./browser-use-patch.mjs";
 import { buildNodeLauncher } from "./build-node-launcher.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -31,6 +32,7 @@ function getExternalModules() {
 }
 
 export async function buildMainBundle(rootDir = projectRoot) {
+  patchBrowserUseUpstream(rootDir);
   await stageNpmRuntime(rootDir);
   await buildNodeLauncher(rootDir, { os: process.platform, arch: process.arch });
   const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
@@ -45,6 +47,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
     absWorkingDir: rootDir,
     entryPoints: {
       "main/index": path.join(rootSrc, "main", "index.ts"),
+      "main/chrome-worker": path.join(rootSrc, "main", "modules", "browser-use", "chrome-worker.ts"),
       "main/attachment-worker": path.join(rootSrc, "main", "modules", "assistant", "attachments", "attachment-worker.ts"),
       "main/conversation-html-worker": path.join(rootSrc, "main", "modules", "conversation-share", "html-worker.ts"),
       "main/local-document-worker": path.join(rootSrc, "main", "modules", "work-panel", "local-document-worker.ts"),
@@ -74,6 +77,8 @@ export async function buildMainBundle(rootDir = projectRoot) {
       ".node": "file"
     }
   });
+  stageBrowserUseRuntime(rootDir, path.join(outdir, "main"));
+
   // Public-only build evidence used when signing the final installer manifest.
   fs.writeFileSync(path.join(outdir, "update-trust.json"), JSON.stringify(updateTrust) + "\n");
 
@@ -103,6 +108,8 @@ export async function buildMainBundle(rootDir = projectRoot) {
   const developmentMainDir = path.join(rootDir, "dist-electron", "main");
   fs.mkdirSync(developmentMainDir, { recursive: true });
   fs.copyFileSync(webappToolingWorker, path.join(developmentMainDir, "webapp-tooling-worker.js"));
+  fs.copyFileSync(path.join(outdir, "main", "chrome-worker.js"), path.join(developmentMainDir, "chrome-worker.js"));
+  stageBrowserUseRuntime(rootDir, developmentMainDir);
 
   return outdir;
 }

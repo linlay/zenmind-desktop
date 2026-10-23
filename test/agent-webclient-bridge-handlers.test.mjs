@@ -803,7 +803,7 @@ test("chat.start promotes the Desktop owner before the guest promotion guard ACK
 });
 
 for (const earlyFallback of [false, true]) {
-test(`${earlyFallback ? "earliest known-Run tool before the file guard ACK" : "first normal file-draft query"} waits for both canonical file bindings before reading WorkPanel state`, async t => {
+test(`${earlyFallback ? "Broker acceptance before queued run.start" : "first normal file-draft query"} waits for both canonical file bindings before reading WorkPanel state`, async t => {
   const { createLocalDocumentChatSync } = require("../dist-electron/main/app/local-document-chat-sync.js");
   const { createDesktopRequests } = require("../dist-electron/main/modules/agent-platform/realtime/desktop-requests.js");
   const { executeWorkPanelStateAction } = require("../dist-electron/main/modules/desktop-actions/work-panel-state.js");
@@ -878,7 +878,7 @@ test(`${earlyFallback ? "earliest known-Run tool before the file guard ACK" : "f
     guestWebContentsId: 101, agentKey: "agent-1", newChat: files.nonce, chatId,
   });
   assert.equal(files.syncInputs[0].ownerWebContentsId, files.main.id);
-  assert.equal(runtime.calls.grants.length, earlyFallback ? 0 : 1);
+  assert.equal(runtime.calls.grants.length, 1, "Broker acceptance registers the same pending canonical grant before queued run.start delivery");
   assert.equal(sentFrames(sender).some(frame => frame.event?.type === "chat.start"), false);
 
   const toolSource = { chatId, runId, agentKey: "agent-1" };
@@ -894,7 +894,7 @@ test(`${earlyFallback ? "earliest known-Run tool before the file guard ACK" : "f
   await flush();
   assert.equal(toolCompleted, false);
   assert.equal(files.rendererReads.length, 0);
-  assert.deepEqual(presentationCalls, earlyFallback ? [{ chatId, agentKey: "agent-1" }] : []);
+  assert.deepEqual(presentationCalls, [], "even the earliest tool waits for the canonical guard before reading presentation state");
   assert.ok((await files.snapshot()).documents.every(document => document.ownerChatId === "" && document.newChat === files.nonce),
     "the pending canonical association must not expose a fake or premature owner in preview metadata");
   // The actual renderer ACK only installs the guard. Host and Registry commits

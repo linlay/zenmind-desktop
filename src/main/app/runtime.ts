@@ -1,7 +1,9 @@
-import { app, dialog, clipboard, globalShortcut, ipcMain, protocol } from "electron";
+import { app, dialog, clipboard, globalShortcut, ipcMain, protocol, shell as electronShell } from "electron";
+import { BROWSER_USE_CHANGED, BROWSER_USE_SETTINGS_CHANGED, type BrowserUseSettingsState } from "../../shared/browser-use";
+import { BrowserUseRuntime, ChromeBackend, createBrowserUseSettingsStore, registerBrowserUseIpc } from "../modules/browser-use";
 import path from "node:path";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
-import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE } from "../../shared/brand";
+import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE, PRODUCT_NAME } from "../../shared/brand";
 import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
 import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../infrastructure/electron/bundle-paths";
 import { getFocusedWebviewDevToolsShortcut } from "../infrastructure/electron/platform-adapter";
@@ -22,6 +24,7 @@ import { type AppShellRuntime, type SelectionExplainWindowController } from "../
 import { createWebsFacade, registerWebappAuth, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
 import { LocalDocumentWorkspaceController, registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
 import { NativeShareController } from "../modules/native-share";
+import { buildWebsiteBridgeScript } from "../modules/web-surfaces";
 import { isNativeShareTargetRoute, registerNativeShareIpc } from "./assembly/native-share";
 import { t } from "../support/i18n/main-i18n";
 import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
@@ -171,6 +174,31 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   const getMainWindow = () => appShellRuntime?.getMainWindow() ?? null;
+  const browserUseSettings = createBrowserUseSettingsStore(app, startupPlatform);
+  const publishBrowserSettings = (state: BrowserUseSettingsState) => {
+    const window = getMainWindow();
+    if (window && !window.isDestroyed()) window.webContents.send(BROWSER_USE_SETTINGS_CHANGED, state);
+  };
+  const browserUse = new BrowserUseRuntime({
+    clientName: PRODUCT_NAME,
+    preferences: { read: browserUseSettings.readSnapshot, authorization: browserUseSettings.authorization },
+    getWebsiteBridgeScript: url => buildWebsiteBridgeScript(url, webSurfaceRuntime.browserSurfaceRegistry.websiteBridges.runtimePackages()),
+    createClient: onExit => new ChromeBackend({ onExit }),
+    onSettingsChanged: publishBrowserSettings,
+    onChanged: state => {
+      const window = getMainWindow();
+      if (window && !window.isDestroyed()) window.webContents.send(BROWSER_USE_CHANGED, state);
+    },
+    stopRun: (runId, agentKey) => assistantBridgeRuntime.assistantBridge.stopMainRun(runId, agentKey),
+  });
+  registerBrowserUseIpc({
+    ipcMain, runtime: browserUse, getMainWindow,
+    getActiveChatId: () => realtimeBroker.getMainChatRootObserver()?.contextId,
+    openExternal: url => electronShell.openExternal(url),
+    settingsStore: browserUseSettings,
+    onSettingsChanged: publishBrowserSettings,
+  });
+  app.once("will-quit", () => browserUse.dispose());
   artifactRuntime = createArtifactRuntime({
     app, platform: startupPlatform, broker: realtimeBroker, ipcMain, getMainWindow,
     onError: (error) => console.warn("[artifacts] failed to record push", error),
@@ -218,6 +246,8 @@ export function createMainProcessRuntime() {
     get navigateMainWindow() { return navigateMainWindow; },
     get delay() { return delay; }
   });
+  const unsubscribeChromeWebsiteBridges = webSurfaceRuntime.browserSurfaceRegistry.websiteBridges.subscribe(() => browserUse.refreshWebsiteBridges());
+  app.once("will-quit", unsubscribeChromeWebsiteBridges);
   const nativeShare = new NativeShareController({
     platform: startupPlatform,
     inbox: path.join(getDesktopRoot(app), "data", "native-share"),
@@ -427,6 +457,7 @@ export function createMainProcessRuntime() {
     get enterpriseChatRuntime() { return enterpriseChatRuntime; }
   });
   assistantBridgeRuntime = assistant.assembleAssistantRuntime({
+    get browserUse() { return browserUse; },
     get assistantIntegrationPorts() { return assistantIntegrationPorts; },
     get desktopAppInfo() { return desktopAppInfo; },
     get startupPlatform() { return startupPlatform; },

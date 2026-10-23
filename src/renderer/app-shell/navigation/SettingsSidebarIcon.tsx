@@ -155,6 +155,14 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
           <path d="m10.8 12.2 8.7-8.7M16 7l3 3M13.5 9.5l2 2" />
         </svg>
       );
+    case "browser":
+      return (
+        <svg {...iconProps}>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 9h18M7 6.5h.01M10 6.5h.01" />
+          <path d="m10 12-3 2.5 3 2.5M14 12l3 2.5-3 2.5" />
+        </svg>
+      );
     case "websites":
       return (
         <svg {...iconProps}>

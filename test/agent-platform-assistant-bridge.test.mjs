@@ -1697,6 +1697,92 @@ test("agent platform assistant bridge maps submitAwaiting and stopRun to platfor
   }
 });
 
+test("agent platform stopMainRun uses the same Primary Main WebSocket for FramePort and TEAM roots", async () => {
+  const originalFetch = globalThis.fetch;
+  const interrupts = [];
+  const ws = createWsHarness({ onSend: ({ socket, frame }) => {
+    if (frame.type === "/api/interrupt") {
+      interrupts.push(frame);
+      socket.receive({ frame: "response", type: frame.type, id: frame.id, code: 0,
+        data: { accepted: true, status: "accepted", runId: frame.payload.runId } });
+    }
+  } });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async () => { throw new Error("Main WS interrupt must not use HTTP"); };
+  try {
+    assert.equal((await bridge.stopMainRun("frame-run", " cutej ")).ok, true);
+    assert.equal((await bridge.stopMainRun("team-frame-run", "research-team")).ok, true);
+    assert.deepEqual(interrupts.map(frame => [frame.payload.runId, frame.payload.agentKey]),
+      [["frame-run", "cutej"], ["team-frame-run", "research-team"]]);
+    assert.equal(ws.sockets.length, 1);
+    assert.equal(new URL(ws.sockets[0].url).searchParams.get("source"), "desktop-main");
+  } finally { bridge.dispose(); globalThis.fetch = originalFetch; }
+});
+
+test("agent platform stopMainRun cannot replace an active transaction owner with a conflicting frozen hint", async () => {
+  const originalFetch = globalThis.fetch;
+  const interrupts = [];
+  const ws = createWsHarness({ onQuery: ({ socket, frame }) => acceptQuery(socket, frame),
+    onSend: ({ socket, frame }) => {
+      if (frame.type === "/api/interrupt") { interrupts.push(frame); socket.receive({ frame: "response", type: frame.type,
+        id: frame.id, code: 0, data: { accepted: true, status: "accepted" } }); }
+    } });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async () => { throw new Error("Main WS interrupt must not use HTTP"); };
+  try {
+    assert.equal((await bridge.startRun({ runId: "owned-run", chatId: "owned-chat", agentKey: "root-agent", message: "fixture" })).ok, true);
+    assert.equal((await bridge.stopMainRun("owned-run", "wrong-member-hint")).ok, true);
+    assert.equal(interrupts[0].payload.agentKey, "root-agent");
+    assert.equal(ws.queryRequests.length, 1);
+    assert.equal(ws.sockets.length, 1, "query and interrupt must share the existing Main socket");
+  } finally { bridge.dispose(); globalThis.fetch = originalFetch; }
+});
+
+test("agent platform stopMainRun reports WS rejection and never falls back across the transport boundary", async () => {
+  const originalFetch = globalThis.fetch; let httpCalls = 0;
+  const ws = createWsHarness({ onSend: ({ socket, frame }) => {
+    if (frame.type === "/api/interrupt") socket.receive({ frame: "error", type: "run_control_identity_mismatch", id: frame.id,
+      code: 403, msg: "request does not match run control identity" });
+  } });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async () => { httpCalls++; throw new Error("HTTP fallback forbidden"); };
+  try {
+    const result = await bridge.stopMainRun("frame-run", "cutej");
+    assert.equal(result.ok, false); assert.match(result.message, /request does not match run control identity/u);
+    assert.equal(httpCalls, 0);
+    assert.equal((await bridge.stopMainRun("missing-owner", "")).ok, false);
+  } finally { bridge.dispose(); globalThis.fetch = originalFetch; }
+});
+
+test("agent platform stopMainRun requires explicit WS acceptance", async () => {
+  const originalFetch = globalThis.fetch;
+  const ws = createWsHarness({ onSend: ({ socket, frame }) => {
+    if (frame.type === "/api/interrupt") socket.receive({ frame: "response", type: frame.type, id: frame.id,
+      code: 0, data: { accepted: false, detail: "The Run was not accepted for interruption." } });
+  } });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async () => { throw new Error("HTTP fallback forbidden"); };
+  try {
+    const result = await bridge.stopMainRun("frame-run", "cutej");
+    assert.equal(result.ok, false);
+    assert.equal(result.message, "The Run was not accepted for interruption.");
+  } finally { bridge.dispose(); globalThis.fetch = originalFetch; }
+});
+
+test("ordinary stopRun keeps the HTTP contract and does not invent a missing owner", async () => {
+  const originalFetch = globalThis.fetch; const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), body: JSON.parse(String(init.body)) });
+    return new Response(JSON.stringify({ code: 400, msg: "agentKey is required" }), { status: 400 });
+  };
+  try {
+    assert.equal((await bridge.stopRun("legacy-untracked-run")).ok, false);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/interrupt");
+    assert.equal("agentKey" in requests[0].body, false);
+  } finally { bridge.dispose(); globalThis.fetch = originalFetch; }
+});
+
 test("agent platform assistant bridge deletes chats through the platform chat delete endpoint", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];

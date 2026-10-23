@@ -3,6 +3,8 @@ import { DESKTOP_HISTORY_GESTURE_PROGRESS_CHANNEL, readDesktopHistoryGestureProg
 installDesktopHistoryGesture();
 import { WORK_PANEL_BROWSER_SHORTCUT_CHANNEL, type WorkPanelBrowserShortcut } from "../shared/work-panel-browser";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { BROWSER_USE_CHANNEL, BROWSER_USE_CHANGED, BROWSER_USE_SETTINGS_CHANNEL, BROWSER_USE_SETTINGS_CHANGED,
+  type BrowserUseState, type BrowserUseSettingsState } from "../shared/browser-use";
 import { createMainNavigationSubscription } from "./main-navigation";
 import { NATIVE_SHARE_READ_CHANNEL } from "../shared/native-share";
 import { LOCAL_DOCUMENT_CHANNELS, type LocalDocumentWorkspaceState } from "../shared/local-document";
@@ -115,6 +117,20 @@ const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ??
 const onNavigate = createMainNavigationSubscription(ipcRenderer);
 
 const api: DesktopApi = {
+  browserUse: {
+    control: request => ipcRenderer.invoke(BROWSER_USE_CHANNEL, request),
+    settings: request => ipcRenderer.invoke(BROWSER_USE_SETTINGS_CHANNEL, request),
+    onSettingsChanged: listener => {
+      const receive = (_event: Electron.IpcRendererEvent, state: BrowserUseSettingsState) => listener(state);
+      ipcRenderer.on(BROWSER_USE_SETTINGS_CHANGED, receive);
+      return () => ipcRenderer.off(BROWSER_USE_SETTINGS_CHANGED, receive);
+    },
+    onChanged: listener => {
+      const receive = (_event: Electron.IpcRendererEvent, state: BrowserUseState) => listener(state);
+      ipcRenderer.on(BROWSER_USE_CHANGED, receive);
+      return () => ipcRenderer.off(BROWSER_USE_CHANGED, receive);
+    }
+  },
   nativeShare: { read: request => ipcRenderer.invoke(NATIVE_SHARE_READ_CHANNEL, request) },
   localDocuments: {
     select: () => ipcRenderer.invoke(LOCAL_DOCUMENT_CHANNELS.select),

@@ -1,0 +1,30 @@
+{
+  "purpose": "由真正小君分别在WorkPanel和Chrome中执行相同业务目标；网站组件自检不能算作模型验收",
+  "start": "node qa/browser-use-acceptance/server.mjs",
+  "listen": "127.0.0.1 only; random port by default",
+  "runtimeFiles": {
+    "manifest.json": "权限600，包含内部只读验证器token、运行目录和端口；不得复制到给小君的提示",
+    "tasks.json": "按实际端口生成workpanel.prompt和chrome.prompt；不包含候选正确答案或验证器token",
+    "ledger.jsonl": "服务端追加审计，包括页面、筛选、分页、报价详情、DOM重建、候选选择、iframe、shadow、复核和本地提交",
+    "state.json": "当前两份独立业务状态；可由主代理只读核验",
+    "screenshots/": "留给真正小君验收时的页面截图；网站不会自行替小君操作或截图"
+  },
+  "readOnlyVerifier": {
+    "header": "X-Acceptance-Token: <manifest.verification.token>",
+    "routes": ["GET /_verify/state", "GET /_verify/audit", "GET /_verify/check", "GET /_verify/check?mode=workpanel", "GET /_verify/check?mode=chrome"],
+    "policy": "验证器没有写入、重置或代为提交接口；模型不可直接访问这些接口"
+  },
+  "scenario": {
+    "quantity": 6,
+    "budget": 72000,
+    "capabilities": ["公开测试账号登录", "多条件筛选", "分页与排序", "原厂授权详情检查", "3个候选到货总价对比", "动态DOM节点替换", "同源iframe收货信息", "open Shadow DOM预算组件", "完整草稿保存", "同一草稿摘要复核", "仅本机订单提交"],
+    "datasets": "workpanel与chrome供应商、报价、最低价赢家和订单编号分别独立；正确答案仅在服务端验证器计算"
+  },
+  "selfcheck": "node qa/browser-use-acceptance/selfcheck.mjs；始终另起独立server/dataset，不得用其订单或截图冒充真正小君验收",
+  "chrome": {
+    "preferred": "更新后的真正Main通过正常UI和官方Chrome扩展连接，只选择本地沙盒标签；安装或权限节点按实际情况由用户批准",
+    "currentConstraint": "production connect只接收profileDirName/clientName，默认Chrome根由上游确定；它不能指向任意独立CfT userDataDir",
+    "doNot": ["不修改用户Chrome默认profile或Local State来诱导连接", "不读私人标签", "不改~/.cutej配置", "不开放全局CDP端口", "不通过只读工厂或直接后端调用代替模型网页工具"],
+    "fallback": "只有主代理确认真实Chrome权限受阻后，另做QA外置loader的隔离CfT补充；不增加长期生产测试开关"
+  }
+}

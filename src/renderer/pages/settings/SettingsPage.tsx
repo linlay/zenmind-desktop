@@ -9,6 +9,7 @@ import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS,
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
 import { LocalServicesSettings } from "./LocalServicesSettings";
+import { BrowserControlSettings } from "./BrowserControlSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -4863,6 +4864,8 @@ export function SettingsPage({
         );
       case "localServices":
         return <LocalServicesSettings isWindows={isWindows} />;
+      case "browser":
+        return <BrowserControlSettings />;
       case "control":
         return (
           <div className="settings-control-center-embed">

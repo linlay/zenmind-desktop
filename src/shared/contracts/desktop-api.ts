@@ -881,6 +881,7 @@ export interface RendererDiagnosticReport {
 }
 
 export interface DesktopApi {
+  browserUse: import("../browser-use").BrowserUseApi;
   nativeShare: {
     read(request: import("../native-share").NativeShareReadRequest): Promise<import("../native-share").NativeShareReadResult>;
   };
