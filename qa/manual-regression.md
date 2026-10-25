@@ -289,6 +289,7 @@
 
 ## Website / WebApp 置顶
 
+- macOS 与 Windows 分别在已安装本地导入或市场 WebApp 的环境中，对 Website 和 WebApp 执行置顶、取消置顶；确认混合列表可正常读取，无依赖注入错误或“更新网站置顶状态失败”提示。
 - macOS 与 Windows 分别在 Website 右键菜单和 WebApp 更多菜单中置顶，确认入口直接显示在看板、自动化之前，不进入对话 Pinned，也不在 Sites 中重复；关闭看板功能或调整主导航顺序后仍位于顶部。
 - 展开侧栏，对照 Automations / New chat 检查置顶 Website / WebApp：图标容器统一为 16×16，图标中心、文字起点和行高一致；Website favicon 不因置顶缩放，WebApp SVG 不额外放大。
 - 置顶多个网站与 WebApp，确认新置顶在首位，重启后顺序保留；取消置顶按原 Sites 顺序恢复。关闭页面、停止 WebApp 或切换独立窗口不丢失置顶，现有打开、关闭、运行圆点与更多菜单继续可用。
