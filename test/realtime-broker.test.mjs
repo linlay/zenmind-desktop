@@ -2377,3 +2377,24 @@ test("mobile detach releases only the named connection consumer and is idempoten
   assert.equal(requestOfType(run.socket, "/api/detach").length, 0);
   assert.equal(requestOfType(run.socket, "/api/interrupt").length, 0);
 });
+
+test("upstream Run and history requests always ask Platform for the full detail level", async (t) => {
+  const h = createHarness(t);
+  const options = { baseUrl: "http://127.0.0.1:8080", token: h.token, payload: {}, onEvent() {} };
+  const query = h.broker.query({ ...options, id: "detail-query" });
+  query.accepted.catch(() => {});
+  query.completed.catch(() => {});
+  await waitUntil(() => h.socket("primary")?.sent.some((frame) => frame.type === "/api/query"));
+  assert.equal(requestOfType(h.socket("primary"), "/api/query")[0].detail, "full");
+
+  for (const type of ["/api/chat", "/api/agents"]) {
+    void h.broker.forwardRequest({
+      baseUrl: options.baseUrl, token: h.token, lane: "primary", localId: `detail-${type}`,
+      consumerId: "detail-test", type, payload: { chatId: "chat-1" }, onFrame() {}, onError() {},
+    }).catch(() => {});
+  }
+  await waitUntil(() => requestOfType(h.socket("primary"), "/api/chat").length === 1 &&
+    requestOfType(h.socket("primary"), "/api/agents").length === 1);
+  assert.equal(requestOfType(h.socket("primary"), "/api/chat")[0].detail, "full");
+  assert.equal(requestOfType(h.socket("primary"), "/api/agents")[0].detail, undefined);
+});
