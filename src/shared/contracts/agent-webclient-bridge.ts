@@ -316,8 +316,10 @@ export type AgentPlatformRequestFrame = {
   frame: "request";
   type: string;
   id: string;
-  /** Platform event detail level of /api/query, /api/attach and /api/chat. Desktop always forwards "full". */
-  detail?: "summary" | "full";
+  /** Platform event detail level of /api/query, /api/attach and /api/chat.
+   * Omitted follows the Agent's default; Desktop sets it only for its own
+   * main-process Runs that read tool events (the image studio asks for full). */
+  detail?: "summary" | "full" | "none";
   payload?: unknown;
 };
 

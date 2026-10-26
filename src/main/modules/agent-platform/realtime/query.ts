@@ -1,6 +1,6 @@
 import type { BrokerDiagnosticsCounters } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
-import { type AgentWebclientRunOwner } from "../../../../shared/contracts";
+import { type AgentPlatformRequestFrame, type AgentWebclientRunOwner } from "../../../../shared/contracts";
 import { requireAgentPlatformEpochMillis } from "../../../../shared/time-contract";
 import { type SiteControlScope } from "../../web-surfaces";
 import { AgentPlatformRealtimeClient, type AgentPlatformRealtimeFrame } from "./agent-platform-realtime-client";
@@ -70,6 +70,8 @@ export function createQuery(deps: QueryPort) {
     consumerId?: string;
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
+    /** Omitted follows the Agent's default detail level. */
+    detail?: AgentPlatformRequestFrame["detail"];
     observerToken?: string;
     siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle {
@@ -197,6 +199,7 @@ export function createQuery(deps: QueryPort) {
           // Frame Port retains WebClient's BTW intent; Platform selects semantics by authenticated lane.
           type: "/api/query",
           id: upstreamRequestId,
+          ...(options.detail ? { detail: options.detail } : {}),
           payload: options.payload,
         });
       })

@@ -1,6 +1,7 @@
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
+  AgentPlatformRequestFrame,
   AgentWebclientConnectionPhase,
   AgentWebclientRunOwner,
 } from "../../../../shared/contracts";
@@ -351,6 +352,8 @@ export class RealtimeBroker {
     consumerId?: string;
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
+    /** Omitted follows the Agent's default detail level. */
+    detail?: AgentPlatformRequestFrame["detail"];
     observerToken?: string;
     siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle { return this.queryController.query(options); }

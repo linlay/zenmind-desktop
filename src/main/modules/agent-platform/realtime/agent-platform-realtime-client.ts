@@ -15,9 +15,6 @@ const DEFAULT_MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const AUTH_REQUEST_TIMEOUT_MS = 10_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 30_000;
-// Desktop shares one upstream stream per Run across every window, so it always
-// asks Platform for the full detail level; each window renders its own mode.
-const FULL_DETAIL_REQUEST_TYPES = new Set(["/api/query", "/api/attach", "/api/chat"]);
 
 function unrefTimer<T extends ReturnType<typeof setTimeout>>(timer: T): T {
   (timer as T & { unref?: () => void }).unref?.();
@@ -340,10 +337,7 @@ export class AgentPlatformRealtimeClient {
     return this.open(false);
   }
 
-  send(input: AgentPlatformRealtimeFrame) {
-    const frame = input.frame === "request" && FULL_DETAIL_REQUEST_TYPES.has(String(input.type))
-      ? { ...input, detail: "full" }
-      : input;
+  send(frame: AgentPlatformRealtimeFrame) {
     const socket = this.socket;
     if (!socket || this.state.phase !== "connected") {
       throw new Error("connection_unavailable: Agent Platform realtime connection is not open");
