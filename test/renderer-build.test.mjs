@@ -8353,6 +8353,14 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(viteConfig, /public["'],\s*["']desktop-pet/);
 });
 
+test("tool menu opens directly while account state stays subscribed", () => {
+  const appShell = readAppShellSource();
+  assert.match(appShell, /onRequestToolMenuOpen=\{shellOverlay\.requestToolMenuOpen\}/);
+  assert.doesNotMatch(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
+  assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);
+  assert.match(appShell, /ssoApi\.onStatusChanged\(\(status\) => \{\s*setDesktopSsoStatus\(status\);/);
+});
+
 test("desktop sso waits for a user click and keeps pending login recoverable", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
@@ -8412,7 +8420,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(appShell, /handleDesktopSsoLogin\("switch"\)|sidebar\.sso\.switchAccount/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
   assert.match(appShell, /const refreshDesktopSsoStatus = useCallback\(async \(\) => \{[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
-  assert.match(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
+  assert.match(appShell, /onRequestToolMenuOpen=\{shellOverlay\.requestToolMenuOpen\}/);
+  assert.doesNotMatch(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
   assert.doesNotMatch(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\]/);
   assert.doesNotMatch(appShell, /className=\{desktopSsoClassName\}/);
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);

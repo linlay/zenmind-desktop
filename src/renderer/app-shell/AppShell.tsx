@@ -2391,10 +2391,6 @@ export function AppShell() {
     setDesktopSsoStatus(status);
   }, [t]);
 
-  const requestToolMenuOpen = useCallback(() => {
-    void shellOverlay.requestToolMenuOpen(refreshDesktopSsoStatus);
-  }, [refreshDesktopSsoStatus, shellOverlay.requestToolMenuOpen]);
-
   useEffect(() => {
     startDesktopActionRendererBridge();
   }, []);
@@ -4978,7 +4974,7 @@ export function AppShell() {
           onNavigateItem={undefined}
           onOpenGlobalSearch={shellOverlay.openGlobalSearch}
           toolMenuOpen={toolMenuOverlay !== null}
-          onRequestToolMenuOpen={requestToolMenuOpen}
+          onRequestToolMenuOpen={shellOverlay.requestToolMenuOpen}
           onAutoOpenToolMenu={shellOverlay.openToolMenuIfIdle}
           onCloseToolMenu={() => shellOverlay.closeToolMenu(toolMenuOverlay)}
           onToggleCollapsed={toggleSidebarCollapsed}

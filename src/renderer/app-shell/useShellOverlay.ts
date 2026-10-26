@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useReducer, useRef } from "react";
 
 export type ShellOverlay =
   | { kind: "toolMenu" }
@@ -31,53 +31,26 @@ export function reduceShellOverlay(
 export function useShellOverlay() {
   const [activeOverlay, dispatch] = useReducer(reduceShellOverlay, null);
   const activeOverlayRef = useRef<ShellOverlay>(null);
-  const toolMenuRequestIdRef = useRef(0);
-  const toolMenuRequestPendingRef = useRef(false);
   const shareSessionIdRef = useRef(0);
   activeOverlayRef.current = activeOverlay;
 
-  const cancelPendingToolMenuOpen = useCallback(() => {
-    toolMenuRequestIdRef.current += 1;
-    toolMenuRequestPendingRef.current = false;
-  }, []);
-
-  useEffect(
-    () => () => {
-      cancelPendingToolMenuOpen();
-    },
-    [cancelPendingToolMenuOpen],
-  );
-
   const openGlobalSearch = useCallback(() => {
-    cancelPendingToolMenuOpen();
     const overlay = { kind: "globalSearch" } as const;
     activeOverlayRef.current = overlay;
     dispatch({ type: "open", overlay });
-  }, [cancelPendingToolMenuOpen]);
+  }, []);
 
   const closeGlobalSearch = useCallback((overlay: { kind: "globalSearch" }) => {
     if (activeOverlayRef.current !== overlay) {
       return;
     }
-    cancelPendingToolMenuOpen();
     activeOverlayRef.current = null;
     dispatch({ type: "close", overlay });
-  }, [cancelPendingToolMenuOpen]);
+  }, []);
 
   const requestToolMenuOpen = useCallback(
-    async (refresh?: () => Promise<void> | void) => {
-      const requestId = toolMenuRequestIdRef.current + 1;
-      toolMenuRequestIdRef.current = requestId;
-      toolMenuRequestPendingRef.current = true;
-      try {
-        await refresh?.();
-      } catch {
-        // Account refresh failure must not prevent the existing menu from opening.
-      }
-      if (toolMenuRequestIdRef.current !== requestId) {
-        return;
-      }
-      toolMenuRequestPendingRef.current = false;
+    () => {
+      // Identity is maintained in the background; opening a menu must stay local.
       const overlay = { kind: "toolMenu" } as const;
       activeOverlayRef.current = overlay;
       dispatch({ type: "open", overlay });
@@ -86,7 +59,7 @@ export function useShellOverlay() {
   );
 
   const openToolMenuIfIdle = useCallback(() => {
-    if (activeOverlayRef.current || toolMenuRequestPendingRef.current) {
+    if (activeOverlayRef.current) {
       return;
     }
     const overlay = { kind: "toolMenu" } as const;
@@ -98,13 +71,12 @@ export function useShellOverlay() {
     if (overlay && activeOverlayRef.current !== overlay) {
       return;
     }
-    cancelPendingToolMenuOpen();
     if (!overlay) {
       return;
     }
     activeOverlayRef.current = null;
     dispatch({ type: "close", overlay });
-  }, [cancelPendingToolMenuOpen]);
+  }, []);
 
   const openConversationShare = useCallback(
     (chatId: string, chatName: string) => {
@@ -112,7 +84,6 @@ export function useShellOverlay() {
       if (!normalizedChatId) {
         return;
       }
-      cancelPendingToolMenuOpen();
       shareSessionIdRef.current += 1;
       const overlay = {
         kind: "conversationShare" as const,
@@ -126,7 +97,7 @@ export function useShellOverlay() {
         overlay,
       });
     },
-    [cancelPendingToolMenuOpen],
+    [],
   );
 
   const closeConversationShare = useCallback(
@@ -134,11 +105,10 @@ export function useShellOverlay() {
       if (activeOverlayRef.current !== overlay) {
         return;
       }
-      cancelPendingToolMenuOpen();
       activeOverlayRef.current = null;
       dispatch({ type: "close", overlay });
     },
-    [cancelPendingToolMenuOpen],
+    [],
   );
 
   return {
