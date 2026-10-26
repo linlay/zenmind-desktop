@@ -2407,3 +2407,77 @@ test("a Run that reads tool events asks for the full detail level explicitly", a
   await waitUntil(() => h.socket("primary")?.sent.some((frame) => frame.type === "/api/query"));
   assert.equal(requestOfType(h.socket("primary"), "/api/query")[0].detail, "full");
 });
+
+
+test("progress activities forward duplicates without changing cursors or replay; retries remain ordered", () => {
+  const { createRunChannels } = require("../dist-electron/main/modules/agent-platform/realtime/run-channels.js");
+  const received = [];
+  const diagnostics = { seqRegressionCount: 0, seqGapCount: 0 };
+  const subscription = { lastSeq: 5, onEvent: event => received.push(event) };
+  const channels = createRunChannels({
+    diagnostics, options: {}, runSubscriptions: new Map([["reader", subscription]]),
+  });
+  const run = {
+    runId: "activity-run", chatId: "activity-chat", lane: "primary", lastSeq: 5,
+    subscribers: new Set(["reader"]), activeWaits: new Map(), replay: [], replayBytes: 0,
+  };
+  for (const kind of ["announce", "announce", "thinking", "idle"]) {
+    const event = runEvent("run.activity", run.runId, run.chatId, 0, {kind, message: kind === "idle" ? "" : "Read Jira"});
+    channels.consumeRunEvent(run, event, null);
+    // Bootstrap commits use the same replay entry point.
+    channels.appendReplay(run, event, 0);
+  }
+  assert.equal(received.length, 4);
+  assert.equal(run.lastSeq, 5);
+  assert.equal(subscription.lastSeq, 5);
+  assert.deepEqual(run.replay, []);
+  assert.equal(run.replayBytes, 0);
+  assert.equal(diagnostics.seqRegressionCount, 0);
+  const retry = runEvent("run.activity", run.runId, run.chatId, 6, {retry: {attempt: 2}});
+  channels.consumeRunEvent(run, retry, null);
+  channels.consumeRunEvent(run, retry, null);
+  assert.equal(received.length, 5);
+  assert.equal(run.lastSeq, 6);
+  assert.equal(subscription.lastSeq, 6);
+  assert.equal(run.replay.length, 1);
+  assert.equal(diagnostics.seqRegressionCount, 1);
+});
+
+
+test("query bootstrap and live progress survive seq zero without entering replay", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const events = [];
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080", token, id: "activity-query", runId: "run-activity", chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" }, observerToken: observer.token, consumerId: "main-chat",
+    payload: { runId: "run-activity", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: event => events.push(event),
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  const emit = (type, seq, extra = {}) => socket("primary").emit({
+    frame: "stream", id: upstream.id, event: runEvent(type, "run-activity", "chat-1", seq, extra),
+  });
+  emit("run.activity", 0, {kind: "thinking", message: "Thinking"});
+  emit("run.start", 1, {agentKey: "agent-1"});
+  await query.accepted;
+  for (let i = 0; i < 2; i++) emit("run.activity", 0, {kind: "announce", message: "Read Jira"});
+  emit("run.activity", 0, {kind: "idle", message: ""});
+  emit("run.activity", 2, {retry: {attempt: 2}});
+  emit("run.activity", 2, {retry: {attempt: 2}});
+  await nextTurn();
+  assert.deepEqual(events.filter(e => e.type === "run.activity" && !e.retry).map(e => e.message),
+    ["Thinking", "Read Jira", "Read Jira", ""]);
+  assert.equal(events.filter(e => e.retry).length, 1);
+  const replay = [];
+  broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080", token, runId: "run-activity", chatId: "chat-1", lastSeq: 0,
+    owner: { kind: "agent", agentKey: "agent-1" }, kind: "internal", role: "internal", consumerId: "late-reader",
+    onEvent: event => replay.push(event),
+  }).unsubscribe();
+  assert.deepEqual(replay.map(e => [e.type, e.seq]), [["run.start", 1], ["run.activity", 2]]);
+  const channel = broker.getDiagnostics().replay.find(run => run.runId === "run-activity");
+  assert.equal(channel.lastSeq, 2);
+});

@@ -16,6 +16,7 @@ import {
   brokerError,
   framePayload,
   isObserverDetachReason,
+  isProgressActivity,
   isRecord,
   isTerminalEvent,
   pushIdentity,
@@ -98,6 +99,13 @@ export function createRunChannels(deps: RunChannelsPort) {
     if (eventChatId && eventChatId !== run.chatId) {
       throw brokerError("protocol_error", "stream chatId conflicts with registered Run");
     }
+    if (isProgressActivity(event)) {
+      // Progress is live state, not part of the ordered replay stream.
+      // Forward every update; clients own duplicate-text presentation.
+      for (const id of run.subscribers)
+        deps.runSubscriptions.get(id)?.onEvent(event, path);
+      return;
+    }
     if (isWaitAttachSnapshot(type, event)) {
       // Platform attach projects current waits with seq 0: deliver them, but keep
       // the resume cursor and replay log unchanged.
@@ -175,6 +183,7 @@ export function createRunChannels(deps: RunChannelsPort) {
   }
 
   function appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null, path?: string): void {
+    if (isProgressActivity(event)) return;
     const bytes = Buffer.byteLength(JSON.stringify(event));
     run.replay.push({ event, bytes, seq, ...(path ? { path } : {}) });
     run.replayBytes += bytes;

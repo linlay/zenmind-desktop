@@ -384,3 +384,8 @@ export type BrokerDiagnosticsCounters = {
   cloneRevokedCount: number;
   laneRotationCount: number;
 };
+
+/** Progress updates are ephemeral; retries remain ordered public events. */
+export function isProgressActivity(event: Record<string, unknown>): boolean {
+  return event.type === "run.activity" && !event.retry;
+}

@@ -21,6 +21,7 @@ import {
   cloneBindingError,
   createDeferred,
   isObserverDetachReason,
+  isProgressActivity,
   isRecord,
   isTerminalEvent,
   readText,
@@ -281,6 +282,7 @@ export function createQuery(deps: QueryPort) {
       if (eventChatId && eventChatId !== run.chatId) {
         throw brokerError("protocol_error", "bootstrap chatId conflicts with canonical Run");
       }
+      if (isProgressActivity(event)) continue;
       const seq = typeof event.seq === "number" && Number.isSafeInteger(event.seq)
         ? event.seq
         : null;
@@ -401,6 +403,10 @@ export function createQuery(deps: QueryPort) {
     run.subscribers.add(id);
     transaction.subscriptionId = id;
     deps.replayToSubscriber(run, subscription);
+    // Bootstrap progress is delivered once, without entering retained replay.
+    for (const { event, path } of transaction.bufferedEvents) {
+      if (isProgressActivity(event)) subscription.onEvent(event, path);
+    }
     transaction.bufferedEvents = [];
     transaction.bufferedEventBytes = 0;
   }
