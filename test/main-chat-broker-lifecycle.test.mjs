@@ -330,12 +330,18 @@ test('real WebClient FramePort query acceptance registers the browser Run before
   const source = { chatId: 'browser-chat', runId: 'browser-run', agentKey: 'agent-1' };
   assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]], 'accepted.then must not mark run.start processed before its browser grant exists');
   assert.throws(() => browser.runtime.select('browser-chat', 'chrome'), { code: 'browser_busy' });
+  const unselected = await browser.reverse('browser-before-selection', 'desktop.cdp.call', undefined, { method: 'Surface.list', source });
+  assert.equal(unselected.type, 'browser_selection_required', JSON.stringify(unselected));
+  assert.equal(browser.actions.length, 0, 'grant readiness alone never chooses the task browser');
+  const selected = await browser.reverse('browser-task-target', 'desktop.cdp.call', undefined, { method: 'Browser.select', params: { browser: 'workpanel' }, source });
+  assert.equal(selected.frame, 'response', JSON.stringify(selected));
   const open = await browser.reverse('browser-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
   assert.equal(open.frame, 'response', JSON.stringify(open));
   const list = await browser.reverse('browser-list', 'desktop.cdp.call', undefined, { method: 'Surface.list', source });
   assert.equal(list.frame, 'response', JSON.stringify(list));
   const chrome = await browser.reverse('browser-wrong-provider', 'desktop.cdp.call', undefined, { method: 'Surface.openChrome', params: { url: 'https://fixture.test/' }, source });
-  assert.equal(chrome.type, 'browser_connection_required', JSON.stringify(chrome));
+  // A WorkPanel Run never asks for Chrome; Platform reopens the address in the WorkPanel.
+  assert.equal(chrome.type, 'browser_backend_mismatch', JSON.stringify(chrome));
   const wrongOwner = await browser.reverse('browser-wrong-owner', 'desktop.cdp.call', undefined, { method: 'Surface.list', source: { ...source, agentKey: 'other-agent' } });
   assert.equal(wrongOwner.type, 'protocol_error');
   const wrongChat = await browser.reverse('browser-wrong-chat', 'desktop.cdp.call', undefined, { method: 'Surface.list', source: { ...source, chatId: 'other-chat' } });
@@ -355,14 +361,17 @@ test('real FramePort browser grant is prepared on acceptance and waits for pendi
   await h.open();
   await h.accept(await h.query('browser-pending-query'), 'pending-browser-chat', 'pending-browser-run');
   const source = { chatId: 'pending-browser-chat', runId: 'pending-browser-run', agentKey: 'agent-1' };
-  assert.deepEqual(browser.lifecycle, [['prepared', source]], 'acceptance freezes the environment while canonical synchronization remains pending');
-  const response = browser.reverse('browser-pending-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  assert.deepEqual(browser.lifecycle, [['prepared', source]], 'acceptance prepares the Run identity while canonical synchronization remains pending');
+  const response = browser.reverse('browser-pending-target', 'desktop.cdp.call', undefined, { method: 'Browser.select', params: { browser: 'workpanel' }, source });
   await flush();
   assert.equal(browser.actions.length, 0);
-  assert.equal(h.sockets[0].sent.some(frame => frame.id === 'browser-pending-open'), false);
+  assert.equal(h.sockets[0].sent.some(frame => frame.id === 'browser-pending-target'), false, 'task selection must wait for the canonical grant too');
   release();
   assert.equal((await response).frame, 'response');
   assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]]);
+  const opened = await browser.reverse('browser-pending-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
+  assert.equal(opened.frame, 'response', JSON.stringify(opened));
+  assert.equal(browser.actions.length, 1);
 });
 
 test('existing Chat FramePort query also registers its browser grant exactly once', async t => {
@@ -376,6 +385,8 @@ test('existing Chat FramePort query also registers its browser grant exactly onc
   await flush();
   const source = { chatId: 'existing-browser-chat', runId: 'existing-browser-run', agentKey: 'agent-1' };
   assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]]);
+  const selected = await browser.reverse('existing-browser-target', 'desktop.cdp.call', undefined, { method: 'Browser.select', params: { browser: 'workpanel' }, source });
+  assert.equal(selected.frame, 'response', JSON.stringify(selected));
   assert.equal((await browser.reverse('existing-browser-list', 'desktop.cdp.call', undefined, { method: 'Surface.list', source })).frame, 'response');
 });
 

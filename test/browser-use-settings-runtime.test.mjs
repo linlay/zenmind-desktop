@@ -1,3 +1,4 @@
+import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -49,37 +50,33 @@ function harness(options = {}) {
   return { runtime, clients, preferences, changes, settings, cdp };
 }
 
-test("new Chats inherit the selected default, while already accepted Run environments remain immutable", async t => {
+test("new Chats inherit defaults, and copied Chrome IDs do not request connection for a WorkPanel task", async t => {
   const h = harness({ preferences: { defaultBackend: "workpanel" } }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source());
+  await registerBrowserTask(h.runtime, source());
   h.preferences.defaultBackend = "chrome";
   assert.equal(h.runtime.state("chat-a").backend, "workpanel");
   assert.equal(h.runtime.state("chat-b").backend, "chrome");
-  await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test" }), { code: "browser_connection_required" });
+  await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test" }), { code: "browser_backend_mismatch" });
+  await assert.rejects(h.cdp("Surface.observe", {}, source(), "chrome:copied"), { code: "browser_backend_mismatch" });
   assert.equal(h.clients.length, 0);
-  const request = h.runtime.state("chat-a").connectionRequest;
-  assert.equal(request.runId, "run-a"); assert.equal(request.reason, "connect");
-  await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test" }), { code: "browser_connection_required" });
-  assert.equal(h.runtime.state("chat-a").connectionRequest.id, request.id);
-  assert.equal(h.changes.filter(state => state.connectionRequest).length, 1);
-  h.runtime.releaseRun("run-a");
   assert.equal(h.runtime.state("chat-a").connectionRequest, undefined);
 });
 
-test("only a validated live Run can request the browser UI; connected WorkPanel Run requests a new Run", async t => {
+test("only a validated live Run may select Chrome; WorkPanel mismatch never raises Chrome authorization", async t => {
   const h = harness({ preferences: { defaultBackend: "workpanel" } }); t.after(() => h.runtime.dispose());
-  await h.runtime.connect("chat-a"); h.runtime.select("chat-a", "workpanel"); h.runtime.registerRun(source());
-  await assert.rejects(h.cdp("Surface.openChrome", {}, source("wrong-chat")), { code: "browser_run_unavailable" });
+  await h.runtime.connect("chat-a"); h.runtime.select("chat-a", "workpanel"); await registerBrowserTask(h.runtime, source());
+  await assert.rejects(h.cdp("Browser.select", { browser: "chrome" }, source("wrong-chat")), { code: "browser_run_unavailable" });
+  await assert.rejects(h.cdp("Surface.observe", {}, source(), "chrome:copied"), { code: "browser_backend_mismatch" });
   assert.equal(h.runtime.state("chat-a").connectionRequest, undefined);
-  await assert.rejects(h.cdp("Surface.openChrome", {}), { code: "browser_connection_required" });
-  assert.equal(h.runtime.state("chat-a").connectionRequest.reason, "new_run");
+  await h.cdp("Browser.select", { browser: "chrome" });
+  assert.equal(h.runtime.state("chat-a").backend, "chrome");
   assert.equal(h.clients.length, 1);
   assert.equal(h.clients[0].calls.some(call => call.method === "open"), false);
 });
 
 test("remembered authorization connects lazily on the first Chrome action, never at Chat creation", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
-  h.runtime.state("chat-a"); h.runtime.registerRun(source()); assert.equal(h.clients.length, 0);
+  h.runtime.state("chat-a"); await registerBrowserTask(h.runtime, source()); assert.equal(h.clients.length, 0);
   const result = await h.cdp("Surface.openChrome", { url: "https://fixture.test/new" });
   assert.equal(h.clients.length, 1); assert.equal(result.result.provider, "chrome");
   assert.equal(h.clients[0].calls.find(call => call.method === "connect").params.extensionToken, token);
@@ -89,7 +86,7 @@ test("remembered authorization connects lazily on the first Chrome action, never
 
 test("disabled remembering or missing authorization prompts once without constructing a Worker", async t => {
   for (const options of [{ preferences: { rememberChromeConnection: false } }, { authorization: () => undefined }]) {
-    const h = harness(options); t.after(() => h.runtime.dispose()); h.runtime.registerRun(source());
+    const h = harness(options); t.after(() => h.runtime.dispose()); await registerBrowserTask(h.runtime, source());
     await assert.rejects(h.cdp("Surface.list"), { code: "browser_connection_required" });
     await assert.rejects(h.cdp("Surface.list"), { code: "browser_connection_required" });
     assert.equal(h.clients.length, 0); assert.equal(h.changes.filter(state => state.connectionRequest).length, 1);
@@ -101,17 +98,17 @@ test("disabled remembering or missing authorization prompts once without constru
 
 test("concurrent first calls from the same Run reuse one in-flight private connection", async t => {
   const gate = deferred(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source());
+  await registerBrowserTask(h.runtime, source());
   const first = h.cdp("Surface.list"), second = h.cdp("Surface.getCurrent"); await flush();
   assert.equal(h.clients.length, 1); assert.equal(h.clients[0].calls.filter(call => call.method === "connect").length, 1);
   gate.resolve(); await Promise.all([first, second]);
-  h.runtime.registerRun(source("chat-a", "other-run"));
+  await registerBrowserTask(h.runtime, source("chat-a", "other-run"));
   await assert.rejects(h.cdp("Surface.list", {}, source("chat-a", "other-run")), { code: "browser_busy" });
 });
 
 test("remembered authorization shares the live workspace and exact Page across Chats after lease handoff", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source()); h.runtime.registerRun(source("chat-b", "run-b"));
+  await registerBrowserTask(h.runtime, source()); await registerBrowserTask(h.runtime, source("chat-b", "run-b"));
   const a = await h.cdp("Surface.list");
   await assert.rejects(h.cdp("Surface.list", {}, source("chat-b", "run-b")), { code: "browser_busy" });
   h.runtime.releaseRun("run-a");
@@ -124,9 +121,9 @@ test("remembered authorization shares the live workspace and exact Page across C
 
 test("a new Run detects a closed engine in a live Worker and reconnects before dispatching its first action", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source()); const original = (await h.cdp("Surface.list")).result.surfaces[0];
+  await registerBrowserTask(h.runtime, source()); const original = (await h.cdp("Surface.list")).result.surfaces[0];
   h.runtime.releaseRun("run-a"); h.clients[0].engineClosed = true;
-  h.runtime.registerRun(source("chat-a", "next-run"));
+  await registerBrowserTask(h.runtime, source("chat-a", "next-run"));
   const opened = await h.cdp("Surface.openChrome", { url: "https://fixture.test/recovered" }, source("chat-a", "next-run"));
   assert.equal(h.clients[0].killed, true); assert.equal(h.clients.length, 2);
   assert.equal(h.clients[0].calls.some(call => call.method === "open"), false);
@@ -139,7 +136,7 @@ test("concurrent first calls share pending health and the replacement handshake 
   const health = deferred(), connect = deferred();
   const h = harness({ health: (_client, index) => index === 0 ? health.promise : { connected: true },
     connect: (_client, index) => index === 1 ? connect.promise : undefined }); t.after(() => h.runtime.dispose());
-  await h.runtime.connect("chat-a"); h.runtime.registerRun(source());
+  await h.runtime.connect("chat-a"); await registerBrowserTask(h.runtime, source());
   const first = h.cdp("Surface.openChrome", { url: "https://fixture.test/one" }), second = h.cdp("Surface.list"); await flush();
   assert.equal(h.clients[0].calls.filter(call => call.method === "state").length, 1);
   assert.equal(h.clients[0].calls.some(call => call.method === "open"), false);
@@ -153,10 +150,10 @@ test("concurrent first calls share pending health and the replacement handshake 
 
 test("cancelled health drains before the next owner without killing the shared connection", async t => {
   const health = deferred(); const h = harness({ health: (_client, index) => index === 0 ? health.promise : { connected: true } }); t.after(() => h.runtime.dispose());
-  await h.runtime.connect("chat-a"); h.runtime.registerRun(source());
+  await h.runtime.connect("chat-a"); await registerBrowserTask(h.runtime, source());
   const pending = h.cdp("Surface.list"); const rejected = assert.rejects(pending, { code: "browser_run_unavailable" });
   await flush(); h.runtime.releaseRun("run-a"); assert.equal(h.clients[0].killed, false);
-  h.runtime.registerRun(source("chat-a", "next-run"));
+  await registerBrowserTask(h.runtime, source("chat-a", "next-run"));
   await assert.rejects(h.cdp("Surface.list", {}, source("chat-a", "next-run")), { code: "browser_workspace_draining" });
   health.resolve({ connected: false }); await rejected; await flush(); await flush();
   await h.cdp("Surface.list", {}, source("chat-a", "next-run"));
@@ -167,7 +164,7 @@ test("cancelled health drains before the next owner without killing the shared c
 test("a bounded preflight timeout retires only the old generation before a saved-authorization recovery", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const health = deferred(); const h = harness({ health: (_client, index) => index === 0 ? health.promise : { connected: true } }); t.after(() => h.runtime.dispose());
-  await h.runtime.connect("chat-a"); h.runtime.registerRun(source());
+  await h.runtime.connect("chat-a"); await registerBrowserTask(h.runtime, source());
   const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test/recovered" }); await flush();
   t.mock.timers.tick(5000); const result = await pending;
   assert.equal(h.clients[0].killed, true); assert.equal(h.clients.length, 2); assert.equal(result.result.surface.url, "https://fixture.test/recovered");
@@ -177,13 +174,13 @@ test("a bounded preflight timeout retires only the old generation before a saved
 
 test("a closed engine prompts rather than reconnecting when remembering has since been disabled", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
-  await h.runtime.connect("chat-a"); h.preferences.rememberChromeConnection = false; h.clients[0].engineClosed = true; h.runtime.registerRun(source());
+  await h.runtime.connect("chat-a"); h.preferences.rememberChromeConnection = false; h.clients[0].engineClosed = true; await registerBrowserTask(h.runtime, source());
   await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test" }), { code: "browser_connection_required" });
   assert.equal(h.clients[0].killed, true); assert.equal(h.clients.length, 1); assert.equal(h.runtime.state("chat-a").connectionRequest.reason, "connect");
 });
 
 test("an action dispatched before mid-Run engine closure is never retried automatically", async t => {
-  const h = harness(); t.after(() => h.runtime.dispose()); h.runtime.registerRun(source());
+  const h = harness(); t.after(() => h.runtime.dispose()); await registerBrowserTask(h.runtime, source());
   await h.cdp("Surface.list");
   const request = h.clients[0].request.bind(h.clients[0]); let opens = 0;
   h.clients[0].request = async (method, ...args) => { if (method === "open") { opens++; throw Object.assign(new Error("This Chrome connection has been released"), { code: "cancelled" }); } return request(method, ...args); };
@@ -193,9 +190,9 @@ test("an action dispatched before mid-Run engine closure is never retried automa
 
 test("Run release cancels only its wait while another Chat reuses the workspace handshake", async t => {
   const gate = deferred(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source()); const old = h.cdp("Surface.list"); const rejected = assert.rejects(old, { code: "browser_run_unavailable" });
+  await registerBrowserTask(h.runtime, source()); const old = h.cdp("Surface.list"); const rejected = assert.rejects(old, { code: "browser_run_unavailable" });
   await flush(); h.runtime.releaseRun("run-a"); assert.equal(h.clients[0].killed, false);
-  const next = source("chat-b", "next-run"); h.runtime.registerRun(next); const current = h.cdp("Surface.list", {}, next);
+  const next = source("chat-b", "next-run"); await registerBrowserTask(h.runtime, next); const current = h.cdp("Surface.list", {}, next);
   gate.resolve(); await rejected; const listed = await current;
   assert.equal(h.clients.length, 1); assert.equal(h.clients[0].calls.filter(call => call.method === "connect").length, 1);
   assert.deepEqual(h.runtime.state("chat-b").pages, listed.result.surfaces);
@@ -204,7 +201,7 @@ test("Run release cancels only its wait while another Chat reuses the workspace 
 test("Run release preserves an explicitly requested manual workspace connection", async t => {
   const gate = deferred(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
   const manual = h.runtime.connect("chat-a");
-  await flush(); h.runtime.registerRun(source());
+  await flush(); await registerBrowserTask(h.runtime, source());
   const pending = h.cdp("Surface.list"); const runRejected = assert.rejects(pending, { code: "browser_run_unavailable" });
   await flush(); h.runtime.releaseRun("run-a"); await runRejected;
   assert.equal(h.clients[0].killed, false); gate.resolve(); await manual;
@@ -213,7 +210,7 @@ test("Run release preserves an explicitly requested manual workspace connection"
 
 test("Worker exit during automatic handshake requests visible recovery and ignores a late factory result", async t => {
   const gate = deferred(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source()); const pending = h.cdp("Surface.list"); const rejected = assert.rejects(pending, { code: "chrome_connection_failed" });
+  await registerBrowserTask(h.runtime, source()); const pending = h.cdp("Surface.list"); const rejected = assert.rejects(pending, { code: "chrome_connection_failed" });
   await flush(); h.clients[0].onExit(); await rejected;
   assert.equal(h.runtime.state("chat-a").connectionRequest.reason, "connect");
   assert.deepEqual(h.runtime.state("chat-a").activeRunIds, ["run-a"]);
@@ -222,7 +219,7 @@ test("Worker exit during automatic handshake requests visible recovery and ignor
 
 test("tool cancellation stops its wait without cancelling the shared workspace connection", async t => {
   const gate = deferred(), abort = new AbortController(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source()); const pending = h.cdp("Surface.list", {}, source(), undefined, abort.signal);
+  await registerBrowserTask(h.runtime, source()); const pending = h.cdp("Surface.list", {}, source(), undefined, abort.signal);
   const rejected = assert.rejects(pending, { code: "browser_run_unavailable" });
   await flush(); abort.abort(); await rejected;
   assert.equal(h.clients[0].killed, false); assert.equal(h.runtime.state("chat-a").connectionRequest, undefined);
@@ -232,7 +229,7 @@ test("tool cancellation stops its wait without cancelling the shared workspace c
 test("automatic handshake stops at 15 seconds and requests manual recovery without replay or fallback", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const gate = deferred(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source()); const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test" });
+  await registerBrowserTask(h.runtime, source()); const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test" });
   const rejected = assert.rejects(pending, { code: "chrome_connection_failed" });
   await flush(); t.mock.timers.tick(15_000); await rejected;
   assert.equal(h.clients[0].killed, true); assert.equal(h.runtime.state("chat-a").connectionRequest.reason, "connect");
@@ -242,7 +239,7 @@ test("automatic handshake stops at 15 seconds and requests manual recovery witho
 
 test("saved authorization never appears in reported connection errors, including malicious transport echoes", async t => {
   const h = harness({ connect: () => { throw new Error(`transport echoed ${token}`); } }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source());
+  await registerBrowserTask(h.runtime, source());
   let received; try { await h.cdp("Surface.list"); } catch (error) { received = error; }
   assert.equal(received.code, "chrome_connection_failed");
   assert.equal(JSON.stringify([received.message, h.changes, h.settings]).includes(token), false);
@@ -250,7 +247,7 @@ test("saved authorization never appears in reported connection errors, including
 
 test("unreadable saved credentials request manual recovery without exposing private storage errors", async t => {
   const h = harness({ authorization: () => { throw new Error(`private storage ${token}`); } }); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source());
+  await registerBrowserTask(h.runtime, source());
   await assert.rejects(h.cdp("Surface.list"), error => error.code === "browser_connection_required" && !error.message.includes(token));
   assert.equal(h.runtime.state("chat-a").connectionRequest.reason, "connect"); assert.equal(h.clients.length, 0);
 });
@@ -259,7 +256,7 @@ test("a Worker creation failure reports a safe error and requests connection rec
   const changes = [];
   const runtime = new BrowserUseRuntime({ preferences: { read: () => ({ defaultBackend: "chrome", rememberChromeConnection: true }), authorization: () => token },
     onChanged: state => changes.push(state), createClient() { throw new Error(`private factory ${token}`); } });
-  t.after(() => runtime.dispose()); runtime.registerRun(source());
+  t.after(() => runtime.dispose()); await registerBrowserTask(runtime, source());
   await assert.rejects(runtime.cdp({ source: source(), method: "Surface.list" }, undefined, neverFallback), error => error.code === "browser_runtime_unavailable" && !error.message.includes(token));
   assert.equal(runtime.state("chat-a").connectionRequest.reason, "connect"); assert.equal(JSON.stringify(changes).includes(token), false);
 });
@@ -276,7 +273,7 @@ test("interactive connect deliberately ignores saved authorization and allows ch
 });
 
 test("model-authored Surface calls can never supply credentials, profile, relay or launch settings", async t => {
-  const h = harness(); t.after(() => h.runtime.dispose()); h.runtime.registerRun(source());
+  const h = harness(); t.after(() => h.runtime.dispose()); await registerBrowserTask(h.runtime, source());
   for (const key of ["extensionToken", "profileDirName", "port", "cdpEndpoint", "userDataDir", "executablePath"]) {
     await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test", [key]: token }), { code: "invalid_args" });
   }
@@ -285,7 +282,7 @@ test("model-authored Surface calls can never supply credentials, profile, relay 
 
 test("settings metadata counts active leases and forgetting refuses to disconnect an active task", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
-  await h.runtime.connect("chat-a"); h.runtime.registerRun(source());
+  await h.runtime.connect("chat-a"); await registerBrowserTask(h.runtime, source());
   assert.deepEqual(h.runtime.settingsState(), { ...h.preferences, connectedChats: 1, activeRuns: 1 });
   await assert.rejects(h.runtime.disconnectIdleConnections(), { code: "browser_busy" }); assert.equal(h.clients[0].killed, false);
   h.runtime.releaseRun("run-a"); await h.runtime.disconnectIdleConnections();
@@ -297,7 +294,7 @@ test("settings notification and metadata failures cannot fail an otherwise valid
   const h = harness({ onSettingsChanged: () => { throw new Error("UI closed"); },
     read: () => { if (broken) throw new Error("private storage unavailable"); return { defaultBackend: "chrome", rememberChromeConnection: true }; } });
   t.after(() => h.runtime.dispose()); await h.runtime.connect("chat-a"); broken = true;
-  h.runtime.registerRun(source()); const result = await h.cdp("Surface.list"); assert.equal(result.ok, true);
+  await registerBrowserTask(h.runtime, source()); const result = await h.cdp("Surface.list"); assert.equal(result.ok, true);
   assert.throws(() => h.runtime.settingsState(), /private storage unavailable/);
   assert.equal(h.runtime.hasActiveRuns(), true);
   h.runtime.releaseRun("run-a"); await h.runtime.disconnectIdleConnections(); assert.equal(h.clients[0].killed, true);

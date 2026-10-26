@@ -100,7 +100,10 @@ export async function executeClick(p: DesktopClickParams, contents: WebContents,
       result.status = "condition_met";
     } finally { result.timingsMs.wait = Date.now() - waitStart; }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "click_failed";
+    const code = (error as { code?: unknown } | undefined)?.code;
+    // A native modal opened by the press leaves the click outcome unknown; it is reported, never retried.
+    const message = code === "dialog_pending" || code === "file_chooser_pending" ? code
+      : error instanceof Error ? error.message : "click_failed";
     result.status = message === "canceled" || message === "timeout" || message === "navigation" ? message : "failed";
     result.error = message;
   } finally {

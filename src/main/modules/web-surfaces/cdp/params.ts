@@ -64,7 +64,7 @@ function valueType(value: unknown): string {
 }
 
 export function validateDesktopCdpParams(method: string, value: unknown): asserts value is Record<string, unknown> | undefined {
-  if (["Surface.observe", "Surface.click", "Surface.interact"].includes(method)) {
+  if (["Surface.observe", "Surface.click", "Surface.interact", "Surface.scroll"].includes(method)) {
     try { validateObservationParams(method, value); } catch (error) {
       throw new DesktopCdpParamsError(method, [{ path: "params", expected: error instanceof Error ? error.message : "valid surface parameters", actualType: valueType(value) }]);
     }

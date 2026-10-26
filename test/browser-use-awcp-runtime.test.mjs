@@ -1,3 +1,4 @@
+import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -43,7 +44,7 @@ async function fixture(t, overrides = {}) {
     }, ...overrides,
   });
   t.after(() => runtime.dispose());
-  await runtime.connect('chat-a'); runtime.registerRun(source());
+  await runtime.connect('chat-a'); await registerBrowserTask(runtime, source());
   return { runtime, clients, scripts, surfaceId: runtime.state('chat-a').pages[0].surfaceId };
 }
 
@@ -61,7 +62,7 @@ test('Main dispatches AWCP only to the frozen Chat page and compiles installed s
 
 test('forged Run owners, cross-Chat pages and pending acceptance cannot reach scripts or AWCP', async t => {
   const f = await fixture(t);
-  await f.runtime.connect('chat-b'); f.runtime.registerRun(source('chat-b', 'run-b'));
+  await f.runtime.connect('chat-b'); await registerBrowserTask(f.runtime, source('chat-b', 'run-b'));
   await assert.rejects(f.runtime.awcp('x', 'AWCP.getManual', {}, { ...source(), agentKey: 'another' }, signal(), f.surfaceId), { code: 'browser_run_unavailable' });
   await assert.rejects(f.runtime.awcp('x', 'AWCP.getManual', {}, source('chat-b', 'run-b'), signal(), f.surfaceId), { code: 'target_not_found' });
   f.runtime.releaseRun('run-a'); f.runtime.prepareRun(source('chat-a', 'pending'));
@@ -72,7 +73,7 @@ test('forged Run owners, cross-Chat pages and pending acceptance cannot reach sc
 
 test('only ordinary non-Chrome Runs remain unhandled; a Chrome Run never borrows a WorkPanel page', async t => {
   const f = await fixture(t);
-  f.runtime.registerRun(source('workpanel-chat', 'workpanel-run'));
+  await registerBrowserTask(f.runtime, source('workpanel-chat', 'workpanel-run'));
   assert.deepEqual(await f.runtime.awcp('m', 'AWCP.getManual', {}, source('workpanel-chat', 'workpanel-run'), signal(), 'page:workpanel'), { handled: false });
   await assert.rejects(f.runtime.awcp('m', 'AWCP.getManual', {}, source(), signal(), 'page:workpanel'), { code: 'awcp_target_unavailable' });
   await assert.rejects(f.runtime.awcp('m', 'AWCP.getManual', {}, source('workpanel-chat', 'workpanel-run'), signal(), f.surfaceId), { code: 'browser_run_unavailable' });

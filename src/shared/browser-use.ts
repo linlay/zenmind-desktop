@@ -84,6 +84,8 @@ export type BrowserUseState = {
   connectionName?: string;
   selectedSurfaceId?: string;
   connectionRequest?: { id: string; runId: string; reason: "connect" | "new_run" };
+  /** A Run in this Chat is suspended until the user connects Chrome; it continues by itself afterwards. */
+  awaitingConnection?: boolean;
   /** Main owns the connection; these identities never authorize renderer actions. */
   workspaceId?: string;
   workspaceShared?: boolean;

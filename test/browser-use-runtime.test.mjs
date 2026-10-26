@@ -1,3 +1,4 @@
+import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -58,7 +59,7 @@ test('Chrome registers only HTTP(S) business pages and never exposes internal co
     { pageId: 'credentials', title: privateMarker, url: 'https://fixture:private@example.test/' },
   );
   assert.deepEqual((await runtime.refreshState('chat-a')).pages, [original]);
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const listed = await runtime.cdp(request('Surface.list'), undefined, noFallback);
   assert.deepEqual(listed.result.surfaces, [original]);
   assert.equal(JSON.stringify(changes).includes(privateMarker), false);
@@ -75,7 +76,7 @@ test('Chrome registers only HTTP(S) business pages and never exposes internal co
 test("only canonical registered Run identities can operate; browser selection freezes for the Run", async () => {
   const { runtime } = harness();
   await assert.rejects(runtime.cdp(request("Surface.list"), undefined, noFallback), { code: "browser_run_unavailable" });
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   assert.throws(() => runtime.select("chat-a", "chrome"), { code: "browser_busy" });
   await assert.rejects(runtime.cdp(request("Surface.list", source("chat-b")), undefined, noFallback), { code: "browser_run_unavailable" });
   runtime.releaseRun("run-a");
@@ -86,8 +87,8 @@ test("Chrome connection is Chat scoped; no granted page can be used by another C
   const { runtime, clients } = harness();
   await runtime.connect("chat-a");
   await runtime.connect("chat-b");
-  runtime.registerRun(source());
-  runtime.registerRun(source("chat-b", "run-b"));
+  await registerBrowserTask(runtime, source());
+  await registerBrowserTask(runtime, source("chat-b", "run-b"));
   const list = await runtime.cdp(request("Surface.list"), undefined, noFallback);
   const page = list.result.surfaces[0];
   assert.equal(page.provider, "chrome");
@@ -101,7 +102,7 @@ test("Chrome connection is Chat scoped; no granted page can be used by another C
 test("closing and reopening an identical URL never transfers an old Surface to its neighbour", async () => {
   const { runtime, clients } = harness();
   await runtime.connect("chat-a");
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const original = (await runtime.cdp(request("Surface.list"), undefined, noFallback)).result.surfaces[0];
   clients[0].pages = [{ pageId: "replacement", title: original.title, url: original.url }];
   await assert.rejects(runtime.cdp(request("Input.click", source(), original.surfaceId, { x: 10, y: 20 }), undefined, noFallback), { code: "target_not_found" });
@@ -113,12 +114,12 @@ test("closing and reopening an identical URL never transfers an old Surface to i
 
 test("WorkPanel refs are restricted to the observing Run, even when the Chat is the same", async () => {
   const { runtime } = harness();
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const fallback = async () => ({ ok: true, result: { observationId: "workpanel-observation" } });
   await runtime.cdp(request("Surface.observe", source(), "page:a"), undefined, fallback);
   await runtime.cdp(request("Surface.click", source(), "page:a", { ref: "e1", observationId: "workpanel-observation" }), undefined, fallback);
   runtime.releaseRun("run-a");
-  runtime.registerRun(source("chat-a", "run-next"));
+  await registerBrowserTask(runtime, source("chat-a", "run-next"));
   await assert.rejects(runtime.cdp(request("Surface.click", source("chat-a", "run-next"), "page:a", {
     ref: "e1", observationId: "workpanel-observation",
   }), undefined, fallback), { code: "stale_observation" });
@@ -127,7 +128,7 @@ test("WorkPanel refs are restricted to the observing Run, even when the Chat is 
 test("takeover aborts queued browser operations, disconnects the worker, and interrupts the task", async () => {
   const { runtime, clients, stopped } = harness();
   await runtime.connect("chat-a");
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const page = (await runtime.cdp(request("Surface.list"), undefined, noFallback)).result.surfaces[0];
   await runtime.cdp(request("Surface.observe", source(), page.surfaceId), undefined, noFallback);
   const leaseSignal = clients[0].calls.at(-1).signal;
@@ -141,7 +142,7 @@ test("takeover aborts queued browser operations, disconnects the worker, and int
 
 test("a canceled WorkPanel operation cannot deliver a late successful result", async () => {
   const { runtime } = harness();
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   let finish;
   const pending = runtime.cdp(request("Surface.observe"), undefined, () => new Promise(resolve => { finish = resolve; }));
   runtime.releaseRun("run-a");
@@ -151,7 +152,7 @@ test("a canceled WorkPanel operation cannot deliver a late successful result", a
 
 test("takeover forwards the frozen TEAM root owner through its private stop callback", async () => {
   const { runtime, stopped } = harness();
-  runtime.registerRun({ chatId: "team-chat", runId: "team-run", agentKey: "research-team" });
+  await registerBrowserTask(runtime, { chatId: "team-chat", runId: "team-run", agentKey: "research-team" });
   await runtime.takeover("team-chat");
   assert.deepEqual(stopped, [{ runId: "team-run", agentKey: "research-team" }]);
 });
@@ -159,7 +160,7 @@ test("takeover forwards the frozen TEAM root owner through its private stop call
 test("Chrome raw scripts are unavailable and new pages reject embedded credentials", async () => {
   const { runtime } = harness();
   await runtime.connect("chat-a");
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const page = (await runtime.cdp(request("Surface.list"), undefined, noFallback)).result.surfaces[0];
   await assert.rejects(runtime.cdp(request("Runtime.evaluate", source(), page.surfaceId, { expression: "document.cookie" }), undefined, noFallback), { code: "capability_unavailable" });
   await assert.rejects(runtime.cdp(request("Page.reload", source(), page.surfaceId, { ignoreCache: true }), undefined, noFallback), { code: "capability_unavailable" });
@@ -187,7 +188,7 @@ test("a pending canonical grant freezes selection but cannot execute until ready
   runtime.prepareRun(source());
   assert.throws(() => runtime.select("chat-a", "chrome"), { code: "browser_busy" });
   await assert.rejects(runtime.cdp(request("Surface.list"), undefined, noFallback), { code: "browser_run_unavailable" });
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const result = await runtime.cdp(request("Surface.list"), undefined, async () => ({ ok: true, result: { surfaces: [] } }));
   assert.equal(result.ok, true);
 });
@@ -195,7 +196,7 @@ test("a pending canonical grant freezes selection but cannot execute until ready
 test("deleting or archiving a Chat releases Chrome and all of its Run leases", async () => {
   const { runtime, clients } = harness();
   await runtime.connect("chat-a");
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   await runtime.releaseChat("chat-a");
   await runtime.releaseChat("chat-a");
   assert.equal(clients[0].disconnected, true);
@@ -212,4 +213,41 @@ test("reopening browser controls refreshes removed pages and detects a disconnec
   clients[0].disconnected = true;
   assert.equal((await runtime.refreshState("chat-a")).connection, "disconnected");
   assert.equal(clients[0].killed, true);
+});
+
+test("a Chrome Run without a connection suspends until the user connects, then continues without a new task", async () => {
+  const { runtime, clients } = harness();
+  runtime.select("chat-a", "chrome");
+  await registerBrowserTask(runtime, source());
+  await assert.rejects(runtime.cdp(request("Surface.list"), undefined, noFallback), { code: "browser_connection_required" });
+  assert.equal(runtime.state("chat-a").awaitingConnection, true);
+  const waiting = runtime.cdp(request("Browser.awaitConnection", source(), undefined, { timeoutMs: 5000 }), undefined, noFallback);
+  // The suspended Run must not lock the user out of the connection it waits for.
+  await runtime.connect("chat-a");
+  assert.deepEqual((await waiting).result, { status: "connected" });
+  const listed = await runtime.cdp(request("Surface.list"), undefined, noFallback);
+  assert.equal(listed.result.surfaces.length, 1);
+  assert.equal(clients.length, 1);
+  assert.equal(runtime.state("chat-a").awaitingConnection, undefined);
+  // Once page work was dispatched the Run is no longer suspended; other connection changes stay locked.
+  await assert.rejects(runtime.connect("chat-a", { interactive: true }), { code: "browser_busy" });
+});
+
+test("only a suspended Chrome Run may await a connection; the wait is bounded and ends with the Run", async () => {
+  const { runtime } = harness();
+  await registerBrowserTask(runtime, source());
+  const workpanel = await runtime.cdp(request("Browser.awaitConnection"), undefined, noFallback);
+  assert.deepEqual(workpanel.result, { status: "unavailable", reason: "backend_mismatch" });
+  runtime.releaseRun("run-a");
+
+  runtime.select("chat-a", "chrome");
+  await registerBrowserTask(runtime, source("chat-a", "run-b"));
+  const unrequested = await runtime.cdp(request("Browser.awaitConnection", source("chat-a", "run-b")), undefined, noFallback);
+  assert.deepEqual(unrequested.result, { status: "unavailable", reason: "connection_not_requested" });
+  await assert.rejects(runtime.cdp(request("Surface.list", source("chat-a", "run-b")), undefined, noFallback), { code: "browser_connection_required" });
+  const pending = await runtime.cdp(request("Browser.awaitConnection", source("chat-a", "run-b"), undefined, { timeoutMs: 1000 }), undefined, noFallback);
+  assert.deepEqual(pending.result, { status: "pending" });
+  const stopped = runtime.cdp(request("Browser.awaitConnection", source("chat-a", "run-b"), undefined, { timeoutMs: 20000 }), undefined, noFallback);
+  runtime.releaseRun("run-b");
+  await assert.rejects(stopped, { code: "browser_run_unavailable" });
 });

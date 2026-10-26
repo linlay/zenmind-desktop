@@ -1,5 +1,6 @@
 import { acquireWorkPanelControlScope, type SiteControlScope } from "./site-scope";
-import type { WebContents } from "electron";
+import { ipcMain, type WebContents } from "electron";
+import { ensureWorkPanelPageDialogIpc } from "./page-dialogs";
 import type { DesktopPageContextSnapshot, ServiceState } from "../../../../shared/contracts";
 import {
   EmbeddedCdpGateway,
@@ -82,6 +83,8 @@ export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): Emb
 }
 
 export function createCdpIntegration(options: CdpIntegrationOptions) {
+  // Register the native sentinel before WorkPanel guests can issue synchronous page requests.
+  if (ipcMain) ensureWorkPanelPageDialogIpc(ipcMain);
   let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
 
   async function listSurfaces(): Promise<EmbeddedCdpContainer[]> {
@@ -181,6 +184,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
       return embeddedCdpGateway;
     }
     embeddedCdpGateway = new EmbeddedCdpGateway({
+      dialogIpc: ipcMain,
       getSurfaces: listSurfaces,
       acquireWorkPanelScope: (containerId, chatId) => acquireWorkPanelControlScope(options.browserSurfaces, containerId, chatId),
       resolveWebContents,

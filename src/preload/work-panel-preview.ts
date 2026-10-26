@@ -1,5 +1,7 @@
 import { installDesktopHistoryGesture } from "./desktop-history-gesture";
 installDesktopHistoryGesture();
+import { installWorkPanelPageDialogs } from "./work-panel-page-dialog";
+installWorkPanelPageDialogs();
 import { ipcRenderer } from "electron";
 import {
   WORK_PANEL_PREVIEW_REVIEW_ACTION_CHANNEL,

@@ -1,3 +1,4 @@
+import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -25,8 +26,8 @@ function harness() {
 test('legacy Chrome actions cannot write through another Run holding the browser', async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
   await h.runtime.connect('chat-a');
-  h.runtime.registerRun(source('run-a'));
-  h.runtime.registerRun(source('run-b'));
+  await registerBrowserTask(h.runtime, source('run-a'));
+  await registerBrowserTask(h.runtime, source('run-b'));
   const surfaceId = (await h.cdp('run-a', 'Surface.list')).result.surfaces[0].surfaceId;
   await assert.rejects(h.runtime.action({ action: 'desktop.web.interactElement', source: source('run-b'),
     args: { surfaceId, action: 'scroll', deltaY: 600 } }, undefined, noFallback), { code: 'browser_busy' });
@@ -36,11 +37,11 @@ test('legacy Chrome actions cannot write through another Run holding the browser
 test('legacy Chrome actions cannot reuse a previous Run observation', async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
   await h.runtime.connect('chat-a');
-  h.runtime.registerRun(source('run-a'));
+  await registerBrowserTask(h.runtime, source('run-a'));
   const surfaceId = (await h.cdp('run-a', 'Surface.list')).result.surfaces[0].surfaceId;
   await h.cdp('run-a', 'Surface.observe', surfaceId);
   h.runtime.releaseRun('run-a');
-  h.runtime.registerRun(source('run-b'));
+  await registerBrowserTask(h.runtime, source('run-b'));
   await assert.rejects(h.runtime.action({ action: 'desktop.web.interactElement', source: source('run-b'),
     args: { surfaceId, action: 'fill', ref: 'e1', observationId: 'previous-observation', value: 'must not run' } }, undefined, noFallback), { code: 'stale_observation' });
   assert.equal(h.calls.some(call => call.method === 'interact'), false);
@@ -48,7 +49,7 @@ test('legacy Chrome actions cannot reuse a previous Run observation', async t =>
 
 test('a taken-over native action cannot return a late successful result', async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
-  h.runtime.registerRun(source('native-run'));
+  await registerBrowserTask(h.runtime, source('native-run'));
   let finish, operationSignal;
   const action = h.runtime.action({ action: 'desktop.web.interactElement', source: source('native-run'), args: { action: 'scroll' } }, undefined,
     signal => { operationSignal = signal; return new Promise(resolve => { finish = resolve; }); });

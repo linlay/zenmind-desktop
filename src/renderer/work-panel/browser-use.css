@@ -9,7 +9,7 @@
   overflow-y: auto;
 }
 .browser-use-help { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
-.browser-use-status { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.browser-use-status, .browser-use-environment { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .browser-use-pages { display: flex; flex-direction: column; flex-shrink: 0; gap: 6px; max-height: 260px; overflow-y: auto; }
 .browser-use-page-button {
   display: flex;

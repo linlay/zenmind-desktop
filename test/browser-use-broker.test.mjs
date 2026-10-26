@@ -32,6 +32,7 @@ test("canonical readiness freezes the browser before granting execution, then re
   await assert.rejects(runtime.cdp(request, undefined, async () => ({ ok: true })), { code: "browser_run_unavailable" });
   ready(); await Promise.resolve();
   assert.deepEqual(events, ["prepared", "ready"]);
+  await runtime.cdp({ ...request, method: "Browser.select", params: { browser: "workpanel" } }, undefined, async () => { throw new Error("unexpected fallback"); });
   assert.equal((await runtime.cdp(request, undefined, async () => ({ ok: true }))).ok, true);
   controller.revokeRunActionGrant("run-a");
   await assert.rejects(runtime.cdp(request, undefined, async () => ({ ok: true })), { code: "browser_run_unavailable" });
@@ -59,5 +60,6 @@ test("replacing the Desktop bridge revokes old leases and replays only ready can
   controller.setDesktopBridgeProvider(null);
   await assert.rejects(runtime.cdp(request, undefined, async () => ({ ok: true })), { code: "browser_run_unavailable" });
   controller.setDesktopBridgeProvider(provider);
+  await runtime.cdp({ ...request, method: "Browser.select", params: { browser: "workpanel" } }, undefined, async () => { throw new Error("unexpected fallback"); });
   assert.equal((await runtime.cdp(request, undefined, async () => ({ ok: true }))).ok, true);
 });

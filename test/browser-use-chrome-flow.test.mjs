@@ -1,3 +1,4 @@
+import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -43,7 +44,7 @@ function fixture() {
 test("action-returned observations authorize the next typed action only in their own Run and Surface", async () => {
   const { runtime } = fixture();
   await runtime.connect("chat-a");
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   const opened = await runtime.cdp(call("Surface.openChrome", undefined, { url: "https://example.test/new" }), undefined, noFallback);
   const { surfaceId, observation } = opened.result;
   assert.equal(observation.surfaceId, surfaceId);
@@ -61,7 +62,7 @@ test("action-returned observations authorize the next typed action only in their
     ref: "e1", observationId: filled.result.observation.observationId,
   }), undefined, noFallback), { code: "stale_observation" });
   runtime.releaseRun("run-a");
-  runtime.registerRun(source("chat-a", "run-b"));
+  await registerBrowserTask(runtime, source("chat-a", "run-b"));
   await assert.rejects(runtime.cdp(call("Surface.handleDialog", surfaceId, {
     dialogId: "dialog-a", observationId: filled.result.observation.observationId, action: "dismiss",
   }, source("chat-a", "run-b")), undefined, noFallback), { code: "stale_observation" });
@@ -70,7 +71,7 @@ test("action-returned observations authorize the next typed action only in their
 test("multiple visible Chrome windows do not select an arbitrary first page", async () => {
   const { runtime, clients } = fixture();
   await runtime.connect("chat-a");
-  runtime.registerRun(source());
+  await registerBrowserTask(runtime, source());
   clients[0].pages = [
     { pageId: "window-a", title: "Same", url: "https://example.test/", active: true },
     { pageId: "window-b", title: "Same", url: "https://example.test/", active: true },
@@ -96,19 +97,23 @@ test("connection labels distinguish Chats without using their raw canonical iden
   assert.equal(runtime.state("chat-a").connectionName, first);
 });
 
-test("Chrome-only file, dialog and expanded interactions cannot silently run in WorkPanel", async () => {
+test("WorkPanel runs the same typed interactions as Chrome, while scripts and raw CDP stay unavailable to both", async () => {
   const { runtime } = fixture();
-  runtime.registerRun(source());
-  let fallbackCalls = 0;
-  const fallback = async () => { fallbackCalls++; return { ok: true }; };
-  for (const method of ["Surface.scroll", "Surface.getDownloads", "Surface.readDownload"]) {
-    await assert.rejects(runtime.cdp(call(method, "page:existing"), undefined, fallback), { code: "capability_unavailable" });
-  }
+  await registerBrowserTask(runtime, source());
+  const forwarded = [];
+  const fallback = async () => { forwarded.push(true); return { ok: true, result: { status: "done" } }; };
+  await runtime.cdp(call("Surface.scroll", "page:existing", { deltaY: 400 }), undefined, fallback);
   for (const action of ["hover", "type", "press", "check", "uncheck"]) {
-    await assert.rejects(runtime.cdp(call("Surface.interact", "page:existing", { selector: "#known", action }), undefined, fallback),
-      { code: "capability_unavailable" });
+    await runtime.cdp(call("Surface.interact", "page:existing", { selector: "#known", action }), undefined, fallback);
   }
-  assert.equal(fallbackCalls, 0);
+  await runtime.cdp(call("Surface.interact", "page:existing", { selector: "#tags", action: "select", values: ["a", "b"] }), undefined, fallback);
+  await runtime.cdp(call("Surface.observe", "page:existing", { viewportOnly: true }), undefined, fallback);
+  await runtime.cdp(call("Surface.getDownloads", "page:existing"), undefined, fallback);
+  assert.equal(forwarded.length, 9);
+  for (const method of ["Runtime.evaluate", "DOM.getDocument", "Input.dispatchKeyEvent", "Network.enable"]) {
+    await assert.rejects(runtime.cdp(call(method, "page:existing", {}), undefined, fallback), { code: "capability_unavailable" });
+  }
+  assert.equal(forwarded.length, 9);
 });
 
 test("late health results from a released worker cannot disconnect a replacement connection", async () => {

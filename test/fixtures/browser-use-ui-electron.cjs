@@ -90,8 +90,8 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 130));
     fs.writeFileSync(path.join(output, name + '.png'), (await win.webContents.capturePage()).toPNG());
   };
-  const radioInputsDisabled = '[...document.querySelectorAll(".ant-radio-button-wrapper input")].length === 2 && [...document.querySelectorAll(".ant-radio-button-wrapper input")].every(input => input.disabled)';
-  const radioInputsEnabled = '[...document.querySelectorAll(".ant-radio-button-wrapper input")].length === 2 && [...document.querySelectorAll(".ant-radio-button-wrapper input")].every(input => !input.disabled)';
+  const radioInputsDisabled = 'document.querySelector(".browser-use-controls")?.dataset.busy === "true"';
+  const radioInputsEnabled = 'document.querySelector(".browser-use-controls")?.dataset.busy === "false"';
   const settleRenderer = () => new Promise(resolve => setTimeout(resolve, 90));
   const holdDelivery = (action, label) => js(`window.browserUseDeliveryFixture.hold(${JSON.stringify(action)}, ${JSON.stringify(label)})`);
   const releaseDelivery = (label, mode = 'result') => js(`window.browserUseDeliveryFixture.release(${JSON.stringify(label)}, ${JSON.stringify(mode)})`);
@@ -103,12 +103,21 @@ app.whenReady().then(async () => {
     await wait('!!document.querySelector(".browser-use-controls")');
     assert.match(await js('document.querySelector(".browser-use-controls").innerText'), /网页在当前对话右侧/u);
     await capture('01-workpanel-light');
-    // Chrome is directly connectable even before changing the backend radio.
+    // WorkPanel never offers Chrome connection controls or requires a manual backend choice.
     assert.equal(runtime.state('chat-a').backend, 'workpanel');
+    assert.equal(await js('document.querySelectorAll(".ant-radio-button-wrapper input").length'), 0);
+    assert.equal(await js('[...document.querySelectorAll("button")].some(button => button.textContent.trim() === "连接 Chrome")'), false);
+    win.webContents.send(BROWSER_USE_CHANGED, { ...runtime.state('chat-a'), activeRunIds: ['workpanel-run'],
+      workspaceShared: true, workspaceOwner: { chatId: 'other-chat', runId: 'chrome-run', draining: false } });
+    await wait(radioInputsDisabled);
+    assert.equal(await js('[...document.querySelectorAll("button")].some(button => /连接 Chrome|接管工作区|手动选择标签页/u.test(button.textContent))'), false);
+    workspaceChecks.push({ name: 'workpanel-never-displays-unrelated-chrome-connection-or-takeover', pass: true });
+    runtime.select('chat-a', 'chrome');
+    await wait('document.body.innerText.includes("Chrome 尚未连接")');
     await clickButton('连接 Chrome');
     await wait('document.body.innerText.includes("正在连接 Chrome")');
     assert.equal(runtime.state('chat-a').backend, 'chrome');
-    connectionGuideChecks.push({ name: 'direct-connect-without-selecting-chrome-first', pass: true });
+    connectionGuideChecks.push({ name: 'task-chrome-target-displays-recovery-without-backend-radio', pass: true });
     await capture('03-chrome-connecting-light');
     approve();
     await wait('document.body.innerText.includes("Chrome 已连接")');
@@ -116,7 +125,7 @@ app.whenReady().then(async () => {
     await capture('04-chrome-connected-light');
     runtime.registerRun({ runId: 'fixture-run', chatId: 'chat-a', agentKey: 'cutej' });
     await wait('document.body.innerText.includes("接管并停止")');
-    assert.equal(await js('[...document.querySelectorAll(".ant-radio-button-wrapper input")].every(input=>input.disabled)'), true);
+    assert.equal(await js(radioInputsDisabled), true);
     await capture('05-chrome-running-light');
     await js('window.browserUseUiFixture.setTheme("dark")');
     await capture('06-chrome-running-dark');
@@ -177,7 +186,7 @@ app.whenReady().then(async () => {
       await holdDelivery('connect', oldConnect);
       await clickButton('连接 Chrome');
       await wait('document.body.innerText.includes("正在连接 Chrome")');
-      assert.equal(await js(radioInputsDisabled), true, 'Pending connection must lock backend selection');
+      assert.equal(await js(radioInputsDisabled), true, 'Pending connection must lock connection controls');
       if (mode === 'result') {
         await js('window.browserUseUiFixture.setLocale("en-US")');
         await wait('document.body.innerText.includes("Connecting to Chrome")');
@@ -420,14 +429,14 @@ app.whenReady().then(async () => {
     await js('window.browserUseUiFixture.setLocale("en-US")');
     await wait('document.body.innerText.includes("Chrome connected")');
     await js('window.browserUseUiFixture.setChatId(null)');
-    await wait('document.body.innerText.includes("Start a conversation")');
+    await wait('document.body.innerText.includes("Specify Chrome or the right WorkPanel")');
     await capture('08-no-chat-dark-english');
     assert.deepEqual(errors, []);
     const viewport = await js('({width:innerWidth,height:innerHeight,deviceScaleFactor:devicePixelRatio})');
     fs.writeFileSync(path.join(output, 'visual-result.json'), JSON.stringify({ ok: true, viewport,
       screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')), calls, stops, errors, requestGenerationChecks, connectionGuideChecks, workspaceChecks, settingsChecks, settingsRequests,
       limitation: 'The real UI and IPC ran in Electron; the browser client is a test double, not a Chrome extension connection.' }, null, 2));
-    console.log('Browser Use UI real Electron: PASS (Chrome states, settings and write-only authorization, Chat-scoped connection guides, themes/locales, frozen selection, takeover, request generations, no Chat); screenshots: ' + output);
+    console.log('Browser Use UI real Electron: PASS (Chrome states, settings and write-only authorization, Chat-scoped connection guides, themes/locales, task target status, takeover, request generations, no Chat); screenshots: ' + output);
   } finally { runtime.dispose(); win.destroy(); }
 }).then(() => { clearTimeout(guard); fs.rmSync(profile, { recursive: true, force: true }); app.exit(0); })
   .catch(error => { console.error(error); clearTimeout(guard); app.exit(1); });

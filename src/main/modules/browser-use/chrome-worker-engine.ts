@@ -62,6 +62,9 @@ function textParam(value: unknown, name: string, max = 100_000): string {
 }
 
 /** One Main-owned workspace owns this connection; its queue never follows the UI's active Chrome tab. */
+// Read-only page requests stay available while a timed-out input settles.
+const unsettledInputBlocked = new Set(["click", "interact", "dialog", "upload", "navigate", "back", "reload", "close"]);
+
 export class ChromeWorkerEngine {
   private controller?: ChromeWorkerController;
   private readonly abort = new AbortController();
@@ -77,6 +80,8 @@ export class ChromeWorkerEngine {
   private readonly transfers = new ChromeTransferStore();
   private readonly awcp = new ChromeAwcp(this.abort.signal);
   private watched = new WeakSet<object>();
+  /** A timed-out pointer input whose effects are unknown; only this page waits for it, never the connection. */
+  private readonly unsettledInput = new Map<string, Promise<void>>();
 
   constructor(private readonly factory: ChromeControllerFactory = defaultFactory) {}
 
@@ -200,6 +205,8 @@ export class ChromeWorkerEngine {
     }
     const pageId = request.pageId;
     if (typeof pageId !== "string" || !pageId) throw chromeWorkerError("invalid_params", "A stable Chrome page ID is required");
+    if (this.unsettledInput.has(pageId) && unsettledInputBlocked.has(request.method))
+      throw chromeWorkerError("input_unsettled", "An earlier pointer input on this page has not settled. Observe the page before another action; do not repeat that input.");
     if (request.method === "observe") return this.observe(controller, pageId, params);
     if (request.method === "click") return this.click(controller, pageId, params);
     if (request.method === "interact") return this.interact(controller, pageId, params);
@@ -267,6 +274,12 @@ export class ChromeWorkerEngine {
     tab.page.on("close", () => { invalidate(); this.knownSecrets.delete(tab.desktopPageId); });
     tab.page.on("crash", () => { invalidate(); this.knownSecrets.delete(tab.desktopPageId); });
     tab.page.on("dialog", invalidate); tab.page.on("dialogclosed", invalidate); tab.page.on("filechooser", invalidate);
+  }
+
+  private holdUnsettledInput(pageId: string, input: Promise<void>) {
+    const settled = input.then(() => undefined, () => undefined);
+    this.unsettledInput.set(pageId, settled);
+    void settled.then(() => { if (this.unsettledInput.get(pageId) === settled) this.unsettledInput.delete(pageId); });
   }
 
   private invalidate(pageId: string): number {
@@ -573,15 +586,16 @@ export class ChromeWorkerEngine {
         result.action.outcome = "unknown";
         if (locator) await this.modalAware(tab, signal => locator!.click({ timeout: remaining(), noWaitAfter: true, signal }), remaining());
         else {
-          let timer: ReturnType<typeof setTimeout> | undefined;
+          let timer: ReturnType<typeof setTimeout> | undefined, press: Promise<void> | undefined;
           try {
             await Promise.race([
-              this.modalAware(tab, () => tab.page.mouse.click(params.x as number, params.y as number), remaining()),
+              this.modalAware(tab, () => (press = tab.page.mouse.click(params.x as number, params.y as number)), remaining()),
               new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(chromeWorkerError("browser_action_timeout", "timeout")), remaining()); })
             ]);
           } catch (error) {
-            // A timed-out transport has unknown input effects: release it before accepting another operation.
-            if ((error as { code?: string }).code === "browser_action_timeout") await controller.disconnect();
+            // The input effects are unknown. Hold this page's mutations until it settles; other pages and
+            // the shared connection stay usable, and the press is never repeated.
+            if ((error as { code?: string }).code === "browser_action_timeout" && press) this.holdUnsettledInput(pageId, press);
             throw error;
           } finally { clearTimeout(timer); }
         }

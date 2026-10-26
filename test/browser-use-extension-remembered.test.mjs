@@ -1,3 +1,4 @@
+import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -173,7 +174,7 @@ test("official saved authorization connects independent Chat groups without Allo
     const firstRun = { chatId: "owned-lifecycle-chat", runId: "dead-first-run", agentKey: "cutej" };
     const nextRun = { ...firstRun, runId: "healthy-next-run" };
     const fallback = async () => { throw new Error("Chrome lifecycle must not fall back to WorkPanel"); };
-    runtime.registerRun(firstRun);
+    await registerBrowserTask(runtime, firstRun);
     await assert.rejects(runtime.cdp({ source: firstRun, method: "Surface.openChrome", params: { url: `http://127.0.0.1:${closedPort}/dead-first` } }, undefined, fallback), { code: "page_connection_refused" });
     runtime.releaseRun(firstRun.runId);
     await delay(3500); // The official extension's final-tab detach/reattach window is 2.5 seconds.
@@ -199,7 +200,7 @@ test("official saved authorization connects independent Chat groups without Allo
     }
     assert.equal(staleWorkerState.connected, false);
     assert.equal(runtime.state(firstRun.chatId).connection, "connected", "Main must verify the engine instead of assuming a live worker is connected");
-    runtime.registerRun(nextRun);
+    await registerBrowserTask(runtime, nextRun);
     const continued = await runtime.cdp({ source: nextRun, method: "Surface.openChrome", params: { url: `${origin}/runtime-recovered` } }, undefined, fallback);
     publicResults.push(continued);
     assert.equal(continued.result.surface.url, `${origin}/runtime-recovered`, "same Chat's new Run must open the healthy URL without a manual connection");

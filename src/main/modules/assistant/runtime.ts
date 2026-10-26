@@ -166,6 +166,9 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
         : execute();
     },
     cdp: (request, scope, signal) => {
+      if (scope && request.method === "Browser.select") return Promise.resolve({ ok: false, method: request.method, error: {
+        code: "browser_scope_locked", message: "This application task is bound to its Website or WebApp. Continue in the authorized application; start an ordinary Chat for Chrome or WorkPanel tasks.",
+      } });
       const execute = (actionSignal = signal) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope, actionSignal, true);
       return options.browserUse && !scope
         ? options.browserUse.cdp(request, signal, execute).catch(error => ({ ok: false, method: request.method, error: browserUseError(error) }))

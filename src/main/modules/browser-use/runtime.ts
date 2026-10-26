@@ -17,20 +17,31 @@ type Run = BrowserRunSource & {
   checkedClient?: BrowserWorkerClient;
   connectionHealth?: { client: BrowserWorkerClient; promise: Promise<boolean> };
   awcpUsed?: boolean;
+  browserSelected?: boolean;
+  // Binding is chosen from task intent before the first page request, then frozen.
+  pageWorkStarted?: boolean;
   workspaceId: string;
   workspaceGeneration?: number;
   pending: Set<Promise<unknown>>;
   downloads: Map<string, Set<string>>;
 };
 type RecordValue = Record<string, unknown>;
+const surfaceInteractions = ["fill", "type", "select", "focus", "scroll", "hover", "press", "check", "uncheck"];
 const chromeCapabilities = {
   observe: true, elementRefs: true, screenshot: true, open: true,
   rawCdp: false, evaluate: false, awcp: true, ignoreCacheReload: false,
   actionObservation: true, dialogs: true, uploadChatFiles: true, downloadToChat: true,
-  interactions: ["fill", "type", "select", "focus", "scroll", "hover", "press", "check", "uncheck"],
+  interactions: surfaceInteractions,
 };
-const chromeOnlyMethods = new Set(["Surface.scroll", "Surface.handleDialog", "Surface.uploadFiles", "Surface.getDownloads", "Surface.readDownload"]);
-const chromeOnlyInteractions = new Set(["type", "hover", "press", "check", "uncheck"]);
+const workpanelCapabilities = {
+  observe: true, elementRefs: true, screenshot: true, open: true,
+  rawCdp: false, evaluate: false, awcp: true, ignoreCacheReload: true,
+  actionObservation: true, dialogs: true, uploadChatFiles: true, downloadToChat: true,
+  interactions: surfaceInteractions,
+};
+// Both providers expose the same typed page operations; model-supplied scripts and raw CDP are not page operations.
+const pageScriptMethods = new Set(["Runtime.evaluate", "Page.enable", "DOM.getDocument", "DOM.querySelector", "DOM.querySelectorAll",
+  "DOM.getOuterHTML", "DOM.getBoxModel", "Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText", "Network.enable", "Network.disable"]);
 const privateConnectionParams = new Set(["extensionToken", "profileDirName", "userDataDir", "executablePath", "cdpEndpoint", "wsEndpoint", "browserURL", "browserUrl", "endpointURL", "port", "clientName", "channel"]);
 const defaultPreferences: BrowserUsePreferences = { defaultBackend: "workpanel", rememberChromeConnection: false, hasSavedAuthorization: false, secureStorageAvailable: false };
 
@@ -62,6 +73,7 @@ export class BrowserUseRuntime {
   private readonly sessions = new Map<string, Session>();
   private readonly runs = new Map<string, Run>();
   private readonly workspaces = new Map<string, ChromeWorkspace>();
+  private readonly connectionWaiters = new Set<() => void>();
   constructor(private readonly options: {
     clientName?: string;
     createClient(onExit: () => void): BrowserWorkerClient;
@@ -112,6 +124,7 @@ export class BrowserUseRuntime {
       ...(workspace.owner ? { workspaceOwner: { ...workspace.owner } } : {}),
       ...(workspace.selectedSurfaceId ? { selectedSurfaceId: workspace.selectedSurfaceId } : {}),
       ...(session.connectionRequest ? { connectionRequest: session.connectionRequest } : {}),
+      ...([...this.runs.values()].some(run => run.chatId === chatId && this.awaitingConnection(run)) ? { awaitingConnection: true } : {}),
       activeRunIds: [...this.runs.values()].filter(run => run.chatId === chatId && !run.controller.signal.aborted).map(run => run.runId),
       ...(workspace.error ? { error: workspace.error } : {}),
     };
@@ -134,6 +147,11 @@ export class BrowserUseRuntime {
   }
   private changedWorkspace(workspace: ChromeWorkspace) {
     for (const session of this.sessions.values()) if (session.workspace === workspace) this.options.onChanged?.(this.state(session.chatId));
+    for (const wake of [...this.connectionWaiters]) wake();
+  }
+  /** A Run that asked for a connection and has not dispatched page work may wait for the user to connect. */
+  private awaitingConnection(run: Run | undefined) {
+    return !!run && run.connectionRequested === true && run.workspaceGeneration === undefined && !run.pending.size && !run.controller.signal.aborted;
   }
   async refreshState(chatId: string): Promise<BrowserUseState> {
     const session = this.session(chatId), workspace = session.workspace;
@@ -160,8 +178,10 @@ export class BrowserUseRuntime {
     return this.state(chatId);
   }
   private changed(session: Session) { this.changedWorkspace(session.workspace); }
-  private assertIdle(chatId: string) {
-    if (this.state(chatId).activeRunIds.length) throw failure("browser_busy", "Take over the current task before changing its browser.");
+  private assertIdle(chatId: string, allowAwaitingConnection = false) {
+    const busy = [...this.runs.values()].some(run => run.chatId === chatId && !run.controller.signal.aborted
+      && !(allowAwaitingConnection && this.awaitingConnection(run)));
+    if (busy) throw failure("browser_busy", "Take over the current task before changing its browser.");
   }
   select(chatId: string, backend: BrowserUseBackend) {
     if (backend !== "chrome" && backend !== "workpanel") throw failure("invalid_args", "Unsupported browser.");
@@ -173,17 +193,52 @@ export class BrowserUseRuntime {
     this.changed(session);
     return this.state(chatId);
   }
-  private assertWorkspaceIdle(workspace: ChromeWorkspace) {
+  /** Model intent may choose a candidate, but can never migrate dispatched page work. */
+  private selectRunBrowser(run: Run, params: RecordValue) {
+    const backend = text(params.browser);
+    if (Object.keys(params).some(key => key !== "browser") || (backend !== "chrome" && backend !== "workpanel"))
+      throw failure("invalid_args", "browser must be chrome or workpanel; connection settings cannot be supplied here.");
+    const reply = () => ({ ok: true, method: "Browser.select", result: { browser: run.backend, provider: run.backend, locked: run.pageWorkStarted === true } });
+    if (run.backend === backend) { run.browserSelected = true; return reply(); }
+    if (run.pageWorkStarted || run.workspaceGeneration !== undefined || run.pending.size || run.awcpUsed)
+      throw failure("browser_target_locked", "This task has already started a page request. Keep using its browser, or start a new task for the other browser and first verify any earlier write result. Do not replay an uncertain action.");
+    const session = this.session(run.chatId), previous = session.workspace;
+    if (previous.owner?.runId === run.runId) {
+      if (previous.owner.draining) throw failure("browser_workspace_draining", "Wait for pending Chrome operations to finish before starting another task.");
+      previous.owner = undefined;
+    }
+    session.backend = backend;
+    if (backend === "chrome") {
+      if (!session.workspace.client && !session.workspace.owner) session.workspace = this.workspaceFor(run.chatId, backend);
+      this.attachAvailableWorkspace(session);
+    }
+    run.backend = backend;
+    run.browserSelected = true;
+    run.workspaceId = session.workspace.id;
+    run.checkedClient = undefined;
+    run.connectionHealth = undefined;
+    run.connectionRequested = false;
+    if (session.connectionRequest?.runId === run.runId) session.connectionRequest = undefined;
+    if (previous !== session.workspace) this.changedWorkspace(previous);
+    this.changed(session);
+    return reply();
+  }
+  private requireRunBrowser(run: Run) {
+    if (!run.browserSelected) throw failure("browser_selection_required", "Choose this task's browser with surface_browser before any webpage or AWCP request. Follow the user's current Chrome or WorkPanel intent; if unclear, ask_user_question once, then select their answer. Saved defaults and earlier Chats are not a task choice. No page request has been dispatched.");
+  }
+  private assertWorkspaceIdle(workspace: ChromeWorkspace, allowAwaitingConnection = false) {
+    if (allowAwaitingConnection && workspace.owner && !workspace.owner.draining && this.awaitingConnection(this.runs.get(workspace.owner.runId))) return;
     if (workspace.owner) throw failure(workspace.owner.draining ? "browser_workspace_draining" : "browser_busy", "The Chrome workspace is still controlled by another task. Wait or take over the workspace.");
   }
   async connect(chatId: string, options: { interactive?: boolean } = {}) {
-    this.assertIdle(chatId);
+    // A suspended Chrome Run waits for exactly this user action; it has dispatched nothing yet.
+    this.assertIdle(chatId, true);
     const session = this.session(chatId);
     if (session.backend !== "chrome" && !session.workspace.client) session.workspace = this.workspaceFor(chatId, "chrome");
     session.backend = "chrome";
     this.attachAvailableWorkspace(session);
     const workspace = session.workspace;
-    this.assertWorkspaceIdle(workspace);
+    this.assertWorkspaceIdle(workspace, true);
     if (workspace.connection === "connecting") throw failure("browser_connecting", "Chrome is waiting for connection approval.");
     if (options.interactive && workspace.client) { await this.disconnectWorkspace(workspace); this.assertIdle(chatId); this.assertWorkspaceIdle(workspace); }
     const extensionToken = !options.interactive && this.preferences().rememberChromeConnection ? this.options.preferences?.authorization() : undefined;
@@ -246,7 +301,7 @@ export class BrowserUseRuntime {
   prepareRun(source: BrowserRunSource) {
     if (!source.chatId || !source.runId || !source.agentKey) return;
     const existing = this.runs.get(source.runId);
-    if (existing) return; // A Run's environment is immutable, including re-attach.
+    if (existing) return; // Re-attach never changes the Run's candidate or task selection.
     this.attachAvailableWorkspace(this.session(source.chatId));
     this.runs.set(source.runId, { ...source, backend: this.session(source.chatId).backend, ready: false, controller: new AbortController(), observations: new Map(), workspaceId: this.session(source.chatId).workspace.id, pending: new Set(), downloads: new Map() });
     this.changed(this.session(source.chatId));
@@ -379,7 +434,7 @@ export class BrowserUseRuntime {
   }
   private client(session: Session) {
     if (!session.workspace.client || session.workspace.connection !== "connected")
-      throw failure("browser_connection_required", "Connect Chrome from the browser control at the top of this Chat, then start a new task.");
+      throw failure("browser_connection_required", "Connect Chrome from the browser control at the top of this Chat; the waiting task continues after the connection is approved.");
     return session.workspace.client;
   }
   private page(session: Session, surfaceId: string) {
@@ -500,14 +555,17 @@ export class BrowserUseRuntime {
     try { extensionToken = this.preferences().rememberChromeConnection ? this.options.preferences?.authorization() : undefined; }
     catch {
       this.requestConnection(session, run);
-      throw failure("browser_connection_required", "Saved Chrome authorization is unavailable. Open browser settings or choose a page, then start a new task.");
+      throw failure("browser_connection_required", "Saved Chrome authorization is unavailable. Connect Chrome from this Chat's browser control; the waiting task continues after the connection is approved.");
     }
     if (!extensionToken) {
       this.requestConnection(session, run);
-      throw failure("browser_connection_required", "Connect Chrome in browser settings or choose a page from this Chat's browser control, then start a new task.");
+      throw failure("browser_connection_required", "Connect Chrome from this Chat's browser control; the waiting task continues after the connection is approved.");
     }
     const workspace = session.workspace;
-    if (workspace.shared && !this.preferences().rememberChromeConnection) throw failure("browser_connection_required", "Connect Chrome explicitly before continuing this task.");
+    if (workspace.shared && !this.preferences().rememberChromeConnection) {
+      this.requestConnection(session, run);
+      throw failure("browser_connection_required", "Connect Chrome explicitly; the waiting task continues after the connection is approved.");
+    }
     const pending = this.connectWorkspace(workspace, { extensionToken, timeoutMs: 15_000 });
     try {
       await this.waitForRun(pending, run, signal);
@@ -531,9 +589,11 @@ export class BrowserUseRuntime {
     surfaceId?: string,
   ): Promise<BrowserAwcpDispatch> {
     const candidate = this.runs.get(text(source.runId));
+    if (candidate) this.requireRunBrowser(this.lease(source));
     if (!candidate || candidate.backend !== "chrome") {
       if (typeof surfaceId === "string" && surfaceId.startsWith("chrome:"))
         throw failure("browser_run_unavailable", "This Chrome page is not authorized for the current task.");
+      if (candidate) this.lease(source).pageWorkStarted = true;
       return { handled: false };
     }
     const run = this.lease(source);
@@ -546,6 +606,9 @@ export class BrowserUseRuntime {
     const combined = AbortSignal.any([signal, run.controller.signal]);
     if (combined.aborted) throw failure("browser_run_unavailable", "The browser task was stopped.");
     const session = this.session(run.chatId);
+    // Reserve the binding before asynchronous connection work; a concurrent
+    // selection must not redirect a request that is already entering this route.
+    run.pageWorkStarted = true;
     this.acquireWorkspace(session, run);
     await this.ensureChromeConnection(session, run, combined);
     await this.refreshPages(session, combined, run);
@@ -585,11 +648,42 @@ export class BrowserUseRuntime {
     }
   }
 
+  /**
+   * Platform polls this after browser_connection_required. Only a Chrome Run that has not dispatched
+   * page work may wait; the wait is bounded per call and ends with the Run.
+   */
+  private async awaitConnection(run: Run, params: RecordValue, signal: AbortSignal) {
+    const method = "Browser.awaitConnection";
+    const session = this.session(run.chatId);
+    const ready = () => session.workspace.id === run.workspaceId && session.workspace.connection === "connected" && !!session.workspace.client;
+    const reply = (status: "connected" | "pending" | "unavailable", reason?: string) => ({ ok: true, method, result: { status, ...(reason ? { reason } : {}) } });
+    if (run.backend !== "chrome") return reply("unavailable", "backend_mismatch");
+    if (ready()) return reply("connected");
+    if (!this.awaitingConnection(run)) return reply("unavailable", "connection_not_requested");
+    const requested = typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) ? params.timeoutMs : 20_000;
+    const waitMs = Math.min(Math.max(requested, 1_000), 20_000);
+    await new Promise<void>(resolve => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const done = () => { clearTimeout(timer); this.connectionWaiters.delete(wake); signal.removeEventListener("abort", done); resolve(); };
+      const wake = () => { if (ready()) done(); };
+      timer = setTimeout(done, waitMs);
+      this.connectionWaiters.add(wake);
+      signal.addEventListener("abort", done, { once: true });
+      if (signal.aborted) done();
+    });
+    if (signal.aborted || this.runs.get(run.runId) !== run) throw failure("browser_run_unavailable", "The browser task was stopped.");
+    return ready() ? reply("connected") : reply("pending");
+  }
+
   /** Called exclusively by the already authenticated reverse Platform bridge. */
   async cdp(request: RecordValue, signal: AbortSignal | undefined, fallback: (signal: AbortSignal) => Promise<unknown>) {
     const run = this.lease(request.source);
     const combined = signal ? AbortSignal.any([signal, run.controller.signal]) : run.controller.signal;
     const method = text(request.method);
+    if (method === "Browser.awaitConnection") return this.awaitConnection(run, record(request.params), combined);
+    if (combined.aborted) throw failure("browser_run_unavailable", "The task was stopped.");
+    if (method === "Browser.select") return this.selectRunBrowser(run, record(request.params));
+    this.requireRunBrowser(run);
     const surfaceId = text(request.surfaceId);
     const params = record(request.params);
     if (combined.aborted) throw failure("browser_run_unavailable", "The task was stopped.");
@@ -600,30 +694,34 @@ export class BrowserUseRuntime {
       if (run.observations.get(surfaceId) !== text(params.observationId))
         throw failure("stale_observation", "Observe this page in the current task before using an element reference.");
     }
+    if (pageScriptMethods.has(method))
+      throw failure("capability_unavailable", "Raw scripts and CDP methods are unavailable. Use the typed surface tools to observe and operate this page.");
     if (run.backend === "workpanel") {
-      if (chromeOnlyMethods.has(method) || (method === "Surface.observe" && "viewportOnly" in params) || (method === "Surface.interact"
-        && (chromeOnlyInteractions.has(text(params.action)) || "values" in params))) {
-        throw failure("capability_unavailable", "This operation requires the connected Chrome environment.");
+      // surface_open follows the Run's browser; Platform reopens the address in the WorkPanel.
+      if (method === "Surface.openChrome") throw failure("browser_backend_mismatch", "This task uses the WorkPanel browser; open the webpage there.");
+      if (surfaceId.startsWith("chrome:")) {
+        throw failure("browser_backend_mismatch", "This task uses WorkPanel. Use its current webpages; before any page work, surface_browser may select Chrome if the user requested Chrome. Otherwise start a new task for Chrome.");
       }
-      if (surfaceId.startsWith("chrome:") || method === "Surface.openChrome") {
-        this.requestConnection(this.session(run.chatId), run);
-        throw failure("browser_connection_required", "Select and connect Chrome from the browser control at the top of this Chat, then start a new task.");
-      }
+      run.pageWorkStarted = true;
       const reply = await fallback(combined);
       if (combined.aborted) throw failure("browser_run_unavailable", "The task was stopped.");
-      if (method === "Surface.observe") {
-        const result = record(record(reply).result);
-        if (record(reply).ok === true && text(result.observationId)) run.observations.set(surfaceId, text(result.observationId));
+      const result = record(record(reply).result);
+      if (record(reply).ok === true && surfaceId) {
+        // A typed action returns the observation it produced; its refs replace the earlier snapshot's.
+        const observation = method === "Surface.observe" ? result : record(result.observation);
+        if (text(observation.observationId)) run.observations.set(surfaceId, text(observation.observationId));
+        else if (["Surface.click", "Surface.interact", "Surface.scroll", "Input.click"].includes(method)) run.observations.delete(surfaceId);
       }
-      if (method === "Surface.list" || method === "Surface.getState") {
-        const result = record(record(reply).result);
+      if (method === "Surface.list" || method === "Surface.getState" || method === "Surface.getCurrent") {
         if (Array.isArray(result.surfaces)) result.surfaces = result.surfaces.map(page => ({ ...record(page), provider: "workpanel" }));
         if (result.surface) result.surface = { ...record(result.surface), provider: "workpanel" };
         result.provider = "workpanel";
+        result.capabilities = workpanelCapabilities;
       }
       return reply;
     }
     const session = this.session(run.chatId);
+    run.pageWorkStarted = true;
     this.acquireWorkspace(session, run);
     await this.ensureChromeConnection(session, run, combined);
     if (combined.aborted) throw failure("browser_run_unavailable", "The task was stopped.");
@@ -739,8 +837,10 @@ export class BrowserUseRuntime {
     const args = record(request.args);
     if (!action.startsWith("desktop.web.") && action !== "desktop.workpanel.openWeb") return fallback(signal ?? new AbortController().signal);
     const run = this.lease(request.source);
+    this.requireRunBrowser(run);
     const combined = signal ? AbortSignal.any([signal, run.controller.signal]) : run.controller.signal;
     if (run.backend !== "chrome") {
+      run.pageWorkStarted = true;
       const result = await fallback(combined);
       if (combined.aborted) throw failure("browser_run_unavailable", "The task was stopped.");
       return result;

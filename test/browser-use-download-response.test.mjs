@@ -12,8 +12,14 @@ const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
 export function compileDownloadTransfer(target) {
-  for (const name of ["chrome-download-response", "chrome-file-transfer"]) {
-    const source = fs.readFileSync(path.join(root, "src/main/modules/browser-use", `${name}.ts`), "utf8");
+  const sources = [
+    ["chrome-download-response", "src/main/modules/browser-use/chrome-download-response.ts"],
+    ["chrome-file-transfer", "src/main/modules/browser-use/chrome-file-transfer.ts"],
+    ["browser-file-transfer", "src/main/support/browser-files/transfer.ts"],
+  ];
+  for (const [name, file] of sources) {
+    // The shared transfer rules are compiled beside the module under test.
+    const source = fs.readFileSync(path.join(root, file), "utf8").replaceAll('"../../support/browser-files/transfer"', '"./browser-file-transfer"');
     fs.writeFileSync(path.join(target, `${name}.js`), ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText);

@@ -1,12 +1,17 @@
 import type { DesktopClickWait } from "../../../../shared/desktop-click";
 
 export type ObservationProbeRequest = {
-  kind: "observe" | "locate" | "verify" | "wait" | "fill" | "verify-focus" | "verify-fill" | "select" | "focus" | "scroll";
+  kind: "observe" | "locate" | "verify" | "wait" | "fill" | "verify-focus" | "verify-fill" | "select" | "focus" | "scroll"
+    | "check-state" | "viewport" | "file-input" | "file-input-element";
   observationId: string;
   ref?: string;
+  /** A unique CSS selector in the main document; replaces ref and needs no snapshot. */
+  selector?: string;
   value?: string;
+  values?: string[];
   maxTextLength?: number;
   maxElements?: number;
+  viewportOnly?: boolean;
   waitFor?: DesktopClickWait;
 };
 
@@ -27,6 +32,10 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
     }
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
+  };
+  const intersectsViewport = (element: Element) => {
+    const rect = element.getBoundingClientRect(), view = element.ownerDocument.defaultView!;
+    return rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
   };
   const disabled = (element: Element) => {
     for (let current: Element | null = element; current; current = parent(current)) {
@@ -77,6 +86,9 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
     const text: string[] = [];
     let textLength = 0, visited = 0, truncated = false;
     let optionCount = 0, optionCharacters = 24_000;
+    // Viewport filtering keeps frame-local boxes: each frame element must also intersect its parent viewport.
+    const inView = (element: Element, frames: Frame[]) => !request.viewportOnly
+      || intersectsViewport(element) && frames.every((frame) => intersectsViewport(frame.element));
     const appendText = (value: string) => {
       const normalized = clean(value, maxText + 1);
       if (!normalized) return;
@@ -89,7 +101,7 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
     const visit = (node: Node, frames: Frame[], depth = 0) => {
       if (++visited > 15_000 || depth > 100) { truncated = true; return; }
       if (node.nodeType === Node.TEXT_NODE) {
-        if (node.parentElement && rendered(node.parentElement)) appendText(node.textContent ?? "");
+        if (node.parentElement && rendered(node.parentElement) && inView(node.parentElement, frames)) appendText(node.textContent ?? "");
         return;
       }
       if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
@@ -102,7 +114,7 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
           || style.opacity === "0" || style.contentVisibility === "hidden"
           || element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return;
         const role = roleOf(element);
-        if (role && rendered(element) && !(element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden")) {
+        if (role && rendered(element) && inView(element, frames) && !(element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden")) {
           if (elements.length < maxElements) {
             const ref = `e${elements.length + 1}`;
             const item: Record<string, unknown> = { ref, role, name: nameOf(element), tag: element.tagName.toLowerCase(), disabled: disabled(element) };
@@ -154,10 +166,21 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
     if (document.body) visit(document.body, []);
     store[key] = { id: request.observationId, document, entries };
     return { observationId: request.observationId, url: location.href, title: document.title,
-      text: text.join(" ").slice(0, maxText), elements, truncated };
+      text: text.join(" ").slice(0, maxText), elements, truncated, ...(request.viewportOnly ? { viewportOnly: true } : {}) };
+  }
+  if (request.kind === "viewport") return { width: innerWidth, height: innerHeight };
+  let entry: Entry | undefined;
+  if (request.selector !== undefined) {
+    // A selector targets the main document only; frame content needs an observed ref.
+    let matches: NodeListOf<Element>;
+    try { matches = document.querySelectorAll(request.selector); }
+    catch { return { error: "invalid_selector" }; }
+    if (matches.length === 0) return { error: "element_not_found" };
+    if (matches.length > 1) return { error: "ambiguous_selector" };
+    entry = { element: matches[0], document, frames: [] };
   }
   const snapshot = store[key];
-  if (!snapshot || snapshot.id !== request.observationId || snapshot.document !== document) return { error: "observation_stale" };
+  if (!entry && (!snapshot || snapshot.id !== request.observationId || snapshot.document !== document)) return { error: "observation_stale" };
   // Invalid postconditions must fail before scrolling or dispatching a press.
   if (request.waitFor?.selector) {
     try { document.querySelectorAll(request.waitFor.selector); }
@@ -175,7 +198,7 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
     const checked = typeof (element as HTMLInputElement).checked === "boolean" ? (element as HTMLInputElement).checked : element.getAttribute("aria-checked") === "true";
     return { matched: checked === wait.checked, checked };
   }
-  const entry = snapshot.entries.get(request.ref!);
+  entry ??= snapshot!.entries.get(request.ref!);
   if (!entry) return { error: "element_ref_not_found" };
   const element = entry.element, elementDocument = entry.document;
   try {
@@ -217,12 +240,30 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
   if (request.kind === "select") {
     if (element.tagName !== "SELECT") return { error: "element_not_selectable" };
     const select = element as HTMLSelectElement;
-    if (![...select.options].some((option) => option.value === request.value && !option.disabled && !option.closest("optgroup[disabled]"))) return { error: "option_not_found" };
-    scroll(); select.focus({ preventScroll: true }); select.value = request.value!;
+    const wanted = request.values ?? [request.value!];
+    if (!select.multiple && wanted.length !== 1) return { error: "element_not_multiple" };
+    const usable = (option: HTMLOptionElement) => !option.disabled && !option.closest("optgroup[disabled]");
+    if (!wanted.every((value) => [...select.options].some((option) => option.value === value && usable(option)))) return { error: "option_not_found" };
+    scroll(); select.focus({ preventScroll: true });
+    if (select.multiple) for (const option of select.options) option.selected = wanted.includes(option.value) && usable(option);
+    else select.value = wanted[0];
     const EventClass = elementDocument.defaultView!.Event;
     select.dispatchEvent(new EventClass("input", { bubbles: true }));
     select.dispatchEvent(new EventClass("change", { bubbles: true }));
-    return { matched: select.value === request.value };
+    const selected = [...select.selectedOptions].map((option) => option.value);
+    return { matched: selected.length === wanted.length && wanted.every((value) => selected.includes(value)) };
+  }
+  if (request.kind === "file-input" || request.kind === "file-input-element") {
+    if (!element.matches("input[type=file]")) return { error: "element_not_file_input" };
+    // The element itself is returned only by reference, for DOM.setFileInputFiles.
+    return request.kind === "file-input" ? { matched: true, multiple: (element as HTMLInputElement).multiple } : element;
+  }
+  if (request.kind === "check-state") {
+    const role = element.getAttribute("role") ?? "";
+    const native = element.matches("input[type=checkbox], input[type=radio]");
+    if (!native && !["checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio"].includes(role)) return { error: "element_not_checkable" };
+    return { checked: native ? (element as HTMLInputElement).checked : element.getAttribute("aria-checked") === "true",
+      radio: native ? (element as HTMLInputElement).type === "radio" : role === "radio" || role === "menuitemradio" };
   }
   if (request.kind === "focus" || request.kind === "scroll") {
     scroll();

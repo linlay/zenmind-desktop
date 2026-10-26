@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Popover, Radio, Spin } from "antd";
+import { Button, Popover, Spin } from "antd";
 import { GlobalOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import type { BrowserUseControlRequest, BrowserUseState } from "../../shared/browser-use";
@@ -59,14 +59,17 @@ export function BrowserUseControl({ chatId }: { chatId: string | null }) {
     if (open && chatId) void apply({ action: "state", chatId }, true);
   }, [open, chatId, apply]);
   const running = Boolean(state?.activeRunIds.length);
-  const workspaceShared = state?.workspaceShared === true;
-  const workspaceOwner = state?.workspaceOwner;
+  const usingChrome = state?.backend === "chrome" || Boolean(state?.connectionRequest);
+  const workspaceShared = usingChrome && state?.workspaceShared === true;
+  const workspaceOwner = usingChrome ? state?.workspaceOwner : undefined;
   const workspaceDraining = workspaceOwner?.draining === true;
   const workspaceBusy = Boolean(workspaceOwner);
   const workspaceOwnedElsewhere = Boolean(workspaceOwner && workspaceOwner.chatId !== chatId);
   const locked = running || workspaceBusy;
+  // A suspended Run waits for exactly this connection, so connecting must stay available.
+  const connectLocked = locked && state?.awaitingConnection !== true;
   const connection = state?.connection ?? "disconnected";
-  const needsConnection = Boolean(state?.connectionRequest && connection !== "connected");
+  const needsConnection = Boolean(usingChrome && state?.connectionRequest && connection !== "connected");
   const needsNewRun = Boolean(state?.connectionRequest && connection === "connected" && !workspaceBusy);
   const failure = error ?? (state?.error ? { ...state.error, connecting: true } : undefined);
   const errorMessage = failure?.code === "chrome_connection_timeout" || (failure?.code === "browser_action_timeout" && failure.connecting)
@@ -80,22 +83,20 @@ export function BrowserUseControl({ chatId }: { chatId: string | null }) {
               ? t("browserUse.savedAuthorizationUnavailable")
               : failure ? t("browserUse.failed") : undefined;
   const content = (
-    <div className="browser-use-controls">
+    <div className="browser-use-controls" data-busy={busy || locked ? "true" : "false"}>
       <strong>{t("browserUse.title")}</strong>
       {!chatId ? <p>{t("browserUse.startChat")}</p> : <>
-        {needsConnection && <p className="browser-use-request-help" role="status">{t("browserUse.connectionRequested")}</p>}
+        {needsConnection && <p className="browser-use-request-help" role="status">{t(state?.awaitingConnection ? "browserUse.connectionAwaited" : "browserUse.connectionRequested")}</p>}
         {needsNewRun && <p className="browser-use-request-help" role="status">{t("browserUse.continueRequested")}</p>}
-        <Radio.Group
-          value={state?.backend ?? "workpanel"}
-          disabled={busy || locked}
-          onChange={event => void apply({ action: "select", chatId, backend: event.target.value })}
-          optionType="button"
-          options={[{ label: t("browserUse.workpanel"), value: "workpanel" }, { label: "Chrome", value: "chrome" }]}
-        />
-        <p className="browser-use-help">{t(state?.backend === "chrome" ? workspaceShared ? "browserUse.sharedChromeHelp" : "browserUse.chromeHelp" : "browserUse.workpanelHelp")}</p>
+        <div className="browser-use-environment" role="status">
+          <span>{t("browserUse.currentEnvironment")}</span>
+          <strong>{usingChrome ? "Chrome" : t("browserUse.workpanel")}</strong>
+        </div>
+        <p className="browser-use-help">{t("browserUse.taskTargetHelp")}</p>
+        <p className="browser-use-help">{t(usingChrome ? workspaceShared ? "browserUse.sharedChromeHelp" : "browserUse.chromeHelp" : "browserUse.workpanelHelp")}</p>
         {workspaceDraining ? <p className="browser-use-request-help" role="status">{t("browserUse.workspaceDraining")}</p>
           : workspaceOwnedElsewhere && <p className="browser-use-request-help" role="status">{t("browserUse.workspaceBusy")}</p>}
-        {(state?.backend === "chrome" || needsConnection || connection === "connecting") && <>
+        {usingChrome && <>
           <div className="browser-use-status" role="status">
             {connection === "connecting" && <Spin size="small" />}
             <span>{t(`browserUse.${connection}`)}</span>
@@ -113,15 +114,15 @@ export function BrowserUseControl({ chatId }: { chatId: string | null }) {
             {workspaceShared && !locked && <p className="browser-use-help">{t("browserUse.sharedDisconnectHelp")}</p>}
           </div>}
         </>}
-        {connection !== "connected" && <>
-          <Button size="small" type="primary" loading={connection === "connecting"} disabled={locked || (busy && connection !== "connecting")}
+        {usingChrome && connection !== "connected" && <>
+          <Button size="small" type="primary" loading={connection === "connecting"} disabled={connectLocked || (busy && connection !== "connecting")}
             onClick={() => void apply({ action: "connect", chatId })}>{t("browserUse.connect")}</Button>
           {connection === "connecting" ? <Button size="small" disabled={locked} onClick={() => void apply({ action: "disconnect", chatId })}>{t("browserUse.cancel")}</Button>
-            : <Button size="small" disabled={busy || locked} onClick={() => void apply({ action: "connect", chatId, interactive: true })}>{t("browserUse.manualAuthorization")}</Button>}
+            : <Button size="small" disabled={busy || connectLocked} onClick={() => void apply({ action: "connect", chatId, interactive: true })}>{t("browserUse.manualAuthorization")}</Button>}
         </>}
-        {locked && <Button size="small" danger loading={busy} onClick={() => void apply({ action: "takeover", chatId })}>{t(workspaceShared ? "browserUse.workspaceTakeover" : "browserUse.takeover")}</Button>}
-        {locked && <p className="browser-use-help">{t(workspaceShared ? "browserUse.workspaceTakeoverHelp" : "browserUse.runningHelp")}</p>}
-        {locked && !workspaceShared && <p className="browser-use-help">{t("browserUse.connectionFrozen")}</p>}
+        {usingChrome && locked && <Button size="small" danger loading={busy} onClick={() => void apply({ action: "takeover", chatId })}>{t(workspaceShared ? "browserUse.workspaceTakeover" : "browserUse.takeover")}</Button>}
+        {usingChrome && locked && <p className="browser-use-help">{t(workspaceShared ? "browserUse.workspaceTakeoverHelp" : "browserUse.runningHelp")}</p>}
+        {usingChrome && locked && !workspaceShared && <p className="browser-use-help">{t("browserUse.connectionFrozen")}</p>}
       </>}
       {errorMessage && <p className="browser-use-error" role="alert">{errorMessage}</p>}
       <Button size="small" type="link" className="browser-use-settings-link" onClick={() => { setOpen(false); navigate(buildSettingsSectionPath("browser")); }}>{t("browserUse.settings")}</Button>
