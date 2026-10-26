@@ -128,3 +128,11 @@ DOCX、PPTX、XLSX 由 WebClient 的文件元信息卡发起在线预览。Platf
 Container 持有网页宿主与标签集合，每个可操作网页实例拥有独立 Surface 身份。普通 Chat 打开网址默认进入 WorkPanel，Website/WebApp Copilot 沿用所属容器；网页发现与操作共用来源授权，不因承载位置或前后台状态切换模型。本地文件预览与 WebApp bridge 权限不随之扩展。完整模型见[前端嵌入与导航](前端嵌入与导航.md#网页-container-与-surface)，动作与 CDP 边界见[桌面协议与动作桥](桌面协议与动作桥.md#网页-container-与-surface)。
 
 普通 Chat 对自己拥有的 HTTP(S) 网页可使用 AWCP，与 Website/WebApp 采用相同的目录、章节和调用协议。宿主先校验 canonical Run 与精确 Surface 归属，再探测页面协议；无 AWCP 是页面能力缺失，不代表 WorkPanel 容器不支持。授权不扩展到本地文件、其他 Chat 或通用 Desktop bridge。
+
+## 消息 VIEW 工作面板
+
+消息中的 VIEW 是带冻结模板身份和声明式数据操作的交互视图，与 HTML 文件文档分别承载。Desktop 模式下，VIEW header 的侧栏按钮通过 canonical WorkPanel bridge 打开独立 WebClient View Surface；Dialog 入口及普通浏览器侧栏继续沿用原有交互。宿主通过独立能力声明是否支持 View，旧版本明确提示升级，不退回浏览器侧栏。
+
+View 标签归属来源 Chat，以发布 Run、协议 contentId/toolId 和块序号区分实例，不使用 React 挂载 ID 或时间线渲染计数器。descriptor 与 URL 只传语义身份，不携带 HTML、payload 或凭据；宿主验证 route 与 context 一致并以真实来源确定 owner Chat，AppShell 的统一 reducer 持有标签状态。重载后 WebClient 从 Chat 回放中定位已绑定的块与冻结引用。当前聊天的 WebClient 只通过同源临时通道同步已有 View 的数据，按实例请求、发布者 generation 和序号隔离；关闭页面释放订阅。该通道不保存持久状态，不提供命令执行能力，也不创建第二个 Run observer。
+
+独立页面复用 ViewEmbed 的 sandbox iframe、CSP、查询状态、宿主操作确认和幂等请求机制。HTML 只调用 viewHost.query/invoke，native/CLI/MCP 继续由 Agent Platform 按冻结声明、当前用户和连接器权限执行，Desktop 不执行命令或授予 HTML Node/IPC。Main 只允许 View Surface 请求其登记 Chat 的回放、display 模板和相同 Run 的 view query/invoke；异步准备后重新验证 surface generation 与归属，不提供 query/attach/interrupt 等 Run 控制。macOS 与 Windows 共用这条展示与数据链路，命令参数和平台执行差异仍由 Platform 连接器拥有。

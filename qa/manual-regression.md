@@ -1452,3 +1452,12 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 
 - 运行 `node qa/project-creation-dialog-smoke.mjs`：首次冷读取完成后关闭重开，表单立即出现且不重复请求创建选项；侧栏预加载完成后首次点击也应直接显示表单。
 - 选项过期时打开仍保留表单，后台刷新不重置用户新选的模型；刷新失败时表单不消失、创建被禁用，点击重试成功后恢复。切换语言不复用另一语言的选项；首次读取失败后可重试，不永久缓存失败。
+
+### 消息 VIEW → Desktop WorkPanel
+
+- [ ] macOS / Windows：Markdown VIEW 右上角 Dialog 仍在 WebClient 弹出；侧栏按钮打开 Desktop View 标签，不出现 WebClient 内层侧栏。旧宿主缺少 View capability 时明确提示升级。
+- [ ] 同一个块重复打开复用标签，同模板不同块/消息独立；切换 Chat 不串标签，返回原 Chat 可继续查看，关闭标签及工作区释放 View 页面。
+- [ ] View 标签加载冻结 HTML 与 payload；刷新页面后按 Chat/Run/contentId 或 toolId/块序号恢复，不依赖时间线计数器。源内容更新同步到已打开标签，主聊天切换后不接收其他 Chat 的数据。
+- [ ] 声明式 CLI/MCP/native 查询正常返回，参数和错误保持一致；写操作必须先在宿主确认，取消不调用，确认后返回结果，同一操作不因重载或超时自动重放。
+- [ ] HTML iframe 无同源/Node/Desktop bridge 能力，伪造来源窗口消息无效；跨 Chat/Run、重复身份 URL 参数和 View 页面 Run 控制请求被拒绝。
+- [ ] 普通浏览器的 VIEW 侧栏、Dialog 及现有 WorkPanel 文件/Planning/Overview 标签回归正常。

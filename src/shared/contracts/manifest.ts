@@ -318,6 +318,7 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
     "/explain/",
     "/source-viewer/",
     "/planning-viewer/",
+    "/view-viewer/",
     "/resource-viewer/",
     "/file-viewer/",
     "/web-viewer",

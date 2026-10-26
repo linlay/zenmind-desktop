@@ -16,6 +16,7 @@ export const SURFACE_ROLES = [
   "reference",
   "file",
   "planning",
+  "view",
   "agent",
   "copilot",
   "skill",
@@ -75,6 +76,7 @@ const DYNAMIC_ROLE_PREFIXES: Partial<Record<SurfaceRole, string>> = {
   reference: "ref",
   file: "file",
   planning: "plan",
+  view: "view",
   agent: "agt",
   copilot: "cpl",
   skill: "skl",
@@ -95,6 +97,7 @@ const CHILD_ROLES = new Set<SurfaceRole>([
   "reference",
   "file",
   "planning",
+  "view",
   "agent",
   "copilot",
   "skill",
@@ -185,7 +188,7 @@ export function createPluginSettingsSurfaceIdentity(pluginId: string) {
 
 export function createChatChildSurfaceIdentity(
   role: Extract<SurfaceRole,
-    "overview" | "debug" | "btw" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "agent" | "copilot" | "skill" | "workpanel-web">,
+    "overview" | "debug" | "btw" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "view" | "agent" | "copilot" | "skill" | "workpanel-web">,
   identityKey: string,
   ownerChatId: string,
   parentSurfaceId: string | undefined = MAIN_CHAT_SURFACE_ID,
