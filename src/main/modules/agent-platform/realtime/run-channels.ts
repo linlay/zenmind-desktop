@@ -16,6 +16,7 @@ import {
   brokerError,
   framePayload,
   isObserverDetachReason,
+  isProgressActivity,
   isRecord,
   isTerminalEvent,
   pushIdentity,
@@ -28,7 +29,7 @@ import { type RunSiteControlGrants } from "./run-site-control-grants";
 export interface RunChannelsPort {
   runChannels: Map<string, BrokerRun>;
   runSubscriptions: Map<string, RunSubscription>;
-  releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
+  handleUpstreamDetached(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
   diagnostics: BrokerDiagnosticsCounters;
   siteControlGrants: RunSiteControlGrants;
   readonly options: { onArtifactPublished?(event: Record<string, unknown>): void; onDiagnostic?(message: string): void; };
@@ -73,7 +74,7 @@ export function createRunChannels(deps: RunChannelsPort) {
     if (!reason)
       return;
     if (isObserverDetachReason(reason)) {
-      deps.releaseRunObserver(run, readText(frame.id), reason, frame.lastSeq);
+      deps.handleUpstreamDetached(run, readText(frame.id), reason, frame.lastSeq);
       return;
     }
     completeRun(run, {
@@ -97,6 +98,13 @@ export function createRunChannels(deps: RunChannelsPort) {
     }
     if (eventChatId && eventChatId !== run.chatId) {
       throw brokerError("protocol_error", "stream chatId conflicts with registered Run");
+    }
+    if (isProgressActivity(event)) {
+      // Progress is live state, not part of the ordered replay stream.
+      // Forward every update; clients own duplicate-text presentation.
+      for (const id of run.subscribers)
+        deps.runSubscriptions.get(id)?.onEvent(event, path);
+      return;
     }
     if (isWaitAttachSnapshot(type, event)) {
       // Platform attach projects current waits with seq 0: deliver them, but keep
@@ -175,6 +183,7 @@ export function createRunChannels(deps: RunChannelsPort) {
   }
 
   function appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null, path?: string): void {
+    if (isProgressActivity(event)) return;
     const bytes = Buffer.byteLength(JSON.stringify(event));
     run.replay.push({ event, bytes, seq, ...(path ? { path } : {}) });
     run.replayBytes += bytes;

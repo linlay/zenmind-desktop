@@ -104,6 +104,7 @@ import {
   getAssistantAwaitingStatusKey,
   getAssistantNavWorkspaceDisabledReason,
   getAssistantNavAgentNonNegativeInteger,
+  getAssistantNavAgentAttentionChats,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
   getAssistantNavAgentUnpinnedChats,
@@ -127,6 +128,7 @@ import { decodeRoutePathSegment } from "../../../shared/route-path";
 import { buildWebEntryPath } from "../../../shared/web-entry-routes";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import { CreateProjectDialog } from "./CreateProjectDialog";
+import { projectCreationOptionsCache } from "./projectCreationOptionsCache";
 import type {
   SettingsSectionGroupId,
   SettingsSectionId,
@@ -1174,7 +1176,12 @@ export function AppSidebar({
   onSelectSettingsSection,
   onExitSecondarySidebarMode,
 }: AppSidebarProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  useEffect(() => {
+    if (!assistantNavAgentsLoaded || !assistantLauncherVisible) return;
+    // Warm runtime presets before the user opens the project dialog.
+    void projectCreationOptionsCache(locale).load().catch(() => undefined);
+  }, [assistantNavAgentsLoaded, assistantLauncherVisible, locale]);
   const isPrimaryMode = sidebarMode === "primary";
   const isCapabilitiesMode = sidebarMode === "capabilities";
   const isSettingsMode = sidebarMode === "settings";
@@ -5312,12 +5319,13 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const awaitingChats = allRecentChats.filter(
+    const attentionChats = getAssistantNavAgentAttentionChats(agent);
+    const awaitingChats = attentionChats.filter(
       (chat) => chat.hasPendingAwaiting === true,
     );
     const awaitingChat = awaitingChats[0] ?? null;
     const awaitingChatsCount = awaitingChats.length;
-    const activeRunChat = allRecentChats.find(
+    const activeRunChat = attentionChats.find(
       (chat) => chat.hasActiveRun === true,
     );
     const previewStatus =
@@ -5386,16 +5394,10 @@ export function AppSidebar({
                     }
                   />
                 ) : null}
-                {awaitingChatsCount > 0 ? (
-                  <span className="chat-awaiting-status">
-                    {awaitingChatsCount}
-                  </span>
-                ) : null}
-                {unreadCount > 0 ? (
-                  <div className="assistant-worker-badge">
-                    {formatUnreadCount(unreadCount)}
-                  </div>
-                ) : null}
+                {renderStatusBadges({
+                  pendingCount: awaitingChatsCount,
+                  unreadCount,
+                })}
               </Flex>
             </Flex>
           </Flex>
@@ -6542,6 +6544,7 @@ export function AppSidebar({
     }
     return (
       <CreateProjectDialog
+        key={locale}
         workspaceDir={createProjectDialog.workspaceDir}
         t={t}
         onClose={() => setCreateProjectDialog(null)}

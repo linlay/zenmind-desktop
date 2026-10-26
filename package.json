@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.10",
+  "version": "0.5.21",
   "private": true,
   "description": "桌面壳",
   "main": "dist-electron/main/index.js",
@@ -83,6 +83,7 @@
     "electron": "42.11.4",
     "electron-builder": "^24.13.3",
     "esbuild": "^0.27.7",
+    "plist": "3.1.1",
     "typescript": "^5.9.2",
     "vite": "^7.3.6"
   }

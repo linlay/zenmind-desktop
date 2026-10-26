@@ -6,6 +6,7 @@ import {
   DeleteOutlined,
   DesktopOutlined,
   DownloadOutlined,
+  EyeInvisibleOutlined,
   FileOutlined,
   FileZipOutlined,
   FolderOpenOutlined,
@@ -34,6 +35,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent
 } from "react";
 import { createPortal } from "react-dom";
@@ -56,6 +58,8 @@ import { useI18n } from "../i18n/useI18n";
 
 type EnterpriseChatFloatingPanelProps = {
   desktopSsoStatus: DesktopSsoStatus | null;
+  isMac?: boolean;
+  hidden?: boolean;
 };
 
 type PanelView = "chats" | "contacts" | "settings" | "new-group" | "conversation";
@@ -160,25 +164,29 @@ function newClientMessageId() {
 
 function clampLauncherPosition(
   position: LauncherPosition,
-  viewport = { width: window.innerWidth, height: window.innerHeight }
+  viewport = { width: window.innerWidth, height: window.innerHeight },
+  panelSize?: { width: number; height: number }
 ) {
   return {
     x: Math.max(
-      CHAT_LAUNCHER_MARGIN,
+      panelSize ? panelSize.width - CHAT_LAUNCHER_SIZE + CHAT_LAUNCHER_MARGIN : CHAT_LAUNCHER_MARGIN,
       Math.min(position.x, viewport.width - CHAT_LAUNCHER_SIZE - CHAT_LAUNCHER_MARGIN)
     ),
     y: Math.max(
-      CHAT_LAUNCHER_MARGIN,
+      panelSize ? panelSize.height + 12 + CHAT_LAUNCHER_MARGIN : CHAT_LAUNCHER_MARGIN,
       Math.min(position.y, viewport.height - CHAT_LAUNCHER_SIZE - CHAT_LAUNCHER_MARGIN)
     )
   };
 }
 
-function readLauncherPosition() {
-  const fallback = clampLauncherPosition({
+function defaultLauncherPosition() {
+  return clampLauncherPosition({
     x: window.innerWidth - CHAT_LAUNCHER_SIZE - 20,
     y: window.innerHeight - CHAT_LAUNCHER_SIZE - 20
   });
+}
+
+function readLauncherPosition() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(CHAT_LAUNCHER_POSITION_KEY) || "");
     if (
@@ -192,7 +200,7 @@ function readLauncherPosition() {
   } catch {
     // Invalid renderer-only UI preferences fall back to the bottom-right corner.
   }
-  return fallback;
+  return defaultLauncherPosition();
 }
 
 function readHiddenConversationPreferences() {
@@ -297,7 +305,9 @@ function desktopActionArgsPreview(args: Record<string, unknown>) {
 }
 
 export function EnterpriseChatFloatingPanel({
-  desktopSsoStatus
+  desktopSsoStatus,
+  isMac = false,
+  hidden = false
 }: EnterpriseChatFloatingPanelProps) {
   const { locale, t } = useI18n();
   const [snapshot, setSnapshot] = useState<EnterpriseChatSnapshot | null>(null);
@@ -334,6 +344,9 @@ export function EnterpriseChatFloatingPanel({
     readHiddenConversationPreferences
   );
   const [launcherPosition, setLauncherPosition] = useState<LauncherPosition>(readLauncherPosition);
+  const [launcherMenuAnchor, setLauncherMenuAnchor] = useState<LauncherPosition | null>(null);
+  const launcherRef = useRef<HTMLButtonElement | null>(null);
+  const launcherMenuRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
     height: window.innerHeight
@@ -665,33 +678,42 @@ export function EnterpriseChatFloatingPanel({
   const pendingActionSender = activeConversation?.members.find(
     (member) => member.user.id === pendingActionMessage?.senderId
   )?.user;
-  const visible = signedIn && snapshot?.enabled === true;
+  const visible = !hidden && signedIn && snapshot?.enabled === true;
+
+  useEffect(() => {
+    if (!visible) {
+      setLauncherMenuAnchor(null);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!launcherMenuAnchor) {
+      return;
+    }
+    // Popover positions its initially hidden portal before it can receive focus.
+    const frame = window.requestAnimationFrame(() => {
+      launcherMenuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    });
+    const closeMenu = () => setLauncherMenuAnchor(null);
+    window.addEventListener("blur", closeMenu);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("blur", closeMenu);
+    };
+  }, [launcherMenuAnchor]);
 
   const panelWidth = Math.min(CHAT_PANEL_WIDTH, viewport.width - 24);
   const panelHeight = Math.min(CHAT_PANEL_HEIGHT, viewport.height - 82);
-  const panelLeft = Math.max(
-    12,
-    Math.min(
-      launcherPosition.x + CHAT_LAUNCHER_SIZE - panelWidth,
-      viewport.width - panelWidth - 12
-    )
+  const floatingPosition = clampLauncherPosition(
+    launcherPosition, viewport, open ? { width: panelWidth, height: panelHeight } : undefined
   );
-  const panelTop = launcherPosition.y >= panelHeight + 20
-    ? launcherPosition.y - panelHeight - 12
-    : Math.max(
-        12,
-        Math.min(
-          launcherPosition.y + CHAT_LAUNCHER_SIZE + 12,
-          viewport.height - panelHeight - 12
-        )
-      );
   const floatingStyle = {
-    left: launcherPosition.x,
-    top: launcherPosition.y
+    left: floatingPosition.x,
+    top: floatingPosition.y
   } satisfies CSSProperties;
   const panelStyle = {
-    left: panelLeft,
-    top: panelTop,
+    left: floatingPosition.x + CHAT_LAUNCHER_SIZE - panelWidth,
+    top: floatingPosition.y - panelHeight - 12,
     width: panelWidth,
     height: panelHeight
   } satisfies CSSProperties;
@@ -1229,19 +1251,30 @@ export function EnterpriseChatFloatingPanel({
     void sendPastedFiles(files);
   }
 
-  function handleLauncherPointerDown(event: PointerEvent<HTMLButtonElement>) {
+  function handlePanelPointerDown(event: PointerEvent<HTMLElement>) {
+    if ((event.target as Element).closest("button, a, input, textarea, select, [role='button']")) return;
+    handleLauncherPointerDown(event);
+    event.preventDefault();
+  }
+
+  function handleLauncherPointerDown(event: PointerEvent<HTMLElement>) {
+    // Control-click opens the context menu on macOS; Windows keeps Ctrl-click as a primary click.
+    if (event.button !== 0 || (isMac && event.ctrlKey)) {
+      return;
+    }
+    setLauncherMenuAnchor(null);
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originX: launcherPosition.x,
-      originY: launcherPosition.y,
+      originX: floatingPosition.x,
+      originY: floatingPosition.y,
       moved: false
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function handleLauncherPointerMove(event: PointerEvent<HTMLButtonElement>) {
+  function handleLauncherPointerMove(event: PointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
@@ -1255,20 +1288,119 @@ export function EnterpriseChatFloatingPanel({
       setLauncherPosition(clampLauncherPosition({
         x: drag.originX + deltaX,
         y: drag.originY + deltaY
-      }, viewport));
+      }, viewport, open ? { width: panelWidth, height: panelHeight } : undefined));
     }
   }
 
-  function handleLauncherPointerEnd(event: PointerEvent<HTMLButtonElement>) {
+  function handleLauncherPointerEnd(event: PointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
-    suppressLauncherClickRef.current = drag.moved;
+    suppressLauncherClickRef.current = event.currentTarget.classList.contains("enterprise-chat-launcher") && drag.moved;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+  }
+
+  function closeLauncherMenu(restoreFocus = false) {
+    setLauncherMenuAnchor(null);
+    if (restoreFocus) {
+      launcherRef.current?.focus();
+    }
+  }
+
+  async function hideEnterpriseChat() {
+    if (busy) {
+      return;
+    }
+    closeLauncherMenu();
+    setBusy("hide");
+    setError("");
+    try {
+      const settings = await window.electronAPI.settings.setEnterpriseImEnabled(false);
+      if (settings.enabled) {
+        throw new Error(t("enterpriseChat.launcherMenu.hideFailed"));
+      }
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setOpen(true);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function handleLauncherClick(event: MouseEvent<HTMLButtonElement>) {
+    // The controlled Popover opens only from the context-menu handlers.
+    event.preventDefault();
+    if (isMac && event.ctrlKey) {
+      return;
+    }
+    if (suppressLauncherClickRef.current) {
+      suppressLauncherClickRef.current = false;
+      return;
+    }
+    closeLauncherMenu();
+    setOpen((current) => !current);
+  }
+
+  function handleLauncherContextMenu(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setLauncherMenuAnchor({ x: event.clientX, y: event.clientY });
+  }
+
+  function handleLauncherKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      setLauncherMenuAnchor({ x: rect.left, y: rect.bottom + 4 });
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!event.repeat) {
+        event.currentTarget.click();
+      }
+    }
+  }
+
+  function handleLauncherMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      closeLauncherMenu(true);
+      return;
+    }
+    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+    const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number;
+    if (event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % buttons.length;
+    } else if (event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = buttons.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    buttons[nextIndex]?.focus();
+  }
+
+  function openLauncherView(nextView: "contacts" | "new-group" | "settings") {
+    closeLauncherMenu(true);
+    setError("");
+    if (nextView === "settings") {
+      setMottoDraft(snapshot?.selfProfile.motto ?? "");
+    }
+    setView(nextView);
+    setOpen(true);
   }
 
   function handleComposerResizePointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -1456,7 +1588,13 @@ export function EnterpriseChatFloatingPanel({
           role="dialog"
           aria-label={t("enterpriseChat.title")}
         >
-          <header className="enterprise-chat-header">
+          <header className="enterprise-chat-header"
+            onPointerDown={handlePanelPointerDown}
+            onPointerMove={handleLauncherPointerMove}
+            onPointerUp={handleLauncherPointerEnd}
+            onPointerCancel={handleLauncherPointerEnd}
+            onLostPointerCapture={() => { dragRef.current = null; }}
+          >
             {view === "conversation" ? (
               renderConversationHeader()
             ) : view === "new-group" ? (
@@ -2227,28 +2365,69 @@ export function EnterpriseChatFloatingPanel({
           ) : null}
         </section>
       ) : null}
-      <button
-        type="button"
-        className={open ? "enterprise-chat-launcher is-open" : "enterprise-chat-launcher"}
-        aria-label={open ? t("enterpriseChat.close") : t("enterpriseChat.open")}
-        title={open ? t("enterpriseChat.close") : t("enterpriseChat.open")}
-        onPointerDown={handleLauncherPointerDown}
-        onPointerMove={handleLauncherPointerMove}
-        onPointerUp={handleLauncherPointerEnd}
-        onPointerCancel={handleLauncherPointerEnd}
-        onClick={() => {
-          if (suppressLauncherClickRef.current) {
-            suppressLauncherClickRef.current = false;
-            return;
-          }
-          setOpen((current) => !current);
+      <Popover
+        open={launcherMenuAnchor !== null}
+        anchorPoint={launcherMenuAnchor}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) closeLauncherMenu();
         }}
+        content={(
+          <div
+            ref={launcherMenuRef}
+            className="enterprise-chat-launcher-menu"
+            role="menu"
+            aria-label={t("enterpriseChat.launcherMenu.title")}
+            onKeyDown={handleLauncherMenuKeyDown}
+          >
+            <button type="button" role="menuitem" disabled={Boolean(busy)} onClick={() => void hideEnterpriseChat()}>
+              <EyeInvisibleOutlined aria-hidden="true" />
+              <span>{t("enterpriseChat.launcherMenu.hide")}</span>
+            </button>
+            <button type="button" role="menuitem" onClick={() => openLauncherView("contacts")}>
+              <UserOutlined aria-hidden="true" /><span>{t("enterpriseChat.contacts")}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={snapshot.connectionState !== "connected" || Boolean(busy)}
+              onClick={() => openLauncherView("new-group")}
+            >
+              <TeamOutlined aria-hidden="true" /><span>{t("enterpriseChat.newGroup")}</span>
+            </button>
+            <div role="separator" />
+            <button type="button" role="menuitem" onClick={() => openLauncherView("settings")}>
+              <SettingOutlined aria-hidden="true" /><span>{t("enterpriseChat.launcherMenu.settings")}</span>
+            </button>
+            <button type="button" role="menuitem" onClick={() => {
+              closeLauncherMenu(true);
+              setLauncherPosition(defaultLauncherPosition());
+            }}>
+              <ReloadOutlined aria-hidden="true" /><span>{t("enterpriseChat.launcherMenu.resetPosition")}</span>
+            </button>
+          </div>
+        )}
       >
-        {open ? <CloseOutlined /> : <MessageOutlined />}
-        {!open && unreadCount > 0 ? (
-          <span className="enterprise-chat-launcher-badge">{Math.min(99, unreadCount)}</span>
-        ) : null}
-      </button>
+        <button
+          ref={launcherRef}
+          type="button"
+          className={open ? "enterprise-chat-launcher is-open" : "enterprise-chat-launcher"}
+          aria-label={open ? t("enterpriseChat.close") : t("enterpriseChat.open")}
+          aria-haspopup="menu"
+          title={t("enterpriseChat.launcherMenu.hint")}
+          onPointerDown={handleLauncherPointerDown}
+          onPointerMove={handleLauncherPointerMove}
+          onPointerUp={handleLauncherPointerEnd}
+          onPointerCancel={handleLauncherPointerEnd}
+          onClick={handleLauncherClick}
+          onContextMenu={handleLauncherContextMenu}
+          onKeyDown={handleLauncherKeyDown}
+        >
+          {open ? <CloseOutlined /> : <MessageOutlined />}
+          {!open && unreadCount > 0 ? (
+            <span className="enterprise-chat-launcher-badge">{Math.min(99, unreadCount)}</span>
+          ) : null}
+        </button>
+      </Popover>
       {previewImage ? createPortal(
         <div
           className="enterprise-chat-image-preview-backdrop"

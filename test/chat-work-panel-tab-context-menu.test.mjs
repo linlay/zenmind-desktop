@@ -503,3 +503,24 @@ test("Work Panel local resource open and reveal IPCs are main-window-owned", asy
   assert.equal((await revealHandler({ sender: {} }, request)).code, "invalid_request");
   assert.equal((await revealHandler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");
 });
+
+test("native image menus expose default open and platform reveal for local originals", async () => {
+  for (const platform of ["darwin", "win32"]) for (const localOriginal of [true, false]) {
+    const handlers = new Map();
+    let template;
+    const owner = { isDestroyed: () => false, getContentBounds: () => ({ width: 100, height: 100 }) };
+    registerChatWorkPanelTabContextMenuIpcHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, {
+      platform, getMainWindow: () => owner, BrowserWindow: { fromWebContents: () => owner },
+      Menu: { buildFromTemplate: (items) => { template = items; return { popup: (options) => { items.find((item) => item.id === "open-resource-default-app").click(); options.callback(); } }; } },
+    });
+    const request = { mode: "work-panel", x: 0, y: 0, profile: "default", nativeImage: { localOriginal },
+      documentPathAvailable: true, isFullscreen: false, canClose: true, canCloseOthers: false };
+    assert.equal((await handlers.get("chatWorkPanel.tabContextMenu.popup")({ sender: {} }, request)).actionId, "open-resource-default-app");
+    const reveal = template.find((item) => item.id === "reveal-resource");
+    assert.equal(reveal.enabled, localOriginal);
+    assert.match(reveal.label, platform === "darwin" ? /Finder|访达/u : /Explorer|资源管理器/u);
+    assert.ok(template.some((item) => item.id === "copy-title"));
+    assert.ok(!template.some((item) => item.id === "open-resource-browser" || item.id === "download-resource"));
+    assert.equal(normalizeChatWorkPanelTabContextMenuRequest({ ...request, nativeImage: { localOriginal, path: "/forged" } }), null);
+  }
+});

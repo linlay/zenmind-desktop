@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { net, type App } from "electron";
 import yaml from "js-yaml";
-import { requestApiKey, ProviderRegisterHttpError, type ProviderRegisterFetch } from "./provider-register-network";
+import { requestApiKey, type ProviderRegisterFetch } from "./provider-register-network";
 import { t } from "../../support/i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
 
@@ -34,7 +34,7 @@ type ProviderYaml = {
 };
 
 export type ProviderRegisterResult =
-  | { status: "skipped"; reason: "missing" | "disabled" | "unchanged" }
+  | { status: "skipped"; reason: "missing" | "disabled" | "unchanged" | "retired" }
   | { status: "applied"; providers: string[]; updatedProviders: string[] };
 
 export type ProviderRegisterOptions = {
@@ -42,9 +42,6 @@ export type ProviderRegisterOptions = {
   fetchImpl?: ProviderRegisterFetch;
   getDesktopDeviceId: (app: App) => string;
   preparation?: boolean;
-  getAccessToken?: () => string | null;
-  refreshAccessToken?: () => Promise<string>;
-  onLoginRequired?: () => void;
 };
 
 export function resolveProviderRegisterPath(
@@ -75,24 +72,13 @@ function readRegisterConfig(registerPath: string) {
   }
 }
 
-export function getProviderRegisterMode(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  const file = resolveProviderRegisterPath(app, platform);
-  if (!fs.existsSync(file)) return "disabled" as const;
-  return normalizeMode(readRegisterConfig(file).config);
-}
+// Login credentials no longer mint Provider Keys: providers declare
+// `useAccessToken: true` and Platform reads the Desktop identity file per request.
+const RETIRED_ACCESS_TOKEN_MODE = "access-token";
 
-function normalizeMode(config: ProviderRegisterConfig): "access-token" | "grant-jwt" {
-  if (config.mode === undefined) return "grant-jwt";
-  if (config.mode === "access-token" || config.mode === "grant-jwt") return config.mode;
+function normalizeMode(config: ProviderRegisterConfig): "grant-jwt" {
+  if (config.mode === undefined || config.mode === "grant-jwt") return "grant-jwt";
   throw new Error(t("providerRegister.modeInvalid"));
-}
-
-// Platform hot-reloads these selected keys; existing runs retain their provider snapshot.
-export function clearAccessTokenProviderKeys(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  if (getProviderRegisterMode(app, platform) !== "access-token") return;
-  const { config } = readRegisterConfig(resolveProviderRegisterPath(app, platform));
-  const targets = readProviderTargets({ app, platform, providers: normalizeProviders(config.providers) });
-  applyProviderApiKey({ targets: targets.map(target => ({ ...target, needsUpdate: true })), apiKey: "" });
 }
 
 function normalizeEndpoint(value: unknown) {
@@ -290,13 +276,13 @@ export async function ensureProviderRegisterApiKey(
   }
 
   const { config } = readRegisterConfig(registerPath);
-  const mode = normalizeMode(config);
-  const providers = normalizeProviders(config.providers);
-  if (mode === "access-token") {
-    // Registration runs after deployment; preparation does not require a login.
-    if (options.preparation) return { status: "skipped", reason: "unchanged" };
-    return bindAccessTokenProviders(app, options, config, providers, registerPath);
+  if (config.mode === RETIRED_ACCESS_TOKEN_MODE) {
+    // Never fall back to Grant or block startup for a retired policy file.
+    console.warn("[provider-register] access-token mode is retired; use useAccessToken in the provider registry");
+    return { status: "skipped", reason: "retired" };
   }
+  normalizeMode(config);
+  const providers = normalizeProviders(config.providers);
   let targets: ReturnType<typeof readProviderTargets>;
   if (config.mode === undefined && config.enabled !== true) {
     try {
@@ -332,56 +318,6 @@ export async function ensureProviderRegisterApiKey(
     `[provider-register] applied registration key for providers=${providers.join(",")} updated=${updatedProviders.join(",") || "none"}`
   );
   return { status: "applied", providers, updatedProviders };
-}
-
-const identityEpochs = new Map<string, number>();
-export function invalidateProviderRegistration(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  const file = resolveProviderRegisterPath(app, platform);
-  identityEpochs.set(file, (identityEpochs.get(file) ?? 0) + 1);
-}
-
-const bindingsInFlight = new Map<string, Promise<ProviderRegisterResult>>();
-
-async function bindAccessTokenProviders(app: App, options: ProviderRegisterOptions, config: ProviderRegisterConfig, providers: string[], registerPath: string): Promise<ProviderRegisterResult> {
-  const endpoint = normalizeEndpoint(config.endpoint);
-  const url = new URL(endpoint);
-  if (url.protocol !== "https:" || url.username || url.password || url.hash || url.search) {
-    throw new Error(t("providerRegister.secureEndpointRequired"));
-  }
-  let token = options.getAccessToken?.() || "";
-  if (!token) {
-    options.onLoginRequired?.();
-    throw new Error(t("providerRegister.loginRequired"));
-  }
-  const pending = bindingsInFlight.get(registerPath);
-  if (pending) {
-    // Wait for the previous identity's request, but never consume its result.
-    await pending.catch(() => undefined);
-    return bindAccessTokenProviders(app, options, config, providers, registerPath);
-  }
-  const run = async (): Promise<ProviderRegisterResult> => {
-    const platform = options.platform ?? process.platform;
-    const targets = readProviderTargets({ app, providers, platform });
-    const deviceId = options.getDesktopDeviceId(app);
-    const epoch = identityEpochs.get(registerPath) ?? 0;
-    const isCurrent = () => (identityEpochs.get(registerPath) ?? 0) === epoch && options.getAccessToken?.() === token && options.getDesktopDeviceId(app) === deviceId &&
-      fs.existsSync(registerPath) && JSON.stringify(readRegisterConfig(registerPath).config) === JSON.stringify(config);
-    let apiKey: string;
-    try {
-      apiKey = await requestApiKey({ endpoint, token, deviceId, bind: true, fetchImpl: options.fetchImpl ?? defaultFetchImpl() });
-    } catch (error) {
-      if (!(error instanceof ProviderRegisterHttpError) || error.status !== 401 || !options.refreshAccessToken || !isCurrent()) throw error;
-      token = await options.refreshAccessToken();
-      if (!token || !isCurrent()) { options.onLoginRequired?.(); throw new Error(t("providerRegister.loginRequired")); }
-      apiKey = await requestApiKey({ endpoint, token, deviceId, bind: true, fetchImpl: options.fetchImpl ?? defaultFetchImpl() });
-    }
-    // No await between identity validation and committing the selected providers.
-    if (!isCurrent()) throw new Error(t("providerRegister.identityChanged"));
-    const updatedProviders = applyProviderApiKey({ targets: targets.map(target => ({ ...target, needsUpdate: true })), apiKey });
-    return { status: "applied", providers, updatedProviders };
-  };
-  const promise = run(); bindingsInFlight.set(registerPath, promise);
-  try { return await promise; } finally { if (bindingsInFlight.get(registerPath) === promise) bindingsInFlight.delete(registerPath); }
 }
 
 export const __testInternals = {

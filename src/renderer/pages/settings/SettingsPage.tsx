@@ -1,3 +1,4 @@
+import { formatMicrocredits, usageLimitProgress } from "../../../shared/usage-credits";
 import { PetAppearancePreview } from "./PetAppearancePreview";
 import { PetImportControls } from "./PetImportControls";
 import { createSectionNotice, dismissSectionNoticeById, selectSectionFeedback, type NoticeTone, type SettingsNotice, type SectionReadErrorMap } from "./sectionFeedback";
@@ -47,6 +48,7 @@ import type {
   DesktopSsoStatus,
   DesktopStateSnapshot,
   DesktopUsageProfileLogEntry,
+  DesktopUsageProfilePrice,
   DesktopUsageProfileRateLimitStatus,
   DesktopUsageProfileResult,
   DesktopUsageProfileSession,
@@ -317,20 +319,6 @@ function formatUsageCount(value: number, locale: SupportedLocale) {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Number.isFinite(value) ? value : 0);
 }
 
-function formatUsageCostMicro(value: number, currency: string, locale: SupportedLocale) {
-  const normalizedCurrency = currency || "USD";
-  const amount = (Number.isFinite(value) ? value : 0) / 1_000_000;
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: "currency",
-      currency: normalizedCurrency,
-      maximumFractionDigits: amount >= 100 ? 0 : 2
-    }).format(amount);
-  } catch {
-    return `${normalizedCurrency} ${amount.toFixed(2)}`;
-  }
-}
-
 function formatUsageDateTime(value: string, locale: SupportedLocale, fallback: string) {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp) || timestamp <= 0) {
@@ -392,7 +380,7 @@ function buildUsageDailyMap(items: DesktopUsageProfileTrafficBucket[]) {
       cache_miss_tokens: (current?.cache_miss_tokens ?? 0) + item.cache_miss_tokens,
       cache_total_tokens: (current?.cache_total_tokens ?? 0) + item.cache_total_tokens,
       cache_hit_rate: item.cache_hit_rate,
-      cost_micro: (current?.cost_micro ?? 0) + item.cost_micro,
+      charged_microcredits: (BigInt(current?.charged_microcredits ?? "0") + BigInt(item.charged_microcredits)).toString(),
       error_requests: (current?.error_requests ?? 0) + item.error_requests,
       average_latency_ms: item.average_latency_ms
     });
@@ -435,37 +423,16 @@ function calculateUsageStreaks(items: DesktopUsageProfileTrafficBucket[], now: D
 }
 
 function aggregateUsageModels(logs: DesktopUsageProfileLogEntry[]) {
-  const byModel = new Map<string, { model: string; requests: number; tokens: number; costMicro: number }>();
+  const byModel = new Map<string, { model: string; requests: number; tokens: number; costMicro: string }>();
   for (const log of logs) {
     const model = log.public_model || log.upstream_model || log.provider || "unknown";
-    const current = byModel.get(model) ?? { model, requests: 0, tokens: 0, costMicro: 0 };
+    const current = byModel.get(model) ?? { model, requests: 0, tokens: 0, costMicro: "0" };
     current.requests += 1;
     current.tokens += log.total_tokens;
-    current.costMicro += log.cost_micro;
+    current.costMicro = (BigInt(current.costMicro) + BigInt(log.charged_microcredits)).toString();
     byModel.set(model, current);
   }
   return [...byModel.values()].sort((left, right) => right.requests - left.requests).slice(0, 6);
-}
-
-function limitUsageProgress(limit: DesktopUsageProfileRateLimitStatus) {
-  const quota = limit.cost_quota_micro > 0
-    ? limit.cost_quota_micro
-    : limit.token_quota > 0
-      ? limit.token_quota
-      : limit.request_quota;
-  const used = limit.cost_quota_micro > 0
-    ? limit.cost_micro
-    : limit.token_quota > 0
-      ? limit.tokens
-      : limit.requests;
-  const remaining = limit.cost_quota_micro > 0
-    ? limit.cost_remaining_micro
-    : limit.token_quota > 0
-      ? limit.token_remaining
-      : limit.request_remaining;
-  const usedPercent = quota > 0 ? Math.min(100, Math.max(0, Math.round((used / quota) * 100))) : 0;
-  const remainingPercent = quota > 0 ? Math.max(0, Math.min(100, Math.round((remaining / quota) * 100))) : 100;
-  return { quota, used, remaining, usedPercent, remainingPercent };
 }
 
 function usageAvatarInitials(name: string, email: string) {
@@ -719,6 +686,11 @@ function UsageSettingsPanel({
   const user = ssoStatus?.user ?? null;
   const avatarSource = user?.avatarUrl?.trim() || "";
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [usageNow, setUsageNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setUsageNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     setAvatarFailed(false);
   }, [avatarSource]);
@@ -766,7 +738,7 @@ function UsageSettingsPanel({
   const failureProfile = profile && !profile.ok ? profile : null;
 
   const dailyMap = useMemo(
-    () => buildUsageDailyMap(successProfile?.usage.items ?? []),
+    () => buildUsageDailyMap(successProfile?.usage?.items ?? []),
     [successProfile]
   );
   const heatmap = useMemo(() => {
@@ -823,17 +795,17 @@ function UsageSettingsPanel({
   }, [dailyMap, heatmapMode, locale, successProfile]);
 
   const overview = useMemo(() => {
-    if (!successProfile) {
+    if (!successProfile?.usage) {
       return [];
     }
-    const peakDailyTokens = successProfile.usage.items.reduce(
+    const peakDailyTokens = successProfile.usage!.items.reduce(
       (max, item) => Math.max(max, item.total_tokens),
       0
     );
-    const streaks = calculateUsageStreaks(successProfile.usage.items, new Date(successProfile.fetchedAt));
+    const streaks = calculateUsageStreaks(successProfile.usage!.items, new Date(successProfile.fetchedAt));
     return [{
       label: t("settings.usage.overview.totalTokens"),
-      value: formatUsageTokenCount(successProfile.usage.summary.total_tokens, locale)
+      value: formatUsageTokenCount(successProfile.usage!.summary.total_tokens, locale)
     }, {
       label: t("settings.usage.overview.peakDailyTokens"),
       value: formatUsageTokenCount(peakDailyTokens, locale)
@@ -845,17 +817,17 @@ function UsageSettingsPanel({
       value: t("settings.usage.overview.days", { count: streaks.longestStreak })
     }, {
       label: t("settings.usage.overview.sessions"),
-      value: formatUsageCount(successProfile.sessions.total, locale)
+      value: successProfile.sessions ? formatUsageCount(successProfile.sessions.total, locale) : t("settings.usage.sectionUnavailable")
     }];
   }, [locale, successProfile, t]);
 
   const modelUsage = useMemo(
-    () => aggregateUsageModels(successProfile?.logs.items ?? []),
+    () => aggregateUsageModels(successProfile?.logs?.items ?? []),
     [successProfile]
   );
   const priceByModel = useMemo(() => {
-    const prices = new Map<string, NonNullable<typeof successProfile>["prices"]["items"][number]>();
-    for (const price of successProfile?.prices.items ?? []) {
+    const prices = new Map<string, NonNullable<NonNullable<typeof successProfile>["prices"]>["items"][number]>();
+    for (const price of successProfile?.prices?.items ?? []) {
       prices.set(price.public_model, price);
     }
     return prices;
@@ -878,7 +850,7 @@ function UsageSettingsPanel({
   }
 
   function renderHeatmap() {
-    if (!successProfile || successProfile.usage.items.length === 0) {
+    if (!successProfile?.usage || successProfile.usage.items.length === 0) {
       return (
         <div className="settings-item-empty usage-heatmap-empty">
           {t("settings.usage.heatmap.empty")}
@@ -920,12 +892,15 @@ function UsageSettingsPanel({
     return (
       <div className="usage-limit-list">
         {limits.map((limit) => {
-          const progress = limitUsageProgress(limit);
+          const progress = usageLimitProgress(limit, usageNow);
           return (
             <div className="usage-limit-row" key={`${limit.window}-${limit.starts_at}-${limit.resets_at}`}>
               <div>
                 <strong>{limit.window || t("settings.usage.billing.windowFallback")}</strong>
-                <span>{t("settings.usage.billing.resetAt", { time: formatUsageDateTime(limit.resets_at, locale, t("common.none")) })}</span>
+                {BigInt(limit.quota_microcredits) > 0n ? <span>{t("settings.usage.billing.windowCredits", { used: formatMicrocredits(progress.pending ? "0" : limit.charged_microcredits, locale), quota: formatMicrocredits(limit.quota_microcredits, locale), remaining: formatMicrocredits(progress.pending ? limit.quota_microcredits : limit.remaining_microcredits, locale) })}</span> : null}
+                {limit.token_quota > 0 ? <span>{t("settings.usage.billing.windowTokens", { used: formatUsageCount(progress.pending ? 0 : limit.tokens, locale), quota: formatUsageCount(limit.token_quota, locale) })}</span> : null}
+                {limit.request_quota > 0 ? <span>{t("settings.usage.billing.windowRequests", { used: formatUsageCount(progress.pending ? 0 : limit.requests, locale), quota: formatUsageCount(limit.request_quota, locale) })}</span> : null}
+                <span title={`${formatUsageDateTime(limit.starts_at, locale, t("common.none"))} – ${formatUsageDateTime(limit.resets_at, locale, t("common.none"))}`}>{progress.pending ? t("settings.usage.billing.pendingWindow") : t("settings.usage.billing.resetAt", { time: formatUsageDateTime(limit.resets_at, locale, t("common.none")) })}</span>
               </div>
               <div className="usage-limit-meter" aria-label={t("settings.usage.billing.remainingPercent", { percent: progress.remainingPercent })}>
                 <span style={{ width: `${progress.usedPercent}%` }} />
@@ -971,7 +946,7 @@ function UsageSettingsPanel({
                 })}
               </span>
             </div>
-            <span>{formatUsageCostMicro(item.costMicro, successProfile.balance.currency, locale)}</span>
+            <span>{formatMicrocredits(item.costMicro, locale)}</span>
           </div>
         ))}
       </div>
@@ -1003,6 +978,24 @@ function UsageSettingsPanel({
     );
   }
 
+  function formatModelPrice(price: DesktopUsageProfilePrice) {
+    if (price.billing.mode === "free") return t("settings.usage.details.free");
+    if (price.billing.mode === "characters") {
+      return t("settings.usage.details.characterPrice", {
+        amount: formatMicrocredits(price.billing.microcredits_per_10k_characters!, locale)
+      });
+    }
+    if (price.billing.mode === "image") {
+      return (price.billing.image_prices ?? []).map((image) =>
+        `${image.size || "*"} / ${image.quality || "*"}: ${formatMicrocredits(image.charged_microcredits, locale)}`
+      ).join(" · ");
+    }
+    return t("settings.usage.details.priceMeta", {
+      input: formatMicrocredits(price.input_microcredits_per_1m_tokens, locale),
+      output: formatMicrocredits(price.output_microcredits_per_1m_tokens, locale)
+    });
+  }
+
   function renderPrices() {
     const allowedModels = successProfile?.currentKey.allowed_models ?? [];
     const visiblePrices = allowedModels
@@ -1022,12 +1015,7 @@ function UsageSettingsPanel({
                 <strong>{price.public_model}</strong>
                 <span>{price.protocol}</span>
               </div>
-              <span>
-                {t("settings.usage.details.priceMeta", {
-                  input: formatUsageCostMicro(price.input_cost_micro_per_1m_tokens, price.currency, locale),
-                  output: formatUsageCostMicro(price.output_cost_micro_per_1m_tokens, price.currency, locale)
-                })}
-              </span>
+              <span>{formatModelPrice(price)}</span>
             </div>
           ))}
         </div>
@@ -1035,8 +1023,7 @@ function UsageSettingsPanel({
     );
   }
 
-  const balanceRemaining = successProfile?.balance.items.reduce((total, item) =>
-    total + Math.max(0, item.cost_remaining_micro), 0) ?? 0;
+  const unavailable = <div className="settings-item-empty">{t("settings.usage.sectionUnavailable")}</div>;
 
   return (
     <div className="usage-settings-stack">
@@ -1047,6 +1034,7 @@ function UsageSettingsPanel({
         <div className="usage-profile-copy" aria-live="polite">
           <h2>{profileContext.title}</h2>
           {profileContext.description ? <p>{profileContext.description}</p> : null}
+          {successProfile ? <p>{successProfile.provider.authMode === "apikey" ? t("settings.usage.profile.keyBilling", { name: successProfile.currentKey.name || successProfile.provider.providerKey }) : t("settings.usage.profile.employeeBilling")}</p> : null}
           {profileContext.status ? (
             <span className="usage-status-pill is-active">
               {profileContext.status}
@@ -1074,6 +1062,7 @@ function UsageSettingsPanel({
       {successProfile ? (
         <>
           <div className="usage-summary-strip" aria-label={t("settings.usage.overview.title")}>
+            {!successProfile.usage ? unavailable : null}
             {overview.map((item) => (
               <div className="usage-summary-item" key={item.label}>
                 <strong>{item.value}</strong>
@@ -1098,7 +1087,7 @@ function UsageSettingsPanel({
                 ]}
               />
             </div>
-            {renderHeatmap()}
+            {successProfile.usage ? renderHeatmap() : unavailable}
           </div>
 
           <div className="data-root-card usage-billing-card">
@@ -1120,13 +1109,13 @@ function UsageSettingsPanel({
                 <small>{successProfile.provider.baseURL}</small>
               </div>
               <div className="usage-billing-panel">
-                <strong>{formatUsageCostMicro(successProfile.balance.cost_micro, successProfile.balance.currency, locale)}</strong>
+                <strong>{successProfile.balance ? formatMicrocredits(successProfile.balance.used_microcredits, locale) : t("settings.usage.sectionUnavailable")}</strong>
                 <span>{t("settings.usage.billing.balanceSpent")}</span>
                 <small>
-                  {successProfile.balance.unlimited
+                  {successProfile.balance?.credits_unlimited
                     ? t("settings.usage.billing.unlimited")
                     : t("settings.usage.billing.remainingCost", {
-                        amount: formatUsageCostMicro(balanceRemaining, successProfile.balance.currency, locale)
+                        amount: successProfile.balance ? formatMicrocredits(successProfile.balance.remaining_microcredits, locale) : t("settings.usage.sectionUnavailable")
                       })}
                 </small>
               </div>
@@ -1134,7 +1123,9 @@ function UsageSettingsPanel({
             <div className="usage-section-subhead">
               <h3>{t("settings.usage.billing.limitsTitle")}</h3>
             </div>
-            {renderLimitRows(successProfile.limits.rate_limit_usage)}
+            {successProfile.balance ? <div className="page-copy">{t("settings.usage.billing.totalQuota", { amount: successProfile.balance.credits_unlimited ? t("settings.usage.billing.unlimited") : formatMicrocredits(successProfile.balance.quota_microcredits, locale) })}</div> : null}
+            {successProfile.balance?.degraded_components.length ? <div className="page-copy">{t("settings.usage.billing.degraded")}</div> : null}
+            {successProfile.limits ? renderLimitRows(successProfile.limits.rate_limit_usage) : unavailable}
             <div className="usage-section-subhead">
               <h3>{t("settings.usage.billing.allowedModels")}</h3>
             </div>
@@ -1145,14 +1136,15 @@ function UsageSettingsPanel({
             <div className="usage-section-subhead">
               <h2>{t("settings.usage.details.modelsTitle")}</h2>
             </div>
-            {renderCommonModels()}
-            {renderPrices()}
+            <p className="page-copy">{t("settings.usage.details.modelsScope")}</p>
+            {successProfile.logs ? renderCommonModels() : unavailable}
+            {successProfile.prices ? renderPrices() : unavailable}
           </div>
           <div className="data-root-card usage-detail-card usage-devices-card">
             <div className="usage-section-subhead">
               <h2>{t("settings.usage.details.devicesTitle")}</h2>
             </div>
-            {renderDevices(successProfile.sessions.items)}
+            {successProfile.sessions ? renderDevices(successProfile.sessions.items) : unavailable}
           </div>
         </>
       ) : null}
@@ -2385,7 +2377,7 @@ function AboutAppCard({
         ) : null}
         <div className="settings-reset-actions">
           <Button
-            type="link"
+            type="default"
             danger
             className="settings-reset-button"
             disabled={runtimeResetPending}
@@ -2836,7 +2828,10 @@ export function SettingsPage({
     showSectionNotice(sectionId, result.message, result.ok ? "success" : "error");
   }
 
+  const usageRequestGeneration = useRef(0);
+
   async function refreshUsageProfile() {
+    const generation = ++usageRequestGeneration.current;
     setUsageProfileLoading(true);
     setUsageSsoStatusUnavailable(false);
     const [profileResult, ssoResult] = await Promise.allSettled([
@@ -2844,10 +2839,12 @@ export function SettingsPage({
       window.electronAPI.sso.getStatus()
     ]);
 
+    if (generation !== usageRequestGeneration.current) return;
     if (profileResult.status === "fulfilled") {
       setUsageProfile(profileResult.value);
       setReadErrorSections(["usage"], "");
     } else {
+      setUsageProfile(null);
       setReadErrorSections(
         ["usage"],
         profileResult.reason instanceof Error ? profileResult.reason.message : String(profileResult.reason)
@@ -2891,6 +2888,14 @@ export function SettingsPage({
       return;
     }
     void refreshUsageProfile();
+    const invalidate = () => {
+      ++usageRequestGeneration.current;
+      setUsageProfile(null);
+      void refreshUsageProfile();
+    };
+    const unsubscribeSso = window.electronAPI.sso.onStatusChanged(invalidate);
+    const unsubscribeConfig = window.electronAPI.settings.onDesktopConfigChanged(invalidate);
+    return () => { ++usageRequestGeneration.current; unsubscribeSso(); unsubscribeConfig(); };
   }, [shouldReadUsageProfile]);
 
   useEffect(() => {
@@ -2900,6 +2905,13 @@ export function SettingsPage({
 
     let cancelled = false;
     setDesktopDeviceInfoLoading(true);
+    const unsubscribeEnterpriseChat = window.electronAPI.enterpriseChat.onStateChanged((state) => {
+      if (!cancelled) {
+        setEnterpriseImSettings((current) => current.enabled === state.enabled
+          ? current
+          : { ...current, enabled: state.enabled });
+      }
+    });
     Promise.all([
       window.electronAPI.settings.getGeneralSettings(),
       window.electronAPI.settings.getDesktopDeviceInfo(),
@@ -2933,6 +2945,7 @@ export function SettingsPage({
 
     return () => {
       cancelled = true;
+      unsubscribeEnterpriseChat();
     };
   }, [shouldReadGeneralSettings]);
 

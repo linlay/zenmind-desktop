@@ -117,7 +117,6 @@ export function createMainProcessRuntime() {
       servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId));
   const servicesIntegrationPorts = services.assembleServicesIntegration({
     get issueAgentAccessToken() { return identityTokenProvider; },
-    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
     get websFacade() { return websFacade; }
   });
   servicesFacade = createServicesFacade(servicesIntegrationPorts);
@@ -752,10 +751,6 @@ export function createMainProcessRuntime() {
     return identity.applyDesktopSsoRestoreResult({
       get desktopSsoRestoreState() { return desktopSsoRestoreState; },
       set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
-      get appState() { return appState; },
-      get startupPlatform() { return startupPlatform; },
-      get servicesRuntime() { return servicesRuntime; },
-      get servicesIntegrationPorts() { return servicesIntegrationPorts; },
       get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
       set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
@@ -839,6 +834,7 @@ export function createMainProcessRuntime() {
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
       registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+        get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
         promoteLocalDocumentDraft: input => localDocuments.promoteDraftChat(input),

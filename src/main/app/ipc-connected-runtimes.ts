@@ -15,7 +15,7 @@ import { registerAppearanceIpcHandlers, registerSettingsIpcHandlers } from "../m
 import { registerSsoIpcHandlers } from "../modules/identity";
 import { registerKanbanIpcHandlers } from "../modules/kanban";
 import { registerTunnelHubIpcHandlers } from "../modules/tunnel";
-import { registerWebIpcHandlers } from "../modules/webs";
+import { listWebEntries, registerWebIpcHandlers } from "../modules/webs";
 import { registerEnterpriseChatIpcHandlers } from "../modules/enterprise-chat";
 import { MainIpcRegistrationOptions } from "./ipc-registration-contracts";
 
@@ -189,7 +189,9 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
   registerAppearanceIpcHandlers(ipcMain, { runtime: options.appearanceRuntime, app, platform: options.platform, getMainWindow: options.getMainWindow });
 
   registerSettingsIpcHandlers(ipcMain, {
+    refreshUsageAccessToken: (force) => options.refreshDesktopSsoIdentityToken(force),
     app,
+    listWebEntryKeys: () => listWebEntries(app, options.websFacade.webappManager).items.map((item) => item.entryKey),
     onNavigationPreferencesChanged: (preferences) => {
       const window = options.getMainWindow();
       if (window && !window.isDestroyed()) window.webContents.send("settings.navigationPreferencesChanged", preferences);

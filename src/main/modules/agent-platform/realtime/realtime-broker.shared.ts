@@ -119,6 +119,8 @@ export type BrokerRun = {
   accessToken: string;
   detachInFlight: Promise<void> | null;
   operationGeneration: number;
+  /** lastSeq at the previous unsolicited upstream detach; a repeat without progress stops auto-resume. */
+  upstreamLossSeq?: number;
 };
 
 export type QueryTransaction = {
@@ -386,3 +388,8 @@ export type BrokerDiagnosticsCounters = {
   cloneRevokedCount: number;
   laneRotationCount: number;
 };
+
+/** Progress updates are ephemeral; retries remain ordered public events. */
+export function isProgressActivity(event: Record<string, unknown>): boolean {
+  return event.type === "run.activity" && !event.retry;
+}

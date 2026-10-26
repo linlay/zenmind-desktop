@@ -164,6 +164,10 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
       .map((chat) => normalizeAssistantNavChat(chat, agentKey))
       .filter((chat): chat is AssistantNavChatItem => Boolean(chat))
     : [];
+  const attentionChats = Array.isArray(record.attentionChats)
+    ? record.attentionChats.map((chat) => normalizeAssistantNavChat(chat, agentKey))
+      .filter((chat): chat is AssistantNavChatItem => Boolean(chat))
+    : undefined;
   const unreadCount = toOptionalNonNegativeInteger(record.unreadCount);
   const unreadChatCount = toOptionalNonNegativeInteger(record.unreadChatCount);
   const unreadFromChats = recentChats.filter((chat) => chat.isRead === false).length;
@@ -174,11 +178,13 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     "assistantNavigation.agent.updatedAt",
   );
   const latestChatId = toText(record.latestChatId) || latestChat?.chatId || null;
-  const resolvedUnreadCount = resolveAssistantNavUnreadCount({
-    statsUnreadCount: unreadCount,
-    statsUnreadChatCount: unreadChatCount,
-    unreadFromChats,
-  });
+  const resolvedUnreadCount = attentionChats
+    ? attentionChats.filter((chat) => chat.isRead === false).length
+    : resolveAssistantNavUnreadCount({
+      statsUnreadCount: unreadCount,
+      statsUnreadChatCount: unreadChatCount,
+      unreadFromChats,
+    });
 
   return {
     agentKey,
@@ -188,7 +194,9 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     unreadCount: resolvedUnreadCount,
     unreadChatCount: resolvedUnreadCount,
     chatCount,
-    hasPendingAwaiting: record.hasPendingAwaiting === true || recentChats.some((chat) => chat.hasPendingAwaiting),
+    hasPendingAwaiting: attentionChats
+      ? attentionChats.some((chat) => chat.hasPendingAwaiting)
+      : record.hasPendingAwaiting === true || recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId,
     latestPreview: toText(record.latestPreview),
     ...(updatedAt !== undefined ? { updatedAt } : {}),
@@ -197,6 +205,7 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
       projectChats: record.projectChats.map((chat) => normalizeAssistantNavChat(chat, agentKey))
         .filter((chat): chat is AssistantNavChatItem => Boolean(chat)),
     } : {}),
+    ...(attentionChats ? { attentionChats } : {}),
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,
     workspaceDirExists:
@@ -398,6 +407,13 @@ export function normalizeAssistantNavAgentItemsResult(
 
 export function getAssistantNavAgentRecentChats(agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined) {
   return Array.isArray(agent?.recentChats) ? agent.recentChats : [];
+}
+
+export function getAssistantNavAgentAttentionChats(
+  agent: Pick<AssistantNavAgentItem, "recentChats" | "attentionChats"> | null | undefined,
+) {
+  const chats = agent?.attentionChats ?? getAssistantNavAgentRecentChats(agent);
+  return [...new Map(chats.map((chat) => [chat.chatId, chat])).values()];
 }
 
 export function getAssistantNavAgentSortedChats(

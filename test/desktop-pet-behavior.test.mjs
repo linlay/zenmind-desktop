@@ -35,6 +35,12 @@ const {
   DESKTOP_PET_USER_ASSET_PROTOCOL,
   resolveDesktopPetSignatureActions
 } = require("../dist-electron/shared/desktop-pet.js");
+const {
+  summarizeAssistantNavigationAttention,
+} = require("../dist-electron/shared/assistant-navigation-attention.js");
+const {
+  applyAssistantNavigationPush,
+} = require("../dist-electron/main/modules/assistant/navigation-status-client.js");
 
 function createApp(root) {
   return {
@@ -602,7 +608,7 @@ test("desktop pet state exposes panel placement for detached panel rendering", (
   assert.equal(state.panelPlacement, "below");
 });
 
-test("desktop pet message list keeps only recent unread or awaiting chats", () => {
+test("desktop pet overview includes unread and read awaiting chats with awaiting first", () => {
   const now = Date.now();
   const snapshot = {
     ok: true,
@@ -643,10 +649,10 @@ test("desktop pet message list keeps only recent unread or awaiting chats", () =
         },
         {
           chatId: "chat-old",
-          chatName: "过期未读对话",
+          chatName: "较早的未读对话",
           agentKey: "cutej",
           updatedAt: now - 8 * 24 * 60 * 60 * 1_000,
-          lastRunContent: "八天前的回复",
+          lastRunContent: "",
           isRead: false,
           hasActiveRun: false,
           hasPendingAwaiting: false
@@ -654,10 +660,89 @@ test("desktop pet message list keeps only recent unread or awaiting chats", () =
       ]
     }]
   };
+  snapshot.chatItems = snapshot.items[0].recentChats;
 
   const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
 
-  assert.deepEqual(messages.map((message) => message.chatId), ["chat-awaiting", "chat-unread"]);
+  assert.deepEqual(messages.map((message) => message.chatId), ["chat-awaiting", "chat-unread", "chat-old"]);
+  assert.deepEqual(messages.map((message) => message.unread), [false, true, true]);
+  assert.equal(messages.filter((message) => message.unread).length, summarizeAssistantNavigationAttention(snapshot).total.unreadCount);
+  assert.equal(messages.filter((message) => message.status === "awaiting").length, summarizeAssistantNavigationAttention(snapshot).total.pendingCount);
+  assert.deepEqual(createDesktopPetActiveTasksFromNavigationSnapshot(snapshot).map((task) => task.chatId), ["chat-awaiting"]);
+});
+
+test("desktop pet overview deduplicates chats shared by unread, awaiting and pinned projections", () => {
+  const baseChat = {
+    chatId: "unread", agentKey: "ordinary", chatName: "Unread",
+    createdAt: EPOCH_MS, updatedAt: EPOCH_MS + 30,
+    lastRunId: "run-1", lastRunContent: "Result", isRead: false,
+    hasActiveRun: false, hasPendingAwaiting: false,
+  };
+  const unreadAwaiting = {
+    ...baseChat, chatId: "unread-awaiting", agentKey: "project", updatedAt: EPOCH_MS + 20,
+    hasPendingAwaiting: true, awaitingCount: 2, awaitingMode: "approval",
+  };
+  const readAwaiting = {
+    ...unreadAwaiting, chatId: "read-awaiting", updatedAt: EPOCH_MS + 10,
+    isRead: true, pinned: true,
+  };
+  const project = {
+    agentKey: "project", displayName: "Project", workspaceDir: "/projects/demo",
+    recentChats: [readAwaiting, unreadAwaiting],
+    attentionChats: [readAwaiting, unreadAwaiting],
+    hasPendingAwaiting: true,
+  };
+  const snapshot = {
+    ok: true, items: [project], activityItems: [project],
+    chatItems: [baseChat], pinnedChatItems: [readAwaiting],
+  };
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+  assert.deepEqual(messages.map((message) => message.chatId), ["unread-awaiting", "read-awaiting", "unread"]);
+  assert.equal(new Set(messages.map((message) => message.chatId)).size, messages.length);
+  assert.deepEqual(summarizeAssistantNavigationAttention(snapshot).total, { unreadCount: 2, pendingCount: 2 });
+  assert.equal(messages.filter((message) => message.unread).length, 2);
+  assert.equal(messages.filter((message) => message.status === "awaiting").length, 2);
+  assert.equal(messages[1].unread, false, "read awaiting remains in the same overview");
+});
+
+test("desktop pet awaiting overview survives read Push until answered or run termination", () => {
+  const chat = {
+    chatId: "waiting", agentKey: "project", chatName: "Approval",
+    createdAt: EPOCH_MS, updatedAt: EPOCH_MS + 1,
+    lastRunId: "run-1", readRunId: "", isRead: false,
+    hasActiveRun: true, hasPendingAwaiting: true, awaitingMode: "approval", awaitingCount: 1,
+  };
+  const baseline = () => [{
+    agentKey: "project", displayName: "Project", workspaceDir: "/projects/demo",
+    unreadCount: 1, unreadChatCount: 1, hasPendingAwaiting: true,
+    recentChats: [{ ...chat }], projectChats: [{ ...chat }], attentionChats: [{ ...chat }],
+  }];
+  const apply = (items, type, payload) => applyAssistantNavigationPush(items, {
+    frame: "push", type, payload: { agentKey: "project", chatId: "waiting", runId: "run-1", ...payload },
+  }).items;
+  const messagesFor = (items) => createDesktopPetMessagesFromNavigationSnapshot({ ok: true, items });
+  const readItems = apply(baseline(), "chat.read", {
+    lastRunId: "run-1", readRunId: "run-1", readAt: EPOCH_MS + 2, agentUnreadCount: 0,
+  });
+  const readMessages = messagesFor(readItems);
+  assert.equal(readMessages.length, 1);
+  assert.equal(readMessages[0].status, "awaiting");
+  assert.equal(readMessages[0].unread, false);
+  assert.deepEqual(summarizeAssistantNavigationAttention({ items: readItems }).total, { unreadCount: 0, pendingCount: 1 });
+
+  const answeredAfterRead = apply(readItems, "awaiting.answered", { answeredAt: EPOCH_MS + 3 });
+  assert.deepEqual(messagesFor(answeredAfterRead), [], "answered and already read removes the overview card");
+  const terminatedAfterRead = apply(readItems, "run.finished", { finishedAt: EPOCH_MS + 3 });
+  assert.deepEqual(messagesFor(terminatedAfterRead), [], "terminal and already read removes the overview card");
+
+  const answeredUnread = apply(baseline(), "awaiting.answered", { answeredAt: EPOCH_MS + 2 });
+  assert.equal(messagesFor(answeredUnread).length, 1, "answering does not discard unread content");
+  assert.equal(messagesFor(answeredUnread)[0].unread, true);
+  assert.notEqual(messagesFor(answeredUnread)[0].status, "awaiting");
+  const readAfterAnswered = apply(answeredUnread, "chat.read", {
+    lastRunId: "run-1", readRunId: "run-1", readAt: EPOCH_MS + 3, agentUnreadCount: 0,
+  });
+  assert.deepEqual(messagesFor(readAfterAnswered), []);
 });
 
 test("desktop pet window modes keep the visible pet footprint anchored", () => {
@@ -1321,154 +1406,72 @@ test("desktop pet drag projects geometry on both platforms and samples the final
   }
 });
 
-test("desktop pet idle and unread states keep base window bounds for stable dragging", () => {
+test("desktop pet panel mode depends only on overview messages", () => {
   const idleState = {
     status: "idle",
     hint: "",
     messagePreview: "",
     unreadCount: 0,
-    activeTasks: []
+    activeTasks: [],
+    messages: []
   };
-
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: idleState,
-    previewPanel: null
-  }), "base");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: {
-      ...idleState,
-      unreadCount: 7
-    },
-    previewPanel: null
-  }), "base");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: {
-      ...idleState,
-      messagePreview: "有新消息"
-    },
-    previewPanel: null
-  }), "base");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: {
-      status: "running",
-      hint: "",
-      messagePreview: "",
-      unreadCount: 0,
-      activeTasks: [
-        {
-          id: "cutej:chat-running",
-          chatId: "chat-running",
-          status: "running",
-          updatedAt: "2026-06-17T00:01:00.000Z"
-        }
-      ],
-      messages: [
-        {
-          id: "cutej:chat-running",
-          chatId: "chat-running",
-          status: "running",
-          updatedAt: "2026-06-17T00:01:00.000Z"
-        },
-        {
-          id: "cutej:chat-history",
-          chatId: "chat-history",
-          status: "done",
-          updatedAt: "2026-06-17T00:00:00.000Z"
-        }
-      ]
-    },
-    previewPanel: null
-  }), "bubble");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: idleState,
-    previewPanel: {
-      visible: true,
-      expanded: false,
-      status: "running"
+  const runningTask = {
+    id: "cutej:chat-running",
+    chatId: "chat-running",
+    status: "running",
+    updatedAt: EPOCH_MS
+  };
+  const unreadMessage = {
+    id: "cutej:chat-unread",
+    chatId: "chat-unread",
+    status: "done",
+    unread: true,
+    updatedAt: EPOCH_MS
+  };
+  const awaitingMessage = { ...unreadMessage, status: "awaiting", unread: false };
+  for (const state of [
+    idleState,
+    { ...idleState, unreadCount: 7 },
+    { ...idleState, messagePreview: "有新消息" },
+    { ...idleState, status: "running", activeTasks: [runningTask] },
+    { ...idleState, status: "awaiting", activeTasks: [{ ...runningTask, status: "awaiting" }] },
+    { ...idleState, status: "error", hint: "请求失败" },
+  ]) {
+    assert.equal(resolveDesktopPetWindowMode({ dragging: false, state, previewPanel: null }), "base");
+  }
+  for (const status of ["running", "awaiting", "done"]) {
+    for (const expanded of [false, true]) {
+      assert.equal(resolveDesktopPetWindowMode({
+        dragging: false,
+        state: idleState,
+        previewPanel: { visible: true, expanded, status }
+      }), "base", `${status} preview metadata does not create a panel`);
     }
-  }), "base");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: idleState,
-    previewPanel: {
-      visible: true,
-      expanded: false,
-      status: "done"
-    }
-  }), "bubble");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: {
-      ...idleState,
-      messages: [
-        {
-          id: "cutej:chat-read",
-          chatId: "chat-read",
-          updatedAt: "2026-06-17T00:00:00.000Z"
-        }
-      ]
-    },
-    previewPanel: null
-  }), "bubble");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: {
-      ...idleState,
-      unreadCount: 1,
-      messages: [
-        {
-          id: "cutej:chat-unread",
-          chatId: "chat-unread",
-          updatedAt: "2026-06-17T00:00:00.000Z"
-        }
-      ]
-    },
-    previewPanel: null
-  }), "bubble");
+  }
+  for (const messages of [[unreadMessage], [awaitingMessage], [unreadMessage, awaitingMessage]]) {
+    const state = { ...idleState, messages };
+    assert.equal(resolveDesktopPetWindowMode({ dragging: false, state, previewPanel: null }), "bubble");
+    assert.equal(resolveDesktopPetWindowMode({ dragging: true, state, previewPanel: null }), "base");
+  }
   assert.equal(resolveDesktopPetWindowMode({
     dragging: false,
     layoutMode: "base",
-    state: {
-      ...idleState,
-      messages: [
-        {
-          id: "cutej:chat-collapsed",
-          chatId: "chat-collapsed",
-          updatedAt: "2026-06-17T00:00:00.000Z"
-        }
-      ]
-    },
+    state: { ...idleState, messages: [unreadMessage] },
     previewPanel: null
   }), "base");
   assert.equal(resolveDesktopPetWindowMode({
     dragging: false,
-    layoutMode: "task-list-compact",
-    state: {
-      ...idleState,
-      activeTasks: [
-        {
-          id: "cutej:chat-running",
-          chatId: "chat-running",
-          status: "running",
-          updatedAt: "2026-06-17T00:01:00.000Z"
-        }
-      ]
-    },
+    layoutMode: "bubble",
+    state: { ...idleState, messages: [awaitingMessage] },
     previewPanel: null
-  }), "task-list-compact");
-  assert.equal(resolveDesktopPetWindowMode({
-    dragging: false,
-    state: idleState,
-    previewPanel: {
-      visible: true,
-      expanded: true
-    }
-  }), "preview-expanded");
+  }), "bubble");
+  for (const layoutMode of ["task-list", "task-list-compact", "preview-expanded"]) {
+    assert.equal(resolveDesktopPetWindowMode({
+      dragging: false, layoutMode,
+      state: { ...idleState, activeTasks: [runningTask] },
+      previewPanel: { visible: true, expanded: true, status: "running" },
+    }), "base", "legacy layout modes cannot restore a removed panel");
+  }
 });
 
 test("desktop pet state exposes awaiting when any active task is awaiting", () => {
@@ -1497,6 +1500,31 @@ test("desktop pet state exposes awaiting when any active task is awaiting", () =
   });
 
   assert.equal(state.status, "awaiting");
+});
+
+test("desktop pet authoritative pending attention selects awaiting even without recent active tasks", () => {
+  const state = createDesktopPetState(createSettings(), {
+    supported: true,
+    enabled: true,
+    localStatus: createDefaultDesktopPetLocalStatus(),
+    agentStatus: createAgentStatus({ presence: "available", hasPendingAwaiting: false }),
+    activeTasks: [],
+    runningTaskCount: 0,
+    navigationAttention: {
+      chats: { unreadCount: 0, pendingCount: 0 },
+      projects: { unreadCount: 0, pendingCount: 1 },
+      total: { unreadCount: 0, pendingCount: 1 },
+    },
+    messages: [{
+      id: "project:old-awaiting", chatId: "old-awaiting", agentKey: "project",
+      agentDisplayName: "Project", runId: "run-old", title: "Approval", preview: "",
+      status: "awaiting", unread: false, updatedAt: EPOCH_MS,
+    }],
+  });
+  assert.equal(state.status, "awaiting");
+  assert.equal(state.unreadCount, 0);
+  assert.deepEqual(state.activeTasks, []);
+  assert.equal(state.messages[0]?.status, "awaiting");
 });
 
 test("desktop pet visual arbitration keeps awaiting above hover and signature", () => {
@@ -1678,8 +1706,8 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
       agentKey: "cutej",
       displayName: "小君",
       role: "",
-      unreadCount: 0,
-      unreadChatCount: 0,
+      unreadCount: 1,
+      unreadChatCount: 1,
       chatCount: 1,
       hasPendingAwaiting: true,
       latestChatId: "chat-awaiting",
@@ -1692,19 +1720,20 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
         updatedAt,
         lastRunId: "run-awaiting",
         lastRunContent: "需要你确认两项操作",
-        isRead: true,
+        isRead: false,
         hasActiveRun: true,
         hasPendingAwaiting: true,
         awaitingCount: 2
       }]
     }]
   };
+  snapshot.chatItems = snapshot.items[0].recentChats;
 
   assert.equal(createDesktopPetActiveTasksFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
   assert.equal(createDesktopPetMessagesFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
 });
 
-test("desktop pet reads copilot activity items when navigation items omit the agent", () => {
+test("desktop pet keeps copilot activity tasks while unread overview follows the Chats scope", () => {
   const updatedAt = Date.now() - 1_000;
   const snapshot = {
     ok: true,
@@ -1728,7 +1757,7 @@ test("desktop pet reads copilot activity items when navigation items omit the ag
         lastRunId: "run-1",
         lastRunContent: "已完成网络诊断",
         isRead: false,
-        hasActiveRun: false,
+        hasActiveRun: true,
         hasPendingAwaiting: false
       }]
     }]
@@ -1736,11 +1765,40 @@ test("desktop pet reads copilot activity items when navigation items omit the ag
 
   const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
 
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].agentKey, "net-yu");
-  assert.equal(messages[0].agentDisplayName, "网驭智能体");
-  assert.equal(messages[0].preview, "已完成网络诊断");
-  assert.equal(messages[0].unread, true);
+  assert.deepEqual(messages, []);
+  assert.equal(messages.length, summarizeAssistantNavigationAttention(snapshot).total.unreadCount);
+  const tasks = createDesktopPetActiveTasksFromNavigationSnapshot(snapshot);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].agentKey, "net-yu");
+
+  snapshot.chatItems = snapshot.activityItems[0].recentChats;
+  const visibleMessages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+  assert.equal(visibleMessages.length, 1);
+  assert.equal(visibleMessages[0].agentDisplayName, "网驭智能体");
+  assert.equal(visibleMessages[0].unread, true);
+  assert.equal(visibleMessages.length, summarizeAssistantNavigationAttention(snapshot).total.unreadCount);
+});
+
+test("desktop pet overview includes ordinary awaiting chats beyond both sidebar and activity windows", () => {
+  const awaitingChats = Array.from({ length: 60 }, (_, index) => ({
+    chatId: `awaiting-${index}`, chatName: `Awaiting ${index}`, agentKey: "helper",
+    createdAt: EPOCH_MS - 1000, updatedAt: EPOCH_MS - index,
+    lastRunId: `run-${index}`, lastRunContent: "",
+    isRead: index % 2 === 0, hasActiveRun: true, hasPendingAwaiting: true, awaitingCount: 1,
+  }));
+  const agent = {
+    agentKey: "helper", displayName: "Helper", updatedAt: EPOCH_MS,
+    hasPendingAwaiting: true, recentChats: awaitingChats.slice(0, 50), attentionChats: awaitingChats,
+  };
+  const snapshot = { ok: true, items: [], activityItems: [agent], chatItems: awaitingChats.slice(0, 24) };
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+  assert.equal(messages.length, 60, "waiting cards have no two-row or fifty-item cutoff");
+  assert.equal(new Set(messages.map((message) => message.chatId)).size, 60);
+  assert.equal(messages.every((message) => message.status === "awaiting"), true);
+  assert.equal(messages.filter((message) => message.unread).length, 12, "blue unread follows the same Chats scope as the sidebar");
+  assert.deepEqual(summarizeAssistantNavigationAttention(snapshot).total, { unreadCount: 12, pendingCount: 60 });
+  assert.equal(messages.some((message) => message.chatId === "awaiting-59"), true);
+  assert.equal(createDesktopPetActiveTasksFromNavigationSnapshot(snapshot).length, 50, "bounded activity remains available for animation and integrations");
 });
 
 test("desktop pet visual arbitration lets manual signature surface over hover", () => {
@@ -2035,23 +2093,35 @@ test("desktop pet visual maps review, failed, and rare idle jumping onto standar
   }), "jumping");
 });
 
-test("desktop pet retains older awaiting messages ahead of the unread limit", () => {
+test("desktop pet overview retains every old or empty project unread and awaiting chat beyond fifty", () => {
   const now = Date.now();
-  const unread = Array.from({ length: 50 }, (_, index) => ({
-    chatId: `unread-${index}`, chatName: `Unread ${index}`, agentKey: "cutej",
-    updatedAt: now - index, lastRunContent: "Completed", isRead: false,
+  const oldestAt = now - 30 * 24 * 60 * 60 * 1000;
+  const unread = Array.from({ length: 60 }, (_, index) => ({
+    chatId: `unread-${index}`, chatName: `Unread ${index}`, agentKey: "project",
+    createdAt: oldestAt - 1000, updatedAt: oldestAt - index, lastRunContent: "", isRead: false,
     hasActiveRun: false, hasPendingAwaiting: false
   }));
-  const messages = createDesktopPetMessagesFromNavigationSnapshot({
-    ok: true, items: [{ agentKey: "cutej", displayName: "CuteJ", updatedAt: now,
-      recentChats: [...unread,
-        { ...unread[0], chatId: "older-awaiting", isRead: true, hasPendingAwaiting: true, updatedAt: now - 10000 },
-        { ...unread[0], chatId: "newer-awaiting", isRead: false, hasPendingAwaiting: true, updatedAt: now - 5000 }
+  const snapshot = {
+    ok: true, items: [{
+      agentKey: "project", displayName: "Project", workspaceDir: "/projects/demo", updatedAt: now,
+      unreadCount: unread.length + 1, unreadChatCount: unread.length + 1,
+      recentChats: unread.slice(0, 50),
+      attentionChats: [...unread,
+        { ...unread[0], chatId: "read-awaiting", isRead: true, hasPendingAwaiting: true, updatedAt: oldestAt - 10000 },
+        { ...unread[0], chatId: "unread-awaiting", hasPendingAwaiting: true, updatedAt: oldestAt - 5000 }
       ]
     }]
-  });
-  assert.equal(messages.length, 50);
-  assert.deepEqual(messages.slice(0, 3).map(message => message.chatId), ["newer-awaiting", "older-awaiting", "unread-0"]);
+  };
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+  assert.equal(messages.length, 62);
+  assert.deepEqual(summarizeAssistantNavigationAttention(snapshot).total, { unreadCount: 61, pendingCount: 2 });
+  assert.equal(new Set(messages.map((message) => message.chatId)).size, 62);
+  assert.deepEqual(messages.slice(0, 4).map((message) => message.chatId), ["unread-awaiting", "read-awaiting", "unread-0", "unread-1"]);
+  assert.equal(messages.some((message) => message.chatId === "unread-59"), true);
+  assert.equal(messages.find((message) => message.chatId === "read-awaiting")?.unread, false);
+  assert.equal(messages.every((message) => message.preview === ""), true);
+  assert.equal(messages.filter((message) => message.unread).length, 61);
+  assert.equal(messages.filter((message) => message.status === "awaiting").length, 2);
 });
 
 // Native bounds and renderer offsets can be painted on different frames.

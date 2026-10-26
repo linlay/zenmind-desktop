@@ -46,6 +46,8 @@ const EMPTY_SHORTCUT_TARGETS: DesktopGlobalSearchShortcutTargets = { attention: 
 export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestIdRef = useRef(0);
+  const queryHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
   const shortcutTargetsRef = useRef<DesktopGlobalSearchShortcutTargets>(EMPTY_SHORTCUT_TARGETS);
   const [query, setQuery] = useState("");
   const [remoteResults, setRemoteResults] = useState<AssistantChatSearchResult[]>([]);
@@ -72,6 +74,14 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
 
   useEffect(() => {
     if (!props.open) {
+      const previousQuery = query.trim();
+      if (previousQuery) {
+        queryHistoryRef.current = [
+          previousQuery,
+          ...queryHistoryRef.current.filter((entry) => entry !== previousQuery)
+        ].slice(0, 50);
+      }
+      historyIndexRef.current = -1;
       setQuery("");
       setRemoteResults([]);
       setRemoteError("");
@@ -177,9 +187,26 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
     : props.t("desktop.globalSearch.empty.default");
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       props.onClose();
+      return;
+    }
+    if (
+      (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+      !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey &&
+      queryHistoryRef.current.length > 0 &&
+      (historyIndexRef.current >= 0 || (!query && event.key === "ArrowUp"))
+    ) {
+      event.preventDefault();
+      const nextIndex = event.key === "ArrowUp"
+        ? Math.min(historyIndexRef.current + 1, queryHistoryRef.current.length - 1)
+        : Math.max(historyIndexRef.current - 1, -1);
+      historyIndexRef.current = nextIndex;
+      setQuery(nextIndex < 0 ? "" : queryHistoryRef.current[nextIndex]);
       return;
     }
     if (event.key === "ArrowDown") {
@@ -224,7 +251,10 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
             value={query}
             placeholder={props.t("desktop.globalSearch.placeholder")}
             aria-label={props.t("desktop.globalSearch.placeholder")}
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => {
+              historyIndexRef.current = -1;
+              setQuery(event.currentTarget.value);
+            }}
             onKeyDown={handleKeyDown}
           />
           {props.shortcutPlatform ? (
@@ -233,6 +263,28 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
             </kbd>
           ) : null}
         </div>
+        {queryHistoryRef.current.length > 0 ? (
+          <div className="desktop-global-search-history">
+            <span className="desktop-global-search-history-label">{props.t("desktop.globalSearch.history")}</span>
+            <div className="desktop-global-search-history-tags">
+              {queryHistoryRef.current.map((entry, index) => (
+                <button
+                  key={entry}
+                  type="button"
+                  className="desktop-global-search-history-tag"
+                  title={entry}
+                  onClick={() => {
+                    historyIndexRef.current = index;
+                    setQuery(entry);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {entry}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="desktop-global-search-results" role="listbox" aria-label={props.t("desktop.globalSearch.results")}>
           {sections.length > 0 ? sections.map((section) => (
             <div className="desktop-global-search-section" key={section.id}>

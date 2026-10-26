@@ -1,3 +1,4 @@
+import { allowsViewRequest } from "./view-request-policy";
 import { type WebContents } from "electron";
 import { isPlainBridgeRecord, type AgentWebclientPlatformFramePortSendInput } from "../../../../shared/contracts";
 import { MAIN_CHAT_SURFACE_ID, SELECTION_EXPLAIN_SURFACE_ID } from "../../../../shared/surface-identity";
@@ -70,6 +71,15 @@ export function createRequestDispatch(deps: RequestDispatchPort) {
     let context = authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
     if ("ok" in context) {
       deps.sendFrame(session, frameError(frame.id, "surface_unavailable", context.error.message));
+      return;
+    }
+    const isView = context.target.surfaceRole === "view";
+    const viewRequestAllowed = (candidate: SurfaceContext) => allowsViewRequest({
+      identityKey: candidate.target.surfaceIdentityKey, ownerChatId: candidate.target.ownerChatId,
+      guestUrl: event.sender.getURL(), type: frame.type, payload: frame.payload,
+    });
+    if (isView && !viewRequestAllowed(context)) {
+      deps.sendFrame(session, frameError(frame.id, "capability_denied", "View request does not match its registered Chat/Run"));
       return;
     }
     const isKanbanPreview = context.target.surfaceRole === "kanban-chat" &&
@@ -350,17 +360,21 @@ export function createRequestDispatch(deps: RequestDispatchPort) {
     const refreshedContext = session.closed || event.sender.isDestroyed()
       ? null
       : authorizeSurface(event.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
-    if (!refreshedContext || "ok" in refreshedContext || ((isLive || isKanbanPreview) && (
+    if (!refreshedContext || "ok" in refreshedContext || ((isLive || isKanbanPreview || isView) && (
       refreshedContext.target.registrationId !== authorizedSurface.registrationId ||
       refreshedContext.target.surfaceId !== authorizedSurface.surfaceId ||
       refreshedContext.target.ownerChatId !== authorizedSurface.ownerChatId ||
       (refreshedContext.target.pageRouteIdentity || refreshedContext.target.pageRoute) !==
       authorizedSurface.route ||
-      !refreshedContext.target.active
+      ((isLive || isKanbanPreview || frame.type === "/api/view/invoke") && !refreshedContext.target.active)
     ))) {
       siteControlScope?.release("Surface changed while checking Platform availability.");
       finishExplicitDetachWrite(false);
       deps.sendFrame(session, frameError(frame.id, "surface_unavailable", "Surface changed while checking Platform availability"));
+      return;
+    }
+    if (isView && !viewRequestAllowed(refreshedContext)) {
+      deps.sendFrame(session, frameError(frame.id, "capability_denied", "View ownership changed while preparing the request"));
       return;
     }
     session.requestIds.add(frame.id);

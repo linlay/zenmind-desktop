@@ -122,6 +122,30 @@ test('gateway keeps observation refs across its owned detach and enforces Chat o
   assert.equal(h.calls.length, before);
 });
 
+test('WorkPanel viewport changes and resets invalidate the earlier observation before more input', async (t) => {
+  const h = harness();
+  const emulations = [];
+  h.contents.enableDeviceEmulation = params => emulations.push(params);
+  h.contents.disableDeviceEmulation = () => emulations.push('reset');
+  const tab = { tabId: 'item', currentUrl: h.contents.getURL(), title: 'Fixture', webContentsId: h.contents.id };
+  const container = { id: 'panel', targetGeneration: 'registration', surfaceKind: 'chat-work-panel', surfaceRole: 'workpanel-web',
+    ownerChatId: 'chat-a', label: 'Fixture', url: h.contents.getURL(), open: true, active: false, tabs: [tab], activeTabId: tab.tabId };
+  const gateway = new EmbeddedCdpGateway({ getSurfaces: () => [container], resolveWebContents: () => h.contents,
+    logger: { debug() {}, warn() {} } });
+  t.after(() => gateway.stop());
+  const request = { surfaceId: createEmbeddedWebSurfaceId(container, tab), source: { chatId: 'chat-a' } };
+  for (const params of [{ width: 390, height: 844, mobile: true }, { reset: true }]) {
+    const observation = (await gateway.executeCommand({ ...request, method: 'Surface.observe' })).result;
+    await gateway.executeCommand({ ...request, method: 'Surface.setViewport', params });
+    const before = h.calls.filter(call => call.method.startsWith('Input.')).length;
+    await assert.rejects(gateway.executeCommand({ ...request, method: 'Surface.click', params: { observationId: observation.observationId, ref: 'e1' } }), { code: 'observation_stale' });
+    assert.equal(h.calls.filter(call => call.method.startsWith('Input.')).length, before);
+  }
+  assert.equal(emulations[0].screenPosition, 'mobile');
+  assert.deepEqual(emulations[0].viewSize, { width: 390, height: 844 });
+  assert.equal(emulations[1], 'reset');
+});
+
 test('WorkPanel semantic commands preserve the saved-password automation hold', async (t) => {
   const { holdPageAutomation } = require('../dist-electron/main/modules/web-surfaces/cdp/command-queue.js');
   const h = harness();

@@ -79,7 +79,7 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
       "workpanel.close" as const,
     ];
     if (method === "getCapabilities")
-      return { ok: true, capabilities };
+      return { ok: true, capabilities: capabilities.includes("workpanel.open") && !documentSurface ? [...capabilities, "workpanel.view"] : capabilities };
     if (method === "getDocumentOpenOptions" || method === "openDocumentCopy" || method === "openDocumentInLocalApp") {
       if (!localDocumentAllowed || !documentSource || !deps.options.documentLocalOpen)
         return failure("capability_denied", "This surface cannot open local documents");

@@ -48,7 +48,7 @@ export type WorkPanelState = {
 export type WorkPanelCommand =
   | { type: "adoptLocalDocumentWorkspace"; ownerChatId: string; draftOwnerKey: string; documents: LocalDocumentItem[] }
   | { type: "setDialogPresentation"; ownerChatId: string; itemId: string; dialog: WorkPanelDialogPresentation | null; restoreUrl?: string }
-  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; explicitlyOpened?: boolean }
+  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; explicitlyOpened?: boolean; webInstanceId?: string }
   | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
   | { type: "closeItem"; ownerChatId: string; itemId: string; force?: boolean; closeImplicitWorkspace?: boolean }
@@ -184,6 +184,7 @@ function normalizeContext(
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const record = input as Record<string, unknown>;
   const allowed = new Set(
+    module === "view" ? ["chatId", "runId", "sourceId", "viewIndex"] :
     module === "planning"
       ? ["chatId", "planningId", "agentKey"]
       : module === "skill"
@@ -199,7 +200,7 @@ function normalizeContext(
   const context: Record<string, string> = {};
   for (const key of [
     "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-    "publishId", "sourceId", "btwId", "instanceId", "id",
+    "publishId", "sourceId", "btwId", "instanceId", "id", "viewIndex",
   ] as const) {
     const value = cleanIdentity(record[key]);
     if (record[key] !== undefined && !value) return null;
@@ -541,6 +542,16 @@ function normalizeDescriptor(
         ? `file:${context.agentKey}:${context.path}`
         : "";
       break;
+    case "view": {
+      if (!context.chatId || !context.runId || !context.sourceId || !/^(?:tool|0|[1-9]\d{0,5})$/u.test(context.viewIndex || "")) return null;
+      const expectedPath = `/view-viewer/${encodeURIComponent(context.sourceId)}`;
+      const url = new URL(route, "https://workpanel.invalid");
+      if (url.pathname !== expectedPath || url.hash ||
+          [...url.searchParams.keys()].some(key => !["chatId", "runId", "viewIndex", "lang", "theme"].includes(key)) ||
+          ["chatId", "runId", "viewIndex"].some(key => url.searchParams.getAll(key).length !== 1 || url.searchParams.get(key) !== context[key])) return null;
+      stableKey = `view:${JSON.stringify([context.chatId, context.runId, context.sourceId, context.viewIndex])}`;
+      break;
+    }
     case "planning":
       stableKey = context.chatId && context.planningId
         ? `planning:${context.chatId}:${context.planningId}`
@@ -905,6 +916,10 @@ function reduceWorkPanelCommandCore(
       items: [],
       activeItemId: null,
     };
+    // Host-created browser tabs own their identity even when the URL is identical.
+    // This field is internal to the command, never part of the public descriptor.
+    const webInstanceId = normalized.descriptor.kind === "web" ? cleanIdentity(command.webInstanceId) : "";
+    if (webInstanceId) normalized.stableKey = `web-instance:${webInstanceId}`;
     const existing = workspace.items.find((item) => item.stableKey === normalized.stableKey);
     const isOverview = normalized.descriptor.kind === "webclient" &&
       normalized.descriptor.module === "overview";

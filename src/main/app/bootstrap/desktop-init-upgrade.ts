@@ -1,3 +1,4 @@
+import { getTransitHubSettingsPath, normalizeTransitHubSettings, writeTransitHubSettings } from "../../modules/settings";
 import { type App } from "electron";
 import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
 import {
@@ -64,7 +65,8 @@ export function desktopInitUpgradeCanonicalPaths(app: App, platform: NodeJS.Plat
     path.join(configRoot, "tunnel-hub.json"),
     getDesktopActionBridgeSettingsConfigPath(app, platform),
     getEnterpriseImSettingsPath(app, platform),
-    getHelpSettingsPath(app, platform)
+    getHelpSettingsPath(app, platform),
+    getTransitHubSettingsPath(app, platform)
   ];
 }
 
@@ -82,6 +84,7 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     "kanban",
     "market",
     "tunnelHub",
+    "transitHub",
     "desktopActionBridge",
     "enterpriseIm",
     "help"
@@ -89,6 +92,7 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
     requireObjectWhenPresent(key);
   }
 
+  const transitHub = present("transitHub") ? normalizeTransitHubSettings(defaults.transitHub) : null;
   const services = isRecord(defaults.services) ? defaults.services : {};
   const lifecycleArgs = normalizeServiceLifecycleArgsConfig({ services }, platform);
   const portDefaults = normalizeServicePortDefaultsConfig({ services }, platform);
@@ -135,6 +139,7 @@ export function validateDesktopInitUpgradeDefaults(defaults: Record<string, unkn
   }
   return {
     present,
+    transitHub,
     lifecycleArgs,
     portDefaults,
     assistant,
@@ -271,6 +276,7 @@ export function applyDesktopInitVersionUpgrade(
     if (prepared.enterpriseIm) {
       writeEnterpriseImSettings(app, prepared.enterpriseIm, platform);
     }
+    if (prepared.transitHub) writeTransitHubSettings(app, prepared.transitHub, platform);
     if (prepared.help) {
       writeHelpSettings(app, prepared.help, platform);
     }

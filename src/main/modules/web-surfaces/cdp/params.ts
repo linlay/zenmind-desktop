@@ -33,6 +33,7 @@ const rules: Record<string, Rules> = {
     ...fields("string", "objectGroup uniqueContextId"), ...fields("object", "serializationOptions")
   },
   "Page.reload": fields("boolean", "ignoreCache"),
+  "Surface.setViewport": { ...fields("integer", "width height"), ...fields("number", "deviceScaleFactor"), ...fields("boolean", "mobile reset") },
   "Page.navigate": { url: { type: "string", required: true }, ...fields("string", "referrer transitionType frameId referrerPolicy") },
   "Page.captureScreenshot": {
     ...fields("integer", "quality"), ...fields("boolean", "fromSurface captureBeyondViewport optimizeForSpeed"),

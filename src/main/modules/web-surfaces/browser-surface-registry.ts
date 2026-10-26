@@ -5,7 +5,13 @@ import type { BrowserSurfaceRegistryOptions } from "./registry-contracts";
 export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOptions) {
   const store = createRegistrationStore(options);
   const projection = createContainerProjection(options, { registeredSurfaces: store.registeredSurfaces, resolveRegisteredSurface: store.resolveRegisteredSurface, findWebContentsForSurfaceUrl: store.guest.findWebContentsForSurfaceUrl });
+  function isWorkPanelHtmlPreview(webContentsId: number, ownerChatId: string | undefined) {
+    const contents = store.guest.findWebContentsById(webContentsId);
+    return Boolean(contents && !contents.isDestroyed() && ownerChatId &&
+      options.isWorkPanelHtmlPreviewGuest?.(contents, ownerChatId));
+  }
   return {
+    isWorkPanelHtmlPreview,
     websiteBridges: store.guest.websiteBridges,
     ensureWebsiteBridge: store.guest.ensureWebsiteBridge,
     observeWebGuests: store.guest.observeWebGuests,

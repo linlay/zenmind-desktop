@@ -185,6 +185,11 @@ export class DocumentHtmlPreviewSessions {
     return true;
   }
 
+  handleIdForGuest(guest: WebContents) {
+    if (guest.isDestroyed()) return "";
+    return [...this.entries.values()].find((entry) => entry.guest === guest)?.document.handleId ?? "";
+  }
+
   hasGuest(guest: WebContents) {
     return [...this.entries.values()].some((entry) => entry.guest === guest);
   }

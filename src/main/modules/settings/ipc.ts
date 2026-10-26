@@ -32,12 +32,12 @@ import { getDesktopConfigRoot, getDesktopStateRoot } from "../../infrastructure/
 import { getDesktopDeviceInfo } from "../identity";
 import { getDesktopDeviceIdentityInfo } from "../identity";
 import { getDesktopUsageProfile } from "./usage-profile";
-import { listWebEntries } from "../webs";
 import { t } from "../../support/i18n/main-i18n";
 import { requireEpochMillis } from "../../../shared/time-contract";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
+  listWebEntryKeys: () => readonly string[];
   onNavigationPreferencesChanged?: (value: DesktopNavigationPreferences) => void;
   platform?: NodeJS.Platform;
   nativeTheme: { themeSource: string };
@@ -58,6 +58,7 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
+  refreshUsageAccessToken?: (force: boolean) => Promise<string>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
   onEnterpriseImSettingsChanged?: (settings: EnterpriseImSettings) => void;
@@ -247,7 +248,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     getDesktopStateSnapshot(app, platform)
   );
   ipcMain.handle("settings.getUsageProfile", async () =>
-    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app)
+    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app, { platform: options.platform, getAccessToken: options.refreshUsageAccessToken })
   );
   ipcMain.handle("settings.getDesktopDeviceInfo", async () => getDesktopDeviceInfo(app));
   ipcMain.handle("settings.getGeneralSettings", async () =>
@@ -392,7 +393,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   );
   ipcMain.handle("settings.setWebEntryPinned", async (_event: any, value: unknown) => {
     const input = parseSitePinInput(value);
-    return setWebEntryPinned(app, input, listWebEntries(app).items.map((item) => item.entryKey), platform);
+    return setWebEntryPinned(app, input, options.listWebEntryKeys(), platform);
   });
   ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) => {
     const normalizedThemeMode = normalizeThemePreference(themeMode);

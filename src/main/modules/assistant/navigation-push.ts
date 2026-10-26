@@ -664,21 +664,86 @@ export function applyAssistantNavigationChatPush(
   return { items: currentItems, changed: false, shouldRefresh: true };
 }
 
+function applyAssistantNavigationAttentionChatPush(
+  currentItems: AssistantNavChatItem[],
+  frame: NavigationPushFrame,
+  agentKey: string,
+): AssistantNavigationChatApplyResult {
+  const result = applyAssistantNavigationChatPush(currentItems, frame);
+  if (!result.shouldRefresh) return result;
+  const event = toPushEvent(frame);
+  if (validateAgentPlatformPushTimeContract(event.type, event) || !isValidReadProjectionPush(event)) {
+    return result;
+  }
+  const chatId = readPushChatId(event);
+  if (!chatId) return result;
+  if (event.type === "chat.deleted" || event.type === "chat.archived") {
+    const items = currentItems.filter((chat) => chat.chatId !== chatId);
+    return { items, changed: items.length !== currentItems.length, shouldRefresh: true };
+  }
+  // A complete owner baseline has no server-owned display cutoff. Valid new
+  // identities can enter immediately; the next refresh fills their summaries.
+  if (readPushAgentKey(event) === agentKey &&
+      (event.type === "chat.created" || event.type === "chat.unread")) {
+    const chat = createChatPatchFromPush(event);
+    if (chat && (event.type !== "chat.unread" || !shouldIgnoreReadStatePush(event, chat))) {
+      return { items: [...currentItems, chat], changed: true, shouldRefresh: true };
+    }
+  }
+  return result;
+}
+
 // Sidebar order is server-owned; push patches update fields without reshuffling it.
 export function applyAssistantNavigationPush(
   currentItems: AssistantNavAgentItem[],
   frame: NavigationPushFrame,
 ): AssistantNavigationApplyResult {
   const activity = applyAssistantNavigationActivityPush(currentItems, frame);
+  const event = toPushEvent(frame);
+  const chatId = readPushChatId(event);
+  const eventAgentKey = readPushAgentKey(event);
   let changed = activity.changed;
   let sidebarHandled = false;
+  let attentionShouldRefresh = false;
+  let hasCompleteAttention = false;
+  let attentionHasTarget = false;
   const items = activity.items.map((agent) => {
-    if (!agent.projectChats) return agent;
-    const next = applyAssistantNavigationChatPush(agent.projectChats, frame);
-    sidebarHandled ||= !next.shouldRefresh;
-    if (!next.changed) return agent;
-    changed = true;
-    return { ...agent, projectChats: next.items };
+    let nextAgent = agent;
+    if (agent.projectChats) {
+      const next = applyAssistantNavigationChatPush(agent.projectChats, frame);
+      sidebarHandled ||= !next.shouldRefresh;
+      if (next.changed) nextAgent = { ...nextAgent, projectChats: next.items };
+    }
+    if (agent.attentionChats) {
+      hasCompleteAttention = true;
+      const ownsTarget = agent.attentionChats.some((chat) => chat.chatId === chatId);
+      attentionHasTarget ||= ownsTarget;
+      const next = applyAssistantNavigationAttentionChatPush(agent.attentionChats, frame, agent.agentKey);
+      sidebarHandled ||= !next.shouldRefresh;
+      if (ownsTarget || agent.agentKey === eventAgentKey ||
+          agent.recentChats.some((chat) => chat.chatId === chatId) ||
+          agent.projectChats?.some((chat) => chat.chatId === chatId)) {
+        attentionShouldRefresh ||= next.shouldRefresh;
+      }
+      const unreadCount = next.items.filter((chat) => chat.isRead === false).length;
+      const hasPendingAwaiting = next.items.some((chat) => chat.hasPendingAwaiting);
+      if (next.changed || nextAgent.unreadCount !== unreadCount || nextAgent.unreadChatCount !== unreadCount ||
+          nextAgent.hasPendingAwaiting !== hasPendingAwaiting) {
+        nextAgent = { ...nextAgent, attentionChats: next.items, unreadCount, unreadChatCount: unreadCount, hasPendingAwaiting };
+      }
+    }
+    changed ||= nextAgent !== agent;
+    return nextAgent;
   });
-  return { items: changed ? items : currentItems, changed, shouldRefresh: activity.shouldRefresh && !sidebarHandled };
+  // Unknown runtime identity cannot be completed from a run/awaiting status
+  // alone. A successful update in recent/sidebar/pinned must not hide this gap.
+  if (hasCompleteAttention && createChatRuntimeStatusPatch(event) && !attentionHasTarget) {
+    attentionShouldRefresh = true;
+  }
+  return {
+    items: changed ? items : currentItems,
+    changed,
+    shouldRefresh: attentionShouldRefresh || (activity.shouldRefresh && !sidebarHandled),
+    attentionShouldRefresh,
+  };
 }

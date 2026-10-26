@@ -10,11 +10,6 @@ import {
   PRODUCT_NAME
 } from "../../../shared/brand";
 import { resolveElectronBundleRootFromRuntimeDir } from "../../infrastructure/electron/bundle-paths";
-import {
-  clearAccessTokenProviderKeys,
-  getProviderRegisterMode,
-  invalidateProviderRegistration
-} from "../../modules/agent-platform";
 import { type AssistantBridgeRuntime } from "../../modules/assistant";
 import { EnterpriseChatRuntime } from "../../modules/enterprise-chat";
 import {
@@ -31,20 +26,13 @@ import {
   type DesktopSsoRestoreResult
 } from "../../modules/identity";
 import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../../modules/marketplace";
-import {
-  createServicesRuntime,
-  stopBrowserWebclient,
-  type ServicesIntegrationPorts
-} from "../../modules/services";
+import { stopBrowserWebclient } from "../../modules/services";
 import {
   stopTunnelHubRuntime
 } from "../../modules/tunnel";
 import { createWebSurfaceRuntime } from "../../modules/webs";
 import { t } from "../../support/i18n/main-i18n";
 import { safeConsoleError } from "../../support/logging/safe-console";
-import {
-  isStartupPhaseAtLeast
-} from "../lifecycle/startup-phases";
 import { createMainAppState } from "../state";
 import { configureSystemIdentity } from "../system-identity";
 export interface AssembleSystemIdentityDependencies {
@@ -198,10 +186,6 @@ export async function handleDesktopSsoWebviewNavigation(dependencies: HandleDesk
 
 export interface ApplyDesktopSsoRestoreResultDependencies {
   desktopSsoRestoreState: DesktopSsoRestoreResult["state"];
-  readonly appState: Pick<ReturnType<typeof createMainAppState>, "startupPhase">;
-  readonly startupPlatform: NodeJS.Platform;
-  readonly servicesRuntime: Pick<ReturnType<typeof createServicesRuntime>, "runServiceMutation">;
-  readonly servicesIntegrationPorts: Pick<ServicesIntegrationPorts, "ensureProviderRegisterApiKey">;
   ssoCredentialDependentRuntimesStarted: boolean;
   readonly nonCoreDesktopRuntimeStarted: boolean;
   readonly startSsoCredentialDependentRuntimes: () => void;
@@ -211,24 +195,8 @@ export interface ApplyDesktopSsoRestoreResultDependencies {
 
 export function applyDesktopSsoRestoreResult(dependencies: ApplyDesktopSsoRestoreResultDependencies, result: DesktopSsoRestoreResult) {
   if (result.state !== "authenticated") void stopBrowserWebclient();
-  const previousRestoreState = dependencies.desktopSsoRestoreState;
+  // Login-identity providers follow the SSO token file inside Platform; no Provider Key changes here.
   dependencies.desktopSsoRestoreState = result.state;
-  // Provider registration policy is independent of SSO configuration and never falls back to Grant.
-  const shellStarted = isStartupPhaseAtLeast(dependencies.appState.startupPhase, "core-services-starting");
-  if (shellStarted && getProviderRegisterMode(app, dependencies.startupPlatform) === "access-token") {
-    if (result.state !== "authenticated" && previousRestoreState === "authenticated") {
-      invalidateProviderRegistration(app, dependencies.startupPlatform);
-      void dependencies.servicesRuntime.runServiceMutation(async () => {
-        clearAccessTokenProviderKeys(app, dependencies.startupPlatform);
-      }).catch(error => safeConsoleError("failed to clear access-token Provider Keys", { error: String(error) }));
-    } else if (result.state === "authenticated" && previousRestoreState !== "authenticated" &&
-      isDesktopSsoCredentialRuntimeReady()) {
-      // Update the selected Provider in place; do not start or restart local services.
-      void dependencies.servicesRuntime.runServiceMutation(() =>
-        dependencies.servicesIntegrationPorts.ensureProviderRegisterApiKey(app)
-      ).catch(error => safeConsoleError("failed to register access-token Provider Key", { error: String(error) }));
-    }
-  }
   if (result.state !== "authenticated") {
     dependencies.ssoCredentialDependentRuntimesStarted = false;
     if (dependencies.nonCoreDesktopRuntimeStarted) {

@@ -28,13 +28,13 @@ type Run = BrowserRunSource & {
 type RecordValue = Record<string, unknown>;
 const surfaceInteractions = ["fill", "type", "select", "focus", "scroll", "hover", "press", "check", "uncheck"];
 const chromeCapabilities = {
-  observe: true, elementRefs: true, screenshot: true, open: true,
+  observe: true, elementRefs: true, screenshot: true, open: true, viewport: false,
   rawCdp: false, evaluate: false, awcp: true, ignoreCacheReload: false,
   actionObservation: true, dialogs: true, uploadChatFiles: true, downloadToChat: true,
   interactions: surfaceInteractions,
 };
 const workpanelCapabilities = {
-  observe: true, elementRefs: true, screenshot: true, open: true,
+  observe: true, elementRefs: true, screenshot: true, open: true, viewport: true,
   rawCdp: false, evaluate: false, awcp: true, ignoreCacheReload: true,
   actionObservation: true, dialogs: true, uploadChatFiles: true, downloadToChat: true,
   interactions: surfaceInteractions,
@@ -710,7 +710,7 @@ export class BrowserUseRuntime {
         // A typed action returns the observation it produced; its refs replace the earlier snapshot's.
         const observation = method === "Surface.observe" ? result : record(result.observation);
         if (text(observation.observationId)) run.observations.set(surfaceId, text(observation.observationId));
-        else if (["Surface.click", "Surface.interact", "Surface.scroll", "Input.click"].includes(method)) run.observations.delete(surfaceId);
+        else if (["Surface.click", "Surface.interact", "Surface.scroll", "Surface.setViewport", "Input.click"].includes(method)) run.observations.delete(surfaceId);
       }
       if (method === "Surface.list" || method === "Surface.getState" || method === "Surface.getCurrent") {
         if (Array.isArray(result.surfaces)) result.surfaces = result.surfaces.map(page => ({ ...record(page), provider: "workpanel" }));
@@ -719,6 +719,9 @@ export class BrowserUseRuntime {
         result.capabilities = workpanelCapabilities;
       }
       return reply;
+    }
+    if (method === "Surface.setViewport") {
+      throw failure("capability_unavailable", "Viewport emulation is available for WorkPanel pages only. This Chrome session uses the user's browser viewport.");
     }
     const session = this.session(run.chatId);
     run.pageWorkStarted = true;

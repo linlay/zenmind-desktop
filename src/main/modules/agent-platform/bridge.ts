@@ -83,7 +83,7 @@ export class AgentPlatformAssistantBridge {
     this.directory = new AgentDirectory(this.platform, options.ports);
     this.chats = new ChatClient(this.platform);
     this.exports = new ChatExportClient(this.platform);
-    this.completion = new ImageCompletion(this.platform, (request, onRawEvent, strictAttachments) => this.runs.completeText(request, onRawEvent, strictAttachments));
+    this.completion = new ImageCompletion(this.platform, (request, onRawEvent, strictAttachments, detail) => this.runs.completeText(request, onRawEvent, strictAttachments, detail));
   }
 
   async startRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> { return this.runs.startRun(request); }

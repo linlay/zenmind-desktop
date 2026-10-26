@@ -14,9 +14,11 @@ import type {
   DesktopUsageProfileTrafficBucket
 } from "../../../shared/contracts";
 import {
-  listAgentPlatformUsageProviderCandidates,
+  readAgentPlatformUsageProvider,
   type AgentPlatformUsageProviderCandidate
 } from "../agent-platform";
+import { readTransitHubSettings } from "./transit-hub-settings";
+import { getDesktopSsoAccessToken } from "../identity";
 import { t } from "../../support/i18n/main-i18n";
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -24,6 +26,11 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export type DesktopUsageProfileOptions = {
   fetchImpl?: FetchLike;
   now?: Date;
+  platform?: NodeJS.Platform;
+  getAccessToken?: (force: boolean) => Promise<string>;
+  peekAccessToken?: () => string;
+  /** Internal retry guard: one SSO refresh for the whole profile query. */
+  tokenRefreshAttempted?: boolean;
 };
 
 class UsageProfileFetchError extends Error {
@@ -34,6 +41,11 @@ class UsageProfileFetchError extends Error {
     this.name = "UsageProfileFetchError";
     this.status = status;
   }
+}
+
+function asMicrocredits(value: unknown): string {
+  if (typeof value !== "string" || !/^-?\d+$/.test(value)) throw new Error("Invalid micro-Credits integer string.");
+  return BigInt(value).toString();
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -64,7 +76,7 @@ function normalizeRateLimitDefinition(value: unknown): DesktopUsageProfileRateLi
     window: asString(item.window),
     request_quota: asNumber(item.request_quota),
     token_quota: asNumber(item.token_quota),
-    cost_quota_micro: asNumber(item.cost_quota_micro)
+    quota_microcredits: asMicrocredits(item.quota_microcredits)
   };
 }
 
@@ -72,6 +84,7 @@ function normalizeRateLimitStatus(value: unknown): DesktopUsageProfileRateLimitS
   const item = asRecord(value);
   return {
     window: asString(item.window),
+    state: item.state === "idle" || item.state === "expired" || item.state === "active" ? item.state : undefined,
     starts_at: asString(item.starts_at),
     resets_at: asString(item.resets_at),
     requests: asNumber(item.requests),
@@ -80,9 +93,9 @@ function normalizeRateLimitStatus(value: unknown): DesktopUsageProfileRateLimitS
     tokens: asNumber(item.tokens),
     token_quota: asNumber(item.token_quota),
     token_remaining: asNumber(item.token_remaining),
-    cost_micro: asNumber(item.cost_micro),
-    cost_quota_micro: asNumber(item.cost_quota_micro),
-    cost_remaining_micro: asNumber(item.cost_remaining_micro)
+    charged_microcredits: asMicrocredits(item.charged_microcredits),
+    quota_microcredits: asMicrocredits(item.quota_microcredits),
+    remaining_microcredits: asMicrocredits(item.remaining_microcredits)
   };
 }
 
@@ -98,7 +111,7 @@ function normalizeTrafficBucket(value: unknown): DesktopUsageProfileTrafficBucke
     cache_miss_tokens: asNumber(item.cache_miss_tokens),
     cache_total_tokens: asNumber(item.cache_total_tokens),
     cache_hit_rate: item.cache_hit_rate === null ? null : asNumber(item.cache_hit_rate),
-    cost_micro: asNumber(item.cost_micro),
+    charged_microcredits: asMicrocredits(item.charged_microcredits),
     error_requests: asNumber(item.error_requests),
     average_latency_ms: asNumber(item.average_latency_ms)
   };
@@ -156,11 +169,19 @@ function normalizeUsage(value: unknown) {
 
 function normalizeBalance(value: unknown): DesktopUsageProfileBalance {
   const item = asRecord(value);
+  if (item.unit !== "CREDITS" || item.microcredits_per_credit !== 1_000_000 || typeof item.credits_unlimited !== "boolean" || typeof item.unlimited !== "boolean") {
+    throw new Error("Unsupported Transit Hub Credits contract.");
+  }
   return {
-    currency: asString(item.currency, "USD"),
-    cost_micro: asNumber(item.cost_micro),
-    unlimited: asBoolean(item.unlimited),
-    items: Array.isArray(item.items) ? item.items.map(normalizeRateLimitStatus) : []
+    unit: "CREDITS",
+    microcredits_per_credit: 1000000,
+    quota_microcredits: asMicrocredits(item.quota_microcredits),
+    used_microcredits: asMicrocredits(item.used_microcredits),
+    remaining_microcredits: asMicrocredits(item.remaining_microcredits),
+    credits_unlimited: item.credits_unlimited,
+    unlimited: item.unlimited,
+    items: Array.isArray(item.items) ? item.items.map(normalizeRateLimitStatus) : [],
+    degraded_components: asStringArray(item.degraded_components)
   };
 }
 
@@ -187,8 +208,12 @@ function normalizeLogEntry(value: unknown): DesktopUsageProfileLogEntry {
     cache_miss_tokens: asNumber(item.cache_miss_tokens),
     cache_total_tokens: asNumber(item.cache_total_tokens),
     cache_hit_rate: item.cache_hit_rate === null ? null : asNumber(item.cache_hit_rate),
-    cost_micro: asNumber(item.cost_micro),
-    estimated: asBoolean(item.estimated),
+    charged_microcredits: asMicrocredits(item.charged_microcredits),
+    estimated: item.billing_status === "estimated",
+    billing_status: asString(item.billing_status),
+    usage_source: asString(item.usage_source),
+    characters: asNumber(item.characters),
+    image_count: asNumber(item.image_count),
     error_type: asString(item.error_type),
     created_at: asString(item.created_at)
   };
@@ -224,16 +249,27 @@ function normalizeListResult<T>(value: unknown, normalizeItem: (value: unknown) 
 
 function normalizePrice(value: unknown): DesktopUsageProfilePrice {
   const item = asRecord(value);
+  const billing = asRecord(item.billing);
+  if (item.unit !== "CREDITS" || !["tokens", "image", "characters", "free"].includes(asString(billing.mode))) throw new Error("Unsupported model price contract.");
+  if (billing.mode === "characters") asMicrocredits(billing.microcredits_per_10k_characters);
   return {
     id: asString(item.id),
     protocol: asString(item.protocol),
     public_model: asString(item.public_model),
-    input_cost_micro_per_1m_tokens: asNumber(item.input_cost_micro_per_1m_tokens),
-    input_cache_hit_cost_micro_per_1m_tokens: item.input_cache_hit_cost_micro_per_1m_tokens === null
+    input_microcredits_per_1m_tokens: asMicrocredits(item.input_microcredits_per_1m_tokens),
+    input_cache_hit_microcredits_per_1m_tokens: item.input_cache_hit_microcredits_per_1m_tokens == null
       ? null
-      : asNumber(item.input_cache_hit_cost_micro_per_1m_tokens),
-    output_cost_micro_per_1m_tokens: asNumber(item.output_cost_micro_per_1m_tokens),
-    currency: asString(item.currency),
+      : asMicrocredits(item.input_cache_hit_microcredits_per_1m_tokens),
+    output_microcredits_per_1m_tokens: asMicrocredits(item.output_microcredits_per_1m_tokens),
+    unit: asString(item.unit),
+    billing: {
+      mode: asString(asRecord(item.billing).mode),
+      microcredits_per_10k_characters: asRecord(item.billing).microcredits_per_10k_characters == null ? undefined : asMicrocredits(asRecord(item.billing).microcredits_per_10k_characters),
+      image_prices: Array.isArray(asRecord(item.billing).image_prices) ? (asRecord(item.billing).image_prices as unknown[]).map((value) => {
+        const image = asRecord(value);
+        return { size: asString(image.size), quality: asString(image.quality), charged_microcredits: asMicrocredits(image.charged_microcredits) };
+      }) : undefined
+    },
     created_at: asString(item.created_at),
     updated_at: asString(item.updated_at)
   };
@@ -258,40 +294,18 @@ function usageApiURL(baseURL: string, pathname: string, query?: Record<string, s
 
 async function fetchUsageJson(fetchImpl: FetchLike, candidate: AgentPlatformUsageProviderCandidate, pathname: string, query?: Record<string, string>) {
   const response = await fetchImpl(usageApiURL(candidate.baseURL, pathname, query), {
+    redirect: "error",
+    credentials: "omit",
+    signal: AbortSignal.timeout(15_000),
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${candidate.apiKey}`
     }
   });
   if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const payload = asRecord(await response.json());
-      detail = asString(payload.error) || asString(payload.message) || detail;
-    } catch {
-      try {
-        detail = await response.text();
-      } catch {
-        // Keep the HTTP status text.
-      }
-    }
-    throw new UsageProfileFetchError(response.status, detail || `HTTP ${response.status}`);
+    throw new UsageProfileFetchError(response.status, `HTTP ${response.status}`);
   }
   return response.json();
-}
-
-function dedupeCandidates(candidates: AgentPlatformUsageProviderCandidate[]) {
-  const seen = new Set<string>();
-  const deduped: AgentPlatformUsageProviderCandidate[] = [];
-  for (const candidate of candidates) {
-    const key = `${candidate.baseURL}\0${candidate.apiKey}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    deduped.push(candidate);
-  }
-  return deduped;
 }
 
 function failureResult(reason: DesktopUsageProfileFailureReason, message: string, fetchedAt: string): DesktopUsageProfileResult {
@@ -314,72 +328,74 @@ export async function getDesktopUsageProfile(
     return failureResult("error", t("settings.usage.errors.fetchUnavailable"), fetchedAt);
   }
 
-  let candidates: AgentPlatformUsageProviderCandidate[];
+  let configurationReady = false;
   try {
-    candidates = dedupeCandidates(listAgentPlatformUsageProviderCandidates(app));
-  } catch (error) {
-    return failureResult(
-      "error",
-      error instanceof Error ? error.message : String(error),
-      fetchedAt
-    );
-  }
-
-  if (candidates.length === 0) {
-    return failureResult("not-configured", t("settings.usage.errors.notConfigured"), fetchedAt);
-  }
-
-  const from = new Date(now);
-  from.setUTCDate(from.getUTCDate() - 364);
-  from.setUTCHours(0, 0, 0, 0);
-
-  let lastError: unknown = null;
-  for (const candidate of candidates) {
-    try {
-      const currentKey = normalizeCurrentKey(await fetchUsageJson(fetchImpl, candidate, "/api/me"));
-      const [limits, usage, balance, logs, sessions, prices] = await Promise.all([
-        fetchUsageJson(fetchImpl, candidate, "/api/me/limits").then(normalizeLimits),
-        fetchUsageJson(fetchImpl, candidate, "/api/me/usage", {
-          bucket: "day",
-          from: from.toISOString(),
-          to: now.toISOString()
-        }).then(normalizeUsage),
-        fetchUsageJson(fetchImpl, candidate, "/api/me/balance").then(normalizeBalance),
-        fetchUsageJson(fetchImpl, candidate, "/api/me/logs", { limit: "500" }).then((value) => normalizeListResult(value, normalizeLogEntry)),
-        fetchUsageJson(fetchImpl, candidate, "/api/me/sessions", { include_stale: "true", limit: "500" })
-          .then((value) => normalizeListResult(value, normalizeSession)),
-        fetchUsageJson(fetchImpl, candidate, "/api/me/prices").then(normalizePrices)
-      ]);
-
-      return {
-        ok: true,
-        provider: {
-          providerKey: candidate.providerKey,
-          providerName: candidate.providerName,
-          baseURL: candidate.baseURL,
-          model: candidate.model
-        },
-        currentKey,
-        limits,
-        usage,
-        balance,
-        logs,
-        sessions,
-        prices,
-        fetchedAt
-      };
-    } catch (error) {
-      lastError = error;
+    const settings = readTransitHubSettings(app, options.platform);
+    if (!settings?.enabled) return failureResult("not-configured", t("settings.usage.errors.notConfigured"), fetchedAt);
+    const getToken = options.getAccessToken ?? (async () => getDesktopSsoAccessToken() || "");
+    const peekToken = options.peekAccessToken ?? (() => getDesktopSsoAccessToken() || "");
+    const candidate = settings.auth.mode === "apikey"
+      ? readAgentPlatformUsageProvider(app, settings.auth.providerKey, options.platform)
+      : { providerKey: "", providerName: "Transit Hub", baseURL: settings.baseUrl, model: "", sourcePath: "", apiKey: "" };
+    if (settings.auth.mode === "apikey" && new URL(candidate.baseURL).origin !== new URL(settings.baseUrl).origin) {
+      throw new Error("Transit Hub and API key provider origins do not match.");
     }
+    configurationReady = true;
+    candidate.baseURL = settings.baseUrl;
+    if (settings.auth.mode === "access-token") candidate.apiKey = await getToken(false);
+    if (!candidate.apiKey) return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
+    async function refreshAndRetry(): Promise<DesktopUsageProfileResult> {
+      if (options.tokenRefreshAttempted || peekToken() !== candidate.apiKey) {
+        return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
+      }
+      const refreshed = await getToken(true);
+      if (!refreshed) return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
+      return getDesktopUsageProfile(app, { ...options, tokenRefreshAttempted: true });
+    }
+    let currentKey;
+    try {
+      currentKey = normalizeCurrentKey(await fetchUsageJson(fetchImpl, candidate, "/api/me"));
+    } catch (error) {
+      if (settings.auth.mode === "access-token" && error instanceof UsageProfileFetchError && error.status === 401) return await refreshAndRetry();
+      throw error;
+    }
+    const from = new Date(now);
+    from.setUTCDate(from.getUTCDate() - 364);
+    from.setUTCHours(0, 0, 0, 0);
+    const unavailableSections: Array<"limits" | "usage" | "balance" | "logs" | "sessions" | "prices"> = [];
+    let unauthorizedSection = false;
+    async function section<T>(name: typeof unavailableSections[number], read: () => Promise<T>): Promise<T | null> {
+      try { return await read(); } catch (error) {
+        if (error instanceof UsageProfileFetchError && error.status === 401) unauthorizedSection = true;
+        unavailableSections.push(name);
+        return null;
+      }
+    }
+    const [limits, usage, balance, logs, sessions, prices] = await Promise.all([
+      section("limits", () => fetchUsageJson(fetchImpl, candidate, "/api/me/limits").then(normalizeLimits)),
+      section("usage", () => fetchUsageJson(fetchImpl, candidate, "/api/me/usage", { bucket: "day", from: from.toISOString(), to: now.toISOString() }).then(normalizeUsage)),
+      section("balance", () => fetchUsageJson(fetchImpl, candidate, "/api/me/balance").then(normalizeBalance)),
+      section("logs", () => fetchUsageJson(fetchImpl, candidate, "/api/me/logs", { limit: "500" }).then((v) => normalizeListResult(v, normalizeLogEntry))),
+      section("sessions", () => fetchUsageJson(fetchImpl, candidate, "/api/me/sessions", { include_stale: "true", limit: "500" }).then((v) => normalizeListResult(v, normalizeSession))),
+      section("prices", () => fetchUsageJson(fetchImpl, candidate, "/api/me/prices").then(normalizePrices))
+    ]);
+    if (settings.auth.mode === "access-token" && unauthorizedSection && !options.tokenRefreshAttempted) return await refreshAndRetry();
+    if (settings.auth.mode === "access-token" && peekToken() !== candidate.apiKey) {
+      return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
+    }
+    // Reimporting configuration while a query is running invalidates its results too.
+    if (JSON.stringify(readTransitHubSettings(app, options.platform)) !== JSON.stringify(settings)) {
+      return failureResult("unavailable", t("settings.usage.errors.unavailable"), fetchedAt);
+    }
+    return {
+      ok: true,
+      provider: { providerKey: candidate.providerKey, providerName: candidate.providerName, baseURL: candidate.baseURL, model: candidate.model, authMode: settings.auth.mode },
+      currentKey, limits, usage, balance, logs, sessions, prices, unavailableSections, fetchedAt
+    };
+  } catch (error) {
+    if (!configurationReady) return failureResult("error", t("settings.usage.errors.configuration"), fetchedAt);
+    // Remote errors must not echo credentials or response bodies into IPC/logs.
+    return failureResult(error instanceof UsageProfileFetchError && [401, 403].includes(error.status) ? "unauthorized" : "unavailable",
+      t(error instanceof UsageProfileFetchError && [401, 403].includes(error.status) ? "settings.usage.errors.unauthorized" : "settings.usage.errors.unavailable"), fetchedAt);
   }
-
-  if (lastError instanceof UsageProfileFetchError && (lastError.status === 401 || lastError.status === 403)) {
-    return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
-  }
-
-  return failureResult(
-    "unavailable",
-    lastError instanceof Error ? lastError.message : t("settings.usage.errors.unavailable"),
-    fetchedAt
-  );
 }

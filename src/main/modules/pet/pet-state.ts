@@ -154,6 +154,16 @@ export function resolveMergedDesktopPetStatus(
     return normalizeLocalDesktopPetStatus(localStatus);
   }
 
+  if ((navigationAttention?.total.pendingCount ?? 0) > 0) {
+    return {
+      status: "awaiting",
+      hint: t("desktopPet.status.awaitingConfirm"),
+      messagePreview: "",
+      unreadCount: navigationAttention?.total.unreadCount ?? 0,
+      chatId: activeTasks.find((task) => task.status === "awaiting")?.chatId ?? null,
+    };
+  }
+
   const attentionTask = activeTasks.find((task) => task.status === "awaiting") ?? activeTasks[0];
   if (attentionTask) {
     return {

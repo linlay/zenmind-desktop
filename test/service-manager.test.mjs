@@ -2682,7 +2682,7 @@ test("agent-platform deploy command only appends Desktop required args", async (
   }
 });
 
-test("agent-platform deploy passes refreshed image-2 lifecycle args without backfilling model defaults", async () => {
+test("agent-platform deploy passes image and speech lifecycle args without backfilling model defaults", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2702,6 +2702,7 @@ test("agent-platform deploy passes refreshed image-2 lifecycle args without back
     const configuredArgs = [
       "--ai-web-fetch-model-key", "custom-web-fetch",
       "--ai-image-generate-model-key", "th-gpt-image-2",
+      "--ai-speech-generate-model-key", "th-minimax-speech-2_8-hd",
       "--coder-reasoning-effort", "HIGH"
     ];
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -2744,6 +2745,7 @@ test("agent-platform deploy passes refreshed image-2 lifecycle args without back
     assert.deepEqual(findFlagValues(command, "--ai-vision-ocr-model-key"), []);
     assert.deepEqual(findFlagValues(command, "--ai-web-fetch-model-key"), ["custom-web-fetch"]);
     assert.deepEqual(findFlagValues(command, "--ai-image-generate-model-key"), ["th-gpt-image-2"]);
+    assert.deepEqual(findFlagValues(command, "--ai-speech-generate-model-key"), ["th-minimax-speech-2_8-hd"]);
     assert.deepEqual(findFlagValues(command, "--coder-model-key"), []);
     assert.ok(command.indexOf("--output-dir") > command.indexOf("HIGH"));
   } finally {

@@ -1,5 +1,5 @@
 import { RobotOutlined, CodeOutlined, DatabaseOutlined, ApiOutlined } from "@ant-design/icons";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   AssistantCreateProjectResult,
@@ -19,7 +19,17 @@ import {
 } from "../../../shared/project-creation";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
+import { useI18n } from "../../i18n/useI18n";
+import { projectCreationOptionsCache } from "./projectCreationOptionsCache";
+
 type Translate = TranslateFunction;
+
+function orderedOptions(options: AssistantProjectCreationOptions): AssistantProjectCreationOptions {
+  return { ...options, types: PROJECT_TYPES.flatMap(({ key }) => {
+    const type = options.types.find((item) => item.key === key);
+    return type ? [type] : [];
+  }) };
+}
 
 // Desktop owns the type catalog; Platform supplies runtime presets and availability.
 const PROJECT_TYPES = [
@@ -62,9 +72,13 @@ function groupMembers(group: AssistantProjectCreationGroup, t: Translate) {
  * model and project directory on one screen. Platform owns runtime capabilities.
  */
 export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onClose, onCreated }: CreateProjectDialogProps) {
+  const { locale } = useI18n();
+  const cache = projectCreationOptionsCache(locale);
+  const cachedOptions = cache.peek();
   const [workspaceDir, setWorkspaceDir] = useState(initialWorkspaceDir);
-  const [options, setOptions] = useState<AssistantProjectCreationOptions | null>(null);
-  const [selection, setSelection] = useState<ProjectCreationSelection | null>(null);
+  const [options, setOptions] = useState<AssistantProjectCreationOptions | null>(() => cachedOptions ? orderedOptions(cachedOptions) : null);
+  const [selection, setSelection] = useState<ProjectCreationSelection | null>(() => cachedOptions ? initialProjectCreationSelection(orderedOptions(cachedOptions)) : null);
+  const selectionTouched = useRef(false);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [pending, setPending] = useState(false);
@@ -98,7 +112,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
   useEffect(() => {
     let cancelled = false;
     setLoadError("");
-    void window.electronAPI.assistant.getProjectCreationOptions().then(
+    void cache.load(loadAttempt > 0).then(
       (result) => {
         if (cancelled) {
           return;
@@ -107,16 +121,9 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
           setLoadError(result.message || t("sidebar.project.optionsFailed"));
           return;
         }
-        const runtimeOptions = result.options;
-        const next = {
-          ...runtimeOptions,
-          types: PROJECT_TYPES.flatMap(({ key }) => {
-            const type = runtimeOptions.types.find((item) => item.key === key);
-            return type ? [type] : [];
-          }),
-        };
+        const next = orderedOptions(result.options);
         setOptions(next);
-        setSelection(initialProjectCreationSelection(next));
+        setSelection(current => current && selectionTouched.current ? current : initialProjectCreationSelection(next));
       },
       (reason) => {
         if (!cancelled) {
@@ -127,7 +134,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
     return () => {
       cancelled = true;
     };
-  }, [loadAttempt, t]);
+  }, [cache, loadAttempt, t]);
 
   const type = options && selection ? findProjectCreationType(options, selection.typeKey) : undefined;
   const effectiveModelKey = options && selection ? resolveProjectCreationModel(options, selection) : "";
@@ -143,6 +150,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
   }, [options, type]);
 
   function update(next: ProjectCreationSelection) {
+    selectionTouched.current = true;
     setSelection(next);
     setError("");
   }
@@ -157,7 +165,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!options || !selection || pending) {
+    if (!options || !selection || pending || loadError) {
       return;
     }
     if (problem) {
@@ -369,6 +377,12 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
           </>
         )}
 
+        {loadError && options && selection ? (
+          <div className="sidebar-project-dialog-status" role="alert">
+            <span>{loadError}</span>
+            <button type="button" className="sidebar-website-secondary-button" onClick={() => setLoadAttempt(value => value + 1)}>{t("sidebar.project.optionsRetry")}</button>
+          </div>
+        ) : null}
         {error ? (
           <div className="sidebar-website-dialog-error" role="alert">
             {error}
@@ -381,7 +395,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
           <button
             type="submit"
             className="sidebar-website-primary-button"
-            disabled={pending || !options || !selection || Boolean(problem)}
+            disabled={pending || !options || !selection || Boolean(problem) || Boolean(loadError)}
             title={problem ? t(PROBLEM_MESSAGES[problem]) : undefined}
           >
             {pending ? t("sidebar.project.creating") : t("sidebar.project.create")}

@@ -1,4 +1,4 @@
-import { acquireWorkPanelControlScope, type SiteControlScope } from "./site-scope";
+import { acquireWorkPanelControlScope, workPanelContainerContent, type SiteControlScope } from "./site-scope";
 import { ipcMain, type WebContents } from "electron";
 import { ensureWorkPanelPageDialogIpc } from "./page-dialogs";
 import type { DesktopPageContextSnapshot, ServiceState } from "../../../../shared/contracts";
@@ -187,6 +187,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
       dialogIpc: ipcMain,
       getSurfaces: listSurfaces,
       acquireWorkPanelScope: (containerId, chatId) => acquireWorkPanelControlScope(options.browserSurfaces, containerId, chatId),
+      classifyWorkPanelContainer: (surface) => workPanelContainerContent(options.browserSurfaces, surface),
       resolveWebContents,
       activateTarget,
       closeTarget,

@@ -327,11 +327,11 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and layered cl
   assert.match(css, /\.chat-work-panel-tab\.is-overview\s*\{[^}]*flex:\s*0 0 auto;[^}]*width:\s*max-content;[^}]*min-width:\s*max-content;[^}]*max-width:\s*none/su);
   assert.match(css, /\.chat-work-panel-tab\s*\{[^}]*flex:\s*0 1 auto;[^}]*width:\s*fit-content;[^}]*min-width:\s*140px;[^}]*max-width:\s*240px/su);
   assert.match(css, /\.chat-work-panel-tab-trigger\s*\{[^}]*padding:\s*0 10px;/su);
-  assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*34px/su);
+  assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*flex:\s*0 0 24px;[^}]*width:\s*24px/su);
   assert.match(css, /\.chat-work-panel-tab-loading-spinner/u);
   assert.doesNotMatch(css, /\.chat-work-panel-resource-actions/u);
   assert.doesNotMatch(css, /\.chat-work-panel-resource-action\.ant-btn/u);
-  assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);
+  assert.match(css, /\.chat-work-panel-tab\.has-close \.chat-work-panel-tab-trigger[^}]*padding-right:\s*4px/su);
   assert.doesNotMatch(css, /\.chat-work-panel-tab-close::before\s*\{/u);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\.is-fullscreen\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%/su);
   assert.match(css, /\.chat-work-panel \.external-webview-browser-chrome\s*\{\s*display:\s*none;/su);

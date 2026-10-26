@@ -1190,6 +1190,12 @@ export function AppShell() {
     shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
   const shouldPollStartup = startupRestoreState === null || showStartupCard;
   const showsEmptyContentSurface = location.pathname === "/";
+  // SSO may temporarily replace the startup card without ending startup.
+  const shouldShowEnterpriseChat =
+    !showStartupCard &&
+    resolvedStartupRestoreState.phase !== "env-import-required" &&
+    !showsEmptyContentSurface &&
+    location.pathname !== EMPTY_WEB_SURFACE_ROUTE;
   const webItemMap = useMemo(() => {
     return new Map<WebEntryKey, WebNavigationEntry>(webItems.map((item) => {
       if (item.kind === "webapp") {
@@ -5302,7 +5308,11 @@ export function AppShell() {
           onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}
         />
       ) : null}
-      <EnterpriseChatFloatingPanel desktopSsoStatus={desktopSsoStatus} />
+      <EnterpriseChatFloatingPanel
+        desktopSsoStatus={desktopSsoStatus}
+        isMac={isMac}
+        hidden={!shouldShowEnterpriseChat}
+      />
       <ProjectFloatingWebviews
         entries={projectFloatingWebviews}
         hostTheme={resolvedTheme}

@@ -22,6 +22,7 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
   "Surface.uploadFiles",
   "Surface.getDownloads",
   "Surface.readDownload",
+  "Surface.setViewport",
   "Page.bringToFront",
   "Page.enable",
   "Page.navigate",

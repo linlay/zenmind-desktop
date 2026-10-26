@@ -362,3 +362,35 @@ test("root uploaded images open natively and a root DOCX falls back by content t
     fs.rmSync(homePath, { recursive: true, force: true });
   }
 });
+
+test("native image reveal validates ownership and originals on macOS and Windows", async () => {
+  for (const platform of ["darwin", "win32"]) {
+    const homePath = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-image-reveal-"));
+    const root = path.join(resolveRuntimeRootPath({ homePath, platform: process.platform }), "chats", "chat-reveal", "artifacts");
+    fs.mkdirSync(root, { recursive: true });
+    const imagePath = path.join(root, "图片 image.png");
+    fs.writeFileSync(imagePath, PNG_1X1);
+    const registry = new WorkPanelResourceImageRegistry();
+    const calls = [];
+    configureRegistry(registry, homePath, { platform, fileShell: { showItemInFolder: (target) => calls.push(target) },
+      fetchRemoteResource: async () => ({ bytes: PNG_1X1, mimeType: "image/png" }) });
+    const webContents = sender();
+    try {
+      const source = { ownerChatId: "chat-reveal", rendererWebContentsId: webContents.id, profile: "artifact", agentKey: "agent", chatId: "chat-reveal", resourceId: "image", relativePath: "artifacts/图片 image.png" };
+      const prepared = await registry.prepareClaim(source);
+      const claimed = await registry.claim({ claimId: prepared.claimId, ownerChatId: source.ownerChatId, rendererGeneration: "generation" }, webContents);
+      const request = { ownerChatId: source.ownerChatId, rendererGeneration: "generation", handleId: claimed.resource.handleId };
+      assert.equal(registry.reveal(request, webContents).ok, true);
+      assert.deepEqual(calls, [fs.realpathSync(imagePath)]);
+      for (const forged of [{ ...request, ownerChatId: "other" }, { ...request, rendererGeneration: "stale" }]) assert.equal(registry.reveal(forged, webContents).ok, false);
+      assert.equal(registry.reveal(request, sender(99)).ok, false);
+      fs.unlinkSync(imagePath);
+      assert.equal(registry.reveal(request, webContents).ok, false);
+      const remote = await registry.prepareClaim({ ...source, resourceId: "remote", relativePath: "artifacts/remote.png" });
+      const remoteClaim = await registry.claim({ claimId: remote.claimId, ownerChatId: source.ownerChatId, rendererGeneration: "generation" }, webContents);
+      assert.equal(remoteClaim.resource.localOriginal, false);
+      assert.equal(registry.reveal({ ...request, handleId: remoteClaim.resource.handleId }, webContents).ok, false);
+      assert.equal(calls.length, 1);
+    } finally { registry.dispose(); fs.rmSync(homePath, { recursive: true, force: true }); }
+  }
+});

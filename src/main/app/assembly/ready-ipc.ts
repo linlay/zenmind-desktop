@@ -52,6 +52,7 @@ export interface ReadyIpcDependencies {
   cancelLocalDocumentDraftPromotion: import("../ipc-registration-contracts").MainIpcRegistrationOptions["cancelLocalDocumentDraftPromotion"];
   promoteLocalDocumentDraft: import("../ipc-registration-contracts").MainIpcRegistrationOptions["promoteLocalDocumentDraft"];
   resetRuntimeEnv: import("../ipc-registration-contracts").MainIpcRegistrationOptions["resetRuntimeEnv"];
+  refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
   appearanceRuntime: AppearanceRuntime;
   readonly setStartupPhase: (phase: StartupPhase) => void;
   readonly startupRestoreController: ReturnType<typeof createStartupRestoreController>;
@@ -110,6 +111,7 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     promoteLocalDocumentDraft: dependencies.promoteLocalDocumentDraft,
     resetRuntimeEnv: dependencies.resetRuntimeEnv,
     appearanceRuntime: dependencies.appearanceRuntime,
+    refreshDesktopSsoIdentityToken: dependencies.refreshDesktopSsoIdentityToken,
     app,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
     servicesFacade: dependencies.servicesFacade,

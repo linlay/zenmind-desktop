@@ -585,13 +585,14 @@ export interface DesktopUsageProfileProvider {
   providerName: string;
   baseURL: string;
   model: string;
+  authMode: "apikey" | "access-token";
 }
 
 export interface DesktopUsageProfileRateLimitDefinition {
   window: string;
   request_quota: number;
   token_quota: number;
-  cost_quota_micro: number;
+  quota_microcredits: string;
 }
 
 export interface DesktopUsageProfileAPIKey {
@@ -625,13 +626,14 @@ export interface DesktopUsageProfileTrafficBucket {
   cache_miss_tokens: number;
   cache_total_tokens: number;
   cache_hit_rate: number | null;
-  cost_micro: number;
+  charged_microcredits: string;
   error_requests: number;
   average_latency_ms: number;
 }
 
 export interface DesktopUsageProfileRateLimitStatus {
   window: string;
+  state?: "idle" | "active" | "expired";
   starts_at: string;
   resets_at: string;
   requests: number;
@@ -640,9 +642,9 @@ export interface DesktopUsageProfileRateLimitStatus {
   tokens: number;
   token_quota: number;
   token_remaining: number;
-  cost_micro: number;
-  cost_quota_micro: number;
-  cost_remaining_micro: number;
+  charged_microcredits: string;
+  quota_microcredits: string;
+  remaining_microcredits: string;
 }
 
 export interface DesktopUsageProfileLimits {
@@ -658,10 +660,15 @@ export interface DesktopUsageProfileLimits {
 }
 
 export interface DesktopUsageProfileBalance {
-  currency: string;
-  cost_micro: number;
+  unit: "CREDITS";
+  microcredits_per_credit: 1000000;
+  quota_microcredits: string;
+  used_microcredits: string;
+  remaining_microcredits: string;
+  credits_unlimited: boolean;
   unlimited: boolean;
   items: DesktopUsageProfileRateLimitStatus[];
+  degraded_components: string[];
 }
 
 export interface DesktopUsageProfileLogEntry {
@@ -685,8 +692,12 @@ export interface DesktopUsageProfileLogEntry {
   cache_miss_tokens: number;
   cache_total_tokens: number;
   cache_hit_rate: number | null;
-  cost_micro: number;
+  charged_microcredits: string;
   estimated: boolean;
+  billing_status: string;
+  usage_source: string;
+  characters: number;
+  image_count: number;
   error_type: string;
   created_at: string;
 }
@@ -716,10 +727,15 @@ export interface DesktopUsageProfilePrice {
   id: string;
   protocol: string;
   public_model: string;
-  input_cost_micro_per_1m_tokens: number;
-  input_cache_hit_cost_micro_per_1m_tokens?: number | null;
-  output_cost_micro_per_1m_tokens: number;
-  currency: string;
+  input_microcredits_per_1m_tokens: string;
+  input_cache_hit_microcredits_per_1m_tokens?: string | null;
+  output_microcredits_per_1m_tokens: string;
+  unit: string;
+  billing: {
+    mode: string;
+    microcredits_per_10k_characters?: string;
+    image_prices?: Array<{ size: string; quality: string; charged_microcredits: string }>;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -735,17 +751,18 @@ export type DesktopUsageProfileResult =
       ok: true;
       provider: DesktopUsageProfileProvider;
       currentKey: DesktopUsageProfileAPIKey;
-      limits: DesktopUsageProfileLimits;
+      limits: DesktopUsageProfileLimits | null;
       usage: {
         summary: DesktopUsageProfileTrafficBucket;
         items: DesktopUsageProfileTrafficBucket[];
-      };
-      balance: DesktopUsageProfileBalance;
-      logs: DesktopUsageProfileListResult<DesktopUsageProfileLogEntry>;
-      sessions: DesktopUsageProfileListResult<DesktopUsageProfileSession>;
+      } | null;
+      balance: DesktopUsageProfileBalance | null;
+      logs: DesktopUsageProfileListResult<DesktopUsageProfileLogEntry> | null;
+      sessions: DesktopUsageProfileListResult<DesktopUsageProfileSession> | null;
       prices: {
         items: DesktopUsageProfilePrice[];
-      };
+      } | null;
+      unavailableSections: Array<"limits" | "usage" | "balance" | "logs" | "sessions" | "prices">;
       fetchedAt: string;
     }
   | {
@@ -1287,6 +1304,7 @@ export interface DesktopApi {
       claim: (input: WorkPanelResourceImageClaimRequest) => Promise<WorkPanelResourceImageClaimResult>;
       read: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageReadResult>;
       release: (input: WorkPanelResourceImageReleaseRequest) => Promise<WorkPanelResourceImageActionResult>;
+      reveal: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageActionResult>;
       openExternal: (input: WorkPanelResourceImageExternalOpenRequest) => Promise<WorkPanelResourceImageActionResult>;
       ai: (input: WorkPanelResourceImageAiRequest) => Promise<WorkPanelResourceImageAiResult>;
       cancelAi: (input: WorkPanelResourceImageAiCancelRequest) => Promise<WorkPanelResourceImageActionResult>;

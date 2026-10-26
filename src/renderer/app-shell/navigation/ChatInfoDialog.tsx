@@ -322,13 +322,21 @@ export function ChatInfoDialog({
                     <div className="sidebar-chat-info-run-timing">{formatChatInfoRunTiming(run, t)}</div>
                   </div>
                   <div className="sidebar-chat-info-run-buttons">
-                    <button type="button" className="sidebar-agent-secondary-button sidebar-chat-info-action-button"
+                    <button type="button" className={[
+                      "sidebar-chat-info-row-copy",
+                      copyFeedback[`run-id:${run.runId}`] === "copied" ? "is-copied" : "",
+                      copyFeedback[`run-id:${run.runId}`] === "failed" ? "is-failed" : "",
+                    ].filter(Boolean).join(" ")}
                       title={feedbackText(`run-id:${run.runId}`, t("sidebar.chat.infoCopyRunId"))}
                       aria-label={feedbackText(`run-id:${run.runId}`, t("sidebar.chat.infoCopyRunId"))}
                       onClick={() => void copy(`run-id:${run.runId}`, run.runId)}>
                       <CopyIcon copied={copyFeedback[`run-id:${run.runId}`] === "copied"} />
                     </button>
-                    <button type="button" className="sidebar-agent-secondary-button sidebar-chat-info-action-button"
+                    <button type="button" className={[
+                      "sidebar-chat-info-row-copy sidebar-chat-info-copy-label",
+                      copyFeedback[`run-json:${run.runId}`] === "copied" ? "is-copied" : "",
+                      copyFeedback[`run-json:${run.runId}`] === "failed" ? "is-failed" : "",
+                    ].filter(Boolean).join(" ")}
                       title={feedbackText(`run-json:${run.runId}`, t("sidebar.chat.infoCopyRunJson"))}
                       aria-label={feedbackText(`run-json:${run.runId}`, t("sidebar.chat.infoCopyRunJson"))}
                       disabled={copyFeedback[`run-json:${run.runId}`] === "loading"}

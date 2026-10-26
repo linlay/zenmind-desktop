@@ -59,7 +59,7 @@ Desktop 为 Agent Platform 签发 app token 时始终使用本地 Identity Cente
 
 官网登录、退出、恢复、切换账号不轮换本地聊天连接，也不清空 Root Observer、运行订阅、页面操作授权或 WebApp grant。本地 endpoint、设备或服务凭据身份真正改变时，原有连接失效与授权校验仍生效。WebApp 的本地应用身份与页面/runtime 归属校验保留；未登录官网不妨碍本地 WebApp 调用。
 
-Tunnel Hub、企业聊天、云看板和市场的用户态业务继续使用 canonical SSO token。显式 `authMode: oneid` 连接器按自己的外部凭据规则工作；Provider 登录领取 Key 的启动/停止门禁保持原有策略。这些功能不能改变本地 Platform 调用主体。
+Tunnel Hub、企业聊天、云看板和市场的用户态业务继续使用 canonical SSO token。显式 `authMode: oneid` 连接器按自己的外部凭据规则工作；`useAccessToken` Provider 只读取 canonical token 文件，不设启动/停止门禁。这些功能不能改变本地 Platform 调用主体。
 
 Desktop 与 Platform 应一起发布：Platform 的宿主入口验证已签名的 app token、设备和非空本地主体，不再要求官网个人主体前缀。已有持久 Run 的控制身份不在 Desktop 中改写，服务端不因本变更放宽不同运行身份间的控制权限。
 
@@ -83,17 +83,18 @@ Frame Port contract 与 Agent WebClient bundle、vendored contract hash 和 Desk
 
 Desktop 通过受控文件协议把 canonical token 的路径交给 `agent-platform`。Platform 在创建普通智能体 Host Bash 时按需读取并注入，不把 token 放入 Desktop 全局环境或服务启动参数。
 
-Workspace Terminal、容器、代理、ACP、MCP、LSP 与 sidecar 默认不继承该凭据。扩展新的注入面必须单独完成威胁分析和授权设计。
+Platform 的第二个消费方是声明 `useAccessToken: true` 的模型 Provider：每次出站模型请求重新读取该文件，只发往该 Provider 的 `baseUrl`，所有协议统一使用 `Authorization: Bearer`。该 Provider 不再使用 YAML 中的 `apiKey`，也不把 token 写回 registry、日志或 Provider 摘要。KBX 与记忆 worker 只在单次调用的私有配置中携带当次读取的 token，不常驻保存。当前不维护 Provider 地址白名单：能修改该 Provider YAML 的执行面可以改写 `baseUrl` 并收到账号级 token，因此 registry 写权限必须保持受控。静态 `apiKey` 对能读取 registry 的执行面同样可见，但 SSO token 的作用范围更大；若需收紧，由 Platform 固定 `useAccessToken` Provider 的目标地址。
+
+Workspace Terminal、容器、代理、ACP、MCP、LSP 与其他 sidecar 默认不继承该凭据。扩展新的注入面必须单独完成威胁分析和授权设计。
 
 ### 业务服务授权
 
-Provider 登记由运行环境 `provider-register.json` 选择 Grant 或登录凭据模式，文件缺失时不获取 Key。Grant 模式保持一次性消费与成功清理；登录模式使用 main 持有的 canonical access token 和已确认的 Desktop 设备号直接向 Transit Hub 绑定并领取 Key，不创建中间 Grant，也不把 access token 或返回的 Key 写回登记文件。
+模型凭据有两种互不回退的来源，由运行环境交付决定：
 
-Transit Hub 使用受信任公钥验证身份，以签发方、稳定用户 ID 和设备号作为绑定。重复领取返回同一 Key，不重置额度和有效期；服务端只在该受保护接口解密返回绑定 Key。Desktop 不从未经验证的 JWT claims 自行建立用户身份，也不接受页面传入用户 ID 或模型凭据。
+- Grant：运行环境 `provider-register.json` 提供一次性 Grant JWT，Desktop 向 Transit Hub `/api/apply-apikey` 换取 `dk_` Key 并写入选定 Provider，成功后清理登记文件。文件缺失时不获取 Key。登记沿用 Electron 的 macOS/Windows 系统代理解析，省略 Cookie、拒绝重定向并设置请求超时；网络和业务失败阻止依赖服务启动，错误不包含原始凭据。
+- 员工登录身份：Provider YAML 声明 `useAccessToken: true`，Desktop 不申请、不写入、不清除任何 Key，只维护 canonical token 文件（登录发布、定时提前续期、退出删除）。Transit Hub 用认证中心公钥离线验签，按员工身份计量，不发放 API Key。未登录时 Platform/WebClient 照常启动，该 Provider 的模型请求返回需要登录；登录、续期或退出后，下一次请求立即使用当前文件内容，不重启服务、不热更新 registry。认证中心登出不撤销仍有效的 JWT，需要立即停用时由 Transit Hub 后台禁用员工记录。
 
-两种模式都沿用 Electron 的 macOS/Windows 系统代理解析，省略 Cookie、拒绝重定向并设置请求超时。登录模式只允许无 URL 凭据、查询参数和片段的 HTTPS 配置地址；401 仅允许 main 刷新一次 canonical token，不能回退到 Grant。返回前重新验证当前 token、设备、登记配置和身份 generation，迟到响应不得覆盖其他账号的配置。Grant 模式的网络和业务失败仍阻止依赖服务启动；access-token 模式的申请失败只影响选定 Provider 的凭据，不阻止 Platform/WebClient 启动，错误不包含原始凭据。
-
-登录模式选中的 Provider 属于此登记策略管理，其 Key 可在登录后替换并在身份失效后清除，不停止 Platform/WebClient；配置通过 Platform 热更新生效，已运行任务保留既有快照，其他 Provider 与服务内部配置不受此流程修改。生命周期处理见[启动初始化与恢复](启动初始化与恢复.md)。
+原“登录凭据换设备 Key”（`provider-register.json` 的 `mode: access-token`，Transit Hub `/api/bind-apikey`）已随服务端接口一起退役。遗留文件会被跳过并记录警告，不回退到 Grant，也不阻止启动。同一 Provider 不应同时交付登记文件和 `useAccessToken`。生命周期处理见[启动初始化与恢复](启动初始化与恢复.md)。
 
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 

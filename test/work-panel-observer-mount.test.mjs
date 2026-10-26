@@ -9,7 +9,10 @@ const ts = require("typescript");
 
 // Execute the real host render, with effects and native surfaces stubbed out.
 // Inspect guest-bearing item subtrees, not tab labels (which stay mounted).
-function loadHost(onProvider = () => {}) {
+function loadHost(onProvider = () => {}, stateful = false) {
+  const slots = [];
+  let cursor = 0;
+  let uuid = 0;
   const source = fs.readFileSync(new URL("../src/renderer/work-panel/WorkPanelHost.tsx", import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -19,13 +22,19 @@ function loadHost(onProvider = () => {}) {
   const module = { exports: {} };
   vm.runInNewContext(outputText, {
     exports: module.exports, module,
-    crypto: { randomUUID: () => "test-generation" },
+    crypto: { randomUUID: () => `test-generation-${++uuid}` },
     document: { documentElement: { dataset: { theme: "light" } } },
+    window: { electronAPI: { webs: { webapps: { listOpenWindows: async () => [] } } } },
     require: (id) => {
       if (id === "react/jsx-runtime") return require(id);
       if (id === "react") return {
         lazy: () => "test-surface", Suspense: "test-suspense",
-        useState: (value) => [typeof value === "function" ? value() : value, noop],
+        useState: (value) => {
+          if (!stateful) return [typeof value === "function" ? value() : value, noop];
+          const index = cursor++;
+          if (!(index in slots)) slots[index] = typeof value === "function" ? value() : value;
+          return [slots[index], update => { slots[index] = typeof update === "function" ? update(slots[index]) : update; }];
+        },
         useRef: (current) => ({ current }), useCallback: (value) => value,
         useEffect: (effect) => { if (effect.toString().includes("registerDesktopActionProviderForScope")) effect(); }, useLayoutEffect: noop,
       };
@@ -36,7 +45,7 @@ function loadHost(onProvider = () => {}) {
       return stubs;
     },
   });
-  return module.exports.WorkPanelHost;
+  return (...args) => { cursor = 0; return module.exports.WorkPanelHost(...args); };
 }
 
 function findNodes(tree, predicate) {
@@ -116,3 +125,52 @@ test("global desktop WorkPanel actions reject local draft keys and resolve only 
   const result = await provider({ action: "desktop.workpanel.getState", source: { chatId: "real-chat", agentKey: "main" }, args: {} });
   assert.equal(result.ok, true); assert.equal(result.result.state, canonical);
 });
+
+for (const isMac of [true, false]) {
+  test(`${isMac ? "macOS" : "Windows"}: launcher URL drafts survive tab and Chat switching independently`, () => {
+    const StatefulHost = loadHost(() => {}, true);
+    const commands = [];
+    let openSucceeded = false;
+    const props = {
+      activeChatId: "a", isMac, isWindows: !isMac, fullscreenOwnerChatId: null,
+      state: { workspaces: [{ workspaceId: "workspace-a", ownerChatId: "a", activeItemId: "overview", items: [
+        { itemId: "overview", title: "Overview", descriptor: { kind: "webclient", module: "overview", route: "/overview", context: {} } },
+      ] }], review: { activeItemIdsByOwnerChatId: {} } },
+      launcher: { webapps: [] }, dispatchCommand: command => { commands.push(command); return { ok: openSucceeded }; }, onFullscreenChange: async () => true,
+    };
+    const render = () => StatefulHost(props);
+    const launcher = tree => findNodes(tree, node => typeof node.props.onUrlDraftChange === "function")[0];
+    const add = tree => findNodes(tree, node => node.props.className === "chat-work-panel-add-button")[0].props.onClick();
+    add(render());
+    launcher(render()).props.onUrlDraftChange("first.example/path");
+    add(render());
+    assert.equal(launcher(render()).props.urlDraft, "");
+    launcher(render()).props.onUrlDraftChange("second.example/path");
+    const tabs = findNodes(render(), node => node.props.title === "chatWorkPanel.newTab.title" && node.props.onActivate);
+    tabs[0].props.onActivate();
+    assert.equal(launcher(render()).props.urlDraft, "first.example/path");
+    findNodes(render(), node => node.props.title === "Overview" && node.props.onActivate)[0].props.onActivate();
+    assert.equal(launcher(render()), undefined);
+    tabs[0].props.onActivate();
+    assert.equal(launcher(render()).props.urlDraft, "first.example/path");
+    props.activeChatId = "b";
+    assert.equal(launcher(render()), undefined);
+    props.activeChatId = "a";
+    assert.equal(launcher(render()).props.urlDraft, "first.example/path");
+    tabs[1].props.onActivate();
+    assert.equal(launcher(render()).props.urlDraft, "second.example/path");
+    assert.equal(tabs[1].props.closeShortcut, isMac ? "⌘W" : "Ctrl+W");
+    tabs[1].props.onClose();
+    assert.equal(launcher(render()), undefined);
+    tabs[0].props.onActivate();
+    assert.equal(launcher(render()).props.urlDraft, "first.example/path");
+    launcher(render()).props.onOpenWeb("https://example.com/");
+    assert.equal(launcher(render()).props.urlDraft, "first.example/path", "failed opens retain the launcher draft");
+    openSucceeded = true;
+    launcher(render()).props.onOpenWeb("https://example.com/");
+    const opened = commands.at(-1);
+    assert.equal(opened.webInstanceId, tabs[0].key);
+    assert.equal(opened.descriptor.url, "https://example.com/");
+    assert.equal(launcher(render()), undefined);
+  });
+}

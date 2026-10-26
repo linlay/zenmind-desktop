@@ -58,6 +58,24 @@ test("explicit Chrome overrides WorkPanel and lazily reuses saved authorization"
   assert.equal(h.fallbacks.length, 0); assert.equal(JSON.stringify([opened, h.changes]).includes(token), false);
 });
 
+test("viewport emulation obeys the task gate and never connects or falls back from Chrome", async t => {
+  const chrome = harness("chrome"); t.after(() => chrome.runtime.dispose()); chrome.runtime.registerRun(source());
+  const viewport = { width: 390, height: 844, mobile: true };
+  await assert.rejects(chrome.cdp("Surface.setViewport", viewport), { code: "browser_selection_required" });
+  await chrome.select("chrome");
+  await assert.rejects(chrome.cdp("Surface.setViewport", viewport), error => error.code === "capability_unavailable" && /WorkPanel pages only/.test(error.message));
+  assert.equal(chrome.clients.length, 0);
+  assert.equal(chrome.fallbacks.length, 0);
+  assert.equal(chrome.runtime.state("chat-a").connectionRequest, undefined);
+
+  const panel = harness("chrome"); t.after(() => panel.runtime.dispose()); panel.runtime.registerRun(source());
+  await panel.select("workpanel");
+  await panel.cdp("Surface.setViewport", viewport, source(), "web:owned");
+  assert.deepEqual(panel.fallbacks, [{ method: "Surface.setViewport", params: viewport, surfaceId: "web:owned" }]);
+  assert.equal(panel.clients.length, 0);
+  await assert.rejects(panel.select("chrome"), { code: "browser_target_locked" });
+});
+
 test("new Runs and Chats choose their own intent while remembered Chrome pages keep one exclusive workspace", async t => {
   const h = harness(); t.after(() => h.runtime.dispose()); h.runtime.registerRun(source()); await h.select("chrome");
   const pages = (await h.cdp("Surface.list")).result.surfaces;
