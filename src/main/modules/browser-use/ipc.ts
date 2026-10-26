@@ -11,9 +11,9 @@ export function registerBrowserUseIpc(options: {
   getActiveChatId(): string | undefined;
   openExternal(url: string): Promise<void>;
   settingsStore?: {
-    read(): BrowserUsePreferences;
-    update(input: Omit<Extract<BrowserUseSettingsRequest, { action: "save" }>, "action">): BrowserUsePreferences;
-    forget(): BrowserUsePreferences;
+    read(): Promise<BrowserUsePreferences>;
+    update(input: Omit<Extract<BrowserUseSettingsRequest, { action: "save" }>, "action">): Promise<BrowserUsePreferences>;
+    forget(): Promise<BrowserUsePreferences>;
   };
   onSettingsChanged?(state: BrowserUseSettingsState): void;
 }) {
@@ -59,13 +59,13 @@ export function registerBrowserUseIpc(options: {
         case "get": break;
         case "save": {
           const { action: _action, ...preferences } = input;
-          options.settingsStore.update(preferences);
+          await options.settingsStore.update(preferences);
           break;
         }
         case "forget":
           if (options.runtime.hasActiveRuns())
             throw Object.assign(new Error("Stop active browser tasks before forgetting the connection."), { code: "browser_busy" });
-          options.settingsStore.forget();
+          await options.settingsStore.forget();
           await options.runtime.disconnectIdleConnections();
           break;
         case "install-extension": await options.openExternal(CHROME_BROWSER_EXTENSION_URL); break;
@@ -74,12 +74,18 @@ export function registerBrowserUseIpc(options: {
       // Runtime status notifications use a metadata-only snapshot. A trusted,
       // explicit settings query refreshes the real OS capability separately.
       let state = options.runtime.settingsState();
-      if (input.action === "get") state = { ...state, ...options.settingsStore.read() };
+      if (input.action === "get") {
+        const preferences = await options.settingsStore.read();
+        state = { ...options.runtime.settingsState(), ...preferences };
+      }
       else if (input.action === "forget") {
         // A corrupt first query may never have probed system storage. Refresh it
         // after recovery so the current page can save a replacement immediately.
         // An unavailable probe cannot undo authorization that was already forgotten.
-        try { state = { ...state, ...options.settingsStore.read() }; }
+        try {
+          const preferences = await options.settingsStore.read();
+          state = { ...options.runtime.settingsState(), ...preferences };
+        }
         catch { state = { ...state, secureStorageAvailable: false }; }
       }
       if (input.action !== "get") {

@@ -110,7 +110,7 @@ test("a Chrome page request locks the environment and same-browser selection rem
 test("a Chrome request entering its handshake cannot be redirected by a concurrent selection", async t => {
   let finish;
   const handshake = new Promise(resolve => { finish = resolve; });
-  const runtime = new BrowserUseRuntime({ preferences: { read: () => ({ defaultBackend: "chrome", rememberChromeConnection: true }), authorization: () => token },
+  const runtime = new BrowserUseRuntime({ preferences: { read: () => ({ defaultBackend: "chrome", rememberChromeConnection: true, hasSavedAuthorization: true, secureStorageAvailable: true }), authorization: async () => token },
     createClient: () => ({ async request(method) { if (method === "connect") { await handshake; return { connected: true, pages: [] }; } if (method === "list") return []; }, kill() {}, async disconnect() {} }) });
   t.after(() => runtime.dispose()); runtime.registerRun(source());
   const call = (method, params = {}) => runtime.cdp({ method, params, source: source() }, undefined, async () => { throw new Error("unexpected WorkPanel dispatch"); });

@@ -16,6 +16,7 @@ type Run = BrowserRunSource & {
   backend: BrowserUseBackend; ready: boolean; controller: AbortController; observations: Map<string, string>; connectionRequested?: boolean;
   checkedClient?: BrowserWorkerClient;
   connectionHealth?: { client: BrowserWorkerClient; promise: Promise<boolean> };
+  connectionSignal?: AbortSignal;
   awcpUsed?: boolean;
   browserSelected?: boolean;
   // Binding is chosen from task intent before the first page request, then frozen.
@@ -79,7 +80,7 @@ export class BrowserUseRuntime {
     createClient(onExit: () => void): BrowserWorkerClient;
     onChanged?(state: BrowserUseState): void;
     onSettingsChanged?(state: BrowserUseSettingsState): void;
-    preferences?: { read(): BrowserUsePreferences; authorization(): string | undefined };
+    preferences?: { read(): BrowserUsePreferences; authorization(): Promise<string | undefined> };
     /** Main compiles only installed and enabled website bridges for this exact URL. */
     getWebsiteBridgeScript?(url: string): string;
     stopRun?(runId: string, agentKey: string): Promise<unknown>;
@@ -241,43 +242,67 @@ export class BrowserUseRuntime {
     this.assertWorkspaceIdle(workspace, true);
     if (workspace.connection === "connecting") throw failure("browser_connecting", "Chrome is waiting for connection approval.");
     if (options.interactive && workspace.client) { await this.disconnectWorkspace(workspace); this.assertIdle(chatId); this.assertWorkspaceIdle(workspace); }
-    const extensionToken = !options.interactive && this.preferences().rememberChromeConnection ? this.options.preferences?.authorization() : undefined;
-    await this.connectWorkspace(workspace, { extensionToken });
+    const authorization = !options.interactive && this.preferences().rememberChromeConnection
+      ? () => this.options.preferences!.authorization() : undefined;
+    await this.connectWorkspace(workspace, { authorization, manual: true });
     this.changedWorkspace(workspace); return this.state(chatId);
   }
   /** A connection belongs to its workspace, never to the first Run waiting for it. */
-  private connectWorkspace(workspace: ChromeWorkspace, options: { extensionToken?: string; timeoutMs?: number }): Promise<void> {
+  private connectWorkspace(workspace: ChromeWorkspace, options: { authorization?: () => Promise<string | undefined>; manual?: boolean; timeoutMs?: number }): Promise<void> {
     if (workspace.connecting) return workspace.connecting.promise;
     if (workspace.connection === "connected" && workspace.client) return Promise.resolve();
     const previous = workspace.client; workspace.client = undefined; previous?.kill();
     workspace.pages.clear(); workspace.selectedSurfaceId = undefined;
     workspace.connection = "connecting"; workspace.error = undefined;
     const generation = ++workspace.generation, abort = new AbortController();
-    let client: BrowserWorkerClient;
-    try { client = this.options.createClient(() => {
-      if (!client || workspace.client !== client || workspace.generation !== generation) return;
-      const wasConnecting = workspace.connection === "connecting";
-      workspace.client = undefined; workspace.pages.clear(); workspace.selectedSurfaceId = undefined;
-      workspace.connection = "disconnected"; workspace.connecting?.abort.abort(); workspace.connecting = undefined;
-      workspace.owner = undefined; workspace.drain = undefined;
-      if (!wasConnecting) for (const run of this.runs.values()) if (run.workspaceId === workspace.id && run.backend === "chrome") run.controller.abort();
-      this.changedWorkspace(workspace); this.settingsChanged();
-    }); } catch {
-      const error = failure("browser_runtime_unavailable", "Chrome connection could not be started. Check Desktop's browser installation and connect again.");
-      workspace.connection = "error"; workspace.error = browserUseError(error);
-      this.changedWorkspace(workspace); this.settingsChanged(); return Promise.reject(error);
-    }
-    workspace.client = client; this.changedWorkspace(workspace);
+    let client: BrowserWorkerClient | undefined;
+    this.changedWorkspace(workspace);
     let timer: ReturnType<typeof setTimeout> | undefined, rejectAbort: () => void;
     const interrupted = new Promise<never>((_resolve, reject) => {
       rejectAbort = () => reject(failure("browser_disconnected", "Chrome connection was canceled."));
       abort.signal.addEventListener("abort", rejectAbort, { once: true });
     });
     const promise = Promise.resolve().then(async () => {
+      let extensionToken: string | undefined;
       try {
+        if (options.authorization) {
+          // Share the existing connection wait across Runs. Native Keychain work
+          // remains asynchronous and may outlive one bounded Desktop request.
+          timer = setTimeout(() => abort.abort(), 5 * 60_000);
+          try { extensionToken = await Promise.race([options.authorization(), interrupted]); }
+          catch (error) {
+            if (abort.signal.aborted) throw error;
+            throw failure(text(record(error).code) === "secure_storage_unavailable" ? "secure_storage_unavailable" : "browser_authorization_unavailable",
+              "The saved Chrome authorization is not available from system storage.");
+          }
+          clearTimeout(timer); timer = undefined;
+          if (abort.signal.aborted || workspace.generation !== generation) throw failure("browser_disconnected", "Chrome connection was canceled.");
+          if (!options.manual && !this.preferences().rememberChromeConnection) {
+            throw failure("browser_authorization_unavailable", "The saved Chrome authorization changed while it was being prepared.");
+          }
+          if (!options.manual && ![...this.runs.values()].some(run => run.workspaceId === workspace.id &&
+            workspace.owner?.runId === run.runId && workspace.owner.draining === false &&
+            run.backend === "chrome" && run.browserSelected && run.pageWorkStarted && !run.controller.signal.aborted &&
+            run.connectionSignal && !run.connectionSignal.aborted)) {
+            throw failure("browser_run_unavailable", "The browser task was stopped before authorization completed.");
+          }
+          if (!extensionToken && !options.manual) throw failure("browser_connection_required", "Connect Chrome to continue this task.");
+        }
+        try { client = this.options.createClient(() => {
+          if (!client || workspace.client !== client || workspace.generation !== generation) return;
+          const wasConnecting = workspace.connection === "connecting";
+          workspace.client = undefined; workspace.pages.clear(); workspace.selectedSurfaceId = undefined;
+          workspace.connection = "disconnected"; workspace.connecting?.abort.abort(); workspace.connecting = undefined;
+          workspace.owner = undefined; workspace.drain = undefined;
+          if (!wasConnecting) for (const run of this.runs.values()) if (run.workspaceId === workspace.id && run.backend === "chrome") run.controller.abort();
+          this.changedWorkspace(workspace); this.settingsChanged();
+        }); } catch {
+          throw failure("browser_runtime_unavailable", "Chrome connection could not be started. Check Desktop's browser installation and connect again.");
+        }
+        workspace.client = client; this.changedWorkspace(workspace);
         if (options.timeoutMs) timer = setTimeout(() => abort.abort(), options.timeoutMs);
         await Promise.race([client.request("connect", { channel: "chrome", clientName: workspace.connectionName,
-          ...(options.extensionToken ? { extensionToken: options.extensionToken } : {}) }, undefined, abort.signal), interrupted]);
+          ...(extensionToken ? { extensionToken } : {}) }, undefined, abort.signal), interrupted]);
         if (abort.signal.aborted || workspace.client !== client || workspace.generation !== generation) throw failure("browser_disconnected", "Chrome connection was canceled.");
         workspace.connection = "connected";
         await Promise.race([this.refreshWorkspacePages(workspace), interrupted]);
@@ -285,10 +310,12 @@ export class BrowserUseRuntime {
         for (const session of this.sessions.values()) if (session.workspace === workspace) session.connectionRequest = undefined;
         this.changedWorkspace(workspace); this.settingsChanged();
       } catch (error) {
-        const safeError = options.extensionToken ? failure("chrome_connection_failed", "Chrome could not reconnect with the saved authorization. Connect again from browser settings or choose a page.") : error;
+        const code = text(record(error).code), abandoned = code === "browser_run_unavailable";
+        const safeError = extensionToken && !abandoned && !["browser_runtime_unavailable", "browser_authorization_unavailable", "secure_storage_unavailable", "browser_settings_unavailable"].includes(code)
+          ? failure("chrome_connection_failed", "Chrome could not reconnect with the saved authorization. Connect again from browser settings or choose a page.") : error;
         if (workspace.client === client && workspace.generation === generation) {
-          workspace.client = undefined; workspace.pages.clear(); workspace.selectedSurfaceId = undefined; client.kill();
-          workspace.connection = "error"; workspace.error = browserUseError(safeError); this.changedWorkspace(workspace); this.settingsChanged();
+          workspace.client = undefined; workspace.pages.clear(); workspace.selectedSurfaceId = undefined; client?.kill();
+          workspace.connection = abandoned ? "disconnected" : "error"; workspace.error = abandoned ? undefined : browserUseError(safeError); this.changedWorkspace(workspace); this.settingsChanged();
         }
         throw safeError;
       } finally {
@@ -551,13 +578,7 @@ export class BrowserUseRuntime {
       throw failure("browser_run_unavailable", "The Chrome connection changed after this task began. Start a new task and observe its current pages.");
     if (await this.connectedForRun(session, run, signal)) { run.workspaceGeneration = session.workspace.generation; return; }
     if (signal.aborted || this.runs.get(run.runId) !== run) throw failure("browser_run_unavailable", "The browser task was stopped.");
-    let extensionToken: string | undefined;
-    try { extensionToken = this.preferences().rememberChromeConnection ? this.options.preferences?.authorization() : undefined; }
-    catch {
-      this.requestConnection(session, run);
-      throw failure("browser_connection_required", "Saved Chrome authorization is unavailable. Connect Chrome from this Chat's browser control; the waiting task continues after the connection is approved.");
-    }
-    if (!extensionToken) {
+    if (!this.preferences().rememberChromeConnection || !this.preferences().hasSavedAuthorization || !this.options.preferences) {
       this.requestConnection(session, run);
       throw failure("browser_connection_required", "Connect Chrome from this Chat's browser control; the waiting task continues after the connection is approved.");
     }
@@ -566,16 +587,31 @@ export class BrowserUseRuntime {
       this.requestConnection(session, run);
       throw failure("browser_connection_required", "Connect Chrome explicitly; the waiting task continues after the connection is approved.");
     }
-    const pending = this.connectWorkspace(workspace, { extensionToken, timeoutMs: 15_000 });
+    run.connectionSignal = signal;
+    if (workspace.connection === "error" && workspace.error) {
+      this.requestConnection(session, run);
+      throw failure("browser_connection_required", "Chrome is waiting for its saved authorization to be available. Resolve system authorization or connect explicitly from browser settings.");
+    }
+    const pending = this.connectWorkspace(workspace, { authorization: () => this.options.preferences!.authorization(), timeoutMs: 15_000 });
+    let replyTimer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await this.waitForRun(pending, run, signal);
+      await Promise.race([this.waitForRun(pending, run, signal), new Promise<never>((_resolve, reject) => {
+        replyTimer = setTimeout(() => reject(failure("browser_connection_required", "Chrome is preparing its saved connection. This task will continue after system authorization finishes.")), 1_000);
+      })]);
       if (signal.aborted || this.runs.get(run.runId) !== run || this.sessions.get(run.chatId) !== session || session.workspace !== workspace)
         throw failure("browser_run_unavailable", "The browser task was stopped.");
       run.checkedClient = this.client(session);
       run.workspaceGeneration = workspace.generation;
     } catch (error) {
       if (signal.aborted || this.runs.get(run.runId) !== run) throw failure("browser_run_unavailable", "The browser task was stopped.");
-      this.requestConnection(session, run); throw error;
+      this.requestConnection(session, run);
+      if (text(record(error).code) === "browser_connection_required") throw error;
+      if (["secure_storage_unavailable", "browser_authorization_unavailable", "browser_settings_unavailable"].includes(text(record(error).code))) {
+        throw failure("browser_connection_required", "Chrome's saved authorization is not ready. Keep this task waiting or connect Chrome explicitly from its browser control.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(replyTimer);
     }
   }
 
@@ -658,6 +694,7 @@ export class BrowserUseRuntime {
     const ready = () => session.workspace.id === run.workspaceId && session.workspace.connection === "connected" && !!session.workspace.client;
     const reply = (status: "connected" | "pending" | "unavailable", reason?: string) => ({ ok: true, method, result: { status, ...(reason ? { reason } : {}) } });
     if (run.backend !== "chrome") return reply("unavailable", "backend_mismatch");
+    run.connectionSignal = signal;
     if (ready()) return reply("connected");
     if (!this.awaitingConnection(run)) return reply("unavailable", "connection_not_requested");
     const requested = typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) ? params.timeoutMs : 20_000;

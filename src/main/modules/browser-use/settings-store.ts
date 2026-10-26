@@ -30,11 +30,11 @@ export type BrowserUseSettingsStore = {
   /** Main-only metadata snapshot; never probes or initializes OS cryptography. */
   readSnapshot(): BrowserUsePreferences;
   /** Explicit trusted settings query: refreshes actual system storage availability. */
-  read(): BrowserUsePreferences;
-  update(input: BrowserUseSettingsInput): BrowserUsePreferences;
-  forget(): BrowserUsePreferences;
+  read(): Promise<BrowserUsePreferences>;
+  update(input: BrowserUseSettingsInput): Promise<BrowserUsePreferences>;
+  forget(): Promise<BrowserUsePreferences>;
   /** Main-only: this value must never be returned through the public settings API. */
-  authorization(): string | undefined;
+  authorization(): Promise<string | undefined>;
 };
 
 const ERROR_MESSAGES = {
@@ -84,14 +84,17 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
   // Unknown is conservatively unavailable in background snapshots. The settings
   // page explicitly calls read(), while encryption/decryption verifies anew.
   let lastKnownSecureStorageAvailable = false;
+  let authorizationRevision = 0;
+  let mutationEpoch = 0;
+  let saves: Promise<void> = Promise.resolve();
 
   if (path.resolve(configRoot, "../..") !== dataRoot) return fail("browser_settings_unavailable");
 
-  function secureStorageAvailable() {
+  async function secureStorageAvailable() {
     let available = false;
     try {
-      if (platform === "darwin") available = safeStorage.isEncryptionAvailable();
-      else if (platform === "win32") available = safeStorage.isEncryptionAvailable();
+      if (platform === "darwin") available = await safeStorage.isAsyncEncryptionAvailable();
+      else if (platform === "win32") available = await safeStorage.isAsyncEncryptionAvailable();
       // Some Linux builds expose a basic_text backend, which is not acceptable here.
     } catch { /* Keep the last completed probe conservative. */ }
     lastKnownSecureStorageAvailable = available;
@@ -103,6 +106,14 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
     catch (error) {
       if (error instanceof BrowserUseSettingsError) throw error;
       // Do not expose filesystem paths, OS/keychain diagnostics, or credential bytes.
+      return fail("browser_settings_unavailable");
+    }
+  }
+
+  async function safelyAsync<T>(operation: () => Promise<T>): Promise<T> {
+    try { return await operation(); }
+    catch (error) {
+      if (error instanceof BrowserUseSettingsError) throw error;
       return fail("browser_settings_unavailable");
     }
   }
@@ -208,10 +219,20 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
       hasSavedAuthorization: Boolean(stored.authorizationId), secureStorageAvailable: lastKnownSecureStorageAvailable };
   }
 
-  function authorization(stored = readStored()) {
+  async function authorization(stored = readStored()) {
     if (!stored.rememberChromeConnection || !stored.authorizationId) return undefined;
-    if (!secureStorageAvailable()) return fail("secure_storage_unavailable");
-    try { return normalizeAuthorization(safeStorage.decryptString(readEncrypted(stored.authorizationId))); }
+    const epoch = mutationEpoch;
+    const encrypted = readEncrypted(stored.authorizationId);
+    if (!await secureStorageAvailable()) return fail("secure_storage_unavailable");
+    try {
+      const decrypted = await safeStorage.decryptStringAsync(encrypted);
+      const current = readStored();
+      if (epoch !== mutationEpoch || !current.rememberChromeConnection ||
+        current.authorizationId !== stored.authorizationId || !readEncrypted(stored.authorizationId).equals(encrypted)) {
+        return fail("browser_authorization_unavailable");
+      }
+      return normalizeAuthorization(decrypted.result);
+    }
     catch { return fail("browser_authorization_unavailable"); }
   }
 
@@ -267,6 +288,7 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
         writeAtomic(staged, `${JSON.stringify({ version: SETTINGS_VERSION, ciphertext: encrypted.toString("base64") })}\n`, MAX_AUTHORIZATION_BYTES);
       }
       writeAtomic(settingsFile, `${JSON.stringify(stored)}\n`, MAX_SETTINGS_BYTES);
+      authorizationRevision += 1;
     } catch (error) {
       if (staged) {
         try { assertManagedPath(staged, "file"); fs.rmSync(staged, { force: true }); } catch { /* The old metadata still governs authorization. */ }
@@ -281,40 +303,57 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
 
   return {
     readSnapshot: () => safely(() => publicState(readStored())),
-    read: () => safely(() => {
+    read: () => safelyAsync(async () => {
       const stored = readStored();
       if (stored.authorizationId) readEncrypted(stored.authorizationId);
-      // Even isEncryptionAvailable() can initialize Keychain synchronously on macOS.
-      // Never perform this probe from a Run grant or a status notification.
-      secureStorageAvailable();
-      return publicState(stored);
+      // Native async safeStorage keeps Keychain prompts off the Main thread.
+      await secureStorageAvailable();
+      const current = readStored();
+      if (current.authorizationId) readEncrypted(current.authorizationId);
+      return publicState(current);
     }),
-    authorization: () => safely(() => authorization()),
-    update: input => safely(() => {
+    authorization: () => safelyAsync(() => authorization()),
+    update: input => safelyAsync(async () => {
       if (!isObject(input) || Object.keys(input).some(key => !["defaultBackend", "rememberChromeConnection", "extensionToken"].includes(key)) ||
         input.defaultBackend !== undefined && input.defaultBackend !== "chrome" && input.defaultBackend !== "workpanel" ||
         input.rememberChromeConnection !== undefined && typeof input.rememberChromeConnection !== "boolean") return fail("invalid_browser_settings");
       const token = input.extensionToken === undefined ? undefined : normalizeAuthorization(input.extensionToken);
-      const before = readStored();
-      const next: StoredSettings = { version: SETTINGS_VERSION, defaultBackend: input.defaultBackend ?? before.defaultBackend,
-        rememberChromeConnection: input.rememberChromeConnection ?? before.rememberChromeConnection };
-      let encrypted: Buffer | undefined;
-      if (next.rememberChromeConnection) {
-        if (!secureStorageAvailable()) return fail("secure_storage_unavailable");
-        if (token) {
-          try { encrypted = safeStorage.encryptString(token); }
-          catch { return fail("browser_authorization_unavailable"); }
-          if (!Buffer.isBuffer(encrypted) || encrypted.length === 0 || encrypted.length > MAX_AUTHORIZATION_BYTES / 2) return fail("browser_authorization_unavailable");
-          next.authorizationId = randomUUID();
-        } else {
-          if (!authorization(before)) return fail("invalid_browser_authorization");
-          next.authorizationId = before.authorizationId;
+      const epoch = mutationEpoch;
+      const pending = saves.then(async () => {
+        if (epoch !== mutationEpoch) return fail("browser_settings_unavailable");
+        const before = readStored(), revision = authorizationRevision;
+        const next: StoredSettings = { version: SETTINGS_VERSION, defaultBackend: input.defaultBackend ?? before.defaultBackend,
+          rememberChromeConnection: input.rememberChromeConnection ?? before.rememberChromeConnection };
+        let encrypted: Buffer | undefined;
+        if (next.rememberChromeConnection) {
+          if (token) {
+            if (!await secureStorageAvailable()) return fail("secure_storage_unavailable");
+            try { encrypted = await safeStorage.encryptStringAsync(token); }
+            catch { return fail("browser_authorization_unavailable"); }
+            if (!Buffer.isBuffer(encrypted) || encrypted.length === 0 || encrypted.length > MAX_AUTHORIZATION_BYTES / 2) return fail("browser_authorization_unavailable");
+            next.authorizationId = randomUUID();
+          } else {
+            if (!before.rememberChromeConnection || !before.authorizationId) return fail("invalid_browser_authorization");
+            // Preferences do not require a new Keychain operation or invalidate
+            // an in-flight read of the same credential.
+            readEncrypted(before.authorizationId);
+            next.authorizationId = before.authorizationId;
+          }
         }
-      }
-      return commit(next, encrypted);
+        // Explicit forget supersedes queued saves and slow native crypto. An
+        // external metadata replacement must not be overwritten after an await.
+        if (epoch !== mutationEpoch || revision !== authorizationRevision || JSON.stringify(readStored()) !== JSON.stringify(before)) {
+          return fail("browser_settings_unavailable");
+        }
+        return commit(next, encrypted);
+      });
+      saves = pending.then(() => undefined, () => undefined);
+      return pending;
     }),
-    forget: () => safely(() => {
+    forget: () => safelyAsync(async () => {
       // Explicit forget also recovers a corrupt/unreadable token without decrypting it.
+      // It never waits behind a Keychain request and invalidates its late result.
+      mutationEpoch += 1;
       let before = defaults();
       try { before = readStored(); } catch { /* Replace only when the user explicitly forgets authorization. */ }
       return commit({ version: SETTINGS_VERSION, defaultBackend: before.defaultBackend, rememberChromeConnection: false });

@@ -27,6 +27,8 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 const TOKEN = "synthetic-browser-authorization_0123456789ABCDEF";
 const TOKEN_TWO = "replacement-browser-authorization_0123456789ABCDEF";
 const plain = value => JSON.parse(JSON.stringify(value));
+const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
+const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture(t, platform = "darwin") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "browser-use-settings-test-"));
@@ -40,21 +42,26 @@ function fixture(t, platform = "darwin") {
   const state = { available: true, failEncrypt: false, failDecrypt: false, failSettingsWrite: false, probeCalls: 0, encryptCalls: 0, decryptCalls: 0, acl: [] };
   const key = randomBytes(32);
   const safeStorage = {
-    isEncryptionAvailable: () => { state.probeCalls++; return state.available; },
-    encryptString(value) {
+    isEncryptionAvailable() { throw new Error("Synchronous Keychain probing is forbidden"); },
+    encryptString() { throw new Error("Synchronous Keychain encryption is forbidden"); },
+    decryptString() { throw new Error("Synchronous Keychain decryption is forbidden"); },
+    async isAsyncEncryptionAvailable() { state.probeCalls++; await state.probeGate?.promise; return state.available; },
+    async encryptStringAsync(value) {
       state.encryptCalls++;
+      await state.encryptGate?.promise;
       if (state.failEncrypt) throw new Error(`keychain failed with secret ${TOKEN} at ${root}`);
       const nonce = randomBytes(12);
       const cipher = createCipheriv("aes-256-gcm", key, nonce);
-      const body = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+      const body = Buffer.concat([(await cipher.update(value, "utf8")), cipher.final()]);
       return Buffer.concat([nonce, cipher.getAuthTag(), body]);
     },
-    decryptString(value) {
+    async decryptStringAsync(value) {
       state.decryptCalls++;
+      await state.decryptGate?.promise;
       if (state.failDecrypt) throw new Error(`keychain rejected ${TOKEN} at ${root}`);
       const decipher = createDecipheriv("aes-256-gcm", key, value.subarray(0, 12));
       decipher.setAuthTag(value.subarray(12, 28));
-      return Buffer.concat([decipher.update(value.subarray(28)), decipher.final()]).toString("utf8");
+      return { result: Buffer.concat([(await decipher.update(value.subarray(28))), decipher.final()]).toString("utf8"), shouldReEncrypt: false };
     },
   };
   const mockFs = Object.create(fs);
@@ -78,8 +85,8 @@ function fixture(t, platform = "darwin") {
     saved() { return JSON.parse(fs.readFileSync(settingsFile, "utf8")); } };
 }
 
-function rejectsSafely(operation, expected, fixture) {
-  assert.throws(operation, error => {
+async function rejectsSafely(operation, expected, fixture) {
+  await assert.rejects(operation, error => {
     assert.equal(error.code, expected);
     assert.equal(error.message.includes(TOKEN), false);
     assert.equal(error.message.includes(fixture.root), false);
@@ -88,19 +95,19 @@ function rejectsSafely(operation, expected, fixture) {
   });
 }
 
-test("new settings use conservative defaults and reading creates no config or secret files", t => {
+test("new settings use conservative defaults and reading creates no config or secret files", async t => {
   const f = fixture(t);
-  assert.deepEqual(plain(f.store.read()), { defaultBackend: "workpanel", rememberChromeConnection: false,
+  assert.deepEqual(plain((await f.store.read())), { defaultBackend: "workpanel", rememberChromeConnection: false,
     hasSavedAuthorization: false, secureStorageAvailable: true });
-  assert.equal(f.store.authorization(), undefined);
+  assert.equal((await f.store.authorization()), undefined);
   assert.equal(fs.existsSync(f.configRoot), false);
   assert.equal(fs.existsSync(f.secretsRoot), false);
 });
 
-test("new Chat state, Run preparation and status broadcasts never initialize OS cryptography", t => {
+test("new Chat state, Run preparation and status broadcasts never initialize OS cryptography", async t => {
   for (const platform of ["darwin", "win32"]) {
     const f = fixture(t, platform), changes = [];
-    f.store.update({ defaultBackend: "chrome" });
+    await f.store.update({ defaultBackend: "chrome" });
     const runtime = new BrowserUseRuntime({
       preferences: { read: f.store.readSnapshot, authorization: f.store.authorization },
       onSettingsChanged: value => changes.push(value),
@@ -117,7 +124,7 @@ test("new Chat state, Run preparation and status broadcasts never initialize OS 
     assert.equal(f.state.encryptCalls, 0);
     assert.equal(f.state.decryptCalls, 0);
 
-    assert.equal(f.store.read().secureStorageAvailable, true, "an explicit settings query probes actual availability");
+    assert.equal((await f.store.read()).secureStorageAvailable, true, "an explicit settings query probes actual availability");
     assert.equal(f.state.probeCalls, 1);
     runtime.prepareRun({ chatId: "second-chat", runId: "run-2", agentKey: "cutej" });
     assert.equal(changes.at(-1).secureStorageAvailable, true, "notifications reuse the last completed probe");
@@ -126,7 +133,7 @@ test("new Chat state, Run preparation and status broadcasts never initialize OS 
     f.state.available = false;
     assert.equal(f.store.readSnapshot().secureStorageAvailable, true, "metadata reads do not secretly refresh OS state");
     assert.equal(f.state.probeCalls, 1);
-    assert.equal(f.store.read().secureStorageAvailable, false);
+    assert.equal((await f.store.read()).secureStorageAvailable, false);
     runtime.releaseRun("run-2");
     assert.equal(changes.at(-1).secureStorageAvailable, false);
     assert.equal(f.state.probeCalls, 2);
@@ -134,10 +141,10 @@ test("new Chat state, Run preparation and status broadcasts never initialize OS 
   }
 });
 
-test("saved authorization remains encrypted and is freshly checked when actually used, while snapshots stay metadata-only", t => {
+test("saved authorization remains encrypted and is freshly checked when actually used, while snapshots stay metadata-only", async t => {
   for (const platform of ["darwin", "win32"]) {
     const f = fixture(t, platform);
-    f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+    await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
     const fresh = f.reopen();
     const before = f.state.probeCalls;
     assert.equal(fresh.readSnapshot().rememberChromeConnection, true);
@@ -145,26 +152,26 @@ test("saved authorization remains encrypted and is freshly checked when actually
     assert.equal(fresh.readSnapshot().secureStorageAvailable, false, "a new store has not probed the OS yet");
     assert.equal(f.state.probeCalls, before);
     assert.equal(f.state.decryptCalls, 0);
-    assert.equal(fresh.authorization(), TOKEN);
+    assert.equal((await fresh.authorization()), TOKEN);
     assert.equal(f.state.probeCalls, before + 1);
     assert.equal(f.state.decryptCalls, 1);
     f.state.available = false;
-    rejectsSafely(() => fresh.authorization(), "secure_storage_unavailable", f);
+    await rejectsSafely(() => fresh.authorization(), "secure_storage_unavailable", f);
     assert.equal(f.state.probeCalls, before + 2);
     assert.equal(f.state.decryptCalls, 1, "unavailable crypto cannot reach decryptString");
     assert.equal(fresh.readSnapshot().secureStorageAvailable, false);
   }
 });
 
-test("authorization survives reopening as OS ciphertext and never appears in public settings or metadata", t => {
+test("authorization survives reopening as OS ciphertext and never appears in public settings or metadata", async t => {
   const f = fixture(t);
-  const result = f.store.update({ defaultBackend: "chrome", rememberChromeConnection: true,
-    extensionToken: `PLAYWRIGHT_MCP_EXTENSION_TOKEN='${TOKEN}'` });
+  const result = (await f.store.update({ defaultBackend: "chrome", rememberChromeConnection: true,
+    extensionToken: `PLAYWRIGHT_MCP_EXTENSION_TOKEN='${TOKEN}'` }));
   assert.deepEqual(plain(result), { defaultBackend: "chrome", rememberChromeConnection: true,
     hasSavedAuthorization: true, secureStorageAvailable: true });
   assert.equal(f.state.decryptCalls, 0);
-  assert.equal(f.reopen().authorization(), TOKEN);
-  f.store.read();
+  assert.equal((await f.reopen().authorization()), TOKEN);
+  await f.store.read();
   assert.equal(f.state.decryptCalls, 1, "public reads never decrypt the authorization");
   const metadata = fs.readFileSync(f.settingsFile, "utf8");
   const bytes = f.files().map(file => fs.readFileSync(path.join(f.credentialRoot, file)));
@@ -178,74 +185,74 @@ test("authorization survives reopening as OS ciphertext and never appears in pub
   assert.equal(fs.statSync(path.join(f.credentialRoot, f.files()[0])).mode & 0o777, 0o600);
 });
 
-test("token normalization accepts only bounded URL-safe values and known quoted assignment syntax", t => {
+test("token normalization accepts only bounded URL-safe values and known quoted assignment syntax", async t => {
   const f = fixture(t);
   for (const input of [TOKEN, `'${TOKEN}'`, `"${TOKEN}"`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN=${TOKEN}`,
     `"PLAYWRIGHT_MCP_EXTENSION_TOKEN=${TOKEN}"`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN="${TOKEN}"`, "a".repeat(16), "a".repeat(256)]) {
-    f.store.update({ rememberChromeConnection: true, extensionToken: input });
-    assert.match(f.store.authorization(), /^[A-Za-z0-9_-]{16,256}$/u);
+    await f.store.update({ rememberChromeConnection: true, extensionToken: input });
+    assert.match((await f.store.authorization()), /^[A-Za-z0-9_-]{16,256}$/u);
     assert.equal(f.files().length, 1, "replacing authorization removes obsolete ciphertext");
   }
   const before = fs.readFileSync(f.settingsFile);
   for (const input of ["", "a".repeat(15), "a".repeat(257), "a".repeat(1025), `${TOKEN}\n`, `${TOKEN}\r`, `${TOKEN} x`,
     `https://example.test/${TOKEN}`, `export PLAYWRIGHT_MCP_EXTENSION_TOKEN=${TOKEN}`, `$(echo ${TOKEN})`, `\"${TOKEN}'`, 42, null]) {
-    rejectsSafely(() => f.store.update({ rememberChromeConnection: true, extensionToken: input }), "invalid_browser_authorization", f);
+    await rejectsSafely(() => f.store.update({ rememberChromeConnection: true, extensionToken: input }), "invalid_browser_authorization", f);
     assert.deepEqual(fs.readFileSync(f.settingsFile), before);
   }
 });
 
-test("enabling remembered authorization requires a token, omitted tokens reuse the saved authorization", t => {
+test("enabling remembered authorization requires a token, omitted tokens reuse the saved authorization", async t => {
   const f = fixture(t);
-  rejectsSafely(() => f.store.update({ rememberChromeConnection: true }), "invalid_browser_authorization", f);
+  await rejectsSafely(() => f.store.update({ rememberChromeConnection: true }), "invalid_browser_authorization", f);
   assert.equal(fs.existsSync(f.settingsFile), false);
-  f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
   const id = f.saved().authorizationId;
-  f.store.update({ defaultBackend: "chrome" });
+  await f.store.update({ defaultBackend: "chrome" });
   assert.equal(f.saved().authorizationId, id);
-  assert.equal(f.store.authorization(), TOKEN);
+  assert.equal((await f.store.authorization()), TOKEN);
   assert.equal(f.files().length, 1);
 });
 
-test("disabling or forgetting removes ciphertext while preserving the default backend", t => {
+test("disabling or forgetting removes ciphertext while preserving the default backend", async t => {
   const f = fixture(t);
-  f.store.update({ defaultBackend: "chrome", rememberChromeConnection: true, extensionToken: TOKEN });
-  f.store.update({ rememberChromeConnection: false });
-  assert.equal(f.store.authorization(), undefined);
+  await f.store.update({ defaultBackend: "chrome", rememberChromeConnection: true, extensionToken: TOKEN });
+  await f.store.update({ rememberChromeConnection: false });
+  assert.equal((await f.store.authorization()), undefined);
   assert.deepEqual(f.files(), []);
   assert.equal("authorizationId" in f.saved(), false);
-  f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
   f.state.available = false;
   const probesBeforeForget = f.state.probeCalls;
-  const result = f.store.forget();
+  const result = (await f.store.forget());
   assert.equal(f.state.probeCalls, probesBeforeForget, "the Store recovery itself never initializes system storage");
   assert.equal(result.defaultBackend, "chrome");
   assert.equal(result.rememberChromeConnection, false);
   assert.equal(result.hasSavedAuthorization, false);
-  assert.equal(f.store.authorization(), undefined);
+  assert.equal((await f.store.authorization()), undefined);
   assert.deepEqual(f.files(), []);
 });
 
-test("unavailable Keychain/DPAPI blocks persistence without weakening protection or replacing prior settings", t => {
+test("unavailable Keychain/DPAPI blocks persistence without weakening protection or replacing prior settings", async t => {
   for (const platform of ["darwin", "win32", "linux"]) {
     const f = fixture(t, platform);
-    f.store.update({ defaultBackend: "chrome" });
+    await f.store.update({ defaultBackend: "chrome" });
     const before = fs.readFileSync(f.settingsFile);
     f.state.available = false;
-    assert.equal(f.store.read().secureStorageAvailable, false);
-    rejectsSafely(() => f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN }), "secure_storage_unavailable", f);
+    assert.equal((await f.store.read()).secureStorageAvailable, false);
+    await rejectsSafely(() => f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN }), "secure_storage_unavailable", f);
     assert.deepEqual(fs.readFileSync(f.settingsFile), before);
     assert.equal(fs.existsSync(f.credentialRoot), false);
     if (platform === "linux") {
       f.state.available = true;
-      assert.equal(f.store.read().secureStorageAvailable, false, "basic_text is never used on unsupported platforms");
+      assert.equal((await f.store.read()).secureStorageAvailable, false, "basic_text is never used on unsupported platforms");
     }
   }
 });
 
-test("Windows uses explicit owner ACLs for config and secret directories", t => {
+test("Windows uses explicit owner ACLs for config and secret directories", async t => {
   const f = fixture(t, "win32");
-  f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
-  assert.equal(f.store.authorization(), TOKEN);
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  assert.equal((await f.store.authorization()), TOKEN);
   for (const directory of [f.configRoot, f.secretsRoot, f.credentialRoot]) {
     const call = f.state.acl.find(entry => entry[1][0] === directory);
     assert.equal(call[0], "icacls");
@@ -255,59 +262,60 @@ test("Windows uses explicit owner ACLs for config and secret directories", t => 
   }
 });
 
-test("failed encryption or metadata publication preserves the prior settings and usable authorization", t => {
+test("failed encryption or metadata publication preserves the prior settings and usable authorization", async t => {
   const f = fixture(t);
-  f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
   const metadata = fs.readFileSync(f.settingsFile);
   const files = f.files();
   const original = fs.readFileSync(path.join(f.credentialRoot, files[0]));
   f.state.failEncrypt = true;
-  rejectsSafely(() => f.store.update({ defaultBackend: "chrome", extensionToken: TOKEN_TWO }), "browser_authorization_unavailable", f);
+  await rejectsSafely(() => f.store.update({ defaultBackend: "chrome", extensionToken: TOKEN_TWO }), "browser_authorization_unavailable", f);
   f.state.failEncrypt = false;
   f.state.failSettingsWrite = true;
-  rejectsSafely(() => f.store.update({ defaultBackend: "chrome", extensionToken: TOKEN_TWO }), "browser_settings_unavailable", f);
+  await rejectsSafely(() => f.store.update({ defaultBackend: "chrome", extensionToken: TOKEN_TWO }), "browser_settings_unavailable", f);
   f.state.failSettingsWrite = false;
   assert.deepEqual(fs.readFileSync(f.settingsFile), metadata);
   assert.deepEqual(f.files(), files);
   assert.deepEqual(fs.readFileSync(path.join(f.credentialRoot, files[0])), original);
-  assert.equal(f.store.authorization(), TOKEN);
+  assert.equal((await f.store.authorization()), TOKEN);
   assert.equal(fs.readdirSync(f.configRoot).some(file => file.endsWith(".tmp")), false);
 });
 
-test("keychain rejection and damaged authorization use fixed errors and explicit forget can recover", t => {
+test("keychain rejection and damaged authorization use fixed errors and explicit forget can recover", async t => {
   const f = fixture(t);
-  f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
   const original = fs.readFileSync(f.settingsFile);
   f.state.failDecrypt = true;
-  rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
-  rejectsSafely(() => f.store.update({ defaultBackend: "chrome" }), "browser_authorization_unavailable", f);
-  assert.deepEqual(fs.readFileSync(f.settingsFile), original);
+  await rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
+  await f.store.update({ defaultBackend: "chrome" });
+  assert.equal(f.saved().defaultBackend, "chrome", "a preference change does not need to decrypt an unchanged credential");
+  assert.equal(f.saved().authorizationId, JSON.parse(original).authorizationId);
   f.state.failDecrypt = false;
   fs.writeFileSync(path.join(f.credentialRoot, f.files()[0]), "{broken}");
-  rejectsSafely(() => f.store.read(), "browser_authorization_unavailable", f);
-  rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
-  assert.equal(f.store.forget().hasSavedAuthorization, false);
+  await rejectsSafely(() => f.store.read(), "browser_authorization_unavailable", f);
+  await rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
+  assert.equal((await f.store.forget()).hasSavedAuthorization, false);
   assert.deepEqual(f.files(), []);
 });
 
-test("stored settings shape and input shape are validated without silently overwriting a corrupt file", t => {
+test("stored settings shape and input shape are validated without silently overwriting a corrupt file", async t => {
   const f = fixture(t);
   for (const input of [null, [], { defaultBackend: "unknown" }, { rememberChromeConnection: "yes" }, { data: TOKEN }]) {
-    rejectsSafely(() => f.store.update(input), "invalid_browser_settings", f);
+    await rejectsSafely(() => f.store.update(input), "invalid_browser_settings", f);
   }
-  f.store.update({ defaultBackend: "chrome" });
+  await f.store.update({ defaultBackend: "chrome" });
   for (const stored of ["{broken", JSON.stringify({ version: 2, defaultBackend: "chrome", rememberChromeConnection: false }),
     JSON.stringify({ version: 1, defaultBackend: "chrome", rememberChromeConnection: true, authorizationId: "../../outside" }),
     JSON.stringify({ version: 1, defaultBackend: "chrome", rememberChromeConnection: false, token: TOKEN }), "x".repeat(4097)]) {
     fs.writeFileSync(f.settingsFile, stored);
-    rejectsSafely(() => f.store.read(), "browser_settings_unavailable", f);
-    rejectsSafely(() => f.store.update({ defaultBackend: "workpanel" }), "browser_settings_unavailable", f);
+    await rejectsSafely(() => f.store.read(), "browser_settings_unavailable", f);
+    await rejectsSafely(() => f.store.update({ defaultBackend: "workpanel" }), "browser_settings_unavailable", f);
     assert.equal(fs.readFileSync(f.settingsFile, "utf8"), stored);
   }
-  assert.equal(f.store.forget().rememberChromeConnection, false);
+  assert.equal((await f.store.forget()).rememberChromeConnection, false);
 });
 
-test("symlinked metadata, credential files and managed parents cannot escape the current brand data root", t => {
+test("symlinked metadata, credential files and managed parents cannot escape the current brand data root", async t => {
   const f = fixture(t);
   const external = path.join(f.root, "outside");
   fs.mkdirSync(external);
@@ -315,19 +323,97 @@ test("symlinked metadata, credential files and managed parents cannot escape the
   fs.writeFileSync(target, "untouched");
   fs.mkdirSync(f.configRoot, { recursive: true });
   fs.symlinkSync(target, f.settingsFile);
-  rejectsSafely(() => f.store.update({ defaultBackend: "chrome" }), "browser_settings_unavailable", f);
-  rejectsSafely(() => f.store.forget(), "browser_settings_unavailable", f);
+  await rejectsSafely(() => f.store.update({ defaultBackend: "chrome" }), "browser_settings_unavailable", f);
+  await rejectsSafely(() => f.store.forget(), "browser_settings_unavailable", f);
   assert.equal(fs.readFileSync(target, "utf8"), "untouched");
   fs.unlinkSync(f.settingsFile);
-  f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
   const sealed = path.join(f.credentialRoot, f.files()[0]);
   fs.unlinkSync(sealed);
   fs.symlinkSync(target, sealed);
-  rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
+  await rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
   assert.equal(fs.readFileSync(target, "utf8"), "untouched");
   fs.unlinkSync(sealed);
   fs.rmdirSync(f.credentialRoot);
   fs.symlinkSync(external, f.credentialRoot, "dir");
-  rejectsSafely(() => f.store.update({ extensionToken: TOKEN_TWO }), "browser_settings_unavailable", f);
+  await rejectsSafely(() => f.store.update({ extensionToken: TOKEN_TWO }), "browser_settings_unavailable", f);
   assert.deepEqual(fs.readdirSync(external), ["original.json"]);
+});
+
+test("delayed async Keychain work leaves timers and metadata reads responsive without using sync crypto", async t => {
+  const f = fixture(t);
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  f.state.decryptGate = deferred();
+  const pending = f.store.authorization();
+  await flush();
+  assert.equal(f.state.decryptCalls, 1);
+  const probes = f.state.probeCalls;
+  let ticks = 0;
+  await new Promise(resolve => setTimeout(() => { ticks++; resolve(); }, 5));
+  assert.equal(ticks, 1);
+  assert.equal(f.store.readSnapshot().hasSavedAuthorization, true);
+  assert.equal(f.state.probeCalls, probes);
+  assert.equal(f.state.decryptCalls, 1);
+  f.state.decryptGate.resolve();
+  assert.equal(await pending, TOKEN);
+});
+
+test("changing only the default browser does not revoke or repeat a pending decrypt of the same authorization", async t => {
+  const f = fixture(t);
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  const id = f.saved().authorizationId;
+  f.state.decryptGate = deferred();
+  const pending = f.store.authorization();
+  await flush();
+  const probes = f.state.probeCalls;
+  await f.store.update({ defaultBackend: "chrome" });
+  assert.equal(f.state.probeCalls, probes);
+  assert.equal(f.state.decryptCalls, 1);
+  assert.equal(f.saved().authorizationId, id);
+  f.state.decryptGate.resolve();
+  assert.equal(await pending, TOKEN);
+});
+
+test("forget finishes while decrypt is pending and a late plaintext result cannot revive authorization", async t => {
+  const f = fixture(t);
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  f.state.decryptGate = deferred();
+  const rejected = rejectsSafely(() => f.store.authorization(), "browser_authorization_unavailable", f);
+  await flush();
+  const probes = f.state.probeCalls;
+  assert.equal((await f.store.forget()).hasSavedAuthorization, false);
+  assert.equal(f.state.probeCalls, probes);
+  assert.deepEqual(f.files(), []);
+  f.state.decryptGate.resolve();
+  await rejected;
+  assert.equal(await f.store.authorization(), undefined);
+  assert.equal(f.store.readSnapshot().rememberChromeConnection, false);
+});
+
+test("forget supersedes a slow encryption and every older queued save without publishing late ciphertext", async t => {
+  const f = fixture(t);
+  await f.store.update({ rememberChromeConnection: true, extensionToken: TOKEN });
+  f.state.encryptGate = deferred();
+  const first = rejectsSafely(() => f.store.update({ extensionToken: TOKEN_TWO }), "browser_settings_unavailable", f);
+  await flush();
+  const second = rejectsSafely(() => f.store.update({ extensionToken: TOKEN_TWO }), "browser_settings_unavailable", f);
+  await f.store.forget();
+  f.state.encryptGate.resolve();
+  await Promise.all([first, second]);
+  assert.equal(f.store.readSnapshot().hasSavedAuthorization, false);
+  assert.deepEqual(f.files(), []);
+});
+
+test("concurrent saves serialize while preserving the newest default and the encrypted credential", async t => {
+  const f = fixture(t);
+  f.state.encryptGate = deferred();
+  const first = f.store.update({ defaultBackend: "chrome", rememberChromeConnection: true, extensionToken: TOKEN });
+  await flush();
+  const second = f.store.update({ defaultBackend: "workpanel" });
+  f.state.encryptGate.resolve();
+  await Promise.all([first, second]);
+  assert.equal(f.store.readSnapshot().defaultBackend, "workpanel");
+  assert.equal(f.store.readSnapshot().hasSavedAuthorization, true);
+  assert.equal(await f.store.authorization(), TOKEN);
+  assert.equal(f.files().length, 1);
 });

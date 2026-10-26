@@ -50,6 +50,94 @@ function harness(options = {}) {
   return { runtime, clients, preferences, changes, settings, cdp };
 }
 
+test("async authorization keeps Main metadata and timers responsive before any Chrome worker is created", async t => {
+  const authorization = deferred(); const h = harness({ authorization: () => authorization.promise }); t.after(() => h.runtime.dispose());
+  await registerBrowserTask(h.runtime, source());
+  const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test/after-authorization" });
+  await flush();
+  assert.equal(h.clients.length, 0);
+  assert.equal(h.runtime.state("chat-a").connection, "connecting");
+  assert.equal(h.runtime.settingsState().hasSavedAuthorization, true);
+  let ticks = 0;
+  await new Promise(resolve => setTimeout(() => { ticks++; resolve(); }, 5));
+  assert.equal(ticks, 1);
+  authorization.resolve(token);
+  assert.equal((await pending).result.surface.url, "https://fixture.test/after-authorization");
+  assert.equal(h.clients[0].calls.filter(call => call.method === "open").length, 1);
+});
+
+test("slow authorization uses bounded connection polling and only opens the page after readiness", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const authorization = deferred(); let decrypts = 0;
+  const h = harness({ authorization: () => { decrypts++; return authorization.promise; } }); t.after(() => h.runtime.dispose());
+  await registerBrowserTask(h.runtime, source());
+  const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test/once" });
+  const waiting = assert.rejects(pending, error => error.code === "browser_connection_required" && /preparing its saved connection/.test(error.message));
+  await flush(); t.mock.timers.tick(1_001); await waiting;
+  assert.equal(h.clients.length, 0);
+  const poll = h.cdp("Browser.awaitConnection", { timeoutMs: 20_000 });
+  await flush(); t.mock.timers.tick(20_000);
+  assert.equal((await poll).result.status, "pending");
+  assert.equal(decrypts, 1);
+  authorization.resolve(token); await flush(); await flush();
+  assert.equal((await h.cdp("Browser.awaitConnection", { timeoutMs: 20_000 })).result.status, "connected");
+  const opened = await h.cdp("Surface.openChrome", { url: "https://fixture.test/once" });
+  assert.equal(opened.result.surface.url, "https://fixture.test/once");
+  assert.equal(decrypts, 1);
+  assert.equal(h.clients[0].calls.filter(call => call.method === "open").length, 1);
+});
+
+for (const cancellation of ["Run", "request"]) test(`late authorization cannot create a worker or page after ${cancellation} cancellation`, async t => {
+  const authorization = deferred(); const h = harness({ authorization: () => authorization.promise }); t.after(() => h.runtime.dispose());
+  await registerBrowserTask(h.runtime, source());
+  const controller = new AbortController();
+  const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test/must-not-open" }, source(), undefined, controller.signal);
+  const rejected = assert.rejects(pending, { code: "browser_run_unavailable" });
+  await flush();
+  if (cancellation === "Run") h.runtime.releaseRun("run-a"); else controller.abort();
+  await rejected;
+  authorization.resolve(token); await flush(); await flush();
+  assert.equal(h.clients.length, 0);
+  assert.deepEqual(h.runtime.state("chat-a").pages, []);
+});
+
+test("turning off saved authorization during a native wait cannot connect with its late result", async t => {
+  const authorization = deferred(); const h = harness({ authorization: () => authorization.promise }); t.after(() => h.runtime.dispose());
+  await registerBrowserTask(h.runtime, source());
+  const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test/must-not-open" });
+  const rejected = assert.rejects(pending, { code: "browser_connection_required" });
+  await flush(); h.preferences.rememberChromeConnection = false; h.preferences.hasSavedAuthorization = false;
+  authorization.resolve(token); await rejected;
+  assert.equal(h.clients.length, 0);
+  assert.deepEqual(h.runtime.state("chat-a").pages, []);
+});
+
+test("a busy Run without the workspace lease cannot keep an abandoned authorization wait alive", async t => {
+  const authorization = deferred(); const h = harness({ authorization: () => authorization.promise }); t.after(() => h.runtime.dispose());
+  await registerBrowserTask(h.runtime, source());
+  const first = h.cdp("Surface.openChrome", { url: "https://fixture.test/must-not-open" });
+  const rejected = assert.rejects(first, { code: "browser_run_unavailable" });
+  await flush();
+  const other = source("chat-b", "run-b"); await registerBrowserTask(h.runtime, other);
+  await assert.rejects(h.cdp("Surface.list", {}, other), { code: "browser_busy" });
+  assert.equal((await h.cdp("Browser.awaitConnection", {}, other)).result.status, "unavailable");
+  h.runtime.releaseRun("run-a"); await rejected;
+  authorization.resolve(token); await flush(); await flush();
+  assert.equal(h.clients.length, 0);
+});
+
+test("an explicit native authorization failure is not repeatedly retried by connection polls or later page attempts", async t => {
+  let decrypts = 0;
+  const h = harness({ authorization: async () => { decrypts++; throw Object.assign(new Error("Native authorization was not granted"), { code: "browser_authorization_unavailable" }); } });
+  t.after(() => h.runtime.dispose()); await registerBrowserTask(h.runtime, source());
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test/must-not-open" }), { code: "browser_connection_required" });
+  }
+  assert.equal(decrypts, 1);
+  assert.equal(h.clients.length, 0);
+  assert.equal(h.runtime.state("chat-a").error.code, "browser_authorization_unavailable");
+});
+
 test("new Chats inherit defaults, and copied Chrome IDs do not request connection for a WorkPanel task", async t => {
   const h = harness({ preferences: { defaultBackend: "workpanel" } }); t.after(() => h.runtime.dispose());
   await registerBrowserTask(h.runtime, source());
@@ -226,13 +314,15 @@ test("tool cancellation stops its wait without cancelling the shared workspace c
   gate.resolve(); await flush(); await flush(); assert.equal(h.runtime.state("chat-a").connection, "connected");
 });
 
-test("automatic handshake stops at 15 seconds and requests manual recovery without replay or fallback", async t => {
+test("automatic handshake returns a bounded pending reply and still stops at 15 seconds without replay or fallback", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const gate = deferred(); const h = harness({ connect: () => gate.promise }); t.after(() => h.runtime.dispose());
   await registerBrowserTask(h.runtime, source()); const pending = h.cdp("Surface.openChrome", { url: "https://fixture.test" });
-  const rejected = assert.rejects(pending, { code: "chrome_connection_failed" });
-  await flush(); t.mock.timers.tick(15_000); await rejected;
+  const rejected = assert.rejects(pending, { code: "browser_connection_required" });
+  await flush(); t.mock.timers.tick(1_001); await rejected;
+  t.mock.timers.tick(14_000); await flush();
   assert.equal(h.clients[0].killed, true); assert.equal(h.runtime.state("chat-a").connectionRequest.reason, "connect");
+  assert.equal(h.runtime.state("chat-a").error.code, "chrome_connection_failed");
   assert.equal(h.clients[0].calls.some(call => call.method === "open"), false);
   gate.resolve(); await flush(); assert.equal(h.runtime.state("chat-a").pages.length, 0);
 });
@@ -254,7 +344,7 @@ test("unreadable saved credentials request manual recovery without exposing priv
 
 test("a Worker creation failure reports a safe error and requests connection recovery", async t => {
   const changes = [];
-  const runtime = new BrowserUseRuntime({ preferences: { read: () => ({ defaultBackend: "chrome", rememberChromeConnection: true }), authorization: () => token },
+  const runtime = new BrowserUseRuntime({ preferences: { read: () => ({ defaultBackend: "chrome", rememberChromeConnection: true, hasSavedAuthorization: true, secureStorageAvailable: true }), authorization: async () => token },
     onChanged: state => changes.push(state), createClient() { throw new Error(`private factory ${token}`); } });
   t.after(() => runtime.dispose()); await registerBrowserTask(runtime, source());
   await assert.rejects(runtime.cdp({ source: source(), method: "Surface.list" }, undefined, neverFallback), error => error.code === "browser_runtime_unavailable" && !error.message.includes(token));

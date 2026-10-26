@@ -22,39 +22,42 @@ const { registerBrowserUseIpc } = ipcModule.exports;
 function fixture() {
   const handlers = new Map(), calls = [], events = [];
   let preferences = { defaultBackend: "workpanel", rememberChromeConnection: false, hasSavedAuthorization: false, secureStorageAvailable: true };
-  let broken = false, probeFails = false, probeCalls = 0, lastKnownAvailability = false;
+  let broken = false, probeFails = false, probeCalls = 0, lastKnownAvailability = false, probeGate, updateGate, activeChatId;
   const store = {
     readSnapshot() {
       if (broken) throw Object.assign(new Error("Browser settings could not be read or saved."), { code: "browser_settings_unavailable" });
       return { ...preferences, secureStorageAvailable: lastKnownAvailability };
     },
-    read() {
+    async read() {
       this.readSnapshot();
       probeCalls++;
+      await probeGate?.promise;
       if (probeFails) { lastKnownAvailability = false; throw new Error("System storage probe failed."); }
       lastKnownAvailability = preferences.secureStorageAvailable;
       return this.readSnapshot();
     },
-    update(value) {
+    async update(value) {
       assert.equal("action" in value, false);
       calls.push({ method: "update", keys: Object.keys(value) });
+      await updateGate?.promise;
       preferences = { ...preferences, defaultBackend: value.defaultBackend, rememberChromeConnection: value.rememberChromeConnection,
         hasSavedAuthorization: value.rememberChromeConnection && Boolean(value.extensionToken || preferences.hasSavedAuthorization) };
       return this.readSnapshot();
     },
-    forget() { calls.push({ method: "forget" }); broken = false; preferences = { ...preferences, rememberChromeConnection: false, hasSavedAuthorization: false }; return this.readSnapshot(); },
-    authorization() { calls.push({ method: "authorization" }); return undefined; },
+    async forget() { calls.push({ method: "forget" }); broken = false; preferences = { ...preferences, rememberChromeConnection: false, hasSavedAuthorization: false }; return this.readSnapshot(); },
+    async authorization() { calls.push({ method: "authorization" }); return undefined; },
   };
   const runtime = new BrowserUseRuntime({ preferences: { read: () => store.readSnapshot(), authorization: () => store.authorization() },
     onSettingsChanged: value => events.push(value), createClient() { throw new Error("settings must not start Chrome"); } });
   const frame = {}, contents = { mainFrame: frame };
   const valid = { sender: contents, senderFrame: frame };
   registerBrowserUseIpc({ ipcMain: { handle(channel, handler) { handlers.set(channel, handler); } }, runtime, settingsStore: store,
-    getMainWindow: () => ({ webContents: contents, isDestroyed: () => false }), getActiveChatId: () => undefined,
+    getMainWindow: () => ({ webContents: contents, isDestroyed: () => false }), getActiveChatId: () => activeChatId,
     openExternal: async url => calls.push({ method: "external", url }), onSettingsChanged: value => events.push(value) });
   return { runtime, store, calls, events, valid, contents, frame, breakStore: () => { broken = true; },
     probes: () => probeCalls, availability: value => { preferences.secureStorageAvailable = value; },
     failProbe: value => { probeFails = value; },
+    holdProbe: gate => { probeGate = gate; }, holdUpdate: gate => { updateGate = gate; }, activeChat: value => { activeChatId = value; },
     settings: (request, event = valid) => handlers.get("browserUse.settings")(event, request),
     control: request => handlers.get("browserUse.control")(valid, request) };
 }
@@ -66,6 +69,33 @@ test("browser settings are available without a Chat only to the trusted Main top
   assert.equal((await f.settings({ action: "get" })).ok, true);
   assert.equal((await f.control({ action: "state", chatId: "unowned-chat" })).error.code, "chat_changed");
   assert.equal(f.calls.length, 0);
+});
+
+test("an asynchronous storage probe keeps metadata controls responsive and returns current Run counts", async t => {
+  const f = fixture(); t.after(() => f.runtime.dispose());
+  let resolve; const gate = { promise: new Promise(yes => { resolve = yes; }) };
+  f.holdProbe(gate); f.activeChat("chat-a");
+  const pending = f.settings({ action: "get" });
+  await new Promise(done => setImmediate(done));
+  assert.equal((await f.control({ action: "state", chatId: "chat-a" })).ok, true);
+  assert.equal(f.probes(), 1);
+  f.runtime.prepareRun({ chatId: "chat-a", runId: "new-run", agentKey: "cutej" });
+  resolve();
+  assert.equal((await pending).state.activeRuns, 1);
+  assert.equal(f.calls.some(call => call.method === "authorization"), false);
+});
+
+test("settings save waits for native asynchronous persistence before reporting success", async t => {
+  const f = fixture(); t.after(() => f.runtime.dispose());
+  let resolve; const gate = { promise: new Promise(yes => { resolve = yes; }) };
+  f.holdUpdate(gate);
+  const pending = f.settings({ action: "save", defaultBackend: "chrome", rememberChromeConnection: true, extensionToken: "SYNTHETIC_async_authorization_123" });
+  await new Promise(done => setImmediate(done));
+  assert.equal(f.runtime.settingsState().hasSavedAuthorization, false);
+  resolve();
+  const result = await pending;
+  assert.equal(result.ok, true);
+  assert.equal(result.state.hasSavedAuthorization, true);
 });
 
 test("trusted settings queries return freshly probed availability while Run status broadcasts remain metadata-only", async t => {
