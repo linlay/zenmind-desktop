@@ -286,7 +286,7 @@ export class BrowserUseRuntime {
             run.connectionSignal && !run.connectionSignal.aborted)) {
             throw failure("browser_run_unavailable", "The browser task was stopped before authorization completed.");
           }
-          if (!extensionToken && !options.manual) throw failure("browser_connection_required", "Connect Chrome to continue this task.");
+          if (!extensionToken && !options.manual) throw failure("browser_authorization_unavailable", "The saved Chrome authorization is unavailable.");
         }
         try { client = this.options.createClient(() => {
           if (!client || workspace.client !== client || workspace.generation !== generation) return;
@@ -588,7 +588,9 @@ export class BrowserUseRuntime {
       throw failure("browser_connection_required", "Connect Chrome explicitly; the waiting task continues after the connection is approved.");
     }
     run.connectionSignal = signal;
-    if (workspace.connection === "error" && workspace.error) {
+    // Only an explicit credential failure waits for manual recovery. A bounded
+    // wait or transport failure must not permanently disable saved connections.
+    if (workspace.connection === "error" && ["secure_storage_unavailable", "browser_authorization_unavailable", "browser_settings_unavailable"].includes(workspace.error?.code ?? "")) {
       this.requestConnection(session, run);
       throw failure("browser_connection_required", "Chrome is waiting for its saved authorization to be available. Resolve system authorization or connect explicitly from browser settings.");
     }

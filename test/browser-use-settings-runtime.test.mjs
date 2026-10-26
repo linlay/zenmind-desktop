@@ -138,6 +138,41 @@ test("an explicit native authorization failure is not repeatedly retried by conn
   assert.equal(h.runtime.state("chat-a").error.code, "browser_authorization_unavailable");
 });
 
+test("an expired authorization wait allows a new Run to recover after native initialization completes", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const authorization = deferred(); const h = harness({ authorization: () => authorization.promise }); t.after(() => h.runtime.dispose());
+  await registerBrowserTask(h.runtime, source());
+  const old = h.cdp("Surface.openChrome", { url: "https://fixture.test/must-not-replay" });
+  const waiting = assert.rejects(old, { code: "browser_connection_required" });
+  await flush(); t.mock.timers.tick(1_001); await waiting;
+  t.mock.timers.tick(5 * 60_000); await flush();
+  assert.equal(h.runtime.state("chat-a").error.code, "browser_disconnected");
+  h.runtime.releaseRun("run-a");
+  authorization.resolve(token); await flush(); await flush();
+  assert.equal(h.clients.length, 0, "finishing the expired read cannot revive the old request");
+
+  const next = source("chat-b", "next-run"); await registerBrowserTask(h.runtime, next);
+  const opened = await h.cdp("Surface.openChrome", { url: "https://fixture.test/new-task" }, next);
+  assert.equal(opened.result.surface.url, "https://fixture.test/new-task");
+  assert.equal(h.clients.length, 1);
+  assert.deepEqual(h.clients[0].calls.filter(call => call.method === "open").map(call => call.params.url), ["https://fixture.test/new-task"]);
+});
+
+test("a transient transport handshake error is recoverable by a new Run without manual connection or replay", async t => {
+  const h = harness({ connect: (_client, index) => { if (index === 0) throw new Error("Synthetic transient transport failure"); } });
+  t.after(() => h.runtime.dispose()); await registerBrowserTask(h.runtime, source());
+  await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test/must-not-replay" }), { code: "chrome_connection_failed" });
+  assert.equal(h.clients[0].killed, true);
+  assert.equal(h.clients[0].calls.some(call => call.method === "open"), false);
+  h.runtime.releaseRun("run-a");
+
+  const next = source("chat-b", "next-run"); await registerBrowserTask(h.runtime, next);
+  const opened = await h.cdp("Surface.openChrome", { url: "https://fixture.test/new-task" }, next);
+  assert.equal(opened.result.surface.url, "https://fixture.test/new-task");
+  assert.equal(h.clients.length, 2);
+  assert.deepEqual(h.clients[1].calls.filter(call => call.method === "open").map(call => call.params.url), ["https://fixture.test/new-task"]);
+});
+
 test("new Chats inherit defaults, and copied Chrome IDs do not request connection for a WorkPanel task", async t => {
   const h = harness({ preferences: { defaultBackend: "workpanel" } }); t.after(() => h.runtime.dispose());
   await registerBrowserTask(h.runtime, source());
