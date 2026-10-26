@@ -6,6 +6,7 @@ import {
   DeleteOutlined,
   DesktopOutlined,
   DownloadOutlined,
+  EyeInvisibleOutlined,
   FileOutlined,
   FileZipOutlined,
   FolderOpenOutlined,
@@ -1310,6 +1311,27 @@ export function EnterpriseChatFloatingPanel({
     }
   }
 
+  async function hideEnterpriseChat() {
+    if (busy) {
+      return;
+    }
+    closeLauncherMenu();
+    setBusy("hide");
+    setError("");
+    try {
+      const settings = await window.electronAPI.settings.setEnterpriseImEnabled(false);
+      if (settings.enabled) {
+        throw new Error(t("enterpriseChat.launcherMenu.hideFailed"));
+      }
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setOpen(true);
+    } finally {
+      setBusy("");
+    }
+  }
+
   function handleLauncherClick(event: MouseEvent<HTMLButtonElement>) {
     // The controlled Popover opens only from the context-menu handlers.
     event.preventDefault();
@@ -2357,12 +2379,9 @@ export function EnterpriseChatFloatingPanel({
             aria-label={t("enterpriseChat.launcherMenu.title")}
             onKeyDown={handleLauncherMenuKeyDown}
           >
-            <button type="button" role="menuitem" onClick={() => {
-              closeLauncherMenu(true);
-              setOpen((current) => !current);
-            }}>
-              {open ? <CloseOutlined aria-hidden="true" /> : <MessageOutlined aria-hidden="true" />}
-              <span>{t(open ? "enterpriseChat.launcherMenu.collapse" : "enterpriseChat.open")}</span>
+            <button type="button" role="menuitem" disabled={Boolean(busy)} onClick={() => void hideEnterpriseChat()}>
+              <EyeInvisibleOutlined aria-hidden="true" />
+              <span>{t("enterpriseChat.launcherMenu.hide")}</span>
             </button>
             <button type="button" role="menuitem" onClick={() => openLauncherView("contacts")}>
               <UserOutlined aria-hidden="true" /><span>{t("enterpriseChat.contacts")}</span>
