@@ -2904,6 +2904,13 @@ export function SettingsPage({
 
     let cancelled = false;
     setDesktopDeviceInfoLoading(true);
+    const unsubscribeEnterpriseChat = window.electronAPI.enterpriseChat.onStateChanged((state) => {
+      if (!cancelled) {
+        setEnterpriseImSettings((current) => current.enabled === state.enabled
+          ? current
+          : { ...current, enabled: state.enabled });
+      }
+    });
     Promise.all([
       window.electronAPI.settings.getGeneralSettings(),
       window.electronAPI.settings.getDesktopDeviceInfo(),
@@ -2937,6 +2944,7 @@ export function SettingsPage({
 
     return () => {
       cancelled = true;
+      unsubscribeEnterpriseChat();
     };
   }, [shouldReadGeneralSettings]);
 
