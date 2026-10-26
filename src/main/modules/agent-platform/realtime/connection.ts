@@ -405,6 +405,9 @@ export function createConnection(deps: ConnectionPort) {
     if (reason) {
       rotateIdentity(reason);
     }
+    // Run this before query/forward bookkeeping registers a new, unsent request.
+    // Closing a stale connection must only fail work dispatched on that connection.
+    for (const client of Object.values(deps.clients)) client.closeIfSilenceExpired();
   }
 
   return { sendRunRequest, getConnectionPhase, getConnectionState, getConnectionStates, ensureConnected, forwardRequest, rotateIdentity, beginShutdown, dispose, handleConnectionState, handleFrame, cleanupPending, prepareConnectionIdentity };

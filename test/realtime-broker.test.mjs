@@ -115,6 +115,25 @@ function requestOfType(socket, type) {
   return socket.sent.filter((frame) => frame.frame === "request" && frame.type === type);
 }
 
+test("a new query after a suspended watchdog is admitted once after a fresh handshake", async (t) => {
+  const h = createHarness(t, { heartbeatTimeoutMs: 100_000 });
+  await h.broker.ensureConnected("http://127.0.0.1:8080", h.token);
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  now += 60 * 60_000;
+  const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, id: "post-suspend-query",
+    runId: "post-suspend-run", chatId: "chat-1", owner: { kind: "agent", agentKey: "agent-1" },
+    payload: { message: "fixture", chatId: "chat-1", agentKey: "agent-1" }, onEvent() {} });
+  await nextTurn();
+  assert.equal(h.sockets.length, 2);
+  assert.equal(h.sockets[0].closed, true);
+  assert.equal(requestOfType(h.sockets[0], "/api/query").length, 0);
+  const requests = requestOfType(h.sockets[1], "/api/query");
+  assert.equal(requests.length, 1);
+  h.sockets[1].emit({ frame: "stream", id: requests[0].id, event: runEvent("run.start", "post-suspend-run", "chat-1", 1) });
+  assert.equal((await query.accepted).runId, "post-suspend-run");
+});
+
 function explanationObserver(overrides = {}) {
   return rootObserver({ token: "explanation:g1:2:202", kind: "selection_explain", surfaceId: "selection-explain",
     generation: "g1", contextId: "chat-1", webContentsId: 202, ...overrides });

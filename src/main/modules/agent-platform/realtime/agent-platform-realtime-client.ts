@@ -284,6 +284,21 @@ export class AgentPlatformRealtimeClient {
     return { ...this.state, key: this.state.key ? { ...this.state.key } : null };
   }
 
+  /** A suspended event loop may admit consumer work before an overdue watchdog runs. */
+  closeIfSilenceExpired(): boolean {
+    const socket = this.socket;
+    const timeoutMs = this.options.heartbeatTimeoutMs ?? this.negotiatedSilenceTimeoutMs;
+    if (!socket || this.state.phase !== "connected" || timeoutMs <= 0 || !this.lastInboundAt) return false;
+    const elapsedMs = Date.now() - this.lastInboundAt;
+    if (elapsedMs < timeoutMs) return false;
+    const generation = this.generation;
+    const error = new Error("PLATFORM_CONNECTION_UNAVAILABLE: Agent Platform inbound silence timed out");
+    this.options.onDiagnostic?.(`realtime_inbound_silence_expired:${JSON.stringify({ elapsedMs, timeoutMs, generation })}`);
+    this.handleClosed(socket, generation, error);
+    try { socket.close(1000, "heartbeat timeout"); } catch { /* Ownership was already cleared. */ }
+    return true;
+  }
+
   getRotationReason(baseUrl: string, token: string): RealtimeIdentityRotationReason | null {
     if (!this.currentKey) return null;
     const nextKey = {
@@ -321,6 +336,7 @@ export class AgentPlatformRealtimeClient {
     }
     this.currentKey = nextKey;
     this.currentBaseUrl = normalizedBaseUrl;
+    this.closeIfSilenceExpired();
     if (this.socket && this.state.phase === "connected") {
       if (token !== this.currentToken) {
         await this.refreshAuthorizationWithToken(token);
@@ -338,6 +354,7 @@ export class AgentPlatformRealtimeClient {
   }
 
   send(frame: AgentPlatformRealtimeFrame) {
+    this.closeIfSilenceExpired();
     const socket = this.socket;
     if (!socket || this.state.phase !== "connected") {
       throw new Error("connection_unavailable: Agent Platform realtime connection is not open");
@@ -732,13 +749,9 @@ export class AgentPlatformRealtimeClient {
     const timeoutMs = this.options.heartbeatTimeoutMs ?? this.negotiatedSilenceTimeoutMs;
     if (timeoutMs <= 0) return;
     this.heartbeatTimer = unrefTimer(setTimeout(() => {
-      const error = new Error("PLATFORM_CONNECTION_UNAVAILABLE: Agent Platform inbound silence timed out");
-      this.handleClosed(socket, generation, error);
-      try {
-        socket.close(1000, "heartbeat timeout");
-      } catch {
-        // handleClosed already cleared local ownership.
-      }
+      if (socket !== this.socket || generation !== this.generation) return;
+      // A newer frame may have arrived before an overdue callback resumed.
+      if (!this.closeIfSilenceExpired()) this.resetHeartbeatTimer(socket, generation);
     }, timeoutMs));
   }
 
