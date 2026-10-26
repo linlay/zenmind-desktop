@@ -104,6 +104,7 @@ import {
   getAssistantAwaitingStatusKey,
   getAssistantNavWorkspaceDisabledReason,
   getAssistantNavAgentNonNegativeInteger,
+  getAssistantNavAgentAttentionChats,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
   getAssistantNavAgentUnpinnedChats,
@@ -5318,12 +5319,13 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const awaitingChats = allRecentChats.filter(
+    const attentionChats = getAssistantNavAgentAttentionChats(agent);
+    const awaitingChats = attentionChats.filter(
       (chat) => chat.hasPendingAwaiting === true,
     );
     const awaitingChat = awaitingChats[0] ?? null;
     const awaitingChatsCount = awaitingChats.length;
-    const activeRunChat = allRecentChats.find(
+    const activeRunChat = attentionChats.find(
       (chat) => chat.hasActiveRun === true,
     );
     const previewStatus =

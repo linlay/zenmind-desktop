@@ -16,6 +16,7 @@ const {
   buildAssistantNavigationAgentsFromPlatformAgents,
   enrichNavigationAgentsWithGitBranches,
   readAssistantNavigationChatAgentsFromPlatform,
+  readAssistantNavigationChatActivityFromPlatform,
   readAssistantNavigationProjectAgentsFromPlatform,
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform,
@@ -23,6 +24,12 @@ const {
 } = require("../dist-electron/main/modules/assistant/navigation-status-client.js");
 const { readDesktopProfileFromRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 const { getDesktopConfigRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
+const {
+  collectAssistantNavigationUnreadChats,
+  collectAssistantNavigationPendingChats,
+  collectAssistantNavigationOverviewChats,
+  summarizeAssistantNavigationAttention,
+} = require("../dist-electron/shared/assistant-navigation-attention.js");
 
 const EPOCH_MS = 1_783_000_000_000;
 
@@ -1426,17 +1433,21 @@ test("assistant navigation reads projects and the chat agent directory as separa
   globalThis.fetch = async (url) => {
     const parsed = new URL(String(url));
     requestedSearches.push(parsed.search);
-    const data = parsed.pathname === "/api/chats" ? [{ chatId: "ordered-project-chat", agentKey: "project", createdAt: EPOCH_MS, updatedAt: EPOCH_MS }] : parsed.searchParams.get("hasWorkspace") === "true"
+    const data = parsed.pathname === "/api/chats" ? [
+      { chatId: "ordered-project-chat", agentKey: "project", lastRunId: "run-1", isRead: false, createdAt: EPOCH_MS, updatedAt: EPOCH_MS },
+      { chatId: "project-chat-1", agentKey: "project", lastRunId: "run-2", isRead: false, createdAt: EPOCH_MS, updatedAt: EPOCH_MS + 1 },
+    ] : parsed.searchParams.get("hasWorkspace") === "true"
       ? [{
           key: "project",
           name: "Project",
           workspaceDir: "/tmp/zenmind-missing-project",
-          stats: { unreadCount: 1 },
+          stats: { totalCount: 2, unreadCount: 2 },
           chats: [{
             chatId: "project-chat-1",
             agentKey: "project",
             chatName: "项目会话",
             lastRunContent: "已完成",
+            lastRunId: "run-2",
             isRead: false,
             createdAt: EPOCH_MS,
             updatedAt: EPOCH_MS + 1,
@@ -1457,16 +1468,73 @@ test("assistant navigation reads projects and the chat agent directory as separa
 
   assert.deepEqual(requestedSearches, [
     "?hasWorkspace=true&includeChats=50&chatsPinned=false",
-    "?agentKey=project&pinned=false&limit=50",
+    "?agentKey=project",
     "?scope=nav&hasWorkspace=false",
   ]);
   assert.deepEqual(projects.map((item) => item.agentKey), ["project"]);
   assert.equal(projects[0]?.recentChats[0]?.chatId, "project-chat-1");
-  assert.equal(projects[0]?.unreadCount, 1);
-  assert.deepEqual(projects[0].projectChats.map((chat) => chat.chatId), ["ordered-project-chat"]);
+  assert.equal(projects[0]?.unreadCount, 2);
+  assert.deepEqual(projects[0].projectChats.map((chat) => chat.chatId), ["ordered-project-chat", "project-chat-1"]);
+  assert.deepEqual(projects[0].attentionChats.map((chat) => chat.chatId), ["ordered-project-chat", "project-chat-1"]);
   assert.deepEqual(chatAgents.map((item) => item.agentKey), ["zenmi"]);
   assert.equal(chatAgents[0]?.unreadCount, 2);
   assert.deepEqual(chatAgents[0]?.recentChats, []);
+});
+
+test("complete project and ordinary attention retain waiting Chats beyond windows and retain missing owners without adding recency", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const urls = [];
+  const ordinaryChats = Array.from({ length: 65 }, (_, index) => ({
+    chatId: `ordinary-${index}`, chatName: `Ordinary ${index}`, agentKey: "ordinary",
+    createdAt: EPOCH_MS, updatedAt: EPOCH_MS + index, lastRunId: "run-2",
+    read: { isRead: true, readRunId: "run-2" },
+    ...(index === 64 ? { hasPendingAwaiting: true, awaitingCount: 7, awaitingMode: "approval" } : {}),
+  }));
+  const orphanWaiting = {
+    ...ordinaryChats[64], chatId: "missing-owner-waiting", agentKey: "removed-agent",
+  };
+  const projectChats = Array.from({ length: 60 }, (_, index) => ({
+    ...ordinaryChats[index], agentKey: "project", chatId: `project-${index}`,
+    ...(index === 59 ? { hasPendingAwaiting: true, awaitingCount: 4 } : {}),
+  }));
+  const projectPin = { ...projectChats[59], chatId: "project-pin-waiting", pinned: true };
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    urls.push(url);
+    let data;
+    if (url.pathname === "/api/chats") {
+      assert.equal(url.searchParams.has("limit"), false);
+      assert.equal(url.searchParams.has("pinned"), false);
+      data = url.searchParams.has("agentKey") ? [projectPin, ...projectChats] : [...ordinaryChats, orphanWaiting];
+    } else if (url.searchParams.get("hasWorkspace") === "true") {
+      data = [{ key: "project", name: "Project", workspaceDir: "/projects/demo", chats: projectChats.slice(0, 50), stats: { totalCount: 61, unreadCount: 0 } }];
+    } else {
+      data = [{ key: "ordinary", name: "Ordinary", chats: ordinaryChats.slice(0, 50), stats: { totalCount: 65, unreadCount: 0 } }];
+    }
+    return { ok: true, status: 200, json: async () => ({ code: 0, data }) };
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const [projects, ordinaryActivity] = await Promise.all([
+    readAssistantNavigationProjectAgentsFromPlatform("http://127.0.0.1:11789", "test-token"),
+    readAssistantNavigationChatActivityFromPlatform("http://127.0.0.1:11789", "test-token"),
+  ]);
+  assert.equal(projects[0].attentionChats.length, 61);
+  assert.equal(projects[0].recentChats.length, 50);
+  assert.equal(projects[0].projectChats.length, 50);
+  assert.equal(projects[0].hasPendingAwaiting, true);
+  assert.equal(ordinaryActivity.find((agent) => agent.agentKey === "ordinary").attentionChats.length, 65);
+  assert.equal(ordinaryActivity.find((agent) => agent.agentKey === "ordinary").recentChats.length, 50);
+  assert.equal(ordinaryActivity.find((agent) => agent.agentKey === "ordinary").hasPendingAwaiting, true);
+  const missingOwner = ordinaryActivity.find((agent) => agent.agentKey === "removed-agent");
+  assert.deepEqual(missingOwner.recentChats, []);
+  assert.equal(missingOwner.attentionChats[0].chatId, "missing-owner-waiting");
+  assert.equal(missingOwner.hasPendingAwaiting, true);
+  const snapshot = { items: projects, activityItems: [...projects, ...ordinaryActivity], chatItems: [], pinnedChatItems: [projectPin] };
+  assert.deepEqual(collectAssistantNavigationPendingChats(snapshot).map((chat) => chat.chatId).sort(),
+    ["missing-owner-waiting", "ordinary-64", "project-59", "project-pin-waiting"]);
+  assert.deepEqual(summarizeAssistantNavigationAttention(snapshot).total, { unreadCount: 0, pendingCount: 4 });
+  assert.equal(urls.filter((url) => url.pathname === "/api/chats" && url.searchParams.get("hasWorkspace") === "false").length, 1);
 });
 
 test("assistant navigation client preserves the Platform nav catalog order", async (t) => {
@@ -2267,25 +2335,36 @@ test("navigation fetches global pins independently of the regular and project cu
     lastRunId: "loyw3v28", read: { isRead: false, readRunId: "" },
   });
   const pins = Array.from({ length: 30 }, (_, i) => platformChat(`pin-${i}`, i % 2 ? "CODER" : "REACT", true, i));
+  const projectUnpinned = Array.from({ length: 60 }, (_, i) => ({
+    ...platformChat(`project-${i}`, "CODER", false, i),
+    ...(i === 59 ? { activeRun: { runId: "project-outside-activity" } } : {}),
+  }));
+  const projectPins = pins.filter((chat) => chat.agentKey === "project");
+  const projectHistory = [...projectPins, ...projectUnpinned];
+  const regularHistory = Array.from({ length: 50 }, (_, i) => ({
+    ...platformChat(`regular-${i}`, "REACT", false, i),
+    ...(i === 49 ? { activeRun: { runId: "running-outside-sidebar" } } : {}),
+  }));
+  const copilotWaiting = {
+    ...platformChat("copilot-awaiting", "REACT", false, 100),
+    agentKey: "copilot-only", hasPendingAwaiting: true,
+  };
+  const ordinaryHistory = [...pins.filter((chat) => chat.agentKey === "zenmi"), ...regularHistory, copilotWaiting];
   let orderData = { sortMode: "manual", pinnedChats: pins };
   let orderFailure = false;
   globalThis.fetch = async (url) => {
     urls.push(String(url));
-    const data = new URL(String(url)).pathname === "/api/chats"
-      ? Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i))
+    const parsed = new URL(String(url));
+    const data = parsed.pathname === "/api/chats"
+      ? parsed.searchParams.get("hasWorkspace") === "false" ? ordinaryHistory : projectHistory
       : new URL(String(url)).searchParams.get("hasWorkspace") === "true"
-      ? [{ key: "project", name: "Project", mode: "CODER", workspaceDir: temp, stats: { totalCount: 65, unreadCount: 15 },
-          chats: Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i)) }]
+      ? [{ key: "project", name: "Project", mode: "CODER", workspaceDir: temp,
+          stats: { totalCount: projectHistory.length, unreadCount: projectHistory.filter((chat) => !chat.read.isRead).length },
+          chats: projectUnpinned.slice(0, 50) }]
       : new URL(String(url)).searchParams.has("includeChats")
         ? [{ key: "zenmi", name: "Zenmi", mode: "REACT",
-            chats: Array.from({ length: 50 }, (_, i) => ({
-              ...platformChat(`regular-${i}`, "REACT", false, i),
-              ...(i === 49 ? { activeRun: { runId: "running-outside-sidebar" } } : {}),
-            })) },
-           { key: "copilot-only", name: "Copilot", chats: [{
-             ...platformChat("copilot-awaiting", "REACT", false, 100),
-             agentKey: "copilot-only", hasPendingAwaiting: true,
-           }] }]
+            chats: regularHistory },
+           { key: "copilot-only", name: "Copilot", chats: [copilotWaiting] }]
         : [{ key: "zenmi", name: "Zenmi", mode: "REACT" }];
     return { ok: true, status: 200, json: async () => ({ code: 0, data }) };
   };
@@ -2327,7 +2406,8 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(requests.filter((request) => request.type === "/api/chats/order").length, 1);
   assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { hasWorkspace: false, limit: 25, pinned: false });
   assert.deepEqual(urls.map((url) => new URL(url).search).sort(), [
-    "?agentKey=project&pinned=false&limit=50",
+    "?agentKey=project",
+    "?hasWorkspace=false",
     "?hasWorkspace=false&includeChats=50&chatsPinned=false",
     "?hasWorkspace=true&includeChats=50&chatsPinned=false",
     "?scope=nav&hasWorkspace=false",
@@ -2337,18 +2417,41 @@ test("navigation fetches global pins independently of the regular and project cu
   assert.equal(chatAgentActivity.recentChats.filter((chat) => !chat.pinned).length, 50);
   assert.equal(chatAgentActivity.recentChats.filter((chat) => chat.pinned).length, 15);
   assert.equal(result.items.find((agent) => agent.agentKey === "zenmi").recentChats.length, 0);
-  const { createDesktopPetActiveTasksFromNavigationSnapshot } = require("../dist-electron/main/modules/pet/navigation-projection.js");
+  const completeProject = result.items.find((agent) => agent.agentKey === "project");
+  assert.equal(completeProject.attentionChats.length, 75);
+  assert.equal(completeProject.unreadCount, 75);
+  assert.equal(completeProject.unreadChatCount, 75);
+  assert.equal(completeProject.projectChats.length, 50);
+  assert.equal(completeProject.projectChats.some((chat) => chat.pinned), false);
+  assert.deepEqual(completeProject.projectChats.map((chat) => chat.chatId), projectUnpinned.slice(0, 50).map((chat) => chat.chatId));
+  const {
+    createDesktopPetActiveTasksFromNavigationSnapshot,
+    createDesktopPetMessagesFromNavigationSnapshot,
+  } = require("../dist-electron/main/modules/pet/navigation-projection.js");
   const { getAppTrayRecentChats } = require("../dist-electron/main/modules/shell/tray-chats.js");
   const tasks = createDesktopPetActiveTasksFromNavigationSnapshot(result);
   assert.ok(tasks.some((task) => task.chatId === "regular-49" && task.status === "running"));
   assert.ok(tasks.some((task) => task.chatId === "copilot-awaiting" && task.status === "awaiting"));
+  assert.equal(tasks.some((task) => task.chatId === "project-59"), false, "complete unread history must not enlarge activity tasks");
   assert.equal(result.items.some((agent) => agent.agentKey === "copilot-only"), false);
   assert.equal(result.chatItems.some((chat) => chat.chatId === "regular-49"), false);
   const trayChats = getAppTrayRecentChats(result);
   assert.equal(trayChats[0].chatId, "copilot-awaiting");
   assert.ok(trayChats.some((chat) => chat.chatId === "regular-49"));
+  assert.equal(trayChats.some((chat) => chat.chatId === "project-59"), false);
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(result);
+  assert.equal(messages.length, 115);
+  assert.equal(messages.filter((message) => message.unread).length, summarizeAssistantNavigationAttention(result).total.unreadCount);
+  assert.equal(messages.length, collectAssistantNavigationOverviewChats(result).length);
+  assert.equal(messages.some((message) => message.chatId === "project-59"), true);
+  assert.equal(messages.some((message) => message.chatId === "regular-49"), false);
+  assert.equal(messages.find((message) => message.chatId === "copilot-awaiting").unread, false);
+  assert.equal(new Set(messages.map((message) => message.chatId)).size, messages.length);
+  projectHistory.find((chat) => chat.chatId === "pin-1").read = {
+    isRead: true, readRunId: "loyw3v28", readAt: EPOCH_MS + 100,
+  };
   push({ frame: "push", type: "chat.read", data: {
-    chatId: "pin-1", agentKey: "project", readRunId: "loyw3v28", lastRunId: "loyw3v28", readAt: EPOCH_MS + 100, agentUnreadCount: 14,
+    chatId: "pin-1", agentKey: "project", readRunId: "loyw3v28", lastRunId: "loyw3v28", readAt: EPOCH_MS + 100, agentUnreadCount: 74,
   } });
   const current = client.getSnapshot();
   assert.equal(current.pinnedChatItems[1].isRead, true);
@@ -2358,6 +2461,10 @@ test("navigation fetches global pins independently of the regular and project cu
   const projectActivity = current.activityItems.find((agent) => agent.agentKey === "project");
   assert.equal(projectActivity.recentChats.filter((chat) => !chat.pinned).length, 50);
   assert.equal(projectActivity.recentChats.filter((chat) => chat.pinned).length, 15);
+  assert.equal(projectActivity.unreadCount, 74);
+  assert.equal(projectActivity.attentionChats.find((chat) => chat.chatId === "pin-1").isRead, true);
+  assert.equal(createDesktopPetMessagesFromNavigationSnapshot(current).length, 114);
+  assert.equal(createDesktopPetMessagesFromNavigationSnapshot(current).filter((message) => message.unread).length, summarizeAssistantNavigationAttention(current).total.unreadCount);
   let refreshScheduled = false;
   client.scheduleRefresh = () => { refreshScheduled = true; };
   push({ frame: "push", type: "chats.order.changed", data: { updatedAt: EPOCH_MS + 200 } });
@@ -2425,3 +2532,355 @@ test("project sidebar pushes retain manual order and update chats outside the ac
   });
   assert.deepEqual(read.items[0].projectChats.map((chat) => chat.chatId), ["older", "newer"]);
 });
+
+test("complete project attention applies read, unread, creation and removal atomically with its count", () => {
+  const known = createNavigationChat({ chatId: "known", isRead: false, lastRunId: "run-2", readRunId: "run-1" });
+  const outsideUnread = createNavigationChat({ chatId: "outside-unread", isRead: false, lastRunId: "run-2", readRunId: "run-1" });
+  const outsideRead = createNavigationChat({ chatId: "outside-read", lastRunId: "run-2", readRunId: "run-2" });
+  let items = [createAgent({
+    workspaceDir: "/projects/demo", unreadCount: 2, unreadChatCount: 2, chatCount: 3,
+    recentChats: [known], projectChats: [known], attentionChats: [known, outsideUnread, outsideRead],
+  })];
+
+  function assertUnreadIds(expectedIds) {
+    const snapshot = { items, activityItems: items, chatItems: [] };
+    const unread = collectAssistantNavigationUnreadChats(snapshot);
+    assert.deepEqual(unread.map((chat) => chat.chatId).sort(), [...expectedIds].sort());
+    assert.equal(items[0].unreadCount, expectedIds.length);
+    assert.equal(items[0].unreadChatCount, expectedIds.length);
+    assert.equal(unread.length, summarizeAssistantNavigationAttention(snapshot).total.unreadCount);
+  }
+
+  function apply(type, data) {
+    const result = applyAssistantNavigationPush(items, { frame: "push", type, data: { agentKey: "zenmi", ...data } });
+    items = result.items;
+    return result;
+  }
+
+  assertUnreadIds(["known", "outside-unread"]);
+  apply("run.started", { chatId: "outside-unread", runId: "run-2", startedAt: EPOCH_MS + 5 });
+  assert.equal(items[0].attentionChats.find((chat) => chat.chatId === "outside-unread").hasActiveRun, true);
+  assert.deepEqual(items[0].recentChats.map((chat) => chat.chatId), ["known"], "complete attention updates must not insert old chats into activity");
+
+  const updatedBeforeRead = items[0].attentionChats.find((chat) => chat.chatId === "outside-unread").updatedAt;
+  apply("chat.read", {
+    chatId: "outside-unread", lastRunId: "run-2", readRunId: "run-2", readAt: EPOCH_MS + 10, agentUnreadCount: 1,
+  });
+  assertUnreadIds(["known"]);
+  assert.equal(items[0].attentionChats.find((chat) => chat.chatId === "outside-unread").updatedAt, updatedBeforeRead);
+
+  apply("chat.unread", {
+    chatId: "outside-unread", lastRunId: "run-2", readRunId: "run-1", createdAt: EPOCH_MS + 1, agentUnreadCount: 1,
+  });
+  assertUnreadIds(["known"]);
+  assert.equal(items[0].attentionChats.find((chat) => chat.chatId === "outside-unread").readRunId, "run-2");
+
+  apply("chat.unread", {
+    chatId: "outside-read", lastRunId: "run-3", readRunId: "run-2", createdAt: EPOCH_MS + 20, agentUnreadCount: 2,
+  });
+  assertUnreadIds(["known", "outside-read"]);
+
+  const absentRead = apply("chat.read", {
+    chatId: "absent-read", lastRunId: "run-3", readRunId: "run-3", readAt: EPOCH_MS + 21, agentUnreadCount: 2,
+  });
+  assert.equal(absentRead.shouldRefresh, true);
+  assert.equal(items[0].attentionChats.some((chat) => chat.chatId === "absent-read"), false);
+  assertUnreadIds(["known", "outside-read"]);
+
+  apply("chat.unread", {
+    chatId: "new-unread", lastRunId: "run-4", readRunId: "run-3", createdAt: EPOCH_MS + 30, agentUnreadCount: 3,
+  });
+  assertUnreadIds(["known", "outside-read", "new-unread"]);
+
+  apply("chat.created", { chatId: "new-created", chatName: "New project chat", createdAt: EPOCH_MS + 40 });
+  assert.equal(items[0].attentionChats.find((chat) => chat.chatId === "new-created").isRead, true);
+  assertUnreadIds(["known", "outside-read", "new-unread"]);
+  apply("chat.unread", {
+    chatId: "new-created", lastRunId: "run-5", readRunId: "", createdAt: EPOCH_MS + 45, agentUnreadCount: 4,
+  });
+  assertUnreadIds(["known", "outside-read", "new-unread", "new-created"]);
+
+  apply("chat.archived", { chatId: "outside-read", archivedAt: EPOCH_MS + 50 });
+  assert.equal(items[0].attentionChats.some((chat) => chat.chatId === "outside-read"), false);
+  assertUnreadIds(["known", "new-unread", "new-created"]);
+  apply("chat.deleted", { chatId: "new-unread" });
+  assert.equal(items[0].attentionChats.some((chat) => chat.chatId === "new-unread"), false);
+  assertUnreadIds(["known", "new-created"]);
+
+  apply("chat.read_all", { updatedAt: EPOCH_MS + 60, agentUnreadCount: 0 });
+  assertUnreadIds([]);
+  assert.equal(items[0].attentionChats.every((chat) => chat.isRead), true);
+  assert.equal(items[0].attentionChats.find((chat) => chat.chatId === "new-created").readRunId, "run-5");
+});
+
+for (const workspaceDir of [undefined, "/projects/demo"]) {
+  test(`complete ${workspaceDir ? "project" : "ordinary"} attention keeps waiting after read and clears it on answer or run lifecycle`, () => {
+    const waiting = createNavigationChat({
+      chatId: "outside-window-waiting", lastRunId: "run-2", isRead: false,
+      hasActiveRun: true, hasPendingAwaiting: true, awaitingCount: 7, awaitingMode: "question",
+    });
+    const agent = createAgent({
+      ...(workspaceDir ? { workspaceDir } : {}), attentionChats: [waiting], recentChats: [],
+      hasPendingAwaiting: true, unreadCount: 1, unreadChatCount: 1,
+    });
+    const read = applyAssistantNavigationPush([agent], { frame: "push", type: "chat.read", data: {
+      agentKey: "zenmi", chatId: waiting.chatId, lastRunId: "run-2", readRunId: "run-2", readAt: EPOCH_MS + 10, agentUnreadCount: 0,
+    } });
+    assert.equal(read.items[0].hasPendingAwaiting, true);
+    assert.equal(read.items[0].attentionChats[0].hasPendingAwaiting, true);
+    assert.equal(read.items[0].attentionChats[0].isRead, true);
+    assert.equal(read.items[0].unreadCount, 0);
+    const readAll = applyAssistantNavigationPush([agent], { frame: "push", type: "chat.read_all", data: { agentKey: "zenmi", agentUnreadCount: 0 } });
+    assert.equal(readAll.items[0].hasPendingAwaiting, true);
+
+    for (const frame of [
+      { type: "awaiting.answered", data: { answeredAt: EPOCH_MS + 20 } },
+      { type: "run.finished", data: { finishedAt: EPOCH_MS + 20, runId: "run-2" } },
+      { type: "run.started", data: { startedAt: EPOCH_MS + 20, runId: "run-3" } },
+    ]) {
+      const result = applyAssistantNavigationPush(read.items, { frame: "push", type: frame.type, data: {
+        chatId: waiting.chatId, agentKey: "zenmi", ...frame.data,
+      } });
+      assert.equal(result.items[0].hasPendingAwaiting, false, frame.type);
+      assert.equal(result.items[0].attentionChats[0].hasPendingAwaiting, false, frame.type);
+      assert.equal(result.items[0].attentionChats[0].awaitingCount, 0, frame.type);
+      const snapshot = { items: result.items, activityItems: result.items, chatItems: [] };
+      assert.equal(collectAssistantNavigationPendingChats(snapshot).length, 0, frame.type);
+      assert.equal(collectAssistantNavigationOverviewChats(snapshot).length, 0, frame.type);
+    }
+  });
+}
+
+test("a window handling a runtime or read Push cannot hide a missing complete attention identity", () => {
+  const windowChat = createNavigationChat({ chatId: "window-only", lastRunId: "run-2", isRead: false });
+  const owner = createAgent({ recentChats: [windowChat], attentionChats: [] });
+  const asked = applyAssistantNavigationPush([owner], { frame: "push", type: "awaiting.asking", data: {
+    chatId: "window-only", agentKey: "zenmi", createdAt: EPOCH_MS + 5, mode: "approval",
+  } });
+  assert.equal(asked.items[0].recentChats[0].hasPendingAwaiting, true);
+  assert.equal(asked.items[0].attentionChats.length, 0);
+  assert.equal(asked.shouldRefresh, true);
+  assert.equal(asked.attentionShouldRefresh, true);
+
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => os.tmpdir() },
+    getServiceState: async () => ({ status: "stopped", healthMeta: { webUrl: "" } }),
+    issueAccessToken: async () => ({ ok: false, token: "" }), onSnapshot() {},
+  });
+  client.latestResult = {
+    ok: true, items: [], activityItems: [owner], chatItems: [windowChat], pinnedChatItems: [],
+    chatItemsHasMore: false, message: "ready", updatedAt: EPOCH_MS,
+  };
+  let refreshCount = 0;
+  client.scheduleRefresh = () => { refreshCount += 1; };
+  client.handleRealtimeFrame({ frame: "push", type: "chat.read", data: {
+    chatId: "window-only", agentKey: "zenmi", lastRunId: "run-2", readRunId: "run-2", readAt: EPOCH_MS + 10, agentUnreadCount: 0,
+  } });
+  assert.equal(client.getSnapshot().chatItems[0].isRead, true);
+  assert.equal(refreshCount, 1);
+  client.stop();
+});
+
+test("a project read arriving during a stale complete-history baseline is replayed before publication", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-project-attention-replay-"));
+  let push;
+  let releaseProjectHistory;
+  let notifyProjectHistoryRequested;
+  let notifyPushSubscribed;
+  const projectHistoryRequested = new Promise((resolve) => { notifyProjectHistoryRequested = resolve; });
+  const pushSubscribed = new Promise((resolve) => { notifyPushSubscribed = resolve; });
+  const initialChat = createNavigationChat({
+    chatId: "project-pin", pinned: true, isRead: false, lastRunId: "run-2", readRunId: "run-1",
+  });
+  const stalePlatformChat = {
+    chatId: initialChat.chatId, chatName: initialChat.chatName, agentKey: "zenmi", pinned: true,
+    createdAt: EPOCH_MS, updatedAt: EPOCH_MS, lastRunId: "run-2", lastRunContent: "",
+    read: { isRead: false, readRunId: "run-1" },
+  };
+  const project = createAgent({
+    workspaceDir: temp, unreadCount: 1, unreadChatCount: 1, chatCount: 1,
+    attentionChats: [initialChat], projectChats: [],
+  });
+  const snapshots = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/chats" && url.searchParams.has("agentKey")) {
+      assert.equal(url.searchParams.get("agentKey"), "zenmi");
+      assert.equal(url.searchParams.has("limit"), false);
+      assert.equal(url.searchParams.has("pinned"), false);
+      notifyProjectHistoryRequested();
+      return await new Promise((resolve) => {
+        releaseProjectHistory = () => resolve({ ok: true, status: 200, json: async () => ({ code: 0, data: [stalePlatformChat] }) });
+      });
+    }
+    const data = url.searchParams.get("hasWorkspace") === "true"
+      ? [{ key: "zenmi", name: "Zenmi", workspaceDir: temp, stats: { totalCount: 1, unreadCount: 1 }, chats: [] }]
+      : [];
+    return { ok: true, status: 200, json: async () => ({ code: 0, data }) };
+  };
+  const broker = {
+    async ensureConnected() {},
+    subscribePush(options) { push = options.onPush; notifyPushSubscribed(); return () => {}; },
+    getConnectionPhase: () => "connected",
+    getConnectionState: () => ({ phase: "connected" }),
+    cleanupConsumer() {},
+    async forwardRequest(request) {
+      const data = request.type === "/api/chats/order"
+        ? { sortMode: "recent", pinnedChats: [stalePlatformChat] }
+        : [];
+      request.onFrame({ frame: "response", type: request.type, code: 0, data });
+    },
+  };
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temp }, realtimeBroker: broker,
+    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
+    issueAccessToken: async () => ({ ok: true, token: "test-token" }),
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+  });
+  t.after(() => { client.stop(); globalThis.fetch = originalFetch; fs.rmSync(temp, { recursive: true, force: true }); });
+  client.scheduleRefresh = () => {};
+  client.latestResult = {
+    ok: true, items: [project], activityItems: [{ ...project, recentChats: [initialChat] }],
+    chatItems: [], pinnedChatItems: [initialChat], chatItemsHasMore: false,
+    chatSortMode: "recent", chatOrderingSupported: true, chatPinningSupported: true,
+    message: "ready", updatedAt: EPOCH_MS,
+  };
+
+  const refreshing = client.refreshNow();
+  await Promise.all([projectHistoryRequested, pushSubscribed]);
+  push({ frame: "push", type: "chat.read", data: {
+    chatId: "project-pin", agentKey: "zenmi", lastRunId: "run-2", readRunId: "run-2",
+    readAt: EPOCH_MS + 10, agentUnreadCount: 0,
+  } });
+  assert.equal(client.getSnapshot().items[0].unreadCount, 0);
+  releaseProjectHistory();
+  const result = await refreshing;
+
+  assert.equal(result.ok, true, result.message);
+  for (const agent of [result.items[0], result.activityItems[0]]) {
+    assert.equal(agent.unreadCount, 0);
+    assert.equal(agent.unreadChatCount, 0);
+    assert.equal(agent.attentionChats[0].isRead, true);
+    assert.equal(agent.attentionChats[0].readRunId, "run-2");
+    assert.equal(agent.attentionChats[0].updatedAt, EPOCH_MS);
+  }
+  assert.equal(result.pinnedChatItems[0].isRead, true);
+  assert.equal(collectAssistantNavigationUnreadChats(result).length, 0);
+  assert.equal(summarizeAssistantNavigationAttention(result).total.unreadCount, 0);
+  assert.ok(snapshots.length >= 2);
+  assert.equal(snapshots.every((snapshot) => collectAssistantNavigationUnreadChats(snapshot).length === summarizeAssistantNavigationAttention(snapshot).total.unreadCount), true);
+});
+
+const projectBaselineMutationCases = [
+  {
+    name: "archive", frames: [{ type: "chat.archived", data: { chatId: "baseline-chat", archivedAt: EPOCH_MS + 10 } }],
+    expectedUnreadIds: [], expectedAttentionIds: [],
+  },
+  {
+    name: "delete", frames: [{ type: "chat.deleted", data: { chatId: "baseline-chat" } }],
+    expectedUnreadIds: [], expectedAttentionIds: [],
+  },
+  {
+    name: "create then unread",
+    frames: [
+      { type: "chat.created", data: { chatId: "new-during-refresh", chatName: "Created during refresh", createdAt: EPOCH_MS + 10 } },
+      { type: "chat.unread", data: { chatId: "new-during-refresh", lastRunId: "run-3", readRunId: "", createdAt: EPOCH_MS + 20, agentUnreadCount: 2 } },
+    ],
+    expectedUnreadIds: ["baseline-chat", "new-during-refresh"], expectedAttentionIds: ["baseline-chat", "new-during-refresh"],
+    expectedChat: { chatId: "new-during-refresh", chatName: "Created during refresh", createdAt: EPOCH_MS + 10, updatedAt: EPOCH_MS + 20 },
+  },
+  {
+    name: "update",
+    frames: [{ type: "chat.updated", data: {
+      chatId: "baseline-chat", chatName: "Renamed during refresh", lastRunContent: "Latest summary", lastRunId: "run-2", updatedAt: EPOCH_MS + 10,
+    } }],
+    expectedUnreadIds: ["baseline-chat"], expectedAttentionIds: ["baseline-chat"],
+    expectedChat: { chatId: "baseline-chat", chatName: "Renamed during refresh", lastRunContent: "Latest summary", updatedAt: EPOCH_MS + 10 },
+  },
+];
+
+for (const mutation of projectBaselineMutationCases) {
+  test(`project ${mutation.name} arriving during a stale complete-history baseline survives publication`, async (t) => {
+    const originalFetch = globalThis.fetch;
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-project-mutation-replay-"));
+    let push;
+    let releaseProjectHistory;
+    let notifyProjectHistoryRequested;
+    let notifyPushSubscribed;
+    const projectHistoryRequested = new Promise((resolve) => { notifyProjectHistoryRequested = resolve; });
+    const pushSubscribed = new Promise((resolve) => { notifyPushSubscribed = resolve; });
+    const initialChat = createNavigationChat({
+      chatId: "baseline-chat", isRead: false, lastRunId: "run-2", readRunId: "run-1",
+    });
+    const stalePlatformChat = {
+      chatId: initialChat.chatId, chatName: initialChat.chatName, agentKey: "zenmi",
+      createdAt: EPOCH_MS, updatedAt: EPOCH_MS, lastRunId: "run-2", lastRunContent: "",
+      read: { isRead: false, readRunId: "run-1" },
+    };
+    const project = createAgent({
+      workspaceDir: temp, unreadCount: 1, unreadChatCount: 1, chatCount: 1,
+      recentChats: [initialChat], attentionChats: [initialChat], projectChats: [initialChat],
+    });
+    globalThis.fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/chats" && url.searchParams.has("agentKey")) {
+        notifyProjectHistoryRequested();
+        return await new Promise((resolve) => {
+          releaseProjectHistory = () => resolve({ ok: true, status: 200, json: async () => ({ code: 0, data: [stalePlatformChat] }) });
+        });
+      }
+      const data = url.searchParams.get("hasWorkspace") === "true"
+        ? [{ key: "zenmi", name: "Zenmi", workspaceDir: temp, stats: { totalCount: 1, unreadCount: 1 }, chats: [stalePlatformChat] }]
+        : [];
+      return { ok: true, status: 200, json: async () => ({ code: 0, data }) };
+    };
+    const broker = {
+      async ensureConnected() {},
+      subscribePush(options) { push = options.onPush; notifyPushSubscribed(); return () => {}; },
+      getConnectionPhase: () => "connected", getConnectionState: () => ({ phase: "connected" }), cleanupConsumer() {},
+      async forwardRequest(request) {
+        request.onFrame({ frame: "response", type: request.type, code: 0,
+          data: request.type === "/api/chats/order" ? { sortMode: "recent", pinnedChats: [] } : [] });
+      },
+    };
+    const client = new AssistantNavigationStatusClient({
+      app: { getPath: () => temp }, realtimeBroker: broker,
+      getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
+      issueAccessToken: async () => ({ ok: true, token: "test-token" }), onSnapshot() {},
+    });
+    t.after(() => { client.stop(); globalThis.fetch = originalFetch; fs.rmSync(temp, { recursive: true, force: true }); });
+    let refreshCount = 0;
+    client.scheduleRefresh = () => { refreshCount += 1; };
+    client.latestResult = {
+      ok: true, items: [project], activityItems: [project], chatItems: [], pinnedChatItems: [],
+      chatItemsHasMore: false, message: "ready", updatedAt: EPOCH_MS,
+    };
+
+    const refreshing = client.refreshNow();
+    await Promise.all([projectHistoryRequested, pushSubscribed]);
+    for (const frame of mutation.frames) {
+      push({ frame: "push", type: frame.type, data: { agentKey: "zenmi", ...frame.data } });
+    }
+    assert.deepEqual(collectAssistantNavigationUnreadChats(client.getSnapshot()).map((chat) => chat.chatId).sort(), [...mutation.expectedUnreadIds].sort());
+    assert.ok(refreshCount >= 1, "non-read mutations must still schedule the server-owned list refresh");
+    releaseProjectHistory();
+    const result = await refreshing;
+
+    assert.equal(result.ok, true, result.message);
+    for (const agent of [result.items[0], result.activityItems[0]]) {
+      assert.deepEqual(agent.attentionChats.map((chat) => chat.chatId).sort(), [...mutation.expectedAttentionIds].sort());
+      assert.equal(agent.unreadCount, mutation.expectedUnreadIds.length);
+      assert.equal(agent.unreadChatCount, mutation.expectedUnreadIds.length);
+      if (mutation.expectedChat) {
+        const actualChat = agent.attentionChats.find((chat) => chat.chatId === mutation.expectedChat.chatId);
+        for (const [field, expectedValue] of Object.entries(mutation.expectedChat)) {
+          assert.equal(actualChat[field], expectedValue, `${mutation.name} must preserve ${field} across baseline replay`);
+        }
+      }
+    }
+    const unread = collectAssistantNavigationUnreadChats(result);
+    assert.deepEqual(unread.map((chat) => chat.chatId).sort(), [...mutation.expectedUnreadIds].sort());
+    assert.equal(unread.length, summarizeAssistantNavigationAttention(result).total.unreadCount);
+  });
+}

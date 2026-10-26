@@ -47,6 +47,8 @@ export type DesktopPetNavigationSnapshotLike = {
   ok?: unknown;
   items?: unknown;
   activityItems?: unknown;
+  chatItems?: unknown;
+  pinnedChatItems?: unknown;
 };
 
 export type DesktopPetBoundsLike = {
