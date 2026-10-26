@@ -70,6 +70,7 @@ const {
   getAssistantAwaitingStatusKey,
   getAssistantNavWorkspaceDisabledReason,
   getAssistantNavAgentAttentionChat,
+  getAssistantNavAgentAttentionChats,
   getAssistantNavAgentPreviewChats,
   hasAssistantNavChat,
   isAssistantNavChatAgent,
@@ -679,4 +680,65 @@ test("project previews preserve the server order independently of recent activit
     assert.deepEqual(getAssistantNavAgentPreviewChats(agent, 1).map((item) => item.chatId), [order[0].chatId]);
     assert.deepEqual(agent.recentChats.map((item) => item.chatId), ["active"]);
   }
+});
+
+test("project unread counts survive renderer normalization outside the sidebar and activity windows", () => {
+  const attentionChats = Array.from({ length: 65 }, (_, index) => chat({
+    chatId: `unread-${index}`, agentKey: "project", isRead: false,
+  }));
+  const [agent] = normalizeAssistantNavAgents([{
+    agentKey: "project", displayName: "Project", workspaceDir: "/project",
+    unreadCount: 0, recentChats: attentionChats.slice(0, 50),
+    projectChats: attentionChats.slice(0, 1), attentionChats,
+  }]);
+  assert.equal(agent.unreadCount, 65);
+  assert.equal(agent.unreadChatCount, 65);
+  assert.equal(agent.attentionChats.length, 65);
+  assert.equal(agent.recentChats.length, 50);
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 50).length, 1);
+});
+
+test("complete attention retains old and pinned awaiting Chats outside renderer display windows", () => {
+  const recentChats = Array.from({ length: 50 }, (_, index) => chat({
+    chatId: `recent-${index}`, agentKey: "project", isRead: true,
+  }));
+  const ordinaryAwaiting = chat({
+    chatId: "old-awaiting", agentKey: "project", isRead: true, hasPendingAwaiting: true, awaitingCount: 7,
+  });
+  const pinnedAwaiting = chat({
+    chatId: "pinned-awaiting", agentKey: "project", pinned: true, isRead: true, hasPendingAwaiting: true,
+  });
+  const [agent] = normalizeAssistantNavAgents([{
+    agentKey: "project", displayName: "Project", workspaceDir: "/project", hasPendingAwaiting: false,
+    recentChats, projectChats: recentChats.slice(0, 1),
+    attentionChats: [...recentChats, ordinaryAwaiting, pinnedAwaiting, pinnedAwaiting],
+  }]);
+
+  assert.equal(agent.hasPendingAwaiting, true);
+  const attention = getAssistantNavAgentAttentionChats(agent);
+  const awaiting = attention.filter((item) => item.hasPendingAwaiting);
+  assert.deepEqual(awaiting.map((item) => item.chatId), ["old-awaiting", "pinned-awaiting"]);
+  assert.equal(awaiting.length, 2, "header waiting count is Chat count, with pinned duplicates counted once");
+  assert.equal(agent.recentChats.length, 50);
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 50).length, 1);
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 50).some((item) => item.chatId === pinnedAwaiting.chatId), false);
+});
+
+test("complete attention clears stale awaiting flags after awaiting ends", () => {
+  for (const workspaceDir of [undefined, "/project"]) {
+    const [agent] = normalizeAssistantNavAgents([{
+      agentKey: "owner", displayName: "Owner", workspaceDir,
+      hasPendingAwaiting: true,
+      recentChats: [chat({ chatId: "stale-recent", hasPendingAwaiting: true })],
+      attentionChats: [chat({ chatId: "stale-recent", hasPendingAwaiting: false, isRead: true })],
+    }]);
+    assert.equal(agent.hasPendingAwaiting, false);
+    assert.equal(getAssistantNavAgentAttentionChats(agent).some((item) => item.hasPendingAwaiting), false);
+  }
+});
+
+test("attention helper retains legacy recent Chats when no complete baseline is present", () => {
+  const chats = [chat({ chatId: "awaiting", hasPendingAwaiting: true })];
+  assert.deepEqual(getAssistantNavAgentAttentionChats({ recentChats: chats }), chats);
+  assert.deepEqual(getAssistantNavAgentAttentionChats({ recentChats: chats, attentionChats: [] }), []);
 });

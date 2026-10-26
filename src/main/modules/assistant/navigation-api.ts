@@ -1,6 +1,6 @@
 import { isObjectRecord } from "./navigation-values";
 import { type AgentPlatformApiResponse, type PlatformChatSummary, NAVIGATION_AGENT_CHAT_LIMIT } from "./navigation-contracts";
-import { type AssistantNavAgentItem } from "../../../shared/contracts";
+import { type AssistantNavAgentItem, type AssistantNavChatItem } from "../../../shared/contracts";
 import { enrichNavigationAgentsWithGitBranches } from "./navigation-workspace";
 import {
   mapNavigationChat,
@@ -89,14 +89,21 @@ export async function readAssistantNavigationProjectAgentsFromPlatform(
   );
   const projects = buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
   const orderedProjects = await Promise.all(projects.map(async (agent) => {
-    const chats = includeChatLimit > 0 ? await readApiJson<PlatformChatSummary[]>(
-      `${createApiUrl(baseUrl, "/api/chats")}?agentKey=${encodeURIComponent(agent.agentKey)}&pinned=false&limit=${includeChatLimit}`,
+    // Project unread totals include old and pinned Chats outside the sidebar window.
+    // Keep their identities and read cursors in the same Navigation baseline.
+    const chats = await readApiJson<PlatformChatSummary[]>(
+      `${createApiUrl(baseUrl, "/api/chats")}?agentKey=${encodeURIComponent(agent.agentKey)}`,
       token,
-    ) : [];
-    const projectChats = chats.map((chat, index) => mapNavigationChat(
+    );
+    const attentionChats = chats.map((chat, index) => mapNavigationChat(
       chat, agent.agentKey, `navigation.projects.${agent.agentKey}.chats[${index}]`,
-    )).filter((chat): chat is NonNullable<typeof chat> => Boolean(chat) && !chat?.pinned);
-    return { ...agent, projectChats };
+    )).filter((chat): chat is NonNullable<typeof chat> => Boolean(chat));
+    const projectChats = attentionChats.filter((chat) => !chat.pinned).slice(0, includeChatLimit);
+    const unreadCount = attentionChats.filter((chat) => chat.isRead === false).length;
+    return {
+      ...agent, attentionChats, projectChats, unreadCount, unreadChatCount: unreadCount,
+      hasPendingAwaiting: attentionChats.some((chat) => chat.hasPendingAwaiting),
+    };
   }));
   return await enrichNavigationAgentsWithGitBranches(orderedProjects);
 }
@@ -120,11 +127,44 @@ export async function readAssistantNavigationChatActivityFromPlatform(
   baseUrl: string,
   token: string,
 ): Promise<AssistantNavAgentItem[]> {
-  const agents = await readApiJson<unknown[]>(
-    `${createApiUrl(baseUrl, "/api/agents")}?hasWorkspace=false&includeChats=${NAVIGATION_AGENT_CHAT_LIMIT}&chatsPinned=false`,
-    token,
-  );
-  return buildAssistantNavigationAgentsFromPlatformAgents(agents, NAVIGATION_AGENT_CHAT_LIMIT);
+  const [agents, chats] = await Promise.all([
+    readApiJson<unknown[]>(
+      `${createApiUrl(baseUrl, "/api/agents")}?hasWorkspace=false&includeChats=${NAVIGATION_AGENT_CHAT_LIMIT}&chatsPinned=false`,
+      token,
+    ),
+    readApiJson<PlatformChatSummary[]>(
+      `${createApiUrl(baseUrl, "/api/chats")}?hasWorkspace=false`,
+      token,
+    ),
+  ]);
+  const chatsByAgent = new Map<string, AssistantNavChatItem[]>();
+  for (const [index, rawChat] of chats.entries()) {
+    const chat = mapNavigationChat(rawChat, "", `navigation.chatActivity.chats[${index}]`);
+    if (!chat?.agentKey) continue;
+    const ownerChats = chatsByAgent.get(chat.agentKey) ?? [];
+    ownerChats.push(chat);
+    chatsByAgent.set(chat.agentKey, ownerChats);
+  }
+  const activity = buildAssistantNavigationAgentsFromPlatformAgents(agents, NAVIGATION_AGENT_CHAT_LIMIT);
+  const knownAgentKeys = new Set(activity.map((agent) => agent.agentKey));
+  for (const [agentKey, attentionChats] of chatsByAgent) {
+    if (knownAgentKeys.has(agentKey)) continue;
+    // Deleted catalog owners can still have published Chat history. Only their
+    // attention is retained; no history is added to task/tray recency windows.
+    activity.push({
+      agentKey, displayName: agentKey, role: "", unreadCount: 0, unreadChatCount: 0,
+      chatCount: attentionChats.length, hasPendingAwaiting: false,
+      latestChatId: null, latestPreview: "", recentChats: [],
+    });
+  }
+  return activity.map((agent) => {
+    const attentionChats = chatsByAgent.get(agent.agentKey) ?? [];
+    const unreadCount = attentionChats.filter((chat) => chat.isRead === false).length;
+    return {
+      ...agent, attentionChats, unreadCount, unreadChatCount: unreadCount,
+      hasPendingAwaiting: attentionChats.some((chat) => chat.hasPendingAwaiting),
+    };
+  });
 }
 
 export async function readAssistantCopilotAgentsFromPlatform(

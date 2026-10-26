@@ -1,4 +1,5 @@
 import { readEpochMillis } from "../../../shared/time-contract";
+import { collectAssistantNavigationOverviewChats } from "../../../shared/assistant-navigation-attention";
 import type {
   AssistantNavChatItem,
   DesktopPetTaskItem,
@@ -133,68 +134,39 @@ export function resolveDesktopPetMessageStatus(chat: AssistantNavChatItem): Desk
   return "done";
 }
 
-export const DESKTOP_PET_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-
-export const DESKTOP_PET_MESSAGE_LIMIT = 50;
-
-export function isDesktopPetMessageRecent(updatedAt: number, now = Date.now()) {
-  return updatedAt >= now - DESKTOP_PET_MESSAGE_RETENTION_MS;
-}
-
 export function createDesktopPetMessagesFromNavigationSnapshot(
   snapshot: DesktopPetNavigationSnapshotLike | null | undefined
 ): DesktopPetMessageItem[] {
-  const items = readDesktopPetNavigationItems(snapshot);
-  if (!Array.isArray(items)) {
+  if (!snapshot?.ok) {
     return [];
   }
-  const messagesByChatId = new Map<string, DesktopPetMessageItem>();
-  for (const agent of items as AssistantNavAgentItem[]) {
-    const agentKey = toDesktopPetTaskText(agent?.agentKey);
-    if (!agentKey || !Array.isArray(agent?.recentChats)) {
-      continue;
-    }
-    const agentDisplayName = toDesktopPetTaskText(agent.displayName) || agentKey;
-    for (const chat of agent.recentChats) {
-      const chatId = toDesktopPetTaskText(chat.chatId);
-      if (!chatId) {
-        continue;
-      }
-      const unread = chat.isRead === false;
-      const status = resolveDesktopPetMessageStatus(chat);
-      if (!unread && status !== "awaiting") {
-        continue;
-      }
-      if (!toDesktopPetTaskText(chat.lastRunContent) && !chat.hasActiveRun && !chat.hasPendingAwaiting) {
-        continue;
-      }
-      const messageAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
-      const updatedAt = readEpochMillis(chat.updatedAt) ?? readEpochMillis(agent.updatedAt);
-      if (updatedAt === undefined || !isDesktopPetMessageRecent(updatedAt)) {
-        continue;
-      }
-      const awaitingCount = readDesktopPetAwaitingCount(chat);
-      const message: DesktopPetMessageItem = {
-        id: `${messageAgentKey}:${chatId}`,
-        chatId,
-        runId: toDesktopPetTaskText(chat.lastRunId) || null,
-        agentKey: messageAgentKey,
-        agentDisplayName,
-        title: resolveDesktopPetTaskTitle(chat),
-        preview: getUsableDesktopPetTaskPreview(chat.lastRunContent),
-        status,
-        unread,
-        ...(awaitingCount > 0 ? { awaitingCount } : {}),
-        ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
-        updatedAt
-      };
-      const existing = messagesByChatId.get(chatId);
-      if (!existing || getDesktopPetTaskTimestamp(message.updatedAt) > getDesktopPetTaskTimestamp(existing.updatedAt)) {
-        messagesByChatId.set(chatId, message);
-      }
-    }
-  }
-  return [...messagesByChatId.values()].sort((left, right) => {
+  const items: AssistantNavAgentItem[] = Array.isArray(snapshot.items) ? snapshot.items : [];
+  const activityItems: AssistantNavAgentItem[] = Array.isArray(snapshot.activityItems) ? snapshot.activityItems : [];
+  const agentsByKey = new Map([...items, ...activityItems].map((agent) => [agent.agentKey, agent]));
+  const chats = collectAssistantNavigationOverviewChats({
+    items,
+    activityItems,
+    chatItems: Array.isArray(snapshot.chatItems) ? snapshot.chatItems : [],
+    pinnedChatItems: Array.isArray(snapshot.pinnedChatItems) ? snapshot.pinnedChatItems : [],
+  });
+  return chats.map((chat): DesktopPetMessageItem => {
+    const agent = agentsByKey.get(chat.agentKey);
+    const awaitingCount = readDesktopPetAwaitingCount(chat);
+    return {
+      id: `${chat.agentKey}:${chat.chatId}`,
+      chatId: chat.chatId,
+      runId: toDesktopPetTaskText(chat.lastRunId) || null,
+      agentKey: chat.agentKey,
+      agentDisplayName: toDesktopPetTaskText(agent?.displayName) || chat.agentKey,
+      title: resolveDesktopPetTaskTitle(chat),
+      preview: getUsableDesktopPetTaskPreview(chat.lastRunContent),
+      status: resolveDesktopPetMessageStatus(chat),
+      unread: chat.isRead === false,
+      ...(awaitingCount > 0 ? { awaitingCount } : {}),
+      ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
+      updatedAt: readEpochMillis(chat.updatedAt) ?? readEpochMillis(agent?.updatedAt) ?? 0,
+    };
+  }).sort((left, right) => {
     const awaitingPriority = Number(right.status === "awaiting") - Number(left.status === "awaiting");
     if (awaitingPriority !== 0) {
       return awaitingPriority;
@@ -204,5 +176,5 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
       return timeDelta;
     }
     return left.title.localeCompare(right.title, "zh-CN");
-  }).slice(0, DESKTOP_PET_MESSAGE_LIMIT);
+  });
 }

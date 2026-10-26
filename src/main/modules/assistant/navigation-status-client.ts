@@ -19,6 +19,7 @@ import {
   type NavigationPushFrame,
   type NavigationPushEvent,
   JOURNALED_NAVIGATION_PUSH_TYPES,
+  NAVIGATION_READ_PUSH_TYPES,
   NAVIGATION_LIVE_FRAME_LIMIT,
   type AssistantNavigationChatsSnapshot,
   type PlatformChatSummary,
@@ -274,7 +275,7 @@ export class AssistantNavigationStatusClient {
         return {
           ...agent,
           recentChats,
-          hasPendingAwaiting: agent.hasPendingAwaiting || recentChats.some((chat) => chat.hasPendingAwaiting),
+          hasPendingAwaiting: (agent.attentionChats ?? recentChats).some((chat) => chat.hasPendingAwaiting),
         };
       });
       if (chatOrderSnapshot.chatOrderingSupported) {
@@ -608,12 +609,13 @@ export class AssistantNavigationStatusClient {
         updatedAt: nowEpochMillis()
       });
     }
-    const isReadProjectionPush = JOURNALED_NAVIGATION_PUSH_TYPES.has(event.type);
+    const isReadProjectionPush = NAVIGATION_READ_PUSH_TYPES.has(event.type);
     if (isReadProjectionPush) {
       // Read state is a push-owned projection. A successfully applied or
       // recognized stale event must not start a snapshot race; only a wholly
       // missing target needs server calibration.
-      if (next.shouldRefresh && nextActivity.shouldRefresh && nextChats.shouldRefresh && nextPins.shouldRefresh) {
+      if (next.attentionShouldRefresh || nextActivity.attentionShouldRefresh ||
+          (next.shouldRefresh && nextActivity.shouldRefresh && nextChats.shouldRefresh && nextPins.shouldRefresh)) {
         this.scheduleRefresh();
       }
       return;

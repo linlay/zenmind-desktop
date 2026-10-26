@@ -5,7 +5,6 @@ import type {
   AssistantNavAgentItem,
   AssistantWorkerOpenRequest,
   DesktopPetAgentOption,
-  DesktopPetMessageItem,
   DesktopPetPanelPlacement,
   DesktopPetState,
   DesktopPetTaskItem
@@ -75,11 +74,7 @@ export type DesktopPetRuntimeOptions = {
 
 const DESKTOP_PET_RENDERER_WINDOW_MODES: readonly DesktopPetWindowMode[] = [
   "base",
-  "bubble",
-  "preview-collapsed",
-  "preview-expanded",
-  "task-list-compact",
-  "task-list"
+  "bubble"
 ];
 
 function normalizeDesktopPetRendererWindowMode(mode: unknown): DesktopPetWindowMode {
@@ -109,7 +104,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
   const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
   const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
-  const desktopPetDismissedMessages = new Map<string, number>();
   let destroyingPanelWindow = false;
   let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
   let desktopPetDragLayout: DesktopPetWindowLayout | null = null;
@@ -276,16 +270,10 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     };
   }
 
-  function isMessageVisible(message: DesktopPetMessageItem) {
-    const dismissedAt = desktopPetDismissedMessages.get(message.chatId);
-    return !dismissedAt || message.updatedAt > dismissedAt;
-  }
-
   function getMessagesForState() {
     return createDesktopPetMessagesFromNavigationSnapshot(
       options.getNavigationSnapshot()
-    )
-      .filter((message) => isMessageVisible(message) && (message.unread || message.status === "awaiting"));
+    );
   }
 
   function getAgentStatusForState() {
@@ -790,12 +778,14 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     if (!chatId || !message) {
       return { ok: false, message: t("desktopPet.replyMissingContent") };
     }
+    if (getMessagesForState().some((item) => item.chatId === chatId && item.status === "awaiting")) {
+      return { ok: false, message: t("desktopPet.status.awaitingConfirm") };
+    }
     const result = await assistantBridge.startRun({
       chatId,
       agentKey: agentKey || undefined,
       message
     });
-    desktopPetDismissedMessages.delete(chatId);
     return result;
   }
 
@@ -807,7 +797,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
     const message = getMessagesForState().find((item) => item.chatId === chatId);
     // A stale card must not mark a newer Run as read.
-    if (!message || message.updatedAt !== updatedAt || (message.runId || null) !== (input.runId || null)) {
+    if (!message || message.status === "awaiting" || message.updatedAt !== updatedAt || (message.runId || null) !== (input.runId || null)) {
       return { ok: false };
     }
     try {
@@ -818,8 +808,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     } catch {
       return { ok: false };
     }
-    // Read counts stay authoritative: Navigation consumes the Platform chat.read Push.
-    desktopPetDismissedMessages.set(chatId, updatedAt);
+    // The card and unread count both wait for Navigation's authoritative chat.read Push.
     refreshState();
     return { ok: true };
   }
