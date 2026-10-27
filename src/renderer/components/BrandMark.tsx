@@ -1,3 +1,4 @@
+import { MaterialIcon } from "./icons/MaterialIcon";
 import { SkinVisual } from "../appearance/SkinVisual";
 import type { SVGProps } from "react";
 import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
@@ -163,46 +164,21 @@ function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
   const iconProps = createSidebarActionIconProps(kind, className);
 
   switch (kind) {
-    case "sidebar_left":
-      return (
-        <svg {...iconProps}>
-          <rect x="3" y="3" width="18" height="18" rx="3.5" />
-          <line x1="9" y1="3" x2="9" y2="21" />
-        </svg>
-      );
-    case "sidebar_right":
-      return (
-        <svg {...iconProps}>
-          <rect x="3" y="3" width="18" height="18" rx="3.5" />
-          <line x1="8" y1="9" x2="16" y2="9" />
-          <line x1="8" y1="12" x2="16" y2="12" />
-          <line x1="8" y1="15" x2="13" y2="15" />
-        </svg>
-      );
+    case "sidebar_left": return <MaterialIcon name="dock_to_right" className={iconProps.className} />;
+    case "sidebar_right": return <MaterialIcon name="dock_to_left" className={iconProps.className} />;
     case "back":
       return (
         <svg {...iconProps}>
-          <path d="M20 12H4" />
-          <path d="m10 6-6 6 6 6" />
+          <path d="M20 12H4M10 4.5 4 12l6 7.5" />
         </svg>
       );
     case "forward":
       return (
         <svg {...iconProps}>
-          <path d="M4 12h16" />
-          <path d="m14 6 6 6-6 6" />
+          <path d="M4 12h16M14 4.5 20 12l-6 7.5" />
         </svg>
       );
-    case "sort":
-      return (
-        <svg {...iconProps}>
-          <path d="M6 5v14" />
-          <path d="M3.5 15.5 6 18l2.5-2.5" />
-          <path d="M12 7h8" />
-          <path d="M12 12h6" />
-          <path d="M12 17h4" />
-        </svg>
-      );
+    case "sort": return <MaterialIcon name="list_arrow" className={iconProps.className} />;
     case "expand_all":
       return (
         <svg {...iconProps}>
@@ -219,58 +195,12 @@ function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
           <path d="M3 12h18" />
         </svg>
       );
-    case "refresh":
-      return (
-        <svg {...iconProps}>
-          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-          <path d="M21 3v5h-5" />
-        </svg>
-      );
-    case "add":
-      return (
-        <svg {...iconProps}>
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      );
-    case "new_project":
-      return (
-        <svg {...iconProps}>
-          <path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z" />
-          <path d="M12 10v6m-3-3h6" />
-        </svg>
-      );
-    case "new_chat":
-      return (
-        <svg {...iconProps}>
-          <path d="M10 4H6a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3v-4" />
-          <path d="m15 5 3 3M9 15l1-5 7-7a2.12 2.12 0 0 1 3 3l-7 7-4 2Z" />
-        </svg>
-      );
-    case "pin":
-      return (
-        <svg {...iconProps}>
-          <path d="m14 3 7 7-4 1-3 5-6-6 5-3 1-4Z" />
-          <path d="m11 13-7 7" />
-        </svg>
-      );
-    case "more_actions":
-      return (
-        <svg {...iconProps} viewBox="0 0 16 16" stroke="none">
-          <path
-            d="M3.33362 6.80811C3.99161 6.80828 4.52502 7.34246 4.52502 8.00049C4.52485 8.65837 3.9915 9.19172 3.33362 9.19189C2.67559 9.19189 2.14141 8.65848 2.14124 8.00049C2.14124 7.34235 2.67548 6.80811 3.33362 6.80811Z"
-            fill="currentColor"
-          />
-          <path
-            d="M8.00061 6.80811C8.65849 6.80841 9.19202 7.34254 9.19202 8.00049C9.19184 8.65829 8.65838 9.19159 8.00061 9.19189C7.34258 9.19189 6.8084 8.65848 6.80823 8.00049C6.80823 7.34235 7.34247 6.80811 8.00061 6.80811Z"
-            fill="currentColor"
-          />
-          <path
-            d="M12.6666 6.80811C13.3246 6.80828 13.858 7.34246 13.858 8.00049C13.8579 8.65837 13.3245 9.19172 12.6666 9.19189C12.0088 9.1917 11.4744 8.65836 11.4742 8.00049C11.4742 7.34247 12.0087 6.8083 12.6666 6.80811Z"
-            fill="currentColor"
-          />
-        </svg>
-      );
+    case "refresh": return <MaterialIcon name="refresh" className={iconProps.className} />;
+    case "add": return <MaterialIcon name="add" className={iconProps.className} />;
+    case "new_project": return <MaterialIcon name="create_new_folder" className={iconProps.className} />;
+    case "new_chat": return <MaterialIcon name="edit_square" className={iconProps.className} />;
+    case "pin": return <MaterialIcon name="push_pin" className={iconProps.className} />;
+    case "more_actions": return <MaterialIcon name="more_horiz" className={iconProps.className} />;
     case "double_check":
       return (
         <svg {...iconProps}>
@@ -284,19 +214,7 @@ function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
           <path d="M 7.5 11 L 13.5 20 L 22.5 5" />
         </svg>
       );
-    case "close":
-      return (
-        <svg {...iconProps}>
-          <line x1="6" y1="6" x2="18" y2="18" />
-          <line x1="18" y1="6" x2="6" y2="18" />
-        </svg>
-      );
-    default:
-      return (
-        <svg {...iconProps}>
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      );
+    case "close": return <MaterialIcon name="close" className={iconProps.className} />;
   }
 }
 

@@ -32,7 +32,7 @@ export const paths = {
   library: '<path d="M12 6Q6 2 3 5v15q4-3 9 0 5-3 9 0V5q-3-3-9 1v14"/>',
   refresh: '<path d="M20 10a8 8 0 1 0 0 6M20 3v7h-7"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
 };
-const mapping = { 'navigation.search':'search','navigation.back':'back','navigation.forward':'forward','navigation.sidebar_left':'sidebar','navigation.sidebar_right':'sidebar_right','navigation.refresh':'refresh','navigation.more_actions':'more','entry.kanban':'kanban','entry.automation':'automation','entry.new_chat':'new_chat','entry.new_project':'project','entry.chat':'chat','entry.project':'project','entry.website':'website','chat.send':'send','chat.stop':'stop','chat.attach':'attach','chat.expand':'expand','chat.collapse':'collapse','chat.voice':'voice','agent.default':'project','agent.terminal':'terminal','agent.database':'database','agent.library':'library','agent.folder':'project','agent.coder':'terminal','agent.kbase':'library' };
+const mapping = { 'navigation.search':'search','navigation.back':'back','navigation.forward':'forward','navigation.sidebar_left':'sidebar','navigation.sidebar_right':'sidebar_right','navigation.refresh':'refresh','navigation.more_actions':'more','entry.kanban':'kanban','entry.automation':'automation','entry.new_chat':'new_chat','entry.new_project':'project','entry.chat':'chat','entry.project':'project','entry.website':'website','chat.send':'send','chat.stop':'stop','chat.attach':'attach','chat.expand':'expand','chat.collapse':'collapse','chat.voice':'voice' };
 
 export const COLLECTION_STYLES = {
   'pink-kitty': { label: '猫爪 · 猫耳 · 猫尾', motif: 'bow', rounded: true },

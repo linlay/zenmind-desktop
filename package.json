@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.21",
+  "version": "0.5.25",
   "private": true,
   "description": "桌面壳",
   "main": "dist-electron/main/index.js",
@@ -13,6 +13,9 @@
     "brand:sync": "node ./scripts/sync-brand.mjs",
     "brand:prepare": "npm run brand:sync && node ./scripts/generate-app-icons.mjs",
     "icons": "npm run brand:prepare",
+    "icons:webclient:sync": "node ./scripts/sync-webclient-icons.mjs",
+    "icons:webclient:check": "node ./scripts/sync-webclient-icons.mjs --check",
+    "test:primary-navigation": "npm run build:main:types && node --test test/primary-chat-navigation.test.mjs test/agent-icon-fallback.test.mjs && node qa/primary-chat-navigation-smoke.mjs",
     "sync:version": "node ./scripts/sync-package-version.mjs",
     "predev": "npm run sync:version",
     "prebuild": "npm run sync:version",

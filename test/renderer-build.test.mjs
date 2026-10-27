@@ -1673,17 +1673,12 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.assistant-worker-actions\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?gap:\s*4px;[\s\S]*?height:\s*28px;/);
   assert.match(globalStyles, /\.assistant-worker-icon-button\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*6px;/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
-  assert.match(agentIconSource, /defaultIcon from "\.\.\/\.\.\/assets\/agent-icons\/default\.svg"/);
-  assert.match(agentIconSource, /kbaseIcon from "\.\.\/\.\.\/assets\/agent-icons\/kbase\.svg"/);
-  assert.match(agentIconSource, /const IconMap/);
-  assert.match(agentIconSource, /AGENT_ICON_NAMES[\s\S]*"folder"[\s\S]*"coder"[\s\S]*"kbase"[\s\S]*"terminal"/);
-  assert.doesNotMatch(agentIconSource, /BUILTIN_ICON_CONFIGS/);
-  assert.doesNotMatch(agentIconSource, /ledger/);
+  assert.match(agentIconSource, /AgentDefaultPose/);
+  assert.match(agentIconSource, /resolveAgentIcon\(icon, mode/);
+  assert.match(agentIconSource, /agentAppearance/);
   assert.match(agentIconSource, /isImageIcon/);
-  assert.match(agentIconSource, /useState\(false\)/);
-  assert.match(agentIconSource, /\(\)\s*=>\s*setImageFailed\(true\)/);
-  assert.match(agentIconSource, /readIconColor\(icon\) \|\| "#94a3b8"/);
-  assert.doesNotMatch(agentIconSource, /readIconColor\(icon\) \|\| "var\(--accent\)"/);
+  assert.match(agentIconSource, /setFailedSource\(imageSource\)/);
+  assert.match(agentIconSource, /color=\{appearance.color\}/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_DEFINITIONS/);
   assert.match(appShell, /type AgentWebclientRouteDefinition = \{/);
@@ -8353,6 +8348,14 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(viteConfig, /public["'],\s*["']desktop-pet/);
 });
 
+test("tool menu opens directly while account state stays subscribed", () => {
+  const appShell = readAppShellSource();
+  assert.match(appShell, /onRequestToolMenuOpen=\{shellOverlay\.requestToolMenuOpen\}/);
+  assert.doesNotMatch(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
+  assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);
+  assert.match(appShell, /ssoApi\.onStatusChanged\(\(status\) => \{\s*setDesktopSsoStatus\(status\);/);
+});
+
 test("desktop sso waits for a user click and keeps pending login recoverable", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
@@ -8412,7 +8415,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(appShell, /handleDesktopSsoLogin\("switch"\)|sidebar\.sso\.switchAccount/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
   assert.match(appShell, /const refreshDesktopSsoStatus = useCallback\(async \(\) => \{[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
-  assert.match(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
+  assert.match(appShell, /onRequestToolMenuOpen=\{shellOverlay\.requestToolMenuOpen\}/);
+  assert.doesNotMatch(appShell, /requestToolMenuOpen\(refreshDesktopSsoStatus\)/);
   assert.doesNotMatch(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\]/);
   assert.doesNotMatch(appShell, /className=\{desktopSsoClassName\}/);
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);

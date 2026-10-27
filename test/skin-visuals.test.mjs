@@ -99,3 +99,19 @@ test('legacy screenshot overrides are ignored before asset validation, including
     images: { 'chat.send': 'chat.send', 'chat.screenshot': 'invalid' }, styles: {} } }));
   assert.deepEqual(snapshot.visuals.images, { 'chat.send': 'chat.send' });
 });
+
+test('Agent icons are never skin resources; old Agent declarations are discarded before asset reads', () => {
+  assert.equal(api.SKIN_VISUAL_SLOTS.some(slot => slot.startsWith('agent.')), false);
+  for (const legacy of ['visuals/old-terminal.png', '../../invalid.svg', null, { invalid: true }]) {
+    const images = Object.fromEntries(api.SKIN_VISUAL_SLOTS.map(slot => [slot, 'visuals/icon.png']));
+    const oldAgents = Object.fromEntries(['default', 'terminal', 'database', 'library', 'folder', 'coder', 'kbase'].map(name => [`agent.${name}`, legacy]));
+    let reads = 0;
+    const parsed = parseSkinVisuals({ images: { ...images, ...oldAgents } }, raw => { reads++; assert.equal(raw, 'visuals/icon.png'); return raw; });
+    assert.deepEqual(parsed.images, images);
+    assert.equal(reads, api.SKIN_VISUAL_SLOTS.length);
+    const manifest = parseSkinPackageManifest({ schemaVersion: '1.1', id: 'legacy.agent.skin', name: 'Legacy', version: '1.0.0',
+      variants: { light: { visuals: { images: { 'agent.coder': legacy, 'entry.new_chat': 'visuals/chat.png' } } }, dark: {} } });
+    assert.deepEqual(manifest.variants.light.visuals.images, { 'entry.new_chat': 'visuals/chat.png' });
+    assert.deepEqual(api.skinPackageResources(manifest), ['visuals/chat.png']);
+  }
+});

@@ -698,7 +698,6 @@ export const SKIN_VISUAL_SLOTS = [
   "navigation.search", "navigation.back", "navigation.forward", "navigation.sidebar_left", "navigation.sidebar_right",
   "navigation.refresh", "navigation.more_actions", "entry.kanban", "entry.automation", "entry.new_chat", "entry.new_project",
   "entry.chat", "entry.project", "entry.website", "chat.send", "chat.stop", "chat.attach", "chat.expand", "chat.collapse", "chat.voice",
-  "agent.default", "agent.terminal", "agent.database", "agent.library", "agent.folder", "agent.coder", "agent.kbase",
   "heading.pinned.zh-CN", "heading.pinned.en-US",
   "heading.chats.zh-CN", "heading.projects.zh-CN", "heading.websites.zh-CN",
   "heading.chats.en-US", "heading.projects.en-US", "heading.websites.en-US"
@@ -714,14 +713,18 @@ export type SkinVisualStyles = {
 };
 export type SkinVisuals = { images: Partial<Record<SkinVisualSlot, string>>; styles: SkinVisualStyles };
 export const SKIN_VISUAL_LIMITS = { assetBytes: 256 * 1024, totalBytes: 4 * 1024 * 1024, maxDimension: 1024 } as const;
+function isDiscardedSkinVisualSlot(key: string) {
+  return key === "chat.screenshot" || key.startsWith("agent.");
+}
 export function parseSkinVisuals(value: unknown, parseImage: (value: unknown) => string | null): SkinVisuals | null {
   if (!appearanceRecord(value) || Object.keys(value).some(key => !["images", "styles"].includes(key))) return null;
   const images = value.images ?? {}, styles = value.styles ?? {};
-  if (!appearanceRecord(images) || !appearanceRecord(styles) || Object.keys(images).filter(key => key !== "chat.screenshot").length > SKIN_VISUAL_SLOTS.length) return null;
+  if (!appearanceRecord(images) || !appearanceRecord(styles) || Object.keys(images).filter(key => !isDiscardedSkinVisualSlot(key)).length > SKIN_VISUAL_SLOTS.length) return null;
   const result: SkinVisuals = { images: {}, styles: {} };
   for (const [key, raw] of Object.entries(images)) {
-    // Screenshot is a native menu action; silently discard legacy skin overrides.
-    if (key === "chat.screenshot") continue;
+    // Native screenshots and Agent identities do not belong to skin resources.
+    // Discard legacy declarations before reading or validating any image.
+    if (isDiscardedSkinVisualSlot(key)) continue;
     if (!(SKIN_VISUAL_SLOTS as readonly string[]).includes(key)) return null;
     const image = parseImage(raw);
     if (!image) return null;

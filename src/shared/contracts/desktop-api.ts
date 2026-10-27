@@ -47,6 +47,8 @@ import type {
   AssistantNavigationLiveStatus,
   AssistantNavigationPushEventListener,
   AssistantPastedImageInput,
+  AssistantReorderNavigationAgentsRequest,
+  AssistantReorderNavigationAgentsResult,
   AssistantReorderProjectsRequest,
   AssistantReorderProjectsResult,
   AssistantSettingsInput,
@@ -1022,6 +1024,7 @@ export interface DesktopApi {
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: (options?: AssistantNavigationListOptions) => Promise<AssistantNavAgentItemsResult>;
     updateChatOrder: (input: AssistantChatOrderMutationRequest) => Promise<AssistantChatOrderMutationResult>;
+    reorderNavigationAgents: (input: AssistantReorderNavigationAgentsRequest) => Promise<AssistantReorderNavigationAgentsResult>;
     reorderProjects: (input: AssistantReorderProjectsRequest) => Promise<AssistantReorderProjectsResult>;
     getNavigationLiveStatus: () => Promise<AssistantNavigationLiveStatus>;
     listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;

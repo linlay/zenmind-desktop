@@ -40,55 +40,42 @@ function normalizeCatalogKeys(value: unknown, field: string) {
   return keys;
 }
 
+// Both views reorder a projection of the same valid Agent catalog.
+function createSubsetOrderPlan(requested: unknown, current: unknown, full: unknown, label: string) {
+  const requestedKeys = validateProjectAgentOrderRequestKeys(requested);
+  const currentKeys = normalizeCatalogKeys(current, "currentAgentKeys");
+  const fullKeys = normalizeCatalogKeys(full, "fullAgentKeys");
+  const currentSet = new Set(currentKeys);
+  const fullSet = new Set(fullKeys);
+  for (const key of requestedKeys) {
+    if (!currentSet.has(key)) throw new Error(`${label} agent is no longer available: ${key}`);
+  }
+  for (const key of currentKeys) {
+    if (!fullSet.has(key)) throw new Error(`${label} agent is missing from the valid Agent catalog: ${key}`);
+  }
+  const requestedSet = new Set(requestedKeys);
+  const agentKeys = [...requestedKeys, ...currentKeys.filter(key => !requestedSet.has(key))];
+  let index = 0;
+  const fullAgentKeys = fullKeys.map(key => currentSet.has(key) ? agentKeys[index++] : key);
+  if (index !== agentKeys.length) throw new Error(`${label} agent slots do not match the current catalog`);
+  return { agentKeys, fullAgentKeys };
+}
+
 export function createProjectAgentOrderPlan(input: {
   requestedProjectAgentKeys: unknown;
   currentProjectAgentKeys: unknown;
   fullAgentKeys: unknown;
 }): ProjectAgentOrderPlan {
-  const requestedProjectAgentKeys = validateProjectAgentOrderRequestKeys(
-    input.requestedProjectAgentKeys,
-  );
-  const currentProjectAgentKeys = normalizeCatalogKeys(
-    input.currentProjectAgentKeys,
-    "currentProjectAgentKeys",
-  );
-  const fullAgentKeys = normalizeCatalogKeys(input.fullAgentKeys, "fullAgentKeys");
-  const currentProjectKeySet = new Set(currentProjectAgentKeys);
-  const fullAgentKeySet = new Set(fullAgentKeys);
+  const plan = createSubsetOrderPlan(input.requestedProjectAgentKeys, input.currentProjectAgentKeys, input.fullAgentKeys, "project");
+  return { projectAgentKeys: plan.agentKeys, fullAgentKeys: plan.fullAgentKeys };
+}
 
-  for (const key of requestedProjectAgentKeys) {
-    if (!currentProjectKeySet.has(key)) {
-      throw new Error(`project agent is no longer available: ${key}`);
-    }
-  }
-  for (const key of currentProjectAgentKeys) {
-    if (!fullAgentKeySet.has(key)) {
-      throw new Error(`project agent is missing from the valid Agent catalog: ${key}`);
-    }
-  }
-
-  const requestedKeySet = new Set(requestedProjectAgentKeys);
-  const projectAgentKeys = [
-    ...requestedProjectAgentKeys,
-    ...currentProjectAgentKeys.filter((key) => !requestedKeySet.has(key)),
-  ];
-  let projectIndex = 0;
-  const nextFullAgentKeys = fullAgentKeys.map((key) => {
-    if (!currentProjectKeySet.has(key)) {
-      return key;
-    }
-    const nextProjectKey = projectAgentKeys[projectIndex];
-    projectIndex += 1;
-    return nextProjectKey;
-  });
-
-  if (projectIndex !== projectAgentKeys.length) {
-    throw new Error("project agent slots do not match the current catalog");
-  }
-  return {
-    projectAgentKeys,
-    fullAgentKeys: nextFullAgentKeys,
-  };
+export function createNavigationAgentOrderPlan(input: {
+  requestedAgentKeys: unknown;
+  currentAgentKeys: unknown;
+  fullAgentKeys: unknown;
+}) {
+  return createSubsetOrderPlan(input.requestedAgentKeys, input.currentAgentKeys, input.fullAgentKeys, "navigation");
 }
 
 export const __testInternals = {

@@ -31,6 +31,15 @@ const {
   summarizeAssistantNavigationAttention,
 } = require("../dist-electron/shared/assistant-navigation-attention.js");
 
+// Existing scenarios exercise legacy navigation; the shared Agent-order endpoint
+// has dedicated public-order tests in navigation-agent-order.test.mjs.
+function installLegacyAgentOrderFixture(order = null) {
+  const fetch = globalThis.fetch;
+  globalThis.fetch = (input, options) => new URL(String(input)).pathname === "/api/agents/order"
+    ? Promise.resolve(order ? { ok: true, status: 200, json: async () => ({ order }) } : { ok: false, status: 404 })
+    : fetch(input, options);
+}
+
 const EPOCH_MS = 1_783_000_000_000;
 
 function createAgent(overrides = {}) {
@@ -269,6 +278,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     fs.rmSync(temporaryAppData, { recursive: true, force: true });
   });
 
+  installLegacyAgentOrderFixture(["zenmi"]);
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => temporaryAppData },
     getServiceState: async () => ({
@@ -307,6 +317,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(first.chatItemsHasMore, false);
   assert.equal(first.chatSortMode, "manual");
   assert.equal(first.chatOrderingSupported, true);
+  assert.equal(first.agentOrderingSupported, true);
   assert.equal(
     readDesktopProfileFromRoot(
       getDesktopConfigRoot({ getPath: () => temporaryAppData }),
@@ -488,6 +499,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   const reconnected = await client.refreshNow();
   assert.equal(sockets.length, 2);
   assert.equal(reconnected.chatItems.find((chat) => chat.chatId === "react-0")?.hasActiveRun, true);
+  assert.equal(snapshots.at(-1).agentOrderingSupported, true);
 });
 
 test("assistant navigation reports a failed order snapshot without probing a pinned list", async (t) => {
@@ -550,6 +562,7 @@ test("assistant navigation reports a failed order snapshot without probing a pin
     fs.rmSync(temporaryAppData, { recursive: true, force: true });
   });
 
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => temporaryAppData },
     getServiceState: async () => ({
@@ -669,6 +682,7 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     fs.rmSync(temporaryAppData, { recursive: true, force: true });
   });
 
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => temporaryAppData },
     getServiceState: async () => ({
@@ -921,6 +935,7 @@ test("assistant navigation applies read push without scheduling a full refresh",
     recentChats: [unreadChat],
   });
   const snapshots = [];
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => os.tmpdir() },
     getServiceState: async () => ({ status: "stopped", healthMeta: { webUrl: "" } }),
@@ -995,6 +1010,7 @@ test("assistant navigation live status reports WebSocket setup failures without 
     },
   });
 
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => os.tmpdir() },
     getServiceState: async () => ({
@@ -1075,6 +1091,7 @@ test("assistant navigation retains its last valid snapshot when a refreshed batc
     fs.rmSync(temporaryAppData, { recursive: true, force: true });
   });
 
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => temporaryAppData },
     getServiceState: async () => ({
@@ -2388,6 +2405,7 @@ test("navigation fetches global pins independently of the regular and project cu
       request.onFrame({ frame: "response", type: request.type, code: 0, data });
     },
   };
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => temp }, realtimeBroker: broker,
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
@@ -2469,6 +2487,11 @@ test("navigation fetches global pins independently of the regular and project cu
   client.scheduleRefresh = () => { refreshScheduled = true; };
   push({ frame: "push", type: "chats.order.changed", data: { updatedAt: EPOCH_MS + 200 } });
   assert.equal(refreshScheduled, true);
+  refreshScheduled = false;
+  const previousNavigation = client.getSnapshot().items;
+  push({ frame: "push", type: "chat.primary.changed", data: { agentKey: "project", chatId: "old-primary" } });
+  assert.equal(refreshScheduled, true);
+  assert.deepEqual(client.getSnapshot().items, previousNavigation);
 
   // Neither a failed response nor a malformed snapshot may clear live pins.
   const previousPins = client.getSnapshot().pinnedChatItems;
@@ -2662,6 +2685,7 @@ test("a window handling a runtime or read Push cannot hide a missing complete at
   assert.equal(asked.shouldRefresh, true);
   assert.equal(asked.attentionShouldRefresh, true);
 
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => os.tmpdir() },
     getServiceState: async () => ({ status: "stopped", healthMeta: { webUrl: "" } }),
@@ -2732,6 +2756,7 @@ test("a project read arriving during a stale complete-history baseline is replay
       request.onFrame({ frame: "response", type: request.type, code: 0, data });
     },
   };
+  installLegacyAgentOrderFixture();
   const client = new AssistantNavigationStatusClient({
     app: { getPath: () => temp }, realtimeBroker: broker,
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
@@ -2844,7 +2869,8 @@ for (const mutation of projectBaselineMutationCases) {
           data: request.type === "/api/chats/order" ? { sortMode: "recent", pinnedChats: [] } : [] });
       },
     };
-    const client = new AssistantNavigationStatusClient({
+    installLegacyAgentOrderFixture();
+  const client = new AssistantNavigationStatusClient({
       app: { getPath: () => temp }, realtimeBroker: broker,
       getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
       issueAccessToken: async () => ({ ok: true, token: "test-token" }), onSnapshot() {},

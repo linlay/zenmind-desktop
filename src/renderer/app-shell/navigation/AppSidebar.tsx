@@ -1,3 +1,5 @@
+import { PrimaryChatNavigation } from "./PrimaryChatNavigation";
+import { primaryChatNavigationTarget } from "./primaryChatView";
 import { SkinHeading } from "../../appearance/SkinVisual";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
@@ -319,6 +321,7 @@ type BootstrapGuideDismissedBubbles = {
   help: boolean;
 };
 
+const PINNED_CHAT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.pinned-chat-sort`;
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
 const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 800;
 const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
@@ -1018,6 +1021,10 @@ type AppSidebarProps = {
   webPinningAvailable?: boolean;
   onSetWebItemPinned?: (item: WebEntry, pinned: boolean) => Promise<void>;
   webItems: WebEntry[];
+  primaryChatNavigation?: boolean;
+  primaryChatNavError?: string;
+  primaryChatNavAgents?: AssistantNavAgentItem[];
+  onReorderPrimaryAgents?: (agentKeys: string[]) => Promise<{ ok: boolean; agentKeys: string[]; message: string }>;
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantPinnedChatItems?: AssistantNavChatItem[];
   assistantChatPinningSupported?: boolean;
@@ -1111,8 +1118,12 @@ export function AppSidebar({
   webPinningAvailable = false,
   onSetWebItemPinned,
   webItems,
+  primaryChatNavigation = false,
+  primaryChatNavError = "",
+  primaryChatNavAgents = [],
+  onReorderPrimaryAgents,
   assistantNavAgents = [],
-  assistantPinnedChatItems = [],
+  assistantPinnedChatItems: manualPinnedChatItems = [],
   assistantChatPinningSupported = false,
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
@@ -1187,6 +1198,27 @@ export function AppSidebar({
   const isSettingsMode = sidebarMode === "settings";
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
+  );
+  const [pinnedChatSortMode, setPinnedChatSortMode] = useState<AssistantChatSortMode>(() => {
+    try {
+      return window.localStorage.getItem(PINNED_CHAT_SORT_STORAGE_KEY) === "recent"
+        ? "recent" : "manual";
+    } catch {
+      return "manual";
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PINNED_CHAT_SORT_STORAGE_KEY, pinnedChatSortMode);
+    } catch {
+      // Keep the current renderer preference when storage is unavailable.
+    }
+  }, [pinnedChatSortMode]);
+  const assistantPinnedChatItems = useMemo(
+    () => pinnedChatSortMode === "recent"
+      ? [...manualPinnedChatItems].sort((a, b) => b.updatedAt - a.updatedAt)
+      : manualPinnedChatItems,
+    [manualPinnedChatItems, pinnedChatSortMode],
   );
   const projectDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1306,6 +1338,38 @@ export function AppSidebar({
     index: number;
   } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
+  const navigationScrollRef = useRef({ standard: 0, primary: 0 });
+  useLayoutEffect(() => {
+    const nav = sidebarNavRef.current;
+    if (!nav || !isPrimaryMode) return;
+    const mode = primaryChatNavigation ? "primary" : "standard";
+    const target = navigationScrollRef.current[mode];
+    let restoring = true;
+    let frame = 0;
+    const startedAt = performance.now();
+    const previousAnchor = nav.style.overflowAnchor;
+    nav.style.overflowAnchor = "none";
+    let previousHeight = -1;
+    let stableFrames = 0;
+    // Hidden Collapse contents remeasure and animate on reveal. Restore only
+    // after the desired position is reachable; ignore our own scroll events.
+    const restore = () => {
+      const height = nav.scrollHeight;
+      stableFrames = height === previousHeight ? stableFrames + 1 : 0;
+      previousHeight = height;
+      nav.scrollTop = target;
+      if ((height - nav.clientHeight >= target && stableFrames >= 3) || performance.now() - startedAt > 750) {
+        restoring = false;
+        nav.style.overflowAnchor = previousAnchor;
+      } else {
+        frame = requestAnimationFrame(restore);
+      }
+    };
+    restore();
+    const save = () => { if (!restoring) navigationScrollRef.current[mode] = nav.scrollTop; };
+    nav.addEventListener("scroll", save);
+    return () => { cancelAnimationFrame(frame); nav.style.overflowAnchor = previousAnchor; nav.removeEventListener("scroll", save); };
+  }, [primaryChatNavigation, isPrimaryMode]);
   const sidebarScrollThumbRef = useRef<HTMLDivElement | null>(null);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const toolMenuContentRef = useRef<HTMLDivElement | null>(null);
@@ -1318,6 +1382,8 @@ export function AppSidebar({
   const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarContextMenuRequestIdRef = useRef(0);
   const currentRouteRef = useRef(currentRoute);
+  const primaryChatNavAgentsRef = useRef(primaryChatNavAgents);
+  primaryChatNavAgentsRef.current = primaryChatNavAgents;
   const assistantNavAgentsRef = useRef(assistantNavAgents);
   const webItemsRef = useRef(webItems);
   assistantNavAgentsRef.current = assistantNavAgents;
@@ -1576,6 +1642,7 @@ export function AppSidebar({
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
     assistantChatSortMode,
+    pinnedChatSortMode,
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
@@ -1599,6 +1666,7 @@ export function AppSidebar({
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
     assistantChatSortMode,
+    pinnedChatSortMode,
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
@@ -2086,6 +2154,8 @@ export function AppSidebar({
       setSidebarNavFocusId(visibleItems[0].dataset.sidebarNavId || "");
     }
   }, [
+    primaryChatNavigation,
+    primaryChatNavAgents,
     expandedAssistantAgentKeys,
     isCollapsed,
     isPrimaryMode,
@@ -2310,7 +2380,7 @@ export function AppSidebar({
         '[data-sidebar-roving-item="true"]',
       ),
     ).filter((element) => {
-      if (element.closest('[aria-hidden="true"]')) {
+      if (element.closest('[hidden], [aria-hidden="true"]')) {
         return false;
       }
       if (element instanceof HTMLButtonElement && element.disabled) {
@@ -2376,7 +2446,7 @@ export function AppSidebar({
     return (
       assistantNavAgentsRef.current.find(
         (agent) => agent.agentKey === agentKey,
-      ) || null
+      ) || primaryChatNavAgentsRef.current.find(agent => agent.agentKey === agentKey) || null
     );
   }
 
@@ -2405,7 +2475,6 @@ export function AppSidebar({
   ): SidebarContextMenuTarget | null {
     const runtime = sidebarContextMenuRuntimeRef.current;
     if (subject.kind === "group") {
-      if (subject.groupId === "pinned") return null;
       return {
         kind: "group",
         groupId: subject.groupId,
@@ -2414,7 +2483,7 @@ export function AppSidebar({
         canCreateChat:
           Boolean(runtime.resolvedChatDefaultAgentKey) &&
           !runtime.chatDefaultAgentUnavailable,
-        chatSortMode: runtime.assistantChatSortMode,
+        chatSortMode: subject.groupId === "pinned" ? runtime.pinnedChatSortMode : runtime.assistantChatSortMode,
         chatOrderingSupported:
           runtime.assistantChatOrderingSupported &&
           !runtime.chatOrderMutationPending,
@@ -2508,7 +2577,7 @@ export function AppSidebar({
         actionId === "group.chat-sort-recent" ||
         actionId === "group.chat-sort-manual"
       ) {
-        return target.groupId === "chats" && target.chatOrderingSupported;
+        return (target.groupId === "chats" || target.groupId === "pinned") && target.chatOrderingSupported;
       }
       return (
         target.groupId === "webs" &&
@@ -2603,9 +2672,9 @@ export function AppSidebar({
       } else if (actionId === "group.new-chat") {
         startChatsNewChat();
       } else if (actionId === "group.chat-sort-recent") {
-        await updateChatsSortMode("recent");
+        await updateChatsSortMode("recent", subject.groupId);
       } else if (actionId === "group.chat-sort-manual") {
-        await updateChatsSortMode("manual");
+        await updateChatsSortMode("manual", subject.groupId);
       } else if (actionId === "group.add-website") {
         showWebsiteDialog();
       } else if (actionId === "group.import-webapp") {
@@ -3074,7 +3143,7 @@ export function AppSidebar({
       return;
     }
 
-    if (activeChatDragId || activeProjectDragKey) {
+    if (activeChatDragId || activeProjectDragKey || currentElement.closest('[data-primary-agent-dragging="true"]')) {
       return;
     }
 
@@ -4069,7 +4138,11 @@ export function AppSidebar({
     }
   }
 
-  async function updateChatsSortMode(sortMode: AssistantChatSortMode) {
+  async function updateChatsSortMode(sortMode: AssistantChatSortMode, groupId: SidebarGroupId = "chats") {
+    if (groupId === "pinned") {
+      setPinnedChatSortMode(sortMode);
+      return;
+    }
     if (
       chatOrderMutationPending ||
       !assistantChatOrderingSupported ||
@@ -4168,6 +4241,9 @@ export function AppSidebar({
     setChatOrderError("");
     try {
       const result = await onUpdateAssistantChatOrder(request);
+      if (result.ok && assistantPinnedChatItems.some((chat) => chat.chatId === chatId)) {
+        setPinnedChatSortMode("manual");
+      }
       if (!result.ok) {
         setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
       }
@@ -4470,9 +4546,11 @@ export function AppSidebar({
     );
   }
 
-  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+  function renderChatsSortButton(options: { inPopover?: boolean; groupId?: "chats" | "pinned" } = {}) {
+    const groupId = options.groupId ?? "chats";
+    const sortMode = groupId === "pinned" ? pinnedChatSortMode : assistantChatSortMode;
     const sortLabel = assistantChatOrderingSupported
-      ? assistantChatSortMode === "manual"
+      ? sortMode === "manual"
         ? t("sidebar.chats.sortManual")
         : t("sidebar.chats.sortRecent")
       : t("sidebar.chats.sortUnavailable");
@@ -4489,7 +4567,7 @@ export function AppSidebar({
               event.preventDefault();
               event.stopPropagation();
               openNativeSidebarContextMenu(
-                { kind: "group", groupId: "chats", menuScope: "sort" },
+                { kind: "group", groupId, menuScope: "sort" },
                 event.currentTarget,
               );
             }}
@@ -4504,9 +4582,12 @@ export function AppSidebar({
             )}
           </button>
         </Tooltip>
-        {renderChatsNewChatButton(options)}
       </>
     );
+  }
+
+  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+    return <>{renderChatsSortButton(options)}{renderChatsNewChatButton(options)}</>;
   }
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
@@ -4944,6 +5025,14 @@ export function AppSidebar({
     return renderSidebarGroup({
       groupId: "pinned",
       label: t("sidebar.pinned.title"),
+      headerActions: sidebarGroupState.pinned
+        ? renderChatsSortButton({ groupId: "pinned" }) : undefined,
+      popoverHeader: (
+        <div className="sidebar-chats-collapsed-head">
+          <span>{t("sidebar.pinned.title")}</span>
+          {renderChatsSortButton({ groupId: "pinned", inPopover: true })}
+        </div>
+      ),
       iconNode: <SidebarActionIcon kind="pin" />,
       status: {
         unreadCount: assistantPinnedChatItems.filter((chat) => !chat.isRead).length,
@@ -5358,6 +5447,8 @@ export function AppSidebar({
           dragActivator?.setActivatorNodeRef(element);
         }}
         headerButtonProps={{
+          "data-agent-identity": "",
+          "data-agent-pointer-idle": "",
           className: "assistant-worker-header",
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
           ...getSidebarRovingItemProps(
@@ -5375,7 +5466,7 @@ export function AppSidebar({
         }}
         header={
           <Flex gap={8} align="center" className="worker-panel-header">
-            <AgentIcon icon={agent.icon} size={16} type="agent" />
+            <AgentIcon icon={agent.icon} mode={agent.mode} size={16} type="agent" />
             <Flex align="center" className="worker-panel-header-body">
               <span className="assistant-worker-name">
                 <span>{agent.displayName}</span>
@@ -5832,6 +5923,23 @@ export function AppSidebar({
         </div>
       </Collapse>
     );
+  }
+
+  function renderPrimaryChatNavigation() {
+    // This is a chat-directory view. Copilot launcher visibility is unrelated
+    // and becomes false on Main Chat routes, where this list must stay mounted.
+    return <PrimaryChatNavigation
+      agents={primaryChatNavAgents} collapsed={isCollapsed} currentChatId={activeSidebarChatId}
+      loaded={assistantNavAgentsLoaded} error={primaryChatNavError}
+      onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })}
+      onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
+      itemProps={getSidebarRovingItemProps}
+      onContextMenu={handleAgentContextMenu}
+      onReorder={onReorderPrimaryAgents}
+      onOpen={(agent) => {
+        if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
+        else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
+      }} />;
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
@@ -6336,7 +6444,7 @@ export function AppSidebar({
   }
 
   function handleAgentContextMenu(
-    event: MouseEvent<HTMLElement>,
+    event: MouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
     agent: AssistantNavAgentItem,
   ) {
     event.preventDefault();
@@ -6344,7 +6452,7 @@ export function AppSidebar({
     openNativeSidebarContextMenu(
       { kind: "agent", agentKey: agent.agentKey },
       event.currentTarget,
-      event.clientX === 0 && event.clientY === 0
+      !("clientX" in event) || (event.clientX === 0 && event.clientY === 0)
         ? undefined
         : { x: event.clientX, y: event.clientY },
     );
@@ -6925,7 +7033,7 @@ export function AppSidebar({
                     title={t("sidebar.copilot.title")}
                   >
                     <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
-                      <SidebarActionIcon kind="sidebar_right" />
+                      <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                     </span>
                   </button>
                 ) : null}
@@ -6951,7 +7059,8 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : <SortableNavEntries
+              : <>
+                <SortableNavEntries
                   order={sidebarNavOrder}
                   sortableKeys={["kanban", "schedules", "new-chat", ...shownCapabilityNavItems.map((item) => item.orderKey), ...pinnedWebNavItems.map((item) => item.orderKey)]}
                   onChange={onSidebarNavOrderChange}
@@ -6961,9 +7070,16 @@ export function AppSidebar({
                     const pinned = pinnedWebNavItems.find((item) => item.orderKey === key);
                     if (pinned) return renderSidebarChildLink(pinned, { topLevel: true });
                     const item = navItems.find((entry) => entry.orderKey === key);
-                    return item ? renderPrimaryNavEntry(item) : null;
+                    if (!item) return null;
+                    if (item.entryType === "chats" || item.entryType === "assistants") {
+                      return <Fragment>
+                        {item.entryType === "chats" && primaryChatNavigation ? renderPrimaryChatNavigation() : null}
+                        <div hidden={primaryChatNavigation} style={{ display: primaryChatNavigation ? "none" : "contents" }}>{renderPrimaryNavEntry(item)}</div>
+                      </Fragment>;
+                    }
+                    return renderPrimaryNavEntry(item);
                   }}
-                />}
+                /></>}
         </nav>
         <div ref={sidebarScrollThumbRef} className="sidebar-scroll-thumb" aria-hidden="true" hidden />
         {renderBootstrapGuideCard()}

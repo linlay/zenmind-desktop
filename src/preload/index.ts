@@ -20,6 +20,8 @@ import type {
   AssistantNavigationAgentsChangedListener,
   AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
+  AssistantReorderNavigationAgentsRequest,
+  AssistantReorderNavigationAgentsResult,
   AssistantReorderProjectsRequest,
   AssistantAttachmentProgressListener,
   AssistantPastedImageInput,
@@ -313,6 +315,8 @@ const api: DesktopApi = {
       ipcRenderer.invoke("assistant.listNavigationAgents", options),
     updateChatOrder: (input: AssistantChatOrderMutationRequest) =>
       ipcRenderer.invoke("assistant.updateChatOrder", input),
+    reorderNavigationAgents: (input: AssistantReorderNavigationAgentsRequest) =>
+      ipcRenderer.invoke("assistant.reorderNavigationAgents", input),
     reorderProjects: (input: AssistantReorderProjectsRequest) =>
       ipcRenderer.invoke("assistant.reorderProjects", input),
     getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),

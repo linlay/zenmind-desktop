@@ -201,6 +201,9 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     latestPreview: toText(record.latestPreview),
     ...(updatedAt !== undefined ? { updatedAt } : {}),
     recentChats,
+    ...(isObjectRecord(record.primaryChat) ? {
+      primaryChat: normalizeAssistantNavChat(record.primaryChat, agentKey) ?? undefined,
+    } : {}),
     ...(Array.isArray(record.projectChats) ? {
       projectChats: record.projectChats.map((chat) => normalizeAssistantNavChat(chat, agentKey))
         .filter((chat): chat is AssistantNavChatItem => Boolean(chat)),

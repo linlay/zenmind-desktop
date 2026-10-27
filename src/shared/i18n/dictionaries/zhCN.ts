@@ -7,6 +7,19 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const zhCNMessages = {
+  "settings.debug.primaryChats.title": "主要对话模式",
+  "settings.debug.primaryChats.description": "实验功能：每个智能体只显示一个主要对话。关闭后恢复完整导航，保留现有对话和排序。",
+  "sidebar.primaryChats.loadFailed": "主要对话加载失败",
+  "sidebar.primaryChats.orderFailed": "保存智能体顺序失败",
+  "sidebar.primaryChats.retry": "重试",
+  "sidebar.primaryChats.title": "主要对话",
+  "sidebar.primaryChats.toggle": "主要对话模式",
+  "sidebar.primaryChats.standardMode": "切回完整导航",
+  "sidebar.primaryChats.history": "显示历史",
+  "sidebar.primaryChats.noChat": "暂无对话",
+  "sidebar.primaryChats.noReply": "暂无回复",
+  "sidebar.primaryChats.empty": "暂无智能体",
+  "sidebar.primaryChats.loading": "正在加载主要对话…",
   "imageGeneration.resultMissing": "Zenmi 未返回 image_generate 工具结果。",
   "imageGeneration.resultUnreadable": "Zenmi 已生成图片，但 Desktop 无法安全读取生成结果。",
   "imageGeneration.succeeded": "Zenmi 图片生成成功。",

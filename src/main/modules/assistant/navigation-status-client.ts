@@ -39,7 +39,9 @@ import {
   readAssistantNavigationChatAgentsFromPlatform,
   readAssistantNavigationChatActivityFromPlatform,
   readAssistantNavigationProjectAgentsFromPlatform,
-  unwrapApiResponse
+  unwrapApiResponse,
+  readAssistantNavigationAgentOrderFromPlatform,
+  orderNavigationAgents
 } from "./navigation-api";
 import { type App } from "electron";
 import { isTimeContractViolation, requireAgentPlatformEpochMillis } from "../../../shared/time-contract";
@@ -252,18 +254,19 @@ export class AssistantNavigationStatusClient {
 
       // Projects, the chat-agent directory, activity, Chats and Pinned are independent
       // reads, so they are requested together.
-      const [[projectItems, chatAgentItems, chatActivityItems], [chatSnapshot, chatOrderSnapshot]] = await Promise.all([
+      const [[projectItems, chatAgentItems, chatActivityItems, agentOrder], [chatSnapshot, chatOrderSnapshot]] = await Promise.all([
         Promise.all([
           readAssistantNavigationProjectAgentsFromPlatform(baseUrl, token),
           readAssistantNavigationChatAgentsFromPlatform(baseUrl, token),
           readAssistantNavigationChatActivityFromPlatform(baseUrl, token),
+          readAssistantNavigationAgentOrderFromPlatform(baseUrl, token),
         ]),
         this.connectRealtime(baseUrl, token).then(() => Promise.all([
           this.requestNavigationChats(baseUrl, token),
           this.requestNavigationChatOrder(baseUrl, token),
         ])),
       ]);
-      const items = [...projectItems, ...chatAgentItems];
+      const items = orderNavigationAgents([...projectItems, ...chatAgentItems], agentOrder);
       const { pinnedChatItems } = chatOrderSnapshot;
       // Keep runtime activity and tray recency independent of the sidebar window.
       // Projects retain their catalog order; chat activity includes copilot-only owners.
@@ -285,6 +288,7 @@ export class AssistantNavigationStatusClient {
         ok: true,
         items,
         activityItems,
+        agentOrderingSupported: agentOrder !== null,
         ...chatSnapshot,
         ...chatOrderSnapshot,
         pinnedChatItems,
@@ -561,6 +565,10 @@ export class AssistantNavigationStatusClient {
     if (IGNORED_PUSH_TYPES.has(event.type)) {
       return;
     }
+    if (event.type === "chat.primary.changed") {
+      this.scheduleRefresh(0);
+      return;
+    }
     this.recordRuntimeStatusPush(frame, event);
     const protocolType = frameType || (event.type === "run.start"
       ? "run.started"
@@ -605,6 +613,7 @@ export class AssistantNavigationStatusClient {
         chatItemsHasMore: this.latestResult.chatItemsHasMore,
         chatSortMode: this.latestResult.chatSortMode ?? "recent",
         chatOrderingSupported: this.latestResult.chatOrderingSupported === true,
+        agentOrderingSupported: this.latestResult.agentOrderingSupported === true,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowEpochMillis()
       });

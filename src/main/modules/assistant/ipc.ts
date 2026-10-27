@@ -14,6 +14,8 @@ import type {
   AssistantChatSortMode,
   AssistantConversationShareRequest,
   AssistantNavigationListOptions,
+  AssistantReorderNavigationAgentsRequest,
+  AssistantReorderNavigationAgentsResult,
   AssistantReorderProjectsRequest,
   AssistantReorderProjectsResult,
 } from "../../../shared/contracts";
@@ -28,6 +30,7 @@ import { COPILOT_DOCK_SURFACE_ID } from "../../../shared/surface-identity";
 import type { ConversationShareFacade } from "../conversation-share";
 import {
   createProjectAgentOrderPlan,
+  createNavigationAgentOrderPlan,
   validateProjectAgentOrderRequestKeys,
 } from "./project-agent-order";
 import { copyAssistantChatStoragePath, resolveAssistantChatStoragePaths } from "./chat-storage-path";
@@ -529,6 +532,37 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
           ? error.message
           : t("assistant.chatOrderSaveFailed"),
       };
+    }
+  });
+
+  ipcMain.handle("assistant.reorderNavigationAgents", async (
+    _event: unknown, input: AssistantReorderNavigationAgentsRequest,
+  ): Promise<AssistantReorderNavigationAgentsResult> => {
+    try {
+      const requestedAgentKeys = validateProjectAgentOrderRequestKeys(input?.agentKeys);
+      if (!callAgentPlatform) throw new Error(t("assistant.projectOrderUnavailable"));
+      const projects = await callAgentPlatform(app, "/api/agents?hasWorkspace=true");
+      const chatAgents = await callAgentPlatform(app, "/api/agents?scope=nav&hasWorkspace=false");
+      if (!Array.isArray(chatAgents)) throw new Error("navigation Agent catalog must be an array");
+      const chatKeys = chatAgents.map(item => {
+        const key = item && typeof item.key === "string" ? item.key.trim() : "";
+        if (!key) throw new Error("navigation Agent key is required");
+        return key;
+      });
+      const currentAgentKeys = [...readProjectAgentCatalogKeys(projects, "navigationOrder.projects"), ...chatKeys];
+      const fullAgentKeys = readAgentOrderKeys(await callAgentPlatform(app, "/api/agents/order"), "navigationOrder.current");
+      const plan = createNavigationAgentOrderPlan({ requestedAgentKeys, currentAgentKeys, fullAgentKeys });
+      const response = await callAgentPlatform(app, "/api/agents/order", {
+        method: "PUT", body: { order: plan.fullAgentKeys },
+      }) as Record<string, unknown>;
+      const subset = new Set(plan.agentKeys);
+      const agentKeys = readAgentOrderKeys(response, "navigationOrder.saved").filter(key => subset.has(key));
+      if (agentKeys.length !== plan.agentKeys.length) throw new Error("saved Agent order is missing a navigation Agent");
+      const updatedAt = response.updatedAt == null ? undefined : requireEpochMillis(response.updatedAt, "navigationOrder.updatedAt");
+      assistantNavigationStatusClient?.scheduleRefresh?.(0);
+      return { ok: true, agentKeys, message: "", ...(updatedAt === undefined ? {} : { updatedAt }) };
+    } catch (error) {
+      return { ok: false, agentKeys: [], message: error instanceof Error ? error.message : t("assistant.projectOrderSaveFailed") };
     }
   });
 

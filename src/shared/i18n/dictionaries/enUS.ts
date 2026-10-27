@@ -7,6 +7,19 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const enUSMessages = {
+  "settings.debug.primaryChats.title": "Primary conversation mode",
+  "settings.debug.primaryChats.description": "Experimental: show one primary conversation per agent. Turn off to restore full navigation while keeping existing conversations and ordering.",
+  "sidebar.primaryChats.loadFailed": "Could not load primary conversations",
+  "sidebar.primaryChats.orderFailed": "Failed to save Agent order",
+  "sidebar.primaryChats.retry": "Retry",
+  "sidebar.primaryChats.title": "Primary conversations",
+  "sidebar.primaryChats.toggle": "Primary conversation mode",
+  "sidebar.primaryChats.standardMode": "Switch to full navigation",
+  "sidebar.primaryChats.history": "Show history",
+  "sidebar.primaryChats.noChat": "No conversation yet",
+  "sidebar.primaryChats.noReply": "No reply yet",
+  "sidebar.primaryChats.empty": "No agents available",
+  "sidebar.primaryChats.loading": "Loading primary conversations…",
   "imageGeneration.resultMissing": "Zenmi did not return an image_generate result.",
   "imageGeneration.resultUnreadable": "Zenmi generated the images, but Desktop could not safely read them.",
   "imageGeneration.succeeded": "Zenmi generated the images successfully.",

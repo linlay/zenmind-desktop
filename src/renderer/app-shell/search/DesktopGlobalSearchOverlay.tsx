@@ -19,6 +19,7 @@ import {
 import { getAssistantAwaitingStatusKey } from "../../assistantNavigation";
 import { SidebarActionIcon, SidebarIllustration } from "../../components/BrandMark";
 import { AgentIcon } from "../navigation/AgentIcon";
+import { SettingsSidebarIcon } from "../navigation/SettingsSidebarIcon";
 import {
   buildDesktopGlobalSearchSections,
   buildDesktopGlobalSearchShortcutTargets,
@@ -241,10 +242,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="desktop-global-search-input-shell">
-          <svg className="desktop-global-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="10.5" cy="10.5" r="6.8" />
-            <line x1="15.5" y1="15.5" x2="20" y2="20" />
-          </svg>
+          <SettingsSidebarIcon kind="search" className="desktop-global-search-input-icon" />
           <input
             ref={inputRef}
             type="search"
@@ -462,7 +460,7 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatA
 function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.kind === "agent") {
     if (row.projectKind) {
-      return <AgentIcon icon={row.projectKind} size={16} type="agent" />;
+      return <AgentIcon mode={row.projectKind} size={16} type="agent" />;
     }
     return <UserOutlined />;
   }

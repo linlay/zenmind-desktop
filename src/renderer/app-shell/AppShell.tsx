@@ -97,6 +97,7 @@ import {
   resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
+import { readPrimaryChatNavigation, savePrimaryChatNavigation } from "./navigation/primaryChatView";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
@@ -750,6 +751,14 @@ export function AppShell() {
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [firstInstallBootstrapNavigationRequested, setFirstInstallBootstrapNavigationRequested] =
     useState<boolean | null>(null);
+  const [primaryChatNavigation, setPrimaryChatNavigation] = useState(readPrimaryChatNavigation);
+  const [primaryChatNavError, setPrimaryChatNavError] = useState("");
+  const [primaryAgentOrderingSupported, setPrimaryAgentOrderingSupported] = useState(false);
+  const [primaryChatNavAgents, setPrimaryChatNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  function handlePrimaryChatNavigationChange(enabled: boolean) {
+    savePrimaryChatNavigation(enabled);
+    setPrimaryChatNavigation(enabled);
+  }
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantPinnedChatItems, setAssistantPinnedChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantChatPinningSupported, setAssistantChatPinningSupported] = useState(false);
@@ -1837,12 +1846,16 @@ export function AppShell() {
       const result = await window.electronAPI.assistant.listNavigationAgents(options);
       if (assistantNavAgentsRefreshIdRef.current === refreshId) {
         if (!result.ok) {
+          setPrimaryChatNavError(result.message || t("sidebar.primaryChats.loadFailed"));
           return;
         }
+        setPrimaryChatNavError("");
         const nextResult = normalizeAssistantNavAgentItemsResult(result);
         const navigationItems = normalizeAssistantNavAgents(nextResult.items);
         const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult));
         setAssistantNavAgentsLoaded(true);
+        setPrimaryChatNavAgents(navigationItems);
+        setPrimaryAgentOrderingSupported(nextResult.agentOrderingSupported === true);
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
@@ -1853,6 +1866,7 @@ export function AppShell() {
         setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
       }
     } catch {
+      if (assistantNavAgentsRefreshIdRef.current === refreshId) setPrimaryChatNavError(t("sidebar.primaryChats.loadFailed"));
       // Keep the current live list while agent-platform is still warming up.
     }
   }
@@ -1987,12 +2001,14 @@ export function AppShell() {
     void refreshAssistantNavAgents();
     void refreshCopilotAgentOptions();
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
-      if (cancelled || !result.ok) {
-        return;
-      }
+      if (cancelled) return;
+      if (!result.ok) { setPrimaryChatNavError(result.message || t("sidebar.primaryChats.loadFailed")); return; }
+      setPrimaryChatNavError("");
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgentsLoaded(true);
+      setPrimaryChatNavAgents(nextResult.items);
+      setPrimaryAgentOrderingSupported(nextResult.agentOrderingSupported === true);
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
@@ -2391,10 +2407,6 @@ export function AppShell() {
     const status = await ssoApi.getStatus();
     setDesktopSsoStatus(status);
   }, [t]);
-
-  const requestToolMenuOpen = useCallback(() => {
-    void shellOverlay.requestToolMenuOpen(refreshDesktopSsoStatus);
-  }, [refreshDesktopSsoStatus, shellOverlay.requestToolMenuOpen]);
 
   useEffect(() => {
     startDesktopActionRendererBridge();
@@ -4794,7 +4806,7 @@ export function AppShell() {
                   </button>
                   <button
                     type="button"
-                    className={`app-system-bar-action${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                    className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
                     aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     aria-expanded={!effectiveSidebarCollapsed}
@@ -4841,7 +4853,7 @@ export function AppShell() {
                   disabled={isAgentWebclientMainRoute}
                   title={t("sidebar.copilot.title")}
                 >
-                  <SidebarActionIcon kind="sidebar_right" />
+                  <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                 </button>
               ) : null}
             </nav>
@@ -4915,6 +4927,16 @@ export function AppShell() {
           webRunningEntryKeys={webRunningEntryKeys}
           webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
+          primaryChatNavError={primaryChatNavError}
+          primaryChatNavigation={primaryChatNavigation}
+          primaryChatNavAgents={primaryChatNavAgents}
+          onReorderPrimaryAgents={primaryAgentOrderingSupported ? async (agentKeys) => {
+            try {
+              return await window.electronAPI.assistant.reorderNavigationAgents({ agentKeys });
+            } finally {
+              await refreshAssistantNavAgents({ force: true });
+            }
+          } : undefined}
           assistantNavAgents={assistantNavAgents}
           assistantPinnedChatItems={assistantPinnedChatItems}
           assistantChatPinningSupported={assistantChatPinningSupported}
@@ -4980,7 +5002,7 @@ export function AppShell() {
           onNavigateItem={undefined}
           onOpenGlobalSearch={shellOverlay.openGlobalSearch}
           toolMenuOpen={toolMenuOverlay !== null}
-          onRequestToolMenuOpen={requestToolMenuOpen}
+          onRequestToolMenuOpen={shellOverlay.requestToolMenuOpen}
           onAutoOpenToolMenu={shellOverlay.openToolMenuIfIdle}
           onCloseToolMenu={() => shellOverlay.closeToolMenu(toolMenuOverlay)}
           onToggleCollapsed={toggleSidebarCollapsed}
@@ -5095,6 +5117,8 @@ export function AppShell() {
                     onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     onTunnelHubEnabledChange={setTunnelHubEnabled}
+                    primaryChatNavigation={primaryChatNavigation}
+                    onPrimaryChatNavigationChange={handlePrimaryChatNavigationChange}
                     debugVisible={debugSettingsUnlocked}
                     onCloseDebug={handleCloseDebugSettings}
                   />
