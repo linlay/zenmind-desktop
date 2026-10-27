@@ -6615,6 +6615,7 @@ export function AppSidebar({
           <p className="sidebar-agent-dialog-message">
             {t("sidebar.chat.deleteConfirm", { name: chatLabel })}
           </p>
+          <LibraryDeleteNotice chatId={assistantChatDeleteDialog.chat.chatId} />
           {assistantChatDeleteDialog.error ? (
             <div className="sidebar-agent-dialog-error" role="alert">
               {assistantChatDeleteDialog.error}
@@ -7228,3 +7229,4 @@ const ArrowIcon: React.FC<
     </svg>
   );
 };
+import { LibraryDeleteNotice } from "../history/LibraryDeleteNotice";

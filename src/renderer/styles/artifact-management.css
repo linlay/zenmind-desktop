@@ -62,3 +62,21 @@
 .artifact-management-chat:hover { text-decoration: underline; }
 .artifact-management-size { white-space: nowrap; }
 .artifact-management-pagination { justify-content: flex-end; padding-top: 12px; }
+.artifact-management-toolbar { flex-wrap: wrap; gap: 10px; }
+.artifact-management-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.artifact-management-filters .ant-select { min-width: 110px; max-width: 200px; }
+.artifact-management-filters button[aria-pressed="true"] { color: var(--accent-strong); background: var(--control-hover-bg); }
+.artifact-management-sync { display: flex; flex-wrap: wrap; gap: 12px; color: var(--ink-soft); margin-bottom: 6px; }
+.artifact-management-scope { color: var(--ink-muted); margin: 0 0 12px; line-height: 1.6; }
+.artifact-management-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.artifact-management-star { border: 0; background: none; color: var(--ink-muted); cursor: pointer; padding: 3px; flex-shrink: 0; }
+.artifact-management-star[aria-pressed="true"] { color: var(--accent-strong); }
+.artifact-management-star:focus-visible { outline: 2px solid var(--accent); }
+.artifact-management-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 25px; }
+.artifact-management-tags span { color: var(--ink-soft); background: var(--control-hover-bg); border-radius: var(--control-radius); padding: 1px 5px; overflow-wrap: anywhere; }
+.artifact-management-status { display: block; margin: 4px 0 0 25px; color: var(--ink-muted); font-size: 11px; }
+.artifact-management-tag-editor { width: 100%; }
+@media (max-width: 800px) {
+  .artifact-management-search { width: 100%; }
+  .artifact-management-header { align-items: flex-start; }
+}

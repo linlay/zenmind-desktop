@@ -905,6 +905,8 @@ export interface DesktopApi {
   };
   localDocuments: LocalDocumentsApi;
   artifacts: {
+    organize: (input: import("../artifacts").DesktopArtifactOrganizeInput) => Promise<void>;
+    sync: () => Promise<import("../artifacts").DesktopArtifactSyncState>;
     act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;
     list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;
     onChanged: (listener: () => void) => () => void;

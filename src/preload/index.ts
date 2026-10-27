@@ -132,6 +132,8 @@ const api: DesktopApi = {
     },
   },
   artifacts: {
+    organize: (input) => ipcRenderer.invoke("artifacts.organize", input),
+    sync: () => ipcRenderer.invoke("artifacts.sync"),
     act: (input) => ipcRenderer.invoke("artifacts.act", input),
     list: (input) => ipcRenderer.invoke("artifacts.list", input),
     onChanged: (listener) => {
