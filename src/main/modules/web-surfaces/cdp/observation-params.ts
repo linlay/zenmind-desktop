@@ -3,7 +3,7 @@ import { validateClickParams } from "./click-params";
 
 export type SurfaceObserveParams = { maxTextLength?: number; maxElements?: number; viewportOnly?: boolean };
 export type SurfaceRefParams = { observationId: string; ref: string; timeoutMs?: number };
-export type SurfaceClickParams = SurfaceRefParams & { waitFor?: DesktopClickWait };
+export type SurfaceClickParams = SurfaceRefParams & { waitFor?: DesktopClickWait; captureDownload?: boolean };
 export type SurfaceInteractAction = "fill" | "select" | "focus" | "scroll" | "type" | "press" | "hover" | "check" | "uncheck";
 /** One target at most: an observed ref, a unique CSS selector, or (scroll/type/press only) the focused page. */
 export type SurfaceInteractParams = {
@@ -43,7 +43,7 @@ export function validateObservationParams(method: string, input: unknown): void 
   if (!input || typeof input !== "object" || Array.isArray(input)) fail(`${method} params must be an object`);
   const p = input as Record<string, unknown>;
   const allowed = method === "Surface.observe" ? ["maxTextLength", "maxElements", "viewportOnly"]
-    : method === "Surface.click" ? ["observationId", "ref", "waitFor", "timeoutMs"]
+    : method === "Surface.click" ? ["observationId", "ref", "waitFor", "timeoutMs", "captureDownload"]
       : method === "Surface.scroll" ? ["deltaX", "deltaY"]
         : ["observationId", "ref", "selector", "action", "value", "values", "key", "deltaX", "deltaY", "timeoutMs"];
   if (Object.keys(p).some((key) => !allowed.includes(key))) fail(`Unknown ${method} parameter`);
@@ -80,7 +80,8 @@ export function validateObservationParams(method: string, input: unknown): void 
     identifier("ref");
     // Reuse the existing click condition contract without accepting coordinates/selectors.
     validateClickParams({ x: 0, y: 0, ...(Object.hasOwn(p, "waitFor") ? { waitFor: p.waitFor } : {}),
-      ...(Object.hasOwn(p, "timeoutMs") ? { timeoutMs: p.timeoutMs } : {}) });
+      ...(Object.hasOwn(p, "timeoutMs") ? { timeoutMs: p.timeoutMs } : {}),
+      ...(Object.hasOwn(p, "captureDownload") ? { captureDownload: p.captureDownload } : {}) });
     return;
   }
   const action = p.action as SurfaceInteractAction;

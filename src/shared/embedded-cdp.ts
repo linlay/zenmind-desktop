@@ -42,6 +42,9 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
   "Network.disable"
 ] as const;
 
+/** Private acknowledgements; never accepted by public CDP/HTTP/WebSocket callers. */
+export const DESKTOP_CDP_HOST_METHODS = ["Surface.releaseDownload"] as const;
+
 export type DesktopCdpPublicMethod = typeof DESKTOP_CDP_PUBLIC_METHODS[number];
 
 export type EmbeddedCdpSurfaceKind = "website" | "webapp" | "browser" | "service" | "chat-work-panel";

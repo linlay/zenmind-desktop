@@ -1,4 +1,4 @@
-import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
+import { registerBrowserTask, releaseBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -54,6 +54,7 @@ test('Main dispatches AWCP only to the frozen Chat page and compiles installed s
   assert.equal(result.handled, true); assert.equal(result.result.revision, 'revision-1');
   const dispatched = f.clients[0].calls.find(call => call.method === 'awcp-manual');
   assert.equal(dispatched.pageId, 'private-0'); assert.equal(dispatched.params.runId, 'run-a');
+  assert.equal(dispatched.params.runLease, 1);
   assert.equal(dispatched.params.expectedUrl, 'https://fixture.test/forum');
   assert.equal(dispatched.params.bridgeScript, privateScript); assert.deepEqual(f.scripts, ['https://fixture.test/forum']);
   assert.equal(JSON.stringify(result).includes('SYNTHETIC_INSTALLED_BRIDGE_SOURCE'), false);
@@ -82,6 +83,7 @@ test('only ordinary non-Chrome Runs remain unhandled; a Chrome Run never borrows
 test('model-authored script or host options are rejected by the common AWCP envelope before dispatch', async t => {
   const f = await fixture(t);
   await assert.rejects(f.runtime.awcp('m', 'AWCP.getManual', { bridgeScript: 'untrusted' }, source(), signal(), f.surfaceId), { code: 'awcp_invalid_request' });
+  await assert.rejects(f.runtime.awcp('m', 'AWCP.getManual', { runLease: 999 }, source(), signal(), f.surfaceId), { code: 'awcp_invalid_request' });
   await assert.rejects(f.runtime.awcp('m', 'AWCP.invoke', { revision: 'revision-1', action: 'forum.posts.list', args: {}, expectedUrl: 'https://other.test' }, source(), signal(), f.surfaceId), { code: 'awcp_invalid_request' });
   assert.deepEqual(f.scripts, []);
   const state = await f.runtime.cdp({ method: 'Surface.getCurrent', source: source() }, undefined, noFallback);
@@ -106,8 +108,25 @@ test('Run completion and package changes revoke AWCP state without dispatching t
   assert.equal(f.clients[0].calls.filter(call => call.method === 'awcp-refresh').length, 1);
   f.runtime.releaseRun('run-a');
   assert.equal(f.clients[0].calls.filter(call => call.method === 'awcp-release-run' && call.params.runId === 'run-a').length, 1);
+  assert.deepEqual(f.clients[0].calls.find(call => call.method === 'awcp-release-run').params, { runId: 'run-a', runLease: 1 });
   assert.equal(f.runtime.state('chat-a').connection, 'connected');
   await assert.rejects(f.runtime.awcp('late', 'AWCP.getManual', {}, source(), signal(), f.surfaceId), { code: 'browser_run_unavailable' });
+});
+
+test('Main reuses a Run AWCP lease and advances it only for the next shared-workspace owner', async t => {
+  const f = await fixture(t, { preferences: {
+    read: () => ({ defaultBackend: 'chrome', rememberChromeConnection: true, hasSavedAuthorization: true }),
+    authorization: async () => 'SYNTHETIC_AUTHORIZATION_TOKEN',
+  } });
+  await f.runtime.awcp('first-directory', 'AWCP.getManual', {}, source(), signal(), f.surfaceId);
+  await f.runtime.awcp('first-section', 'AWCP.getManual', { revision: 'revision-1', section: 'forum.posts.list' }, source(), signal(), f.surfaceId);
+  assert.deepEqual(f.clients[0].calls.filter(call => call.method === 'awcp-manual').map(call => call.params.runLease), [1, 1]);
+  await releaseBrowserTask(f.runtime, 'run-a');
+  await registerBrowserTask(f.runtime, source('chat-b', 'run-b'));
+  await f.runtime.awcp('next-directory', 'AWCP.getManual', {}, source('chat-b', 'run-b'), signal(), f.surfaceId);
+  assert.equal(f.clients.length, 1, 'the authorized connection is reused by the next owner');
+  assert.equal(f.clients[0].calls.filter(call => call.method === 'awcp-manual').at(-1).params.runLease, 2);
+  assert.deepEqual(f.clients[0].calls.find(call => call.method === 'awcp-release-run').params, { runId: 'run-a', runLease: 1 });
 });
 
 test('bridge resolution failures are fixed host errors and cannot leak package paths or source', async t => {

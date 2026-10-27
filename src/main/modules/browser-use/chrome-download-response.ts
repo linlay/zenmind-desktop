@@ -2,29 +2,23 @@ import type { CDPSession, Page } from "playwright-core";
 import type { ChromeWorkerTab } from "./chrome-worker-contract";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
-const READ_BYTES = 64 * 1024;
-const CAPTURE_TIMEOUT_MS = 20_000;
+const CAPTURE_WINDOW_MS = 10_000;
 type Header = { name: string; value: string };
 type PausedResponse = { requestId: string; resourceType: string; request: { url: string };
-  responseStatusCode?: number; responseStatusText?: string; responseHeaders?: Header[] };
+  responseStatusCode?: number; responseHeaders?: Header[] };
 export type ResponseDownloadInfo = { pageId: string; fileName: string; mimeType: string };
 export type ResponseDownloadTicket = {
   reserve(bytes: number): void;
   complete(buffer: Buffer): void;
   fail(code: "file_transfer_limit" | "download_failed"): void;
 };
-type Pending = { id: string; settled: boolean; handle?: string; ticket?: ResponseDownloadTicket; settling?: Promise<void> };
-type State = { tab: ChromeWorkerTab; session?: Pick<CDPSession, "send" | "on" | "off" | "detach">; ready: Promise<void>; closed: boolean;
-  pending: Set<Pending>; listener: (event: PausedResponse) => void; onClose: () => void; releasing?: Promise<void> };
+type State = { tab: ChromeWorkerTab; session?: Pick<CDPSession, "send" | "on" | "off" | "detach">;
+  ready: Promise<void>; accepting: boolean; claimed: boolean; reading: boolean; timer?: ReturnType<typeof setTimeout>;
+  tasks: Set<Promise<void>>; tickets: Set<ResponseDownloadTicket>;
+  listener: (event: PausedResponse) => void; onClose: () => void; releasing?: Promise<void> };
 
 function captureError(code: string): Error & { code: string } {
-  return Object.assign(new Error("The HTTP attachment could not be imported safely."), { code });
-}
-async function bounded<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try { return await Promise.race([promise, new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(captureError("download_failed")), Math.max(1, timeoutMs));
-  })]); } finally { clearTimeout(timer); }
+  return Object.assign(new Error("The HTTP attachment could not be imported safely; its browser download is preserved."), { code });
 }
 function attachmentName(disposition: string): string {
   const extended = /(?:^|;)\s*filename\*\s*=\s*(?:"([^"]*)"|([^;]*))/iu.exec(disposition);
@@ -37,138 +31,142 @@ function attachmentName(disposition: string): string {
   return (ordinary?.[1]?.replace(/\\(.)/gu, "$1") ?? ordinary?.[2]?.trim() ?? "download.bin").slice(0, 1000);
 }
 
-/** Official-extension-only capture. The relay cannot provide Browser.download*.
- * Fetch/IO operate on the original authorized Page response, never a second URL request. */
+/** One explicit download action may copy one bounded response. It never owns the original body. */
 export class ChromeDownloadResponseCapture {
   private readonly states = new Map<Page, State>();
+  private readonly pageGenerations = new WeakMap<Page, number>();
+  private generation = 0;
   private closed = false;
   private stopping?: Promise<void>;
   constructor(private readonly begin: (info: ResponseDownloadInfo) => ResponseDownloadTicket | undefined) {}
 
-  prepare(tab: ChromeWorkerTab): Promise<void> {
-    if (this.closed) return Promise.reject(captureError("browser_disconnected"));
+  async prepare(tab: ChromeWorkerTab): Promise<void> {
+    if (this.closed) throw captureError("browser_disconnected");
+    const generation = this.generation;
+    const pageGeneration = this.pageGenerations.get(tab.page) ?? 0;
     const existing = this.states.get(tab.page);
-    if (existing) return existing.ready;
-    const state: State = { tab, closed: false, pending: new Set(), ready: Promise.resolve(),
-      listener: event => { void this.paused(state, event); },
-      onClose: () => { void this.release(state); } };
+    if (existing) {
+      if (existing.reading || !existing.claimed && existing.accepting) throw captureError("download_capture_busy");
+      await this.release(existing);
+    }
+    if (this.closed) throw captureError("browser_disconnected");
+    if (generation !== this.generation || pageGeneration !== (this.pageGenerations.get(tab.page) ?? 0)) throw captureError("cancelled");
+    if (tab.page.isClosed?.()) throw captureError("surface_not_found");
+    const state: State = { tab, accepting: true, claimed: false, reading: false, tasks: new Set(), tickets: new Set(),
+      ready: Promise.resolve(), listener: () => undefined, onClose: () => undefined };
+    state.onClose = () => { void this.release(state); };
+    state.listener = event => {
+      const task = this.paused(state, event);
+      state.tasks.add(task);
+      void task.finally(() => {
+        state.tasks.delete(task);
+        if (state.claimed || !state.accepting) void this.release(state);
+      });
+    };
     this.states.set(tab.page, state);
+    tab.page.once("close", state.onClose); tab.page.once("crash", state.onClose);
     state.ready = (async () => {
       if (!tab.createDownloadSession) throw captureError("capability_unavailable");
-      const session = await bounded(tab.createDownloadSession(), 3000);
-      if (this.closed || state.closed) { await session.detach().catch(() => {}); throw captureError("browser_disconnected"); }
+      const session = await tab.createDownloadSession();
+      if (!state.accepting || this.closed || generation !== this.generation) {
+        await session.detach().catch(() => undefined); throw captureError("cancelled");
+      }
       state.session = session;
       session.on("Fetch.requestPaused", state.listener);
-      tab.page.once("close", state.onClose);
-      await bounded(session.send("Fetch.enable", { patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Response" }] }), 3000);
-      if (this.closed || state.closed) throw captureError("browser_disconnected");
-    })().catch(async error => { await this.release(state); throw error; });
-    return state.ready;
-  }
-
-  private async settle(state: State, pending: Pending, kind: "continue" | "fail" | "fulfill", response?: {
-    code: number; phrase?: string; headers: Header[]; body: Buffer;
-  }): Promise<void> {
-    if (pending.settled || !state.session) return;
-    if (pending.settling) { await pending.settling.catch(() => {}); if (pending.settled) return; }
-    const session = state.session;
-    const operation = (async () => {
-      if (kind === "continue") await bounded(session.send("Fetch.continueResponse", { requestId: pending.id }), 1000);
-      else if (kind === "fail") await bounded(session.send("Fetch.failRequest", { requestId: pending.id, errorReason: "Aborted" }), 1000);
-      else if (response) await bounded(session.send("Fetch.fulfillRequest", {
-        requestId: pending.id, responseCode: response.code, responsePhrase: response.phrase,
-        responseHeaders: response.headers, body: response.body.toString("base64"),
-      }), 5000);
-      pending.settled = true;
+      await session.send("Fetch.enable", { patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Response" }] });
+      if (!state.accepting || this.closed || generation !== this.generation) throw captureError("cancelled");
+      state.timer = setTimeout(() => { void this.release(state); }, CAPTURE_WINDOW_MS);
+      state.timer.unref?.();
     })();
-    pending.settling = operation;
-    try { await operation; } finally { if (pending.settling === operation) pending.settling = undefined; }
+    try { await state.ready; }
+    catch (error) { await this.release(state); throw error; }
   }
 
   private async paused(state: State, event: PausedResponse): Promise<void> {
-    const pending: Pending = { id: event.requestId, settled: false };
-    state.pending.add(pending);
-    let consumed = false;
+    let ticket: ResponseDownloadTicket | undefined, buffer: Buffer | undefined;
     try {
-      if (this.closed || state.closed) { await this.settle(state, pending, "fail"); return; }
+      if (!state.accepting || state.claimed || this.closed) return;
       let url: URL;
-      try { url = new URL(event.request.url); } catch { await this.settle(state, pending, "continue"); return; }
+      try { url = new URL(event.request.url); } catch { return; }
       const headers = event.responseHeaders ?? [];
-      const disposition = headers.find(header => header.name.toLowerCase() === "content-disposition")?.value ?? "";
+      const header = (name: string) => headers.filter(entry => entry.name.toLowerCase() === name);
+      const disposition = header("content-disposition")[0]?.value ?? "";
       if (event.resourceType !== "Document" || !["http:", "https:"].includes(url.protocol)
         || !/^\s*attachment(?:\s*;|\s*$)/iu.test(disposition)
-        || !event.responseStatusCode || event.responseStatusCode < 200 || event.responseStatusCode >= 300) {
-        await this.settle(state, pending, "continue"); return;
-      }
-      const mime = (headers.find(header => header.name.toLowerCase() === "content-type")?.value ?? "application/octet-stream").split(";", 1)[0].trim();
-      pending.ticket = this.begin({ pageId: state.tab.desktopPageId, fileName: attachmentName(disposition),
+        || !event.responseStatusCode || event.responseStatusCode < 200 || event.responseStatusCode >= 300) return;
+      state.claimed = true; clearTimeout(state.timer);
+      const mime = (header("content-type")[0]?.value ?? "application/octet-stream").split(";", 1)[0].trim();
+      ticket = this.begin({ pageId: state.tab.desktopPageId, fileName: attachmentName(disposition),
         mimeType: /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/u.test(mime) ? mime : "application/octet-stream" });
-      if (!pending.ticket) { await this.settle(state, pending, "fail"); return; }
-      const declared = headers.find(header => header.name.toLowerCase() === "content-length")?.value;
-      if (declared && /^\d+$/u.test(declared) && Number(declared) > MAX_FILE_BYTES) throw captureError("file_transfer_limit");
-      const deadline = Date.now() + CAPTURE_TIMEOUT_MS;
-      const session = state.session!;
-      const result = await bounded(session.send("Fetch.takeResponseBodyAsStream", { requestId: pending.id }), CAPTURE_TIMEOUT_MS);
-      pending.handle = result.stream; consumed = true;
-      const chunks: Buffer[] = []; let size = 0;
-      for (;;) {
-        if (this.closed || state.closed) throw captureError("browser_disconnected");
-        const chunk = await bounded(session.send("IO.read", { handle: pending.handle, size: READ_BYTES }), deadline - Date.now());
-        if (this.closed || state.closed) throw captureError("browser_disconnected");
-        const buffer = Buffer.from(chunk.data, chunk.base64Encoded ? "base64" : "utf8");
-        if (size + buffer.length > MAX_FILE_BYTES) throw captureError("file_transfer_limit");
-        pending.ticket.reserve(buffer.length);
-        size += buffer.length; chunks.push(buffer);
-        if (chunk.eof) break;
-      }
-      await bounded(session.send("IO.close", { handle: pending.handle }), 1000).catch(() => {});
-      pending.handle = undefined;
-      const buffer = Buffer.concat(chunks, size);
-      if (this.closed || state.closed) throw captureError("browser_disconnected");
-      // Fetch exposes decoded entity bytes. Rebuild framing headers for those
-      // same bytes; preserving a gzip/transfer encoding would corrupt the replay.
-      const replayHeaders = headers.filter(header => !["content-length", "content-encoding", "transfer-encoding"].includes(header.name.toLowerCase()));
-      replayHeaders.push({ name: "Content-Length", value: String(size) });
-      await this.settle(state, pending, "fulfill", { code: event.responseStatusCode,
-        phrase: event.responseStatusText, headers: replayHeaders, body: buffer });
-      if (this.closed || state.closed) throw captureError("browser_disconnected");
-      pending.ticket.complete(buffer);
+      if (!ticket) return; // Import capacity cannot stop a browser download.
+      state.tickets.add(ticket);
+      if (event.responseStatusCode === 206 || header("content-range").length) throw captureError("download_failed");
+      const lengths = header("content-length"), declared = lengths[0]?.value.trim();
+      if (lengths.length !== 1 || !declared || !/^\d+$/u.test(declared)
+        || header("content-encoding").length || header("transfer-encoding").length) throw captureError("download_failed");
+      const size = Number(declared);
+      if (!Number.isSafeInteger(size) || size > MAX_FILE_BYTES) throw captureError("file_transfer_limit");
+      ticket.reserve(size); // Reserve before receiving a copy, never after consuming an original stream.
+      state.reading = true;
+      const result = await state.session!.send("Fetch.getResponseBody", { requestId: event.requestId });
+      state.reading = false;
+      if (!state.accepting || this.closed) return;
+      if (typeof result.body !== "string" || (result.base64Encoded
+        ? result.body.length > 4 * Math.ceil(MAX_FILE_BYTES / 3)
+        : Buffer.byteLength(result.body, "utf8") > MAX_FILE_BYTES)) throw captureError("file_transfer_limit");
+      buffer = Buffer.from(result.body, result.base64Encoded ? "base64" : "utf8");
+      if (buffer.length !== size || result.base64Encoded && buffer.toString("base64") !== result.body) throw captureError("download_failed");
     } catch (error) {
-      pending.ticket?.fail((error as { code?: string }).code === "file_transfer_limit" ? "file_transfer_limit" : "download_failed");
-      // Once the stream was taken, continueResponse is invalid. Fail the
-      // original request; never replay it or issue a second authenticated fetch.
-      await this.settle(state, pending, pending.ticket || consumed ? "fail" : "continue").catch(() => {});
+      ticket?.fail((error as { code?: string } | undefined)?.code === "file_transfer_limit" ? "file_transfer_limit" : "download_failed");
+      buffer = undefined;
     } finally {
-      if (pending.handle && state.session) await bounded(state.session.send("IO.close", { handle: pending.handle }), 1000).catch(() => {});
-      state.pending.delete(pending);
+      state.reading = false;
+      // getResponseBody leaves the original response intact. Do not continue or disable Fetch
+      // until that real command has settled, even when the Run has already been cancelled.
+      let continued = false;
+      try {
+        if (state.session) { await state.session.send("Fetch.continueResponse", { requestId: event.requestId }); continued = true; }
+      }
+      catch { ticket?.fail("download_failed"); }
+      if (buffer && continued && state.accepting && !this.closed) ticket?.complete(buffer);
+      else if (ticket && (!state.accepting || this.closed)) ticket.fail("download_failed");
+      if (ticket) state.tickets.delete(ticket);
     }
   }
 
   private release(state: State): Promise<void> {
     if (state.releasing) return state.releasing;
-    state.closed = true;
-    state.tab.page.off("close", state.onClose);
-    state.session?.off("Fetch.requestPaused", state.listener);
-    const pending = [...state.pending];
-    for (const entry of pending) entry.ticket?.fail("download_failed");
+    state.accepting = false; clearTimeout(state.timer);
+    for (const ticket of state.tickets) ticket.fail("download_failed");
     state.releasing = (async () => {
-      await Promise.allSettled(pending.map(async entry => {
-        await bounded(this.settle(state, entry, "fail"), 1000).catch(() => {});
-        if (entry.handle && state.session) await bounded(state.session.send("IO.close", { handle: entry.handle }), 500).catch(() => {});
-      }));
+      await state.ready.catch(() => undefined);
+      while (state.tasks.size) await Promise.allSettled([...state.tasks]);
       if (state.session) {
-        await bounded(state.session.send("Fetch.disable"), 500).catch(() => {});
-        await bounded(state.session.detach(), 500).catch(() => {});
+        await state.session.send("Fetch.disable").catch(() => undefined);
+        while (state.tasks.size) await Promise.allSettled([...state.tasks]);
+        state.session.off("Fetch.requestPaused", state.listener);
+        await state.session.detach().catch(() => undefined);
       }
-      this.states.delete(state.tab.page);
+      state.tab.page.off("close", state.onClose); state.tab.page.off("crash", state.onClose);
+      if (this.states.get(state.tab.page) === state) this.states.delete(state.tab.page);
     })();
     return state.releasing;
   }
 
+  releasePage(pageId: string): Promise<void> {
+    const states = [...this.states.values()].filter(state => state.tab.desktopPageId === pageId);
+    for (const state of states) this.pageGenerations.set(state.tab.page, (this.pageGenerations.get(state.tab.page) ?? 0) + 1);
+    return Promise.all(states.map(state => this.release(state))).then(() => undefined);
+  }
+
+  endRun(): Promise<void> {
+    this.generation++;
+    return Promise.all([...this.states.values()].map(state => this.release(state))).then(() => undefined);
+  }
+
   shutdown(): Promise<void> {
-    if (this.stopping) return this.stopping;
     this.closed = true;
-    this.stopping = Promise.allSettled([...this.states.values()].map(state => this.release(state))).then(() => {});
+    this.stopping ??= this.endRun();
     return this.stopping;
   }
 }

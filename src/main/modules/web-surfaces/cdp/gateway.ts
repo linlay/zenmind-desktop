@@ -23,7 +23,8 @@ import type { AddressInfo, Socket } from "node:net";
 import type { IpcMain, WebContents } from "electron";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
-  EMBEDDED_CDP_GATEWAY_PORT
+  EMBEDDED_CDP_GATEWAY_PORT,
+  DESKTOP_CDP_HOST_METHODS,
 } from "../../../../shared/embedded-cdp";
 import { PRODUCT_NAME } from "../../../../shared/brand";
 
@@ -83,10 +84,18 @@ export type EmbeddedCdpCommandRequest = {
   source?: { chatId?: string };
 };
 
+const hostCommands = new WeakSet<EmbeddedCdpCommandRequest>();
+/** Main-only, single-use acknowledgement marker; JSON/source fields cannot issue it. */
+export function authorizeDesktopHostCdpCommand(request: EmbeddedCdpCommandRequest): EmbeddedCdpCommandRequest {
+  if (!DESKTOP_CDP_HOST_METHODS.some(method => method === request.method)) throw new EmbeddedCdpCapabilityError("This is not a host acknowledgement.");
+  hostCommands.add(request);
+  return request;
+}
+
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const DEFAULT_PROTOCOL_VERSION = "1.3";
 // These read or resolve a pending native modal; every other page command waits until it is handled.
-const modalFreeMethods = new Set(["Surface.observe", "Surface.handleDialog", "Surface.uploadFiles", "Surface.getDownloads", "Surface.readDownload"]);
+const modalFreeMethods = new Set(["Surface.observe", "Surface.handleDialog", "Surface.uploadFiles", "Surface.getDownloads", "Surface.readDownload", "Surface.releaseDownload"]);
 const DEFAULT_CDP_TIMEOUT_MS = 15_000;
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 export class EmbeddedCdpInvalidArgsError extends Error {
@@ -458,6 +467,8 @@ export class EmbeddedCdpGateway {
     if (!method) {
       throw new Error("method is required");
     }
+    const hostOnly = DESKTOP_CDP_HOST_METHODS.some(candidate => candidate === method);
+    if (hostOnly && !hostCommands.delete(request)) throw new EmbeddedCdpCapabilityError("This acknowledgement requires a trusted host request.");
     const params = request.params ?? {};
     if (method === "Surface.list" || method === "Surface.getCurrent") {
       validateDesktopCdpParams(method, request.params);
@@ -518,7 +529,9 @@ export class EmbeddedCdpGateway {
     const ownedScope = !scope && surface.surfaceKind === "chat-work-panel" && request.source?.chatId
       ? this.options.acquireWorkPanelScope?.(surface.id, request.source.chatId) : undefined;
     scope ??= ownedScope;
-    try { return await withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
+    try {
+      if (hostOnly && !scope) throw new EmbeddedCdpCapabilityError("This acknowledgement requires an authorized page scope.");
+      return await withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
       ? (phase) => this.options.controlSiteFocus!(surface, tab, scope, phase) : undefined, async () => {
       const live = await this.resolveCommandTarget(request, scope);
       if (live.tab.webContentsId !== tab.webContentsId || live.surface.targetGeneration !== surface.targetGeneration) {
@@ -661,6 +674,7 @@ export class EmbeddedCdpGateway {
       return;
     }
     try {
+      if (DESKTOP_CDP_HOST_METHODS.some(candidate => candidate === method)) throw new EmbeddedCdpCapabilityError("Host acknowledgements are not exposed over WebSocket.");
       validateDesktopCdpParams(method, command.params);
       if (method === "Surface.close") {
         const paramsSurfaceId = typeof command.params?.surfaceId === "string"
@@ -818,7 +832,13 @@ export class EmbeddedCdpGateway {
         const current = await this.resolveCommandTarget({ method, surfaceId, source: { chatId: surface.ownerChatId } }, scope);
         if (current.tab.webContentsId !== contents.id || current.surface.targetGeneration !== surface.targetGeneration) throw new Error("target_replaced");
       };
-      const send = (name: string, args: Record<string, unknown>, timeoutMs: number) => {
+      const send = async (name: string, args: Record<string, unknown>, timeoutMs: number) => {
+        if (automation && params.captureDownload === true && (method === "Surface.click" || method === "Input.click")
+          && name === "Input.dispatchMouseEvent" && args.type === "mousePressed") {
+          await validate();
+          if (signal?.aborted) throw new Error("canceled");
+          automation.armDownload(contents, signal);
+        }
         const work = sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs });
         return automation ? automation.raceModal(contents, work) : work;
       };

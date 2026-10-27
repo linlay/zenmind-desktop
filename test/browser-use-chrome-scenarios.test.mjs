@@ -96,6 +96,25 @@ test('Chrome mutation observation failures preserve the completed action and nev
   assert.equal(await f.page.evaluate(() => window.inputs), 1);
 });
 
+test('Chrome fill interrupted by an input dialog preserves unknown effects and never repeats the input', { skip: !available, timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  await f.page.setContent('<input aria-label="Name" oninput="window.inputs=(window.inputs||0)+1;window.answer=confirm(\'Keep this input?\')">');
+  const initial = await f.observed();
+  const filled = await f.call('interact', { ...f.target(initial, 'Name'), action: 'fill', value: 'typed once' });
+  assert.equal(filled.status, 'failed'); assert.equal(filled.error, 'dialog_pending');
+  assert.equal(filled.action.outcome, 'unknown');
+  assert.notEqual(filled.observation.observationId, initial.observationId);
+  const dialog = filled.observation.dialogs[0];
+  assert.equal(dialog.type, 'confirm'); assert.equal(dialog.message, 'Keep this input?');
+  const handled = await f.call('dialog', { observationId: filled.observation.observationId, dialogId: dialog.dialogId, action: 'dismiss' });
+  assert.deepEqual(handled.observation.dialogs, []);
+  assert.equal(handled.observation.elements.find(element => element.name === 'Name').value, 'typed once');
+  assert.deepEqual(await f.page.evaluate(() => ({ inputs: window.inputs, answer: window.answer })), { inputs: 1, answer: false });
+  assert.equal(f.page.url(), f.url + '/one');
+  assert.equal(await f.neighbour.locator('input').inputValue(), '');
+  assert.equal(await f.neighbour.evaluate(() => window.inputs ?? 0), 0);
+});
+
 test('Chrome rechecks an observed target after asynchronous resolution before dispatching input into a replaced document', { skip: !available }, async t => {
   const f = await fixture(t);
   const observation = await f.observed();
@@ -217,7 +236,7 @@ test('Chrome file chooser and observed file input accept only scoped bytes; down
   assert.equal(await f.page.locator('#status').textContent(), 'input.csv');
   const observation = uploaded.observation;
   await assert.rejects(f.call('upload', { ...f.target(observation, 'Not a file'), files }), { code: 'invalid_params' });
-  const exported = await f.call('click', { selector: 'a' }); assert.ok(exported.observation);
+  const exported = await f.call('click', { selector: 'a', captureDownload: true }); assert.ok(exported.observation);
   let download;
   for (let i = 0; i < 100; i++) { download = (await f.call('downloads', { action: 'list' })).downloads[0]; if (download?.status === 'complete') break; await delay(20); }
   assert.equal(download.status, 'complete'); assert.equal(download.fileName, 'report.csv');
@@ -225,8 +244,36 @@ test('Chrome file chooser and observed file input accept only scoped bytes; down
   assert.deepEqual(Object.keys(saved).sort(), ['data', 'downloadId', 'fileName', 'mimeType', 'sha256', 'sizeBytes']);
   assert.equal(Buffer.from(saved.data, 'base64').toString(), 'alpha,beta\n1,2\n');
   await assert.rejects(f.call('downloads', { action: 'read', downloadId: download.downloadId }, f.otherId), { code: 'download_not_found' });
+  assert.equal((await f.call('downloads', { action: 'release', downloadId: saved.downloadId, sha256: saved.sha256 })).released, true);
+  assert.deepEqual((await f.call('downloads', { action: 'list' })).downloads, []);
   const artifacts = fs.readdirSync(f.outputDir, { recursive: true }).filter(name => fs.statSync(path.join(f.outputDir, name)).isFile());
   for (const name of artifacts) assert.equal(fs.readFileSync(path.join(f.outputDir, name), 'utf8').includes('alpha,beta'), false, 'the upstream must not write a duplicate unbounded download artifact');
+});
+
+test('Chrome chooser upload interrupted by a change dialog clears the chooser without repeating the upload', { skip: !available, timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  await f.page.setContent('<input id="file" type="file" aria-label="Attachment" onchange="window.uploads=(window.uploads||0)+1;window.answer=confirm(\'Keep this file?\')"><button onclick="document.querySelector(\'#file\').click()">Choose attachment</button>');
+  const clicked = await f.call('click', { selector: 'button' });
+  const chooser = clicked.observation.fileChoosers[0]; assert.ok(chooser);
+  const contents = 'name\nfixture\n';
+  const files = [{ name: 'input.csv', mimeType: 'text/csv', data: Buffer.from(contents).toString('base64') }];
+  const uploaded = await f.call('upload', { observationId: clicked.observation.observationId, chooserId: chooser.chooserId, files });
+  assert.equal(uploaded.status, 'failed'); assert.equal(uploaded.error, 'dialog_pending');
+  assert.equal(uploaded.action.outcome, 'unknown');
+  assert.notEqual(uploaded.observation.observationId, clicked.observation.observationId);
+  assert.deepEqual(uploaded.observation.fileChoosers, []);
+  const dialog = uploaded.observation.dialogs[0];
+  assert.equal(dialog.type, 'confirm'); assert.equal(dialog.message, 'Keep this file?');
+  await assert.rejects(f.call('upload', { observationId: uploaded.observation.observationId, chooserId: chooser.chooserId, files }), { code: 'stale_observation' });
+  const handled = await f.call('dialog', { observationId: uploaded.observation.observationId, dialogId: dialog.dialogId, action: 'accept' });
+  assert.deepEqual(handled.observation.dialogs, []); assert.deepEqual(handled.observation.fileChoosers, []);
+  assert.equal(handled.observation.elements.find(element => element.name === 'Attachment').fileCount, 1);
+  assert.deepEqual(await f.page.locator('#file').evaluate(async input => ({
+    uploads: window.uploads, answer: window.answer, names: [...input.files].map(file => file.name), contents: await input.files[0].text(),
+  })), { uploads: 1, answer: true, names: ['input.csv'], contents });
+  assert.equal(f.page.url(), f.url + '/one');
+  assert.equal(await f.neighbour.locator('input').inputValue(), '');
+  assert.equal(await f.neighbour.evaluate(() => window.uploads ?? 0), 0);
 });
 
 test('Chrome viewport observations expose the long-page tail after typed scrolling, using real upstream CSS viewport boxes', { skip: !available, timeout: 30000 }, async t => {

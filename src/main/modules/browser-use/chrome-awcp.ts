@@ -9,18 +9,20 @@ import {
 import type { ChromeWorkerTab } from "./chrome-worker-contract";
 
 export const CHROME_AWCP_MAX_SCRIPT_BYTES = 12 * 1024 * 1024;
-type Parameters = { requestId: string; runId: string; payload: Record<string, unknown>; expectedUrl: string; bridgeScript: string };
+type Parameters = { requestId: string; runId: string; runLease: number; payload: Record<string, unknown>; expectedUrl: string; bridgeScript: string };
+export type ChromeAwcpRunLease = { runId: string; lease: number; pending: number; released: boolean };
 type Binding = { page: Page; epoch: number; revision: string; actions: Set<string>; sections: Set<string> };
 type PageState = { page: Page; pageId: string; epoch: number; scriptHash?: string; ownedBridge?: JSHandle<unknown>; dispose(): void };
-type Active = { runId: string; page: Page; pageId: string; cancel(error: Error): Promise<void> };
+type Active = { runLease: number; page: Page; pageId: string; cancel(error: Error): Promise<void> };
 type Context = { check(): void; dispatch(): void; epoch: number };
 
 function parameters(input: unknown): Parameters {
   assertPlainRecord(input, "Chrome AWCP request");
-  if (Object.keys(input).sort().join(",") !== "bridgeScript,expectedUrl,payload,requestId,runId")
+  if (Object.keys(input).sort().join(",") !== "bridgeScript,expectedUrl,payload,requestId,runId,runLease")
     throw awcpHostError("awcp_invalid_request", "The Chrome AWCP request has unsupported fields.");
   assertToken("requestId", input.requestId, AWCP_LIMITS.maxRequestIdLength);
   assertToken("runId", input.runId, AWCP_LIMITS.maxRequestIdLength);
+  assertRunLease(input.runLease);
   assertPlainRecord(input.payload, "AWCP payload");
   if (typeof input.expectedUrl !== "string" || input.expectedUrl.length > 8192)
     throw awcpHostError("awcp_invalid_request", "The Chrome AWCP page address is invalid.");
@@ -34,6 +36,11 @@ function parameters(input: unknown): Parameters {
   return input as Parameters;
 }
 
+function assertRunLease(value: unknown): asserts value is number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1)
+    throw awcpHostError("awcp_invalid_request", "A private AWCP Run lease is required.");
+}
+
 async function bounded(work: Promise<unknown>, ms = 300): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try { await Promise.race([work.catch(() => undefined), new Promise(resolve => { timer = setTimeout(resolve, ms); })]); }
@@ -42,15 +49,40 @@ async function bounded(work: Promise<unknown>, ms = 300): Promise<void> {
 
 /** Fixed AWCP transport for one owned extension connection; it exposes no script tool. */
 export class ChromeAwcp {
-  private readonly bindings = new Map<string, Map<string, Binding>>();
+  private readonly bindings = new Map<number, Map<string, Binding>>();
   private readonly pages = new Map<string, PageState>();
   private readonly active = new Map<string, Active>();
-  private readonly releasedRuns = new Set<string>();
+  private readonly runs = new Map<number, ChromeAwcpRunLease>();
+  private releasedThrough = 0;
   private configurationEpoch = 0;
   private closed = false;
 
   constructor(private readonly signal: AbortSignal) {}
   generation() { return this.configurationEpoch; }
+
+  /** Capture cancellation identity before queueing; old requests never look up a replacement Run. */
+  retainRun(input: unknown): ChromeAwcpRunLease {
+    const args = parameters(input);
+    if (this.closed || this.signal.aborted) throw awcpHostError("awcp_cancelled", "The Chrome AWCP connection was released.");
+    if (args.runLease <= this.releasedThrough) throw awcpHostError("site_control_unavailable", "The AWCP Run authorization ended.");
+    let run = this.runs.get(args.runLease);
+    if (run && run.runId !== args.runId) throw awcpHostError("awcp_invalid_request", "The private AWCP Run lease does not match.");
+    if (!run) { run = { runId: args.runId, lease: args.runLease, pending: 0, released: false }; this.runs.set(run.lease, run); }
+    run.pending++;
+    return run;
+  }
+
+  releaseRequest(run: ChromeAwcpRunLease): void {
+    run.pending--;
+    if (run.released && run.pending === 0 && this.runs.get(run.lease) === run) this.runs.delete(run.lease);
+  }
+
+  private assertRun(args: Parameters, run: ChromeAwcpRunLease): void {
+    if (run.released || run.lease <= this.releasedThrough || this.runs.get(run.lease) !== run)
+      throw awcpHostError("site_control_unavailable", "The AWCP Run authorization ended.");
+    if (run.runId !== args.runId || run.lease !== args.runLease)
+      throw awcpHostError("awcp_invalid_request", "The private AWCP Run lease does not match.");
+  }
 
   watch(tab: ChromeWorkerTab): PageState {
     const previous = this.pages.get(tab.desktopPageId);
@@ -90,8 +122,8 @@ export class ChromeAwcp {
       void active.cancel(awcpHostError(code, "The authorized Chrome page changed during the AWCP request."));
   }
 
-  private binding(runId: string, state: PageState, revision: string): Binding {
-    const current = this.bindings.get(runId)?.get(state.pageId);
+  private binding(runLease: number, state: PageState, revision: string): Binding {
+    const current = this.bindings.get(runLease)?.get(state.pageId);
     if (!current) throw awcpPreflightFailure("manual_required", "Read this page's AWCP directory in the current Run first.");
     if (current.page !== state.page || current.epoch !== state.epoch || state.page.isClosed())
       throw awcpPreflightFailure("page_changed", "The AWCP page binding changed. Read the current directory.");
@@ -123,10 +155,20 @@ export class ChromeAwcp {
 
   async releaseRun(input: unknown): Promise<{ released: true }> {
     assertPlainRecord(input, "AWCP Run release");
-    if (Object.keys(input).join(",") !== "runId") throw awcpHostError("awcp_invalid_request", "The AWCP Run release has unsupported fields.");
+    if (Object.keys(input).sort().join(",") !== "runId,runLease") throw awcpHostError("awcp_invalid_request", "The AWCP Run release has unsupported fields.");
     assertToken("runId", input.runId, AWCP_LIMITS.maxRequestIdLength);
-    this.releasedRuns.add(input.runId); this.bindings.delete(input.runId);
-    await Promise.all([...this.active.values()].filter(active => active.runId === input.runId)
+    assertRunLease(input.runLease);
+    const run = this.runs.get(input.runLease);
+    if (run && run.runId !== input.runId) throw awcpHostError("awcp_invalid_request", "The private AWCP Run lease does not match.");
+    // Main grants these monotonically to this workspace's single operation owner.
+    // A scalar watermark rejects retired identities even after their records drain.
+    this.releasedThrough = Math.max(this.releasedThrough, input.runLease);
+    for (const current of this.runs.values()) if (current.lease <= this.releasedThrough) {
+      current.released = true;
+      if (current.pending === 0) this.runs.delete(current.lease);
+    }
+    for (const lease of this.bindings.keys()) if (lease <= this.releasedThrough) this.bindings.delete(lease);
+    await Promise.all([...this.active.values()].filter(active => active.runLease <= this.releasedThrough)
       .map(active => active.cancel(awcpHostError("site_control_unavailable", "The AWCP Run authorization ended."))));
     return { released: true };
   }
@@ -148,12 +190,12 @@ export class ChromeAwcp {
     this.closed = true;
     await this.refresh();
     for (const state of this.pages.values()) state.dispose();
-    this.pages.clear(); this.releasedRuns.clear();
+    this.pages.clear(); this.runs.clear();
   }
 
-  private async withPage<T>(tab: ChromeWorkerTab, args: Parameters, generation: number, invoke: boolean, execute: (state: PageState, context: Context) => Promise<T>): Promise<T> {
+  private async withPage<T>(tab: ChromeWorkerTab, args: Parameters, run: ChromeAwcpRunLease, generation: number, invoke: boolean, execute: (state: PageState, context: Context) => Promise<T>): Promise<T> {
     if (this.closed || this.signal.aborted) throw awcpHostError("awcp_cancelled", "The Chrome AWCP connection was released.");
-    if (this.releasedRuns.has(args.runId)) throw awcpHostError("site_control_unavailable", "The AWCP Run authorization ended.");
+    this.assertRun(args, run);
     if (generation !== this.configurationEpoch) throw awcpPreflightFailure("page_changed", "The website bridge configuration changed. Read its current directory.");
     if (this.active.has(args.requestId)) throw awcpHostError("awcp_duplicate_request", "The AWCP request id is already active.");
     if (tab.page.isClosed()) throw awcpHostError("awcp_target_unavailable", "The authorized Chrome page is unavailable.");
@@ -166,7 +208,7 @@ export class ChromeAwcp {
     let rejectLifecycle!: (error: Error) => void;
     const interrupted = new Promise<never>((_resolve, reject) => { rejectLifecycle = reject; });
     void interrupted.catch(() => undefined);
-    const active: Active = { runId: args.runId, page: state.page, pageId: state.pageId, cancel: error => {
+    const active: Active = { runLease: run.lease, page: state.page, pageId: state.pageId, cancel: error => {
       if (!failure) { failure = error; rejectLifecycle(error); }
       if (!canceling) canceling = invoke && dispatched ? this.cancelPage(state.page, args.requestId) : Promise.resolve();
       return canceling;
@@ -178,14 +220,18 @@ export class ChromeAwcp {
     const context: Context = { epoch, check: () => {
       if (failure) throw failure;
       if (this.closed || this.signal.aborted) throw awcpHostError("awcp_cancelled", "The Chrome AWCP connection was released.");
-      if (this.releasedRuns.has(args.runId)) throw awcpHostError("site_control_unavailable", "The AWCP Run authorization ended.");
+      this.assertRun(args, run);
       if (generation !== this.configurationEpoch || state.epoch !== epoch || this.pages.get(state.pageId) !== state || state.page.url() !== args.expectedUrl)
         throw awcpHostError("awcp_navigation_interrupted", "The authorized Chrome page changed during the AWCP request.");
       if (state.page.isClosed()) throw awcpHostError("awcp_target_unavailable", "The authorized Chrome page is unavailable.");
     }, dispatch: () => { context.check(); dispatched = true; } };
     try {
       context.check();
-      const work = execute(state, context);
+      // Cancellation may win before a page evaluation replies. Keep its identity
+      // until that actual work settles, including late injection cleanup.
+      run.pending++;
+      const work = Promise.resolve().then(() => execute(state, context));
+      void work.then(() => this.releaseRequest(run), () => this.releaseRequest(run));
       const result = await Promise.race([work, interrupted]); context.check(); return result;
     } catch (error) {
       if (isAwcpHostError(error)) throw error;
@@ -238,12 +284,12 @@ export class ChromeAwcp {
       throw awcpHostError("awcp_invalid_contract", "The authorized Chrome page exposes an invalid AWCP entry point.");
   }
 
-  async manual(tab: ChromeWorkerTab, input: unknown, generation = this.generation()): Promise<AwcpManualResponse> {
+  async manual(tab: ChromeWorkerTab, input: unknown, run: ChromeAwcpRunLease, generation = this.generation()): Promise<AwcpManualResponse> {
     const args = parameters(input), payload = validateManualPayload(args.payload);
-    return this.withPage(tab, args, generation, false, async (state, context) => {
+    return this.withPage(tab, args, run, generation, false, async (state, context) => {
       await this.ensureProtocol(state, args, context); context.check();
       if ("section" in payload) {
-        const binding = this.binding(args.runId, state, payload.revision);
+        const binding = this.binding(args.runLease, state, payload.revision);
         if (!binding.actions.has(payload.section)) throw awcpPreflightFailure("action_not_found", "The requested AWCP section is unavailable.");
       }
       const envelope = JSON.stringify(payload);
@@ -251,26 +297,26 @@ export class ChromeAwcp {
       assertJsonValue(value, "AWCP manual", "awcp_invalid_contract");
       if ("section" in payload) {
         const error = validateManualError(value, payload.section);
-        if (error === "stale_revision") { this.bindings.get(args.runId)?.delete(state.pageId); throw awcpPreflightFailure("stale_revision", "The AWCP revision changed. Read its directory again."); }
+        if (error === "stale_revision") { this.bindings.get(args.runLease)?.delete(state.pageId); throw awcpPreflightFailure("stale_revision", "The AWCP revision changed. Read its directory again."); }
         if (error === "section_not_found") throw awcpPreflightFailure("action_not_found", "The requested AWCP section is unavailable.");
         const section = validateManualSection(value, payload.section, payload.revision);
-        this.binding(args.runId, state, payload.revision).sections.add(section.section);
+        this.binding(args.runLease, state, payload.revision).sections.add(section.section);
         return { ok: true, method: "AWCP.getManual", ...section };
       }
       const index = validateManualIndex(value);
-      let bindings = this.bindings.get(args.runId);
-      if (!bindings) { bindings = new Map(); this.bindings.set(args.runId, bindings); }
+      let bindings = this.bindings.get(args.runLease);
+      if (!bindings) { bindings = new Map(); this.bindings.set(args.runLease, bindings); }
       bindings.set(state.pageId, { page: state.page, epoch: context.epoch, revision: index.revision,
         actions: new Set(index.sections.map(section => section.section)), sections: new Set() });
       return { ok: true, method: "AWCP.getManual", ...index };
     });
   }
 
-  async invoke(tab: ChromeWorkerTab, input: unknown, generation = this.generation()): Promise<AwcpActionResponse> {
+  async invoke(tab: ChromeWorkerTab, input: unknown, run: ChromeAwcpRunLease, generation = this.generation()): Promise<AwcpActionResponse> {
     const args = parameters(input), payload = validateInvokePayload(args.requestId, args.payload);
-    return this.withPage(tab, args, generation, true, async (state, context) => {
+    return this.withPage(tab, args, run, generation, true, async (state, context) => {
       await this.ensureProtocol(state, args, context); context.check();
-      const binding = this.binding(args.runId, state, payload.revision);
+      const binding = this.binding(args.runLease, state, payload.revision);
       if (!binding.sections.has(payload.action)) {
         const reason = binding.actions.has(payload.action) ? "manual_required" : "action_not_found";
         throw awcpPreflightFailure(reason, reason === "manual_required" ? "Read this AWCP section before invoking it." : "The requested AWCP action is unavailable.");
@@ -279,7 +325,7 @@ export class ChromeAwcp {
       context.dispatch();
       const value = await state.page.evaluate(`globalThis.awcp.invoke(JSON.parse(${JSON.stringify(envelope)}))`); context.check();
       const response = validateActionResponse(value, args.requestId, payload.action);
-      if (!response.ok && response.error.code === "stale_revision") this.bindings.get(args.runId)?.delete(state.pageId);
+      if (!response.ok && response.error.code === "stale_revision") this.bindings.get(args.runLease)?.delete(state.pageId);
       return response;
     });
   }

@@ -1,4 +1,5 @@
 import test from "node:test";
+import { releaseBrowserTask } from "./helpers/browser-use-task.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -81,7 +82,7 @@ test("new Runs and Chats choose their own intent while remembered Chrome pages k
   const pages = (await h.cdp("Surface.list")).result.surfaces;
   h.runtime.registerRun(source("chat-b", "run-b")); await h.select("chrome", source("chat-b", "run-b"));
   await assert.rejects(h.cdp("Surface.list", {}, source("chat-b", "run-b")), { code: "browser_busy" });
-  h.runtime.releaseRun("run-a");
+  await releaseBrowserTask(h.runtime, "run-a");
   assert.equal((await h.cdp("Surface.list", {}, source("chat-b", "run-b"))).result.surfaces[0].surfaceId, pages[0].surfaceId);
   assert.equal(h.clients.length, 1);
   h.runtime.registerRun(source("chat-a", "followup")); await h.select("workpanel", source("chat-a", "followup"));

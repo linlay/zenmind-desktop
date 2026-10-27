@@ -4,9 +4,10 @@ export function validateClickParams(value: unknown): asserts value is DesktopCli
   const fail = (message: string): never => { throw Object.assign(new Error(message), { code: "invalid_args" }); };
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("Input.click params must be an object");
   const p = value as Record<string, unknown>;
-  if (Object.keys(p).some(k => !["selector", "x", "y", "waitFor", "timeoutMs"].includes(k))) fail("Unknown Input.click parameter");
+  if (Object.keys(p).some(k => !["selector", "x", "y", "waitFor", "timeoutMs", "captureDownload"].includes(k))) fail("Unknown Input.click parameter");
   const has = (k: string) => Object.hasOwn(p, k);
   const text = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= 4096;
+  if (has("captureDownload") && typeof p.captureDownload !== "boolean") fail("captureDownload must be a boolean");
   if (has("selector")) {
     if (!text(p.selector) || has("x") || has("y")) fail("Use either selector or x/y, never both");
   } else if (![p.x, p.y].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0)) {

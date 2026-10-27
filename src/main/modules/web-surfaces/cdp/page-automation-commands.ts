@@ -3,7 +3,7 @@ import type { SurfaceObservationRegistry } from "./observation";
 import type { WorkPanelPageAutomation } from "./page-automation";
 
 type Send = (method: string, params: Record<string, unknown>, timeoutMs: number) => Promise<any>;
-export const PAGE_AUTOMATION_METHODS = new Set(["Surface.handleDialog", "Surface.uploadFiles", "Surface.getDownloads", "Surface.readDownload"]);
+export const PAGE_AUTOMATION_METHODS = new Set(["Surface.handleDialog", "Surface.uploadFiles", "Surface.getDownloads", "Surface.readDownload", "Surface.releaseDownload"]);
 
 function invalid(message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code: "invalid_params" });
@@ -30,6 +30,11 @@ export async function executePageAutomationCommand(input: {
   if (method === "Surface.readDownload") {
     onlyKeys(params, ["downloadId"]);
     return { result: await automation.readDownload(contents, identifier(params.downloadId, "downloadId")), observe: false };
+  }
+  if (method === "Surface.releaseDownload") {
+    onlyKeys(params, ["downloadId", "sha256"]);
+    if (typeof params.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(params.sha256)) throw invalid("sha256 must be a lowercase SHA-256 digest.");
+    return { result: await automation.releaseDownload(contents, identifier(params.downloadId, "downloadId"), params.sha256), observe: false };
   }
   if (method === "Surface.handleDialog") {
     onlyKeys(params, ["observationId", "dialogId", "action", "promptText"]);

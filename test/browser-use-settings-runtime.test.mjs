@@ -1,4 +1,4 @@
-import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
+import { registerBrowserTask, releaseBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -234,7 +234,7 @@ test("remembered authorization shares the live workspace and exact Page across C
   await registerBrowserTask(h.runtime, source()); await registerBrowserTask(h.runtime, source("chat-b", "run-b"));
   const a = await h.cdp("Surface.list");
   await assert.rejects(h.cdp("Surface.list", {}, source("chat-b", "run-b")), { code: "browser_busy" });
-  h.runtime.releaseRun("run-a");
+  await releaseBrowserTask(h.runtime, "run-a");
   const b = await h.cdp("Surface.list", {}, source("chat-b", "run-b"));
   assert.equal(h.clients.length, 1); assert.equal(a.result.surfaces[0].surfaceId, b.result.surfaces[0].surfaceId);
   assert.equal(h.runtime.state("chat-a").workspaceId, h.runtime.state("chat-b").workspaceId);
@@ -245,7 +245,7 @@ test("remembered authorization shares the live workspace and exact Page across C
 test("a new Run detects a closed engine in a live Worker and reconnects before dispatching its first action", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
   await registerBrowserTask(h.runtime, source()); const original = (await h.cdp("Surface.list")).result.surfaces[0];
-  h.runtime.releaseRun("run-a"); h.clients[0].engineClosed = true;
+  await releaseBrowserTask(h.runtime, "run-a"); h.clients[0].engineClosed = true;
   await registerBrowserTask(h.runtime, source("chat-a", "next-run"));
   const opened = await h.cdp("Surface.openChrome", { url: "https://fixture.test/recovered" }, source("chat-a", "next-run"));
   assert.equal(h.clients[0].killed, true); assert.equal(h.clients.length, 2);
@@ -422,7 +422,7 @@ test("settings notification and metadata failures cannot fail an otherwise valid
   await registerBrowserTask(h.runtime, source()); const result = await h.cdp("Surface.list"); assert.equal(result.ok, true);
   assert.throws(() => h.runtime.settingsState(), /private storage unavailable/);
   assert.equal(h.runtime.hasActiveRuns(), true);
-  h.runtime.releaseRun("run-a"); await h.runtime.disconnectIdleConnections(); assert.equal(h.clients[0].killed, true);
+  await releaseBrowserTask(h.runtime, "run-a"); await h.runtime.disconnectIdleConnections(); assert.equal(h.clients[0].killed, true);
 });
 
 test("Worker validates explicit Main authorization, forwards it privately and never returns it", async t => {

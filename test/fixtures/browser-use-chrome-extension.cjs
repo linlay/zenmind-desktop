@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
     checks.viewportObserved = viewport.viewportOnly === true && viewport.elements.some(element => element.name === 'Go');
     const scrolled = await backend.request('interact', { action: 'scroll', deltaY: 400 }, pageId);
     checks.scrollViewportObserved = scrolled.action.outcome === 'complete' && scrolled.observation?.viewportOnly === true;
-    await backend.request("interact", { action: "fill", selector: "#name", text: "Official extension relay" }, pageId);
+    await backend.request("interact", { action: "fill", selector: "#name", value: "Official extension relay" }, pageId);
     await backend.request("click", { selector: "#go" }, pageId);
     checks.title = (await backend.request("state")).pages[0]?.title;
     const screenshot = await backend.request("screenshot", {}, pageId);

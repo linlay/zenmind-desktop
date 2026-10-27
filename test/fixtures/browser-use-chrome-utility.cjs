@@ -56,7 +56,7 @@ app.whenReady().then(async () => {
     const observation = await fixture.request("observe", {}, pageId);
     checks.passwordMasked = !JSON.stringify(observation).includes("UTILITY-PASSWORD-SECRET");
     checks.observationElements = observation.elements.length;
-    await fixture.request("interact", { action: "fill", selector: "#name", text: "小君 UtilityProcess" }, pageId);
+    await fixture.request("interact", { action: "fill", selector: "#name", value: "小君 UtilityProcess" }, pageId);
     await fixture.request("click", { selector: "#go" }, pageId);
     checks.value = await first.locator("#name").inputValue();
     checks.title = await first.title();

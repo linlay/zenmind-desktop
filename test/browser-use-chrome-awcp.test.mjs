@@ -76,18 +76,24 @@ async function fixture(t) {
   };
   const engine = new ChromeWorkerEngine(async () => controller); t.after(() => engine.disconnect());
   await engine.request({ id: "connect", method: "connect" });
-  let serial = 0;
+  let serial = 0, leaseSequence = 0;
+  const leases = new Map();
+  const runLeaseFor = runId => {
+    if (!leases.has(runId)) leases.set(runId, ++leaseSequence);
+    return leases.get(runId);
+  };
   const call = (method, payload = {}, options = {}) => {
-    const index = options.page ?? 0, page = pages[index];
+    const index = options.page ?? 0, page = pages[index], runId = options.runId ?? "run-a";
     return engine.request({ id: `wire-${++serial}`, method, pageId: tabs[index].desktopPageId, params: {
-      requestId: options.requestId ?? `awcp-${serial}`, runId: options.runId ?? "run-a", payload,
+      requestId: options.requestId ?? `awcp-${serial}`, runId, runLease: options.runLease ?? runLeaseFor(runId), payload,
       expectedUrl: options.expectedUrl ?? page.url(), bridgeScript: options.script ?? buildWebsiteBridgeScript(page.url(), [pkg]),
     } });
   };
   const directory = options => call("awcp-manual", {}, options);
   const section = (revision, options) => call("awcp-manual", { revision, section: action }, options);
   const invoke = (revision, args = {}, options) => call("awcp-invoke", { revision, action, args }, options);
-  return { pages, tabs, engine, controller, runOptions, call, directory, section, invoke };
+  const releaseRun = runId => engine.request({ id: `release-${++serial}`, method: "awcp-release-run", params: { runId, runLease: runLeaseFor(runId) } });
+  return { pages, tabs, engine, controller, runOptions, call, directory, section, invoke, runLeaseFor, releaseRun };
 }
 
 test("Chrome AWCP uses the shared v1 directory, section and invocation contracts with a section-read gate", async t => {
@@ -98,7 +104,7 @@ test("Chrome AWCP uses the shared v1 directory, section and invocation contracts
   const result = await f.invoke(index.revision, { note: "read" }); assert.equal(result.ok, true); assert.equal(result.result.count, 1);
   const denied = await f.invoke(index.revision, { fail: true }); assert.equal(denied.ok, false); assert.equal(denied.error.code, "action.synthetic_rejection");
   assert.equal(f.pages[0].context.installs, 1, "identical bridge installation is idempotent");
-  assert.equal(f.runOptions.every(options => options?.downloadCapture === false), true, "AWCP does not install a download interceptor");
+  assert.equal(f.runOptions.every(options => options === undefined), true, "AWCP does not supply download preparation options");
 });
 
 test("manual authorization cannot transfer across Run, Page, revision or main-frame navigation", async t => {
@@ -147,11 +153,70 @@ test("Run release bypasses the Worker queue, cancels a pending page invocation a
   const rejected = assert.rejects(pending, { code: "site_control_unavailable" });
   for (let i = 0; i < 30 && !f.pages[0].context.slowResolve; i++) await flush();
   assert.equal(typeof f.pages[0].context.slowResolve, "function");
-  await f.engine.request({ id: "release", method: "awcp-release-run", params: { runId: "run-a" } }); await rejected;
+  await f.releaseRun("run-a"); await rejected;
   assert.equal((await f.engine.request({ id: "state", method: "state" })).connected, true);
   await assert.rejects(f.directory(), { code: "site_control_unavailable" });
   const next = await f.directory({ runId: "run-b" }); await f.section(next.revision, { runId: "run-b" });
   assert.equal((await f.invoke(next.revision, {}, { runId: "run-b" })).ok, true);
+});
+
+test("released AWCP leases survive queue and page-reply draining, then reclaim Run records without reviving old work", async t => {
+  const f = await fixture(t), evaluateHandle = f.pages[0].evaluateHandle.bind(f.pages[0]);
+  let resume, delayed = false;
+  f.pages[0].evaluateHandle = async expression => {
+    const handle = await evaluateHandle(expression);
+    if (!delayed && expression.includes("__desktopAwcpBefore")) { delayed = true; await new Promise(resolve => { resume = resolve; }); }
+    return handle;
+  };
+  const pending = f.directory({ requestId: "pending-old-run" });
+  const rejected = assert.rejects(pending, { code: "site_control_unavailable" });
+  for (let i = 0; i < 30 && !resume; i++) await flush();
+  assert.equal(typeof resume, "function");
+  const queued = f.directory({ requestId: "queued-old-run" });
+  const queuedRejected = assert.rejects(queued, { code: "site_control_unavailable" });
+  await f.releaseRun("run-a"); await Promise.all([rejected, queuedRejected]);
+  assert.equal(f.pages[0].context.installs, 1, "release cannot dispatch the queued directory or reinstall its bridge");
+  assert.equal(f.engine.awcp.runs.size, 1, "the delayed page reply still owns its cancelled identity");
+  assert.equal(f.engine.awcp.bindings.size, 0);
+  resume();
+  for (let i = 0; i < 30 && f.engine.awcp.runs.size; i++) await flush();
+  assert.equal(f.engine.awcp.runs.size, 0, "the retired Run record is reclaimed only after its late reply and cleanup settle");
+  assert.equal(f.pages[0].context.awcp, undefined, "the old injection cannot survive its cancelled owner");
+  const evaluations = f.pages[0].evaluations;
+  await assert.rejects(f.directory(), { code: "site_control_unavailable" });
+  await assert.rejects(f.invoke("old-revision"), { code: "site_control_unavailable" });
+  assert.equal(f.pages[0].evaluations, evaluations, "the reclaimed old lease is still rejected before touching the page");
+  const next = await f.directory({ runId: "run-b" }); await f.section(next.revision, { runId: "run-b" });
+  assert.equal((await f.invoke(next.revision, {}, { runId: "run-b" })).ok, true);
+});
+
+test("many completed AWCP Runs retain only the release watermark and future Runs need their own manual", async t => {
+  const f = await fixture(t);
+  for (let index = 0; index < 50; index++) {
+    const runId = `completed-${index}`;
+    await f.directory({ runId }); await f.releaseRun(runId);
+    assert.equal(f.engine.awcp.runs.size, 0);
+    assert.equal(f.engine.awcp.bindings.size, 0);
+  }
+  assert.equal(f.engine.awcp.releasedThrough, 50);
+  await assert.rejects(f.directory({ runId: "completed-0" }), { code: "site_control_unavailable" });
+  await assert.rejects(f.section("old-revision", { runId: "future-run" }), error => error.code === "awcp_preflight_rejected" && error.details.reason === "manual_required");
+  const next = await f.directory({ runId: "future-run" });
+  await assert.rejects(f.invoke(next.revision, {}, { runId: "future-run" }), error => error.code === "awcp_preflight_rejected" && error.details.reason === "manual_required");
+  await f.section(next.revision, { runId: "future-run" }); assert.equal((await f.invoke(next.revision, {}, { runId: "future-run" })).ok, true);
+  await f.releaseRun("future-run");
+  assert.equal(f.engine.awcp.runs.size, 0); assert.equal(f.engine.awcp.bindings.size, 0);
+});
+
+test("AWCP private Run leases require positive safe integers and a lease cannot change its owner", async t => {
+  const f = await fixture(t);
+  for (const runLease of [0, -1, 1.5, "1", Number.MAX_SAFE_INTEGER + 1])
+    await assert.rejects(f.directory({ runLease }), { code: "awcp_invalid_request" });
+  assert.equal(f.pages[0].evaluations, 0);
+  const index = await f.directory();
+  await assert.rejects(f.directory({ runId: "another-run", runLease: f.runLeaseFor("run-a") }), { code: "awcp_invalid_request" });
+  await assert.rejects(f.engine.request({ id: "forged-release", method: "awcp-release-run", params: { runId: "another-run", runLease: f.runLeaseFor("run-a") } }), { code: "awcp_invalid_request" });
+  await f.section(index.revision); assert.equal((await f.invoke(index.revision)).ok, true);
 });
 
 test("refresh cancels in-flight AWCP and rejects pre-refresh queued requests without reinstalling an old bridge", async t => {
@@ -215,7 +280,7 @@ test("closed or crashed pages release AWCP bindings, navigation listeners and ow
     if (event === "close") f.pages[0].closed = true;
     f.pages[0].emit(event); await flush();
     assert.equal(f.engine.awcp.pages.has(f.tabs[0].desktopPageId), false);
-    assert.equal(f.engine.awcp.bindings.get("run-a")?.has(f.tabs[0].desktopPageId), false);
+    assert.equal(f.engine.awcp.bindings.get(f.runLeaseFor("run-a"))?.has(f.tabs[0].desktopPageId), false);
     assert.equal(f.pages[0].listenerCount("request"), 0);
     assert.equal(f.pages[0].releasedHandles, released + 1);
   }

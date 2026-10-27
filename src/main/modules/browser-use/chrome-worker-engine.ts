@@ -9,14 +9,13 @@ import type { BrowserObservedDialog, BrowserObservedFileChooser } from "../../..
 import type { ChromeWorkerController, ChromeWorkerModalState, ChromeWorkerObservation, ChromeWorkerPage, ChromeWorkerRequest, ChromeWorkerTab } from "./chrome-worker-contract";
 import { chromeObserveOptions, projectChromeObservation, scanChromeSnapshot, viewportChromeSnapshot, type ChromeFieldMetadata } from "./chrome-observation";
 import { ChromeTransferStore, decodeBrowserUploadFiles } from "./chrome-file-transfer";
-import { ChromeAwcp } from "./chrome-awcp";
+import { ChromeAwcp, type ChromeAwcpRunLease } from "./chrome-awcp";
 import { awcpHostError, isAwcpHostError } from "../awcp";
 
 type ControllerOptions = {
   outputDir: string; clientName: string; profileDirName?: string; extensionToken?: string; signal: AbortSignal;
   onTab?(tab: ChromeWorkerTab): void;
   onDownload?(tab: ChromeWorkerTab, download: import("playwright-core").Download): void;
-  onBeforeOperation?(tab: ChromeWorkerTab): Promise<void>;
 };
 export type ChromeControllerFactory = (options: ControllerOptions) => Promise<ChromeWorkerController>;
 
@@ -71,6 +70,7 @@ export class ChromeWorkerEngine {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly requests = new Map<string, { cancelled: boolean; running: boolean }>();
   private closed = false;
+  private transferEpoch = 0;
   private outputDir?: string;
   private disconnecting?: Promise<void>;
   private observations = new Map<string, { id: string; refs: Set<string>; dialogs: Map<string, ChromeWorkerModalState>; choosers: Map<string, ChromeWorkerModalState> }>();
@@ -87,6 +87,13 @@ export class ChromeWorkerEngine {
 
   request(request: ChromeWorkerRequest): Promise<unknown> {
     if (request.method === "cancel" || request.method === "disconnect") return this.disconnect();
+    if (request.method === "release-transfers") {
+      if (Object.keys(request.params ?? {}).length || request.pageId)
+        return Promise.reject(chromeWorkerError("invalid_params", "Transfer release takes no page or parameters."));
+      this.transferEpoch++;
+      // Revoke immediately, even while a click is running; reply only after the original response drains.
+      return this.transfers.endRun().then(() => ({ released: true }));
+    }
     if (request.method === "cancel-request") {
       const params = request.params;
       if (!params || Object.keys(params).join(",") !== "requestId" || typeof params.requestId !== "string" || !params.requestId || params.requestId.length > 128)
@@ -98,12 +105,20 @@ export class ChromeWorkerEngine {
     if (request.method === "awcp-release-run") return this.awcp.releaseRun(request.params);
     if (request.method === "awcp-refresh") return this.awcp.refresh(request.params);
     if (this.requests.has(request.id)) return Promise.reject(chromeWorkerError("invalid_params", "The private request identity is already pending."));
+    let awcpRun: ChromeAwcpRunLease | undefined;
+    try {
+      if (request.method === "awcp-manual" || request.method === "awcp-invoke") awcpRun = this.awcp.retainRun(request.params);
+    } catch (error) { return Promise.reject(error); }
     const entry = { cancelled: false, running: false }; this.requests.set(request.id, entry);
     const awcpGeneration = this.awcp.generation();
+    const transferEpoch = this.transferEpoch;
     const result = this.queue.then(() => {
       if (entry.cancelled) throw chromeWorkerError("cancelled", "The browser request was cancelled before execution.");
-      entry.running = true; return this.dispatch(request, awcpGeneration);
-    }).finally(() => { if (this.requests.get(request.id) === entry) this.requests.delete(request.id); });
+      entry.running = true; return this.dispatch(request, awcpGeneration, awcpRun, transferEpoch);
+    }).finally(() => {
+      if (this.requests.get(request.id) === entry) this.requests.delete(request.id);
+      if (awcpRun) this.awcp.releaseRequest(awcpRun);
+    });
     this.queue = result.catch(() => undefined);
     return result;
   }
@@ -133,7 +148,7 @@ export class ChromeWorkerEngine {
     return this.controller;
   }
 
-  private async dispatch(request: ChromeWorkerRequest, awcpGeneration: number): Promise<unknown> {
+  private async dispatch(request: ChromeWorkerRequest, awcpGeneration: number, awcpRun: ChromeAwcpRunLease | undefined, transferEpoch: number): Promise<unknown> {
     const params = request.params ?? {};
     if (request.method === "state" && !request.pageId) return this.state();
     if (request.method === "list" && this.closed) throw chromeWorkerError("browser_disconnected", "The Chrome connection has been released");
@@ -154,8 +169,7 @@ export class ChromeWorkerEngine {
         const clientName = typeof params.clientName === "string" && params.clientName.trim() && params.clientName.length <= 80 ? params.clientName.trim() : "Desktop";
         try { controller = await this.factory({ outputDir: this.outputDir, clientName, profileDirName: profile as string | undefined,
           ...(typeof params.extensionToken === "string" ? { extensionToken: params.extensionToken } : {}), signal: this.abort.signal,
-          onTab: tab => this.watch(tab), onDownload: (tab, download) => { this.watch(tab); void this.transfers.captureDownload(tab, download); },
-          onBeforeOperation: tab => this.transfers.prepare(tab) }); }
+          onTab: tab => this.watch(tab), onDownload: (tab, download) => { this.watch(tab); void this.transfers.captureDownload(tab, download); } }); }
         catch (error) {
           fs.rmSync(this.outputDir, { recursive: true, force: true });
           this.outputDir = undefined;
@@ -182,8 +196,8 @@ export class ChromeWorkerEngine {
         return await controller.run<unknown>(request.pageId, tab => {
           this.watch(tab);
           if (request.method === "awcp-invoke") this.invalidate(tab.desktopPageId);
-          return request.method === "awcp-manual" ? this.awcp.manual(tab, params, awcpGeneration) : this.awcp.invoke(tab, params, awcpGeneration);
-        }, { downloadCapture: false });
+          return request.method === "awcp-manual" ? this.awcp.manual(tab, params, awcpRun!, awcpGeneration) : this.awcp.invoke(tab, params, awcpRun!, awcpGeneration);
+        });
       } catch (error) {
         if (isAwcpHostError(error)) throw error;
         if (this.closed || this.abort.signal.aborted) throw awcpHostError("awcp_cancelled", "The Chrome AWCP connection was released.");
@@ -208,19 +222,24 @@ export class ChromeWorkerEngine {
     if (this.unsettledInput.has(pageId) && unsettledInputBlocked.has(request.method))
       throw chromeWorkerError("input_unsettled", "An earlier pointer input on this page has not settled. Observe the page before another action; do not repeat that input.");
     if (request.method === "observe") return this.observe(controller, pageId, params);
-    if (request.method === "click") return this.click(controller, pageId, params);
+    if (request.method === "click") return this.click(controller, pageId, params, transferEpoch);
     if (request.method === "interact") return this.interact(controller, pageId, params);
     if (request.method === "dialog") return this.handleDialog(controller, pageId, params);
     if (request.method === "upload") return this.upload(controller, pageId, params);
     if (request.method === "downloads") {
-      if (Object.keys(params).some(key => !["action", "downloadId"].includes(key)) || !["list", "read"].includes(String(params.action)))
-        throw chromeWorkerError("invalid_params", "Choose list or read for downloads.");
+      if (Object.keys(params).some(key => !["action", "downloadId", "sha256"].includes(key)) || !["list", "read", "release"].includes(String(params.action)))
+        throw chromeWorkerError("invalid_params", "Choose list, read or release for downloads.");
       return controller.run(pageId, async tab => {
         this.watch(tab);
         if (params.action === "list") {
-          if (params.downloadId !== undefined) throw chromeWorkerError("invalid_params", "A download ID is only valid for read.");
+          if (params.downloadId !== undefined || params.sha256 !== undefined) throw chromeWorkerError("invalid_params", "Download identities are not valid for list.");
           return { downloads: this.transfers.list(pageId) };
         }
+        if (params.action === "release") {
+          if (typeof params.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(params.sha256)) throw chromeWorkerError("invalid_params", "A saved download SHA-256 is required.");
+          return this.transfers.releaseDownload(pageId, textParam(params.downloadId, "downloadId", 128), params.sha256);
+        }
+        if (params.sha256 !== undefined) throw chromeWorkerError("invalid_params", "A download SHA-256 is only valid for release.");
         return this.transfers.read(pageId, textParam(params.downloadId, "downloadId", 128));
       });
     }
@@ -242,20 +261,12 @@ export class ChromeWorkerEngine {
       if (!["navigate", "back", "reload"].includes(request.method)) throw chromeWorkerError("capability_unavailable", "This browser operation is unavailable");
       const url = request.method === "navigate" ? browserUseUrl(params.url) : undefined;
       this.invalidate(pageId);
-      let modalError: string | undefined;
-      try {
-        await this.modalAware(tab, signal => request.method === "navigate"
-          ? tab.page.goto(url!, { waitUntil: "domcontentloaded", timeout: 30000, signal })
-          : request.method === "back" ? tab.page.goBack({ waitUntil: "domcontentloaded", timeout: 30000, signal })
-            : tab.page.reload({ waitUntil: "domcontentloaded", timeout: 30000, signal }), 30000);
-      } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (code !== "dialog_pending" && code !== "file_chooser_pending") throw error;
-        modalError = code;
-      }
+      const result = await this.modalAction(tab, signal => request.method === "navigate"
+        ? tab.page.goto(url!, { waitUntil: "domcontentloaded", timeout: 30000, signal })
+        : request.method === "back" ? tab.page.goBack({ waitUntil: "domcontentloaded", timeout: 30000, signal })
+          : tab.page.reload({ waitUntil: "domcontentloaded", timeout: 30000, signal }), 30000);
       const state = await this.describe(controller, tab);
-      return this.withObservation(controller, tab, { ...state, status: modalError ? "failed" : "done",
-        ...(modalError ? { error: modalError } : {}), action: { outcome: modalError ? "unknown" : "complete" } });
+      return this.withObservation(controller, tab, { ...state, ...result });
     });
   }
 
@@ -468,6 +479,18 @@ export class ChromeWorkerEngine {
     }
   }
 
+  /** A modal interrupts the action with unknown effects; preserve that result without retrying. */
+  private async modalAction(tab: ChromeWorkerTab, action: (signal: AbortSignal) => Promise<unknown>, timeoutMs: number, allowChooser = false) {
+    try {
+      await this.modalAware(tab, action, timeoutMs, allowChooser);
+      return { status: "done", action: { outcome: "complete" } };
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "dialog_pending" && code !== "file_chooser_pending") throw error;
+      return { status: "failed", error: code, action: { outcome: "unknown" } };
+    }
+  }
+
   /** The original Playwright call keeps its deadline and is explicitly aborted on a native modal. */
   private async modalAware<T>(tab: ChromeWorkerTab, action: (signal: AbortSignal) => Promise<T>, timeoutMs: number, allowChooser = false): Promise<T> {
     const pending = this.pendingModal(tab);
@@ -523,7 +546,8 @@ export class ChromeWorkerEngine {
     return ref;
   }
 
-  private async click(controller: ChromeWorkerController, pageId: string, params: Record<string, unknown>) {
+  private async click(controller: ChromeWorkerController, pageId: string, params: Record<string, unknown>, transferEpoch: number) {
+    if (params.captureDownload !== undefined && typeof params.captureDownload !== "boolean") throw chromeWorkerError("invalid_params", "captureDownload must be a boolean.");
     const timeoutMs = params.timeoutMs === undefined ? 3000 : params.timeoutMs;
     if (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10_000) throw chromeWorkerError("invalid_params", "timeoutMs must be an integer from 100 to 10000");
     const coordinateInput = params.x !== undefined || params.y !== undefined;
@@ -580,6 +604,12 @@ export class ChromeWorkerEngine {
         if (params.ref !== undefined) this.observed(pageId, params.observationId);
         result.timingsMs.locate = Date.now() - started;
         remaining();
+        if (params.captureDownload === true) {
+          if (transferEpoch !== this.transferEpoch) throw chromeWorkerError("cancelled", "The download action authorization ended.");
+          await this.transfers.prepare(tab);
+          if (transferEpoch !== this.transferEpoch) throw chromeWorkerError("cancelled", "The download action authorization ended.");
+          remaining();
+        }
         result.stage = "click";
         clickStarted = Date.now();
         this.invalidate(pageId);
@@ -615,7 +645,9 @@ export class ChromeWorkerEngine {
           await delay(Math.min(25, remaining()), undefined, { signal: this.abort.signal });
         }
       } catch (error) {
+        if (params.captureDownload === true && result.action.outcome === "not_started") await this.transfers.cancelCapture(pageId);
         if (this.abort.signal.aborted) throw chromeWorkerError("cancelled", "Browser control has been released");
+        if (params.captureDownload === true && transferEpoch !== this.transferEpoch) throw chromeWorkerError("cancelled", "The download action authorization ended.");
         if (tab.page.isClosed()) {
           if (result.action.outcome === "not_started") throw chromeWorkerError("surface_not_found", "The selected Chrome page was closed");
           result.status = "failed"; result.error = "page_closed"; return result;
@@ -637,8 +669,10 @@ export class ChromeWorkerEngine {
   }
 
   private async interact(controller: ChromeWorkerController, pageId: string, params: Record<string, unknown>) {
-    const action = params.action ?? params.kind;
-    if (!["fill", "set", "type", "press", "key", "scroll", "focus", "hover", "select", "check", "uncheck"].includes(String(action)))
+    const action = params.action;
+    if (["kind", "text", "keys"].some(field => Object.hasOwn(params, field)) || action === "set" || action === "key")
+      throw chromeWorkerError("invalid_params", "Use action with fill/type/press and the canonical value/key parameters.");
+    if (!["fill", "type", "press", "scroll", "focus", "hover", "select", "check", "uncheck"].includes(String(action)))
       throw chromeWorkerError("capability_unavailable", "This browser interaction is unavailable");
     const hasTarget = params.selector !== undefined || params.ref !== undefined;
     const targetText = hasTarget ? this.target(pageId, params) : undefined;
@@ -651,8 +685,8 @@ export class ChromeWorkerEngine {
         values = params.values.map(value => textParam(value, "values", 4096));
       } else values = textParam(params.value, "value", 4096);
     }
-    const input = action === "fill" || action === "set" || action === "type" ? textParam(params.text ?? params.value, "text") : undefined;
-    const key = action === "press" || action === "key" ? textParam(params.key ?? params.keys, "key", 40) : undefined;
+    const input = action === "fill" || action === "type" ? textParam(params.value, "value") : undefined;
+    const key = action === "press" ? textParam(params.key, "key", 40) : undefined;
     if (key && !["Enter", "Escape", "Tab", "Shift+Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Backspace", "Delete", "Space", "ControlOrMeta+A"].includes(key))
       throw chromeWorkerError("invalid_params", "This key is not available.");
     if (action === "scroll" && hasTarget && (params.deltaX !== undefined || params.deltaY !== undefined))
@@ -664,39 +698,31 @@ export class ChromeWorkerEngine {
     };
     const deltaX = action === "scroll" && !hasTarget ? delta("deltaX", 0) : 0;
     const deltaY = action === "scroll" && !hasTarget ? delta("deltaY", 600) : 0;
-    if (!hasTarget && !["scroll", "type", "press", "key"].includes(String(action))) throw chromeWorkerError("invalid_params", "An observed element target is required.");
+    if (!hasTarget && !["scroll", "type", "press"].includes(String(action))) throw chromeWorkerError("invalid_params", "An observed element target is required.");
     return controller.run(pageId, async tab => {
       this.watch(tab);
-      let modalError: string | undefined;
-      try {
-        await this.modalAware(tab, async signal => {
-          const locator = hasTarget ? (await tab.targetLocator({ target: targetText! })).locator : undefined;
-          if (signal.aborted) throw chromeWorkerError("cancelled", "Browser control has been released");
-          if (params.ref !== undefined) this.observed(pageId, params.observationId);
-          this.invalidate(pageId);
-          if (action === "fill" || action === "set") await locator!.fill(input!, { timeout: 10000, signal });
-          else if (action === "type") {
-            if (locator) await locator.pressSequentially(input!, { timeout: 10000, signal });
-            else await tab.page.keyboard.insertText(input!);
-          } else if (action === "press" || action === "key") {
-            if (locator) await locator.press(key!, { timeout: 10000, signal });
-            else await tab.page.keyboard.press(key!);
-          } else if (action === "scroll") {
-            if (locator) await locator.scrollIntoViewIfNeeded({ timeout: 10000, signal });
-            else await tab.page.mouse.wheel(deltaX, deltaY);
-          } else if (action === "focus") await locator!.focus({ timeout: 10000, signal });
-          else if (action === "hover") await locator!.hover({ timeout: 10000, signal });
-          else if (action === "select") await locator!.selectOption(values!, { timeout: 10000, signal });
-          else await locator!.setChecked(action === "check", { timeout: 10000, signal });
-        }, 10000);
-      } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (code !== "dialog_pending" && code !== "file_chooser_pending") throw error;
-        modalError = code;
-      }
+      const result = await this.modalAction(tab, async signal => {
+        const locator = hasTarget ? (await tab.targetLocator({ target: targetText! })).locator : undefined;
+        if (signal.aborted) throw chromeWorkerError("cancelled", "Browser control has been released");
+        if (params.ref !== undefined) this.observed(pageId, params.observationId);
+        this.invalidate(pageId);
+        if (action === "fill") await locator!.fill(input!, { timeout: 10000, signal });
+        else if (action === "type") {
+          if (locator) await locator.pressSequentially(input!, { timeout: 10000, signal });
+          else await tab.page.keyboard.insertText(input!);
+        } else if (action === "press") {
+          if (locator) await locator.press(key!, { timeout: 10000, signal });
+          else await tab.page.keyboard.press(key!);
+        } else if (action === "scroll") {
+          if (locator) await locator.scrollIntoViewIfNeeded({ timeout: 10000, signal });
+          else await tab.page.mouse.wheel(deltaX, deltaY);
+        } else if (action === "focus") await locator!.focus({ timeout: 10000, signal });
+        else if (action === "hover") await locator!.hover({ timeout: 10000, signal });
+        else if (action === "select") await locator!.selectOption(values!, { timeout: 10000, signal });
+        else await locator!.setChecked(action === "check", { timeout: 10000, signal });
+      }, 10000);
       const state = await this.describe(controller, tab);
-      return this.withObservation(controller, tab, { ...state, status: modalError ? "failed" : "done",
-        ...(modalError ? { error: modalError } : {}), action: { outcome: modalError ? "unknown" : "complete" } }, action === "scroll" ? { viewportOnly: true } : {});
+      return this.withObservation(controller, tab, { ...state, ...result }, action === "scroll" ? { viewportOnly: true } : {});
     });
   }
 
@@ -748,18 +774,11 @@ export class ChromeWorkerEngine {
       this.observed(pageId, params.observationId);
       const files = decodeBrowserUploadFiles(params.files);
       this.invalidate(pageId);
-      let modalError: string | undefined;
-      try {
-        await this.modalAware(tab, signal => handle ? handle.setInputFiles(files, { timeout: 10000, signal }) : locator!.setInputFiles(files, { timeout: 10000, signal }), 10000, Boolean(modal));
-      } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (code !== "dialog_pending" && code !== "file_chooser_pending") throw error;
-        modalError = code;
-      }
+      const result = await this.modalAction(tab, signal => handle ? handle.setInputFiles(files, { timeout: 10000, signal }) : locator!.setInputFiles(files, { timeout: 10000, signal }), 10000, Boolean(modal));
       if (this.abort.signal.aborted) throw chromeWorkerError("cancelled", "Browser control has been released");
       if (modal) tab.clearModalState?.(modal);
       if (handle) await handle.dispose();
-      return this.withObservation(controller, tab, { status: modalError ? "failed" : "done", ...(modalError ? { error: modalError } : {}), action: { outcome: modalError ? "unknown" : "complete" } });
+      return this.withObservation(controller, tab, result);
     });
   }
 

@@ -1,4 +1,4 @@
-import { registerBrowserTask } from "./helpers/browser-use-task.mjs";
+import { registerBrowserTask, releaseBrowserTask } from "./helpers/browser-use-task.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -83,7 +83,7 @@ function harness(options = {}) {
 test("a new Chat and re-question keep the exact authorized Surface without another connect or open", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); const a = source(); await registerBrowserTask(f.runtime, a);
   const listed = await f.cdp(a, "Surface.list"), page = listed.result.surfaces[0]; const observed = await f.cdp(a, "Surface.observe", page.surfaceId);
-  f.runtime.releaseRun(a.runId); const b = source("chat-b", "run-b"); await registerBrowserTask(f.runtime, b);
+  await releaseBrowserTask(f.runtime, a.runId); const b = source("chat-b", "run-b"); await registerBrowserTask(f.runtime, b);
   assert.equal(f.runtime.state(b.chatId).workspaceId, f.runtime.state(a.chatId).workspaceId);
   assert.equal(f.runtime.state(b.chatId).pages[0].surfaceId, page.surfaceId);
   const current = await f.cdp(b, "Surface.getCurrent"); assert.equal(current.result.currentSurfaceId, page.surfaceId);
@@ -100,7 +100,7 @@ test("pure-text Runs do not own the workspace; real browser ownership blocks ano
   const page = (await f.cdp(a, "Surface.list")).result.surfaces[0];
   assert.deepEqual(f.runtime.state(b.chatId).workspaceOwner, { chatId: a.chatId, runId: a.runId, draining: false });
   await assert.rejects(f.cdp(b, "Surface.observe", page.surfaceId), { code: "browser_busy" });
-  f.runtime.releaseRun(a.runId); assert.equal((await f.cdp(b, "Surface.observe", page.surfaceId)).ok, true);
+  await releaseBrowserTask(f.runtime, a.runId); assert.equal((await f.cdp(b, "Surface.observe", page.surfaceId)).ok, true);
   await assert.rejects(f.cdp({ ...b, agentKey: "forged" }, "Surface.list"), { code: "browser_run_unavailable" });
 });
 
@@ -125,7 +125,7 @@ test("normal cancellation drains old work before handoff and never kills or rede
 
 test("deleting the previous Chat detaches it without releasing the shared page", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); const a = source(); await registerBrowserTask(f.runtime, a);
-  const page = (await f.cdp(a, "Surface.list")).result.surfaces[0]; f.runtime.releaseRun(a.runId);
+  const page = (await f.cdp(a, "Surface.list")).result.surfaces[0]; await releaseBrowserTask(f.runtime, a.runId);
   const b = source("chat-b", "run-b"); await registerBrowserTask(f.runtime, b); await f.runtime.releaseChat(a.chatId);
   assert.equal(f.clients[0].killed, false); assert.equal(f.clients[0].disconnected, false);
   assert.equal((await f.cdp(b, "Surface.getCurrent")).result.currentSurfaceId, page.surfaceId);
@@ -151,7 +151,7 @@ test("a draining private workspace survives promotion and a new Chat attaching d
 });
 
 test("state changes reach all attached Chats and settings refresh runs once per physical workspace", async t => {
-  const f = harness(); t.after(() => f.runtime.dispose()); const a = source(); await registerBrowserTask(f.runtime, a); await f.cdp(a, "Surface.list"); f.runtime.releaseRun(a.runId);
+  const f = harness(); t.after(() => f.runtime.dispose()); const a = source(); await registerBrowserTask(f.runtime, a); await f.cdp(a, "Surface.list"); await releaseBrowserTask(f.runtime, a.runId);
   f.runtime.state("chat-b"); const start = f.events.length; await registerBrowserTask(f.runtime, a);
   await f.cdp(a, "Surface.openChrome", undefined, { url: "https://fixture.test/new" });
   const changes = f.events.slice(start); assert.equal(changes.some(state => state.chatId === "chat-b" && state.pages.some(page => page.url.endsWith("/new"))), true);
@@ -204,7 +204,7 @@ test("unremembered manual connections remain private and missing surfaces reveal
 
 test("new Chat modal and download identifiers need a fresh current-Run observation", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); const a = source(); await registerBrowserTask(f.runtime, a);
-  const page = (await f.cdp(a, "Surface.list")).result.surfaces[0], observed = await f.cdp(a, "Surface.observe", page.surfaceId); f.runtime.releaseRun(a.runId);
+  const page = (await f.cdp(a, "Surface.list")).result.surfaces[0], observed = await f.cdp(a, "Surface.observe", page.surfaceId); await releaseBrowserTask(f.runtime, a.runId);
   const b = source("chat-b", "run-b"); await registerBrowserTask(f.runtime, b);
   await assert.rejects(f.cdp(b, "Surface.handleDialog", page.surfaceId, { observationId: observed.result.observationId, dialogId: "modal-a", action: "dismiss" }), { code: "stale_observation" });
   await assert.rejects(f.cdp(b, "Surface.readDownload", page.surfaceId, { downloadId: "download-a" }), { code: "stale_observation" });

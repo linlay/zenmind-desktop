@@ -6,6 +6,7 @@ export { AwcpGuestBridge } from "./awcp/guest-bridge";
 export type { AwcpActionResponse, AwcpInvokePayload, AwcpManualPayload, AwcpManualResponse } from "./awcp/guest-bridge";
 export { DESKTOP_CDP_TARGET_TIMEOUT_CODE, isDesktopCdpTimeoutError, readDesktopCdpErrorDetails } from "./cdp/debugger";
 export type { EmbeddedCdpCommandRequest } from "./cdp/gateway";
+export { authorizeDesktopHostCdpCommand } from "./cdp/gateway";
 export { createCdpIntegration } from "./cdp/integration";
 export { captureCopilotSiteControlScope, acquireWorkPanelAwcpScope } from "./cdp/site-scope";
 export type { SiteControlScope } from "./cdp/site-scope";

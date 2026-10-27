@@ -129,7 +129,7 @@ test("real Chrome: observations, refs, form interaction, click and screenshot st
   assert.ok(!JSON.stringify(observation).includes("PASSWORD-SECRET-42"), "AX password values must not leave the Worker");
   assert.ok(!JSON.stringify(observation).includes("654321"), "one-time-code values must not leave the Worker");
   assert.ok(observation.text.includes("[redacted]"));
-  await f.engine.request({ id: "fill", method: "interact", pageId, params: { action: "fill", ref: textbox.ref, observationId: observation.observationId, text: "小君" } });
+  await f.engine.request({ id: "fill", method: "interact", pageId, params: { action: "fill", ref: textbox.ref, observationId: observation.observationId, value: "小君" } });
   assert.equal(await f.first.locator("#name").inputValue(), "小君");
   assert.equal(await f.second.locator("#name").inputValue(), "");
   await assert.rejects(f.engine.request({ id: "stale", method: "click", pageId, params: { ref: button.ref, observationId: observation.observationId } }), { code: "stale_observation" });
@@ -145,6 +145,30 @@ test("real Chrome: observations, refs, form interaction, click and screenshot st
   const screenshot = await f.engine.request({ id: "shot", method: "screenshot", pageId });
   assert.equal(Buffer.from(screenshot.data, "base64").subarray(1, 4).toString(), "PNG");
   assert.equal(screenshot.mimeType, "image/png");
+});
+
+test("real Chrome: obsolete interaction aliases are rejected before any input or reference invalidation", { skip: !chromeAvailable }, async t => {
+  const f = await fixture(t), pageId = f.pages[0].pageId;
+  await f.first.locator("#name").fill("keep this value");
+  await f.first.evaluate(() => { window.inputCount = 0; document.querySelector("#name").oninput = () => window.inputCount++; });
+  const observation = await f.engine.request({ id: "canonical-observe", method: "observe", pageId });
+  const ref = observation.elements.find(element => element.name === "Name").ref;
+  const target = { ref, observationId: observation.observationId };
+  for (const [index, params] of [
+    { kind: "fill", value: "obsolete" }, { action: "set", value: "obsolete" },
+    { action: "key", key: "Backspace" }, { action: "fill", text: "obsolete" },
+    { action: "fill", value: "", text: "obsolete" }, { action: "press", keys: "Backspace" },
+    { action: "fill", value: "obsolete", kind: "fill" },
+  ].entries()) {
+    await assert.rejects(f.engine.request({ id: `obsolete-${index}`, method: "interact", pageId, params: { ...target, ...params } }), { code: "invalid_params" });
+    assert.equal(await f.first.locator("#name").inputValue(), "keep this value");
+  }
+  assert.equal(await f.first.evaluate(() => window.inputCount), 0);
+  assert.equal(await f.second.locator("#name").inputValue(), "");
+  // Valid empty values still clear inputs, and rejected aliases did not expire this observation.
+  await f.engine.request({ id: "canonical-clear", method: "interact", pageId, params: { ...target, action: "fill", value: "" } });
+  assert.equal(await f.first.locator("#name").inputValue(), "");
+  assert.equal(await f.first.evaluate(() => window.inputCount), 1);
 });
 
 test("real Chrome: closing a page invalidates its ID; pending and future actions never fall back to a neighbour", { skip: !chromeAvailable }, async t => {

@@ -13,6 +13,7 @@ export type ChromeWorkspace = {
   shared: boolean;
   generation: number;
   activityRevision: number;
+  awcpLeaseSequence: number;
   lastUsed: number;
   connection: BrowserUseState["connection"];
   client?: BrowserWorkerClient;

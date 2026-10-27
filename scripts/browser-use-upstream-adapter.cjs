@@ -117,7 +117,7 @@ module.exports.__desktopBrowserUse = {
           return describe(tab);
         });
       },
-      async run(pageId, operation, runOptions) {
+      async run(pageId, operation) {
         return enqueue(async () => {
           const tab = tabFor(pageId);
           context._desktopPinnedTab = tab;
@@ -139,12 +139,11 @@ module.exports.__desktopBrowserUse = {
               let released = false;
               const receive = params => { for (const listener of listeners) listener(params); };
               parent.on('Fetch.requestPaused', receive);
-              const methods = new Set(['Fetch.enable', 'Fetch.disable', 'Fetch.continueResponse', 'Fetch.failRequest',
-                'Fetch.takeResponseBodyAsStream', 'Fetch.fulfillRequest', 'IO.read', 'IO.close']);
+              const methods = new Set(['Fetch.enable', 'Fetch.disable', 'Fetch.continueResponse', 'Fetch.getResponseBody']);
               const session = {
                 send(method, params) {
                   if (released || !methods.has(method)) throw fail('capability_unavailable', 'This private response port is unavailable.');
-                  if (!['Fetch.disable', 'Fetch.failRequest', 'IO.close'].includes(method)) tabFor(pageId);
+                  if (!['Fetch.disable', 'Fetch.continueResponse'].includes(method)) tabFor(pageId);
                   return parent.send(method, params);
                 },
                 on(event, listener) { if (event !== 'Fetch.requestPaused') throw fail('capability_unavailable', 'This private session only observes paused responses.'); listeners.add(listener); return session; },
@@ -158,7 +157,6 @@ module.exports.__desktopBrowserUse = {
               };
               return session;
             };
-            if (!options.context && runOptions?.downloadCapture !== false) await options.onBeforeOperation?.(tab);
             tabFor(pageId);
             const result = await operation(tab);
             // A successful close needs no live page. Other navigation must still be a business page
@@ -168,15 +166,6 @@ module.exports.__desktopBrowserUse = {
           } finally {
             context._desktopPinnedTab = undefined;
           }
-        });
-      },
-      async tool(pageId, name, args, signal) {
-        // Hold the pinned scope across the action AND Response.serialize(), never select by array index.
-        return this.run(pageId, async () => {
-          if (signal?.aborted) throw fail("cancelled", "Browser operation cancelled");
-          const result = await backend.callTool(name, { ...args, _meta: { json: true } }, signal);
-          tabFor(pageId);
-          return result;
         });
       },
       async disconnect() {

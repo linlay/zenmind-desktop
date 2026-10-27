@@ -1,6 +1,7 @@
 import { type DesktopActionBridgeOptions, type DesktopCdpCallRequest, type DesktopCdpCallResponse } from "./action-contracts";
 import {
   type SiteControlScope,
+  authorizeDesktopHostCdpCommand,
   validateDesktopCdpParams,
   DesktopCdpParamsError,
   isDesktopCdpTimeoutError,
@@ -8,7 +9,7 @@ import {
   readDesktopCdpErrorDetails
 } from "../web-surfaces";
 import { cdpFail, asRecord } from "./action-values";
-import { DESKTOP_CDP_PUBLIC_METHODS } from "../../../shared/embedded-cdp";
+import { DESKTOP_CDP_HOST_METHODS, DESKTOP_CDP_PUBLIC_METHODS } from "../../../shared/embedded-cdp";
 
 export async function handleDesktopCdpRequest(
   options: DesktopActionBridgeOptions,
@@ -21,7 +22,8 @@ export async function handleDesktopCdpRequest(
   if (!method) {
     return cdpFail("unknown", "invalid_args", "method is required");
   }
-  if (!DESKTOP_CDP_PUBLIC_METHODS.some((candidate) => candidate === method)) {
+  const hostOnly = DESKTOP_CDP_HOST_METHODS.some(candidate => candidate === method);
+  if (hostOnly ? !trustedRunSource : !DESKTOP_CDP_PUBLIC_METHODS.some((candidate) => candidate === method)) {
     return cdpFail(method, "method_not_allowed", "This CDP method is not exposed by Desktop.");
   }
   try {
@@ -36,6 +38,11 @@ export async function handleDesktopCdpRequest(
   const allowedFields = new Set(["requestId", "method", "params", "surfaceId", "source"]);
   if (Object.keys(request).some((key) => !allowedFields.has(key))) return cdpFail(method, "invalid_args", "Unsupported CDP request field. Use surfaceId to select a page.");
   const params = { ...asRecord(request.params) };
+  if (hostOnly && (Object.keys(params).some(key => !["downloadId", "sha256"].includes(key)) ||
+      typeof params.downloadId !== "string" || !params.downloadId.trim() || params.downloadId.length > 200 ||
+      typeof params.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(params.sha256))) {
+    return cdpFail(method, "invalid_params", "A download acknowledgement requires only downloadId and a lowercase SHA-256 digest.");
+  }
   let surfaceId = typeof request.surfaceId === "string" ? request.surfaceId.trim() : "";
   if (method === "Surface.close") {
     const paramsSurfaceId = typeof params.surfaceId === "string" ? params.surfaceId.trim() : "";
@@ -53,12 +60,13 @@ export async function handleDesktopCdpRequest(
     delete params.surfaceId;
   }
   try {
-    const response = await options.executeCdpCommand({
+    const command = {
       method,
       params,
       surfaceId,
       ...(trustedRunSource && request.source?.chatId ? { source: { chatId: request.source.chatId } } : {})
-    }, scope, signal);
+    };
+    const response = await options.executeCdpCommand(hostOnly ? authorizeDesktopHostCdpCommand(command) : command, scope, signal);
     return {
       ok: true,
       method,

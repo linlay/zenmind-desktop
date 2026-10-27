@@ -39,7 +39,7 @@ export function chromeWorkerResponseError(error: unknown, method: ChromeWorkerMe
     return { code: cause.code, message: chromeObservationFailureMessages[cause.code as keyof typeof chromeObservationFailureMessages] };
   if (method === "open" && cause.code === "browser_page_creation_failed")
     return { code: "browser_page_creation_failed", message: "Chrome could not create or attach the new tab. Check Chrome for a browser debugger conflict or a closed window. A tab may already exist; no automatic retry was performed." };
-  const safe = new Set(["invalid_params", "url_not_allowed", "surface_not_found", "stale_observation", "browser_disconnected", "browser_runtime_unavailable", "capability_unavailable", "cancelled", "dialog_pending", "file_chooser_pending", "file_transfer_limit", "download_not_found", "download_not_ready", "download_failed", "observation_unavailable", "observation_budget_exceeded", "observation_timeout"]);
+  const safe = new Set(["invalid_params", "url_not_allowed", "surface_not_found", "stale_observation", "browser_disconnected", "browser_runtime_unavailable", "capability_unavailable", "cancelled", "dialog_pending", "file_chooser_pending", "file_transfer_limit", "download_not_found", "download_not_ready", "download_failed", "download_capture_busy", "observation_unavailable", "observation_budget_exceeded", "observation_timeout"]);
   if (typeof cause.code === "string" && safe.has(cause.code)) return { code: cause.code, message: message.slice(0, 1000) };
   if (method === "connect") {
     if (/Playwright extension did not connect within/i.test(message)) return { code: "chrome_connection_timeout", message: "Chrome connection was not approved in time. Enable the official Playwright Extension in your current Chrome profile, then connect and choose Allow & select." };
@@ -52,7 +52,7 @@ export function chromeWorkerResponseError(error: unknown, method: ChromeWorkerMe
 
 /** The fixture uses the same transport with an owned, isolated Chrome factory; production uses the extension factory. */
 export function startChromeWorker(engine: ChromeWorkerEngine): void {
-  const methods = new Set<ChromeWorkerMethod>(["connect", "list", "state", "open", "navigate", "back", "reload", "activate", "close", "observe", "click", "interact", "dialog", "upload", "downloads", "screenshot", "disconnect", "cancel", "awcp-manual", "awcp-invoke", "awcp-release-run", "awcp-refresh", "cancel-request"]);
+  const methods = new Set<ChromeWorkerMethod>(["connect", "list", "state", "open", "navigate", "back", "reload", "activate", "close", "observe", "click", "interact", "dialog", "upload", "downloads", "screenshot", "disconnect", "cancel", "awcp-manual", "awcp-invoke", "awcp-release-run", "awcp-refresh", "cancel-request", "release-transfers"]);
   const utilityPort = (process as typeof process & { parentPort?: { on(event: "message", callback: (event: { data: unknown }) => void): void; postMessage(message: unknown): void } }).parentPort;
 
   function reply(value: ChromeWorkerReply): void {

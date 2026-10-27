@@ -17,7 +17,7 @@ type Run = BrowserRunSource & {
   checkedClient?: BrowserWorkerClient;
   connectionHealth?: { client: BrowserWorkerClient; promise: Promise<boolean> };
   connectionSignal?: AbortSignal;
-  awcpUsed?: boolean;
+  awcpLease?: number;
   browserSelected?: boolean;
   // Binding is chosen from task intent before the first page request, then frozen.
   pageWorkStarted?: boolean;
@@ -102,7 +102,7 @@ export class BrowserUseRuntime {
     if (existing) { existing.shared = true; return existing; }
     const id = randomUUID();
     const alias = createHash("sha256").update(shared ? id : chatId).digest("hex").slice(0, 8).toUpperCase();
-    const workspace: ChromeWorkspace = { id, shared, generation: 0, activityRevision: 0, lastUsed: Date.now(), connection: "disconnected", pages: new Map(),
+    const workspace: ChromeWorkspace = { id, shared, generation: 0, activityRevision: 0, awcpLeaseSequence: 0, lastUsed: Date.now(), connection: "disconnected", pages: new Map(),
       connectionName: `${(this.options.clientName ?? "Desktop").slice(0, 60)} · ${alias}` };
     this.workspaces.set(id, workspace); return workspace;
   }
@@ -201,7 +201,7 @@ export class BrowserUseRuntime {
       throw failure("invalid_args", "browser must be chrome or workpanel; connection settings cannot be supplied here.");
     const reply = () => ({ ok: true, method: "Browser.select", result: { browser: run.backend, provider: run.backend, locked: run.pageWorkStarted === true } });
     if (run.backend === backend) { run.browserSelected = true; return reply(); }
-    if (run.pageWorkStarted || run.workspaceGeneration !== undefined || run.pending.size || run.awcpUsed)
+    if (run.pageWorkStarted || run.workspaceGeneration !== undefined || run.pending.size || run.awcpLease !== undefined)
       throw failure("browser_target_locked", "This task has already started a page request. Keep using its browser, or start a new task for the other browser and first verify any earlier write result. Do not replay an uncertain action.");
     const session = this.session(run.chatId), previous = session.workspace;
     if (previous.owner?.runId === run.runId) {
@@ -381,10 +381,15 @@ export class BrowserUseRuntime {
     const run = this.runs.get(runId);
     if (!run) return;
     const workspace = this.workspaces.get(run.workspaceId);
-    if (run.awcpUsed && workspace?.client && workspace.connection === "connected")
-      void workspace.client.request("awcp-release-run", { runId }).catch(() => undefined);
+    if (run.awcpLease !== undefined && workspace?.client && workspace.connection === "connected")
+      void workspace.client.request("awcp-release-run", { runId, runLease: run.awcpLease }).catch(() => undefined);
     run.controller.abort(); this.runs.delete(runId); run.observations.clear(); run.downloads.clear();
     if (workspace?.owner?.runId === runId) {
+      if (workspace.client && workspace.connection === "connected") {
+        // Revoke download capture and drain the original response before another Run owns it.
+        const cleanup = workspace.client.request("release-transfers").catch(() => undefined);
+        run.pending.add(cleanup);
+      }
       const pending = [...run.pending], client = workspace.client, generation = workspace.generation;
       if (!pending.length) workspace.owner = undefined;
       else {
@@ -661,11 +666,16 @@ export class BrowserUseRuntime {
     catch { throw awcpHostError("awcp_bridge_unavailable", "Installed website bridges could not be prepared."); }
     if (typeof bridgeScript !== "string" || Buffer.byteLength(bridgeScript, "utf8") > 12 * 1024 * 1024)
       throw awcpHostError("awcp_bridge_unavailable", "The website bridge exceeds its execution budget.");
-    run.awcpUsed = true;
+    if (session.workspace.owner?.runId !== run.runId) throw failure("browser_run_unavailable", "The AWCP task no longer owns this Chrome workspace.");
+    if (run.awcpLease === undefined) {
+      const lease = session.workspace.awcpLeaseSequence + 1;
+      if (!Number.isSafeInteger(lease)) throw failure("browser_run_unavailable", "Reconnect Chrome before starting another AWCP task.");
+      session.workspace.awcpLeaseSequence = lease; run.awcpLease = lease;
+    }
     if (method === "AWCP.invoke") run.observations.delete(surfaceId);
     try {
       const result = await this.runRequest(session, run, method === "AWCP.getManual" ? "awcp-manual" : "awcp-invoke", {
-        requestId, runId: run.runId, payload, expectedUrl: page.url, bridgeScript,
+        requestId, runId: run.runId, runLease: run.awcpLease, payload, expectedUrl: page.url, bridgeScript,
       }, page.pageId, combined);
       if (combined.aborted || session.workspace.client !== client || this.runs.get(run.runId) !== run)
         throw failure("browser_run_unavailable", "The browser task was stopped.");
@@ -786,7 +796,9 @@ export class BrowserUseRuntime {
 
   private rememberDownloads(run: Run, surfaceId: string, input: unknown) {
     const entries = Array.isArray(input) ? input : [];
-    run.downloads.set(surfaceId, new Set(entries.map(item => text(record(item).downloadId)).filter(Boolean)));
+    const observed = run.downloads.get(surfaceId) ?? new Set<string>();
+    for (const item of entries) { const id = text(record(item).downloadId); if (id) observed.add(id); }
+    run.downloads.set(surfaceId, observed);
   }
 
   private async chromeCommand(session: Session, run: Run, method: string, params: RecordValue, surfaceId: string, signal: AbortSignal) {
@@ -815,7 +827,7 @@ export class BrowserUseRuntime {
       "Surface.goBack": "back", "Page.reload": "reload", "Page.bringToFront": "activate",
       "Surface.close": "close", "Page.captureScreenshot": "screenshot",
       "Surface.scroll": "interact", "Surface.handleDialog": "dialog", "Surface.uploadFiles": "upload",
-      "Surface.getDownloads": "downloads", "Surface.readDownload": "downloads",
+      "Surface.getDownloads": "downloads", "Surface.readDownload": "downloads", "Surface.releaseDownload": "downloads",
     };
     const command = commands[method];
     if (!command) throw failure("capability_unavailable", "This Chrome session supports page observation and typed page actions. Raw scripts and CDP methods are unavailable.");
@@ -824,12 +836,10 @@ export class BrowserUseRuntime {
     if (method === "Page.navigate") params = { ...params, url: httpUrl(params.url) };
     if (method === "Page.captureScreenshot") params = { ...params, fullPage: params.captureBeyondViewport === true };
     if (method === "Surface.scroll") params = { ...params, action: "scroll" };
-    if (method === "Surface.getDownloads" || method === "Surface.readDownload") {
-      params = { ...params, action: method === "Surface.getDownloads" ? "list" : "read" };
-    }
-    if (method === "Surface.getDownloads" || method === "Surface.readDownload") {
+    if (method === "Surface.getDownloads" || method === "Surface.readDownload" || method === "Surface.releaseDownload") {
+      params = { ...params, action: method === "Surface.getDownloads" ? "list" : method === "Surface.readDownload" ? "read" : "release" };
       if (!run.observations.has(surfaceId)) throw failure("stale_observation", "Observe this Chrome page in the current task before accessing browser downloads.");
-      if (method === "Surface.readDownload" && !run.downloads.get(surfaceId)?.has(text(params.downloadId)))
+      if ((method === "Surface.readDownload" || method === "Surface.releaseDownload") && !run.downloads.get(surfaceId)?.has(text(params.downloadId)))
         throw failure("stale_observation", "Read this page's current download list before saving that download.");
     }
     const result = await this.runRequest(session, run, command, params, page.pageId, signal);

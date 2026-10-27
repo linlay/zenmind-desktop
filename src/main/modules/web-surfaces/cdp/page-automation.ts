@@ -2,21 +2,23 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { DownloadItem, IpcMain, Session, WebContents } from "electron";
+import type { IpcMain, Session, WebContents } from "electron";
 import type { BrowserObservedDialog, BrowserObservedDownload, BrowserObservedFileChooser } from "../../../../shared/browser-use";
 import {
-  BROWSER_DOWNLOAD_MAX_BYTES, BROWSER_DOWNLOAD_MAX_FILES, decodeBrowserUploadFiles, mimeTypeForName, safeDownloadName, transferError,
+  BROWSER_DOWNLOAD_MAX_BYTES, BROWSER_DOWNLOAD_MAX_FILES, BROWSER_FILE_MAX_BYTES, decodeBrowserUploadFiles, mimeTypeForName, safeDownloadName, transferError,
 } from "../../../support/browser-files/transfer";
 import { WorkPanelPageDialogs } from "./page-dialogs";
 import type { SiteControlScope } from "./site-scope";
 
 const PROTOCOL_VERSION = "1.3";
-/** Downloads and file choosers belong to the agent only shortly after it operated the page. */
+/** File choosers keep the existing bounded agent interaction window. */
 const AGENT_WINDOW_MS = 30_000;
+const DOWNLOAD_WINDOW_MS = 10_000;
 
 type Dialog = BrowserObservedDialog;
 type Chooser = BrowserObservedFileChooser & { backendNodeId: number };
-type Download = { info: BrowserObservedDownload; filePath: string; mimeType: string; item?: DownloadItem };
+type Download = { info: BrowserObservedDownload; filePath: string; mimeType: string; reservedBytes: number; signal?: AbortSignal; dispose(): void };
+type DownloadWindow = { until: number; signal?: AbortSignal; dispose(): void };
 type PageState = {
   contents: WebContents;
   attached: boolean;
@@ -27,6 +29,8 @@ type PageState = {
   dialogs: Map<string, Dialog>;
   choosers: Map<string, Chooser>;
   downloads: Map<string, Download>;
+  downloadWindow?: DownloadWindow;
+  downloadNotice?: BrowserObservedDownload;
   listeners: Set<() => void>;
   directory?: string;
   focusLeases: number;
@@ -97,6 +101,24 @@ export class WorkPanelPageAutomation {
     }
   }
 
+  /** Only a validated click may opt into the first attachment; observing never arms this window. */
+  armDownload(contents: WebContents, signal?: AbortSignal): void {
+    const state = this.state(contents);
+    state.downloadWindow?.dispose();
+    state.downloadWindow = undefined;
+    if (signal?.aborted) return;
+    state.downloadNotice = undefined;
+    let timer: ReturnType<typeof setTimeout>;
+    const window: DownloadWindow = { until: Date.now() + DOWNLOAD_WINDOW_MS, signal, dispose: () => {
+      clearTimeout(timer); signal?.removeEventListener("abort", window.dispose);
+      if (state.downloadWindow === window) state.downloadWindow = undefined;
+    } };
+    state.downloadWindow = window;
+    signal?.addEventListener("abort", window.dispose, { once: true });
+    timer = setTimeout(window.dispose, DOWNLOAD_WINDOW_MS); timer.unref?.();
+    this.watchDownloads(contents);
+  }
+
   /** Focus belongs to an input transaction. Native dialogs defer cleanup until Chromium can answer it. */
   async acquireFocus(contents: WebContents, setFocus: (enabled: boolean) => Promise<unknown>): Promise<() => Promise<void>> {
     const state = this.state(contents);
@@ -141,7 +163,8 @@ export class WorkPanelPageAutomation {
     return {
       dialogs: [...state.dialogs.values()].map((dialog) => ({ ...dialog })),
       fileChoosers: [...state.choosers.values()].map(({ backendNodeId: _node, ...chooser }) => chooser),
-      downloads: [...state.downloads.values()].map((download) => ({ ...download.info })),
+      downloads: [...state.downloads.values()].filter(download => !download.signal?.aborted).map((download) => ({ ...download.info }))
+        .concat(state.downloadNotice ? [{ ...state.downloadNotice }] : []),
     };
   }
 
@@ -217,13 +240,27 @@ export class WorkPanelPageAutomation {
   async readDownload(contents: WebContents, downloadId: string) {
     const state = this.pages.get(contents.id);
     const download = state?.contents === contents ? state.downloads.get(downloadId) : undefined;
-    if (!download) throw transferError("download_not_found", "This page does not own that download.");
+    if (!state || !download || download.signal?.aborted) throw transferError("download_not_found", "This page does not own that download.");
     if (download.info.status === "pending") throw transferError("download_not_ready", "The download is still in progress. Check its status before saving.");
     if (download.info.status !== "complete") throw transferError("download_failed", "This download could not be imported into the Chat.");
     const buffer = await fs.promises.readFile(download.filePath);
-    if (buffer.length > BROWSER_DOWNLOAD_MAX_BYTES) throw transferError("file_transfer_limit", "The download exceeds the transfer limit.");
+    if (buffer.length > BROWSER_FILE_MAX_BYTES) throw transferError("file_transfer_limit", "The download exceeds the transfer limit.");
+    if (this.pages.get(contents.id) !== state || state.downloads.get(downloadId) !== download || download.signal?.aborted)
+      throw transferError("download_not_found", "This page no longer owns that download.");
     return { downloadId, fileName: download.info.fileName, mimeType: download.mimeType, data: buffer.toString("base64"),
       sizeBytes: buffer.length, sha256: createHash("sha256").update(buffer).digest("hex") };
+  }
+
+  /** Platform acknowledges only bytes it has validated and persisted as a Chat file. */
+  async releaseDownload(contents: WebContents, downloadId: string, sha256: string): Promise<{ released: true }> {
+    if (!/^[a-f0-9]{64}$/u.test(sha256)) throw transferError("invalid_params", "A lowercase SHA-256 digest is required.");
+    const state = this.pages.get(contents.id), download = state?.contents === contents ? state.downloads.get(downloadId) : undefined;
+    if (!download) return { released: true };
+    const file = await this.readDownload(contents, downloadId);
+    if (file.sha256 !== sha256) throw transferError("download_digest_mismatch", "The persisted file digest does not match this download.");
+    fs.rmSync(path.dirname(download.filePath), { recursive: true, force: true });
+    download.dispose();
+    return { released: true };
   }
 
   private state(contents: WebContents): PageState {
@@ -246,9 +283,8 @@ export class WorkPanelPageAutomation {
           void Promise.resolve().then(restore).catch(() => undefined);
         }
         if (this.pages.get(contents.id) === state) this.pages.delete(contents.id);
-        for (const download of state.downloads.values()) if (download.info.status === "pending") {
-          try { download.item?.cancel(); } catch { /* The item may already be finished. */ }
-        }
+        state.downloadWindow?.dispose();
+        for (const download of [...state.downloads.values()]) download.dispose();
         for (const remove of [
           () => debuggerRef.off("message", onMessage),
           () => debuggerRef.off("detach", onDetach),
@@ -329,33 +365,64 @@ export class WorkPanelPageAutomation {
     this.sessions.add(guestSession);
     guestSession.on("will-download", (_event, item, source) => {
       const state = source ? this.pages.get(source.id) : undefined;
-      // Downloads outside an agent window keep Electron's normal user flow.
-      if (!state || state.contents !== source || Date.now() > state.agentUntil) return;
-      if (state.downloads.size >= BROWSER_DOWNLOAD_MAX_FILES) return;
+      const capture = state?.downloadWindow;
+      // Ordinary preparation, observation and user downloads never opt in.
+      if (!state || state.contents !== source || !capture) return;
+      capture.dispose();
+      if (capture.signal?.aborted || Date.now() > capture.until) return;
       const downloadId = randomUUID();
       const fileName = safeDownloadName(item.getFilename());
-      const directory = path.join(this.directory(state), "downloads", downloadId);
-      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      const notice = (error: string) => {
+        if (this.pages.get(source.id) === state && !capture.signal?.aborted)
+          state.downloadNotice = { downloadId, fileName, status: "failed", error };
+      };
+      const declaredBytes = item.getTotalBytes();
+      if (state.downloads.size >= BROWSER_DOWNLOAD_MAX_FILES) { notice("file_transfer_limit"); return; }
+      if (!Number.isSafeInteger(declaredBytes) || declaredBytes <= 0) { notice("download_failed"); return; }
+      if (declaredBytes > BROWSER_FILE_MAX_BYTES) { notice("file_transfer_limit"); return; }
+      const retained = () => [...state.downloads.values()].reduce((total, entry) => total + entry.reservedBytes, 0);
+      if (retained() + declaredBytes > BROWSER_DOWNLOAD_MAX_BYTES) {
+        notice("file_transfer_limit"); return;
+      }
+      let directory: string;
+      try { directory = path.join(this.directory(state), "downloads", downloadId); fs.mkdirSync(directory, { recursive: true, mode: 0o700 }); }
+      catch { notice("download_failed"); return; }
       const filePath = path.join(directory, fileName);
-      item.setSavePath(filePath);
+      try { item.setSavePath(filePath); }
+      catch { fs.rmSync(directory, { recursive: true, force: true }); notice("download_failed"); return; }
+      let finished = false, discarded = false;
+      const cleanup = () => { try { fs.rmSync(directory, { recursive: true, force: true }); } catch { /* Native teardown may still be closing the file. */ } };
+      const discard = () => {
+        discarded = true;
+        if (state.downloads.get(downloadId) === download) state.downloads.delete(downloadId);
+        capture.signal?.removeEventListener("abort", discard);
+        if (finished) cleanup();
+      };
       const download: Download = { info: { downloadId, fileName, status: "pending" }, filePath,
-        mimeType: item.getMimeType() || mimeTypeForName(fileName), item };
+        mimeType: item.getMimeType() || mimeTypeForName(fileName), reservedBytes: declaredBytes, signal: capture.signal, dispose: discard };
       state.downloads.set(downloadId, download);
-      const fail = (error: string) => { download.info = { ...download.info, status: "failed", error }; download.item = undefined; };
-      item.on("updated", () => {
-        if (item.getReceivedBytes() > BROWSER_DOWNLOAD_MAX_BYTES || item.getTotalBytes() > BROWSER_DOWNLOAD_MAX_BYTES) {
-          fail("file_transfer_limit");
-          item.cancel();
-        }
-      });
+      const fail = (error: string) => { notice(error); discard(); };
+      const updated = () => {
+        if (discarded || capture.signal?.aborted || this.pages.get(source.id) !== state) { discard(); return; }
+        const received = item.getReceivedBytes(), total = item.getTotalBytes();
+        if (!Number.isSafeInteger(received) || received < 0 || received > BROWSER_FILE_MAX_BYTES || total > BROWSER_FILE_MAX_BYTES) { fail("file_transfer_limit"); return; }
+        download.reservedBytes = Math.max(download.reservedBytes, received);
+        if (retained() > BROWSER_DOWNLOAD_MAX_BYTES) fail("file_transfer_limit");
+      };
+      capture.signal?.addEventListener("abort", discard, { once: true });
+      item.on("updated", updated);
       item.once("done", (_doneEvent, outcome) => {
-        if (download.info.status === "failed") return;
+        finished = true; item.off("updated", updated);
+        if (discarded || capture.signal?.aborted || this.pages.get(source.id) !== state) { discard(); return; }
         if (outcome !== "completed") { fail("download_failed"); return; }
-        const sizeBytes = item.getReceivedBytes();
-        if (sizeBytes > BROWSER_DOWNLOAD_MAX_BYTES) { fail("file_transfer_limit"); return; }
+        let sizeBytes: number;
+        try { sizeBytes = fs.statSync(filePath).size; } catch { fail("download_failed"); return; }
+        if (sizeBytes > BROWSER_FILE_MAX_BYTES) { fail("file_transfer_limit"); return; }
+        download.reservedBytes = sizeBytes;
+        if (retained() > BROWSER_DOWNLOAD_MAX_BYTES) { fail("file_transfer_limit"); return; }
         download.info = { ...download.info, status: "complete", sizeBytes };
-        download.item = undefined;
       });
+      if (capture.signal?.aborted) discard();
     });
   }
 }

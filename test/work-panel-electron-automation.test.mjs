@@ -29,7 +29,7 @@ fs.mkdirSync(profile, { recursive: true });
 app.setPath("userData", profile);
 app.setPath("sessionData", profile);
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
-const { EmbeddedCdpGateway, createEmbeddedWebSurfaceId } = require(args.source + "/dist-electron/main/modules/web-surfaces/cdp/gateway.js");
+const { EmbeddedCdpGateway, createEmbeddedWebSurfaceId, authorizeDesktopHostCdpCommand } = require(args.source + "/dist-electron/main/modules/web-surfaces/cdp/gateway.js");
 const { acquireWorkPanelControlScope } = require(args.source + "/dist-electron/main/modules/web-surfaces/cdp/site-scope.js");
 const { ensureWorkPanelPageDialogIpc } = require(args.source + "/dist-electron/main/modules/web-surfaces/cdp/page-dialogs.js");
 ensureWorkPanelPageDialogIpc(ipcMain);
@@ -54,7 +54,7 @@ ipcMain.on("fixture-preload-diagnostics", (_event, value) => report.preload.push
 ipcMain.on("workPanel.pageDialog", (event, value) => { if (value?.op === "ready") report.preload.push({ ready: true, mainFrame: event.senderFrame === event.sender.mainFrame, protocol: event.sender.mainFrame.url.split(":")[0] }); });
 app.whenReady().then(async () => {
   const server = http.createServer((req, res) => {
-    if (req.url === "/report.csv") { res.writeHead(200, { "content-type": "text/csv", "content-disposition": "attachment; filename=report.csv" }); res.end("a,b\n1,2\n"); return; }
+    if (req.url === "/report.csv") { res.writeHead(200, { "content-type": "text/csv", "content-disposition": "attachment; filename=report.csv", "content-length": "8" }); res.end("a,b\n1,2\n"); return; }
     res.writeHead(200, { "content-type": "text/html" }); res.end(page);
   }).listen(0, "127.0.0.1");
   await new Promise(resolve => server.once("listening", resolve));
@@ -120,7 +120,11 @@ app.whenReady().then(async () => {
   let gateway = new EmbeddedCdpGateway(options);
   let heartbeats = 0; const heartbeat = setInterval(() => { heartbeats++; }, 10);
   const surfaceId = createEmbeddedWebSurfaceId(surface, tab);
-  const run = async (method, params) => (await gateway.executeCommand({ method, params, surfaceId, source: { chatId: "chat-x" } })).result;
+  const run = async (method, params) => {
+    const request = { method, params, surfaceId, source: { chatId: "chat-x" } };
+    // This fixture is the trusted Main caller; public/forged acknowledgements are tested separately.
+    return (await gateway.executeCommand(method === "Surface.releaseDownload" ? authorizeDesktopHostCdpCommand(request) : request)).result;
+  };
   const ref = (observation, name) => observation.elements.find(element => element.name === name)?.ref;
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   try {
@@ -192,13 +196,15 @@ app.whenReady().then(async () => {
     report.chooser.names = await content.executeJavaScript("[...document.getElementById('hidden').files].map(f => f.name)");
 
     observation = answeredChooser.observation;
-    await run("Surface.click", { observationId: observation.observationId, ref: ref(observation, "Report") });
+    await run("Surface.click", { observationId: observation.observationId, ref: ref(observation, "Report"), captureDownload: true });
     let downloads = [];
     for (let attempt = 0; attempt < 50 && !downloads.some(d => d.status === "complete"); attempt += 1) {
       await settle(100); downloads = (await run("Surface.getDownloads", {})).downloads;
     }
     const read = await run("Surface.readDownload", { downloadId: downloads[0]?.downloadId });
     report.download = { status: downloads[0]?.status, fileName: read.fileName, text: Buffer.from(read.data, "base64").toString() };
+    const acknowledgement = await run("Surface.releaseDownload", { downloadId: read.downloadId, sha256: read.sha256 });
+    report.downloadAck = { ...acknowledgement, remaining: (await run("Surface.getDownloads", {})).downloads.length };
 
     observation = await run("Surface.observe", {});
     const typed = await run("Surface.interact", { observationId: observation.observationId, ref: ref(observation, "Name"), action: "type", value: "Ada" });
@@ -284,6 +290,7 @@ for (const { scoped, failRestore, webview } of [{ scoped: true, failRestore: fal
   assert.deepEqual(report.uploadDialog, { status: "failed", outcome: "unknown", error: "dialog_pending", title: "upload:true", count: 1 });
   assert.deepEqual(report.chooser, { opened: true, multiple: true, status: "failed", pending: 0, title: "chooser:true", names: ["notes.txt", "more.txt"] });
   assert.deepEqual(report.download, { status: "complete", fileName: "report.csv", text: "a,b\n1,2\n" });
+  assert.deepEqual(report.downloadAck, { released: true, remaining: 0 });
   if (scoped) {
     assert.equal(report.scope.restorationFailures, failRestore ? 1 : 0);
     assert.ok(report.scope.issued > 0, 'the fixture must exercise a host-issued SiteControlScope');

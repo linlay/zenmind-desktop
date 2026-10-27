@@ -94,8 +94,13 @@ test("official Chrome Worker supports mixed typed and AWCP tools with the unchan
     });
     const opened = await engine.request({ id: "open", method: "open", params: { url: `${origin}/forum` } }), pageId = opened.pageId;
     let serial = 0;
+    const runLeases = new Map();
+    const leaseFor = runId => {
+      if (!runLeases.has(runId)) runLeases.set(runId, runLeases.size + 1);
+      return runLeases.get(runId);
+    };
     const awcp = (method, payload, runId = "run-a", script = buildWebsiteBridgeScript(`${origin}/forum`, [pkg])) => engine.request({ id: `wire-${++serial}`, method, pageId,
-      params: { requestId: `owned-request-${serial}`, runId, payload, expectedUrl: `${origin}/forum`, bridgeScript: script } });
+      params: { requestId: `owned-request-${serial}`, runId, runLease: leaseFor(runId), payload, expectedUrl: `${origin}/forum`, bridgeScript: script } });
     const observe = () => engine.request({ id: `observe-${++serial}`, method: "observe", pageId });
     const click = observation => {
       const button = observation.elements.find(element => element.role === "button");
@@ -113,7 +118,7 @@ test("official Chrome Worker supports mixed typed and AWCP tools with the unchan
     checks.samePageMixedTypedManualSectionInvokeObserveClick = true;
     const slow = awcp("awcp-invoke", { revision: index.revision, action: "forum.posts.list", args: { keyword: "SLOW_OFFLINE" } });
     const cancelled = assert.rejects(slow, { code: "site_control_unavailable" }); await sawSlow;
-    await engine.request({ id: "release-run", method: "awcp-release-run", params: { runId: "run-a" } }); await cancelled; resumeSlow(); resumeSlow = undefined;
+    await engine.request({ id: "release-run", method: "awcp-release-run", params: { runId: "run-a", runLease: leaseFor("run-a") } }); await cancelled; resumeSlow(); resumeSlow = undefined;
     assert.equal((await engine.request({ id: "state-after-release", method: "state" })).connected, true);
     checks.realRunReleaseCancelsReadWithoutDisconnect = true;
     const next = await awcp("awcp-manual", {}, "run-b"); await awcp("awcp-manual", { revision: next.revision, section: "forum.posts.list" }, "run-b");
