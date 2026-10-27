@@ -866,7 +866,7 @@ export const enUSMessages = {
   "settings.browser.label": "Browser control",
   "settings.browser.description": "Choose the browser for new conversations and configure Chrome authorization.",
   "settings.browser.defaultBrowser": "Default browser for new chats",
-  "settings.browser.defaultHelp": "Applies to new conversations. You can also change the browser at the top of each chat.",
+  "settings.browser.defaultHelp": "Default preference for new chats. Specify Chrome or WorkPanel in your task; the agent will ask if the target is unclear.",
   "settings.browser.remember": "Remember the Chrome connection",
   "settings.browser.rememberHelp": "New Chrome conversations, windows, and retries can continue with the currently authorized webpages. One task operates at a time. Turning this off clears credentials for future connections.",
   "settings.browser.authorization": "Chrome extension authorization code",

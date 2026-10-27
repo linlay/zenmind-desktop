@@ -866,7 +866,7 @@ export const zhCNMessages = {
   "settings.browser.label": "浏览器控制",
   "settings.browser.description": "设置新对话使用的浏览器，以及 Chrome 的连接授权。",
   "settings.browser.defaultBrowser": "新对话默认浏览器",
-  "settings.browser.defaultHelp": "只影响后续新对话。也可以在每个对话顶部切换。",
+  "settings.browser.defaultHelp": "用于新对话的默认偏好。任务中指定 Chrome 或工作面板时，以任务要求为准；目标不明确时，小君会询问。",
   "settings.browser.remember": "记住 Chrome 连接",
   "settings.browser.rememberHelp": "开启后，新建 Chrome 对话、新窗口和重问可继续使用当前已授权网页。每次只允许一个任务操作；关闭只清除以后自动连接的凭据。",
   "settings.browser.authorization": "Chrome 扩展授权码",
