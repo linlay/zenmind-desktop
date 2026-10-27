@@ -21,5 +21,5 @@ export function parseArtifactMetadata(value: unknown, allowLegacy = false): Desk
     return null;
   return { chatId, runId, artifactId, name, mimeType, sizeBytes: Number(data.sizeBytes), sha256: cleanText(data.sha256), pushedAt,
     category: artifactCategory(mimeType), favorite: false, tags: [], contentState: runId ? "ready" : "unresolved",
-    sourceState: "active", accessState: "unknown", agentKey: "", chatName: "" };
+    sourceState: "active", accessState: "unknown", agentKey: "", chatName: "", folderId: null, displayName: "" };
 }

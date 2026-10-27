@@ -2,10 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { App } from "electron";
-import { ARTIFACT_CATEGORIES, type DesktopArtifactAccessState, type DesktopArtifactContentState, type DesktopArtifactIdentity, type DesktopArtifactListInput, type DesktopArtifactListResult, type DesktopArtifactOrganizeInput, type DesktopArtifactRecord, type DesktopArtifactSourceState } from "../../../shared/artifacts";
+import { type DesktopArtifactBatchInput, type DesktopArtifactFolderInput, type DesktopArtifactAccessState, type DesktopArtifactContentState, type DesktopArtifactIdentity, type DesktopArtifactListInput, type DesktopArtifactListResult, type DesktopArtifactOrganizeInput, type DesktopArtifactRecord, type DesktopArtifactSourceState } from "../../../shared/artifacts";
 import { isAgentPlatformEpochMilliseconds } from "../../../shared/time-contract";
 import { getDesktopRoot } from "../../infrastructure/filesystem/user-paths";
 import { cleanText, object, parseArtifactMetadata, validIdentity } from "./metadata";
+import { mutateArtifactFolder, organizeArtifactBatch } from "./organization";
+import { ARTIFACT_COLUMNS as COLUMNS, ARTIFACT_FROM as FROM, decodeArtifactRow as decode, readArtifactList } from "./queries";
 export function parseArtifactPush(value: unknown): DesktopArtifactRecord | null {
   const frame = object(value);
   if (frame.frame !== "push" || !["artifact.published", "resource.pushed"].includes(String(frame.type)))
@@ -21,15 +23,6 @@ export function getArtifactDatabasePath(app: App, platform: NodeJS.Platform = pr
     return path.win32.join(root, "data", "artifacts.db");
   return path.join(root, "data", "artifacts.db");
 }
-const COLUMNS = `a.chat_id AS chatId, a.run_id AS runId, a.artifact_id AS artifactId, a.name,
- a.mime_type AS mimeType, a.size_bytes AS sizeBytes, a.sha256, a.pushed_at AS pushedAt,
- a.category, a.favorite, a.tags, a.content_state AS contentState,
- COALESCE(c.source_state, 'active') AS sourceState, COALESCE(c.access_state, 'unknown') AS accessState,
- COALESCE(c.chat_name, '') AS chatName, COALESCE(c.agent_key, '') AS agentKey`;
-const FROM = "FROM artifacts a LEFT JOIN artifact_chats c ON a.chat_id=c.chat_id";
-function decode(row: Record<string, unknown>): DesktopArtifactRecord {
-  return { ...row, favorite: !!row.favorite, tags: JSON.parse(String(row.tags)) } as unknown as DesktopArtifactRecord;
-}
 export class ArtifactStore {
   constructor(private readonly databasePath: () => string) { }
   private withDatabase<T>(read: (db: DatabaseSync) => T): T {
@@ -37,23 +30,31 @@ export class ArtifactStore {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
     const db = new DatabaseSync(filename);
     try {
-      db.exec("PRAGMA busy_timeout = 3000; PRAGMA journal_mode = WAL;");
+      db.exec("PRAGMA busy_timeout = 3000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
       const columns = db.prepare("PRAGMA table_info(artifacts)").all();
       const legacy = columns.length > 0 && !columns.some(c => c.name === "run_id");
       db.exec("BEGIN IMMEDIATE");
       try {
         if (legacy)
           db.exec("ALTER TABLE artifacts RENAME TO artifacts_legacy; DROP INDEX IF EXISTS artifacts_pushed_at;");
-        db.exec(`CREATE TABLE IF NOT EXISTS artifacts (
+        db.exec(`CREATE TABLE IF NOT EXISTS artifact_folders (
+     id TEXT PRIMARY KEY,parent_id TEXT REFERENCES artifact_folders(id) ON DELETE RESTRICT,name TEXT NOT NULL);
+     CREATE UNIQUE INDEX IF NOT EXISTS artifact_folder_names ON artifact_folders(COALESCE(parent_id,''),name COLLATE NOCASE);
+     CREATE TABLE IF NOT EXISTS artifacts (
      chat_id TEXT NOT NULL, run_id TEXT NOT NULL, artifact_id TEXT NOT NULL,
      name TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL CHECK(size_bytes>=0),
      sha256 TEXT NOT NULL, pushed_at INTEGER NOT NULL, category TEXT NOT NULL,
      favorite INTEGER NOT NULL DEFAULT 0, tags TEXT NOT NULL DEFAULT '[]', content_state TEXT NOT NULL,
+     folder_id TEXT REFERENCES artifact_folders(id) ON DELETE RESTRICT,display_name TEXT NOT NULL DEFAULT '',
      PRIMARY KEY(chat_id, run_id, artifact_id));
      CREATE INDEX IF NOT EXISTS artifacts_pushed_at ON artifacts(pushed_at DESC, chat_id, run_id, artifact_id);
      CREATE TABLE IF NOT EXISTS artifact_chats (
       chat_id TEXT PRIMARY KEY, source_state TEXT NOT NULL DEFAULT 'active',
       access_state TEXT NOT NULL DEFAULT 'unknown', chat_name TEXT NOT NULL DEFAULT '', agent_key TEXT NOT NULL DEFAULT '');`);
+        const currentColumns = db.prepare("PRAGMA table_info(artifacts)").all();
+        if (!currentColumns.some(column => column.name === "folder_id")) db.exec("ALTER TABLE artifacts ADD COLUMN folder_id TEXT REFERENCES artifact_folders(id) ON DELETE RESTRICT;");
+        if (!currentColumns.some(column => column.name === "display_name")) db.exec("ALTER TABLE artifacts ADD COLUMN display_name TEXT NOT NULL DEFAULT ''; ");
+        db.exec("CREATE INDEX IF NOT EXISTS artifact_folder_items ON artifacts(folder_id,pushed_at DESC);");
         if (legacy) {
           db.exec(`INSERT INTO artifacts(chat_id,run_id,artifact_id,name,mime_type,size_bytes,sha256,pushed_at,category,content_state)
       SELECT chat_id,'',artifact_id,name,mime_type,size_bytes,sha256,pushed_at,'other','unresolved' FROM artifacts_legacy;
@@ -138,7 +139,9 @@ export class ArtifactStore {
             continue;
           const target = matches[0];
           const tags = db.prepare("SELECT tags FROM artifacts WHERE chat_id=? AND run_id=? AND artifact_id=?").get(chatId, target.runId, target.artifactId)!;
-          db.prepare("UPDATE artifacts SET favorite=MAX(favorite,?),tags=? WHERE chat_id=? AND run_id=? AND artifact_id=?").run(Number(old.favorite), JSON.stringify([...new Set([...JSON.parse(String(old.tags)), ...JSON.parse(String(tags.tags))])]), chatId, target.runId, target.artifactId);
+          db.prepare(`UPDATE artifacts SET favorite=MAX(favorite,?),tags=?,folder_id=COALESCE(folder_id,?),
+            display_name=CASE WHEN display_name='' THEN ? ELSE display_name END WHERE chat_id=? AND run_id=? AND artifact_id=?`).run(
+              Number(old.favorite), JSON.stringify([...new Set([...JSON.parse(String(old.tags)), ...JSON.parse(String(tags.tags))])]), old.folder_id!, old.display_name!, chatId, target.runId, target.artifactId);
           db.prepare("DELETE FROM artifacts WHERE chat_id=? AND run_id='' AND artifact_id=?").run(chatId, old.artifact_id!);
         }
         db.exec("COMMIT");
@@ -181,44 +184,23 @@ export class ArtifactStore {
   }
   organize(input: DesktopArtifactOrganizeInput) {
     if (!validIdentity(input) || (input.favorite !== undefined && typeof input.favorite !== "boolean") ||
-      (input.tags !== undefined && (!Array.isArray(input.tags) || input.tags.length > 20 || input.tags.some(t => !cleanText(t, 64)))))
-      throw new Error("Invalid library metadata");
-    this.withDatabase(db => {
-      if (input.favorite !== undefined)
-        db.prepare("UPDATE artifacts SET favorite=? WHERE chat_id=? AND run_id=? AND artifact_id=?").run(Number(input.favorite), input.chatId, input.runId, input.artifactId);
-      if (input.tags !== undefined)
-        db.prepare("UPDATE artifacts SET tags=? WHERE chat_id=? AND run_id=? AND artifact_id=?").run(JSON.stringify([...new Set(input.tags.map(t => t.trim()))]), input.chatId, input.runId, input.artifactId);
+      (input.tags !== undefined && (!Array.isArray(input.tags) || input.tags.length > 20 || input.tags.some(t => !cleanText(t, 64)))) ||
+      (input.displayName !== undefined && !cleanText(input.displayName, 256))) throw new Error("Invalid library metadata");
+    this.transaction(db => {
+      if (!db.prepare("SELECT 1 FROM artifacts WHERE chat_id=? AND run_id=? AND artifact_id=?").get(input.chatId, input.runId, input.artifactId)) throw new Error("Library item missing");
+      if (input.favorite !== undefined) db.prepare("UPDATE artifacts SET favorite=? WHERE chat_id=? AND run_id=? AND artifact_id=?").run(Number(input.favorite), input.chatId, input.runId, input.artifactId);
+      if (input.tags !== undefined) db.prepare("UPDATE artifacts SET tags=? WHERE chat_id=? AND run_id=? AND artifact_id=?").run(JSON.stringify([...new Set(input.tags.map(t => t.trim()))]), input.chatId, input.runId, input.artifactId);
+      if (input.displayName !== undefined) db.prepare("UPDATE artifacts SET display_name=? WHERE chat_id=? AND run_id=? AND artifact_id=?").run(input.displayName.trim(), input.chatId, input.runId, input.artifactId);
     });
   }
-  list(input: DesktopArtifactListInput = {}): DesktopArtifactListResult {
-    const search = typeof input?.search === "string" ? input.search.trim().slice(0, 256) : "";
-    const offset = Number.isSafeInteger(input?.offset) ? Math.max(0, Math.min(input.offset!, 1000000)) : 0;
-    const limit = Number.isSafeInteger(input?.limit) ? Math.max(1, Math.min(input.limit!, 100)) : 50;
-    const clauses: string[] = [], params: (string | number)[] = [];
-    if (search) {
-      clauses.push("(a.name LIKE ? ESCAPE '\\' OR a.chat_id LIKE ? ESCAPE '\\' OR a.artifact_id LIKE ? ESCAPE '\\' OR a.mime_type LIKE ? ESCAPE '\\' OR c.chat_name LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM json_each(a.tags) WHERE value LIKE ? ESCAPE '\\'))");
-      params.push(...Array(6).fill(`%${search.replace(/[\\%_]/gu, "\\$&")}%`));
-    }
-    if (ARTIFACT_CATEGORIES.includes(input?.category!)) {
-      clauses.push("a.category=?");
-      params.push(input.category!);
-    }
-    if (input?.favoritesOnly === true)
-      clauses.push("a.favorite=1");
-    if (typeof input?.chatId === "string") {
-      clauses.push("a.chat_id=?");
-      params.push(input.chatId.slice(0, 256));
-    }
-    if (typeof input?.tag === "string" && input.tag) {
-      clauses.push("EXISTS(SELECT 1 FROM json_each(a.tags) WHERE value=?)");
-      params.push(input.tag.slice(0, 64));
-    }
-    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    return this.withDatabase(db => ({
-      total: Number(db.prepare(`SELECT COUNT(*) AS total ${FROM} ${where}`).get(...params)!.total),
-      records: db.prepare(`SELECT ${COLUMNS} ${FROM} ${where} ORDER BY a.pushed_at DESC,a.chat_id,a.run_id,a.artifact_id LIMIT ? OFFSET ?`).all(...params, limit, offset).map(decode),
-      tags: db.prepare("SELECT DISTINCT value FROM artifacts,json_each(tags) ORDER BY value").all().map(r => String(r.value)),
-      sync: { phase: "idle", completed: 0, total: 0, failed: 0, denied: 0 },
-    }));
+  folder(input: DesktopArtifactFolderInput) { return this.transaction(db => mutateArtifactFolder(db, input)); }
+  organizeMany(input: DesktopArtifactBatchInput) { return this.transaction(db => organizeArtifactBatch(db, input)); }
+  private transaction<T>(write: (db: DatabaseSync) => T): T {
+    return this.withDatabase(db => {
+      db.exec("BEGIN IMMEDIATE");
+      try { const result = write(db); db.exec("COMMIT"); return result; }
+      catch (error) { db.exec("ROLLBACK"); throw error; }
+    });
   }
+  list(input: DesktopArtifactListInput = {}): DesktopArtifactListResult { return this.withDatabase(db => readArtifactList(db, input)); }
 }

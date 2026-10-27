@@ -26,7 +26,34 @@ export interface DesktopArtifactRecord extends DesktopArtifactIdentity {
   accessState: DesktopArtifactAccessState;
   chatName: string;
   agentKey: string;
+  folderId: string | null;
+  displayName: string;
 }
+
+export interface DesktopArtifactFolder {
+  id: string;
+  parentId: string | null;
+  name: string;
+  directCount: number;
+  totalCount: number;
+  childCount: number;
+}
+
+export type DesktopArtifactFolderInput =
+  | { action: "create"; parentId: string | null; name: string }
+  | { action: "rename"; id: string; name: string }
+  | { action: "delete"; id: string };
+
+export interface DesktopArtifactBatchInput {
+  items: DesktopArtifactIdentity[];
+  folderId?: string | null;
+  favorite?: boolean;
+}
+
+export type DesktopArtifactMutationResult = { ok: true } | {
+  ok: false;
+  error: "invalid_name" | "duplicate_name" | "folder_missing" | "folder_not_empty" | "items_missing" | "invalid_request" | "folder_depth";
+};
 
 export interface DesktopArtifactListInput {
   search?: string;
@@ -36,6 +63,9 @@ export interface DesktopArtifactListInput {
   favoritesOnly?: boolean;
   tag?: string;
   chatId?: string;
+  folderId?: string | null;
+  recent?: boolean;
+  sort?: "date" | "name" | "type";
 }
 
 export interface DesktopArtifactSyncState {
@@ -52,11 +82,15 @@ export interface DesktopArtifactListResult {
   total: number;
   tags: string[];
   sync: DesktopArtifactSyncState;
+  folders: DesktopArtifactFolder[];
+  counts: { all: number; starred: number; unfiled: number; recent: number };
+  categories: Partial<Record<DesktopArtifactCategory, number>>;
 }
 
 export interface DesktopArtifactOrganizeInput extends DesktopArtifactIdentity {
   favorite?: boolean;
   tags?: string[];
+  displayName?: string;
 }
 
 export interface DesktopArtifactActionInput extends DesktopArtifactIdentity {

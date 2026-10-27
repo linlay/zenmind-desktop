@@ -3,11 +3,12 @@ export { createArtifactPlatformClient } from "./platform-client";
 export type { ArtifactPlatformApi } from "./platform-client";
 import type { App, BrowserWindow, IpcMain } from "electron";
 import type { RealtimeBroker } from "../agent-platform";
-import type { DesktopArtifactIdentity, DesktopArtifactOrganizeInput, DesktopArtifactSyncState } from "../../../shared/artifacts";
+import type { DesktopArtifactIdentity, DesktopArtifactBatchInput, DesktopArtifactFolderInput, DesktopArtifactOrganizeInput, DesktopArtifactSyncState } from "../../../shared/artifacts";
 import { requireEpochMillis } from "../../../shared/time-contract";
 import { ArtifactStore, getArtifactDatabasePath } from "./store";
 import { artifactError, type ArtifactPlatformApi } from "./platform-client";
-import { cleanText, object } from "./metadata";
+import { cleanText, object, validIdentity } from "./metadata";
+import { ARTIFACT_THUMBNAIL_LIMIT, artifactThumbnailDataUrl, canReadArtifactThumbnail } from "./thumbnail";
 export function createArtifactRuntime(options: {
   app: App;
   platform: NodeJS.Platform;
@@ -203,6 +204,21 @@ export function createArtifactRuntime(options: {
   }
   options.ipcMain.handle("artifacts.list", (event, input) => { authorize(event); return { ...store.list(input), sync: { ...sync } }; });
   options.ipcMain.handle("artifacts.organize", (event, input: DesktopArtifactOrganizeInput) => { authorize(event); store.organize(input); notify(); });
+  options.ipcMain.handle("artifacts.folder", (event, input: DesktopArtifactFolderInput) => { authorize(event); const result = store.folder(input); if (result.ok) notify(); return result; });
+  options.ipcMain.handle("artifacts.organizeMany", (event, input: DesktopArtifactBatchInput) => { authorize(event); const result = store.organizeMany(input); if (result.ok) notify(); return result; });
+  options.ipcMain.handle("artifacts.thumbnail", async (event, input: DesktopArtifactIdentity) => {
+    authorize(event);
+    if (!validIdentity(input) || !options.platformApi) return null;
+    const item = store.get(input), generation = epoch, version = revision(input.chatId);
+    if (!item || !canReadArtifactThumbnail(item)) return null;
+    try {
+      const bytes = await options.platformApi.read({ chatId: item.chatId, runId: item.runId, artifactId: item.artifactId }, AbortSignal.timeout(15_000), ARTIFACT_THUMBNAIL_LIMIT);
+      authorize(event);
+      const latest = store.get(input);
+      if (disposed || generation !== epoch || version !== revision(input.chatId) || !latest || !canReadArtifactThumbnail(latest) || latest.sha256 !== item.sha256) return null;
+      return artifactThumbnailDataUrl(bytes, item);
+    } catch { return null; }
+  });
   options.ipcMain.handle("artifacts.sync", event => { authorize(event); requestSync(); return { ...sync }; });
   return {
     recordPublished(event: Record<string, unknown>) {
@@ -256,7 +272,7 @@ export function createArtifactRuntime(options: {
       if (notification)
         clearTimeout(notification);
       notification = null;
-      for (const channel of ["artifacts.list", "artifacts.organize", "artifacts.sync"])
+      for (const channel of ["artifacts.list", "artifacts.organize", "artifacts.sync", "artifacts.folder", "artifacts.organizeMany", "artifacts.thumbnail"])
         options.ipcMain.removeHandler(channel);
     },
   };

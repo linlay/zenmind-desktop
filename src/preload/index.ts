@@ -132,6 +132,9 @@ const api: DesktopApi = {
     },
   },
   artifacts: {
+    folder: (input) => ipcRenderer.invoke("artifacts.folder", input),
+    organizeMany: (input) => ipcRenderer.invoke("artifacts.organizeMany", input),
+    thumbnail: (input) => ipcRenderer.invoke("artifacts.thumbnail", input),
     organize: (input) => ipcRenderer.invoke("artifacts.organize", input),
     sync: () => ipcRenderer.invoke("artifacts.sync"),
     act: (input) => ipcRenderer.invoke("artifacts.act", input),

@@ -1,229 +1,236 @@
-import { EllipsisOutlined, FileOutlined, ReloadOutlined, SearchOutlined, StarFilled, StarOutlined } from "@ant-design/icons";
-import { Dropdown, Modal, Select } from "antd";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ARTIFACT_CATEGORIES, artifactExternalExtension, type DesktopArtifactActionError, type DesktopArtifactCategory, type DesktopArtifactActionInput, type DesktopArtifactListResult, type DesktopArtifactRecord } from "../../../shared/artifacts";
+import { AppstoreOutlined, BarsOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, EyeOutlined, FolderAddOutlined, FolderOpenOutlined, InfoCircleOutlined, InboxOutlined, LinkOutlined, MenuOutlined, MessageOutlined, ReadOutlined, ReloadOutlined, RightOutlined, SearchOutlined, StarFilled, StarOutlined, SyncOutlined, TagOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { ARTIFACT_CATEGORIES, artifactExternalExtension, type DesktopArtifactActionInput, type DesktopArtifactFolder, type DesktopArtifactIdentity, type DesktopArtifactListResult, type DesktopArtifactMutationResult, type DesktopArtifactOrganizeInput, type DesktopArtifactRecord } from "../../../shared/artifacts";
 import { formatEpochMillis } from "../../../shared/time-contract";
 import { useI18n } from "../../i18n/useI18n";
+import { LibraryDialogs, type LibraryDialog } from "./LibraryDialogs";
+import { createLibraryThumbnailLoader, LibraryThumbnailContext } from "./LibraryFileVisual";
+import { LibraryInspector } from "./LibraryInspector";
+import { LibraryFileCard, LibraryFolderCard } from "./LibraryItems";
+import { LibraryMenu, type LibraryMenuItem, type LibraryMenuState } from "./LibraryMenu";
+import { LibrarySidebar } from "./LibrarySidebar";
+import { LIBRARY_DRAG_TYPE, artifactCanOpen, artifactIdentity, artifactKey, artifactName, folderTrail, libraryScope, readLibraryLayout, type LibraryLayout, type LibraryView } from "./library-model";
 
 const PAGE_SIZE = 50;
-type ArtifactUiAction = DesktopArtifactActionInput["action"] | "details";
-
-function orderedActions(item: DesktopArtifactRecord): ArtifactUiAction[] {
-  const extension = artifactExternalExtension(item.name, item.mimeType);
-  if (extension === ".html" || extension === ".htm" || extension === ".xhtml") {
-    return ["view", "open-browser", "download", "details", "reveal", "open-default"];
-  }
-  if (extension) {
-    return ["view", "open-default", "download", "details", "reveal", "open-browser"];
-  }
-  return ["view", "download", "details", "reveal"];
-}
+const EMPTY: DesktopArtifactListResult = { records: [], total: 0, tags: [], folders: [], categories: {}, counts: { all: 0, starred: 0, unfiled: 0, recent: 0 }, sync: { phase: "idle", completed: 0, total: 0, failed: 0, denied: 0 } };
 
 export function ArtifactManagementPage({ onOpenChat, onView }: {
-  onView: (request: { agentKey: string; chatId: string; artifactId: string; relativePath: string; name: string }) => boolean;
-  onOpenChat: (request: { agentKey: string; chatId: string }) => void;
+  onView(request: { agentKey: string; chatId: string; artifactId: string; relativePath: string; name: string }): boolean;
+  onOpenChat(request: { agentKey: string; chatId: string }): void;
 }) {
   const { t } = useI18n();
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  const page = useRef<HTMLElement>(null), searchInput = useRef<HTMLInputElement>(null);
+  const [view, setView] = useState<LibraryView>({ kind: "all" });
+  const [result, setResult] = useState<DesktopArtifactListResult>(EMPTY);
+  const [search, setSearch] = useState(""), [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
-  const [result, setResult] = useState<DesktopArtifactListResult>({ records: [], total: 0, tags: [], sync: { phase: "idle", completed: 0, total: 0, failed: 0, denied: 0 } });
-  const [category, setCategory] = useState<DesktopArtifactCategory | undefined>();
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [tag, setTag] = useState<string | undefined>();
-  const [draftTags, setDraftTags] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const [selected, setSelected] = useState<DesktopArtifactRecord | null>(null);
-  const [actionBusy, setActionBusy] = useState(false);
-  const [actionError, setActionError] = useState<DesktopArtifactActionError | "restart" | null>(null);
-  const [platform, setPlatform] = useState<string>("");
-  async function act(item: DesktopArtifactRecord, action: DesktopArtifactActionInput["action"]) {
-    setActionBusy(true);
-    setActionError(null);
-    try {
-      if (typeof window.electronAPI.artifacts.act !== "function") {
-        setActionError("restart");
-        return;
-      }
-      const response = await window.electronAPI.artifacts.act({ chatId: item.chatId, runId: item.runId, artifactId: item.artifactId, action });
-      if (!response.ok) { setActionError(response.error || "failed"); return; }
-      if (action === "view" && !onView({ ...response, chatId: item.chatId, artifactId: item.artifactId, name: item.name })) setActionError("failed");
-    } catch { setActionError("failed"); }
-    finally { setActionBusy(false); }
-  }
-  function runAction(item: DesktopArtifactRecord, action: ArtifactUiAction) {
-    if (action === "details") { setDraftTags(item.tags); setSelected(item); return; }
-    void act(item, action);
-  }
-  async function openChat(chatId: string) {
-    setActionError(null);
-    try {
-      const chat = result.records.find(item => item.chatId === chatId && item.agentKey) || await window.electronAPI.assistant.getChatInfo(chatId);
-      if (!chat?.agentKey) { setActionError("failed"); return; }
-      onOpenChat({ agentKey: chat.agentKey, chatId });
-    } catch { setActionError("failed"); }
-  }
-  const generation = useRef(0);
+  const [category, setCategory] = useState<DesktopArtifactRecord["category"] | undefined>();
+  const [sort, setSort] = useState<"date" | "name" | "type">("date");
+  const [layout, setLayout] = useState<LibraryLayout>(readLibraryLayout);
+  const [expanded, setExpanded] = useState(new Set<string>());
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false), [mutating, setMutating] = useState(false);
+  const [loadError, setLoadError] = useState(false), [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [menu, setMenu] = useState<LibraryMenuState | null>(null), [dialog, setDialog] = useState<LibraryDialog | null>(null);
+  const [detailsVisible, setDetailsVisible] = useState(true), [detailsOpen, setDetailsOpen] = useState(false), [sidebarOpen, setSidebarOpen] = useState(false);
+  const [narrow, setNarrow] = useState(false), [focusTags, setFocusTags] = useState(0);
+  const [platform, setPlatform] = useState("");
+  const generation = useRef(0), mounted = useRef(true);
+  const thumbnails = useMemo(createLibraryThumbnailLoader, []);
+  const input = useMemo(() => ({ ...libraryScope(view), search: query, category, offset, limit: PAGE_SIZE, sort }), [view, query, category, offset, sort]);
   const load = useCallback(async () => {
     const request = ++generation.current;
-    setBusy(true);
-    setError(false);
+    setBusy(true); setLoadError(false);
     try {
-      const next = await window.electronAPI.artifacts.list({ search: query, offset, limit: PAGE_SIZE, category, favoritesOnly, tag });
-      if (request === generation.current) {
-        setResult(next);
-        if (offset > 0 && offset >= next.total) setOffset(Math.max(0, Math.floor((next.total - 1) / PAGE_SIZE) * PAGE_SIZE));
-        setSelected(previous => previous ? next.records.find(item => item.chatId === previous.chatId && item.runId === previous.runId && item.artifactId === previous.artifactId) ?? null : null);
-      }
-    } catch {
-      if (request === generation.current) setError(true);
-    } finally {
-      if (request === generation.current) setBusy(false);
-    }
-  }, [query, offset, category, favoritesOnly, tag]);
-
-  async function organize(item: DesktopArtifactRecord, patch: { favorite?: boolean; tags?: string[] }) {
-    setActionBusy(true); setActionError(null);
-    try {
-      await window.electronAPI.artifacts.organize({ chatId: item.chatId, runId: item.runId, artifactId: item.artifactId, ...patch });
-      await load();
-    } catch { setActionError("failed"); }
-    finally { setActionBusy(false); }
-  }
-  async function synchronize() {
-    setActionError(null);
-    try { const sync = await window.electronAPI.artifacts.sync(); setResult(previous => ({ ...previous, sync })); await load(); }
-    catch { setActionError("failed"); }
-  }
-  function status(item: DesktopArtifactRecord) {
-    if (item.sourceState !== "active") return item.sourceState;
-    if (item.contentState !== "ready") return item.contentState;
-    if (item.accessState === "denied" || item.accessState === "error") return item.accessState;
-    return "ready";
-  }
-
+      const next = await window.electronAPI.artifacts.list(input);
+      if (!mounted.current || request !== generation.current) return;
+      setResult(next);
+      const visible = new Set(next.records.map(artifactKey));
+      setSelected(previous => previous.filter(key => visible.has(key)));
+      if (offset > 0 && offset >= next.total) setOffset(Math.max(0, Math.floor((next.total - 1) / PAGE_SIZE) * PAGE_SIZE));
+      if (typeof input.folderId === "string" && !next.folders.some(folder => folder.id === input.folderId)) { setView({ kind: "all" }); setSelected([]); }
+    } catch { if (mounted.current && request === generation.current) setLoadError(true); }
+    finally { if (mounted.current && request === generation.current) setBusy(false); }
+  }, [input, offset]);
+  const refresh = useRef(load); refresh.current = load;
   useEffect(() => {
-    void window.electronAPI.settings.getPlatform().then(setPlatform).catch(() => undefined);
-  }, []);
-  useEffect(() => {
-    const timer = window.setTimeout(() => { setQuery(search.trim()); setOffset(0); }, 200);
-    return () => window.clearTimeout(timer);
-  }, [search]);
+    mounted.current = true; thumbnails.activate();
+    return () => { mounted.current = false; generation.current++; thumbnails.dispose(); };
+  }, [thumbnails]);
   useEffect(() => {
     const unsubscribe = window.electronAPI.artifacts.onChanged(() => void load());
-    void load();
-    return () => { generation.current++; unsubscribe(); };
+    void load(); return () => { generation.current++; unsubscribe(); };
   }, [load]);
+  useEffect(() => {
+    if (search.trim() === query) return;
+    const timer = window.setTimeout(() => { setQuery(search.trim()); setOffset(0); setSelected([]); }, 200);
+    return () => window.clearTimeout(timer);
+  }, [search, query]);
+  useEffect(() => { void window.electronAPI.settings.getPlatform().then(value => { if (mounted.current) setPlatform(value); }).catch(() => undefined); }, []);
+  useEffect(() => {
+    const element = page.current;
+    if (!element) return;
+    const update = () => { if (mounted.current) setNarrow(element.clientWidth <= 1050); };
+    update(); const observer = new ResizeObserver(update); observer.observe(element); return () => observer.disconnect();
+  }, []);
+  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 3000); return () => window.clearTimeout(timer); }, [toast]);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const selectedItems = result.records.filter(item => selected.includes(artifactKey(item)));
+  const current = selectedItems.length === 1 ? selectedItems[0] : null;
+  const path = view.kind === "folder" ? folderTrail(result.folders, view.id) : [];
+  const title = view.kind === "folder" ? path.at(-1)?.name || t("library.myFolders") : view.kind === "tag" ? view.tag : t(`library.view.${view.kind}`);
+  const childFolders = !query && !category && (view.kind === "all" || view.kind === "folder") ? result.folders.filter(folder => folder.parentId === (view.kind === "folder" ? view.id : null)) : [];
+  const isWindows = platform === "win32", isMac = platform === "darwin";
 
-  return <section className="artifact-management-page" aria-labelledby="artifact-management-title">
-    <header className="artifact-management-header">
-      <div>
-        <h1 id="artifact-management-title">{t("nav.artifactManagement")}</h1>
-        <p>{t("artifactManagement.description")}</p>
-      </div>
-      <button type="button" className="artifact-management-button" disabled={result.sync.phase === "syncing"} onClick={() => void synchronize()}>
-        <ReloadOutlined spin={result.sync.phase === "syncing"} />{t("artifactManagement.sync")}
-      </button>
-    </header>
-    <div className="artifact-management-toolbar">
-      <label className="artifact-management-search">
-        <SearchOutlined aria-hidden="true" />
-        <input value={search} onChange={(event) => setSearch(event.target.value)}
-          aria-label={t("artifactManagement.search")} placeholder={t("artifactManagement.search")} />
-      </label>
-      <div className="artifact-management-filters">
-        <Select aria-label={t("artifactManagement.type")} value={category || "all"} onChange={value => { setCategory(value === "all" ? undefined : value as DesktopArtifactCategory); setOffset(0); }}
-          options={[{ value: "all", label: t("artifactManagement.allTypes") }, ...ARTIFACT_CATEGORIES.map(value => ({ value, label: t(`artifactManagement.category.${value}`) }))]} />
-        <Select allowClear aria-label={t("artifactManagement.tags")} placeholder={t("artifactManagement.tags")} value={tag} onChange={value => { setTag(value); setOffset(0); }} options={result.tags.map(value => ({ value, label: value }))} />
-        <button type="button" className="artifact-management-button" aria-pressed={favoritesOnly} onClick={() => { setFavoritesOnly(!favoritesOnly); setOffset(0); }}>
-          {favoritesOnly ? <StarFilled /> : <StarOutlined />}{t("artifactManagement.favorites")}
-        </button>
-        <span aria-live="polite">{t("artifactManagement.count", { count: result.total })}</span>
-      </div>
-    </div>
-    <div className="artifact-management-sync" role="status">
-      {t(`artifactManagement.sync.${result.sync.phase}`, { completed: result.sync.completed, total: result.sync.total, failed: result.sync.failed, denied: result.sync.denied })}
-      {result.sync.lastSyncedAt && <span>{t("artifactManagement.lastSynced", { time: formatEpochMillis(result.sync.lastSyncedAt) })}</span>}
-    </div>
-    <p className="artifact-management-scope">{t("artifactManagement.scope")}</p>
-    {actionBusy && <p role="status">{t("artifactManagement.preparing")}</p>}
-    {actionError && <p role="alert">{t(actionError === "restart" ? "artifactManagement.restartRequired" : actionError === "failed" ? "artifactManagement.actionFailed" : `artifactManagement.status.${actionError}`)}</p>}
-    {error ? <div className="artifact-management-empty" role="alert">{t("artifactManagement.loadFailed")}</div>
-      : result.records.length === 0 ? <div className="artifact-management-empty" role="status">
-        <FileOutlined /><p>{t(busy ? "artifactManagement.loading" : query || category || favoritesOnly || tag ? "artifactManagement.noResults" : "artifactManagement.empty")}</p>
-      </div> : <div className="artifact-management-table-scroll" aria-busy={busy}>
-        <table className="artifact-management-table">
-          <thead><tr>
-            <th>{t("artifactManagement.name")}</th><th>{t("artifactManagement.type")}</th><th>{t("artifactManagement.source")}</th>
-            <th>{t("artifactManagement.size")}</th><th>{t("artifactManagement.pushedAt")}</th><th>{t("artifactManagement.actions")}</th>
-          </tr></thead>
-          <tbody>{result.records.map((item) => {
-            const chat = item;
-            const unavailable = item.sourceState !== "active" || ["unresolved", "ambiguous"].includes(item.contentState);
-            const labels: Record<ArtifactUiAction, string> = {
-              download: t("artifactManagement.download"),
-              view: t("artifactManagement.view"),
-              details: t("artifactManagement.details"),
-              reveal: t(platform === "win32" ? "artifactManagement.revealExplorer" : "artifactManagement.revealFinder"),
-              "open-default": t("artifactManagement.openDefault"),
-              "open-browser": t("artifactManagement.openBrowser"),
-            };
-            const actions = orderedActions(item).map((key) => ({ key, label: labels[key] }));
-            return <tr key={JSON.stringify([item.chatId, item.runId, item.artifactId])}>
-              <td><div className="artifact-management-title-row">
-                <button type="button" className="artifact-management-star" disabled={actionBusy} aria-pressed={item.favorite} aria-label={t(item.favorite ? "artifactManagement.unfavorite" : "artifactManagement.favorite")} onClick={() => void organize(item, { favorite: !item.favorite })}>{item.favorite ? <StarFilled /> : <StarOutlined />}</button>
-                <button type="button" className="artifact-management-name artifact-management-clamp" title={item.name} onClick={() => runAction(item, "details")}>{item.name}</button>
-              </div>
-                <div className="artifact-management-tags">{item.tags.map(value => <span key={value}>{value}</span>)}</div>
-                {status(item) !== "ready" && <span className="artifact-management-status">{t(`artifactManagement.status.${status(item)}`)}</span>}
-              </td>
-              <td><span className="artifact-management-clamp" title={item.mimeType}>{t(`artifactManagement.category.${item.category}`)}</span></td>
-              <td><button type="button" title={chat?.chatName || item.chatId} className="artifact-management-chat artifact-management-clamp" onClick={() => void openChat(item.chatId)}>
-                {chat?.chatName || item.chatId}
-              </button></td>
-              <td className="artifact-management-size">{formatSize(item.sizeBytes)}</td>
-              <td><time className="artifact-management-clamp">{formatEpochMillis(item.pushedAt)}</time></td>
-              <td><div className="artifact-management-actions">
-                {actions.slice(0, 2).map((action) => <button key={action.key} type="button" disabled={actionBusy || unavailable} onClick={() => runAction(item, action.key)}>{action.label}</button>)}
-                <Dropdown trigger={["click"]} placement="bottomRight" menu={{ items: actions.slice(2).map(action => ({ ...action, disabled: action.key !== "details" && unavailable })), onClick: ({ key }) => runAction(item, key as ArtifactUiAction) }}>
-                  <button type="button" disabled={actionBusy} className="artifact-management-extra-menu" aria-label={t("artifactManagement.extraMenuButton")} title={t("artifactManagement.extraMenuButton")}><EllipsisOutlined /></button>
-                </Dropdown>
-              </div></td>
-            </tr>;
-          })}</tbody>
-        </table>
-      </div>}
-    <Modal open={selected !== null} title={t("artifactManagement.details")} footer={null} onCancel={() => setSelected(null)}>
-      {selected && <dl className="artifact-management-details">
-        <dt>{t("artifactManagement.name")}</dt><dd>{selected.name}</dd>
-        <dt>{t("artifactManagement.type")}</dt><dd>{selected.mimeType || t("artifactManagement.unknownType")}</dd>
-        <dt>{t("artifactManagement.source")}</dt><dd>{selected.chatName || selected.chatId}</dd>
-        <dt>{t("artifactManagement.size")}</dt><dd>{formatSize(selected.sizeBytes)}</dd>
-        <dt>{t("artifactManagement.pushedAt")}</dt><dd>{formatEpochMillis(selected.pushedAt)}</dd>
-        <dt>{t("artifactManagement.artifactId")}</dt><dd>{selected.artifactId}</dd>
-        <dt>{t("artifactManagement.runId")}</dt><dd>{selected.runId || t("artifactManagement.status.unresolved")}</dd>
-        <dt>{t("artifactManagement.status")}</dt><dd>{t(`artifactManagement.status.${status(selected)}`)}</dd>
-        <dt>{t("artifactManagement.checksum")}</dt><dd>{selected.sha256 || "—"}</dd>
-        <dt>{t("artifactManagement.tags")}</dt><dd>
-          <Select mode="tags" aria-label={t("artifactManagement.tags")} className="artifact-management-tag-editor" value={draftTags} onChange={setDraftTags} maxCount={20}
-            options={result.tags.map(value => ({ value, label: value }))} />
-          <p>{t("artifactManagement.tagsHelp")}</p>
-          <button type="button" className="artifact-management-button" disabled={actionBusy || draftTags.some(value => !value.trim() || value.length > 64)} onClick={() => void organize(selected, { tags: draftTags })}>{t("artifactManagement.saveTags")}</button>
-        </dd>
-      </dl>}
-    </Modal>
-    <footer className="artifact-management-pagination">
-      <button type="button" className="artifact-management-button" disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>{t("artifactManagement.previous")}</button>
-      <span>{Math.floor(offset / PAGE_SIZE) + 1} / {Math.max(1, Math.ceil(result.total / PAGE_SIZE))}</span>
-      <button type="button" className="artifact-management-button" disabled={busy || offset + PAGE_SIZE >= result.total} onClick={() => setOffset(offset + PAGE_SIZE)}>{t("artifactManagement.next")}</button>
-    </footer>
-  </section>;
-}
+  function navigate(next: LibraryView) {
+    setView(next); setSearch(""); setQuery(""); setCategory(undefined); setOffset(0); setSelected([]); setError(null); setMenu(null); setSidebarOpen(false); setDetailsOpen(false);
+    if (next.kind === "folder") setExpanded(previous => new Set([...previous, ...folderTrail(result.folders, next.id).map(folder => folder.id)]));
+  }
+  function openDialog(next: LibraryDialog) { setError(null); setMenu(null); setDialog(next); }
+  async function mutate(operation: () => Promise<void | DesktopArtifactMutationResult>, message?: string) {
+    if (mutating) return false;
+    setMutating(true); setError(null);
+    try {
+      const response = await operation();
+      if (!mounted.current) return false;
+      if (response && !response.ok) { setError(t(`library.error.${response.error}`)); return false; }
+      await refresh.current();
+      if (mounted.current && message) setToast(message);
+      return true;
+    } catch { if (mounted.current) setError(t("library.mutationFailed")); return false; }
+    finally { if (mounted.current) setMutating(false); }
+  }
+  function organize(item: DesktopArtifactRecord, patch: Omit<DesktopArtifactOrganizeInput, keyof DesktopArtifactIdentity>) {
+    return mutate(() => window.electronAPI.artifacts.organize({ ...artifactIdentity(item), ...patch }));
+  }
+  function move(items: DesktopArtifactIdentity[], folderId: string | null) {
+    return mutate(() => window.electronAPI.artifacts.organizeMany({ items, folderId }), t("library.moved", { count: items.length }));
+  }
+  async function act(item: DesktopArtifactRecord, action: DesktopArtifactActionInput["action"]) {
+    if (mutating) return;
+    setMutating(true); setError(null);
+    try {
+      const response = await window.electronAPI.artifacts.act({ ...artifactIdentity(item), action });
+      if (!mounted.current) return;
+      if (!response.ok) setError(t(response.error && response.error !== "failed" ? `artifactManagement.status.${response.error}` : "artifactManagement.actionFailed"));
+      else if (action === "view" && !onView({ ...response, chatId: item.chatId, artifactId: item.artifactId, name: artifactName(item) })) setError(t("artifactManagement.actionFailed"));
+    } catch { if (mounted.current) setError(t("artifactManagement.actionFailed")); }
+    finally { if (mounted.current) setMutating(false); }
+  }
+  async function openChat(item: DesktopArtifactRecord) {
+    setError(null);
+    try {
+      const chat = item.agentKey ? item : await window.electronAPI.assistant.getChatInfo(item.chatId);
+      if (!mounted.current) return;
+      if (!chat?.agentKey) setError(t("artifactManagement.actionFailed")); else onOpenChat({ agentKey: chat.agentKey, chatId: item.chatId });
+    } catch { if (mounted.current) setError(t("artifactManagement.actionFailed")); }
+  }
+  async function synchronize() {
+    setError(null);
+    try { const sync = await window.electronAPI.artifacts.sync(); if (mounted.current) setResult(previous => ({ ...previous, sync })); }
+    catch { if (mounted.current) setError(t("artifactManagement.actionFailed")); }
+  }
+  function showMenu(event: MouseEvent<HTMLElement>, items: LibraryMenuItem[]) {
+    const anchor = event.currentTarget, rect = anchor.getBoundingClientRect();
+    setMenu({ anchor, x: event.type === "contextmenu" ? event.clientX : rect.right - 228, y: event.type === "contextmenu" ? event.clientY : rect.bottom + 5, items });
+  }
+  function showDetails(item: DesktopArtifactRecord) { setSelected([artifactKey(item)]); setDetailsVisible(true); setDetailsOpen(true); }
+  function fileMenu(item: DesktopArtifactRecord, event: MouseEvent<HTMLElement>) {
+    setSelected([artifactKey(item)]);
+    const canOpen = artifactCanOpen(item), external = !!artifactExternalExtension(item.name, item.mimeType);
+    showMenu(event, [
+      { key: "view", label: t("library.openItem"), icon: <EyeOutlined />, disabled: !canOpen || mutating, run: () => void act(item, "view") },
+      { key: "favorite", label: t(item.favorite ? "artifactManagement.unfavorite" : "artifactManagement.favorite"), icon: item.favorite ? <StarFilled /> : <StarOutlined />, disabled: mutating, run: () => void organize(item, { favorite: !item.favorite }) },
+      { key: "separator-1", separator: true },
+      { key: "move", label: t("library.moveTo"), icon: <FolderOpenOutlined />, disabled: mutating, run: () => openDialog({ kind: "move", items: [artifactIdentity(item)], folderId: item.folderId }) },
+      { key: "rename", label: t("library.rename"), icon: <EditOutlined />, disabled: mutating, run: () => openDialog({ kind: "rename-item", item }) },
+      { key: "tags", label: t("library.editTags"), icon: <TagOutlined />, run: () => { showDetails(item); setFocusTags(value => value + 1); } },
+      { key: "details", label: t("artifactManagement.details"), icon: <InfoCircleOutlined />, run: () => showDetails(item) },
+      { key: "separator-2", separator: true },
+      { key: "source", label: t("library.backToSource"), icon: <MessageOutlined />, disabled: item.sourceState !== "active", run: () => void openChat(item) },
+      { key: "download", label: t("artifactManagement.download"), icon: <LinkOutlined />, disabled: !canOpen || mutating, run: () => void act(item, "download") },
+      ...((isMac || isWindows) ? [{ key: "reveal", label: t(isWindows ? "artifactManagement.revealExplorer" : "artifactManagement.revealFinder"), icon: <FolderOpenOutlined />, disabled: !canOpen || mutating, run: () => void act(item, "reveal") }] : []),
+      ...(external ? [{ key: "default", label: t("artifactManagement.openDefault"), icon: <ReadOutlined />, disabled: !canOpen || mutating, run: () => void act(item, "open-default") }, { key: "browser", label: t("artifactManagement.openBrowser"), icon: <EyeOutlined />, disabled: !canOpen || mutating, run: () => void act(item, "open-browser") }] : []),
+    ]);
+  }
+  function folderMenu(folder: DesktopArtifactFolder, event: MouseEvent<HTMLElement>) {
+    showMenu(event, [
+      { key: "open", label: t("library.openFolder"), icon: <FolderOpenOutlined />, run: () => navigate({ kind: "folder", id: folder.id }) },
+      { key: "create", label: t("library.newChildFolder"), icon: <FolderAddOutlined />, run: () => openDialog({ kind: "create", parentId: folder.id }) },
+      { key: "separator", separator: true },
+      { key: "rename", label: t("library.rename"), icon: <EditOutlined />, disabled: mutating, run: () => openDialog({ kind: "rename-folder", folder }) },
+      { key: "delete", label: t("library.deleteEmptyFolder"), icon: <DeleteOutlined />, danger: true, disabled: mutating || folder.childCount > 0 || folder.totalCount > 0, run: () => openDialog({ kind: "delete-folder", folder }) },
+    ]);
+  }
+  function workspaceMenu(event: MouseEvent<HTMLElement>) {
+    showMenu(event, [
+      { key: "create", label: t("library.newRootFolder"), icon: <FolderAddOutlined />, run: () => openDialog({ kind: "create", parentId: null }) },
+      { key: "sync", label: t("artifactManagement.sync"), icon: <SyncOutlined />, disabled: result.sync.phase === "syncing", run: () => void synchronize() },
+      { key: "separator", separator: true },
+      { key: "about", label: t("library.about"), icon: <InfoCircleOutlined />, run: () => openDialog({ kind: "about" }) },
+    ]);
+  }
+  async function confirmDialog(name: string, folderId: string | null) {
+    if (!dialog) return;
+    let ok = false;
+    if (dialog.kind === "create") ok = await mutate(() => window.electronAPI.artifacts.folder({ action: "create", parentId: dialog.parentId, name }), t("library.created"));
+    if (dialog.kind === "rename-folder") ok = await mutate(() => window.electronAPI.artifacts.folder({ action: "rename", id: dialog.folder.id, name }), t("library.renamed"));
+    if (dialog.kind === "delete-folder") ok = await mutate(() => window.electronAPI.artifacts.folder({ action: "delete", id: dialog.folder.id }), t("library.deleted"));
+    if (dialog.kind === "rename-item") ok = await organize(dialog.item, { displayName: name });
+    if (dialog.kind === "move") ok = await move(dialog.items, folderId);
+    if (ok && mounted.current) setDialog(null);
+  }
+  function select(item: DesktopArtifactRecord, additive: boolean) {
+    const key = artifactKey(item);
+    setSelected(previous => additive ? previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key] : [key]);
+    setDetailsVisible(true);
+  }
+  function drag(event: DragEvent, item: DesktopArtifactRecord) {
+    const items = selected.includes(artifactKey(item)) ? selectedItems : [item];
+    if (!selected.includes(artifactKey(item))) setSelected([artifactKey(item)]);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(LIBRARY_DRAG_TYPE, JSON.stringify(items.map(artifactIdentity)));
+  }
+  function changeLayout(next: LibraryLayout) { setLayout(next); try { localStorage.setItem("desktop.library.layout", next); } catch { /* Optional local presentation preference. */ } }
+  const syncText = t(`artifactManagement.sync.${result.sync.phase}`, { completed: result.sync.completed, total: result.sync.total, failed: result.sync.failed, denied: result.sync.denied });
 
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  return <LibraryThumbnailContext.Provider value={thumbnails}><section ref={page} className={`artifact-management-page library-page${sidebarOpen ? " is-sidebar-open" : ""}${detailsOpen ? " is-details-open" : ""}${!detailsVisible ? " is-details-hidden" : ""}`} aria-label={t("nav.artifactManagement")} onKeyDown={event => {
+    if (dialog || menu || (event.target as HTMLElement).closest("input,textarea,[contenteditable=true]")) return;
+    if ((isMac ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); searchInput.current?.focus(); }
+    if ((isMac ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === "a") { event.preventDefault(); setSelected(result.records.map(artifactKey)); }
+    if (event.key === "Escape") { setSidebarOpen(false); setDetailsOpen(false); setSelected([]); }
+  }}>
+    {sidebarOpen && <button type="button" className="library-sidebar-mask" aria-label={t("library.closeNavigation")} onClick={() => setSidebarOpen(false)} />}
+    <LibrarySidebar view={view} folders={result.folders} counts={result.counts} tags={result.tags} expanded={expanded} syncing={result.sync.phase === "syncing"} onNavigate={navigate} onExpand={id => setExpanded(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onCreate={parentId => openDialog({ kind: "create", parentId })} onFolderMenu={folderMenu} onWorkspaceMenu={workspaceMenu} onMove={(items, folderId) => { if (!mutating) void move(items, folderId); }} onSync={() => void synchronize()} />
+    <main className="library-workspace">
+      <header className="library-topbar"><button type="button" className="library-icon-button library-navigation-toggle" aria-label={t("library.navigation")} onClick={() => setSidebarOpen(!sidebarOpen)}><MenuOutlined /></button><nav className="library-breadcrumbs" aria-label={t("library.breadcrumb")}><button type="button" onClick={() => navigate({ kind: "all" })}>{t("nav.artifactManagement")}</button>{path.length ? path.map(folder => <span key={folder.id}><RightOutlined /><button type="button" onClick={() => navigate({ kind: "folder", id: folder.id })}>{folder.name}</button></span>) : <span><RightOutlined /><strong>{title}</strong></span>}</nav><button type="button" className="library-icon-button" aria-label={t("library.toggleDetails")} aria-pressed={narrow ? detailsOpen : detailsVisible} onClick={() => { if (narrow) setDetailsOpen(!detailsOpen); else setDetailsVisible(!detailsVisible); }}><InfoCircleOutlined /></button></header>
+      <div className="library-main-columns"><section className="library-content" aria-label={t("library.files")}>
+        <div className="library-content-head"><div className="library-title-row"><div><h1>{title}</h1><p>{t(view.kind === "folder" ? "library.folderSubtitle" : view.kind === "unfiled" ? "library.unfiledSubtitle" : view.kind === "recent" ? "library.recentSubtitle" : view.kind === "starred" ? "library.starredSubtitle" : "library.allSubtitle")}</p></div><div className="library-head-actions"><button type="button" className="library-button" onClick={() => openDialog({ kind: "create", parentId: view.kind === "folder" ? view.id : null })}><FolderAddOutlined /><span>{t("library.newFolder")}</span></button><button type="button" className="library-icon-button" aria-label={t("library.viewMenu")} onClick={event => showMenu(event, [
+          { key: "select", label: t("library.selectPage"), icon: <CheckOutlined />, disabled: !result.records.length, run: () => setSelected(result.records.map(artifactKey)) },
+          { key: "sync", label: t("artifactManagement.sync"), icon: <SyncOutlined />, disabled: result.sync.phase === "syncing", run: () => void synchronize() },
+          { key: "about", label: t("library.about"), icon: <InfoCircleOutlined />, run: () => openDialog({ kind: "about" }) },
+        ])}><EllipsisOutlined /></button></div></div>
+        <div className="library-search-row"><label className="library-search"><SearchOutlined /><input ref={searchInput} value={search} onChange={event => setSearch(event.target.value)} type="search" aria-label={t("artifactManagement.search")} placeholder={t(view.kind === "folder" ? "library.searchFolder" : "artifactManagement.search", { name: title })} /><kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd></label><div className="library-display-controls"><button type="button" className="library-sort" aria-label={t("library.sort")} onClick={event => showMenu(event, (["date", "name", "type"] as const).map(value => ({ key: value, label: t(`library.sort.${value}`), checked: sort === value, run: () => { setSort(value); setOffset(0); } })))}>{t(`library.sort.${sort}`)}<DownOutlined /></button><div className="library-layout-switcher" role="group" aria-label={t("library.layout")}>
+          {(["small", "large", "list"] as const).map(value => <button type="button" key={value} className={layout === value ? "is-active" : ""} aria-label={t(`library.layout.${value}`)} title={t(`library.layout.${value}`)} aria-pressed={layout === value} onClick={() => changeLayout(value)}>{value === "list" ? <BarsOutlined /> : <AppstoreOutlined className={`library-layout-${value}`} />}</button>)}
+        </div></div></div>
+        <div className="library-filters" aria-label={t("artifactManagement.type")}><button type="button" className={!category ? "is-active" : ""} aria-pressed={!category} onClick={() => { setCategory(undefined); setOffset(0); setSelected([]); }}>{t("library.allTypes")}<small>{Object.values(result.categories).reduce((sum, value) => sum + value, 0)}</small></button>{ARTIFACT_CATEGORIES.map(value => <button type="button" key={value} className={category === value ? "is-active" : ""} aria-pressed={category === value} onClick={() => { setCategory(value); setOffset(0); setSelected([]); }}>{t(`artifactManagement.category.${value}`)}{result.categories[value] ? <small>{result.categories[value]}</small> : null}</button>)}</div></div>
+        {error && !dialog && <p role="alert" className="library-error">{error}<button type="button" className="library-icon-button" aria-label={t("common.close")} onClick={() => setError(null)}><CloseOutlined /></button></p>}
+        {selected.length > 1 && <div className="library-selectionbar"><span>{t("library.selected", { count: selected.length })}</span><button type="button" className="library-button" disabled={mutating} onClick={() => openDialog({ kind: "move", items: selectedItems.map(artifactIdentity), folderId: view.kind === "folder" ? view.id : null })}><FolderOpenOutlined />{t("library.moveTo")}</button><button type="button" className="library-button" disabled={mutating} onClick={() => void mutate(() => window.electronAPI.artifacts.organizeMany({ items: selectedItems.map(artifactIdentity), favorite: true }))}><StarOutlined />{t("artifactManagement.favorite")}</button><button type="button" className="library-icon-button" aria-label={t("library.clearSelection")} onClick={() => setSelected([])}><CloseOutlined /></button></div>}
+        <div className="library-browse" aria-busy={busy || mutating}>
+          {loadError ? <div className="library-empty" role="alert"><p>{t("artifactManagement.loadFailed")}</p><button type="button" className="library-button" onClick={() => void load()}><ReloadOutlined />{t("artifactManagement.refresh")}</button></div> : <>
+            {childFolders.length > 0 && <section><div className="library-section-head"><h2>{t("library.folders")}<small>{childFolders.length}</small></h2><span>{t("library.dragHint")}</span></div><div className="library-folders">{childFolders.map(folder => <LibraryFolderCard key={folder.id} folder={folder} onNavigate={() => navigate({ kind: "folder", id: folder.id })} onMenu={event => folderMenu(folder, event)} onMove={(items, id) => { if (!mutating) void move(items, id); }} />)}</div></section>}
+            <div className="library-section-head"><h2>{t(query ? "library.searchResults" : "library.files")}<small>{result.total}</small></h2><span>{t("library.openHint")}</span></div>
+            {result.records.length ? <div className={`library-files layout-${layout}`}>{result.records.map(item => <LibraryFileCard key={artifactKey(item)} item={item} selected={selected.includes(artifactKey(item))} layout={layout} busy={mutating} onSelect={additive => select(item, additive)} onOpen={() => { if (artifactCanOpen(item)) void act(item, "view"); }} onMenu={event => fileMenu(item, event)} onDrag={drag} />)}</div> : <div className="library-empty" role="status"><InboxOutlined /><h2>{t(busy ? "artifactManagement.loading" : query || category || view.kind === "tag" || view.kind === "starred" ? "artifactManagement.noResults" : "library.emptyView")}</h2><p>{t(view.kind === "folder" ? "library.emptyFolderHelp" : "library.emptyLibraryHelp")}</p></div>}
+          </>}
+        </div>
+        <footer className="library-statusbar"><span>{t("artifactManagement.count", { count: result.total })}{selected.length > 0 && ` · ${t("library.selected", { count: selected.length })}`}</span><span className={`library-sync-summary phase-${result.sync.phase}`} title={result.sync.lastSyncedAt ? `${syncText} · ${formatEpochMillis(result.sync.lastSyncedAt)}` : syncText}>{result.sync.phase === "syncing" ? <SyncOutlined spin /> : <LinkOutlined />}<span>{syncText}</span></span>{result.total > PAGE_SIZE && <div className="library-pagination"><button type="button" className="library-icon-button" disabled={busy || offset === 0} aria-label={t("artifactManagement.previous")} onClick={() => { setOffset(Math.max(0, offset - PAGE_SIZE)); setSelected([]); }}><RightOutlined style={{ transform: "rotate(180deg)" }} /></button><span>{Math.floor(offset / PAGE_SIZE) + 1} / {Math.max(1, Math.ceil(result.total / PAGE_SIZE))}</span><button type="button" className="library-icon-button" disabled={busy || offset + PAGE_SIZE >= result.total} aria-label={t("artifactManagement.next")} onClick={() => { setOffset(offset + PAGE_SIZE); setSelected([]); }}><RightOutlined /></button></div>}</footer>
+      </section>
+      <LibraryInspector item={current} count={selected.length} folders={result.folders} busy={mutating} focusTags={focusTags} onClose={() => { if (narrow) setDetailsOpen(false); else setDetailsVisible(false); }} onOpen={() => { if (current) void act(current, "view"); }} onFavorite={() => { if (current) void organize(current, { favorite: !current.favorite }); }} onMenu={event => { if (current) fileMenu(current, event); }} onMove={() => { if (current) openDialog({ kind: "move", items: [artifactIdentity(current)], folderId: current.folderId }); }} onNavigate={id => navigate(id ? { kind: "folder", id } : { kind: "unfiled" })} onSource={() => { if (current) void openChat(current); }} onTags={tags => current ? organize(current, { tags }) : Promise.resolve(false)} />
+      </div>
+    </main>
+    {menu && <LibraryMenu menu={menu} onClose={closeMenu} />}
+    <LibraryDialogs dialog={dialog} folders={result.folders} busy={mutating} error={error} onCancel={() => { if (!mutating) { setDialog(null); setError(null); } }} onConfirm={(name, folderId) => void confirmDialog(name, folderId)} />
+    {(toast || mutating) && <div className="library-toast" role="status">{mutating ? <SyncOutlined spin /> : <CheckOutlined />}<span>{mutating ? t("library.saving") : toast}</span></div>}
+  </section></LibraryThumbnailContext.Provider>;
 }

@@ -12,7 +12,7 @@ export interface ArtifactPlatformApi {
   listChats(signal: AbortSignal): Promise<ArtifactChat[]>;
   listArchives(signal: AbortSignal): Promise<ArtifactChat[]>;
   listArtifacts(chatId: string, signal: AbortSignal): Promise<DesktopArtifactRecord[]>;
-  read(identity: DesktopArtifactIdentity, signal: AbortSignal): Promise<Buffer>;
+  read(identity: DesktopArtifactIdentity, signal: AbortSignal, maxBytes?: number): Promise<Buffer>;
 }
 export function artifactError(error: unknown): string {
   return error instanceof ArtifactPlatformError ? error.code : "failed";
@@ -50,7 +50,7 @@ export function createArtifactPlatformClient(options: {
   }>;
   fetchImpl?: typeof fetch;
 }): ArtifactPlatformApi {
-  async function request(route: string, body: unknown, signal: AbortSignal, binary = false): Promise<unknown> {
+  async function request(route: string, body: unknown, signal: AbortSignal, binary = false, maxBytes = 100 * 1024 * 1024): Promise<unknown> {
     const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(30000)]);
     for (const reason of ["missing", "unauthorized"] as const) {
       requestSignal.throwIfAborted();
@@ -65,7 +65,7 @@ export function createArtifactPlatformClient(options: {
         await response.body?.cancel();
         continue;
       }
-      const bytes = await bytesWithLimit(response, binary && response.ok ? 100 * 1024 * 1024 : 32 * 1024 * 1024);
+      const bytes = await bytesWithLimit(response, binary && response.ok ? maxBytes : 32 * 1024 * 1024);
       if (binary && response.ok)
         return bytes;
       let raw: unknown;
@@ -143,6 +143,6 @@ export function createArtifactPlatformClient(options: {
         cursor = page.nextCursor;
       }
     },
-    async read(identity, signal) { return await request("/api/chat/artifacts/read", identity, signal, true) as Buffer; },
+    async read(identity, signal, maxBytes) { return await request("/api/chat/artifacts/read", identity, signal, true, maxBytes) as Buffer; },
   };
 }
