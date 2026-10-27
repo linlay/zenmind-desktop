@@ -1024,6 +1024,7 @@ type AppSidebarProps = {
   primaryChatNavigation?: boolean;
   primaryChatNavError?: string;
   primaryChatNavAgents?: AssistantNavAgentItem[];
+  onReorderPrimaryAgents?: (agentKeys: string[]) => Promise<{ ok: boolean; agentKeys: string[]; message: string }>;
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantPinnedChatItems?: AssistantNavChatItem[];
   assistantChatPinningSupported?: boolean;
@@ -1120,6 +1121,7 @@ export function AppSidebar({
   primaryChatNavigation = false,
   primaryChatNavError = "",
   primaryChatNavAgents = [],
+  onReorderPrimaryAgents,
   assistantNavAgents = [],
   assistantPinnedChatItems: manualPinnedChatItems = [],
   assistantChatPinningSupported = false,
@@ -1380,6 +1382,8 @@ export function AppSidebar({
   const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarContextMenuRequestIdRef = useRef(0);
   const currentRouteRef = useRef(currentRoute);
+  const primaryChatNavAgentsRef = useRef(primaryChatNavAgents);
+  primaryChatNavAgentsRef.current = primaryChatNavAgents;
   const assistantNavAgentsRef = useRef(assistantNavAgents);
   const webItemsRef = useRef(webItems);
   assistantNavAgentsRef.current = assistantNavAgents;
@@ -2442,7 +2446,7 @@ export function AppSidebar({
     return (
       assistantNavAgentsRef.current.find(
         (agent) => agent.agentKey === agentKey,
-      ) || null
+      ) || primaryChatNavAgentsRef.current.find(agent => agent.agentKey === agentKey) || null
     );
   }
 
@@ -3139,7 +3143,7 @@ export function AppSidebar({
       return;
     }
 
-    if (activeChatDragId || activeProjectDragKey) {
+    if (activeChatDragId || activeProjectDragKey || currentElement.closest('[data-primary-agent-dragging="true"]')) {
       return;
     }
 
@@ -5930,6 +5934,8 @@ export function AppSidebar({
       onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })}
       onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
       itemProps={getSidebarRovingItemProps}
+      onContextMenu={handleAgentContextMenu}
+      onReorder={onReorderPrimaryAgents}
       onOpen={(agent) => {
         if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
         else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
@@ -6438,7 +6444,7 @@ export function AppSidebar({
   }
 
   function handleAgentContextMenu(
-    event: MouseEvent<HTMLElement>,
+    event: MouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
     agent: AssistantNavAgentItem,
   ) {
     event.preventDefault();
@@ -6446,7 +6452,7 @@ export function AppSidebar({
     openNativeSidebarContextMenu(
       { kind: "agent", agentKey: agent.agentKey },
       event.currentTarget,
-      event.clientX === 0 && event.clientY === 0
+      !("clientX" in event) || (event.clientX === 0 && event.clientY === 0)
         ? undefined
         : { x: event.clientX, y: event.clientY },
     );

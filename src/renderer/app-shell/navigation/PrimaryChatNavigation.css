@@ -27,3 +27,9 @@
 
 
 .primary-chat-status .assistant-worker-unread-dot { margin:0; }
+
+.primary-chat-item { app-region:no-drag; -webkit-app-region:no-drag; touch-action:none; }
+.primary-chat-row.is-dragging { opacity:.35; }
+.primary-chat-row.drop-before::before, .primary-chat-row.drop-after::after { content:""; position:absolute; left:8px; right:8px; height:2px; background:var(--accent); pointer-events:none; z-index:3; }
+.primary-chat-row.drop-before::before { top:-1px; }
+.primary-chat-row.drop-after::after { bottom:-1px; }

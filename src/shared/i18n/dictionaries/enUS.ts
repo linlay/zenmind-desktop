@@ -10,6 +10,7 @@ export const enUSMessages = {
   "settings.debug.primaryChats.title": "Primary conversation mode",
   "settings.debug.primaryChats.description": "Experimental: show one primary conversation per agent. Turn off to restore full navigation while keeping existing conversations and ordering.",
   "sidebar.primaryChats.loadFailed": "Could not load primary conversations",
+  "sidebar.primaryChats.orderFailed": "Failed to save Agent order",
   "sidebar.primaryChats.retry": "Retry",
   "sidebar.primaryChats.title": "Primary conversations",
   "sidebar.primaryChats.toggle": "Primary conversation mode",

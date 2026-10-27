@@ -188,3 +188,27 @@ export async function readAssistantCopilotAgentsFromPlatform(
     buildAssistantCopilotAgentsFromPlatformAgents(fallbackAgents),
   );
 }
+
+export async function readAssistantNavigationAgentOrderFromPlatform(baseUrl: string, token: string) {
+  const response = await fetch(createApiUrl(baseUrl, "/api/agents/order"), {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  if (response.status === 404 || response.status === 405) return null;
+  if (!response.ok) throw new Error(`agent-platform returned HTTP ${response.status}`);
+  const data = unwrapApiResponse<{ order: string[] }>(await response.json());
+  if (!data || !Array.isArray(data.order) || data.order.some(key => typeof key !== "string" || !key.trim()) ||
+      new Set(data.order.map(key => key.trim())).size !== data.order.length) throw new Error("invalid Agent catalog order");
+  return data.order.map(key => key.trim());
+}
+
+export function orderNavigationAgents(items: AssistantNavAgentItem[], order: string[] | null) {
+  if (!order) return items;
+  const byKey = new Map(items.map(agent => [agent.agentKey, agent]));
+  const ordered = order.flatMap(key => {
+    const agent = byKey.get(key);
+    byKey.delete(key);
+    return agent ? [agent] : [];
+  });
+  // A concurrently created Agent may arrive before its order snapshot.
+  return [...ordered, ...byKey.values()];
+}
