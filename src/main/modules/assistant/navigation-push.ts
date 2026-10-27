@@ -709,6 +709,15 @@ export function applyAssistantNavigationPush(
   let attentionHasTarget = false;
   const items = activity.items.map((agent) => {
     let nextAgent = agent;
+    if (agent.primaryChat) {
+      if ((event.type === "chat.deleted" || event.type === "chat.archived") && agent.primaryChat.chatId === chatId) {
+        nextAgent = { ...nextAgent, primaryChat: undefined };
+      } else {
+        const primary = applyAssistantNavigationChatPush([agent.primaryChat], frame);
+        if (primary.changed) nextAgent = { ...nextAgent, primaryChat: primary.items[0] };
+        sidebarHandled ||= !primary.shouldRefresh;
+      }
+    }
     if (agent.projectChats) {
       const next = applyAssistantNavigationChatPush(agent.projectChats, frame);
       sidebarHandled ||= !next.shouldRefresh;

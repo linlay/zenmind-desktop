@@ -1476,3 +1476,11 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - [ ] 声明式 CLI/MCP/native 查询正常返回，参数和错误保持一致；写操作必须先在宿主确认，取消不调用，确认后返回结果，同一操作不因重载或超时自动重放。
 - [ ] HTML iframe 无同源/Node/Desktop bridge 能力，伪造来源窗口消息无效；跨 Chat/Run、重复身份 URL 参数和 View 页面 Run 控制请求被拒绝。
 - [ ] 普通浏览器的 VIEW 侧栏、Dialog 及现有 WorkPanel 文件/Planning/Overview 标签回归正常。
+
+## 主要对话与 SVG 导航
+
+- macOS / Windows：升级后默认完整导航；置顶与普通聊天、项目展开、手动顺序、拖动、新建、历史、网站入口和右键菜单保持。搜索旁切换主要对话并切回，检查原展开状态与滚动位置、当前 Chat、草稿、附件和 WorkPanel 保留。Windows 全屏仍可切换。
+- 主要对话每个导航 Agent 一行；主要 Chat 在最近预览之外或已置顶仍直接打开原 Chat。没有指针时显示暂无对话；点击后首次 query 带 primary:true，含上传占位 Chat。完整导航新建、历史续聊、Copilot、Kanban、BTW、详细解释不携带该标记。
+- 跨客户端切换主要指针、回复、运行开始结束、HITL、已读、归档和删除后，主要视图按精确 Chat 更新；不向普通预览插入旧主要 Chat。断连保留成功数据、错误可重试，恢复后对账；primary_chat_busy 不自动重发或抢占运行。
+- 展开与收起侧栏，分别验证主要入口、历史、Tab／方向键、焦点轮廓、未读与运行状态。切换明暗与旧皮肤，检查六种 mode、旧 terminal/library 名称回退、自定义图片、图标颜色、16/20/30px 清晰度与同屏多个 TEAM mask。
+- 自动入口：`node --test test/primary-chat-navigation.test.mjs test/agent-icon-fallback.test.mjs`；Electron 界面回归：`node qa/primary-chat-navigation-smoke.mjs`；上游资源一致性：`node scripts/sync-webclient-icons.mjs --check`。WebClient 的 primaryChatIntent / useMessageActions 定向测试与 Desktop 同批验证。平台样式模拟不能代替 Windows 真机发布验收。

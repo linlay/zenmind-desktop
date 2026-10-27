@@ -142,7 +142,8 @@ const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
 const AGENT_WEBCLIENT_ONE_SHOT_ROUTE_QUERY_PARAMS = new Set([
   "composerDraft",
   "composerSkill",
-  "shareBatch"
+  "shareBatch",
+  "primaryNewChat"
 ]);
 
 /** A native share is scoped to one Desktop-issued, ownerless new Chat route. */

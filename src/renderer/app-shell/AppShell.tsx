@@ -97,6 +97,8 @@ import {
   resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
+import { MaterialIcon } from "../components/icons/MaterialIcon";
+import { readPrimaryChatNavigation, savePrimaryChatNavigation } from "./navigation/primaryChatView";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
@@ -749,6 +751,12 @@ export function AppShell() {
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [firstInstallBootstrapNavigationRequested, setFirstInstallBootstrapNavigationRequested] =
     useState<boolean | null>(null);
+  const [primaryChatNavigation, setPrimaryChatNavigation] = useState(readPrimaryChatNavigation);
+  const [primaryChatNavError, setPrimaryChatNavError] = useState("");
+  const [primaryChatNavAgents, setPrimaryChatNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  function togglePrimaryChatNavigation() {
+    setPrimaryChatNavigation(current => { const next = !current; savePrimaryChatNavigation(next); return next; });
+  }
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantPinnedChatItems, setAssistantPinnedChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantChatPinningSupported, setAssistantChatPinningSupported] = useState(false);
@@ -1836,12 +1844,15 @@ export function AppShell() {
       const result = await window.electronAPI.assistant.listNavigationAgents(options);
       if (assistantNavAgentsRefreshIdRef.current === refreshId) {
         if (!result.ok) {
+          setPrimaryChatNavError(result.message || t("sidebar.primaryChats.loadFailed"));
           return;
         }
+        setPrimaryChatNavError("");
         const nextResult = normalizeAssistantNavAgentItemsResult(result);
         const navigationItems = normalizeAssistantNavAgents(nextResult.items);
         const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult));
         setAssistantNavAgentsLoaded(true);
+        setPrimaryChatNavAgents(navigationItems);
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
@@ -1852,6 +1863,7 @@ export function AppShell() {
         setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
       }
     } catch {
+      if (assistantNavAgentsRefreshIdRef.current === refreshId) setPrimaryChatNavError(t("sidebar.primaryChats.loadFailed"));
       // Keep the current live list while agent-platform is still warming up.
     }
   }
@@ -1986,12 +1998,13 @@ export function AppShell() {
     void refreshAssistantNavAgents();
     void refreshCopilotAgentOptions();
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
-      if (cancelled || !result.ok) {
-        return;
-      }
+      if (cancelled) return;
+      if (!result.ok) { setPrimaryChatNavError(result.message || t("sidebar.primaryChats.loadFailed")); return; }
+      setPrimaryChatNavError("");
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgentsLoaded(true);
+      setPrimaryChatNavAgents(nextResult.items);
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
@@ -4788,6 +4801,14 @@ export function AppShell() {
                   </button>
                   <button
                     type="button"
+                    className="app-system-bar-action primary-chat-mode-toggle"
+                    aria-label={t("sidebar.primaryChats.toggle")}
+                    title={t(primaryChatNavigation ? "sidebar.primaryChats.standardMode" : "sidebar.primaryChats.toggle")}
+                    aria-pressed={primaryChatNavigation}
+                    onClick={togglePrimaryChatNavigation}
+                  ><MaterialIcon name="question_answer" /></button>
+                  <button
+                    type="button"
                     className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
                     aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
@@ -4909,6 +4930,11 @@ export function AppShell() {
           webRunningEntryKeys={webRunningEntryKeys}
           webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
+          primaryChatNavError={primaryChatNavError}
+          windowFullScreen={windowFullScreen}
+          primaryChatNavigation={primaryChatNavigation}
+          primaryChatNavAgents={primaryChatNavAgents}
+          onTogglePrimaryChatNavigation={togglePrimaryChatNavigation}
           assistantNavAgents={assistantNavAgents}
           assistantPinnedChatItems={assistantPinnedChatItems}
           assistantChatPinningSupported={assistantChatPinningSupported}

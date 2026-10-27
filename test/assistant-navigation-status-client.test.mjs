@@ -2469,6 +2469,11 @@ test("navigation fetches global pins independently of the regular and project cu
   client.scheduleRefresh = () => { refreshScheduled = true; };
   push({ frame: "push", type: "chats.order.changed", data: { updatedAt: EPOCH_MS + 200 } });
   assert.equal(refreshScheduled, true);
+  refreshScheduled = false;
+  const previousNavigation = client.getSnapshot().items;
+  push({ frame: "push", type: "chat.primary.changed", data: { agentKey: "project", chatId: "old-primary" } });
+  assert.equal(refreshScheduled, true);
+  assert.deepEqual(client.getSnapshot().items, previousNavigation);
 
   // Neither a failed response nor a malformed snapshot may clear live pins.
   const previousPins = client.getSnapshot().pinnedChatItems;

@@ -1,3 +1,6 @@
+import { MaterialIcon } from "../../components/icons/MaterialIcon";
+import { PrimaryChatNavigation } from "./PrimaryChatNavigation";
+import { primaryChatNavigationTarget } from "./primaryChatView";
 import { SkinHeading } from "../../appearance/SkinVisual";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useDesktopUpdates } from "../../updates/useDesktopUpdates";
@@ -1019,6 +1022,11 @@ type AppSidebarProps = {
   webPinningAvailable?: boolean;
   onSetWebItemPinned?: (item: WebEntry, pinned: boolean) => Promise<void>;
   webItems: WebEntry[];
+  primaryChatNavigation?: boolean;
+  primaryChatNavError?: string;
+  windowFullScreen?: boolean;
+  primaryChatNavAgents?: AssistantNavAgentItem[];
+  onTogglePrimaryChatNavigation?: () => void;
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantPinnedChatItems?: AssistantNavChatItem[];
   assistantChatPinningSupported?: boolean;
@@ -1112,6 +1120,11 @@ export function AppSidebar({
   webPinningAvailable = false,
   onSetWebItemPinned,
   webItems,
+  primaryChatNavigation = false,
+  primaryChatNavError = "",
+  windowFullScreen = false,
+  primaryChatNavAgents = [],
+  onTogglePrimaryChatNavigation,
   assistantNavAgents = [],
   assistantPinnedChatItems: manualPinnedChatItems = [],
   assistantChatPinningSupported = false,
@@ -1328,6 +1341,38 @@ export function AppSidebar({
     index: number;
   } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
+  const navigationScrollRef = useRef({ standard: 0, primary: 0 });
+  useLayoutEffect(() => {
+    const nav = sidebarNavRef.current;
+    if (!nav || !isPrimaryMode) return;
+    const mode = primaryChatNavigation ? "primary" : "standard";
+    const target = navigationScrollRef.current[mode];
+    let restoring = true;
+    let frame = 0;
+    const startedAt = performance.now();
+    const previousAnchor = nav.style.overflowAnchor;
+    nav.style.overflowAnchor = "none";
+    let previousHeight = -1;
+    let stableFrames = 0;
+    // Hidden Collapse contents remeasure and animate on reveal. Restore only
+    // after the desired position is reachable; ignore our own scroll events.
+    const restore = () => {
+      const height = nav.scrollHeight;
+      stableFrames = height === previousHeight ? stableFrames + 1 : 0;
+      previousHeight = height;
+      nav.scrollTop = target;
+      if ((height - nav.clientHeight >= target && stableFrames >= 3) || performance.now() - startedAt > 750) {
+        restoring = false;
+        nav.style.overflowAnchor = previousAnchor;
+      } else {
+        frame = requestAnimationFrame(restore);
+      }
+    };
+    restore();
+    const save = () => { if (!restoring) navigationScrollRef.current[mode] = nav.scrollTop; };
+    nav.addEventListener("scroll", save);
+    return () => { cancelAnimationFrame(frame); nav.style.overflowAnchor = previousAnchor; nav.removeEventListener("scroll", save); };
+  }, [primaryChatNavigation, isPrimaryMode]);
   const sidebarScrollThumbRef = useRef<HTMLDivElement | null>(null);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const toolMenuContentRef = useRef<HTMLDivElement | null>(null);
@@ -2110,6 +2155,8 @@ export function AppSidebar({
       setSidebarNavFocusId(visibleItems[0].dataset.sidebarNavId || "");
     }
   }, [
+    primaryChatNavigation,
+    primaryChatNavAgents,
     expandedAssistantAgentKeys,
     isCollapsed,
     isPrimaryMode,
@@ -2334,7 +2381,7 @@ export function AppSidebar({
         '[data-sidebar-roving-item="true"]',
       ),
     ).filter((element) => {
-      if (element.closest('[aria-hidden="true"]')) {
+      if (element.closest('[hidden], [aria-hidden="true"]')) {
         return false;
       }
       if (element instanceof HTMLButtonElement && element.disabled) {
@@ -4484,6 +4531,7 @@ export function AppSidebar({
     return (
       <button
         type="button"
+        hidden={primaryChatNavigation}
         className="sidebar-link sidebar-primary-link sidebar-new-chat-button"
         aria-label={label}
         title={disabled ? t("sidebar.chats.defaultAgentUnavailable") : label}
@@ -5418,7 +5466,7 @@ export function AppSidebar({
         }}
         header={
           <Flex gap={8} align="center" className="worker-panel-header">
-            <AgentIcon icon={agent.icon} size={16} type="agent" />
+            <AgentIcon icon={agent.icon} mode={agent.mode} size={16} type="agent" />
             <Flex align="center" className="worker-panel-header-body">
               <span className="assistant-worker-name">
                 <span>{agent.displayName}</span>
@@ -6893,7 +6941,7 @@ export function AppSidebar({
           shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"
         }
       >
-        {!isWindows ? (
+        {!isWindows || windowFullScreen ? (
           <div className="sidebar-chrome">
             <div className={chromeToolbarClassName}>
               <div className="sidebar-top-actions">
@@ -6906,6 +6954,13 @@ export function AppSidebar({
                     onClick={onOpenGlobalSearch}
                   >
                     <SettingsSidebarIcon kind="search" />
+                  </button>
+                ) : null}
+                {isPrimaryMode && assistantLauncherVisible ? (
+                  <button type="button" className="app-sidebar-collapse-button is-compact primary-chat-mode-toggle"
+                    aria-label={t("sidebar.primaryChats.toggle")} title={t(primaryChatNavigation ? "sidebar.primaryChats.standardMode" : "sidebar.primaryChats.toggle")}
+                    aria-pressed={primaryChatNavigation} onClick={onTogglePrimaryChatNavigation}>
+                    <MaterialIcon name="question_answer" />
                   </button>
                 ) : null}
                 {isPrimaryMode ? (
@@ -6994,7 +7049,16 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : <SortableNavEntries
+              : <>
+                {primaryChatNavigation && assistantLauncherVisible ? <PrimaryChatNavigation
+                  agents={primaryChatNavAgents} collapsed={isCollapsed} currentChatId={activeSidebarChatId}
+                  loaded={assistantNavAgentsLoaded} error={primaryChatNavError} onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })} onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
+                  itemProps={getSidebarRovingItemProps}
+                  onOpen={(agent) => {
+                    if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
+                    else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
+                  }} /> : null}
+                <SortableNavEntries
                   order={sidebarNavOrder}
                   sortableKeys={["kanban", "schedules", "new-chat", ...shownCapabilityNavItems.map((item) => item.orderKey), ...pinnedWebNavItems.map((item) => item.orderKey)]}
                   onChange={onSidebarNavOrderChange}
@@ -7004,9 +7068,13 @@ export function AppSidebar({
                     const pinned = pinnedWebNavItems.find((item) => item.orderKey === key);
                     if (pinned) return renderSidebarChildLink(pinned, { topLevel: true });
                     const item = navItems.find((entry) => entry.orderKey === key);
-                    return item ? renderPrimaryNavEntry(item) : null;
+                    if (!item) return null;
+                    if (item.entryType === "chats" || item.entryType === "assistants") {
+                      return <div hidden={primaryChatNavigation} style={{ display: primaryChatNavigation ? "none" : "contents" }}>{renderPrimaryNavEntry(item)}</div>;
+                    }
+                    return renderPrimaryNavEntry(item);
                   }}
-                />}
+                /></>}
         </nav>
         <div ref={sidebarScrollThumbRef} className="sidebar-scroll-thumb" aria-hidden="true" hidden />
         {renderBootstrapGuideCard()}

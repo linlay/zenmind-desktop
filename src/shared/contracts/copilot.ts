@@ -329,6 +329,8 @@ export interface AssistantNavigationLiveStatus {
 }
 
 export interface AssistantNavAgentItem {
+  /** Platform-owned pointer, independent of recent/pinned sidebar windows. */
+  primaryChat?: AssistantNavChatItem;
   agentKey: string;
   displayName: string;
   role: string;

@@ -1673,17 +1673,12 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.assistant-worker-actions\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?gap:\s*4px;[\s\S]*?height:\s*28px;/);
   assert.match(globalStyles, /\.assistant-worker-icon-button\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*6px;/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
-  assert.match(agentIconSource, /defaultIcon from "\.\.\/\.\.\/assets\/agent-icons\/default\.svg"/);
-  assert.match(agentIconSource, /kbaseIcon from "\.\.\/\.\.\/assets\/agent-icons\/kbase\.svg"/);
-  assert.match(agentIconSource, /const IconMap/);
-  assert.match(agentIconSource, /AGENT_ICON_NAMES[\s\S]*"folder"[\s\S]*"coder"[\s\S]*"kbase"[\s\S]*"terminal"/);
-  assert.doesNotMatch(agentIconSource, /BUILTIN_ICON_CONFIGS/);
-  assert.doesNotMatch(agentIconSource, /ledger/);
+  assert.match(agentIconSource, /AgentGlyph/);
+  assert.match(agentIconSource, /resolveAgentIcon\(icon, mode/);
+  assert.match(agentIconSource, /agentAppearance/);
   assert.match(agentIconSource, /isImageIcon/);
-  assert.match(agentIconSource, /useState\(false\)/);
-  assert.match(agentIconSource, /\(\)\s*=>\s*setImageFailed\(true\)/);
-  assert.match(agentIconSource, /readIconColor\(icon\) \|\| "#94a3b8"/);
-  assert.doesNotMatch(agentIconSource, /readIconColor\(icon\) \|\| "var\(--accent\)"/);
+  assert.match(agentIconSource, /setFailedSource\(imageSource\)/);
+  assert.match(agentIconSource, /color: appearance.color/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_DEFINITIONS/);
   assert.match(appShell, /type AgentWebclientRouteDefinition = \{/);

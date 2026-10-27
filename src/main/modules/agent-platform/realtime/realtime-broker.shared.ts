@@ -65,6 +65,7 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "run.complete",
   "chat.created",
   "chats.order.changed",
+  "chat.primary.changed",
   "chat.updated",
   "chat.deleted",
   "chat.archived",

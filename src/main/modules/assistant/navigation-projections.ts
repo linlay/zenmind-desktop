@@ -303,6 +303,9 @@ export function createNavigationAgentItem(agent: PlatformAgentSummary, includeCh
     latestPreview: latestPreview.slice(0, 120),
     ...(updatedAt !== undefined ? { updatedAt } : {}),
     recentChats,
+    ...(isObjectRecord(agent.primaryChat) ? {
+      primaryChat: mapNavigationChat(agent.primaryChat, agentKey, `${path}.primaryChat`) ?? undefined,
+    } : {}),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
     workspaceDirExists: checkWorkspaceDirExists(workspaceDir),

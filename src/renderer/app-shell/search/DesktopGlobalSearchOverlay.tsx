@@ -460,7 +460,7 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatA
 function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.kind === "agent") {
     if (row.projectKind) {
-      return <AgentIcon icon={row.projectKind} size={16} type="agent" />;
+      return <AgentIcon mode={row.projectKind} size={16} type="agent" />;
     }
     return <UserOutlined />;
   }

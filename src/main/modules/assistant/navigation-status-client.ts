@@ -561,6 +561,10 @@ export class AssistantNavigationStatusClient {
     if (IGNORED_PUSH_TYPES.has(event.type)) {
       return;
     }
+    if (event.type === "chat.primary.changed") {
+      this.scheduleRefresh(0);
+      return;
+    }
     this.recordRuntimeStatusPush(frame, event);
     const protocolType = frameType || (event.type === "run.start"
       ? "run.started"

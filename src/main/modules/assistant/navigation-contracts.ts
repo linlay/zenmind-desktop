@@ -58,6 +58,7 @@ export type PlatformChatOrder = {
 };
 
 export type PlatformAgentSummary = {
+  primaryChat?: unknown;
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
