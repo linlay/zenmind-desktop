@@ -20,7 +20,7 @@ export function PrimaryChatNavigation({ agents, collapsed, currentChatId, loaded
       const preview = chat ? (chat.lastRunContent || chat.chatName || t("sidebar.primaryChats.noReply")).replace(/\s+/gu, " ") : t("sidebar.primaryChats.noChat");
       const status = chat?.hasPendingAwaiting ? t("sidebar.agent.awaiting") : chat?.hasActiveRun ? t("sidebar.agent.running") : chat && !chat.isRead ? t("sidebar.chat.unread") : "";
       return <div className="primary-chat-row" key={agent.agentKey}>
-        <button type="button" {...itemProps(`primary:${agent.agentKey}`)}
+        <button data-agent-pointer-idle="" data-agent-identity="" type="button" {...itemProps(`primary:${agent.agentKey}`)}
           className={`primary-chat-item${chat && chat.chatId === currentChatId ? " is-active" : ""}`}
           aria-current={chat && chat.chatId === currentChatId ? "page" : undefined}
           title={`${agent.displayName}\n${preview}${status ? ` · ${status}` : ""}`}

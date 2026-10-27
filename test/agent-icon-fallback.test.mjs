@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
-const { outputFiles } = await build({ stdin: { contents: `export { AgentIcon } from './src/renderer/app-shell/navigation/AgentIcon';`, resolveDir: process.cwd() }, bundle: true, write: false, platform: "node", format: "cjs", packages: "external", jsx: "automatic", loader: { ".css": "empty", ".svg": "text" }, define: { __DESKTOP_APP_BRAND__: JSON.stringify(APP_BRAND) } });
+const { outputFiles } = await build({ stdin: { contents: `export { AgentIcon } from './src/renderer/app-shell/navigation/AgentIcon';`, resolveDir: process.cwd() }, bundle: true, outfile: "agent-icons-test.cjs", write: false, platform: "node", format: "cjs", packages: "external", jsx: "automatic", loader: { ".css": "empty", ".svg": "text" }, define: { __DESKTOP_APP_BRAND__: JSON.stringify(APP_BRAND) } });
 const mod = { exports: {} };
 new Function("module", "exports", "require", outputFiles[0].text)(mod, mod.exports, require);
 const render = props => renderToStaticMarkup(React.createElement(mod.exports.AgentIcon, props));

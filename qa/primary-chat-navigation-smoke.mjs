@@ -14,6 +14,7 @@ import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {MemoryRouter} from 'react-router-dom';
 import {AppSidebar} from './src/renderer/app-shell/navigation/AppSidebar';
+import {PrimaryChatNavigationDebugSetting} from './src/renderer/pages/settings/PrimaryChatNavigationDebugSetting';
 import {RendererI18nContext} from './src/renderer/i18n/i18n-context';
 import {createTranslator} from './src/shared/i18n';
 import './src/renderer/styles.css';
@@ -29,9 +30,8 @@ function Fixture(){
  const navigate=target=>{window.qa.routes.push(target);setRoute(target);return true;};
  return <div className={'app-shell '+(options.windows?'is-windows-platform':'is-mac-platform')} style={{display:'flex',height:'100vh',width:'100%',background:'var(--bg-base)','--app-sidebar-width':options.collapsed?'64px':'264px'}}>
  <div className='app-sidebar-shell' style={{width:options.collapsed?64:264,height:'100%',minHeight:0,flex:'none'}}><AppSidebar
- isCollapsed={options.collapsed} isMac={!options.windows} isWindows={options.windows} windowFullScreen={options.fullScreen}
+ isCollapsed={options.collapsed} isMac={!options.windows} isWindows={options.windows}
  currentPathname={route.split('?')[0]} currentRoute={route} primaryChatNavigation={options.primary} primaryChatNavAgents={agents} primaryChatNavError={options.error}
- onTogglePrimaryChatNavigation={()=>setOptions(old=>({...old,primary:!old.primary}))}
  sidebarNavOrder={['new-chat','chats','group:assistants','group:webs']} onSidebarNavOrderChange={order=>window.qa.orders.push(order)}
  webItems={[]} assistantNavAgents={agents} chatNavAgentOptions={agents} chatDefaultAgentKey='agent-0'
  assistantNavChatItems={[chat('ordinary','agent-0')]} assistantPinnedChatItems={[chat('pinned','agent-0')]}
@@ -40,7 +40,7 @@ function Fixture(){
  onRequestNavigate={navigate} onRequestAgentChatNavigate={navigate}
  onToggleCollapsed={()=>setOptions(old=>({...old,collapsed:!old.collapsed}))}
  toolMenuOpen={false} onRequestToolMenuOpen={()=>{}} onAutoOpenToolMenu={()=>{}} onCloseToolMenu={()=>{}}
- /></div><main style={{flex:1,padding:30}}><input id='fixture-draft' defaultValue='keep draft'/><div id='fixture-guest' data-instance='stable'>Chat surface</div></main></div>;
+ /></div><main style={{flex:1,padding:30}}><PrimaryChatNavigationDebugSetting enabled={options.primary} onChange={primary=>setOptions(old=>({...old,primary}))}/><input id='fixture-draft' defaultValue='keep draft'/><div id='fixture-guest' data-instance='stable'>Chat surface</div></main></div>;
 }
 createRoot(document.getElementById('root')).render(<RendererI18nContext.Provider value={{locale:'zh-CN',source:'user',t:createTranslator('zh-CN'),setLocale:async()=>{}}}><MemoryRouter><Fixture/></MemoryRouter></RendererI18nContext.Provider>);
 `;
@@ -59,11 +59,14 @@ async function until(code){for(let n=0;n<150;n++){try{if(await js(code))return;}
 const click=selector=>js('document.querySelector('+JSON.stringify(selector)+').click()');
 (async()=>{await app.whenReady();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 win=new BrowserWindow({show:false,width:1280,height:800,useContentSize:true,webPreferences:{contextIsolation:true,nodeIntegration:false}});
+win.webContents.on('render-process-gone',(_event,details)=>console.error('Renderer exited:',details));
 win.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
 await win.loadURL('http://127.0.0.1:'+server.address().port);
+win.webContents.debugger.attach('1.3');
+await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
 await until('!!document.querySelector(".sidebar-new-chat-button")');
 assert.equal(await js('window.qa.state.primary'),false);
-assert.equal(await js('document.querySelector(".primary-chat-mode-toggle").getBoundingClientRect().height>0'),true);
+assert.equal(await js('document.querySelector(".primary-chat-mode-toggle")'),null);
 await js('document.querySelector(".app-sidebar-shell").style.width="160px";document.querySelector(".app-shell").style.setProperty("--app-sidebar-width","160px")');
 assert.equal(await js('(()=>{const outer=document.querySelector(".app-sidebar").getBoundingClientRect();return [...document.querySelectorAll(".sidebar-top-actions button")].every(button=>{const rect=button.getBoundingClientRect();return rect.left>=outer.left&&rect.right<=outer.right;});})()'),true);
 await js('document.querySelector(".app-sidebar-shell").style.width="264px";document.querySelector(".app-shell").style.setProperty("--app-sidebar-width","264px")');
@@ -73,11 +76,27 @@ if(await js('document.querySelector("[data-sidebar-group-id=assistants]").getAtt
 await delay(250);
 await until('!!document.querySelector(".assistant-worker-header")');
 const expanded=await js('document.querySelector("[data-sidebar-group-id=assistants]").getAttribute("aria-expanded")');
+// The real header and name are the interaction region, not just the SVG.
+await until('document.querySelector(".assistant-worker-header [data-pointer-resting]")!==null');
+const clocks=await js('[...document.querySelectorAll(".assistant-worker-header [data-pointer-resting]")].slice(0,4).map(root=>({period:parseFloat(root.style.getPropertyValue("--agent-idle-period")),delay:parseFloat(root.style.getPropertyValue("--agent-idle-delay"))}))');
+assert.equal(clocks.length,4);for(const clock of clocks){assert.ok(clock.period>=22&&clock.period<32);assert.ok(clock.delay>=0&&clock.delay<7);}assert.ok(new Set(clocks.map(clock=>clock.period)).size>1);
+assert.equal(await js('(()=>{const motion=document.querySelector(".assistant-worker-header [data-agent-motion]");const animation=motion.getAnimations()[0];if(!animation)return false;animation.pause();const timing=animation.effect.getTiming();animation.currentTime=timing.delay+timing.duration*.9;return getComputedStyle(motion).transform!=="none"&&getComputedStyle(motion).transform!=="matrix(1, 0, 0, 1, 0, 0)";})()'),true);
+await js('(()=>{const name=document.querySelector(".assistant-worker-name");const r=name.getBoundingClientRect();name.dispatchEvent(new PointerEvent("pointermove",{bubbles:true,pointerType:"mouse",clientX:r.left+30,clientY:r.top+5}));})()');
+await until('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.pointerMood!=="rest"');
+assert.equal(await js('document.querySelectorAll(".assistant-worker-header [data-agent-avatar]")[1].dataset.pointerMood'), 'rest');
+assert.ok(await js('document.querySelector(".assistant-worker-header [data-agent-motion]").style.transform'));
+await js('window.dispatchEvent(new Event("blur"))');
+assert.equal(await js('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.pointerResting'),'true');
+await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+await delay(80);
+assert.equal(await js('document.querySelector(".assistant-worker-header [data-agent-motion]").getAnimations().length'),0);
+await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+await delay(80);
 await js('document.querySelector(".sidebar-nav").scrollTop=160');await delay(40);
 const scroll=await js('document.querySelector(".sidebar-nav").scrollTop');
 assert.ok(scroll>0,'fixture must exercise actual sidebar scrolling');
 await js('window.qa.standardNode=document.querySelector(".sidebar-new-chat-button")');
-await click('.primary-chat-mode-toggle');await until('document.querySelectorAll(".primary-chat-item").length===18');
+await click('[role="switch"][aria-labelledby="primary-chat-navigation-label"]');await until('document.querySelectorAll(".primary-chat-item").length===18');
 assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height'),0);
 assert.equal(await js('window.qa.routes.length'),0);
 assert.equal(await js('(()=>{const dot=document.querySelector(".primary-chat-status .assistant-worker-unread-dot");return dot.getBoundingClientRect().width===8&&getComputedStyle(dot).opacity==="1";})()'),true);
@@ -91,10 +110,10 @@ await click('.primary-chat-history');assert.equal(await js('window.qa.histories.
 await js('window.qa.set({collapsed:true})');await until('!!document.querySelector(".primary-chat-navigation.is-collapsed")');
 await click('.primary-chat-item');assert.equal(await js('window.qa.routes.at(-1)'),'/agent/agent-0?chatId=primary-0');
 await js('window.qa.set({collapsed:false})');await until('!document.querySelector(".primary-chat-navigation.is-collapsed")');
-await click('.primary-chat-mode-toggle');await until('!document.querySelector(".primary-chat-navigation")');
+await click('[role="switch"][aria-labelledby="primary-chat-navigation-label"]');await until('!document.querySelector(".primary-chat-navigation")');
 assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height>0'),true);
 assert.equal(await js('document.querySelector("[data-sidebar-group-id=assistants]").getAttribute("aria-expanded")'),expanded);
-await until('document.querySelector(".sidebar-nav").scrollTop==='+scroll);
+try { await until('document.querySelector(".sidebar-nav").scrollTop==='+scroll); } catch(error) { console.error('Scroll restoration:',{expected:scroll,actual:await js('document.querySelector(".sidebar-nav").scrollTop')});throw error; }
 assert.equal(await js('document.querySelector(".sidebar-nav").scrollTop'),scroll);
 assert.equal(await js('document.querySelector("#fixture-draft").value'),'untouched draft');
 assert.equal(await js('window.qa.standardNode===document.querySelector(".sidebar-new-chat-button")'),true);
@@ -103,14 +122,15 @@ assert.deepEqual(await js('window.qa.orders'),[]);
 await js('window.qa.set({primary:true})');await until('!!document.querySelector(".primary-chat-navigation")');
 await js('document.querySelector(".sidebar-nav").scrollTop=0');
 for(const theme of ['light','dark']){await js('document.documentElement.dataset.theme='+JSON.stringify(theme));await delay(80);fs.writeFileSync(path.join(output,theme+'.png'),(await win.webContents.capturePage()).toPNG());}
-// Windows branch: ordinary window uses AppShell system-bar toggle; fullscreen exposes sidebar fallback.
+// Both Windows branches keep the primary mode entry exclusively in Debug settings.
 await js('window.qa.set({windows:true,fullScreen:false})');await until('document.querySelector(".app-shell.is-windows-platform")!==null');
 assert.equal(await js('!!document.querySelector(".sidebar-chrome")'),false);
-await js('window.qa.set({fullScreen:true})');await until('!!document.querySelector(".primary-chat-mode-toggle")');
-await click('.primary-chat-mode-toggle');await until('!document.querySelector(".primary-chat-navigation")');
+await js('window.qa.set({fullScreen:true})');await until('window.qa.state.fullScreen===true');
+assert.equal(await js('document.querySelector(".primary-chat-mode-toggle")'),null);
+await click('[role="switch"][aria-labelledby="primary-chat-navigation-label"]');await until('!document.querySelector(".primary-chat-navigation")');
 assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height>0'),true);
 assert.deepEqual(errors,[]);
-console.log(JSON.stringify({ok:true,checks:['standard default','primary open and create intent','history','collapsed navigation','original expanded state and scroll','draft and guest retained','no order writes','light/dark','Windows/fullscreen branches'],output},null,2));
+console.log(JSON.stringify({ok:true,checks:['standard default','primary open and create intent','history','collapsed navigation','original expanded state and scroll','draft and guest retained','no order writes','light/dark','Windows/fullscreen branches','Debug-only switch','independent idle clocks','row hover and pointer reset','reduced motion'],output},null,2));
 win.destroy();server.close();app.quit();})().catch(error=>{console.error(error);if(win)win.destroy();server.close();app.exit(1);});
 `;
 fs.writeFileSync(path.join(output,"checks.cjs"), checker);

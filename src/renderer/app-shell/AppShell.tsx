@@ -97,7 +97,6 @@ import {
   resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
-import { MaterialIcon } from "../components/icons/MaterialIcon";
 import { readPrimaryChatNavigation, savePrimaryChatNavigation } from "./navigation/primaryChatView";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
@@ -754,8 +753,9 @@ export function AppShell() {
   const [primaryChatNavigation, setPrimaryChatNavigation] = useState(readPrimaryChatNavigation);
   const [primaryChatNavError, setPrimaryChatNavError] = useState("");
   const [primaryChatNavAgents, setPrimaryChatNavAgents] = useState<AssistantNavAgentItem[]>([]);
-  function togglePrimaryChatNavigation() {
-    setPrimaryChatNavigation(current => { const next = !current; savePrimaryChatNavigation(next); return next; });
+  function handlePrimaryChatNavigationChange(enabled: boolean) {
+    savePrimaryChatNavigation(enabled);
+    setPrimaryChatNavigation(enabled);
   }
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantPinnedChatItems, setAssistantPinnedChatItems] = useState<AssistantNavChatItem[]>([]);
@@ -4801,14 +4801,6 @@ export function AppShell() {
                   </button>
                   <button
                     type="button"
-                    className="app-system-bar-action primary-chat-mode-toggle"
-                    aria-label={t("sidebar.primaryChats.toggle")}
-                    title={t(primaryChatNavigation ? "sidebar.primaryChats.standardMode" : "sidebar.primaryChats.toggle")}
-                    aria-pressed={primaryChatNavigation}
-                    onClick={togglePrimaryChatNavigation}
-                  ><MaterialIcon name="question_answer" /></button>
-                  <button
-                    type="button"
                     className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
                     aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
@@ -4931,10 +4923,8 @@ export function AppShell() {
           webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
           primaryChatNavError={primaryChatNavError}
-          windowFullScreen={windowFullScreen}
           primaryChatNavigation={primaryChatNavigation}
           primaryChatNavAgents={primaryChatNavAgents}
-          onTogglePrimaryChatNavigation={togglePrimaryChatNavigation}
           assistantNavAgents={assistantNavAgents}
           assistantPinnedChatItems={assistantPinnedChatItems}
           assistantChatPinningSupported={assistantChatPinningSupported}
@@ -5115,6 +5105,8 @@ export function AppShell() {
                     onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     onTunnelHubEnabledChange={setTunnelHubEnabled}
+                    primaryChatNavigation={primaryChatNavigation}
+                    onPrimaryChatNavigationChange={handlePrimaryChatNavigationChange}
                     debugVisible={debugSettingsUnlocked}
                     onCloseDebug={handleCloseDebugSettings}
                   />

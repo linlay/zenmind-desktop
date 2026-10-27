@@ -1479,8 +1479,10 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 
 ## 主要对话与 SVG 导航
 
-- macOS / Windows：升级后默认完整导航；置顶与普通聊天、项目展开、手动顺序、拖动、新建、历史、网站入口和右键菜单保持。搜索旁切换主要对话并切回，检查原展开状态与滚动位置、当前 Chat、草稿、附件和 WorkPanel 保留。Windows 全屏仍可切换。
+- macOS / Windows：升级后默认完整导航；置顶与普通聊天、项目展开、手动顺序、拖动、新建、历史、网站入口和右键菜单保持。侧栏顶部和 Windows 系统栏均不显示主要对话按钮；通过已解锁的“设置 → Debug → 其他”开关启用并关闭，检查原展开状态与滚动位置、当前 Chat、草稿、附件和 WorkPanel 保留。Windows 普通与全屏下均从 Debug 开关控制。
 - 主要对话每个导航 Agent 一行；主要 Chat 在最近预览之外或已置顶仍直接打开原 Chat。没有指针时显示暂无对话；点击后首次 query 带 primary:true，含上传占位 Chat。完整导航新建、历史续聊、Copilot、Kanban、BTW、详细解释不携带该标记。
 - 跨客户端切换主要指针、回复、运行开始结束、HITL、已读、归档和删除后，主要视图按精确 Chat 更新；不向普通预览插入旧主要 Chat。断连保留成功数据、错误可重试，恢复后对账；primary_chat_busy 不自动重发或抢占运行。
-- 展开与收起侧栏，分别验证主要入口、历史、Tab／方向键、焦点轮廓、未读与运行状态。切换明暗与旧皮肤，检查六种 mode、旧 terminal/library 名称回退、自定义图片、图标颜色、16/20/30px 清晰度与同屏多个 TEAM mask。
+- 展开与收起侧栏，分别验证主要入口、历史、Tab／方向键、焦点轮廓、未读与运行状态。切换明暗与旧皮肤，检查六种 mode、旧 terminal/library 名称回退、自定义图片、图标颜色、16/20/30px 清晰度与同屏多个 TEAM mask。旧皮肤中的 agent.* 图片声明不影响任何 Agent 图标，也不加载这些图片。
 - 自动入口：`node --test test/primary-chat-navigation.test.mjs test/agent-icon-fallback.test.mjs`；Electron 界面回归：`node qa/primary-chat-navigation-smoke.mjs`；上游资源一致性：`node scripts/sync-webclient-icons.mjs --check`。WebClient 的 primaryChatIntent / useMessageActions 定向测试与 Desktop 同批验证。平台样式模拟不能代替 Windows 真机发布验收。
+
+- 默认 SVG Agent 头像：GENERAL／CODER／KBASE／TEAM 的完整导航项目头与主要对话行，各自持有 22–32 秒的待机周期和 0–7 秒初始延迟；使用实际动画时间推进检查转头和眨眼。Hover 名称区域也应响应，邻行不被激活，离开行后复位。系统减少动态效果、窗口失焦、页面隐藏与头像卸载时不得持续追踪或泄漏监听。EXECUTOR／PROXY 及自定义图片保持上游对应行为，皮肤不能替换 Agent 图标。

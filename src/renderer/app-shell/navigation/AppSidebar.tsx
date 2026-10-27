@@ -1,4 +1,3 @@
-import { MaterialIcon } from "../../components/icons/MaterialIcon";
 import { PrimaryChatNavigation } from "./PrimaryChatNavigation";
 import { primaryChatNavigationTarget } from "./primaryChatView";
 import { SkinHeading } from "../../appearance/SkinVisual";
@@ -1024,9 +1023,7 @@ type AppSidebarProps = {
   webItems: WebEntry[];
   primaryChatNavigation?: boolean;
   primaryChatNavError?: string;
-  windowFullScreen?: boolean;
   primaryChatNavAgents?: AssistantNavAgentItem[];
-  onTogglePrimaryChatNavigation?: () => void;
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantPinnedChatItems?: AssistantNavChatItem[];
   assistantChatPinningSupported?: boolean;
@@ -1122,9 +1119,7 @@ export function AppSidebar({
   webItems,
   primaryChatNavigation = false,
   primaryChatNavError = "",
-  windowFullScreen = false,
   primaryChatNavAgents = [],
-  onTogglePrimaryChatNavigation,
   assistantNavAgents = [],
   assistantPinnedChatItems: manualPinnedChatItems = [],
   assistantChatPinningSupported = false,
@@ -5449,6 +5444,8 @@ export function AppSidebar({
           dragActivator?.setActivatorNodeRef(element);
         }}
         headerButtonProps={{
+          "data-agent-identity": "",
+          "data-agent-pointer-idle": "",
           className: "assistant-worker-header",
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
           ...getSidebarRovingItemProps(
@@ -6941,7 +6938,7 @@ export function AppSidebar({
           shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"
         }
       >
-        {!isWindows || windowFullScreen ? (
+        {!isWindows ? (
           <div className="sidebar-chrome">
             <div className={chromeToolbarClassName}>
               <div className="sidebar-top-actions">
@@ -6954,13 +6951,6 @@ export function AppSidebar({
                     onClick={onOpenGlobalSearch}
                   >
                     <SettingsSidebarIcon kind="search" />
-                  </button>
-                ) : null}
-                {isPrimaryMode && assistantLauncherVisible ? (
-                  <button type="button" className="app-sidebar-collapse-button is-compact primary-chat-mode-toggle"
-                    aria-label={t("sidebar.primaryChats.toggle")} title={t(primaryChatNavigation ? "sidebar.primaryChats.standardMode" : "sidebar.primaryChats.toggle")}
-                    aria-pressed={primaryChatNavigation} onClick={onTogglePrimaryChatNavigation}>
-                    <MaterialIcon name="question_answer" />
                   </button>
                 ) : null}
                 {isPrimaryMode ? (
