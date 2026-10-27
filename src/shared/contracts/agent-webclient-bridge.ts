@@ -316,6 +316,10 @@ export type AgentPlatformRequestFrame = {
   frame: "request";
   type: string;
   id: string;
+  /** Platform event detail level of /api/query, /api/attach and /api/chat.
+   * Omitted follows the Agent's default; Desktop sets it only for its own
+   * main-process Runs that read tool events (the image studio asks for full). */
+  detail?: "summary" | "full" | "none";
   payload?: unknown;
 };
 
@@ -418,6 +422,7 @@ export type WorkPanelSourceContext = WorkPanelChatContext & {
   publishId: string;
   sourceId: string;
 };
+export type WorkPanelViewContext = { chatId: string; runId: string; sourceId: string; viewIndex: string };
 export type WorkPanelPlanningContext = { chatId: string; planningId: string };
 export type WorkPanelArtifactContext = WorkPanelChatContext & { artifactId: string; relativePath?: string };
 export type WorkPanelReferenceContext = WorkPanelChatContext & { referenceId: string; relativePath?: string };
@@ -456,6 +461,7 @@ export type WorkPanelWebclientModule =
   | "reference"
   | "file"
   | "planning"
+  | "view"
   | "agent"
   | "copilot"
   | "skill";
@@ -478,6 +484,7 @@ export type WorkPanelWebclientDescriptor = WorkPanelWebclientDescriptorBase & (
   | { module: "reference"; context: WorkPanelReferenceContext }
   | { module: "file"; context: WorkPanelFileContext }
   | { module: "planning"; context: WorkPanelPlanningContext }
+  | { module: "view"; context: WorkPanelViewContext }
   | { module: "agent" | "copilot"; context: WorkPanelAgentContext }
   | { module: "skill"; context: WorkPanelSkillContext }
 );
@@ -620,6 +627,7 @@ export type WorkPanelBridgeResult =
   | AgentWebclientBridgeFailure;
 
 export type WorkPanelCapability =
+  | "workpanel.view"
   | "workpanel.open"
   | "workpanel.document.open-local"
   | "workpanel.document.open-local-direct"

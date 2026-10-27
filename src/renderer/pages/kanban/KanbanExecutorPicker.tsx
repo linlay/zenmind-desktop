@@ -60,7 +60,7 @@ export function KanbanExecutorPicker({ agents, value, disabled, onChange, defaul
       {visibleAgents.map((agent) => <button key={agent.agentKey} type="button" className="kanban-executor-card"
         title={agent.displayName || agent.agentKey} aria-pressed={value === agent.agentKey} disabled={disabled}
         onClick={() => onChange(agent.agentKey)}>
-        <span className="kanban-executor-avatar" aria-hidden="true"><AgentIcon icon={agent.icon} size={20} type="agent" /></span>
+        <span className="kanban-executor-avatar" aria-hidden="true"><AgentIcon icon={agent.icon} mode={agent.mode} size={20} type="agent" /></span>
         <span className="kanban-executor-name">{agent.displayName || agent.agentKey}</span>
         {value === agent.agentKey && <CheckOutlined className="kanban-executor-check" aria-hidden="true" />}
       </button>)}

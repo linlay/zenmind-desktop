@@ -579,6 +579,23 @@ body.desktop-pet-body,
   line-height: inherit;
 }
 
+.desktop-pet-status-panel .desktop-pet-overview-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.desktop-pet-status-panel .desktop-pet-message-count.is-unread {
+  color: #1677ff;
+}
+
+.desktop-pet-status-panel .desktop-pet-message-count.is-awaiting {
+  color: #b96a16;
+}
+
 .desktop-pet-status-panel .desktop-pet-task-head-action {
   color: var(--pet-secondary);
 }
@@ -1306,7 +1323,7 @@ body.desktop-pet-body,
   --pet-message-actions-width: 52px;
 }
 
-.desktop-pet-message-card:is(:hover, :focus-within) .desktop-pet-message-main {
+.desktop-pet-message-card:not(.is-awaiting):is(:hover, :focus-within) .desktop-pet-message-main {
   /* Fade the copy before the floating controls while keeping its full layout width. */
   -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--pet-message-actions-width) - 20px), transparent calc(100% - var(--pet-message-actions-width)), transparent 100%);
   mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--pet-message-actions-width) - 20px), transparent calc(100% - var(--pet-message-actions-width)), transparent 100%);

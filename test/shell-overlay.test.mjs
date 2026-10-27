@@ -83,16 +83,6 @@ function createHookHarness({ navigation = false } = {}) {
   };
 }
 
-function deferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
 test("shell overlay reducer replaces the active overlay and ignores stale closes", () => {
   const { reduceShellOverlay } = loadShellOverlayModule({});
   const firstShare = {
@@ -142,57 +132,64 @@ test("a stale close cannot close a newer overlay of the same kind", () => {
   assert.equal(harness.render().activeOverlay, null);
 });
 
-test("opening search invalidates a pending tool menu request", async () => {
+test("tool menu opens synchronously without requesting account refresh", () => {
   const harness = createHookHarness();
-  const refresh = deferred();
+  const overlay = harness.render();
+  let refreshRequested = false;
+
+  // Guard against restoring the old refresh callback dependency at runtime.
+  overlay.requestToolMenuOpen(() => {
+    refreshRequested = true;
+    return new Promise(() => {});
+  });
+
+  assert.deepEqual(harness.render().activeOverlay, { kind: "toolMenu" });
+  assert.equal(refreshRequested, false);
+});
+
+test("opening search replaces the tool menu without a late reopen", async () => {
+  const harness = createHookHarness();
   let overlay = harness.render();
 
-  const pendingOpen = overlay.requestToolMenuOpen(() => refresh.promise);
+  overlay.requestToolMenuOpen();
+  const menu = harness.render().activeOverlay;
   overlay.openGlobalSearch();
-  refresh.resolve();
-  await pendingOpen;
+  overlay.closeToolMenu(menu);
+  await Promise.resolve();
 
   overlay = harness.render();
   assert.deepEqual(overlay.activeOverlay, { kind: "globalSearch" });
 });
 
-test("closing a pending tool menu request prevents a late open", async () => {
+test("tool menu can close immediately and ignores a previous menu's close", async () => {
   const harness = createHookHarness();
-  const refresh = deferred();
   let overlay = harness.render();
 
-  const pendingOpen = overlay.requestToolMenuOpen(() => refresh.promise);
-  overlay.closeToolMenu(null);
-  refresh.resolve();
-  await pendingOpen;
+  overlay.requestToolMenuOpen();
+  const firstMenu = harness.render().activeOverlay;
+  overlay.requestToolMenuOpen();
+  const currentMenu = harness.render().activeOverlay;
+  overlay.closeToolMenu(firstMenu);
+  assert.equal(harness.render().activeOverlay, currentMenu);
+
+  overlay.closeToolMenu(currentMenu);
+  await Promise.resolve();
 
   overlay = harness.render();
   assert.equal(overlay.activeOverlay, null);
 });
 
-test("the latest tool menu request opens after either refresh outcome", async () => {
+test("bootstrap auto-open opens an idle menu and preserves any active overlay", () => {
   const harness = createHookHarness();
   let overlay = harness.render();
-  const staleRefresh = deferred();
-  const currentRefresh = deferred();
 
-  const staleOpen = overlay.requestToolMenuOpen(() => staleRefresh.promise);
-  const currentOpen = overlay.requestToolMenuOpen(() => currentRefresh.promise);
-  staleRefresh.resolve();
-  currentRefresh.reject(new Error("offline"));
-  await Promise.all([staleOpen, currentOpen]);
-
-  overlay = harness.render();
-  assert.deepEqual(overlay.activeOverlay, { kind: "toolMenu" });
-});
-
-test("bootstrap auto-open does not replace an active or pending overlay", async () => {
-  const harness = createHookHarness();
-  const refresh = deferred();
-  let overlay = harness.render();
-
-  const pendingOpen = overlay.requestToolMenuOpen(() => refresh.promise);
   overlay.openToolMenuIfIdle();
+  const menu = harness.render().activeOverlay;
+  assert.deepEqual(menu, { kind: "toolMenu" });
+  overlay.openToolMenuIfIdle();
+  assert.equal(harness.render().activeOverlay, menu);
+
+  overlay.closeToolMenu(menu);
   assert.equal(harness.render().activeOverlay, null);
 
   overlay = harness.render();
@@ -200,9 +197,10 @@ test("bootstrap auto-open does not replace an active or pending overlay", async 
   overlay.openToolMenuIfIdle();
   assert.deepEqual(harness.render().activeOverlay, { kind: "globalSearch" });
 
-  refresh.resolve();
-  await pendingOpen;
-  assert.deepEqual(harness.render().activeOverlay, { kind: "globalSearch" });
+  overlay.openConversationShare("chat-1", "Chat");
+  const share = harness.render().activeOverlay;
+  overlay.openToolMenuIfIdle();
+  assert.equal(harness.render().activeOverlay, share);
 });
 
 test("navigation closes only the share session; stale closes cannot affect its replacement", () => {

@@ -67,6 +67,7 @@ function registerSettingsHandlers(app, overrides = {}) {
   const ipcMain = createIpcMain();
   registerSettingsIpcHandlers(ipcMain, {
     app,
+    listWebEntryKeys: () => [],
     platform: "darwin",
     nativeTheme: { themeSource: "system" },
     getDataRoot: () => "",

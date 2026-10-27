@@ -1,3 +1,4 @@
+import { MaterialIcon } from "../../components/icons/MaterialIcon";
 import { SkinVisual } from "../../appearance/SkinVisual";
 import type { SVGProps } from "react";
 import type { SettingsSectionId } from "../../../shared/settings-sections";
@@ -35,13 +36,7 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
           <polyline points="15 18 9 12 15 6" />
         </svg>
       );
-    case "search":
-      return (
-        <svg {...iconProps}>
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      );
+    case "search": return <MaterialIcon name="search" className={iconProps.className} />;
     case "appearance":
       return (
         <svg {...iconProps}>

@@ -65,6 +65,7 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "run.complete",
   "chat.created",
   "chats.order.changed",
+  "chat.primary.changed",
   "chat.updated",
   "chat.deleted",
   "chat.archived",
@@ -119,6 +120,8 @@ export type BrokerRun = {
   accessToken: string;
   detachInFlight: Promise<void> | null;
   operationGeneration: number;
+  /** lastSeq at the previous unsolicited upstream detach; a repeat without progress stops auto-resume. */
+  upstreamLossSeq?: number;
 };
 
 export type QueryTransaction = {
@@ -382,3 +385,8 @@ export type BrokerDiagnosticsCounters = {
   cloneRevokedCount: number;
   laneRotationCount: number;
 };
+
+/** Progress updates are ephemeral; retries remain ordered public events. */
+export function isProgressActivity(event: Record<string, unknown>): boolean {
+  return event.type === "run.activity" && !event.retry;
+}

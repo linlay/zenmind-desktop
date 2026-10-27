@@ -4108,6 +4108,10 @@ div.sidebar-chats-group-popover {
   color: var(--control-icon-color);
 }
 
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .sidebar-collapsed-toggle-button {
+  height: 26px;
+}
+
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:hover,
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:focus-visible {
   background: var(--control-hover-bg);
@@ -4486,6 +4490,10 @@ div.sidebar-chats-group-popover {
   width: 24px;
   height: 24px;
   border-radius: var(--control-radius-sm);
+}
+
+.app-sidebar-collapse-button.is-compact.sidebar-collapsed-toggle-button {
+  height: 26px;
 }
 
 .app-sidebar-collapse-button.is-compact:hover,

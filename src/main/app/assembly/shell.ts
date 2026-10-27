@@ -124,6 +124,7 @@ export function assembleAppShell(dependencies: AssembleAppShellDependencies) {
             "reference",
             "file",
             "planning",
+            "view",
             "agent",
             "copilot",
             "skill",

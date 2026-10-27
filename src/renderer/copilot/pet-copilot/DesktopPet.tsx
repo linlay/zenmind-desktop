@@ -1,11 +1,8 @@
-import CheckOutlined from "@ant-design/icons/CheckOutlined";
 import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import DownOutlined from "@ant-design/icons/DownOutlined";
 import EnterOutlined from "@ant-design/icons/EnterOutlined";
-import LoadingOutlined from "@ant-design/icons/LoadingOutlined";
 import MessageOutlined from "@ant-design/icons/MessageOutlined";
-import MinusOutlined from "@ant-design/icons/MinusOutlined";
 import UpOutlined from "@ant-design/icons/UpOutlined";
 import {
   useEffect,
@@ -20,14 +17,12 @@ import { useLocation } from "react-router-dom";
 import type {
   DesktopPetAppearanceOption,
   DesktopPetPreviewPanel,
-  DesktopPetPreviewItemStatus,
   DesktopPetSignatureAction,
   DesktopPetSignatureTrigger,
   DesktopPetSignatureVariant,
   DesktopPetState,
   DesktopPetStateAsset,
   DesktopPetStatus,
-  DesktopPetTaskItem,
   DesktopPetMessageItem,
   DesktopPetWindowMode
 } from "../../../shared/contracts";
@@ -110,103 +105,7 @@ function normalizePetStatus(status: DesktopPetStatus): DesktopPetStatus {
   return "idle";
 }
 
-function formatPetHint(status: DesktopPetStatus, t: ReturnType<typeof useI18n>["t"]) {
-  if (status === "awaiting") {
-    return t("desktopPet.status.awaitingConfirm");
-  }
-  if (status === "running") {
-    return t("desktopPet.status.thinking");
-  }
-  if (status === "done") {
-    return t("desktopPet.doneFallback");
-  }
-  if (status === "error") {
-    return t("desktopPet.status.error");
-  }
-  return "";
-}
-
-function formatPreviewStatus(status: DesktopPetPreviewItemStatus, t: ReturnType<typeof useI18n>["t"]) {
-  switch (status) {
-    case "running":
-      return t("desktopPet.preview.running");
-    case "waiting":
-      return t("desktopPet.preview.waiting");
-    case "error":
-      return t("desktopPet.preview.failed");
-    case "cancelled":
-      return t("desktopPet.preview.cancelled");
-    case "success":
-    case "done":
-      return t("desktopPet.preview.done");
-    default:
-      return t("desktopPet.preview.pending");
-  }
-}
-
-function mapDesktopPetPreviewBadgeStatus(status: string): string {
-  switch (status) {
-    case "success":
-    case "done":
-      return "done";
-    case "running":
-      return "running";
-    case "waiting":
-      return "awaiting";
-    case "error":
-      return "error";
-    case "cancelled":
-    case "stopped":
-      return "cancelled";
-    default:
-      return "idle";
-  }
-}
-
-function renderDesktopPetStatusIcon(status: string) {
-  switch (status) {
-    case "done":
-      return <CheckOutlined aria-hidden="true" />;
-    case "running":
-      return <LoadingOutlined spin aria-hidden="true" />;
-    case "message":
-      return <MessageOutlined aria-hidden="true" />;
-    case "awaiting":
-      return <ClockCircleOutlined aria-hidden="true" />;
-    case "error":
-      return <CloseOutlined aria-hidden="true" />;
-    case "cancelled":
-    case "idle":
-    default:
-      return <MinusOutlined aria-hidden="true" />;
-  }
-}
-
-function formatTaskStatus(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n>["t"]) {
-  if (task.status === "done") {
-    return t("desktopPet.status.done");
-  }
-  if (task.status !== "awaiting") {
-    return t("desktopPet.task.running");
-  }
-  switch (task.awaitingMode) {
-    case "planning":
-      return t("sidebar.assistants.awaitingStatus.planning");
-    case "question":
-      return t("sidebar.assistants.awaitingStatus.question");
-    case "approval":
-      return t("sidebar.assistants.awaitingStatus.approval");
-    case "form":
-      return t("sidebar.assistants.awaitingStatus.form");
-    default:
-      return t("desktopPet.task.awaitingConfirm");
-  }
-}
-
 const DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30;
-const DESKTOP_PET_TASK_VISIBLE_LIMIT = 2;
-const DESKTOP_PET_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const DESKTOP_PET_MESSAGE_LIMIT = 50;
 
 function formatInlinePetPreview(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -216,62 +115,13 @@ function formatInlinePetPreview(value: string) {
   return `${normalized.slice(0, Math.max(0, DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH - 3)).trimEnd()}...`;
 }
 
-function shouldShowSecondaryPreview(primary: string, secondary: string) {
-  return Boolean(secondary) && secondary !== primary;
-}
-
-function formatTaskPreview(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n>["t"]) {
-  const preview = task.preview.trim();
-  return preview || formatTaskStatus(task, t);
-}
-
-function getDesktopPetMessageCacheKey(message: DesktopPetMessageItem) {
-  return message.chatId || message.id;
-}
-
-function getDesktopPetMessageVersionKey(message: DesktopPetMessageItem) {
-  return [
-    message.chatId,
-    message.runId ?? "",
-    message.updatedAt
-  ].join("\u0000");
-}
-
-function mergeDesktopPetMessageLists(
-  primaryMessages: readonly DesktopPetMessageItem[],
-  fallbackMessages: readonly DesktopPetMessageItem[]
-) {
-  const merged: DesktopPetMessageItem[] = [];
-  const seenKeys = new Set<string>();
-  for (const message of [...primaryMessages, ...fallbackMessages]) {
-    const key = getDesktopPetMessageCacheKey(message);
-    if (!key || seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
-    merged.push(message);
-  }
-  return merged;
-}
-
-function getVisibleDesktopPetMessages(input: {
-  messages: readonly DesktopPetMessageItem[];
-  previewHistoryMessage: DesktopPetMessageItem | null;
-  dismissedKeys: ReadonlySet<string>;
-}) {
-  const withPreview = input.previewHistoryMessage
-    ? mergeDesktopPetMessageLists(input.messages, [input.previewHistoryMessage])
-    : input.messages;
-  const oldestVisibleAt = Date.now() - DESKTOP_PET_MESSAGE_RETENTION_MS;
-  return withPreview
+function getVisibleDesktopPetMessages(messages: readonly DesktopPetMessageItem[]) {
+  return messages
     .filter((message) => message.unread || message.status === "awaiting")
-    .filter((message) => message.updatedAt >= oldestVisibleAt)
-    .filter((message) => !input.dismissedKeys.has(getDesktopPetMessageVersionKey(message)))
     .sort((left, right) => {
       const awaitingPriority = Number(right.status === "awaiting") - Number(left.status === "awaiting");
       return awaitingPriority || right.updatedAt - left.updatedAt;
-    })
-    .slice(0, DESKTOP_PET_MESSAGE_LIMIT);
+    });
 }
 
 function formatMessageCardPreview(
@@ -284,7 +134,7 @@ function formatMessageCardPreview(
   if (draftPreview) {
     return t("desktopPet.replyPreview", { text: draftPreview });
   }
-  if (isThinking || message.status === "running") {
+  if (message.status !== "awaiting" && (isThinking || message.status === "running")) {
     return t("desktopPet.status.thinking");
   }
   const preview = formatDesktopPetMessagePreview(message.preview);
@@ -300,116 +150,13 @@ function formatMessageCardPreview(
   return t("desktopPet.status.ready");
 }
 
-function formatStatusPanelTitle(status: DesktopPetStatus, hasMessageReaction: boolean, t: DesktopPetTranslate) {
-  if (hasMessageReaction) {
-    return t("desktopPet.newMessage");
-  }
-  if (status === "idle") {
-    return t("desktopPet.status.idle");
-  }
-  if (status === "running") {
-    return t("desktopPet.status.processing");
-  }
-  if (status === "awaiting") {
-    return t("desktopPet.status.awaiting");
-  }
-  if (status === "done") {
-    return t("desktopPet.status.done");
-  }
-  return t("desktopPet.status.error");
-}
-
-function formatStatusPanelPreview(
-  status: DesktopPetStatus,
-  hasMessageReaction: boolean,
-  message: string,
-  hint: string,
-  t: DesktopPetTranslate
-) {
-  if (hasMessageReaction) {
-    return message || t("desktopPet.newMessage");
-  }
-  if (hint) {
-    return hint;
-  }
-  if (status === "idle") {
-    return t("desktopPet.task.none");
-  }
-  if (status === "running") {
-    return t("desktopPet.task.backgroundRunning");
-  }
-  if (status === "awaiting") {
-    return t("desktopPet.task.awaitingPlanningConfirm");
-  }
-  if (status === "done") {
-    return t("desktopPet.task.completed");
-  }
-  return t("desktopPet.task.openDesktop");
-}
-
-type DesktopPetPanelStatus = DesktopPetStatus | "message";
-
-function normalizePreviewPanelStatus(status: DesktopPetPreviewPanel["status"]): DesktopPetStatus {
-  switch (status) {
-    case "done":
-      return "done";
-    case "error":
-    case "stopped":
-      return "error";
-    case "waiting":
-      return "awaiting";
-    case "running":
-    default:
-      return "running";
-  }
-}
-
-function formatPreviewPanelHeaderTitle(panel: DesktopPetPreviewPanel, t: DesktopPetTranslate) {
-  const status = normalizePreviewPanelStatus(panel.status);
-  if (status === "done") {
-    return t("desktopPet.status.done");
-  }
-  if (status === "error") {
-    return t("desktopPet.status.stopped");
-  }
-  if (status === "awaiting") {
-    return t("desktopPet.status.awaiting");
-  }
-  return t("desktopPet.preview.running");
-}
-
-function formatPreviewPanelSummary(panel: DesktopPetPreviewPanel, t: DesktopPetTranslate) {
-  const summary = panel.summary.trim();
-  if (summary) {
-    return formatInlinePetPreview(summary);
-  }
-  const status = normalizePreviewPanelStatus(panel.status);
-  if (status === "done") {
-    return panel.artifactCount > 0
-      ? t("desktopPet.preview.completedArtifacts", { count: panel.artifactCount })
-      : t("desktopPet.status.done");
-  }
-  if (status === "error") {
-    return t("desktopPet.status.stopped");
-  }
-  if (status === "awaiting") {
-    return panel.awaiting?.title.trim() || t("desktopPet.status.awaiting");
-  }
-  return t("desktopPet.task.thinking");
-}
-
 type DesktopPetDragState = {
   pointerId: number;
   target: HTMLElement;
   lastScreenX: number;
 };
 
-type DesktopPetDragAnchorMode =
-  | "bubble"
-  | "preview-expanded"
-  | "task-list"
-  | "task-list-compact"
-  | null;
+type DesktopPetDragAnchorMode = "bubble" | null;
 
 type ActiveDesktopPetSignature = {
   actionId: string;
@@ -450,8 +197,7 @@ function pointIntersectsVisiblePetArea(x: number, y: number, mask: DesktopPetAlp
   const image = document.querySelector<HTMLElement>(".desktop-pet-image");
   return Boolean(image && pointIntersectsDesktopPetImage(image, mask, x, y)) ||
     pointIntersectsElement(".desktop-pet-unread-badge", x, y) ||
-    pointIntersectsElement(".desktop-pet-task-panel", x, y) ||
-    pointIntersectsElement(".desktop-pet-preview", x, y);
+    pointIntersectsElement(".desktop-pet-task-panel", x, y);
 }
 
 function shouldShowReviewAction(previewPanel: DesktopPetPreviewPanel | null) {
@@ -552,7 +298,6 @@ export function DesktopPet() {
   const [replyText, setReplyText] = useState("");
   const [dismissingMessageIds, setDismissingMessageIds] = useState<readonly string[]>([]);
   const [dismissErrorChatId, setDismissErrorChatId] = useState<string | null>(null);
-  const [dismissedMessageKeys, setDismissedMessageKeys] = useState<readonly string[]>([]);
   // 回复发送后到后端状态回填前的乐观「思考中」占位（按 chatId），超时自动清除
   const [pendingReplyIds, setPendingReplyIds] = useState<readonly string[]>([]);
   const pendingReplyTimersRef = useRef<Map<string, number>>(new Map());
@@ -893,45 +638,12 @@ export function DesktopPet() {
     : rawDisplayStatus;
   const unreadCount = Math.max(0, Math.round(Number(petState.unreadCount) || 0));
   const messagePreview = typeof petState.messagePreview === "string" ? petState.messagePreview.trim() : "";
-  const activeTasks = Array.isArray(petState.activeTasks) ? petState.activeTasks : [];
-  const visibleTasks = activeTasks.slice(0, DESKTOP_PET_TASK_VISIBLE_LIMIT);
-  const hiddenTaskCount = Math.max(0, activeTasks.length - visibleTasks.length);
   const petMessages = Array.isArray(petState.messages) ? petState.messages : [];
-  const dismissedMessageKeySet = new Set(dismissedMessageKeys);
-  const runningTaskCount = activeTasks.filter((task) => task.status === "running").length;
-  const awaitingTaskCount = activeTasks.filter((task) => task.status === "awaiting").length;
-  const completedTaskCount = activeTasks.filter((task) => task.status === "done").length;
-  const previewPanel = petState.previewPanel?.visible ? petState.previewPanel : null;
-  const isDonePreviewPanel = previewPanel?.status === "done";
-  const previewHistoryMessage: DesktopPetMessageItem | null =
-    isDonePreviewPanel && previewPanel?.chatId
-      ? {
-          id: `preview:${previewPanel.runId}:${previewPanel.chatId}`,
-          chatId: previewPanel.chatId,
-          runId: previewPanel.runId,
-          agentKey: petState.boundAgentKey,
-          agentDisplayName: petState.agentDisplayName || petState.boundAgentKey,
-          title: formatPreviewPanelHeaderTitle(previewPanel, t),
-          preview: formatPreviewPanelSummary(previewPanel, t),
-          status: "done",
-          unread: false,
-          updatedAt: previewPanel.updatedAt
-        }
-      : null;
-  const visibleMessages = getVisibleDesktopPetMessages({
-    messages: petMessages,
-    previewHistoryMessage,
-    dismissedKeys: dismissedMessageKeySet
-  });
+  const visibleMessages = getVisibleDesktopPetMessages(petMessages);
   const hasHistoryMessages = visibleMessages.length > 0;
-  const hasCollapsedPreviewPanel = Boolean(previewPanel && !previewPanel.expanded && !isDonePreviewPanel && !hasHistoryMessages);
-  const hasTaskPanelContent = activeTasks.length > 0 && !hasHistoryMessages;
-  const shouldShowTaskPanel = !isDragging && isWidgetExpanded && hasTaskPanelContent;
-  const showTaskPanel = isPanelWindow && shouldShowTaskPanel;
-  const useCompactTaskPanel = shouldShowTaskPanel && activeTasks.length <= DESKTOP_PET_TASK_VISIBLE_LIMIT;
-  const shouldShowPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !shouldShowTaskPanel && Boolean(previewPanel && previewPanel.expanded && !isDonePreviewPanel);
-  const showPreviewPanel = isPanelWindow && shouldShowPreviewPanel;
-  const previewPanelSummary = previewPanel ? formatPreviewPanelSummary(previewPanel, t) : "";
+  const hasExpandedOverview = !isDragging && isWidgetExpanded && hasHistoryMessages;
+  const showStatusPanel = isPanelWindow && hasExpandedOverview;
+  const previewPanel = petState.previewPanel?.visible ? petState.previewPanel : null;
   const hasMessageReaction = displayStatus === "idle" && !isDragging && (messagePreview.length > 0 || unreadCount > 0);
   const isReviewing = displayStatus === "running" && shouldShowReviewAction(previewPanel);
   const stateDragDirection: DesktopPetDragDirection =
@@ -1038,9 +750,7 @@ export function DesktopPet() {
       activeSignature ||
       activeStandardAction ||
       hasMessageReaction ||
-      hasHistoryMessages ||
-      shouldShowTaskPanel ||
-      shouldShowPreviewPanel
+      hasHistoryMessages
     ) {
       return undefined;
     }
@@ -1060,28 +770,10 @@ export function DesktopPet() {
     activeStandardAction,
     hasMessageReaction,
     hasHistoryMessages,
-    shouldShowTaskPanel,
-    shouldShowPreviewPanel,
     signature,
     appearanceId
   ]);
   const assetPath = visualAsset.assetPath;
-  const statusBubbleText = displayStatus === "idle"
-    ? ""
-    : petState.hint.trim() || formatPetHint(displayStatus, t);
-  const bubbleText = hasMessageReaction
-    ? messagePreview || t("desktopPet.newMessage")
-    : statusBubbleText;
-  const showMessageBadgeOnly = hasMessageReaction && !hasHistoryMessages && !shouldShowTaskPanel && !shouldShowPreviewPanel && !isDonePreviewPanel;
-  const canShowStatusPanel =
-    !isDragging &&
-    !shouldShowTaskPanel &&
-    !shouldShowPreviewPanel &&
-    !hasCollapsedPreviewPanel &&
-    !showMessageBadgeOnly &&
-    (hasHistoryMessages || displayStatus !== "idle");
-  const shouldShowStatusPanel = canShowStatusPanel && isWidgetExpanded;
-  const showStatusPanel = isPanelWindow && shouldShowStatusPanel;
   const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts({
     navigationAttention: petState.navigationAttention
   });
@@ -1102,57 +794,17 @@ export function DesktopPet() {
           ariaLabel: t("desktopPet.unread", { count: unreadBadgeCounts.unreadCount })
         }]
       : []),
-    ...(runningTaskCount > 0 && unreadBadgeCounts.pendingCount === 0 && unreadBadgeCounts.unreadCount === 0
-      ? [{
-          key: "running" as const,
-          tone: "running" as const,
-          count: runningTaskCount,
-          ariaLabel: t("desktopPet.activity.runningCount", { count: runningTaskCount })
-        }]
-      : [])
   ];
   // The pet and its panel are separate windows; expanding the panel must not
   // remove the pet's only visible status/count affordance.
   const showUnreadBadges = unreadBadgeItems.length > 0;
-  const previewTitle = previewPanel ? formatInlinePetPreview(previewPanel.title) : "";
-  const previewSummary = previewPanel && previewPanel.expanded
-    ? formatInlinePetPreview(previewPanel.summary)
-    : "";
-  const showPreviewSummary = shouldShowSecondaryPreview(previewTitle, previewSummary);
-  const taskPanelTitle = petState.agentDisplayName?.trim() || t("desktopPet.panel.defaultAgent");
-  const taskSummaryText = t("desktopPet.panel.taskSummary", {
-    running: runningTaskCount,
-    awaiting: awaitingTaskCount,
-    completed: completedTaskCount
-  });
-  const statusPanelStatus: DesktopPetPanelStatus = hasMessageReaction ? "message" : displayStatus;
-  const statusPanelTitle = hasHistoryMessages
-    ? t("desktopPet.panel.overview")
-    : formatStatusPanelTitle(displayStatus, hasMessageReaction, t);
-  const statusPanelPreview = formatStatusPanelPreview(displayStatus, hasMessageReaction, bubbleText, petState.hint.trim(), t);
   const activeDragAnchorMode = isDragging ? dragAnchorMode : null;
-  const hasTaskPanelAnchor =
-    showTaskPanel ||
-    activeDragAnchorMode === "task-list" ||
-    activeDragAnchorMode === "task-list-compact";
-  const hasCompactTaskPanelAnchor =
-    (isPanelWindow && useCompactTaskPanel) ||
-    activeDragAnchorMode === "task-list-compact";
-  const hasPreviewExpandedAnchor =
-    showPreviewPanel ||
-    activeDragAnchorMode === "preview-expanded";
-  const hasBubbleAnchor = showStatusPanel || activeDragAnchorMode === "bubble";
+  const hasBubbleAnchor = hasExpandedOverview || activeDragAnchorMode === "bubble";
   const desiredWindowMode: DesktopPetWindowMode = isPanelWindow
     ? "base"
     : isDragging
       ? activeDragAnchorMode ?? "base"
-      : shouldShowTaskPanel
-        ? useCompactTaskPanel ? "task-list-compact" : "task-list"
-        : shouldShowPreviewPanel
-          ? "preview-expanded"
-          : shouldShowStatusPanel
-            ? "bubble"
-            : "base";
+      : hasExpandedOverview ? "bubble" : "base";
 
   useEffect(() => {
     if (isPanelWindow) {
@@ -1165,28 +817,15 @@ export function DesktopPet() {
   }, [desiredWindowMode, isPanelWindow]);
 
   function resolveCurrentDragAnchorMode(): DesktopPetDragAnchorMode {
-    if (shouldShowTaskPanel) {
-      return useCompactTaskPanel ? "task-list-compact" : "task-list";
-    }
-    if (shouldShowPreviewPanel) {
-      return "preview-expanded";
-    }
-    if (shouldShowStatusPanel) {
-      return "bubble";
-    }
-    return null;
-  }
-
-  function handlePreviewPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    event.stopPropagation();
-  }
-
-  function handleTaskPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    event.stopPropagation();
+    return hasBubbleAnchor ? "bubble" : null;
   }
 
   function stopPanelClick(event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleTaskPointerDown(event: ReactPointerEvent<HTMLElement>) {
     event.stopPropagation();
   }
 
@@ -1209,7 +848,7 @@ export function DesktopPet() {
   function handleUnreadBadgeClick(event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (hasTaskPanelContent || canShowStatusPanel || hasHistoryMessages) {
+    if (hasHistoryMessages) {
       setIsWidgetExpanded(true);
       return;
     }
@@ -1242,16 +881,11 @@ export function DesktopPet() {
 
   function handleReplySubmit(message: DesktopPetMessageItem) {
     const text = replyText.trim();
-    if (!text) {
+    if (!text || message.status === "awaiting") {
       return;
     }
     void window.electronAPI.desktopPet
       .replyMessage({ chatId: message.chatId, agentKey: message.agentKey, message: text })
-      .then((result) => {
-        if (result.ok) {
-          hideMessageLocally(message);
-        }
-      })
       .catch(() => undefined);
     markReplyPending(message.chatId);
     setReplyingChatId(null);
@@ -1273,11 +907,6 @@ export function DesktopPet() {
     handleReplySubmit(message);
   }
 
-  function hideMessageLocally(message: DesktopPetMessageItem) {
-    const dismissedKey = getDesktopPetMessageVersionKey(message);
-    setDismissedMessageKeys((current) => current.includes(dismissedKey) ? current : [...current, dismissedKey]);
-  }
-
   async function handleDismissMessage(message: DesktopPetMessageItem) {
     if (dismissingMessageIds.includes(message.chatId)) return;
     setDismissingMessageIds((current) => [...current, message.chatId]);
@@ -1290,13 +919,10 @@ export function DesktopPet() {
         setDismissErrorChatId(message.chatId);
         return;
       }
-      hideMessageLocally(message);
       if (replyingChatId === message.chatId) {
         setReplyingChatId(null);
       }
-      if (previewPanel?.status === "done" && previewPanel.chatId === message.chatId && previewPanel.runId === message.runId) {
-        void window.electronAPI.desktopPet.dismissPreview();
-      }
+
     } catch {
       setDismissErrorChatId(message.chatId);
     } finally {
@@ -1316,47 +942,7 @@ export function DesktopPet() {
         agentKey: message.agentKey,
         chatId: message.chatId
       })
-      .then((result) => {
-        if (result.ok && message.status !== "awaiting") {
-          hideMessageLocally(message);
-        }
-      })
       .catch(() => undefined);
-  }
-
-  function handleOpenAssistantFromPanel(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    void window.electronAPI.desktopPet.openAssistant();
-  }
-
-  function handleTaskClick(event: ReactMouseEvent<HTMLButtonElement>, task: DesktopPetTaskItem) {
-    event.preventDefault();
-    event.stopPropagation();
-    void window.electronAPI.desktopPet.openTaskChat({
-      agentKey: task.agentKey,
-      chatId: task.chatId
-    });
-  }
-
-  function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
-    event.stopPropagation();
-    if (!previewPanel) {
-      return;
-    }
-    if (previewPanel.status === "done") {
-      return;
-    }
-    void window.electronAPI.desktopPet.setPreviewExpanded(!previewPanel.expanded);
-  }
-
-  function togglePreviewExpanded(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!previewPanel) {
-      return;
-    }
-    void window.electronAPI.desktopPet.setPreviewExpanded(!previewPanel.expanded);
   }
 
   async function finishDrag(pointerId: number | null, openAppIfClick: boolean) {
@@ -1367,7 +953,7 @@ export function DesktopPet() {
     resetLocalDragState();
     const result = await endDrag();
     if (openAppIfClick && !result.moved) {
-      if (!isWidgetExpanded && (hasTaskPanelContent || canShowStatusPanel || hasHistoryMessages)) {
+      if (!isWidgetExpanded && hasHistoryMessages) {
         setIsWidgetExpanded(true);
         return;
       }
@@ -1480,10 +1066,6 @@ export function DesktopPet() {
         `is-appearance-${appearanceId}`,
           shouldShowSignatureSpriteAnimation ? "has-signature-animation" : "",
           shouldShowStateSpriteAnimation ? "has-state-animation" : "",
-          hasTaskPanelAnchor ? "has-tasks" : "",
-          hasCompactTaskPanelAnchor ? "has-compact-tasks" : "",
-          showPreviewPanel ? "has-preview" : "",
-          hasPreviewExpandedAnchor ? "has-preview-expanded" : "",
           hasBubbleAnchor ? "has-bubble" : "",
         isWidgetExpanded ? "is-widget-expanded" : "is-widget-collapsed",
 	        petState.edgeDock?.includes("top") ? "is-edge-dock-top" : "",
@@ -1504,147 +1086,12 @@ export function DesktopPet() {
         onPointerCancel={isPanelWindow ? undefined : handlePointerCancel}
       >
         <span className="desktop-pet-stage" aria-hidden="true" />
-        {showTaskPanel ? (
-          <section
-            className={[
-              "desktop-pet-task-panel",
-              isWidgetExpanded ? "is-expanded" : "is-collapsed"
-            ].join(" ")}
-            aria-live="polite"
-            onPointerDown={handleTaskPointerDown}
-          >
-            <div className="desktop-pet-task-head">
-              <span className="desktop-pet-task-head-copy">
-                <strong>{taskPanelTitle}</strong>
-                <span>{taskSummaryText}</span>
-              </span>
-              <button
-                type="button"
-                className="desktop-pet-task-head-action"
-                aria-label={
-                  isWidgetExpanded
-                    ? t("desktopPet.panel.collapseWidget")
-                    : t("desktopPet.panel.expandWidget")
-                }
-                aria-expanded={isWidgetExpanded}
-                onClick={toggleWidgetExpanded}
-              >
-                {isWidgetExpanded ? (
-                  <UpOutlined aria-hidden="true" />
-                ) : (
-                  <DownOutlined aria-hidden="true" />
-                )}
-              </button>
-            </div>
-            {isWidgetExpanded ? (
-              <>
-                <div className="desktop-pet-task-list">
-                  {visibleTasks.map((task) => (
-                    <button
-                      type="button"
-                      key={task.id}
-                      className={`desktop-pet-issue-card is-${task.status}`}
-                      onClick={(event) => handleTaskClick(event, task)}
-                    >
-                      <span className="desktop-pet-task-copy">
-                        <strong>{task.title}</strong>
-                        <span>{formatTaskPreview(task, t)}</span>
-                      </span>
-                      <span
-                        className={`desktop-pet-task-status-badge is-${task.status}`}
-                        aria-label={formatTaskStatus(task, t)}
-                      >
-                        {renderDesktopPetStatusIcon(task.status)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {hiddenTaskCount > 0 || completedTaskCount > 0 ? (
-                  <div className="desktop-pet-task-actions">
-                    <span className="desktop-pet-task-more">
-                      {completedTaskCount > 0
-                        ? t("desktopPet.panel.completedMore", { count: completedTaskCount })
-                        : t("desktopPet.panel.more", { count: hiddenTaskCount })}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="desktop-pet-task-legend" aria-hidden="true">
-                  <span><i className="is-done" />{t("desktopPet.panel.legendDone")}</span>
-                  <span><i className="is-running" />{t("desktopPet.panel.legendRunning")}</span>
-                  <span><i className="is-awaiting" />{t("desktopPet.panel.legendAwaiting")}</span>
-                </div>
-              </>
-            ) : null}
-          </section>
-        ) : showPreviewPanel && previewPanel ? (
-          <section
-            className={[
-              "desktop-pet-task-panel",
-              "desktop-pet-preview-panel",
-              `is-${mapDesktopPetPreviewBadgeStatus(previewPanel.status)}`,
-              previewPanel.expanded ? "is-expanded" : "is-collapsed"
-            ].filter(Boolean).join(" ")}
-            aria-live="polite"
-            onPointerDown={handlePreviewPointerDown}
-            onClick={handlePreviewClick}
-          >
-            <div className="desktop-pet-task-head">
-              <span className="desktop-pet-task-head-copy">
-                <strong>{previewTitle || formatPreviewPanelHeaderTitle(previewPanel, t)}</strong>
-                {showPreviewSummary ? <span>{previewSummary}</span> : null}
-              </span>
-              {previewPanel.status !== "done" ? (
-                <button
-                  type="button"
-                  className="desktop-pet-task-head-action"
-                  aria-label={previewPanel.expanded ? t("desktopPet.collapsePreview") : t("desktopPet.expandPreview")}
-                  aria-expanded={previewPanel.expanded}
-                  onClick={togglePreviewExpanded}
-                >
-                  {previewPanel.expanded ? (
-                    <UpOutlined aria-hidden="true" />
-                  ) : (
-                    <DownOutlined aria-hidden="true" />
-                  )}
-                </button>
-              ) : null}
-            </div>
-            {previewPanel.expanded ? (
-              <div className="desktop-pet-task-list">
-                {previewPanel.items.map((item) => {
-                  const itemDetailText = item.detailText ?? item.text;
-                  const itemTitle = formatInlinePetPreview(item.title);
-                  const itemDetailPreview = formatInlinePetPreview(itemDetailText);
-                  const showItemDetail = shouldShowSecondaryPreview(itemTitle, itemDetailPreview);
-                  const itemBadgeStatus = mapDesktopPetPreviewBadgeStatus(item.status);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`desktop-pet-issue-card is-${itemBadgeStatus}`}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <span className="desktop-pet-task-copy">
-                        <strong>{itemTitle}</strong>
-                        {showItemDetail ? <span>{itemDetailPreview}</span> : null}
-                      </span>
-                      <span
-                        className={`desktop-pet-task-status-badge is-${itemBadgeStatus}`}
-                        aria-label={formatPreviewStatus(item.status, t)}
-                      >
-                        {renderDesktopPetStatusIcon(itemBadgeStatus)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-          </section>
-        ) : showStatusPanel ? (
+        {showStatusPanel ? (
           <section
             className={[
               "desktop-pet-task-panel",
               "desktop-pet-status-panel",
-              `is-${statusPanelStatus}`,
+              "is-message",
               isWidgetExpanded ? "is-expanded" : "is-collapsed"
             ].join(" ")}
             aria-live="polite"
@@ -1653,11 +1100,12 @@ export function DesktopPet() {
             <div className="desktop-pet-task-head">
               <span className="desktop-pet-task-head-copy">
                 <strong>
-                  <MessageOutlined aria-hidden="true" />{statusPanelTitle}
-                  {hasHistoryMessages ? (
-                    <span className="desktop-pet-message-count">({visibleMessages.length})</span>
-                  ) : null}
+                  <MessageOutlined aria-hidden="true" />{t("desktopPet.panel.overview")}
                 </strong>
+                <span className="desktop-pet-overview-counts">
+                  <span className="desktop-pet-message-count is-unread">{t("desktopPet.panel.unreadCount", { count: unreadBadgeCounts.unreadCount })}</span>
+                  <span className="desktop-pet-message-count is-awaiting">{t("desktopPet.panel.awaitingCount", { count: unreadBadgeCounts.pendingCount })}</span>
+                </span>
               </span>
               <button
                 type="button"
@@ -1676,10 +1124,9 @@ export function DesktopPet() {
             {isWidgetExpanded ? (
               <>
                 <div className={`desktop-pet-message-stack${replyingChatId ? " is-replying" : ""}`}>
-                  {visibleMessages.length > 0 ? (
-                    visibleMessages.map((message) => {
+                  {visibleMessages.map((message) => {
                       const isThinking =
-                        message.status === "running" || pendingReplyIds.includes(message.chatId);
+                        message.status !== "awaiting" && (message.status === "running" || pendingReplyIds.includes(message.chatId));
                       const cardStatus = isThinking ? "running" : message.status;
                       const canReply = message.status !== "awaiting";
                       const isReplying = canReply && replyingChatId === message.chatId;
@@ -1689,6 +1136,7 @@ export function DesktopPet() {
                       <div
                         key={message.id}
                         className={`desktop-pet-message-card is-${cardStatus}${message.unread ? " is-unread" : ""}${canReply ? " can-reply" : ""}${isReplying ? " is-replying" : ""}`}
+                        data-chat-id={message.chatId}
                         onPointerDown={handleTaskPointerDown}
                       >
                         <button
@@ -1731,6 +1179,7 @@ export function DesktopPet() {
                               <EnterOutlined aria-hidden="true" />
                             </button>
                           ) : null}
+                          {canReply ? (
                           <button
                             type="button"
                             className="desktop-pet-message-dismiss"
@@ -1741,6 +1190,7 @@ export function DesktopPet() {
                           >
                             <CloseOutlined aria-hidden="true" />
                           </button>
+                          ) : null}
                         </div>
                         {isReplying ? (
                           <div
@@ -1787,25 +1237,7 @@ export function DesktopPet() {
                         ) : null}
                       </div>
                       );
-                    })
-                  ) : (
-                    <button
-                      type="button"
-                      className={`desktop-pet-issue-card is-${statusPanelStatus}`}
-                      onClick={handleOpenAssistantFromPanel}
-                    >
-                      <span className="desktop-pet-task-copy">
-                        <strong>{statusPanelTitle}</strong>
-                        <span>{statusPanelPreview}</span>
-                      </span>
-                      <span
-                        className={`desktop-pet-task-status-badge is-${statusPanelStatus}`}
-                        aria-label={statusPanelTitle}
-                      >
-                        {renderDesktopPetStatusIcon(statusPanelStatus)}
-                      </span>
-                    </button>
-                  )}
+                    })}
                 </div>
               </>
             ) : null}

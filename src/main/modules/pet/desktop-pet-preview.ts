@@ -344,8 +344,19 @@ function isTerminalEvent(type: string) {
     type === "done";
 }
 
+// Reply previews use public content, not model internals or tool execution details.
+// Lifecycle and existing structured notifications retain their own presentation.
+function isPreviewEvent(type: string) {
+  return isStartEvent(type) || isTerminalEvent(type) ||
+    type.startsWith("content.") || type.startsWith("action.") ||
+    type.startsWith("plan.") || type.startsWith("task.") ||
+    type === "awaiting.ask" || type === "awaiting.asking" || type === "awaiting.confirm" ||
+    type === "awaiting.answer" || type === "awaiting.answered" ||
+    type === "request.submit" || type === "artifact.publish";
+}
+
 function isDeltaEvent(type: string) {
-  return type === "content.delta" || type === "reasoning.delta" || type === "tool.args" || type === "action.args";
+  return type === "content.delta" || type === "action.args";
 }
 
 function createDefaultPanel(event: DesktopPetPreviewEvent, expanded: boolean): DesktopPetPreviewPanel {
@@ -485,24 +496,12 @@ function readContentDetail(event: DesktopPetPreviewEvent) {
   );
 }
 
-function readToolDetail(event: DesktopPetPreviewEvent, fallback: string) {
-  if (event.type === "tool.args") {
-    return readEventDetailField(event, "command", "target", "args", "message") || fallback;
-  }
-  return readEventDetailField(event, "error", "message", "target", "command", "output", "stdout", "stderr", "result") ||
-    fallback;
-}
-
 function readActionDetail(event: DesktopPetPreviewEvent, fallback: string) {
   if (event.type === "action.args") {
     return readEventDetailField(event, "action", "target", "args", "message") || fallback;
   }
   return readEventDetailField(event, "error", "message", "action", "target", "output", "stdout", "stderr", "result") ||
     fallback;
-}
-
-function readToolLabel(event: DesktopPetPreviewEvent) {
-  return sanitizeDesktopPetPreviewText(event.toolName || event.action || event.target || event.message, 32) || t("desktopPet.preview.tool");
 }
 
 function readActionLabel(event: DesktopPetPreviewEvent) {
@@ -656,7 +655,7 @@ export class DesktopPetPreviewProjector {
 
   ingest(rawEvent: unknown, _meta: DesktopPetPreviewMeta = {}): DesktopPetPreviewIngestResult {
     const event = normalizeDesktopPetAgentEvent(rawEvent);
-    if (!event) {
+    if (!event || !isPreviewEvent(event.type)) {
       return { changed: false, panel: this.panel, refresh: "none" };
     }
 
@@ -710,15 +709,6 @@ export class DesktopPetPreviewProjector {
       return undefined;
     }
 
-    if (event.type.startsWith("reasoning.")) {
-      const text = readContentText(event) || t("desktopPet.preview.reasoningFallback");
-      const done = event.type === "reasoning.end" || event.type === "reasoning.snapshot";
-      const detailText = readContentDetail(event) || text;
-      this.panel.summary = text;
-      this.upsertItem("reasoning", "thinking", done ? t("desktopPet.preview.reasoningProcess") : t("desktopPet.status.thinking"), text, done ? "success" : "running", event.createdAt, detailText);
-      return undefined;
-    }
-
     if (event.type.startsWith("content.")) {
       const responsePreview = this.rememberResponsePreview(event);
       const text = responsePreview ? truncateReplyPreview(responsePreview) : t("desktopPet.preview.generatingReply");
@@ -726,31 +716,6 @@ export class DesktopPetPreviewProjector {
       const detailText = sanitizeDesktopPetPreviewText(responsePreview, DETAIL_TEXT_MAX_LENGTH) || readContentDetail(event) || text;
       this.panel.summary = text;
       this.upsertItem("content", "content", done ? t("desktopPet.status.replyGenerated") : t("desktopPet.preview.replyGenerating"), text, done ? "success" : "running", event.createdAt, detailText);
-      return undefined;
-    }
-
-    if (event.type.startsWith("tool.")) {
-      const label = readToolLabel(event);
-      const id = `tool:${event.toolCallId || label}`;
-      const status = statusForTool(event);
-      const text = event.type === "tool.args"
-        ? t("desktopPet.preview.argsReady")
-        : sanitizeDesktopPetPreviewText(event.error || event.message || event.target, ITEM_TEXT_MAX_LENGTH) || (status === "running" ? t("desktopPet.preview.executing") : t("desktopPet.preview.toolResult"));
-      const detailText = readToolDetail(event, text);
-      this.panel.summary = status === "error"
-        ? t("desktopPet.preview.failedWithLabel", { label })
-        : status === "running"
-          ? t("desktopPet.preview.toolUsingSummary", { label })
-          : t("desktopPet.preview.completedWithLabel", { label });
-      this.upsertItem(
-        id,
-        "tool",
-        status === "running" ? t("desktopPet.preview.toolRunningTitle", { label }) : t("desktopPet.preview.toolTitle", { label }),
-        text,
-        status,
-        event.createdAt,
-        detailText
-      );
       return undefined;
     }
 

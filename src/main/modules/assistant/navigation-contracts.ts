@@ -58,6 +58,7 @@ export type PlatformChatOrder = {
 };
 
 export type PlatformAgentSummary = {
+  primaryChat?: unknown;
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
@@ -132,6 +133,8 @@ export type AssistantNavigationApplyResult = {
   items: AssistantNavAgentItem[];
   changed: boolean;
   shouldRefresh: boolean;
+  /** Complete attention must be calibrated even if another window handled the Push. */
+  attentionShouldRefresh?: boolean;
 };
 
 export type AssistantNavigationChatApplyResult = {
@@ -176,10 +179,18 @@ export const NAVIGATION_LIVE_FRAME_LIMIT = 20;
 
 export const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
 
-export const JOURNALED_NAVIGATION_PUSH_TYPES = new Set([
+export const NAVIGATION_READ_PUSH_TYPES = new Set([
   "chat.read",
   "chat.unread",
   "chat.read_all",
+]);
+
+export const JOURNALED_NAVIGATION_PUSH_TYPES = new Set([
+  ...NAVIGATION_READ_PUSH_TYPES,
+  "chat.created",
+  "chat.updated",
+  "chat.archived",
+  "chat.deleted",
 ]);
 
 export const STRUCTURED_PUSH_TIME_FIELDS = [

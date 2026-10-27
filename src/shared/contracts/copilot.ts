@@ -329,6 +329,8 @@ export interface AssistantNavigationLiveStatus {
 }
 
 export interface AssistantNavAgentItem {
+  /** Platform-owned pointer, independent of recent/pinned sidebar windows. */
+  primaryChat?: AssistantNavChatItem;
   agentKey: string;
   displayName: string;
   role: string;
@@ -343,6 +345,8 @@ export interface AssistantNavAgentItem {
   recentChats: AssistantNavChatItem[];
   /** Platform-ordered project sidebar window; activity keeps recentChats. */
   projectChats?: AssistantNavChatItem[];
+  /** Complete owner Chat baseline for attention identity and state Push replay. */
+  attentionChats?: AssistantNavChatItem[];
   mode?: string;
   workspaceDir?: string;
   workspaceDirExists?: boolean;

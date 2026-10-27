@@ -19,6 +19,7 @@ import {
 import { getAssistantAwaitingStatusKey } from "../../assistantNavigation";
 import { SidebarActionIcon, SidebarIllustration } from "../../components/BrandMark";
 import { AgentIcon } from "../navigation/AgentIcon";
+import { SettingsSidebarIcon } from "../navigation/SettingsSidebarIcon";
 import {
   buildDesktopGlobalSearchSections,
   buildDesktopGlobalSearchShortcutTargets,
@@ -241,10 +242,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="desktop-global-search-input-shell">
-          <svg className="desktop-global-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="10.5" cy="10.5" r="6.8" />
-            <line x1="15.5" y1="15.5" x2="20" y2="20" />
-          </svg>
+          <SettingsSidebarIcon kind="search" className="desktop-global-search-input-icon" />
           <input
             ref={inputRef}
             type="search"
@@ -263,6 +261,28 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
             </kbd>
           ) : null}
         </div>
+        {queryHistoryRef.current.length > 0 ? (
+          <div className="desktop-global-search-history">
+            <span className="desktop-global-search-history-label">{props.t("desktop.globalSearch.history")}</span>
+            <div className="desktop-global-search-history-tags">
+              {queryHistoryRef.current.map((entry, index) => (
+                <button
+                  key={entry}
+                  type="button"
+                  className="desktop-global-search-history-tag"
+                  title={entry}
+                  onClick={() => {
+                    historyIndexRef.current = index;
+                    setQuery(entry);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {entry}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="desktop-global-search-results" role="listbox" aria-label={props.t("desktop.globalSearch.results")}>
           {sections.length > 0 ? sections.map((section) => (
             <div className="desktop-global-search-section" key={section.id}>
@@ -440,7 +460,7 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatA
 function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.kind === "agent") {
     if (row.projectKind) {
-      return <AgentIcon icon={row.projectKind} size={16} type="agent" />;
+      return <AgentIcon mode={row.projectKind} size={16} type="agent" />;
     }
     return <UserOutlined />;
   }

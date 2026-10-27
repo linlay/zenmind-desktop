@@ -1932,3 +1932,35 @@ test("Frame Port preserves stream occupant diagnostics and changes only the gues
   await flush();
   assert.deepEqual(sentFrames(sender).at(-1), { ...platformFrame, id: "guest-new" });
 });
+
+test("View WorkPanel guests forward scoped data and CLI actions without acquiring Run observers", async () => {
+  const route = "/view-viewer/content-id?chatId=chat-1&runId=run-1&viewIndex=0";
+  const target = childTarget(202, "view", "agent-management", {
+    pageRoute: "/view-viewer/content-id", pageRouteIdentity: undefined,
+    currentUrl: `http://127.0.0.1:7079${route}`,
+    surfaceIdentityKey: 'view:["chat-1","run-1","content-id","0"]',
+  });
+  const runtime = createRuntime(new Map([[202, target]]));
+  const sender = createSender(202, target.currentUrl);
+  await openSession(runtime, sender, "view-session");
+  for (const [id, type, payload] of [
+    ["chat", "/api/chat", { chatId: "chat-1" }],
+    ["view", "/api/view", { chatId: "chat-1", source: "connector", key: "orders", hash: "a".repeat(64), usage: "display" }],
+    ["query", "/api/view/query", { chatId: "chat-1", runId: "run-1", query: "list", params: {} }],
+    ["write", "/api/view/invoke", { chatId: "chat-1", runId: "run-1", action: "update", params: {}, requestId: "write-1" }],
+    ["other-run", "/api/view/invoke", { chatId: "chat-1", runId: "run-2" }],
+    ["start", "/api/query", { chatId: "chat-1" }],
+    ["attach", "/api/attach", { chatId: "chat-1", runId: "run-1" }],
+  ]) send(runtime, sender, "view-session", { frame: "request", id, type, payload });
+  await flush();
+  assert.deepEqual(runtime.calls.forwarded.map(call => call.localId), ["chat", "view", "query", "write"]);
+  for (const id of ["other-run", "start", "attach"]) {
+    assert.equal(sentFrames(sender).find(frame => frame.id === id)?.type, "capability_denied");
+  }
+  assert.equal(runtime.calls.queries.length, 0);
+  assert.equal(runtime.calls.attaches.length, 0);
+  assert.equal(runtime.calls.clones.length, 0);
+  const capabilities = await runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, { method: "getCapabilities" });
+  assert.equal(capabilities.capabilities.includes("workpanel.open"), false);
+  sender.destroy();
+});

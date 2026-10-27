@@ -1,7 +1,7 @@
 import { t } from "../../support/i18n/main-i18n";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { AssistantStartRunRequest, AssistantTextCompletionResult } from "../../../shared/contracts";
+import type { AgentPlatformRequestFrame, AssistantStartRunRequest, AssistantTextCompletionResult } from "../../../shared/contracts";
 import { AgentPlatformImageCompletionRequest, AgentPlatformImageCompletionResult, MAX_GENERATED_IMAGE_BYTES } from "./bridge-contracts";
 import { readString } from "./bridge-values";
 import {
@@ -17,7 +17,7 @@ import { readResponseBytesWithLimit } from "./platform-http-response";
 export class ImageCompletion {
   constructor(
     private readonly platform: Pick<PlatformClient, "resolvePlatform" | "platformFetch">,
-    private readonly completeText: (request: AssistantStartRunRequest, onRawEvent?: (event: Record<string, unknown>) => boolean | void, strictAttachments?: boolean) => Promise<AssistantTextCompletionResult>
+    private readonly completeText: (request: AssistantStartRunRequest, onRawEvent?: (event: Record<string, unknown>) => boolean | void, strictAttachments?: boolean, detail?: AgentPlatformRequestFrame["detail"]) => Promise<AssistantTextCompletionResult>
   ) {}
 
   async completeImage(request: AgentPlatformImageCompletionRequest): Promise<AgentPlatformImageCompletionResult> {
@@ -28,10 +28,12 @@ export class ImageCompletion {
       message: "",
       artifacts: []
     };
+    // The outcome is read from image_generate's tool events, which only the
+    // full detail level delivers.
     const completion = await this.completeText({
       ...request,
       message: buildZenmiImageGenerateMessage(request)
-    }, (event: Record<string, unknown>) => observeImageGenerateEvent(event, outcome), true);
+    }, (event: Record<string, unknown>) => observeImageGenerateEvent(event, outcome), true, "full");
     if (outcome.message && !outcome.ok) {
       return { ok: false, runId: completion.runId, chatId: completion.chatId, message: outcome.message, images: [] };
     }

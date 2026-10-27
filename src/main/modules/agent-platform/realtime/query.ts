@@ -1,6 +1,6 @@
 import type { BrokerDiagnosticsCounters } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
-import { type AgentWebclientRunOwner } from "../../../../shared/contracts";
+import { type AgentPlatformRequestFrame, type AgentWebclientRunOwner } from "../../../../shared/contracts";
 import { requireAgentPlatformEpochMillis } from "../../../../shared/time-contract";
 import { type SiteControlScope } from "../../web-surfaces";
 import { AgentPlatformRealtimeClient, type AgentPlatformRealtimeFrame } from "./agent-platform-realtime-client";
@@ -21,6 +21,7 @@ import {
   cloneBindingError,
   createDeferred,
   isObserverDetachReason,
+  isProgressActivity,
   isRecord,
   isTerminalEvent,
   readText,
@@ -41,7 +42,7 @@ export interface QueryPort {
   readonly options: { acceptanceTimeoutMs?: number; };
   clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
   consumeRunEvent(run: BrokerRun, event: Record<string, unknown>, transaction: QueryTransaction | null): void;
-  releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
+  handleUpstreamDetached(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void;
   completeRun(run: BrokerRun, result: RealtimeQueryCompleted, source: NonNullable<BrokerRun["terminalSource"]>): void;
   diagnostics: BrokerDiagnosticsCounters;
   appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null, path?: string): void;
@@ -70,6 +71,8 @@ export function createQuery(deps: QueryPort) {
     consumerId?: string;
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
+    /** Omitted follows the Agent's default detail level. */
+    detail?: AgentPlatformRequestFrame["detail"];
     observerToken?: string;
     siteControlScope?: SiteControlScope;
   }): RealtimeQueryHandle {
@@ -197,6 +200,7 @@ export function createQuery(deps: QueryPort) {
           // Frame Port retains WebClient's BTW intent; Platform selects semantics by authenticated lane.
           type: "/api/query",
           id: upstreamRequestId,
+          ...(options.detail ? { detail: options.detail } : {}),
           payload: options.payload,
         });
       })
@@ -237,7 +241,7 @@ export function createQuery(deps: QueryPort) {
       return;
     }
     if (isObserverDetachReason(reason)) {
-      deps.releaseRunObserver(run, transaction.upstreamRequestId, reason, frame.lastSeq);
+      deps.handleUpstreamDetached(run, transaction.upstreamRequestId, reason, frame.lastSeq);
       return;
     }
     deps.completeRun(run, {
@@ -278,6 +282,7 @@ export function createQuery(deps: QueryPort) {
       if (eventChatId && eventChatId !== run.chatId) {
         throw brokerError("protocol_error", "bootstrap chatId conflicts with canonical Run");
       }
+      if (isProgressActivity(event)) continue;
       const seq = typeof event.seq === "number" && Number.isSafeInteger(event.seq)
         ? event.seq
         : null;
@@ -398,6 +403,10 @@ export function createQuery(deps: QueryPort) {
     run.subscribers.add(id);
     transaction.subscriptionId = id;
     deps.replayToSubscriber(run, subscription);
+    // Bootstrap progress is delivered once, without entering retained replay.
+    for (const { event, path } of transaction.bufferedEvents) {
+      if (isProgressActivity(event)) subscription.onEvent(event, path);
+    }
     transaction.bufferedEvents = [];
     transaction.bufferedEventBytes = 0;
   }

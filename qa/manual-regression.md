@@ -2,6 +2,9 @@
 
 本清单只描述当前版本的预期行为，不记录历史通过率或发布结论。自动验收入口见 [QA 索引](README.md)；架构边界见 [设计文档](../docs/README.md)，精确接口与行为以源码、契约和测试为准。用户可见流程在 macOS 与 Windows 分别验证，平台专属项目按标注执行。
 
+- macOS / Windows 分别检查主导航展开、收起及右侧 WorkPanel 开关：两侧开关按钮高度为 26px，悬停、键盘焦点和点击正常；主导航搜索图标保持 16×16，圆环、手柄和线宽与 Cmd/Ctrl+K 搜索浮层一致。
+- macOS / Windows 检查主导航前进、后退按钮：16px 图标中箭头头部上下各延长 1px，箭杆长度不变，两个方向对称，禁用和悬停状态正常。
+
 ## Windows 安装与卸载阶段进度
 
 - CuteJ / ZenMind 安装页的“浏览”使用现代 Windows 目录选择器。在 2520×1680、200% 缩放及 100%/150%/200% 混合 DPI 显示器上验证完整窗口和底部选择／取消按钮可见；选择现存父目录自动补齐品牌目录名，选择品牌目录不重复追加，取消保留原路径。初始目录不存在时仍可浏览，窗口打开失败时可直接输入路径；macOS 安装流程不变。
@@ -206,6 +209,8 @@
 
 ## SSO 重启恢复
 
+- macOS / Windows 分别覆盖已登录、未登录及保存旧会话但恢复换票超时的场景：点击左下角设置入口或用键盘打开账号菜单，均应立即显示，不等待远端请求；关闭菜单、切换全局搜索或进入设置后，迟到的身份更新不能重新打开菜单。不打开菜单时，后台仍按原有周期检查恢复与续期；菜单保持打开时，登录、退出及后台身份变化仍能同步更新账号显示。
+
 - macOS 与 Windows 分别在已登录状态打开底部账号菜单，悬停用户名、头像及账号行空白处，确认不再弹出重复的用户名提示；菜单内与底部入口的姓名保持显示，退出登录入口及键盘打开、Escape 关闭菜单仍可用。覆盖侧栏展开/收起及浅色/深色外观。
 
 - macOS / Windows 登录后模拟换票 401/403 或跳转登录页：左下角立即显示未登录、旧凭据被撤销，市场公共条目仍可浏览，用户态操作要求重新登录。模拟 token 到期且换票 503/断网：显示未登录，网络恢复后可后台恢复；尚未到期的 token 提前刷新遇到 503 不应误退出。
@@ -289,12 +294,15 @@
 
 ## Website / WebApp 置顶
 
+- macOS 与 Windows 分别在已安装本地导入或市场 WebApp 的环境中，对 Website 和 WebApp 执行置顶、取消置顶；确认混合列表可正常读取，无依赖注入错误或“更新网站置顶状态失败”提示。
 - macOS 与 Windows 分别在 Website 右键菜单和 WebApp 更多菜单中置顶，确认入口直接显示在看板、自动化之前，不进入对话 Pinned，也不在 Sites 中重复；关闭看板功能或调整主导航顺序后仍位于顶部。
 - 展开侧栏，对照 Automations / New chat 检查置顶 Website / WebApp：图标容器统一为 16×16，图标中心、文字起点和行高一致；Website favicon 不因置顶缩放，WebApp SVG 不额外放大。
 - 置顶多个网站与 WebApp，确认新置顶在首位，重启后顺序保留；取消置顶按原 Sites 顺序恢复。关闭页面、停止 WebApp 或切换独立窗口不丢失置顶，现有打开、关闭、运行圆点与更多菜单继续可用。
 - 展开/收起侧栏，检查中英文、浅深色、长标题、图标和选中态；方向键顺序与视觉一致，Enter 可打开，macOS/Windows 键盘上下文菜单均能取消置顶。置顶失败时保持原列表并提示可重试。
 
 ## 对话置顶
+
+- macOS / Windows 分别在展开态 Pinned 标题和收起态 Popover 使用排序按钮：更新时间倒序 / 手动排序独立切换并在重启后保留，不影响 Chats 排序；更新时间相同保留原手动相对顺序，已读操作不改变排序。新消息更新时间后自动重排，切回手动恢复 Platform 顺序；拖拽成功切回手动，保存失败保留模式并提示错误。覆盖中英文、浅深色和键盘菜单。
 
 - macOS 与 Windows 分别检查展开侧栏和收起态 Pinned Popover：标题与时间/运行状态保持第一行，智能体名称独占紧凑第二行（11px 字号、14px 行高、1px 行间距）；长名称省略且悬停可查看全名，选中底色覆盖两行，更多按钮相对整条对话上下居中。覆盖浅深色、长标题和长智能体名称，普通非置顶对话仍保持原行高。
 - macOS 与 Windows 分别在展开和收起侧栏确认默认顺序为“自动化 → 新建对话 → 置顶 / Pinned → 对话 / Chats”；调整 Chats 导航位置后 Pinned 仍紧邻其上方，键盘焦点顺序与显示顺序一致。
@@ -419,7 +427,7 @@
 - 在 macOS 与 Windows 的展开侧栏分别点击全局 Chats 和某个 Project 内的 Chat，确认焦点留在所点行；逐次按 `↑` / `↓` 时只在当前可见 Chat 列表内切换并同步选中态与页面，跳过分组标题、“查看更多”和“查看历史”，首尾不循环，长按不连续切换。按 `Enter` 后焦点进入 Main Chat WebView；键盘拖拽排序期间方向键只用于排序，不触发 Chat 导航。Cmd+K、历史弹窗和新建 Chat 仍在导航后聚焦 Main Chat。
 - macOS 与 Windows 分别在 Chats、Pinned 和 Project 内选择含 awaiting 的 Chat，不按 Enter，直接用主键盘或小键盘 `1–9` 选择选项，行为与 Chat 内相同；答题及多题翻页后焦点仍留在侧栏，`↑/↓` 可继续切换。覆盖快速 A→B 切换并立即按数字、页面加载中、无 awaiting、选项越界、提交中重复按键、提交失败重试和远端已回答：不得回答旧 Chat、重复提交或延迟补发。编辑输入框、打开弹窗、拖拽、组合键、输入法组合和长按均不触发；按 Enter 主动进入 Chat 后数字与方向键维持原有行为。
 
-- macOS Cmd+K / Windows Ctrl+K 分别输入不同关键词并关闭，再打开空搜索框按 ↑：按最近使用顺序回填历史关键词，继续 ↑ 到最早一项后不循环，↓ 返回较新记录并最终恢复空输入。重复关键词去重，空白不记录，历史仅保留当前窗口会话最近 50 项；手动修改关键词后退出历史翻查，上下键恢复结果选择，Enter 和鼠标仍正常打开结果。无历史时上下键保持原有结果选择；中文输入法选词时方向键与 Enter 不触发历史或导航。
+- macOS Cmd+K / Windows Ctrl+K 分别输入不同关键词并关闭，再打开空搜索框按 ↑：按最近使用顺序回填历史关键词，继续 ↑ 到最早一项后不循环，↓ 返回较新记录并最终恢复空输入。重复关键词去重，空白不记录，历史仅保留当前窗口会话最近 50 项；手动修改关键词后退出历史翻查，上下键恢复结果选择，Enter 和鼠标仍正常打开结果。无历史时上下键保持原有结果选择；中文输入法选词时方向键与 Enter 不触发历史或导航。 搜索框下有历史时显示单行小标签，无历史时隐藏；点击标签回填并聚焦输入框，随后上下键继续翻查，Enter 打开结果。验证 Tab 聚焦和 Enter/空格激活标签、长词省略及悬停全文、超出一行横向滚动，并覆盖中英文、浅深色、皮肤与窄窗口。
 - 从已有 Chat 打开 Cmd+K，分别通过鼠标、Enter、macOS Option+数字与 Windows Alt+数字选择当前 Agent 和其他 Agent；确认每次都进入所选 Agent 的 `/agent/:agentKey?newChat=<13 位 nonce>`，现有 Cmd+K “New Chat” 仍选择当前或默认 Agent。Desktop route、Main Chat guest URL、WebClient Router 与 Registry ownerless identity 必须一致，`webContentsId` 保持不变；立即发送第一条消息时 `/api/query` 只到达 Platform 一次，并正常以 `chat.start/run.start` 将同一 generation 提升为 canonical `chatId`。快速连续选择多个 Agent 时只允许最后一个目标提交，Chat 搜索结果仍打开原 canonical Chat。
 - macOS `Cmd+K` / Windows `Ctrl+K` 未输入关键词时，等待、未读对话和最近对话保持单行；中文未读分组名称为“未读对话”。输入关键词后，仅对话搜索结果显示两行：第一行保留图标、标题、助理名称、状态与快捷键，第二行与标题左对齐显示 `lastRunContent`。运行状态只显示标题前的转圈图标，右侧不重复显示“运行中”；等待提交、等待审批等具体等待标签继续保留，读屏仍可识别运行状态。覆盖本地与仅远端命中的对话、命中较早 Run 的搜索、多行/长文本、空内容、浅深色与窄窗口；第二行合并换行、单行省略，空内容仍保留相同行高，选中背景覆盖整项。清空关键词后恢复单行，鼠标与键盘打开对话正常。
 - 准备一个不在 WebClient 当前列表缓存中的 unread Chat，分别从 Cmd+K、Sidebar 和桌宠打开。确认目标内容提交显示后只有 WebClient 经 Frame Port 发出一次单 Chat `/api/read`，Desktop 没有 `assistant.markChatRead` IPC、Sidebar fallback 或桌宠直写；Platform 的 `chat.read` 到达前 Sidebar 圆点保持，到达后全局 Chats、Project recentChats、activity 和 Agent 计数同时更新。让 read Push 在 Navigation 刷新旧快照期间到达，确认快照完成后仍为 read；再注入同 Run/旧 Run 的晚到 unread，确认被忽略，而更新 Run 的 unread 能恢复圆点。点击“全部标为已读”时确认 Desktop 只发送 Agent 级请求，UI 等待 `chat.read_all` Push，不做本地乐观清除。
@@ -433,17 +441,19 @@
 - 分别开启和关闭桌宠发送 Main Chat Query，并覆盖 `run.started` Push 早于、晚于 Query `run.start` 两种顺序；两种情况下都只允许一次 `/api/query`。确认桌宠不注册独立 Broker consumer、不单独请求 `/api/agents` 或 `/api/chats`、不消费 Assistant Run 逐事件流，只在 Navigation 应用 `desktop-main` Primary Push 并发布新快照后更新，不得创建 RunChannel、发送 `/api/attach` 或导致 `duplicate_id`。
 - Windows 任务栏：构造 Chats unread=2、Projects unread=4，确认任务栏红色角标为 6；置顶普通会话计入一次，项目置顶不得重复计算，pending 不额外增加数字。检查 1、9、10、99、100（显示 99+）与高 DPI 下的可读性；Platform read/read_all Push 后同步减少，归零或快照失效时消失。最小化、还原、隐藏后显示和窗口重建后保持正确值，点击任务栏本身不得清空未读；关闭桌宠仍正常更新。
 - macOS Dock：使用同一快照确认应用图标显示原生红色数字角标，Chats unread=2、Projects unread=4 时为 6，置顶去重与 pending 排除同 Windows。检查 1、9、10、99、100（显示 99+）；Platform read/read_all Push 后同步减少，归零或快照失效时清除。最小化、隐藏、关闭主窗口但应用继续运行时仍更新，还原或重新创建主窗口后保留正确值；点击 Dock 图标不直接标记已读，关闭桌宠不影响更新。开发版与正式版分别按实际 bundle 身份确认系统通知总开关和应用图标标记均已开启；关闭通知时，即使 `dock.getBadge()` 能读回数字，系统也可隐藏角标，不能以该读回值替代真实 Dock 验收。重新开启后恢复窗口或重启应用，确认当前数字重新显示。
-- 构造 Chats unread=2、pending=1，Projects unread=4、pending=2，确认 Nav Bar 分组数字分别保持该值，桌宠同时显示蓝色 unread=6 与橙色 pending=3；将对应 Chat read、awaiting answered 后，两处必须在同一 Navigation Push 投影后一起减少。折叠/展开 Chats、从 8 条增加到 24 条不改变统计口径；重启及 Primary 断线重连后不得恢复消息缓存或本地持久化中的旧数字。
-- 展开桌宠“对话概览”，确认仅显示七天内的 unread 与 awaiting 会话，视窗完整容纳三条并可用滚轮继续浏览；标题为 13px 中等字重、摘要为 12px 次级文字，列表使用轻分隔线，unread 为蓝点、awaiting 为橙色时钟且不显示回复入口。回复和关闭使用相同的 12px 灰色图标、24px 点击区、透明底色与悬停/焦点样式，回复保留“回复”可访问名称与悬停提示。标题和摘要始终占满整行，不预留操作列；hover 或键盘焦点进入该条消息时，两按钮浮在正文右侧上方，下方标题和摘要在进入按钮区域前渐隐，图标区域不再透出文字；未悬停且未聚焦时恢复整行文字，正文宽度、文字位置与卡片高度保持稳定，两按钮不得互相重叠，点击不得误触下方的打开对话动作。键盘 Tab 可访问回复和关闭且焦点清晰，点击回复后输入框独占下一行，取消后恢复原布局；输入展开时关闭按钮停留在正文右侧，不能盖住输入框。概览超过三条时仍完整显示三条并能滚动，关闭请求期间按钮禁用，失败保留消息并显示可重试提示；关闭表示标为已读并关闭，成功后移除该版本提醒；回复成功只提交新 Run，不调用 `/api/read`。打开对话只导航到 Main Chat，必须等内容显示后由 WebClient 发 read，并在 Platform `chat.read` Push 到达后让桌宠与 Sidebar 同步转为 read；单纯 hover、滚动和展开列表不得标记已读。
-- 桌宠混合提醒中 awaiting 排在普通 unread 前，同类按更新时间倒序；超过 50 条时较旧 awaiting 不被普通 unread 挤出。运行中 Chat 收到 `chat.updated` 的 `activeRun: null` 后再清空 unread，已结束任务不得重新显示为进行中，其他活动任务继续保留；未提供 activeRun 的普通更新不得清除运行状态。
-- 桌宠未读与待确认均为 0、仍有运行任务时，人物显示运行数量；展开/收起面板均保留数字。上方任务面板在 1/2/多任务时贴近人物，两项任务均完整显示；下方布局仍靠窗口顶部。
-- 构造 12 条 unread 提醒，关闭 10 条，确认每次通过 Platform 单 Chat `/api/read` 标记对应 Chat/Run 已读，`chat.read` Push 后宠物与侧栏未读同步降至 2；全部关闭后未读角标消失。“对话概览”标题旁的数量随概览列表更新，底部不再显示额外统计行。请求失败或断网时卡片保留、提示失败且可重试，请求期间关闭按钮禁用；旧版本卡片不得标记新 Run 已读，同一会话新 Run 的提醒正常恢复。macOS 与 Windows 均需验证。
+- 构造 Chats unread=2、pending=1，Projects unread=4、两条待确认会话（可在同一个项目内），确认 Nav Bar 分组数字分别保持该值，桌宠同时显示蓝色 unread=6 与橙色 pending=3；将对应 Chat read、awaiting answered 后，两处必须在同一 Navigation Push 投影后一起减少。折叠/展开 Chats、从 8 条增加到 24 条不改变统计口径；重启及 Primary 断线重连后不得恢复消息缓存或本地持久化中的旧数字。
+- 展开桌宠“对话概览”，确认只有统一对话概览，列表为 unread 与 awaiting 的去重并集；标题分别标明“未读 N”和“待确认 M”并与人物角标一致，同一会话同时未读与待确认只显示一条；七天以前、空摘要和超过 50 条仍待处理的会话都保留，已读 awaiting 继续显示，视窗完整容纳三条并可用滚轮继续浏览；标题为 13px 中等字重、摘要为 12px 次级文字，列表使用轻分隔线，unread 为蓝点、awaiting 为橙色时钟且只提供打开原会话入口，不显示回复与标读关闭按钮。回复和关闭使用相同的 12px 灰色图标、24px 点击区、透明底色与悬停/焦点样式，回复保留“回复”可访问名称与悬停提示。标题和摘要始终占满整行，不预留操作列；hover 或键盘焦点进入该条消息时，两按钮浮在正文右侧上方，下方标题和摘要在进入按钮区域前渐隐，图标区域不再透出文字；未悬停且未聚焦时恢复整行文字，正文宽度、文字位置与卡片高度保持稳定，两按钮不得互相重叠，点击不得误触下方的打开对话动作。键盘 Tab 可访问回复和关闭且焦点清晰，点击回复后输入框独占下一行，取消后恢复原布局；输入展开时关闭按钮停留在正文右侧，不能盖住输入框。概览超过三条时仍完整显示三条并能滚动，关闭请求期间按钮禁用，失败保留消息并显示可重试提示；关闭表示标为已读并关闭，成功请求后卡片与数量都等待权威 `chat.read` Push 再一起减少；回复成功只提交新 Run，不调用 `/api/read` 且不本地隐藏提醒。打开对话只导航到 Main Chat，必须等内容显示后由 WebClient 发 read，并在 Platform `chat.read` Push 到达后让桌宠与 Sidebar 同步转为 read；单纯 hover、滚动和展开列表不得标记已读。
+- 桌宠统一概览中 awaiting（含已读）排在普通 unread 前，同类按更新时间倒序；超过 50 条时不截断任何计入 unread 的会话，较旧 awaiting 仍排在普通 unread 前。运行中 Chat 收到 `chat.updated` 的 `activeRun: null` 后再清空 unread，已结束任务不得重新显示为进行中，其他活动任务继续保留；未提供 activeRun 的普通更新不得清除运行状态。
+- pending 全部按会话数：同一项目三条 awaiting，项目标题、Projects 分组和宠物待确认数均为 3；项目置顶 awaiting 只计入全局一次，项目单项不得漏数。构造最近活动 50 条之外但 manual 排在首条的 awaiting，以及普通 Chats 24/50 条之外的 awaiting，组级数字、宠物角标和概览仍能找到相同条目。刷新期间收 read、answered、run.finished、归档/删除与置顶更新，旧基线不能恢复已结束等待。
+- 桌宠只保留对话概览：构造普通 unread + 已读 awaiting，分别点击蓝色和橙色角标，两者都展开同一完整列表，awaiting 不被 unread 遮蔽；超过两条、超过 50 条待确认均能滚动访问。read Push 只降低未读数，等待条目和待确认数保持；answered/terminal 后已读条目才移除。两种数量均为 0 时不展示任务面板、运行预览或运行数量角标，人物运行与拖动动画正常。
+- 构造 12 条 unread 提醒，关闭 10 条，确认每次通过 Platform 单 Chat `/api/read` 标记对应 Chat/Run 已读，`chat.read` Push 后宠物与侧栏未读同步降至 2；全部关闭后未读角标消失。“对话概览”标题的未读数、待确认数与对应角标在同一 Navigation Push 后一起更新，等待条目不因标读而消失，底部不再显示额外统计行。请求失败或断网时卡片保留、提示失败且可重试，请求期间关闭按钮禁用；旧版本卡片不得标记新 Run 已读，同一会话新 Run 的提醒正常恢复。macOS 与 Windows 均需验证。
 - macOS 与 Windows 在其他应用前台时展开宠物概览，确认展开不抢键盘焦点；点击“回复”后可输入中文、英文，退格、取消和发送正常。收到导航推送后输入焦点与草稿保持；宠物人物窗口仍不抢焦点。
-- 桌宠概览在浅色/深色及 280/376/424px 宽度下检查原有浅青色半透明背景、标题与摘要层级、Markdown 摘要清理；“对话概览”标题旁显示当前概览列表的对话总数，包含滚动区域内的所有条目，底部不再显示 +N 更多或额外统计行。回复输入独占一行，与操作按钮相隔 12px，发送按钮下方有留白，列表滚动时卡片不得压缩并与下一条消息重叠。
+- 桌宠概览在浅色/深色及 280/376/424px 宽度下检查原有浅青色半透明背景、标题与摘要层级、Markdown 摘要清理；“对话概览”标题分别显示与人物未读和待确认角标一致的两个数字，完整列表包含两种状态的去重会话，包含滚动区域内的所有条目，底部不再显示 +N 更多或额外统计行。回复输入独占一行，与操作按钮相隔 12px，发送按钮下方有留白，列表滚动时卡片不得压缩并与下一条消息重叠。
 - Main Chat surface 获得可信 active 登记后、任何 live frame 到达前，在 Realtime Inspector 确认 Root Observer 与 Overview lease 已同时存在；未打开 WorkPanel 时不得创建 Overview WebView、UI subscriber 或额外 upstream attach。ownerless 新 Chat 先显示 `pending_chat_identity`，canonical Chat 建立后在同一 context epoch 内变为 `ready`。
 - 连续至少 30 次交错 Main Chat surface 登记、Frame Port open、Main attach/query 与 Overview attach，并穿插 A→B→C 快速切换；确认无需重试即可从本地 replay 连续收到事件，不产生 Overview upstream attach，关闭 clone 不产生 detach。正常首开、切换和恢复中不得出现 `Main Chat clone parent was released`、`sender is not a trusted Agent WebClient surface`、`parent_observer_closed: active Main Chat observer is unavailable`，也不得出现 `primary_stream_not_ready` 或其他基于等待时长的错误。
 - Main Chat 离开、owner Chat/context 变化、surface generation 替换和 guest 销毁时，确认 Overview/Debug subscriber 同步失效，正常切换的旧 Overview 以本地 `detached` 完成；每个变为无 observer 的非终态 RunChannel 只发送一次 upstream detach，Platform Run 继续执行。返回原 Chat 后从 Inspector 显示的 lastSeq attach，query 不得重发。隐藏、显示或关闭 WorkPanel 只改变 pending/UI subscriber 数，Overview lease 始终由当前 active Main Chat 持有；隐藏的所有 guest 必须保持 mounted 且 inactive。
 - 制造 detach/reattach 紧邻交接：detach 尚未写出时新 observer 应取消旧 detach；detach 已写出时新 attach 必须等待响应后从 lastSeq 开始。确认旧 generation 的迟到完成不会覆盖新 observer，且不重新出现 listeners attach/detach 高频抖动。
+- 在 Main Chat 发起高频输出且最终需要确认的长 Run，事件累积后切到其他对话或页面停留到 Platform 新增超过 10000 条事件，再在确认前返回：Inspector 中该 Run 应为 observed/attached 且未进入 terminal，确认框正常出现；Platform 对恢复游标返回 `seq_expired` 时 Run 只挂起不结束。
 - macOS 与 Windows 分别模拟 query/attach 返回 `409 active_stream_exists`：聊天错误正文直接说明上一条运行流尚未释放，不必展开 Technical details；详情保留原始错误码与 409。模拟未知错误码时正文直接显示服务端原因，发送失败保留输入草稿，不自动重发 query。
 - 分别断开 Primary、BTW 和 Selection Explain，确认其他 lane 的 Inspector phase 与活动 Run 不被标记为断线；账号、endpoint 或 device identity 变化时三条 lane 一起轮换。Primary 收到旁聊或解释 runId 的 `run.finished` 后能收敛对应 RunChannel。
 - 进入 Kanban 前先在其他页面打开 Copilot Dock；进入 `/kanban` 后确认 Dock guest 立即 inactive 并卸载，Launcher、System Bar、程序化 open/toggle 和旧 Kanban session 都不能恢复 Dock。Kanban Chat、claim、run prepare、native run 与事件同步继续正常；离开 Kanban 后其他页面原有 Dock session 可以恢复。
@@ -472,6 +482,13 @@
 ## 企业聊天浮窗拖动
 
 - 运行 `node qa/enterprise-chat-drag-smoke.mjs`；macOS / Windows 上按住标题栏可拖动聊天面板，靠近窗口边缘与缩小主窗口后仍保持可见；标题栏的创建群聊、刷新和关闭按钮可正常点击。拖动标题栏或底部入口时两者同步移动，按钮保持在面板右下方且间距稳定。
+
+## 企业聊天悬浮入口
+
+- macOS / Windows：启动准备、启动失败、环境导入、启动中的登录弹窗，以及空白根页面和起始页均不显示企业聊天图标；进入正常业务页或明确进入控制中心后，仍按原有登录状态与功能开关显示，不改变企业聊天后台连接与账号规则。
+- 右键悬浮按钮显示隐藏、联系人、发起群聊、聊天设置和恢复默认位置；隐藏调用与设置页相同的关闭开关，按钮与面板消失，常规设置中的企业聊天开关同步关闭，重启后仍关闭；从设置重新开启可恢复入口。隐藏失败时保留入口并显示错误。其余菜单进入对应现有页面，设置页带出已保存资料，恢复位置后重载仍保留默认位置。断线时发起群聊禁用，其余本地入口可用。
+- macOS 右键及 Control 点击、Windows 右键和 Shift+F10／菜单键只打开快捷菜单，不打开聊天、不移动按钮；普通左键和拖动保持原行为，拖动结束不误打开面板，Windows Ctrl 点击仍为普通点击。
+- 中英文、浅深色及窗口四角分别检查菜单不越界；上下方向键、Home／End、回车、Esc、Tab、点击空白及窗口失焦可正常选择或关闭；Esc 后焦点返回按钮，聊天关闭或账号失效后没有残留菜单。
 
 ## 企业聊天附件下载
 
@@ -1467,3 +1484,20 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 使用模拟 Hub 和本地上游发送普通消息与分片消息，包含空最终续片、跨片中文和分片间 Ping；HTTP 流式响应与 WebSocket 文本、二进制的内容和顺序一致。
 - 握手响应附带欢迎消息，以及 tunnel.open 响应紧接复用流时，首条消息和首个流均不丢失，WebApp 升级响应先于业务消息。
 - 分片未完成时关闭或断开连接，确认无残留消息交付；一次协议错误只触发一次重连，主动关闭、退出登录和切换账号仍遵循原有策略。
+
+### 消息 VIEW → Desktop WorkPanel
+
+- [ ] macOS / Windows：Markdown VIEW 右上角 Dialog 仍在 WebClient 弹出；侧栏按钮打开 Desktop View 标签，不出现 WebClient 内层侧栏。旧宿主缺少 View capability 时明确提示升级。
+- [ ] 同一个块重复打开复用标签，同模板不同块/消息独立；切换 Chat 不串标签，返回原 Chat 可继续查看，关闭标签及工作区释放 View 页面。
+- [ ] View 标签加载冻结 HTML 与 payload；刷新页面后按 Chat/Run/contentId 或 toolId/块序号恢复，不依赖时间线计数器。源内容更新同步到已打开标签，主聊天切换后不接收其他 Chat 的数据。
+- [ ] 声明式 CLI/MCP/native 查询正常返回，参数和错误保持一致；写操作必须先在宿主确认，取消不调用，确认后返回结果，同一操作不因重载或超时自动重放。
+- [ ] HTML iframe 无同源/Node/Desktop bridge 能力，伪造来源窗口消息无效；跨 Chat/Run、重复身份 URL 参数和 View 页面 Run 控制请求被拒绝。
+- [ ] 普通浏览器的 VIEW 侧栏、Dialog 及现有 WorkPanel 文件/Planning/Overview 标签回归正常。
+
+## 主要对话与 SVG 导航
+
+- macOS / Windows：升级后默认完整导航；置顶与普通聊天、项目展开、手动顺序、拖动、新建、历史、网站入口和右键菜单保持。搜索旁切换主要对话并切回，检查原展开状态与滚动位置、当前 Chat、草稿、附件和 WorkPanel 保留。Windows 全屏仍可切换。
+- 主要对话每个导航 Agent 一行；主要 Chat 在最近预览之外或已置顶仍直接打开原 Chat。没有指针时显示暂无对话；点击后首次 query 带 primary:true，含上传占位 Chat。完整导航新建、历史续聊、Copilot、Kanban、BTW、详细解释不携带该标记。
+- 跨客户端切换主要指针、回复、运行开始结束、HITL、已读、归档和删除后，主要视图按精确 Chat 更新；不向普通预览插入旧主要 Chat。断连保留成功数据、错误可重试，恢复后对账；primary_chat_busy 不自动重发或抢占运行。
+- 展开与收起侧栏，分别验证主要入口、历史、Tab／方向键、焦点轮廓、未读与运行状态。切换明暗与旧皮肤，检查六种 mode、旧 terminal/library 名称回退、自定义图片、图标颜色、16/20/30px 清晰度与同屏多个 TEAM mask。
+- 自动入口：`node --test test/primary-chat-navigation.test.mjs test/agent-icon-fallback.test.mjs`；Electron 界面回归：`node qa/primary-chat-navigation-smoke.mjs`；上游资源一致性：`node scripts/sync-webclient-icons.mjs --check`。WebClient 的 primaryChatIntent / useMessageActions 定向测试与 Desktop 同批验证。平台样式模拟不能代替 Windows 真机发布验收。

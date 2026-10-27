@@ -179,13 +179,13 @@ export function createRootObservers(deps: RootObserversPort) {
       if (subscription.observerToken !== token)
         continue;
       deps.unsubscribe(subscription.id);
-      if (subscription.role === "clone") {
-        const run = deps.getRunChannel(subscription.runId, subscription.lane);
-        subscription.onComplete?.({
-          reason: "detached",
-          ...(run ? { lastSeq: run.lastSeq } : {}),
-        });
-      }
+      // Root and clone streams both end locally: another surface can replace
+      // the active observer before the old surface's own release arrives.
+      const run = deps.getRunChannel(subscription.runId, subscription.lane);
+      subscription.onComplete?.({
+        reason: "detached",
+        ...(run ? { lastSeq: run.lastSeq } : {}),
+      });
     }
     for (const run of deps.runChannels.values()) {
       if (!run.rootObserverTokens.delete(token))

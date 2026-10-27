@@ -7,6 +7,7 @@ import {
   QueryTransaction,
   RealtimeLane,
   RealtimeQueryCompleted,
+  RunSubscription,
   frameError,
   framePayload,
   readText,
@@ -24,6 +25,8 @@ export interface RunAttachmentPort {
   ensureConnected(baseUrl: string, token: string, lane?: RealtimeLane): Promise<void>;
   runChannels: Map<string, BrokerRun>;
   hasSystemRunLease(run: BrokerRun): boolean;
+  runSubscriptions: Map<string, RunSubscription>;
+  onDiagnostic?(message: string): void;
   clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
   forwardRequest(options: {
     baseUrl: string;
@@ -40,14 +43,8 @@ export interface RunAttachmentPort {
 }
 
 export function createRunAttachment(deps: RunAttachmentPort) {
-  function releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void {
+  function retireUpstreamRequest(run: BrokerRun, requestId: string): void {
     deps.laneStreams.release(run.lane, requestId);
-    if (typeof lastSeq === "number" && Number.isSafeInteger(lastSeq) && lastSeq >= 0) {
-      run.lastSeq = Math.max(run.lastSeq, lastSeq);
-    }
-    const transaction = run.query && (!requestId || run.query.upstreamRequestId === requestId)
-      ? run.query
-      : null;
     if (requestId) {
       deps.queriesByRequestId.delete(requestId);
       deps.terminalRequestIds.add(requestId);
@@ -57,6 +54,16 @@ export function createRunAttachment(deps: RunAttachmentPort) {
     }
     if (!requestId || run.upstreamRequestId === requestId)
       run.upstreamRequestId = null;
+  }
+
+  function releaseRunObserver(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void {
+    if (typeof lastSeq === "number" && Number.isSafeInteger(lastSeq) && lastSeq >= 0) {
+      run.lastSeq = Math.max(run.lastSeq, lastSeq);
+    }
+    const transaction = run.query && (!requestId || run.query.upstreamRequestId === requestId)
+      ? run.query
+      : null;
+    retireUpstreamRequest(run, requestId);
     if (transaction) {
       run.query = null;
       if (transaction.signal && transaction.abortListener) {
@@ -75,6 +82,47 @@ export function createRunAttachment(deps: RunAttachmentPort) {
     run.activeWaits.clear();
     run.lastRestoreResult = `observer_released:${reason}`;
     deps.diagnostics.observerReleaseCount += 1;
+  }
+
+  /** Routes an upstream `detached` stream end for a query or attach stream. */
+  function handleUpstreamDetached(run: BrokerRun, requestId: string, reason: string, lastSeq: unknown): void {
+    if (run.detachInFlight || (run.rootObserverTokens.size === 0 && !deps.hasSystemRunLease(run)) ||
+      run.upstreamLossSeq === run.lastSeq) {
+      releaseRunObserver(run, requestId, reason, lastSeq);
+      return;
+    }
+    // Desktop did not ask for this detach (e.g. Platform dropped a slow
+    // observer) and the Run is still observed: resume from the last delivered
+    // seq like a reconnect, keeping subscribers and any open query attached.
+    retireUpstreamRequest(run, requestId);
+    run.upstreamLossSeq = run.lastSeq;
+    run.suspended = true;
+    run.activeWaits.clear();
+    deps.onDiagnostic?.(`upstream_stream_lost:${JSON.stringify({ lane: run.lane, runId: run.runId, requestId, reason, lastSeq: run.lastSeq })}`);
+    void restoreRun(run);
+  }
+
+  /** Platform no longer retains the resume cursor; the Run itself keeps running. */
+  function expireAttachStream(run: BrokerRun, requestId: string, error: Error): void {
+    retireUpstreamRequest(run, requestId);
+    run.suspended = true;
+    run.activeWaits.clear();
+    // The local replay can no longer continue contiguously, so the next
+    // observer resumes from its own authoritative cursor instead.
+    run.replay = [];
+    run.replayBytes = 0;
+    run.lastRestoreResult = `failed:${error.name}`;
+    deps.onDiagnostic?.(`attach_cursor_expired:${JSON.stringify({ lane: run.lane, runId: run.runId, requestId, lastSeq: run.lastSeq })}`);
+    const subscriptions = [...run.subscribers].flatMap((subscriptionId) => {
+      const subscription = deps.runSubscriptions.get(subscriptionId);
+      deps.runSubscriptions.delete(subscriptionId);
+      return subscription ? [subscription] : [];
+    });
+    run.subscribers.clear();
+    for (const subscription of subscriptions) {
+      if (subscription.onError) subscription.onError(error);
+      else subscription.onComplete?.({ reason: "error", lastSeq: run.lastSeq });
+    }
   }
 
   async function startAttach(run: BrokerRun, baseUrl: string, token: string): Promise<void> {
@@ -211,5 +259,5 @@ export function createRunAttachment(deps: RunAttachmentPort) {
     return detach;
   }
 
-  return { releaseRunObserver, startAttach, restoreRun, detachRunIfUnobserved };
+  return { releaseRunObserver, handleUpstreamDetached, expireAttachStream, startAttach, restoreRun, detachRunIfUnobserved };
 }

@@ -227,6 +227,8 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
       return <FileTextOutlined />;
     case "btw":
       return <RobotOutlined />;
+    case "view":
+      return <AppstoreOutlined />;
     case "planning":
       return <DeploymentUnitOutlined />;
     case "agent":

@@ -82,43 +82,10 @@ export function resolveDesktopPetWindowMode(input: {
     return "base";
   }
   if (input.layoutMode) {
-    return input.layoutMode;
+    return input.layoutMode === "bubble" ? "bubble" : "base";
   }
-  const messagePreview = typeof input.state.messagePreview === "string"
-    ? input.state.messagePreview.trim()
-    : "";
-  const hint = typeof input.state.hint === "string"
-    ? input.state.hint.trim()
-    : "";
-  const unreadCount = Number(input.state.unreadCount);
   const hasHistoryMessages = Array.isArray(input.state.messages) && input.state.messages.length > 0;
-  const hasMessageReaction = input.state.status === "idle" && (
-    messagePreview.length > 0 ||
-    (Number.isFinite(unreadCount) && unreadCount > 0)
-  );
-  if (hasHistoryMessages) {
-    return "bubble";
-  }
-
-  const activeTasks = Array.isArray(input.state.activeTasks) ? input.state.activeTasks : [];
-  if (activeTasks.length > 0) {
-    return activeTasks.length <= 2 ? "task-list-compact" : "task-list";
-  }
-  const panel = input.previewPanel;
-  if (panel?.visible) {
-    return panel.status === "done" ? "bubble" : panel.expanded ? "preview-expanded" : "base";
-  }
-
-  const shouldShowBubble = hasHistoryMessages || input.state.status !== "idle" && (
-    hint.length > 0 ||
-    messagePreview.length > 0 ||
-    (Number.isFinite(unreadCount) && unreadCount > 0) ||
-    input.state.status === "running" ||
-    input.state.status === "awaiting" ||
-    input.state.status === "done" ||
-    input.state.status === "error"
-  );
-  return shouldShowBubble ? "bubble" : "base";
+  return hasHistoryMessages ? "bubble" : "base";
 }
 
 export function createDesktopPetIdleResetAction(clearPreview = false) {

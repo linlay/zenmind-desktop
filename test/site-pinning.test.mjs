@@ -100,27 +100,48 @@ test("a cleanup error after file replacement still restores both navigation file
   assert.equal(notifications.length, 0);
 });
 
-test("UI IPC and Action port share the same persisted Website pin", async (t) => {
-  const { app } = setup(t, "darwin");
-  const { registerSettingsIpcHandlers } = require("../dist-electron/main/modules/settings/ipc.js");
-  const { writeWebsiteItem } = require("../dist-electron/main/modules/webs/websites/store.js");
-  const { listWebEntries } = require("../dist-electron/main/modules/webs/ipc.js");
-  const { setSitePinned } = require("../dist-electron/main/modules/settings/navigation-preferences.js");
-  writeWebsiteItem(app, { id: "docs", entryKey: keys[0], kind: "website", label: "Docs", url: "https://example.test", createdAt: 1, updatedAt: 1 }, "darwin");
-  const handlers = new Map();
-  const notifications = [];
-  registerSettingsIpcHandlers({ handle: (key, callback) => handlers.set(key, callback) }, {
-    app, platform: "darwin", nativeTheme: { themeSource: "system" },
-    initializeMainI18n: () => ({}), isSupportedLocale: () => true, setMainLocale: () => ({}),
-    buildApplicationMenu() {}, refreshTrayContextMenu() {}, emitLocaleChanged() {},
-    onNavigationPreferencesChanged: (snapshot) => notifications.push(snapshot)
+for (const platform of ["darwin", "win32"]) {
+  test(`UI IPC pins mixed Website/WebApp entries with the injected manager on ${platform}`, async (t) => {
+    const { app } = setup(t, platform);
+    const { registerSettingsIpcHandlers } = require("../dist-electron/main/modules/settings/ipc.js");
+    const { writeWebsiteItem } = require("../dist-electron/main/modules/webs/websites/store.js");
+    const { listWebEntries } = require("../dist-electron/main/modules/webs/ipc.js");
+    const { WebappManager } = require("../dist-electron/main/modules/webs/webapps/manager.js");
+    const { getWebappDir } = require("../dist-electron/main/modules/webs/webapps/store.js");
+    const { setSitePinned } = require("../dist-electron/main/modules/settings/navigation-preferences.js");
+    writeWebsiteItem(app, { id: "docs", entryKey: keys[0], kind: "website", label: "Docs", url: "https://example.test", createdAt: 1, updatedAt: 1 }, platform);
+    const webappDir = getWebappDir(app, keys[1].slice("webapp:".length), platform);
+    fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
+    fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>");
+    fs.writeFileSync(path.join(webappDir, "webapp.json"), JSON.stringify({
+      schemaVersion: 2, id: keys[1].slice("webapp:".length), key: "pin-test",
+      label: "Pin test", version: "1.0.0", target: "any", appConfig: {},
+      frontend: { root: "frontend", index: "index.html", routeConfig: { backendPrefixes: [] } }
+    }));
+    let metadataReads = 0;
+    const manager = new WebappManager({ readInstalledRecords: () => { metadataReads++; return []; } });
+    const listWebEntryKeys = () => listWebEntries(app, manager).items.map((item) => item.entryKey);
+    assert.deepEqual(new Set(listWebEntryKeys()), new Set(keys));
+    const handlers = new Map();
+    const notifications = [];
+    registerSettingsIpcHandlers({ handle: (key, callback) => handlers.set(key, callback) }, {
+      app, platform, listWebEntryKeys, nativeTheme: { themeSource: "system" },
+      initializeMainI18n: () => ({}), isSupportedLocale: () => true, setMainLocale: () => ({}),
+      buildApplicationMenu() {}, refreshTrayContextMenu() {}, emitLocaleChanged() {},
+      onNavigationPreferencesChanged: (snapshot) => notifications.push(snapshot)
+    });
+    const pinned = await handlers.get("settings.setWebEntryPinned")({}, { entryKey: keys[0], pinned: true });
+    assert.deepEqual(pinned.pinnedWebEntryKeys, [keys[0]]);
+    assert.equal(notifications.length, 1);
+    const webappPinned = await handlers.get("settings.setWebEntryPinned")({}, { entryKey: keys[1], pinned: true });
+    assert.deepEqual(webappPinned.pinnedWebEntryKeys, [keys[1], keys[0]]);
+    const webappUnpinned = await handlers.get("settings.setWebEntryPinned")({}, { entryKey: keys[1], pinned: false });
+    assert.deepEqual(webappUnpinned.pinnedWebEntryKeys, [keys[0]]);
+    const unpinned = setSitePinned(app, { entryKey: keys[0], pinned: false },
+      listWebEntryKeys(), platform);
+    assert.deepEqual(unpinned, { ok: true, result: { entryKey: keys[0], pinned: false } });
+    assert.deepEqual((await handlers.get("settings.getNavigationPreferences")()).pinnedWebEntryKeys, []);
+    assert.equal(notifications.length, 4);
+    assert.ok(metadataReads >= 5, "pin operations must use the manager with injected integration ports");
   });
-  const pinned = await handlers.get("settings.setWebEntryPinned")({}, { entryKey: keys[0], pinned: true });
-  assert.deepEqual(pinned.pinnedWebEntryKeys, [keys[0]]);
-  assert.equal(notifications.length, 1);
-  const unpinned = setSitePinned(app, { entryKey: keys[0], pinned: false },
-    listWebEntries(app).items.map((item) => item.entryKey), "darwin");
-  assert.deepEqual(unpinned, { ok: true, result: { entryKey: keys[0], pinned: false } });
-  assert.deepEqual((await handlers.get("settings.getNavigationPreferences")()).pinnedWebEntryKeys, []);
-  assert.equal(notifications.length, 2);
-});
+}

@@ -1143,6 +1143,11 @@
   font-size: 14px;
 }
 
+.app-system-bar-sidebar-toggle,
+.main-chat-work-panel-toggle {
+  height: 26px;
+}
+
 .main-chat-work-panel-toggle-icon {
   display: block;
   width: 16px;
@@ -3810,7 +3815,7 @@
 
 .desktop-global-search-input-shell {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 52px;
@@ -3818,10 +3823,11 @@
 }
 
 .desktop-global-search-input-icon {
-  width: 18px;
-  height: 18px;
+  display: block;
+  width: 16px;
+  height: 16px;
   color: var(--ink-muted);
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .desktop-global-search-input-shell input {
@@ -3870,6 +3876,54 @@
 .desktop-global-search-shortcut-modifier,
 .desktop-global-search-shortcut-key {
   display: inline-block;
+}
+
+.desktop-global-search-history {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 8px;
+  font-size: 12px;
+}
+
+.desktop-global-search-history-label {
+  flex: none;
+  color: var(--ink-muted);
+}
+
+.desktop-global-search-history-tags {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.desktop-global-search-history-tag {
+  flex: none;
+  max-width: 160px;
+  padding: 2px 8px;
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.desktop-global-search-history-tag:hover,
+.desktop-global-search-history-tag:focus-visible {
+  background: var(--control-active-bg);
+  color: var(--ink);
+}
+
+.desktop-global-search-history-tag:focus-visible {
+  outline: 1px solid var(--ink-muted);
+  outline-offset: -2px;
 }
 
 .desktop-global-search-results {
