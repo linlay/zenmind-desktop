@@ -4856,7 +4856,7 @@ export function AppShell() {
                   disabled={isAgentWebclientMainRoute}
                   title={t("sidebar.copilot.title")}
                 >
-                  <SidebarActionIcon kind="sidebar_right" />
+                  <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                 </button>
               ) : null}
             </nav>

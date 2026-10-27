@@ -249,7 +249,7 @@
   align-items: center;
   justify-content: center;
   width: 24px;
-  height: 24px;
+  height: 26px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: var(--control-radius-sm);
@@ -298,6 +298,9 @@
 }
 
 .sidebar-assistant-top-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 16px;
   height: 16px;
   color: inherit;
@@ -4100,16 +4103,12 @@ div.sidebar-chats-group-popover {
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button {
   width: 24px;
-  height: 24px;
+  height: 26px;
   justify-self: center;
   border-radius: var(--control-radius-sm);
   background: transparent;
   border-color: transparent;
   color: var(--control-icon-color);
-}
-
-.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .sidebar-collapsed-toggle-button {
-  height: 26px;
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:hover,
@@ -4488,12 +4487,8 @@ div.sidebar-chats-group-popover {
 
 .app-sidebar-collapse-button.is-compact {
   width: 24px;
-  height: 24px;
-  border-radius: var(--control-radius-sm);
-}
-
-.app-sidebar-collapse-button.is-compact.sidebar-collapsed-toggle-button {
   height: 26px;
+  border-radius: var(--control-radius-sm);
 }
 
 .app-sidebar-collapse-button.is-compact:hover,

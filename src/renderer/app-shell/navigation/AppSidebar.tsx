@@ -7023,7 +7023,7 @@ export function AppSidebar({
                     title={t("sidebar.copilot.title")}
                   >
                     <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
-                      <SidebarActionIcon kind="sidebar_right" />
+                      <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                     </span>
                   </button>
                 ) : null}

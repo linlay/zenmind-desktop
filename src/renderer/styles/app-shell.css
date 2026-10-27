@@ -714,7 +714,7 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 2px;
-  height: 24px;
+  height: 26px;
   margin-left: 4px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -724,7 +724,7 @@
   display: inline-grid;
   flex: 0 0 24px;
   width: 24px;
-  height: 24px;
+  height: 26px;
   padding: 0;
   place-items: center;
   border: 1px solid transparent;
@@ -1148,7 +1148,8 @@
   height: 26px;
 }
 
-.main-chat-work-panel-toggle-icon {
+.main-chat-work-panel-toggle-icon,
+.sidebar-right-panel-icon {
   display: block;
   width: 16px;
   height: 16px;
