@@ -4526,7 +4526,6 @@ export function AppSidebar({
     return (
       <button
         type="button"
-        hidden={primaryChatNavigation}
         className="sidebar-link sidebar-primary-link sidebar-new-chat-button"
         aria-label={label}
         title={disabled ? t("sidebar.chats.defaultAgentUnavailable") : label}
@@ -5922,6 +5921,21 @@ export function AppSidebar({
     );
   }
 
+  function renderPrimaryChatNavigation() {
+    // This is a chat-directory view. Copilot launcher visibility is unrelated
+    // and becomes false on Main Chat routes, where this list must stay mounted.
+    return <PrimaryChatNavigation
+      agents={primaryChatNavAgents} collapsed={isCollapsed} currentChatId={activeSidebarChatId}
+      loaded={assistantNavAgentsLoaded} error={primaryChatNavError}
+      onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })}
+      onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
+      itemProps={getSidebarRovingItemProps}
+      onOpen={(agent) => {
+        if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
+        else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
+      }} />;
+  }
+
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
     if (item.entryType === "chats") {
       return (
@@ -7040,14 +7054,6 @@ export function AppSidebar({
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
               : <>
-                {primaryChatNavigation && assistantLauncherVisible ? <PrimaryChatNavigation
-                  agents={primaryChatNavAgents} collapsed={isCollapsed} currentChatId={activeSidebarChatId}
-                  loaded={assistantNavAgentsLoaded} error={primaryChatNavError} onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })} onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
-                  itemProps={getSidebarRovingItemProps}
-                  onOpen={(agent) => {
-                    if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
-                    else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
-                  }} /> : null}
                 <SortableNavEntries
                   order={sidebarNavOrder}
                   sortableKeys={["kanban", "schedules", "new-chat", ...shownCapabilityNavItems.map((item) => item.orderKey), ...pinnedWebNavItems.map((item) => item.orderKey)]}
@@ -7060,7 +7066,10 @@ export function AppSidebar({
                     const item = navItems.find((entry) => entry.orderKey === key);
                     if (!item) return null;
                     if (item.entryType === "chats" || item.entryType === "assistants") {
-                      return <div hidden={primaryChatNavigation} style={{ display: primaryChatNavigation ? "none" : "contents" }}>{renderPrimaryNavEntry(item)}</div>;
+                      return <Fragment>
+                        {item.entryType === "chats" && primaryChatNavigation ? renderPrimaryChatNavigation() : null}
+                        <div hidden={primaryChatNavigation} style={{ display: primaryChatNavigation ? "none" : "contents" }}>{renderPrimaryNavEntry(item)}</div>
+                      </Fragment>;
                     }
                     return renderPrimaryNavEntry(item);
                   }}

@@ -1486,3 +1486,5 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 自动入口：`node --test test/primary-chat-navigation.test.mjs test/agent-icon-fallback.test.mjs`；Electron 界面回归：`node qa/primary-chat-navigation-smoke.mjs`；上游资源一致性：`node scripts/sync-webclient-icons.mjs --check`。WebClient 的 primaryChatIntent / useMessageActions 定向测试与 Desktop 同批验证。平台样式模拟不能代替 Windows 真机发布验收。
 
 - 默认 SVG Agent 头像：GENERAL／CODER／KBASE／TEAM 的完整导航项目头与主要对话行，各自持有 22–32 秒的待机周期和 0–7 秒初始延迟；使用实际动画时间推进检查转头和眨眼。Hover 名称区域也应响应，邻行不被激活，离开行后复位。系统减少动态效果、窗口失焦、页面隐藏与头像卸载时不得持续追踪或泄漏监听。EXECUTOR／PROXY 及自定义图片保持上游对应行为，皮肤不能替换 Agent 图标。
+
+- 主要对话区域回归：从非 Chat 页面启用主要对话，点击已有主要 Chat 后确认所有主要对话行继续可见且列表 DOM 不被卸载；点击暂无对话的 Agent、折叠侧栏和多次切换 Chat 后同样保持。复用真实的 Main Chat 路由下 Copilot launcher 隐藏条件，不能在夹具中始终置为可见。主要对话仅替换原置顶／普通／项目聊天区域，Kanban、自动化、独立新建对话、网站和其他能力入口的相对顺序保持。

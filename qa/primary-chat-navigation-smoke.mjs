@@ -25,14 +25,15 @@ const agents=Array.from({length:18},(_,i)=>({agentKey:'agent-'+i,displayName:['æ
 window.qa={routes:[],histories:[],orders:[],set:null,state:null};
 function Fixture(){
  const [options,setOptions]=useState({primary:false,collapsed:false,windows:false,fullScreen:false,error:''});
- const [route,setRoute]=useState('/agent/agent-0?chatId=primary-0');
+ const [route,setRoute]=useState('/');
  window.qa.set=patch=>setOptions(old=>({...old,...patch}));window.qa.state=options;
  const navigate=target=>{window.qa.routes.push(target);setRoute(target);return true;};
  return <div className={'app-shell '+(options.windows?'is-windows-platform':'is-mac-platform')} style={{display:'flex',height:'100vh',width:'100%',background:'var(--bg-base)','--app-sidebar-width':options.collapsed?'64px':'264px'}}>
  <div className='app-sidebar-shell' style={{width:options.collapsed?64:264,height:'100%',minHeight:0,flex:'none'}}><AppSidebar
  isCollapsed={options.collapsed} isMac={!options.windows} isWindows={options.windows}
+ assistantLauncherVisible={!route.startsWith('/agent/') && route!=='/kanban'}
  currentPathname={route.split('?')[0]} currentRoute={route} primaryChatNavigation={options.primary} primaryChatNavAgents={agents} primaryChatNavError={options.error}
- sidebarNavOrder={['new-chat','chats','group:assistants','group:webs']} onSidebarNavOrderChange={order=>window.qa.orders.push(order)}
+ sidebarNavOrder={['kanban','schedules','new-chat','chats','group:assistants','group:webs']} onSidebarNavOrderChange={order=>window.qa.orders.push(order)}
  webItems={[]} assistantNavAgents={agents} chatNavAgentOptions={agents} chatDefaultAgentKey='agent-0'
  assistantNavChatItems={[chat('ordinary','agent-0')]} assistantPinnedChatItems={[chat('pinned','agent-0')]}
  assistantNavAgentsLoaded assistantChatPinningSupported assistantChatOrderingSupported
@@ -97,15 +98,21 @@ const scroll=await js('document.querySelector(".sidebar-nav").scrollTop');
 assert.ok(scroll>0,'fixture must exercise actual sidebar scrolling');
 await js('window.qa.standardNode=document.querySelector(".sidebar-new-chat-button")');
 await click('[role="switch"][aria-labelledby="primary-chat-navigation-label"]');await until('document.querySelectorAll(".primary-chat-item").length===18');
-assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height'),0);
+assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height>0'),true);
+assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().top < document.querySelector(".primary-chat-navigation").getBoundingClientRect().top'),true);
 assert.equal(await js('window.qa.routes.length'),0);
+await js('window.qa.primaryList=document.querySelector(".primary-chat-navigation")');
 assert.equal(await js('(()=>{const dot=document.querySelector(".primary-chat-status .assistant-worker-unread-dot");return dot.getBoundingClientRect().width===8&&getComputedStyle(dot).opacity==="1";})()'),true);
 await js('document.querySelector(".primary-chat-item").focus();document.querySelector(".primary-chat-item").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true}))');
 assert.equal(await js('document.activeElement.dataset.sidebarNavId'),'primary:agent-1');
 await click('.primary-chat-row:nth-child(2) .primary-chat-item');await until('window.qa.routes.length>0');
 assert.equal(await js('window.qa.routes.at(-1)'),'/agent/agent-0?chatId=primary-0');
+await until('document.querySelectorAll(".primary-chat-item").length===18');
+assert.equal(await js('window.qa.primaryList===document.querySelector(".primary-chat-navigation")'),true);
 await click('.primary-chat-row:nth-child(3) .primary-chat-item');
 assert.match(await js('window.qa.routes.at(-1)'),/^\\/agent\\/agent-1\\?newChat=\\d{13}&primaryNewChat=true$/);
+await until('document.querySelectorAll(".primary-chat-item").length===18');
+assert.equal(await js('window.qa.primaryList===document.querySelector(".primary-chat-navigation")'),true);
 await click('.primary-chat-history');assert.equal(await js('window.qa.histories.at(-1)'),'agent-0');
 await js('window.qa.set({collapsed:true})');await until('!!document.querySelector(".primary-chat-navigation.is-collapsed")');
 await click('.primary-chat-item');assert.equal(await js('window.qa.routes.at(-1)'),'/agent/agent-0?chatId=primary-0');
@@ -130,7 +137,7 @@ assert.equal(await js('document.querySelector(".primary-chat-mode-toggle")'),nul
 await click('[role="switch"][aria-labelledby="primary-chat-navigation-label"]');await until('!document.querySelector(".primary-chat-navigation")');
 assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height>0'),true);
 assert.deepEqual(errors,[]);
-console.log(JSON.stringify({ok:true,checks:['standard default','primary open and create intent','history','collapsed navigation','original expanded state and scroll','draft and guest retained','no order writes','light/dark','Windows/fullscreen branches','Debug-only switch','independent idle clocks','row hover and pointer reset','reduced motion'],output},null,2));
+console.log(JSON.stringify({ok:true,checks:['standard default','primary open and create intent','primary list survives Main Chat routes and Copilot hiding','utility entries retain their position','history','collapsed navigation','original expanded state and scroll','draft and guest retained','no order writes','light/dark','Windows/fullscreen branches','Debug-only switch','independent idle clocks','row hover and pointer reset','reduced motion'],output},null,2));
 win.destroy();server.close();app.quit();})().catch(error=>{console.error(error);if(win)win.destroy();server.close();app.exit(1);});
 `;
 fs.writeFileSync(path.join(output,"checks.cjs"), checker);
