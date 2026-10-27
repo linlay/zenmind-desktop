@@ -37,9 +37,9 @@ function DefaultSettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
       );
     case "search":
       return (
-        <svg {...iconProps}>
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        <svg {...iconProps} strokeWidth="1.6">
+          <circle cx="10.5" cy="10.5" r="6.8" />
+          <line x1="15.5" y1="15.5" x2="20" y2="20" />
         </svg>
       );
     case "appearance":

@@ -4788,7 +4788,7 @@ export function AppShell() {
                   </button>
                   <button
                     type="button"
-                    className={`app-system-bar-action${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                    className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
                     aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     aria-expanded={!effectiveSidebarCollapsed}

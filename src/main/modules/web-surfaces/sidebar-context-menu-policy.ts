@@ -66,7 +66,7 @@ export function normalizeSidebarContextMenuRequest(
         "chatOrderingSupported",
         "menuScope"
       ]) ||
-      !["assistants", "chats", "webs"].includes(String(target.groupId)) ||
+      !["assistants", "chats", "webs", "pinned"].includes(String(target.groupId)) ||
       !isBoolean(target.canCreateProject) ||
       !isBoolean(target.canCreateChat) ||
       !["recent", "manual"].includes(String(target.chatSortMode)) ||
@@ -77,7 +77,7 @@ export function normalizeSidebarContextMenuRequest(
     }
     normalizedTarget = {
       kind: "group",
-      groupId: target.groupId as "assistants" | "chats" | "webs",
+      groupId: target.groupId as "assistants" | "chats" | "webs" | "pinned",
       canCreateProject: target.canCreateProject,
       canCreateChat: target.canCreateChat,
       chatSortMode: target.chatSortMode as "recent" | "manual",
@@ -188,7 +188,7 @@ export function buildSidebarContextMenuPolicy(
         enabled: target.canCreateProject
       }];
     }
-    if (target.groupId === "chats") {
+    if (target.groupId === "chats" || target.groupId === "pinned") {
       const sortItems: SidebarContextMenuPolicyItem[] = [
         {
           id: "group.chat-sort-recent",
@@ -205,7 +205,7 @@ export function buildSidebarContextMenuPolicy(
           checked: target.chatSortMode === "manual"
         }
       ];
-      if (target.menuScope === "sort") {
+      if (target.menuScope === "sort" || target.groupId === "pinned") {
         return sortItems;
       }
       return [

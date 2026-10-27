@@ -319,6 +319,7 @@ type BootstrapGuideDismissedBubbles = {
   help: boolean;
 };
 
+const PINNED_CHAT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.pinned-chat-sort`;
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
 const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 800;
 const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
@@ -1112,7 +1113,7 @@ export function AppSidebar({
   onSetWebItemPinned,
   webItems,
   assistantNavAgents = [],
-  assistantPinnedChatItems = [],
+  assistantPinnedChatItems: manualPinnedChatItems = [],
   assistantChatPinningSupported = false,
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
@@ -1187,6 +1188,27 @@ export function AppSidebar({
   const isSettingsMode = sidebarMode === "settings";
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
+  );
+  const [pinnedChatSortMode, setPinnedChatSortMode] = useState<AssistantChatSortMode>(() => {
+    try {
+      return window.localStorage.getItem(PINNED_CHAT_SORT_STORAGE_KEY) === "recent"
+        ? "recent" : "manual";
+    } catch {
+      return "manual";
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PINNED_CHAT_SORT_STORAGE_KEY, pinnedChatSortMode);
+    } catch {
+      // Keep the current renderer preference when storage is unavailable.
+    }
+  }, [pinnedChatSortMode]);
+  const assistantPinnedChatItems = useMemo(
+    () => pinnedChatSortMode === "recent"
+      ? [...manualPinnedChatItems].sort((a, b) => b.updatedAt - a.updatedAt)
+      : manualPinnedChatItems,
+    [manualPinnedChatItems, pinnedChatSortMode],
   );
   const projectDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1576,6 +1598,7 @@ export function AppSidebar({
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
     assistantChatSortMode,
+    pinnedChatSortMode,
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
@@ -1599,6 +1622,7 @@ export function AppSidebar({
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
     assistantChatSortMode,
+    pinnedChatSortMode,
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
@@ -2405,7 +2429,6 @@ export function AppSidebar({
   ): SidebarContextMenuTarget | null {
     const runtime = sidebarContextMenuRuntimeRef.current;
     if (subject.kind === "group") {
-      if (subject.groupId === "pinned") return null;
       return {
         kind: "group",
         groupId: subject.groupId,
@@ -2414,7 +2437,7 @@ export function AppSidebar({
         canCreateChat:
           Boolean(runtime.resolvedChatDefaultAgentKey) &&
           !runtime.chatDefaultAgentUnavailable,
-        chatSortMode: runtime.assistantChatSortMode,
+        chatSortMode: subject.groupId === "pinned" ? runtime.pinnedChatSortMode : runtime.assistantChatSortMode,
         chatOrderingSupported:
           runtime.assistantChatOrderingSupported &&
           !runtime.chatOrderMutationPending,
@@ -2508,7 +2531,7 @@ export function AppSidebar({
         actionId === "group.chat-sort-recent" ||
         actionId === "group.chat-sort-manual"
       ) {
-        return target.groupId === "chats" && target.chatOrderingSupported;
+        return (target.groupId === "chats" || target.groupId === "pinned") && target.chatOrderingSupported;
       }
       return (
         target.groupId === "webs" &&
@@ -2603,9 +2626,9 @@ export function AppSidebar({
       } else if (actionId === "group.new-chat") {
         startChatsNewChat();
       } else if (actionId === "group.chat-sort-recent") {
-        await updateChatsSortMode("recent");
+        await updateChatsSortMode("recent", subject.groupId);
       } else if (actionId === "group.chat-sort-manual") {
-        await updateChatsSortMode("manual");
+        await updateChatsSortMode("manual", subject.groupId);
       } else if (actionId === "group.add-website") {
         showWebsiteDialog();
       } else if (actionId === "group.import-webapp") {
@@ -4069,7 +4092,11 @@ export function AppSidebar({
     }
   }
 
-  async function updateChatsSortMode(sortMode: AssistantChatSortMode) {
+  async function updateChatsSortMode(sortMode: AssistantChatSortMode, groupId: SidebarGroupId = "chats") {
+    if (groupId === "pinned") {
+      setPinnedChatSortMode(sortMode);
+      return;
+    }
     if (
       chatOrderMutationPending ||
       !assistantChatOrderingSupported ||
@@ -4168,6 +4195,9 @@ export function AppSidebar({
     setChatOrderError("");
     try {
       const result = await onUpdateAssistantChatOrder(request);
+      if (result.ok && assistantPinnedChatItems.some((chat) => chat.chatId === chatId)) {
+        setPinnedChatSortMode("manual");
+      }
       if (!result.ok) {
         setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
       }
@@ -4470,9 +4500,11 @@ export function AppSidebar({
     );
   }
 
-  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+  function renderChatsSortButton(options: { inPopover?: boolean; groupId?: "chats" | "pinned" } = {}) {
+    const groupId = options.groupId ?? "chats";
+    const sortMode = groupId === "pinned" ? pinnedChatSortMode : assistantChatSortMode;
     const sortLabel = assistantChatOrderingSupported
-      ? assistantChatSortMode === "manual"
+      ? sortMode === "manual"
         ? t("sidebar.chats.sortManual")
         : t("sidebar.chats.sortRecent")
       : t("sidebar.chats.sortUnavailable");
@@ -4489,7 +4521,7 @@ export function AppSidebar({
               event.preventDefault();
               event.stopPropagation();
               openNativeSidebarContextMenu(
-                { kind: "group", groupId: "chats", menuScope: "sort" },
+                { kind: "group", groupId, menuScope: "sort" },
                 event.currentTarget,
               );
             }}
@@ -4504,9 +4536,12 @@ export function AppSidebar({
             )}
           </button>
         </Tooltip>
-        {renderChatsNewChatButton(options)}
       </>
     );
+  }
+
+  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+    return <>{renderChatsSortButton(options)}{renderChatsNewChatButton(options)}</>;
   }
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
@@ -4944,6 +4979,14 @@ export function AppSidebar({
     return renderSidebarGroup({
       groupId: "pinned",
       label: t("sidebar.pinned.title"),
+      headerActions: sidebarGroupState.pinned
+        ? renderChatsSortButton({ groupId: "pinned" }) : undefined,
+      popoverHeader: (
+        <div className="sidebar-chats-collapsed-head">
+          <span>{t("sidebar.pinned.title")}</span>
+          {renderChatsSortButton({ groupId: "pinned", inPopover: true })}
+        </div>
+      ),
       iconNode: <SidebarActionIcon kind="pin" />,
       status: {
         unreadCount: assistantPinnedChatItems.filter((chat) => !chat.isRead).length,

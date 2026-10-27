@@ -183,14 +183,14 @@ function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
       return (
         <svg {...iconProps}>
           <path d="M20 12H4" />
-          <path d="m10 6-6 6 6 6" />
+          <path d="M10 4.5 4 12l6 7.5" />
         </svg>
       );
     case "forward":
       return (
         <svg {...iconProps}>
           <path d="M4 12h16" />
-          <path d="m14 6 6 6-6 6" />
+          <path d="M14 4.5 20 12l-6 7.5" />
         </svg>
       );
     case "sort":

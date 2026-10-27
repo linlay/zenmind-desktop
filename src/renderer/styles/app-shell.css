@@ -1143,6 +1143,11 @@
   font-size: 14px;
 }
 
+.app-system-bar-sidebar-toggle,
+.main-chat-work-panel-toggle {
+  height: 26px;
+}
+
 .main-chat-work-panel-toggle-icon {
   display: block;
   width: 16px;
@@ -3810,7 +3815,7 @@
 
 .desktop-global-search-input-shell {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 52px;
@@ -3818,10 +3823,11 @@
 }
 
 .desktop-global-search-input-icon {
-  width: 18px;
-  height: 18px;
+  display: block;
+  width: 16px;
+  height: 16px;
   color: var(--ink-muted);
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .desktop-global-search-input-shell input {

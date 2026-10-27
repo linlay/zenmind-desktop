@@ -63,6 +63,26 @@ test("sidebar group context menus expose creation actions without project sortin
   }), ["group.add-website", "group.import-webapp"]);
 });
 
+test("pinned group accepts native sort menus with independent radio state and no creation action", () => {
+  for (const mode of ["recent", "manual"]) {
+    for (const supported of [true, false]) {
+      for (const menuScope of [undefined, "sort"]) {
+        const target = {
+          kind: "group", groupId: "pinned",
+          canCreateProject: true, canCreateChat: true,
+          chatSortMode: mode, chatOrderingSupported: supported,
+          ...(menuScope ? { menuScope } : {})
+        };
+        assert.deepEqual(normalizeSidebarContextMenuRequest({ x: 1, y: 2, target })?.target, target);
+        const items = buildSidebarContextMenuPolicy(target);
+        assert.deepEqual(items.map((item) => item.id), ["group.chat-sort-recent", "group.chat-sort-manual"]);
+        assert.deepEqual(items.map((item) => item.checked), [mode === "recent", mode === "manual"]);
+        assert.ok(items.every((item) => item.type === "radio" && item.enabled === supported));
+      }
+    }
+  }
+});
+
 test("sidebar entity context menus expose only their fixed action sets", () => {
   const agentItems = buildSidebarContextMenuPolicy({
     kind: "agent",

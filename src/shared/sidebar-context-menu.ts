@@ -50,7 +50,7 @@ type SidebarWebContextMenuTargetBase = {
 export type SidebarContextMenuTarget =
   | {
       kind: "group";
-      groupId: "assistants" | "chats" | "webs";
+      groupId: "assistants" | "chats" | "webs" | "pinned";
       canCreateProject: boolean;
       canCreateChat: boolean;
       chatSortMode: "recent" | "manual";
