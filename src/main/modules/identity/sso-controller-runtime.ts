@@ -60,7 +60,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   let accessTokenRefreshPromise: Promise<string> | null = null;
   let restorePromise: Promise<DesktopSsoRestoreResult> | null = null;
   let restoreState: DesktopSsoRestoreResult["state"] | "uninitialized" = "uninitialized";
-  const credentials = createSsoCredentialStore(options.app, options.platform, options.credentialProtection);
+  const credentials = createSsoCredentialStore(options.app, options.platform);
   let oidcBlocked = false;
   let oidcGeneration = desktopSsoRuntimeState.credentialGeneration;
   let oidcFlight: Promise<string> | null = null;

@@ -39,13 +39,15 @@ Electron 默认 session 完成登录
 
 网关在受信同源 HTTPS 端点完成上游验证；Desktop 检查 ID token 的格式、期限和身份连续性，并使用同源 Bearer userinfo 确认稳定业务账号。若配置 JWKS / discovery，还须执行本地签名验证；JWT 解码本身不证明签名有效。JWT subject 与 userinfo 的工号是不同身份字段，分别绑定，不要求字符串相同。
 
-完整恢复凭据仅由主进程使用系统保护加密存入 secrets。macOS 使用 Keychain 支持的 safeStorage，Windows 使用 DPAPI，并显式限制目录权限；系统保护不可用时拒绝明文降级。加密凭据是会话恢复事实源，`sso-id-token.txt` 是供 Platform 每次调用读取的业务投影，不含 refresh token。先原子保存轮换凭据，再同步 Cookie 和业务投影；后续发布失败保留新 refresh token，禁止重新使用旧轮换值。旧文件只作升级恢复候选，恢复成功后删除；暂时故障不得将其发布为新业务投影。
+完整恢复凭据由主进程保存在 secrets 层的 `sso-credentials.json`，是受文件权限保护的明文文件，不是加密保险库。macOS 使用目录 0700、文件 0600；Windows 显式设置当前用户 ACL。SSO 登录和启动恢复不访问 Keychain、DPAPI 或 safeStorage，不弹出系统密钥授权。相同系统用户权限的程序仍可能读取此文件，这与供业务使用的 ID token 文件采用同一本机账户信任边界。refresh token 不交给 renderer、Platform、日志或普通配置，Platform 工具对凭据文件整体脱敏。
+
+本地凭据是会话恢复事实源，`sso-id-token.txt` 是供 Platform 每次调用读取的业务投影，不含 refresh token。先原子保存轮换凭据，再同步 Cookie 和业务投影；后续发布失败保留新 refresh token，禁止重新使用旧轮换值。旧 `.enc` 文件启动时忽略，不为迁移读取系统密钥；只有旧密文的用户通过已有 Cookie 恢复或重新登录，成功保存新文件后清理旧密文。旧业务文件仍只作升级恢复候选，恢复成功后删除。
 
 刷新使用匿名、禁止重定向的同源表单请求，不发送 Cookie、Bearer、client_id 或 client_secret。不必等待过期；按 JWT exp 提前调度，短生命周期缩小提前窗口。新 refresh token 有返回时替换，省略时保留原值，非法空值拒绝。运行期、启动恢复及业务 401 共用单飞协调器。账号退出/切换使 generation 失效并取消在途请求，迟到结果不得写入新会话。
 
-每轮自动请求最多三次，只有网络/超时和 502 退避重试。400、404、500、非法响应及校验失败不原样循环；刷新接口 401 清理身份和全部凭据。同源 userinfo 的拒绝不等于 refresh token 被拒绝。预算耗尽后状态查询、定时器和业务强制刷新都不能重置预算；用户在使用情况页点击刷新可显式重新尝试。临时失败时有效业务 token 可继续使用，过期后撤销业务投影并进入暂不可用，保留加密恢复材料。本地 Platform App 身份及聊天不因官网登录变化而改变。
+每轮自动请求最多三次，只有网络/超时和 502 退避重试。400、404、500、非法响应及校验失败不原样循环；刷新接口 401 清理身份和全部凭据。同源 userinfo 的拒绝不等于 refresh token 被拒绝。预算耗尽后状态查询、定时器和业务强制刷新都不能重置预算；用户在使用情况页点击刷新可显式重新尝试。临时失败时有效业务 token 可继续使用，过期后撤销业务投影并进入暂不可用，保留本地恢复材料。本地 Platform App 身份及聊天不因官网登录变化而改变。
 
-退出通过配置的同源网关 logout URL 携带 Session Cookie 发起 GET，不跟随 EIAM 重定向；随后清理本地加密凭据、业务投影与已知 Cookie。
+退出通过配置的同源网关 logout URL 携带 Session Cookie 发起 GET，不跟随 EIAM 重定向；随后清理本地凭据、业务投影与已知 Cookie。
 
 ## 启动恢复
 
@@ -136,7 +138,7 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 - `localhost` 登录回调在 Windows 与 macOS 上同时监听 IPv4、IPv6 本机回环地址，保持回调 URL 与同一个登录状态一致，不依赖浏览器和 Node 的 DNS 地址族选择一致，也不监听通配网络接口。仅在操作系统明确不支持 IPv6 时允许 IPv4 单栈；端口冲突必须失败并释放已绑定的监听器。成功、失败、取消、等待超时与应用退出时统一关闭全部监听器；回调响应须能完整返回，旧请求的迟到清理不得关闭新一轮监听器。成功回调由宿主唤回 Desktop，成功页不再链接到已释放的本地端口。
 - 凭据写入 secrets/state 层，不进入普通 config、命令行、页面 URL 或遥测。
 - canonical 文件发布必须原子化；撤销失败应显式返回，不能假装退出完成。
-- 网关模式以加密凭据为恢复事实源、业务文件为可重建投影；其他模式的 canonical token 只有一个持久事实源；启动恢复会清理已退役的重复 site-token 文件，任何消费者都不得重新创建或读取它。
+- 网关模式以私有凭据文件为恢复事实源、业务文件为可重建投影；其他模式的 canonical token 只有一个持久事实源；启动恢复会清理已退役的重复 site-token 文件，任何消费者都不得重新创建或读取它。
 - 临时故障遵循 fail closed：当前运行不使用未经重新验证的站点身份。
 - Tunnel Hub 身份 JWT 只能由 Main 放入 WSS 首帧，不进入 URL、renderer、日志或 Tunnel 配置；Relay 应在 JWT 到期时终止对应 Desktop session，Desktop 再通过正常刷新和重连取得新 JWT。
 - `tunnel-hub-token`、`tunnel-hub-device-secret` 与旧 registration token 都是已废弃凭据；读取或保存 Tunnel Hub 设置以及 runtime 启动时必须清理，不得作为 SSO 缺失时的回退。

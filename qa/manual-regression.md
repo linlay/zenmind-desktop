@@ -1533,10 +1533,10 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 
 ### OIDC 网关静默续期
 
-- [ ] Cookie 登录取得完整 JSON，业务文件只含 id_token，refresh token 仅以密文保存在 secrets；状态调试页面不显示 token 正文。
+- [ ] Cookie 登录取得完整 JSON，业务文件只含 id_token，refresh token 仅保存在当前用户权限保护的 secrets 文件，SSO 启动和恢复不弹系统钥匙串授权；状态调试页面不显示 token 正文。
 - [ ] 有效期前续期、并发强制续期、系统唤醒后的期限检查；Platform 下一次 Provider/oneid 调用读取新文件，无需重启。
-- [ ] 关闭后重启且 Cookie 已失效，仍可通过加密 refresh token 恢复；旧版 token 文件恢复成功后删除。
+- [ ] 关闭后重启且 Cookie 已失效，仍可通过本地 refresh token 恢复；旧版 token 文件恢复成功后删除。
 - [ ] refresh token 轮换或未返回新值均正确；userinfo/文件发布失败后不丢失已轮换的 refresh token。
 - [ ] 刷新 401 清理凭据并提示登录；502/断网只退避有限次，状态轮询不重置预算，使用情况页刷新可手动重试。
 - [ ] 临时错误且旧 token 有效时继续使用；过期后撤销业务文件。退出/切账号期间的迟到响应不能写回 token 或 Cookie。
-- [ ] macOS / Windows 分别验证系统加密、目录权限、带空格路径、原子文件替换及生命周期参数；新旧 Desktop/Platform 混用不得静默降级。
+- [ ] macOS / Windows 分别验证无系统密钥授权弹窗、目录权限、带空格路径、原子文件替换及生命周期参数；新旧 Desktop/Platform 混用不得静默降级。

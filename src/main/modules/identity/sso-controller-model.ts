@@ -2,7 +2,6 @@ import { getDesktopSsoStatus } from "./sso-restore";
 import { exchangeConfiguredDesktopSsoCookieForAccessToken } from "./sso-browser-session";
 import type { Session, App, BrowserWindow } from "electron";
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
-import type { SsoCredentialProtection } from "./sso-credentials";
 
 export type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
 
@@ -73,7 +72,6 @@ export type DesktopSsoControllerOptions = {
   openBrowserUrl(input: BrowserOpenInput): Promise<BrowserOpenResult>;
   openExternal(url: string): Promise<void>;
   onRestoreResult?(result: DesktopSsoRestoreResult): void;
-  credentialProtection?: SsoCredentialProtection;
 };
 
 export type DesktopSsoRestoreResult = {

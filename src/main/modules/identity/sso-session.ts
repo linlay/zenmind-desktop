@@ -404,7 +404,7 @@ export function finalizeDesktopSsoLoginAttempt(
 export function clearSession(app: App) {
   desktopSsoRuntimeState.credentialGeneration++;
   let credentialRemovalError: Error | undefined;
-  try { clearSsoCredentials(app); } catch { credentialRemovalError = new Error("SSO encrypted credentials could not be removed."); }
+  try { clearSsoCredentials(app); } catch { credentialRemovalError = new Error("SSO local credentials could not be removed."); }
   closeCallbackServer();
   desktopSsoRuntimeState.pendingLogin = null;
   desktopSsoRuntimeState.currentBusinessToken = "";

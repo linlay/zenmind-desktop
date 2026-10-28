@@ -17,7 +17,6 @@ const record = { enabled:true, browserOrigin:origin, loginUrl:origin+'/login',
 const config = buildOidcConfigFromRecord(record);
 const jwt = (sub='oidc-sub', exp=Date.now()/1000+3600) => [ {alg:'RS256'}, {sub,iss:'https://issuer.example.test',aud:'client',iat:Math.floor(Date.now()/1000),exp} ].map(v=>Buffer.from(JSON.stringify(v)).toString('base64url')).join('.')+'.signature';
 const response = (status, data) => ({ok:status>=200&&status<300,status,json:async()=>data});
-const protection = {available:()=>true,encrypt:s=>Buffer.from('encrypted:'+s),decrypt:b=>b.toString().slice(10)};
 const previous = async () => parseSsoTokenResponse({id_token:jwt(),refresh_token:'refresh & secret'},config,()=>assert.fail());
 const appFor = root => ({getPath:n=>n==='home'?root:path.join(root,n)});
 
@@ -45,12 +44,13 @@ test('config rejects mixed protocols, cross-origin endpoints and incomplete refr
     assert.throws(()=>buildOidcConfigFromRecord({...record,...change}));
   }
 });
-test('encrypted store rejects unavailable encryption and mismatched environments',async t=>{
+test('private credential store uses owner-only permissions and rejects mismatched environments',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'sso-credentials-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const app=appFor(root);const store=createSsoCredentialStore(app,'darwin',protection);const value=await previous();store.save(value);
+  const app=appFor(root);const store=createSsoCredentialStore(app,'darwin');const value=await previous();store.save(value);
   assert.equal(store.read(origin).refreshToken,value.refreshToken);
   assert.throws(()=>store.read('https://other.test'));
-  const blocked=createSsoCredentialStore(app,'darwin',{...protection,available:()=>false});assert.throws(()=>blocked.read(origin));
+  assert.equal(fs.statSync(path.join(getSecretsRoot(app),'sso-credentials.json')).mode & 0o777,0o600);
+  assert.equal(fs.statSync(getSecretsRoot(app)).mode & 0o777,0o700);
   store.clear();assert.equal(store.read(origin),null);
 });
 function fixture(t,handler){
@@ -58,7 +58,7 @@ function fixture(t,handler){
   const app=appFor(root);const file=resolveDesktopSsoConfigPath(app,'darwin');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(record));
   const events=[];const sets=[];
   const session={cookies:{get:async()=>[{name:'SESSION',value:'cookie',domain:'ai.example.test',path:'/'}],set:async c=>sets.push(c),remove:async()=>{},flushStore:async()=>{}},flushStorageData:async()=>{},fetch:handler};
-  const options={app,platform:'darwin',credentialProtection:protection,session:{defaultSession:session},getMainWindow:()=>({webContents:{send:(_c,s)=>events.push(s)}}),openBrowserUrl:async()=>{},openExternal:async()=>{}};
+  const options={app,platform:'darwin',session:{defaultSession:session},getMainWindow:()=>({webContents:{send:(_c,s)=>events.push(s)}}),openBrowserUrl:async()=>{},openExternal:async()=>{}};
   const controller=createDesktopSsoController(options);return {app,controller,options,events,sets};
 }
 test('login saves credentials; restart refresh works without Cookie; concurrent refresh is single-flight',async t=>{
@@ -70,23 +70,23 @@ test('login saves credentials; restart refresh works without Cookie; concurrent 
   });
   await f.controller.exchangeBrowserCookieAccessToken();assert.equal(exchanges,1);assert.equal(getDesktopSsoStatus(f.app).authenticated,true);
   const file=getDesktopSsoIdTokenFilePath(f.app);assert.ok(fs.existsSync(file));
-  assert.equal(fs.readFileSync(path.join(getSecretsRoot(f.app),'sso-credentials.enc'),'utf8').startsWith('encrypted:'),true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(getSecretsRoot(f.app),'sso-credentials.json'),'utf8')).refreshToken,'refresh-1');
   f.options.session.defaultSession.cookies.get=async()=>[];
   const restarted=createDesktopSsoController(f.options);
   const [a,b]=await Promise.all([restarted.ensureBusinessToken(true),restarted.ensureBusinessToken(true)]);
   assert.equal(a,b);assert.equal(refreshes,1);
-  assert.equal(createSsoCredentialStore(f.app,'darwin',protection).read(origin).refreshToken,'refresh-2');
+  assert.equal(createSsoCredentialStore(f.app,'darwin').read(origin).refreshToken,'refresh-2');
   assert.equal(getDesktopSsoStatus(f.app).user.sub,'staff-1');
   assert.equal(JSON.stringify(f.events).includes('refresh-2'),false);
 });
-test('refresh 401 clears encrypted and projected credentials',async t=>{
+test('refresh 401 clears private and projected credentials',async t=>{
   let failed=false;
   const f=fixture(t,async url=>url.endsWith('/userinfo')?response(200,{data:{staffno:'staff-1'}}):failed?response(401,{}):response(200,{id_token:jwt(),refresh_token:'r'}));
   await f.controller.exchangeBrowserCookieAccessToken();failed=true;
   await assert.rejects(f.controller.ensureBusinessToken(true));
   assert.equal(getDesktopSsoStatus(f.app).authenticated,false);
   assert.equal(fs.existsSync(getDesktopSsoIdTokenFilePath(f.app)),false);
-  assert.equal(createSsoCredentialStore(f.app,'darwin',protection).read(origin),null);
+  assert.equal(createSsoCredentialStore(f.app,'darwin').read(origin),null);
 });
 test('late refresh after logout cannot recreate credentials or token file',async t=>{
   let release;let waiting=false;
@@ -99,7 +99,7 @@ test('late refresh after logout cannot recreate credentials or token file',async
   const flight=f.controller.ensureBusinessToken(true);await new Promise(r=>setImmediate(r));
   clearDesktopSsoLocalSession(f.app);release();assert.equal(await flight,'');
   assert.equal(fs.existsSync(getDesktopSsoIdTokenFilePath(f.app)),false);
-  assert.equal(createSsoCredentialStore(f.app,'darwin',protection).read(origin),null);
+  assert.equal(createSsoCredentialStore(f.app,'darwin').read(origin),null);
 });
 test('a temporary failure stops automatic requests until an explicit retry, including after expiry',async t=>{
   let fail=false,requests=0;
@@ -115,10 +115,10 @@ test('a temporary failure stops automatic requests until an explicit retry, incl
   try {await assert.rejects(f.controller.ensureBusinessToken());assert.equal(fs.existsSync(getDesktopSsoIdTokenFilePath(f.app)),false);}finally{Date.now=now;}
   fail=false;await f.controller.retrySession();assert.equal(requests,3);assert.equal(getDesktopSsoStatus(f.app).authenticated,true);
 });
-test('startup restores from encrypted credentials without requiring browser session metadata',async t=>{
+test('startup restores from private credentials without requiring browser session metadata',async t=>{
   let refreshes=0;
   const f=fixture(t,async url=>url.endsWith('/userinfo')?response(200,{data:{staffno:'staff-1'}}):(refreshes++,response(200,{id_token:jwt(),refresh_token:'r'})));
-  createSsoCredentialStore(f.app,'darwin',protection).save({...await previous(),accountId:'staff-1'});
+  createSsoCredentialStore(f.app,'darwin').save({...await previous(),accountId:'staff-1'});
   f.options.session.defaultSession.cookies.get=async()=>[];
   const result=await f.controller.restoreDesktopSsoSession();
   assert.equal(result.state,'authenticated');assert.equal(refreshes,1);
@@ -128,7 +128,7 @@ test('rotated refresh credential survives userinfo failure without publishing a 
   const f=fixture(t,async url=>url.endsWith('/userinfo')?response(fail?500:200,{data:{staffno:'staff-1'}}):response(200,{id_token:jwt(),refresh_token:fail?'rotated':'first'}));
   await f.controller.exchangeBrowserCookieAccessToken();const old=fs.readFileSync(getDesktopSsoIdTokenFilePath(f.app),'utf8');fail=true;
   await assert.rejects(f.controller.ensureBusinessToken(true));
-  assert.equal(createSsoCredentialStore(f.app,'darwin',protection).read(origin).refreshToken,'rotated');
+  assert.equal(createSsoCredentialStore(f.app,'darwin').read(origin).refreshToken,'rotated');
   assert.equal(fs.readFileSync(getDesktopSsoIdTokenFilePath(f.app),'utf8'),old);
 });
 test('legacy token file is removed only after successful credential recovery',async t=>{
@@ -153,7 +153,7 @@ test('expiry withdraws the business projection even after automatic renewal stop
   await new Promise(resolve=>setTimeout(resolve,1000));
   assert.equal(count,2);assert.equal(fs.existsSync(getDesktopSsoIdTokenFilePath(f.app)),false);
   assert.equal(getDesktopSsoStatus(f.app).authenticated,false);
-  assert.ok(createSsoCredentialStore(f.app,'darwin',protection).read(origin).refreshToken);
+  assert.ok(createSsoCredentialStore(f.app,'darwin').read(origin).refreshToken);
 });
 test('a refresh already in flight may finish after expiry while the old proof is withdrawn',async t=>{
   let count=0,aborted=false;const short=jwt('oidc-sub',Date.now()/1000+0.7);
@@ -166,12 +166,12 @@ test('a refresh already in flight may finish after expiry while the old proof is
   await f.controller.exchangeBrowserCookieAccessToken();
   await new Promise(resolve=>setTimeout(resolve,1800));
   assert.equal(aborted,false);assert.equal(count,2);assert.equal(getDesktopSsoStatus(f.app).authenticated,true);
-  assert.equal(createSsoCredentialStore(f.app,'darwin',protection).read(origin).refreshToken,'rotated');
+  assert.equal(createSsoCredentialStore(f.app,'darwin').read(origin).refreshToken,'rotated');
 });
 test('rotated credentials stay recoverable in memory when atomic persistence fails',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'sso-save-failure-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const app=appFor(root),store=createSsoCredentialStore(app,'darwin',protection),value=await previous();
-  fs.mkdirSync(path.join(getSecretsRoot(app),'sso-credentials.enc'),{recursive:true});
+  const app=appFor(root),store=createSsoCredentialStore(app,'darwin'),value=await previous();
+  fs.mkdirSync(path.join(getSecretsRoot(app),'sso-credentials.json'),{recursive:true});
   assert.throws(()=>store.save(value));assert.equal(store.read(origin).refreshToken,value.refreshToken);
 });
 
@@ -192,4 +192,14 @@ test('unexpected errors never copy native messages or token-shaped text into dia
  const {describeSsoFailure}=require('../dist-electron/main/modules/identity/sso-failures.js');
  const failure=describeSsoFailure('syncCookies',new Error('token=eyJ.secret.signature Cookie=private refresh_token=private'));
  assert.equal(failure.code,'unexpected');assert.doesNotMatch(failure.message,/eyJ|Cookie=|refresh_token=|private/);
+});
+
+test('legacy encrypted credentials are ignored without OS access and removed after a new login',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'sso-no-keychain-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const app=appFor(root),store=createSsoCredentialStore(app,'darwin');
+ const legacy=path.join(getSecretsRoot(app),'sso-credentials.enc');
+ fs.mkdirSync(path.dirname(legacy),{recursive:true});fs.writeFileSync(legacy,'unreadable-legacy-ciphertext');
+ assert.equal(store.read(origin),null);assert.equal(fs.readFileSync(legacy,'utf8'),'unreadable-legacy-ciphertext');
+ const value=await previous();store.save(value);assert.equal(fs.existsSync(legacy),false);
+ assert.equal(store.read(origin).refreshToken,value.refreshToken);
 });
