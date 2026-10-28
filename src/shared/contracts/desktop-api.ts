@@ -905,6 +905,11 @@ export interface DesktopApi {
   };
   localDocuments: LocalDocumentsApi;
   artifacts: {
+    folder: (input: import("../artifacts").DesktopArtifactFolderInput) => Promise<import("../artifacts").DesktopArtifactMutationResult>;
+    organizeMany: (input: import("../artifacts").DesktopArtifactBatchInput) => Promise<import("../artifacts").DesktopArtifactMutationResult>;
+    thumbnail: (input: import("../artifacts").DesktopArtifactIdentity) => Promise<string | null>;
+    organize: (input: import("../artifacts").DesktopArtifactOrganizeInput) => Promise<void>;
+    sync: () => Promise<import("../artifacts").DesktopArtifactSyncState>;
     act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;
     list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;
     onChanged: (listener: () => void) => () => void;

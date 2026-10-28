@@ -48,6 +48,7 @@ import {
 import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { registerMainIpcHandlers } from "../module-registry";
 export interface ReadyIpcDependencies {
+  artifactRuntime?: import("../../modules/artifacts").ArtifactRuntime;
   beginLocalDocumentDraftPromotion: import("../ipc-registration-contracts").MainIpcRegistrationOptions["beginLocalDocumentDraftPromotion"];
   cancelLocalDocumentDraftPromotion: import("../ipc-registration-contracts").MainIpcRegistrationOptions["cancelLocalDocumentDraftPromotion"];
   promoteLocalDocumentDraft: import("../ipc-registration-contracts").MainIpcRegistrationOptions["promoteLocalDocumentDraft"];
@@ -106,6 +107,7 @@ export interface ReadyIpcDependencies {
 }
 export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
   registerMainIpcHandlers({
+    artifactRuntime: dependencies.artifactRuntime,
     beginLocalDocumentDraftPromotion: dependencies.beginLocalDocumentDraftPromotion,
     cancelLocalDocumentDraftPromotion: dependencies.cancelLocalDocumentDraftPromotion,
     promoteLocalDocumentDraft: dependencies.promoteLocalDocumentDraft,

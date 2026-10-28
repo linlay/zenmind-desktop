@@ -594,6 +594,7 @@ export function ChatHistoryDialog({
                 {t("sidebar.chat.deleteConfirm", { name: deleteDialog.chat.chatName || deleteDialog.chat.chatId })}
               </p>
               {deleteDialog.error ? <div className="chat-history-delete-error" role="alert">{deleteDialog.error}</div> : null}
+              <LibraryDeleteNotice chatId={deleteDialog.chat.chatId} />
               <div className="chat-history-delete-actions">
                 <button
                   ref={deleteCancelRef}
@@ -619,3 +620,4 @@ export function ChatHistoryDialog({
     </div>
   );
 }
+import { LibraryDeleteNotice } from "./LibraryDeleteNotice";
