@@ -50,7 +50,7 @@ export function createSkinPackageStore(options: {
     return ids().slice(0, limits.installed).flatMap((id) => {
       try {
         const manifest = readManifest(id);
-        return [{ id, name: manifest.name, version: manifest.version, author: manifest.author,
+        return [{ id, packageId: manifest.id, name: manifest.name, version: manifest.version, author: manifest.author,
           previewDataUrl: manifest.preview ? readImage(id, manifest.preview, PREVIEW_BYTES) : null }];
       } catch { return []; }
     });
@@ -103,8 +103,9 @@ export function createSkinPackageStore(options: {
         else { try { fs.rmSync(tombstone, { recursive: true, force: true }); } catch { /* Retry owned cleanup on the next read. */ } }
       }
     },
-    async install(filePath: string, assertOwner: () => void): Promise<InstalledDesktopSkinId> {
+    async install(filePath: string, assertOwner: () => void, expected?: { id: string; version: string }): Promise<InstalledDesktopSkinId> {
       const { manifest, images } = await readSkinPackageArchive(filePath);
+      if (expected && (manifest.id !== expected.id || manifest.version !== expected.version)) throw new SkinPackageError("invalidPackage");
       const existing = ids();
       for (const id of existing) {
         let installed: SkinPackageManifest;

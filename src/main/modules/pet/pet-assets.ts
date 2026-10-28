@@ -278,6 +278,7 @@ export function listUserDesktopPetAppearanceOptions(app: App): DesktopPetAppeara
     }
     return [{
       id: pet.id,
+      assetVersion: readUserPetText(pet.manifest, ["version"]),
       displayName: readUserPetText(pet.manifest, ["displayName", "name"], pet.petId),
       description: readUserPetText(pet.manifest, ["description"], ""),
       assetBasePath: userPetAssetBaseUrl(pet.petId),

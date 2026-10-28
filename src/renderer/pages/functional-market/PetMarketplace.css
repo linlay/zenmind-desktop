@@ -1,0 +1,23 @@
+.pet-discovery { flex-direction: column; }
+.pet-market-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.pet-market-scopes { margin-bottom: 0; }
+.pet-market-list-heading > :last-child:not(.pet-market-scopes) { min-width: 130px; }
+.pet-market-card { padding: 0; overflow: hidden; cursor: pointer; }
+.pet-market-card:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
+.pet-market-card.is-current { border-color: var(--market-control-blue); }
+.pet-market-open { border: 0; background: transparent; padding: 0; cursor: pointer; width: 100%; }
+.pet-market-card-copy { padding: 16px 18px 8px; flex: 1; }
+.pet-market-card h2 { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--market-control-text); margin: 0 0 8px; }
+.pet-market-card p { color: var(--market-control-muted); line-height: 1.65; min-height: 42px; margin: 0 0 12px; }
+.pet-market-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.pet-market-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px 18px; }
+.pet-market-preview { width: 100%; }
+.pet-market-stage { min-height: 180px; display: flex; justify-content: center; align-items: center; background: color-mix(in srgb, var(--market-control-blue) 5%, var(--market-control-card)); }
+.pet-market-sprite { display: block; width: 128px; height: 128px; flex: 0 0 auto; background-repeat: no-repeat; image-rendering: auto; }
+.pet-market-preview-fallback { color: var(--market-control-muted); font-size: 12px; }
+.pet-market-preview.is-detail .pet-market-stage { min-height: 260px; border-radius: 12px; margin-bottom: 12px; }
+.pet-market-preview.is-detail > :last-child { width: 100%; }
+.pet-market-detail-meta { color: var(--market-control-muted); }
+@keyframes market-pet-sprite { from { background-position: 0 0; } to { background-position: var(--pet-sprite-end) 0; } }
+@media (prefers-reduced-motion: reduce) { .pet-market-sprite { animation: none !important; } }
+@media (max-width: 680px) { .pet-market-list-heading { align-items: flex-start; flex-wrap: wrap; } }

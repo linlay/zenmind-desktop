@@ -1147,6 +1147,10 @@ export interface DesktopApi {
     getConnectorAgent(agentKey: string): Promise<MarketConnectorAgentState>;
     getConnectorAgentTools(input: { connectorId: string; agentKey: string }): Promise<MarketConnectorAgentToolState>;
     readSkillContent: (id: string) => Promise<MarketSkillContentResult>;
+    installSkin: (id: string) => Promise<MarketCommandResult>;
+    readSkinAsset: (input: { id: string; version: string; path: string }) => Promise<{ dataUrl: string }>;
+    installPet: (id: string) => Promise<MarketCommandResult>;
+    readPetAsset: (input: { id: string; version: string; path: string }) => Promise<{ dataUrl: string }>;
     getSkillPins: () => Promise<MarketSkillPins>;
     saveSkillPins: (update: MarketSkillPinUpdate) => Promise<MarketSkillPins>;
     getSettings: () => Promise<MarketSettings>;

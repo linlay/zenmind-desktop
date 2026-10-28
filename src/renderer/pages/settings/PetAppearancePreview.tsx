@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { DesktopPetAppearanceOption } from "../../../shared/contracts";
+import { versionedDesktopPetAssetUrl } from "../../../shared/desktop-pet";
 
 /** Hover previews are local: they never request an action from the live desktop pet. */
 export function PetAppearancePreview({ appearance, hovered }: {
@@ -16,7 +17,7 @@ export function PetAppearancePreview({ appearance, hovered }: {
   const style = {
     "--desktop-pet-appearance-preview-frames": String(frames),
     "--pet-preview-end": `${-128 * frames}px`,
-    backgroundImage: `url("${appearance.assetBasePath.replace(/\/$/u, "")}/${asset.path}")`,
+    backgroundImage: `url("${versionedDesktopPetAssetUrl(appearance.assetBasePath, asset.path, appearance.assetVersion)}")`,
     animation: active
       ? `pet-card-action ${signature ? signature.durationMs : 600}ms steps(${frames}, end) 1`
       : "none"

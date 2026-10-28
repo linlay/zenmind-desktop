@@ -44,6 +44,10 @@ export function createDesktopSkinStore(options: Options) {
   }
   return {
     read,
+    listInstalledPackages() {
+      packages.recoverRemovals(profile().appearance.skinId);
+      return packages.list();
+    },
     setSkin(id: unknown, selection: DesktopSkinSelectionOptions = {}) {
       if (!isDesktopSkinId(id) || (!isBuiltinDesktopSkinId(id) && !packages.resolve(id))) throw new Error("Unknown desktop skin.");
       const previous = profile().appearance.background;
@@ -52,8 +56,8 @@ export function createDesktopSkinStore(options: Options) {
       if (reset) removeAsset(previous?.id);
       return read();
     },
-    async importPackage(filePath: string, assertOwner: () => void = () => {}) {
-      const importedSkinId = await packages.install(filePath, assertOwner);
+    async importPackage(filePath: string, assertOwner: () => void = () => {}, expected?: { id: string; version: string }) {
+      const importedSkinId = await packages.install(filePath, assertOwner, expected);
       return { settings: read(), importedSkinId };
     },
     removePackage(id: unknown) {

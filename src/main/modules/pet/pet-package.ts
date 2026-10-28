@@ -159,7 +159,7 @@ async function packageFiles(input: string) {
     if (!meta)
       throw invalid();
     addSize(meta.uncompressedSize);
-    if (name.startsWith("__MACOSX/") || name.split("/").at(-1) === ".DS_Store")
+    if (name.split("/").some(component => component.toLowerCase() === "__macosx" || component.toLowerCase() === ".ds_store" || component.startsWith("._")))
       continue;
     files.set(name, () => readEntry(entry, limits.fileBytes));
   }
@@ -267,20 +267,45 @@ export async function readPetPackage(input: string) {
     throw invalid();
   }
 }
-export async function installLocalPetPackage(input: string, root: string, assertOwner = () => { }) {
+export type PetMarketIdentity = { id: string; version: string };
+type PetInstallOptions = {
+  assertOwner?: () => void;
+  market?: PetMarketIdentity;
+  onCommitted?: (appearanceId: string) => void;
+};
+
+// Both installation entry points use the same validated bytes and publication
+// transaction. Only packages previously installed from Market can be upgraded.
+export async function installPetPackage(input: string, root: string, options: PetInstallOptions = {}) {
+  const assertOwner = options.assertOwner ?? (() => {});
   const { manifest, images } = await readPetPackage(input);
+  if (options.market && (manifest.id !== options.market.id || manifest.version !== options.market.version))
+    throw new PetPackageError("invalidPackage");
   assertOwner();
   await fs.mkdir(root, { recursive: true });
+  const rootStat = await fs.lstat(root);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw invalid();
   const target = path.join(root, manifest.id);
+  let replacesExisting = false;
   try {
-    await fs.lstat(target);
-    throw new PetPackageError("packageExists");
+    const stat = await fs.lstat(target);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !options.market)
+      throw new PetPackageError("packageExists");
+    const marker = JSON.parse((await boundedFile(path.join(target, ".market-source.json"), limits.manifestBytes)).toString("utf8"));
+    const installed = JSON.parse((await boundedFile(path.join(target, "pet.json"), limits.manifestBytes)).toString("utf8"));
+    if (marker.id !== manifest.id || marker.version !== installed.version || installed.id !== manifest.id)
+      throw new PetPackageError("packageExists");
+    replacesExisting = true;
   }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-      throw error;
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // A missing marker on an existing directory denotes a local import.
+    if (await fs.lstat(target).then(() => true, e => { if (e.code === "ENOENT") return false; throw e; }))
+      throw new PetPackageError("packageExists");
   }
   const stage = await fs.mkdtemp(path.join(root, ".pet-import-"));
+  let backup: string | undefined;
+  let published = false;
   try {
     for (const [name, bytes] of images) {
       const dest = path.join(stage, name);
@@ -288,20 +313,33 @@ export async function installLocalPetPackage(input: string, root: string, assert
       await fs.writeFile(dest, bytes, { flag: "wx" });
     }
     await fs.writeFile(path.join(stage, "pet.json"), JSON.stringify(manifest, null, 2) + "\n", { flag: "wx" });
+    if (options.market)
+      await fs.writeFile(path.join(stage, ".market-source.json"), JSON.stringify(options.market), { flag: "wx" });
     assertOwner();
-    // Existing identities are never replaced; the IPC serializes local imports.
-    try {
-      await fs.lstat(target);
-      throw new PetPackageError("packageExists");
-    }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        throw error;
+    if (replacesExisting) {
+      backup = await fs.mkdtemp(path.join(root, ".pet-previous-"));
+      await fs.rmdir(backup);
+      await fs.rename(target, backup);
+    } else {
+      try { await fs.lstat(target); throw new PetPackageError("packageExists"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     }
     await fs.rename(stage, target);
+    published = true;
+    options.onCommitted?.(`user:${manifest.id}`);
+    // Cleanup failure must not roll back an already recorded successful release.
+    if (backup) await fs.rm(backup, { recursive: true, force: true }).catch(() => {});
     return `user:${manifest.id}`;
+  } catch (error) {
+    if (published) await fs.rm(target, { recursive: true, force: true });
+    if (backup) await fs.rename(backup, target);
+    throw error;
   }
   finally {
     await fs.rm(stage, { recursive: true, force: true });
   }
+}
+
+export async function installLocalPetPackage(input: string, root: string, assertOwner = () => {}) {
+  return installPetPackage(input, root, { assertOwner });
 }
