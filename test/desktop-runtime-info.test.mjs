@@ -128,7 +128,7 @@ test("runtime diagnostics aggregate exact safe fields across platform and packag
         assert.equal(platform, scenario.platform);
         return scenario.platform === "win32" ? "C:\\Users\\tester\\ZenMind" : "/Users/tester/.zenmind";
       },
-      readDesktopSsoAccessToken() {
+      readDesktopSsoIdToken() {
         calls.token += 1;
         return rawToken;
       },

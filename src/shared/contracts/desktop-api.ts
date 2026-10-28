@@ -791,7 +791,7 @@ export type DesktopStateFileName =
   | "env-bootstrap.json"
   | "pet-state.json"
   | "sso-session.json"
-  | "sso-access-token.txt";
+  | "sso-id-token.txt";
 
 export interface DesktopStateFileSnapshot {
   name: DesktopStateFileName;
@@ -1181,6 +1181,7 @@ export interface DesktopApi {
     readLog: (options?: ServiceLogReadOptions) => Promise<ServiceLogReadResult>;
   };
   sso: {
+    retrySession: () => Promise<DesktopSsoStatus>;
     getStatus: () => Promise<DesktopSsoStatus>;
     startLogin: () => Promise<DesktopSsoStartResult>;
     cancelLogin: () => Promise<DesktopSsoCancelResult>;

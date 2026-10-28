@@ -2849,10 +2849,10 @@ test("desktop state debug tab is wired through the fixed read-only IPC contract"
   assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
   assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-state-file-head/);
 
-  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-id-token\.txt"/);
   assert.match(desktopApi, /getDesktopStateSnapshot:\s*\(\) => Promise<DesktopStateSnapshot>/);
   assert.match(preload, /getDesktopStateSnapshot:\s*\(\) => ipcRenderer\.invoke\("settings\.getDesktopStateSnapshot"\)/);
-  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-id-token\.txt"/);
   assert.match(settingsHandlers, /getDesktopStateRoot\(app, platform\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopStateSnapshot", async \(\) =>/);
   assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);

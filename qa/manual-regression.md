@@ -1527,3 +1527,13 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - macOS 使用 Command 快捷键与 Finder 菜单，Windows 使用 Ctrl 与文件资源管理器菜单；在原生两平台分别验证定位、下载与外部打开。自动化中的平台标签模拟不代替原生 Windows 验收。
 
 自动化入口：先构建 Main 类型产物，运行 `node --test test/artifact-store.test.mjs test/artifact-actions.test.mjs test/artifact-library.test.mjs test/artifact-folders.test.mjs` 与 `node qa/library-smoke.mjs`。后者以隔离数据驱动实际 React 页面，不连接用户服务；上游真实发布、鉴权及原生系统动作按以上清单单独联调。
+
+### OIDC 网关静默续期
+
+- [ ] Cookie 登录取得完整 JSON，业务文件只含 id_token，refresh token 仅以密文保存在 secrets；状态调试页面不显示 token 正文。
+- [ ] 有效期前续期、并发强制续期、系统唤醒后的期限检查；Platform 下一次 Provider/oneid 调用读取新文件，无需重启。
+- [ ] 关闭后重启且 Cookie 已失效，仍可通过加密 refresh token 恢复；旧版 token 文件恢复成功后删除。
+- [ ] refresh token 轮换或未返回新值均正确；userinfo/文件发布失败后不丢失已轮换的 refresh token。
+- [ ] 刷新 401 清理凭据并提示登录；502/断网只退避有限次，状态轮询不重置预算，使用情况页刷新可手动重试。
+- [ ] 临时错误且旧 token 有效时继续使用；过期后撤销业务文件。退出/切账号期间的迟到响应不能写回 token 或 Cookie。
+- [ ] macOS / Windows 分别验证系统加密、目录权限、带空格路径、原子文件替换及生命周期参数；新旧 Desktop/Platform 混用不得静默降级。

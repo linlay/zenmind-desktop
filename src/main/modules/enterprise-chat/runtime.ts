@@ -21,7 +21,7 @@ import type {
   EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot
 } from "../../../shared/contracts";
-import { getDesktopDeviceInfo, getDesktopSsoAccessToken } from "../identity";
+import { getDesktopDeviceInfo, getDesktopSsoBusinessToken } from "../identity";
 import {
   EnterpriseChatActionLedger,
   type EnterpriseChatActionLedgerEntry
@@ -88,7 +88,7 @@ export class EnterpriseChatRuntime {
     this.serverUrl = normalizeServerUrl(this.getServerUrl());
     this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
-    this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoAccessToken;
+    this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoBusinessToken;
     this.refreshIdentityToken = options.refreshIdentityToken;
     this.getDeviceInfo = options.getDeviceInfo ?? (() => getDesktopDeviceInfo(this.app));
     this.platform = options.platform ?? process.platform;

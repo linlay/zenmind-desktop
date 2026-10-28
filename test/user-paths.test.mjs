@@ -17,14 +17,14 @@ test("canonical Desktop SSO access-token path follows macOS and Windows roots", 
     registryDataRootPath: ""
   });
   assert.equal(
-    __testInternals.resolveDesktopSsoAccessTokenFilePath(macDataRoot, "darwin"),
+    __testInternals.resolveDesktopSsoIdTokenFilePath(macDataRoot, "darwin"),
     path.posix.join(
       macHome,
       APP_BRAND.paths.runtimeRootDirName,
       APP_BRAND.paths.desktopDataSubdir,
       "state",
       "desktop",
-      "sso-access-token.txt"
+      "sso-id-token.txt"
     )
   );
 
@@ -35,14 +35,14 @@ test("canonical Desktop SSO access-token path follows macOS and Windows roots", 
     registryDataRootPath: ""
   });
   assert.equal(
-    __testInternals.resolveDesktopSsoAccessTokenFilePath(windowsDataRoot, "win32"),
+    __testInternals.resolveDesktopSsoIdTokenFilePath(windowsDataRoot, "win32"),
     path.win32.join(
       windowsHome,
       APP_BRAND.paths.runtimeRootDirName,
       APP_BRAND.paths.desktopDataSubdir,
       "state",
       "desktop",
-      "sso-access-token.txt"
+      "sso-id-token.txt"
     )
   );
 });

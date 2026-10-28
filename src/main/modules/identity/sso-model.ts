@@ -30,6 +30,8 @@ export type OidcConfig = {
   logoutCallbackUri: string;
   browserOrigin?: string;
   usePkce?: boolean;
+  tokenExchange?: { url: string };
+  tokenRefresh?: { url: string };
   cookieAccessTokenExchange?: CookieAccessTokenExchangeConfig;
   accessTokenCookie?: AccessTokenCookieConfig;
   accessTokenCookies?: AccessTokenCookieConfig[];
