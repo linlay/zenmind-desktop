@@ -12,11 +12,13 @@ await build({ stdin: { contents: `
 import React,{useState,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {MemoryRouter,useLocation,useNavigate} from 'react-router-dom';
+import {RendererI18nContext} from ${JSON.stringify(path.join(repo, 'src/renderer/i18n/i18n-context.ts'))};
+import {createTranslator} from ${JSON.stringify(path.join(repo, 'src/shared/i18n/index.ts'))};
 import {AppSidebar} from ${JSON.stringify(path.join(repo, "src/renderer/app-shell/navigation/AppSidebar.tsx"))};
 import {resolveSidebarMode} from ${JSON.stringify(path.join(repo, "src/renderer/app-shell/navigation/capabilityNavigation.ts"))};
 import ${JSON.stringify(path.join(repo, "src/renderer/styles.css"))};
 window.menuRequests=[];window.closedWebsites=[];
-window.electronAPI={sidebarContextMenu:{popup:async(request)=>{window.menuRequests.push(request);return {actionId:null};}}};
+window.electronAPI={assistant:{getProjectCreationOptions:async()=>({ok:false,message:'Fixture has no project creation'})},sidebarContextMenu:{popup:async(request)=>{window.menuRequests.push(request);return {actionId:null};}}};
 function Fixture(){
  const location=useLocation(),navigate=useNavigate();
  const [order,setOrder]=useState(()=>JSON.parse(localStorage.getItem('test-order')||'null')||['kanban','schedules','new-chat','chats','group:assistants','group:webs']);
@@ -28,13 +30,14 @@ function Fixture(){
  return <div className={'app-shell '+(mode!=='primary'?'is-secondary-sidebar-mode ':'')+(options.platform==='darwin'?'is-mac-platform':'is-windows-platform')}>
  <div className="app-sidebar-shell"><AppSidebar desktopSsoStatus={options.sso} isCollapsed={options.collapsed} isMac={options.platform==='darwin'} isWindows={options.platform==='win32'} currentPathname={location.pathname} currentRoute={location.pathname} sidebarMode={mode} sidebarNavOrder={options.website?[...order,'website:qa']:order} onSidebarNavOrderChange={next=>{setRetained({locationKey:location.key,mode});setOrder(next);localStorage.setItem('test-order',JSON.stringify(next));}} webItems={options.website?[{id:'qa',entryKey:'website:qa',label:'QA Website',kind:'website',url:'https://example.com',createdAt:1,updatedAt:1}]:[]} pinnedWebEntryKeys={options.website&&options.websitePinned?['website:qa']:[]} webOpenEntryKeys={options.website?['website:qa']:[]} onSetWebItemPinned={async()=>{}} onCloseWebItem={async(item)=>{window.closedWebsites.push(item.entryKey);}} marketEnabled={options.market} helpEnabled={options.help} toolMenuOpen={options.menuOpen} onRequestToolMenuOpen={()=>{}} onAutoOpenToolMenu={()=>{}} onCloseToolMenu={()=>{}} onRequestToolNavigate={to=>{const mode=resolveSidebarMode(to);if(to===location.pathname){setRetained({locationKey:location.key,mode});}else{navigate(to,{state:{sidebarMode:mode}});}return true;}} onRequestNavigate={to=>{navigate(to);return true;}} onExitSecondarySidebarMode={()=>navigate('/kanban')}/></div></div>;
 }
-createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={['/agents']}><Fixture/></MemoryRouter>);
+function LocalizedFixture(){const [locale,setLocale]=useState('zh-CN');window.setLocale=setLocale;return <RendererI18nContext.Provider value={{locale,source:'user',t:createTranslator(locale),setLocale:async()=>{}}}><MemoryRouter initialEntries={['/agents']}><Fixture/></MemoryRouter></RendererI18nContext.Provider>}
+createRoot(document.getElementById('root')).render(<LocalizedFixture/>);
 `, resolveDir: repo, loader: "tsx" }, outfile: path.join(root, "fixture.js"), bundle: true, loader: { ".svg": "dataurl" }, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', __DESKTOP_APP_BRAND__: JSON.stringify(require(path.join(repo, "dist-electron/shared/brand.js")).APP_BRAND) } });
-fs.writeFileSync(path.join(root, "index.html"), `<!doctype html><html data-theme="light"><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"><style>.app-sidebar-shell{width:240px!important;height:100vh}.app-sidebar{height:100vh}.app-shell{height:100vh}</style><div id="root"></div><script src="fixture.js"></script></html>`);
+fs.writeFileSync(path.join(root, "index.html"), `<!doctype html><html data-theme="light"><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"><style>.app-sidebar-shell{width:240px!important;height:100vh}.app-sidebar-shell:has(.is-collapsed){width:66px!important;min-width:66px}.app-sidebar{height:100vh}.app-shell{height:100vh}</style><div id="root"></div><script>window.addEventListener('error',event=>console.error(event.error?.stack||event.message))</script><script src="fixture.js"></script></html>`);
 fs.writeFileSync(path.join(root, "main.cjs"), `
 const {app,BrowserWindow}=require('electron');const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 app.setPath('userData',path.join(__dirname,'profile'));app.setPath('sessionData',path.join(__dirname,'session'));
-(async()=>{await app.whenReady();const win=new BrowserWindow({show:false,width:1280,height:800,webPreferences:{contextIsolation:true,nodeIntegration:false}});await win.loadFile(path.join(__dirname,'index.html'));const js=(s)=>win.webContents.executeJavaScript(s);const until=async(s)=>{for(let n=0;n<100;n++){if(await js(s))return;await new Promise(r=>setTimeout(r,50));}throw new Error('Timed out: '+s);};
+(async()=>{await app.whenReady();const win=new BrowserWindow({show:false,width:1280,height:800,webPreferences:{contextIsolation:true,nodeIntegration:false}});win.webContents.on('console-message',details=>{if(details.level==='error'&&!details.message.startsWith('Unsafe attempt to load URL'))console.error(details.message)});await win.loadFile(path.join(__dirname,'index.html'));const js=(s)=>win.webContents.executeJavaScript(s);const until=async(s)=>{for(let n=0;n<100;n++){if(await js(s))return;await new Promise(r=>setTimeout(r,50));}throw new Error('Timed out: '+s);};
 await until('document.querySelector(".sidebar-capability-visibility-button")');
 assert.deepEqual(await js('Array.from(document.querySelectorAll(".sidebar-capabilities-nav [data-sidebar-capability-id]")).slice(0,3).map(item=>item.dataset.sidebarCapabilityId)'),['agents','kbases','memory']);
 for(const [id,route] of [['agents','/agents'],['kbases','/kbases'],['memory','/memory'],['skills','/skills'],['mcp-servers','/connectors'],['registries','/registries'],['archives','/archives'],['market','/market'],['artifact-management','/artifact-management'],['share-management','/share-management'],['help','/help']]){
@@ -74,6 +77,26 @@ for(const platform of ['darwin','win32']){
   }
  }
 }
+// Collapsed footer represents account state, with no visible settings gear.
+for(const locale of ['zh-CN','en-US']){
+ await js('window.setLocale('+JSON.stringify(locale)+')');
+ const signedOut=locale==='zh-CN'?'未登录':'Not signed in';
+for(const platform of ['darwin','win32']){
+ for(const theme of ['light','dark']){
+  for(const sso of [null,{configured:true,authenticated:false,completedSteps:{}},{configured:true,authenticated:true,user:{name:'Frank Linlay'},completedSteps:{userInfo:true,accessToken:true}}]){
+   await js('window.navigate("/kanban");window.setOptions('+JSON.stringify({platform,sso,collapsed:true})+');document.documentElement.dataset.theme='+JSON.stringify(theme));
+   await until('document.querySelector(".app-sidebar.is-collapsed .sidebar-tool-menu-trigger")');
+   const state=await js('(()=>{const trigger=document.querySelector(".sidebar-tool-menu-trigger");const avatar=trigger.querySelector(".sidebar-account-menu-avatar");const label=trigger.querySelector(".sidebar-link-label");return {avatar:!!avatar&&getComputedStyle(avatar).display!=="none",label:getComputedStyle(label).display!=="none"?label.textContent:null,icons:Array.from(trigger.querySelectorAll(".sidebar-link-icon")).filter(node=>getComputedStyle(node).display!=="none").length,title:trigger.title,labelSize:{width:label.clientWidth,scrollWidth:label.scrollWidth,height:label.scrollHeight,buttonHeight:trigger.clientHeight},labelClipped:label.scrollWidth>label.clientWidth||label.scrollHeight>trigger.clientHeight}})()');
+   assert.equal(state.avatar,!!sso?.authenticated);
+   assert.equal(state.label,sso?.authenticated?null:signedOut);
+   assert.equal(state.icons,0);
+   assert.equal(state.title,sso?.authenticated?'Frank Linlay':signedOut);
+   if(!sso?.authenticated) assert.equal(state.labelClipped,false,JSON.stringify({platform,theme,locale,state}));
+  }
+ }
+}
+}
+await js('window.setLocale("zh-CN");window.setOptions({collapsed:false});document.documentElement.dataset.theme="light"');
 // Footer menu opens the dedicated sidebar, including the current primary route.
 for(const route of ['/agents','/kbases','/memory','/skills','/artifact-management']){
  for(const sameRoute of [false,true]){

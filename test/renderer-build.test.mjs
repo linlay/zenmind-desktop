@@ -8516,7 +8516,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu-avatar-fallback\s*\{/);
   assert.match(globalStyles, /\.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?flex:\s*0 0 24px;/);
   assert.match(globalStyles, /\.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*auto;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*inline-flex;/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{[\s\S]*?min-width:\s*58px;[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout-label\s*\{[\s\S]*?white-space:\s*nowrap;/);
