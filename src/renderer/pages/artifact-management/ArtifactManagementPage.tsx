@@ -1,5 +1,6 @@
 import { AppstoreOutlined, BarsOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, EyeOutlined, FolderAddOutlined, FolderOpenOutlined, InfoCircleOutlined, InboxOutlined, LinkOutlined, MenuOutlined, MessageOutlined, ReadOutlined, ReloadOutlined, RightOutlined, SearchOutlined, StarFilled, StarOutlined, SyncOutlined, TagOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { ARTIFACT_CATEGORIES, artifactExternalExtension, type DesktopArtifactActionInput, type DesktopArtifactFolder, type DesktopArtifactIdentity, type DesktopArtifactListResult, type DesktopArtifactMutationResult, type DesktopArtifactOrganizeInput, type DesktopArtifactRecord } from "../../../shared/artifacts";
 import { formatEpochMillis } from "../../../shared/time-contract";
 import { useI18n } from "../../i18n/useI18n";
@@ -10,6 +11,7 @@ import { LibraryFileCard, LibraryFolderCard } from "./LibraryItems";
 import { LibraryMenu, type LibraryMenuItem, type LibraryMenuState } from "./LibraryMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
 import { LIBRARY_DRAG_TYPE, artifactCanOpen, artifactIdentity, artifactKey, artifactName, folderTrail, libraryScope, readLibraryLayout, type LibraryLayout, type LibraryView } from "./library-model";
+import { useLibrarySelection, type LibrarySelectionGesture } from "./useLibrarySelection";
 
 const PAGE_SIZE = 50;
 const EMPTY: DesktopArtifactListResult = { records: [], total: 0, tags: [], folders: [], categories: {}, counts: { all: 0, starred: 0, unfiled: 0, recent: 0 }, sync: { phase: "idle", completed: 0, total: 0, failed: 0, denied: 0 } };
@@ -33,7 +35,7 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
   const [loadError, setLoadError] = useState(false), [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [menu, setMenu] = useState<LibraryMenuState | null>(null), [dialog, setDialog] = useState<LibraryDialog | null>(null);
-  const [detailsVisible, setDetailsVisible] = useState(true), [detailsOpen, setDetailsOpen] = useState(false), [sidebarOpen, setSidebarOpen] = useState(false);
+  const [detailsVisible, setDetailsVisible] = useState(false), [detailsOpen, setDetailsOpen] = useState(false), [sidebarOpen, setSidebarOpen] = useState(false);
   const [narrow, setNarrow] = useState(false), [focusTags, setFocusTags] = useState(0);
   const [platform, setPlatform] = useState("");
   const generation = useRef(0), mounted = useRef(true);
@@ -82,9 +84,14 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
   const title = view.kind === "folder" ? path.at(-1)?.name || t("library.myFolders") : view.kind === "tag" ? view.tag : t(`library.view.${view.kind}`);
   const childFolders = !query && !category && (view.kind === "all" || view.kind === "folder") ? result.folders.filter(folder => folder.parentId === (view.kind === "folder" ? view.id : null)) : [];
   const isWindows = platform === "win32", isMac = platform === "darwin";
+  const selection = useLibrarySelection({ keys: result.records.map(artifactKey), selected, setSelected, platform,
+    scope: JSON.stringify([input, layout]), enabled: !busy && !mutating && !loadError && !dialog && !menu });
+  useEffect(() => {
+    if (!selection.selecting && !selectedItems.length) { setDetailsVisible(false); setDetailsOpen(false); }
+  }, [selection.selecting, selectedItems.length, detailsVisible, detailsOpen]);
 
   function navigate(next: LibraryView) {
-    setView(next); setSearch(""); setQuery(""); setCategory(undefined); setOffset(0); setSelected([]); setError(null); setMenu(null); setSidebarOpen(false); setDetailsOpen(false);
+    setView(next); setSearch(""); setQuery(""); setCategory(undefined); setOffset(0); setSelected([]); setError(null); setMenu(null); setSidebarOpen(false); setDetailsOpen(false); setDetailsVisible(false);
     if (next.kind === "folder") setExpanded(previous => new Set([...previous, ...folderTrail(result.folders, next.id).map(folder => folder.id)]));
   }
   function openDialog(next: LibraryDialog) { setError(null); setMenu(null); setDialog(next); }
@@ -135,8 +142,9 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
     const anchor = event.currentTarget, rect = anchor.getBoundingClientRect();
     setMenu({ anchor, x: event.type === "contextmenu" ? event.clientX : rect.right - 228, y: event.type === "contextmenu" ? event.clientY : rect.bottom + 5, items });
   }
-  function showDetails(item: DesktopArtifactRecord) { setSelected([artifactKey(item)]); setDetailsVisible(true); setDetailsOpen(true); }
+  function showDetails(item: DesktopArtifactRecord) { selection.point(artifactKey(item)); setSelected([artifactKey(item)]); setDetailsVisible(true); setDetailsOpen(true); }
   function fileMenu(item: DesktopArtifactRecord, event: MouseEvent<HTMLElement>) {
+    selection.point(artifactKey(item));
     setSelected([artifactKey(item)]);
     const canOpen = artifactCanOpen(item), external = !!artifactExternalExtension(item.name, item.mimeType);
     showMenu(event, [
@@ -166,6 +174,7 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
   function workspaceMenu(event: MouseEvent<HTMLElement>) {
     showMenu(event, [
       { key: "create", label: t("library.newRootFolder"), icon: <FolderAddOutlined />, run: () => openDialog({ kind: "create", parentId: null }) },
+      { key: "select", label: t("library.selectPage"), icon: <CheckOutlined />, disabled: !result.records.length, run: () => setSelected(result.records.map(artifactKey)) },
       { key: "sync", label: t("artifactManagement.sync"), icon: <SyncOutlined />, disabled: result.sync.phase === "syncing", run: () => void synchronize() },
       { key: "separator", separator: true },
       { key: "about", label: t("library.about"), icon: <InfoCircleOutlined />, run: () => openDialog({ kind: "about" }) },
@@ -181,9 +190,8 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
     if (dialog.kind === "move") ok = await move(dialog.items, folderId);
     if (ok && mounted.current) setDialog(null);
   }
-  function select(item: DesktopArtifactRecord, additive: boolean) {
-    const key = artifactKey(item);
-    setSelected(previous => additive ? previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key] : [key]);
+  function select(item: DesktopArtifactRecord, gesture: LibrarySelectionGesture) {
+    selection.select(artifactKey(item), gesture);
     setDetailsVisible(true);
   }
   function drag(event: DragEvent, item: DesktopArtifactRecord) {
@@ -204,23 +212,19 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
     {sidebarOpen && <button type="button" className="library-sidebar-mask" aria-label={t("library.closeNavigation")} onClick={() => setSidebarOpen(false)} />}
     <LibrarySidebar view={view} folders={result.folders} counts={result.counts} tags={result.tags} expanded={expanded} syncing={result.sync.phase === "syncing"} onNavigate={navigate} onExpand={id => setExpanded(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onCreate={parentId => openDialog({ kind: "create", parentId })} onFolderMenu={folderMenu} onWorkspaceMenu={workspaceMenu} onMove={(items, folderId) => { if (!mutating) void move(items, folderId); }} onSync={() => void synchronize()} />
     <main className="library-workspace">
-      <header className="library-topbar"><button type="button" className="library-icon-button library-navigation-toggle" aria-label={t("library.navigation")} onClick={() => setSidebarOpen(!sidebarOpen)}><MenuOutlined /></button><nav className="library-breadcrumbs" aria-label={t("library.breadcrumb")}><button type="button" onClick={() => navigate({ kind: "all" })}>{t("nav.artifactManagement")}</button>{path.length ? path.map(folder => <span key={folder.id}><RightOutlined /><button type="button" onClick={() => navigate({ kind: "folder", id: folder.id })}>{folder.name}</button></span>) : <span><RightOutlined /><strong>{title}</strong></span>}</nav><button type="button" className="library-icon-button" aria-label={t("library.toggleDetails")} aria-pressed={narrow ? detailsOpen : detailsVisible} onClick={() => { if (narrow) setDetailsOpen(!detailsOpen); else setDetailsVisible(!detailsVisible); }}><InfoCircleOutlined /></button></header>
+      <header className="library-topbar"><button type="button" className="library-icon-button library-navigation-toggle" aria-label={t("library.navigation")} onClick={() => setSidebarOpen(!sidebarOpen)}><MenuOutlined /></button><nav className="library-breadcrumbs" aria-label={t("library.breadcrumb")}><button type="button" onClick={() => navigate({ kind: "all" })}>{t("nav.artifactManagement")}</button>{path.length ? path.map(folder => <span key={folder.id}><RightOutlined /><button type="button" onClick={() => navigate({ kind: "folder", id: folder.id })}>{folder.name}</button></span>) : <span><RightOutlined /><strong>{title}</strong></span>}</nav><button type="button" className="library-icon-button" aria-label={t("library.toggleDetails")} disabled={!selected.length} aria-pressed={narrow ? detailsOpen : detailsVisible} onClick={() => { if (narrow) setDetailsOpen(!detailsOpen); else setDetailsVisible(!detailsVisible); }}><InfoCircleOutlined /></button></header>
       <div className="library-main-columns"><section className="library-content" aria-label={t("library.files")}>
-        <div className="library-content-head"><div className="library-title-row"><div><h1>{title}</h1><p>{t(view.kind === "folder" ? "library.folderSubtitle" : view.kind === "unfiled" ? "library.unfiledSubtitle" : view.kind === "recent" ? "library.recentSubtitle" : view.kind === "starred" ? "library.starredSubtitle" : "library.allSubtitle")}</p></div><div className="library-head-actions"><button type="button" className="library-button" onClick={() => openDialog({ kind: "create", parentId: view.kind === "folder" ? view.id : null })}><FolderAddOutlined /><span>{t("library.newFolder")}</span></button><button type="button" className="library-icon-button" aria-label={t("library.viewMenu")} onClick={event => showMenu(event, [
-          { key: "select", label: t("library.selectPage"), icon: <CheckOutlined />, disabled: !result.records.length, run: () => setSelected(result.records.map(artifactKey)) },
-          { key: "sync", label: t("artifactManagement.sync"), icon: <SyncOutlined />, disabled: result.sync.phase === "syncing", run: () => void synchronize() },
-          { key: "about", label: t("library.about"), icon: <InfoCircleOutlined />, run: () => openDialog({ kind: "about" }) },
-        ])}><EllipsisOutlined /></button></div></div>
+        <h1 className="library-view-title">{title}</h1>
+        <div className="library-content-head">
         <div className="library-search-row"><label className="library-search"><SearchOutlined /><input ref={searchInput} value={search} onChange={event => setSearch(event.target.value)} type="search" aria-label={t("artifactManagement.search")} placeholder={t(view.kind === "folder" ? "library.searchFolder" : "artifactManagement.search", { name: title })} /><kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd></label><div className="library-display-controls"><button type="button" className="library-sort" aria-label={t("library.sort")} onClick={event => showMenu(event, (["date", "name", "type"] as const).map(value => ({ key: value, label: t(`library.sort.${value}`), checked: sort === value, run: () => { setSort(value); setOffset(0); } })))}>{t(`library.sort.${sort}`)}<DownOutlined /></button><div className="library-layout-switcher" role="group" aria-label={t("library.layout")}>
           {(["small", "large", "list"] as const).map(value => <button type="button" key={value} className={layout === value ? "is-active" : ""} aria-label={t(`library.layout.${value}`)} title={t(`library.layout.${value}`)} aria-pressed={layout === value} onClick={() => changeLayout(value)}>{value === "list" ? <BarsOutlined /> : <AppstoreOutlined className={`library-layout-${value}`} />}</button>)}
         </div></div></div>
         <div className="library-filters" aria-label={t("artifactManagement.type")}><button type="button" className={!category ? "is-active" : ""} aria-pressed={!category} onClick={() => { setCategory(undefined); setOffset(0); setSelected([]); }}>{t("library.allTypes")}<small>{Object.values(result.categories).reduce((sum, value) => sum + value, 0)}</small></button>{ARTIFACT_CATEGORIES.map(value => <button type="button" key={value} className={category === value ? "is-active" : ""} aria-pressed={category === value} onClick={() => { setCategory(value); setOffset(0); setSelected([]); }}>{t(`artifactManagement.category.${value}`)}{result.categories[value] ? <small>{result.categories[value]}</small> : null}</button>)}</div></div>
         {error && !dialog && <p role="alert" className="library-error">{error}<button type="button" className="library-icon-button" aria-label={t("common.close")} onClick={() => setError(null)}><CloseOutlined /></button></p>}
-        {selected.length > 1 && <div className="library-selectionbar"><span>{t("library.selected", { count: selected.length })}</span><button type="button" className="library-button" disabled={mutating} onClick={() => openDialog({ kind: "move", items: selectedItems.map(artifactIdentity), folderId: view.kind === "folder" ? view.id : null })}><FolderOpenOutlined />{t("library.moveTo")}</button><button type="button" className="library-button" disabled={mutating} onClick={() => void mutate(() => window.electronAPI.artifacts.organizeMany({ items: selectedItems.map(artifactIdentity), favorite: true }))}><StarOutlined />{t("artifactManagement.favorite")}</button><button type="button" className="library-icon-button" aria-label={t("library.clearSelection")} onClick={() => setSelected([])}><CloseOutlined /></button></div>}
-        <div className="library-browse" aria-busy={busy || mutating}>
+        <div className={`library-browse${selection.selecting ? " is-selecting" : ""}`} tabIndex={-1} onPointerDown={selection.begin} aria-busy={busy || mutating}>
           {loadError ? <div className="library-empty" role="alert"><p>{t("artifactManagement.loadFailed")}</p><button type="button" className="library-button" onClick={() => void load()}><ReloadOutlined />{t("artifactManagement.refresh")}</button></div> : <>
             {childFolders.length > 0 && <section><div className="library-section-head"><h2>{t("library.folders")}<small>{childFolders.length}</small></h2><span>{t("library.dragHint")}</span></div><div className="library-folders">{childFolders.map(folder => <LibraryFolderCard key={folder.id} folder={folder} onNavigate={() => navigate({ kind: "folder", id: folder.id })} onMenu={event => folderMenu(folder, event)} onMove={(items, id) => { if (!mutating) void move(items, id); }} />)}</div></section>}
-            <div className="library-section-head"><h2>{t(query ? "library.searchResults" : "library.files")}<small>{result.total}</small></h2><span>{t("library.openHint")}</span></div>
+            <div className={`library-section-head library-files-header${selected.length > 1 ? " library-selectionbar" : ""}`}>{selected.length > 1 ? <><span>{t("library.selected", { count: selected.length })}</span><div className="library-selection-actions"><button type="button" className="library-button" disabled={mutating} onClick={() => openDialog({ kind: "move", items: selectedItems.map(artifactIdentity), folderId: view.kind === "folder" ? view.id : null })}><FolderOpenOutlined />{t("library.moveTo")}</button><button type="button" className="library-button" disabled={mutating} onClick={() => void mutate(() => window.electronAPI.artifacts.organizeMany({ items: selectedItems.map(artifactIdentity), favorite: true }))}><StarOutlined />{t("artifactManagement.favorite")}</button><button type="button" className="library-icon-button" aria-label={t("library.clearSelection")} onClick={() => setSelected([])}><CloseOutlined /></button></div></> : <><h2>{t(query ? "library.searchResults" : "library.files")}<small>{result.total}</small></h2><span>{t("library.openHint")}</span></>}</div>
             {result.records.length ? <div className={`library-files layout-${layout}`}>{result.records.map(item => <LibraryFileCard key={artifactKey(item)} item={item} selected={selected.includes(artifactKey(item))} layout={layout} busy={mutating} onSelect={additive => select(item, additive)} onOpen={() => { if (artifactCanOpen(item)) void act(item, "view"); }} onMenu={event => fileMenu(item, event)} onDrag={drag} />)}</div> : <div className="library-empty" role="status"><InboxOutlined /><h2>{t(busy ? "artifactManagement.loading" : query || category || view.kind === "tag" || view.kind === "starred" ? "artifactManagement.noResults" : "library.emptyView")}</h2><p>{t(view.kind === "folder" ? "library.emptyFolderHelp" : "library.emptyLibraryHelp")}</p></div>}
           </>}
         </div>
@@ -229,6 +233,7 @@ export function ArtifactManagementPage({ onOpenChat, onView }: {
       <LibraryInspector item={current} count={selected.length} folders={result.folders} busy={mutating} focusTags={focusTags} onClose={() => { if (narrow) setDetailsOpen(false); else setDetailsVisible(false); }} onOpen={() => { if (current) void act(current, "view"); }} onFavorite={() => { if (current) void organize(current, { favorite: !current.favorite }); }} onMenu={event => { if (current) fileMenu(current, event); }} onMove={() => { if (current) openDialog({ kind: "move", items: [artifactIdentity(current)], folderId: current.folderId }); }} onNavigate={id => navigate(id ? { kind: "folder", id } : { kind: "unfiled" })} onSource={() => { if (current) void openChat(current); }} onTags={tags => current ? organize(current, { tags }) : Promise.resolve(false)} />
       </div>
     </main>
+    {selection.box && createPortal(<div className="library-selection-box" style={selection.box} aria-hidden="true" />, document.body)}
     {menu && <LibraryMenu menu={menu} onClose={closeMenu} />}
     <LibraryDialogs dialog={dialog} folders={result.folders} busy={mutating} error={error} onCancel={() => { if (!mutating) { setDialog(null); setError(null); } }} onConfirm={(name, folderId) => void confirmDialog(name, folderId)} />
     {(toast || mutating) && <div className="library-toast" role="status">{mutating ? <SyncOutlined spin /> : <CheckOutlined />}<span>{mutating ? t("library.saving") : toast}</span></div>}

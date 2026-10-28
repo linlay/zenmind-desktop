@@ -29,6 +29,10 @@ async function shot(name) { await delay(120); fs.writeFileSync(path.join(output,
   await win.loadURL('http://127.0.0.1:' + server.address().port);
   await until('document.querySelectorAll(".library-file").length===9');
   assert.equal(await js('document.querySelector(".library-topbar").getBoundingClientRect().height'), 44);
+  assert.equal(await js('getComputedStyle(document.querySelector(".library-inspector")).display'), 'none');
+  assert.equal(await js('document.querySelectorAll(".library-topbar .library-head-actions").length'), 0);
+  assert.equal(await js('document.querySelector("h1").getBoundingClientRect().height'), 1);
+  await shot('no-selection');
   assert.deepEqual(await js('[...document.querySelectorAll(".library-layout-switcher button")].map(button=>button.title)'), ['小卡片', '大卡片', '列表']);
   assert.equal(await js('document.querySelector(".library-page").textContent.toLowerCase().includes("theme")'), false);
   await click('.library-file[aria-label="Landscape.png"]');
@@ -39,6 +43,7 @@ async function shot(name) { await delay(120); fs.writeFileSync(path.join(output,
   await js('window.qa.remount()'); await until('document.querySelectorAll(".layout-list .library-file").length===9');
   assert.equal(await js('localStorage.getItem("desktop.library.layout")'), 'list');
   await click('[aria-label="大卡片"]');
+  await require('./library-selection-checks.cjs')({ win, js, until, delay, click, shot });
   // Folder hierarchy, direct contents and breadcrumb navigation.
   await click('.library-tree-chevron[aria-label="展开Research"]'); await click('.library-tree-chevron[aria-label="展开Brand"]');
   await clickText('.library-tree-label > span:not(.anticon)', 'Images');
@@ -48,6 +53,9 @@ async function shot(name) { await delay(120); fs.writeFileSync(path.join(output,
   await all();
   // Single item alias, tags, favorite, source and exact Run identity.
   await click('.library-file[aria-label="Annual report.docx"] .library-file-more'); await menuItem('重命名');
+  await until('document.querySelector(".library-dialog .ant-modal-content")');
+  assert.deepEqual(await js('(()=>{const panel=document.querySelector(".library-dialog .ant-modal-content"),style=getComputedStyle(panel);return {shared:panel.classList.contains("sidebar-operation-menu-popover"),radius:style.borderRadius,background:style.backgroundColor,blur:style.backdropFilter};})()'), { shared: true, radius: '16px', background: 'rgba(255, 255, 255, 0.9)', blur: 'blur(18px) saturate(1.35)' });
+  await delay(250); await shot('dialog-light');
   await until('document.querySelector(".library-dialog-field input")'); await input('.library-dialog-field input', 'Approved report'); await submit(); await modalClosed();
   await until('[...document.querySelectorAll(".library-file")].some(item=>item.getAttribute("aria-label")==="Approved report")');
   assert.equal(await js('window.qa.data[0].name'), 'Annual report.docx');
@@ -75,7 +83,7 @@ async function shot(name) { await delay(120); fs.writeFileSync(path.join(output,
   await click('.library-side-label button'); await until('document.querySelector(".library-dialog-field input")'); await input('.library-dialog-field input', 'Data'); await submit();
   await until('document.querySelector(".library-dialog-error")?.textContent.includes("同名")'); await click('.ant-modal-close'); await modalClosed();
   await clickText('.library-tree-label > span:not(.anticon)', 'Data'); await until('document.querySelector("h1").textContent==="Data"');
-  await click('.library-head-actions .library-button'); await until('document.querySelector(".library-dialog-field input")'); await input('.library-dialog-field input', 'Reports'); await submit(); await modalClosed();
+  await click('.library-tree-row.is-active .library-tree-more'); await menuItem('新建子资料夹'); await until('document.querySelector(".library-dialog-field input")'); await input('.library-dialog-field input', 'Reports'); await submit(); await modalClosed();
   assert.equal(await js('window.qa.folders.find(folder=>folder.name==="Reports").parentId===window.qa.folders.find(folder=>folder.name==="Data").id'), true);
   await all();
   // Two-item move dialog applies exactly the selection.
@@ -101,6 +109,10 @@ async function shot(name) { await delay(120); fs.writeFileSync(path.join(output,
   await click('.library-file[aria-label="Landscape.png"]');
   await js('window.qa.setLocale("en-US");window.qa.setDark(true)'); await until('document.querySelector("h1").textContent==="All items"');
   await shot('dark');
+  await click('.library-brand .library-icon-button'); await menuItem('About the library');
+  await until('document.querySelector(".library-dialog .ant-modal-content")'); await delay(250); await shot('dialog-dark');
+  assert.equal(await js('getComputedStyle(document.querySelector(".library-dialog .ant-modal-content")).backgroundColor'), 'rgba(31, 35, 42, 0.9)');
+  await click('.ant-modal-close'); await modalClosed();
   await click('.library-file[aria-label="Landscape.png"] .library-file-more'); await shot('menu-dark');
   await js('document.querySelector(".library-menu").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
   // Narrow navigation and inspector overlays must fit the actual container.
@@ -117,12 +129,13 @@ async function shot(name) { await delay(120); fs.writeFileSync(path.join(output,
   await js('document.querySelector(".library-menu").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
   // Pagination, live events and retry use the production request path.
   win.setContentSize(1280, 820); await js('window.qa.pushMany()'); await until('document.querySelectorAll(".library-file").length===50');
+  await require('./library-selection-checks.cjs').scroll({ win, js, until, delay });
   await click('.library-pagination button:last-child'); await until('document.querySelectorAll(".library-file").length===14');
   await js('window.qa.fail=true;window.qa.notify()'); await until('document.querySelector(".library-empty[role=alert]")');
   await js('window.qa.fail=false'); await click('.library-empty button'); await until('document.querySelectorAll(".library-file").length===14');
   assert.deepEqual(errors, []);
   fs.writeFileSync(path.join(output, 'passed'), 'ok');
-  console.log(JSON.stringify({ ok: true, checks: ['real component in StrictMode', 'thin header and three remembered layouts', 'nested tree and breadcrumbs', 'aliases preserve source filenames', 'tags, favorites and source actions', 'shared menu styling and keyboard', 'source restrictions', 'nested folder creation and duplicate validation', 'bulk moves and internal drops', 'unfiled, category and search filters', 'sync and source Run identity', 'Chinese/English and light/dark', 'narrow navigation and inspector', 'Windows file manager label', 'pagination, live updates and retry'], output }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ['real component in StrictMode', 'thin header and three remembered layouts', 'mouse marquee in three layouts', 'Shift range and Command/Ctrl selection', 'marquee auto-scroll and Escape cancellation', 'file drag preserves selection', 'nested tree and breadcrumbs', 'aliases preserve source filenames', 'tags, favorites and source actions', 'shared menu styling and keyboard', 'source restrictions', 'nested folder creation and duplicate validation', 'bulk moves and internal drops', 'unfiled, category and search filters', 'sync and source Run identity', 'Chinese/English and light/dark', 'narrow navigation and inspector', 'Windows file manager label', 'pagination, live updates and retry'], output }, null, 2));
   win.destroy(); server.close(); app.quit();
 })().catch(async error => {
   console.error(error); console.error('QA output:', output); console.error('Renderer errors:', errors);

@@ -11,6 +11,7 @@ const { APP_BRAND } = require('../dist-electron/shared/brand.js');
 await build({ entryPoints: ['qa/library-fixture.tsx'], outfile: path.join(output, 'app.js'), bundle: true, platform: 'browser', jsx: 'automatic', loader: { '.svg': 'file', '.png': 'file', '.woff2': 'file' }, define: { 'process.env.NODE_ENV': '"development"', __DESKTOP_APP_BRAND__: JSON.stringify(APP_BRAND), __LIBRARY_QA_IMAGE__: JSON.stringify('data:image/png;base64,' + fs.readFileSync('qa/assets/alpine-lake.png').toString('base64')) } });
 fs.writeFileSync(path.join(output, 'index.html'), '<!doctype html><html data-theme="light"><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><div id="root"></div><script src="/app.js"></script></html>');
 fs.copyFileSync('qa/library-checks.cjs', path.join(output, 'checks.cjs'));
+fs.copyFileSync('qa/library-selection-checks.cjs', path.join(output, 'library-selection-checks.cjs'));
 const env = { ...process.env, LIBRARY_QA_DIR: output }; delete env.ELECTRON_RUN_AS_NODE;
 const child = spawn(require('electron'), [path.join(output, 'checks.cjs')], { env, stdio: 'inherit' });
 process.exitCode = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', code => resolve(code ?? 1)); });
