@@ -54,6 +54,7 @@ import { requestSsoTokens, SsoTokenRequestError } from "./sso-token-client";
 import { readJsonPathValue } from "./sso-cookie-token";
 import { removeIdTokenFile } from "./sso-session";
 import { getJwtPayload } from "./sso-claims";
+import { SsoKnownFailure, describeSsoFailure, type SsoFailureStage } from "./sso-failures";
 
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {
   let accessTokenRefreshPromise: Promise<string> | null = null;
@@ -134,28 +135,34 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       currentOidcConfig()?.tokenRefresh?.url === config.tokenRefresh!.url;
     const request = fetchImpl || ((url, init) => options.session.defaultSession.fetch(url, init));
     const operation = (async () => {
+      let stage: SsoFailureStage = "readCredentials";
       try {
         const previous = interactive ? null : credentials.read(new URL(config.tokenExchange!.url).origin);
+        stage = "readCookie";
         const cookie = previous?.refreshToken ? undefined :
           await buildDesktopSsoCookieHeader(options.session.defaultSession, config.tokenExchange!.url);
         if (!current()) return "";
         if (!previous?.refreshToken && !cookie) throw new SsoTokenRequestError(401);
+        stage = "tokenRequest";
         const next = await requestSsoTokens(config, request, {
           previous, cookie, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)])
         });
         if (!current()) return "";
         // A rotated refresh token must survive a later userinfo/Cookie publication failure.
+        stage = "saveCredentials";
         if (previous) credentials.save(next);
         const userConfig = config.userInfo!;
+        stage = "accountRequest";
         const response = await request(userConfig.url, {
           method: "GET", credentials: "omit", redirect: "manual", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5_000)]),
           headers: { Accept: "application/json", Authorization: `Bearer ${next.idToken}` }
         });
         if (!current()) return "";
         // A downstream userinfo rejection does not prove the refresh token invalid.
-        if (!response.ok) throw new Error(`SSO account verification failed (${response.status}).`);
+        if (!response.ok) throw new SsoKnownFailure("accountHttp", response.status);
+        stage = "accountParse";
         let value: unknown;
-        try { value = await response.json(); } catch { throw new Error("SSO account response is not valid JSON."); }
+        try { value = await response.json(); } catch { throw new SsoKnownFailure("accountJson"); }
         if (!current()) return "";
         const field = (key: string) => {
           const raw = readJsonPathValue(value, key);
@@ -165,13 +172,15 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           sub: field(userConfig.subPath), name: field(userConfig.namePath),
           email: field(userConfig.emailPath), avatarUrl: field(userConfig.avatarUrlPath)
         };
-        if (!user.sub || previous?.accountId && previous.accountId !== user.sub) {
-          throw new Error("SSO verified account does not match the current session.");
-        }
+        if (!user.sub) throw new SsoKnownFailure("accountMissing");
+        if (previous?.accountId && previous.accountId !== user.sub) throw new SsoKnownFailure("accountChanged");
         next.accountId = user.sub;
+        stage = "saveCredentials";
         credentials.save(next);
+        stage = "syncCookies";
         await syncAccessTokenCookies(next.idToken);
         if (!current()) return "";
+        stage = "publishSession";
         const status = completeDesktopSsoRestoredBrowserSession(options.app, next.idToken, user);
         scheduleOidcRenewal(next.idToken);
         restoreState = "authenticated";
@@ -181,13 +190,15 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         return next.idToken;
       } catch (error) {
         if (!current()) return "";
+        const failure = describeSsoFailure(stage, error);
+        safeConsoleError("SSO operation failed", { stage: failure.stage, code: failure.code, status: failure.status });
         oidcBlocked = true;
         const definitive = error instanceof SsoTokenRequestError && error.status === 401;
         const expired = desktopSsoIdTokenNeedsRefresh(options.app, 0);
         if (definitive || expired || !getDesktopSsoStatus(options.app).authenticated) {
           const status = definitive
             ? clearDesktopSsoLocalSession(options.app, t("sso.restoreSessionExpired"))
-            : markDesktopSsoRestoreTemporarilyUnavailable(options.app, t("sso.restoreTemporarilyUnavailable"));
+            : markDesktopSsoRestoreTemporarilyUnavailable(options.app, failure.message);
           restoreState = definitive ? "signed_out" : "temporarily_unavailable";
           removeIdTokenFile(options.app, definitive);
           await clearDesktopSsoAccessTokenCookies();
@@ -196,7 +207,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           publishRestoreResult({ state: restoreState, status });
         }
         // No response body or transport exception (which may contain credentials) crosses this boundary.
-        throw new Error(error instanceof SsoTokenRequestError ? error.message : "SSO credential renewal or publication failed.");
+        throw new Error(failure.message);
       }
     })();
     const flight = operation.finally(() => {

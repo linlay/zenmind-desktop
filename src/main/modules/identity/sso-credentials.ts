@@ -5,6 +5,7 @@ import { safeStorage } from "electron";
 import type { App } from "electron";
 import { getSecretsRoot } from "../../infrastructure/filesystem/user-paths";
 import { restrictDirectoryToCurrentUser } from "../credentials";
+import { SsoKnownFailure } from "./sso-failures";
 
 export type SsoCredentials = {
   schemaVersion: 1;
@@ -47,7 +48,7 @@ export function createSsoCredentialStore(app: App, platform: NodeJS.Platform, pr
   const file = path.join(getSecretsRoot(app, platform), "sso-credentials.enc");
   // Keep a rotated credential in memory even when its atomic disk publication fails.
   function requireProtection() {
-    if (!protection.available()) throw new Error("SSO system credential encryption is unavailable.");
+    if (!protection.available()) throw new SsoKnownFailure("encryptionUnavailable");
   }
   return {
     read(gateway: string): SsoCredentials | null {
@@ -58,28 +59,29 @@ export function createSsoCredentialStore(app: App, platform: NodeJS.Platform, pr
       try {
         value = pending || JSON.parse(protection.decrypt(fs.readFileSync(file)));
       } catch {
-        throw new Error("SSO encrypted credentials could not be read.");
+        throw new SsoKnownFailure("credentialRead");
       }
       if (value.schemaVersion !== 1 || value.gateway !== gateway || !value.subject || !value.issuer ||
           !value.audience || typeof value.idToken !== "string" || !value.idToken ||
           (value.refreshToken !== undefined && (typeof value.refreshToken !== "string" || !value.refreshToken))) {
-        throw new Error("SSO credential environment or format mismatch.");
+        throw new SsoKnownFailure("credentialMismatch");
       }
       return { ...value };
     },
     save(value: SsoCredentials) {
       pendingCredentials.set(file, { ...value });
       requireProtection();
-      const encrypted = protection.encrypt(JSON.stringify(value));
-      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-      restrictDirectoryToCurrentUser(path.dirname(file), platform);
+      let encrypted: Buffer;
+      try { encrypted = protection.encrypt(JSON.stringify(value)); } catch { throw new SsoKnownFailure("credentialEncrypt"); }
       const temporary = `${file}.${randomUUID()}.tmp`;
       try {
+        fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+        restrictDirectoryToCurrentUser(path.dirname(file), platform);
         fs.writeFileSync(temporary, encrypted, { mode: 0o600 });
         fs.renameSync(temporary, file);
         pendingCredentials.delete(file);
       } catch {
-        throw new Error("SSO encrypted credentials could not be saved.");
+        throw new SsoKnownFailure("credentialSave");
       } finally {
         fs.rmSync(temporary, { force: true });
       }

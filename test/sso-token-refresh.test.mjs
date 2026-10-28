@@ -174,3 +174,22 @@ test('rotated credentials stay recoverable in memory when atomic persistence fai
   fs.mkdirSync(path.join(getSecretsRoot(app),'sso-credentials.enc'),{recursive:true});
   assert.throws(()=>store.save(value));assert.equal(store.read(origin).refreshToken,value.refreshToken);
 });
+
+test('failure status exposes a fixed stage and reason without upstream exception text',async t=>{
+ const f=fixture(t,async()=>response(200,{access_token:jwt(),refresh_token:'DO-NOT-LEAK'}));
+ await assert.rejects(f.controller.exchangeBrowserCookieAccessToken(),e=>e.message.includes('id_token')&&!e.message.includes('DO-NOT-LEAK'));
+ const status=getDesktopSsoStatus(f.app);
+ assert.match(status.error,/id_token/);
+ assert.equal(JSON.stringify(f.events).includes('DO-NOT-LEAK'),false);
+});
+test('userinfo field mapping errors remain distinct from token exchange failures',async t=>{
+ const f=fixture(t,async url=>url.endsWith('/userinfo')?response(200,{data:{different:'private-account'}}):response(200,{id_token:jwt(),refresh_token:'r'}));
+ await assert.rejects(f.controller.exchangeBrowserCookieAccessToken(),e=>!e.message.includes('private-account'));
+ const {describeSsoFailure,SsoKnownFailure}=require('../dist-electron/main/modules/identity/sso-failures.js');
+ assert.equal(getDesktopSsoStatus(f.app).error,describeSsoFailure('accountParse',new SsoKnownFailure('accountMissing')).message);
+});
+test('unexpected errors never copy native messages or token-shaped text into diagnostics',()=>{
+ const {describeSsoFailure}=require('../dist-electron/main/modules/identity/sso-failures.js');
+ const failure=describeSsoFailure('syncCookies',new Error('token=eyJ.secret.signature Cookie=private refresh_token=private'));
+ assert.equal(failure.code,'unexpected');assert.doesNotMatch(failure.message,/eyJ|Cookie=|refresh_token=|private/);
+});

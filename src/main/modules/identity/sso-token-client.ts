@@ -2,11 +2,11 @@ import type { FetchLike, OidcConfig } from "./sso-model";
 import type { SsoCredentials } from "./sso-credentials";
 import { getJwtPayload } from "./sso-claims";
 import { validateIdToken } from "./sso-token-validation";
-import { DesktopSsoRestoreRequestError } from "./sso-controller-model";
+import { SsoKnownFailure } from "./sso-failures";
 
-export class SsoTokenRequestError extends DesktopSsoRestoreRequestError {
+export class SsoTokenRequestError extends SsoKnownFailure {
   constructor(status?: number) {
-    super(`SSO token request failed (${status || "network"}).`, status);
+    super("requestFailed", status);
   }
 }
 
@@ -19,23 +19,25 @@ export function isRetryableSsoTokenError(error: unknown) {
 export async function parseSsoTokenResponse(
   value: unknown, config: OidcConfig, fetchImpl: FetchLike, previous?: SsoCredentials | null
 ): Promise<SsoCredentials> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("SSO token response must be JSON.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new SsoKnownFailure("responseObject");
   const body = value as Record<string, unknown>;
   const idToken = typeof body.id_token === "string" ? body.id_token.trim() : "";
-  if (idToken.split(".").length !== 3) throw new Error("SSO response has no valid id_token.");
+  if (idToken.split(".").length !== 3) throw new SsoKnownFailure("missingIdToken");
   const claims = getJwtPayload(idToken);
   if (typeof claims.exp !== "number" || claims.exp * 1000 <= Date.now() ||
       typeof claims.sub !== "string" || !claims.sub.trim() || typeof claims.iss !== "string" || !claims.iss ||
       !(typeof claims.aud === "string" && claims.aud || Array.isArray(claims.aud) && claims.aud.length && claims.aud.every(x => typeof x === "string" && x))) {
-    throw new Error("SSO ID token has invalid identity or expiry.");
+    throw new SsoKnownFailure("invalidIdClaims");
   }
   const audience = JSON.stringify(Array.isArray(claims.aud) ? [...claims.aud].sort() : [claims.aud]);
   if (previous && (previous.subject !== claims.sub || previous.issuer !== claims.iss || previous.audience !== audience)) {
-    throw new Error("SSO refreshed identity does not match the current account.");
+    throw new SsoKnownFailure("identityChanged");
   }
-  if (config.jwksUrl || config.wellKnownUrl) await validateIdToken(idToken, fetchImpl, config);
+  if (config.jwksUrl || config.wellKnownUrl) {
+    try { await validateIdToken(idToken, fetchImpl, config); } catch { throw new SsoKnownFailure("idValidation"); }
+  }
   if (body.refresh_token !== undefined && (typeof body.refresh_token !== "string" || !body.refresh_token.trim())) {
-    throw new Error("SSO response contains an invalid refresh_token.");
+    throw new SsoKnownFailure("invalidRefreshToken");
   }
   return {
     schemaVersion: 1, gateway: new URL(config.tokenExchange!.url).origin,
@@ -76,7 +78,7 @@ export async function requestSsoTokens(
       } catch { throw new SsoTokenRequestError(); }
       if (!response.ok) throw new SsoTokenRequestError(response.status);
       let body: unknown;
-      try { body = await response.json(); } catch { throw new Error("SSO token response is not valid JSON."); }
+      try { body = await response.json(); } catch { throw new SsoKnownFailure("responseJson"); }
       return await parseSsoTokenResponse(body, config, fetchImpl, options.previous);
     } catch (error) {
       if (!isRetryableSsoTokenError(error) || attempt === 2 || options.signal.aborted) throw error;
