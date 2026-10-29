@@ -26,13 +26,18 @@ export async function postNodeJson(url: string, options: {
       res.once("error", () => reject(options.signal.aborted ? options.signal.reason : new NodeJsonRequestError("network_error")));
       res.once("aborted", () => reject(options.signal.aborted ? options.signal.reason : new NodeJsonRequestError("network_error")));
       res.once("end", () => {
-        const status = res.statusCode ?? 502;
-        const headers = new Headers();
-        for (const [key, value] of Object.entries(res.headers)) {
-          if (Array.isArray(value)) value.forEach(item => headers.append(key, item));
-          else if (value !== undefined) headers.set(key, value);
+        try {
+          const status = res.statusCode ?? 502;
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (Array.isArray(value)) value.forEach(item => headers.append(key, item));
+            else if (value !== undefined) headers.set(key, value);
+          }
+          resolve(new Response([204, 205, 304].includes(status) ? null : Buffer.concat(chunks), { status, headers }));
+        } catch (error) {
+          // Node accepts status codes that Response rejects; event callbacks must reject, never throw into Main.
+          reject(error);
         }
-        resolve(new Response([204, 205, 304].includes(status) ? null : Buffer.concat(chunks), { status, headers }));
       });
     });
     req.setTimeout(0); // The caller's AbortSignal owns the full request deadline.

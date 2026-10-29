@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { DesktopActionBridgeOptions, DesktopActionInvocationContext } from "./action-contracts";
 import type { DesktopActionCallResponse } from "../../../shared/desktop-actions";
 import { validateWebappExecute, WEBAPP_EXECUTE_TIMEOUT_MS, type WebappExecuteInput } from "../../../shared/webapp-execute";
@@ -20,6 +21,18 @@ async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T
     signal.addEventListener("abort", abort, { once: true });
     promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
   });
+}
+
+async function checkDeliveryContext(context: WebappContext, signal: AbortSignal) {
+  try {
+    await abortable(context.check(), signal);
+  } catch (error) {
+    if (!(error instanceof ConnectorError) || error.code !== "desktop_identity_required") throw error;
+    // Retry only the identity lookup, never execute; delivery still requires a fresh, matching identity.
+    context.checkInstance();
+    await delay(100, undefined, { signal });
+    await abortable(context.check(), signal);
+  }
 }
 
 export async function executeWebappExecute(options: DesktopActionBridgeOptions, args: unknown,
@@ -95,7 +108,7 @@ export async function executeWebappExecute(options: DesktopActionBridgeOptions, 
     const input = args as WebappExecuteInput;
     const result = await abortable(postWebappExecute(context, { agentKey, message: input.message, outputSchema: input.outputSchema,
       ...(input.input === undefined ? {} : { input: input.input }), accessLevel: "default", requestId }, abort.signal), abort.signal);
-    await abortable(context.check(), abort.signal);
+    await checkDeliveryContext(context, abort.signal);
     abort.signal.throwIfAborted();
     rememberWebappChat(context.key, result.chatId);
     finished = true;
@@ -104,7 +117,7 @@ export async function executeWebappExecute(options: DesktopActionBridgeOptions, 
   } catch (error) {
     const failure = abort.signal.aborted ? abort.signal.reason : error;
     if (context && failure instanceof WebappExecuteError && typeof failure.details?.chatId === "string") {
-      try { await abortable(context.check(), abort.signal); rememberWebappChat(context.key, failure.details.chatId); }
+      try { await checkDeliveryContext(context, abort.signal); rememberWebappChat(context.key, failure.details.chatId); }
       catch { return fail(abort.signal.reason instanceof WebappExecuteError ? abort.signal.reason.code : "app_grant_required",
         { requestId, agentKey, executionState: sent ? "unknown" : "not_started" }); }
     }

@@ -147,6 +147,50 @@ test('a transient identity probe failure does not kill an execution; final verif
  const g=fixture();fetcher=async()=>{g.options.services.getResponsiveServiceState=async()=>{throw Error('unavailable at delivery')};return json({chatId:'chat-1',status:'success',output:{}})};
  assert.equal((await run(g)).ok,false);
 });
+test('delivery retries a transient missing identity once without repeating the execution POST',async()=>{
+ const f=fixture();let posts=0,checks=0;const issue=f.options.issueAgentAccessToken;
+ fetcher=async()=>{
+  posts++;f.options.issueAgentAccessToken=async()=>++checks===1?{ok:false}:issue();
+  return json({chatId:'chat-1',status:'success',output:{amount:128}});
+ };
+ const result=await run(f);assert.equal(result.ok,true);assert.equal(result.result.output.amount,128);assert.equal(posts,1);assert.equal(checks,2);
+});
+test('delivery gives up after one retry when identity stays unavailable',async()=>{
+ const f=fixture();let posts=0,checks=0;
+ fetcher=async()=>{posts++;f.options.issueAgentAccessToken=async()=>{checks++;return {ok:false}};return json({chatId:'chat-1',status:'success',output:{}})};
+ const result=await run(f);assert.equal(result.error.code,'desktop_identity_required');assert.equal(result.error.details.executionState,'unknown');assert.equal(checks,2);assert.equal(posts,1);
+});
+test('delivery rejects a changed identity immediately instead of retrying it',async()=>{
+ const f=fixture();let checks=0;const issue=f.options.issueAgentAccessToken;
+ fetcher=async()=>{f.setIdentity('other');f.options.issueAgentAccessToken=async()=>{checks++;return issue()};return json({chatId:'chat-1',status:'success',output:{}})};
+ assert.equal((await run(f)).error.code,'app_grant_required');assert.equal(checks,1);
+});
+test('identity recovery cannot deliver a result to a different subject or a replacement application instance',async()=>{
+ for(const change of ['identity','instance']) {
+  const f=fixture();let checks=0;const issue=f.options.issueAgentAccessToken;
+  fetcher=async()=>{
+   f.options.issueAgentAccessToken=async()=>{checks++;if(checks===1)return {ok:false};if(change==='identity')f.setIdentity('other');else f.runtime.startedAt++;return issue()};
+   return json({chatId:'chat-1',status:'success',output:{}});
+  };
+  assert.equal((await run(f)).error.code,'app_grant_required');assert.equal(checks,2);
+ }
+});
+test('cancellation and the overall deadline interrupt the delivery retry delay',async()=>{
+ for(const reason of ['cancel','deadline']) {
+  const f=fixture();let checks=0;
+  fetcher=async()=>{
+   f.options.issueAgentAccessToken=async()=>{checks++;if(reason==='cancel')setTimeout(()=>f.request.abort(),10);return {ok:false}};
+   return json({chatId:'chat-1',status:'success',output:{}});
+  };
+  const result=await run(f,input,{timeoutMs:reason==='deadline'?30:1000,checkMs:1000});
+  assert.equal(result.error.code,reason==='cancel'?'cancelled':'assistant_timeout');assert.equal(checks,1);
+ }
+});
+test('validated Platform errors also recheck identity before retaining their Chat',async()=>{
+ const f=fixture();let checks=0;const issue=f.options.issueAgentAccessToken;
+ fetcher=async()=>{f.options.issueAgentAccessToken=async()=>++checks===1?{ok:false}:issue();return json({chatId:'chat-1',error:{code:'output_invalid'}},422)};
+ const result=await run(f);assert.equal(result.error.code,'output_invalid');assert.equal(result.error.details.chatId,'chat-1');assert.equal(checks,2);
+});
 test('interrupt obtains a fresh token with the original subject after the execute token has aged',async()=>{
  const f=fixture();let start;const ready=new Promise(resolve=>{start=resolve});let authorization;
  fetcher=async(url,options)=>{

@@ -1,6 +1,6 @@
 # WebApp Bridge 接入 Platform `/api/execute`：评估与完整方案
 
-> 状态：实现已落地；自动验证见文末实施记录，真实十分钟长任务和 Windows/macOS 安装包回归仍需目标环境验收。
+> 状态：实现已落地；macOS 原生 Electron 页面与受管后端的真实十分钟期限、interrupt 和连接回收已验证，见文末实施记录。Windows 原生与双平台安装包回归仍需目标环境验收。
 > 核对日期：2026-10-29。基线：Desktop `f86bfece`、Agent Platform `8a514534`。
 > 替代原先基于 v0.5.27 的草案。按用户后续要求加入 HTTP /api/interrupt 主动取消，并保留连接断开取消。
 
@@ -414,3 +414,12 @@ Desktop 与内置 Platform 的交付组合必须实际支持 /api/execute，生�
 - Platform 直接验证 df26af48 原样快照，四个相关测试包通过；该提交不含 onContinuation 的并行变更。两端仍需配套发布，成功空对象修复不能缺少。
 
 审查后最终验证：相关回归 291 项全部通过；Main 构建、WebApp 契约漂移、架构、i18n 和 renderer 类型检查通过。macOS 原生 Electron 42.11.4 持有八路请求 310 秒，期间无请求提前结束；普通默认 session 调用 11 ms、第九路拒绝 13 ms、换票后精确 interrupt 11 ms，八条连接及八个中断全部完成。结果见 build/qa/webapp-execute-electron.json。Windows 原生与安装包工作流仍需分别验收，不以本次 macOS 结果代替。
+
+## 15. 后续审查收尾
+
+- Node HTTP end 回调捕获 Headers / Response 构造异常并 reject Promise，避免非常规 HTTP 状态触发 Main 未捕获异常；真实本地 HTTP 测试覆盖 600、999、合法 599 与空响应 204。
+- 最终交付仅对 `desktop_identity_required` 等待 100 ms 后重试一次校验，不重发 execute，不延长总期限；身份或实例变化立即拒绝，等待可被取消与期限中止。永久不可用仍拒绝交付，可信业务错误的 Chat 归属登记遵循同一复验。
+- Electron 冒烟新增独立 `electron-node` 子进程，使用正式后端 SDK 和 backend scope，验证成功、取消及精确 interrupt；WS 夹具补齐授权续期应答。Windows 夹具显式忽略真实 runtime-root 注册表配置，所有路径留在临时 home 下。
+- `--verify-timeout` 使用真实 600,000 ms Main 期限，同时验证页面与受管后端收到 `assistant_timeout`、各自 canonical Run 被 interrupt、两条上游连接关闭。此模式不缩短生产 timer，也不通过手动 abort 代替到期。
+- 本轮相关回归 164 项通过；Main 类型检查、架构与两类生成契约漂移检查通过。macOS Electron 42.11.4 的十分钟测试通过，累计 11 个精确中断和 11 条取消/超时连接回收；受管后端运行 Node 24.19.0。证据保存在 `build/qa/webapp-execute-electron-timeout.json`，普通冒烟结果单独保存。
+- Windows 原生以及 macOS / Windows 安装包流程仍待验收；本轮使用本地 Platform 协议夹具，不替代真实模型业务任务或安装包验证。
