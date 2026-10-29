@@ -172,14 +172,16 @@ function buildWorkPanelTemplate(
   ];
   const crossEnvironmentItems = fileActionsAvailable
     ? [
-        ...(!request.nativeImage ? [{
+        {
           id: "download-resource",
-          label: t(request.profile === "artifact"
-            ? "chatWorkPanel.tabContextMenu.downloadArtifact"
-            : request.profile === "reference" ? "chatWorkPanel.tabContextMenu.downloadReference"
-              : "chatWorkPanel.tabContextMenu.saveCopy"),
+          label: t(request.nativeImage
+            ? "chatWorkPanel.tabContextMenu.downloadImage"
+            : request.profile === "artifact"
+              ? "chatWorkPanel.tabContextMenu.downloadArtifact"
+              : request.profile === "reference" ? "chatWorkPanel.tabContextMenu.downloadReference"
+                : "chatWorkPanel.tabContextMenu.saveCopy"),
           click: click("download-resource")
-        }] : []),
+        },
         ...(request.nativeHtml ? [{ id: "open-resource-browser", label: t("chatWorkPanel.tabContextMenu.openInBrowser"), click: click("open-resource-browser") }] : []),
         {
           id: "open-resource-default-app",

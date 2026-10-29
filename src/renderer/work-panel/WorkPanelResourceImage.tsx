@@ -5,9 +5,9 @@ import {
   CheckOutlined,
   CompressOutlined,
   ControlOutlined,
+  DownloadOutlined,
   DragOutlined,
   EditOutlined,
-  ExportOutlined,
   ExpandOutlined,
   FullscreenOutlined,
   HighlightOutlined,
@@ -1270,10 +1270,14 @@ export function WorkPanelResourceImage({
     }
   };
 
-  const openExternal = async (mode: "default" | "choose") => {
-    if (dirty && !window.confirm(t("chatWorkPanel.image.externalDraftWarning"))) return;
-    const result = await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...handleRequest, mode });
-    if (!result.ok && result.message) setError(result.message);
+  const downloadImage = async () => {
+    if (!current) return;
+    try {
+      const result = await window.electronAPI.chatWorkPanel.resourceImages.saveCopy(handleRequest);
+      if (!result.ok && result.message) setError(result.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : t("chatWorkPanel.resourceActions.failed"));
+    }
   };
 
   const handoff = async () => {
@@ -1362,61 +1366,22 @@ export function WorkPanelResourceImage({
       data-native-image-ai-busy={aiBusy ? "true" : "false"}
       tabIndex={0}
     >
-      <div className={`work-panel-image-toolbar${editing ? " is-editing" : " is-preview"}`} role="toolbar" aria-label={t("chatWorkPanel.image.toolbar")}>
-        {!editing ? (
-          <>
-            <Popover
-              trigger={["hover", "focus"]}
-              title={t("chatWorkPanel.image.info")}
-              content={(
-                <div className="work-panel-image-info-content">
-                  <strong>{resource.fileName}</strong>
-                  <span>{imageFormat(resource.mimeType)} · {formatBytes(resource.sizeBytes)}</span>
-                  <span>{current ? `${current.width} × ${current.height}` : "—"}</span>
-                </div>
-              )}
-            >
-              <button type="button" className="work-panel-image-info-button" aria-label={t("chatWorkPanel.image.info")}>
-                <InfoCircleOutlined />
-              </button>
-            </Popover>
-            <div className="work-panel-image-spacer" />
-            <div className="work-panel-image-toolbar-actions">
-              <ImageZoomControl value={effectiveZoom} fit={fitMode} disabled={!current} onChange={changeZoom} onStep={stepZoom} onFit={() => setFitMode(true)} />
-              <span className="work-panel-image-open-with">
-                <ExportOutlined aria-hidden="true" />
-                <select aria-label={t("chatWorkPanel.image.openWith")} disabled={saveBusy} value="" onChange={(event) => {
-                  const mode = event.target.value as "default" | "choose";
-                  if (mode) void openExternal(mode);
-                }}>
-                  <option value="" disabled>{t(resource.localOriginal ? "chatWorkPanel.image.openWith" : "chatWorkPanel.image.downloadOpen")}</option>
-                  <option value="default">{t("chatWorkPanel.image.openDefault")}</option>
-                  <option value="choose">{t("chatWorkPanel.image.openOther")}</option>
-                </select>
-              </span>
-              <button type="button" className="work-panel-image-edit-button" disabled={editDisabled || !current} onClick={() => onEditingChange(true)}>
-                <EditOutlined /> {t("chatWorkPanel.image.edit")}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="work-panel-image-toolbar-actions">
-              <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-return-to-preview" disabled={Boolean(aiBusy) || saveBusy} onClick={() => {
-                setError("");
-                onEditingChange(false);
-              }}><ArrowLeftOutlined /></ImageToolbarButton>
-              <ImageToolbarButton label={t("chatWorkPanel.image.undo")} disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /></ImageToolbarButton>
-              <ImageToolbarButton label={t("chatWorkPanel.image.redo")} disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /></ImageToolbarButton>
-            </div>
-            <div className="work-panel-image-spacer" />
-            <div className="work-panel-image-toolbar-actions">
-              <ImageZoomControl value={effectiveZoom} fit={fitMode} disabled={!current} onChange={changeZoom} onStep={stepZoom} onFit={() => setFitMode(true)} />
-              <ImageToolbarButton label={t("chatWorkPanel.image.save")} className={pixelDirty && !saveBusy && !aiBusy && !sourceConflict ? "is-primary" : ""} disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /></ImageToolbarButton>
-            </div>
-          </>
-        )}
-      </div>
+      {editing ? (
+        <div className="work-panel-image-toolbar is-editing" role="toolbar" aria-label={t("chatWorkPanel.image.toolbar")}>
+          <div className="work-panel-image-toolbar-actions">
+            <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-return-to-preview" disabled={Boolean(aiBusy) || saveBusy} onClick={() => {
+              setError("");
+              onEditingChange(false);
+            }}><ArrowLeftOutlined /></ImageToolbarButton>
+            <ImageToolbarButton label={t("chatWorkPanel.image.undo")} disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /></ImageToolbarButton>
+            <ImageToolbarButton label={t("chatWorkPanel.image.redo")} disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /></ImageToolbarButton>
+          </div>
+          <div className="work-panel-image-spacer" />
+          <div className="work-panel-image-toolbar-actions">
+            <ImageToolbarButton label={t("chatWorkPanel.image.save")} className={pixelDirty && !saveBusy && !aiBusy && !sourceConflict ? "is-primary" : ""} disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /></ImageToolbarButton>
+          </div>
+        </div>
+      ) : null}
 
       <div className="work-panel-image-body">
         {editing ? (
@@ -1529,6 +1494,38 @@ export function WorkPanelResourceImage({
           </aside>
         ) : null}
         <div ref={contentRef} className="work-panel-image-content">
+        <div className="work-panel-image-zoom-float">
+          {!editing ? (
+            <Popover
+              trigger={["hover", "focus"]}
+              title={t("chatWorkPanel.image.info")}
+              content={(
+                <div className="work-panel-image-info-content">
+                  <strong>{resource.fileName}</strong>
+                  <span>{imageFormat(resource.mimeType)} · {formatBytes(resource.sizeBytes)}</span>
+                  <span>{current ? `${current.width} × ${current.height}` : "—"}</span>
+                </div>
+              )}
+            >
+              <button type="button" className="work-panel-image-info-button" aria-label={t("chatWorkPanel.image.info")}>
+                <InfoCircleOutlined />
+              </button>
+            </Popover>
+          ) : null}
+          <ImageZoomControl value={effectiveZoom} disabled={!current} onChange={changeZoom} onStep={stepZoom} onFit={() => setFitMode(true)} />
+          {!editing ? (
+            <>
+              <Tooltip title={t("chatWorkPanel.image.download")}>
+                <button type="button" className="work-panel-image-download-button" disabled={!current || saveBusy} onClick={() => void downloadImage()} aria-label={t("chatWorkPanel.image.download")}>
+                  <DownloadOutlined />
+                </button>
+              </Tooltip>
+              <button type="button" className="work-panel-image-edit-button" disabled={editDisabled || !current} onClick={() => onEditingChange(true)}>
+                <EditOutlined /> {t("chatWorkPanel.image.edit")}
+              </button>
+            </>
+          ) : null}
+        </div>
 
       {editing && (tool === "select" || adjustOpen || canvasSizeOpen || selectionTransform || aiPromptOperation) ? (
         <div

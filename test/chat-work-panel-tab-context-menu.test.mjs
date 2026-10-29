@@ -520,7 +520,10 @@ test("native image menus expose default open and platform reveal for local origi
     assert.equal(reveal.enabled, localOriginal);
     assert.match(reveal.label, platform === "darwin" ? /Finder|访达/u : /Explorer|资源管理器/u);
     assert.ok(template.some((item) => item.id === "copy-title"));
-    assert.ok(!template.some((item) => item.id === "open-resource-browser" || item.id === "download-resource"));
+    assert.ok(!template.some((item) => item.id === "open-resource-browser"));
+    const download = template.find((item) => item.id === "download-resource");
+    assert.ok(download);
+    assert.match(download.label, /Download Image|下载图片/u);
     assert.equal(normalizeChatWorkPanelTabContextMenuRequest({ ...request, nativeImage: { localOriginal, path: "/forged" } }), null);
   }
 });
