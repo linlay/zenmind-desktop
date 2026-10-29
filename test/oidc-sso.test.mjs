@@ -12,11 +12,11 @@ dns.setDefaultResultOrder("ipv4first");
 
 const {
   cancelDesktopSsoLogin,
-  desktopSsoAccessTokenNeedsRefresh,
+  desktopSsoIdTokenNeedsRefresh,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
   failDesktopSsoFlow,
   failDesktopSsoStep,
-  getDesktopSsoAccessToken,
+  getDesktopSsoBusinessToken,
   getDesktopSsoStatus,
   logoutDesktopSso,
   prepareDesktopSsoSessionRestore,
@@ -111,7 +111,7 @@ test("desktop sso Bearer restoration requires explicit same-origin configuration
   const prepared = prepareDesktopSsoSessionRestore(app);
   assert.equal(prepared.requiresRemoteValidation, true);
   assert.equal(prepared.authMode, "bearer");
-  assert.equal(getDesktopSsoAccessToken(), null);
+  assert.equal(getDesktopSsoBusinessToken(), null);
   for (const override of [
     { sessionRestore: { authMode: "auto" } },
     { sessionRestore: null },
@@ -485,7 +485,7 @@ test("desktop sso late config status refresh does not revive persisted credentia
     updatedAt: "2026-08-03T00:00:00.000Z"
   });
   const userInfoPath = path.join(stateRoot, "sso-user-info.json");
-  const accessTokenPath = path.join(stateRoot, "sso-access-token.txt");
+  const accessTokenPath = path.join(stateRoot, "sso-id-token.txt");
   fs.writeFileSync(userInfoPath, `${JSON.stringify({
     schemaVersion: 2,
     source: "browser_session",
@@ -524,7 +524,7 @@ test("desktop sso late config status refresh does not revive persisted credentia
     userInfo: false,
     accessToken: false
   });
-  assert.equal(getDesktopSsoAccessToken(), null);
+  assert.equal(getDesktopSsoBusinessToken(), null);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
   assert.equal(fs.existsSync(userInfoPath), true);
   assert.equal(fs.existsSync(accessTokenPath), true);
@@ -538,9 +538,9 @@ test("desktop SSO logout clears only canonical session and token files", async (
   const stateRoot = getDesktopStateRoot(app);
   fs.mkdirSync(stateRoot, { recursive: true });
   const canonicalSessionPath = path.join(stateRoot, "sso-session.json");
-  const canonicalTokenPath = path.join(stateRoot, "sso-access-token.txt");
+  const canonicalTokenPath = path.join(stateRoot, "sso-id-token.txt");
   const legacySessionPath = path.join(stateRoot, "oidc-sso-session.json");
-  const legacyTokenPath = path.join(stateRoot, "desktop-sso-access-token.txt");
+  const legacyTokenPath = path.join(stateRoot, "desktop-sso-id-token.txt");
   fs.writeFileSync(canonicalSessionPath, JSON.stringify({
     authenticated: true,
     user: { sub: "canonical-user" }
@@ -565,7 +565,7 @@ test("desktop SSO logout clears only canonical session and token files", async (
 test("desktop SSO publishes the canonical access token with an atomic rename", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-token-atomic-"));
   const app = createApp(path.join(root, "home"));
-  const accessTokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+  const accessTokenPath = __testInternals.getDesktopSsoIdTokenFilePath(app);
   const originalRenameSync = fs.renameSync;
   let temporaryPath = "";
   t.after(() => {
@@ -579,18 +579,18 @@ test("desktop SSO publishes the canonical access token with an atomic rename", (
     return originalRenameSync(from, to);
   };
 
-  __testInternals.saveAccessTokenFile(app, "atomic-token");
+  __testInternals.saveIdTokenFile(app, "atomic-token");
 
   assert.equal(fs.readFileSync(accessTokenPath, "utf8"), "atomic-token\n");
   assert.equal(path.dirname(temporaryPath), path.dirname(accessTokenPath));
-  assert.match(path.basename(temporaryPath), /^\.sso-access-token\.txt\..+\.tmp$/u);
+  assert.match(path.basename(temporaryPath), /^\.sso-id-token\.txt\..+\.tmp$/u);
   assert.equal(fs.existsSync(temporaryPath), false);
 });
 
 test("desktop SSO logout reports canonical access-token revocation failure", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-token-revoke-"));
   const app = createApp(path.join(root, "home"));
-  const accessTokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+  const accessTokenPath = __testInternals.getDesktopSsoIdTokenFilePath(app);
   fs.mkdirSync(path.dirname(accessTokenPath), { recursive: true });
   fs.writeFileSync(accessTokenPath, "stale-token\n", "utf8");
   const originalRmSync = fs.rmSync;
@@ -662,7 +662,7 @@ test("desktop sso writes user info state after local authentication completes", 
     accessToken: true
   });
   const sessionPath = path.join(getDesktopStateRoot(app), "sso-session.json");
-  const accessTokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+  const accessTokenPath = __testInternals.getDesktopSsoIdTokenFilePath(app);
   const session = JSON.parse(fs.readFileSync(sessionPath, "utf8"));
   assert.equal(session.schemaVersion, 2);
   assert.equal(session.authenticated, true);
@@ -723,7 +723,7 @@ test("desktop sso persists verified browser-session user id before access token"
   const stateRoot = getDesktopStateRoot(app);
   const sessionPath = path.join(stateRoot, "sso-session.json");
   const userInfoPath = path.join(stateRoot, "sso-user-info.json");
-  const accessTokenPath = path.join(stateRoot, "sso-access-token.txt");
+  const accessTokenPath = path.join(stateRoot, "sso-id-token.txt");
 
   assert.equal(sessionStatus.authenticated, true);
   assert.equal(sessionStatus.user, null);
@@ -798,7 +798,7 @@ test("desktop sso preserves the current login while a replacement session is pen
   const credentialPaths = [
     path.join(stateRoot, "sso-session.json"),
     path.join(stateRoot, "sso-user-info.json"),
-    path.join(stateRoot, "sso-access-token.txt")
+    path.join(stateRoot, "sso-id-token.txt")
   ];
 
   const started = await startDesktopSsoLogin(app);
@@ -899,13 +899,13 @@ test("desktop sso keeps validated OIDC session, base userinfo, and access token 
   assert.equal("idToken" in session, false);
   assert.equal(userInfo.source, "id_token");
   assert.equal(userInfo.sub, "oidc-user");
-  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "validated-access-token");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), "validated-access-token");
 
   failDesktopSsoFlow("simulate restart");
   const restoredStatus = getDesktopSsoStatus(app);
   assert.equal(restoredStatus.authenticated, true);
   assert.equal(restoredStatus.completedSteps.accessToken, true);
-  assert.equal(getDesktopSsoAccessToken(), "validated-access-token");
+  assert.equal(getDesktopSsoBusinessToken(), "validated-access-token");
 });
 
 test("desktop sso restore removes the retired duplicate site token", (t) => {
@@ -1126,12 +1126,12 @@ test("desktop sso exchanges Cookie plus CSRF into the canonical token file", asy
   assert.equal(requests[1].init.headers.Cookie, "zenmind_session=session-secret");
   assert.equal(requests[1].init.headers["X-CSRF-Token"], "csrf-token-1");
   assert.equal(
-    fs.readFileSync(__testInternals.getDesktopSsoAccessTokenFilePath(app), "utf8").trim(),
+    fs.readFileSync(__testInternals.getDesktopSsoIdTokenFilePath(app), "utf8").trim(),
     token
   );
   const legacyTokenPath = path.join(path.dirname(path.dirname(getDesktopStateRoot(app))), "secrets", "sso-site-token.json");
   assert.equal(fs.existsSync(legacyTokenPath), false);
-  assert.equal(desktopSsoAccessTokenNeedsRefresh(app), false);
+  assert.equal(desktopSsoIdTokenNeedsRefresh(app), false);
 });
 
 test("desktop sso does not infer cookie token exchange from ai browser origin", (t) => {
@@ -1152,7 +1152,7 @@ test("desktop sso does not infer cookie token exchange from ai browser origin", 
   assert.equal(result.configured, true);
   assert.equal(result.config.cookieAccessTokenExchange, undefined);
   assert.equal(__testInternals.getDesktopSsoCookieAccessTokenExchangeUrl(app), null);
-  assert.deepEqual(__testInternals.getDesktopSsoAccessTokenCookieLookups(app), []);
+  assert.deepEqual(__testInternals.getDesktopSsoBusinessTokenCookieLookups(app), []);
 });
 
 test("desktop sso reads explicit embedded cookie token exchange config", (t) => {
@@ -1229,7 +1229,7 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     emailPath: "email",
     avatarUrlPath: "picture"
   });
-  assert.deepEqual(__testInternals.getDesktopSsoAccessTokenCookieLookup(app), {
+  assert.deepEqual(__testInternals.getDesktopSsoBusinessTokenCookieLookup(app), {
     url: `${embeddedLoginOrigin}/`,
     name: "access_token"
   });

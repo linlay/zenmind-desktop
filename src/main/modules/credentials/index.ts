@@ -9,6 +9,7 @@ import { createWebsiteCredentialStore } from "./store";
 import { createAuthenticationGate, createSystemAuthenticator } from "./system-auth";
 
 export { registerWebsiteCredentialIpc } from "./ipc";
+export { restrictDirectoryToCurrentUser } from "./access-control";
 export type { WebsiteCredentialStore } from "./store";
 export { createAgentCredentialAccess } from "./fill/agent-access";
 export type { AgentCredentialAccess, AgentCredentialAccount } from "./fill/agent-access";

@@ -18,7 +18,7 @@ import {
   type AgentPlatformUsageProviderCandidate
 } from "../agent-platform";
 import { readTransitHubSettings } from "./transit-hub-settings";
-import { getDesktopSsoAccessToken } from "../identity";
+import { getDesktopSsoBusinessToken } from "../identity";
 import { t } from "../../support/i18n/main-i18n";
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -332,8 +332,8 @@ export async function getDesktopUsageProfile(
   try {
     const settings = readTransitHubSettings(app, options.platform);
     if (!settings?.enabled) return failureResult("not-configured", t("settings.usage.errors.notConfigured"), fetchedAt);
-    const getToken = options.getAccessToken ?? (async () => getDesktopSsoAccessToken() || "");
-    const peekToken = options.peekAccessToken ?? (() => getDesktopSsoAccessToken() || "");
+    const getToken = options.getAccessToken ?? (async () => getDesktopSsoBusinessToken() || "");
+    const peekToken = options.peekAccessToken ?? (() => getDesktopSsoBusinessToken() || "");
     const candidate = settings.auth.mode === "apikey"
       ? readAgentPlatformUsageProvider(app, settings.auth.providerKey, options.platform)
       : { providerKey: "", providerName: "Transit Hub", baseURL: settings.baseUrl, model: "", sourcePath: "", apiKey: "" };

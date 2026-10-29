@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
 const { initializeElectronProfile } = require("../../dist-electron/main/app/bootstrap/electron-profile.js");
 const { createDesktopSsoController } = require("../../dist-electron/main/modules/identity/sso-controller.js");
-const { clearDesktopSsoLocalSession, getDesktopSsoStatus, getDesktopSsoAccessToken, readDesktopSsoAccessToken, __testInternals } = require("../../dist-electron/main/modules/identity/oidc-sso.js");
+const { clearDesktopSsoLocalSession, getDesktopSsoStatus, getDesktopSsoBusinessToken, readDesktopSsoIdToken, __testInternals } = require("../../dist-electron/main/modules/identity/oidc-sso.js");
 const { getElectronUserDataRoot } = require("../../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../../dist-electron/shared/brand.js");
 const { DESKTOP_BROWSER_WEBVIEW_PARTITION } = require("../../dist-electron/shared/browser-surfaces.js");
@@ -74,7 +74,7 @@ async function run() {
   const token = `${encode({ alg: "none", typ: "JWT" })}.${encode({
     sub: "test-user", iss: origin, aud: "desktop", exp: Math.floor(Date.now() / 1000) + 86400, phase
   })}.synthetic-signature`;
-  const savedToken = readDesktopSsoAccessToken(app);
+  const savedToken = readDesktopSsoIdToken(app);
   const restoringWithBearer = bearerRestore && phase === "restore";
   let fetchCount = 0;
   const controller = createDesktopSsoController({
@@ -99,7 +99,7 @@ async function run() {
               headers: userInfoRequiresToken ? {} : { "x-auth-request-user": "test-user" } });
           }
           if (url.endsWith("/api/oauth2/userinfo")) {
-            assert.equal(getDesktopSsoAccessToken(), null, "identity must be confirmed before publishing canonical credentials");
+            assert.equal(getDesktopSsoBusinessToken(), null, "identity must be confirmed before publishing canonical credentials");
             if (restoringWithBearer) {
               assert.equal((await ssoSession.cookies.get({ url: origin, name: "access_token" })).length, 0,
                 "derived Cookie must wait for remote identity confirmation");

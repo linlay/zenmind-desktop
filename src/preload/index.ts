@@ -148,6 +148,11 @@ const api: DesktopApi = {
     },
   },
   artifacts: {
+    folder: (input) => ipcRenderer.invoke("artifacts.folder", input),
+    organizeMany: (input) => ipcRenderer.invoke("artifacts.organizeMany", input),
+    thumbnail: (input) => ipcRenderer.invoke("artifacts.thumbnail", input),
+    organize: (input) => ipcRenderer.invoke("artifacts.organize", input),
+    sync: () => ipcRenderer.invoke("artifacts.sync"),
     act: (input) => ipcRenderer.invoke("artifacts.act", input),
     list: (input) => ipcRenderer.invoke("artifacts.list", input),
     onChanged: (listener) => {
@@ -571,6 +576,7 @@ const api: DesktopApi = {
     readLog: (options) => ipcRenderer.invoke("tunnelHub.readLog", options)
   },
   sso: {
+    retrySession: () => ipcRenderer.invoke("sso.retrySession"),
     getStatus: () => ipcRenderer.invoke("sso.getStatus"),
     startLogin: () => ipcRenderer.invoke("sso.startLogin"),
     cancelLogin: () => ipcRenderer.invoke("sso.cancelLogin"),

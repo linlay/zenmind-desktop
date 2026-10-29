@@ -74,6 +74,7 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "chat.read_all",
   "catalog.updated",
   "archive.restored",
+  "archive.deleted",
   "awaiting.asking",
   "awaiting.answered",
   "resource.pushed",

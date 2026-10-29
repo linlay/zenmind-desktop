@@ -27,6 +27,8 @@ import {
   loadMainWindowRenderer
 } from "./window-manager";
 import { getRendererEntry } from "../../infrastructure/electron/renderer-route";
+import { attachMacTrafficLightLayout } from "../../infrastructure/electron/mac-traffic-lights";
+import { MAC_TRAFFIC_LIGHT_LAYOUT } from "./window-model";
 import { getArchiveExtensions } from "../../infrastructure/electron/platform-adapter";
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "../web-surfaces";
 import {
@@ -272,6 +274,13 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     });
 
     mainWindowLifecycle.applyAppearance(targetWindow);
+    if (options.platform === "darwin") {
+      attachMacTrafficLightLayout(targetWindow, {
+        platform: options.platform,
+        ...MAC_TRAFFIC_LIGHT_LAYOUT,
+        onError: (error) => options.safeConsoleError("mac-traffic-lights", { error: String(error) })
+      });
+    }
     mainWindowLifecycle.attachRendererDiagnostics(targetWindow);
 
     configureMainWindowWebContents<BrowserWindow, Electron.WebContents>(targetWindow, {

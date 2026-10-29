@@ -14,7 +14,7 @@ test('session exchange protects sender, consent, redirect, identity and cookie o
  const target={cookies};const transport={fetch:async(url,init)=>{fetches++;assert.equal(url,'https://notes.test/api/session');assert.equal(init.credentials,'omit');assert.equal(init.redirect,'manual');assert.equal(init.body,'{}');return reply?reply():new Response('{}',{headers:{'Set-Cookie':'notes=secret-session; Path=/; HttpOnly; Secure; SameSite=Lax'}});}};
  const session={defaultSession:target,fromPartition:name=>name==='webapp-auth-exchange'?transport:target};
  const token=()=> 'e30.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+600})).toString('base64url')+'.sig';
- const identity={getDesktopSsoAccessToken:()=>revoked?'':token(),getDesktopSsoStatus:()=>({authenticated:!revoked,user:{issuer:'issuer',sub:'a'}}),subscribeDesktopSsoCredentialRevocation:listener=>{revoke=listener;}};
+ const identity={getDesktopSsoBusinessToken:()=>revoked?'':token(),getDesktopSsoStatus:()=>({authenticated:!revoked,user:{issuer:'issuer',sub:'a'}}),subscribeDesktopSsoCredentialRevocation:listener=>{revoke=listener;}};
  const old=Module._load;
  Module._load=function(name,parent,...args){
   if(parent?.filename.endsWith('/webs/auth-session.js')) {

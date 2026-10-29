@@ -84,3 +84,5 @@ Windows/Linux 继续消费各自原始清单；签名后刷新仅用于 Darwin �
 - `scripts/build-builtin-services.sh` 与 `scripts/build-builtin-services.ps1`
 - `src/shared/contracts/manifest.ts`
 - 内置资源、bundle 路径和平台打包测试
+
+Agent Platform 的 Desktop manifest 必须显式声明 SSO ID-token 文件启动契约版本；Desktop 在构造 start 命令前拒绝缺少或不匹配的发布物，不能由旧启动脚本忽略未知参数后静默降级。Platform 发布模板与 Desktop 校验同批更新；本次不自动重建或同步旧的本地 bundle。

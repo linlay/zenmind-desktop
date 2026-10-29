@@ -608,7 +608,30 @@ export function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   if (useGoogleDesktopFlow) {
     config.usePkce = true;
   }
-  const cookieAccessTokenExchange =
+  if (record.tokenExchange !== undefined) {
+    if (record.cookieAccessTokenExchange !== undefined || record.sessionRestore !== undefined) {
+      throw new Error("SSO tokenExchange replaces cookieAccessTokenExchange and sessionRestore.");
+    }
+    const endpoint = (key: string) => {
+      const raw = getRecordObject(record, key);
+      if (!raw || Object.keys(raw).some(field => field !== "url")) {
+        throw new Error(`SSO ${key} requires only url.`);
+      }
+      const url = new URL(getRecordString(raw, "url"));
+      const origin = config.browserOrigin || new URL(config.loginUrl || config.authorizeUrl).origin;
+      if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.origin !== origin) {
+        throw new Error(`SSO ${key} must be a same-origin HTTPS URL without credentials or query.`);
+      }
+      return { url: url.toString() };
+    };
+    config.tokenExchange = endpoint("tokenExchange");
+    config.tokenRefresh = endpoint("tokenRefresh");
+  } else if (record.tokenRefresh !== undefined) {
+    throw new Error("SSO tokenRefresh requires tokenExchange.");
+  }
+  const cookieAccessTokenExchange = config.tokenExchange
+    ? { url: config.tokenExchange.url, method: "GET" as const, headers: {}, accessTokenPath: "id_token", validationMode: "identity" as const }
+    :
     useGoogleDesktopFlow
       ? null
       : normalizeCookieAccessTokenExchangeConfig(record, config);
@@ -672,6 +695,18 @@ export function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     } catch {
       throw new Error(t("sso.config.fieldInvalidUrl", { field }));
     }
+  }
+  if (config.tokenExchange) {
+    if (!config.userInfo || new URL(config.userInfo.url).origin !== new URL(config.tokenExchange.url).origin) {
+      throw new Error("SSO tokenExchange requires same-origin userInfo for account verification.");
+    }
+    if (config.logoutUrl) {
+      const logout = new URL(config.logoutUrl);
+      if (logout.origin !== new URL(config.tokenExchange.url).origin || logout.username || logout.password || logout.search || logout.hash) {
+        throw new Error("SSO logout must be a same-origin URL without credentials or query.");
+      }
+    }
+    return config;
   }
   if (isServerBrokerAuthMode(config)) {
     if (!config.serverAuthorizeUrl?.trim()) {

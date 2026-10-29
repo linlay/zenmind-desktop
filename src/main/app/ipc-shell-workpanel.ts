@@ -91,15 +91,13 @@ export function registerShellWorkPanelIpc(options: MainIpcRegistrationOptions) {
   };
 
   registerArtifactActionIpc(ipcMain, {
+    library: options.artifactRuntime,
     app,
     fileShell: shell,
     platform: options.platform,
     getMainWindow: options.getMainWindow,
     getChatInfo: (chatId) => assistantBridge.getChatInfo(chatId),
     getRuntimeRoot: () => resolvePreferredAgentPlatformRuntimeRoot(app),
-    fetchResource: ({ chatId, relativePath }) => fetchDocumentResource({
-      chatId, relativePath: relativePath.split("/").map(encodeURIComponent).join("/"),
-    }),
     showSaveDialog: options.showSaveDialog,
   });
 

@@ -1,7 +1,7 @@
 import type { App } from "electron";
 import { isDesktopDevelopmentRuntime } from "../../infrastructure/electron/development-runtime";
 import { t } from "../../support/i18n/main-i18n";
-import { readDesktopSsoAccessToken } from "../identity";
+import { readDesktopSsoIdToken } from "../identity";
 import { deriveTunnelHubRegistrationApiOrigin } from "../tunnel";
 import { readTunnelHubSettings } from "../tunnel";
 import {
@@ -17,7 +17,7 @@ export type ConversationShareTarget = {
 export function resolveConversationShareTarget(app: App):
   | { ok: true; target: ConversationShareTarget }
   | { ok: false; message: string } {
-  const accessToken = readDesktopSsoAccessToken(app);
+  const accessToken = readDesktopSsoIdToken(app);
   if (!accessToken) {
     return { ok: false, message: t("assistant.chatShareLoginRequired") };
   }

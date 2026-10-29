@@ -4,7 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, session, type Session } from "elec
 import { WEBAPP_AUTH_CHANNEL, type WebappAuthSessionResult } from "../../../shared/webapp-auth";
 import { DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../shared/browser-surfaces";
 import { getDesktopStateRoot } from "../../infrastructure/filesystem/user-paths";
-import { getDesktopSsoAccessToken, getDesktopSsoStatus, subscribeDesktopSsoCredentialRevocation } from "../identity";
+import { getDesktopSsoBusinessToken, getDesktopSsoStatus, subscribeDesktopSsoCredentialRevocation } from "../identity";
 import type { BrowserSurfaceRegistry } from "../web-surfaces";
 import type { WebsFacade } from "./facade";
 import { t } from "../../support/i18n/main-i18n";
@@ -99,7 +99,7 @@ export function registerWebappAuth(options: {
       guest.on("did-start-navigation", changed);
       guest.once("destroyed", changed);
       const initialStatus = getDesktopSsoStatus(app);
-      if (!initialStatus.authenticated || !initialStatus.user?.sub || !getDesktopSsoAccessToken()) {
+      if (!initialStatus.authenticated || !initialStatus.user?.sub || !getDesktopSsoBusinessToken()) {
         throw new WebappAuthError("sign_in_required", "Sign in to Desktop first.");
       }
       // Registration alone is not permission to disclose an SSO bearer. The native
@@ -120,7 +120,7 @@ export function registerWebappAuth(options: {
       const validateIdentity = () => {
         validate();
         const current = getDesktopSsoStatus(app);
-        if (!current.authenticated || identity !== JSON.stringify([current.user?.issuer, current.user?.sub]) || !getDesktopSsoAccessToken()) {
+        if (!current.authenticated || identity !== JSON.stringify([current.user?.issuer, current.user?.sub]) || !getDesktopSsoBusinessToken()) {
           throw new WebappAuthError("context_changed", "The Desktop account changed.");
         }
       };

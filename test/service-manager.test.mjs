@@ -109,7 +109,7 @@ const {
 const { updateDesktopProfileInRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 const {
   getDesktopConfigRoot,
-  getDesktopSsoAccessTokenFilePath
+  getDesktopSsoIdTokenFilePath
 } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
@@ -240,6 +240,7 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
   if (serviceId === "agent-platform") {
     return {
       ...desktop,
+      ssoIdTokenFile: "v1",
       capabilities: {
         provides: [],
         requires: []
@@ -2645,7 +2646,7 @@ test("agent-platform deploy command only appends Desktop required args", async (
       "--state-dir",
       "--log-dir",
       "--port",
-      "--identity-file",
+      "--sso-id-token-file",
       "--daemon",
       "--ai-vision-general-model-key",
       "--ai-vision-ocr-model-key",
@@ -2668,12 +2669,15 @@ test("agent-platform deploy command only appends Desktop required args", async (
     assert.notEqual(identityCenterPublicKeyPath, publicKeyPath);
 
     const startCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, ["start.sh"], layout, "start");
+    assert.throws(() => __testInternals.appendDesktopManagedLayoutFlags(
+      app, { ...service, desktop: { ...service.desktop, ssoIdTokenFile: undefined } }, ["start.sh"], layout, "start"
+    ), /SSO ID-token file contract v1/);
     assertFlag(startCommand, "--config-dir", layout.configDir);
     assert.equal(startCommand.includes("--runtime-dir"), false);
     assertFlag(startCommand, "--state-dir", layout.stateDir);
     assertFlag(startCommand, "--log-dir", layout.logDir);
     assertFlag(startCommand, "--port", String(fixture.ports.platform));
-    assertFlag(startCommand, "--identity-file", getDesktopSsoAccessTokenFilePath(app));
+    assertFlag(startCommand, "--sso-id-token-file", getDesktopSsoIdTokenFilePath(app));
     const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, ["stop.sh"], layout, "stop");
     assert.deepEqual(stopCommand, ["stop.sh", "--state-dir", layout.stateDir]);
   } finally {

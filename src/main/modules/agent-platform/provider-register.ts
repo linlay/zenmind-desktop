@@ -73,7 +73,7 @@ function readRegisterConfig(registerPath: string) {
 }
 
 // Login credentials no longer mint Provider Keys: providers declare
-// `useAccessToken: true` and Platform reads the Desktop identity file per request.
+// `useSsoIdToken: true` and Platform reads the Desktop identity file per request.
 const RETIRED_ACCESS_TOKEN_MODE = "access-token";
 
 function normalizeMode(config: ProviderRegisterConfig): "grant-jwt" {
@@ -278,7 +278,7 @@ export async function ensureProviderRegisterApiKey(
   const { config } = readRegisterConfig(registerPath);
   if (config.mode === RETIRED_ACCESS_TOKEN_MODE) {
     // Never fall back to Grant or block startup for a retired policy file.
-    console.warn("[provider-register] access-token mode is retired; use useAccessToken in the provider registry");
+    console.warn("[provider-register] access-token mode is retired; use useSsoIdToken in the provider registry");
     return { status: "skipped", reason: "retired" };
   }
   normalizeMode(config);

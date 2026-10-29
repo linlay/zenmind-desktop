@@ -109,6 +109,7 @@ export interface ManifestDesktopHosting {
 }
 
 export interface ManifestDesktop {
+  ssoIdTokenFile?: "v1";
   runtimeResources?: "v1";
   assetFileName?: string;
   bundleTopLevelDir?: string;

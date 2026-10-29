@@ -21,7 +21,7 @@ function fixture(t, platform = "darwin") {
   function provider(key = "grant-hub", options = {}) {
     const file = path.join(resolveRuntimeRoot(app, platform), "registries", "providers", `${key}.yml`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `key: ${key}\nbaseUrl: ${options.origin ?? origin}\napiKey: ${options.key ?? "dk_grant_fixture"}\nuseAccessToken: ${options.accessToken ?? false}\n`);
+    fs.writeFileSync(file, `key: ${key}\nbaseUrl: ${options.origin ?? origin}\napiKey: ${options.key ?? "dk_grant_fixture"}\nuseSsoIdToken: ${options.accessToken ?? false}\n`);
     return file;
   }
   let token = "employee-fixture";

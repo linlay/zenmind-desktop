@@ -4,7 +4,7 @@ import type { CallbackServerInfo, CallbackHooks, PendingLogin, DesktopSsoProxySt
 import type { App } from "electron";
 import type { DesktopSsoStatus, DesktopSsoClaims } from "../../../shared/contracts";
 
-let canonicalAccessToken = "";
+let canonicalBusinessToken = "";
 const credentialRevocationListeners = new Set<() => void>();
 export function subscribeDesktopSsoCredentialRevocation(listener: () => void) {
   credentialRevocationListeners.add(listener);
@@ -12,6 +12,7 @@ export function subscribeDesktopSsoCredentialRevocation(listener: () => void) {
 }
 
 export const desktopSsoRuntimeState = {
+  credentialGeneration: 0,
   currentStatus: createSignedOutStatus(t("sso.notSignedIn")),
   callbackServers: [] as http.Server[],
   callbackServerReady: null as Promise<void> | null,
@@ -19,10 +20,10 @@ export const desktopSsoRuntimeState = {
   callbackHooks: {} as CallbackHooks,
   pendingLogin: null as PendingLogin | null,
   desktopSsoProxyState: null as DesktopSsoProxyState | null,
-  get currentAccessToken() { return canonicalAccessToken; },
-  set currentAccessToken(value: string) {
-    const revoked = Boolean(canonicalAccessToken) && !value;
-    canonicalAccessToken = value;
+  get currentBusinessToken() { return canonicalBusinessToken; },
+  set currentBusinessToken(value: string) {
+    const revoked = Boolean(canonicalBusinessToken) && !value;
+    canonicalBusinessToken = value;
     if (revoked) for (const listener of credentialRevocationListeners) listener();
   },
   currentIdToken: "",
@@ -85,7 +86,7 @@ export function createAuthenticatedStatus(
   completedSteps: DesktopSsoStatus["completedSteps"] = createCompletedSteps({
     session: true,
     userInfo: Boolean(claims),
-    accessToken: Boolean(desktopSsoRuntimeState.currentAccessToken)
+    accessToken: Boolean(desktopSsoRuntimeState.currentBusinessToken)
   }),
   options: { message?: string; error?: string; pending?: boolean } = {}
 ): DesktopSsoStatus {

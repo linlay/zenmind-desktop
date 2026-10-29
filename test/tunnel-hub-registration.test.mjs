@@ -47,7 +47,7 @@ function desktopRoot(homePath) {
 function writeDesktopSsoAccessToken(homePath, token = "canonical-desktop-jwt") {
   const stateRoot = path.join(desktopRoot(homePath), "state", "desktop");
   fs.mkdirSync(stateRoot, { recursive: true });
-  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${token}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-id-token.txt"), `${token}\n`, "utf8");
 }
 
 function listen(server) {

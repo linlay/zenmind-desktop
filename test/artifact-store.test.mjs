@@ -63,7 +63,7 @@ test("main Push subscription records while the page is closed, restricts IPC and
   });
   t.after(() => runtime.dispose());
   assert.deepEqual(fs.readdirSync(home), []); // Factory must not change first-install detection.
-  assert.deepEqual(consumer.types, ["artifact.published", "resource.pushed"]);
+  assert.deepEqual(consumer.types, ["artifact.published", "resource.pushed", "chat.deleted", "chat.archived", "archive.restored", "archive.deleted"]);
   assert.equal(consumer.kind, "internal");
   consumer.onPush(event());
   window = { isDestroyed: () => false, webContents };

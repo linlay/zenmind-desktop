@@ -4270,12 +4270,13 @@ div.sidebar-chats-group-popover {
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-icon {
+  display: none;
   width: 16px;
   height: 16px;
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger>.sidebar-account-menu-avatar {
-  display: none;
+  display: inline-flex;
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger-settings-icon {
@@ -4288,6 +4289,16 @@ div.sidebar-chats-group-popover {
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label {
   display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-menu-trigger.is-signed-out .sidebar-link-label {
+  display: block;
+  width: 36px;
+  font-size: 10px;
+  line-height: 11px;
+  white-space: normal;
+  text-align: center;
+  text-overflow: clip;
 }
 
 .app-sidebar .sidebar-primary-link.sidebar-link-active,

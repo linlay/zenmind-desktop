@@ -26,22 +26,28 @@ function fixture(overrides = {}) {
   let handler;
   const frame = {};
   const sender = { mainFrame: frame };
+  const mainWindow = { isDestroyed: () => false, webContents: sender };
   const artifact = { artifactId: 'art', url: 'artifacts/run/file.txt' };
   const ports = {
-    getMainWindow: () => ({ isDestroyed: () => false, webContents: sender }),
+    getMainWindow: () => mainWindow,
     getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [artifact] }, events: [{ type: 'unsupported-history-event' }] }) }),
     fetchResource: async () => ({ bytes: Buffer.from('hello') }),
     getRuntimeRoot: () => { throw new Error('Local storage unavailable'); },
     showSaveDialog: async () => ({ canceled: true }),
     ...overrides,
   };
+  ports.library ??= {
+    actionContext: () => ({ record: { sourceState: 'active', contentState: 'ready' }, isCurrent: () => true }),
+    read: async (identity) => { assert.equal(identity.runId, 'run'); return (await ports.fetchResource(identity)).bytes; },
+    reportFailure() {},
+  };
   registerArtifactActionIpc({ handle: (_channel, fn) => { handler = fn; } }, ports);
-  return { call: (input = {}, event = { sender, senderFrame: frame }) => handler(event, { chatId: 'chat', artifactId: 'art', action: 'view', ...input }) };
+  return { call: (input = {}, event = { sender, senderFrame: frame }) => handler(event, { chatId: 'chat', runId: 'run', artifactId: 'art', action: 'view', ...input }) };
 }
 test('view resolves authoritative source identity; unknown artifacts and unauthorized senders fail', async () => {
   const { call } = fixture();
   assert.deepEqual(await call(), { ok: true, agentKey: 'agent', relativePath: 'artifacts/run/file.txt' });
-  assert.deepEqual(await call({ artifactId: 'missing' }), { ok: false });
+  assert.deepEqual(await call({ artifactId: 'missing' }), { ok: false, error: 'missing' });
   assert.deepEqual(await call({}, { sender: {}, senderFrame: {} }), { ok: false });
   assert.deepEqual(await fixture({ getChatInfo: async () => ({ chatId: 'other', agentKey: 'agent' }) }).call(), { ok: false });
 });
@@ -58,7 +64,7 @@ test('cancelled download never reads content; saved download writes original byt
   }
 });
 test('unavailable resources and service failures report failure', async () => {
-  assert.deepEqual(await fixture({ getChatInfo: async () => { throw new Error('offline'); } }).call(), { ok: false });
+  assert.deepEqual(await fixture({ getChatInfo: async () => { throw new Error('offline'); } }).call(), { ok: false, error: 'failed' });
   assert.deepEqual(await fixture({ getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'other', artifact: { items: [{ artifactId: 'art', url: 'artifacts/a' }] } }) }) }).call(), { ok: false });
 });
 
@@ -142,7 +148,7 @@ test('missing originals fail all direct actions without saving or fetching a rep
   let saved = 0, fetched = 0, opened = 0;
   const { call } = fixture({
     platform: 'darwin', getRuntimeRoot: () => dir,
-    getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [{ artifactId: 'art', url: 'artifacts/page.html' }] } }) }),
+    getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [{ artifactId: 'art', url: 'artifacts/run/page.html' }] } }) }),
     showSaveDialog: async () => { saved++; return { canceled: true }; },
     fetchResource: async () => { fetched++; return null; },
     fileShell: { showItemInFolder: () => { opened++; }, openPath: async () => { opened++; return ''; } },
@@ -185,5 +191,54 @@ test('Windows artifact resolution uses native drive and UNC paths and rejects AD
     }
     assert.equal(resolve('artifacts/file.html', { ...fileSystem, realpathSync: (value) => value.includes('file.html') ? path.win32.join(root, 'chats/other/file.html') : value }), null);
     assert.equal(resolve('artifacts/file.html', { ...fileSystem, realpathSync: (value) => value.endsWith('chats\\chat') ? path.win32.join(root, 'chats/other') : value }), null);
+  }
+});
+
+test('same artifact ID is resolved only inside the requested Run and duplicate matches fail closed', async () => {
+  const getChatInfo = async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [
+    { artifactId: 'art', url: '@chat/artifacts/run/first.txt' },
+    { artifactId: 'art', url: '@chat/artifacts/run-2/second.txt' },
+  ] } }) });
+  assert.deepEqual(await fixture({ getChatInfo }).call({ runId: 'run-2' }), { ok: true, agentKey: 'agent', relativePath: 'artifacts/run-2/second.txt' });
+  const failures = [];
+  const duplicate = fixture({
+    getChatInfo: async () => ({ chatId: 'chat', agentKey: 'agent', rawJson: JSON.stringify({ chatId: 'chat', artifact: { items: [
+      { artifactId: 'art', url: '@chat/artifacts/run/a.txt' }, { artifactId: 'art', url: '@chat/artifacts/run/b.txt' },
+    ] } }) }),
+    library: { actionContext: () => ({ record: { sourceState: 'active', contentState: 'ready' }, isCurrent: () => true }), reportFailure: (...args) => failures.push(args) },
+  });
+  assert.deepEqual(await duplicate.call(), { ok: false, error: 'ambiguous' });
+  assert.equal(failures[0][1], 'artifact_ambiguous');
+});
+
+test('download preserves artifact error codes and does not write changed content', async t => {
+  const { ArtifactPlatformError } = require('../dist-electron/main/modules/artifacts/platform-client.js');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-integrity-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'saved.txt');
+  for (const [code, expected] of [['artifact_changed', 'changed'], ['artifact_ambiguous', 'ambiguous'], ['chat_access_denied', 'denied']]) {
+    const failures = [];
+    const { call } = fixture({ showSaveDialog: async () => ({ canceled: false, filePath }), library: {
+      actionContext: () => ({ record: { sourceState: 'active', contentState: 'ready' }, isCurrent: () => true }),
+      read: async input => { assert.deepEqual(input, { chatId: 'chat', runId: 'run', artifactId: 'art' }); throw new ArtifactPlatformError(code, 409); },
+      reportFailure: (_identity, error) => failures.push(error),
+    } });
+    assert.deepEqual(await call({ action: 'download' }), { ok: false, error: expected });
+    assert.deepEqual(failures, [code]);
+    await assert.rejects(fs.stat(filePath), { code: 'ENOENT' });
+  }
+});
+
+test('closing or archiving during file selection revokes the pending download', async () => {
+  let current = true, reads = 0;
+  const { call } = fixture({
+    showSaveDialog: async () => { current = false; return { canceled: false, filePath: '/must-not-write' }; },
+    library: { actionContext: () => ({ record: { sourceState: 'active', contentState: 'ready' }, isCurrent: () => current }), read: async () => { reads++; throw new Error('must not read'); }, reportFailure() {} },
+  });
+  assert.deepEqual(await call({ action: 'download' }), { ok: false });
+  assert.equal(reads, 0);
+  for (const [record, error] of [[{ sourceState: 'archived', contentState: 'ready' }, 'archived'], [{ sourceState: 'active', contentState: 'unresolved' }, 'unresolved']]) {
+    const blocked = fixture({ getChatInfo: async () => { throw new Error('must not resolve'); }, library: { actionContext: () => ({ record, isCurrent: () => true }) } });
+    assert.deepEqual(await blocked.call(), { ok: false, error });
   }
 });

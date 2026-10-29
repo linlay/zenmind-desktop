@@ -4492,7 +4492,10 @@ export function SettingsPage({
             loading={usageProfileLoading}
             heatmapMode={usageHeatmapMode}
             onHeatmapModeChange={setUsageHeatmapMode}
-            onRefresh={refreshUsageProfile}
+            onRefresh={async () => {
+              await window.electronAPI.sso.retrySession();
+              await refreshUsageProfile();
+            }}
           />
         );
       case "general": {
