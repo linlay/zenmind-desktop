@@ -135,7 +135,7 @@ function createSsoJwt(payload = {}) {
 
 function writeCanonicalSsoAccessToken(app, payload = {}) {
   const token = createSsoJwt(payload);
-  const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
+  const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-id-token.txt");
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   return token;

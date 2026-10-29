@@ -77,7 +77,7 @@ const DESKTOP_STATE_DEBUG_FILES: ReadonlyArray<{
   { name: "env-bootstrap.json", format: "json" },
   { name: "pet-state.json", format: "json" },
   { name: "sso-session.json", format: "json" },
-  { name: "sso-access-token.txt", format: "text" }
+  { name: "sso-id-token.txt", format: "text" }
 ];
 
 function desktopStateFileSnapshot(
@@ -111,7 +111,7 @@ function desktopStateFileSnapshot(
         exists: true,
         size: stats.size,
         modifiedAt,
-        content: rawContent
+        content: definition.name === "sso-id-token.txt" ? "[REDACTED]" : rawContent
       };
     }
 

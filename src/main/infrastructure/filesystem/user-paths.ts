@@ -14,7 +14,7 @@ const DESKTOP_DIRS = [
   "cache",
   "secrets"
 ] as const;
-const DESKTOP_SSO_ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
+const DESKTOP_SSO_ID_TOKEN_FILE_NAME = "sso-id-token.txt";
 type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
@@ -282,19 +282,19 @@ export function getDesktopStateRoot(app: App, platform: NodeJS.Platform = proces
   return path.join(getDataRoot(app, platform), "state", "desktop");
 }
 
-function resolveDesktopSsoAccessTokenFilePath(
+function resolveDesktopSsoIdTokenFilePath(
   dataRoot: string,
   platform: NodeJS.Platform = process.platform
 ) {
   const pathApi = pathApiForRoot(platform, dataRoot);
-  return pathApi.join(dataRoot, "state", "desktop", DESKTOP_SSO_ACCESS_TOKEN_FILE_NAME);
+  return pathApi.join(dataRoot, "state", "desktop", DESKTOP_SSO_ID_TOKEN_FILE_NAME);
 }
 
-export function getDesktopSsoAccessTokenFilePath(
+export function getDesktopSsoIdTokenFilePath(
   app: Pick<App, "getPath">,
   platform: NodeJS.Platform = process.platform
 ) {
-  return resolveDesktopSsoAccessTokenFilePath(getDataRoot(app as App, platform), platform);
+  return resolveDesktopSsoIdTokenFilePath(getDataRoot(app as App, platform), platform);
 }
 
 export function getServiceStateRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
@@ -326,7 +326,7 @@ export const __testInternals = {
   DESKTOP_DIRS,
   resolveDesktopRoot,
   resolveApplicationSupportRoot,
-  resolveDesktopSsoAccessTokenFilePath,
+  resolveDesktopSsoIdTokenFilePath,
   resolveWebsiteBridgeRoots
 };
 

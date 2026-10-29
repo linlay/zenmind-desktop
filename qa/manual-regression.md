@@ -213,6 +213,8 @@
 
 - macOS 与 Windows 分别在已登录状态打开底部账号菜单，悬停用户名、头像及账号行空白处，确认不再弹出重复的用户名提示；菜单内与底部入口的姓名保持显示，退出登录入口及键盘打开、Escape 关闭菜单仍可用。覆盖侧栏展开/收起及浅色/深色外观。
 
+- macOS / Windows 收起主侧栏时，底部账号入口不显示设置齿轮：未登录（含未配置 SSO）显示“未登录”，已登录显示账号头像，头像缺失或加载失败沿用姓名首字；登录、退出和账号切换即时更新。中英文、浅深色下无裁切，点击和键盘打开原账号菜单；展开侧栏仍显示原账号姓名及设置入口。
+
 - macOS / Windows 登录后模拟换票 401/403 或跳转登录页：左下角立即显示未登录、旧凭据被撤销，市场公共条目仍可浏览，用户态操作要求重新登录。模拟 token 到期且换票 503/断网：显示未登录，网络恢复后可后台恢复；尚未到期的 token 提前刷新遇到 503 不应误退出。
 
 - Windows / macOS 分别验证系统浏览器与内嵌登录：先在 8080 启动测试服务，登录及退出均使用动态空闲端口，测试服务始终可访问；授权与换票使用同一实际回调地址，内嵌代理的跳转、页面资源和 Referer 不包含固定 8080。`localhost` 的同一动态端口在 `127.0.0.1` 与 `::1` 均可达，显式 IPv4 的 Google 流程保持可用；认证服务白名单允许动态回环端口。
@@ -259,7 +261,8 @@
 - Windows 在 100%、125%、150% 缩放下持续往返拖动系统栏，分别覆盖同屏与混合 DPI 跨屏，确认窗口宽高不随拖动次数累积增长，松手停止；最大化状态拖动不得改变尺寸。macOS 验证原有拖动行为。
 - 在主 renderer 与聚焦 webview 中分别按 `Ctrl+Shift+I`，确认都只切换主 renderer 的停靠式 DevTools；按钮始终留在 ZenMind 系统栏。按 `Ctrl+Shift+D` 仍只为当前 focus webview 打开独立 DevTools。
 - 点击最小化、最大化/还原，确认状态图标及时更新；分别通过系统栏关闭按钮、`Alt+F4` 和任务栏右键“关闭窗口”触发关闭，确认只显示一个现有的退出确认框，取消后窗口保持显示，确认后完成受管任务与服务清理并真正退出。托盘菜单“退出”仍直接执行安全退出；打开全局搜索或可信 guest 模态层时窗口按钮被遮罩且不可点击。
-- macOS 确认仍使用原生 traffic lights，标题栏和全屏行为不变；`Cmd+W` 在 Website 逐个关闭当前 tab，在 Chat 按可见 WorkPanel → 主窗口层级关闭。
+- macOS 确认仍使用原生 traffic lights，三个按钮间距收紧且在收起侧栏内居中，展开侧栏后不跳位。缩放、最大化/还原、最小化恢复、隐藏再显示与退出系统全屏后间距保持；全屏及过渡时由系统布局。红黄绿按钮的点击、悬停符号、绿色按钮系统平铺菜单与 Option 点击保持可用，浅深色、Retina/外接显示器下无重叠或裁切。Apple Silicon 与 Intel 分别验证原生布局；Windows 保持 renderer 系统控件，不加载 macOS 原生适配。`Cmd+W` 在 Website 逐个关闭当前 tab，在 Chat 按可见 WorkPanel → 主窗口层级关闭。
+- 原生按钮布局自动验收：`npm run build:main:types && RUN_MAC_TRAFFIC_LIGHTS_ELECTRON_TEST=1 node --test test/mac-traffic-lights.test.mjs`，覆盖真实按钮坐标、尺寸、原生 target/action、窗口缩放与全屏、明暗切换和关闭清理；交互式 macOS 会话追加 `RUN_MAC_TRAFFIC_LIGHTS_MINIMIZE=1` 验证真实最小化/恢复。自动化宿主可能拒绝最小化，不能把 restore 事件模拟当成真实最小化验收；绿色菜单及真实鼠标悬停仍须手测。
 
 ## 连接器导入与授权
 
@@ -1553,3 +1556,13 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - macOS 使用 Command 快捷键与 Finder 菜单，Windows 使用 Ctrl 与文件资源管理器菜单；在原生两平台分别验证定位、下载与外部打开。自动化中的平台标签模拟不代替原生 Windows 验收。
 
 自动化入口：先构建 Main 类型产物，运行 `node --test test/artifact-store.test.mjs test/artifact-actions.test.mjs test/artifact-library.test.mjs test/artifact-folders.test.mjs` 与 `node qa/library-smoke.mjs`。后者以隔离数据驱动实际 React 页面，不连接用户服务；上游真实发布、鉴权及原生系统动作按以上清单单独联调。
+
+### OIDC 网关静默续期
+
+- [ ] Cookie 登录取得完整 JSON，业务文件只含 id_token，refresh token 仅以密文保存在 secrets；状态调试页面不显示 token 正文。
+- [ ] 有效期前续期、并发强制续期、系统唤醒后的期限检查；Platform 下一次 Provider/oneid 调用读取新文件，无需重启。
+- [ ] 关闭后重启且 Cookie 已失效，仍可通过加密 refresh token 恢复；旧版 token 文件恢复成功后删除。
+- [ ] refresh token 轮换或未返回新值均正确；userinfo/文件发布失败后不丢失已轮换的 refresh token。
+- [ ] 刷新 401 清理凭据并提示登录；502/断网只退避有限次，状态轮询不重置预算，使用情况页刷新可手动重试。
+- [ ] 临时错误且旧 token 有效时继续使用；过期后撤销业务文件。退出/切账号期间的迟到响应不能写回 token 或 Cookie。
+- [ ] macOS / Windows 分别验证系统加密、目录权限、带空格路径、原子文件替换及生命周期参数；新旧 Desktop/Platform 混用不得静默降级。

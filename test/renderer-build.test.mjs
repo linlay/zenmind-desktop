@@ -2849,10 +2849,10 @@ test("desktop state debug tab is wired through the fixed read-only IPC contract"
   assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
   assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-state-file-head/);
 
-  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-id-token\.txt"/);
   assert.match(desktopApi, /getDesktopStateSnapshot:\s*\(\) => Promise<DesktopStateSnapshot>/);
   assert.match(preload, /getDesktopStateSnapshot:\s*\(\) => ipcRenderer\.invoke\("settings\.getDesktopStateSnapshot"\)/);
-  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-id-token\.txt"/);
   assert.match(settingsHandlers, /getDesktopStateRoot\(app, platform\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopStateSnapshot", async \(\) =>/);
   assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);
@@ -8516,7 +8516,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu-avatar-fallback\s*\{/);
   assert.match(globalStyles, /\.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?flex:\s*0 0 24px;/);
   assert.match(globalStyles, /\.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*auto;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*inline-flex;/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{[\s\S]*?min-width:\s*58px;[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout-label\s*\{[\s\S]*?white-space:\s*nowrap;/);

@@ -5,7 +5,7 @@ import { type DesktopServiceConfigResetContext } from "./desktop-config-upgrade"
 import { type ServiceDefinition } from "../../../support/manifest/manifest-utils";
 import { ServiceCommandKind, CORE_SERVICE_IDS } from "./manager-contracts";
 import { getDesktopManagedCommandPort, getDesktopManagedContainerHubBindAddr } from "./host-policy";
-import { getDesktopSsoAccessTokenFilePath } from "../../../infrastructure/filesystem/user-paths";
+import { getDesktopSsoIdTokenFilePath } from "../../../infrastructure/filesystem/user-paths";
 
 export function appendAgentPlatformDesktopDeployArgs(
   command: string[],
@@ -98,13 +98,16 @@ export function appendDesktopManagedLayoutFlags(
     if (kind === "stop") {
       return [...command, "--state-dir", layout.stateDir];
     }
+    if (service.desktop.ssoIdTokenFile !== "v1") {
+      throw new Error("Agent Platform bundle lacks SSO ID-token file contract v1; publish Desktop and Platform together.");
+    }
     return [
       ...command,
       "--config-dir", layout.configDir,
       "--state-dir", layout.stateDir,
       "--log-dir", layout.logDir,
       "--port", String(getDesktopManagedCommandPort(service)),
-      "--identity-file", getDesktopSsoAccessTokenFilePath(app)
+      "--sso-id-token-file", getDesktopSsoIdTokenFilePath(app)
     ];
   }
 

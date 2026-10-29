@@ -7103,6 +7103,7 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
+                      shouldRenderDesktopSsoTriggerAvatar ? "" : "is-signed-out",
                       hasDesktopUpdate ? "has-update" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
@@ -7111,7 +7112,7 @@ export function AppSidebar({
                     aria-label={hasDesktopUpdate ? `${t("nav.sidebar.openSettings")} · ${t(`updates.phase.${desktopUpdate!.phase}`)}` : t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}
-                    title={hasDesktopUpdate ? t(`updates.phase.${desktopUpdate!.phase}`) : t("nav.settings")}
+                    title={hasDesktopUpdate ? t(`updates.phase.${desktopUpdate!.phase}`) : shouldRenderCollapsed ? toolMenuTriggerLabel : t("nav.settings")}
                   >
                     {!shouldRenderDesktopSsoTrigger ? (
                       <span className="sidebar-link-icon sidebar-settings-icon-slot">

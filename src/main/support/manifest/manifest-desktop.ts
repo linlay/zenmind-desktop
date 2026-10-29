@@ -43,6 +43,7 @@ export function resolveDesktop(
   const actions = resolveDesktopActions(raw, settings);
 
   return {
+    ...(desktop.ssoIdTokenFile === "v1" ? { ssoIdTokenFile: "v1" as const } : {}),
     ...(runtimeResources ? { runtimeResources } : {}),
     assetFileName,
     bundleTopLevelDir,

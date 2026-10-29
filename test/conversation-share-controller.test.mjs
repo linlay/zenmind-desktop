@@ -26,7 +26,7 @@ function createFixture(t, tunnelOverrides = {}) {
   };
   const desktopRoot = path.join(homeRoot, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
   const configPath = path.join(desktopRoot, "config", "desktop", "tunnel-hub.json");
-  const tokenPath = path.join(desktopRoot, "state", "desktop", "sso-access-token.txt");
+  const tokenPath = path.join(desktopRoot, "state", "desktop", "sso-id-token.txt");
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify({
@@ -113,7 +113,7 @@ test("createConversationShare keeps the link and reports observed attachment omi
 test("createConversationShare resolves login and Tunnel before reading Snapshot", async (t) => {
   const app = createFixture(t);
   const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
-  fs.rmSync(path.join(desktopRoot, "state", "desktop", "sso-access-token.txt"));
+  fs.rmSync(path.join(desktopRoot, "state", "desktop", "sso-id-token.txt"));
   let read = false;
   let created = false;
 

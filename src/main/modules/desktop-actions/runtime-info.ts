@@ -8,7 +8,7 @@ import type {
 } from "../../../shared/contracts";
 import { isEpochMilliseconds } from "../../../shared/time-contract";
 import { getDesktopDeviceInfo } from "../identity";
-import { readDesktopSsoAccessToken } from "../identity";
+import { readDesktopSsoIdToken } from "../identity";
 import { listServices } from "../services";
 import { getDataRoot } from "../../infrastructure/filesystem/user-paths";
 
@@ -21,7 +21,7 @@ export type DesktopRuntimeDiagnosticsDependencies = {
   now?: () => number;
   getDeviceInfo?: (app: App, platform: NodeJS.Platform, arch: string) => DesktopDeviceInfo;
   getDataRoot?: (app: App, platform: NodeJS.Platform) => string;
-  readDesktopSsoAccessToken?: (app: Pick<App, "getPath">) => string;
+  readDesktopSsoIdToken?: (app: Pick<App, "getPath">) => string;
   listServices?: (app: App) => Promise<ServiceState[]>;
 };
 
@@ -98,7 +98,7 @@ export async function createDesktopRuntimeDiagnostics(
   const dataRoot = dependencies.getDataRoot
     ? dependencies.getDataRoot(app, platform)
     : getDataRoot(app, platform);
-  const token = (dependencies.readDesktopSsoAccessToken ?? readDesktopSsoAccessToken)(app);
+  const token = (dependencies.readDesktopSsoIdToken ?? readDesktopSsoIdToken)(app);
   const services = await (dependencies.listServices ?? listServices)(app);
 
   return {

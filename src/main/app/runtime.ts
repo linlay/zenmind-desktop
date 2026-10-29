@@ -13,7 +13,7 @@ import { createDesktopAppearanceRuntime } from "../modules/settings";
 import { createArtifactRuntime, createArtifactPlatformClient } from "../modules/artifacts";
 import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, getAssistantSettings, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
-import { getDesktopDeviceId, getDesktopSsoAccessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
+import { getDesktopDeviceId, getDesktopSsoBusinessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
 import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
 import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
 import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
@@ -269,7 +269,7 @@ export function createMainProcessRuntime() {
     get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
     get webviewContextMenuController() { return webviewContextMenuController; }
   });
-  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
+  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoBusinessToken() || "";
   const enterpriseChatRuntime = enterpriseChat.assembleEnterpriseChat({
     get startupPlatform() { return startupPlatform; },
     get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
