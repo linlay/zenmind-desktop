@@ -1,5 +1,4 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { Select } from "antd";
 import type { DesktopPetAppearanceOption, DesktopPetSignatureAction, DesktopPetStateAsset, MarketItem } from "@shared/contracts";
 import { DESKTOP_PET_REQUIRED_STATE_KEYS, versionedDesktopPetAssetUrl } from "../../../shared/desktop-pet";
 import { useI18n } from "../../i18n/useI18n";
@@ -34,27 +33,17 @@ export function readPetPreviewManifest(item: MarketItem) {
     return { ...manifest, states, signature } as DesktopPetAppearanceOption;
   } catch { return null; }
 }
-export function PetPreview({ item, appearance, controls = false }: {
+export function PetPreview({ item, appearance, detail = false }: {
   item?: MarketItem;
   appearance?: DesktopPetAppearanceOption;
-  controls?: boolean;
+  detail?: boolean;
 }) {
   const { t } = useI18n();
   const manifest = appearance ?? (item ? readPetPreviewManifest(item) : null);
-  const [selected, setSelected] = useState("idle");
   const [source, setSource] = useState("");
   const [failed, setFailed] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const [size, setSize] = useState({ width: 128, height: 128 });
-  const options: Array<{ value: string; label: string; asset?: DesktopPetStateAsset }> = manifest ? [
-    ...DESKTOP_PET_REQUIRED_STATE_KEYS.map(key => ({ value: key, label: t(`market.pet.state.${key}`) })),
-    ...DESKTOP_PET_REQUIRED_STATE_KEYS.flatMap(key => (manifest.states[key]?.alts ?? []).flatMap(action => action.variants.map((asset, index) => ({
-      value: `alt:${key}:${action.id}:${index}`, label: `${t(`market.pet.state.${key}`)} · ${action.label}`, asset
-    })))),
-    ...(manifest.signature ?? []).flatMap(action => action.variants.map((asset, index) => ({ value: `signature:${action.id}:${index}`, label: action.label, asset })))
-  ] : [];
-  const signature = options.find(option => option.value === selected) as { asset?: DesktopPetStateAsset } | undefined;
-  const asset = signature?.asset ?? manifest?.states[selected] ?? manifest?.states.idle;
+  const asset = manifest?.states.idle;
   useEffect(() => {
     let active = true;
     setSource(""); setFailed(false);
@@ -89,14 +78,12 @@ export function PetPreview({ item, appearance, controls = false }: {
     height: size.height,
     backgroundImage: source ? `url("${source}")` : undefined,
     backgroundSize: `${frames * 100}% 100%`,
-    "--pet-sprite-end": `${-size.width * frames}px`,
-    animation: source && (controls || hovered) ? `market-pet-sprite ${asset?.durationMs ?? 1000}ms steps(${frames}, end) infinite` : "none"
+    backgroundPosition: "0 0"
   } as CSSProperties;
-  return <div className={`pet-market-preview ${controls ? "is-detail" : ""}`} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+  return <div className={`pet-market-preview ${detail ? "is-detail" : ""}`}>
     <div className="pet-market-stage">
       {failed ? <span className="pet-market-preview-fallback">{t("market.pet.noPreview")}</span>
         : <span aria-label={t("market.pet.animationPreview")} role="img" className="pet-market-sprite" style={style} />}
     </div>
-    {controls && manifest ? <Select aria-label={t("market.pet.chooseAction")} value={selected} onChange={setSelected} options={options} /> : null}
   </div>;
 }

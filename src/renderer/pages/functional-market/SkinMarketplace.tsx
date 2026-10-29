@@ -1,6 +1,6 @@
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { Alert, Button, Modal, Tag } from "antd";
-import { PlusCircleOutlined, ReloadOutlined, SearchOutlined, LoadingOutlined, CheckOutlined } from "@ant-design/icons";
+import { PlusCircleOutlined, ReloadOutlined, SearchOutlined, LoadingOutlined, CheckOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { MarketItem } from "@shared/contracts";
 import type { TranslationKey } from "../../../shared/i18n";
 import type { DesktopSkinId, InstalledDesktopSkinSummary } from "../../../shared/desktop-appearance";
@@ -83,13 +83,14 @@ export function SkinMarketplace(props: Props) {
         </div>;
     };
     const useButton = (id: DesktopSkinId) => <Button type={current === id ? "default" : "primary"}
+        className={`market-card-action market-card-primary ${current === id ? "is-current" : ""}`}
         disabled={!flow.ready || flow.busy || current === id} loading={flow.busyId === id}
         icon={current === id ? <CheckOutlined /> : undefined} onClick={() => void flow.useSkin(id)}>
         {t(current === id ? "market.skin.current" : "market.skin.use")}
     </Button>;
     const installButton = (item: MarketItem) => {
         const exact = installed.find(skin => skin.packageId === item.id && skin.version === item.version);
-        return exact ? useButton(exact.id) : <Button type="primary"
+        return exact ? useButton(exact.id) : <Button type="primary" className="market-card-action market-card-primary"
             disabled={!flow.ready || flow.busy || item.state === "incompatible"} loading={flow.busyId === item.id}
             onClick={() => void flow.install(item)}>
             {t(item.state === "update-available" ? "market.action.update" : "market.action.install")}
@@ -124,7 +125,7 @@ export function SkinMarketplace(props: Props) {
                         return <article className={`skill-discovery-card skin-market-card ${skin.id === current ? "is-selected" : ""}`}
                             key={skin.id} data-skin-id={skin.id} aria-label={name}>
                             {renderPreview(`builtin:${skin.id}`, name, { definition: skin })}
-                            <div className="skin-market-copy"><h2>{name}</h2><Tag>{t("market.skin.builtin")}</Tag></div>
+                            <div className="skin-market-copy"><div className="skin-market-title"><h2 title={name}>{name}</h2><div className="skin-market-meta"><Tag>{t("market.skin.builtin")}</Tag></div></div></div>
                             <div className="skin-market-actions">{useButton(skin.id as DesktopSkinId)}</div>
                         </article>;
                     })}
@@ -135,20 +136,20 @@ export function SkinMarketplace(props: Props) {
                         {renderPreview(packagePreviewKey(skin.packageId, skin.version), `${skin.name} ${skin.version}`, {
                             installedSkinId: skin.id, definition: current === skin.id ? appearance.skin : undefined, thumbnail: skin.previewDataUrl
                         })}
-                        <div className="skin-market-copy"><h2>{skin.name}</h2><div className="skin-market-meta">
+                        <div className="skin-market-copy"><div className="skin-market-title"><h2 title={skin.name}>{skin.name}</h2><div className="skin-market-meta">
                             <Tag>{t("market.state.installed")}</Tag><span>{skin.version}</span>
-                        </div></div>
-                        <div className="skin-market-actions"><Button type="text" danger disabled={flow.busy} onClick={() => setRemove(skin)}>{t("common.delete")}</Button>{useButton(skin.id)}</div>
+                        </div></div></div>
+                        <div className="skin-market-actions"><Button type="text" danger className="market-card-action market-card-delete" icon={<DeleteOutlined />} disabled={flow.busy} onClick={() => setRemove(skin)}>{t("common.delete")}</Button>{useButton(skin.id)}</div>
                     </article>)}
                     {market.map(item => <article className="skill-discovery-card skin-market-card" key={packagePreviewKey(item.id, item.version)}
                         data-package-id={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
                         onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button,a,input")) open(item); }}
                         onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open(item); } }}>
                         {renderPreview(packagePreviewKey(item.id, item.version), item.name, { item })}
-                        <div className="skin-market-copy"><h2>{item.name}</h2><p>{item.description}</p><div className="skin-market-meta">
+                        <div className="skin-market-copy"><div className="skin-market-title"><h2 title={item.name}>{item.name}</h2><div className="skin-market-meta">
                             <Tag>{t("market.skin.market")}</Tag><span>{item.version}</span>
-                        </div></div>
-                        <div className="skin-market-actions"><Button type="text" onClick={() => open(item)}>{t("market.action.details")}</Button>{installButton(item)}</div>
+                        </div></div><p>{item.description}</p></div>
+                        <div className="skin-market-actions"><Button type="text" className="market-card-action market-card-secondary" onClick={() => open(item)}>{t("market.action.details")}</Button>{installButton(item)}</div>
                     </article>)}
                 </div>
                 {!count ? <div className="skill-discovery-empty">{t(props.loading ? "market.storefront.loading" : "market.skin.empty")}</div> : null}

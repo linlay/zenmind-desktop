@@ -95,3 +95,28 @@
 .skill-discovery-card.is-detail-clickable:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
 
 .skill-discovery .anticon, .skill-discovery .anticon svg, .skill-discovery-toolbar .anticon, .skill-discovery-toolbar .anticon svg { width: 16px; height: 16px; font-size: 16px; }
+
+.market-card-action.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  box-shadow: none;
+}
+.market-card-action.ant-btn .anticon, .market-card-action.ant-btn .anticon svg { width: 13px; height: 13px; font-size: 13px; }
+.market-card-secondary.ant-btn, .market-card-delete.ant-btn { color: var(--market-control-muted, var(--ink-muted)); }
+.market-card-delete.ant-btn { background: transparent; border-color: transparent; }
+.market-card-delete.ant-btn:not(:disabled):hover,
+.market-card-delete.ant-btn:not(:disabled):focus-visible { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.market-card-action.ant-btn.is-current:disabled {
+  color: var(--market-control-blue, var(--control-primary-bg));
+  background: color-mix(in srgb, var(--market-control-blue, var(--control-primary-bg)) 9%, transparent);
+  border-color: transparent;
+  opacity: 1;
+}
