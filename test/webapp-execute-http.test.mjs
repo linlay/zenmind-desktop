@@ -25,7 +25,7 @@ async function fixture(t) {
   const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=JSON.parse(Buffer.concat(chunks));
   assert.match(req.headers.authorization,/^Bearer h\./);
   if(req.url==='/api/interrupt'){interruptBody=body;res.end(JSON.stringify({code:0,data:{accepted:true}}));return}
-  assert.equal(req.url,'/api/execute');setImmediate(()=>onRun?.({runId:'run-1',chatId:'chat-1',agentKey:body.agentKey}));posts++;assert.equal(body.agentKey,'executor');assert.equal(body.accessLevel,'default');
+  assert.equal(req.url,'/api/execute');setImmediate(()=>onRun?.({runId:'run-1',chatId:'chat-1',agentKey:body.agentKey}));posts++;assert.equal(body.agentKey,'executor');assert.equal(body.accessLevel,'ask_for_approval');
   res.once('close',()=>{if(!res.writableFinished)closed?.()});started?.();
   if(mode==='success')res.end(JSON.stringify({code:0,data:{chatId:'chat-1',status:'success',output:{amount:128}}}));
  });

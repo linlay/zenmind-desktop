@@ -36,5 +36,5 @@ export function normalizeAssistantPermissionMode(value: unknown): AssistantStart
 }
 
 export function normalizeAssistantAccessLevel(value: unknown): AssistantStartRunRequest["accessLevel"] | undefined {
-  return value === "default" || value === "auto_approve" || value === "full_access" ? value : undefined;
+  return value === "default" || value === "ask_for_approval" || value === "auto_approve" || value === "full_access" ? value : undefined;
 }

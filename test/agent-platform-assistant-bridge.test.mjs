@@ -763,7 +763,8 @@ test("agent platform assistant bridge releases wake lock when stopRun interrupt 
   }
 });
 
-test("agent platform assistant bridge forwards startRun accessLevel and emits aggregated completion message", async () => {
+for (const accessLevel of ["default", "ask_for_approval", "auto_approve", "full_access"]) {
+test(`agent platform assistant bridge forwards ${accessLevel} unchanged and emits aggregated completion message`, async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   const ws = createWsHarness({
@@ -774,7 +775,7 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
       assert.equal(body.requestId, "request-stable-1");
       assert.equal(body.chatId, "chat-stable-1");
       assert.equal(body.agentKey, "codeAssistant");
-      assert.equal(body.accessLevel, "auto_approve");
+      assert.equal(body.accessLevel, accessLevel);
       assert.equal(body.stream, true);
       assert.equal(body.params.desktop.source, "copilot");
       assert.equal(Object.hasOwn(body.params.desktop, "permissionMode"), false);
@@ -794,7 +795,7 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     const result = await bridge.startRun({
       message: "hello platform",
       agentKey: "codeAssistant",
-      accessLevel: "auto_approve",
+      accessLevel: accessLevel,
       chatId: "chat-stable-1",
       runId: "run-stable-1",
       requestId: "request-stable-1"
@@ -817,6 +818,8 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     globalThis.fetch = originalFetch;
   }
 });
+
+}
 
 test("agent platform assistant bridge accepts a query only after matching run.start and buffers earlier events", async () => {
   const originalFetch = globalThis.fetch;

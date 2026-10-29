@@ -107,7 +107,7 @@ export async function executeWebappExecute(options: DesktopActionBridgeOptions, 
     log("platform", "execute_sent");
     const input = args as WebappExecuteInput;
     const result = await abortable(postWebappExecute(context, { agentKey, message: input.message, outputSchema: input.outputSchema,
-      ...(input.input === undefined ? {} : { input: input.input }), accessLevel: "default", requestId }, abort.signal), abort.signal);
+      ...(input.input === undefined ? {} : { input: input.input }), accessLevel: "ask_for_approval", requestId }, abort.signal), abort.signal);
     await checkDeliveryContext(context, abort.signal);
     abort.signal.throwIfAborted();
     rememberWebappChat(context.key, result.chatId);

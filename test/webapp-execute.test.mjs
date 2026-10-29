@@ -55,7 +55,7 @@ test('execute uses Main identity, fixed permissions and Agent with no references
  fetcher=async(url,options)=>{calls.push([url,options]);return json({chatId:'chat-1',status:'success',output:{createdAt:'business-time',amount:128}})};
  const result=await run(f);assert.equal(result.ok,true);assert.equal(result.result.output.createdAt,'business-time');
  const [url,options]=calls[0];assert.equal(new URL(url).pathname,'/api/execute');assert.match(options.headers.Authorization,/^Bearer h\./);
- const body=JSON.parse(options.body);assert.equal(body.agentKey,'executor');assert.equal(body.accessLevel,'default');assert.equal(body.input,0);assert.equal(body.references,undefined);assert.equal(body.skillIds,undefined);assert.ok(body.requestId);assert.equal(calls.length,1);
+ const body=JSON.parse(options.body);assert.equal(body.agentKey,'executor');assert.equal(body.accessLevel,'ask_for_approval');assert.equal(body.input,0);assert.equal(body.references,undefined);assert.equal(body.skillIds,undefined);assert.ok(body.requestId);assert.equal(calls.length,1);
 });
 test('business failure resolves and configured Agent uses the existing select mechanism',async()=>{
  const f=fixture();f.item.userConfig={fields:[{type:'select',name:'agent',source:'desktop.agents'}]};f.options.webs.webappManager.readUserConfig=()=>({agent:'chosen'});

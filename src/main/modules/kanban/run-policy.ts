@@ -58,7 +58,7 @@ export function parseStructuredReviewText(value: string): { verdict: "approved" 
 
 export function normalizeRemoteAccessLevel(value: unknown): AssistantStartRunRequest["accessLevel"] | undefined {
   const text = readText(value);
-  return text === "default" || text === "auto_approve" || text === "full_access" ? text : undefined;
+  return text === "default" || text === "ask_for_approval" || text === "auto_approve" || text === "full_access" ? text : undefined;
 }
 
 export function stableClientEventId(deviceId: string, parts: Array<string | number | null | undefined>) {

@@ -578,7 +578,7 @@ export interface AssistantPastedImageInput {
   data: ArrayBuffer;
 }
 
-export type AssistantAccessLevel = "default" | "auto_approve" | "full_access";
+export type AssistantAccessLevel = "default" | "ask_for_approval" | "auto_approve" | "full_access";
 
 export interface AssistantStartRunRequest {
   references?: {type: "skill" | "kbase" | "chat"; id: string}[];
