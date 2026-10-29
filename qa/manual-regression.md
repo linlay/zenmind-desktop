@@ -1513,7 +1513,7 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 展开与收起侧栏，分别验证主要入口、历史、Tab／方向键、焦点轮廓、未读与运行状态。切换明暗与旧皮肤，检查六种 mode、旧 terminal/library 名称回退、自定义图片、图标颜色、16/20/30px 清晰度与同屏多个 TEAM mask。旧皮肤中的 agent.* 图片声明不影响任何 Agent 图标，也不加载这些图片。
 - 自动入口：`node --test test/primary-chat-navigation.test.mjs test/agent-icon-fallback.test.mjs`；Electron 界面回归：`node qa/primary-chat-navigation-smoke.mjs`；上游资源一致性：`node scripts/sync-webclient-icons.mjs --check`。WebClient 的 primaryChatIntent / useMessageActions 定向测试与 Desktop 同批验证。平台样式模拟不能代替 Windows 真机发布验收。
 
-- 默认 SVG Agent 头像：GENERAL／CODER／KBASE／TEAM 的完整导航项目头与主要对话行，各自持有 22–32 秒的待机周期和 0–7 秒初始延迟；使用实际动画时间推进检查转头和眨眼。Hover 名称区域也应响应，邻行不被激活，离开行后复位。系统减少动态效果、窗口失焦、页面隐藏与头像卸载时不得持续追踪或泄漏监听。EXECUTOR／PROXY 及自定义图片保持上游对应行为，皮肤不能替换 Agent 图标。
+- 默认 SVG Agent 头像：macOS／Windows 分别检查 GENERAL／CODER／KBASE／TEAM／EXECUTOR／PROXY 的完整导航项目头与主要对话行，独立间隔 8–16 秒随机播放转身、左右看、伸展，连续动作不重复，无交互满一分钟后才允许打瞌睡。检查转身背面隐藏五官、眼睛与嘴形变化、TEAM 叠层及较扁阴影，动作全程不越出图标边界。移动到名称区域也应响应，邻行不被激活；停止移动 1.5 秒或离开行后复位并恢复待机。16/20/30px 下相同相对鼠标位置的眼神与头部倾斜一致。系统减少动态效果、窗口失焦、页面隐藏、头像不可见与卸载时清理动作和追踪。自定义图片保留图片与加载失败回退行为，皮肤不能替换 Agent 图标。
 
 - 主要对话区域回归：从非 Chat 页面启用主要对话，点击已有主要 Chat 后确认所有主要对话行继续可见且列表 DOM 不被卸载；点击暂无对话的 Agent、折叠侧栏和多次切换 Chat 后同样保持。复用真实的 Main Chat 路由下 Copilot launcher 隐藏条件，不能在夹具中始终置为可见。主要对话仅替换原置顶／普通／项目聊天区域，Kanban、自动化、独立新建对话、网站和其他能力入口的相对顺序保持。
 
