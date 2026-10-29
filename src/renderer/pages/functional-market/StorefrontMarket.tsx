@@ -1,3 +1,5 @@
+import {SkinMarketplace} from "./SkinMarketplace";
+import { PetMarketplace } from "./PetMarketplace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiOutlined,
@@ -175,6 +177,7 @@ function marketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "skills") return result.skillMessage ?? "";
   if (tab === "agents") return result.agentMessage ?? "";
   if (tab === "sandboxImages") return result.sandboxMessage ?? "";
+  if (tab === "skins") return result.skinMessage ?? "";
   if (tab === "pets") return result.petMessage ?? "";
   if (tab === "websiteApps") return result.websiteAppMessage ?? "";
   if (tab === "mcps") return result.connectorMessage ?? "";
@@ -188,6 +191,7 @@ function clearMarketMessageForTab(result: ReturnType<typeof createEmptyMarketRes
   else if (tab === "skills") next.skillMessage = "";
   else if (tab === "agents") next.agentMessage = "";
   else if (tab === "sandboxImages") next.sandboxMessage = "";
+  else if (tab === "skins") next.skinMessage = "";
   else if (tab === "pets") next.petMessage = "";
   else if (tab === "websiteApps") next.websiteAppMessage = "";
   else if (tab === "mcps") next.connectorMessage = "";
@@ -201,6 +205,7 @@ function marketOfflineForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "skills") return Boolean(result.skillOffline);
   if (tab === "agents") return Boolean(result.agentOffline);
   if (tab === "sandboxImages") return Boolean(result.sandboxOffline);
+  if (tab === "skins") return Boolean(result.skinOffline);
   if (tab === "pets") return Boolean(result.petOffline);
   if (tab === "websiteApps") return Boolean(result.websiteAppOffline);
   if (tab === "mcps") return Boolean(result.connectorOffline);
@@ -309,6 +314,7 @@ function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"
       return t("market.type.agent");
     case "sandbox-image":
       return t("market.type.sandboxImage");
+    case "skin": return t("market.type.skin");
     case "pet":
       return t("market.type.pet");
     case "cli":
@@ -666,7 +672,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       setMarketResult(next);
       setSelectedDetailItem(current => current ? next.items.find(item => item.type === current.type && item.id === current.id) ?? null : null);
       const initialItem = initialItemId
-        ? next.items.find((item) => item.id === initialItemId) ?? null
+        ? next.items.find((item) => item.id === initialItemId && (!["pets","skins"].includes(activeTab) || item.type === itemType)) ?? null
         : null;
       if (initialItem) {
         setSelectedDetailItem(initialItem);
@@ -1727,6 +1733,25 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
     return <ConnectorMarketplace items={activeItems} loading={isLoadingMarket}
       onTabChange={handleMarketTabChange} onChanged={() => refreshEverything(false, true)}
       onManage={() => navigate("/connectors")}
+      feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
+        <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
+        <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"
+          onClick={() => { setFeedback(""); setMarketResult((current) => clearMarketMessageForTab(current, activeTab)); }} />
+      </div> : null} />;
+  }
+  if(activeTab === "skins") {
+    return <SkinMarketplace items={activeItems} loading={isLoadingMarket} onTabChange={handleMarketTabChange}
+      onChanged={()=>refreshEverything(false,true)} onRefresh={()=>loadMarket(true,true)} detailItem={selectedDetailItem} onDetail={setSelectedDetailItem}
+      feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
+        <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"}/>
+        <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined/>} size="small" type="text"
+          onClick={()=>{setFeedback("");setMarketResult(current=>clearMarketMessageForTab(current,activeTab));}}/>
+      </div> : null}/>;
+  }
+  if (activeTab === "pets") {
+    return <PetMarketplace items={activeItems} loading={isLoadingMarket}
+      onTabChange={handleMarketTabChange} onChanged={() => refreshEverything(false, true)}
+      onRefresh={() => loadMarket(true, true)} detailItem={selectedDetailItem} onDetail={setSelectedDetailItem}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
         <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
         <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"

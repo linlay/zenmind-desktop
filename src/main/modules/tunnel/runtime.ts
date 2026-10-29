@@ -46,6 +46,7 @@ type TunnelHubRuntimeOptions = {
   desktopWsServerOptions: DesktopWsServerOptions;
   logger?: Logger;
   onConnected?: () => Promise<unknown> | unknown;
+  onConnectionChanged?: () => void;
   createTunnelClient?: (input: TunnelClientFactoryInput) => TunnelClient;
   readNetworkSignature?: () => string;
   networkMonitorIntervalMs?: number;
@@ -56,6 +57,7 @@ const LOG_LIMIT_BYTES = 128 * 1024;
 const LOG_PATH = "memory://desktop-tunnel-hub";
 const DEFAULT_NETWORK_MONITOR_INTERVAL_MS = 5_000;
 const MIN_NETWORK_MONITOR_INTERVAL_MS = 10;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function buildNetworkInterfaceSignature(platformLabel: string, interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>) {
   const entries: string[] = [];
@@ -187,7 +189,7 @@ export class TunnelHubRuntime {
     this.stopping = false;
     this.lastError = "";
     const settings = readTunnelHubSettings(this.options.app);
-    this.phase = settings.enabled ? "stopped" : "disabled";
+    this.setPhase(settings.enabled ? "stopped" : "disabled");
     this.log("stopped");
     return this.commandResult(true, "Tunnel Hub stopped.");
   }
@@ -369,6 +371,7 @@ export class TunnelHubRuntime {
       this.canConnect() && relayUrl === readTunnelHubSettings(this.options.app).relayUrl;
     const expire = () => {
       if (!ownsSession()) return;
+      if (Date.now() < expiresAt) return scheduleExpiry();
       this.clearCredentialSync();
       this.client = null;
       this.lastError = "Platform credential expired";
@@ -376,12 +379,21 @@ export class TunnelHubRuntime {
       client.close();
       this.scheduleReconnect();
     };
-    const scheduleRefresh = (delayMs: number) => {
-      this.credentialRefreshTimer = setTimeout(refresh, delayMs);
+    const scheduleExpiry = () => {
+      this.credentialExpiryTimer = setTimeout(expire,
+        Math.max(0, Math.min(MAX_TIMER_DELAY_MS, expiresAt - Date.now())));
+      this.credentialExpiryTimer.unref?.();
+    };
+    const scheduleRefresh = (refreshAt: number) => {
+      this.credentialRefreshTimer = setTimeout(() => {
+        if (!current()) return;
+        this.credentialRefreshTimer = null;
+        if (Date.now() < refreshAt) return scheduleRefresh(refreshAt);
+        void refresh();
+      }, Math.max(0, Math.min(MAX_TIMER_DELAY_MS, refreshAt - Date.now())));
       this.credentialRefreshTimer.unref?.();
     };
     const refresh = async () => {
-      this.credentialRefreshTimer = null;
       if (!current()) return;
       if (Date.now() >= expiresAt) return expire();
       try {
@@ -399,13 +411,12 @@ export class TunnelHubRuntime {
         if (Date.now() >= expiresAt) return expire();
         this.lastError = "Platform credential synchronization failed";
         this.log(this.lastError);
-        scheduleRefresh(5_000);
+        scheduleRefresh(Date.now() + 5_000);
       }
     };
     // Only credentials acknowledged by the Hub may extend the session deadline.
-    this.credentialExpiryTimer = setTimeout(expire, Math.max(0, expiresAt - Date.now()));
-    this.credentialExpiryTimer.unref?.();
-    scheduleRefresh(Math.max(0, expiresAt - Date.now() - 50_000));
+    scheduleExpiry();
+    scheduleRefresh(expiresAt - 50_000);
   }
 
   private createTunnelClient(input: TunnelClientFactoryInput) {
@@ -422,7 +433,7 @@ export class TunnelHubRuntime {
     }
     this.client = null;
     if (!readTunnelHubSettings(this.options.app).enabled) {
-      this.phase = "disabled";
+      this.setPhase("disabled");
       return;
     }
     this.setPhase("reconnecting");
@@ -504,7 +515,7 @@ export class TunnelHubRuntime {
       void this.stop();
       return;
     }
-    this.phase = "reconnecting";
+    this.setPhase("reconnecting");
     const delayMs = Math.max(1, settings.reconnectSeconds) * 1000;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -532,8 +543,16 @@ export class TunnelHubRuntime {
   }
 
   private setPhase(phase: TunnelHubRuntimePhase) {
+    const wasConnected = this.phase === "connected";
     this.phase = phase;
     this.log(`phase=${phase}`);
+    if (wasConnected !== (phase === "connected")) {
+      try {
+        this.options.onConnectionChanged?.();
+      } catch (error) {
+        this.options.logger?.warn?.(`[tunnel-hub] connection notification failed: ${messageFromError(error)}`);
+      }
+    }
   }
 
   private log(message: string) {

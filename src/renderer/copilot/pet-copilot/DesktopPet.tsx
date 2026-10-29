@@ -34,6 +34,7 @@ import {
   getDesktopPetStatusAssetPath,
   isDesktopPetAnimatedAsset,
   normalizeDesktopPetAppearanceId,
+  versionedDesktopPetAssetUrl,
   resolveDesktopPetSignatureActions
 } from "../../../shared/desktop-pet";
 import {
@@ -224,11 +225,6 @@ function getDesktopPetSpriteAssetBasePath(appearanceId: string) {
     : `./desktop-pet/${appearanceId}`;
 }
 
-function joinDesktopPetAssetPath(basePath: string, relativePath: string) {
-  const normalizedBasePath = basePath.endsWith("/") ? basePath : `${basePath}/`;
-  return `${normalizedBasePath}${relativePath.replace(/^\/+/u, "")}`;
-}
-
 function resolveDesktopPetAppearanceOption(
   state: DesktopPetState,
   appearanceId: string
@@ -246,7 +242,7 @@ function resolveDesktopPetVisualAsset(
   if (stateAsset) {
     const basePath = customAppearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
     return {
-      assetPath: joinDesktopPetAssetPath(basePath, stateAsset.path),
+      assetPath: versionedDesktopPetAssetUrl(basePath, stateAsset.path, customAppearance?.assetVersion),
       asset: stateAsset
     };
   }
@@ -263,7 +259,7 @@ function resolveDesktopPetSignatureAssetPath(
 ) {
   const appearance = resolveDesktopPetAppearanceOption(state, appearanceId);
   const basePath = appearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
-  return joinDesktopPetAssetPath(basePath, variantPath);
+  return versionedDesktopPetAssetUrl(basePath, variantPath, appearance?.assetVersion);
 }
 
 function chooseDesktopPetSignatureVariant(action: DesktopPetSignatureAction): DesktopPetSignatureVariant | null {

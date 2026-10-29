@@ -3781,6 +3781,7 @@ export function ServiceWebviewSurface({
       className={[
         "embedded-surface-page",
         "embedded-surface-page-embedded",
+        hostBackgroundSurface && active !== false ? "agent-webclient-background-surface" : "",
         hostSkinBackground ? "agent-webclient-host-background" : ""
       ].filter(Boolean).join(" ")}
       {...surfaceVisibilityProps}

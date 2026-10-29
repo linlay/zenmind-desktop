@@ -189,7 +189,7 @@ Identity 清空 canonical 凭据时同步通知会话交换模块取消在途请
 
 手机邮箱登录复用官网已有会话接口，官网 JWT 仅用于 Hub 识别用户和检查电脑归属。Identity Center 继续提供原本地 App Token；其本地设备、主体、密钥与官网账号分开。Hub 注册 ID 不等于本地 Identity 设备 ID。
 
-已登录并开启 Tunnel 的 Desktop 复用既有票据签发缓存取得本地 App Token，验证后在 tunnel.open 上传给 Hub。当前连接保留握手 sessionId，到期前通过既有注册 API 更新同一在线连接的内存票据；不重注册电脑、不为票据更新重启健康 Tunnel。Runtime 串行重试续期，直到成功、取消或 Hub 已确认的票据到期；独立到期保护取消在途更新、关闭连接并进入既有重连流程，签发或 HTTP 请求挂起也不能延长在线状态。Registration 仅执行可取消且有超时的 HTTP 更新及身份校验。更新、重连和退出沿用同一 generation、客户端及会话身份校验，迟到结果不得写入新会话；停止、断线及连接替换统一清理续期、到期保护和在途请求。关闭 Tunnel 即释放 Hub 内存票据。
+已登录并开启 Tunnel 的 Desktop 复用既有票据签发缓存取得本地 App Token，验证后在 tunnel.open 上传给 Hub。当前连接保留握手 sessionId，到期前通过既有注册 API 更新同一在线连接的内存票据；不重注册电脑、不为票据更新重启健康 Tunnel。Runtime 串行重试续期，直到成功、取消或 Hub 已确认的票据到期；独立到期保护取消在途更新、关闭连接并进入既有重连流程，签发或 HTTP 请求挂起也不能延长在线状态。Registration 仅执行可取消且有超时的 HTTP 更新及身份校验。更新、重连和退出沿用同一 generation、客户端及会话身份校验，迟到结果不得写入新会话；停止、断线及连接替换统一清理续期、到期保护和在途请求。关闭 Tunnel 即释放 Hub 内存票据。 长有效期凭据按绝对截止时间分段等待，每次唤醒重新核对真实期限；定时器单段等待上限不改变凭据有效期，也不能提前触发到期回收。
 
 Hub 验证官网证明和目标归属后，手机取回所选电脑的原 App Token；业务 WS/HTTP 仍由 Desktop 验证本地 Identity 签名、scope、设备与期限。远端连接用手机新取得的票据执行 auth.refresh，Desktop 不替远端签发票据。WS、上传与资源请求同时携带独立官网证明，Hub 不把官网身份透传给 Platform。WebApp 通过受控请求取得短期、同源 HttpOnly 不透明 Cookie，业务 Token 不进入 WebView URL 或页面 header；Cookie 随在线连接消失，到期或关闭后失效。
 

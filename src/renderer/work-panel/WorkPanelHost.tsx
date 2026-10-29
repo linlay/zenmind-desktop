@@ -1284,12 +1284,14 @@ export function WorkPanelHost({
     if (!currentItem) return;
     if (nativeImage) {
       if (currentItem.descriptor.kind !== "native" || currentItem.descriptor.context.handleId !== nativeImage.handleId) return;
-      if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app") {
+      if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app" || result.actionId === "download-resource") {
         const request = { ownerChatId, rendererGeneration: rendererGenerationRef.current, handleId: String(nativeImage.handleId) };
         try {
           const outcome = result.actionId === "reveal-resource"
             ? await window.electronAPI.chatWorkPanel.resourceImages.reveal(request)
-            : await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...request, mode: "default" });
+            : result.actionId === "download-resource"
+              ? await window.electronAPI.chatWorkPanel.resourceImages.saveCopy(request)
+              : await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...request, mode: "default" });
           if (!outcome.ok && outcome.message) modal.error({ content: outcome.message });
         } catch { modal.error({ content: t("chatWorkPanel.resourceActions.failed") }); }
         return;

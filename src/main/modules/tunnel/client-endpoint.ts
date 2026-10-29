@@ -351,23 +351,12 @@ function readTextJsonPayload(message: TunnelHubWebSocketMessage) {
   return message.type === 0x1 ? JSON.parse(message.payload.toString("utf8")) as TunnelStreamEnvelope : null;
 }
 
-async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClientEndpointOptions) {
+async function writeTunnelOpen(
+  ws: TunnelHubWebSocketClient,
+  options: TunnelClientEndpointOptions,
+  onOpened: (sessionId: string) => void
+) {
   const id = createControlId(TUNNEL_OPEN_ID_PREFIX);
-  ws.sendMessage(0x1, Buffer.from(JSON.stringify({
-    v: 1,
-    ns: TUNNEL_NAMESPACE_DESKTOP,
-    frame: "request",
-    type: "tunnel.open",
-    id,
-    payload: {
-      identityToken: options.identityToken,
-      platformCredential: options.platformCredential,
-      deviceId: options.deviceId,
-      client: TUNNEL_CLIENT_NAME,
-      capabilities: TUNNEL_CLIENT_CAPABILITIES
-    }
-  }), "utf8"));
-
   return new Promise<string>((resolve, reject) => {
     let settled = false;
     const fail = (error: Error) => {
@@ -408,13 +397,20 @@ async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClie
         readText(response.type) === "tunnel.open" &&
         code === 0
       ) {
-        settled = true;
-        cleanup();
         const sessionId = isRecord(response.data) ? readText(response.data.sessionId) : "";
         if (!sessionId) {
-          reject(new Error("Tunnel sessionId is required"));
+          fail(new Error("Tunnel sessionId is required"));
           return;
         }
+        try {
+          // Install the stream consumer before parsing any bytes following this response.
+          onOpened(sessionId);
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+        settled = true;
+        cleanup();
         resolve(sessionId);
         return;
       }
@@ -424,6 +420,25 @@ async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClie
     ws.on("message", handleMessage);
     ws.on("error", handleError);
     ws.on("close", handleClose);
+    try {
+      ws.sendMessage(0x1, Buffer.from(JSON.stringify({
+        v: 1,
+        ns: TUNNEL_NAMESPACE_DESKTOP,
+        frame: "request",
+        type: "tunnel.open",
+        id,
+        payload: {
+          identityToken: options.identityToken,
+          platformCredential: options.platformCredential,
+          deviceId: options.deviceId,
+          client: TUNNEL_CLIENT_NAME,
+          capabilities: TUNNEL_CLIENT_CAPABILITIES
+        }
+      }), "utf8"));
+      ws.startReceiving();
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }
 
@@ -506,9 +521,28 @@ export class TunnelClientEndpoint extends EventEmitter {
       tlsInsecureSkipVerify: this.options.tlsInsecureSkipVerify,
       timeoutMs: 10_000
     });
+    if (this.closed) {
+      ws.close();
+      throw new Error("Tunnel connect cancelled");
+    }
     this.ws = ws;
     try {
-      this.sessionId = await writeTunnelOpen(ws, this.options);
+      await writeTunnelOpen(ws, this.options, (sessionId) => {
+        if (this.closed) {
+          throw new Error("Tunnel connect cancelled");
+        }
+        this.sessionId = sessionId;
+        const session = new TunnelHubYamuxSession(ws);
+        this.session = session;
+        session.on("stream", (stream: TunnelHubYamuxStream) => {
+          void this.handleStream(stream).catch((error) => {
+            this.options.logger?.warn?.(`[tunnel-endpoint] stream failed: ${error instanceof Error ? error.message : String(error)}`);
+            stream.reset();
+          });
+        });
+        session.on("error", (error) => this.emit("error", error));
+        session.on("close", () => this.emit("close"));
+      });
     } catch (error) {
       ws.close();
       this.ws = null;
@@ -518,17 +552,6 @@ export class TunnelClientEndpoint extends EventEmitter {
       ws.close();
       throw new Error("Tunnel connect cancelled");
     }
-    const session = new TunnelHubYamuxSession(ws);
-    this.ws = ws;
-    this.session = session;
-    session.on("stream", (stream: TunnelHubYamuxStream) => {
-      void this.handleStream(stream).catch((error) => {
-        this.options.logger?.warn?.(`[tunnel-endpoint] stream failed: ${error instanceof Error ? error.message : String(error)}`);
-        stream.reset();
-      });
-    });
-    session.on("error", (error) => this.emit("error", error));
-    session.on("close", () => this.emit("close"));
   }
 
   close() {
@@ -781,6 +804,10 @@ export class TunnelClientEndpoint extends EventEmitter {
       return;
     }
 
+    const closeBoth = () => {
+      localWs?.close(1000, "tunnel websocket closing");
+      stream.end();
+    };
     try {
       const headers = stripWebSocketDialHeaders(publicRequest.headers);
       applyForwardHeaders(headers, publicRequest, target);
@@ -788,6 +815,13 @@ export class TunnelClientEndpoint extends EventEmitter {
         headers,
         timeoutMs: 10_000
       });
+      localWs.on("message", (message: TunnelHubWebSocketMessage) => {
+        if (message.type === 0x1 || message.type === 0x2) {
+          void stream.write(encodeWsFrame(message.type, message.payload)).catch(closeBoth);
+        }
+      });
+      localWs.on("close", closeBoth);
+      localWs.on("error", closeBoth);
       await writeTunnelJson(stream, {
         v: 1,
         ns: TUNNEL_NAMESPACE_WEBAPP,
@@ -801,23 +835,15 @@ export class TunnelClientEndpoint extends EventEmitter {
           headers: {}
         }
       });
+      localWs.startReceiving();
     } catch (error) {
-      await writeWebAppError(stream, envelope, 502, error);
-      stream.end();
+      try {
+        await writeWebAppError(stream, envelope, 502, error);
+      } finally {
+        closeBoth();
+      }
       return;
     }
-
-    const closeBoth = () => {
-      localWs?.close(1000, "tunnel websocket closing");
-      stream.end();
-    };
-    localWs.on("message", (message: TunnelHubWebSocketMessage) => {
-      if (message.type === 0x1 || message.type === 0x2) {
-        void stream.write(encodeWsFrame(message.type, message.payload)).catch(() => closeBoth());
-      }
-    });
-    localWs.on("close", closeBoth);
-    localWs.on("error", closeBoth);
 
     try {
       for (;;) {

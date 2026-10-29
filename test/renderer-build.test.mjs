@@ -5787,7 +5787,7 @@ test("native image controls keep semantic colors across interaction states and t
   );
 });
 
-test("native image modes keep viewing actions on top and photo tools in a sidebar", () => {
+test("native image modes keep preview actions in the floating bar and photo tools in a sidebar", () => {
   const source = readSourceFile(
     "src",
     "renderer",
@@ -5796,11 +5796,16 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   );
   const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
 
+  assert.match(source, /editing \? \(\s*<div className="work-panel-image-toolbar is-editing"/u);
+  assert.doesNotMatch(source, /work-panel-image-toolbar is-preview/u);
   assert.match(
     source,
-    /!editing \? \([\s\S]*?className="work-panel-image-open-with"[\s\S]*?className="work-panel-image-edit-button"[\s\S]*?\) : \(/u
+    /className="work-panel-image-zoom-float"[\s\S]*?className="work-panel-image-info-button"[\s\S]*?<ImageZoomControl[\s\S]*?className="work-panel-image-download-button"[\s\S]*?className="work-panel-image-edit-button"/u
   );
-  assert.equal(source.match(/className="work-panel-image-open-with"/gu)?.length, 1);
+  assert.match(styles, /\.work-panel-image-zoom-float\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*14px;[^}]*left:\s*50%;/u);
+  assert.equal(source.match(/<ImageZoomControl/gu)?.length, 1);
+  assert.match(styles, /\.work-panel-image-zoom-float \.work-panel-image-download-button\s*\{[^}]*width:\s*30px;/u);
+  assert.doesNotMatch(source, /className="work-panel-image-open-with"/u);
   assert.doesNotMatch(source, /className="work-panel-image-file"/u);
   assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?<strong>\{resource\.fileName\}<\/strong>/u);
   assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
@@ -5815,7 +5820,6 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
     /className="work-panel-image-save-actions"[\s\S]*?chatWorkPanel\.image\.cancel[\s\S]*?chatWorkPanel\.image\.overwrite[\s\S]*?chatWorkPanel\.image\.saveNew/u
   );
   assert.match(styles, /\.work-panel-image-toolbar\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/u);
-  assert.match(styles, /\.work-panel-image-toolbar\.is-preview\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
   assert.match(styles, /\.work-panel-image-toolbar\.is-editing\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
   assert.match(styles, /@container \(max-width: 760px\)[\s\S]*?\.work-panel-image-toolbar\.is-editing \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*none;/u);
   assert.match(styles, /\.work-panel-image-toolbar\.is-editing \.is-return-to-preview \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*inline;/u);

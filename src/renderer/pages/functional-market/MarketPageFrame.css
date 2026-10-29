@@ -2,6 +2,10 @@
   --market-control-bg: #ffffff;
   --market-control-card: #ffffff;
   --market-control-card-soft: #f7faff;
+  --market-card-surface: color-mix(in srgb, var(--market-control-card) 62%, transparent);
+  --market-card-soft-surface: color-mix(in srgb, var(--market-control-card-soft) 62%, transparent);
+  --market-card-hover-surface: color-mix(in srgb, var(--market-control-card-soft) 70%, transparent);
+  --market-card-muted: color-mix(in srgb, var(--market-control-text) 88%, var(--market-control-card));
   --market-control-border: rgba(15, 23, 42, 0.1);
   --market-control-text: #18181b;
   --market-control-muted: #64748b;
@@ -28,6 +32,9 @@
   --market-control-bg: #0f141b;
   --market-control-card: #171e28;
   --market-control-card-soft: #121821;
+  --market-card-surface: color-mix(in srgb, var(--market-control-card) 74%, transparent);
+  --market-card-soft-surface: color-mix(in srgb, var(--market-control-card-soft) 74%, transparent);
+  --market-card-hover-surface: color-mix(in srgb, var(--market-control-card-soft) 80%, transparent);
   --market-control-border: rgba(148, 163, 184, 0.16);
   --market-control-text: #e7edf6;
   --market-control-muted: #94a3b8;

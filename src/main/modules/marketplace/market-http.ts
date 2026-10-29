@@ -50,6 +50,8 @@ export function marketRoute(type: MarketItemType) {
       return "sandbox-images";
     case "pet":
       return "pets";
+    case "skin":
+      return "skins";
     case "cli":
       return "cli-tools";
     case "mcp":

@@ -2,7 +2,7 @@ import { SKIN_VISUAL_LIMITS, isSkinVisualDataUrl, type SkinVisuals } from "../..
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { isInstalledDesktopSkinId, type InstalledDesktopSkinId, type InstalledDesktopSkinSummary } from "../../../shared/desktop-appearance";
+import { isInstalledDesktopSkinId, type DesktopSkinPreview, type InstalledDesktopSkinId, type InstalledDesktopSkinSummary } from "../../../shared/desktop-appearance";
 import type { DesktopSkinDefinition, DesktopSkinBackground } from "../../../shared/desktop-skin-definition";
 import { parseSkinPackageManifest, resolveSkinPackageTokens, SKIN_PACKAGE_LIMITS as limits, SkinPackageError, type SkinPackageManifest } from "../../../shared/desktop-skin-package";
 import { readSkinPackageArchive } from "./skin-package-archive";
@@ -16,6 +16,7 @@ export function createSkinPackageStore(options: {
   makePreview?: (data: Buffer) => Buffer;
 }) {
   const directory = (id: InstalledDesktopSkinId) => path.join(options.root, id.slice(5));
+  const previewImages = new Map<string, { signature: string; imageUrl: string }>();
   function readManifest(id: InstalledDesktopSkinId) {
     const dir = directory(id);
     if (!fs.lstatSync(dir).isDirectory()) throw new Error("Invalid skin directory.");
@@ -50,7 +51,7 @@ export function createSkinPackageStore(options: {
     return ids().slice(0, limits.installed).flatMap((id) => {
       try {
         const manifest = readManifest(id);
-        return [{ id, name: manifest.name, version: manifest.version, author: manifest.author,
+        return [{ id, packageId: manifest.id, name: manifest.name, version: manifest.version, author: manifest.author,
           previewDataUrl: manifest.preview ? readImage(id, manifest.preview, PREVIEW_BYTES) : null }];
       } catch { return []; }
     });
@@ -87,8 +88,39 @@ export function createSkinPackageStore(options: {
         tokens: { light: resolveSkinPackageTokens(manifest.variants.light.tokens), dark: resolveSkinPackageTokens(manifest.variants.dark.tokens) }, backgrounds, visuals };
     } catch { return null; }
   }
+  function previewBackground(id: InstalledDesktopSkinId, mode: "light" | "dark", name: string): string | null {
+    const key = `${id}:${mode}`;
+    try {
+      const target = path.join(directory(id), name), stat = fs.lstatSync(target);
+      if (!stat.isFile() || stat.size > MAX_BACKGROUND_STORED_BYTES) throw new Error("Invalid preview source.");
+      const signature = `${name}:${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+      const cached = previewImages.get(key);
+      if (cached?.signature === signature) {
+        previewImages.delete(key); previewImages.set(key, cached);
+        return cached.imageUrl;
+      }
+      const bytes = readBoundedFile(target, MAX_BACKGROUND_STORED_BYTES);
+      inspectBackgroundImage(bytes);
+      const preview = options.makePreview ? options.makePreview(bytes) : bytes;
+      if (preview.length > PREVIEW_BYTES || !preview.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("Invalid preview image.");
+      inspectBackgroundImage(preview);
+      const imageUrl = `data:image/png;base64,${preview.toString("base64")}`;
+      previewImages.delete(key); previewImages.set(key, { signature, imageUrl });
+      while (previewImages.size > limits.installed * 2) previewImages.delete(previewImages.keys().next().value!);
+      return imageUrl;
+    } catch { previewImages.delete(key); return null; }
+  }
+  function preview(id: unknown, mode: unknown): DesktopSkinPreview | null {
+    if (!isInstalledDesktopSkinId(id) || (mode !== "light" && mode !== "dark")) return null;
+    try {
+      const variant = readManifest(id).variants[mode];
+      const imageUrl = variant.background && previewBackground(id, mode, variant.background.path);
+      return { tokens: resolveSkinPackageTokens(variant.tokens),
+        background: imageUrl ? { imageUrl, position: variant.background!.position } : null };
+    } catch { return null; }
+  }
   return {
-    list, resolve,
+    list, resolve, preview,
     recoverRemovals(selectedId: string) {
       let entries: string[];
       try { entries = fs.readdirSync(options.root); }
@@ -103,8 +135,9 @@ export function createSkinPackageStore(options: {
         else { try { fs.rmSync(tombstone, { recursive: true, force: true }); } catch { /* Retry owned cleanup on the next read. */ } }
       }
     },
-    async install(filePath: string, assertOwner: () => void): Promise<InstalledDesktopSkinId> {
+    async install(filePath: string, assertOwner: () => void, expected?: { id: string; version: string }): Promise<InstalledDesktopSkinId> {
       const { manifest, images } = await readSkinPackageArchive(filePath);
+      if (expected && (manifest.id !== expected.id || manifest.version !== expected.version)) throw new SkinPackageError("invalidPackage");
       const existing = ids();
       for (const id of existing) {
         let installed: SkinPackageManifest;

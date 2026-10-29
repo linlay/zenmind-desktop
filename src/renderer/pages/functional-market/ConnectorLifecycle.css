@@ -68,7 +68,7 @@
 .connector-detail-brand-row .connector-detail-icon { flex: 0 0 52px; width: 52px; height: 52px; overflow: hidden; background: transparent; }
 
 .connector-discovery .connector-market-card { min-height: 0; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; }
-.connector-discovery .connector-market-card:hover { background: color-mix(in srgb, var(--market-control-card) 92%, var(--text-primary) 8%); border-color: color-mix(in srgb, var(--market-control-muted) 28%, transparent); box-shadow: none; }
+.connector-discovery .connector-market-card:hover { background: var(--market-card-hover-surface); border-color: color-mix(in srgb, var(--market-control-muted) 28%, transparent); box-shadow: none; }
 .connector-discovery .connector-market-card:focus-visible { outline: 2px solid var(--accent-color, #5b5cf0); outline-offset: 2px; }
 
 /* Keep connector identity/actions visible while expanded documentation scrolls. */

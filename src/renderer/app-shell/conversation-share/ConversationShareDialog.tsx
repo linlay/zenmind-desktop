@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { CopyOutlined, GlobalOutlined, QrcodeOutlined } from "@ant-design/icons";
 import { Spin } from "antd";
 import type { TranslateFunction } from "../../../shared/i18n";
+import { ConversationShareOmissions } from "./ConversationShareOmissions";
 import { ConversationShareQrDialog } from "./ConversationShareQrDialog";
 import { useConversationShareDialog, type ConversationShareAction } from "./useConversationShareDialog";
 
@@ -58,10 +59,10 @@ export function ConversationShareDialog({
   }, []);
 
   useEffect(() => {
-    if (state.phase !== "done") return;
+    if (state.phase !== "done" || state.omittedResources.length) return;
     const timer = window.setTimeout(() => onCloseRef.current(), 1_800);
     return () => window.clearTimeout(timer);
-  }, [state.phase]);
+  }, [state.phase, state.omittedResources]);
 
   return (
     <div
@@ -74,11 +75,10 @@ export function ConversationShareDialog({
         <div className="conversation-share-toast" data-kind={state.feedback.kind} role={state.feedback.kind === "error" ? "alert" : "status"}>
           {state.feedback.kind === "loading" ? <Spin size="small" aria-hidden="true" /> : null}
           <span>{state.feedback.message}</span>
-          {state.phase === "done" && state.warning ? <small>{state.warning}</small> : null}
         </div>
       ) : null}
 
-      {state.phase === "choice" ? (
+      {state.phase === "choice" || (state.phase === "done" && state.omittedResources.length > 0) ? (
         <section
           ref={dialogRef}
           className="conversation-share-dialog"
@@ -106,7 +106,7 @@ export function ConversationShareDialog({
             </div>
           ) : (
             <div className="conversation-share-choice-body">
-              <div className="conversation-share-actions">
+              {state.phase === "choice" ? <div className="conversation-share-actions">
                 {ACTIONS.map(({ id, icon: Icon, label }) => (
                   <button
                     key={id}
@@ -124,8 +124,8 @@ export function ConversationShareDialog({
                     <span>{t(label)}</span>
                   </button>
                 ))}
-              </div>
-              {state.warning ? <p className="conversation-share-warning" role="note">{state.warning}</p> : null}
+              </div> : null}
+              <ConversationShareOmissions items={state.omittedResources} t={t} />
             </div>
           )}
         </section>
@@ -134,7 +134,7 @@ export function ConversationShareDialog({
           url={state.createdRecord.url}
           chatId={chatId}
           chatName={chatName}
-          warning={state.warning}
+          omittedResources={state.omittedResources}
           t={t}
           onClose={onClose}
           onFeedback={notify}

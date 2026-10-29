@@ -1,3 +1,5 @@
+import { readMarketSkinAsset } from "./skin-preview";
+import { readMarketPetAsset } from "./pet-preview";
 import { getCustomMcpConfig, saveCustomMcpConfig } from "./custom-mcp-config";
 import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesystem/download-paths";
 import { readMarketSkillContent } from "./skill-detail";
@@ -24,6 +26,8 @@ export interface MarketplaceIpcHandlerOptions {
   refreshMarketCatalog: (app: any, options?: any) => Promise<any>;
   toggleMarketFavorite: (app: any, input: any) => Promise<any>;
   installMarketItem: (app: any, itemId: string) => Promise<any>;
+  installSkinMarketItem?: (app: any, itemId: string, assertOwner: () => void) => Promise<any>;
+  installPetMarketItem?: (app: any, itemId: string, assertOwner: () => void) => Promise<any>;
   updateMarketItem: (app: any, itemId: string) => Promise<any>;
   uninstallMarketItem: (app: any, itemId: string) => Promise<any>;
   buildSandboxImage: (app: any, itemId: string) => Promise<any>;
@@ -133,6 +137,23 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     }
     return readMarketSkillContent(app, id);
   });
+  ipcMain.handle("market.installSkin", async(event:any,id:unknown) => {
+    assertPinSender(event);
+    if(typeof id!=="string"||!/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u.test(id)||!options.installSkinMarketItem)throw new Error("market_skin_invalid");
+    return runServiceMutation(()=>options.installSkinMarketItem!(app,id,()=>{assertPinSender(event)}));
+  });
+  ipcMain.handle("market.readSkinAsset",async(event:any,input:unknown)=>{assertPinSender(event);return readMarketSkinAsset(app,input)});
+  ipcMain.handle("market.installPet", async (event: any, id: unknown) => {
+    assertPinSender(event);
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{0,79}$/u.test(id) || !options.installPetMarketItem) throw new Error("market_pet_invalid");
+    return runServiceMutation(async () => {
+      assertPinSender(event);
+      const result = await options.installPetMarketItem!(app, id, () => { assertPinSender(event); });
+      if (result.ok) onMarketCommandResult?.(result);
+      return result;
+    });
+  });
+  ipcMain.handle("market.readPetAsset", async (event: any, input: unknown) => { assertPinSender(event); return readMarketPetAsset(app, input); });
   ipcMain.handle("market.saveSettings", async (_event: any, input: any) => saveMarketSettings(app, input));
   ipcMain.handle("market.list", async (_event: any, listOptions: any) => listMarketItems(app, listOptions));
   ipcMain.handle("market.refresh", async (_event: any, listOptions: any) => refreshMarketCatalog(app, listOptions));
