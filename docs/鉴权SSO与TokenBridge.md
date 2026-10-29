@@ -97,7 +97,7 @@ Frame Port contract 与 Agent WebClient bundle、vendored contract hash 和 Desk
 
 ### 内置服务与 Host Bash
 
-Desktop 通过 `--sso-id-token-file` 把 `sso-id-token.txt` 的绝对路径交给 `agent-platform`；双方启动契约同批发布，不兼容旧参数。Platform 在创建普通智能体 Host Bash 时按需读取并注入，不把 token 放入 Desktop 全局环境或服务启动参数。
+Desktop 通过 `--sso-id-token-file` 把 `sso-id-token.txt` 的绝对路径交给 `agent-platform`；双方启动契约同批发布，不兼容旧参数。Platform 仅向已验证的单条直接 oneid CLI 子进程及 oneid stdio MCP 提供 `AP_ID_TOKEN`，HTTP MCP 按请求从同一文件生成 Bearer；普通 Host Bash、Terminal 和 Container 不自动获得身份。连接器模板统一为 `${AP_ID_TOKEN}`，旧身份变量名不提供兼容。token 不进入 Desktop 全局环境或服务启动参数。
 
 Platform 的第二个消费方是声明 `useSsoIdToken: true` 的模型 Provider：每次出站模型请求重新读取该文件，只发往该 Provider 的 `baseUrl`，所有协议统一使用 `Authorization: Bearer`。该 Provider 不再使用 YAML 中的 `apiKey`，也不把 token 写回 registry、日志或 Provider 摘要。KBX 与记忆 worker 只在单次调用的私有配置中携带当次读取的 token，不常驻保存。当前不维护 Provider 地址白名单：能修改该 Provider YAML 的执行面可以改写 `baseUrl` 并收到账号级 token，因此 registry 写权限必须保持受控。静态 `apiKey` 对能读取 registry 的执行面同样可见，但 SSO token 的作用范围更大；若需收紧，由 Platform 固定 `useSsoIdToken` Provider 的目标地址。
 
