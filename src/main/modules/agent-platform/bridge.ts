@@ -104,27 +104,31 @@ export class AgentPlatformAssistantBridge {
     return this.realtimeBroker.subscribeRun({ ...input, baseUrl: available.baseUrl, token: available.token, kind: "internal", role: "internal" });
   }
 
-  async observeExecuteRun(requestId: string, agentKey: string,
-    onRun: (run: { runId: string; chatId: string; agentKey: string }) => void, signal: AbortSignal): Promise<() => void> {
+  observeExecuteRun(requestId: string, agentKey: string,
+    onRun: (run: { runId: string; chatId: string; agentKey: string }) => void, signal: AbortSignal): () => void {
     signal.throwIfAborted();
+    let closed = false;
+    const startedAt = Date.now();
     const release = this.realtimeBroker.subscribePush({ types: ["run.started"], kind: "internal", consumerId: `execute:${requestId}`,
       onPush(frame) {
         const data = frame.data as Record<string, unknown> | undefined;
-        if (!signal.aborted && data?.requestId === requestId && data.agentKey === agentKey &&
+        if (!closed && !signal.aborted && data?.requestId === requestId && data.agentKey === agentKey &&
             typeof data.runId === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(data.runId) &&
             typeof data.chatId === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(data.chatId)) {
           onRun({ runId: data.runId, chatId: data.chatId, agentKey });
         }
       }
     });
-    const cleanup = () => { release(); signal.removeEventListener("abort", cleanup); };
+    const cleanup = () => { if (closed) return; closed = true; release(); signal.removeEventListener("abort", cleanup); };
     signal.addEventListener("abort", cleanup, { once: true });
-    try {
+    // Register synchronously; an optional Push connection must never block HTTP execute.
+    void (async () => {
       const available = await this.platform.resolvePlatform();
-      if (!available.ok || signal.aborted) { cleanup(); return () => {}; }
+      if (!available.ok || signal.aborted || closed) return;
       await this.realtimeBroker.ensureConnected(available.baseUrl, available.token);
-      if (signal.aborted) cleanup();
-    } catch { cleanup(); } // HTTP disconnection still cancels execute if Push is unavailable.
+    })().catch(() => {
+      if (!closed) console.warn("[webapp-execute]", { requestId, stage: "push", elapsedMs: Date.now() - startedAt, code: "assistant_push_unavailable" });
+    });
     return cleanup;
   }
 

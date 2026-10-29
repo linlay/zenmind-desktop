@@ -3,12 +3,22 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { createRequire } from 'node:module';
 let fetcher;
+globalThis.__executeNodeFetch=(...args)=>fetcher(...args);
 globalThis.__executeElectron = { net: { fetch: (...args) => fetcher(...args) } };
 const { outputFiles } = await build({
-  stdin: { contents: `export * from './src/main/modules/desktop-actions/webapp-execute'; export * from './src/shared/webapp-execute'; export * from './src/main/modules/webs/webapps/capability-policy'; export * from './src/main/modules/desktop-actions/webapp-connector';`, resolveDir: process.cwd() },
+  stdin: { contents: `export * from './src/main/modules/desktop-actions/webapp-execute'; export * from './src/main/infrastructure/network/node-json-request'; export * from './src/shared/webapp-execute'; export * from './src/main/modules/webs/webapps/capability-policy'; export * from './src/main/modules/desktop-actions/webapp-connector'; export {probeWebappExecutionIdentity} from './src/main/modules/desktop-actions/webapp-platform-client';`, resolveDir: process.cwd() },
   bundle: true, write: false, platform: 'node', format: 'esm',
   banner: { js: 'import {createRequire} from "node:module"; const require=createRequire('+JSON.stringify(import.meta.url)+');' },
   plugins: [{name:'ports',setup(b) {
+    b.onResolve({filter:/node-json-request$/},()=>({path:'node-request',namespace:'stub-node-request'}));
+    b.onLoad({filter:/.*/,namespace:'stub-node-request'},()=>({contents:`
+      export class NodeJsonRequestError extends Error { constructor(code) {super(code);this.code=code;} }
+      export async function postNodeJson(url,options) {
+        const response=await globalThis.__executeNodeFetch(url,options);
+        const bytes=await response.arrayBuffer();
+        if(bytes.byteLength>options.maxResponseBytes)throw new NodeJsonRequestError('response_too_large');
+        return new Response(bytes,{status:response.status,headers:response.headers});
+      }`}));
     b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));
     b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const {net,dialog,BrowserWindow,shell,session}=globalThis.__executeElectron;'}));
     b.onResolve({filter:/^\.\.\/artifacts$/},()=>({path:'artifacts',namespace:'stub-artifacts'}));
@@ -31,7 +41,7 @@ function fixture() {
     issueAgentAccessToken:async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:identity})).toString('base64url')+'.s'}),
     services:{getResponsiveServiceState:async()=>({status:'running',healthMeta:{webUrl:'http://127.0.0.1:1234'}})},
     webs:{webappManager:{list:()=>[item],readUserConfig:()=>({})},webappRuntime:{getStatus:()=>runtime}},
-    assistantBridge:{listAgents:async()=>[{agentKey:'chosen'}],observeExecuteRun:async(requestId,agentKey,callback,signal)=>{
+    assistantBridge:{listAgents:async()=>[{agentKey:'chosen'}],observeExecuteRun:(requestId,agentKey,callback,signal)=>{
       onRun=()=>{if(!signal.aborted) callback({runId:'run-1',chatId:'chat-1',agentKey})};return ()=>{onRun=undefined};
     }}
   };
@@ -61,6 +71,7 @@ test('invalid inputs, permissions and sources are rejected before HTTP',async()=
 for (const [platformCode,expected,status] of [['approval_required','approval_required',403],['output_invalid','output_invalid',422],['output_missing','output_missing',422],['cancelled','cancelled',409],['run_error','assistant_failed',500],['agent_not_found','assistant_agent_unavailable',404],['result_submit_unavailable','assistant_agent_unsupported',400],['execute_unsupported_agent','assistant_agent_unsupported',400],['unknown_field','invalid_args',400]]) test('maps '+platformCode+' without leaking raw cause',async()=>{
  fetcher=async()=>json({chatId:'chat-1',error:{code:platformCode,message:'secret-token'},cause:'secret-token'},status);
  const result=await run(fixture());assert.equal(result.error.code,expected);assert.equal(result.error.details.chatId,'chat-1');assert.equal(JSON.stringify(result).includes('secret-token'),false);
+ if(['agent_not_found','result_submit_unavailable','execute_unsupported_agent','unknown_field'].includes(platformCode))assert.equal(result.error.details.executionState,'not_started');
 });
 test('malformed and oversized responses fail without retry',async()=>{
  for(const data of [{chatId:'chat-1',status:'success'},{chatId:'chat-1',status:'unknown'},{chatId:'',status:'failure',reason:'x'}]) {
@@ -79,6 +90,8 @@ for(const reason of ['disconnect','revoke','timeout','stop','identity']) test(re
  const promise=run(f,input,{timeoutMs:reason==='timeout'?30:1000,checkMs:5});await ready;
  if(reason==='disconnect')f.request.abort();if(reason==='revoke')f.grant.abort();if(reason==='stop')api.stopWebappExecutions();if(reason==='identity')f.setIdentity('other');
  const result=await promise;assert.equal(result.error.code,reason==='timeout'?'assistant_timeout':reason==='revoke'||reason==='identity'?'app_grant_required':'cancelled');
+ if(reason==='identity') {assert.equal(interrupted,undefined);return;}
+ for(let i=0;i<100&&!interrupted;i++)await new Promise(resolve=>setImmediate(resolve));
  assert.equal(interrupted.runId,'run-1');assert.equal(interrupted.chatId,'chat-1');assert.equal(interrupted.agentKey,'executor');
 });
 test('grant identity remains bound across independent request signals',async()=>{
@@ -99,7 +112,7 @@ test('both token scopes include execute without Manifest declarations',()=>{
 
 test('cancellation before a canonical Run arrives still aborts HTTP without guessing a Run',async()=>{
  const f=fixture();let ready;const started=new Promise(resolve=>{ready=resolve});let calls=0;
- f.options.assistantBridge.observeExecuteRun=async()=>()=>{};
+ f.options.assistantBridge.observeExecuteRun=()=>()=>{};
  fetcher=async(_url,{signal})=>{calls++;ready();return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}))};
  const operation=run(f);await started;f.request.abort();assert.equal((await operation).error.code,'cancelled');assert.equal(calls,1);
 });
@@ -111,4 +124,59 @@ test('deadline during non-cancellable Agent lookup prevents a late POST',async()
   const result=await run(f,input,{timeoutMs:10,checkMs:5});assert.equal(result.error.code,'assistant_timeout');
   complete([{agentKey:'chosen'}]);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,0);
  } finally {clearTimeout(keeper)}
+});
+
+test('empty helper fails as agent unavailable before any execution request',async()=>{
+ const f=fixture();delete f.item.copilot;f.options.getAssistantSettings=()=>({desktopHelperAgentKey:''});
+ let calls=0;fetcher=async()=>{calls++;throw Error('unexpected POST')};
+ const result=await run(f);assert.equal(result.error.code,'assistant_agent_unavailable');assert.equal(result.error.details.executionState,'not_started');assert.equal(calls,0);
+});
+test('connection refusal proves execution has not started',async()=>{
+ fetcher=async()=>{throw new api.NodeJsonRequestError('connection_refused')};
+ const result=await run(fixture());assert.equal(result.error.code,'assistant_unavailable');assert.equal(result.error.details.executionState,'not_started');
+});
+test('a transient identity probe failure does not kill an execution; final verification is still strict',async()=>{
+ const f=fixture();let finish;let start;const ready=new Promise(resolve=>{start=resolve});let probes=0;
+ const original=f.options.services.getResponsiveServiceState;
+ fetcher=async()=>{start();return new Promise(resolve=>{finish=resolve})};
+ const pending=run(f,input,{timeoutMs:1000,checkMs:5});await ready;
+ f.options.services.getResponsiveServiceState=async()=>{probes++;throw Error('temporary service probe failure')};
+ while(!probes)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(f.request.signal.aborted,false);assert.equal(f.grant.signal.aborted,false);
+ f.options.services.getResponsiveServiceState=original;finish(json({chatId:'chat-1',status:'success',output:{}}));assert.equal((await pending).ok,true);
+ const g=fixture();fetcher=async()=>{g.options.services.getResponsiveServiceState=async()=>{throw Error('unavailable at delivery')};return json({chatId:'chat-1',status:'success',output:{}})};
+ assert.equal((await run(g)).ok,false);
+});
+test('interrupt obtains a fresh token with the original subject after the execute token has aged',async()=>{
+ const f=fixture();let start;const ready=new Promise(resolve=>{start=resolve});let authorization;
+ fetcher=async(url,options)=>{
+  if(new URL(url).pathname==='/api/interrupt'){authorization=options.headers.Authorization;return json({accepted:true})}
+  f.accepted();start();return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+ };
+ const pending=run(f);await ready;
+ f.options.issueAgentAccessToken=async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'desktop-app'})).toString('base64url')+'.fresh'});
+ f.request.abort();assert.equal((await pending).error.code,'cancelled');
+ for(let i=0;i<100&&!authorization;i++)await new Promise(resolve=>setImmediate(resolve));
+ assert.match(authorization,/\.fresh$/);
+});
+test('interrupt rejection emits a fixed diagnostic without credentials or raw errors',async t=>{
+ const f=fixture();const records=[];const original=console.warn;console.warn=(...args)=>records.push(args);t.after(()=>{console.warn=original});
+ let start;const ready=new Promise(resolve=>{start=resolve});
+ fetcher=async(url,options)=>{
+  if(new URL(url).pathname==='/api/interrupt')return json({error:{code:'unauthorized',message:'private-secret'}},401);
+  f.accepted();start();return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+ };
+ const pending=run(f);await ready;f.request.abort();assert.equal((await pending).error.code,'cancelled');
+ for(let i=0;i<100&&!records.some(item=>item[1]?.code==='assistant_interrupt_failed');i++)await new Promise(resolve=>setImmediate(resolve));
+ assert.ok(records.some(item=>item[1]?.code==='assistant_interrupt_failed'));assert.equal(JSON.stringify(records).includes('private-secret'),false);
+ assert.ok(records.every(item=>typeof item[1]?.requestId==='string'&&typeof item[1]?.elapsedMs==='number'));
+});
+
+test('execution identity probes coalesce across sequential callers in the same short window',async()=>{
+ const f=fixture();let states=0;let tokens=0;
+ const state=f.options.services.getResponsiveServiceState;const token=f.options.issueAgentAccessToken;
+ f.options.services.getResponsiveServiceState=async()=>{states++;return state()};
+ f.options.issueAgentAccessToken=async()=>{tokens++;return token()};
+ for(let i=0;i<8;i++)assert.equal((await api.probeWebappExecutionIdentity(f.options)).subject,'desktop-app');
+ assert.equal(states,1);assert.equal(tokens,1);
 });

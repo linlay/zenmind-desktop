@@ -12,5 +12,6 @@ export async function selectWebappAssistantAgent(options: DesktopActionBridgeOpt
     if (!agents.some(agent => agent.agentKey === selected)) throw new ConnectorError("assistant_agent_unavailable");
     agentKey = selected;
   }
+  if (!agentKey?.trim()) throw new ConnectorError("assistant_agent_unavailable");
   return agentKey;
 }

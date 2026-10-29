@@ -28,6 +28,6 @@ export function validateWebappExecute(value: unknown): string | null {
     return isExecuteRecord(node) && !Object.getOwnPropertySymbols(node).length &&
       Object.entries(node).every(([key, item]) => (!input || key !== "$file") && json(item, depth + 1, input));
   }
-  if (!json(schema, 0, false) || (Object.hasOwn(value, "input") && !json(value.input, 0, true))) return "invalid_args";
+  if (!json(schema, 0, false) || (value.input !== undefined && !json(value.input, 0, true))) return "invalid_args";
   return new TextEncoder().encode(JSON.stringify(schema)).length > 64 * 1024 ? "invalid_args" : null;
 }

@@ -47,7 +47,7 @@ test('execute SDK validates JSON, preserves failure and keeps signal outside the
  const input={message:'extract',input:false,outputSchema:{type:'object'}};
  assert.equal((await assistant.execute(input,{signal:controller.signal})).status,'failure');
  const cycle={};cycle.self=cycle;
- for(const value of [cycle,undefined,NaN,new Date(),[,,],{toJSON(){return 'hidden'}}]) await assert.rejects(assistant.execute({...input,input:value}),{code:'invalid_args'});
+ for(const value of [cycle,NaN,new Date(),[,,],{toJSON(){return 'hidden'}}]) await assert.rejects(assistant.execute({...input,input:value}),{code:'invalid_args'});
  await assert.rejects(assistant.execute({...input,skillIds:[]}),{code:'invalid_args'});
  controller.abort();await assert.rejects(assistant.execute(input,{signal:controller.signal}),{code:'cancelled'});
 });
@@ -55,4 +55,13 @@ test('execute SDK cancellation during response body decoding remains cancelled',
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});const controller=new AbortController();
  globalThis.fetch=async()=>({ok:true,json:async()=>{controller.abort();throw new DOMException('aborted','AbortError')}});
  await assert.rejects(assistant.execute({message:'test',outputSchema:{type:'object'}},{signal:controller.signal}),{code:'cancelled'});
+});
+
+test('execute treats an explicit undefined input as absent and accepts the same 64-level boundary as Main',async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});let body;
+ globalThis.fetch=async(_url,options)=>{body=JSON.parse(options.body);return new Response(JSON.stringify({ok:true,result:{chatId:'chat',status:'success',output:{}}}))};
+ const input={message:'depth',outputSchema:{type:'object'}};
+ await assistant.execute({...input,input:undefined});assert.equal(Object.hasOwn(body.args,'input'),false);
+ let value='leaf';for(let i=0;i<64;i++)value={nested:value};
+ await assistant.execute({...input,input:value});await assert.rejects(assistant.execute({...input,input:{nested:value}}),{code:'invalid_args'});
 });

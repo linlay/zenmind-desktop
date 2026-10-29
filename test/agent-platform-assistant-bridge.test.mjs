@@ -2157,3 +2157,12 @@ test('execute observer accepts only its request and root Agent, then releases on
  assert.deepEqual(runs,[{runId:'run-1',chatId:'chat-1',agentKey:'agent-1'}]);assert.equal(connected,1);
  controller.abort();callback({data:{requestId:'request-1',runId:'run-1',chatId:'chat-1',agentKey:'agent-1'}});assert.equal(runs.length,1);assert.ok(releases);release();
 });
+
+test('execute Push observer returns immediately while Primary reconnection is pending',async()=>{
+ const bridge=Object.create(AgentPlatformAssistantBridge.prototype);let releaseCount=0;let connecting=false;
+ bridge.platform={resolvePlatform:async()=>({ok:true,baseUrl:'http://127.0.0.1:1234',token:'host-token'})};
+ bridge.realtimeBroker={subscribePush:()=>()=>{releaseCount++},ensureConnected:()=>{connecting=true;return new Promise(()=>{})}};
+ const controller=new AbortController();const release=bridge.observeExecuteRun('request-nonblocking','agent-1',()=>{},controller.signal);
+ assert.equal(typeof release,'function');await new Promise(resolve=>setImmediate(resolve));assert.equal(connecting,true);
+ release();controller.abort();assert.equal(releaseCount,1);
+});

@@ -9,12 +9,6 @@ import { createRequire } from 'node:module';
 import { createBackendClient } from '../contracts/webapp/bridge.mjs';
 const require=createRequire(import.meta.url);
 let onRun;
-const nativeFetch=globalThis.fetch;
-const electronPath=require.resolve('electron');
-require.cache[electronPath]={id:electronPath,filename:electronPath,loaded:true,exports:{net:{fetch:(url,options)=>{
-  if(new URL(url).pathname==='/api/execute')setImmediate(()=>onRun?.({runId:'run-1',chatId:'chat-1',agentKey:'executor'}));
-  return nativeFetch(url,options);
-}}}};
 const {startDesktopActionBridge,stopDesktopActionBridge}=require('../dist-electron/main/modules/desktop-actions/action-http-server.js');
 const {writeDesktopActionBridgeSettingsConfig}=require('../dist-electron/main/modules/desktop-actions/settings.js');
 const {issueWebappActionToken,revokeWebappActionToken}=require('../dist-electron/main/modules/webs/webapps/action-tokens.js');
@@ -31,7 +25,7 @@ async function fixture(t) {
   const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=JSON.parse(Buffer.concat(chunks));
   assert.match(req.headers.authorization,/^Bearer h\./);
   if(req.url==='/api/interrupt'){interruptBody=body;res.end(JSON.stringify({code:0,data:{accepted:true}}));return}
-  assert.equal(req.url,'/api/execute');posts++;assert.equal(body.agentKey,'executor');assert.equal(body.accessLevel,'default');
+  assert.equal(req.url,'/api/execute');setImmediate(()=>onRun?.({runId:'run-1',chatId:'chat-1',agentKey:body.agentKey}));posts++;assert.equal(body.agentKey,'executor');assert.equal(body.accessLevel,'default');
   res.once('close',()=>{if(!res.writableFinished)closed?.()});started?.();
   if(mode==='success')res.end(JSON.stringify({code:0,data:{chatId:'chat-1',status:'success',output:{amount:128}}}));
  });
@@ -43,7 +37,7 @@ async function fixture(t) {
   issueAgentAccessToken:async()=>({ok:true,token:'h.'+Buffer.from(JSON.stringify({sub:'desktop-app'})).toString('base64url')+'.s'}),
   services:{getResponsiveServiceState:async()=>({status:'running',healthMeta:{webUrl:`http://127.0.0.1:${platformPort}`}})},
   webs:{webappManager:{list:()=>[item],readUserConfig:()=>({})},webappRuntime:{getStatus:()=>runtime}},
-  assistantBridge:{observeExecuteRun:async(_id,_key,callback)=>{onRun=callback;return()=>{onRun=undefined}},listAgents:async()=>[]}
+  assistantBridge:{observeExecuteRun:(_id,_key,callback)=>{onRun=callback;return()=>{onRun=undefined}},listAgents:async()=>[]}
  };
  const bridge=startDesktopActionBridge(options);await once(bridge,'listening');t.after(()=>{stopDesktopActionBridge();bridge.closeAllConnections()});
  const page=issueWebappActionToken(item,'localPageGateway');const backend=issueWebappActionToken(item,'backendActionToken');

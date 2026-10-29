@@ -104,13 +104,17 @@ else showReason(result.reason);
 
 受管后端使用 createBackendClient 返回的同名方法。目标必须是有效工具带 result_submit 的 Native Agent；EXECUTOR 模板通常符合，但不按 mode 授权。沿用现有用户 Agent 选择、固定 Copilot 和 Desktop helper 选择机制；默认 helper 未必支持执行，宿主不自动换 Agent。execute 只用 Agent 自身挂载的技能，不注入 Manifest copilot.references。
 
-仅接受 message、input、outputSchema；拒绝 agentKey、skillIds、references、accessLevel、background、chatId 和任意路由。权限固定 default，不提供问答或审批 UI。审批返回 approval_required；Agent 主动提问可能等待直至取消/超时。input 为标准 JSON，不支持 Blob、multipart、$file、自定义 toJSON、循环或非有限数；JSON 嵌套最多 64 层。
+仅接受 message、input、outputSchema；拒绝 agentKey、skillIds、references、accessLevel、background、chatId 和任意路由。权限固定 default，不提供问答或审批 UI。审批返回 approval_required；Agent 主动提问可能等待直至取消/超时。input 为标准 JSON，不支持 Blob、multipart、$file、自定义 toJSON、循环或非有限数；input/schema 各从自身根节点计数，最多 64 层。显式 input:undefined 视为省略，嵌套 undefined 仍拒绝。
 
 message 最多 12,000 个 UTF-16 code unit；outputSchema 根为 object，序列化最多 64 KiB。完整页面请求体最多 64 KiB，完整后端请求体最多 256 KiB，因此页面实际可用 schema 大小还需扣除其他字段。Platform 完整响应最多 1 MiB。Main 执行期限十分钟，传输层留十五秒余量；全局最多八个在途执行，同一 WebApp 最多两个，两入口共享额度，不排队。
 
+长请求和取消使用独立 Node HTTP socket，不占默认 Chromium session 的同源连接池。运行期每十五秒兜底探测身份，同宿主短窗口合并；临时状态查询/续签失败不取消任务，真正的 grant、实例或主体变化仍撤销，交付前严格复验。Push 连接在后台准备，不阻塞执行请求。
+
 status:failure 是正常业务结果，不抛异常。请求失败抛 DesktopBridgeError：unsupported Agent 为 assistant_agent_unsupported，Agent 不可用为 assistant_agent_unavailable，缺失/非法交卷为 output_missing/output_invalid，超时为 assistant_timeout，超大结果为 assistant_result_too_large，主动取消为 cancelled。无执行路由为 assistant_execute_unavailable，不回退到 chat。
 
-AbortSignal 仅控制本次执行，包含响应体读取阶段。Main 使用与本次 requestId/Agent 关联的 canonical Run 经 HTTP /api/interrupt 主动中断，并始终 abort HTTP execute；还没收到 Run 标识时由断开连接触发 Platform 中断。assistant.stop/subscribe 仍只用于原 chat 后台 Run。页面刷新、应用停止、实例失效和 Desktop 退出同样取消；隐藏或展示转移不主动取消，页面关闭也不取消独立后端调用。
+AbortSignal 仅控制本次执行，包含响应体读取阶段。Main 获取当前同主体、同 endpoint 的新 token，使用与本次 requestId/Agent 关联的 canonical Run 经独立 HTTP /api/interrupt 主动中断，并始终 abort execute；还没收到 Run 标识时由断开连接触发 Platform 中断。assistant.stop/subscribe 仍只用于原 chat 后台 Run。页面刷新、应用停止、实例失效和 Desktop 退出同样取消；隐藏或展示转移不主动取消，页面关闭也不取消独立后端调用。
+
+连接拒绝和 Platform 明确的参数/Agent 准入拒绝在 details.executionState 标为 not_started，无法确认是否执行的异常标 unknown。日志只记关联标识、阶段、耗时和稳定错误码，不记任务/结果正文或 token；interrupt 非成功 HTTP/业务 ack 记录 assistant_interrupt_failed。
 
 Schema 合法只证明交卷形状通过，不证明外部副作用或所有后续步骤成功。取消不回滚已执行操作；接口没有 requestId 去重，SDK 从不自动重发。output 原样返回；@chat 路径不是 artifactId，只有真实已发布产物能经 artifact.list/get/read 获取。
 

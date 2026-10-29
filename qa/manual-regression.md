@@ -1604,3 +1604,5 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 两入口分别取消、刷新/关闭页面、停止/重启/卸载应用和退出 Desktop，确认精确 Run 被 HTTP interrupt/连接断开中断，其他应用 Run 不受影响；隐藏/展示转移不主动中断，页面关闭不取消独立后端请求。
 - 缺 result_submit、非 Native Agent、非法 Schema、需审批、未交卷、响应超大、并发超限均返回对应错误；官网账号变化不轮换本地调用，真实本地身份/实例变化后旧结果不能交付。
 - 仅已发布 artifact 可读取；@chat 字符串不能直接下载任意文件，跨应用 Chat 和 page/backend token 串用拒绝。两平台分别检查进程退出、socket 与在途订阅清理。
+- 构建 Main 后运行 `npx electron qa/webapp-execute-electron-smoke.cjs --hold-ms 310000`：四个应用各两路均到达 Platform；默认 session 普通调用正常，第九路立即拒绝；超过五分钟后换票取消，精确 Run 的 interrupt 和八条连接回收成功。macOS/Windows 原生 Electron 分别执行，不用 Node fetch mock 结果代替。
+- 临时身份探测/续签失败不误杀任务，真正主体、endpoint 或实例变化仍撤销，交付前严格复验；空 Agent 返回 assistant_agent_unavailable；SDK/Main 的深度边界一致，input:undefined 视为省略；interrupt 非成功 ack 有固定日志，不泄漏正文或 token。

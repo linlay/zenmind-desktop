@@ -139,7 +139,7 @@ output 是应用拥有的 JSON，Desktop 原样保留合法业务字段，不按
 
 因此不保证页面能发送恰好 64 KiB 的 schema：完整请求也必须放得下。首版不放宽普通 Action 边界；较大的任务数据可使用现有受管后端 256 KiB 入口，文档必须明确双入口的传输差异。
 
-SDK 在序列化前为 execute 校验严格 JSON，拒绝循环、BigInt、undefined 业务值、函数、Symbol、NaN/Infinity、Blob 及依赖自定义 toJSON 的对象，避免 JSON.stringify 静默丢字段或改值；Main 校验仍是权威。SDK 不复制完整 Schema 编译器。
+SDK 在序列化前为 execute 校验严格 JSON。显式 input:undefined 视为省略，嵌套 undefined、循环、BigInt、函数、Symbol、NaN/Infinity、Blob 和自定义 toJSON 对象仍拒绝。input/schema 各从自身根节点计数，最多 64 层；Main 校验仍是权威，不复制完整 Schema 编译器。
 
 input 中的 `$file` 是 Platform 的保留语义。首版没有 multipart，发送前拒绝 input 中任何对象键 `$file`，返回 invalid_args；不把它当普通键，不从宿主或旧 Chat 补文件。普通 `"@chat/foo"` 输入字符串也不会获得旧 Chat 文件访问能力。
 
@@ -194,9 +194,9 @@ Node SDK ─────────→ /webapps/actions/call ──────
   → finally 释放计时器、监听、reader 与容量
 ```
 
-建议新增 `webapp-execute.ts` 负责请求协调，`webapp-execute-client.ts` 负责固定 HTTP 请求与响应解码，`webapp-assistant-agent.ts` 负责共享 Agent 选择。adapter 可注入 fetch 以便测试；不为一次接入增加通用任务框架或任意路由代理。
+`webapp-execute.ts` 负责请求协调，`webapp-execute-client.ts` 负责固定 HTTP 请求与响应解码，`webapp-assistant-agent.ts` 负责共享 Agent 选择。单元测试可替换 Node HTTP 端口；连接池与长请求由真实 Electron 脚本另验。不增加通用任务框架或任意路由代理。
 
-adapter 使用现有 WebApp 身份捕获结果与 electron.net.fetch，设置 credentials omit、redirect error、cache no-store，携带 Main 的 Bearer token、Content-Type、Accept 和现有 X-Locale，不转发调用方 headers。固定构造：
+adapter 使用现有 WebApp 身份捕获结果，通过 Node HTTP(S) 独立 socket（agent:false）发送，不使用 Chromium 默认 session，不跟随重定向、不继承 Cookie，不设置短于业务期限的连接空闲超时。携带 Main 的 Bearer token、Content-Type、Accept 和现有 X-Locale，不转发调用方 headers。固定构造：
 
 ```ts
 {
@@ -223,7 +223,7 @@ requestId 只关联诊断，不提供去重。401、网络错误、超时或非�
 | gateway 外层期限 | 615,000 ms，仅 assistant.execute；给 Main 返回错误留余量，其他 Action 保持 120 秒 |
 | 在途并发 | 全局 8，同一 WebApp 实例 2，页面/后端共享实例额度 |
 | 排队 | 不排队；超限在访问 Platform 前返回 app_capacity_exceeded |
-| 在途 context 检查 | 每秒复验，单请求不重入，失效即 abort；终态前再次检查 |
+| 在途 context 检查 | 每十五秒兜底，单请求不重入，同宿主一秒内合并身份探测；仅确认身份、endpoint 或实例不匹配才撤销，瞬时失败只记诊断；交付前严格复验 |
 
 并发额度在首次异步操作前原子预留，所有出口 finally 释放；不保留终态任务或结果。
 
@@ -237,7 +237,7 @@ requestId 只关联诊断，不提供去重。401、网络错误、超时或非�
 
 每层 finally 移除监听、清除 timer、释放 reader。下游已经断开时停止 writeJSON/res.end；正常完成后的 close 不再取消。
 
-不能只把 AbortSignal.timeout 改成十分钟：还必须处理 HTTP 栈的响应头/空闲超时。gateway 的 execute 上游也使用 electron.net.fetch，其他 Action 保持原路径。
+不能只把 AbortSignal.timeout 改成十分钟：gateway 到 Action server、Main 到 Platform execute 和 interrupt 均使用独立 Node HTTP(S) socket（agent:false），不共用 Chromium 或其他请求的连接池；其他 Action 保持原路径。
 
 受管 Node SDK 没有 gateway，但当前使用 global fetch，同样不能依赖其默认长请求行为。首版为 createBackendClient 的 execute 提供专用 Node HTTP 传输：仅在该方法被调用时动态加载 node:http，连接已经校验的注入 loopback URL，不跟随重定向；外层期限 615,000 ms，不设置更短的响应头/活动 socket 期限。它复用相同 JSON envelope、错误解码和 AbortSignal 语义，并有界读取 Bridge 响应（上限为 Platform 响应限额加 4 KiB envelope 余量）。浏览器方法和其他后端方法继续使用现有 fetch，不把 Node 依赖加载到页面。
 
@@ -251,7 +251,7 @@ Main 到期时向仍连接的调用方返回 assistant_timeout；gateway 自己�
 - 隐藏页面、切换侧栏、主工作区/WorkPanel 展示转移不主动取消；连接还在就继续。
 - guest 销毁/文档刷新导致连接断开，取消该页面调用；后端独立调用不因页面关闭取消。
 - action bridge 停止或更换端口前 abort 所有在途 execute controller，再 close server；单纯 server.close 会留下长请求。
-- 不用 assistantBridge.stopRun 取消 execute，也不扩展 assistant.stop/subscribe。Main 发送前被动订阅共享 Primary 的 run.started，通过宿主生成 requestId 与根 agentKey 匹配 canonical runId/chatId；取得身份后取消同时发 HTTP /api/interrupt 并 abort execute。interrupt 使用原本地 App token 和独立三秒期限，不自动重试，不接受页面指定 Run。尚未取得身份或通知丢失时，由 execute 连接断开取消兜底。
+- 不用 assistantBridge.stopRun 取消 execute，也不扩展 assistant.stop/subscribe。Main 发送前同步登记共享 Primary 的 run.started 订阅，后台准备连接，不阻塞 POST；通过宿主 requestId 与根 agentKey 匹配 canonical runId/chatId。取消时在独立三秒期限内获取当前 token，复验主体和 endpoint 未改变，再发 HTTP /api/interrupt 并校验 ack；同时 abort execute。不自动重试，不接受页面指定 Run。尚未取得身份或通知丢失时，由连接断开取消兜底。
 
 Main 期限必须覆盖前置异步操作：不能只给最终 fetch 加 timeout。等待身份/Agent 查询时也应及时结算取消，并用 epoch/终态保护阻止迟到回调再发送 POST。
 
@@ -290,7 +290,7 @@ HTTP 成功与 code === 0 必须同时成立。data 必须含非空 chatId，且
 
 SDK 到本地桥的普通网络故障沿用 bridge_unavailable；execute 主动取消为 cancelled。终态只能交付一次。
 
-details 只允许已校验 chatId、所选 agentKey、白名单 platformCode、HTTP status 和宿主 requestId。能证明尚未发往 Platform 时可标 executionState:not_started；发送后丢失响应只能标 unknown，不能提示无条件重试。
+details 只允许已校验 chatId、所选 agentKey、白名单 platformCode、HTTP status 和宿主 requestId。连接拒绝和 Platform 明确的 invalid_request、unknown_field、agent_not_found、result_submit_unavailable、execute_unsupported_agent 准入拒绝标 executionState:not_started；其余发送后丢失响应标 unknown，不提示无条件重试。
 
 日志只记上述标识、阶段、耗时和稳定错误码，不记 message/input/schema/output/reason/token/完整 URL/data.cause。合法业务 failure.reason 属于应用结果，可返回但不写宿主日志。业务 output 由 Agent 生成，WebApp 自行按业务规则消费，不因 Schema 合法而视作可信 HTML 或可执行代码。
 
@@ -399,6 +399,18 @@ Desktop 与内置 Platform 的交付组合必须实际支持 /api/execute，生�
 ### 本次自动验证结果
 
 - Desktop：Main 类型检查与生产 bundle、WebApp 生成契约/漂移、架构、i18n、renderer 类型检查通过；八个相关测试文件共 283 项通过。
-- Platform：当前工作区有其他并行变更导致 Server 测试辅助类型缺失；使用 git HEAD 干净副本仅叠加本次五个 Go 文件后，runtime/query、runtime/types、完整 server、architecture 四个包测试通过。
+- Platform：首次验证采用临时基线副本。为消除工作区整文件复制可能夹带并行修改的疑问，审查修正时直接导出已提交 df26af48 的原样快照，重新运行 runtime/query、runtime/types、完整 server、architecture 四个包，均通过；该提交不含 onContinuation 的并行修改。
 - 真实 loopback 集成已验证页面/原生 Node 双入口、scope 串用拒绝、页面/后端取消和 bridge 停止会关闭上游连接并发送匹配 Run 的 HTTP interrupt。
 - 没有在本次运行中验证真实 Electron 十分钟长请求或 Windows/macOS 安装包工作流；这些保留在 qa/manual-regression.md，不能把 Node HTTP 夹具当作该验收结果。
+
+## 14. 审查修正与复验
+
+- execute 两段长连接与 interrupt 均改为 Node HTTP(S) 独立 socket，消除默认 Chromium session 的同源六连接池限制；Main 仍按全局八个、单应用两个即时准入。
+- 在途身份探测降至十五秒并在同宿主短窗口内合并，临时服务/续签失败不误杀任务。最终交付仍严格复验。
+- interrupt 重新取得当前同主体、同 endpoint 的 token，独立三秒期限覆盖身份获取和 HTTP；检查 HTTP/业务 ack，失败记录固定错误码，断开取消兜底保持。
+- Push 同步登记、后台连接；新增 requestId、阶段、耗时和稳定错误码日志。空 Agent 在发送前失败，可证明未开始的准入/连接拒绝标 not_started。
+- SDK 和 Main 的 input/schema 深度从各自根节点计数；显式 input:undefined 视为省略，嵌套 undefined 仍拒绝。
+- 新增 qa/webapp-execute-electron-smoke.cjs，使用项目原生 Electron/Chromium、默认 net.fetch 与真实 Broker/本地 WS v2 夹具。验证八路到达、第九路立即拒绝、普通请求不饥饿、持有超过五分钟后刷新 token 的精确 interrupt 与连接回收；同时断言挂起期间请求没有提前结束。
+- Platform 直接验证 df26af48 原样快照，四个相关测试包通过；该提交不含 onContinuation 的并行变更。两端仍需配套发布，成功空对象修复不能缺少。
+
+审查后最终验证：相关回归 291 项全部通过；Main 构建、WebApp 契约漂移、架构、i18n 和 renderer 类型检查通过。macOS 原生 Electron 42.11.4 持有八路请求 310 秒，期间无请求提前结束；普通默认 session 调用 11 ms、第九路拒绝 13 ms、换票后精确 interrupt 11 ms，八条连接及八个中断全部完成。结果见 build/qa/webapp-execute-electron.json。Windows 原生与安装包工作流仍需分别验收，不以本次 macOS 结果代替。

@@ -341,8 +341,9 @@ function executeJson(value, seen = new Set(), depth = 0) {
     if (Object.keys(value).length !== value.length) throw Error("Use dense JSON arrays.");
     for (const item of value) executeJson(item, seen, depth + 1);
   } else {
-    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
       if (!descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw Error("Use JSON data properties.");
+      if (depth === -1 && key === "input" && descriptor.value === undefined) continue;
       executeJson(descriptor.value, seen, depth + 1);
     }
   }
@@ -376,7 +377,7 @@ async function executeAssistant(input, { signal } = {}, transport) {
   const action = "assistant.execute";
   let body;
   try {
-    executeJson(input);
+    executeJson(input, new Set(), -1);
     if (!input || Array.isArray(input) || typeof input !== "object" ||
         Object.keys(input).some(key => !["message", "input", "outputSchema"].includes(key)) ||
         typeof input.message !== "string" || !input.message.trim() ||

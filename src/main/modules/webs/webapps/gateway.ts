@@ -1,4 +1,4 @@
-import { net as electronNet } from "electron";
+import { postNodeJson } from "../../../infrastructure/network/node-json-request";
 import { createHttpRequestLifetime } from "../../../infrastructure/network/http-request-lifetime";
 import { WEBAPP_EXECUTE_TRANSPORT_TIMEOUT_MS } from "../../../../shared/webapp-execute";
 import fs from "node:fs";
@@ -510,10 +510,8 @@ async function handleDesktopBridgeRequest(
     const execute = action === WEBAPP_BRIDGE_ACTIONS.assistantExecute;
     timer = setTimeout(() => deadline.abort(), execute ? WEBAPP_EXECUTE_TRANSPORT_TIMEOUT_MS : 120_000);
     timer.unref();
-    const fetchRequest = (url: string, init: RequestInit) => execute ? electronNet.fetch(url, init) : fetch(url, init);
-    const response = await fetchRequest(
-      `http://${HOST}:${requireWebsIntegrationPorts(options.integrationPorts).getConfiguredDesktopActionBridgePort(options.app)}/webapps/pages/actions/call`,
-      {
+    const actionUrl = `http://${HOST}:${requireWebsIntegrationPorts(options.integrationPorts).getConfiguredDesktopActionBridgePort(options.app)}/webapps/pages/actions/call`;
+    const upstream = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -524,8 +522,10 @@ async function handleDesktopBridgeRequest(
           args: parsed.args && typeof parsed.args === "object" ? parsed.args : {}
         }),
         signal: AbortSignal.any([lifetime.signal, deadline.signal])
-      }
-    );
+    };
+    const response = execute
+      ? await postNodeJson(actionUrl, { ...upstream, maxResponseBytes: 1024 * 1024 + 4096 })
+      : await fetch(actionUrl, upstream);
     const body = await response.text();
     if (lifetime.signal.aborted || res.destroyed) return;
     res.writeHead(response.status, {
