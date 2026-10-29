@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { Alert, Button, Modal, Select, Tag } from "antd";
-import { CheckOutlined, DeleteOutlined, DownloadOutlined, LoadingOutlined, PlusCircleOutlined, ReloadOutlined, SearchOutlined, SmileOutlined } from "@ant-design/icons";
+import { Alert, Button, Modal, Tag } from "antd";
+import { CheckOutlined, DeleteOutlined, DownloadOutlined, LoadingOutlined, PlusCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { DesktopPetAppearanceOption, MarketItem } from "@shared/contracts";
 import { useI18n } from "../../i18n/useI18n";
 import { MarketPageFrame } from "./MarketPageFrame";
@@ -24,17 +24,18 @@ export interface PetMarketplaceProps {
 export function PetMarketplace(props: PetMarketplaceProps) {
   const { t } = useI18n();
   const runtime = useMarketPetFlow(props.onChanged);
-  const [scope, setScope] = useState<"market" | "mine">("market");
   const [query, setQuery] = useState("");
   const [localDetail, setLocalDetail] = useState<DesktopPetAppearanceOption | null>(null);
   const [remove, setRemove] = useState<DesktopPetAppearanceOption | null>(null);
-  const [sort, setSort] = useState("newest");
   const appearances = runtime.petState?.appearanceOptions ?? [];
   const current = runtime.stateError ? undefined : runtime.petState?.appearanceId;
-  const marketItems = props.items.filter(item => item.type === "pet" && (item.marketplaceAvailable === true || item.source === "cloud") && matchesMarketItemQuery(item, query, t)).sort((a, b) =>
-    sort === "popular" ? (b.downloadCount ?? 0) - (a.downloadCount ?? 0) : String(b.updatedAt ?? b.publishedAt ?? "").localeCompare(String(a.updatedAt ?? a.publishedAt ?? "")));
-  const mine = appearances.filter(item => `${item.displayName} ${item.description}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  const installed = (item: MarketItem) => appearances.some(pet => pet.id === `user:${item.id}`);
+  const marketItems = props.items.filter(item => item.type === "pet" && (item.marketplaceAvailable === true || item.source === "cloud")
+    && !appearances.some(pet => pet.id === `user:${item.id}`) && matchesMarketItemQuery(item, query, t));
+  const mine = appearances.filter(pet => {
+    const item = props.items.find(item => item.type === "pet" && `user:${item.id}` === pet.id);
+    return `${pet.displayName} ${pet.description}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+      || Boolean(item && matchesMarketItemQuery(item, query, t));
+  });
   const detailsItem = props.detailItem?.type === "pet" ? props.detailItem : undefined;
   const detailAppearance = localDetail ?? undefined;
   const openMarket = (item: MarketItem) => { setLocalDetail(null); props.onDetail(item); };
@@ -63,7 +64,7 @@ export function PetMarketplace(props: PetMarketplaceProps) {
   };
   return <MarketPageFrame activeTab="pets" onTabChange={props.onTabChange} tabs={getMarketTabDefinitions(t)} toolbar={<div className="skill-discovery-toolbar">
     <label className="skill-discovery-search"><SearchOutlined aria-hidden="true" /><input className="pet-market-search" type="search" placeholder={t("market.pet.search")} aria-label={t("market.pet.search")} value={query} onChange={event => setQuery(event.target.value)} /></label>
-    <button type="button" className="skill-discovery-outline" onClick={async () => { if (await runtime.importPet()) { setQuery(""); setScope("mine"); } }} disabled={runtime.busy} aria-busy={runtime.busyId === "import"}>
+    <button type="button" className="skill-discovery-outline" onClick={async () => { if (await runtime.importPet()) setQuery(""); }} disabled={runtime.busy} aria-busy={runtime.busyId === "import"}>
       {runtime.busyId === "import" ? <LoadingOutlined aria-hidden="true" /> : <PlusCircleOutlined aria-hidden="true" />}{t("settings.desktopPet.import.zip")}
     </button>
     <button type="button" className="skill-discovery-outline" aria-label={t("market.pet.refresh")} disabled={runtime.busy} aria-busy={props.loading || runtime.loading} onClick={() => { void runtime.refresh(); props.onRefresh(); }}><ReloadOutlined aria-hidden="true" /></button>
@@ -73,28 +74,26 @@ export function PetMarketplace(props: PetMarketplaceProps) {
       {props.feedback}
       <div className="skill-discovery-scroll">
         <div className="pet-market-list-heading">
-          <div className="skill-discovery-collections pet-market-scopes"><button type="button" aria-selected={scope === "market"} onClick={() => setScope("market")}>{t("market.pet.browse")}</button>
-            <button type="button" aria-selected={scope === "mine"} onClick={() => setScope("mine")}>{t("market.pet.mine", { count: appearances.length })}</button></div>
-          {scope === "market" ? <Select size="small" value={sort} onChange={setSort} aria-label={t("market.pet.sort")} options={[{ value: "newest", label: t("market.pet.newest") }, { value: "popular", label: t("market.pet.popular") }]} /> : null}
+          <h2>{t("market.pet.all")}<span className="skill-discovery-count">{marketItems.length + mine.length}</span></h2>
         </div>
-        <div className="skill-discovery-grid pet-market-grid" aria-busy={props.loading || runtime.loading}>{scope === "market" ? marketItems.map(item => <article className="skill-discovery-card pet-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
+        <div className="skill-discovery-grid pet-market-grid" aria-busy={props.loading || runtime.loading}>{marketItems.map(item => <article className="skill-discovery-card pet-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
           onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) openMarket(item); }}
           onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openMarket(item); } }}>
           <button className="pet-market-open" onClick={() => openMarket(item)} aria-label={t("market.pet.detailsName", { name: item.name })}><PetPreview item={item} /></button>
-          <div className="pet-market-card-copy"><h2>{item.name}</h2><p>{item.description}</p><div className="pet-market-tags"><Tag>{item.version}</Tag>{installed(item) ? <Tag color="blue">{t("market.state.installed")}</Tag> : null}{item.tags.slice(0, 2).map(tag => <Tag key={tag}>{tag}</Tag>)}</div></div>
+          <div className="pet-market-card-copy"><h2>{item.name}<Tag>{t("market.pet.market")}</Tag></h2><p>{item.description}</p><div className="pet-market-tags">{item.version}</div></div>
           <div className="pet-market-card-actions"><Button type="text" className="market-card-action market-card-secondary" onClick={() => openMarket(item)}>{t("market.action.details")}</Button>{installButton(item)}</div>
-        </article>) : mine.map(appearance => {
+        </article>)}{mine.map(appearance => {
           const update = props.items.find(item => `user:${item.id}` === appearance.id && item.state === "update-available");
           return <article className={`skill-discovery-card pet-market-card ${current === appearance.id ? "is-current" : ""}`} key={appearance.id} tabIndex={0} aria-label={appearance.displayName} aria-haspopup="dialog"
             onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) openLocal(appearance); }}
             onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openLocal(appearance); } }}>
             <button className="pet-market-open" onClick={() => openLocal(appearance)} aria-label={t("market.pet.detailsName", { name: appearance.displayName })}><PetPreview appearance={appearance} /></button>
-            <div className="pet-market-card-copy"><h2>{appearance.displayName}{current === appearance.id ? <Tag color="blue">{t("market.pet.current")}</Tag> : null}</h2><p>{appearance.description}</p></div>
-            <div className="pet-market-card-actions">{appearance.id.startsWith("user:") ? <Button type="text" danger className="market-card-action market-card-delete" icon={<DeleteOutlined />} onClick={() => setRemove(appearance)} disabled={runtime.busy}>{t("common.delete")}</Button> : <Tag icon={<SmileOutlined />}>{t("market.pet.builtin")}</Tag>}
+            <div className="pet-market-card-copy"><h2>{appearance.displayName}<Tag>{t(appearance.id.startsWith("user:") ? "market.state.installed" : "market.pet.builtin")}</Tag></h2><p>{appearance.description}</p></div>
+            <div className="pet-market-card-actions">{appearance.id.startsWith("user:") ? <Button type="text" danger className="market-card-action market-card-delete" icon={<DeleteOutlined />} onClick={() => setRemove(appearance)} disabled={runtime.busy}>{t("common.delete")}</Button> : null}
               {update ? <Button className="market-card-action market-card-secondary" onClick={() => void runtime.install(update)} disabled={runtime.busy}>{t("market.action.update")}</Button> : null}{useButton(appearance)}</div>
           </article>;
         })}</div>
-        {(scope === "market" ? marketItems.length : mine.length) === 0 ? <div className="skill-discovery-empty" role="status">{t(props.loading || runtime.loading ? "market.storefront.loading" : "market.pet.empty")}</div> : null}
+        {marketItems.length + mine.length === 0 ? <div className="skill-discovery-empty" role="status">{t(props.loading || runtime.loading ? "market.storefront.loading" : "market.pet.empty")}</div> : null}
       </div>
     </div>
     <Modal destroyOnHidden open={Boolean(detailsItem || detailAppearance)} onCancel={closeDetail} title={detailsItem?.name ?? detailAppearance?.displayName} footer={detailsItem ? installButton(detailsItem) : detailAppearance ? useButton(detailAppearance) : null}>
