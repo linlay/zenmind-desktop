@@ -1,2 +1,64 @@
-.skin-discovery{flex-direction:column}.skin-market-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.skin-market-heading .skill-discovery-collections{margin-bottom:0}.skin-market-modes{display:flex;gap:8px}.skin-market-card{padding:0;overflow:hidden;cursor:pointer}.skin-market-card:focus-visible{outline:2px solid var(--market-control-blue);outline-offset:3px}.skin-market-copy{padding:14px 16px;flex:1}.skin-market-copy h2{font-size:13px;margin:0 0 8px}.skin-market-copy p{font-size:12px;color:var(--market-control-muted);line-height:1.65}.skin-market-actions{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 16px 16px}.skin-market-preview{height:148px;position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;padding:14px;background-position:center;background-size:cover}.skin-market-preview-sidebar{height:100%;width:22%;border-radius:8px;padding:10px 6px}.skin-market-preview-sidebar i{display:block;background:currentColor;opacity:.2;height:5px;margin-bottom:12px;border-radius:3px}.skin-market-preview-panel{flex:1;height:80%;padding:12px;border-radius:9px}.skin-market-preview-panel span{display:block;background:currentColor;opacity:.2;height:5px;width:72%;margin-bottom:10px;border-radius:3px}.skin-market-preview-panel span+span{width:48%}.skin-market-preview-panel b{display:block;margin-top:20px;width:54px;height:17px;border-radius:5px}.skin-market-detail .skin-market-preview{height:240px;margin:12px 0}@media(max-width:680px){.skin-market-heading{align-items:flex-start;flex-wrap:wrap}}
-.skin-market-modes button[aria-pressed="true"]{border-color:var(--market-control-blue);color:var(--market-control-blue);background:var(--market-control-card-soft);font-weight:600}
+.skin-discovery { flex-direction: column; }
+.skin-market-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.skin-market-heading h2 { margin: 0; font-size: 14px; }
+.skin-market-card {
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--market-control-card) 64%, transparent);
+}
+.skin-market-card:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
+.skin-market-copy { padding: 14px 16px; flex: 1; }
+.skin-market-copy h2 { font-size: 13px; margin: 0 0 8px; }
+.skin-market-copy p { font-size: 12px; color: var(--market-control-muted); line-height: 1.65; }
+.skin-market-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--market-control-muted); font-size: 11px; }
+.skin-market-meta .ant-tag { margin-inline-end: 0; }
+.skin-market-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 16px 16px; }
+.skin-market-card-preview { position: relative; }
+.skin-market-preview {
+    height: 148px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    background-position: center;
+    background-size: cover;
+}
+.skin-market-preview-sidebar { height: 100%; width: 22%; border-radius: 8px; padding: 10px 6px; }
+.skin-market-preview-sidebar i { display: block; background: currentColor; opacity: .2; height: 5px; margin-bottom: 12px; border-radius: 3px; }
+.skin-market-preview-panel { flex: 1; height: 80%; padding: 12px; border-radius: 9px; }
+.skin-market-preview-panel span { display: block; background: currentColor; opacity: .2; height: 5px; width: 72%; margin-bottom: 10px; border-radius: 3px; }
+.skin-market-preview-panel span + span { width: 48%; }
+.skin-market-preview-panel b { display: block; margin-top: 20px; width: 54px; height: 17px; border-radius: 5px; }
+.skin-market-modes {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--market-control-border);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--market-control-card) 88%, transparent);
+    color: var(--market-control-text);
+}
+.skin-market-modes button {
+    height: 24px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--market-control-muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+.skin-market-modes button[aria-pressed="true"] {
+    color: var(--market-control-blue);
+    background: color-mix(in srgb, var(--market-control-blue) 12%, transparent);
+    font-weight: 600;
+}
+.skin-market-modes button:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 1px; }
+.skin-market-detail .skin-market-preview { height: 240px; margin: 12px 0; }

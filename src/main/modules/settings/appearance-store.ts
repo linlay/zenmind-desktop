@@ -44,6 +44,10 @@ export function createDesktopSkinStore(options: Options) {
   }
   return {
     read,
+    readPackagePreview(id: unknown, mode: unknown) {
+      // Previewing an unselected package does not read or repair profile state.
+      return packages.preview(id, mode);
+    },
     listInstalledPackages() {
       packages.recoverRemovals(profile().appearance.skinId);
       return packages.list();

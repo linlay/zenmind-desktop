@@ -47,6 +47,13 @@ export function registerAppearanceIpcHandlers(ipcMain: IpcMain, options: {
     });
   }
   register("settings.getDesktopSkin", (_event, _input, store) => ({ settings: store.read() }));
+  ipcMain.handle("settings.getDesktopSkinPreview", (event, id: unknown, mode: unknown) => {
+    assertOwner(event);
+    return runtime.run(store => {
+      assertOwner(event);
+      return store.readPackagePreview(id, mode);
+    });
+  });
   register("settings.setDesktopSkin", (_event, input, store) => {
     const request = typeof input === "object" && input ? input as { id?: unknown; options?: DesktopSkinSelectionOptions } : { id: input };
     const selection = request.options;

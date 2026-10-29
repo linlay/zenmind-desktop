@@ -699,6 +699,7 @@ const api: DesktopApi = {
     resetRuntimeEnv: () => ipcRenderer.invoke("settings.resetRuntimeEnv"),
     getThemePreference: () => ipcRenderer.invoke("settings.getThemePreference"),
     getDesktopSkin: () => ipcRenderer.invoke("settings.getDesktopSkin"),
+    getDesktopSkinPreview: (id, mode) => ipcRenderer.invoke("settings.getDesktopSkinPreview", id, mode),
     setDesktopSkin: (skinId, options) => ipcRenderer.invoke("settings.setDesktopSkin", options === undefined ? skinId : { id: skinId, options }),
     importDesktopSkinPackage: () => ipcRenderer.invoke("settings.importDesktopSkinPackage"),
     importDroppedDesktopSkinPackage: (file: File) => ipcRenderer.invoke("settings.importDroppedDesktopSkinPackage", webUtils.getPathForFile(file)),

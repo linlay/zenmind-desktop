@@ -1,4 +1,4 @@
-import type { DesktopSkinDefinition } from "./desktop-skin-definition";
+import type { DesktopSkinBackground, DesktopSkinDefinition } from "./desktop-skin-definition";
 
 export const DESKTOP_SKIN_IDS = ["default", "mist", "ocean", "violet"] as const;
 export type BuiltinDesktopSkinId = typeof DESKTOP_SKIN_IDS[number];
@@ -7,6 +7,10 @@ export type DesktopSkinId = BuiltinDesktopSkinId | InstalledDesktopSkinId;
 export type DesktopSkinSelectionOptions = { keepBackground?: boolean };
 export type InstalledDesktopSkinSummary = {
   id: InstalledDesktopSkinId; packageId: string; name: string; version: string; author?: string; previewDataUrl: string | null;
+};
+export type DesktopSkinPreview = {
+  tokens: DesktopSkinDefinition["tokens"]["light"];
+  background: DesktopSkinBackground | null;
 };
 
 export type DesktopBackgroundAsset = Readonly<{

@@ -7,7 +7,7 @@ const desktopPetClassicDescription =
   brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const zhCNMessages = {
-  "market.skin.removeVersion": "请在我安装的皮肤中删除具体版本。",
+  "market.skin.removeVersion": "请选择已安装皮肤的具体版本进行删除。",
   "market.skin.stateUnavailable": "皮肤列表暂时无法读取，请刷新后重试。",
 
   "market.tab.skins.label": "皮肤",
@@ -15,10 +15,13 @@ export const zhCNMessages = {
   "market.tab.skins.subtitle": "浏览、安装并选择桌面皮肤",
   "market.type.skin": "皮肤",
   "market.skin.unavailable": "皮肤安装器暂不可用，请重启后重试。",
-  "market.skin.installed": "皮肤已安装，可在我安装的皮肤中选择使用。",
+  "market.skin.installed": "皮肤已安装，可以直接选择使用。",
   "market.skin.applied": "已应用皮肤。",
   "market.skin.removed": "皮肤已删除。",
   "market.skin.preview": "{mode}皮肤预览",
+  "market.skin.previewModes": "{name}的预览模式",
+  "market.skin.all": "全部皮肤",
+  "market.skin.market": "市场",
   "market.skin.current": "正在使用",
   "market.skin.use": "使用这个皮肤",
   "market.skin.retry": "重试",
