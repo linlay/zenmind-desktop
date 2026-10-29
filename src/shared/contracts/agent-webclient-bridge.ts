@@ -319,7 +319,7 @@ export type AgentPlatformRequestFrame = {
   /** Platform event detail level of /api/query, /api/attach and /api/chat.
    * Omitted follows the Agent's default; Desktop sets it only for its own
    * main-process Runs that read tool events (the image studio asks for full). */
-  detail?: "summary" | "full" | "none";
+  detail?: "summary" | "full";
   payload?: unknown;
 };
 
