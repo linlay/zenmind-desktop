@@ -1,6 +1,4 @@
 .skin-discovery { flex-direction: column; }
-.skin-market-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.skin-market-heading h2 { margin: 0; font-size: 14px; }
 .skin-market-card {
     padding: 0;
     overflow: hidden;

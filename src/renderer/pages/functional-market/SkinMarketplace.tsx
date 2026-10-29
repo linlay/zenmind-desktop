@@ -116,7 +116,6 @@ export function SkinMarketplace(props: Props) {
         <div className="skill-discovery skin-discovery">
             <SkinMessages runtime={flow}/>{props.feedback}
             <div className="skill-discovery-scroll">
-                <div className="skin-market-heading"><h2>{t("market.skin.all")}<span className="skill-discovery-count">{count}</span></h2></div>
                 {flow.stateError ? <Alert type="warning" showIcon message={flow.stateError}
                     action={<Button onClick={() => void flow.refresh()}>{t("market.skin.refresh")}</Button>}/> : null}
                 <div className="skill-discovery-grid" aria-busy={props.loading || flow.loading}>

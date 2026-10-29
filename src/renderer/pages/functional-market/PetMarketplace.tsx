@@ -73,9 +73,6 @@ export function PetMarketplace(props: PetMarketplaceProps) {
       <PetMessages runtime={runtime} />
       {props.feedback}
       <div className="skill-discovery-scroll">
-        <div className="pet-market-list-heading">
-          <h2>{t("market.pet.all")}<span className="skill-discovery-count">{marketItems.length + mine.length}</span></h2>
-        </div>
         <div className="skill-discovery-grid pet-market-grid" aria-busy={props.loading || runtime.loading}>{marketItems.map(item => <article className="skill-discovery-card pet-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
           onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) openMarket(item); }}
           onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openMarket(item); } }}>

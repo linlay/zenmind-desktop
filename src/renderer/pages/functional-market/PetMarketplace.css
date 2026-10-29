@@ -1,6 +1,4 @@
 .pet-discovery { flex-direction: column; }
-.pet-market-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-.pet-market-list-heading h2 { margin: 0; font-size: 14px; }
 .pet-market-card { padding: 0; overflow: hidden; cursor: pointer; }
 .pet-market-card:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
 .pet-market-card.is-current { border-color: var(--market-control-blue); }
@@ -17,4 +15,3 @@
 .pet-market-preview-fallback { color: var(--market-control-muted); font-size: 12px; }
 .pet-market-preview.is-detail .pet-market-stage { min-height: 260px; border-radius: 12px; margin-bottom: 12px; }
 .pet-market-detail-meta { color: var(--market-control-muted); }
-@media (max-width: 680px) { .pet-market-list-heading { align-items: flex-start; flex-wrap: wrap; } }
