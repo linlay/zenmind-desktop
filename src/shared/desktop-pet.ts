@@ -286,3 +286,10 @@ export function getDesktopPetStatusAssetPath(appearanceId: unknown, status: stri
   const fileName = stateAsset?.path ?? getDesktopPetStatusAssetName(status);
   return `${appearance.assetBasePath}/${fileName}`;
 }
+
+export function versionedDesktopPetAssetUrl(basePath: string, relativePath: string, version?: string) {
+  const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  const resource = relativePath.replace(/^\/+/u, "").split("/").map(encodeURIComponent).join("/");
+  const url = `${base}${resource}`;
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
+}

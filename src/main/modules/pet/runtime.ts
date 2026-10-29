@@ -33,6 +33,7 @@ import {
   createDefaultDesktopPetLocalStatus,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   getDesktopPetVisibleFootprintForMode,
   getDesktopPetContextMenuItems,
   getAnchoredDesktopPetBounds,
@@ -85,7 +86,13 @@ function normalizeDesktopPetRendererWindowMode(mode: unknown): DesktopPetWindowM
 }
 
 export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
-  const packageService = createPetPackageService({app: options.app, platform: options.platform, refreshState: () => refreshState()});
+  const packageService = createPetPackageService({
+    app: options.app, platform: options.platform, refreshState: () => refreshState(),
+    onRemoved: (appearanceId) => {
+      if (state.desktopPetSettings.appearanceId === appearanceId)
+        state.desktopPetSettings = saveDesktopPetSettings(options.app, { appearanceId: DEFAULT_DESKTOP_PET_APPEARANCE_ID }, options.platform);
+    }
+  });
   type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
   const state = {
     desktopPetWindow: null as BrowserWindow | null,

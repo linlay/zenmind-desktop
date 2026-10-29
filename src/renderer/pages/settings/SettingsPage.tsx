@@ -4593,7 +4593,7 @@ export function SettingsPage({
                   }))}
                 />
               </div>
-              <SkinSettings />
+              <SkinSettings onOpenMarket={() => navigate("/market?tab=skins")} />
               <div className="settings-appearance-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("settings.language.label")}</strong>
@@ -4703,6 +4703,7 @@ export function SettingsPage({
               <div className="settings-pet-gallery">
                 <div className="settings-appearance-row pet-gallery-heading">
                   <div className="settings-appearance-row-copy"><strong>{t("settings.desktopPet.appearance")}</strong></div>
+                <Button onClick={() => navigate("/market?tab=pets")}>{t("market.tab.pets.title")}</Button>
                 <PetImportControls
                   onImported={(state) => { setDesktopPetState(state); setReadErrorSections(["assistant"], ""); }}
                   onNotice={(message, tone) => showSectionNotice("assistant", message, tone)}

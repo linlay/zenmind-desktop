@@ -47,6 +47,8 @@ export interface DesktopPetSettingsInput {
 
 export interface DesktopPetAppearanceOption {
   id: string;
+  /** Installed package revision; changes asset URLs without changing identity. */
+  assetVersion?: string;
   displayName: string;
   description: string;
   assetBasePath: string;

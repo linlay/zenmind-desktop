@@ -7,7 +7,7 @@ import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
 import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
+import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions, DesktopSkinPreview, InstalledDesktopSkinId } from "../desktop-appearance";
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { MarketSkillContentResult } from "./market-skill-detail";
@@ -1152,6 +1152,10 @@ export interface DesktopApi {
     getConnectorAgent(agentKey: string): Promise<MarketConnectorAgentState>;
     getConnectorAgentTools(input: { connectorId: string; agentKey: string }): Promise<MarketConnectorAgentToolState>;
     readSkillContent: (id: string) => Promise<MarketSkillContentResult>;
+    installSkin: (id: string) => Promise<MarketCommandResult>;
+    readSkinAsset: (input: { id: string; version: string; path: string }) => Promise<{ dataUrl: string }>;
+    installPet: (id: string) => Promise<MarketCommandResult>;
+    readPetAsset: (input: { id: string; version: string; path: string }) => Promise<{ dataUrl: string }>;
     getSkillPins: () => Promise<MarketSkillPins>;
     saveSkillPins: (update: MarketSkillPinUpdate) => Promise<MarketSkillPins>;
     getSettings: () => Promise<MarketSettings>;
@@ -1253,6 +1257,7 @@ export interface DesktopApi {
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
     getDesktopSkin: () => Promise<DesktopSkinResult>;
+    getDesktopSkinPreview: (id: InstalledDesktopSkinId, mode: "light" | "dark") => Promise<DesktopSkinPreview | null>;
     setDesktopSkin: (skinId: DesktopSkinId, options?: DesktopSkinSelectionOptions) => Promise<DesktopSkinResult>;
     importDesktopSkinPackage: () => Promise<DesktopSkinResult>;
     importDroppedDesktopSkinPackage: (file: File) => Promise<DesktopSkinResult>;

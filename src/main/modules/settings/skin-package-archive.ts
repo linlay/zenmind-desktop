@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { readBoundedFile } from "./appearance-files";
 import { BackgroundImageError } from "./appearance-images";
-import { SKIN_PACKAGE_LIMITS as limits, SkinPackageError, validateSkinResourcePath, parseSkinPackageManifest, skinPackageResources } from "../../../shared/desktop-skin-package";
+import { SKIN_PACKAGE_LIMITS as limits, SkinPackageError, validateSkinResourcePath, parseSkinPackageManifest, skinPackageResources, discardedSkinPackageResources } from "../../../shared/desktop-skin-package";
 
 const invalid = () => new SkinPackageError("invalidPackage");
 // Check the central-directory count before JSZip creates its name map, so
@@ -91,15 +91,17 @@ export async function readSkinPackageArchive(filePath: string) {
       expanded += declared.uncompressedSize;
       if (declared.uncompressedSize > limits.fileBytes || expanded > limits.expandedBytes) throw new SkinPackageError("packageTooLarge");
       // Finder metadata is not an asset and is never installed or inflated.
-      if (name.startsWith("__MACOSX/") || name.split("/").at(-1) === ".DS_Store") continue;
+      if (name.split("/").some(component => component.toLowerCase() === "__macosx" || component.toLowerCase() === ".ds_store" || component.startsWith("._"))) continue;
       files.set(name, entry);
     }
     const manifests = [...files.keys()].filter((name) => name === "skin.json" || /^[^/]+\/skin\.json$/.test(name));
     if (manifests.length !== 1) throw invalid();
     const root = manifests[0].slice(0, -"skin.json".length);
-    const manifest = parseSkinPackageManifest(JSON.parse((await readEntry(files.get(manifests[0])!, limits.manifestBytes)).toString("utf8")));
+    const rawManifest = JSON.parse((await readEntry(files.get(manifests[0])!, limits.manifestBytes)).toString("utf8"));
+    const manifest = parseSkinPackageManifest(rawManifest);
     const resources = new Set(skinPackageResources(manifest));
-    const allowed = new Set([manifests[0], ...[...resources].map((name) => root + name)]);
+    const ignored = discardedSkinPackageResources(rawManifest);
+    const allowed = new Set([manifests[0], ...[...resources, ...ignored].map((name) => root + name)]);
     if ([...files.keys()].some((name) => !allowed.has(name))) throw invalid();
     const images = new Map<string, Buffer>();
     for (const name of resources) {

@@ -172,3 +172,42 @@ test("1.1 visual images are normalized, persisted under owned names and missing 
   assert.equal(restored.visuals.light.images['chat.send'], undefined);
   assert.equal(restored.visuals.light.styles.unread, '#c33170');
 });
+test('known discarded agent and screenshot PNG references are ignored without decoding or installing',async t=>{
+ const h=setup(t),value=manifest();
+ value.variants.light.visuals={images:{'agent.library':'legacy/library.png','chat.screenshot':'legacy/screenshot.png'}};
+ value.variants.dark.visuals={images:{'agent.terminal':'legacy/terminal.png'}};
+ await h.write(value,z=>{for(const name of ['library','screenshot','terminal'])z.file('legacy/'+name+'.png','not a raster; ignored on purpose')});
+ const {readSkinPackageArchive}=require('../dist-electron/main/modules/settings/skin-package-archive.js');
+ const data=await readSkinPackageArchive(h.source);assert.equal(data.images.size,1);assert.equal(data.manifest.variants.light.visuals.images['agent.library'],undefined);
+ const result=await h.store.importPackage(h.source);const dir=path.join(h.options.assetsRoot,'skins',result.importedSkinId.slice(5));
+ assert.equal(fs.readdirSync(dir).some(name=>name.includes('legacy')||name.includes('library')),false);
+ assert.equal(JSON.stringify(result.settings).includes('legacy/library.png'),false);
+});
+test('discarded references cannot authorize unsafe, non-PNG or unrelated archive files',async t=>{
+ const h=setup(t),{readSkinPackageArchive}=require('../dist-electron/main/modules/settings/skin-package-archive.js');
+ for(const [reference,name] of [['evil.js','evil.js'],['../evil.png','evil.png'],['retired.png','unrelated.png']]){
+  const value=manifest();value.variants.light.visuals={images:{'agent.library':reference}};await h.write(value,z=>z.file(name,'untrusted'));
+  await assert.rejects(readSkinPackageArchive(h.source),error=>error.code==='invalidPackage');
+ }
+});
+test('discarded resources retain archive limits and symlink checks',async t=>{
+ const h=setup(t),{readSkinPackageArchive}=require('../dist-electron/main/modules/settings/skin-package-archive.js');
+ const value=manifest();value.variants.light.visuals={images:{'agent.library':'retired.png'}};
+ await h.write(value,z=>z.file('retired.png',Buffer.alloc(17*1024*1024)));await assert.rejects(readSkinPackageArchive(h.source),e=>e.code==='packageTooLarge');
+ await h.write(value,z=>z.file('retired.png','outside',{unixPermissions:0o120777}));await assert.rejects(readSkinPackageArchive(h.source),e=>e.code==='invalidPackage');
+});
+test('an asset shared with an active background remains a normal decoded resource',async t=>{
+ const h=setup(t),value=manifest();value.variants.light.visuals={images:{'agent.library':'assets/lake.png'}};
+ await h.write(value);
+ const {readSkinPackageArchive}=require('../dist-electron/main/modules/settings/skin-package-archive.js');
+ const data=await readSkinPackageArchive(h.source);assert.equal(data.images.has('assets/lake.png'),true);
+ const applied=await h.store.importPackage(h.source);assert.ok(h.store.setSkin(applied.importedSkinId).installedSkin.backgrounds.light.imageUrl.startsWith('data:image/png;'));
+});
+test('discarded-slot compatibility never skips validation of a shared active image',async t=>{
+ const h=setup(t),value=manifest();value.variants.light.visuals={images:{'agent.library':'assets/lake.png'}};
+ await h.write(value,z=>z.file('assets/lake.png','not a PNG'));
+ const {inspectBackgroundImage}=require('../dist-electron/main/modules/settings/appearance-images.js');
+ const strict=createDesktopSkinStore({...h.options,normalizeImage:data=>{const size=inspectBackgroundImage(data);return {data,...size}}});
+ await assert.rejects(strict.importPackage(h.source),error=>error.code==='invalidImage');
+ assert.equal(strict.read().skinId,'default');assert.equal(strict.read().installedSkins?.length??0,0);
+});

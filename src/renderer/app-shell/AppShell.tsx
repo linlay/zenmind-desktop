@@ -12,6 +12,7 @@ import { useLocalDocumentWorkspace } from "../work-panel/useLocalDocumentWorkspa
 import { localDocumentWorkPanelOwnerForRoute, useLocalDocumentsWorkPanel } from "../work-panel/useLocalDocumentsWorkPanel";
 import { useAppearance } from "../appearance/AppearanceProvider";
 import { DesktopBackground } from "../appearance/DesktopBackground";
+import { isWebclientHostBackgroundSurface } from "../appearance/webclientProjection";
 import { isThemePreference, type ThemePreference } from "../appearance/model";
 import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
@@ -855,6 +856,14 @@ export function AppShell() {
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
     ? activeAgentWebclientRoute
     : null;
+  // Reserve the wallpaper canvas before a lazy guest mounts or negotiates its
+  // document. Guest authorization and appearance delivery remain independent.
+  const usesWebclientBackgroundSurface = Boolean(activeEmbeddedAgentWebclientRoute &&
+    isWebclientHostBackgroundSurface(AGENT_WEBCLIENT_SERVICE_ID,
+      activeEmbeddedAgentWebclientRoute.kind === "chat"
+        ? { surfaceId: MAIN_CHAT_SURFACE_ID, surfaceRole: "main-chat" }
+        : createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID),
+      activeEmbeddedAgentWebclientRoute.embedPath));
   const currentRoute = `${location.pathname}${location.search}`;
   const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId && !activeChatRouteInfo.chatId.startsWith("file-draft:")
     ? activeChatRouteInfo.chatId
@@ -4590,6 +4599,7 @@ export function AppShell() {
         usesWebappSurface ? "has-webapp-surface" : "",
         usesWorkPanelWebappSurface ? "has-work-panel-webapp-surface" : "",
         usesServiceWebviewSurface ? "has-service-webview-surface" : "",
+        usesWebclientBackgroundSurface ? "has-webclient-background-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         location.pathname === "/help" ? "has-help-surface" : "",

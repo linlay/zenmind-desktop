@@ -104,6 +104,14 @@
   background: transparent;
 }
 
+/* The main column already owns the reading veil. A transparent toolbar must
+   not repeatedly blur the same wallpaper when board controls update. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-kanban-controls .kanban-toolbar,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-kanban-controls .kanban-toolbar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* Help has its own anonymous guest, outside the Agent WebClient appearance
    bridge. Clear only Desktop-owned layers; the help document owns its canvas. */
 :root[data-desktop-background="image"] .app-shell.has-help-surface > .app-content,
@@ -166,21 +174,21 @@
   background: color-mix(in srgb, var(--bg-base) 58%, transparent);
 }
 
-/* Main Chat and supported management documents opt in through the dedicated
-   appearance bridge. Clear the owned host chain, never the guest's own CSS.
-   Keep Copilot, WorkPanel and other service reading surfaces independent. */
-:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface:has(.agent-webclient-host-background:not([hidden])) > .app-content,
-:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface:has(.agent-webclient-host-background:not([hidden])) > .app-content > .app-main,
-:root[data-desktop-background="image"] .app-shell.is-windows-platform:has(.agent-webclient-host-background:not([hidden])) > .app-content,
-:root[data-desktop-background="image"] .app-shell.is-windows-platform:has(.agent-webclient-host-background:not([hidden])) > .app-content > .app-main {
+/* Supported foreground routes reserve the canvas synchronously. Waiting for
+   guest document negotiation here briefly restores opaque/blurred surfaces.
+   Only the host chain changes; the guest still owns its document background. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface.has-webclient-background-surface > .app-content,
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface.has-webclient-background-surface > .app-content > .app-main,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-webclient-background-surface > .app-content,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-webclient-background-surface > .app-content > .app-main {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .agent-webclient-host-background,
-:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .agent-webclient-host-background :is(.embedded-surface-frame-shell, .embedded-surface-frame),
-:root[data-desktop-background="image"] .app-shell.is-windows-platform .agent-webclient-host-background,
-:root[data-desktop-background="image"] .app-shell.is-windows-platform .agent-webclient-host-background :is(.embedded-surface-frame-shell, .embedded-surface-frame) {
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface.has-webclient-background-surface .agent-webclient-background-surface:not([hidden]),
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface.has-webclient-background-surface .agent-webclient-background-surface:not([hidden]) :is(.embedded-surface-frame-shell, .embedded-surface-frame),
+:root[data-desktop-background="image"] .app-shell.is-windows-platform .agent-webclient-background-surface:not([hidden]),
+:root[data-desktop-background="image"] .app-shell.is-windows-platform .agent-webclient-background-surface:not([hidden]) :is(.embedded-surface-frame-shell, .embedded-surface-frame) {
   background: transparent;
 }
