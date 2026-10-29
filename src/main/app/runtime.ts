@@ -10,10 +10,10 @@ import { bundledEnvZipExists, configureRuntimeEnvironmentTranslator, resolveRunt
 import { desktopDataRootExists, getDesktopConfigRoot, getDesktopRoot } from "../infrastructure/filesystem/user-paths";
 import { RealtimeBroker } from "../modules/agent-platform";
 import { createDesktopAppearanceRuntime } from "../modules/settings";
-import { createArtifactRuntime } from "../modules/artifacts";
+import { createArtifactRuntime, createArtifactPlatformClient } from "../modules/artifacts";
 import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, getAssistantSettings, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
-import { getDesktopDeviceId, getDesktopSsoAccessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
+import { getDesktopDeviceId, getDesktopSsoBusinessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
 import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
 import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
 import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
@@ -172,6 +172,15 @@ export function createMainProcessRuntime() {
   const getMainWindow = () => appShellRuntime?.getMainWindow() ?? null;
   artifactRuntime = createArtifactRuntime({
     app, platform: startupPlatform, broker: realtimeBroker, ipcMain, getMainWindow,
+    platformApi: createArtifactPlatformClient({ resolve: async (reason) => {
+      const state = await servicesFacade.getServiceState(app, "agent-platform");
+      const baseUrl = state.status === "running" ? state.healthMeta.webUrl.trim() ||
+        (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "") : "";
+      if (!baseUrl) throw new Error("Agent Platform unavailable");
+      const token = await identityTokenProvider(app, reason);
+      if (!token.ok || !token.token.trim()) throw new Error("Agent Platform authorization unavailable");
+      return { baseUrl, token: token.token.trim() };
+    } }),
     onError: (error) => console.warn("[artifacts] failed to record push", error),
   });
   app.once("will-quit", () => artifactRuntime?.dispose());
@@ -260,7 +269,7 @@ export function createMainProcessRuntime() {
     get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
     get webviewContextMenuController() { return webviewContextMenuController; }
   });
-  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
+  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoBusinessToken() || "";
   const enterpriseChatRuntime = enterpriseChat.assembleEnterpriseChat({
     get startupPlatform() { return startupPlatform; },
     get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
@@ -803,6 +812,7 @@ export function createMainProcessRuntime() {
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
       registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+        artifactRuntime,
         get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },

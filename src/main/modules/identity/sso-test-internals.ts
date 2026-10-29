@@ -26,15 +26,15 @@ import {
   getDesktopSsoBrowserSessionConfig,
   getDesktopSsoCookieUserInfoConfig,
   resolveDesktopSsoAvatarRequest,
-  getDesktopSsoAccessTokenCookieLookup,
-  getDesktopSsoAccessTokenCookieLookups,
+  getDesktopSsoBusinessTokenCookieLookup,
+  getDesktopSsoBusinessTokenCookieLookups,
   getDesktopSsoWebSessionExchangeConfig,
   getDesktopSsoWebSessionClearCookies,
   isDesktopSsoLoginCompletionUrl
 } from "./sso-browser-session";
 import { cancelDesktopSsoLogin } from "./sso-login";
-import { desktopSsoAccessTokenNeedsRefresh, saveAccessTokenFile } from "./sso-session";
-import { getDesktopSsoAccessTokenFilePath } from "../../infrastructure/filesystem/user-paths";
+import { desktopSsoIdTokenNeedsRefresh, saveIdTokenFile } from "./sso-session";
+import { getDesktopSsoIdTokenFilePath } from "../../infrastructure/filesystem/user-paths";
 import { normalizeCallbackRequest } from "./sso-callback-params";
 import { getDefaultOidcFetch } from "./sso-http";
 import { completeValidatedOidcLogin, exchangeCodeForTokenClaims, exchangeCodeForClaims, validateIdToken } from "./sso-token-validation";
@@ -68,21 +68,21 @@ export const __testInternals = {
   completeDesktopSsoBrowserSessionUserInfo,
   completeDesktopSsoBrowserUserInfo,
   completeDesktopSsoCookieLogin,
-  desktopSsoAccessTokenNeedsRefresh,
-  getDesktopSsoAccessTokenFilePath,
+  desktopSsoIdTokenNeedsRefresh,
+  getDesktopSsoIdTokenFilePath,
   getDesktopSsoUserInfoFilePath,
   getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoBrowserSessionConfig,
   getDesktopSsoCookieUserInfoConfig,
   getDesktopSsoAvatarCacheConfig,
   resolveDesktopSsoAvatarRequest,
-  getDesktopSsoAccessTokenCookieLookup,
-  getDesktopSsoAccessTokenCookieLookups,
+  getDesktopSsoBusinessTokenCookieLookup,
+  getDesktopSsoBusinessTokenCookieLookups,
   getDesktopSsoWebSessionExchangeConfig,
   getDesktopSsoWebSessionClearCookies,
   isDesktopSsoLoginCompletionUrl,
   readCookieAccessTokenFromResponse,
-  saveAccessTokenFile,
+  saveIdTokenFile,
   normalizeCallbackRequest,
   getDefaultOidcFetch,
   completeValidatedOidcLogin,

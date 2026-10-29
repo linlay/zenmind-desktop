@@ -1,6 +1,6 @@
 import type { BrowserWindow } from "electron";
 import {
-  app
+  app, powerMonitor
 } from "electron";
 import {
   PRODUCT_NAME
@@ -203,7 +203,12 @@ export function startNonCoreDesktopRuntime(dependencies: StartNonCoreDesktopRunt
     });
   }, 5 * 60000);
   desktopSsoRefreshTimer.unref();
-  app.once("before-quit", () => clearInterval(desktopSsoRefreshTimer));
+  const resumeSso = () => { void dependencies.refreshDesktopSsoIdentityToken().catch(() => {}); };
+  powerMonitor?.on("resume", resumeSso);
+  app.once("before-quit", () => {
+    clearInterval(desktopSsoRefreshTimer);
+    powerMonitor?.removeListener("resume", resumeSso);
+  });
   dependencies.runNonCoreStartupTask("webapp install recovery", () => {
     recoverWebappInstallTransactions(app);
   });

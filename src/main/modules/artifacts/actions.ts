@@ -7,6 +7,9 @@ import type { AssistantChatInfo } from "../../../shared/contracts";
 import type { DesktopArtifactActionInput, DesktopArtifactActionResult } from "../../../shared/artifacts";
 import { artifactExternalExtension } from "../../../shared/artifacts";
 import { resolveArtifactLocalFile } from "./local-file";
+import { artifactError } from "./platform-client";
+import { validIdentity } from "./metadata";
+import type { ArtifactActionLibrary } from "./ports";
 
 // Published URLs are chat-relative references, never arbitrary fetch URLs.
 // "@chat/artifacts/..." carries the literal path; the bare form is encoded.
@@ -27,9 +30,9 @@ export function artifactRelativePath(url: unknown, _chatId: string): string | nu
 }
 
 export function registerArtifactActionIpc(ipcMain: Pick<IpcMain, "handle">, ports: {
+  library?: ArtifactActionLibrary;
   getMainWindow(): BrowserWindow | null;
   getChatInfo(chatId: string): Promise<AssistantChatInfo | null>;
-  fetchResource(input: { chatId: string; relativePath: string }): Promise<{ bytes: Buffer } | null>;
   getRuntimeRoot(): string;
   showSaveDialog(options: SaveDialogOptions, owner?: BrowserWindow | null): Promise<SaveDialogReturnValue>;
   app?: Pick<App, "getApplicationInfoForProtocol">;
@@ -40,18 +43,32 @@ export function registerArtifactActionIpc(ipcMain: Pick<IpcMain, "handle">, port
   ipcMain.handle("artifacts.act", async (event, input: DesktopArtifactActionInput): Promise<DesktopArtifactActionResult> => {
     const window = ports.getMainWindow();
     if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return { ok: false };
-    if (!input || !["view", "download", "reveal", "open-default", "open-browser"].includes(input.action) ||
-        typeof input.chatId !== "string" || !input.chatId || input.chatId.length > 256 || /[/\\\u0000-\u001f]/u.test(input.chatId) ||
-        typeof input.artifactId !== "string" || !input.artifactId || input.artifactId.length > 256) return { ok: false };
+    if (!validIdentity(input) || !["view", "download", "reveal", "open-default", "open-browser"].includes(input.action)) return { ok: false };
+    const context = ports.library?.actionContext(input);
+    if (!context?.record) return { ok: false, error: "missing" };
+    const item = context.record;
+    if (item.sourceState !== "active") return { ok: false, error: item.sourceState };
+    if (!input.runId || item.contentState === "unresolved") return { ok: false, error: "unresolved" };
+    if (item.contentState === "ambiguous") return { ok: false, error: "ambiguous" };
+    const current = () => context.isCurrent() && ports.getMainWindow() === window && !window.isDestroyed() &&
+      event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame;
     try {
       const info = await ports.getChatInfo(input.chatId);
-      if (info?.chatId !== input.chatId || !info.agentKey) return { ok: false };
+      if (!current() || info?.chatId !== input.chatId || !info.agentKey) return { ok: false };
       // The current artifact projection is authoritative. Do not replay every message
       // through the Assistant event parser just to resolve a single resource.
       const detail = JSON.parse(info.rawJson);
       if (detail?.chatId !== input.chatId || !Array.isArray(detail.artifact?.items)) return { ok: false };
-      const artifact = detail.artifact.items.find((value: unknown) => value && typeof value === "object" &&
-        (value as Record<string, unknown>).artifactId === input.artifactId) as Record<string, unknown> | undefined;
+      const matches = detail.artifact.items.filter((value: unknown) => {
+        if (!value || typeof value !== "object") return false;
+        const artifact = value as Record<string, unknown>;
+        return artifact.artifactId === input.artifactId && artifactRelativePath(artifact.url, input.chatId)?.split("/")[1] === input.runId;
+      }) as Record<string, unknown>[];
+      if (matches.length !== 1) {
+        ports.library?.reportFailure(input, matches.length ? "artifact_ambiguous" : "artifact_not_found");
+        return { ok: false, error: matches.length ? "ambiguous" : "missing" };
+      }
+      const artifact = matches[0];
       const relativePath = artifactRelativePath(artifact?.url, input.chatId);
       if (!relativePath) return { ok: false };
       const result = { ok: true as const, agentKey: info.agentKey, relativePath };
@@ -63,15 +80,17 @@ export function registerArtifactActionIpc(ipcMain: Pick<IpcMain, "handle">, port
       if (input.action === "download") {
         const selected = await ports.showSaveDialog({ defaultPath: path.posix.basename(relativePath) }, window);
         if (selected.canceled || !selected.filePath) return { ...result, cancelled: true };
-        const resource = await ports.fetchResource({ chatId: input.chatId, relativePath });
-        if (!resource) return { ok: false };
-        await fs.writeFile(selected.filePath, resource.bytes);
+        if (!current()) return { ok: false };
+        const bytes = await ports.library!.read({ chatId: input.chatId, runId: input.runId, artifactId: input.artifactId }, AbortSignal.timeout(30_000));
+        if (!current()) return { ok: false };
+        await fs.writeFile(selected.filePath, bytes);
         return result;
       }
       const platform = ports.platform ?? process.platform;
       const resolveLocal = () => resolveArtifactLocalFile(ports.getRuntimeRoot(), input.chatId, relativePath, platform);
       const target = resolveLocal();
       if (!target || (external && !artifactExternalExtension(target, ""))) return { ok: false };
+      if (!current()) return { ok: false };
       if (input.action === "reveal") {
         if (!ports.fileShell) return { ok: false };
         if (platform === "darwin") ports.fileShell.showItemInFolder(target);
@@ -82,13 +101,18 @@ export function registerArtifactActionIpc(ipcMain: Pick<IpcMain, "handle">, port
       } else if (input.action === "open-browser") {
         if (!ports.app || (platform !== "darwin" && platform !== "win32")) return { ok: false };
         const browser = await ports.app.getApplicationInfoForProtocol("https://example.com");
-        if (!browser.path || resolveLocal() !== target) return { ok: false };
+        if (!current() || !browser.path || resolveLocal() !== target) return { ok: false };
         const launch = ports.launchBrowser ?? launchExternalBrowser;
         if (platform === "darwin") await launch("/usr/bin/open", ["-a", browser.path, target]);
         else if (platform === "win32") await launch(browser.path, [pathToFileURL(target).href]);
       }
       return result;
-    } catch { return { ok: false }; }
+    } catch (error) {
+      const code = artifactError(error);
+      if (current()) ports.library?.reportFailure(input, code);
+      return { ok: false, error: code === "artifact_changed" ? "changed" : code === "artifact_ambiguous" ? "ambiguous" :
+        code === "artifact_not_found" ? "missing" : code === "chat_access_denied" ? "denied" : "failed" };
+    }
   });
 }
 

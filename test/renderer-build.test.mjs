@@ -1673,12 +1673,12 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.assistant-worker-actions\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?gap:\s*4px;[\s\S]*?height:\s*28px;/);
   assert.match(globalStyles, /\.assistant-worker-icon-button\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*6px;/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
-  assert.match(agentIconSource, /AgentGlyph/);
+  assert.match(agentIconSource, /AgentDefaultPose/);
   assert.match(agentIconSource, /resolveAgentIcon\(icon, mode/);
   assert.match(agentIconSource, /agentAppearance/);
   assert.match(agentIconSource, /isImageIcon/);
   assert.match(agentIconSource, /setFailedSource\(imageSource\)/);
-  assert.match(agentIconSource, /color: appearance.color/);
+  assert.match(agentIconSource, /color=\{appearance.color\}/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_DEFINITIONS/);
   assert.match(appShell, /type AgentWebclientRouteDefinition = \{/);
@@ -2849,10 +2849,10 @@ test("desktop state debug tab is wired through the fixed read-only IPC contract"
   assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
   assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-state-file-head/);
 
-  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-id-token\.txt"/);
   assert.match(desktopApi, /getDesktopStateSnapshot:\s*\(\) => Promise<DesktopStateSnapshot>/);
   assert.match(preload, /getDesktopStateSnapshot:\s*\(\) => ipcRenderer\.invoke\("settings\.getDesktopStateSnapshot"\)/);
-  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-id-token\.txt"/);
   assert.match(settingsHandlers, /getDesktopStateRoot\(app, platform\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopStateSnapshot", async \(\) =>/);
   assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);
@@ -8516,7 +8516,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu-avatar-fallback\s*\{/);
   assert.match(globalStyles, /\.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?flex:\s*0 0 24px;/);
   assert.match(globalStyles, /\.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*auto;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*inline-flex;/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{[\s\S]*?min-width:\s*58px;[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout-label\s*\{[\s\S]*?white-space:\s*nowrap;/);

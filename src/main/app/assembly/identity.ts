@@ -15,11 +15,11 @@ import { EnterpriseChatRuntime } from "../../modules/enterprise-chat";
 import {
   completeDesktopSsoCookieLogin,
   createDesktopSsoController,
-  desktopSsoAccessTokenNeedsRefresh,
+  desktopSsoIdTokenNeedsRefresh,
   failDesktopSsoFlow,
   failDesktopSsoStep,
   finalizeDesktopSsoLoginAttempt,
-  getDesktopSsoAccessToken,
+  getDesktopSsoBusinessToken,
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   isDesktopSsoLoginCompletionUrl,
@@ -73,23 +73,23 @@ export function assembleDesktopSsoController(dependencies: AssembleDesktopSsoCon
 }
 
 export interface ConfigureMarketTokenIssuerDependencies {
-  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "refreshBrowserCookieAccessTokenIfNeeded">;
+  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "ensureBusinessToken">;
 }
 
 export function configureMarketTokenIssuer(dependencies: ConfigureMarketTokenIssuerDependencies): void {
   configureMarketAccessTokenIssuer(async (_marketApp, reason) => {
     const currentToken = isDesktopSsoCredentialRuntimeReady()
-      ? getDesktopSsoAccessToken() || ""
+      ? getDesktopSsoBusinessToken() || ""
       : "";
     if (currentToken && reason === "missing") {
       return currentToken;
     }
-    return dependencies.desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(true);
+    return dependencies.desktopSsoController.ensureBusinessToken(true);
   });
 }
 
 export interface CreateDesktopSsoTokenRefresherDependencies {
-  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "retryDesktopSsoSessionRestoreIfNeeded" | "refreshBrowserCookieAccessTokenIfNeeded">;
+  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "retryDesktopSsoSessionRestoreIfNeeded" | "ensureBusinessToken">;
   readonly applyDesktopSsoRestoreResult: (result: DesktopSsoRestoreResult) => void;
   readonly desktopSsoRestoreState: DesktopSsoRestoreResult["state"];
   readonly assistantBridgeRuntime: Pick<AssistantBridgeRuntime, "refreshKanbanDeviceInfo">;
@@ -103,8 +103,8 @@ export function createDesktopSsoTokenRefresher(dependencies: CreateDesktopSsoTok
     if (dependencies.desktopSsoRestoreState === "temporarily_unavailable") {
       return "";
     }
-    const needsRefresh = force || desktopSsoAccessTokenNeedsRefresh(app);
-    const accessToken = await dependencies.desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(force);
+    const needsRefresh = force || desktopSsoIdTokenNeedsRefresh(app);
+    const accessToken = await dependencies.desktopSsoController.ensureBusinessToken(force);
     if (needsRefresh && accessToken) {
       dependencies.assistantBridgeRuntime?.refreshKanbanDeviceInfo();
       void dependencies.enterpriseChatRuntime.refresh().catch((error) => {

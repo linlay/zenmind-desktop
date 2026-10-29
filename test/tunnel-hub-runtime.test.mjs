@@ -58,7 +58,7 @@ function desktopRoot(homePath) {
 function writeDesktopSsoAccessToken(homePath, token = "runtime-sso-access-token") {
   const stateRoot = path.join(desktopRoot(homePath), "state", "desktop");
   fs.mkdirSync(stateRoot, { recursive: true });
-  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${token}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-id-token.txt"), `${token}\n`, "utf8");
 }
 
 function createDesktopWsServerOptions(app, overrides = {}) {
@@ -490,7 +490,7 @@ test("Tunnel Hub runtime requires SSO and clears legacy tunnel secrets", async (
   fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-token"), "cached-relay-token\n", "utf8");
   fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-registration-token"), "legacy-registration-secret\n", "utf8");
   fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-device-secret"), "legacy-device-secret\n", "utf8");
-  fs.rmSync(path.join(desktopRoot(homePath), "state", "desktop", "sso-access-token.txt"), { force: true });
+  fs.rmSync(path.join(desktopRoot(homePath), "state", "desktop", "sso-id-token.txt"), { force: true });
 
   const connectCalls = [];
   const runtime = new TunnelHubRuntime({

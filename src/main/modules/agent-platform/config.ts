@@ -12,7 +12,7 @@ type ProviderConfig = {
   key?: string;
   baseUrl?: string;
   apiKey?: string;
-  useAccessToken?: boolean;
+  useSsoIdToken?: boolean;
   defaultModel?: string;
   protocols?: {
     OPENAI?: {
@@ -141,7 +141,7 @@ export function readAgentPlatformUsageProvider(app: App, providerKey: string, pl
   const paths = ["yml", "yaml"].map((ext) => path.join(providerDir, `${providerKey}.${ext}`)).filter((file) => fs.existsSync(file));
   if (paths.length !== 1) throw new Error("Transit Hub provider is missing or ambiguous.");
   const provider = loadYamlFile<ProviderConfig>(paths[0]);
-  if (!provider?.baseUrl || !provider.apiKey || provider.useAccessToken || (provider.key && provider.key !== providerKey)) {
+  if (!provider?.baseUrl || !provider.apiKey || provider.useSsoIdToken || (provider.key && provider.key !== providerKey)) {
     throw new Error("Transit Hub provider must supply an API key and must not use access-token authentication.");
   }
   const apiKey = resolveProviderAPIKey(providerKey, provider.apiKey, readAgentPlatformEnv(app, platform));

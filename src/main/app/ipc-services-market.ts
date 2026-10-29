@@ -1,5 +1,5 @@
 import type { MarketListResult } from "../../shared/contracts";
-import { getDesktopSsoAccessToken, isDesktopSsoCredentialRuntimeReady } from "../modules/identity";
+import { getDesktopSsoBusinessToken, isDesktopSsoCredentialRuntimeReady } from "../modules/identity";
 import { loadBuiltinServices } from "../modules/services";
 import { importEnvZipIntoExistingRuntime } from "../modules/services";
 import {
@@ -188,10 +188,10 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
       issueAgentAccessToken: async (_app, reason) => {
         let token = isDesktopSsoCredentialRuntimeReady()
-          ? getDesktopSsoAccessToken() || ""
+          ? getDesktopSsoBusinessToken() || ""
           : "";
         if (reason === "unauthorized" || !token) {
-          token = await options.desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.(true) || "";
+          token = await options.desktopSsoController.ensureBusinessToken?.(true) || "";
         }
         return {
           ok: Boolean(token),

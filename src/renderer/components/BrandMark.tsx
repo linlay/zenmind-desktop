@@ -166,8 +166,18 @@ function DefaultSidebarActionIcon({ kind, className }: SidebarActionIconProps) {
   switch (kind) {
     case "sidebar_left": return <MaterialIcon name="dock_to_right" className={iconProps.className} />;
     case "sidebar_right": return <MaterialIcon name="dock_to_left" className={iconProps.className} />;
-    case "back": return <MaterialIcon name="chevron_left" className={iconProps.className} />;
-    case "forward": return <MaterialIcon name="chevron_right" className={iconProps.className} />;
+    case "back":
+      return (
+        <svg {...iconProps}>
+          <path d="M20 12H4M10 4.5 4 12l6 7.5" />
+        </svg>
+      );
+    case "forward":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 12h16M14 4.5 20 12l-6 7.5" />
+        </svg>
+      );
     case "sort": return <MaterialIcon name="list_arrow" className={iconProps.className} />;
     case "expand_all":
       return (

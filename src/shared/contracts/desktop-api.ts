@@ -47,6 +47,8 @@ import type {
   AssistantNavigationLiveStatus,
   AssistantNavigationPushEventListener,
   AssistantPastedImageInput,
+  AssistantReorderNavigationAgentsRequest,
+  AssistantReorderNavigationAgentsResult,
   AssistantReorderProjectsRequest,
   AssistantReorderProjectsResult,
   AssistantSettingsInput,
@@ -789,7 +791,7 @@ export type DesktopStateFileName =
   | "env-bootstrap.json"
   | "pet-state.json"
   | "sso-session.json"
-  | "sso-access-token.txt";
+  | "sso-id-token.txt";
 
 export interface DesktopStateFileSnapshot {
   name: DesktopStateFileName;
@@ -903,6 +905,11 @@ export interface DesktopApi {
   };
   localDocuments: LocalDocumentsApi;
   artifacts: {
+    folder: (input: import("../artifacts").DesktopArtifactFolderInput) => Promise<import("../artifacts").DesktopArtifactMutationResult>;
+    organizeMany: (input: import("../artifacts").DesktopArtifactBatchInput) => Promise<import("../artifacts").DesktopArtifactMutationResult>;
+    thumbnail: (input: import("../artifacts").DesktopArtifactIdentity) => Promise<string | null>;
+    organize: (input: import("../artifacts").DesktopArtifactOrganizeInput) => Promise<void>;
+    sync: () => Promise<import("../artifacts").DesktopArtifactSyncState>;
     act: (input: DesktopArtifactActionInput) => Promise<DesktopArtifactActionResult>;
     list: (input?: DesktopArtifactListInput) => Promise<DesktopArtifactListResult>;
     onChanged: (listener: () => void) => () => void;
@@ -1021,6 +1028,7 @@ export interface DesktopApi {
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: (options?: AssistantNavigationListOptions) => Promise<AssistantNavAgentItemsResult>;
     updateChatOrder: (input: AssistantChatOrderMutationRequest) => Promise<AssistantChatOrderMutationResult>;
+    reorderNavigationAgents: (input: AssistantReorderNavigationAgentsRequest) => Promise<AssistantReorderNavigationAgentsResult>;
     reorderProjects: (input: AssistantReorderProjectsRequest) => Promise<AssistantReorderProjectsResult>;
     getNavigationLiveStatus: () => Promise<AssistantNavigationLiveStatus>;
     listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
@@ -1173,6 +1181,7 @@ export interface DesktopApi {
     readLog: (options?: ServiceLogReadOptions) => Promise<ServiceLogReadResult>;
   };
   sso: {
+    retrySession: () => Promise<DesktopSsoStatus>;
     getStatus: () => Promise<DesktopSsoStatus>;
     startLogin: () => Promise<DesktopSsoStartResult>;
     cancelLogin: () => Promise<DesktopSsoCancelResult>;

@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const { buildAssistantNavigationAgentsFromPlatformAgents, applyAssistantNavigationPush } = require("../dist-electron/main/modules/assistant/navigation-status-client.js");
 const { AGENT_PLATFORM_KNOWN_PUSH_TYPES } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.shared.js");
-const bundle = await build({ stdin: { contents: `export * from './src/renderer/assistantNavigation'; export * from './src/renderer/app-shell/navigation/primaryChatView'; export * from './src/renderer/components/icons/agentAppearance'; export * from './src/renderer/components/icons/AgentGlyph'; export * from './src/shared/agent-webclient-routes';`, resolveDir: process.cwd() }, bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", packages: "external", define: { __DESKTOP_APP_BRAND__: JSON.stringify(APP_BRAND) } });
+const bundle = await build({ stdin: { contents: `export * from './src/renderer/assistantNavigation'; export * from './src/renderer/app-shell/navigation/primaryChatView'; export * from './src/renderer/components/icons/agentAppearance'; export * from './src/renderer/components/icons/AgentDefaultPose'; export * from './src/shared/agent-webclient-routes';`, resolveDir: process.cwd() }, bundle: true, outfile: "agent-icons-test.cjs", write: false, platform: "node", format: "cjs", jsx: "automatic", packages: "external", define: { __DESKTOP_APP_BRAND__: JSON.stringify(APP_BRAND) } });
 const mod = { exports: {} };
 new Function("module", "exports", "require", bundle.outputFiles[0].text)(mod, mod.exports, require);
 const api = mod.exports;
@@ -85,7 +85,7 @@ test("Agent names, colors and legacy fallbacks follow WebClient mode rules", () 
 test("inline TEAM glyph masks remain unique across repeated Agent rows", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
-  const html = renderToStaticMarkup(React.createElement(React.Fragment, null, ...[1, 2].map(key => React.createElement("svg", { key }, React.createElement(api.AgentGlyph, { name: "team" })))));
+  const html = renderToStaticMarkup(React.createElement(React.Fragment, null, ...[1, 2].map(key => React.createElement("svg", { key }, React.createElement(api.AgentDefaultPose, { variant: "team" })))));
   const ids = [...html.matchAll(/<mask id="([^"]+)"/gu)].map(match => match[1]);
   assert.equal(ids.length, 2);
   assert.notEqual(ids[0], ids[1]);

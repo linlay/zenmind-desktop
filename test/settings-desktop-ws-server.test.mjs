@@ -313,7 +313,7 @@ test("enterprise IM settings use independent persistence and notify runtime chan
   assert.equal(changedSettings.at(-1).enabled, false);
 });
 
-test("desktop state snapshot reads the fixed file whitelist including the raw access token", async (t) => {
+test("desktop state snapshot reads the fixed file whitelist while redacting the ID token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-state-snapshot-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -325,7 +325,7 @@ test("desktop state snapshot reads the fixed file whitelist including the raw ac
     ["env-bootstrap.json", JSON.stringify({ copiedFiles: 2 })],
     ["pet-state.json", JSON.stringify({ unreadCount: 3 })],
     ["sso-session.json", JSON.stringify({ authenticated: true })],
-    ["sso-access-token.txt", "plain-debug-access-token"]
+    ["sso-id-token.txt", "plain-debug-access-token"]
   ]);
   for (const [fileName, content] of fileContents) {
     fs.writeFileSync(path.join(stateRoot, fileName), content, "utf8");
@@ -342,7 +342,7 @@ test("desktop state snapshot reads the fixed file whitelist including the raw ac
     "env-bootstrap.json",
     "pet-state.json",
     "sso-session.json",
-    "sso-access-token.txt"
+    "sso-id-token.txt"
   ]);
   assert.equal(snapshot.files.some((file) => file.name === "ignored.json"), false);
 
@@ -357,7 +357,7 @@ test("desktop state snapshot reads the fixed file whitelist including the raw ac
   const token = snapshot.files.at(-1);
   assert.equal(token.exists, true);
   assert.equal(token.format, "text");
-  assert.equal(token.content, "plain-debug-access-token");
+  assert.equal(token.content, "[REDACTED]");
   assert.equal(token.error, undefined);
 });
 
@@ -380,9 +380,9 @@ test("desktop state snapshot isolates missing, invalid, and unreadable fixed fil
   assert.match(byName.get("bootstrap.json").error, /^Invalid JSON:/u);
   assert.equal(byName.get("pet-state.json").exists, true);
   assert.match(byName.get("pet-state.json").error, /regular file/u);
-  assert.equal(byName.get("sso-access-token.txt").exists, false);
-  assert.equal(byName.get("sso-access-token.txt").content, "");
-  assert.equal(byName.get("sso-access-token.txt").modifiedAt, null);
+  assert.equal(byName.get("sso-id-token.txt").exists, false);
+  assert.equal(byName.get("sso-id-token.txt").content, "");
+  assert.equal(byName.get("sso-id-token.txt").modifiedAt, null);
 });
 
 test("desktop state snapshot derives the runtime path explicitly for macOS and Windows", async (t) => {

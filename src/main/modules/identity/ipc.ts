@@ -6,9 +6,10 @@ export interface SsoIpcHandlerOptions {
   desktopSsoController: {
     broadcastStatus: (status: any) => void;
     returnToApp: () => void;
+    retrySession?: () => Promise<any>;
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
-    refreshBrowserCookieAccessTokenIfNeeded?: (force?: boolean) => Promise<string>;
+    ensureBusinessToken?: (force?: boolean) => Promise<string>;
     retryDesktopSsoSessionRestoreIfNeeded?: () => Promise<any>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
     exchangeWebSessionTicket?: (ticket: string) => Promise<any>;
@@ -63,10 +64,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
     issueAgentAccessToken
   } = options;
 
+  ipcMain.handle("sso.retrySession", async () => desktopSsoController.retrySession?.() || getDesktopSsoStatus(app));
   ipcMain.handle("sso.getStatus", async () => {
     try {
       await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded?.();
-      await desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.();
+      await desktopSsoController.ensureBusinessToken?.();
     } catch (error) {
       safeConsoleError("failed to refresh desktop sso token while reading status", error);
     }

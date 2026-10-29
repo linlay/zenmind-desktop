@@ -359,6 +359,7 @@ export interface AssistantNavAgentItemsResult {
   ok: boolean;
   items: AssistantNavAgentItem[];
   activityItems?: AssistantNavAgentItem[];
+  agentOrderingSupported?: boolean;
   chatItems: AssistantNavChatItem[];
   chatItemsHasMore: boolean;
   chatSortMode?: AssistantChatSortMode;
@@ -377,6 +378,13 @@ export interface AssistantNavigationAttentionSummary {
   projects: AssistantNavigationAttentionCounts;
   total: AssistantNavigationAttentionCounts;
 }
+
+/** Orders the navigation Agent subset in the shared Platform catalog. */
+export interface AssistantReorderNavigationAgentsRequest {
+  agentKeys: string[];
+}
+
+export type AssistantReorderNavigationAgentsResult = AssistantReorderProjectsResult;
 
 export interface AssistantReorderProjectsRequest {
   agentKeys: string[];

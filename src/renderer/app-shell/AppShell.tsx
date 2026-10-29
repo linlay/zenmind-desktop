@@ -97,7 +97,6 @@ import {
   resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
-import { MaterialIcon } from "../components/icons/MaterialIcon";
 import { readPrimaryChatNavigation, savePrimaryChatNavigation } from "./navigation/primaryChatView";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
@@ -723,9 +722,11 @@ export function AppShell() {
     useState<boolean | null>(null);
   const [primaryChatNavigation, setPrimaryChatNavigation] = useState(readPrimaryChatNavigation);
   const [primaryChatNavError, setPrimaryChatNavError] = useState("");
+  const [primaryAgentOrderingSupported, setPrimaryAgentOrderingSupported] = useState(false);
   const [primaryChatNavAgents, setPrimaryChatNavAgents] = useState<AssistantNavAgentItem[]>([]);
-  function togglePrimaryChatNavigation() {
-    setPrimaryChatNavigation(current => { const next = !current; savePrimaryChatNavigation(next); return next; });
+  function handlePrimaryChatNavigationChange(enabled: boolean) {
+    savePrimaryChatNavigation(enabled);
+    setPrimaryChatNavigation(enabled);
   }
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantPinnedChatItems, setAssistantPinnedChatItems] = useState<AssistantNavChatItem[]>([]);
@@ -1754,6 +1755,7 @@ export function AppShell() {
         const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult));
         setAssistantNavAgentsLoaded(true);
         setPrimaryChatNavAgents(navigationItems);
+        setPrimaryAgentOrderingSupported(nextResult.agentOrderingSupported === true);
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
@@ -1906,6 +1908,7 @@ export function AppShell() {
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgentsLoaded(true);
       setPrimaryChatNavAgents(nextResult.items);
+      setPrimaryAgentOrderingSupported(nextResult.agentOrderingSupported === true);
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
@@ -4650,14 +4653,6 @@ export function AppShell() {
                   </button>
                   <button
                     type="button"
-                    className="app-system-bar-action primary-chat-mode-toggle"
-                    aria-label={t("sidebar.primaryChats.toggle")}
-                    title={t(primaryChatNavigation ? "sidebar.primaryChats.standardMode" : "sidebar.primaryChats.toggle")}
-                    aria-pressed={primaryChatNavigation}
-                    onClick={togglePrimaryChatNavigation}
-                  ><MaterialIcon name="question_answer" /></button>
-                  <button
-                    type="button"
                     className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
                     aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
                     title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
@@ -4705,7 +4700,7 @@ export function AppShell() {
                   disabled={isAgentWebclientMainRoute}
                   title={t("sidebar.copilot.title")}
                 >
-                  <SidebarActionIcon kind="sidebar_right" />
+                  <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                 </button>
               ) : null}
             </nav>
@@ -4780,10 +4775,15 @@ export function AppShell() {
           webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
           primaryChatNavError={primaryChatNavError}
-          windowFullScreen={windowFullScreen}
           primaryChatNavigation={primaryChatNavigation}
           primaryChatNavAgents={primaryChatNavAgents}
-          onTogglePrimaryChatNavigation={togglePrimaryChatNavigation}
+          onReorderPrimaryAgents={primaryAgentOrderingSupported ? async (agentKeys) => {
+            try {
+              return await window.electronAPI.assistant.reorderNavigationAgents({ agentKeys });
+            } finally {
+              await refreshAssistantNavAgents({ force: true });
+            }
+          } : undefined}
           assistantNavAgents={assistantNavAgents}
           assistantPinnedChatItems={assistantPinnedChatItems}
           assistantChatPinningSupported={assistantChatPinningSupported}
@@ -4966,6 +4966,8 @@ export function AppShell() {
                     onWebappPublishStatusChange={handleWebappPublishStatusChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     onTunnelHubEnabledChange={setTunnelHubEnabled}
+                    primaryChatNavigation={primaryChatNavigation}
+                    onPrimaryChatNavigationChange={handlePrimaryChatNavigationChange}
                     debugVisible={debugSettingsUnlocked}
                     onCloseDebug={handleCloseDebugSettings}
                   />

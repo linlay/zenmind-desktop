@@ -1,3 +1,4 @@
+.primary-chat-navigation { flex:0 0 auto; min-width:0; }
 .primary-chat-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:28px; padding:0 8px 2px; color:var(--ink-muted); font-size:12px; }
 .primary-chat-heading button { border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .primary-chat-row { position:relative; margin:1px 0; }
@@ -17,16 +18,18 @@
 .primary-chat-navigation.is-collapsed .primary-chat-item { position:relative; width:40px; min-height:40px; padding:4px; margin:0 auto; justify-content:center; }
 .primary-chat-navigation.is-collapsed .primary-chat-status { position:absolute; right:0; bottom:2px; }
 .primary-chat-spinner { animation:primary-chat-spin 1s linear infinite; }
-.primary-chat-mode-toggle[aria-pressed="true"] { color:var(--control-icon-hover-color); background:var(--control-active-bg); }
 @keyframes primary-chat-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .primary-chat-spinner { animation:none; } }
 @media (hover:none) { .primary-chat-history { opacity:1; pointer-events:auto; } .primary-chat-name { padding-right:24px; } }
 
-.sidebar-new-chat-button[hidden], .sidebar-sortable-nav-entry:has(> .sidebar-new-chat-button[hidden]) { display:none; }
 .primary-chat-error { display:flex; align-items:center; gap:6px; padding:8px; color:var(--ink-muted); font-size:12px; }
 .primary-chat-error button { border:0; background:var(--control-hover-bg); color:var(--ink); border-radius:4px; cursor:pointer; }
 
-/* The extra switch must fit the existing 160px minimum sidebar without shrinking hit areas. */
-.app-sidebar:not(.is-collapsed) .sidebar-top-actions:has(.primary-chat-mode-toggle) { gap:0; }
 
 .primary-chat-status .assistant-worker-unread-dot { margin:0; }
+
+.primary-chat-item { app-region:no-drag; -webkit-app-region:no-drag; touch-action:none; }
+.primary-chat-row.is-dragging { opacity:.35; }
+.primary-chat-row.drop-before::before, .primary-chat-row.drop-after::after { content:""; position:absolute; left:8px; right:8px; height:2px; background:var(--accent); pointer-events:none; z-index:3; }
+.primary-chat-row.drop-before::before { top:-1px; }
+.primary-chat-row.drop-after::after { bottom:-1px; }

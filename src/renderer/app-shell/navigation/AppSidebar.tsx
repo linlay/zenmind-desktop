@@ -1,4 +1,3 @@
-import { MaterialIcon } from "../../components/icons/MaterialIcon";
 import { PrimaryChatNavigation } from "./PrimaryChatNavigation";
 import { primaryChatNavigationTarget } from "./primaryChatView";
 import { SkinHeading } from "../../appearance/SkinVisual";
@@ -1024,9 +1023,8 @@ type AppSidebarProps = {
   webItems: WebEntry[];
   primaryChatNavigation?: boolean;
   primaryChatNavError?: string;
-  windowFullScreen?: boolean;
   primaryChatNavAgents?: AssistantNavAgentItem[];
-  onTogglePrimaryChatNavigation?: () => void;
+  onReorderPrimaryAgents?: (agentKeys: string[]) => Promise<{ ok: boolean; agentKeys: string[]; message: string }>;
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantPinnedChatItems?: AssistantNavChatItem[];
   assistantChatPinningSupported?: boolean;
@@ -1122,9 +1120,8 @@ export function AppSidebar({
   webItems,
   primaryChatNavigation = false,
   primaryChatNavError = "",
-  windowFullScreen = false,
   primaryChatNavAgents = [],
-  onTogglePrimaryChatNavigation,
+  onReorderPrimaryAgents,
   assistantNavAgents = [],
   assistantPinnedChatItems: manualPinnedChatItems = [],
   assistantChatPinningSupported = false,
@@ -1385,6 +1382,8 @@ export function AppSidebar({
   const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarContextMenuRequestIdRef = useRef(0);
   const currentRouteRef = useRef(currentRoute);
+  const primaryChatNavAgentsRef = useRef(primaryChatNavAgents);
+  primaryChatNavAgentsRef.current = primaryChatNavAgents;
   const assistantNavAgentsRef = useRef(assistantNavAgents);
   const webItemsRef = useRef(webItems);
   assistantNavAgentsRef.current = assistantNavAgents;
@@ -2447,7 +2446,7 @@ export function AppSidebar({
     return (
       assistantNavAgentsRef.current.find(
         (agent) => agent.agentKey === agentKey,
-      ) || null
+      ) || primaryChatNavAgentsRef.current.find(agent => agent.agentKey === agentKey) || null
     );
   }
 
@@ -3144,7 +3143,7 @@ export function AppSidebar({
       return;
     }
 
-    if (activeChatDragId || activeProjectDragKey) {
+    if (activeChatDragId || activeProjectDragKey || currentElement.closest('[data-primary-agent-dragging="true"]')) {
       return;
     }
 
@@ -4531,7 +4530,6 @@ export function AppSidebar({
     return (
       <button
         type="button"
-        hidden={primaryChatNavigation}
         className="sidebar-link sidebar-primary-link sidebar-new-chat-button"
         aria-label={label}
         title={disabled ? t("sidebar.chats.defaultAgentUnavailable") : label}
@@ -5449,6 +5447,8 @@ export function AppSidebar({
           dragActivator?.setActivatorNodeRef(element);
         }}
         headerButtonProps={{
+          "data-agent-identity": "",
+          "data-agent-pointer-idle": "",
           className: "assistant-worker-header",
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
           ...getSidebarRovingItemProps(
@@ -5923,6 +5923,23 @@ export function AppSidebar({
         </div>
       </Collapse>
     );
+  }
+
+  function renderPrimaryChatNavigation() {
+    // This is a chat-directory view. Copilot launcher visibility is unrelated
+    // and becomes false on Main Chat routes, where this list must stay mounted.
+    return <PrimaryChatNavigation
+      agents={primaryChatNavAgents} collapsed={isCollapsed} currentChatId={activeSidebarChatId}
+      loaded={assistantNavAgentsLoaded} error={primaryChatNavError}
+      onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })}
+      onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
+      itemProps={getSidebarRovingItemProps}
+      onContextMenu={handleAgentContextMenu}
+      onReorder={onReorderPrimaryAgents}
+      onOpen={(agent) => {
+        if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
+        else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
+      }} />;
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
@@ -6427,7 +6444,7 @@ export function AppSidebar({
   }
 
   function handleAgentContextMenu(
-    event: MouseEvent<HTMLElement>,
+    event: MouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
     agent: AssistantNavAgentItem,
   ) {
     event.preventDefault();
@@ -6435,7 +6452,7 @@ export function AppSidebar({
     openNativeSidebarContextMenu(
       { kind: "agent", agentKey: agent.agentKey },
       event.currentTarget,
-      event.clientX === 0 && event.clientY === 0
+      !("clientX" in event) || (event.clientX === 0 && event.clientY === 0)
         ? undefined
         : { x: event.clientX, y: event.clientY },
     );
@@ -6598,6 +6615,7 @@ export function AppSidebar({
           <p className="sidebar-agent-dialog-message">
             {t("sidebar.chat.deleteConfirm", { name: chatLabel })}
           </p>
+          <LibraryDeleteNotice chatId={assistantChatDeleteDialog.chat.chatId} />
           {assistantChatDeleteDialog.error ? (
             <div className="sidebar-agent-dialog-error" role="alert">
               {assistantChatDeleteDialog.error}
@@ -6941,7 +6959,7 @@ export function AppSidebar({
           shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"
         }
       >
-        {!isWindows || windowFullScreen ? (
+        {!isWindows ? (
           <div className="sidebar-chrome">
             <div className={chromeToolbarClassName}>
               <div className="sidebar-top-actions">
@@ -6954,13 +6972,6 @@ export function AppSidebar({
                     onClick={onOpenGlobalSearch}
                   >
                     <SettingsSidebarIcon kind="search" />
-                  </button>
-                ) : null}
-                {isPrimaryMode && assistantLauncherVisible ? (
-                  <button type="button" className="app-sidebar-collapse-button is-compact primary-chat-mode-toggle"
-                    aria-label={t("sidebar.primaryChats.toggle")} title={t(primaryChatNavigation ? "sidebar.primaryChats.standardMode" : "sidebar.primaryChats.toggle")}
-                    aria-pressed={primaryChatNavigation} onClick={onTogglePrimaryChatNavigation}>
-                    <MaterialIcon name="question_answer" />
                   </button>
                 ) : null}
                 {isPrimaryMode ? (
@@ -7023,7 +7034,7 @@ export function AppSidebar({
                     title={t("sidebar.copilot.title")}
                   >
                     <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
-                      <SidebarActionIcon kind="sidebar_right" />
+                      <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                     </span>
                   </button>
                 ) : null}
@@ -7050,14 +7061,6 @@ export function AppSidebar({
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
               : <>
-                {primaryChatNavigation && assistantLauncherVisible ? <PrimaryChatNavigation
-                  agents={primaryChatNavAgents} collapsed={isCollapsed} currentChatId={activeSidebarChatId}
-                  loaded={assistantNavAgentsLoaded} error={primaryChatNavError} onRetry={() => void onRefreshAssistantNavAgents?.({ force: true })} onHistory={(agentKey) => onOpenChatHistory?.(agentKey)}
-                  itemProps={getSidebarRovingItemProps}
-                  onOpen={(agent) => {
-                    if (agent.primaryChat) void handleAssistantOpenChat(agent.primaryChat, { focusAgentChat: true });
-                    else requestNavigate(primaryChatNavigationTarget(agent), { retriggerAgentRoute: true, focusAgentChat: true });
-                  }} /> : null}
                 <SortableNavEntries
                   order={sidebarNavOrder}
                   sortableKeys={["kanban", "schedules", "new-chat", ...shownCapabilityNavItems.map((item) => item.orderKey), ...pinnedWebNavItems.map((item) => item.orderKey)]}
@@ -7070,7 +7073,10 @@ export function AppSidebar({
                     const item = navItems.find((entry) => entry.orderKey === key);
                     if (!item) return null;
                     if (item.entryType === "chats" || item.entryType === "assistants") {
-                      return <div hidden={primaryChatNavigation} style={{ display: primaryChatNavigation ? "none" : "contents" }}>{renderPrimaryNavEntry(item)}</div>;
+                      return <Fragment>
+                        {item.entryType === "chats" && primaryChatNavigation ? renderPrimaryChatNavigation() : null}
+                        <div hidden={primaryChatNavigation} style={{ display: primaryChatNavigation ? "none" : "contents" }}>{renderPrimaryNavEntry(item)}</div>
+                      </Fragment>;
                     }
                     return renderPrimaryNavEntry(item);
                   }}
@@ -7097,6 +7103,7 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
+                      shouldRenderDesktopSsoTriggerAvatar ? "" : "is-signed-out",
                       hasDesktopUpdate ? "has-update" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
@@ -7105,7 +7112,7 @@ export function AppSidebar({
                     aria-label={hasDesktopUpdate ? `${t("nav.sidebar.openSettings")} · ${t(`updates.phase.${desktopUpdate!.phase}`)}` : t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}
-                    title={hasDesktopUpdate ? t(`updates.phase.${desktopUpdate!.phase}`) : t("nav.settings")}
+                    title={hasDesktopUpdate ? t(`updates.phase.${desktopUpdate!.phase}`) : shouldRenderCollapsed ? toolMenuTriggerLabel : t("nav.settings")}
                   >
                     {!shouldRenderDesktopSsoTrigger ? (
                       <span className="sidebar-link-icon sidebar-settings-icon-slot">
@@ -7223,3 +7230,4 @@ const ArrowIcon: React.FC<
     </svg>
   );
 };
+import { LibraryDeleteNotice } from "../history/LibraryDeleteNotice";

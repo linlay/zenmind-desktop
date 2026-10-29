@@ -1,3 +1,4 @@
+import { PrimaryChatNavigationDebugSetting } from "./PrimaryChatNavigationDebugSetting";
 import { formatMicrocredits, usageLimitProgress } from "../../../shared/usage-credits";
 import { PetAppearancePreview } from "./PetAppearancePreview";
 import { PetImportControls } from "./PetImportControls";
@@ -141,6 +142,8 @@ type SettingsPageProps = {
   onWebappPublishStatusChange: (id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   onTunnelHubEnabledChange?: (enabled: boolean) => void;
+  primaryChatNavigation?: boolean;
+  onPrimaryChatNavigationChange?: (enabled: boolean) => void;
   debugVisible: boolean;
   onCloseDebug: () => void;
 };
@@ -2051,7 +2054,9 @@ function AgentRealtimeDebugCard() {
   );
 }
 
-function DebugSettingsPanel() {
+function DebugSettingsPanel({ primaryChatNavigation, onPrimaryChatNavigationChange }: {
+  primaryChatNavigation: boolean; onPrimaryChatNavigationChange?: (enabled: boolean) => void;
+}) {
   const { t } = useI18n();
   const [activeCategoryId, setActiveCategoryId] = useState<DebugCategoryId>("device");
 
@@ -2073,6 +2078,7 @@ function DebugSettingsPanel() {
       case "other":
         return (
           <div className="settings-about-stack">
+            <PrimaryChatNavigationDebugSetting enabled={primaryChatNavigation} onChange={onPrimaryChatNavigationChange} />
             <DesktopActionDebugCard />
             <TunnelDebugCard />
           </div>
@@ -2419,6 +2425,8 @@ export function SettingsPage({
   onWebappPublishStatusChange,
   onAssistantSettingsChange,
   onTunnelHubEnabledChange,
+  primaryChatNavigation = false,
+  onPrimaryChatNavigationChange,
   debugVisible,
   onCloseDebug
 }: SettingsPageProps) {
@@ -4436,7 +4444,10 @@ export function SettingsPage({
             loading={usageProfileLoading}
             heatmapMode={usageHeatmapMode}
             onHeatmapModeChange={setUsageHeatmapMode}
-            onRefresh={refreshUsageProfile}
+            onRefresh={async () => {
+              await window.electronAPI.sso.retrySession();
+              await refreshUsageProfile();
+            }}
           />
         );
       case "general": {
@@ -5803,7 +5814,7 @@ export function SettingsPage({
         );
       case "debug":
         return (
-          <DebugSettingsPanel />
+          <DebugSettingsPanel primaryChatNavigation={primaryChatNavigation} onPrimaryChatNavigationChange={onPrimaryChatNavigationChange} />
         );
       default:
         return null;

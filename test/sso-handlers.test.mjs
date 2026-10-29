@@ -18,7 +18,7 @@ const {
   completeDesktopSsoRestoredBrowserSession,
   failDesktopSsoFlow,
   finalizeDesktopSsoLoginAttempt,
-  getDesktopSsoAccessToken,
+  getDesktopSsoBusinessToken,
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   startDesktopSsoLogin
@@ -76,7 +76,7 @@ function writeBrowserCookieRestoreCandidate(app, {
   accessToken = "old-access-token",
   userSub = "old-user"
 } = {}) {
-  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoIdTokenFilePath(app));
   fs.mkdirSync(stateRoot, { recursive: true });
   fs.writeFileSync(path.join(stateRoot, "sso-session.json"), `${JSON.stringify({
     schemaVersion: 2,
@@ -96,7 +96,7 @@ function writeBrowserCookieRestoreCandidate(app, {
     source: "browser_session",
     updatedAt: "2026-08-01T00:00:00.000Z"
   }, null, 2)}\n`, "utf8");
-  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${accessToken}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-id-token.txt"), `${accessToken}\n`, "utf8");
   const legacySiteTokenPath = path.join(path.dirname(path.dirname(stateRoot)), "secrets", "sso-site-token.json");
   fs.mkdirSync(path.dirname(legacySiteTokenPath), { recursive: true });
   fs.writeFileSync(legacySiteTokenPath, `${JSON.stringify({
@@ -566,7 +566,7 @@ test("desktop sso default restart validates Cookie, exchanges a fresh JWT, and f
   });
   assert.equal(calls.fetches.length, 2, "a still-valid local JWT must not skip upstream validation and exchange");
   assert.ok(calls.fetches.every(({ init }) => init.headers.Authorization === undefined));
-  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), freshToken);
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), freshToken);
   const storedUser = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-user-info.json"), "utf8"));
   assert.equal(storedUser.sub, "new-user");
   const storedSession = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-session.json"), "utf8"));
@@ -609,8 +609,8 @@ test("desktop sso Bearer restore clears rejected credentials but retains candida
       const stateRoot = writeBrowserCookieRestoreCandidate(app);
       const result = await controller.restoreDesktopSsoSession();
       assert.equal(result.state, status === 401 ? "signed_out" : "temporarily_unavailable");
-      assert.equal(getDesktopSsoAccessToken(), null);
-      assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), status !== 401);
+      assert.equal(getDesktopSsoBusinessToken(), null);
+      assert.equal(fs.existsSync(path.join(stateRoot, "sso-id-token.txt")), status !== 401);
       assert.equal(calls.defaultSets.length, 0);
       assert.equal(calls.fetches.length, 1);
     });
@@ -631,7 +631,7 @@ test("desktop sso restore retains candidates and stays unavailable when Cookie p
   assert.match(result.status.error, /Cookie store unavailable/u);
   assert.equal(calls.fetches.length, 0);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
-  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-id-token.txt")), true);
 });
 
 test("desktop sso restart 401 clears canonical files and known cookies", async (t) => {
@@ -655,7 +655,7 @@ test("desktop sso restart 401 clears canonical files and known cookies", async (
   for (const fileName of [
     "sso-session.json",
     "sso-user-info.json",
-    "sso-access-token.txt"
+    "sso-id-token.txt"
   ]) {
     assert.equal(fs.existsSync(path.join(stateRoot, fileName)), false, `${fileName} should be removed`);
   }
@@ -712,7 +712,7 @@ test("desktop sso restart keeps files unavailable on 5xx and retries with single
   assert.equal(unavailable.status.authenticated, false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), true);
-  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-id-token.txt")), true);
   assert.ok(calls.defaultRemoves.some(({ name }) => name === "access_token"));
   assert.equal(getDesktopSsoStatus(app).authenticated, false);
   assert.equal(isDesktopSsoCredentialRuntimeReady(), false);
@@ -727,7 +727,7 @@ test("desktop sso restart keeps files unavailable on 5xx and retries with single
   assert.equal(secondRetry.state, "authenticated");
   assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
   assert.equal(calls.fetches.length, 3, "one failed validation plus one shared validation/exchange retry");
-  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), freshToken);
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), freshToken);
 });
 
 test("desktop sso restart timeout preserves the candidate without publishing a token", async (t) => {
@@ -745,7 +745,7 @@ test("desktop sso restart timeout preserves the candidate without publishing a t
   assert.equal(result.state, "temporarily_unavailable");
   assert.equal(result.status.authenticated, false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
-  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-id-token.txt")), true);
   assert.equal(getDesktopSsoStatus(app).completedSteps.accessToken, false);
 });
 
@@ -773,7 +773,7 @@ test(`${authMode} restart keeps file recovery and does not probe Cookie or Beare
       cookieAccessTokenExchange: { url: "https://auth.example.test/api/auth/desktop-sso/token" }
     } : {})
   });
-  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoIdTokenFilePath(app));
   fs.mkdirSync(stateRoot, { recursive: true });
   fs.writeFileSync(path.join(stateRoot, "sso-session.json"), `${JSON.stringify({
     schemaVersion: 2,
@@ -784,7 +784,7 @@ test(`${authMode} restart keeps file recovery and does not probe Cookie or Beare
     message: "Single sign-on completed.",
     updatedAt: "2026-08-01T00:00:00.000Z"
   })}\n`, "utf8");
-  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), "oidc-access-token\n", "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-id-token.txt"), "oidc-access-token\n", "utf8");
   let fetchCount = 0;
   const fakeSession = {
     cookies: {
@@ -897,7 +897,7 @@ test("desktop sso cookie flow keeps session and userinfo when access token retur
   const stateRoot = path.dirname(__testInternals.getDesktopSsoUserInfoFilePath(app));
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), true);
-  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), false);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-id-token.txt")), false);
   const status = getDesktopSsoStatus(app);
   assert.equal(status.authenticated, true);
   assert.equal(status.user.sub, "107078");
@@ -953,7 +953,7 @@ test("desktop sso accepts a verified user id when email and name are empty", asy
   assert.equal(storedUser.name, "107078");
   assert.equal(storedUser.email, undefined);
   assert.equal(storedUser.source, "browser_session");
-  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "access-token-user-id");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), "access-token-user-id");
 });
 
 test("desktop sso cookie flow still stores access token when userinfo fails", async (t) => {
@@ -982,10 +982,10 @@ test("desktop sso cookie flow still stores access token when userinfo fails", as
   }));
 
   assert.equal(accessToken, "access-token-1");
-  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoIdTokenFilePath(app));
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), false);
-  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "access-token-1");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), "access-token-1");
   const status = getDesktopSsoStatus(app);
   assert.deepEqual(status.completedSteps, {
     session: true,
@@ -1045,10 +1045,10 @@ test("desktop sso keeps the webview pending until cookie userinfo and token sett
   assert.equal(finalStatus.error, undefined);
   assert.equal(broadcasts.at(-1).pending, false);
 
-  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoIdTokenFilePath(app));
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), false);
-  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "access-token-2");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), "access-token-2");
 
   failDesktopSsoFlow("simulate restart");
   const restoredStatus = getDesktopSsoStatus(app);
@@ -1073,7 +1073,7 @@ test("desktop sso cookie flow writes no state when browser session validation fa
   const stateRoot = path.dirname(__testInternals.getDesktopSsoUserInfoFilePath(app));
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), false);
-  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), false);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-id-token.txt")), false);
 });
 
 
@@ -1107,10 +1107,10 @@ test("runtime SSO refresh preserves valid identity on temporary failure and fail
           assert.equal(signedInStatus.authenticated, true, signedInStatus.error || signedInStatus.message);
           assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
           const previousStatus = getDesktopSsoStatus(app);
-          await assert.rejects(controller.refreshBrowserCookieAccessTokenIfNeeded(scenario.force));
+          await assert.rejects(controller.ensureBusinessToken(scenario.force));
           const authenticated = scenario.state === "authenticated";
           assert.equal(getDesktopSsoStatus(app).authenticated, authenticated);
-          assert.equal(getDesktopSsoAccessToken(), authenticated ? token : null);
+          assert.equal(getDesktopSsoBusinessToken(), authenticated ? token : null);
           assert.equal(calls.fetches.length, 1);
           assert.equal(calls.statusEvents.length, authenticated ? 0 : 1);
           if (authenticated) {
@@ -1123,12 +1123,12 @@ test("runtime SSO refresh preserves valid identity on temporary failure and fail
             assert.equal(calls.statusEvents[0][1].user, null);
             assert.equal(calls.restoreResults.at(-1).state, scenario.state);
           }
-          const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
-          for (const fileName of ["sso-session.json", "sso-user-info.json", "sso-access-token.txt"]) {
+          const stateRoot = path.dirname(__testInternals.getDesktopSsoIdTokenFilePath(app));
+          for (const fileName of ["sso-session.json", "sso-user-info.json", "sso-id-token.txt"]) {
             assert.equal(fs.existsSync(path.join(stateRoot, fileName)), scenario.state !== "signed_out");
           }
           if (authenticated) {
-            assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), token);
+            assert.equal(fs.readFileSync(path.join(stateRoot, "sso-id-token.txt"), "utf8").trim(), token);
           }
         });
       }
@@ -1154,12 +1154,12 @@ for (const mode of ["cookie", "bearer"]) {
       assert.equal(signedInStatus.authenticated, true, signedInStatus.error || signedInStatus.message);
       assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
       const previousStatus = getDesktopSsoStatus(app);
-      const first = controller.refreshBrowserCookieAccessTokenIfNeeded(firstForce);
+      const first = controller.ensureBusinessToken(firstForce);
       await Promise.race([
         requestStarted,
         first.then(() => assert.fail("Renewal returned without making a request"))
       ]);
-      const second = controller.refreshBrowserCookieAccessTokenIfNeeded(!firstForce);
+      const second = controller.ensureBusinessToken(!firstForce);
       const settling = Promise.allSettled([first, second]);
       respond(new Response("upstream failure", { status: 503 }));
       for (const result of await settling) {
@@ -1168,7 +1168,7 @@ for (const mode of ["cookie", "bearer"]) {
       }
       assert.equal(calls.fetches.length, 1);
       assert.deepEqual(getDesktopSsoStatus(app), previousStatus);
-      assert.equal(getDesktopSsoAccessToken(), token);
+      assert.equal(getDesktopSsoBusinessToken(), token);
       assert.equal(calls.statusEvents.length, 0);
       assert.equal(calls.restoreResults.length, 0);
       assert.equal(calls.defaultRemoves.length, 0);
@@ -1198,8 +1198,8 @@ for (const platform of ["darwin", "win32"]) {
       platform,
       initialEnabled: true,
       serverUrl: "https://im.example.test",
-      getIdentityToken: getDesktopSsoAccessToken,
-      refreshIdentityToken: () => controller.refreshBrowserCookieAccessTokenIfNeeded(true),
+      getIdentityToken: getDesktopSsoBusinessToken,
+      refreshIdentityToken: () => controller.ensureBusinessToken(true),
       getDeviceInfo: () => ({ deviceId: "test-desktop", deviceName: "Test Desktop" }),
       fetchImpl: async (url, init) => {
         assert.equal(url, "https://im.example.test/api/v1/session/exchange");
@@ -1238,15 +1238,15 @@ for (const platform of ["darwin", "win32"]) {
       assert.equal(imRequests.length, attempt);
       assert.equal(calls.fetches.length, attempt);
       assert.deepEqual(getDesktopSsoStatus(app), signedInStatus);
-      assert.equal(getDesktopSsoAccessToken(), expectedToken);
+      assert.equal(getDesktopSsoBusinessToken(), expectedToken);
       assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
       assert.equal(calls.statusEvents.length, eventCount, "IM failure must not publish a Desktop sign-out");
       assert.equal(calls.restoreResults.length, restoreResultCount);
       assert.equal(calls.defaultRemoves.length, 0);
       assert.equal(calls.defaultSets.length, 0);
-      assert.equal(await controller.refreshBrowserCookieAccessTokenIfNeeded(), expectedToken);
+      assert.equal(await controller.ensureBusinessToken(), expectedToken);
       assert.equal(calls.fetches.length, attempt, "Reading a still-valid Desktop session must not retry IM or SSO");
-      const tokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+      const tokenPath = __testInternals.getDesktopSsoIdTokenFilePath(app);
       assert.equal(fs.readFileSync(tokenPath, "utf8").trim(), expectedToken);
     }
   });
@@ -1261,11 +1261,11 @@ test("runtime SSO refresh renews canonical token and its Cookie together", async
   completeDesktopSsoRestoredBrowserSession(app,
     createUnsignedJwt({ sub: "runtime-user", exp: expiresAt - 7100 }), { sub: "runtime-user" });
   const tokens = await Promise.all([
-    controller.refreshBrowserCookieAccessTokenIfNeeded(), controller.refreshBrowserCookieAccessTokenIfNeeded()
+    controller.ensureBusinessToken(), controller.ensureBusinessToken()
   ]);
   assert.deepEqual(tokens, [freshToken, freshToken]);
   assert.equal(calls.fetches.length, 1);
-  assert.equal(getDesktopSsoAccessToken(), freshToken);
+  assert.equal(getDesktopSsoBusinessToken(), freshToken);
   assert.equal(getDesktopSsoStatus(app).authenticated, true);
   assert.equal(calls.defaultSets.find((cookie) => cookie.name === "access_token").expirationDate, expiresAt);
 });
@@ -1281,13 +1281,13 @@ test("late runtime refresh rejection cannot sign out a replacement account", asy
   const expiresAt = Math.floor(Date.now() / 1000) + 7200;
   completeDesktopSsoRestoredBrowserSession(app,
     createUnsignedJwt({ sub: "old-user", exp: expiresAt }), { sub: "old-user" });
-  const refresh = controller.refreshBrowserCookieAccessTokenIfNeeded(true);
+  const refresh = controller.ensureBusinessToken(true);
   await requestStarted;
   const replacementToken = createUnsignedJwt({ sub: "new-user", exp: expiresAt });
   completeDesktopSsoRestoredBrowserSession(app, replacementToken, { sub: "new-user" });
   respond(new Response("expired", { status: 401 }));
   assert.equal(await refresh, "");
-  assert.equal(getDesktopSsoAccessToken(), replacementToken);
+  assert.equal(getDesktopSsoBusinessToken(), replacementToken);
   assert.equal(getDesktopSsoStatus(app).user.sub, "new-user");
   assert.equal(calls.statusEvents.length, 0);
 });
@@ -1313,13 +1313,13 @@ for (const mode of ["bearer", "cookie"]) {
     }, mode === "bearer" ? { sessionRestore: { authMode: "bearer" }, userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" } } : {});
     completeDesktopSsoRestoredBrowserSession(app, previousToken, { sub: "runtime-user" });
     const results = await Promise.all([
-      controller.refreshBrowserCookieAccessTokenIfNeeded(true),
-      controller.refreshBrowserCookieAccessTokenIfNeeded(true)
+      controller.ensureBusinessToken(true),
+      controller.ensureBusinessToken(true)
     ]);
     assert.deepEqual(results, [freshToken, freshToken]);
     assert.equal(calls.fetches.length, 1);
     assert.equal(getDesktopSsoStatus(app).authenticated, true);
-    assert.equal(getDesktopSsoAccessToken(), freshToken);
+    assert.equal(getDesktopSsoBusinessToken(), freshToken);
     assert.equal(calls.statusEvents.length, 0);
   });
 }
@@ -1335,10 +1335,10 @@ for (const status of [401, 403, 302, 503]) {
       return new Response("upstream failure", { status });
     }, { sessionRestore: { authMode: "bearer" }, userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" } });
     completeDesktopSsoRestoredBrowserSession(app, previousToken, { sub: "runtime-user" });
-    await assert.rejects(controller.refreshBrowserCookieAccessTokenIfNeeded(false));
+    await assert.rejects(controller.ensureBusinessToken(false));
     const temporary = status === 503;
     assert.equal(getDesktopSsoStatus(app).authenticated, temporary);
-    assert.equal(getDesktopSsoAccessToken(), temporary ? previousToken : null);
+    assert.equal(getDesktopSsoBusinessToken(), temporary ? previousToken : null);
     assert.equal(calls.statusEvents.length, temporary ? 0 : 1);
     if (!temporary) assert.equal(calls.restoreResults.at(-1).state, "signed_out");
   });
@@ -1354,14 +1354,14 @@ test("late Bearer refresh rejection cannot clear a newly signed in account", asy
     return new Promise(resolve => { respond = resolve; });
   }, { sessionRestore: { authMode: "bearer" }, userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" } });
   completeDesktopSsoRestoredBrowserSession(app, oldToken, { sub: "old-user" });
-  const refreshing = controller.refreshBrowserCookieAccessTokenIfNeeded(true);
+  const refreshing = controller.ensureBusinessToken(true);
   await Promise.race([requestStarted, refreshing.then(() => { throw new Error("Refresh returned without making a request"); })]);
   const newToken = createUnsignedJwt({ sub: "new-user", exp: expiresAt });
   completeDesktopSsoRestoredBrowserSession(app, newToken, { sub: "new-user" });
   const request = calls.fetches[0].init;
   respond(new Response("expired", { status: 401 }));
   assert.equal(await refreshing, "");
-  assert.equal(getDesktopSsoAccessToken(), newToken);
+  assert.equal(getDesktopSsoBusinessToken(), newToken);
   assert.equal(getDesktopSsoStatus(app).authenticated, true);
   assert.equal(getDesktopSsoStatus(app).user.sub, "new-user");
   assert.equal(calls.statusEvents.length, 0);
@@ -1395,9 +1395,9 @@ test("runtime Bearer refresh fetches CSRF anonymously and scopes identity to the
     }
   });
   completeDesktopSsoRestoredBrowserSession(app, previousToken, { sub: "runtime-user" });
-  assert.equal(await controller.refreshBrowserCookieAccessTokenIfNeeded(true), freshToken);
+  assert.equal(await controller.ensureBusinessToken(true), freshToken);
   assert.deepEqual(calls.fetches.map(request => request.url), ["https://ai.example.test/csrf", "https://ai.example.test/authorization"]);
-  assert.equal(getDesktopSsoAccessToken(), freshToken);
+  assert.equal(getDesktopSsoBusinessToken(), freshToken);
   assert.equal(getDesktopSsoStatus(app).authenticated, true);
   assert.equal(calls.statusEvents.length, 0);
 });

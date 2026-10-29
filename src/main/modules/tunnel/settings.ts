@@ -9,7 +9,7 @@ import type {
 } from "../../../shared/contracts";
 import {
   getDesktopConfigRoot,
-  getDesktopSsoAccessTokenFilePath,
+  getDesktopSsoIdTokenFilePath,
   getSecretsRoot
 } from "../../infrastructure/filesystem/user-paths";
 import {
@@ -208,7 +208,7 @@ function readJwtExpiresAtMs(token: string) {
 }
 
 function readCanonicalDesktopSsoToken(app: App, platform: NodeJS.Platform = process.platform) {
-  const tokenPath = getDesktopSsoAccessTokenFilePath(app, platform);
+  const tokenPath = getDesktopSsoIdTokenFilePath(app, platform);
   if (!fs.existsSync(tokenPath)) {
     return "";
   }
