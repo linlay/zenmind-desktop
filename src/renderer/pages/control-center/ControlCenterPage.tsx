@@ -1,3 +1,4 @@
+import { ActionIcon } from "../../components/ActionIcon";
 import { resolveControlCenterEndpoint, shouldOpenControlCenterEndpointInternally } from "./serviceEndpoints";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -308,29 +309,11 @@ function getPidDisplay(service: ServiceState, t: TranslateFunction) {
 }
 
 function StartServiceIcon() {
-  return (
-    <svg
-      className="service-action-icon service-action-icon-start"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M7.25 4.75v14.5L18.75 12 7.25 4.75Z" />
-    </svg>
-  );
+  return <ActionIcon name="start" />;
 }
 
 function StopServiceIcon() {
-  return (
-    <svg
-      className="service-action-icon service-action-icon-stop"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M6.75 6.75h10.5v10.5H6.75z" />
-    </svg>
-  );
+  return <ActionIcon name="stop" />;
 }
 
 function ReinstallServiceIcon() {
@@ -351,16 +334,7 @@ function ReinstallServiceIcon() {
 }
 
 function RestartServiceIcon() {
-  return (
-    <svg
-      className="service-action-icon service-action-icon-restart"
-      viewBox="0 -960 960 960"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M440-122q-121-15-200.5-105.5T160-440q0-66 26-126.5T260-672l57 57q-38 34-57.5 79T240-440q0 88 56 155.5T440-202v80Zm80 0v-80q87-16 143.5-83T720-440q0-100-70-170t-170-70h-3l44 44-56 56-140-140 140-140 56 56-44 44h3q134 0 227 93t93 227q0 121-79.5 211.5T520-122Z" />
-    </svg>
-  );
+  return <ActionIcon name="restart" />;
 }
 
 function InstallServiceIcon() {
@@ -396,18 +370,7 @@ function UninstallServiceIcon() {
 }
 
 function OpenFrontendIcon() {
-  return (
-    <svg
-      className="service-action-icon"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M8 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
-      <path d="M14 4h6v6" />
-      <path d="m11 13 8.5-8.5" />
-    </svg>
-  );
+  return <ActionIcon name="open" />;
 }
 
 function MonitorServiceIcon() {
@@ -438,17 +401,7 @@ function ServiceHelpIcon() {
 }
 
 function ServiceInfoIcon() {
-  return (
-    <svg
-      className="service-action-icon service-action-icon-info"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <circle cx="12" cy="6.75" r="2.15" />
-      <path d="M10.55 10.05h2.9v9.2h-2.9z" />
-    </svg>
-  );
+  return <ActionIcon name="info" />;
 }
 
 function LogArticleIcon() {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Input, Modal, Switch, Tooltip } from "antd";
-import { CloseOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, EyeInvisibleOutlined, EyeOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CloseOutlined, } from "@ant-design/icons";
 import {
   WEBSITE_CREDENTIAL_BACKUP_PASSWORD_MIN_LENGTH,
   WEBSITE_CREDENTIAL_NOTE_MAX_LENGTH,
@@ -143,10 +143,10 @@ export function WebsiteCredentialsSettings() {
         <div className="service-group-head">
           <div className="service-group-copy"><h2>{t("settings.websiteCredentials.accounts")}</h2></div>
           <div className="service-title-actions">
-            <SettingsActionButton label={t("common.refresh")} icon={<ReloadOutlined />} disabled={busy} onClick={() => void perform(() => api.getWebsiteCredentials())} />
-            <SettingsActionButton label={t("settings.websiteCredentials.import")} icon={<ImportOutlined />} disabled={busy || !available} onClick={() => void perform(() => api.importWebsiteCredentials())} />
-            <SettingsActionButton label={t("settings.websiteCredentials.export")} icon={<ExportOutlined />} disabled={busy || !available || !items.length} onClick={() => setBackup({ mode: "export", password: "", confirm: "" })} />
-            <SettingsActionButton label={t("settings.websiteCredentials.add")} icon={<PlusOutlined />} tone="primary" disabled={busy || !available} onClick={() => setDraft({ id: null, origin: "https://", username: "", password: "", note: "" })} />
+            <SettingsActionButton label={t("common.refresh")} icon="refresh" disabled={busy} onClick={() => void perform(() => api.getWebsiteCredentials())} />
+            <SettingsActionButton label={t("settings.websiteCredentials.import")} icon="import" disabled={busy || !available} onClick={() => void perform(() => api.importWebsiteCredentials())} />
+            <SettingsActionButton label={t("settings.websiteCredentials.export")} icon="export" disabled={busy || !available || !items.length} onClick={() => setBackup({ mode: "export", password: "", confirm: "" })} />
+            <SettingsActionButton label={t("settings.websiteCredentials.add")} icon="add" tone="primary" disabled={busy || !available} onClick={() => setDraft({ id: null, origin: "https://", username: "", password: "", note: "" })} />
           </div>
         </div>
         <div className="website-credentials-search">
@@ -177,17 +177,17 @@ export function WebsiteCredentialsSettings() {
               </div>
             </div>
             <div className="service-title-actions">
-              <SettingsActionButton label={t("settings.websiteCredentials.edit")} icon={<EditOutlined />} disabled={busy} onClick={() => void edit(selected.id)} />
-              <SettingsActionButton label={t("common.delete")} icon={<DeleteOutlined />} tone="danger" disabled={busy} onClick={() => setRemoveOpen(true)} />
+              <SettingsActionButton label={t("settings.websiteCredentials.edit")} icon="edit" disabled={busy} onClick={() => void edit(selected.id)} />
+              <SettingsActionButton label={t("common.delete")} icon="delete" tone="danger" disabled={busy} onClick={() => setRemoveOpen(true)} />
             </div>
           </div>
           <dl className="website-credential-meta"><dt>{t("settings.websiteCredentials.username")}</dt><dd><code>{secret ? secret.username : selected.maskedUsername}</code></dd></dl>
           <dl className="website-credential-meta"><dt>{t("settings.websiteCredentials.password")}</dt><dd>
             <code>{secret ? secret.password : "••••••••"}</code>
             {secret
-              ? <SettingsActionButton label={t("settings.websiteCredentials.hide")} icon={<EyeInvisibleOutlined />} onClick={() => setRevealed(null)} />
-              : <SettingsActionButton label={t("settings.websiteCredentials.reveal")} icon={<EyeOutlined />} disabled={busy} onClick={() => void reveal(selected.id).then(value => { if (value && alive.current) setRevealed(value); })} />}
-            <SettingsActionButton label={t("settings.websiteCredentials.copyPassword")} icon={<CopyOutlined />} disabled={busy} onClick={() => void copyPassword(selected.id)} />
+              ? <SettingsActionButton label={t("settings.websiteCredentials.hide")} icon="hide" onClick={() => setRevealed(null)} />
+              : <SettingsActionButton label={t("settings.websiteCredentials.reveal")} icon="reveal" disabled={busy} onClick={() => void reveal(selected.id).then(value => { if (value && alive.current) setRevealed(value); })} />}
+            <SettingsActionButton label={t("settings.websiteCredentials.copyPassword")} icon="copy" disabled={busy} onClick={() => void copyPassword(selected.id)} />
           </dd></dl>
           {selected.note && <dl className="website-credential-meta"><dt>{t("settings.websiteCredentials.note")}</dt><dd>{selected.note}</dd></dl>}
           {secret && <p className="website-credential-hint">{t("settings.websiteCredentials.authHint")}</p>}

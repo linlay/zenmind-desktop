@@ -28,6 +28,7 @@ await build({
       import React, { useLayoutEffect, useEffect, useState } from 'react';
       import { createRoot } from 'react-dom/client';
       import { Button, Input, Select, Segmented, Modal } from 'antd';
+      import { SettingsActionButton } from ${source("pages/settings/SettingsActionButton.tsx")};
       import { AppearanceProvider, useAppearance } from ${source("appearance/AppearanceProvider.tsx")};
       import { bootstrapAppearance } from ${source("appearance/browser.ts")};
       import { Popover } from ${source("components/Popover/index.tsx")};
@@ -54,10 +55,40 @@ await build({
           <section className="settings-page"><h3>Ant Design controls</h3>
             <Button id="ant-primary" type="primary">Primary</Button>
             <Button id="ant-default">Secondary</Button>
+            <Button id="ant-text" type="text">Text action</Button>
+            <Button id="ant-link" type="link">Link action</Button>
             <Button id="ant-disabled" type="primary" disabled>Disabled</Button>
             <Input id="ant-input" defaultValue="Input preserves state" style={{width:200}} />
             <Select id="ant-select" open={selectOpen} onDropdownVisibleChange={setSelectOpen} popupClassName="settings-select-popup" defaultValue="A" options={[{value:'A'},{value:'B'}]} style={{width:100}} />
             <Segmented options={['Light','Dark','System']} />
+          </section>
+          <section id="settings-resources" className="settings-page"><h3>Settings resource actions</h3>
+            <div className="control-center-page web-settings-page" style={{height:'auto',maxHeight:'none'}}>
+              <div className="service-group-head">
+                <strong>Saved accounts</strong><div className="service-title-actions">
+                  <SettingsActionButton label="Refresh" icon="refresh" />
+                  <SettingsActionButton label="Import" icon="import" />
+                  <SettingsActionButton label="Export" icon="export" disabled />
+                  <SettingsActionButton label="Add" icon="add" />
+                </div>
+              </div>
+              <div className="service-group-head">
+                <strong>Website bridge packages</strong><div className="service-title-actions">
+                  <SettingsActionButton label="Refresh" icon="refresh" />
+                  <SettingsActionButton label="Import" icon="import" />
+                </div>
+              </div>
+              <div className="service-title-actions">
+                <Button id="resource-secondary" className="web-action-button is-secondary">Import</Button>
+                <SettingsActionButton id="resource-icon" label="Refresh" icon="refresh" />
+                <SettingsActionButton id="resource-primary" label="Start" tone="primary" icon="start" />
+                <SettingsActionButton id="resource-danger" label="Delete" tone="danger" icon="delete" />
+                <SettingsActionButton id="resource-disabled" label="Disabled" disabled icon="delete" />
+                <button id="resource-help" className="webapp-user-config-help">?</button>
+              </div>
+              <Button id="resource-nav" type="text" className="service-nav-card web-nav-card">Website</Button>
+              <Button id="resource-selected" type="text" className="service-nav-card web-nav-card is-active">Selected website</Button>
+            </div>
           </section>
           <section><h3>Navigation and main-window portals</h3>
             <div className="app-sidebar" style={{position:'static',width:240,padding:0}}>
@@ -131,6 +162,56 @@ registerAppearanceIpcHandlers(ipcMain,{app:fixtureApp,platform:process.platform,
     const {nodeId}=await cdp('DOM.querySelector',{nodeId:root.nodeId,selector});
     await cdp('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:states});
   };
+  // Exercise real Ant buttons and shared resource actions under every built-in skin.
+  const tokenColor=async(token)=>js('(()=>{const probe=document.createElement("i");probe.style.backgroundColor="var('+token+')";document.body.append(probe);const color=getComputedStyle(probe).backgroundColor;probe.remove();return color;})()');
+  const resourceButtons=['#resource-secondary','#resource-icon','#resource-primary','#resource-danger','#resource-disabled'];
+  for(const platform of ['mac','windows']) for(const skin of ['mist','ocean','violet','default']) for(const mode of ['light','dark']){
+    await js('document.querySelector("#shell").className="app-shell is-'+platform+'-platform"');
+    await js('fixture.api.setSkinId('+JSON.stringify(skin)+')');
+    await js('fixture.api.setThemeMode('+JSON.stringify(mode)+')');
+    const background=await tokenColor('--control-button-bg');
+    await until('getComputedStyle(document.querySelector("#ant-default")).backgroundColor === '+JSON.stringify(background));
+    for(const selector of resourceButtons) await equal(selector,'backgroundColor',background);
+    await equal('#ant-primary','backgroundColor',await tokenColor('--control-primary-bg'));
+    await equal('#ant-disabled','backgroundColor',await tokenColor('--control-disabled-bg'));
+    await equal('#ant-text','backgroundColor','rgba(0, 0, 0, 0)');
+    await equal('#ant-link','backgroundColor','rgba(0, 0, 0, 0)');
+    await equal('#resource-icon','width','24px');
+    await equal('#resource-icon','height','24px');
+    await equal('#resource-icon svg','width','16px');
+    await equal('#resource-icon svg','height','16px');
+    await equal('#resource-icon svg','strokeWidth','1.85px');
+    await equal('#resource-icon svg','fill','none');
+    await equal('#resource-help','backgroundColor','rgba(0, 0, 0, 0)');
+    await equal('#resource-help','borderTopWidth','0px');
+    await equal('#resource-nav','backgroundColor','rgba(0, 0, 0, 0)');
+    await equal('#resource-selected','backgroundColor',await tokenColor('--control-active-bg'));
+    for(const pseudo of ['hover','focus-visible']){
+      for(const selector of [...resourceButtons,'#ant-default','#ant-text']){
+        await force(selector,[pseudo]);
+        const current=await style(selector,'backgroundColor');
+        if(selector==='#resource-disabled') assert.equal(current,background,'disabled resource action');
+        else if(pseudo==='focus-visible' && selector.startsWith('#ant-')) {
+          assert.notEqual(await style(selector,'outlineStyle'),'none',selector+' keyboard focus outline');
+          assert.notEqual(await style(selector,'outlineWidth'),'0px',selector+' keyboard focus width');
+        } else assert.notEqual(current,selector==='#ant-text'?'rgba(0, 0, 0, 0)':background,platform+'/'+skin+'/'+mode+'/'+selector+'/'+pseudo);
+        await force(selector,[]);
+      }
+    }
+  }
+  await js('document.querySelector("#shell").className=""');
+  await js('fixture.api.setSkinId("default")');
+  console.log(JSON.stringify({settingsButtons:true,builtInSkins:4,themeModes:2,platformStyles:2,hover:true,keyboardFocus:true,disabled:true,transparentHelp:true,selectionPreserved:true}));
+  if(${JSON.stringify(process.argv.includes("--settings-buttons-only"))}) {
+    await js('fixture.api.setSkinId("mist")');
+    for(const mode of ['light','dark']){
+      await js('fixture.api.setThemeMode('+JSON.stringify(mode)+')');
+      await until('getComputedStyle(document.querySelector("#ant-default")).backgroundColor === '+JSON.stringify(await tokenColor('--control-button-bg')));
+      const bounds=await js('(()=>{const r=document.querySelector("#settings-resources").getBoundingClientRect();return {x:Math.ceil(r.x),y:Math.ceil(r.y),width:Math.floor(r.width),height:Math.floor(r.height)};})()');
+      fs.writeFileSync(path.join(__dirname,'settings-buttons-'+mode+'.png'),(await win.webContents.capturePage(bounds)).toPNG());
+    }
+    win.destroy();app.quit();return;
+  }
   for(const [mode,primary] of [['dark','rgb(79, 136, 255)'],['light','rgb(38, 99, 235)']]){
     await js('fixture.api.setThemeMode('+JSON.stringify(mode)+')');
     await until('getComputedStyle(document.querySelector("#ant-primary")).backgroundColor === '+JSON.stringify(primary));

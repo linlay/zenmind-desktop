@@ -15,7 +15,7 @@ import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined, CloudUploadOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, Popconfirm, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
@@ -5436,7 +5436,7 @@ export function SettingsPage({
                       </div>
                       <div className="service-title-actions service-primary-actions">
                         <SettingsActionButton
-                          icon={<CloudUploadOutlined />}
+                          icon="publish"
                           label={webappPublishPendingId === selectedWebapp.id
                             ? t("settings.webapps.publishing")
                             : publishState?.active
@@ -5449,21 +5449,21 @@ export function SettingsPage({
                         <SettingsActionButton
                           label={t("settings.webapps.start")}
                           tone="primary"
-                          icon={<PlayCircleOutlined />}
+                          icon="start"
                           disabled={webappRuntimePendingId !== "" || runtimeState?.status === "running" || runtimeState?.status === "starting"}
                           loading={webappRuntimePendingId === `start:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("start", selectedWebapp)}
                         />
                         <SettingsActionButton
                           label={t("settings.webapps.stop")}
-                          icon={<PauseCircleOutlined />}
+                          icon="stop"
                           disabled={webappRuntimePendingId !== "" || !runtimeState || runtimeState.status === "stopped"}
                           loading={webappRuntimePendingId === `stop:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("stop", selectedWebapp)}
                         />
                         <SettingsActionButton
                           label={t("settings.webapps.restart")}
-                          icon={<ReloadOutlined />}
+                          icon="restart"
                           disabled={webappRuntimePendingId !== "" || runtimeState?.status !== "running"}
                           loading={webappRuntimePendingId === `restart:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("restart", selectedWebapp)}
@@ -5471,14 +5471,14 @@ export function SettingsPage({
                         {selectedWebapp.removable !== false ? (
                           <SettingsActionButton
                             label={webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
-                            icon={<DeleteOutlined />}
+                            icon="delete"
                             tone="danger"
                             disabled={webappDeletingId === selectedWebapp.id || webappPending}
                             loading={webappDeletingId === selectedWebapp.id}
                             onClick={() => void handleDeleteWebappItem(selectedWebapp)}
                           />
                         ) : null}
-                        <SettingsActionButton label={t("settings.webapps.detailsAction")} icon={<InfoCircleOutlined />} onClick={() => setWebappDetailsOpen(true)} />
+                        <SettingsActionButton label={t("settings.webapps.detailsAction")} icon="info" onClick={() => setWebappDetailsOpen(true)} />
                       </div>
                     </div>
                     {publishState?.active && publishState.url ? (

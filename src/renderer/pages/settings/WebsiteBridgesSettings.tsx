@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal, Switch } from "antd";
-import { ImportOutlined, ExportOutlined, ReloadOutlined, DeleteOutlined, CloseOutlined } from "@ant-design/icons";
+import { CloseOutlined } from "@ant-design/icons";
 import { websiteBridgePageScripts, type WebsiteBridgeMatchRule, type WebsiteBridgeResult, type WebsiteBridgeView } from "../../../shared/website-bridge";
 import { useI18n } from "../../i18n/useI18n";
 import { SettingsSidebarIcon } from "../../app-shell/navigation/SettingsSidebarIcon";
@@ -79,8 +79,8 @@ export function WebsiteBridgesSettings() {
         <div className="service-group-head">
           <div className="service-group-copy"><h2>{t("settings.websiteBridges.packages")}</h2></div>
           <div className="service-title-actions">
-            <SettingsActionButton label={t("settings.websiteBridges.refresh")} icon={<ReloadOutlined />} disabled={busy} onClick={() => void perform(() => api.listWebsiteBridges())} />
-            <SettingsActionButton label={t("settings.websiteBridges.import")} icon={<ImportOutlined />} tone="primary" loading={busy} onClick={() => void perform(() => api.importWebsiteBridge(), t("settings.websiteBridges.imported"))} />
+            <SettingsActionButton label={t("settings.websiteBridges.refresh")} icon="refresh" disabled={busy} onClick={() => void perform(() => api.listWebsiteBridges())} />
+            <SettingsActionButton label={t("settings.websiteBridges.import")} icon="import" tone="primary" loading={busy} onClick={() => void perform(() => api.importWebsiteBridge(), t("settings.websiteBridges.imported"))} />
           </div>
         </div>
         <div className="website-bridges-search">
@@ -111,9 +111,9 @@ export function WebsiteBridgesSettings() {
             </div>
             <div className="service-title-actions">
               <Switch size="small" checked={selected.enabled} disabled={busy || selected.outdated} aria-label={t("settings.websiteBridges.enabled")} onChange={enabled => void perform(() => api.setWebsiteBridgeEnabled({ id: selected.id, enabled }), t("settings.websiteBridges.applied"))} />
-              <SettingsActionButton label={t("settings.websiteBridges.update")} icon={<ImportOutlined />} disabled={busy} onClick={() => void perform(() => api.importWebsiteBridge(selected.id), t("settings.websiteBridges.imported"))} />
-              <SettingsActionButton label={t("settings.websiteBridges.export")} icon={<ExportOutlined />} disabled={busy || selected.outdated} onClick={() => void perform(() => api.exportWebsiteBridge(selected.id))} />
-              <SettingsActionButton label={t("settings.websiteBridges.remove")} icon={<DeleteOutlined />} tone="danger" disabled={busy} onClick={() => setRemoveOpen(true)} />
+              <SettingsActionButton label={t("settings.websiteBridges.update")} icon="import" disabled={busy} onClick={() => void perform(() => api.importWebsiteBridge(selected.id), t("settings.websiteBridges.imported"))} />
+              <SettingsActionButton label={t("settings.websiteBridges.export")} icon="export" disabled={busy || selected.outdated} onClick={() => void perform(() => api.exportWebsiteBridge(selected.id))} />
+              <SettingsActionButton label={t("settings.websiteBridges.remove")} icon="delete" tone="danger" disabled={busy} onClick={() => setRemoveOpen(true)} />
             </div>
           </div>
           {selected.description && <p className="website-bridge-description">{selected.description}</p>}

@@ -621,7 +621,7 @@
 
 .settings-page .web-settings-page .web-action-button.is-secondary.ant-btn {
   border: 1px solid var(--control-center-border);
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-muted);
 }
 
@@ -870,6 +870,10 @@
 }
 
 .settings-page .webapp-user-config-help {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -3594,7 +3598,7 @@
   padding: 0;
   border: 1px solid var(--control-center-border);
   border-radius: 6px;
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-subtle);
   box-shadow: none;
 }
