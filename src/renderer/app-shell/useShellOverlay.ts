@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useLayoutEffect, useReducer, useRef } from "react";
 
 export type ShellOverlay =
   | { kind: "toolMenu" }
@@ -28,11 +28,10 @@ export function reduceShellOverlay(
   return current === action.overlay ? null : current;
 }
 
-export function useShellOverlay() {
+export function useShellOverlay(routeKey = "") {
   const [activeOverlay, dispatch] = useReducer(reduceShellOverlay, null);
   const activeOverlayRef = useRef<ShellOverlay>(null);
   const shareSessionIdRef = useRef(0);
-  activeOverlayRef.current = activeOverlay;
 
   const openGlobalSearch = useCallback(() => {
     const overlay = { kind: "globalSearch" } as const;
@@ -110,6 +109,15 @@ export function useShellOverlay() {
     },
     [],
   );
+
+  const previousRouteRef = useRef(routeKey);
+  useLayoutEffect(() => {
+    const overlay = activeOverlayRef.current;
+    if (previousRouteRef.current !== routeKey && overlay?.kind === "conversationShare") {
+      closeConversationShare(overlay);
+    }
+    previousRouteRef.current = routeKey;
+  }, [routeKey, closeConversationShare]);
 
   return {
     activeOverlay,

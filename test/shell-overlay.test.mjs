@@ -33,9 +33,11 @@ function loadShellOverlayModule(react) {
   return mod.exports;
 }
 
-function createHookHarness() {
+function createHookHarness({ navigation = false } = {}) {
   const slots = [];
+  const layoutEffects = [];
   let cursor = 0;
+  let currentRoute = { pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-1" };
   const react = {
     useReducer(reducer, initialState) {
       const index = cursor++;
@@ -60,13 +62,23 @@ function createHookHarness() {
     useEffect() {
       cursor += 1;
     },
+    useLayoutEffect(effect, deps) {
+      const index = cursor++;
+      const previous = slots[index];
+      if (previous && deps.every((value, offset) => Object.is(value, previous.deps[offset]))) return;
+      slots[index] = { deps };
+      layoutEffects.push(effect);
+    },
   };
   const module = loadShellOverlayModule(react);
   return {
     module,
-    render() {
+    render(route = currentRoute) {
+      currentRoute = route;
       cursor = 0;
-      return module.useShellOverlay();
+      const overlay = module.useShellOverlay(navigation ? JSON.stringify([route.pathname, route.agentKey, route.chatId]) : "");
+      for (const effect of layoutEffects.splice(0)) effect();
+      return overlay;
     },
   };
 }
@@ -189,4 +201,30 @@ test("bootstrap auto-open opens an idle menu and preserves any active overlay", 
   const share = harness.render().activeOverlay;
   overlay.openToolMenuIfIdle();
   assert.equal(harness.render().activeOverlay, share);
+});
+
+test("navigation closes only the share session; stale closes cannot affect its replacement", () => {
+  const h = createHookHarness({ navigation: true });
+  h.render().openConversationShare("chat-1", "First");
+  const first = h.render().activeOverlay;
+  h.render({ pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-1", search: "?theme=dark" });
+  assert.equal(h.render().activeOverlay, first);
+  for (const next of [
+    { pathname: "/agent/agent-1", agentKey: "agent-1", chatId: "chat-2" },
+    { pathname: "/agent/agent-2", agentKey: "agent-2", chatId: "chat-2" },
+    { pathname: "/settings", agentKey: "", chatId: "" }
+  ]) {
+    h.render(next);
+    assert.equal(h.render().activeOverlay, null);
+    h.render().openConversationShare("chat-2", "Second");
+    h.render().closeConversationShare(first);
+    assert.equal(h.render().activeOverlay.kind, "conversationShare");
+  }
+  for (const open of [o => o.openGlobalSearch(), o => o.openToolMenuIfIdle()]) {
+    const otherHarness = createHookHarness({ navigation: true });
+    open(otherHarness.render());
+    const other = otherHarness.render().activeOverlay;
+    otherHarness.render({ pathname: "/other" });
+    assert.equal(otherHarness.render().activeOverlay, other);
+  }
 });

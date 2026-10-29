@@ -2,7 +2,7 @@ import type { App } from "electron";
 import { listPublishedWebappIds, syncPublishedWebappRoute } from "./publisher";
 import { webappRuntime, type WebappRuntime } from "./runtime";
 import { readWebappItems } from "./store";
-import type { WebsIntegrationPorts } from "../integration-ports";
+import { requireWebsIntegrationPorts, type WebsIntegrationPorts } from "../integration-ports";
 
 export async function restorePublishedWebapps(
   app: App,
@@ -13,6 +13,7 @@ export async function restorePublishedWebapps(
     readWebappItems(app, process.platform, ports).map((item) => [item.id, item])
   );
   for (const id of listPublishedWebappIds(app, ports)) {
+    if (!requireWebsIntegrationPorts(ports).getTunnelHubRuntimeStatus()?.connected) return;
     const item = itemsById.get(id);
     if (!item) {
       continue;

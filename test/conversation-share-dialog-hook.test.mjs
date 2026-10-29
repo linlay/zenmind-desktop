@@ -79,7 +79,7 @@ test("share choice stays open during creation and closes only after copying succ
     const operation = harness.render().run("copy");
     assert.equal(harness.render().state.phase, "choice");
     assert.equal(harness.render().state.workingAction, "copy");
-    creation.resolve({ ok: true, record: { url: "https://example.test/share/1" }, warning: "" });
+    creation.resolve({ ok: true, record: { url: "https://example.test/share/1" }, omittedResources: [] });
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(harness.render().state.phase, "choice");
     assert.equal(harness.render().state.workingAction, "copy");
@@ -97,7 +97,7 @@ test("failed copy keeps the choice open and retries without creating a second li
   const harness = createHookHarness({
     assistant: { shareChat: async () => {
       createCount += 1;
-      return { ok: true, record: { url: "https://example.test/share/1" }, warning: "" };
+      return { ok: true, record: { url: "https://example.test/share/1" }, omittedResources: [] };
     } },
     clipboard: { writeText: async () => {
       copyCount += 1;
@@ -126,7 +126,7 @@ test("creation failure keeps the choice open until a browser action succeeds", a
       createCount += 1;
       return createCount === 1
         ? { ok: false, message: "create failed" }
-        : { ok: true, record: { url: "https://example.test/share/1" }, warning: "" };
+        : { ok: true, record: { url: "https://example.test/share/1" }, omittedResources: [] };
     } },
     shell: { openExternal: async (url) => {
       openedUrl = url;
@@ -152,7 +152,7 @@ test("QR opens separately after creation, browser failure stays open, and late r
   const harness = createHookHarness({
     assistant: { shareChat: async () => {
       createCount += 1;
-      return { ok: true, record: { url: "https://example.test/share/1" }, warning: "" };
+      return { ok: true, record: { url: "https://example.test/share/1" }, omittedResources: [] };
     } },
     shell: { openExternal: () => browser.promise },
   });
@@ -176,7 +176,7 @@ test("QR opens separately after creation, browser failure stays open, and late r
   try {
     const operation = closedHarness.render().run("qr");
     closedHarness.cleanup();
-    creation.resolve({ ok: true, record: { url: "https://example.test/share/2" }, warning: "" });
+    creation.resolve({ ok: true, record: { url: "https://example.test/share/2" }, omittedResources: [] });
     await operation;
     assert.equal(closedHarness.state().phase, "choice");
   } finally {

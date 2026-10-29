@@ -128,7 +128,18 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     await fs.promises.writeFile(filePath, content, encoding as any);
   });
 
-  ipcMain.handle("webs.list", async () => listWebEntries(app, webappManager));
+  ipcMain.handle("webs.list", () => {
+    const result = listWebEntries(app, webappManager);
+    return {
+      ...result,
+      webappRuntimeStates: Object.fromEntries(result.items.filter((item) => item.kind === "webapp")
+        .flatMap((item) => {
+          try { return [[item.id, webappManager.runtime.getStatus(app, item.id)]]; }
+          catch { return []; } // One unreadable runtime must not hide the catalog.
+        })),
+      webappPublishInfo: options.websFacade.getWebappPublishInfo(app)
+    };
+  });
 
   ipcMain.handle("webs.websites.list", async () => listWebsiteItems(app));
   ipcMain.handle("webs.websites.add", async (_event: any, input: any) =>
