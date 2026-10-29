@@ -4065,6 +4065,14 @@ div.sidebar-chats-group-popover {
   --sidebar-toolbar-height: 89px;
 }
 
+.app-shell.is-mac-platform.has-floating-chat-header-navigation .app-sidebar.is-collapsed {
+  --sidebar-toolbar-height: 44px;
+}
+
+.app-shell.is-mac-platform.has-floating-chat-header-navigation .app-sidebar.is-collapsed .sidebar-top-actions {
+  display: none;
+}
+
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-mac {
   padding: 0;
   justify-content: center;

@@ -1079,6 +1079,15 @@
   -webkit-app-region: no-drag;
 }
 
+.app-shell .main-chat-header-actions.main-chat-header-navigation {
+  left: calc(var(--app-sidebar-width) + 8px);
+  right: auto;
+}
+
+.app-shell.has-floating-chat-header-navigation .app-system-bar-primary-actions {
+  display: none;
+}
+
 .main-chat-header-action:hover:not(:disabled),
 .main-chat-header-action:focus-visible:not(:disabled) {
   color: var(--ink);

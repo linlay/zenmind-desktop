@@ -1,0 +1,120 @@
+// Real Electron WebView, isolated layout preload, Desktop controls and WebClient hook.
+// No services, model calls, user profile changes or chat mutations.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { build } from "esbuild";
+
+const repo = process.cwd();
+const require = createRequire(path.join(repo, "package.json"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-chat-header-"));
+const output = path.resolve(process.argv[2] || "build/qa/desktop-chat-header");
+fs.mkdirSync(output, { recursive: true });
+const alias = { react: path.join(repo, "node_modules/react"), "react-dom": path.join(repo, "node_modules/react-dom") };
+const shared = { bundle: true, platform: "browser", format: "iife", jsx: "automatic", alias,
+  loader: { ".svg": "file" }, define: { "process.env.NODE_ENV": '"production"',
+    __DESKTOP_APP_BRAND__: JSON.stringify(require("./dist-electron/shared/brand.js").APP_BRAND) } };
+await build({ ...shared, stdin: { loader: "tsx", resolveDir: repo, contents: `
+import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {DesktopChatHeaderNavigation} from './src/renderer/app-shell/navigation/DesktopChatHeaderNavigation';
+import {createWebclientHeaderLayoutHost} from './src/renderer/service-webview/headerLayoutHost';
+import './src/renderer/styles.css';
+window.actions={search:0,back:0,forward:0};window.documents=0;
+function Host(){
+ const [config,setConfig]=useState({collapsed:true,platform:'darwin',fullscreen:false,canGoBack:false,canGoForward:true});
+ const [inset,setInset]=useState(128);const webview=useRef(null),relay=useRef(null),sequence=useRef({revision:0,signature:''});
+ const input=useRef(null);input.current={sidebarCollapsed:config.collapsed,headerLeftInset:config.collapsed?inset:0};
+ const src=useRef(location.origin+'/guest.html?chatId=fixture&desktopSidebarCollapsed=1&desktopHeaderLeftInset=128');
+ window.configure=(patch)=>setConfig(old=>({...old,...patch}));
+ useEffect(()=>{const target=webview.current;const host=createWebclientHeaderLayoutHost({webview:target,
+  trustedUrl:()=>src.current,isCurrentGuest:()=>webview.current===target,read:()=>input.current,revisionState:sequence.current});
+  relay.current=host;const loaded=()=>window.documents++;target.addEventListener('did-finish-load',loaded);
+  return ()=>{host.dispose();target.removeEventListener('did-finish-load',loaded)};},[]);
+ useLayoutEffect(()=>relay.current?.refresh(),[config.collapsed,inset]);
+ return <div className={'app-shell '+(config.platform==='darwin'?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(config.collapsed?' has-floating-chat-header-navigation':'')} style={{'--app-sidebar-width':'66px'}}>
+  <div className="qa-rail" />
+  <webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/>
+  <div className="app-window-controls-layer">
+   {config.collapsed?<DesktopChatHeaderNavigation canGoBack={config.canGoBack} canGoForward={config.canGoForward}
+     onSearch={()=>window.actions.search++} onBack={()=>window.actions.back++} onForward={()=>window.actions.forward++}
+     onExpand={()=>setConfig(old=>({...old,collapsed:false}))} onInsetChange={setInset}/>:null}
+   <div className="main-chat-header-actions qa-right-actions"><button className="main-chat-header-action">⋯</button><button className="main-chat-header-action">↗</button><button className="main-chat-header-action">◧</button></div>
+  </div>
+ </div>;
+}
+createRoot(document.getElementById('root')).render(<Host/>);
+` }, outfile: path.join(root, "host.js") });
+await build({ ...shared, stdin: { loader: "tsx", resolveDir: repo, contents: `
+import React from 'react';import {createRoot} from 'react-dom/client';
+import {useDesktopHeaderLayout} from ${JSON.stringify(path.resolve(repo, "../agent-webclient/src/app/layout/useDesktopHeaderLayout.ts"))};
+window.documentIdentity=crypto.randomUUID();
+function Guest(){const layout=useDesktopHeaderLayout(true);return <><nav id="guest-header" style={{paddingLeft:layout.headerLeftInset}}><input id="search" placeholder="搜索当前对话"/><span>主聊天</span></nav><main><textarea id="draft" defaultValue="未发送草稿"/></main></>}
+createRoot(document.getElementById('root')).render(<Guest/>);
+` }, outfile: path.join(root, "guest.js") });
+await build({ stdin: { contents: "import { installServiceWebviewHeaderLayout } from './src/preload/service-webview-header-layout'; installServiceWebviewHeaderLayout();",
+  resolveDir: repo }, bundle: true, platform: "node", format: "cjs", external: ["electron"], outfile: path.join(root, "preload.cjs") });
+const preloadUrl = new URL(`file://${path.join(root, "preload.cjs")}`).toString();
+fs.writeFileSync(path.join(root, "host.html"), `<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/host.css"><style>
+html,body,#root{height:100%;margin:0}.qa-rail{width:66px;height:100%;background:var(--surface-sidebar);border-right:1px solid var(--line-soft)}
+.qa-guest{position:absolute;left:66px;top:0;width:calc(100% - 66px);height:100%;display:flex}
+.is-windows-platform .qa-guest{top:30px;height:calc(100% - 30px)}.is-windows-platform.is-window-fullscreen .qa-guest{top:0;height:100%}
+</style><div id="root"></div><script>window.preloadUrl=${JSON.stringify(preloadUrl)}</script><script src="/host.js"></script>`);
+fs.writeFileSync(path.join(root, "guest.html"), `<!doctype html><meta charset="utf-8"><style>
+*{box-sizing:border-box}html,body,#root{height:100%;margin:0;font:14px system-ui}body{background:#f7faf8;color:#22382a}
+nav{height:44px;display:flex;align-items:center;padding:4px 16px 0;gap:30px;border-bottom:1px solid #dde6df}
+input{width:180px;height:28px;padding:4px 8px;border:1px solid #dde6df;border-radius:7px;background:#fff}
+main{padding:24px}textarea{width:420px;height:100px;padding:12px;border:1px solid #dde6df;border-radius:12px}
+</style><div id="root"></div><script src="/guest.js"></script>`);
+fs.writeFileSync(path.join(root, "main.cjs"), `
+const {app,BrowserWindow,webContents}=require('electron');const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+app.setPath('userData',path.join(__dirname,'profile'));app.on('window-all-closed',()=>{});
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+(async()=>{await app.whenReady();const server=http.createServer((req,res)=>{const name=path.basename(new URL(req.url,'http://localhost').pathname);const file=path.join(__dirname,name);if(!(['host.html','host.js','host.css','guest.html','guest.js'].includes(name)||name.endsWith('.svg'))||!fs.existsSync(file)){res.writeHead(404);res.end();return}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(file));});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const win=new BrowserWindow({show:false,width:1280,height:800,webPreferences:{webviewTag:true,contextIsolation:true,nodeIntegration:false}});
+await win.loadURL('http://127.0.0.1:'+server.address().port+'/host.html');win.show();win.focus();
+const js=s=>win.webContents.executeJavaScript(s);let guest;
+const until=async(fn)=>{for(let attempt=0;attempt<150;attempt++){if(await fn())return;await pause(30)}throw new Error('Timed out: '+fn)};
+await until(()=>js('!!document.querySelector("webview")?.getWebContentsId()').catch(()=>false));
+guest=webContents.fromId(await js('document.querySelector("webview").getWebContentsId()'));
+const gj=s=>guest.executeJavaScript(s);
+await until(()=>gj('!!document.querySelector("#search")').catch(()=>false));
+await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));
+const identity=await gj('window.documentIdentity'),id=guest.id,url=guest.getURL(),src=await js('document.querySelector("webview").getAttribute("src")');
+await gj('document.querySelector("#draft").value="保留的输入草稿"');
+const click=async(index)=>{const point=await js('(()=>{const r=document.querySelectorAll(".main-chat-header-navigation button")['+index+'].getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');win.webContents.sendInputEvent({type:'mouseMove',...point});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});await pause(80)};
+const cases=[];
+for(const platform of ['darwin','win32']){for(const fullscreen of platform==='win32'?[false,true]:[false]){
+ await js('window.configure('+JSON.stringify({platform,fullscreen,collapsed:true})+')');
+ await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));
+ const before=await js('({...window.actions})');await click(0);await click(1);await click(2);
+ assert.deepEqual(await js('({...window.actions})'),{search:before.search+1,back:before.back,forward:before.forward+1});
+ const positions=await js('(()=>{const a=document.querySelector(".main-chat-header-navigation").getBoundingClientRect();const b=document.querySelector(".qa-right-actions").getBoundingClientRect();const c=document.querySelector("webview").getBoundingClientRect();return {right:a.right,top:a.top,rightTop:b.top,guestLeft:c.left}})()');
+ const searchLeft=await gj('document.querySelector("#search").getBoundingClientRect().left');
+ assert.ok(positions.right<=positions.guestLeft+searchLeft,'Desktop buttons overlap the WebClient search input');assert.equal(positions.top,positions.rightTop);
+ await click(3);await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'));assert.equal(await js('document.querySelectorAll(".main-chat-header-navigation").length'),0);
+ for(let cycle=0;cycle<4;cycle++){await js('window.configure({collapsed:true})');await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));await js('window.configure({collapsed:false})');await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'))}
+ assert.equal(guest.id,id);assert.equal(guest.getURL(),url);assert.equal(await gj('window.documentIdentity'),identity);assert.equal(await gj('document.querySelector("#draft").value'),'保留的输入草稿');assert.equal(await js('document.querySelector("webview").getAttribute("src")'),src);
+ await js('window.configure({collapsed:true})');await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));
+ for(const theme of ['light','dark']){await js('document.documentElement.dataset.theme='+JSON.stringify(theme));await pause(60);fs.writeFileSync(path.join(${JSON.stringify(output)},platform+'-'+(fullscreen?'fullscreen-':'')+theme+'.png'),(await win.webContents.capturePage({x:0,y:0,width:1280,height:140})).toPNG())}
+ cases.push({platform,fullscreen,positions,searchLeft});
+}}
+await js('window.configure({canGoBack:true})');await pause(50);const back=await js('window.actions.back');await click(1);assert.equal(await js('window.actions.back'),back+1);
+const report={ok:true,guestId:id,documentIdentity:identity,loads:await js('window.documents'),cases};assert.equal(report.loads,1,'sidebar changes reloaded the guest');fs.writeFileSync(path.join(${JSON.stringify(output)},'report.json'),JSON.stringify(report,null,2));console.log('Desktop chat header UI smoke passed: '+${JSON.stringify(output)});win.destroy();server.close();app.quit();})().catch(error=>{console.error(error);app.exit(1)});
+`);
+const env = { ...process.env };
+delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(require("electron"), [path.join(root, "main.cjs")], { env, stdio: ["ignore", "pipe", "pipe"] });
+let outputText = "";
+child.stdout.on("data", (data) => { outputText += data; });
+child.stderr.on("data", (data) => { outputText += data; });
+const watchdog = setTimeout(() => child.kill("SIGTERM"), 45000);
+const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+clearTimeout(watchdog);
+if (code !== 0 || !outputText.includes("Desktop chat header UI smoke passed:")) {
+  throw new Error(`Desktop chat header smoke failed (${code}):\n${outputText}`);
+}
+console.log(outputText.trim());

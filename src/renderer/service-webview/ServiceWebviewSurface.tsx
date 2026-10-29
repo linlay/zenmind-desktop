@@ -4,6 +4,7 @@ import {
   createElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -127,6 +128,8 @@ import {
   readWebclientAppearanceProjection
 } from "../appearance/webclientProjection";
 import { createWebclientAppearanceHost } from "./appearanceHost";
+import { createWebclientHeaderLayoutHost } from "./headerLayoutHost";
+import type { AgentWebclientHeaderLayout } from "../../shared/contracts/agent-webclient-bridge";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
 
@@ -138,6 +141,7 @@ export type MainChatCommitSnapshot = {
 };
 
 type ServiceWebviewSurfaceProps = {
+  headerLayout?: AgentWebclientHeaderLayout;
   chatDefaultAgentKey?: string;
   hostTheme: "light" | "dark";
   serviceId?: string;
@@ -660,6 +664,7 @@ async function tryReadServiceWebviewPageContext(
 }
 
 export function ServiceWebviewSurface({
+  headerLayout,
   chatDefaultAgentKey,
   hostTheme,
   serviceId: serviceIdProp,
@@ -704,6 +709,10 @@ export function ServiceWebviewSurface({
     surfaceIdentity.surfaceRole === "service" ? serviceId.trim() : ""
   );
   const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
+  const headerLayoutInputRef = useRef(headerLayout);
+  headerLayoutInputRef.current = headerLayout;
+  const headerLayoutRevisionRef = useRef({ revision: 0, signature: "" });
+  const headerLayoutHostRef = useRef<ReturnType<typeof createWebclientHeaderLayoutHost> | null>(null);
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const mainChatSurface = isAgentWebclientChatSurface(serviceId, surfaceId);
   const appearanceSnapshot = useAppearanceSnapshot();
@@ -1193,6 +1202,9 @@ export function ServiceWebviewSurface({
   const routeHostTheme = service?.id === "agent-webclient" ? appearanceRouteTheme ?? hostTheme : hostTheme;
   const embeddedUrl = useMemo(() => {
     const url = buildServiceWebviewUrl(service?.id, webUrl, {
+      // Layout changes alone never invalidate this bootstrap URL memo. Other
+      // URL inputs sample the latest layout when they rebuild the target.
+      headerLayout: surfaceId === MAIN_CHAT_SURFACE_ID ? headerLayoutInputRef.current : undefined,
       hostTheme: routeHostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       accessToken:
@@ -3412,6 +3424,21 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     appearanceHostRef.current?.refresh();
   }, [appearance.resolvedTheme, appearance.skin, appearance.background, hostBackgroundSurface, active, documentVisible]);
+
+  useEffect(() => {
+    const target = webviewRef.current;
+    if (!target || service?.id !== "agent-webclient" || surfaceId !== MAIN_CHAT_SURFACE_ID ||
+      service.status !== "running" || !bridgeReady || !serviceWebviewPreloadUrl) return;
+    const host = createWebclientHeaderLayoutHost({
+      webview: target, trustedUrl: () => webUrl, isCurrentGuest: () => webviewRef.current === target,
+      read: () => headerLayoutInputRef.current ?? { sidebarCollapsed: false, headerLeftInset: 0 },
+      revisionState: headerLayoutRevisionRef.current,
+    });
+    headerLayoutHostRef.current = host;
+    return () => { host.dispose(); if (headerLayoutHostRef.current === host) headerLayoutHostRef.current = null; };
+  }, [bridgeReady, serviceWebviewPreloadUrl, webviewRenderKey, service?.id, service?.status, surfaceId, webUrl]);
+
+  useLayoutEffect(() => { headerLayoutHostRef.current?.refresh(); }, [headerLayout, active, documentVisible]);
 
   useEffect(() => {
     if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {

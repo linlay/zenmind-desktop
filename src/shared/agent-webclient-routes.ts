@@ -136,7 +136,9 @@ const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
   "theme",
   "hostTheme",
   "lang",
-  "wsSource"
+  "wsSource",
+  "desktopSidebarCollapsed",
+  "desktopHeaderLeftInset"
 ]);
 
 const AGENT_WEBCLIENT_ONE_SHOT_ROUTE_QUERY_PARAMS = new Set([

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNaviga
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar, type AppSidebarChatMenuHandle } from "./navigation/AppSidebar";
 import { HistoryGestureOverlay } from "./navigation/HistoryGestureOverlay";
+import { DesktopChatHeaderNavigation, DESKTOP_CHAT_HEADER_INITIAL_INSET } from "./navigation/DesktopChatHeaderNavigation";
 import { forwardMainChatAwaitingDigit } from "../services/mainChatAwaitingShortcut";
 import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
@@ -1294,6 +1295,11 @@ export function AppShell() {
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const effectiveSidebarCollapsed = sidebarCollapsed && !isSecondarySidebarMode;
+  const showCollapsedChatHeaderNavigation = effectiveSidebarCollapsed && showMainChatWorkPanelToggle && !workPanelFullscreenOwnerChatId;
+  const [chatHeaderLeftInset, setChatHeaderLeftInset] = useState(DESKTOP_CHAT_HEADER_INITIAL_INSET);
+  const mainChatHeaderLayout = useMemo(() => ({ sidebarCollapsed: effectiveSidebarCollapsed,
+    headerLeftInset: showCollapsedChatHeaderNavigation ? chatHeaderLeftInset : 0 }),
+  [effectiveSidebarCollapsed, showCollapsedChatHeaderNavigation, chatHeaderLeftInset]);
   const effectiveSidebarWidth = isSecondarySidebarMode
     ? SETTINGS_SIDEBAR_WIDTH
     : renderedSidebarWidth;
@@ -4753,6 +4759,7 @@ export function AppShell() {
         isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-header-actions" : "",
+        showCollapsedChatHeaderNavigation ? "has-floating-chat-header-navigation" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
@@ -4898,6 +4905,12 @@ export function AppShell() {
       </div>
       <div className="app-window-controls-layer">
         {mainChatHeaderActions}
+        {showCollapsedChatHeaderNavigation ? <DesktopChatHeaderNavigation
+          canGoBack={Boolean(desktopNavigationBackStep)} canGoForward={Boolean(desktopNavigationForwardStep)}
+          onSearch={shellOverlay.openGlobalSearch} onBack={handleSidebarBackNavigation}
+          onForward={handleSidebarForwardNavigation} onExpand={toggleSidebarCollapsed}
+          onInsetChange={setChatHeaderLeftInset}
+        /> : null}
       </div>
       <div className="app-sidebar-shell">
         <AppSidebar
@@ -5032,6 +5045,7 @@ export function AppShell() {
       <div ref={appContentRef} className="app-content">
         <main className="app-main">
           <ServiceWebviewSurfaceHost
+            headerLayout={mainChatHeaderLayout}
             mainChatObserverActive={!assistantCopilotOpen}
             chatDefaultAgentKey={chatRuntimeAgent.agentKey}
             activeServiceId={activeServiceId}

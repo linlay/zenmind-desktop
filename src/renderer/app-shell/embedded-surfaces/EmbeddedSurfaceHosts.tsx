@@ -24,6 +24,7 @@ import {
 } from "../../../shared/surface-identity";
 import type { MainChatCommitSnapshot } from "../../service-webview/ServiceWebviewSurface";
 import type { AgentWebclientWorkspaceArrowKeyDirection } from "../../../shared/service-webview-bridge";
+import type { AgentWebclientHeaderLayout } from "../../../shared/contracts/agent-webclient-bridge";
 
 type ThemeMode = "light" | "dark";
 
@@ -76,6 +77,7 @@ function resolveWebsiteSsoPartition(item: EmbeddedSidebarItem) {
 }
 
 export function ServiceWebviewSurfaceHost({
+  headerLayout,
   mainChatObserverActive = true,
   chatDefaultAgentKey,
   activeServiceId,
@@ -89,6 +91,7 @@ export function ServiceWebviewSurfaceHost({
   onMainChatWorkspaceArrowKey,
 }: {
   mainChatObserverActive?: boolean;
+  headerLayout?: AgentWebclientHeaderLayout;
   chatDefaultAgentKey?: string;
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
@@ -165,6 +168,7 @@ export function ServiceWebviewSurfaceHost({
       {shouldRenderAgentChatSurface ? (
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
+          headerLayout={headerLayout}
           surfaceOwnershipActive={mainChatObserverActive && activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
           desktopRoute={agentChatRoute?.routePath}
