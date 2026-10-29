@@ -24,6 +24,24 @@ export function rememberWebappChat(key: string, chatId: string) {
   chats.add(chatId);
 }
 
+// Reserve the bounded identity bucket before an execution can create a Chat.
+export function prepareWebappChat(key: string) {
+  if (!applicationChats.has(key)) {
+    if (applicationChats.size >= 1024) throw new ConnectorError("app_capacity_exceeded");
+    applicationChats.set(key, new Set());
+  }
+  chatReservations.set(key, (chatReservations.get(key) ?? 0) + 1);
+  return () => {
+    const count = (chatReservations.get(key) ?? 1) - 1;
+    if (count) chatReservations.set(key, count);
+    else {
+      chatReservations.delete(key);
+      if (!applicationChats.get(key)?.size) applicationChats.delete(key);
+    }
+  };
+}
+const chatReservations = new Map<string, number>();
+
 async function wait(ms: number, signal: AbortSignal) {
   if (signal.aborted) return;
   await new Promise<void>(resolve => {

@@ -1,3 +1,5 @@
+import { createHttpRequestLifetime } from "../../infrastructure/network/http-request-lifetime";
+import { stopWebappExecutions } from "./webapp-execute";
 import http from "node:http";
 import { DESKTOP_ACTION_BRIDGE_HOST, DESKTOP_ACTION_DEFINITIONS, type DesktopActionCallRequest } from "../../../shared/desktop-actions";
 import { type DesktopActionBridgeOptions, type DesktopCdpCallRequest } from "./action-contracts";
@@ -32,6 +34,7 @@ export async function readBody(req: http.IncomingMessage) {
 }
 
 export function writeJSON(res: http.ServerResponse, status: number, payload: unknown) {
+  if (res.destroyed || res.writableEnded) return;
   res.writeHead(status, {
     "Content-Type": JSON_CONTENT_TYPE,
     "Cache-Control": "no-store"
@@ -65,6 +68,7 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
     const previousServer = desktopActionServerState.activeServer;
     desktopActionServerState.activeServer = null;
     desktopActionServerState.activeServerPort = 0;
+    stopWebappExecutions();
     previousServer.close();
   }
 
@@ -107,6 +111,7 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
         writeJSON(res, 415, fail("unknown", "unsupported_media_type", "Content-Type must be application/json."));
         return;
       }
+      const lifetime = createHttpRequestLifetime(req, res);
       try {
         const body = await readBody(req);
         const parsed = JSON.parse(body) as DesktopActionCallRequest;
@@ -127,12 +132,12 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
               webappId: authorization.webappId
             }
           },
-          { kind: "webappBackend", webappId: authorization.webappId, signal: authorization.signal }
+          { kind: "webappBackend", webappId: authorization.webappId, signal: authorization.signal, requestSignal: lifetime.signal }
         );
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {
         writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
-      }
+      } finally { lifetime.dispose(); }
       return;
     }
     if (req.method === "POST" && url.pathname === "/webapps/pages/actions/call") {
@@ -140,6 +145,7 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
         writeJSON(res, 415, fail("unknown", "unsupported_media_type", "Content-Type must be application/json."));
         return;
       }
+      const lifetime = createHttpRequestLifetime(req, res);
       try {
         const body = await readBody(req);
         const parsed = JSON.parse(body) as DesktopActionCallRequest;
@@ -160,12 +166,12 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
               webappId: authorization.webappId
             }
           },
-          { kind: "webappPage", webappId: authorization.webappId, signal: authorization.signal }
+          { kind: "webappPage", webappId: authorization.webappId, signal: authorization.signal, requestSignal: lifetime.signal }
         );
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {
         writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
-      }
+      } finally { lifetime.dispose(); }
       return;
     }
     if (req.method === "POST" && url.pathname === "/cdp/call") {
@@ -199,6 +205,7 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
 }
 
 export function stopDesktopActionBridge() {
+  stopWebappExecutions();
   const server = desktopActionServerState.activeServer;
   desktopActionServerState.activeServer = null;
   desktopActionServerState.activeServerPort = 0;

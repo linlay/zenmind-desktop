@@ -1596,3 +1596,11 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - [ ] 刷新 401 清理凭据并提示登录；502/断网只退避有限次，状态轮询不重置预算，使用情况页刷新可手动重试。
 - [ ] 临时错误且旧 token 有效时继续使用；过期后撤销业务文件。退出/切账号期间的迟到响应不能写回 token 或 Cookie。
 - [ ] macOS / Windows 分别验证无系统密钥授权弹窗、目录权限、带空格路径、原子文件替换及生命周期参数；新旧 Desktop/Platform 混用不得静默降级。
+
+## WebApp 结构化执行
+
+- macOS / Windows 分别在静态 WebApp 与受管 Node WebApp 使用带 result_submit 的 Native Agent，验证结构化成功（包括空对象）与业务 failure；不传 Agent、权限、技能引用或任意路由。官网未登录时，不依赖官网凭据的执行仍可用。
+- 页面与后端分别执行超过两分钟、超过五分钟而小于十分钟的任务，确认无传输提前超时；超过 Main 期限返回 assistant_timeout，不自动重发。
+- 两入口分别取消、刷新/关闭页面、停止/重启/卸载应用和退出 Desktop，确认精确 Run 被 HTTP interrupt/连接断开中断，其他应用 Run 不受影响；隐藏/展示转移不主动中断，页面关闭不取消独立后端请求。
+- 缺 result_submit、非 Native Agent、非法 Schema、需审批、未交卷、响应超大、并发超限均返回对应错误；官网账号变化不轮换本地调用，真实本地身份/实例变化后旧结果不能交付。
+- 仅已发布 artifact 可读取；@chat 字符串不能直接下载任意文件，跨应用 Chat 和 page/backend token 串用拒绝。两平台分别检查进程退出、socket 与在途订阅清理。

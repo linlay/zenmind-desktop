@@ -778,7 +778,7 @@ test("public Bridge policy separates page interactions from backend data capabil
       version: 1
     }
   };
-  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
+  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.assistant.chat", "assistant.events", "assistant.stop", "assistant.execute", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
   assert.equal(isWebappActionAllowed(item, "localPageGateway", "desktop.native.clipboard.writeText"), true);
   assert.equal(isWebappActionAllowed(item, "backendActionToken", "desktop.native.clipboard.writeText"), false);
   const token = issueWebappActionToken(item, "backendActionToken");

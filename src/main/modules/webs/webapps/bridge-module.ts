@@ -332,7 +332,99 @@ export const desktop = Object.freeze({
 const image = Object.assign(generateAssistantImage, {
   cancel: (requestId) => call("assistant.image.cancel", { requestId })
 });
-function createDataClient(call, image) {
+function executeJson(value, seen = new Set(), depth = 0) {
+  if (depth > 64) throw Error("JSON is too deeply nested.");
+  if (value === null || typeof value === "boolean" || typeof value === "string") return;
+  if (typeof value === "number" && Number.isFinite(value)) return;
+  if (!value || typeof value !== "object" || seen.has(value) || Object.getOwnPropertySymbols(value).length ||
+      (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))) throw Error("Use standard JSON values.");
+  seen.add(value);
+  if (Array.isArray(value)) {
+    if (Object.keys(value).length !== value.length) throw Error("Use dense JSON arrays.");
+    for (const item of value) executeJson(item, seen, depth + 1);
+  } else {
+    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
+      if (!descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw Error("Use JSON data properties.");
+      executeJson(descriptor.value, seen, depth + 1);
+    }
+  }
+  seen.delete(value);
+}
+
+async function executeNodeRequest(transport, body, signal) {
+  // Only the managed backend loads Node; page SDK clients never resolve this import.
+  const { request } = await import("node:http");
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const req = request(transport.url, { method: "POST", signal,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + transport.token } }, res => {
+      const chunks = []; let size = 0;
+      res.on("data", chunk => {
+        size += chunk.length;
+        if (size > 1024 * 1024 + 4096) {
+          req.destroy(new DesktopBridgeError("assistant.execute", "assistant_result_too_large", "Execution result is too large."));
+        } else chunks.push(chunk);
+      });
+      res.on("error", reject);
+      res.on("end", () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300,
+        json: async () => JSON.parse(Buffer.concat(chunks).toString("utf8")) }));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+async function executeAssistant(input, { signal } = {}, transport) {
+  const action = "assistant.execute";
+  let body;
+  try {
+    executeJson(input);
+    if (!input || Array.isArray(input) || typeof input !== "object" ||
+        Object.keys(input).some(key => !["message", "input", "outputSchema"].includes(key)) ||
+        typeof input.message !== "string" || !input.message.trim() ||
+        !input.outputSchema || Array.isArray(input.outputSchema) || input.outputSchema.type !== "object") throw Error("Use message, input and an object outputSchema.");
+    if (input.message.length > 12000) throw new DesktopBridgeError(action, "assistant_message_too_long", "Assistant message exceeds 12000 characters.");
+    if (new TextEncoder().encode(JSON.stringify(input.outputSchema)).length > 65536) throw Error("Schema exceeds 64 KiB.");
+    const checkFile = node => {
+      if (!node || typeof node !== "object") return;
+      if (Object.hasOwn(node, "$file")) throw Error("File inputs are not supported.");
+      Object.values(node).forEach(checkFile);
+    };
+    checkFile(input.input);
+    body = JSON.stringify({ action, args: input });
+    if (new TextEncoder().encode(body).length > (transport ? 262144 : 65536)) throw Error("Execution request exceeds the bridge body limit.");
+  } catch (error) {
+    if (error instanceof DesktopBridgeError) throw error;
+    throw new DesktopBridgeError(action, "invalid_args", error.message || "Invalid execution arguments.");
+  }
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), 615000);
+  timer.unref?.();
+  const combined = signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal;
+  try {
+    combined.throwIfAborted();
+    const response = transport ? await executeNodeRequest(transport, body, combined) :
+      await fetch(ACTION_PATH, { method: "POST", headers: { "Content-Type": "application/json" },
+        body, credentials: "omit", redirect: "error", signal: combined });
+    const payload = await response.json();
+    combined.throwIfAborted();
+    if (!response.ok || !payload?.ok) throw new DesktopBridgeError(action, payload?.error?.code || "action_failed",
+      payload?.error?.message || "Assistant execution failed.", payload?.error?.details);
+    const result = payload.result;
+    if (typeof result?.chatId !== "string" || !result.chatId ||
+        !(result.status === "success" && result.output && typeof result.output === "object" && !Array.isArray(result.output) ||
+          result.status === "failure" && typeof result.reason === "string" && result.reason.trim())) {
+      throw new DesktopBridgeError(action, "invalid_response", "Invalid execution result.");
+    }
+    return result;
+  } catch (error) {
+    if (combined.aborted) throw new DesktopBridgeError(action, signal?.aborted ? "cancelled" : "assistant_timeout", "Assistant execution ended.");
+    if (error instanceof DesktopBridgeError) throw error;
+    throw new DesktopBridgeError(action, error instanceof SyntaxError ? "invalid_response" : "bridge_unavailable", "Assistant execution is unavailable.");
+  } finally { clearTimeout(timer); }
+}
+
+function createDataClient(call, image, execute) {
 const connector = Object.freeze({
   list: () => call("connector.list"),
   describe: (input) => call("connector.describe", input),
@@ -362,6 +454,7 @@ const artifact = Object.freeze({
   }
 });
 const assistant = Object.freeze({
+  execute,
   stop: (input) => call("assistant.stop", input),
   async *subscribe(input, { signal } = {}) {
     let cursor = input.cursor || 0;
@@ -382,7 +475,7 @@ const assistant = Object.freeze({
 });
 return Object.freeze({ connector, skill, automation, kanban, artifact, assistant });
 }
-export const { connector, skill, automation, kanban, artifact, assistant } = createDataClient((action, args, signal) => call(action, args, undefined, signal), Object.freeze(image));
+export const { connector, skill, automation, kanban, artifact, assistant } = createDataClient((action, args, signal) => call(action, args, undefined, signal), Object.freeze(image), executeAssistant);
 
 // Copy the generated bridge.mjs into a managed Node backend. Credentials stay
 // in that process and must never be forwarded to frontend code or logs.
@@ -394,7 +487,7 @@ export function createBackendClient({ url, token }) {
     throw new DesktopBridgeError("backend.init", "invalid_args", "Use Desktop's injected backend bridge configuration.");
   }
   const transport = { url: target.href.replace(/\/$/u, "") + "/actions/call", token };
-  const client = createDataClient((action, args, signal) => call(action, args, transport, signal), reserved("assistant.image"));
+  const client = createDataClient((action, args, signal) => call(action, args, transport, signal), reserved("assistant.image"), (input, options) => executeAssistant(input, options, transport));
   return Object.freeze({ ...client, artifact: Object.freeze({
     list: client.artifact.list, get: client.artifact.get, read: client.artifact.read,
     open: reserved("artifact.open"), saveAs: reserved("artifact.saveAs")

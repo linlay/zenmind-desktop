@@ -39,11 +39,12 @@ const { connector, assistant, skill, artifact, kanban } = createBackendClient({
 });
 ```
 
-仅受管后端使用 Desktop 注入的 loopback URL 与 token；不得转发至前端或日志。Node SDK 不依赖 DOM。连接器 list/describe/invoke 在前后端使用相同契约与短期应用授权，CLI/MCP 均支持；UI 登录、兼容权限入口、产物预览/保存和其他原生交互仍只允许页面调用。后端业务 API 必须校验访问者，不得公开转发任意 connector 请求或让远程访客隐式继承本机账号。退出账号后 token 失效，登录并重启应用后重新获得。
+仅受管后端使用 Desktop 注入的 loopback URL 与 token；不得转发至前端或日志。Node SDK 不依赖 DOM。连接器 list/describe/invoke 在前后端使用相同契约与短期应用授权，CLI/MCP 均支持；UI 登录、兼容权限入口、产物预览/保存和其他原生交互仍只允许页面调用。后端业务 API 必须校验访问者，不得公开转发任意 connector 请求或让远程访客隐式继承本机账号。官网账号变化不撤销本地调用身份；本地服务身份或应用实例失效后应重新建立调用。
 
 | 能力 | 当前接口与约束 |
 | --- | --- |
 | Agent | `assistant.chat(message)` 或 `assistant.chat({message,skillIds?,background?})`；默认返回 `{text,agentKey,chatId,runId}`，后台返回 `{accepted,chatId,runId}` |
+| 结构化执行 | `assistant.execute({message,input?,outputSchema},{signal?})`；页面/后端共用，同步返回 `{chatId,status,output|reason}` |
 | 运行 | `assistant.subscribe({runId,cursor?},{signal?})` 异步迭代精简事件；`assistant.stop({runId})`，只操作本应用后台运行 |
 | 技能 | `skill.list()`、`skill.describe({skillId})`；只返回固定 Copilot 声明的技能元数据，使用技能经 Agent chat，不直接执行任意技能脚本 |
 | 产物 | `artifact.list({chatId,runId?,cursor?,limit?})`；`get/read/open/saveAs({chatId,runId?,artifactId})`；只允许当前应用实例发起的 Chat |
@@ -80,9 +81,38 @@ if (items.length) await artifact.open({ chatId, runId, artifactId: items[0].arti
 
 `artifact.read()` 返回 `ReadableStream<Uint8Array>`，内部是最多 1 MiB 的有界缓冲；`saveAs` 同样受此上限约束。超限返回 `artifact_too_large`。预览成功为 `{opened:true}`；另存为返回 `{saved:true}` 或 `{cancelled:true}`，不返回绝对文件路径。Platform 不存在全局产物列表时，SDK 不模拟全局列表。
 
-错误统一为 `DesktopBridgeError`，可读取 `code` 和 `action`。实例或账号失效返回 `app_grant_required`；连接器未登录仍返回认证错误。`capabilities.has()` 表示接口可用；连接器和看板能力的 `declared` 为 true、`permission` 为 not_required，系统麦克风等 OS 权限独立处理。
+错误统一为 `DesktopBridgeError`，可读取 `code` 和 `action`。实例或本地服务身份失效返回 `app_grant_required`；连接器未登录仍返回认证错误。`capabilities.has()` 表示接口可用；连接器和看板能力的 `declared` 为 true、`permission` 为 not_required，系统麦克风等 OS 权限独立处理。
 
 连接器登录无需 `connectorAuthentication` 声明，直接调用 `desktop.authenticateConnector({connectorId})`。认证复用现有 config，不创建额外凭据目录。
+
+## 结构化执行与取消
+
+```js
+const controller = new AbortController();
+const result = await assistant.execute({
+  message: '提取订单金额，无法识别时提交 failure。',
+  input: { text: '订单总额 128 元' },
+  outputSchema: {
+    type: 'object', properties: { amount: { type: 'number' } },
+    required: ['amount'], additionalProperties: false
+  }
+}, { signal: controller.signal });
+// 用户点击取消时调用 controller.abort()。
+if (result.status === 'success') useAmount(result.output.amount);
+else showReason(result.reason);
+```
+
+受管后端使用 createBackendClient 返回的同名方法。目标必须是有效工具带 result_submit 的 Native Agent；EXECUTOR 模板通常符合，但不按 mode 授权。沿用现有用户 Agent 选择、固定 Copilot 和 Desktop helper 选择机制；默认 helper 未必支持执行，宿主不自动换 Agent。execute 只用 Agent 自身挂载的技能，不注入 Manifest copilot.references。
+
+仅接受 message、input、outputSchema；拒绝 agentKey、skillIds、references、accessLevel、background、chatId 和任意路由。权限固定 default，不提供问答或审批 UI。审批返回 approval_required；Agent 主动提问可能等待直至取消/超时。input 为标准 JSON，不支持 Blob、multipart、$file、自定义 toJSON、循环或非有限数；JSON 嵌套最多 64 层。
+
+message 最多 12,000 个 UTF-16 code unit；outputSchema 根为 object，序列化最多 64 KiB。完整页面请求体最多 64 KiB，完整后端请求体最多 256 KiB，因此页面实际可用 schema 大小还需扣除其他字段。Platform 完整响应最多 1 MiB。Main 执行期限十分钟，传输层留十五秒余量；全局最多八个在途执行，同一 WebApp 最多两个，两入口共享额度，不排队。
+
+status:failure 是正常业务结果，不抛异常。请求失败抛 DesktopBridgeError：unsupported Agent 为 assistant_agent_unsupported，Agent 不可用为 assistant_agent_unavailable，缺失/非法交卷为 output_missing/output_invalid，超时为 assistant_timeout，超大结果为 assistant_result_too_large，主动取消为 cancelled。无执行路由为 assistant_execute_unavailable，不回退到 chat。
+
+AbortSignal 仅控制本次执行，包含响应体读取阶段。Main 使用与本次 requestId/Agent 关联的 canonical Run 经 HTTP /api/interrupt 主动中断，并始终 abort HTTP execute；还没收到 Run 标识时由断开连接触发 Platform 中断。assistant.stop/subscribe 仍只用于原 chat 后台 Run。页面刷新、应用停止、实例失效和 Desktop 退出同样取消；隐藏或展示转移不主动取消，页面关闭也不取消独立后端调用。
+
+Schema 合法只证明交卷形状通过，不证明外部副作用或所有后续步骤成功。取消不回滚已执行操作；接口没有 requestId 去重，SDK 从不自动重发。output 原样返回；@chat 路径不是 artifactId，只有真实已发布产物能经 artifact.list/get/read 获取。
 
 ## 重试与执行回执
 

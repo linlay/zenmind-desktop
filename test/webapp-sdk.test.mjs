@@ -37,3 +37,22 @@ test('artifact reads expose bytes rather than filesystem paths',async(t)=>{
  const stream=await artifact.read({chatId:'chat',artifactId:'report'});
  assert.equal(await new Response(stream).text(),'report');
 });
+
+test('execute SDK validates JSON, preserves failure and keeps signal outside the body',async(t)=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});const controller=new AbortController();
+ globalThis.fetch=async(_url,options)=>{
+  assert.equal(JSON.parse(options.body).action,'assistant.execute');assert.equal(JSON.parse(options.body).args.signal,undefined);
+  assert.ok(options.signal);return new Response(JSON.stringify({ok:true,result:{chatId:'chat',status:'failure',reason:'missing'}}));
+ };
+ const input={message:'extract',input:false,outputSchema:{type:'object'}};
+ assert.equal((await assistant.execute(input,{signal:controller.signal})).status,'failure');
+ const cycle={};cycle.self=cycle;
+ for(const value of [cycle,undefined,NaN,new Date(),[,,],{toJSON(){return 'hidden'}}]) await assert.rejects(assistant.execute({...input,input:value}),{code:'invalid_args'});
+ await assert.rejects(assistant.execute({...input,skillIds:[]}),{code:'invalid_args'});
+ controller.abort();await assert.rejects(assistant.execute(input,{signal:controller.signal}),{code:'cancelled'});
+});
+test('execute SDK cancellation during response body decoding remains cancelled',async(t)=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});const controller=new AbortController();
+ globalThis.fetch=async()=>({ok:true,json:async()=>{controller.abort();throw new DOMException('aborted','AbortError')}});
+ await assert.rejects(assistant.execute({message:'test',outputSchema:{type:'object'}},{signal:controller.signal}),{code:'cancelled'});
+});
