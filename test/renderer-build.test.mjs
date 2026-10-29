@@ -7036,6 +7036,7 @@ test("assistant static HTML export saves the complete document returned by the p
   const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "conversation-share", "useConversationShareDialog.ts");
   const shareManagement = readSourceFile("src", "renderer", "pages", "share-management", "ShareManagementPage.tsx");
   const copilotContract = readSourceFile("src", "shared", "contracts", "copilot.ts");
+  const sharesContract = readSourceFile("src", "shared", "contracts", "shares.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
   assert.match(htmlExport, /renderer\.renderChatHtml\(normalizedChatId/u);
@@ -7054,7 +7055,9 @@ test("assistant static HTML export saves the complete document returned by the p
   assert.match(desktopApi, /exportChatHtml:\s*\(chatId: string\) => Promise<AssistantNavActionResult>/u);
   assert.match(copilotContract, /interface AssistantConversationShareRequest \{\s*chatId: string;\s*\}/u);
   assert.doesNotMatch(copilotContract, /ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS|DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION/u);
-  assert.match(copilotContract, /interface AssistantConversationShareRecord[\s\S]*?chatId: string;[\s\S]*?createdAt: EpochMilliseconds;[\s\S]*?lastAccessedAt: EpochMilliseconds \| null;[\s\S]*?singleUse: boolean/u);
+  assert.match(copilotContract, /type AssistantConversationShareRecord = import\("\.\/shares"\)\.ShareRecord/u);
+  assert.match(sharesContract, /interface ShareRecord[\s\S]*?kind: string;[\s\S]*?title: string;[\s\S]*?createdAt: EpochMilliseconds;[\s\S]*?lastAccessedAt: EpochMilliseconds \| null/u);
+  assert.doesNotMatch(sharesContract, /expiresAt|singleUse/u);
   assert.match(zhCN, /"sidebar\.chat\.shareCopyLink": "复制链接"/u);
   assert.match(zhCN, /"sidebar\.chat\.shareGenerateQr": "生成二维码"/u);
   assert.match(zhCN, /"sidebar\.chat\.shareOpenBrowser": "浏览器打开"/u);
@@ -7072,9 +7075,9 @@ test("assistant static HTML export saves the complete document returned by the p
   assert.doesNotMatch(shareDialogHook, /listChatShares|listConversationShares|revokeChatShare/u);
   assert.match(shareDialogHook, /const generationRef = useRef\(0\)/u);
   assert.match(shareDialogHook, /generationRef\.current === generation/u);
-  assert.match(shareManagement, /listConversationShares\(\)/u);
-  assert.match(shareManagement, /listHistoryChats\(\)/u);
-  assert.match(shareManagement, /revokeChatShare\(shareId\)/u);
+  assert.match(shareManagement, /shares\.list\(\)/u);
+  assert.doesNotMatch(shareManagement, /listHistoryChats\(\)/u);
+  assert.match(shareManagement, /shares\.revoke\(shareId\)/u);
   assert.match(shareManagement, /formatEpochMillis/u);
 });
 
@@ -7107,14 +7110,14 @@ test("assistant share actions create lazily and share management revokes directl
   assert.match(shareQrDialog, /navigator\.clipboard\.write\(\[new ClipboardItem/u);
   assert.match(shareQrDialog, /clipboard\.writePng\(dataBase64\)/u);
   assert.match(shareQrDialog, /desktopDownloads\.saveFile\(\{/u);
-  assert.match(shareQrDialog, /filename: `\$\{chatName\.trim\(\) \|\| chatId\}\.png`/u);
+  assert.match(shareQrDialog, /filename: `\$\{filenameBase\}\.png`/u);
   assert.doesNotMatch(shareQrDialog, /conversation-share-qr-url|title=\{url\}/u);
   assert.match(shareDialog, /state\.phase === "done"/u);
   assert.match(shareDialog, /event\.key === "Escape"/u);
   assert.doesNotMatch(shareDialog, /shareExpiration|shareConfirm|shareSettings/u);
   assert.match(shareManagement, /ShareManagementRecord/u);
   assert.match(shareManagement, /CopyOutlined[\s\S]*?DisconnectOutlined/u);
-  assert.match(shareManagement, /onRevoke=\{\(\) => void revokeShare\(record\.shareId\)\}/u);
+  assert.match(shareManagement, /onRevoke=\{\(\) => void revokeShare\(record\.id\)\}/u);
   assert.doesNotMatch(shareManagement, /share-management-revoke-confirmation|shareRevokeConfirm/u);
   assert.match(shareManagement, /<section className="share-management-page"[\s\S]*?<div className="share-management-action-toast"[\s\S]*?<header className="share-management-page-header"/u);
   assert.match(shareManagement, /showActionFeedback\("success", result\.message \|\| t\("assistant\.chatShareRevoked"\)\)/u);
@@ -7122,11 +7125,11 @@ test("assistant share actions create lazily and share management revokes directl
   assert.doesNotMatch(shareManagement, /share-management-feedback|setNotice|setActionError/u);
   assert.match(shareManagementCSS, /\.share-management-action-toast\s*\{\s*position: absolute;[\s\S]*?pointer-events: none;/u);
   assert.doesNotMatch(shareManagementCSS, /\.share-management-feedback\b/u);
-  assert.match(shareManagement, /chat\.agentKey\.trim\(\)/u);
-  assert.match(shareManagement, /disabled=\{!group\.agentKey\}[\s\S]*?shareManagement\.conversationUnavailable/u);
-  assert.match(shareManagement, /onOpenChat\(\{ agentKey: group\.agentKey, chatId: group\.chatId \}\)/u);
+  assert.match(shareManagement, /getChatInfo\(record\.source\.id\)/u);
+  assert.match(shareManagement, /!chat\?\.agentKey \|\| chat\.chatId !== record\.source\.id/u);
+  assert.match(shareManagement, /onOpenChat\(\{ agentKey: chat\.agentKey, chatId: chat\.chatId \}\)/u);
   assert.match(shareDialogHook, /let record = createdRecordRef\.current/u);
-  assert.match(shareDialogHook, /if \(!record\) \{\s*const result = await window\.electronAPI\.assistant\.shareChat/u);
+  assert.match(shareDialogHook, /if \(!record\) \{\s*const result = await create\(\)/u);
   assert.match(shareDialogHook, /createdRecordRef\.current = record/u);
   assert.match(shareDialogHook, /phase: action === "qr" \? "qr" : "done"/u);
   assert.match(shareDialogHook, /phase: "choice"/u);

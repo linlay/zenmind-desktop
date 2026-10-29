@@ -294,6 +294,10 @@ const api: DesktopApi = {
       };
     }
   },
+  shares: {
+    list: () => ipcRenderer.invoke("shares.list"),
+    revoke: (id: string) => ipcRenderer.invoke("shares.revoke", id),
+  },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
     consumeFirstInstallBootstrapNavigation: () =>
@@ -502,6 +506,15 @@ const api: DesktopApi = {
     },
   },
   market: {
+    shareItem: (input) => ipcRenderer.invoke("market.shareItem", input),
+    shareReady: (input) => ipcRenderer.invoke("market.shareReady", input),
+    shareAck: (input) => ipcRenderer.invoke("market.shareAck", input),
+    shareRelease: (input) => ipcRenderer.invoke("market.shareRelease", input),
+    onShareReceive: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, delivery: import("../shared/market-share").MarketShareDelivery) => listener(delivery);
+      ipcRenderer.on("market.shareReceive", handler);
+      return () => { ipcRenderer.removeListener("market.shareReceive", handler); };
+    },
     importConnector: () => ipcRenderer.invoke("market.importConnector"),
     createConnector: input => ipcRenderer.invoke("market.createConnector", input),
     getConnectorConnections: () => ipcRenderer.invoke("market.getConnectorConnections"),
@@ -526,8 +539,8 @@ const api: DesktopApi = {
     list: (options) => ipcRenderer.invoke("market.list", options),
     refresh: (options) => ipcRenderer.invoke("market.refresh", options),
     toggleFavorite: (input) => ipcRenderer.invoke("market.toggleFavorite", input),
-    install: (itemId: string) => ipcRenderer.invoke("market.install", itemId),
-    update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
+    install: (itemId: string, expectedVersion?: string) => ipcRenderer.invoke("market.install", itemId, expectedVersion),
+    update: (itemId: string, expectedVersion?: string) => ipcRenderer.invoke("market.update", itemId, expectedVersion),
     uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),
     importSkill: () => ipcRenderer.invoke("market.importSkill"),
     importSkillFromCommand: (commandText: string) => ipcRenderer.invoke("market.importSkillFromCommand", commandText),
@@ -958,6 +971,7 @@ const api: DesktopApi = {
       saveUserConfig: (id: string, values) => ipcRenderer.invoke("webs.webapps.saveUserConfig", id, values),
       getPublishStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getPublishStatus", id),
       publish: (id: string) => ipcRenderer.invoke("webs.webapps.publish", id),
+      share: (id: string) => ipcRenderer.invoke("webs.webapps.share", id),
       unpublish: (id: string) => ipcRenderer.invoke("webs.webapps.unpublish", id),
       readLog: (id, target, options) => ipcRenderer.invoke("webs.webapps.readLog", id, target, options)
     }

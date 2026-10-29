@@ -1,3 +1,4 @@
+import type { ShareFacade } from "../../modules/shares";
 import type { AppearanceRuntime } from "../../modules/settings";
 import type { BrowserWindow } from "electron";
 import {
@@ -105,7 +106,7 @@ export interface ReadyIpcDependencies {
   readonly emitAssistantAttachmentProgress: (progress: AssistantAttachmentTaskProgress) => void;
   readonly captureAssistantScreenshot: (chatId: string | null | undefined) => ReturnType<typeof captureCopilotScreenshot>;
 }
-export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
+export function registerReadyIpc(dependencies: ReadyIpcDependencies, sharesFacade: ShareFacade, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
   registerMainIpcHandlers({
     artifactRuntime: dependencies.artifactRuntime,
     beginLocalDocumentDraftPromotion: dependencies.beginLocalDocumentDraftPromotion,
@@ -119,6 +120,7 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     servicesFacade: dependencies.servicesFacade,
     websFacade: dependencies.websFacade,
     conversationShareFacade,
+    sharesFacade,
     ipcMain,
     platform: dependencies.startupPlatform,
     shell,

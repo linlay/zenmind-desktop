@@ -154,6 +154,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
 
   registerWebIpcHandlers(ipcMain, {
     app,
+    getMainWindow: options.getMainWindow,
     websFacade: options.websFacade,
     showFileDialog: options.showFileDialog as any,
     showSaveDialog: options.showSaveDialog as any,

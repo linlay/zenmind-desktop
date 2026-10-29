@@ -260,6 +260,7 @@ export interface ManifestPluginResources {
 }
 
 export interface Manifest {
+  shareReceiver?: import("./shares").ShareReceiverDeclaration;
   pluginApiVersion?: number;
   id: string;
   name: string;

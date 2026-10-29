@@ -9,20 +9,11 @@ import {
   ShareAltOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AssistantConversationShareRecord } from "../../../shared/contracts";
+import type { ShareRecord } from "../../../shared/contracts";
 import { formatEpochMillis } from "../../../shared/time-contract";
 import { useI18n } from "../../i18n/useI18n";
 
 type ShareManagementStatus = "idle" | "loading" | "ready" | "error";
-
-type ShareGroup = {
-  chatId: string;
-  chatName: string;
-  agentKey: string;
-  records: AssistantConversationShareRecord[];
-};
-
-type ShareChatDetails = Pick<ShareGroup, "chatName" | "agentKey">;
 
 type ShareManagementPageProps = {
   tunnelHubEnabled: boolean;
@@ -41,14 +32,14 @@ export function ShareManagementPage({
 }: ShareManagementPageProps) {
   const { t } = useI18n();
   const [status, setStatus] = useState<ShareManagementStatus>("idle");
-  const [records, setRecords] = useState<AssistantConversationShareRecord[]>([]);
-  const [chatDetails, setChatDetails] = useState<Record<string, ShareChatDetails>>({});
+  const [records, setRecords] = useState<ShareRecord[]>([]);
   const [loadError, setLoadError] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [copiedShareId, setCopiedShareId] = useState("");
   const [selectedChatId, setSelectedChatId] = useState("");
   const [revokingShareId, setRevokingShareId] = useState("");
   const requestIdRef = useRef(0);
+  const generationRef = useRef(0);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const actionFeedbackTimerRef = useRef<number | null>(null);
 
@@ -76,30 +67,14 @@ export function ShareManagementPage({
     setStatus("loading");
     setLoadError("");
     try {
-      const [shareResult, historyResult] = await Promise.all([
-        window.electronAPI.assistant.listConversationShares(),
-        window.electronAPI.assistant.listHistoryChats(),
-      ]);
+      const shareResult = await window.electronAPI.shares.list();
       if (requestIdRef.current !== requestId) return;
       if (!shareResult.ok) {
         setStatus("error");
         setLoadError(shareResult.message || t("shareManagement.loadFailed"));
         return;
       }
-      const nextChatDetails: Record<string, ShareChatDetails> = {};
-      if (historyResult.ok) {
-        for (const chat of historyResult.items) {
-          const chatId = chat.chatId.trim();
-          if (chatId) {
-            nextChatDetails[chatId] = {
-              chatName: chat.chatName.trim() || chatId,
-              agentKey: chat.agentKey.trim(),
-            };
-          }
-        }
-      }
       setRecords([...shareResult.records].sort(compareShareRecords));
-      setChatDetails(nextChatDetails);
       setStatus("ready");
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
@@ -111,9 +86,9 @@ export function ShareManagementPage({
   useEffect(() => {
     if (!tunnelHubEnabled) {
       requestIdRef.current += 1;
+      generationRef.current += 1;
       setStatus("idle");
       setRecords([]);
-      setChatDetails({});
       setLoadError("");
       clearActionFeedback();
       setRevokingShareId("");
@@ -125,6 +100,7 @@ export function ShareManagementPage({
   useEffect(
     () => () => {
       requestIdRef.current += 1;
+      generationRef.current += 1;
       if (copyFeedbackTimerRef.current !== null) {
         window.clearTimeout(copyFeedbackTimerRef.current);
       }
@@ -135,12 +111,14 @@ export function ShareManagementPage({
     [],
   );
 
-  const groups = useMemo(() => groupShares(records, chatDetails), [chatDetails, records]);
-  const selectedGroup = groups.find((group) => group.chatId === selectedChatId) ?? groups[0] ?? null;
+  const groups = useMemo(() => records.map((record) => ({ id: record.id, title: record.title, kind: record.kind, records: [record] })), [records]);
+  const selectedGroup = groups.find((group) => group.id === selectedChatId) ?? groups[0] ?? null;
 
-  async function copyShare(record: AssistantConversationShareRecord) {
+  async function copyShare(record: ShareRecord) {
+    const generation = generationRef.current;
     try {
       const result = await window.electronAPI.clipboard.writeText(record.url);
+      if (generationRef.current !== generation) return;
       if (copyFeedbackTimerRef.current !== null) {
         window.clearTimeout(copyFeedbackTimerRef.current);
         copyFeedbackTimerRef.current = null;
@@ -150,34 +128,56 @@ export function ShareManagementPage({
         showActionFeedback("error", result.message || t("sidebar.chat.shareCopyFailed"));
         return;
       }
-      setCopiedShareId(record.shareId);
+      setCopiedShareId(record.id);
       clearActionFeedback();
       copyFeedbackTimerRef.current = window.setTimeout(() => {
         copyFeedbackTimerRef.current = null;
-        setCopiedShareId((current) => current === record.shareId ? "" : current);
+        setCopiedShareId((current) => current === record.id ? "" : current);
       }, COPY_FEEDBACK_DURATION_MS);
     } catch (error) {
+      if (generationRef.current !== generation) return;
       setCopiedShareId("");
       showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareCopyFailed"));
     }
   }
 
+  async function openSource(record: ShareRecord) {
+    if (record.source?.module !== "conversation") return;
+    const generation = generationRef.current;
+    try {
+      const chat = await window.electronAPI.assistant.getChatInfo(record.source.id);
+      if (generationRef.current !== generation) return;
+      if (!chat?.agentKey || chat.chatId !== record.source.id) {
+        showActionFeedback("error", t("shareManagement.conversationUnavailable"));
+        return;
+      }
+      onOpenChat({ agentKey: chat.agentKey, chatId: chat.chatId });
+    } catch {
+      if (generationRef.current === generation) showActionFeedback("error", t("shareManagement.conversationUnavailable"));
+    }
+  }
+
   async function revokeShare(shareId: string) {
     if (revokingShareId) return;
+    const generation = generationRef.current;
     setRevokingShareId(shareId);
     clearActionFeedback();
     try {
-      const result = await window.electronAPI.assistant.revokeChatShare(shareId);
+      const result = await window.electronAPI.shares.revoke(shareId);
+      if (generationRef.current !== generation) return;
       if (!result.ok) {
         showActionFeedback("error", result.message || t("sidebar.chat.shareRevokeFailed"));
         return;
       }
-      setRecords((current) => current.filter((record) => record.shareId !== shareId));
+      requestIdRef.current += 1;
+      setStatus("ready");
+      setRecords((current) => current.filter((record) => record.id !== shareId));
       showActionFeedback("success", result.message || t("assistant.chatShareRevoked"));
     } catch (error) {
+      if (generationRef.current !== generation) return;
       showActionFeedback("error", error instanceof Error ? error.message : t("sidebar.chat.shareRevokeFailed"));
     } finally {
-      setRevokingShareId("");
+      if (generationRef.current === generation) setRevokingShareId("");
     }
   }
 
@@ -240,57 +240,48 @@ export function ShareManagementPage({
                     <button
                       type="button"
                       className="share-management-list-item"
-                      key={group.chatId}
-                      aria-current={group.chatId === selectedGroup.chatId ? "true" : undefined}
+                      key={group.id}
+                      aria-current={group.id === selectedGroup.id ? "true" : undefined}
                       onClick={() => {
-                        setSelectedChatId(group.chatId);
+                        setSelectedChatId(group.id);
                       }}
                     >
-                      <strong>{group.chatName}</strong>
-                      <span title={group.chatId}>{group.chatId}</span>
+                      <strong>{group.title}</strong>
+                      <span title={group.kind}>{group.kind}</span>
                       <small>{t("shareManagement.linkCount", { count: group.records.length })}</small>
                     </button>
                   ))}
                 </div>
               </aside>
               <div className="share-management-detail">
-                {groups.map((group) => group.chatId === selectedGroup.chatId ? (
-                  <section className="share-management-group" key={group.chatId}>
+                {groups.map((group) => group.id === selectedGroup.id ? (
+                  <section className="share-management-group" key={group.id}>
                     <header>
                       <div className="share-management-group-title">
-                        <h2>{group.chatName}</h2>
-                        <p title={group.chatId}>{group.chatId}</p>
+                        <h2>{group.title}</h2>
+                        <p title={group.id}>{group.id}</p>
                       </div>
                       <div className="share-management-group-header-actions">
                         <span className="share-management-group-link-count">
                           {t("shareManagement.linkCount", { count: group.records.length })}
                         </span>
-                        <button
-                          type="button"
-                          className="share-management-button share-management-open-chat-button"
-                          disabled={!group.agentKey}
-                          title={group.agentKey
-                            ? t("shareManagement.openConversation")
-                            : t("shareManagement.conversationUnavailable")}
-                          onClick={() => onOpenChat({ agentKey: group.agentKey, chatId: group.chatId })}
-                        >
-                          <span>{group.agentKey
-                            ? t("shareManagement.openConversation")
-                            : t("shareManagement.conversationUnavailable")}</span>
-                          <ArrowRightOutlined aria-hidden="true" />
-                        </button>
+                        {group.records[0]?.source?.module === "conversation" ? (
+                          <button type="button" className="share-management-button share-management-open-chat-button" onClick={() => void openSource(group.records[0])}>
+                            <span>{t("shareManagement.openConversation")}</span><ArrowRightOutlined aria-hidden="true" />
+                          </button>
+                        ) : null}
                       </div>
                     </header>
                     <div className="share-management-records">
                       {group.records.map((record) => (
                         <ShareManagementRecord
-                          key={record.shareId}
+                          key={record.id}
                           record={record}
-                          copied={copiedShareId === record.shareId}
-                          revoking={revokingShareId === record.shareId}
-                          anotherRevokePending={Boolean(revokingShareId && revokingShareId !== record.shareId)}
+                          copied={copiedShareId === record.id}
+                          revoking={revokingShareId === record.id}
+                          anotherRevokePending={Boolean(revokingShareId && revokingShareId !== record.id)}
                           onCopy={() => void copyShare(record)}
-                          onRevoke={() => void revokeShare(record.shareId)}
+                          onRevoke={() => void revokeShare(record.id)}
                         />
                       ))}
                     </div>
@@ -313,7 +304,7 @@ function ShareManagementRecord({
   onCopy,
   onRevoke,
 }: {
-  record: AssistantConversationShareRecord;
+  record: ShareRecord;
   copied: boolean;
   revoking: boolean;
   anotherRevokePending: boolean;
@@ -342,10 +333,6 @@ function ShareManagementRecord({
       <dl className="share-management-meta">
         <div><dt>{t("sidebar.chat.shareCreatedAt")}</dt><dd><time>{formatEpochMillis(record.createdAt)}</time></dd></div>
         <div>
-          <dt>{t("sidebar.chat.shareExpiry")}</dt>
-          <dd>{record.singleUse ? t("sidebar.chat.shareSingleUse") : record.expiresAt === null ? t("sidebar.chat.sharePermanent") : <time>{formatEpochMillis(record.expiresAt)}</time>}</dd>
-        </div>
-        <div>
           <dt>{t("sidebar.chat.shareLastAccessedAt")}</dt>
           <dd>{record.lastAccessedAt === null ? t("sidebar.chat.shareNeverAccessed") : <time>{formatEpochMillis(record.lastAccessedAt)}</time>}</dd>
         </div>
@@ -354,28 +341,6 @@ function ShareManagementRecord({
   );
 }
 
-function compareShareRecords(left: AssistantConversationShareRecord, right: AssistantConversationShareRecord) {
-  return right.createdAt - left.createdAt || right.shareId.localeCompare(left.shareId);
-}
-
-function groupShares(
-  records: AssistantConversationShareRecord[],
-  chatDetails: Record<string, ShareChatDetails>,
-): ShareGroup[] {
-  const groups = new Map<string, ShareGroup>();
-  for (const record of records) {
-    const existing = groups.get(record.chatId);
-    if (existing) {
-      existing.records.push(record);
-      continue;
-    }
-    const chat = chatDetails[record.chatId];
-    groups.set(record.chatId, {
-      chatId: record.chatId,
-      chatName: chat?.chatName || record.chatId,
-      agentKey: chat?.agentKey || "",
-      records: [record],
-    });
-  }
-  return [...groups.values()];
+function compareShareRecords(left: ShareRecord, right: ShareRecord) {
+  return right.createdAt - left.createdAt || right.id.localeCompare(left.id);
 }

@@ -37,6 +37,7 @@ import { copyAssistantChatStoragePath, resolveAssistantChatStoragePaths } from "
 import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
 
 export interface AssistantIpcHandlerOptions {
+  isShareSender: (event: import("electron").IpcMainInvokeEvent) => boolean;
   conversationShare: Pick<
     ConversationShareFacade,
     "exportChatHtml" | "create" | "list" | "revoke"
@@ -791,17 +792,19 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     conversationShare.exportChatHtml(chatId, platform)
   );
 
-  ipcMain.handle("assistant.shareChat", async (_event: any, request: AssistantConversationShareRequest) =>
-    conversationShare.create(request)
-  );
-
-  ipcMain.handle("assistant.listConversationShares", async () =>
-    conversationShare.list()
-  );
-
-  ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>
-    conversationShare.revoke(shareId)
-  );
+  const shareRequest = async (event: import("electron").IpcMainInvokeEvent, run: () => Promise<unknown>) => {
+    if (!options.isShareSender(event)) throw new Error("Share IPC sender rejected");
+    const frame = event.senderFrame;
+    const result = await run();
+    if (!options.isShareSender(event) || event.senderFrame !== frame) throw new Error("Share IPC sender changed");
+    return result;
+  };
+  ipcMain.handle("assistant.shareChat", (event: import("electron").IpcMainInvokeEvent, request: AssistantConversationShareRequest) =>
+    shareRequest(event, () => conversationShare.create(request)));
+  ipcMain.handle("assistant.listConversationShares", (event: import("electron").IpcMainInvokeEvent) =>
+    shareRequest(event, () => conversationShare.list()));
+  ipcMain.handle("assistant.revokeChatShare", (event: import("electron").IpcMainInvokeEvent, shareId: string) =>
+    shareRequest(event, () => conversationShare.revoke(shareId)));
 
   // ---------------------------------------------------------------------------
   // assistant — attachments

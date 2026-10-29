@@ -80,9 +80,9 @@ test("Tunnel client submits the V1 snapshot and attachments in one multipart req
     attachments: [resource]
   });
 
-  assert.equal(result.shareId, "share_abc");
+  assert.equal(result.id, "share_abc");
   assert.equal(result.createdAt, Date.parse("2026-08-17T10:00:00.000Z"));
-  assert.equal(result.expiresAt, null);
+  assert.equal(Object.hasOwn(result, "expiresAt"), false);
   assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares");
   assert.equal(requests[0].init.method, "POST");
   assert.equal(requests[0].init.redirect, "manual");
@@ -109,8 +109,8 @@ test("Tunnel client requires explicit null metadata for permanent shares", async
     attachments: []
   });
 
-  assert.equal(result.shareId, "share_permanent");
-  assert.equal(result.expiresAt, null);
+  assert.equal(result.id, "share_permanent");
+  assert.equal(Object.hasOwn(result, "expiresAt"), false);
   assert.equal(result.lastAccessedAt, null);
 });
 
@@ -160,7 +160,7 @@ test("Tunnel client lists RFC3339 metadata and rejects duplicate IDs", async () 
   const requests = [];
   const responses = [
     jsonResponse({
-      items: [record({ lastAccessedAt: "2026-08-17T10:05:00.000Z" }), record({ id: "legacy_30d", expiresAt: "2026-09-16T10:00:00.000Z" }), record({ id: "legacy_once", singleUse: true })]
+      items: [record({ lastAccessedAt: "2026-08-17T10:05:00.000Z" })]
     }),
     jsonResponse({ items: [record(), record()] })
   ];
@@ -170,11 +170,10 @@ test("Tunnel client lists RFC3339 metadata and rejects duplicate IDs", async () 
   });
 
   const records = await client.list(target);
-  assert.equal(records[0].chatId, "chat_1");
+  assert.equal(records[0].source.id, "chat_1");
   assert.equal(records[0].lastAccessedAt, Date.parse("2026-08-17T10:05:00.000Z"));
-  assert.equal(records[0].expiresAt, null);
-  assert.equal(records[1].expiresAt, Date.parse("2026-09-16T10:00:00.000Z"));
-  assert.equal(records[2].singleUse, true);
+  assert.equal(Object.hasOwn(records[0], "expiresAt"), false);
+  assert.equal(Object.hasOwn(records[0], "singleUse"), false);
   assert.equal(requests[0].url, "https://tunnel.example.test/api/desktop/shares");
   assert.equal(requests[0].init.method, "GET");
   assert.equal(requests[0].init.redirect, "manual");
@@ -284,4 +283,10 @@ test("Tunnel client classifies timeout and network failures without leaking deta
       return true;
     }
   );
+});
+
+test("legacy adapter rejects any non-permanent list and discards the fixed retired wire fields", async () => {
+  for (const wire of [record({ expiresAt: "2026-09-16T10:00:00.000Z" }), record({ singleUse: true })]) {
+    await assert.rejects(new TunnelConversationShareClient(async () => jsonResponse({ items: [wire] })).list(target), error => error.kind === "invalid_response");
+  }
 });

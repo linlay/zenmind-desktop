@@ -357,6 +357,11 @@ const webappManifestV2Schema = z.strictObject({
     }).default({ backendPrefixes: [] })
   }),
   backend: webappBackendSchema.optional(),
+  shareReceiver: z.strictObject({
+    protocolVersion: z.literal(1),
+    contextVersions: z.array(z.number().int().min(1).max(2 ** 31 - 1)).min(1).max(16)
+      .refine(versions => new Set(versions).size === versions.length, "contextVersions must be unique.")
+  }).optional(),
   copilot: z.strictObject({
     agentKey: z.string().regex(WEBAPP_AGENT_KEY_PATTERN),
     references: z.array(z.strictObject({

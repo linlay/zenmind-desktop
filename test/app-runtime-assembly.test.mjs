@@ -136,6 +136,7 @@ for (const platform of ["darwin", "win32"]) for (const updateFailure of ["none",
       "../../modules/identity": { registerDesktopSsoAvatarProtocol: protocol("avatar-protocol") },
       "../../modules/plugins": { configurePluginResources: () => events.push("plugin-resources") },
       "../../modules/conversation-share": { createConversationShareFacade: () => share },
+      "../../modules/shares": { createShareFacade: () => ({ dispose() {} }) },
       "../../modules/updates": { registerDesktopUpdates: options => {
         events.push("updates-register"); updateOptions = options;
         if (updateFailure === "registration") throw new Error("updates unavailable");
@@ -159,7 +160,7 @@ for (const platform of ["darwin", "win32"]) for (const updateFailure of ["none",
       applyDesktopSsoRestoreResult: result => { assert.equal(result.state, "signed_out"); events.push("sso-applied"); },
       pluginBridgeRuntime: { configure: () => events.push("plugin-bridge") },
       assistantBridgeRuntime: { start: () => events.push("assistant"), assistantBridge: {} },
-      registerIpc: (facade, getUpdatesRuntime) => {
+      registerIpc: (_shares, facade, getUpdatesRuntime) => {
         assert.equal(facade, share);
         assert.equal(getUpdatesRuntime(), undefined);
         updatesLookup = getUpdatesRuntime;
@@ -200,7 +201,7 @@ test("ready IPC recovery signals the current update runtime before non-core star
     webSurfaceRuntime: {}, appShellRuntime: {}, servicesRuntime: {}, settingsRuntime: {},
     setStartupPhase: phase => events.push(phase),
     startNonCoreDesktopRuntime: () => events.push("non-core")
-  }, {}, () => updates);
+  }, {}, {}, () => updates);
   updates = { mainReady: () => events.push("ready") };
   handlers.onStartupPreparationSucceeded();
   assert.deepEqual(events, ["core-ready", "ready", "non-core"]);
@@ -216,7 +217,7 @@ for (const failure of ['throw', 'reject']) test(`ready IPC continues non-core st
     webSurfaceRuntime: {}, appShellRuntime: {}, servicesRuntime: {}, settingsRuntime: {},
     setStartupPhase: phase => events.push(phase),
     startNonCoreDesktopRuntime: () => events.push('non-core')
-  }, {}, () => ({ mainReady() {
+  }, {}, {}, () => ({ mainReady() {
     if (failure === 'throw') throw new Error('update notification failed');
     return Promise.reject(new Error('update request failed'));
   } }));

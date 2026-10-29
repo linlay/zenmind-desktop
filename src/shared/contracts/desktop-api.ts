@@ -1021,6 +1021,10 @@ export interface DesktopApi {
     syncIssueAutomation: (issueId: string) => Promise<KanbanIssueResult>;
     onChanged: (listener: KanbanChangedListener) => () => void;
   };
+  shares: {
+    list: () => Promise<import("./shares").ShareListResult>;
+    revoke: (id: string) => Promise<import("./shares").ShareRevokeResult>;
+  };
   assistant: {
     getSettings: () => Promise<AssistantSettingsPublic>;
     consumeFirstInstallBootstrapNavigation: () => Promise<AssistantFirstInstallBootstrapNavigationResult>;
@@ -1135,6 +1139,11 @@ export interface DesktopApi {
     onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
+    shareItem(input: import("../market-share").MarketShareCreateInput): Promise<import("./shares").ShareCreateResult>;
+    shareReady(input: { activationId: string; instanceId: string }): Promise<{ generation: string } | null>;
+    shareAck(input: { activationId: string; generation: string; intentId: string; status: "received" | "invalid_context" | "unavailable" }): Promise<boolean>;
+    shareRelease(input: { activationId: string; generation: string }): Promise<void>;
+    onShareReceive(listener: (delivery: import("../market-share").MarketShareDelivery) => void): () => void;
     importConnector(): Promise<MarketCommandResult>;
     createConnector(input: { connectorJson: string; mcpJson?: string; cliJson?: string }): Promise<MarketCommandResult>;
     getConnectorConnections(): Promise<MarketConnectorConnection[]>;
@@ -1159,9 +1168,9 @@ export interface DesktopApi {
     list: (options?: MarketListOptions) => Promise<MarketListResult>;
     refresh: (options?: MarketListOptions) => Promise<MarketListResult>;
     toggleFavorite: (input: MarketFavoriteInput) => Promise<MarketFavoriteResult>;
-    install: (itemId: string) => Promise<MarketCommandResult>;
-    update: (itemId: string) => Promise<MarketCommandResult>;
-    uninstall: (itemId: string) => Promise<MarketCommandResult>;
+    install: (itemId: string, expectedVersion?: string) => Promise<MarketCommandResult>;
+    update: (itemId: string, expectedVersion?: string) => Promise<MarketCommandResult>;
+    uninstall: (itemId: string, expectedVersion?: string) => Promise<MarketCommandResult>;
     importSkill: () => Promise<MarketCommandResult>;
     importSkillFromCommand: (commandText: string) => Promise<MarketCommandResult>;
     importSandboxImage: () => Promise<MarketCommandResult>;
@@ -1384,6 +1393,7 @@ export interface DesktopApi {
       export: () => Promise<WebsiteTransferResult>;
     };
     webapps: {
+      share: (id: string) => Promise<import("./shares").ShareCreateResult>;
       list: () => Promise<WebappItemsResult>;
       import: (file?: File) => Promise<WebappImportResult>;
       export: (id: string) => Promise<WebappExportResult>;

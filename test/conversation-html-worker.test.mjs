@@ -345,6 +345,27 @@ test("conversation snapshot freezes available resources and omits a changed arti
     assert.equal(limited.attachments.length, delta === 0 ? 2 : 1);
     assert.equal(JSON.parse(limited.bytes.toString()).attachments.length, limited.attachments.length);
   }
+  const manifest = await renderer.prepareChatShare("chat_1", { maxManifestBytes: 52428800, maxResourceBytes: 52428800 });
+  assert.equal(manifest.ok, true);
+  const envelope = JSON.parse(manifest.bytes.toString());
+  assert.equal(envelope.protocolVersion, 1);
+  assert.equal(envelope.kind, "conversation");
+  assert.deepEqual(envelope.source, { module: "conversation", id: "chat_1" });
+  assert.equal(envelope.content.version, 1);
+  assert.equal(envelope.content.data.attachments.length, 2);
+  assert.deepEqual(envelope.resources.map(item => item.id), manifest.attachments.map(item => item.id));
+  assert.equal(envelope.resources[1].sha256, pdfHash);
+  assert.deepEqual(envelope.preview, { type: "builtin", viewer: "conversation" });
+  assert.equal(Object.hasOwn(envelope.resources[0], "sourceRef"), false);
+  for (const delta of [0, -1]) {
+    const bounded = await renderer.prepareChatShare("chat_1", { maxManifestBytes: manifest.bytes.length + delta, maxResourceBytes: 52428800 });
+    assert.equal(bounded.ok, true);
+    assert.ok(bounded.bytes.length <= manifest.bytes.length + delta);
+    assert.equal(bounded.attachments.length, delta === 0 ? 2 : 1);
+    const wire = JSON.parse(bounded.bytes.toString());
+    assert.equal(wire.resources.length, bounded.attachments.length);
+    assert.equal(wire.content.data.attachments.length, bounded.attachments.length);
+  }
   served = changed;
   const partial = await renderer.readChatSnapshot("chat_1", { maxSnapshotBytes: 52428800, maxResourceBytes: 52428800 });
   assert.equal(partial.ok, true);

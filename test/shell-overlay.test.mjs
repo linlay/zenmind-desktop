@@ -190,3 +190,18 @@ test("bootstrap auto-open opens an idle menu and preserves any active overlay", 
   overlay.openToolMenuIfIdle();
   assert.equal(harness.render().activeOverlay, share);
 });
+
+test("market share uses the same exclusive overlay and stale conversation/market closes cannot replace it", () => {
+  const harness = createHookHarness();
+  harness.render().openConversationShare("chat-one", "Conversation");
+  const conversation = harness.render().activeOverlay;
+  harness.render().openMarketShare("connector-one", "1.2.3", "Connector");
+  const market = harness.render().activeOverlay;
+  assert.equal(market.kind, "marketShare"); assert.ok(market.sessionId > conversation.sessionId);
+  harness.render().closeConversationShare(conversation);
+  assert.equal(harness.render().activeOverlay, market);
+  harness.render().requestToolMenuOpen();
+  harness.render().closeMarketShare(market);
+  assert.equal(harness.render().activeOverlay.kind, "toolMenu");
+  harness.render().dismiss(); assert.equal(harness.render().activeOverlay, null);
+});

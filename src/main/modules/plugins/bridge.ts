@@ -6,6 +6,8 @@ import path from "node:path";
 import type { App } from "electron";
 import type { DesktopPetTaskItem, ServiceState } from "../../../shared/contracts";
 import type { ServiceDefinition } from "../../support/manifest/manifest-utils";
+import type { ShareReceiverEndpoint } from "../../support/share-ports";
+import type { ShareReceiveResult } from "../../../shared/contracts/shares";
 
 const PLUGIN_BRIDGE_VERSION = "1";
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
@@ -15,6 +17,8 @@ type BridgeClient = {
   socket: net.Socket;
   authenticated: boolean;
   buffer: string;
+  shareGeneration?: string;
+  shareDelivery?: { intentId: string; finish(result: ShareReceiveResult): void };
 };
 
 type BridgeRecord = {
@@ -23,6 +27,7 @@ type BridgeRecord = {
   token: string;
   server: net.Server;
   clients: Set<BridgeClient>;
+  shareWaiters?: Set<() => void>;
 };
 
 type PendingPluginEvent = {
@@ -508,6 +513,10 @@ function handleAuthenticatedEnvelope(app: App, record: BridgeRecord, client: Bri
     respondToRequest(client, id, { ok: false, error: `bridge request is not allowed: ${method}` });
     return;
   }
+  if (["share.ready", "share.ack", "share.release"].includes(method)) {
+    handlePluginShareMessage(record, client, id, method, envelope.params);
+    return;
+  }
   void handleBridgeRequest(app, {
     sourcePluginId: record.service.id,
     method,
@@ -571,7 +580,9 @@ function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord 
     clients.add(client);
     socket.on("data", (chunk) => handleBridgeData(app, record, client, chunk));
     socket.on("close", () => {
+      invalidatePluginShareClient(client);
       clients.delete(client);
+      record.shareWaiters?.forEach(notify => notify());
       if (client.authenticated && ![...clients].some(c => c.authenticated)) cleanupPluginBridgePluginCallback?.(service.id);
     });
     socket.on("error", () => clients.delete(client));
@@ -645,7 +656,16 @@ export function getPluginBridgeEnv(app: App, service: ServiceDefinition): NodeJS
     record = createBridgeRecord(app, service);
     bridgeRecords.set(service.id, record);
   } else {
+    if ((record.service.shareReceiver || service.shareReceiver) &&
+        (record.service.version !== service.version || JSON.stringify(record.service.shareReceiver) !== JSON.stringify(service.shareReceiver))) {
+      record.token = crypto.randomBytes(24).toString("base64url");
+      for (const client of record.clients) {
+        invalidatePluginShareClient(client);
+        client.socket.destroy();
+      }
+    }
     record.service = service;
+    record.shareWaiters?.forEach(notify => notify());
   }
   return {
     DESKTOP_PLUGIN_ID: service.id,
@@ -685,7 +705,19 @@ export function emitPluginBridgeHook(name: string, data: unknown = {}) {
 }
 
 export function publishPluginBridgeServiceState(state: ServiceState) {
+  const previousStatus = latestServiceStates.get(state.id)?.status;
   latestServiceStates.set(state.id, state);
+  if (state.status !== "running") {
+    const record = bridgeRecords.get(state.id);
+    if (record?.service.shareReceiver && previousStatus === "running") {
+      record.token = crypto.randomBytes(24).toString("base64url");
+      for (const client of record.clients) {
+        invalidatePluginShareClient(client);
+        client.socket.destroy();
+      }
+    }
+    record?.shareWaiters?.forEach(notify => notify());
+  }
   if (["stopped", "error"].includes(state.status)) cleanupPluginBridgePluginCallback?.(state.id);
   emitPluginBridgeHook(serviceStatusHookName(state.id), { service: state });
   if (state.id !== AGENT_PLATFORM_SERVICE_ID) {
@@ -716,8 +748,11 @@ export function setPluginBridgeDesktopReady() {
 
 export function stopPluginBridgeServers() {
   for (const record of bridgeRecords.values()) {
+    bridgeRecords.delete(record.service.id);
+    record.shareWaiters?.forEach(notify => notify());
     cleanupPluginBridgePluginCallback?.(record.service.id);
     for (const client of record.clients) {
+      invalidatePluginShareClient(client);
       client.socket.destroy();
     }
     record.server.close();
@@ -727,6 +762,80 @@ export function stopPluginBridgeServers() {
   }
   bridgeRecords.clear();
   pendingPluginEvents.clear();
+}
+
+function invalidatePluginShareClient(client: BridgeClient) {
+  client.shareGeneration = undefined;
+  client.shareDelivery?.finish({ status: "unavailable" });
+}
+
+function handlePluginShareMessage(record: BridgeRecord, client: BridgeClient, id: string, method: string, input: unknown) {
+  const value = asObject(input);
+  if (!record.service.shareReceiver || !isHookSubscribed(record.service, "share.receive")) {
+    respondToRequest(client, id, { ok: false, error: "share receiver is not declared" });
+    return;
+  }
+  if (method === "share.ready" && value.protocolVersion === 1 && Object.keys(value).length === 1) {
+    client.shareGeneration ??= crypto.randomUUID();
+    record.shareWaiters?.forEach(notify => notify());
+    respondToRequest(client, id, { ok: true, result: { generation: client.shareGeneration } });
+    return;
+  }
+  if (method === "share.release" && typeof client.shareGeneration === "string" && value.generation === client.shareGeneration && Object.keys(value).length === 1) {
+    invalidatePluginShareClient(client);
+    respondToRequest(client, id, { ok: true, result: { released: true } });
+    return;
+  }
+  if (method === "share.ack" && client.shareDelivery && typeof client.shareGeneration === "string" && Object.keys(value).length === 3 && value.generation === client.shareGeneration &&
+      value.intentId === client.shareDelivery?.intentId && typeof value.status === "string" &&
+      ["received", "invalid_context", "unavailable"].includes(value.status)) {
+    client.shareDelivery?.finish({ status: value.status as "received" | "invalid_context" | "unavailable" });
+    respondToRequest(client, id, { ok: true, result: { acknowledged: true } });
+    return;
+  }
+  respondToRequest(client, id, { ok: false, error: "invalid or stale share message" });
+}
+
+/** Uses the authenticated socket, never a queued hook or a plugin-supplied owner. */
+export function waitForPluginShareEndpoint(pluginId: string, signal: AbortSignal): Promise<ShareReceiverEndpoint> {
+  const record = bridgeRecords.get(pluginId);
+  if (!record?.service.shareReceiver || signal.aborted) return Promise.reject(new Error("Plugin share receiver is unavailable"));
+  const version = record.service.version;
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { record.shareWaiters?.delete(check); signal.removeEventListener("abort", abort); };
+    const abort = () => { cleanup(); reject(new Error("Plugin share activation ended")); };
+    const check = () => {
+      if (signal.aborted || bridgeRecords.get(pluginId) !== record || record.service.version !== version ||
+          latestServiceStates.get(pluginId)?.status !== "running") { abort(); return; }
+      const client = [...record.clients].find(client => client.authenticated && client.shareGeneration && !client.socket.destroyed);
+      if (!client) return;
+      cleanup();
+      const generation = client.shareGeneration!;
+      const current = () => !signal.aborted && bridgeRecords.get(pluginId) === record && record.service.version === version &&
+        record.clients.has(client) && !client.socket.destroyed && client.shareGeneration === generation &&
+        latestServiceStates.get(pluginId)?.status === "running";
+      resolve({ generation, isCurrent: current, receive: (request, deliverySignal) => {
+        if (!current() || deliverySignal.aborted) return Promise.resolve({ status: "unavailable" });
+        return new Promise(done => {
+          client.shareDelivery?.finish({ status: "unavailable" });
+          const abortDelivery = () => finish({ status: "unavailable" });
+          const finish = (result: ShareReceiveResult) => {
+            if (client.shareDelivery?.finish !== finish) return;
+            client.shareDelivery = undefined;
+            deliverySignal.removeEventListener("abort", abortDelivery);
+            done(result);
+          };
+          client.shareDelivery = { intentId: request.intentId, finish };
+          deliverySignal.addEventListener("abort", abortDelivery, { once: true });
+          sendEvent(client, "share.receive", { generation, request });
+        });
+      } });
+    };
+    record.shareWaiters ??= new Set();
+    record.shareWaiters.add(check);
+    signal.addEventListener("abort", abort, { once: true });
+    check();
+  });
 }
 
 export const __testInternals = {

@@ -487,15 +487,7 @@ export interface AssistantConversationShareRequest {
   chatId: string;
 }
 
-export interface AssistantConversationShareRecord {
-  shareId: string;
-  chatId: string;
-  url: string;
-  createdAt: EpochMilliseconds;
-  expiresAt: EpochMilliseconds | null;
-  lastAccessedAt: EpochMilliseconds | null;
-  singleUse: boolean;
-}
+export type AssistantConversationShareRecord = import("./shares").ShareRecord;
 
 export type AssistantConversationShareCreateResult =
   | { ok: true; message: string; record: AssistantConversationShareRecord; warning?: string }

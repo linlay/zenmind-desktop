@@ -1,5 +1,8 @@
 import type { createPluginSystemWindows } from "./system-windows";
-import { getService, getInstallDir } from "../services";
+import { getService, getInstallDir, getAllServices } from "../services";
+import type { ShareServicePort } from "../../support/share-ports";
+import type { ServiceCommandResult } from "../../../shared/contracts";
+import { createPluginShareReceivers } from "./share-receiver";
 import type { App } from "electron";
 import type { DesktopPetTaskItem } from "../../../shared/contracts";
 import {
@@ -40,6 +43,7 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
   let systemWindows: ReturnType<typeof createPluginSystemWindows> | undefined;
   let stopped = false;
   let lastAssistantActiveTasksSignature = "";
+  let shareReceivers: ReturnType<typeof createPluginShareReceivers> | undefined;
 
   function configure() {
     configurePluginBridge({
@@ -85,6 +89,7 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
 
   async function publishServiceStates() {
     try {
+      shareReceivers?.sync(getAllServices());
       const services = await options.listServices(options.app);
       for (const service of services) {
         publishPluginBridgeServiceState(service);
@@ -125,6 +130,14 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
 
   return {
     configure,
+    configureShareReceivers(shares: ShareServicePort, start: (id: string) => Promise<ServiceCommandResult>) {
+      shareReceivers?.dispose();
+      shareReceivers = createPluginShareReceivers({
+        shares, getService, start, getState: options.getServiceState,
+        onError: id => options.onError("failed to register plugin share receiver", { pluginId: id }),
+      });
+      shareReceivers.sync(getAllServices());
+    },
     publishServiceStates,
     publishAssistantActiveTasks,
     setDesktopReady: setPluginBridgeDesktopReady,
@@ -133,6 +146,7 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
     },
     stop() {
       stopped = true;
+      shareReceivers?.dispose();
       hideDesktopActivityIsland();
       hideDesktopCalendarOverlay();
       hideDesktopClipboardPalette();

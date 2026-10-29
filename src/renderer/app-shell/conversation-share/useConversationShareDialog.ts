@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AssistantConversationShareRecord } from "../../../shared/contracts";
+import type { ShareRecord, ShareCreateResult } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 
 export type ConversationShareAction = "copy" | "qr" | "browser";
@@ -7,15 +7,15 @@ type ConversationSharePhase = "choice" | "qr" | "done";
 type ShareFeedback = { kind: "loading" | "success" | "error"; message: string };
 
 export type ConversationShareDialogState = {
-  createdRecord: AssistantConversationShareRecord | null;
+  createdRecord: ShareRecord | null;
   phase: ConversationSharePhase;
   workingAction: ConversationShareAction | null;
   feedback: ShareFeedback | null;
   warning: string;
 };
 
-export function useConversationShareDialog(
-  session: { chatId: string },
+export function useShareDialog(
+  create: () => Promise<ShareCreateResult>,
   t: TranslateFunction,
 ) {
   const [state, setState] = useState<ConversationShareDialogState>(() => ({
@@ -27,7 +27,7 @@ export function useConversationShareDialog(
   }));
   const generationRef = useRef(0);
   const workingRef = useRef(false);
-  const createdRecordRef = useRef<AssistantConversationShareRecord | null>(null);
+  const createdRecordRef = useRef<ShareRecord | null>(null);
 
   useEffect(() => () => { generationRef.current += 1; }, []);
 
@@ -57,7 +57,7 @@ export function useConversationShareDialog(
       let record = createdRecordRef.current;
       let warning = state.warning;
       if (!record) {
-        const result = await window.electronAPI.assistant.shareChat({ chatId: session.chatId });
+        const result = await create();
         if (!result.ok) throw new Error(result.message || t("sidebar.chat.shareFailed"));
         record = result.record;
         warning = result.warning || "";
@@ -108,4 +108,8 @@ export function useConversationShareDialog(
   }
 
   return { state, run, notify };
+}
+
+export function useConversationShareDialog(session: { chatId: string }, t: TranslateFunction) {
+  return useShareDialog(() => window.electronAPI.assistant.shareChat({ chatId: session.chatId }), t);
 }

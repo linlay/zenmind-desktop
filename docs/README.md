@@ -33,6 +33,8 @@
 
 任何跨 Electron main、preload、renderer、内置服务、插件、webview 或 shared contract 的修改，先读[架构与模块边界](架构与模块边界.md)，再读所属专题。
 
+实际使用与扩展接入参见 [分享短链使用与对接](../contracts/share-shortlink.md)；该手册位于 contracts，设计文档不重复维护接口字段和操作步骤。
+
 ### 基础架构
 
 - [架构与模块边界](架构与模块边界.md)：进程、模块、服务和事实源边界。

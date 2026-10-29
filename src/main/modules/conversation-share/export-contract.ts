@@ -50,6 +50,8 @@ export type RenderConversationHtmlRequest = {
 
 export type ReadConversationSnapshotRequest = {
   kind: "snapshot";
+  /** V2 manifest is assembled in this same worker, never in Main. */
+  shareSourceId?: string;
   limits: ConversationShareLimits;
   requestId: string;
   snapshotUrl: string;

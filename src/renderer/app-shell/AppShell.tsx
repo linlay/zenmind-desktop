@@ -801,6 +801,8 @@ export function AppShell() {
   const conversationShareOverlay = shellOverlay.activeOverlay?.kind === "conversationShare"
     ? shellOverlay.activeOverlay
     : null;
+  const marketShareOverlay = shellOverlay.activeOverlay?.kind === "marketShare" ? shellOverlay.activeOverlay : null;
+  const webappShareOverlay = shellOverlay.activeOverlay?.kind === "webappShare" ? shellOverlay.activeOverlay : null;
   const chatHistoryDialogRequestIdRef = useRef(0);
   const sidebarChatMenuRef = useRef<AppSidebarChatMenuHandle>(null);
   const [chatHistoryDialog, setChatHistoryDialog] =
@@ -1309,7 +1311,7 @@ export function AppShell() {
   const copilotDockNativeDialogVisible =
     nativeDialogVisible ||
     Boolean(desktopActionConfirmation) ||
-    Boolean(conversationShareOverlay);
+    Boolean(conversationShareOverlay || marketShareOverlay || webappShareOverlay);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     // Keep temporarily disabled capabilities in the saved order; visibility is applied by the sidebar.
     return [...CAPABILITY_NAVIGATION_ITEMS
@@ -2540,9 +2542,10 @@ export function AppShell() {
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
+      shellOverlay.dismiss();
       navigate(targetPath);
     });
-  }, [navigate]);
+  }, [navigate, shellOverlay.dismiss]);
 
   useEffect(() => {
     return window.electronAPI.onOpenGlobalSearch(shellOverlay.openGlobalSearch);
@@ -5113,6 +5116,7 @@ export function AppShell() {
                     onWebItemsRefresh={refreshWebItems}
                     onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
                     onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
+                    onShareWebapp={(item) => shellOverlay.openWebappShare(item.id, item.label)}
                     onAssistantSettingsChange={setAssistantSettings}
                     onTunnelHubEnabledChange={setTunnelHubEnabled}
                     primaryChatNavigation={primaryChatNavigation}
@@ -5181,7 +5185,7 @@ export function AppShell() {
                 !marketSettingsLoaded
                   ? null
                   : marketEnabled
-                    ? <RouteSuspense><FunctionalMarketPage /></RouteSuspense>
+                    ? <RouteSuspense><FunctionalMarketPage onShareItem={(item) => shellOverlay.openMarketShare(item.id, item.version, item.name)} /></RouteSuspense>
                     : <Navigate to="/control-center" replace />
               }
             />
@@ -5202,6 +5206,7 @@ export function AppShell() {
               element={
                 <RouteSuspense>
                   <ShareManagementPage
+                    key={JSON.stringify([desktopSsoStatus?.authenticated, desktopSsoStatus?.user?.issuer, desktopSsoStatus?.user?.sub])}
                     tunnelHubEnabled={tunnelHubEnabled}
                     onOpenTunnelSettings={openTunnelSettings}
                     onOpenChat={openChatFromShareManagement}
@@ -5215,9 +5220,30 @@ export function AppShell() {
                 : <Navigate to="/control-center" replace />
             } />
           </Routes>
+          {marketShareOverlay ? (
+            <ConversationShareDialog
+              key={JSON.stringify([marketShareOverlay.sessionId, desktopSsoStatus?.authenticated, desktopSsoStatus?.user?.issuer, desktopSsoStatus?.user?.sub])}
+              title={t("market.share.action")}
+              chatName={marketShareOverlay.name}
+              createShare={() => window.electronAPI.market.shareItem({ itemId: marketShareOverlay.itemId, resourceVersion: marketShareOverlay.resourceVersion })}
+              tunnelHubEnabled={tunnelHubEnabled} t={t}
+              onClose={() => shellOverlay.closeMarketShare(marketShareOverlay)}
+              onOpenTunnelSettings={() => { shellOverlay.closeMarketShare(marketShareOverlay); openTunnelSettings(); }}
+            />
+          ) : null}
+          {webappShareOverlay ? (
+            <ConversationShareDialog
+              key={JSON.stringify([webappShareOverlay.sessionId, desktopSsoStatus?.authenticated, desktopSsoStatus?.user?.issuer, desktopSsoStatus?.user?.sub])}
+              title={t("webapp.shareAction")} chatName={webappShareOverlay.name}
+              createShare={() => window.electronAPI.webs.webapps.share(webappShareOverlay.id)}
+              tunnelHubEnabled={tunnelHubEnabled} t={t}
+              onClose={() => shellOverlay.closeWebappShare(webappShareOverlay)}
+              onOpenTunnelSettings={() => { shellOverlay.closeWebappShare(webappShareOverlay); openTunnelSettings(); }}
+            />
+          ) : null}
           {conversationShareOverlay ? (
             <ConversationShareDialog
-              key={conversationShareOverlay.sessionId}
+              key={JSON.stringify([conversationShareOverlay.sessionId, desktopSsoStatus?.authenticated, desktopSsoStatus?.user?.issuer, desktopSsoStatus?.user?.sub])}
               chatId={conversationShareOverlay.chatId}
               chatName={conversationShareOverlay.chatName}
               tunnelHubEnabled={tunnelHubEnabled}

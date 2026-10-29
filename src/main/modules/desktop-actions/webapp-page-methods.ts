@@ -26,15 +26,22 @@ export const WEBAPP_PAGE_METHODS = new Set([
   "desktop.native.clipboard.writeText",
   "desktop.native.notification.show",
   "desktop.assistant.image",
-  "desktop.assistant.image.cancel"
+  "desktop.assistant.image.cancel",
+  "desktop.share.receive",
+  "desktop.share.ack",
+  "desktop.share.release"
 ]);
 
 export async function executeWebappPageMethod(
   options: DesktopActionBridgeOptions,
   action: string,
   args: Record<string, unknown>,
-  webappId: string
+  webappId: string,
+  signal?: AbortSignal
 ): Promise<DesktopActionCallResponse> {
+  if (["desktop.share.receive", "desktop.share.ack", "desktop.share.release"].includes(action)) {
+    return ok(action, options.webs.receiveSharedContext(webappId, action, args, signal));
+  }
   if (action === "desktop.assistant.image") return executeWebappImage(options, action, args, webappId);
   if (action === "desktop.assistant.image.cancel") return cancelWebappImage(options, action, args, webappId);
   return executeNativeWebappAction(options, action, args, webappId);

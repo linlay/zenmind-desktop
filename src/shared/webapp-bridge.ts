@@ -19,7 +19,8 @@ export const WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES = [
   "desktop.dialog.savePath",
   "desktop.microphone",
   "desktop.clipboard.write",
-  "desktop.notification"
+  "desktop.notification",
+  "desktop.share.receive"
 ] as const;
 
 export const WEBAPP_BRIDGE_RESERVED_CAPABILITIES = [
@@ -78,7 +79,10 @@ export const WEBAPP_BRIDGE_ACTIONS = Object.freeze({
   microphoneGetPermission: "desktop.native.microphone.getPermission",
   microphoneRequestAccess: "desktop.native.microphone.requestAccess",
   clipboardWriteText: "desktop.native.clipboard.writeText",
-  notificationShow: "desktop.native.notification.show"
+  notificationShow: "desktop.native.notification.show",
+  shareReceive: "desktop.share.receive",
+  shareAcknowledge: "desktop.share.ack",
+  shareRelease: "desktop.share.release"
 } as const);
 
 export const WEBAPP_BRIDGE_CAPABILITY_ACTIONS: Readonly<Record<WebappBridgeCapability, readonly string[]>> =
@@ -107,7 +111,8 @@ export const WEBAPP_BRIDGE_CAPABILITY_ACTIONS: Readonly<Record<WebappBridgeCapab
       WEBAPP_BRIDGE_ACTIONS.microphoneRequestAccess
     ]),
     "desktop.clipboard.write": Object.freeze([WEBAPP_BRIDGE_ACTIONS.clipboardWriteText]),
-    "desktop.notification": Object.freeze([WEBAPP_BRIDGE_ACTIONS.notificationShow])
+    "desktop.notification": Object.freeze([WEBAPP_BRIDGE_ACTIONS.notificationShow]),
+    "desktop.share.receive": Object.freeze([WEBAPP_BRIDGE_ACTIONS.shareReceive, WEBAPP_BRIDGE_ACTIONS.shareAcknowledge, WEBAPP_BRIDGE_ACTIONS.shareRelease])
   });
 
 export function isWebappBridgeAvailableCapability(value: string): value is WebappBridgeCapability {

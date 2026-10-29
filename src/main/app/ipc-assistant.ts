@@ -1,3 +1,4 @@
+import { registerSharesIpc } from "../modules/shares";
 import { getAssistantSettings, saveAssistantSettings } from "../modules/assistant";
 import {
   cancelAssistantAttachmentTask,
@@ -18,7 +19,12 @@ export function registerAssistantRuntimeIpc(options: MainIpcRegistrationOptions)
     assistantBridgeRuntime,
   } = options;
   const { assistantBridge, desktopActionOptions } = assistantBridgeRuntime;
+  registerSharesIpc(ipcMain, options.sharesFacade, options.getMainWindow);
   registerAssistantIpcHandlers(ipcMain, {
+    isShareSender: (event) => {
+      const window = options.getMainWindow();
+      return Boolean(window && !window.isDestroyed() && !window.webContents.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame);
+    },
     assistantBridge,
     conversationShare: options.conversationShareFacade,
     assistantNavigationStatusClient: assistantBridgeRuntime.getNavigationStatusClient(),

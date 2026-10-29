@@ -2,23 +2,19 @@ import type { App } from "electron";
 import type {
   AssistantConversationShareRequest
 } from "../../../shared/contracts";
-import {
-  createConversationShare,
-  listConversationShares,
-  revokeConversationShare
-} from "./controller";
+import { createConversationShare } from "./controller";
+import type { ShareFacade } from "../shares";
 import { saveConversationHtmlExport } from "./html-export";
 import {
   ConversationHtmlRenderService,
   type ConversationSnapshotRequestProvider
 } from "./html-render-service";
-import { TunnelConversationShareClient } from "./tunnel-client";
 
 export type ConversationShareFacadeOptions = {
   app: App;
   snapshotProvider: ConversationSnapshotRequestProvider;
   workerPath?: string;
-  fetchImpl?: typeof globalThis.fetch;
+  shares: ShareFacade;
 };
 
 export function createConversationShareFacade(options: ConversationShareFacadeOptions) {
@@ -26,7 +22,6 @@ export function createConversationShareFacade(options: ConversationShareFacadeOp
     snapshotProvider: options.snapshotProvider,
     workerPath: options.workerPath
   });
-  const client = new TunnelConversationShareClient(options.fetchImpl);
 
   return {
     start: () => renderer.start(),
@@ -34,9 +29,9 @@ export function createConversationShareFacade(options: ConversationShareFacadeOp
     exportChatHtml: (chatId: string, platform: NodeJS.Platform | string = process.platform) =>
       saveConversationHtmlExport(options.app, renderer, chatId, platform),
     create: (request: AssistantConversationShareRequest) =>
-      createConversationShare(options.app, renderer, client, request),
-    list: () => listConversationShares(options.app, client),
-    revoke: (shareId: string) => revokeConversationShare(options.app, client, shareId)
+      createConversationShare(renderer, options.shares, request),
+    list: () => options.shares.list(),
+    revoke: (shareId: string) => options.shares.revoke(shareId)
   };
 }
 

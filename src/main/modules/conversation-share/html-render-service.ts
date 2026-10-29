@@ -115,7 +115,7 @@ export class ConversationHtmlRenderService {
     }
   }
 
-  async readChatSnapshot(chatId: string, limits: ConversationShareLimits): Promise<ConversationSnapshotReadResult> {
+  async readChatSnapshot(chatId: string, limits: ConversationShareLimits, shareSourceId?: string): Promise<ConversationSnapshotReadResult> {
     const normalizedChatId = chatId.trim();
     if (!normalizedChatId) {
       return { ok: false, message: t("assistant.chatIdRequired") };
@@ -126,6 +126,7 @@ export class ConversationHtmlRenderService {
     try {
       const response = await this.renderInWorker({
         kind: "snapshot",
+        shareSourceId,
         limits,
         requestId: randomUUID(),
         snapshotUrl: snapshotRequest.snapshotUrl,
@@ -156,6 +157,10 @@ export class ConversationHtmlRenderService {
       }
       return { ok: false, message: mapRenderError(error) };
     }
+  }
+
+  async prepareChatShare(chatId: string, limits: import("../../../shared/contracts/shares").ShareLimits) {
+    return this.readChatSnapshot(chatId, { maxSnapshotBytes: limits.maxManifestBytes, maxResourceBytes: limits.maxResourceBytes }, chatId);
   }
 
   async dispose(): Promise<void> {

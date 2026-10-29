@@ -1,3 +1,4 @@
+import { createShareFacade, type ShareFacade } from "../../modules/shares";
 import type { BrowserWindow } from "electron";
 import {
   app,
@@ -69,7 +70,8 @@ export interface HandleAppReadyDependencies {
   readonly beginAppQuitWithoutConfirmation: () => void;
   readonly startResourceDirectoryWatcher: () => void;
   readonly startupPipeline: Pick<ReturnType<typeof createStartupPipeline>, "run">;
-  readonly registerIpc: (conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) => void;
+  readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
+  readonly registerIpc: (sharesFacade: ShareFacade, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) => void;
 }
 
 export async function handleAppReady(dependencies: HandleAppReadyDependencies) {
@@ -113,16 +115,22 @@ export async function handleAppReady(dependencies: HandleAppReadyDependencies) {
     })
   });
   dependencies.assistantBridgeRuntime.start();
+  const sharesFacade = createShareFacade({
+    app,
+    refreshToken: dependencies.refreshDesktopSsoIdentityToken,
+  });
   const conversationShareFacade = createConversationShareFacade({
+    shares: sharesFacade,
     app,
     snapshotProvider: dependencies.assistantBridgeRuntime.assistantBridge
   });
   conversationShareFacade.start();
   app.once("will-quit", () => {
     void conversationShareFacade.dispose();
+    sharesFacade.dispose();
   });
   let updatesRuntime: ReturnType<typeof registerDesktopUpdates> | undefined;
-  dependencies.registerIpc(conversationShareFacade, () => updatesRuntime);
+  dependencies.registerIpc(sharesFacade, conversationShareFacade, () => updatesRuntime);
   dependencies.configureAppMediaPermissions();
   dependencies.registerFocusedWebviewDevToolsShortcut();
   dependencies.createWindow();

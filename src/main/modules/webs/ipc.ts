@@ -34,6 +34,7 @@ import type { WebsFacade } from "./facade";
 export interface WebIpcHandlerOptions {
   app: App;
   websFacade: WebsFacade;
+  getMainWindow?: () => BrowserWindow | null;
   showFileDialog: (opts: any, owner?: any) => Promise<any>;
   showSaveDialog: (opts: any, owner?: any) => Promise<any>;
   getDataRoot: (app: App) => string;
@@ -129,6 +130,20 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   });
 
   ipcMain.handle("webs.list", async () => listWebEntries(app, webappManager));
+
+  ipcMain.handle("webs.webapps.share", async (event: IpcMainInvokeEvent, id: unknown) => {
+    const owner = () => {
+      const window = options.getMainWindow?.();
+      if (!window || window.isDestroyed() || window.webContents.isDestroyed() || event.sender !== window.webContents ||
+          !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) throw new Error("WebApp share sender rejected");
+    };
+    owner();
+    const frame = event.senderFrame;
+    const result = await options.websFacade.sharePublishedWebapp(app, id);
+    owner();
+    if (event.senderFrame !== frame) throw new Error("WebApp share sender changed");
+    return result;
+  });
 
   ipcMain.handle("webs.websites.list", async () => listWebsiteItems(app));
   ipcMain.handle("webs.websites.add", async (_event: any, input: any) =>

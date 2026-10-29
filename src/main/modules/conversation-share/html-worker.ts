@@ -379,10 +379,18 @@ async function readConversationSnapshot(
     // Serialize the body once; attachment fallback only adjusts its small metadata budget.
     const { attachments: sourceAttachments, ...body } = parsed;
     const bodyJson = JSON.stringify(body);
-    const attachmentsPrefix = bodyJson.slice(0, -1) + ",\"attachments\":[";
-    const metadataBudget = maxSnapshotBytes - Buffer.byteLength(attachmentsPrefix) - 2;
+    const sharePrefix = request.shareSourceId === undefined ? "" : JSON.stringify({
+      protocolVersion: 1, kind: "conversation",
+      title: typeof parsed.title === "string" && parsed.title.trim() && Buffer.byteLength(parsed.title) <= 255 && !/\p{Cc}/u.test(parsed.title) ? parsed.title : "Shared conversation",
+      ...(!/[\p{Cc}/\\:?#]/u.test(request.shareSourceId) ? { source: { module: "conversation", id: request.shareSourceId } } : {}),
+    }).slice(0, -1) + ",\"content\":{\"version\":1,\"data\":";
+    const shareSuffix = request.shareSourceId === undefined ? "" : '},"resources":[';
+    const previewSuffix = request.shareSourceId === undefined ? "" : '],"preview":{"type":"builtin","viewer":"conversation"}}';
+    const attachmentsPrefix = sharePrefix + bodyJson.slice(0, -1) + ",\"attachments\":[";
+    const metadataBudget = maxSnapshotBytes - Buffer.byteLength(attachmentsPrefix) - 2 - Buffer.byteLength(shareSuffix + previewSuffix);
     if (metadataBudget < 0) throw new ConversationHtmlRenderFailure("too_large", maxSnapshotBytes);
     const frozen: string[] = [];
+    const resourceMetadata: string[] = [];
     let metadataBytes = 0;
     let totalBytes = 0;
     let attachmentsOmitted = false;
@@ -400,7 +408,7 @@ async function readConversationSnapshot(
       }
       const descriptor = raw as Record<string, unknown>;
       const { id, name, sourceRef, mimeType } = descriptor;
-      if (typeof id !== "string" || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
+      if (typeof id !== "string" || id.length !== 24 || !/^[a-f0-9]{24}$/u.test(id) || seen.has(id) ||
         typeof name !== "string" || !name || Buffer.byteLength(name, "utf8") > 255 ||
         /[\\/\u0000-\u001f\u007f]/u.test(name) || typeof sourceRef !== "string" ||
         !sourceRef || sourceRef.length > 2_048 || typeof mimeType !== "string") {
@@ -408,7 +416,7 @@ async function readConversationSnapshot(
         continue;
       }
       const mediaType = mimeType.split(";", 1)[0].trim().toLowerCase();
-      if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mediaType) ||
+      if (mediaType.length > 100 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mediaType) ||
         (descriptor.size !== undefined && (!Number.isSafeInteger(descriptor.size) ||
           (descriptor.size as number) < 0)) ||
         (descriptor.sha256 !== undefined &&
@@ -444,7 +452,9 @@ async function readConversationSnapshot(
         seen.add(id);
         totalBytes += bytes.length;
         const json = JSON.stringify({ id, name, mimeType: mediaType, sourceRef, size: bytes.length, sha256 });
-        metadataBytes += Buffer.byteLength(json) + (frozen.length ? 1 : 0);
+        const resourceJson = request.shareSourceId === undefined ? "" : JSON.stringify({ id, name, mimeType: mediaType, size: bytes.length, sha256 });
+        metadataBytes += Buffer.byteLength(json) + (frozen.length ? 1 : 0) + Buffer.byteLength(resourceJson) + (resourceJson && frozen.length ? 1 : 0);
+        resourceMetadata.push(resourceJson);
         frozen.push(json);
         attachments.push({
           id, name, mimeType: mediaType,
@@ -460,10 +470,11 @@ async function readConversationSnapshot(
     }
     while (metadataBytes > metadataBudget && frozen.length) {
       metadataBytes -= Buffer.byteLength(frozen.pop()!) + (frozen.length ? 1 : 0);
+      metadataBytes -= Buffer.byteLength(resourceMetadata.pop()!) + (request.shareSourceId !== undefined && frozen.length ? 1 : 0);
       attachments.pop();
       attachmentsOmitted = true;
     }
-    const encoded = Buffer.from(attachmentsPrefix + frozen.join(",") + "]}");
+    const encoded = Buffer.from(attachmentsPrefix + frozen.join(",") + "]}" + shareSuffix + resourceMetadata.filter(Boolean).join(",") + previewSuffix);
     const transferred = encoded.buffer.slice(
       encoded.byteOffset, encoded.byteOffset + encoded.byteLength
     ) as ArrayBuffer;

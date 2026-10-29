@@ -200,8 +200,8 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
         };
       }
     }),
-    installMarketItem: (marketApp, itemId) => installMarketItem(marketApp, itemId, withMarketplacePorts()),
-    updateMarketItem: (marketApp, itemId) => updateMarketItem(marketApp, itemId, withMarketplacePorts()),
+    installMarketItem: (marketApp, itemId, expectedVersion) => installMarketItem(marketApp, itemId, withMarketplacePorts({ expectedVersion })),
+    updateMarketItem: (marketApp, itemId, expectedVersion) => updateMarketItem(marketApp, itemId, withMarketplacePorts({ expectedVersion })),
     uninstallMarketItem: (marketApp, itemId) =>
       uninstallMarketItem(marketApp, itemId, withMarketplacePorts()),
     buildSandboxImage: (marketApp, itemId) => buildSandboxImage(marketApp, itemId, withMarketplacePorts()),

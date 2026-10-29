@@ -1,143 +1,21 @@
-import type { App } from "electron";
-import {
-  type AssistantConversationShareCreateResult,
-  type AssistantConversationShareListResult,
-  type AssistantConversationShareRequest,
-  type AssistantConversationShareRevokeResult,
-} from "../../../shared/contracts";
+import type { AssistantConversationShareRequest, AssistantConversationShareCreateResult } from "../../../shared/contracts";
+import type { ShareFacade } from "../shares";
+import type { ConversationHtmlRenderService } from "./html-render-service";
 import { t } from "../../support/i18n/main-i18n";
-import type { ConversationSnapshotReader } from "./export-contract";
-import { resolveConversationShareTarget } from "./target";
-import {
-  TunnelConversationShareError,
-  type ConversationShareCreator,
-  type ConversationShareReader,
-  type ConversationShareRevoker,
-} from "./tunnel-client";
 
 export async function createConversationShare(
-  app: App,
-  snapshotReader: ConversationSnapshotReader,
-  shareCreator: ConversationShareCreator,
+  preparer: Pick<ConversationHtmlRenderService, "prepareChatShare">,
+  shares: Pick<ShareFacade, "publish">,
   request: AssistantConversationShareRequest,
 ): Promise<AssistantConversationShareCreateResult> {
-  const conversationId = typeof request?.chatId === "string" ? request.chatId.trim() : "";
-  if (!conversationId) {
-    return { ok: false, message: t("assistant.chatIdRequired") };
-  }
-  if (!isValidConversationId(conversationId)) {
-    return { ok: false, message: t("assistant.chatShareConversationIdInvalid") };
-  }
-  const target = resolveConversationShareTarget(app);
-  if (!target.ok) {
-    return target;
-  }
-
-  let snapshot: Awaited<ReturnType<ConversationSnapshotReader["readChatSnapshot"]>>;
-  try {
-    const limits = await shareCreator.limits(target.target);
-    snapshot = await snapshotReader.readChatSnapshot(conversationId, limits);
-  } catch (error) {
-    return { ok: false, message: mapTunnelShareError(error, "create") };
-  }
-  if (!snapshot.ok) {
-    return { ok: false, message: snapshot.message };
-  }
-
-  try {
-    const record = await shareCreator.create({
-      target: target.target,
-      conversationId,
-      snapshot: snapshot.bytes,
-      attachments: snapshot.attachments,
-    });
-    return {
-      ok: true,
-      message: t("assistant.chatShareCreated"),
-      record,
-      ...(snapshot.attachmentsOmitted ? {
-        warning: t(snapshot.attachmentUnauthorized
-          ? "assistant.chatShareSourceUnauthorized"
-          : "assistant.chatShareAttachmentsOmitted"),
-      } : {}),
-    };
-  } catch (error) {
-    return { ok: false, message: mapTunnelShareError(error, "create") };
-  }
-}
-
-export async function listConversationShares(
-  app: App,
-  shareReader: ConversationShareReader,
-): Promise<AssistantConversationShareListResult> {
-  const target = resolveConversationShareTarget(app);
-  if (!target.ok) {
-    return target;
-  }
-  try {
-    const records = await shareReader.list(target.target);
-    return { ok: true, message: "", records };
-  } catch (error) {
-    return { ok: false, message: mapTunnelShareError(error, "list") };
-  }
-}
-
-export async function revokeConversationShare(
-  app: App,
-  shareRevoker: ConversationShareRevoker,
-  shareId: string,
-): Promise<AssistantConversationShareRevokeResult> {
-  const normalizedShareId = typeof shareId === "string" ? shareId.trim() : "";
-  if (!/^[A-Za-z0-9_-]{1,80}$/u.test(normalizedShareId)) {
-    return { ok: false, message: t("assistant.chatShareInvalidId") };
-  }
-  const target = resolveConversationShareTarget(app);
-  if (!target.ok) {
-    return target;
-  }
-  try {
-    await shareRevoker.revoke(target.target, normalizedShareId);
-    return {
-      ok: true,
-      message: t("assistant.chatShareRevoked"),
-      shareId: normalizedShareId,
-    };
-  } catch (error) {
-    return { ok: false, message: mapTunnelShareError(error, "revoke") };
-  }
-}
-
-function mapTunnelShareError(
-  error: unknown,
-  action: "create" | "list" | "revoke",
-): string {
-  if (!(error instanceof TunnelConversationShareError)) {
-    return t("assistant.chatShareRequestFailed");
-  }
-  if (error.status === 401 || error.status === 403) {
-    return t("assistant.chatShareUnauthorized");
-  }
-  if (error.status === 413) {
-    if (error.code === "snapshot_too_large") return t("assistant.chatShareSnapshotTooLarge");
-    if (error.code === "resources_too_large") return t("assistant.chatShareResourcesTooLarge");
-    return t("assistant.chatShareUploadRejected");
-  }
-  if (error.status === 404 && action === "revoke") {
-    return t("assistant.chatShareMissing");
-  }
-  if (
-    error.kind === "timeout" ||
-    error.kind === "unavailable" ||
-    (error.status !== undefined && error.status >= 500)
-  ) {
-    return t("assistant.chatShareTunnelUnavailable");
-  }
-  if (error.kind === "invalid_response") {
-    return t("assistant.chatShareInvalidResponse");
-  }
-  return t("assistant.chatShareRequestFailed");
-}
-
-function isValidConversationId(value: string): boolean {
-  return Buffer.byteLength(value, "utf8") <= 255 && !/\p{Cc}/u.test(value);
+  const chatId = typeof request?.chatId === "string" ? request.chatId.trim() : "";
+  if (!chatId) return { ok: false, message: t("assistant.chatIdRequired") };
+  if (Buffer.byteLength(chatId, "utf8") > 255 || /\p{Cc}/u.test(chatId)) return { ok: false, message: t("assistant.chatShareConversationIdInvalid") };
+  return shares.publish(async (limits) => {
+    const prepared = await preparer.prepareChatShare(chatId, limits);
+    if (!prepared.ok) return prepared;
+    return { manifest: prepared.bytes, resources: prepared.attachments,
+      ...(prepared.attachmentsOmitted ? { warning: t(prepared.attachmentUnauthorized
+        ? "assistant.chatShareSourceUnauthorized" : "assistant.chatShareAttachmentsOmitted") } : {}) };
+  });
 }

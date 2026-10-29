@@ -51,7 +51,9 @@ npm test
 
 ### 本地分享短链联调
 
-本地联调复用正常配置与登录链路：在 `desktop-init.json` 或设置页中把 SSO 指向本地认证服务、启用 Tunnel 并填写本地 Loopback Relay，然后执行 `npm run dev` 并正常登录。登录生成的站点 Token 与 Tunnel 的 issuer、audience、公钥和 scope 必须一致；Desktop 常驻 Worker 从 Platform 获取 Snapshot、从内置 WebClient Host 获取模板并生成 HTML，main 再使用站点 Token 直连 Tunnel，且不接受命令行或环境变量提供的分享专用 Relay 与 Token 旁路。
+本地联调复用正常配置与登录链路：在 `desktop-init.json` 或设置页中把 SSO 指向本地认证服务、启用 Tunnel 并填写本地 Loopback Relay，然后执行 `npm run dev` 并正常登录。登录生成的站点 Token 与 Tunnel 的 issuer、audience、公钥和 scope 必须一致。对话业务仍由常驻 Worker 从 Platform 冻结 Snapshot 与可用附件，公共分享模块上传已准备的通用信封和资源；本地 HTML 导出才读取模板并生成单文件。Main 使用 Identity 既有凭据与刷新链路直连 Tunnel，不接受命令行或环境变量提供的分享专用 Relay、Token 旁路。
+
+对话、市场连接器及已发布 WebApp 共用发布、分享管理和撤销；每次创建独立保存内容，持续有效直到撤销。品牌短链接收只交给精确注册且上下文版本兼容的业务，首个市场动作是打开分享版本详情，不自动安装；历史版本无法确认时仅展示冻结资料。插件和 WebApp 的可选接收声明、隔离预览和在线服务绑定分别遵守各自领域边界，未安装或不可用时不进行安装恢复。新 Desktop 要求 Hub 支持通用分享 v2；旧 Hub 会明确提示升级，新 Hub 继续适配已发布 Desktop 的永久分享请求。
 
 开发运行时允许从 Loopback WS Relay 派生 HTTP 分享 API；打包应用和非 Loopback 地址仍要求 TLS。
 
@@ -90,6 +92,7 @@ npm test
 ## 6. 专题文档索引
 
 - [设计文档总览](docs/README.md)：文档边界、事实源分工、阅读路径与全部专题索引。
+- [分享短链使用与对接](contracts/share-shortlink.md)：用户入口、Hub/网关、来源业务、插件/WebApp 接收与在线服务接入。
 - [验收入口](qa/README.md)：当前 QA 材料、执行方式与维护范围。
 - [手工回归清单](qa/manual-regression.md)：跨模块和用户可见工作流的发布验证。
 

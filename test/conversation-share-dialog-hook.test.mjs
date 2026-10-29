@@ -14,7 +14,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createHookHarness(electronAPI) {
+function createHookHarness(electronAPI, createShare) {
   const previousWindow = globalThis.window;
   const hooks = [];
   let cursor = 0;
@@ -57,7 +57,7 @@ function createHookHarness(electronAPI) {
   }, module, module.exports);
   const render = () => {
     cursor = 0;
-    return module.exports.useConversationShareDialog({ chatId: "chat-1" }, (key) => key);
+    return createShare ? module.exports.useShareDialog(createShare, key => key) : module.exports.useConversationShareDialog({ chatId: "chat-1" }, key => key);
   };
   const cleanup = () => {
     if (disposed) return;
@@ -182,4 +182,14 @@ test("QR opens separately after creation, browser failure stays open, and late r
   } finally {
     closedHarness.cleanup();
   }
+});
+
+test("another business reuses the same lazy share session and QR flow", async () => {
+  let created = 0;
+  const harness = createHookHarness({}, async () => { created++; return { ok: true, record: { id: "market", url: "https://example.test/share/market" } }; });
+  try {
+    assert.equal(harness.render().state.createdRecord, null); assert.equal(created, 0);
+    await harness.render().run("qr");
+    assert.equal(harness.render().state.phase, "qr"); assert.equal(created, 1);
+  } finally { harness.cleanup(); }
 });

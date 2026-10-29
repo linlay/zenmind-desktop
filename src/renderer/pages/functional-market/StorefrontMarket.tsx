@@ -591,7 +591,7 @@ export function StorefrontMarket(props: MarketViewProps) {
   return <MarketIdentityBoundary><StorefrontMarketContent {...props} /></MarketIdentityBoundary>;
 }
 
-function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }: MarketViewProps) {
+function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange, shareTarget, onDismissSharedItem, onShareItem }: MarketViewProps) {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
@@ -1715,6 +1715,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
   );
 
   function handleMarketTabChange(tab: MarketTab) {
+    onDismissSharedItem?.();
     if (tab === "skills" && activeTab === "skills") {
       setRangeMode("all");
       setInstalledSkillSource("cloud");
@@ -1725,6 +1726,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
 
   if (activeTab === "mcps") {
     return <ConnectorMarketplace items={activeItems} loading={isLoadingMarket}
+      initialItemId={initialItemId} shareTarget={shareTarget} onDismissSharedItem={onDismissSharedItem} onShareItem={onShareItem}
       onTabChange={handleMarketTabChange} onChanged={() => refreshEverything(false, true)}
       onManage={() => navigate("/connectors")}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">

@@ -2,7 +2,7 @@ import type { App, GlobalShortcut } from "electron";
 import type { MainAppState } from "./state";
 import { hasInstallerShutdownArg } from "./lifecycle/single-instance";
 import type { ShutdownReport } from "../../shared/shutdown";
-import { findDesktopOpenDeepLink, isDesktopOpenDeepLink, readDesktopShareOpenRequest, type DesktopShareOpenRequest } from "./deep-link";
+import { findDesktopOpenDeepLink, isDesktopOpenDeepLink, readDesktopShareOpenRequest, readDesktopShareShortlink, type DesktopShareOpenRequest } from "./deep-link";
 import type { NativeShareTransfer } from "../../shared/native-share";
 import { findDesktopDocumentPaths, isSupportedDesktopDocumentPath } from "./open-file";
 
@@ -20,6 +20,7 @@ export type MainAppEventsOptions = {
   showMainWindow: (targetPath?: string) => void;
   openLocalDocument: (filePath: string) => Promise<void> | void;
   openNativeShare?: (batchId: string, transfer?: NativeShareTransfer) => Promise<void> | void;
+  openShareShortlink?: (shareId: string) => Promise<void> | void;
   beginAppQuitWithoutConfirmation: () => void;
   beginInstallerShutdown: (commandLine: string[]) => void;
   isNativeDialogOpen: () => boolean;
@@ -50,6 +51,15 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
   const initialWorkingDirectory = options.initialWorkingDirectory ?? process.cwd();
   let pendingDesktopOpen = !initialInstallerShutdown && Boolean(findDesktopOpenDeepLink(options.initialCommandLine));
   let pendingMainWindowOpen = false;
+  const findShortlink = (arguments_: readonly string[]) => arguments_.map(readDesktopShareShortlink).filter(request => request !== null).at(-1)?.shareId;
+  let pendingShortlink = !initialInstallerShutdown && (options.platform === "darwin" || options.platform === "win32")
+    ? findShortlink(options.initialCommandLine) : undefined;
+  const openShortlink = (shareId: string) => {
+    if (!readyCompleted) { pendingShortlink = shareId; return; }
+    void Promise.resolve().then(() => options.openShareShortlink?.(shareId)).catch(() => {
+      console.error("[main] share handoff failed");
+    });
+  };
   const pendingLocalDocuments = initialInstallerShutdown
     ? []
     : findDesktopDocumentPaths(options.initialCommandLine, options.platform, initialWorkingDirectory);
@@ -108,6 +118,12 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
         openNativeShare(shareRequest);
         return;
       }
+      const shortlink = readDesktopShareShortlink(url);
+      if (shortlink) {
+        event.preventDefault();
+        openShortlink(shortlink.shareId);
+        return;
+      }
       if (!isDesktopOpenDeepLink(url)) {
         return;
       }
@@ -127,8 +143,12 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
         for (const request of shares) openNativeShare(request);
         return;
       }
+      const shortlink = findShortlink(commandLine);
+      if (shortlink) { openShortlink(shortlink); return; }
     }
     if (options.platform === "win32") {
+      const shortlink = findShortlink(commandLine);
+      if (shortlink) { openShortlink(shortlink); return; }
       const desktopOpen = Boolean(findDesktopOpenDeepLink(commandLine));
       const documentPaths = findDesktopDocumentPaths(commandLine, options.platform, workingDirectory || initialWorkingDirectory);
       if (desktopOpen) {
@@ -162,6 +182,11 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     }
     for (const request of pendingShares.values()) openNativeShare(request);
     pendingShares.clear();
+    if (pendingShortlink) {
+      const shareId = pendingShortlink;
+      pendingShortlink = undefined;
+      openShortlink(shareId);
+    }
     options.app.on("activate", () => {
       if (options.isNativeDialogOpen()) {
         return;

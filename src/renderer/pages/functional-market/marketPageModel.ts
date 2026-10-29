@@ -5,6 +5,7 @@ import type {
   MarketListResult
 } from "@shared/contracts";
 import type { TranslateFunction, TranslationKey } from "@shared/i18n";
+import type { MarketShareTarget } from "../../../shared/market-share";
 
 export type MarketTab = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "mcps" | "websiteApps" | "softwarePackages";
 export type SkillScope = "all" | "cloud" | "local";
@@ -20,6 +21,9 @@ export interface MarketViewProps {
   activeTab: MarketTab;
   onTabChange: (tab: MarketTab) => void;
   initialItemId?: string;
+  shareTarget?: MarketShareTarget | null;
+  onDismissSharedItem?: () => void;
+  onShareItem?: (item: MarketItem) => void;
 }
 
 export const DEFAULT_MARKET_TAB: MarketTab = "skills";

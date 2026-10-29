@@ -144,6 +144,44 @@ function stableWebappName(id: string) {
   return `${base.slice(0, 54).replace(/-+$/u, "")}-${digest}`;
 }
 
+/** Only reads a previously published route; never enables Tunnel or updates it. */
+export async function readPublishedWebappBinding(app: App, item: WebappEntry, ports?: WebsIntegrationPorts): Promise<string> {
+  const previous = readWebappPublishState(app, item.id);
+  const name = stableWebappName(item.id);
+  if (!previous?.active || !previous.routeId || previous.name !== name) throw new Error(t("webapp.notPublished"));
+  const integration = requireWebsIntegrationPorts(ports);
+  const settings = integration.readTunnelHubSettings(app);
+  const token = integration.readTunnelHubRegistrationBearerToken(app);
+  if (!token || !settings.enabled || !settings.relayUrl || !settings.deviceId) throw new Error(t("webapp.publishSignInRequired"));
+  const origin = integration.deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
+  const response = await fetch(`${origin}/api/desktop/devices/${encodeURIComponent(settings.deviceId)}/webapps/${encodeURIComponent(name)}`, {
+    method: "GET", headers: { Authorization: "Bearer " + token }, credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) { await response.body?.cancel().catch(() => {}); throw new Error(t("webapp.shareUnavailable")); }
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    if (!reader) throw new Error(t("webapp.shareUnavailable"));
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value.byteLength;
+      if (total > 64 * 1024) throw new Error(t("webapp.shareUnavailable"));
+      chunks.push(part.value);
+    }
+  } finally { await reader?.cancel().catch(() => {}); }
+  let value: unknown;
+  try { value = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { throw new Error(t("webapp.shareUnavailable")); }
+  const binding = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  if (typeof binding.webAppId !== "string" || binding.webAppId.trim() !== binding.webAppId || !/^[A-Za-z0-9_-]{1,128}$/u.test(binding.webAppId) ||
+      binding.deviceId !== settings.deviceId || binding.name !== name || binding.routeId !== previous.routeId || binding.active !== true) {
+    throw new Error(t("webapp.shareUnavailable"));
+  }
+  return binding.webAppId;
+}
+
 function requireLoopbackTarget(targetUrl: string) {
   let parsed: URL;
   try {

@@ -223,7 +223,7 @@ export function useMarketConnectorFlow(onChanged?: () => void, onChat?: (agentKe
     const id = getId(item);
     try {
       if (action === "update") {
-        const result = await window.electronAPI.market.update(item.id);
+        const result = await window.electronAPI.market.update(item.id, item.source === "cloud" ? item.version : undefined);
         if (!result.ok) throw new Error(result.message);
         if (!abort.signal.aborted) { updateConnection(await window.electronAPI.market.getConnectorConnection(result.connectorId || id)); setNotice("market.connector.flow.updated"); }
       }

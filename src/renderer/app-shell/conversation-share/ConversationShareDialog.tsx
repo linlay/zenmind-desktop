@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { CopyOutlined, GlobalOutlined, QrcodeOutlined } from "@ant-design/icons";
 import { Spin } from "antd";
+import type { ShareCreateResult } from "../../../shared/contracts/shares";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { ConversationShareQrDialog } from "./ConversationShareQrDialog";
-import { useConversationShareDialog, type ConversationShareAction } from "./useConversationShareDialog";
+import { useShareDialog, type ConversationShareAction } from "./useConversationShareDialog";
 
-type ConversationShareDialogProps = {
-  chatId: string;
+type ConversationShareDialogProps = ({ chatId: string; createShare?: never } | { chatId?: never; createShare: () => Promise<ShareCreateResult> }) & {
+  title?: string;
   chatName: string;
   tunnelHubEnabled: boolean;
   t: TranslateFunction;
@@ -22,13 +23,15 @@ const ACTIONS = [
 
 export function ConversationShareDialog({
   chatId,
+  title,
+  createShare,
   chatName,
   tunnelHubEnabled,
   t,
   onClose,
   onOpenTunnelSettings,
 }: ConversationShareDialogProps) {
-  const { state, run, notify } = useConversationShareDialog({ chatId }, t);
+  const { state, run, notify } = useShareDialog(createShare ?? (() => window.electronAPI.assistant.shareChat({ chatId: chatId || "" })), t);
   const dialogRef = useRef<HTMLElement | null>(null);
   const lastActionRef = useRef<HTMLButtonElement | null>(null);
   const onCloseRef = useRef(onClose);
@@ -91,7 +94,7 @@ export function ConversationShareDialog({
         >
           <div className="conversation-share-dialog-head">
             <h2 id="conversation-share-title">
-              {t(tunnelHubEnabled ? "sidebar.chat.shareTitle" : "shareManagement.tunnelRequiredTitle")}
+              {tunnelHubEnabled ? title || t("sidebar.chat.shareTitle") : t("shareManagement.tunnelRequiredTitle")}
             </h2>
             <button type="button" className="conversation-share-icon-button" aria-label={t("common.close")} onClick={onClose}>
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17" /></svg>
@@ -132,8 +135,7 @@ export function ConversationShareDialog({
       ) : state.phase === "qr" && state.createdRecord ? (
         <ConversationShareQrDialog
           url={state.createdRecord.url}
-          chatId={chatId}
-          chatName={chatName}
+          filenameBase={chatName.trim() || chatId || state.createdRecord.id}
           warning={state.warning}
           t={t}
           onClose={onClose}

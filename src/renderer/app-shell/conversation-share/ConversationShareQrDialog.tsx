@@ -11,8 +11,7 @@ type ShareFeedback = { kind: "loading" | "success" | "error"; message: string };
 
 type ConversationShareQrDialogProps = {
   url: string;
-  chatId: string;
-  chatName: string;
+  filenameBase: string;
   warning: string;
   t: TranslateFunction;
   onClose: () => void;
@@ -62,8 +61,7 @@ async function copyQrPng(dataBase64: string): Promise<void> {
 
 export function ConversationShareQrDialog({
   url,
-  chatId,
-  chatName,
+  filenameBase,
   warning,
   t,
   onClose,
@@ -88,7 +86,7 @@ export function ConversationShareQrDialog({
         await copyQrPng(dataBase64);
       } else {
         const result = await window.electronAPI.desktopDownloads.saveFile({
-          filename: `${chatName.trim() || chatId}.png`,
+          filename: `${filenameBase}.png`,
           mimeType: "image/png",
           dataBase64,
         });

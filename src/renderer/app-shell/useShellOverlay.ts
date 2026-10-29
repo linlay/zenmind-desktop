@@ -9,6 +9,8 @@ export type ShellOverlay =
       chatName: string;
       sessionId: number;
     }
+  | { kind: "marketShare"; itemId: string; resourceVersion: string; name: string; sessionId: number }
+  | { kind: "webappShare"; id: string; name: string; sessionId: number }
   | null;
 
 export type ShellOverlayAction =
@@ -100,6 +102,34 @@ export function useShellOverlay() {
     [],
   );
 
+  const openMarketShare = useCallback((itemId: string, resourceVersion: string, name: string) => {
+    if (!itemId.trim() || !resourceVersion.trim()) return;
+    shareSessionIdRef.current += 1;
+    const overlay = { kind: "marketShare" as const, itemId, resourceVersion, name, sessionId: shareSessionIdRef.current };
+    activeOverlayRef.current = overlay;
+    dispatch({ type: "open", overlay });
+  }, []);
+
+  const closeMarketShare = useCallback((overlay: Extract<Exclude<ShellOverlay, null>, { kind: "marketShare" }>) => {
+    if (activeOverlayRef.current !== overlay) return;
+    activeOverlayRef.current = null;
+    dispatch({ type: "close", overlay });
+  }, []);
+
+  const openWebappShare = useCallback((id: string, name: string) => {
+    if (!id.trim()) return;
+    shareSessionIdRef.current += 1;
+    const overlay = { kind: "webappShare" as const, id, name, sessionId: shareSessionIdRef.current };
+    activeOverlayRef.current = overlay;
+    dispatch({ type: "open", overlay });
+  }, []);
+
+  const closeWebappShare = useCallback((overlay: Extract<Exclude<ShellOverlay, null>, { kind: "webappShare" }>) => {
+    if (activeOverlayRef.current !== overlay) return;
+    activeOverlayRef.current = null;
+    dispatch({ type: "close", overlay });
+  }, []);
+
   const closeConversationShare = useCallback(
     (overlay: Extract<Exclude<ShellOverlay, null>, { kind: "conversationShare" }>) => {
       if (activeOverlayRef.current !== overlay) {
@@ -111,13 +141,25 @@ export function useShellOverlay() {
     [],
   );
 
+  const dismiss = useCallback(() => {
+    const overlay = activeOverlayRef.current;
+    if (!overlay) return;
+    activeOverlayRef.current = null;
+    dispatch({ type: "close", overlay });
+  }, []);
+
   return {
+    dismiss,
     activeOverlay,
     openGlobalSearch,
     closeGlobalSearch,
     requestToolMenuOpen,
     openToolMenuIfIdle,
     closeToolMenu,
+    openMarketShare,
+    closeMarketShare,
+    openWebappShare,
+    closeWebappShare,
     openConversationShare,
     closeConversationShare,
   };

@@ -197,7 +197,7 @@ async function handleWebappPageMethod(
     return fail(action, "invalid_args", `${reservedField} is reserved.`);
   }
   try {
-    return await executeWebappPageMethod(options, action, args, invocation.webappId);
+    return await executeWebappPageMethod(options, action, args, invocation.webappId, invocation.signal);
   } catch (error) {
     return fail(action, "action_failed", error instanceof Error ? error.message : "Unexpected WebApp method exception.", {
       stage: "execution", executionState: "unknown",

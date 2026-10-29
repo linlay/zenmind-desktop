@@ -1,3 +1,4 @@
+import type { ShareFacade } from "../modules/shares";
 import { app, dialog, clipboard, globalShortcut, ipcMain, protocol } from "electron";
 import path from "node:path";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
@@ -14,7 +15,7 @@ import { createArtifactRuntime, createArtifactPlatformClient } from "../modules/
 import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, getAssistantSettings, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
 import { getDesktopDeviceId, getDesktopSsoAccessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
-import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
+import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller, registerMarketShareReceiver } from "../modules/marketplace";
 import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
 import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
 import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
@@ -53,6 +54,8 @@ import * as runtimeNotifications from "./runtime-notifications";
 import { createMainAppState } from "./state";
 
 export function createMainProcessRuntime() {
+  let sharedLinks: ShareFacade | undefined;
+  let shareOpenGeneration = 0;
   // Assembly ports intentionally read live bindings: several callbacks run only after
   // the receiving runtime has been constructed. Do not eagerly snapshot these getters.
   let servicesFacade!: ServicesFacade;
@@ -654,6 +657,7 @@ export function createMainProcessRuntime() {
   function emitWebsChanged(
     details: Partial<Omit<WebsChangedEvent, "changedAt">> = {}
   ) {
+    websFacade.syncShareReceivers();
     return runtimeNotifications.emitWebsChanged({
       get getMainWindow() { return getMainWindow; }
     }, details);
@@ -811,7 +815,26 @@ export function createMainProcessRuntime() {
       get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
-      registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
+      refreshDesktopSsoIdentityToken: (force) => refreshDesktopSsoIdentityToken(force),
+      registerIpc: (sharesFacade, conversationShareFacade, getUpdatesRuntime) => {
+        sharedLinks = sharesFacade;
+        pluginBridgeRuntime.configureShareReceivers(sharesFacade, id => servicesRuntime.runServiceMutation(() => servicesRuntime.handleServiceStart(id)));
+        websFacade.configureShares(app, sharesFacade, async (id, signal) => {
+          if (signal.aborted) return;
+          const result = await websFacade.webappRuntime.start(app, id);
+          if (!result.ok || signal.aborted) throw new Error("WebApp share activation failed");
+          appShellRuntime.navigateMainWindow("/webs/" + encodeURIComponent("webapp:" + id));
+        });
+        app.once("will-quit", () => websFacade.disposeShareReceivers());
+        try {
+          const disposeMarketShare = registerMarketShareReceiver({
+            app, shares: sharesFacade, ipc: ipcMain, getMainWindow, navigate: (route) => appShellRuntime.navigateMainWindow(route),
+          });
+          app.once("will-quit", disposeMarketShare);
+        } catch {
+          console.error("[main] market share receiver registration failed");
+        }
+        return readyIpc.registerReadyIpc({
         artifactRuntime,
         get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
@@ -865,7 +888,8 @@ export function createMainProcessRuntime() {
         get reportRendererDiagnostic() { return reportRendererDiagnostic; },
         get emitAssistantAttachmentProgress() { return emitAssistantAttachmentProgress; },
         get captureAssistantScreenshot() { return captureAssistantScreenshot; }
-      }, conversationShareFacade, getUpdatesRuntime)
+      }, sharesFacade, conversationShareFacade, getUpdatesRuntime);
+      }
     });
   }
 
@@ -884,6 +908,15 @@ export function createMainProcessRuntime() {
         } catch (error) {
           dialog.showErrorBox(t("dialog.localDocument.openFailed"), error instanceof Error ? error.message : String(error));
         }
+      },
+      async openShareShortlink(shareId) {
+        const generation = ++shareOpenGeneration;
+        showMainWindow();
+        const result = await sharedLinks?.receive(shareId) ?? { status: "unavailable" };
+        if (generation !== shareOpenGeneration || result.status === "received") return;
+        dialog.showErrorBox(t("share.receiveFailedTitle"), t(result.status === "unsupported"
+          ? "share.receiveUnsupported" : result.status === "invalid_context"
+            ? "share.receiveInvalidContext" : "share.receiveUnavailable"));
       },
       async openNativeShare(batchId, transfer) {
         try {

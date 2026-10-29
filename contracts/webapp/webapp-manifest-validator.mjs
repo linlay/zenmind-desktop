@@ -6526,6 +6526,10 @@ const webappManifestV2Schema = strictObject({
     }).default({ backendPrefixes: [] })
   }),
   backend: webappBackendSchema.optional(),
+  shareReceiver: strictObject({
+    protocolVersion: literal(1),
+    contextVersions: array(number().int().min(1).max(2 ** 31 - 1)).min(1).max(16).refine((versions) => new Set(versions).size === versions.length, "contextVersions must be unique.")
+  }).optional(),
   copilot: strictObject({
     agentKey: string().regex(WEBAPP_AGENT_KEY_PATTERN),
     references: array(strictObject({

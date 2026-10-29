@@ -1,3 +1,4 @@
+import type { ShareFacade } from "../modules/shares";
 import type { AppearanceRuntime } from "../modules/settings";
 import { type App, type BrowserWindow, type WebContents } from "electron";
 import { type ServicesFacade } from "../modules/services";
@@ -25,6 +26,7 @@ export type MainIpcRegistrationOptions = {
   servicesFacade: ServicesFacade;
   websFacade: WebsFacade;
   conversationShareFacade: ConversationShareFacade;
+  sharesFacade: ShareFacade;
   ipcMain: any;
   platform: NodeJS.Platform;
   shell: any;

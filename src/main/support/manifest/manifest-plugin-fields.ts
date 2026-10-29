@@ -11,6 +11,23 @@ import {
 import { asObject, asStringArray, asString, asOptionalString, asBoolean, asNumber } from "./manifest-values";
 import { ServiceDefinition } from "./manifest-types";
 
+export function resolvePluginShareReceiver(raw: Record<string, unknown>, serviceMode: ServiceDefinition["serviceMode"]): ServiceDefinition["shareReceiver"] {
+  if (raw.shareReceiver === undefined) return undefined;
+  const value = asObject(raw.shareReceiver);
+  const versions = value.contextVersions;
+  const id = raw.id;
+  const bridge = asStringArray(asObject(raw.bridge).requests);
+  if (Object.keys(value).length !== 2 || value.protocolVersion !== 1 || !Array.isArray(versions) ||
+      !versions.length || versions.length > 16 || versions.some(version => !Number.isInteger(version) || version < 1 || version > 2 ** 31 - 1) ||
+      new Set(versions).size !== versions.length || typeof id !== "string" || id.trim() !== id ||
+      !/^[a-z0-9][a-z0-9._-]{0,119}$/u.test(id) || serviceMode !== "service" ||
+      !asStringArray(asObject(raw.hooks).subscribe).includes("share.receive") ||
+      !["share.ready", "share.ack", "share.release"].every(method => bridge.includes(method))) {
+    throw new Error("shareReceiver requires protocol 1, unique context versions, a service plugin and its declared share Bridge methods/hook");
+  }
+  return { protocolVersion: 1, contextVersions: [...versions] as number[] };
+}
+
 export function resolvePluginHooks(raw: Record<string, unknown>): ManifestPluginHooks & { subscribe: string[] } {
   const hooks = asObject(raw.hooks);
   return {

@@ -5,6 +5,7 @@ export * from "./contracts/navigation";
 export * from "./contracts/webs";
 export * from "./contracts/pet-copilot";
 export * from "./contracts/copilot";
+export * from "./contracts/shares";
 export * from "./contracts/attachments";
 export * from "./contracts/marketplace";
 export * from "./contracts/market-skill-detail";

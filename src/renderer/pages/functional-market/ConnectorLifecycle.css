@@ -11,16 +11,18 @@
 .connector-token-field small { color: var(--text-secondary); }
 .connector-discovery .skill-discovery-card-footer { flex-wrap: wrap; }
 .connector-discovery .skill-discovery-card-footer .ant-tag { margin-inline-end: 0; }
-@media (max-width: 560px) { .connector-market-status { align-items: stretch; flex-direction: column; } .connector-detail-layout { grid-template-columns: minmax(0, 1fr); } }
-.connector-detail-dialog { color: var(--text-primary); }
-.connector-detail-brand-row { display: flex; align-items: center; justify-content: center; gap: 18px; height: 60px; margin: 8px 0 20px; }
-.connector-detail-brand { --brand-mark-size: 52px; flex: 0 0 52px; width: 52px; height: 52px; object-fit: contain; }
+@media (max-width: 560px) { .connector-market-status { align-items: stretch; flex-direction: column; } }
+.connector-detail-dialog { color: var(--text-primary); display: flex; flex-direction: column; max-height: calc(100dvh - 80px); min-height: 0; }
+.connector-detail-brand-row { display: flex; align-items: center; justify-content: center; gap: 18px; height: 46px; margin: 0 0 12px; }
+.connector-detail-brand { --brand-mark-size: 42px; flex: 0 0 42px; width: 42px; height: 42px; object-fit: contain; }
 .connector-detail-dots { color: var(--text-secondary); letter-spacing: 5px; font-size: 24px; }
-.connector-detail-dialog .connector-detail-title { text-align: center; font-size: 22px; line-height: 1.4; margin: 0 0 12px; }
+.connector-detail-dialog .connector-detail-title { text-align: center; font-size: 20px; line-height: 1.4; margin: 0 0 8px; }
 .connector-detail-description { text-align: center; color: var(--text-secondary); font-size: 13px; line-height: 1.7; margin: 0 auto 12px; overflow-wrap: anywhere; }
-.connector-detail-status { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; flex-shrink: 0; padding: 21px 56px 0 28px; }
+.connector-detail-toolbar { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 16px 56px 0 28px; }
+.connector-detail-version { min-width: 0; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.connector-detail-status { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 0; margin-left: auto; }
 .connector-detail-status .ant-tag { margin-inline-end: 0; }
-.connector-detail-primary-actions { justify-content: center; margin: 20px 0 28px; }
+.connector-detail-primary-actions { justify-content: center; margin: 14px 0 0; }
 .connector-detail-primary-actions > button { min-width: 108px; border-radius: 9px; }
 .connector-detail-usage h3 { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin: 0 0 12px; }
 .connector-detail-usage .connector-suggestions { display: flex; flex-direction: column; gap: 9px; }
@@ -65,21 +67,15 @@
 .connector-card-title { display: flex; flex: 1; align-items: center; gap: 7px; min-width: 0; }
 .connector-card-title .skill-discovery-name { flex: 0 1 auto; }
 .connector-discovery .connector-card-update { color: var(--text-secondary, #606060); background: color-mix(in srgb, var(--text-primary) 5%, var(--market-control-card)); border-radius: 8px; }
-.connector-detail-brand-row .connector-detail-icon { flex: 0 0 52px; width: 52px; height: 52px; overflow: hidden; background: transparent; }
+.connector-detail-brand-row .connector-detail-icon { flex: 0 0 42px; width: 42px; height: 42px; overflow: hidden; background: transparent; }
 
 .connector-discovery .connector-market-card { min-height: 0; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; }
 .connector-discovery .connector-market-card:hover { background: color-mix(in srgb, var(--market-control-card) 92%, var(--text-primary) 8%); border-color: color-mix(in srgb, var(--market-control-muted) 28%, transparent); box-shadow: none; }
 .connector-discovery .connector-market-card:focus-visible { outline: 2px solid var(--accent-color, #5b5cf0); outline-offset: 2px; }
 
 /* Keep connector identity/actions visible while expanded documentation scrolls. */
-.connector-detail-dialog { display: flex; flex-direction: column; max-height: calc(100dvh - 80px); min-height: 0; }
 .connector-detail-header { flex-shrink: 0; padding: 12px 28px 18px; border-bottom: 1px solid var(--border-color, #eceef1); max-height: 48dvh; overflow-y: auto; }
-.connector-detail-header .connector-detail-brand-row { height: 46px; margin: 0 0 12px; }
-.connector-detail-header .connector-detail-brand { --brand-mark-size: 42px; flex-basis: 42px; width: 42px; height: 42px; }
-.connector-detail-header .connector-detail-brand-row .connector-detail-icon { flex-basis: 42px; width: 42px; height: 42px; }
-.connector-detail-header .connector-detail-title { font-size: 20px; margin-bottom: 8px; }
 .connector-detail-header .connector-detail-description { margin-bottom: 10px; line-height: 1.6; }
-.connector-detail-header .connector-detail-primary-actions { margin: 14px 0 0; }
 .connector-detail-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 28px 24px; scrollbar-gutter: stable; }
 .connector-detail-usage .connector-suggestions { margin-bottom: 0; gap: 8px; }
 .connector-detail-usage .connector-suggestions > button { min-height: 40px; padding: 10px 12px; background: color-mix(in srgb, var(--text-primary) 4%, transparent); line-height: 1.6; }
@@ -109,7 +105,7 @@
 .connector-detail-readme :is(th, td) { padding: 7px 10px; border: 1px solid var(--border-color, #e5e7eb); }
 @media (max-width: 560px) {
   .connector-detail-header { padding: 12px 20px 16px; }
-  .connector-detail-status { padding-left: 20px; }
+  .connector-detail-toolbar { padding-left: 20px; }
   .connector-detail-scroll { padding: 18px 20px 20px; }
   .connector-detail-info { align-items: flex-start; flex-wrap: wrap; }
 }

@@ -119,7 +119,9 @@ export function getWebappBridgeCapabilities(
     bridgeVersion: WEBAPP_BRIDGE_VERSION,
     capabilities: [
       ...WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES.map((id) => {
-        const status = id === "desktop.microphone" && microphonePermission === "unavailable"
+        const status = id === "desktop.share.receive" && !item.shareReceiver
+          ? "unavailable" as const
+          : id === "desktop.microphone" && microphonePermission === "unavailable"
           ? "unavailable" as const
           : id === "desktop.notification" && !notificationAvailable
             ? "unavailable" as const
@@ -127,7 +129,7 @@ export function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: id === "skill.read" ? !!item.copilot?.agentKey : true,
+          declared: id === "desktop.share.receive" ? !!item.shareReceiver : id === "skill.read" ? !!item.copilot?.agentKey : true,
           permission: id === "auth.session" ? "prompt" as const : id === "desktop.microphone"
             ? microphonePermission
             : id === "desktop.notification" && !notificationAvailable

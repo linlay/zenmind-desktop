@@ -38,6 +38,7 @@ export type InstalledRecord = {
 };
 
 export type MarketplaceOptions = MarketListOptions & {
+  expectedVersion?: string;
   plugins?: PluginLifecycle;
   catalogSnapshot?: unknown;
   catalogUrl?: string;

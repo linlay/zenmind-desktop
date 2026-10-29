@@ -72,6 +72,7 @@ export interface WebappEntry extends WebEntryBase {
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
   desktopBridge?: WebappDesktopBridgeConfig;
+  shareReceiver?: WebappManifest["shareReceiver"];
   copilot?: WebappCopilotConfig;
   sourceKind?: WebappSourceKind;
   sourceLabel?: string;

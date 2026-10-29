@@ -7,12 +7,13 @@ import {
 
 export type WebappCapabilityScope = "backendActionToken" | "localPageGateway";
 
-export function getWebappAllowedActions(_item: WebappEntry, scope: WebappCapabilityScope) {
+export function getWebappAllowedActions(item: WebappEntry, scope: WebappCapabilityScope) {
   const actions = new Set<string>();
   if (scope === "localPageGateway") {
     actions.add(WEBAPP_BRIDGE_ACTIONS.capabilitiesList);
   }
   for (const [capability, capabilityActions] of Object.entries(WEBAPP_BRIDGE_CAPABILITY_ACTIONS)) {
+    if (capability === "desktop.share.receive" && !item.shareReceiver) continue;
     if (scope === "backendActionToken" && capability !== "connector.execute" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
       continue;
     }

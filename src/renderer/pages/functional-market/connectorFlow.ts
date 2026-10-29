@@ -114,7 +114,7 @@ export async function runMarketConnectorFlow(intent: MarketConnectorIntent, api:
   try {
   if (!intent.installed) {
     onPhase("installing"); check();
-    const installed = await api.install(intent.item.id); check();
+    const installed = await api.install(intent.item.id, intent.item.source === "cloud" ? intent.item.version : undefined); check();
     if (!installed.ok) throw new Error(installed.message || "market.connector.flow.installFailed");
     if (!installed.connectorId?.trim()) throw new Error("market.connector.flow.missingId");
     id = installed.connectorId.trim(); intent.onInstalled(id);

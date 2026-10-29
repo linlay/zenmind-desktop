@@ -325,9 +325,51 @@ export const desktop = Object.freeze({
       open: reserved("desktop.camera.open")
     }),
     share: Object.freeze({
-      open: reserved("desktop.share.open")
+      open: reserved("desktop.share.open"),
+      onReceive: receiveSharedContext
     })
 });
+
+function receiveSharedContext(handler) {
+  if (typeof handler !== "function") throw new DesktopBridgeError("desktop.share.receive", "invalid_args", "A business receiver is required.");
+  const controller = new AbortController();
+  const instanceId = crypto.randomUUID();
+  let generation = "", lastIntent = "", lastStatus = "received";
+  const stop = () => {
+    if (controller.signal.aborted) return;
+    controller.abort();
+    globalThis.removeEventListener?.("pagehide", stop);
+    if (generation) void call("desktop.share.release", { instanceId, generation }).catch(() => {});
+  };
+  globalThis.addEventListener?.("pagehide", stop, { once: true });
+  void (async () => {
+    try {
+      while (!controller.signal.aborted) {
+        const delivery = await call("desktop.share.receive", { instanceId }, undefined, controller.signal);
+        if (delivery && !controller.signal.aborted) {
+          generation = delivery.generation;
+          const request = delivery.request;
+          if (lastIntent !== request.intentId) {
+            lastIntent = request.intentId;
+            try {
+              const status = await handler(request, { signal: controller.signal });
+              lastStatus = ["received", "invalid_context", "unavailable"].includes(status) ? status : "received";
+            } catch { lastStatus = "unavailable"; }
+          }
+          if (controller.signal.aborted) break;
+          await call("desktop.share.ack", { instanceId, generation, intentId: request.intentId, status: lastStatus }, undefined, controller.signal);
+        }
+        await new Promise(resolve => {
+          const done = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", done); resolve(); };
+          const timer = setTimeout(done, 500);
+          controller.signal.addEventListener("abort", done, { once: true });
+        });
+      }
+    } catch { /* A stopped instance does not resume in another page or account. */ }
+    finally { stop(); }
+  })();
+  return stop;
+}
 
 const image = Object.assign(generateAssistantImage, {
   cancel: (requestId) => call("assistant.image.cancel", { requestId })

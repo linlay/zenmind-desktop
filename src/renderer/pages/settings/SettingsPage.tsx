@@ -135,6 +135,7 @@ type SettingsPageProps = {
   onWebItemsRefresh: () => void | Promise<unknown>;
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onWebappPublishStateChange?: (id: string, state: WebappPublishState | null) => void;
+  onShareWebapp?: (item: WebappEntry) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   onTunnelHubEnabledChange?: (enabled: boolean) => void;
   primaryChatNavigation?: boolean;
@@ -2416,6 +2417,7 @@ export function SettingsPage({
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
   onWebappPublishStateChange,
+  onShareWebapp,
   onAssistantSettingsChange,
   onTunnelHubEnabledChange,
   primaryChatNavigation = false,
@@ -5678,6 +5680,10 @@ export function SettingsPage({
                                       <Button onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}>
                                         {t("settings.webapps.publishOpenUrl")}
                                       </Button>
+                                      {onShareWebapp ? <Button disabled={webappPublishPendingId !== ""} onClick={() => {
+                                        setWebappDetailsOpen(false);
+                                        onShareWebapp(selectedWebapp);
+                                      }}>{t("webapp.shareAction")}</Button> : null}
                                     </div>
                                   </div>
                                 </div>

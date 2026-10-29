@@ -14,7 +14,7 @@ import {
   resolveBackend,
   resolveServiceConfigFiles
 } from "./manifest-service-fields";
-import { resolvePluginSettings, resolvePluginHooks, resolvePluginBridge, resolvePluginResources } from "./manifest-plugin-fields";
+import { resolvePluginSettings, resolvePluginHooks, resolvePluginBridge, resolvePluginResources, resolvePluginShareReceiver } from "./manifest-plugin-fields";
 import { resolveDesktop } from "./manifest-desktop";
 import { applyCoreServiceWebOverride } from "./manifest-service-policy";
 import { resolveCommand } from "./manifest-commands";
@@ -36,9 +36,11 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
   const resolvedWeb = resolveWeb(raw);
   const web = applyCoreServiceWebOverride(id, resolvedWeb, options);
   const pluginApiVersion = asNumber(raw.pluginApiVersion) ?? 0;
+  const shareReceiver = resolvePluginShareReceiver(raw, serviceMode);
 
   return {
     pluginApiVersion,
+    ...(shareReceiver ? { shareReceiver } : {}),
     id,
     name: asOptionalString(raw.name) ?? id,
     kind: isServiceKind(raw.kind) ? raw.kind : (options.defaultKind ?? "plugin"),

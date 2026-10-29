@@ -4,6 +4,14 @@ import { NATIVE_SHARE_PROTOCOL_HOST, NATIVE_SHARE_PROTOCOL_SCHEME, type NativeSh
 
 export const DESKTOP_OPEN_DEEP_LINK = `${DESKTOP_OPEN_PROTOCOL_SCHEME}://open`;
 
+/** Branded shortlinks carry no origin, receiver, context or credentials. */
+export function readDesktopShareShortlink(value: unknown): { shareId: string; action: "desktop" } | null {
+  const prefix = `${DESKTOP_OPEN_PROTOCOL_SCHEME}://share/`;
+  if (typeof value !== "string" || value.trim() !== value || !value.startsWith(prefix)) return null;
+  const match = /^([A-Za-z0-9_-]{1,80})\?action=desktop$/u.exec(value.slice(prefix.length));
+  return match ? { shareId: match[1], action: "desktop" } : null;
+}
+
 export type DesktopShareOpenRequest = { batchId: string; transfer?: NativeShareTransfer };
 
 /** A share URL carries one fixed loopback capability, never a URL or filesystem path. */

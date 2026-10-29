@@ -51,6 +51,29 @@ const { connector, assistant, skill, artifact, kanban } = createBackendClient({
 | 宿主 | `desktop.capabilities.list/has`、`desktop.app.getConfig/getUserConfig`、`desktop.theme.get/set`、`desktop.locale.get/set`、browser、dialog、microphone、clipboard.writeText、notification |
 | 预留 | `automation.*`、desktop.screen.capture、clipboard.readText、file.reveal、window、camera、share；调用抛 `not_implemented` |
 
+### 接收分享
+
+此入口要求包含分享接收实现的 Desktop，以及同批生成的 Schema、validator 和 SDK；最低契约为 WebApp Manifest v2、Bridge v2、分享接收协议 v1。旧 Desktop 0.5.25 发布包尚无此能力，不能只按应用版本字符串假定可用；正式新发布版本由发布记录冻结。先检查 `desktop.capabilities.has('desktop.share.receive')`，不可用时保留分享预览，不恢复安装或后台等待。
+
+安装清单添加可选声明；owner 与 receiverId 由宿主从安装身份派生，不能在清单或页面中指定：
+
+```json
+"shareReceiver": { "protocolVersion": 1, "contextVersions": [1] }
+```
+
+```js
+const stop = desktop.share.onReceive(async (request, { signal }) => {
+  // 业务核验 request.contextVersion 和自己的 context，再定位业务界面。
+  if (request.contextVersion !== 1 || !isValidContext(request.context)) return 'invalid_context';
+  if (signal.aborted) return 'unavailable';
+  showSharedDetails(request.context);
+  return 'received';
+});
+// 业务组件卸载时调用 stop()；页面离开也会释放当前实例。
+```
+
+此 API 只接收并确认当前交接，不发布分享、不调用任意动作、不授予额外身份。它仅限真实本机 page scope，Node 后端不提供该入口。`desktop.share.open` 仍为预留能力。
+
 主题和语言设置只向本机 WebApp 页面开放，复用 Desktop 的设置持久化与界面更新；不要求 Manifest 声明或额外授权。托管后端 SDK、局域网和发布页面不能调用。能力检测使用 `desktop.capabilities.has('desktop.theme')` 与 `desktop.capabilities.has('desktop.locale')`。
 
 ```js
