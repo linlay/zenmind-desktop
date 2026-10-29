@@ -10,7 +10,7 @@
 .pet-market-card-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 14px; }
 .pet-market-card-actions .market-card-delete, .pet-market-card-actions .market-card-secondary, .pet-market-card-actions > .ant-tag { margin-inline-end: auto; }
 .pet-market-preview { width: 100%; }
-.pet-market-stage { min-height: 180px; display: flex; justify-content: center; align-items: center; background: color-mix(in srgb, var(--market-control-blue) 5%, var(--market-control-card)); }
+.pet-market-stage { min-height: 180px; display: flex; justify-content: center; align-items: center; background: color-mix(in srgb, var(--market-control-blue) 5%, transparent); }
 .pet-market-sprite { display: block; width: 128px; height: 128px; flex: 0 0 auto; background-repeat: no-repeat; image-rendering: auto; }
 .pet-market-preview-fallback { color: var(--market-control-muted); font-size: 12px; }
 .pet-market-preview.is-detail .pet-market-stage { min-height: 260px; border-radius: 12px; margin-bottom: 12px; }

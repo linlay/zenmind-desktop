@@ -3,7 +3,7 @@
     padding: 0;
     overflow: hidden;
     cursor: pointer;
-    background: color-mix(in srgb, var(--market-control-card) 64%, transparent);
+    background: var(--market-card-surface);
 }
 .skin-market-card:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
 .skin-market-copy { padding: 12px 14px; flex: 1; min-width: 0; }

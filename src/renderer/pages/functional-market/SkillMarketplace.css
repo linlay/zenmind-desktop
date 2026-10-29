@@ -33,15 +33,15 @@
 .skill-discovery-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .skill-discovery-section-heading h2 { margin-bottom: 0; }
 .skill-discovery .skill-discovery-shuffle { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--market-control-muted); font-size: 12px; }
-.skill-discovery-card.is-package { position: relative; background: linear-gradient(155deg, var(--market-control-card), var(--market-control-card-soft)); }
+.skill-discovery-card.is-package { position: relative; background: linear-gradient(155deg, var(--market-card-surface), var(--market-card-soft-surface)); }
 .skill-discovery-icon.is-package { border-radius: 8px; box-shadow: 3px -3px 0 color-mix(in srgb, currentColor 15%, transparent); }
 .skill-discovery-icon img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .skill-discovery-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 22px; margin-top: auto; padding-top: 12px; }
 .skill-discovery-kind { color: var(--market-control-muted); font-size: 10px; }
 .skill-discovery .skill-discovery-use { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 5px; padding: 3px 5px; background: transparent; color: var(--market-control-blue); font-size: 11px; }
 .skill-discovery-use:hover { background: var(--market-control-card-soft); }
-.skill-discovery-card { display: flex; flex-direction: column; min-width: 0; min-height: 152px; box-sizing: border-box; padding: 16px; border: 1px solid var(--market-control-border); border-radius: 13px; background: var(--market-control-card); transition: border-color .15s, box-shadow .15s; }
-.skill-discovery-card:hover { border-color: color-mix(in srgb, var(--market-control-muted) 35%, transparent); box-shadow: 0 5px 16px #00000005; }
+.skill-discovery-card { --market-control-muted: var(--market-card-muted); display: flex; flex-direction: column; min-width: 0; min-height: 152px; box-sizing: border-box; padding: 16px; border: 1px solid var(--market-control-border); border-radius: 13px; background: var(--market-card-surface); transition: border-color .15s, box-shadow .15s; }
+.skill-discovery-card:hover { background: var(--market-card-hover-surface); border-color: color-mix(in srgb, var(--market-control-muted) 35%, transparent); box-shadow: 0 5px 16px #00000005; }
 .skill-discovery-card.is-selected { border-color: var(--market-control-blue); }
 .skill-discovery-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .skill-discovery-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 9px; background: #e1f8ed; color: #1e9a6c; }
