@@ -119,6 +119,10 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   async function exchangeOidcTokens(interactive = false, fetchImpl?: CookieAccessTokenFetch) {
     const config = currentOidcConfig();
     if (!config) return "";
+    // A market retry must not complete or close a user's in-progress login.
+    if (!interactive && desktopSsoRuntimeState.pendingLogin) {
+      throw new Error(t("sso.waitingForIam"));
+    }
     if (oidcGeneration !== desktopSsoRuntimeState.credentialGeneration) {
       oidcBlocked = false;
       oidcGeneration = desktopSsoRuntimeState.credentialGeneration;
@@ -584,10 +588,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         restoreState = "signed_out";
         publishRestoreResult({ state: "signed_out", status });
       }
+      // Background renewal also publishes authenticated states. Only an explicit
+      // login callback or return-to-app action may restore/focus the window.
       options.getMainWindow()?.webContents.send("sso.statusChanged", status);
-      if (status.authenticated) {
-        focusMainWindowAfterDesktopSso(options);
-      }
     },
     async openBrowserUrl(input: {
       url: string;

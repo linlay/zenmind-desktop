@@ -26,14 +26,11 @@ import { clearSsoCredentials } from "./sso-credentials";
 import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
 import { closeCallbackServer } from "./callback-lifecycle";
 
-export function saveSession(
-  app: App,
+function serializeSession(
   status: DesktopSsoStatus,
-  _idToken = "",
   metadata: DesktopSsoSessionMetadata = {}
 ) {
-  fs.mkdirSync(path.dirname(getSessionPath(app)), { recursive: true });
-  fs.writeFileSync(getSessionPath(app), JSON.stringify({
+  return JSON.stringify({
     schemaVersion: 2,
     authenticated: status.authenticated,
     issuer: metadata.issuer || status.user?.issuer || "",
@@ -41,7 +38,17 @@ export function saveSession(
     authMode: metadata.authMode || "oidc",
     message: status.message,
     updatedAt: status.updatedAt
-  }, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  }, null, 2) + "\n";
+}
+
+export function saveSession(
+  app: App,
+  status: DesktopSsoStatus,
+  _idToken = "",
+  metadata: DesktopSsoSessionMetadata = {}
+) {
+  fs.mkdirSync(path.dirname(getSessionPath(app)), { recursive: true });
+  fs.writeFileSync(getSessionPath(app), serializeSession(status, metadata), { encoding: "utf8", mode: 0o600 });
 }
 
 export function persistCurrentSessionStatus() {
@@ -51,6 +58,18 @@ export function persistCurrentSessionStatus() {
   saveSession(desktopSsoRuntimeState.currentSessionApp, desktopSsoRuntimeState.currentStatus, desktopSsoRuntimeState.currentIdToken, desktopSsoRuntimeState.currentSessionMetadata);
 }
 
+function serializeUserInfo(
+  user: DesktopSsoClaims,
+  source: DesktopSsoUserInfoSource = "sso"
+) {
+  return `${JSON.stringify({
+    schemaVersion: 2,
+    ...user,
+    updatedAt: new Date().toISOString(),
+    source
+  }, null, 2)}\n`;
+}
+
 export function saveUserInfoFile(
   app: Pick<App, "getPath">,
   user: DesktopSsoClaims,
@@ -58,12 +77,7 @@ export function saveUserInfoFile(
 ) {
   const filePath = getDesktopSsoUserInfoFilePath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify({
-    schemaVersion: 2,
-    ...user,
-    updatedAt: new Date().toISOString(),
-    source
-  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(filePath, serializeUserInfo(user, source), { encoding: "utf8", mode: 0o600 });
 }
 
 export function removeUserInfoFile(app: Pick<App, "getPath">) {
@@ -310,6 +324,97 @@ export function beginAuthenticatedSession(
   removeLegacyDesktopSsoSiteTokenFile(app);
   desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentIdToken = idToken.trim();
+  desktopSsoRuntimeState.currentSessionAuthMode = metadata.authMode;
+  desktopSsoRuntimeState.currentSessionApp = app;
+  desktopSsoRuntimeState.currentSessionMetadata = { ...metadata };
+  desktopSsoRuntimeState.loadedSessionPath = getSessionPath(app);
+  desktopSsoRuntimeState.unverifiedCookieSessionCandidate = false;
+  setCurrentStatus(status);
+  return cloneStatus(status);
+}
+
+/** Publish an already-verified restore/renewal without transient login steps. */
+export function publishRestoredDesktopSsoSession(
+  app: App,
+  user: DesktopSsoClaims,
+  accessToken: string,
+  metadata: Required<Pick<DesktopSsoSessionMetadata, "issuer" | "audience" | "authMode">>
+) {
+  const token = accessToken.trim();
+  const sub = user.sub.trim();
+  if (!token) throw new Error(t("sso.cookieAccessTokenEmpty"));
+  if (!sub) throw new Error(t("sso.token.cookieUserInfoSubMissing", { path: "sub" }));
+  const normalizedUser: DesktopSsoClaims = {
+    ...persistedDesktopSsoUser(app, user),
+    sub,
+    name: user.name?.trim() || sub
+  };
+  const status = createAuthenticatedStatus(presentDesktopSsoUser(app, normalizedUser), createCompletedSteps({
+    session: true,
+    userInfo: true,
+    accessToken: true
+  }));
+  const tokenPath = getDesktopSsoIdTokenFilePath(app);
+  // Stage every file before replacing anything. The canonical token is replaced
+  // last, so preparation failures leave the valid token available to consumers.
+  const files = [
+    { filePath: getSessionPath(app), content: serializeSession(status, metadata) },
+    { filePath: getDesktopSsoUserInfoFilePath(app), content: serializeUserInfo(normalizedUser, "browser_session") },
+    { filePath: tokenPath, content: `${token}\n` }
+  ].map((file) => {
+    let previous: Buffer | null = null;
+    try {
+      previous = fs.readFileSync(file.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return {
+      ...file,
+      previous,
+      temporaryPath: path.join(path.dirname(file.filePath), `.${path.basename(file.filePath)}.${process.pid}.${randomUUID()}.tmp`),
+      committed: false
+    };
+  });
+  try {
+    for (const file of files) {
+      fs.mkdirSync(path.dirname(file.filePath), { recursive: true });
+      fs.writeFileSync(file.temporaryPath, file.content, { encoding: "utf8", mode: 0o600 });
+    }
+    for (const file of files) {
+      fs.renameSync(file.temporaryPath, file.filePath);
+      file.committed = true;
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    for (const file of [...files].reverse()) {
+      if (!file.committed) continue;
+      try {
+        if (file.previous === null) {
+          fs.rmSync(file.filePath, { force: true });
+        } else {
+          fs.writeFileSync(file.temporaryPath, file.previous, { mode: 0o600 });
+          fs.renameSync(file.temporaryPath, file.filePath);
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], "SSO session publication rollback failed.");
+    throw error;
+  } finally {
+    for (const file of files) {
+      try { fs.rmSync(file.temporaryPath, { force: true }); } catch { /* A temporary file is never authoritative. */ }
+    }
+  }
+  // Nothing below may withdraw the old token or emit an incomplete identity.
+  // In particular, do not reuse beginAuthenticatedSession during renewal.
+  clearCachedDesktopSsoAvatar(app);
+  removeLegacyDesktopSsoSiteTokenFile(app);
+  try { fs.rmSync(path.join(path.dirname(tokenPath), "sso-access-token.txt"), { force: true }); } catch { /* Canonical publication already succeeded. */ }
+  closeCallbackServer();
+  desktopSsoRuntimeState.pendingLogin = null;
+  desktopSsoRuntimeState.currentBusinessToken = token;
+  desktopSsoRuntimeState.currentIdToken = "";
   desktopSsoRuntimeState.currentSessionAuthMode = metadata.authMode;
   desktopSsoRuntimeState.currentSessionApp = app;
   desktopSsoRuntimeState.currentSessionMetadata = { ...metadata };

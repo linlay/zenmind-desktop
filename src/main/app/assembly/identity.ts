@@ -20,6 +20,7 @@ import {
   failDesktopSsoStep,
   finalizeDesktopSsoLoginAttempt,
   getDesktopSsoBusinessToken,
+  getDesktopSsoCredentialGeneration,
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   isDesktopSsoLoginCompletionUrl,
@@ -119,35 +120,46 @@ export function createDesktopSsoTokenRefresher(dependencies: CreateDesktopSsoTok
 
 export interface HandleDesktopSsoWebviewNavigationDependencies {
   readonly appState: Pick<ReturnType<typeof createMainAppState>, "desktopSsoWebviewCompletionInFlight">;
-  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "syncBrowserCookies" | "validateBrowserSession" | "exchangeBrowserCookieAccessToken" | "fetchBrowserUserInfo">;
+  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "syncBrowserCookies" | "validateBrowserSession" | "exchangeBrowserCookieAccessToken" | "fetchBrowserUserInfo" | "returnToApp">;
 }
 
 export async function handleDesktopSsoWebviewNavigation(dependencies: HandleDesktopSsoWebviewNavigationDependencies, url: string) {
   let sessionCompleted = false;
+  let completionStarted = false;
+  let isCurrentAttempt = () => false;
   try {
     const status = getDesktopSsoStatus(app);
     if (dependencies.appState.desktopSsoWebviewCompletionInFlight || !status.pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
       return;
     }
+    const generation = getDesktopSsoCredentialGeneration();
+    isCurrentAttempt = () => getDesktopSsoCredentialGeneration() === generation;
+    completionStarted = true;
     dependencies.appState.desktopSsoWebviewCompletionInFlight = true;
     await dependencies.desktopSsoController.syncBrowserCookies();
+    if (!isCurrentAttempt()) return;
     const browserSessionStatus = await dependencies.desktopSsoController.validateBrowserSession();
+    if (!isCurrentAttempt()) return;
     if (!browserSessionStatus) {
       const accessToken = await dependencies.desktopSsoController.exchangeBrowserCookieAccessToken();
+      if (!isCurrentAttempt()) return;
       if (!accessToken) {
         failDesktopSsoFlow(t("main.ssoCookieExchangeNoAccessToken"));
         return;
       }
       completeDesktopSsoCookieLogin(app, accessToken);
       finalizeDesktopSsoLoginAttempt();
+      dependencies.desktopSsoController.returnToApp();
       return;
     }
     sessionCompleted = true;
     const stepErrors: string[] = [];
     try {
       await dependencies.desktopSsoController.fetchBrowserUserInfo();
+      if (!isCurrentAttempt()) return;
     }
     catch (error) {
+      if (!isCurrentAttempt()) return;
       const message = error instanceof Error ? error.message : String(error);
       stepErrors.push(message);
       safeConsoleError("failed to fetch desktop sso browser userinfo", { url, error: message });
@@ -155,18 +167,24 @@ export async function handleDesktopSsoWebviewNavigation(dependencies: HandleDesk
     let accessToken = "";
     try {
       accessToken = await dependencies.desktopSsoController.exchangeBrowserCookieAccessToken();
+      if (!isCurrentAttempt()) return;
       if (!accessToken) {
         stepErrors.push(t("main.ssoCookieExchangeNoAccessToken"));
       }
     }
     catch (error) {
+      if (!isCurrentAttempt()) return;
       const message = error instanceof Error ? error.message : String(error);
       stepErrors.push(message);
       safeConsoleError("failed to exchange desktop sso browser access token", { url, error: message });
     }
     finalizeDesktopSsoLoginAttempt(stepErrors);
+    if (stepErrors.length === 0) {
+      dependencies.desktopSsoController.returnToApp();
+    }
   }
   catch (error) {
+    if (!isCurrentAttempt()) return;
     const message = error instanceof Error ? error.message : String(error);
     if (sessionCompleted) {
       failDesktopSsoStep(message);
@@ -180,7 +198,7 @@ export async function handleDesktopSsoWebviewNavigation(dependencies: HandleDesk
     });
   }
   finally {
-    dependencies.appState.desktopSsoWebviewCompletionInFlight = false;
+    if (completionStarted) dependencies.appState.desktopSsoWebviewCompletionInFlight = false;
   }
 }
 
