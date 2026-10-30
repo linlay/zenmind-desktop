@@ -4283,15 +4283,15 @@ export function AppShell() {
   async function handleOpenWebappInWorkPanel(
     ownerChatId: string,
     target: { id: string; label: string },
-  ) {
+  ): Promise<boolean> {
     const item = webItemsRef.current.find(
       (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === target.id,
     );
-    if (!item) return;
+    if (!item) return false;
     const openWindowIds = await window.electronAPI.webs.webapps.listOpenWindows().catch((): string[] => []);
     if (openWindowIds.includes(item.id)) {
-      await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => undefined);
-      return;
+      const focused = await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => null);
+      return focused?.ok === true;
     }
 
     let nextState = removeWebappWorkPanelReferences(item.id);
@@ -4304,7 +4304,7 @@ export function AppShell() {
         title: item.label,
       },
     });
-    if (!opened.ok || !opened.item) return;
+    if (!opened.ok || !opened.item) return false;
     nextState = opened.nextState;
     commitWorkPanelState(nextState);
     setWebappPresentationOwners((current) => ({
@@ -4315,10 +4315,12 @@ export function AppShell() {
       current.includes(item.entryKey) ? current : [...current, item.entryKey],
     );
     void ensureWebappRuntimeStarted(item).catch(() => undefined);
+    return true;
   }
 
-  function handleFocusWebappWindow(webappId: string) {
-    void window.electronAPI.webs.webapps.openWindow(webappId).catch(() => undefined);
+  async function handleFocusWebappWindow(webappId: string): Promise<boolean> {
+    const focused = await window.electronAPI.webs.webapps.openWindow(webappId).catch(() => null);
+    return focused?.ok === true;
   }
 
   const closeChatWorkPanelWorkspace = useCallback((chatId: string, force = false) => {
@@ -5138,9 +5140,7 @@ export function AppShell() {
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,
             webapps: workPanelWebapps,
-            onOpenWebapp: (ownerChatId, webapp) => {
-              void handleOpenWebappInWorkPanel(ownerChatId, webapp);
-            },
+            onOpenWebapp: handleOpenWebappInWorkPanel,
             onFocusWebappWindow: handleFocusWebappWindow,
           }}
         />
