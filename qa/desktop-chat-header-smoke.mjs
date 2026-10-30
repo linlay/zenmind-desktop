@@ -20,6 +20,7 @@ await build({ ...shared, stdin: { loader: "tsx", resolveDir: repo, contents: `
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {DesktopChatHeaderNavigation} from './src/renderer/app-shell/navigation/DesktopChatHeaderNavigation';
+import {WebappCopilotButton} from './src/renderer/app-shell/navigation/WebappCopilotButton';
 import {AppSidebar} from './src/renderer/app-shell/navigation/AppSidebar';
 import {SidebarActionIcon} from './src/renderer/components/BrandMark';
 import {MemoryRouter} from 'react-router-dom';
@@ -28,7 +29,7 @@ import './src/renderer/styles.css';
 window.actions={search:0,back:0,forward:0};window.documents=0;
 window.electronAPI={assistant:{getProjectCreationOptions:async()=>({ok:false,message:'fixture'})}};
 function Host(){
- const [config,setConfig]=useState({collapsed:true,platform:'darwin',fullscreen:false,canGoBack:false,canGoForward:true,width:240,mainChat:true,copilot:false,sidebarMode:'primary'});
+ const [config,setConfig]=useState({collapsed:true,platform:'darwin',fullscreen:false,canGoBack:false,canGoForward:true,width:240,mainChat:true,webapp:false,copilot:false,dockOpen:false,overlay:false,sidebarMode:'primary'});
  const isMac=config.platform==='darwin',fixed=config.sidebarMode==='primary'&&(isMac||config.fullscreen);
  const collapsed=config.collapsed&&config.sidebarMode==='primary',width=collapsed?66:config.width;
  const [inset,setInset]=useState(142);const webview=useRef(null),relay=useRef(null),sequence=useRef({revision:0,signature:''});
@@ -41,8 +42,9 @@ function Host(){
   return ()=>{host.dispose();target.removeEventListener('did-finish-load',loaded)};},[]);
  useLayoutEffect(()=>relay.current?.refresh(),[config.collapsed,config.mainChat,config.platform,config.fullscreen,inset]);
  const toggle=()=>setConfig(old=>({...old,collapsed:!old.collapsed}));
+ const toggleCopilot=()=>setConfig(old=>({...old,dockOpen:!old.dockOpen}));
  const search=()=>window.actions.search++,back=()=>window.actions.back++,forward=()=>window.actions.forward++;
- return <div className={'app-shell '+(isMac?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(collapsed?' is-sidebar-collapsed':'')+(fixed?' has-fixed-sidebar-header-navigation':'')+(config.mainChat?' has-main-chat-header-actions':' has-webapp-surface')} style={{'--app-sidebar-width':width+'px'}}>
+ return <div className={'app-shell '+(isMac?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(collapsed?' is-sidebar-collapsed':'')+(fixed?' has-fixed-sidebar-header-navigation':'')+(config.mainChat?' has-main-chat-header-actions':'')+(config.webapp?' has-webapp-surface':'')+(config.dockOpen?' has-assistant-dock-full':'')+(config.dockOpen&&config.overlay?' has-assistant-dock-overlay':'')} style={{'--app-sidebar-width':width+'px','--assistant-dock-embedded-width':'360px'}}>
   {!isMac&&!config.fullscreen?<header className="app-system-bar"><div className="app-system-bar-drag-region">
    <span className="app-system-bar-brand-mark">Z</span><nav className="app-system-bar-primary-actions">
     <button className="app-system-bar-action" onClick={search}>S</button>
@@ -51,16 +53,17 @@ function Host(){
     <button className="app-system-bar-action app-system-bar-sidebar-toggle" aria-expanded={!collapsed} onClick={toggle}>◧</button>
    </nav></div></header>:null}
   <div className="app-sidebar-shell"><AppSidebar isCollapsed={collapsed} isMac={isMac} isWindows={!isMac}
-   currentPathname={config.mainChat?'/agent/fixture':'/market'} currentRoute={config.mainChat?'/agent/fixture':'/market'}
-   assistantLauncherVisible={config.copilot} sidebarNavOrder={[]} webItems={[]} onShareChat={()=>{}}
+   currentPathname={config.mainChat?'/agent/fixture':config.webapp?'/webs/webapp:fixture':'/market'} currentRoute={config.mainChat?'/agent/fixture':config.webapp?'/webs/webapp:fixture':'/market'}
+   assistantLauncherVisible={config.copilot&&!config.webapp} sidebarNavOrder={[]} webItems={[]} onShareChat={()=>{}}
    sidebarMode={config.sidebarMode} toolMenuOpen={false} onRequestToolMenuOpen={()=>{}} onAutoOpenToolMenu={()=>{}} onCloseToolMenu={()=>{}}
    onToggleCollapsed={toggle} onOpenGlobalSearch={search} onSidebarNavigateBack={back} onSidebarNavigateForward={forward}/></div>
-  <div className="app-content"><webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/></div>
+  <div className="app-content">{config.webapp&&config.copilot&&config.sidebarMode==='primary'?<WebappCopilotButton open={config.dockOpen} onToggle={toggleCopilot}/>:null}<webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/></div>
   <div className="app-window-controls-layer">
    {fixed?<DesktopChatHeaderNavigation isCollapsed={collapsed} leftInset={collapsed&&!config.mainChat?21:isMac?88:8} canGoBack={config.canGoBack} canGoForward={config.canGoForward}
      onSearch={search} onBack={back} onForward={forward} onToggle={toggle} onInsetChange={setInset}/>:null}
    {config.mainChat?<div className="main-chat-header-actions qa-right-actions"><button className="main-chat-header-action">⋯</button><button className="main-chat-header-action">↗</button><button className="main-chat-header-action main-chat-work-panel-toggle"><SidebarActionIcon kind="sidebar_left" className="main-chat-work-panel-toggle-icon"/></button></div>:null}
   </div>
+  {config.dockOpen?<aside className="agent-webclient-copilot-dock is-open"><button className="copilot-dock-close-button" onClick={toggleCopilot}>×</button></aside>:null}
  </div>;
 }
 createRoot(document.getElementById('root')).render(<MemoryRouter><Host/></MemoryRouter>);
@@ -93,7 +96,7 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 (async()=>{await app.whenReady();const server=http.createServer((req,res)=>{const name=path.basename(new URL(req.url,'http://localhost').pathname);const file=path.join(__dirname,name);if(!(['host.html','host.js','host.css','guest.html','guest.js'].includes(name)||name.endsWith('.svg'))||!fs.existsSync(file)){res.writeHead(404);res.end();return}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(file));});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const win=new BrowserWindow({show:false,width:1280,height:800,webPreferences:{webviewTag:true,contextIsolation:true,nodeIntegration:false}});
-await win.loadURL('http://127.0.0.1:'+server.address().port+'/host.html');win.show();win.focus();
+await win.loadURL('http://127.0.0.1:'+server.address().port+'/host.html');win.show();win.focus();await pause(150);
 const js=s=>win.webContents.executeJavaScript(s);let guest;
 const until=async(fn)=>{for(let attempt=0;attempt<150;attempt++){if(await fn())return;await pause(30)}throw new Error('Timed out: '+fn)};
 await until(()=>js('!!document.querySelector("webview")?.getWebContentsId()').catch(()=>false));
@@ -105,7 +108,7 @@ const identity=await gj('window.documentIdentity'),id=guest.id,url=guest.getURL(
 await gj('document.querySelector("#draft").value="保留的输入草稿"');
 const activeSelector='.main-chat-header-navigation button, .app-system-bar-primary-actions button';
 const center=async(index)=>js('(()=>{const r=document.querySelectorAll('+JSON.stringify(activeSelector)+')['+index+'].getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()');
-const clickPoint=async(point)=>{win.webContents.sendInputEvent({type:'mouseMove',...point});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});await pause(80)};
+const clickPoint=async(point)=>{win.focus();win.webContents.focus();await pause(30);win.webContents.sendInputEvent({type:'mouseMove',...point});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});await pause(80)};
 const click=async(index)=>clickPoint(await center(index));
 const cases=[];
 for(const platform of ['darwin','win32']){for(const fullscreen of [false,true]){
@@ -159,7 +162,38 @@ for(const platform of ['darwin','win32']){for(const fullscreen of [false,true]){
   await js('window.configure({sidebarMode:"settings"})');await pause(80);
   assert.equal(await js('document.querySelector(".main-chat-header-navigation")'),null);
  }
- cases.push({platform,fullscreen,point,positions,searchLeft});
+ // A WebApp has one always-visible launcher in its viewport, including with a collapsed rail.
+ await js('window.configure({webapp:true,mainChat:false,copilot:true,sidebarMode:"primary",collapsed:true,dockOpen:false,overlay:false})');await pause(240);
+ const launcher=()=>js('(()=>{const e=document.querySelector(".webapp-copilot-button"),r=e.getBoundingClientRect(),g=document.querySelector("webview").getBoundingClientRect(),s=getComputedStyle(e);return {x:r.left+r.width/2,y:r.top+r.height/2,right:r.right,top:r.top,width:r.width,contentRight:g.right,contentTop:g.top,guestTop:g.top,opacity:s.opacity,visibility:s.visibility,pressed:e.getAttribute("aria-pressed")}})()');
+ win.webContents.sendInputEvent({type:'mouseMove',x:400,y:400});await pause(30);
+ const initial=await launcher();assert.equal(initial.opacity,'1');assert.equal(initial.visibility,'visible');assert.equal(initial.width,24);
+ assert.equal(initial.contentRight-initial.right,14);assert.equal(initial.top-initial.contentTop,platform==='darwin'?10:8);
+ assert.equal(initial.guestTop,platform==='win32'&&!fullscreen?30:0);
+ assert.equal(await js('document.querySelector(".sidebar-assistant-top-button")'),null,'WebApp must not duplicate the launcher in the sidebar');
+ const draftRect=await gj('(()=>{const r=document.querySelector("#draft").getBoundingClientRect();return {x:r.x+30,y:r.y+20}})()');
+ const guestRect=await js('(()=>{const r=document.querySelector("webview").getBoundingClientRect();return {x:r.x,y:r.y}})()');
+ const draftPoint={x:guestRect.x+draftRect.x,y:guestRect.y+draftRect.y};
+ assert.equal(await js('document.elementFromPoint('+draftPoint.x+','+draftPoint.y+').tagName'),'WEBVIEW','floating control must not intercept the rest of the page');
+ // Electron synthetic input targets one WebContents; route page input to the guest.
+ guest.focus();guest.sendInputEvent({type:'mouseMove',...draftRect});guest.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...draftRect});guest.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...draftRect});await pause(50);
+ assert.equal(await gj('document.activeElement.id'),'draft','page remains clickable around the floating button');
+ win.webContents.focus();
+ for(const collapsed of [false,true]){await js('window.configure({collapsed:'+collapsed+'})');await pause(240);const r=await launcher();assert.equal(r.right,initial.right);assert.equal(r.top,initial.top);assert.equal(r.guestTop,initial.guestTop);}
+ await clickPoint({x:initial.x,y:initial.y});await pause(240);
+ const opened=await launcher();assert.equal(opened.pressed,'true');assert.equal(opened.contentRight-opened.right,14);assert.ok(initial.right-opened.right>=360,'launcher follows the resized WebApp viewport beside the Dock');
+ await clickPoint({x:opened.x,y:opened.y});await pause(240);assert.equal((await launcher()).pressed,'false');
+ win.focus();win.webContents.focus();await js('document.querySelector(".webapp-copilot-button").focus()');
+ assert.equal(await js('document.activeElement.className'),'webapp-copilot-button');
+ await pause(50);win.webContents.sendInputEvent({type:'keyDown',keyCode:'Enter'});win.webContents.sendInputEvent({type:'char',keyCode:String.fromCharCode(13)});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Enter'});await pause(240);assert.equal((await launcher()).pressed,'true','keyboard opens Copilot');
+ await js('window.configure({overlay:true})');await pause(240);
+ const closePoint=await js('(()=>{const r=document.querySelector(".copilot-dock-close-button").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');
+ await clickPoint(closePoint);await pause(240);assert.equal((await launcher()).pressed,'false','overlay Dock keeps an accessible close button');
+ win.webContents.sendInputEvent({type:'mouseMove',x:400,y:400});
+ for(const theme of ['light','dark']){await js('document.documentElement.dataset.theme='+JSON.stringify(theme));await pause(50);fs.writeFileSync(path.join(${JSON.stringify(output)},platform+'-'+(fullscreen?'fullscreen-':'')+'webapp-copilot-'+theme+'.png'),(await win.webContents.capturePage({x:0,y:0,width:1280,height:140})).toPNG())}
+ await js('window.configure({copilot:false})');await pause(50);assert.equal(await js('document.querySelector(".webapp-copilot-button")'),null,'respects the disabled Copilot preference');
+ await js('window.configure({webapp:false,mainChat:true})');await pause(50);assert.equal(await js('document.querySelector(".webapp-copilot-button")'),null,'launcher is exclusive to WebApp pages');
+ assert.equal(await gj('window.documentIdentity'),identity);assert.equal(await gj('document.querySelector("#draft").value'),'保留的输入草稿');
+ cases.push({platform,fullscreen,point,positions,searchLeft,webappLauncher:initial});
 }}
 await js('window.configure({platform:"darwin",fullscreen:false,sidebarMode:"primary",mainChat:true,collapsed:true,canGoBack:true})');await pause(80);
 const back=await js('window.actions.back');await click(1);assert.equal(await js('window.actions.back'),back+1);
