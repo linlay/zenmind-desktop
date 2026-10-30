@@ -7,7 +7,7 @@ import {
   beginAuthenticatedSession,
   completeUserInfoStep,
   completeAccessTokenStep,
-  finalizeDesktopSsoLoginAttempt
+  publishRestoredDesktopSsoSession
 } from "./sso-session";
 import type { DesktopSsoStatus } from "../../../shared/contracts";
 import { createUnconfiguredStatus, createFailedStatus, cloneStatus, desktopSsoRuntimeState } from "./sso-state";
@@ -287,13 +287,28 @@ export function completeDesktopSsoRestoredBrowserSession(
     return createFailedStatus(t("sso.cookieAccessTokenEmpty"));
   }
 
-  completeDesktopSsoBrowserSession(app);
+  if (!configResult.config.browserSession && !configResult.config.tokenExchange) {
+    return createFailedStatus(t("sso.config.browserSessionMissing"));
+  }
   if (!browserUserInfo.sub.trim()) {
     throw new Error(t("sso.token.cookieUserInfoSubMissing", { path: "sub" }));
   }
-  completeDesktopSsoBrowserSessionUserInfo(app, browserUserInfo);
-  persistDesktopSsoAccessToken(app, token);
-  return finalizeDesktopSsoLoginAttempt();
+  const metadata = {
+    issuer: configResult.config.browserOrigin || new URL(configResult.config.tokenExchange?.url || configResult.config.browserSession!.url).origin,
+    audience: (configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG).audience,
+    authMode: "browser-cookie" as const
+  };
+  const name = normalizeStringClaim(browserUserInfo.name);
+  const email = normalizeStringClaim(browserUserInfo.email);
+  const avatarUrl = normalizeStringClaim(browserUserInfo.avatarUrl);
+  return publishRestoredDesktopSsoSession(app, {
+    sub: browserUserInfo.sub.trim(),
+    issuer: metadata.issuer,
+    audience: metadata.audience,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
+  }, token, metadata);
 }
 
 export function getDesktopSsoBusinessToken() {
