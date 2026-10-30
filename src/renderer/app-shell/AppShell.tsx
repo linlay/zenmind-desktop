@@ -4788,7 +4788,8 @@ export function AppShell() {
       <div className="app-window-controls-layer">
         {mainChatHeaderActions}
         {showSidebarHeaderNavigation ? <DesktopChatHeaderNavigation
-          isCollapsed={effectiveSidebarCollapsed} leftInset={isMac ? 88 : 8}
+          isCollapsed={effectiveSidebarCollapsed}
+          leftInset={effectiveSidebarCollapsed && !showMainChatWorkPanelToggle ? 21 : isMac ? 88 : 8}
           canGoBack={Boolean(desktopNavigationBackStep)} canGoForward={Boolean(desktopNavigationForwardStep)}
           onSearch={shellOverlay.openGlobalSearch} onBack={handleSidebarBackNavigation}
           onForward={handleSidebarForwardNavigation} onToggle={toggleSidebarCollapsed}

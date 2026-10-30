@@ -4069,6 +4069,15 @@ div.sidebar-chats-group-popover {
   --sidebar-toolbar-height: 44px;
 }
 
+/* Reserve room for the lone expand button in the rail, never in page content. */
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation:not(.has-main-chat-header-actions) .app-sidebar.is-collapsed {
+  --sidebar-toolbar-height: 61px;
+}
+
+.app-shell.is-windows-platform.is-window-fullscreen.has-fixed-sidebar-header-navigation:not(.has-main-chat-header-actions) .app-sidebar.is-collapsed {
+  padding-top: 40px;
+}
+
 .app-shell.is-mac-platform.has-fixed-sidebar-header-navigation .app-sidebar .sidebar-chrome .sidebar-top-actions > :not(.sidebar-assistant-top-button) {
   display: none;
 }

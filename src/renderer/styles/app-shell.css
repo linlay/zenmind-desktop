@@ -1087,11 +1087,14 @@
   display: none;
 }
 
-/* Other surfaces have no Main Chat layout bridge; reserve a separate header row
-   only when the fixed group extends beyond the collapsed sidebar. */
-.app-shell.has-fixed-sidebar-header-navigation.is-sidebar-collapsed:not(.has-main-chat-header-actions) .app-content {
-  margin-top: 44px;
-  height: calc(100% - 44px);
+/* Non-Chat surfaces keep their full height. In collapsed mode only the expand
+   button remains, inside the sidebar rail rather than above the guest. */
+.app-shell.has-fixed-sidebar-header-navigation.is-sidebar-collapsed:not(.has-main-chat-header-actions) .main-chat-header-navigation > button:not(:last-child) {
+  display: none;
+}
+
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation.is-sidebar-collapsed:not(.has-main-chat-header-actions) .main-chat-header-navigation {
+  top: 35px;
 }
 
 .main-chat-header-action:hover:not(:disabled),
@@ -1161,6 +1164,13 @@
 .app-system-bar-sidebar-toggle,
 .main-chat-work-panel-toggle {
   height: 26px;
+}
+
+/* Fixed navigation uses 24px controls; match their centerline without moving
+   the group or changing the Windows system-bar buttons. */
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation .sidebar-assistant-top-button,
+.app-shell.has-fixed-sidebar-header-navigation .main-chat-work-panel-toggle {
+  height: 24px;
 }
 
 .main-chat-work-panel-toggle-icon,

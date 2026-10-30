@@ -21,6 +21,7 @@ import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {DesktopChatHeaderNavigation} from './src/renderer/app-shell/navigation/DesktopChatHeaderNavigation';
 import {AppSidebar} from './src/renderer/app-shell/navigation/AppSidebar';
+import {SidebarActionIcon} from './src/renderer/components/BrandMark';
 import {MemoryRouter} from 'react-router-dom';
 import {createWebclientHeaderLayoutHost} from './src/renderer/service-webview/headerLayoutHost';
 import './src/renderer/styles.css';
@@ -41,7 +42,7 @@ function Host(){
  useLayoutEffect(()=>relay.current?.refresh(),[config.collapsed,config.mainChat,config.platform,config.fullscreen,inset]);
  const toggle=()=>setConfig(old=>({...old,collapsed:!old.collapsed}));
  const search=()=>window.actions.search++,back=()=>window.actions.back++,forward=()=>window.actions.forward++;
- return <div className={'app-shell '+(isMac?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(collapsed?' is-sidebar-collapsed':'')+(fixed?' has-fixed-sidebar-header-navigation':'')+(config.mainChat?' has-main-chat-header-actions':'')} style={{'--app-sidebar-width':width+'px'}}>
+ return <div className={'app-shell '+(isMac?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(collapsed?' is-sidebar-collapsed':'')+(fixed?' has-fixed-sidebar-header-navigation':'')+(config.mainChat?' has-main-chat-header-actions':' has-webapp-surface')} style={{'--app-sidebar-width':width+'px'}}>
   {!isMac&&!config.fullscreen?<header className="app-system-bar"><div className="app-system-bar-drag-region">
    <span className="app-system-bar-brand-mark">Z</span><nav className="app-system-bar-primary-actions">
     <button className="app-system-bar-action" onClick={search}>S</button>
@@ -56,9 +57,9 @@ function Host(){
    onToggleCollapsed={toggle} onOpenGlobalSearch={search} onSidebarNavigateBack={back} onSidebarNavigateForward={forward}/></div>
   <div className="app-content"><webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/></div>
   <div className="app-window-controls-layer">
-   {fixed?<DesktopChatHeaderNavigation isCollapsed={collapsed} leftInset={isMac?88:8} canGoBack={config.canGoBack} canGoForward={config.canGoForward}
+   {fixed?<DesktopChatHeaderNavigation isCollapsed={collapsed} leftInset={collapsed&&!config.mainChat?21:isMac?88:8} canGoBack={config.canGoBack} canGoForward={config.canGoForward}
      onSearch={search} onBack={back} onForward={forward} onToggle={toggle} onInsetChange={setInset}/>:null}
-   <div className="main-chat-header-actions qa-right-actions"><button className="main-chat-header-action">⋯</button><button className="main-chat-header-action">↗</button><button className="main-chat-header-action">◧</button></div>
+   {config.mainChat?<div className="main-chat-header-actions qa-right-actions"><button className="main-chat-header-action">⋯</button><button className="main-chat-header-action">↗</button><button className="main-chat-header-action main-chat-work-panel-toggle"><SidebarActionIcon kind="sidebar_left" className="main-chat-work-panel-toggle-icon"/></button></div>:null}
   </div>
  </div>;
 }
@@ -115,6 +116,10 @@ for(const platform of ['darwin','win32']){for(const fullscreen of [false,true]){
  assert.deepEqual(await js('({...window.actions})'),{search:before.search+1,back:before.back,forward:before.forward+1});
  const point=await center(3);assert.equal(await js('document.querySelectorAll('+JSON.stringify(activeSelector)+')[3].getAttribute("aria-expanded")'),'false');
  if(platform==='darwin')assert.deepEqual(point,{x:184,y:22});
+ if(fixed){
+  const rightCenter=await js('(()=>{const r=document.querySelector(".main-chat-work-panel-toggle-icon").getBoundingClientRect();return r.top+r.height/2})()');
+  assert.equal(rightCenter,point.y,'WorkPanel icon must align with the fixed navigation');
+ }
  const positions=await js('(()=>{const a=document.querySelector(".main-chat-header-navigation")?.getBoundingClientRect();const c=document.querySelector("webview").getBoundingClientRect();return {right:a?.right,top:a?.top,guestLeft:c.left}})()');
  const searchLeft=await gj('document.querySelector("#search").getBoundingClientRect().left');
  if(fixed)assert.ok(positions.right<=positions.guestLeft+searchLeft,'Desktop buttons overlap the WebClient search input');
@@ -131,16 +136,25 @@ for(const platform of ['darwin','win32']){for(const fullscreen of [false,true]){
  assert.equal(guest.id,id);assert.equal(guest.getURL(),url);assert.equal(await gj('window.documentIdentity'),identity);assert.equal(await gj('document.querySelector("#draft").value'),'保留的输入草稿');assert.equal(await js('document.querySelector("webview").getAttribute("src")'),src);
  if(platform==='darwin')assert.equal(await js('(()=>{const buttons=document.querySelectorAll(".sidebar-top-actions button");return [...buttons].filter(e=>e.getBoundingClientRect().width>0).length})()'),0,'collapsed macOS sidebar must not expose duplicate controls');
  for(const theme of ['light','dark']){await js('document.documentElement.dataset.theme='+JSON.stringify(theme));await pause(60);fs.writeFileSync(path.join(${JSON.stringify(output)},platform+'-'+(fullscreen?'fullscreen-':'')+theme+'.png'),(await win.webContents.capturePage({x:0,y:0,width:1280,height:140})).toPNG())}
- // Non-Chat pages use a host row, with no extra inset sent to the guest.
+ // Collapsed WebApps retain their full height; only the expand control stays in the rail.
  await js('window.configure({mainChat:false,copilot:true,collapsed:true,width:240})');
  await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'));
- assert.deepEqual(await center(3),point);
- assert.equal(await js('document.querySelector("webview").getBoundingClientRect().top'),fixed?44:30);
- await clickPoint(point);await pause(230);assert.deepEqual(await center(3),point);
+ assert.equal(await js('document.querySelector("webview").getBoundingClientRect().top'),platform==='win32'&&!fullscreen?30:0);
+ if(fixed){
+  const visible=await js('(()=>{return [...document.querySelectorAll(".main-chat-header-navigation button")].filter(e=>e.getBoundingClientRect().width>0).length})()');
+  assert.equal(visible,1,'collapsed non-Chat pages must not show a toolbar row');
+  const bounds=await js('(()=>{const r=document.querySelector(".main-chat-header-navigation").getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom}})()');
+  assert.ok(bounds.left>=0&&bounds.right<=66,'expand control must fit within the sidebar rail');
+  assert.ok(await js('document.querySelector(".sidebar-nav").getBoundingClientRect().top')>=bounds.bottom,'expand control must not overlap sidebar entries');
+  assert.equal((await center(3)).x,33);
+ }
+ fs.writeFileSync(path.join(${JSON.stringify(output)},platform+'-'+(fullscreen?'fullscreen-':'')+'webapp-collapsed.png'),(await win.webContents.capturePage({x:0,y:0,width:1280,height:140})).toPNG());
+ const nonChatExpand=await center(3);await clickPoint(nonChatExpand);await pause(230);assert.deepEqual(await center(3),point);
  assert.equal(await js('document.querySelector("webview").getBoundingClientRect().top'),platform==='win32'&&!fullscreen?30:0);
  if(platform==='darwin'){
-  const assistant=await js('(()=>{const e=document.querySelector(".sidebar-assistant-top-button"),r=e.getBoundingClientRect();return {left:r.left,width:r.width,visible:getComputedStyle(e).display!=="none"}})()');
+  const assistant=await js('(()=>{const e=document.querySelector(".sidebar-assistant-top-button"),r=e.getBoundingClientRect(),icon=e.querySelector("svg").getBoundingClientRect();return {left:r.left,width:r.width,cy:icon.top+icon.height/2,visible:getComputedStyle(e).display!=="none"}})()');
   assert.ok(assistant.visible&&assistant.width>0&&assistant.left>=196,'Copilot must not overlap the fixed group');
+  assert.equal(assistant.cy,point.y,'Copilot icon must align with the fixed navigation');
   assert.equal(await js('(()=>{return [...document.querySelectorAll(".sidebar-top-actions button")].filter(e=>e.getBoundingClientRect().width>0).length})()'),1);
   await js('window.configure({sidebarMode:"settings"})');await pause(80);
   assert.equal(await js('document.querySelector(".main-chat-header-navigation")'),null);
