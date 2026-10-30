@@ -20,32 +20,49 @@ await build({ ...shared, stdin: { loader: "tsx", resolveDir: repo, contents: `
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {DesktopChatHeaderNavigation} from './src/renderer/app-shell/navigation/DesktopChatHeaderNavigation';
+import {AppSidebar} from './src/renderer/app-shell/navigation/AppSidebar';
+import {MemoryRouter} from 'react-router-dom';
 import {createWebclientHeaderLayoutHost} from './src/renderer/service-webview/headerLayoutHost';
 import './src/renderer/styles.css';
 window.actions={search:0,back:0,forward:0};window.documents=0;
+window.electronAPI={assistant:{getProjectCreationOptions:async()=>({ok:false,message:'fixture'})}};
 function Host(){
- const [config,setConfig]=useState({collapsed:true,platform:'darwin',fullscreen:false,canGoBack:false,canGoForward:true});
- const [inset,setInset]=useState(128);const webview=useRef(null),relay=useRef(null),sequence=useRef({revision:0,signature:''});
- const input=useRef(null);input.current={sidebarCollapsed:config.collapsed,headerLeftInset:config.collapsed?inset:0};
- const src=useRef(location.origin+'/guest.html?chatId=fixture&desktopSidebarCollapsed=1&desktopHeaderLeftInset=128');
+ const [config,setConfig]=useState({collapsed:true,platform:'darwin',fullscreen:false,canGoBack:false,canGoForward:true,width:240,mainChat:true,copilot:false,sidebarMode:'primary'});
+ const isMac=config.platform==='darwin',fixed=config.sidebarMode==='primary'&&(isMac||config.fullscreen);
+ const collapsed=config.collapsed&&config.sidebarMode==='primary',width=collapsed?66:config.width;
+ const [inset,setInset]=useState(142);const webview=useRef(null),relay=useRef(null),sequence=useRef({revision:0,signature:''});
+ const input=useRef(null);input.current={sidebarCollapsed:config.collapsed,headerLeftInset:collapsed&&fixed&&config.mainChat?inset:0};
+ const src=useRef(location.origin+'/guest.html?chatId=fixture&desktopSidebarCollapsed=1&desktopHeaderLeftInset=142');
  window.configure=(patch)=>setConfig(old=>({...old,...patch}));
  useEffect(()=>{const target=webview.current;const host=createWebclientHeaderLayoutHost({webview:target,
   trustedUrl:()=>src.current,isCurrentGuest:()=>webview.current===target,read:()=>input.current,revisionState:sequence.current});
   relay.current=host;const loaded=()=>window.documents++;target.addEventListener('did-finish-load',loaded);
   return ()=>{host.dispose();target.removeEventListener('did-finish-load',loaded)};},[]);
- useLayoutEffect(()=>relay.current?.refresh(),[config.collapsed,inset]);
- return <div className={'app-shell '+(config.platform==='darwin'?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(config.collapsed?' has-floating-chat-header-navigation':'')} style={{'--app-sidebar-width':'66px'}}>
-  <div className="qa-rail" />
-  <webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/>
+ useLayoutEffect(()=>relay.current?.refresh(),[config.collapsed,config.mainChat,config.platform,config.fullscreen,inset]);
+ const toggle=()=>setConfig(old=>({...old,collapsed:!old.collapsed}));
+ const search=()=>window.actions.search++,back=()=>window.actions.back++,forward=()=>window.actions.forward++;
+ return <div className={'app-shell '+(isMac?'is-mac-platform':'is-windows-platform')+(config.fullscreen?' is-window-fullscreen':'')+(collapsed?' is-sidebar-collapsed':'')+(fixed?' has-fixed-sidebar-header-navigation':'')+(config.mainChat?' has-main-chat-header-actions':'')} style={{'--app-sidebar-width':width+'px'}}>
+  {!isMac&&!config.fullscreen?<header className="app-system-bar"><div className="app-system-bar-drag-region">
+   <span className="app-system-bar-brand-mark">Z</span><nav className="app-system-bar-primary-actions">
+    <button className="app-system-bar-action" onClick={search}>S</button>
+    <button className="app-system-bar-action" disabled={!config.canGoBack} onClick={back}>←</button>
+    <button className="app-system-bar-action" disabled={!config.canGoForward} onClick={forward}>→</button>
+    <button className="app-system-bar-action app-system-bar-sidebar-toggle" aria-expanded={!collapsed} onClick={toggle}>◧</button>
+   </nav></div></header>:null}
+  <div className="app-sidebar-shell"><AppSidebar isCollapsed={collapsed} isMac={isMac} isWindows={!isMac}
+   currentPathname={config.mainChat?'/agent/fixture':'/market'} currentRoute={config.mainChat?'/agent/fixture':'/market'}
+   assistantLauncherVisible={config.copilot} sidebarNavOrder={[]} webItems={[]} onShareChat={()=>{}}
+   sidebarMode={config.sidebarMode} toolMenuOpen={false} onRequestToolMenuOpen={()=>{}} onAutoOpenToolMenu={()=>{}} onCloseToolMenu={()=>{}}
+   onToggleCollapsed={toggle} onOpenGlobalSearch={search} onSidebarNavigateBack={back} onSidebarNavigateForward={forward}/></div>
+  <div className="app-content"><webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/></div>
   <div className="app-window-controls-layer">
-   {config.collapsed?<DesktopChatHeaderNavigation canGoBack={config.canGoBack} canGoForward={config.canGoForward}
-     onSearch={()=>window.actions.search++} onBack={()=>window.actions.back++} onForward={()=>window.actions.forward++}
-     onExpand={()=>setConfig(old=>({...old,collapsed:false}))} onInsetChange={setInset}/>:null}
+   {fixed?<DesktopChatHeaderNavigation isCollapsed={collapsed} leftInset={isMac?88:8} canGoBack={config.canGoBack} canGoForward={config.canGoForward}
+     onSearch={search} onBack={back} onForward={forward} onToggle={toggle} onInsetChange={setInset}/>:null}
    <div className="main-chat-header-actions qa-right-actions"><button className="main-chat-header-action">⋯</button><button className="main-chat-header-action">↗</button><button className="main-chat-header-action">◧</button></div>
   </div>
  </div>;
 }
-createRoot(document.getElementById('root')).render(<Host/>);
+createRoot(document.getElementById('root')).render(<MemoryRouter><Host/></MemoryRouter>);
 ` }, outfile: path.join(root, "host.js") });
 await build({ ...shared, stdin: { loader: "tsx", resolveDir: repo, contents: `
 import React from 'react';import {createRoot} from 'react-dom/client';
@@ -58,9 +75,9 @@ await build({ stdin: { contents: "import { installServiceWebviewHeaderLayout } f
   resolveDir: repo }, bundle: true, platform: "node", format: "cjs", external: ["electron"], outfile: path.join(root, "preload.cjs") });
 const preloadUrl = new URL(`file://${path.join(root, "preload.cjs")}`).toString();
 fs.writeFileSync(path.join(root, "host.html"), `<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/host.css"><style>
-html,body,#root{height:100%;margin:0}.qa-rail{width:66px;height:100%;background:var(--surface-sidebar);border-right:1px solid var(--line-soft)}
-.qa-guest{position:absolute;left:66px;top:0;width:calc(100% - 66px);height:100%;display:flex}
-.is-windows-platform .qa-guest{top:30px;height:calc(100% - 30px)}.is-windows-platform.is-window-fullscreen .qa-guest{top:0;height:100%}
+html,body,#root{height:100%;margin:0}
+.qa-guest{width:100%;height:100%;display:flex}
+
 </style><div id="root"></div><script>window.preloadUrl=${JSON.stringify(preloadUrl)}</script><script src="/host.js"></script>`);
 fs.writeFileSync(path.join(root, "guest.html"), `<!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box}html,body,#root{height:100%;margin:0;font:14px system-ui}body{background:#f7faf8;color:#22382a}
@@ -82,27 +99,56 @@ await until(()=>js('!!document.querySelector("webview")?.getWebContentsId()').ca
 guest=webContents.fromId(await js('document.querySelector("webview").getWebContentsId()'));
 const gj=s=>guest.executeJavaScript(s);
 await until(()=>gj('!!document.querySelector("#search")').catch(()=>false));
-await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));
+await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="142px"'));
 const identity=await gj('window.documentIdentity'),id=guest.id,url=guest.getURL(),src=await js('document.querySelector("webview").getAttribute("src")');
 await gj('document.querySelector("#draft").value="保留的输入草稿"');
-const click=async(index)=>{const point=await js('(()=>{const r=document.querySelectorAll(".main-chat-header-navigation button")['+index+'].getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');win.webContents.sendInputEvent({type:'mouseMove',...point});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});await pause(80)};
+const activeSelector='.main-chat-header-navigation button, .app-system-bar-primary-actions button';
+const center=async(index)=>js('(()=>{const r=document.querySelectorAll('+JSON.stringify(activeSelector)+')['+index+'].getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()');
+const clickPoint=async(point)=>{win.webContents.sendInputEvent({type:'mouseMove',...point});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});await pause(80)};
+const click=async(index)=>clickPoint(await center(index));
 const cases=[];
-for(const platform of ['darwin','win32']){for(const fullscreen of platform==='win32'?[false,true]:[false]){
- await js('window.configure('+JSON.stringify({platform,fullscreen,collapsed:true})+')');
- await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));
+for(const platform of ['darwin','win32']){for(const fullscreen of [false,true]){
+ const fixed=platform==='darwin'||fullscreen,expectedInset=fixed?(platform==='darwin'?142:62):0;
+ await js('window.configure('+JSON.stringify({platform,fullscreen,collapsed:true,mainChat:true,sidebarMode:'primary',copilot:false})+')');
+ await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="'+expectedInset+'px"'));
  const before=await js('({...window.actions})');await click(0);await click(1);await click(2);
  assert.deepEqual(await js('({...window.actions})'),{search:before.search+1,back:before.back,forward:before.forward+1});
- const positions=await js('(()=>{const a=document.querySelector(".main-chat-header-navigation").getBoundingClientRect();const b=document.querySelector(".qa-right-actions").getBoundingClientRect();const c=document.querySelector("webview").getBoundingClientRect();return {right:a.right,top:a.top,rightTop:b.top,guestLeft:c.left}})()');
+ const point=await center(3);assert.equal(await js('document.querySelectorAll('+JSON.stringify(activeSelector)+')[3].getAttribute("aria-expanded")'),'false');
+ if(platform==='darwin')assert.deepEqual(point,{x:184,y:22});
+ const positions=await js('(()=>{const a=document.querySelector(".main-chat-header-navigation")?.getBoundingClientRect();const c=document.querySelector("webview").getBoundingClientRect();return {right:a?.right,top:a?.top,guestLeft:c.left}})()');
  const searchLeft=await gj('document.querySelector("#search").getBoundingClientRect().left');
- assert.ok(positions.right<=positions.guestLeft+searchLeft,'Desktop buttons overlap the WebClient search input');assert.equal(positions.top,positions.rightTop);
- await click(3);await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'));assert.equal(await js('document.querySelectorAll(".main-chat-header-navigation").length'),0);
- for(let cycle=0;cycle<4;cycle++){await js('window.configure({collapsed:true})');await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));await js('window.configure({collapsed:false})');await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'))}
+ if(fixed)assert.ok(positions.right<=positions.guestLeft+searchLeft,'Desktop buttons overlap the WebClient search input');
+ // Keep the physical pointer in place across every expansion, collapse and width change.
+ for(const width of [240,264,360]){
+  await js('window.configure({width:'+width+'})');
+  for(let cycle=0;cycle<2;cycle++){
+   await clickPoint(point);await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'));
+   assert.deepEqual(await center(3),point);assert.equal(await js('document.querySelectorAll('+JSON.stringify(activeSelector)+')[3].getAttribute("aria-expanded")'),'true');
+   await clickPoint(point);await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="'+expectedInset+'px"'));
+   assert.deepEqual(await center(3),point);assert.equal(await js('document.querySelectorAll('+JSON.stringify(activeSelector)+')[3].getAttribute("aria-expanded")'),'false');
+  }
+ }
  assert.equal(guest.id,id);assert.equal(guest.getURL(),url);assert.equal(await gj('window.documentIdentity'),identity);assert.equal(await gj('document.querySelector("#draft").value'),'保留的输入草稿');assert.equal(await js('document.querySelector("webview").getAttribute("src")'),src);
- await js('window.configure({collapsed:true})');await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="128px"'));
+ if(platform==='darwin')assert.equal(await js('(()=>{const buttons=document.querySelectorAll(".sidebar-top-actions button");return [...buttons].filter(e=>e.getBoundingClientRect().width>0).length})()'),0,'collapsed macOS sidebar must not expose duplicate controls');
  for(const theme of ['light','dark']){await js('document.documentElement.dataset.theme='+JSON.stringify(theme));await pause(60);fs.writeFileSync(path.join(${JSON.stringify(output)},platform+'-'+(fullscreen?'fullscreen-':'')+theme+'.png'),(await win.webContents.capturePage({x:0,y:0,width:1280,height:140})).toPNG())}
- cases.push({platform,fullscreen,positions,searchLeft});
+ // Non-Chat pages use a host row, with no extra inset sent to the guest.
+ await js('window.configure({mainChat:false,copilot:true,collapsed:true,width:240})');
+ await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="0px"'));
+ assert.deepEqual(await center(3),point);
+ assert.equal(await js('document.querySelector("webview").getBoundingClientRect().top'),fixed?44:30);
+ await clickPoint(point);await pause(230);assert.deepEqual(await center(3),point);
+ assert.equal(await js('document.querySelector("webview").getBoundingClientRect().top'),platform==='win32'&&!fullscreen?30:0);
+ if(platform==='darwin'){
+  const assistant=await js('(()=>{const e=document.querySelector(".sidebar-assistant-top-button"),r=e.getBoundingClientRect();return {left:r.left,width:r.width,visible:getComputedStyle(e).display!=="none"}})()');
+  assert.ok(assistant.visible&&assistant.width>0&&assistant.left>=196,'Copilot must not overlap the fixed group');
+  assert.equal(await js('(()=>{return [...document.querySelectorAll(".sidebar-top-actions button")].filter(e=>e.getBoundingClientRect().width>0).length})()'),1);
+  await js('window.configure({sidebarMode:"settings"})');await pause(80);
+  assert.equal(await js('document.querySelector(".main-chat-header-navigation")'),null);
+ }
+ cases.push({platform,fullscreen,point,positions,searchLeft});
 }}
-await js('window.configure({canGoBack:true})');await pause(50);const back=await js('window.actions.back');await click(1);assert.equal(await js('window.actions.back'),back+1);
+await js('window.configure({platform:"darwin",fullscreen:false,sidebarMode:"primary",mainChat:true,collapsed:true,canGoBack:true})');await pause(80);
+const back=await js('window.actions.back');await click(1);assert.equal(await js('window.actions.back'),back+1);
 const report={ok:true,guestId:id,documentIdentity:identity,loads:await js('window.documents'),cases};assert.equal(report.loads,1,'sidebar changes reloaded the guest');fs.writeFileSync(path.join(${JSON.stringify(output)},'report.json'),JSON.stringify(report,null,2));console.log('Desktop chat header UI smoke passed: '+${JSON.stringify(output)});win.destroy();server.close();app.quit();})().catch(error=>{console.error(error);app.exit(1)});
 `);
 const env = { ...process.env };

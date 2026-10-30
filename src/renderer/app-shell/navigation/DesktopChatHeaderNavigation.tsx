@@ -2,16 +2,20 @@ import { useLayoutEffect, useRef } from "react";
 import { useI18n } from "../../i18n/useI18n";
 import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
 import { SidebarActionIcon } from "../../components/BrandMark";
+import { SIDEBAR_COLLAPSED_WIDTH } from "../../../shared/sidebar-layout";
 
-export const DESKTOP_CHAT_HEADER_INITIAL_INSET = 128;
+export const DESKTOP_CHAT_HEADER_INITIAL_INSET = 142;
+export const WINDOWS_CHAT_HEADER_INITIAL_INSET = 62;
 
 export function DesktopChatHeaderNavigation(props: {
+  isCollapsed: boolean;
+  leftInset: number;
   canGoBack: boolean;
   canGoForward: boolean;
   onSearch(): void;
   onBack(): void;
   onForward(): void;
-  onExpand(): void;
+  onToggle(): void;
   onInsetChange(inset: number): void;
 }) {
   const { t } = useI18n();
@@ -19,17 +23,20 @@ export function DesktopChatHeaderNavigation(props: {
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    // 8px before the buttons and 12px between the group and guest content.
+    // The group stays anchored to the window, including while the sidebar animates.
+    // Only the collapsed guest needs to reserve the overlap plus a 12px gap.
     const measure = () => {
       const width = Math.ceil(element.getBoundingClientRect().width);
-      if (width > 0) props.onInsetChange(Math.min(256, width + 20));
+      if (width > 0) props.onInsetChange(Math.min(256,
+        Math.max(0, props.leftInset + width - SIDEBAR_COLLAPSED_WIDTH + 12)));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [props.onInsetChange]);
-  return <div ref={ref} className="main-chat-header-actions main-chat-header-navigation" role="group" aria-label={t("nav.main")}>
+  }, [props.leftInset, props.onInsetChange]);
+  const toggleLabel = t(props.isCollapsed ? "nav.sidebar.expand" : "nav.sidebar.collapse");
+  return <div ref={ref} className="main-chat-header-actions main-chat-header-navigation" style={{ left: props.leftInset }} role="group" aria-label={t("nav.main")}>
     <button type="button" className="main-chat-header-action" aria-label={t("desktop.globalSearch.title")}
       title={t("desktop.globalSearch.shortcutHint")} onClick={props.onSearch}>
       <SettingsSidebarIcon kind="search" />
@@ -42,8 +49,8 @@ export function DesktopChatHeaderNavigation(props: {
       title={t("sidebar.navigation.forward")} disabled={!props.canGoForward} onClick={props.onForward}>
       <SidebarActionIcon kind="forward" />
     </button>
-    <button type="button" className="main-chat-header-action" aria-label={t("nav.sidebar.expand")}
-      title={t("nav.sidebar.expand")} aria-expanded={false} onClick={props.onExpand}>
+    <button type="button" className="main-chat-header-action" aria-label={toggleLabel}
+      title={toggleLabel} aria-expanded={!props.isCollapsed} onClick={props.onToggle}>
       <SidebarActionIcon kind="sidebar_left" />
     </button>
   </div>;

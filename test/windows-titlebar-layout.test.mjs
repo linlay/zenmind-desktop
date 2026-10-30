@@ -108,7 +108,7 @@ test("Windows 主导航动作紧跟品牌并从侧栏顶部移除", () => {
   assert.ok(windowControlsIndex > actionsIndex);
   assert.match(
     appShellSource,
-    /sidebarMode === "primary"[\s\S]{0,2200}desktop\.globalSearch\.title[\s\S]{0,1000}nav\.sidebar\.expand[\s\S]{0,1000}sidebar\.navigation\.back[\s\S]{0,800}sidebar\.navigation\.forward[\s\S]{0,1400}toggleSystemBarAssistantDock/u,
+    /sidebarMode === "primary"[\s\S]{0,1000}desktop\.globalSearch\.title[\s\S]{0,1000}sidebar\.navigation\.back[\s\S]{0,800}sidebar\.navigation\.forward[\s\S]{0,1400}toggleSystemBarAssistantDock[\s\S]{0,1600}nav\.sidebar\.expand/u,
   );
   assert.match(
     appShellSource,
@@ -124,10 +124,10 @@ test("Windows 主导航动作紧跟品牌并从侧栏顶部移除", () => {
   );
   assert.match(
     appShellCss,
-    /\.app-system-bar-primary-actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*2px;[^}]*height:\s*24px;[^}]*margin-left:\s*4px;/su,
+    /\.app-system-bar-primary-actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*2px;[^}]*height:\s*26px;[^}]*margin-left:\s*4px;/su,
   );
   assert.match(
     appShellCss,
-    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*var\(--control-radius-sm\);/su,
+    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*26px;[^}]*border-radius:\s*var\(--control-radius-sm\);/su,
   );
 });

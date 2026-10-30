@@ -4065,11 +4065,11 @@ div.sidebar-chats-group-popover {
   --sidebar-toolbar-height: 89px;
 }
 
-.app-shell.is-mac-platform.has-floating-chat-header-navigation .app-sidebar.is-collapsed {
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation .app-sidebar.is-collapsed {
   --sidebar-toolbar-height: 44px;
 }
 
-.app-shell.is-mac-platform.has-floating-chat-header-navigation .app-sidebar.is-collapsed .sidebar-top-actions {
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation .app-sidebar .sidebar-chrome .sidebar-top-actions > :not(.sidebar-assistant-top-button) {
   display: none;
 }
 

@@ -6974,15 +6974,6 @@ export function AppSidebar({
                     <SettingsSidebarIcon kind="search" />
                   </button>
                 ) : null}
-                {isPrimaryMode ? (
-                  <SidebarCollapseToggle
-                    className="sidebar-collapsed-toggle-button"
-                    isCollapsed={isCollapsed}
-                    variant="compact"
-                    onToggleCollapsed={onToggleCollapsed}
-                    t={t}
-                  />
-                ) : null}
                 <div className="sidebar-history-controls">
                   <button
                     type="button"
@@ -7037,6 +7028,15 @@ export function AppSidebar({
                       <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                     </span>
                   </button>
+                ) : null}
+                {isPrimaryMode ? (
+                  <SidebarCollapseToggle
+                    className="sidebar-collapsed-toggle-button"
+                    isCollapsed={isCollapsed}
+                    variant="compact"
+                    onToggleCollapsed={onToggleCollapsed}
+                    t={t}
+                  />
                 ) : null}
               </div>
             </div>

@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNaviga
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar, type AppSidebarChatMenuHandle } from "./navigation/AppSidebar";
 import { HistoryGestureOverlay } from "./navigation/HistoryGestureOverlay";
-import { DesktopChatHeaderNavigation, DESKTOP_CHAT_HEADER_INITIAL_INSET } from "./navigation/DesktopChatHeaderNavigation";
+import { DesktopChatHeaderNavigation, DESKTOP_CHAT_HEADER_INITIAL_INSET, WINDOWS_CHAT_HEADER_INITIAL_INSET } from "./navigation/DesktopChatHeaderNavigation";
 import { forwardMainChatAwaitingDigit } from "../services/mainChatAwaitingShortcut";
 import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
@@ -1284,8 +1284,15 @@ export function AppShell() {
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const effectiveSidebarCollapsed = sidebarCollapsed && !isSecondarySidebarMode;
-  const showCollapsedChatHeaderNavigation = effectiveSidebarCollapsed && showMainChatWorkPanelToggle && !workPanelFullscreenOwnerChatId;
-  const [chatHeaderLeftInset, setChatHeaderLeftInset] = useState(DESKTOP_CHAT_HEADER_INITIAL_INSET);
+  // macOS shares one window-anchored group across both sidebar states. Windows
+  // keeps its system-bar group, switching to the fixed group only in fullscreen.
+  const showSidebarHeaderNavigation = sidebarMode === "primary" && !workPanelFullscreenOwnerChatId && (
+    isMac || (isWindows && windowFullScreen) || (!isWindows && effectiveSidebarCollapsed && showMainChatWorkPanelToggle)
+  );
+  const showCollapsedChatHeaderNavigation = showSidebarHeaderNavigation && effectiveSidebarCollapsed && showMainChatWorkPanelToggle;
+  const [chatHeaderLeftInset, setChatHeaderLeftInset] = useState(
+    isMac ? DESKTOP_CHAT_HEADER_INITIAL_INSET : WINDOWS_CHAT_HEADER_INITIAL_INSET,
+  );
   const mainChatHeaderLayout = useMemo(() => ({ sidebarCollapsed: effectiveSidebarCollapsed,
     headerLeftInset: showCollapsedChatHeaderNavigation ? chatHeaderLeftInset : 0 }),
   [effectiveSidebarCollapsed, showCollapsedChatHeaderNavigation, chatHeaderLeftInset]);
@@ -4626,7 +4633,7 @@ export function AppShell() {
         isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-header-actions" : "",
-        showCollapsedChatHeaderNavigation ? "has-floating-chat-header-navigation" : "",
+        showSidebarHeaderNavigation ? "has-fixed-sidebar-header-navigation" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
@@ -4676,16 +4683,6 @@ export function AppShell() {
                   >
                     <SettingsSidebarIcon kind="search" />
                   </button>
-                  <button
-                    type="button"
-                    className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
-                    aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
-                    title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
-                    aria-expanded={!effectiveSidebarCollapsed}
-                    onClick={toggleSidebarCollapsed}
-                  >
-                    <SidebarActionIcon kind="sidebar_left" />
-                  </button>
                 </>
               ) : null}
               <button
@@ -4726,6 +4723,18 @@ export function AppShell() {
                   title={t("sidebar.copilot.title")}
                 >
                   <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
+                </button>
+              ) : null}
+              {sidebarMode === "primary" ? (
+                <button
+                  type="button"
+                  className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                  aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  aria-expanded={!effectiveSidebarCollapsed}
+                  onClick={toggleSidebarCollapsed}
+                >
+                  <SidebarActionIcon kind="sidebar_left" />
                 </button>
               ) : null}
             </nav>
@@ -4772,10 +4781,11 @@ export function AppShell() {
       </div>
       <div className="app-window-controls-layer">
         {mainChatHeaderActions}
-        {showCollapsedChatHeaderNavigation ? <DesktopChatHeaderNavigation
+        {showSidebarHeaderNavigation ? <DesktopChatHeaderNavigation
+          isCollapsed={effectiveSidebarCollapsed} leftInset={isMac ? 88 : 8}
           canGoBack={Boolean(desktopNavigationBackStep)} canGoForward={Boolean(desktopNavigationForwardStep)}
           onSearch={shellOverlay.openGlobalSearch} onBack={handleSidebarBackNavigation}
-          onForward={handleSidebarForwardNavigation} onExpand={toggleSidebarCollapsed}
+          onForward={handleSidebarForwardNavigation} onToggle={toggleSidebarCollapsed}
           onInsetChange={setChatHeaderLeftInset}
         /> : null}
       </div>
