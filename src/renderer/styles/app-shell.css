@@ -1083,6 +1083,13 @@
   right: auto;
 }
 
+.main-chat-header-navigation .main-chat-header-action > :is(svg, img) {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  object-fit: contain;
+}
+
 .app-shell.has-fixed-sidebar-header-navigation .app-system-bar-primary-actions {
   display: none;
 }
