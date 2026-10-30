@@ -183,6 +183,7 @@ import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../shared/web-ent
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { WorkPanelHost } from "../work-panel/WorkPanelHost";
+import { resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "../work-panel/new-tab-selection";
 import {
   ProjectFloatingWebviews,
   type ProjectFloatingWebviewEntry,
@@ -743,6 +744,7 @@ export function AppShell() {
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const [selectedWorkPanelNewTabs, setSelectedWorkPanelNewTabs] = useState<WorkPanelNewTabSelections>({});
   const localDocumentState = useLocalDocumentWorkspace();
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelDialogRestoresRef = useRef(new Set<string>());
@@ -1238,9 +1240,13 @@ export function AppShell() {
   );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const usesWebappSurface = activeWebEntry?.kind === "webapp";
-  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && workPanelState.workspaces.some(
-    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId && workspace.items.some(
-      (item) => item.itemId === workspace.activeItemId && item.descriptor.kind === "webapp-ref",
+  const activeWorkPanelWorkspace = workPanelState.workspaces.find(
+    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId,
+  );
+  const activeWorkPanelItemId = resolveWorkPanelActiveItemId(activeWorkPanelWorkspace, selectedWorkPanelNewTabs);
+  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && Boolean(
+    activeWorkPanelWorkspace?.items.some(
+      (item) => item.itemId === activeWorkPanelItemId && item.descriptor.kind === "webapp-ref",
     ),
   );
   const resolvedCopilotAgentKey = activeWebEntry
@@ -4283,15 +4289,15 @@ export function AppShell() {
   async function handleOpenWebappInWorkPanel(
     ownerChatId: string,
     target: { id: string; label: string },
-  ) {
+  ): Promise<boolean> {
     const item = webItemsRef.current.find(
       (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === target.id,
     );
-    if (!item) return;
+    if (!item) return false;
     const openWindowIds = await window.electronAPI.webs.webapps.listOpenWindows().catch((): string[] => []);
     if (openWindowIds.includes(item.id)) {
-      await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => undefined);
-      return;
+      const focused = await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => null);
+      return focused?.ok === true;
     }
 
     let nextState = removeWebappWorkPanelReferences(item.id);
@@ -4304,7 +4310,7 @@ export function AppShell() {
         title: item.label,
       },
     });
-    if (!opened.ok || !opened.item) return;
+    if (!opened.ok || !opened.item) return false;
     nextState = opened.nextState;
     commitWorkPanelState(nextState);
     setWebappPresentationOwners((current) => ({
@@ -4315,10 +4321,12 @@ export function AppShell() {
       current.includes(item.entryKey) ? current : [...current, item.entryKey],
     );
     void ensureWebappRuntimeStarted(item).catch(() => undefined);
+    return true;
   }
 
-  function handleFocusWebappWindow(webappId: string) {
-    void window.electronAPI.webs.webapps.openWindow(webappId).catch(() => undefined);
+  async function handleFocusWebappWindow(webappId: string): Promise<boolean> {
+    const focused = await window.electronAPI.webs.webapps.openWindow(webappId).catch(() => null);
+    return focused?.ok === true;
   }
 
   const closeChatWorkPanelWorkspace = useCallback((chatId: string, force = false) => {
@@ -5122,6 +5130,8 @@ export function AppShell() {
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           activeOwnerKey={activeChatWorkPanelVisible ? activeChatWorkPanelOwnerKey : null}
           state={workPanelState}
+          selectedNewTabs={selectedWorkPanelNewTabs}
+          setSelectedNewTabs={setSelectedWorkPanelNewTabs}
           dispatchCommand={dispatchWorkPanelCommand}
           fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}
           onFullscreenChange={changeWorkPanelFullscreen}
@@ -5138,9 +5148,7 @@ export function AppShell() {
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,
             webapps: workPanelWebapps,
-            onOpenWebapp: (ownerChatId, webapp) => {
-              void handleOpenWebappInWorkPanel(ownerChatId, webapp);
-            },
+            onOpenWebapp: handleOpenWebappInWorkPanel,
             onFocusWebappWindow: handleFocusWebappWindow,
           }}
         />
@@ -5149,7 +5157,7 @@ export function AppShell() {
           itemMap={webItemMap}
           mountedEntryKeys={mountedWebEntryKeys}
           presentations={webappPresentationOwners}
-          workPanelState={workPanelState}
+          activeWorkPanelItemId={activeWorkPanelItemId}
           activeWorkPanelChatId={activeChatWorkPanelChatId}
           workPanelVisible={activeChatWorkPanelVisible}
           onCloseWebItem={(entryKey) => {

@@ -19,7 +19,7 @@ import {
   RobotOutlined,
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction, type MouseEvent as ReactMouseEvent } from "react";
 import { flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
@@ -89,6 +89,7 @@ import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 import { WorkPanelNewTab } from "./WorkPanelNewTab";
 import { WorkPanelTab } from "./WorkPanelTab";
+import { isWorkPanelNewTabActive, resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "./new-tab-selection";
 import { WorkPanelLocalDocument, type WorkPanelLocalDocumentData } from "./WorkPanelLocalDocument";
 
 const ExternalWebviewPage = lazy(() =>
@@ -102,6 +103,8 @@ type WorkPanelHostProps = {
   activeChatId: string | null;
   activeOwnerKey?: string | null;
   state: WorkPanelState;
+  selectedNewTabs: WorkPanelNewTabSelections;
+  setSelectedNewTabs: Dispatch<SetStateAction<WorkPanelNewTabSelections>>;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
   fullscreenOwnerChatId: string | null;
   onFullscreenChange(ownerChatId: string | null): Promise<boolean>;
@@ -118,8 +121,8 @@ type WorkPanelHostProps = {
     projectDisabledReason?: string;
     lastRunId?: string;
     webapps: Array<{ id: string; label: string }>;
-    onOpenWebapp(ownerChatId: string, webapp: { id: string; label: string }): void;
-    onFocusWebappWindow(webappId: string): void;
+    onOpenWebapp(ownerChatId: string, webapp: { id: string; label: string }): Promise<boolean>;
+    onFocusWebappWindow(webappId: string): Promise<boolean>;
   };
 };
 
@@ -349,6 +352,8 @@ export function WorkPanelHost({
   activeChatId,
   activeOwnerKey = activeChatId,
   state,
+  selectedNewTabs,
+  setSelectedNewTabs,
   dispatchCommand,
   fullscreenOwnerChatId,
   onFullscreenChange,
@@ -370,7 +375,6 @@ export function WorkPanelHost({
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
   // Launchers are renderer-only tabs: they never create a guest or acquire Run permissions.
   const [newTabs, setNewTabs] = useState<Array<{ id: string; ownerChatId: string; urlDraft: string }>>([]);
-  const [selectedNewTabs, setSelectedNewTabs] = useState<Record<string, { id: string; anchor: string | null }>>({});
   const selectedNewTabsRef = useRef(selectedNewTabs);
   selectedNewTabsRef.current = selectedNewTabs;
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
@@ -406,7 +410,12 @@ export function WorkPanelHost({
 
   const closeNewTab = (ownerChatId: string, id: string) => {
     setNewTabs(current => current.filter(tab => tab.id !== id));
-    if (selectedNewTabsRef.current[ownerChatId]?.id === id) closeNewTabSelection(ownerChatId);
+    setSelectedNewTabs(current => {
+      if (current[ownerChatId]?.id !== id) return current;
+      const next = { ...current };
+      delete next[ownerChatId];
+      return next;
+    });
   };
 
   const openNewTab = (ownerChatId: string) => {
@@ -430,7 +439,8 @@ export function WorkPanelHost({
     const agentKey = launcher.agentKey.trim();
     const route = createAgentWebclientBtwPath({ chatId: ownerChatId });
     if (!agentKey || !route) return;
-    dispatchCommand({
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const result = dispatchCommand({
       type: "openItem",
       ownerChatId,
       descriptor: {
@@ -441,7 +451,7 @@ export function WorkPanelHost({
         title: t("chatWorkPanel.add.sideChat"),
       },
     });
-    closeNewTabSelection(ownerChatId);
+    if (result.ok && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const openProjectFromMenu = (ownerChatId: string) => {
@@ -453,7 +463,8 @@ export function WorkPanelHost({
       runId: launcher.lastRunId,
     });
     if (!route) return;
-    dispatchCommand({
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const result = dispatchCommand({
       type: "openItem",
       ownerChatId,
       descriptor: {
@@ -468,16 +479,22 @@ export function WorkPanelHost({
         title: t("chatWorkPanel.add.project"),
       },
     });
-    closeNewTabSelection(ownerChatId);
+    if (result.ok && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const openFilesFromMenu = async (ownerChatId: string) => {
+    // A native picker can finish after the user has selected another launcher.
+    const selected = selectedNewTabsRef.current[ownerChatId];
     const originalFiles = stateRef.current.workspaces.find(workspace => workspace.ownerChatId === ownerChatId)?.items
       .some(item => item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document");
     if (isLocalDocumentDraftOwnerKey(ownerChatId) || originalFiles) {
       // Main reads the trusted current nonce/Chat; a UI draft key is never an API Chat ID.
-      await window.electronAPI.localDocuments.select();
-      closeNewTabSelection(ownerChatId);
+      const before = await window.electronAPI.localDocuments.getState();
+      const result = await window.electronAPI.localDocuments.select();
+      if (result.ok && selected) {
+        const after = await window.electronAPI.localDocuments.getState();
+        if (after.openRevision !== before.openRevision) closeNewTab(ownerChatId, selected.id);
+      }
       return;
     }
     const result = await window.electronAPI.chatWorkPanel.localFiles.select({
@@ -485,8 +502,9 @@ export function WorkPanelHost({
       rendererGeneration: rendererGenerationRef.current,
     });
     if (!result.ok) return;
+    let opened = false;
     for (const file of result.files) {
-      dispatchCommand({
+      const openedFile = dispatchCommand({
         type: "openItem",
         ownerChatId,
         descriptor: {
@@ -497,15 +515,24 @@ export function WorkPanelHost({
           title: file.fileName,
         },
       });
+      opened ||= openedFile.ok;
     }
-    closeNewTabSelection(ownerChatId);
+    if (opened && selected) closeNewTab(ownerChatId, selected.id);
+  };
+
+  const openWebappFromNewTab = async (ownerChatId: string, webapp: { id: string; label: string }) => {
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const opened = await (openWebappWindowIds.has(webapp.id)
+      ? launcher.onFocusWebappWindow(webapp.id)
+      : launcher.onOpenWebapp(ownerChatId, webapp)).catch(() => false);
+    if (opened && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const closeWorkPanelStep = (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
     if (!workspace) return false;
     const selected = selectedNewTabsRef.current[ownerChatId];
-    if (selected && selected.anchor === workspace.activeItemId) {
+    if (selected && isWorkPanelNewTabActive(selected, workspace.activeItemId)) {
       closeNewTab(ownerChatId, selected.id);
       return true;
     }
@@ -2054,9 +2081,10 @@ export function WorkPanelHost({
     const visiblePanel = activeOwnerKey
       ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeOwnerKey)}"]`)
       : null;
-    const activeItemId = activeOwnerKey
-      ? state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey)?.activeItemId ?? null
-      : null;
+    const activeItemId = resolveWorkPanelActiveItemId(
+      state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey),
+      selectedNewTabs,
+    );
     const isActiveItemHost = (element: HTMLElement | null) => Boolean(
       element &&
       activeOwnerKey &&
@@ -2091,7 +2119,7 @@ export function WorkPanelHost({
     } else if (isMac && focusedItem && !isActiveItemHost(focusedItem)) {
       (focusedItem.querySelector("webview") as Electron.WebviewTag | null)?.blur();
     }
-  }, [activeOwnerKey, isMac, isWindows, state.workspaces]);
+  }, [activeOwnerKey, isMac, isWindows, selectedNewTabs, state.workspaces]);
 
   // Remember the box each workspace had while shown. A hidden workspace keeps
   // that viewport for its web pages instead of following the foreground
@@ -2144,7 +2172,7 @@ export function WorkPanelHost({
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeOwnerKey;
         const selectedNewTab = selectedNewTabs[workspace.ownerChatId];
-        const newTabActive = Boolean(selectedNewTab && selectedNewTab.anchor === workspace.activeItemId);
+        const newTabActive = isWorkPanelNewTabActive(selectedNewTab, workspace.activeItemId);
         const localOnly = isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId);
         // A background Run keeps operating its own Chat's web pages, so a
         // hidden workspace with web items retains a non-zero viewport.
@@ -2234,11 +2262,7 @@ export function WorkPanelHost({
                 onOpenFiles={() => openFilesFromMenu(workspace.ownerChatId)}
                 onOpenSideChat={() => openSideChatFromMenu(workspace.ownerChatId)}
                 onOpenProject={() => openProjectFromMenu(workspace.ownerChatId)}
-                onOpenWebapp={webapp => {
-                  if (openWebappWindowIds.has(webapp.id)) launcher.onFocusWebappWindow(webapp.id);
-                  else launcher.onOpenWebapp(workspace.ownerChatId, webapp);
-                  closeNewTabSelection(workspace.ownerChatId);
-                }} />}
+                onOpenWebapp={webapp => { void openWebappFromNewTab(workspace.ownerChatId, webapp); }} />}
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
                   if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;

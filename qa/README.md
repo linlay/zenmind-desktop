@@ -15,7 +15,7 @@
 | 网站桥制作与加载 | [桥包验收](website-bridge-package.md)、`website-bridges-smoke.mjs` |
 | 网站密码与登录采集 | `website-credentials-smoke.mjs`、`website-credentials-capture-smoke.mjs` |
 | 设置、能力导航与资料库 | `web-settings-smoke.mjs`、`capability-navigation-smoke.mjs`、`library-smoke.mjs`（旧 `artifact-management-smoke.mjs` 转到此入口） |
-| WorkPanel 与本地文档 | `work-panel-browser-smoke.cjs`、`work-panel-browser-smoke.mjs`、`work-panel-local-document-smoke.mjs`、`local-document-open-native-smoke.cjs` |
+| WorkPanel 与本地文档 | `work-panel-browser-smoke.cjs`、`work-panel-browser-smoke.mjs`、`work-panel-local-document-smoke.mjs`、`local-document-open-native-smoke.cjs`；新标签与 WebApp 显示切换运行 `work-panel-new-tab-webapp-smoke.mjs`，验证真实 guest 保留、输入命中、草稿及跨 Chat/面板切换 |
 | 窗口与原生平台交互 | `work-panel-fullscreen-smoke.mjs`、`windows-fullscreen-smoke.cjs`、`mac-application-menu-smoke.cjs`、`screenshot-native-macos.mjs` |
 | 插件、连接器、企业聊天与 WebApp | 对应的 `*-smoke.cjs` / `*-smoke.mjs`，按脚本依赖准备构建产物 |
 
