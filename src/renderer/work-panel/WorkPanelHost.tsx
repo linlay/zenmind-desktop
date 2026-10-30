@@ -19,7 +19,7 @@ import {
   RobotOutlined,
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction, type MouseEvent as ReactMouseEvent } from "react";
 import { flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
@@ -89,6 +89,7 @@ import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 import { WorkPanelNewTab } from "./WorkPanelNewTab";
 import { WorkPanelTab } from "./WorkPanelTab";
+import { isWorkPanelNewTabActive, resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "./new-tab-selection";
 import { WorkPanelLocalDocument, type WorkPanelLocalDocumentData } from "./WorkPanelLocalDocument";
 
 const ExternalWebviewPage = lazy(() =>
@@ -102,6 +103,8 @@ type WorkPanelHostProps = {
   activeChatId: string | null;
   activeOwnerKey?: string | null;
   state: WorkPanelState;
+  selectedNewTabs: WorkPanelNewTabSelections;
+  setSelectedNewTabs: Dispatch<SetStateAction<WorkPanelNewTabSelections>>;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
   fullscreenOwnerChatId: string | null;
   onFullscreenChange(ownerChatId: string | null): Promise<boolean>;
@@ -349,6 +352,8 @@ export function WorkPanelHost({
   activeChatId,
   activeOwnerKey = activeChatId,
   state,
+  selectedNewTabs,
+  setSelectedNewTabs,
   dispatchCommand,
   fullscreenOwnerChatId,
   onFullscreenChange,
@@ -370,7 +375,6 @@ export function WorkPanelHost({
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
   // Launchers are renderer-only tabs: they never create a guest or acquire Run permissions.
   const [newTabs, setNewTabs] = useState<Array<{ id: string; ownerChatId: string; urlDraft: string }>>([]);
-  const [selectedNewTabs, setSelectedNewTabs] = useState<Record<string, { id: string; anchor: string | null }>>({});
   const selectedNewTabsRef = useRef(selectedNewTabs);
   selectedNewTabsRef.current = selectedNewTabs;
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
@@ -528,7 +532,7 @@ export function WorkPanelHost({
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
     if (!workspace) return false;
     const selected = selectedNewTabsRef.current[ownerChatId];
-    if (selected && selected.anchor === workspace.activeItemId) {
+    if (selected && isWorkPanelNewTabActive(selected, workspace.activeItemId)) {
       closeNewTab(ownerChatId, selected.id);
       return true;
     }
@@ -2077,9 +2081,10 @@ export function WorkPanelHost({
     const visiblePanel = activeOwnerKey
       ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeOwnerKey)}"]`)
       : null;
-    const activeItemId = activeOwnerKey
-      ? state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey)?.activeItemId ?? null
-      : null;
+    const activeItemId = resolveWorkPanelActiveItemId(
+      state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey),
+      selectedNewTabs,
+    );
     const isActiveItemHost = (element: HTMLElement | null) => Boolean(
       element &&
       activeOwnerKey &&
@@ -2114,7 +2119,7 @@ export function WorkPanelHost({
     } else if (isMac && focusedItem && !isActiveItemHost(focusedItem)) {
       (focusedItem.querySelector("webview") as Electron.WebviewTag | null)?.blur();
     }
-  }, [activeOwnerKey, isMac, isWindows, state.workspaces]);
+  }, [activeOwnerKey, isMac, isWindows, selectedNewTabs, state.workspaces]);
 
   // Remember the box each workspace had while shown. A hidden workspace keeps
   // that viewport for its web pages instead of following the foreground
@@ -2167,7 +2172,7 @@ export function WorkPanelHost({
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeOwnerKey;
         const selectedNewTab = selectedNewTabs[workspace.ownerChatId];
-        const newTabActive = Boolean(selectedNewTab && selectedNewTab.anchor === workspace.activeItemId);
+        const newTabActive = isWorkPanelNewTabActive(selectedNewTab, workspace.activeItemId);
         const localOnly = isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId);
         // A background Run keeps operating its own Chat's web pages, so a
         // hidden workspace with web items retains a non-zero viewport.

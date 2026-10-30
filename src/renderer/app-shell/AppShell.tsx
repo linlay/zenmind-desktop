@@ -183,6 +183,7 @@ import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../shared/web-ent
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { WorkPanelHost } from "../work-panel/WorkPanelHost";
+import { resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "../work-panel/new-tab-selection";
 import {
   ProjectFloatingWebviews,
   type ProjectFloatingWebviewEntry,
@@ -743,6 +744,7 @@ export function AppShell() {
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const [selectedWorkPanelNewTabs, setSelectedWorkPanelNewTabs] = useState<WorkPanelNewTabSelections>({});
   const localDocumentState = useLocalDocumentWorkspace();
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelDialogRestoresRef = useRef(new Set<string>());
@@ -1238,9 +1240,13 @@ export function AppShell() {
   );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const usesWebappSurface = activeWebEntry?.kind === "webapp";
-  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && workPanelState.workspaces.some(
-    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId && workspace.items.some(
-      (item) => item.itemId === workspace.activeItemId && item.descriptor.kind === "webapp-ref",
+  const activeWorkPanelWorkspace = workPanelState.workspaces.find(
+    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId,
+  );
+  const activeWorkPanelItemId = resolveWorkPanelActiveItemId(activeWorkPanelWorkspace, selectedWorkPanelNewTabs);
+  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && Boolean(
+    activeWorkPanelWorkspace?.items.some(
+      (item) => item.itemId === activeWorkPanelItemId && item.descriptor.kind === "webapp-ref",
     ),
   );
   const resolvedCopilotAgentKey = activeWebEntry
@@ -5124,6 +5130,8 @@ export function AppShell() {
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           activeOwnerKey={activeChatWorkPanelVisible ? activeChatWorkPanelOwnerKey : null}
           state={workPanelState}
+          selectedNewTabs={selectedWorkPanelNewTabs}
+          setSelectedNewTabs={setSelectedWorkPanelNewTabs}
           dispatchCommand={dispatchWorkPanelCommand}
           fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}
           onFullscreenChange={changeWorkPanelFullscreen}
@@ -5149,7 +5157,7 @@ export function AppShell() {
           itemMap={webItemMap}
           mountedEntryKeys={mountedWebEntryKeys}
           presentations={webappPresentationOwners}
-          workPanelState={workPanelState}
+          activeWorkPanelItemId={activeWorkPanelItemId}
           activeWorkPanelChatId={activeChatWorkPanelChatId}
           workPanelVisible={activeChatWorkPanelVisible}
           onCloseWebItem={(entryKey) => {

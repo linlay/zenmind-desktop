@@ -55,7 +55,7 @@ function Fixture() {
       style={{ position: 'absolute', inset: '10px', width: 650, height: 420 }} />
     <CanonicalWebappSurfaceHost activeEntryKey={active} itemMap={items} mountedEntryKeys={opened}
       presentations={opened.includes('webapp:app') ? { app: owner } : {}}
-      workPanelState={{ workspaces: [{ ownerChatId: 'chat-fixture', activeItemId: 'app-item' }] }}
+      activeWorkPanelItemId="app-item"
       activeWorkPanelChatId="chat-fixture" workPanelVisible={active === 'workpanel'}
       onCloseWebItem={(key) => setOpened((current) => current.filter((entry) => entry !== key))} />
   </div></MemoryRouter>;

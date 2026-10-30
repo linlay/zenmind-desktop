@@ -434,7 +434,7 @@ export function CanonicalWebappSurfaceHost({
   itemMap,
   mountedEntryKeys,
   presentations,
-  workPanelState,
+  activeWorkPanelItemId,
   activeWorkPanelChatId,
   workPanelVisible,
   onCloseWebItem,
@@ -443,7 +443,7 @@ export function CanonicalWebappSurfaceHost({
   itemMap: Map<WebEntryKey, EmbeddedSidebarItem>;
   mountedEntryKeys: WebEntryKey[];
   presentations: Record<string, WebappPresentationOwner>;
-  workPanelState: { workspaces: Array<{ ownerChatId: string; activeItemId: string | null }> };
+  activeWorkPanelItemId: string | null;
   activeWorkPanelChatId: string | null;
   workPanelVisible: boolean;
   onCloseWebItem?: (entryKey: WebEntryKey) => void;
@@ -467,7 +467,7 @@ export function CanonicalWebappSurfaceHost({
             ? activeEntryKey === entryKey
             : owner.scope === "workpanel"
               ? workPanelVisible && activeWorkPanelChatId === owner.ownerChatId &&
-                workPanelState.workspaces.find((workspace) => workspace.ownerChatId === owner.ownerChatId)?.activeItemId === owner.itemId
+                activeWorkPanelItemId === owner.itemId
               : false;
           return (
             <CanonicalWebappSurface

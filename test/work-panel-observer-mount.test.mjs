@@ -29,6 +29,10 @@ function loadHost(onProvider = () => {}, stateful = false, electronAPI = {}) {
   const slots = [];
   let cursor = 0;
   let uuid = 0;
+  let selectedNewTabs = {};
+  const setSelectedNewTabs = update => {
+    selectedNewTabs = typeof update === "function" ? update(selectedNewTabs) : update;
+  };
   const source = fs.readFileSync(new URL("../src/renderer/work-panel/WorkPanelHost.tsx", import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -62,12 +66,16 @@ function loadHost(onProvider = () => {}, stateful = false, electronAPI = {}) {
       if (id === "antd") return { Button: "button", Modal: { useModal: () => [{}, null] } };
       if (id.endsWith("/useI18n")) return { useI18n: () => ({ t: (key) => key }) };
       if (id.endsWith("/agent-webclient-routes")) return loadSharedSource("agent-webclient-routes");
+      if (id.endsWith("/new-tab-selection")) return loadSharedSource("../renderer/work-panel/new-tab-selection");
       if (id.endsWith("/work-panel")) return { isLocalDocumentDraftOwnerKey: (value) => /^file-draft:[^:]+:[1-9]\d{12}$/u.test(value) };
       if (id.endsWith("/desktopActionRegistry")) return { registerDesktopActionProviderForScope: (_scope, provider) => { onProvider(provider); return noop; } };
       return stubs;
     },
   });
-  return (...args) => { cursor = 0; return module.exports.WorkPanelHost(...args); };
+  return props => {
+    cursor = 0;
+    return module.exports.WorkPanelHost({ selectedNewTabs, setSelectedNewTabs, ...props });
+  };
 }
 
 function findNodes(tree, predicate) {
@@ -87,6 +95,10 @@ function createLauncherScene(isMac, { electronAPI, launcher: launcherOverrides, 
   const commands = [];
   const props = {
     activeChatId: ownerChatId, isMac, isWindows: !isMac, fullscreenOwnerChatId: null,
+    selectedNewTabs: {},
+    setSelectedNewTabs: update => {
+      props.selectedNewTabs = typeof update === "function" ? update(props.selectedNewTabs) : update;
+    },
     state: { workspaces: [ownerChatId, "b"].map(owner => ({
       workspaceId: `workspace-${owner}`, ownerChatId: owner, activeItemId: "overview", items: [
         { itemId: "overview", title: "Overview", descriptor: { kind: "webclient", module: "overview", route: "/overview", context: {} } },
@@ -354,5 +366,47 @@ for (const isMac of [true, false]) {
     assert.deepEqual(scene.tabKeys(), [second]);
     assert.ok(!scene.tabKeys().includes(first));
     assert.equal(scene.launcher().props.urlDraft, "second.example");
+  });
+
+  test(`${isMac ? "macOS" : "Windows"}: shared launcher selection hides and restores an active WebApp item`, () => {
+    const { isWorkPanelNewTabActive } = loadSharedSource("../renderer/work-panel/new-tab-selection");
+    const scene = createLauncherScene(isMac);
+    const workspace = scene.props.state.workspaces[0];
+    workspace.items.push({ itemId: "webapp", stableKey: "webapp-docs", title: "Docs",
+      descriptor: { kind: "webapp-ref", webappId: "docs", title: "Docs" } });
+    workspace.activeItemId = "webapp";
+    const assertWebappVisible = expected => {
+      const tree = scene.render();
+      const body = findNodes(tree, node => node.props["data-work-panel-owner"] === "a" && node.props["data-work-panel-item"] === "webapp")[0];
+      const tab = findNodes(tree, node => node.props.title === "Docs" && node.props.onActivate)[0];
+      assert.equal(body.props["data-work-panel-active"], String(expected));
+      assert.equal(body.props.hidden, !expected);
+      assert.equal(tab.props.active, expected);
+      assert.equal(isWorkPanelNewTabActive(scene.props.selectedNewTabs.a, workspace.activeItemId), !expected);
+    };
+    assertWebappVisible(true);
+    const first = scene.add("first.example");
+    assert.equal(scene.props.selectedNewTabs.a.id, first, "the parent receives the launcher identity");
+    assert.equal(scene.props.selectedNewTabs.a.anchor, "webapp");
+    assertWebappVisible(false);
+    assert.equal(scene.launcher().key, first);
+    const second = scene.add("second.example");
+    assert.equal(scene.props.selectedNewTabs.a.id, second);
+    findNodes(scene.render(), node => node.key === first && node.props.onClose)[0].props.onClose();
+    assert.equal(scene.props.selectedNewTabs.a.id, second, "closing another launcher preserves the shared selection");
+    assertWebappVisible(false);
+    findNodes(scene.render(), node => node.props.title === "Docs" && node.props.onActivate)[0].props.onActivate();
+    assert.equal(scene.props.selectedNewTabs.a, undefined);
+    assert.equal(scene.launcher(), undefined);
+    assertWebappVisible(true);
+    scene.select(second);
+    assert.equal(scene.props.selectedNewTabs.a.id, second);
+    assert.equal(scene.launcher().props.urlDraft, "second.example");
+    assertWebappVisible(false);
+    findNodes(scene.render(), node => node.key === second && node.props.onClose)[0].props.onClose();
+    assert.equal(scene.props.selectedNewTabs.a, undefined);
+    assert.equal(scene.launcher(), undefined);
+    assertWebappVisible(true);
+    assert.deepEqual(scene.tabKeys(), []);
   });
 }
