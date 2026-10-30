@@ -166,6 +166,7 @@ type WebappDraftSnapshot = {
 type AboutAppCardProps = {
   isWindows: boolean;
   runtimeResetPending: boolean;
+  runtimeResetStage: import("../../../shared/contracts").DesktopRuntimeResetStage;
   runtimeResetResult: DesktopRuntimeEnvResetResult | null;
   onResetRuntimeEnv: () => void | Promise<void>;
 };
@@ -2252,6 +2253,7 @@ function LocalWsServerDebugCard() {
 function AboutAppCard({
   isWindows,
   runtimeResetPending,
+  runtimeResetStage,
   runtimeResetResult,
   onResetRuntimeEnv
 }: AboutAppCardProps) {
@@ -2393,7 +2395,7 @@ function AboutAppCard({
             disabled={runtimeResetPending}
             onClick={() => void onResetRuntimeEnv()}
           >
-            {runtimeResetPending ? t("settings.reset.running") : t("settings.reset.action")}
+            {runtimeResetPending ? t(`settings.reset.progress.${runtimeResetStage}`) : t("settings.reset.action")}
           </Button>
         </div>
       </div>
@@ -4121,6 +4123,9 @@ export function SettingsPage({
     }
   }
 
+  const [runtimeResetStage, setRuntimeResetStage] = useState<import("../../../shared/contracts").DesktopRuntimeResetStage>("preparing");
+  useEffect(() => window.electronAPI.settings.onRuntimeResetProgress(setRuntimeResetStage), []);
+
   async function handleResetRuntimeEnv() {
     if (!window.confirm(t("settings.reset.confirmMessage"))) {
       return;
@@ -5809,6 +5814,7 @@ export function SettingsPage({
           <AboutAppCard
             isWindows={isWindows}
             runtimeResetPending={runtimeResetPending}
+            runtimeResetStage={runtimeResetStage}
             runtimeResetResult={runtimeResetResult}
             onResetRuntimeEnv={handleResetRuntimeEnv}
           />

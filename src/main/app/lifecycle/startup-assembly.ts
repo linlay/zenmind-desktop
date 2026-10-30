@@ -50,11 +50,13 @@ import {
 import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { createMainAppState } from "../state";
 export interface AssembleStartupRestoreDependencies {
+  readonly getRecoveryBackupPath?: () => string | undefined;
   readonly getMainWindow: () => BrowserWindow | null;
 }
 
 export function assembleStartupRestore(dependencies: AssembleStartupRestoreDependencies) {
   return createStartupRestoreController({
+    getRecoveryBackupPath: dependencies.getRecoveryBackupPath,
     onChange: (state) => {
       const mainWindow = dependencies.getMainWindow();
       if (!mainWindow || mainWindow.isDestroyed()) {
@@ -91,6 +93,7 @@ export function assembleStartupEnvironment(dependencies: AssembleStartupEnvironm
 }
 
 export interface AssembleStartupPipelineDependencies {
+  readonly reinstallBuiltinServices?: boolean;
   readonly desktopAppInfo: Pick<DesktopAppInfo, "version">;
   readonly isFirstDesktopInstall: boolean;
   readonly startupEnvImportFailureMessage: string | null;
@@ -108,6 +111,7 @@ export function assembleStartupPipeline(dependencies: AssembleStartupPipelineDep
   return createStartupPipeline({
     app,
     desktopVersion: dependencies.desktopAppInfo.version,
+    reinstallBuiltinServices: dependencies.reinstallBuiltinServices,
     isFirstDesktopInstall: dependencies.isFirstDesktopInstall,
     getEnvImportFailureMessage: () => dependencies.startupEnvImportFailureMessage,
     startupRestoreController: dependencies.startupRestoreController,

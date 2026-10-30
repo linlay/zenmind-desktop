@@ -3369,7 +3369,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(preload, /getDeviceIdentity:\s*\(\) => ipcRenderer\.invoke\("settings\.getDeviceIdentity"\)/);
   assert.match(preload, /getUsageProfile:\s*\(\) => ipcRenderer\.invoke\("settings\.getUsageProfile"\)/);
   assert.match(preload, /getDesktopDeviceInfo:\s*\(\) => ipcRenderer\.invoke\("settings\.getDesktopDeviceInfo"\)/);
-  assert.match(preload, /resetRuntimeEnv:\s*\(\) => ipcRenderer\.invoke\("settings\.resetRuntimeEnv"\)/);
+  assert.match(preload, /resetRuntimeEnv:\s*\(action\) => ipcRenderer\.invoke\("settings\.resetRuntimeEnv", action\)/);
   assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
   assert.match(preload, /getLocale:\s*\(\) => ipcRenderer\.invoke\("settings\.getLocale"\)/);
   assert.match(preload, /setLocale:\s*\(locale\) => ipcRenderer\.invoke\("settings\.setLocale", locale\)/);
@@ -3399,7 +3399,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /interface EnterpriseImSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?baseUrl:\s*string;/);
   assert.match(contracts, /getEnterpriseImSettings: \(\) => Promise<EnterpriseImSettings>/);
   assert.match(contracts, /setEnterpriseImEnabled: \(enabled: boolean\) => Promise<EnterpriseImSettings>/);
-  assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
+  assert.match(contracts, /resetRuntimeEnv: \(action\?: "reinstall" \| "rollback"\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
   assert.match(contracts, /getNavigationPreferences: \(\) => Promise<DesktopNavigationPreferences>/);
   assert.match(contracts, /saveNavigationPreferences: \(input: DesktopNavigationPreferencesInput\)/);

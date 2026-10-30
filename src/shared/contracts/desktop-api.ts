@@ -774,6 +774,8 @@ export type DesktopUsageProfileResult =
       fetchedAt: string;
     };
 
+export type DesktopRuntimeResetStage = "preparing" | "stopping" | "restoring" | "restarting" | "failed";
+
 export interface DesktopRuntimeEnvResetResult {
   ok: boolean;
   restartScheduled?: boolean;
@@ -1254,7 +1256,8 @@ export interface DesktopApi {
     setEnterpriseImEnabled: (enabled: boolean) => Promise<EnterpriseImSettings>;
     getTunnelHubSettings: () => Promise<TunnelHubSettings>;
     saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
-    resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
+    resetRuntimeEnv: (action?: "reinstall" | "rollback") => Promise<DesktopRuntimeEnvResetResult>;
+    onRuntimeResetProgress: (listener: (stage: DesktopRuntimeResetStage) => void) => () => void;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
     getDesktopSkin: () => Promise<DesktopSkinResult>;
     getDesktopSkinPreview: (id: InstalledDesktopSkinId, mode: "light" | "dark") => Promise<DesktopSkinPreview | null>;

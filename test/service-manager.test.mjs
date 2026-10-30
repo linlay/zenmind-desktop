@@ -8189,3 +8189,26 @@ test("Node preparation failure prevents every core start and is reported for ret
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
+
+test("runtime reinstall replaces healthy core programs and keeps optional programs", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  try {
+    const ids = ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"];
+    for (const id of ids) {
+      await installBuiltinService(app, id);
+      fs.writeFileSync(path.join(getTestServiceProgramDir(userDataRoot, id, getBuiltinService(id).version), "local-program-marker"), "old program");
+    }
+    const result = await runStartupPreparation(app, { reinstallBuiltinServices: true, desktopVersion: "v1.0.0", isFirstDesktopInstall: false,
+      applyDesktopConfiguration: () => assert.fail("same-version recovery must preserve Desktop settings") });
+    assert.deepEqual(result.failures, []);
+    for (const id of ids) {
+      assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, id, getBuiltinService(id).version), "local-program-marker")), id === "agent-container-hub");
+    }
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});

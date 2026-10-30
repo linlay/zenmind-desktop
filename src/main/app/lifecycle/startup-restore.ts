@@ -11,6 +11,7 @@ import { STARTUP_RESTORE_SERVICE_ORDER } from "../../modules/services";
 export { STARTUP_RESTORE_SERVICE_ORDER } from "../../modules/services";
 
 export type StartupRestoreControllerOptions = {
+  getRecoveryBackupPath?: () => string | undefined;
   serviceOrder?: readonly ServiceId[];
   onChange?: (state: StartupRestoreState) => void;
 };
@@ -62,6 +63,7 @@ export function createStartupRestoreController(
   function commitState(nextState: StartupRestoreState) {
     currentState = {
       ...cloneStartupRestoreState(nextState),
+      recoveryBackupPath: options.getRecoveryBackupPath?.(),
       updatedAt: new Date().toISOString()
     };
     options.onChange?.(cloneStartupRestoreState(currentState));
@@ -74,7 +76,7 @@ export function createStartupRestoreController(
         ...(required ? { phase: "failed" as const, message: t("providerRegister.loginRequired") } : {}) });
     },
     getState() {
-      return cloneStartupRestoreState(currentState);
+      return { ...cloneStartupRestoreState(currentState), recoveryBackupPath: options.getRecoveryBackupPath?.() };
     },
     beginSession(mode) {
       return commitState(createStartupRestoreState("running", mode, serviceOrder));

@@ -36,8 +36,11 @@ import * as shell from "./assembly/shell";
 import * as webSurfaces from "./assembly/web-surfaces";
 import { createLocalDocumentEditingChat } from "./assembly/local-documents";
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
-import { consumeRuntimeEnvReset, prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset } from "../infrastructure/filesystem/runtime-env-reset-transaction";
+import { consumeRuntimeEnvReset, prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset, completeRuntimeEnvReset, getRuntimeEnvResetRecovery, requestRuntimeEnvRollback } from "../infrastructure/filesystem/runtime-env-reset-transaction";
+import { preparePlatformRuntimeRecovery } from "../modules/services";
+import { restrictDirectoryToCurrentUser } from "../modules/credentials";
 import { createRuntimeResetCoordinator } from "./lifecycle/runtime-reset";
+import { showRuntimeResetRecovery } from "./lifecycle/runtime-reset-recovery";
 import { initializeElectronProfile } from "./bootstrap/electron-profile";
 import * as appReady from "./lifecycle/app-ready";
 import * as runtimeEvents from "./lifecycle/runtime-events";
@@ -98,11 +101,10 @@ export function createMainProcessRuntime() {
   try {
     completedRuntimeReset = consumeRuntimeEnvReset(app, startupPlatform);
   } catch (error) {
-    dialog.showErrorBox(t("settings.reset.failed"), error instanceof Error ? error.message : String(error));
-    app.exit(1);
+    void showRuntimeResetRecovery(error, startupPlatform);
     return { start() {} };
   }
-  const isFirstDesktopInstall = completedRuntimeReset || !desktopDataRootExists(app, startupPlatform);
+  const isFirstDesktopInstall = !completedRuntimeReset && !desktopDataRootExists(app, startupPlatform);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);
   const runtimeRootExistedAtStartup = !completedRuntimeReset && runtimeRootExists(app, startupPlatform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
@@ -186,7 +188,8 @@ export function createMainProcessRuntime() {
   app.once("will-quit", () => artifactRuntime?.dispose());
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
   const startupRestoreController = startupAssembly.assembleStartupRestore({
-    get getMainWindow() { return getMainWindow; }
+    get getMainWindow() { return getMainWindow; },
+    getRecoveryBackupPath: () => getRuntimeEnvResetRecovery(app, startupPlatform)?.backupPath
   });
   const servicesRuntime = createServicesRuntime({
     app,
@@ -309,6 +312,7 @@ export function createMainProcessRuntime() {
   let desktopSsoRestoreState: DesktopSsoRestoreResult["state"] = "signed_out";
   let focusedWebviewDevToolsShortcutRegistered = false;
   function setStartupPhase(phase: StartupPhase) {
+    if (phase === "core-ready") completeRuntimeEnvReset(app, startupPlatform);
     return startupAssembly.setStartupPhase({
       get appState() { return appState; }
     }, phase);
@@ -456,6 +460,7 @@ export function createMainProcessRuntime() {
     get websFacade() { return websFacade; }
   });
   const startupPipeline = startupAssembly.assembleStartupPipeline({
+    get reinstallBuiltinServices() { return completedRuntimeReset; },
     get desktopAppInfo() { return desktopAppInfo; },
     get isFirstDesktopInstall() { return isFirstDesktopInstall; },
     get startupEnvImportFailureMessage() { return startupEnvImportFailureMessage; },
@@ -474,11 +479,8 @@ export function createMainProcessRuntime() {
     get websFacade() { return websFacade; },
     get servicesFacade() { return servicesFacade; }
   });
-  const resetRuntimeEnv = createRuntimeResetCoordinator({
+  const resetLifecycle = {
     state: appState,
-    prepare: () => prepareRuntimeEnvReset(app, startupPlatform),
-    arm: (id) => armRuntimeEnvReset(app, startupPlatform, id),
-    cancel: (id) => cancelRuntimeEnvReset(app, startupPlatform, id),
     beginShutdown: () => {
       realtimeBroker.beginShutdown();
       pluginBridgeRuntime.emitBeforeQuit();
@@ -487,8 +489,40 @@ export function createMainProcessRuntime() {
     cleanup: runShutdownCleanup,
     flushLogs: () => logsRuntime.flush(500),
     relaunch: () => app.relaunch(),
-    quit: beginAppQuitWithoutConfirmation
+    quit: beginAppQuitWithoutConfirmation,
+    onProgress: (stage: import("../../shared/contracts").DesktopRuntimeResetStage) => {
+      const window = getMainWindow();
+      if (window && !window.isDestroyed()) window.webContents.send("settings.runtimeResetProgress", stage);
+    }
+  };
+  const reinstallRuntimeEnv = createRuntimeResetCoordinator({
+    ...resetLifecycle,
+    prepare: async () => {
+      const prepared = await prepareRuntimeEnvReset(app, startupPlatform,
+        directory => restrictDirectoryToCurrentUser(directory, startupPlatform));
+      try {
+        const restore = await preparePlatformRuntimeRecovery(app, prepared.transactionRoot,
+          resolveRuntimeRoot(app, startupPlatform), prepared.candidateRoot);
+        return { ...prepared, restore };
+      } catch (error) {
+        cancelRuntimeEnvReset(app, startupPlatform, prepared.id);
+        throw error;
+      }
+    },
+    arm: (id) => armRuntimeEnvReset(app, startupPlatform, id),
+    cancel: (id) => cancelRuntimeEnvReset(app, startupPlatform, id)
   });
+  const rollbackRuntimeEnv = createRuntimeResetCoordinator({
+    ...resetLifecycle,
+    prepare: async () => {
+      const recovery = getRuntimeEnvResetRecovery(app, startupPlatform);
+      if (!recovery) throw new Error("No runtime reset is available for rollback.");
+      return { id: "rollback", result: recovery };
+    },
+    arm: () => requestRuntimeEnvRollback(app, startupPlatform),
+    cancel: () => {}
+  });
+
 
 
   async function handleDesktopSsoWebviewNavigation(url: string) {
@@ -817,7 +851,7 @@ export function createMainProcessRuntime() {
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
         promoteLocalDocumentDraft: input => localDocuments.promoteDraftChat(input),
-        resetRuntimeEnv: () => servicesRuntime.runServiceMutation(resetRuntimeEnv),
+        resetRuntimeEnv: (action) => servicesRuntime.runServiceMutation(action === "rollback" ? rollbackRuntimeEnv : reinstallRuntimeEnv),
         get setStartupPhase() { return setStartupPhase; },
         get startupRestoreController() { return startupRestoreController; },
         get startupPlatform() { return startupPlatform; },

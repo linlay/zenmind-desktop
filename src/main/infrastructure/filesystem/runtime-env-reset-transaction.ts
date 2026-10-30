@@ -5,12 +5,15 @@ import type { AppPathReader, AppPackageReader, RuntimeEnvResetResult } from "./r
 import { resolveRuntimeRoot, resolveDesktopVersion } from "./runtime-env-paths";
 import { importBundledEnvZipToRuntime } from "./runtime-env-import";
 import { inspectEnvImportTarget } from "./runtime-env-publication";
+import { APP_BRAND } from "../../../shared/brand";
 
 type ResetRequest = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   desktopVersion: string;
-  status: "prepared" | "ready" | "applying" | "completed" | "failed";
+  status: "prepared" | "ready" | "applying" | "verifying" | "completed" | "failed" | "rollback-ready";
+  step: "desktop" | "backup" | "publish";
+  failure?: string;
   result: RuntimeEnvResetResult;
 };
 
@@ -35,9 +38,10 @@ function readRequest(app: AppPathReader, platform: NodeJS.Platform): ResetReques
   let value: ResetRequest;
   try { value = JSON.parse(content) as ResetRequest; }
   catch { throw new Error(`Invalid runtime reset request; preserved at ${requestPath}`); }
-  if (!value || value.schemaVersion !== 1 || typeof value.id !== "string" ||
+  if (!value || value.schemaVersion !== 2 || typeof value.id !== "string" ||
       !/^[a-f0-9-]{36}$/u.test(value.id) || typeof value.desktopVersion !== "string" ||
-      !["prepared", "ready", "applying", "completed", "failed"].includes(value.status) ||
+      !["prepared", "ready", "applying", "verifying", "completed", "failed", "rollback-ready"].includes(value.status) ||
+      !["desktop", "backup", "publish"].includes(value.step) ||
       !value.result || value.result.targetRoot !== resolveRuntimeRoot(app, platform)) {
     throw new Error(`Invalid runtime reset request; preserved at ${requestPath}`);
   }
@@ -54,7 +58,8 @@ function writeRequest(app: AppPathReader, platform: NodeJS.Platform, request: Re
   } finally { fs.rmSync(temporary, { force: true }); }
 }
 
-export async function prepareRuntimeEnvReset(app: AppPathReader & AppPackageReader, platform: NodeJS.Platform) {
+export async function prepareRuntimeEnvReset(app: AppPathReader & AppPackageReader, platform: NodeJS.Platform,
+  secureDirectory?: (directory: string) => void) {
   if (platform !== "darwin" && platform !== "win32") throw new Error("Runtime reset requires macOS or Windows.");
   const existing = readRequest(app, platform);
   if (existing) {
@@ -65,7 +70,10 @@ export async function prepareRuntimeEnvReset(app: AppPathReader & AppPackageRead
   const paths = resetPaths(app, platform, id);
   fs.mkdirSync(paths.transactionRoot, { recursive: true, mode: 0o700 });
   if (platform === "darwin") fs.chmodSync(paths.root, 0o700);
-  // Windows inherits the user's directory ACL; POSIX mode bits do not set an ACL.
+  // The composition root injects the existing Windows ACL/macOS mode policy
+  // before package data or restored credentials are written.
+  secureDirectory?.(paths.root);
+  secureDirectory?.(paths.transactionRoot);
   try {
     const desktopVersion = resolveDesktopVersion(app);
     const imported = await importBundledEnvZipToRuntime(app, platform, {
@@ -73,8 +81,8 @@ export async function prepareRuntimeEnvReset(app: AppPathReader & AppPackageRead
     });
     if (!imported) throw new Error("The bundled env.zip required for reset is unavailable.");
     const result = { ...imported, targetRoot: paths.runtimeRoot, backupPath: paths.backup };
-    writeRequest(app, platform, { schemaVersion: 1, id, status: "prepared", desktopVersion, result });
-    return { id, result };
+    writeRequest(app, platform, { schemaVersion: 2, id, status: "prepared", step: "desktop", desktopVersion, result });
+    return { id, result, candidateRoot: paths.candidate, transactionRoot: paths.transactionRoot };
   } catch (error) {
     fs.rmSync(paths.transactionRoot, { recursive: true, force: true });
     throw error;
@@ -94,31 +102,76 @@ export function cancelRuntimeEnvReset(app: AppPathReader, platform: NodeJS.Platf
   inspectEnvImportTarget(paths.root, `${id}/previous-runtime`, true);
   if (fs.existsSync(paths.backup)) throw new Error("Cannot cancel a runtime reset after backup has begun.");
   inspectEnvImportTarget(paths.root, id, true);
-  fs.rmSync(paths.transactionRoot, { recursive: true, force: true });
+  if (!fs.existsSync(path.join(paths.transactionRoot, "platform-error.log"))) {
+    fs.rmSync(paths.transactionRoot, { recursive: true, force: true });
+  }
   fs.unlinkSync(paths.requestPath);
 }
 
-function preserveAdditionalAgents(runtimeRoot: string, candidate: string, platform: NodeJS.Platform) {
-  inspectEnvImportTarget(runtimeRoot, "agents", true);
-  inspectEnvImportTarget(candidate, "agents", true);
-  const source = path.join(runtimeRoot, "agents");
-  const target = path.join(candidate, "agents");
-  if (!fs.existsSync(source)) return;
-  const bundledNames = fs.existsSync(target) ? fs.readdirSync(target) : [];
-  // Windows names are case-insensitive. On macOS, existsSync follows the volume's
-  // actual case rules (both case-sensitive and case-insensitive volumes exist).
-  const windowsNames = platform === "win32" ? new Set(bundledNames.map((name) => name.toLowerCase())) : null;
-  fs.mkdirSync(target, { recursive: true });
-  for (const name of fs.readdirSync(source)) {
-    const destination = path.join(target, name);
-    if (windowsNames?.has(name.toLowerCase()) || fs.existsSync(destination)) continue;
-    // Copy opaque user resources only after services have stopped. Do not parse
-    // Agent YAML or follow links into external workspaces.
-    fs.cpSync(path.join(source, name), destination, {
-      recursive: true, dereference: false, verbatimSymlinks: true,
-      force: false, errorOnExist: true, preserveTimestamps: true
+// Restore only Desktop-owned persistent partitions. Service configs, service
+// data, caches, Chromium profile and lifecycle markers remain freshly deployed.
+function restoreDesktopData(runtimeRoot: string, candidate: string) {
+  const desktop = APP_BRAND.paths.desktopDataSubdir;
+  const partitions = ["config/desktop", "config/webs", "config/plugins", "config/website-bridges", "secrets",
+    "state/desktop/bootstrap.json", "state/desktop/pet-state.json"];
+  inspectEnvImportTarget(runtimeRoot, path.join(desktop, "data"), true);
+  const dataRoot = path.join(runtimeRoot, desktop, "data");
+  if (fs.existsSync(dataRoot)) {
+    for (const entry of fs.readdirSync(dataRoot)) {
+      if (!["services", "env-initial"].includes(entry)) partitions.push(`data/${entry}`);
+    }
+  }
+  for (const partition of partitions) {
+    const relative = path.join(desktop, partition);
+    inspectEnvImportTarget(runtimeRoot, path.dirname(relative), true);
+    const source = path.join(runtimeRoot, relative);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(source); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
+    inspectEnvImportTarget(runtimeRoot, relative, stat.isDirectory());
+    inspectEnvImportTarget(candidate, relative, stat.isDirectory());
+    fs.cpSync(source, path.join(candidate, relative), {
+      recursive: true, dereference: false, verbatimSymlinks: true, force: true,
+      filter: (file) => {
+        if (fs.lstatSync(file).isSymbolicLink()) throw new Error(`Desktop recovery refuses symbolic link: ${file}`);
+        return true;
+      }
     });
   }
+}
+
+export function getRuntimeEnvResetRecovery(app: AppPathReader, platform: NodeJS.Platform) {
+  const request = readRequest(app, platform);
+  if (!request || request.status === "prepared" || request.status === "completed") return null;
+  const paths = resetPaths(app, platform, request.id);
+  return { ...request.result, backupPath: paths.backup, transactionRoot: paths.transactionRoot, status: request.status };
+}
+
+export function completeRuntimeEnvReset(app: AppPathReader, platform: NodeJS.Platform) {
+  const request = readRequest(app, platform);
+  if (!request || request.status !== "verifying") return;
+  writeRequest(app, platform, { ...request, status: "completed" });
+  fs.unlinkSync(resetPaths(app, platform).requestPath);
+}
+
+export function resumeRuntimeEnvReset(app: AppPathReader & AppPackageReader, platform: NodeJS.Platform) {
+  const request = readRequest(app, platform);
+  if (request?.status === "rollback-ready") return;
+  if (!request || !["failed", "applying"].includes(request.status) || request.desktopVersion !== resolveDesktopVersion(app)) {
+    throw new Error("This reset cannot be resumed with the current Desktop version.");
+  }
+  writeRequest(app, platform, { ...request, status: "ready" });
+}
+
+export function requestRuntimeEnvRollback(app: AppPathReader, platform: NodeJS.Platform) {
+  const request = readRequest(app, platform);
+  if (!request || !["failed", "applying", "verifying"].includes(request.status)) throw new Error("No reset is available for rollback.");
+  const paths = resetPaths(app, platform, request.id);
+  inspectEnvImportTarget(paths.root, `${request.id}/previous-runtime`, true);
+  if (!fs.existsSync(paths.backup) && (request.step === "publish" || !fs.existsSync(paths.runtimeRoot))) {
+    throw new Error("The original runtime is unavailable for rollback.");
+  }
+  writeRequest(app, platform, { ...request, status: "rollback-ready" });
 }
 
 // Synchronous on purpose: runs before any runtime opens files or Electron becomes ready.
@@ -126,30 +179,60 @@ export function consumeRuntimeEnvReset(app: AppPathReader & AppPackageReader, pl
   const request = readRequest(app, platform);
   if (!request || request.status === "prepared") return false;
   const paths = resetPaths(app, platform, request.id);
-  if (request.status === "completed" && request.desktopVersion === resolveDesktopVersion(app)) {
-    fs.unlinkSync(paths.requestPath);
-    return true;
-  }
-  if (request.status !== "ready" || request.desktopVersion !== resolveDesktopVersion(app)) {
-    throw new Error(`Runtime reset requires recovery. Request: ${paths.requestPath}; backup: ${paths.backup}`);
-  }
   if (platform !== "darwin" && platform !== "win32") throw new Error("Runtime reset requires macOS or Windows.");
   inspectEnvImportTarget(paths.root, `${request.id}/candidate`, true);
   inspectEnvImportTarget(paths.root, `${request.id}/previous-runtime`, true);
   inspectEnvImportTarget(paths.runtimeRoot, ".", true);
-  if (!fs.existsSync(paths.candidate) || fs.existsSync(paths.backup)) throw new Error(`Runtime reset paths require recovery: ${paths.transactionRoot}`);
-  writeRequest(app, platform, { ...request, status: "applying" });
-  try {
-    preserveAdditionalAgents(paths.runtimeRoot, paths.candidate, platform);
-    if (fs.existsSync(paths.runtimeRoot)) fs.renameSync(paths.runtimeRoot, paths.backup);
-    // Both platforms use same-volume rename. In particular, Windows sharing errors
-    // must abort here; never copy over a locked profile or delete the old environment.
-    fs.renameSync(paths.candidate, paths.runtimeRoot);
-    writeRequest(app, platform, { ...request, status: "completed" });
+  if (request.status === "rollback-ready") {
+    const failed = path.join(paths.transactionRoot, "failed-runtime");
+    inspectEnvImportTarget(paths.root, `${request.id}/failed-runtime`, true);
+    if (fs.existsSync(paths.backup)) {
+      if (fs.existsSync(paths.runtimeRoot)) {
+        if (fs.existsSync(failed)) throw new Error(`Rollback paths conflict: ${paths.transactionRoot}`);
+        fs.renameSync(paths.runtimeRoot, failed);
+      }
+      fs.renameSync(paths.backup, paths.runtimeRoot);
+    } else if (!fs.existsSync(paths.runtimeRoot) || (!fs.existsSync(failed) && request.step === "publish")) {
+      throw new Error(`Rollback requires recovery: ${paths.transactionRoot}`);
+    }
     fs.unlinkSync(paths.requestPath);
+    return false;
+  }
+  if (request.desktopVersion !== resolveDesktopVersion(app)) throw new Error(`Runtime reset version mismatch: ${paths.transactionRoot}`);
+  if (request.status === "completed") { fs.unlinkSync(paths.requestPath); return false; }
+  if (request.status === "verifying") return true;
+  if (request.status !== "ready") throw new Error(`Runtime reset requires recovery: ${paths.transactionRoot}`);
+  let next = { ...request, status: "applying" as ResetRequest["status"] };
+  writeRequest(app, platform, next);
+  try {
+    if (next.step === "desktop") {
+      if (!fs.existsSync(paths.candidate) || fs.existsSync(paths.backup)) throw new Error("Invalid reset candidate or backup.");
+      restoreDesktopData(paths.runtimeRoot, paths.candidate);
+      // Same-version data recovery preserves user preferences and deleted Sites;
+      // do not replay the package's one-shot first-install defaults afterwards.
+      fs.rmSync(path.join(paths.candidate, "desktop-init.json"), { force: true });
+      next = { ...next, step: "backup" };
+      writeRequest(app, platform, next);
+    }
+    if (next.step === "backup") {
+      // Intent is journaled before rename; an explicit retry can recognize a
+      // completed rename without ever replacing an existing original backup.
+      if (!fs.existsSync(paths.backup)) fs.renameSync(paths.runtimeRoot, paths.backup);
+      else if (fs.existsSync(paths.runtimeRoot)) throw new Error("Both original root and backup exist.");
+      next = { ...next, step: "publish" };
+      writeRequest(app, platform, next);
+    }
+    if (fs.existsSync(paths.candidate)) {
+      if (fs.existsSync(paths.runtimeRoot)) throw new Error("Cannot publish over an existing runtime.");
+      fs.renameSync(paths.candidate, paths.runtimeRoot);
+    } else if (!fs.existsSync(paths.runtimeRoot) || !fs.existsSync(paths.backup)) {
+      throw new Error("Reset publication is incomplete.");
+    }
+    writeRequest(app, platform, { ...next, status: "verifying" });
     return true;
   } catch (error) {
-    try { writeRequest(app, platform, { ...request, status: "failed" }); } catch { /* Preserve applying state. */ }
-    throw new Error(`Runtime reset failed. Preserve ${paths.transactionRoot} for recovery.`, { cause: error });
+    const failure = error instanceof Error ? error.message : String(error);
+    try { writeRequest(app, platform, { ...next, status: "failed", failure }); } catch { /* Preserve applying state. */ }
+    throw new Error(`Runtime reset failed: ${failure}\nRecovery: ${paths.transactionRoot}`, { cause: error });
   }
 }

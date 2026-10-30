@@ -42,7 +42,7 @@ export interface SettingsIpcHandlerOptions {
   platform?: NodeJS.Platform;
   nativeTheme: { themeSource: string };
   getDataRoot: (app: any) => string;
-  resetRuntimeEnv?: (app: any, platform: string) => Promise<{
+  resetRuntimeEnv?: (action?: "reinstall" | "rollback") => Promise<{
     targetRoot: string;
     restartScheduled?: boolean;
     backupPath?: string;
@@ -340,7 +340,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   ipcMain.handle("settings.saveTunnelHubSettings", async (_event: any, input: TunnelHubSettingsInput) =>
     applyTunnelHubSettings ? applyTunnelHubSettings(input) : saveTunnelHubSettings(app, input)
   );
-  ipcMain.handle("settings.resetRuntimeEnv", async () => {
+  ipcMain.handle("settings.resetRuntimeEnv", async (_event: unknown, action: unknown = "reinstall") => {
     if (!resetRuntimeEnv) {
       return {
         ok: false,
@@ -353,7 +353,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     }
 
     try {
-      const result = await resetRuntimeEnv(app, platform);
+      if (action !== "reinstall" && action !== "rollback") throw new Error("Invalid runtime recovery action.");
+      const result = await resetRuntimeEnv(action);
       return {
         ok: true,
         restartRequired: true,

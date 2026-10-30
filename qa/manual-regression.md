@@ -1609,3 +1609,13 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 仅已发布 artifact 可读取；@chat 字符串不能直接下载任意文件，跨应用 Chat 和 page/backend token 串用拒绝。两平台分别检查进程退出、socket 与在途订阅清理。
 - 构建 Main 后运行 `npx electron qa/webapp-execute-electron-smoke.cjs --hold-ms 310000`：四个应用各两路均到达 Platform；默认 session 普通调用正常，第九路立即拒绝；超过五分钟后换票取消，精确 Run 的 interrupt 和八条连接回收成功。macOS/Windows 原生 Electron 分别执行，不用 Node fetch mock 结果代替。
 - 临时身份探测/续签失败不误杀任务，真正主体、endpoint 或实例变化仍撤销，交付前严格复验；空 Agent 返回 assistant_agent_unavailable；SDK/Main 的深度边界一致，input:undefined 视为省略；interrupt 非成功 ack 有固定日志，不泄漏正文或 token。
+
+## 备份重装与恢复
+
+- macOS / Windows 分别模拟核心服务启动失败：显示“备份并重新安装”；仅登录受阻和启动慢时不显示。设置页复用同一流程，重复点击不能创建两个事务。
+- 准备包校验或停服失败时，旧运行根不移动。Windows 同时覆盖自定义登记目录、文件占用、路径大小写和用户 ACL；macOS 覆盖系统路径别名与 profile 释放。
+- 使用 v0.5.30 当前数据结构：恢复活动/归档 Chat、附件、产物、项目 Agent、排序与置顶、自建资源、记忆和知识库；包内资源恢复发行版本，包外用户资源保留。恢复的自动化处于暂停状态，可从原管理入口重新启用。
+- 确认 Desktop 配置、资料库索引、皮肤和网站桥等持久数据保留，完整旧根仍在备份；服务配置、PID、缓存及旧 Chromium profile 不回灌。服务程序实际从包重装，恢复后不重复进入首次 Chat 引导。
+- 分别在 Desktop 数据复制、备份 rename、发布 rename、核心健康检查阶段注入失败或退出：保留 journal、原始备份和新失败现场；仅显式继续才重试目录操作，不循环重启。
+- 核心服务健康前仍显示可回退备份；选择回退后旧根恢复，新失败环境保留。模拟回退两个 rename 之间退出，再次显式继续可以完成回退。
+- v0.5.29、未知版本、未知 DB schema、旧 schema 1 重置请求、自定义 Platform 存储根和符号链接输入明确失败，不能转换或静默跳过。磁盘不足时旧数据与备份均保留。

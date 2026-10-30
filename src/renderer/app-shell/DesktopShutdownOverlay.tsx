@@ -1,10 +1,12 @@
 import type { ShutdownProgress } from "../../shared/shutdown";
 import type { TranslateFunction } from "../../shared/i18n";
+import type { DesktopRuntimeResetStage } from "../../shared/contracts";
 
 type DesktopShutdownOverlayProps = {
   progress: ShutdownProgress | null;
   version: string;
   t: TranslateFunction;
+  runtimeResetStage?: DesktopRuntimeResetStage | null;
 };
 
 const phaseMessageKeys = {
@@ -16,13 +18,15 @@ const phaseMessageKeys = {
   failed: "shutdown.progress.failed"
 } as const;
 
-export function DesktopShutdownOverlay({ progress, version, t }: DesktopShutdownOverlayProps) {
-  if (!progress) {
+export function DesktopShutdownOverlay({ progress, version, t, runtimeResetStage }: DesktopShutdownOverlayProps) {
+  if (!progress && !runtimeResetStage) {
     return null;
   }
 
-  const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
-  const message = progress.message || t(phaseMessageKeys[progress.phase]);
+  const percent = Math.max(0, Math.min(100, Math.round(progress?.percent ?? 0)));
+  const title = t(runtimeResetStage ? "settings.reset.progress.title" : "shutdown.progress.title");
+  const message = runtimeResetStage ? t(`settings.reset.progress.${runtimeResetStage}`)
+    : progress!.message || t(phaseMessageKeys[progress!.phase]);
 
   return (
     <div className="desktop-shutdown-overlay" role="dialog" aria-modal="true" aria-labelledby="desktop-shutdown-title">
@@ -30,10 +34,10 @@ export function DesktopShutdownOverlay({ progress, version, t }: DesktopShutdown
         {version ? <span className="desktop-shutdown-version">{version}</span> : null}
         <div className="desktop-shutdown-brand-mark" aria-hidden="true" />
         <div className="desktop-shutdown-copy">
-          <h2 id="desktop-shutdown-title">{t("shutdown.progress.title")}</h2>
+          <h2 id="desktop-shutdown-title">{title}</h2>
           <p aria-live="polite">{message}</p>
         </div>
-        <div
+        {!runtimeResetStage ? <><div
           className="desktop-shutdown-progress"
           role="progressbar"
           aria-label={t("shutdown.progress.title")}
@@ -43,7 +47,7 @@ export function DesktopShutdownOverlay({ progress, version, t }: DesktopShutdown
         >
           <span style={{ width: `${percent}%` }} />
         </div>
-        <div className="desktop-shutdown-percent" aria-hidden="true">{percent}%</div>
+        <div className="desktop-shutdown-percent" aria-hidden="true">{percent}%</div></> : null}
       </section>
     </div>
   );

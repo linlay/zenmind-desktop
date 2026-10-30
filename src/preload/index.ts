@@ -696,7 +696,12 @@ const api: DesktopApi = {
     setEnterpriseImEnabled: (enabled) => ipcRenderer.invoke("settings.setEnterpriseImEnabled", enabled),
     getTunnelHubSettings: () => ipcRenderer.invoke("settings.getTunnelHubSettings"),
     saveTunnelHubSettings: (input) => ipcRenderer.invoke("settings.saveTunnelHubSettings", input),
-    resetRuntimeEnv: () => ipcRenderer.invoke("settings.resetRuntimeEnv"),
+    resetRuntimeEnv: (action) => ipcRenderer.invoke("settings.resetRuntimeEnv", action),
+    onRuntimeResetProgress: (listener) => {
+      const handler = (_event: unknown, stage: "preparing" | "stopping" | "restoring" | "restarting" | "failed") => listener(stage);
+      ipcRenderer.on("settings.runtimeResetProgress", handler);
+      return () => { ipcRenderer.off("settings.runtimeResetProgress", handler); };
+    },
     getThemePreference: () => ipcRenderer.invoke("settings.getThemePreference"),
     getDesktopSkin: () => ipcRenderer.invoke("settings.getDesktopSkin"),
     getDesktopSkinPreview: (id, mode) => ipcRenderer.invoke("settings.getDesktopSkinPreview", id, mode),

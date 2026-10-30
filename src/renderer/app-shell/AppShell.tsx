@@ -643,6 +643,7 @@ export function AppShell() {
   const workPanelEnteredNativeFullscreenRef = useRef(false);
   const workPanelFullscreenTransitionPendingRef = useRef(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
+  const [runtimeResetStage, setRuntimeResetStage] = useState<import("../../shared/contracts").DesktopRuntimeResetStage | null>(null);
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [desktopDisplay, setDesktopDisplay] = useState<DesktopDisplayOverlayRequest | null>(null);
   const desktopDisplayTokenRef = useRef(0);
@@ -2355,6 +2356,11 @@ export function AppShell() {
   }, []);
 
   // Failed updates leave the app open for diagnostics/retry rather than trapping it under the quit overlay.
+  useEffect(() => window.electronAPI.settings.onRuntimeResetProgress(stage => {
+    setRuntimeResetStage(stage === "failed" ? null : stage);
+    if (stage === "failed") setShutdownProgress(null);
+  }), []);
+
   useEffect(() => window.electronAPI.updates?.onChanged((state) => {
     if (state.phase === "error") setShutdownProgress(null);
   }), []);
@@ -5387,7 +5393,7 @@ export function AppShell() {
           )}
         />
       ) : null}
-      <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
+      <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} runtimeResetStage={runtimeResetStage} />
       <HistoryGestureOverlay
         canGoBack={Boolean(desktopNavigationBackStep)}
         canGoForward={Boolean(desktopNavigationForwardStep)}
