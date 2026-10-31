@@ -16,6 +16,7 @@ const {
   __testInternals,
   clearDesktopSsoLocalSession,
   completeDesktopSsoRestoredBrowserSession,
+  desktopSsoRuntimeState,
   failDesktopSsoFlow,
   finalizeDesktopSsoLoginAttempt,
   getDesktopSsoBusinessToken,
@@ -462,12 +463,15 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
   const calls = {
     statusEvents: [],
     restoreResults: [],
+    windowActions: [],
+    minimized: false,
     defaultSets: [],
     defaultRemoves: [],
     defaultFlushes: 0,
     defaultCookieFlushes: 0,
     fetches: []
   };
+  app.focus = (options) => calls.windowActions.push(["app.focus", options]);
   const browserCookie = {
     name: "_oauth2_proxy",
     value: "browser-session",
@@ -501,10 +505,11 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
     },
     getMainWindow: () => ({
       isDestroyed: () => false,
-      isMinimized: () => false,
-      show: () => undefined,
-      focus: () => undefined,
-      setAlwaysOnTop: () => undefined,
+      isMinimized: () => calls.minimized,
+      restore: () => { calls.windowActions.push(["restore"]); calls.minimized = false; },
+      show: () => calls.windowActions.push(["show"]),
+      focus: () => calls.windowActions.push(["focus"]),
+      setAlwaysOnTop: (value) => calls.windowActions.push(["setAlwaysOnTop", value]),
       webContents: { send: (...args) => calls.statusEvents.push(args) }
     }),
     onRestoreResult: (result) => calls.restoreResults.push(result),
@@ -512,6 +517,47 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
     openExternal: async () => undefined
   });
   return { app, controller, calls };
+}
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: login status broadcasts and later token renewal never activate the main window`, async (t) => {
+    const renewedToken = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + 7200 });
+    const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-background-focus-", async () =>
+      new Response(JSON.stringify({ access_token: renewedToken }), {
+        status: 200, headers: { "content-type": "application/json" }
+      }), {}, platform);
+    t.after(() => { desktopSsoRuntimeState.callbackHooks = {}; });
+    const login = await startDesktopSsoLogin(app, {
+      onStatusChanged: controller.broadcastStatus,
+      onReturnToAppRequested: controller.returnToApp
+    });
+    assert.equal(login.ok, true, login.message);
+    calls.minimized = true;
+    const token = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const status = completeDesktopSsoRestoredBrowserSession(app, token, { sub: "runtime-user" });
+    assert.equal(status.authenticated, true);
+    assert.ok(calls.statusEvents.some(([, value]) => value.authenticated && value.pending));
+    assert.deepEqual(calls.windowActions, [], "Intermediate and completed login status must not request focus");
+    for (let i = 0; i < 3; i += 1) controller.broadcastStatus(getDesktopSsoStatus(app));
+    assert.equal(await controller.ensureBusinessToken(true), renewedToken);
+    assert.equal(calls.fetches.length, 1);
+    assert.equal(calls.statusEvents.at(-1)[0], "sso.statusChanged");
+    assert.equal(calls.restoreResults.at(-1).state, "authenticated");
+    assert.deepEqual(calls.windowActions, [], "Retained login hooks and repeated config broadcasts must stay silent");
+    assert.equal(calls.minimized, true);
+  });
+
+  test(`${platform}: an explicit return from SSO restores and activates the main window`, (t) => {
+    const { controller, calls } = createCookieSsoRestoreFixture(t, "sso-return-focus-", async () => {
+      assert.fail("Returning to Desktop must not make an auth request");
+    }, {}, platform);
+    calls.minimized = true;
+    controller.returnToApp();
+    assert.equal(calls.minimized, false);
+    assert.deepEqual(calls.windowActions, platform === "darwin"
+      ? [["restore"], ["show"], ["app.focus", { steal: true }], ["focus"]]
+      : [["restore"], ["show"], ["setAlwaysOnTop", true], ["focus"], ["setAlwaysOnTop", false]]);
+  });
 }
 
 test("desktop sso default restart validates Cookie, exchanges a fresh JWT, and flushes the default session", async (t) => {

@@ -33,6 +33,8 @@ Electron 默认 session 完成登录
 
 会话、用户信息和 access token 是三个独立结果。交互式登录允许部分成功并向用户说明缺失步骤；不能用某一步的成功伪造另一步，也不能从未经验证的 token claims 推导用户身份。
 
+认证状态广播只同步身份与业务运行时，不得显示、还原、置顶或聚焦主窗口。登录步骤、后台恢复、token 续期与配置重载都遵守此边界；从系统浏览器登录回调或显式“返回 Desktop”请求唤回主窗口，只经过独立的返回应用入口。
+
 ## OIDC 网关凭据与续期
 
 启用 `tokenExchange` / `tokenRefresh` 的网关模式使用固定协议：登录后携带 Electron 默认 session 的 Cookie 获取完整 OIDC JSON，精确读取 `id_token` 和可选 `refresh_token`，不扫描 JWT 候选、不把 EIAM `access_token` 自动作为业务凭据。该模式不接受旧换票及 Bearer 恢复配置。独立 OIDC、服务端票据及其他站点原有换票模式保留自己的语义。

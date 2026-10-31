@@ -584,10 +584,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         restoreState = "signed_out";
         publishRestoreResult({ state: "signed_out", status });
       }
+      // Status also changes during background renewal and config reloads. Only
+      // the explicit returnToApp path may activate the native window.
       options.getMainWindow()?.webContents.send("sso.statusChanged", status);
-      if (status.authenticated) {
-        focusMainWindowAfterDesktopSso(options);
-      }
     },
     async openBrowserUrl(input: {
       url: string;
