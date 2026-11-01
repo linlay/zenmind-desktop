@@ -93,7 +93,7 @@ try {
 
   if (skillRoot) {
     const generatedRoot = path.join(skillRoot, "references", "generated");
-    fs.mkdirSync(generatedRoot, { recursive: true });
+    if (!checkOnly) fs.mkdirSync(generatedRoot, { recursive: true });
     for (const name of [validatorName, schemaName, "bridge.mjs"]) {
       if (checkOnly) assertSameFile(path.join(generatedRoot,name),path.join(temporaryRoot,name));
       else fs.copyFileSync(path.join(temporaryRoot,name),path.join(generatedRoot,name));
