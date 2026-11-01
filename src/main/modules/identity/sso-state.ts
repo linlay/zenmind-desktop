@@ -34,6 +34,10 @@ export const desktopSsoRuntimeState = {
   unverifiedCookieSessionCandidate: false
 };
 
+export function getDesktopSsoCredentialGeneration() {
+  return desktopSsoRuntimeState.credentialGeneration;
+}
+
 export const usedAuthorizationCodes = new Set<string>();
 
 export const usedDesktopSsoTickets = new Set<string>();

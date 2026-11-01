@@ -120,6 +120,10 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   async function exchangeOidcTokens(interactive = false, fetchImpl?: CookieAccessTokenFetch) {
     const config = currentOidcConfig();
     if (!config) return "";
+    // Business retries must not complete or close an interactive login.
+    if (!interactive && desktopSsoRuntimeState.pendingLogin) {
+      throw new Error(t("sso.waitingForIam"));
+    }
     if (oidcGeneration !== desktopSsoRuntimeState.credentialGeneration) {
       oidcBlocked = false;
       oidcGeneration = desktopSsoRuntimeState.credentialGeneration;
@@ -170,9 +174,14 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           const raw = readJsonPathValue(value, key);
           return typeof raw === "string" ? raw.trim() : typeof raw === "number" ? String(raw) : "";
         };
+        const name = field(userConfig.namePath);
+        const email = field(userConfig.emailPath);
+        const avatarUrl = field(userConfig.avatarUrlPath);
         const user = {
-          sub: field(userConfig.subPath), name: field(userConfig.namePath),
-          email: field(userConfig.emailPath), avatarUrl: field(userConfig.avatarUrlPath)
+          sub: field(userConfig.subPath),
+          ...(name ? { name } : {}),
+          ...(email ? { email } : {}),
+          ...(avatarUrl ? { avatarUrl } : {})
         };
         if (!user.sub) throw new SsoKnownFailure("accountMissing");
         if (previous?.accountId && previous.accountId !== user.sub) throw new SsoKnownFailure("accountChanged");
@@ -184,7 +193,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         if (!current()) return "";
         stage = "publishSession";
         const status = interactive
-          ? completeDesktopSsoRestoredBrowserSession(options.app, next.idToken, user)
+          ? completeDesktopSsoRestoredBrowserSession(options.app, next.idToken, user, { interactive: true })
           : commitRenewedDesktopSsoSession(options.app, next.idToken, {
             ...user,
             issuer: config.browserOrigin || new URL(config.tokenExchange!.url).origin,
@@ -358,6 +367,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     exchangeOptions: { signal?: AbortSignal; persist?: boolean; requireCookie?: boolean; syncCookies?: boolean; bearerToken?: string } = {}
   ) {
     if (currentOidcConfig()) return exchangeOidcTokens(true, fetchImpl);
+    const generation = desktopSsoRuntimeState.credentialGeneration;
     const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
     if (!exchangeUrl) {
       return "";
@@ -367,6 +377,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     const cookieHeader = bearerToken === undefined
       ? await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl)
       : "";
+    if (generation !== desktopSsoRuntimeState.credentialGeneration) return "";
     if (bearerToken !== undefined && !bearerToken.trim()) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO refresh token is missing.", 401);
     }
@@ -398,7 +409,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       request,
       { persist: exchangeOptions.persist }
     );
-    if (!accessToken) {
+    if (!accessToken || generation !== desktopSsoRuntimeState.credentialGeneration) {
       return "";
     }
     if (exchangeOptions.syncCookies !== false) {
@@ -685,8 +696,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       await flushDesktopSsoSessions();
     },
     async validateBrowserSession(fetchImpl?: BrowserCookieFetch) {
+      const generation = desktopSsoRuntimeState.credentialGeneration;
       const browserSession = await probeBrowserSession(fetchImpl);
-      if (!browserSession) {
+      if (!browserSession || generation !== desktopSsoRuntimeState.credentialGeneration) {
         return null;
       }
       const sessionStatus = completeDesktopSsoBrowserSession(options.app);
@@ -696,12 +708,14 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       return completeDesktopSsoBrowserSessionUserInfo(options.app, browserSession.userInfo);
     },
     async fetchBrowserUserInfo(fetchImpl?: BrowserCookieFetch) {
+      const generation = desktopSsoRuntimeState.credentialGeneration;
       const config = getDesktopSsoCookieUserInfoConfig(options.app);
       if (!config) {
         return null;
       }
       const ssoSession = options.session.defaultSession;
       const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
+      if (generation !== desktopSsoRuntimeState.credentialGeneration) return null;
       const headers: Record<string, string> = {
         Accept: "application/json"
       };
@@ -710,6 +724,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
       const request = fetchImpl || ((url, init) => ssoSession.fetch(url, init) as unknown as ReturnType<BrowserCookieFetch>);
       const response = await request(config.url, { method: "GET", headers });
+      if (generation !== desktopSsoRuntimeState.credentialGeneration) return null;
       if (!response.ok) {
         if (!config.required) {
           return getDesktopSsoStatus(options.app);
@@ -729,7 +744,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         getDesktopSsoSetCookieHeaders(response.headers)
       );
       try {
-        return completeDesktopSsoBrowserUserInfo(options.app, await response.json());
+        const userInfo = await response.json();
+        if (generation !== desktopSsoRuntimeState.credentialGeneration) return null;
+        return completeDesktopSsoBrowserUserInfo(options.app, userInfo);
       } catch (error) {
         if (!config.required) {
           return getDesktopSsoStatus(options.app);

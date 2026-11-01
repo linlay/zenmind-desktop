@@ -534,7 +534,7 @@ for (const platform of ["darwin", "win32"]) {
     assert.equal(login.ok, true, login.message);
     calls.minimized = true;
     const token = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + 3600 });
-    const status = completeDesktopSsoRestoredBrowserSession(app, token, { sub: "runtime-user" });
+    const status = completeDesktopSsoRestoredBrowserSession(app, token, { sub: "runtime-user" }, { interactive: true });
     assert.equal(status.authenticated, true);
     assert.ok(calls.statusEvents.some(([, value]) => value.authenticated && value.pending));
     assert.deepEqual(calls.windowActions, [], "Intermediate and completed login status must not request focus");
@@ -557,6 +557,32 @@ for (const platform of ["darwin", "win32"]) {
     assert.deepEqual(calls.windowActions, platform === "darwin"
       ? [["restore"], ["show"], ["app.focus", { steal: true }], ["focus"]]
       : [["restore"], ["show"], ["setAlwaysOnTop", true], ["focus"], ["setAlwaysOnTop", false]]);
+  });
+}
+
+for (const step of ['validateBrowserSession', 'fetchBrowserUserInfo', 'exchangeBrowserCookieAccessToken']) {
+  test(`late ${step} response cannot publish credentials after login cancellation`, async t => {
+    let release;
+    const { app, controller, calls } = createCookieSsoRestoreFixture(t, 'sso-late-step-', async () =>
+      new Promise(resolve => { release = resolve; }), {
+        userInfo: { url: 'https://ai.example.test/userinfo', authMode: 'cookie', subPath: 'data.id' },
+        cookieAccessTokenExchange: { url: 'https://ai.example.test/authorization', validationMode: 'remote' }
+      });
+    const started = await startDesktopSsoLogin(app);
+    assert.equal(started.ok, true, started.message);
+    const flight = controller[step]();
+    await new Promise(resolve => setImmediate(resolve));
+    const { cancelDesktopSsoLogin } = require('../dist-electron/main/modules/identity/oidc-sso.js');
+    cancelDesktopSsoLogin(app);
+    const cancelled = getDesktopSsoStatus(app);
+    const lateToken = createUnsignedJwt({ sub: 'late-user', exp: Math.floor(Date.now() / 1000) + 3600 });
+    release(new Response(JSON.stringify({ access_token: lateToken, data: { id: 'late-user' } }), {
+      status: 200, headers: { 'content-type': 'application/json', 'x-auth-request-user': 'late-user' }
+    }));
+    await flight;
+    assert.deepEqual(getDesktopSsoStatus(app), cancelled);
+    assert.equal(getDesktopSsoBusinessToken(), null);
+    assert.deepEqual(calls.windowActions, []);
   });
 }
 

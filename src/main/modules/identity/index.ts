@@ -9,4 +9,4 @@ export { cancelDesktopSsoLogin, completeDesktopSsoCookieLogin, desktopSsoIdToken
 export { createDesktopSsoController } from "./sso-controller";
 export type { DesktopSsoRestoreResult } from "./sso-controller";
 
-export { subscribeDesktopSsoCredentialRevocation } from "./sso-state";
+export { getDesktopSsoCredentialGeneration, subscribeDesktopSsoCredentialRevocation } from "./sso-state";
