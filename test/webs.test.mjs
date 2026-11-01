@@ -901,6 +901,17 @@ test("install policy supports idempotence, upgrades, conflicts, downgrades, and 
   assert.deepEqual(readWebappItems(app).map((item) => item.id).sort(), [installId, parallelId].sort());
 });
 
+test("Desktop import rejects Linux packages without leaving an installed app", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-linux-target-"));
+  const app = createApp(path.join(root, "home"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const id = webappId("linux-contract-app");
+  const archive = await writeArchive(root, "linux-contract-app", { target: "linux-x64" });
+  await assert.rejects(installWebsiteAppArchiveFromPath(app, archive), /linux-x64.*not compatible/u);
+  assert.equal(fs.existsSync(getWebappDir(app, id)), false);
+  assert.deepEqual(readWebappItems(app), []);
+});
+
 test("Tooling and Desktop installer share path and native artifact policy", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-package-policy-"));
   const app = createApp(path.join(root, "home"));

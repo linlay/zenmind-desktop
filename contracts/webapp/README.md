@@ -2,6 +2,8 @@
 
 机器契约由 `npm run webapp-contract:generate` 从源码生成；`webapp-contract:check` 检查漂移。`bridge.mjs` 与运行时 `/__desktop/bridge.js` 内容一致，生成文件不能手改。
 
+Manifest v2 的 `target` 包含 `linux-x64`，供 Linux Compose 包表达目标平台；不支持 `linux-arm64` 或 `linux-amd64` 别名。Desktop 识别语法后仍按本机平台拒绝 Linux 包。`fixtures/manifest-v2.json` 保存可复用的完整合法/非法输入（`schemaVersion: 1`，每个 case 的 `valid` 仅表示 Manifest 语法校验结果），由源码与生成 validator 共同验证；包内文件和宿主能力需要另外校验。Platform 安装器尚未实现，后续接入时应消费相同 fixture，不把该契约更新视为托管能力交付。
+
 浏览器：
 
 ```js

@@ -1045,6 +1045,7 @@
 
 ## WebApp 统一能力桥
 
+- macOS / Windows：导入 `target: linux-x64` 的包应提示平台不兼容，不能启动后端或创建安装记录；原有本机目标和 `any` 包仍可安装。Linux target 的 Manifest 校验通过不表示 Desktop 支持 Linux 托管。
 - macOS / Windows：页面与受管后端的 `skill.list/describe` 在请求未完成时撤销应用 token，确认上游请求被取消并返回 `app_grant_required`；应用资格有效时的普通网络失败仍返回 `connector_unavailable`，不自动重发请求。
 - macOS / Windows 分别在未声明固定 Copilot / skill 引用的 Bridge Lab 中加载技能：前端与受管后端均返回 Platform 的实际目录，选择技能后自动带入 describe 的 skillId，挂载状态随 Desktop 设置中的测试 Agent 变化。空目录直接显示空列表，服务/Agent 不可用直接显示错误，不能静默禁用加载按钮；元数据不包含安装路径、正文或凭据，聊天附加技能仍受包内引用限制。
 - Bridge Lab 所有方法的成功结果、错误和事件流直接显示，不需要展开；连接器执行保留 stdout/stderr/exitCode。分别手动修改 issue.get 的 issueId、后端调用参数后再查询 issue.list 或切换问题，确认真实 ID 自动带入并用于请求，空列表清空旧 ID。仅更新 ZIP 不更新旧宿主，使用本次 Desktop 构建并重启后再导入 0.3.1 验收。
