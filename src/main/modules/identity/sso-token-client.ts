@@ -68,6 +68,7 @@ export async function requestSsoTokens(
       const signal = AbortSignal.any([options.signal, AbortSignal.timeout(5_000)]);
       let response;
       try {
+        console.info("[sso-renewal] request", { kind: refreshToken ? "refresh" : "exchange", attempt: attempt + 1 });
         response = await fetchImpl(url, {
           method: refreshToken ? "POST" : "GET", redirect: "manual", credentials: "omit", signal,
           headers: { Accept: "application/json", ...(refreshToken

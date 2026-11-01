@@ -4,12 +4,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { EventEmitter } from 'node:events';
 const require = createRequire(import.meta.url);
 const { requestSsoTokens, parseSsoTokenResponse } = require('../dist-electron/main/modules/identity/sso-token-client.js');
 const { createSsoCredentialStore } = require('../dist-electron/main/modules/identity/sso-credentials.js');
 const { createDesktopSsoController } = require('../dist-electron/main/modules/identity/sso-controller.js');
 const { buildOidcConfigFromRecord, resolveDesktopSsoConfigPath, getDesktopSsoStatus, clearDesktopSsoLocalSession, desktopSsoRuntimeState } = require('../dist-electron/main/modules/identity/oidc-sso.js');
 const { getDesktopSsoIdTokenFilePath, getSecretsRoot } = require('../dist-electron/main/infrastructure/filesystem/user-paths.js');
+const { getDesktopSsoAvatarCacheDir } = require('../dist-electron/main/modules/identity/avatar-storage.js');
+const { subscribeDesktopSsoCredentialRevocation } = require('../dist-electron/main/modules/identity/sso-state.js');
 const origin = 'https://ai.example.test';
 const record = { enabled:true, browserOrigin:origin, loginUrl:origin+'/login',
   tokenExchange:{url:origin+'/authorization'}, tokenRefresh:{url:origin+'/api/login/oidc/refresh'},
@@ -54,13 +57,139 @@ test('private credential store uses owner-only permissions and rejects mismatche
   store.clear();assert.equal(store.read(origin),null);
 });
 function fixture(t,handler){
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'sso-controller-refresh-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const app=appFor(root);const file=resolveDesktopSsoConfigPath(app,'darwin');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(record));
-  const events=[];const sets=[];
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'sso-controller-refresh-'));
+  const app=Object.assign(new EventEmitter(),appFor(root));
+  t.after(()=>{app.emit('before-quit');desktopSsoRuntimeState.callbackHooks={};clearDesktopSsoLocalSession(app);fs.rmSync(root,{recursive:true,force:true});});
+  const file=resolveDesktopSsoConfigPath(app,'darwin');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(record));
+  const events=[];const sets=[];const restores=[];
   const session={cookies:{get:async()=>[{name:'SESSION',value:'cookie',domain:'ai.example.test',path:'/'}],set:async c=>sets.push(c),remove:async()=>{},flushStore:async()=>{}},flushStorageData:async()=>{},fetch:handler};
-  const options={app,platform:'darwin',session:{defaultSession:session},getMainWindow:()=>({webContents:{send:(_c,s)=>events.push(s)}}),openBrowserUrl:async()=>{},openExternal:async()=>{}};
-  const controller=createDesktopSsoController(options);return {app,controller,options,events,sets};
+  const options={app,platform:'darwin',session:{defaultSession:session},getMainWindow:()=>({webContents:{send:(_c,s)=>events.push(s)}}),onRestoreResult:r=>restores.push(r),openBrowserUrl:async()=>{},openExternal:async()=>{}};
+  const controller=createDesktopSsoController(options);return {app,controller,options,events,sets,restores};
 }
+
+for (const platform of ['darwin', 'win32']) {
+  test(`${platform}: OIDC timer renews once without login steps, missing token files or window activation`, async t => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2026, 10, 1) });
+    const first = jwt('oidc-sub', Date.now() / 1000 + 8 * 3600);
+    let requests = 0;
+    const f = fixture(t, async (url, init) => {
+      if (url.endsWith('/userinfo')) return response(200, { data: { staffno: 'staff-1', avatar: origin + '/avatar.png' } });
+      requests++;
+      if (url.endsWith('/refresh')) assert.equal(new URLSearchParams(init.body).get('grant_type'), 'refresh_token');
+      return response(200, { id_token: requests === 1 ? first : jwt('oidc-sub', Date.now() / 1000 + 8 * 3600), refresh_token: 'r-' + requests });
+    });
+    const configPath = resolveDesktopSsoConfigPath(f.app, 'darwin');
+    fs.writeFileSync(configPath, JSON.stringify({ ...record, userInfo: { ...record.userInfo, avatarUrlPath: 'data.avatar' } }));
+    // Simulate both window branches while retaining the host-native credential store.
+    f.options.platform = platform;
+    const activations = [];
+    f.app.focus = () => activations.push('app.focus');
+    f.options.getMainWindow = () => ({
+      isDestroyed: () => false, isMinimized: () => true,
+      restore: () => activations.push('restore'), show: () => activations.push('show'),
+      focus: () => activations.push('focus'), setAlwaysOnTop: value => activations.push(['top', value]),
+      webContents: { send: (_channel, value) => f.events.push(value) }
+    });
+    desktopSsoRuntimeState.callbackHooks = { onStatusChanged: f.controller.broadcastStatus, onReturnToAppRequested: f.controller.returnToApp };
+    await f.controller.exchangeBrowserCookieAccessToken();
+    const tokenFile = getDesktopSsoIdTokenFilePath(f.app);
+    const userFile = path.join(path.dirname(tokenFile), 'sso-user-info.json');
+    const avatarDir = getDesktopSsoAvatarCacheDir(f.app);
+    fs.mkdirSync(avatarDir, { recursive: true });
+    const avatarFile = path.join(avatarDir, 'cached-avatar.png');
+    fs.writeFileSync(avatarFile, 'cached image');
+    f.events.length = 0; f.restores.length = 0; activations.length = 0;
+    let revocations = 0;
+    t.after(subscribeDesktopSsoCredentialRevocation(() => { revocations++; }));
+    const removals = [];
+    const rm = fs.rmSync, rename = fs.renameSync;
+    t.mock.method(fs, 'rmSync', (file, options) => { removals.push(file); return rm(file, options); });
+    let replacements = 0;
+    t.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === tokenFile) {
+        replacements++;
+        assert.equal(fs.readFileSync(tokenFile, 'utf8').trim(), first);
+        assert.equal(desktopSsoRuntimeState.currentBusinessToken, first);
+        assert.equal(fs.existsSync(userFile), true);
+        assert.equal(fs.existsSync(avatarFile), true);
+      }
+      return rename(from, to);
+    });
+    t.mock.timers.tick((8 * 60 - 15) * 60_000);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests, 2);
+    assert.equal(replacements, 1);
+    assert.equal(f.events.length, 1);
+    assert.equal(f.restores.length, 1);
+    assert.deepEqual(f.events[0].completedSteps, { session: true, userInfo: true, accessToken: true });
+    assert.equal(f.events[0].user.sub, 'staff-1');
+    assert.ok(f.restores[0].accessToken);
+    assert.equal(f.restores[0].accessToken, fs.readFileSync(tokenFile, 'utf8').trim());
+    assert.equal(revocations, 0, 'A successful renewal must never withdraw the previous identity');
+    assert.deepEqual(activations, []);
+    assert.equal(removals.some(file => [tokenFile, userFile, avatarDir].includes(file)), false);
+    assert.equal(fs.existsSync(avatarFile), true);
+    for (let i = 0; i < 10; i++) await f.controller.ensureBusinessToken();
+    assert.equal(requests, 2);
+    f.controller.returnToApp();
+    assert.deepEqual(activations, platform === 'darwin'
+      ? ['restore', 'show', 'app.focus', 'focus']
+      : ['restore', 'show', ['top', true], 'focus', ['top', false]]);
+  });
+}
+
+test('unchanged OIDC expiry keeps the expiry deadline and only repeats when a later check requests renewal', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2026, 10, 1) });
+  const unchanged = jwt('oidc-sub', Date.now() / 1000 + 8 * 3600);
+  let requests = 0;
+  const logs = [];
+  t.mock.method(console, 'info', (...args) => logs.push(args));
+  const f = fixture(t, async url => url.endsWith('/userinfo') ? response(200, { data: { staffno: 'staff-1' } })
+    : (requests++, response(200, { id_token: unchanged, refresh_token: 'r-' + requests })));
+  await f.controller.exchangeBrowserCookieAccessToken();
+  t.mock.timers.tick((8 * 60 - 15) * 60_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 2);
+  t.mock.timers.tick(5 * 60_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 2, 'An unchanged expiry must not create an immediate renewal timer loop');
+  await f.controller.ensureBusinessToken();
+  assert.equal(requests, 3, 'The five-minute fallback may still renew a token inside the refresh window');
+  assert.equal(logs.filter(([event, data]) => event === '[sso-renewal] completed' && data.expiryAdvanced === false).length, 2);
+  assert.equal(JSON.stringify(logs).includes(unchanged), false);
+  t.mock.timers.tick(10 * 60_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(getDesktopSsoStatus(f.app).authenticated, false);
+  assert.equal(fs.existsSync(getDesktopSsoIdTokenFilePath(f.app)), false);
+  assert.ok(createSsoCredentialStore(f.app, 'darwin').read(origin).refreshToken);
+});
+
+test('failed atomic OIDC publication retains the old token and publishes no partial renewal', async t => {
+  let requests = 0;
+  const f = fixture(t, async url => url.endsWith('/userinfo') ? response(200, { data: { staffno: 'staff-1' } })
+    : response(200, { id_token: jwt('oidc-sub', Date.now() / 1000 + 3600 + ++requests), refresh_token: 'r-' + requests }));
+  await f.controller.exchangeBrowserCookieAccessToken();
+  desktopSsoRuntimeState.callbackHooks = { onStatusChanged: f.controller.broadcastStatus };
+  const tokenFile = getDesktopSsoIdTokenFilePath(f.app);
+  const old = fs.readFileSync(tokenFile, 'utf8');
+  const userFile = path.join(path.dirname(tokenFile), 'sso-user-info.json');
+  const oldUser = fs.readFileSync(userFile, 'utf8');
+  const status = getDesktopSsoStatus(f.app);
+  f.events.length = 0; f.restores.length = 0;
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === tokenFile) throw new Error('simulated atomic publication failure');
+    return rename(from, to);
+  });
+  await assert.rejects(f.controller.ensureBusinessToken(true));
+  assert.equal(fs.readFileSync(tokenFile, 'utf8'), old);
+  assert.equal(fs.readFileSync(userFile, 'utf8'), oldUser);
+  assert.deepEqual(getDesktopSsoStatus(f.app), status);
+  assert.equal(desktopSsoRuntimeState.currentBusinessToken, old.trim());
+  assert.equal(f.events.length, 0);
+  assert.equal(f.restores.length, 0);
+  assert.equal(createSsoCredentialStore(f.app, 'darwin').read(origin).refreshToken, 'r-2');
+});
 test('login saves credentials; restart refresh works without Cookie; concurrent refresh is single-flight',async t=>{
   let exchanges=0,refreshes=0;let cookieAvailable=true;
   const f=fixture(t,async(url,init)=>{

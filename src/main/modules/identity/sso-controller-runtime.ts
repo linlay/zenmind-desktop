@@ -43,7 +43,8 @@ import {
   markDesktopSsoRestoreTemporarilyUnavailable,
   getDesktopSsoStatus
 } from "./sso-restore";
-import { readDesktopSsoIdToken, desktopSsoIdTokenNeedsRefresh } from "./sso-session";
+import { readDesktopSsoIdToken, desktopSsoIdTokenNeedsRefresh, commitRenewedDesktopSsoSession } from "./sso-session";
+import { DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG } from "./sso-defaults";
 import { loadDesktopSsoConfig } from "./sso-config";
 import { t } from "../../support/i18n/main-i18n";
 import { getDesktopSsoBrowserUserAgent } from "../../infrastructure/electron/platform-adapter";
@@ -144,6 +145,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         if (!current()) return "";
         if (!previous?.refreshToken && !cookie) throw new SsoTokenRequestError(401);
         stage = "tokenRequest";
+        const requestKind = previous?.refreshToken ? "refresh" : "exchange";
         const next = await requestSsoTokens(config, request, {
           previous, cookie, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)])
         });
@@ -181,12 +183,23 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         await syncAccessTokenCookies(next.idToken);
         if (!current()) return "";
         stage = "publishSession";
-        const status = completeDesktopSsoRestoredBrowserSession(options.app, next.idToken, user);
+        const status = interactive
+          ? completeDesktopSsoRestoredBrowserSession(options.app, next.idToken, user)
+          : commitRenewedDesktopSsoSession(options.app, next.idToken, {
+            ...user,
+            issuer: config.browserOrigin || new URL(config.tokenExchange!.url).origin,
+            audience: config.claims?.audience || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.audience
+          });
         scheduleOidcRenewal(next.idToken);
         restoreState = "authenticated";
         oidcBlocked = false;
         options.getMainWindow()?.webContents.send("sso.statusChanged", status);
         publishRestoreResult({ state: "authenticated", status, accessToken: next.idToken });
+        const expiresAt = Number(getJwtPayload(next.idToken).exp) * 1000;
+        console.info("[sso-renewal] completed", {
+          kind: requestKind, interactive, expiresAt,
+          ...(previous ? { expiryAdvanced: expiresAt > Number(getJwtPayload(previous.idToken).exp) * 1000 } : {})
+        });
         return next.idToken;
       } catch (error) {
         if (!current()) return "";

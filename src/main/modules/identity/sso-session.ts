@@ -319,6 +319,40 @@ export function beginAuthenticatedSession(
   return cloneStatus(status);
 }
 
+/** Commit a verified replacement without emitting login-step callbacks. The
+ * controller publishes the complete snapshot once after scheduling renewal. */
+export function commitRenewedDesktopSsoSession(
+  app: App,
+  accessToken: string,
+  user: DesktopSsoClaims
+) {
+  const normalizedUser = { ...user, sub: user.sub.trim(), name: user.name?.trim() || user.sub.trim() };
+  if (!normalizedUser.sub || !accessToken.trim()) throw new Error("Verified SSO account and token are required.");
+  const previousUser = readUserInfoFile(app);
+  const metadata: DesktopSsoSessionMetadata = {
+    issuer: user.issuer, audience: user.audience, authMode: "browser-cookie"
+  };
+  const status = createAuthenticatedStatus(presentDesktopSsoUser(app, normalizedUser), createCompletedSteps({
+    session: true, userInfo: true, accessToken: true
+  }));
+  // Keep the previous projection readable until the atomic rename succeeds.
+  saveIdTokenFile(app, accessToken);
+  saveUserInfoFile(app, normalizedUser, "browser_session");
+  saveSession(app, status, "", metadata);
+  if (!previousUser || desktopSsoAvatarVersion(previousUser) !== desktopSsoAvatarVersion(normalizedUser)) {
+    clearCachedDesktopSsoAvatar(app);
+  }
+  desktopSsoRuntimeState.currentBusinessToken = accessToken.trim();
+  desktopSsoRuntimeState.currentIdToken = "";
+  desktopSsoRuntimeState.currentSessionAuthMode = "browser-cookie";
+  desktopSsoRuntimeState.currentSessionApp = app;
+  desktopSsoRuntimeState.currentSessionMetadata = metadata;
+  desktopSsoRuntimeState.loadedSessionPath = getSessionPath(app);
+  desktopSsoRuntimeState.unverifiedCookieSessionCandidate = false;
+  desktopSsoRuntimeState.currentStatus = cloneStatus(status);
+  return cloneStatus(status);
+}
+
 export function completeUserInfoStep(
   app: App,
   user: DesktopSsoClaims,
