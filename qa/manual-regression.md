@@ -1631,3 +1631,5 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - 分别在 Desktop 数据复制、备份 rename、发布 rename、核心健康检查阶段注入失败或退出：保留 journal、原始备份和新失败现场；仅显式继续才重试目录操作，不循环重启。
 - 核心服务健康前仍显示可回退备份；选择回退后旧根恢复，新失败环境保留。模拟回退两个 rename 之间退出，再次显式继续可以完成回退。
 - v0.5.29、未知版本、未知 DB schema、旧 schema 1 重置请求、自定义 Platform 存储根和符号链接输入明确失败，不能转换或静默跳过。磁盘不足时旧数据与备份均保留。
+
+- WebApp 后端 SDK：macOS、Windows 原注入凭证继续直接调用，不请求 Compose session；显式 Compose bootstrap 凭证只向注入的 loopback 端点兑换短期 token，业务请求不自动重放；撤销后错误可见。云端页面没有 Desktop preload 或原生能力时按实际 capabilities 处理。

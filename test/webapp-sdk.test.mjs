@@ -65,3 +65,26 @@ test('execute treats an explicit undefined input as absent and accepts the same 
  let value='leaf';for(let i=0;i<64;i++)value={nested:value};
  await assistant.execute({...input,input:value});await assert.rejects(assistant.execute({...input,input:{nested:value}}),{code:'invalid_args'});
 });
+
+test('Compose bootstrap renews into a short-lived token without replaying business actions', async t => {
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});let sessions=0,actions=0;
+ globalThis.fetch=async(url,options)=>{
+  if(url==='http://127.0.0.1:17070/webapps/session'){
+   sessions++;assert.equal(options.headers.Authorization,'Bearer wbb_fixture');assert.equal(options.redirect,'error');
+   return new Response(JSON.stringify({token:'wba_session',expiresAt:Date.now()+600000}));
+  }
+  actions++;assert.equal(options.headers.Authorization,'Bearer wba_session');
+  return new Response(JSON.stringify({ok:true,result:{items:[]}}));
+ };
+ const client=createBackendClient({url:'http://127.0.0.1:17070/webapps',token:'wbb_fixture'});
+ await Promise.all([client.connector.list(),client.connector.list()]);assert.equal(sessions,1);assert.equal(actions,2);
+ globalThis.fetch=async()=>new Response(JSON.stringify({ok:false,error:{code:'app_grant_required'}}),{status:403});
+ await assert.rejects(client.connector.list(),{code:'app_grant_required'});assert.equal(actions,2);
+});
+
+test('rejected Compose bootstrap never sends a business request', async t => {
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});let calls=0;
+ globalThis.fetch=async url=>{calls++;assert.equal(url,'http://127.0.0.1:17070/webapps/session');return new Response(JSON.stringify({ok:false,error:{code:'app_grant_required'}}),{status:403})};
+ const client=createBackendClient({url:'http://127.0.0.1:17070/webapps',token:'wbb_expired'});
+ await assert.rejects(client.connector.list(),{code:'app_grant_required'});assert.equal(calls,1);
+});

@@ -23,6 +23,18 @@ function assertSameFile(expectedPath, generatedPath) {
   }
 }
 
+function createBackendSdk(source) {
+  const part = (from, to) => {
+    const start = source.indexOf(from); const end = to ? source.indexOf(to,start + from.length) : source.length;
+    if (start < 0 || end < start) throw new Error("WebApp SDK source layout changed; update the backend projection.");
+    return source.slice(start,end);
+  };
+  return "// Generated shared Desktop/Compose backend SDK. Use only host-injected credentials.\nconst ACTION_PATH = \"/__desktop/actions/call\";\n\n" +
+    part("export class DesktopBridgeError", "async function listCapabilities") +
+    part("function executeJson(", "export const { connector, skill, automation, kanban, artifact, assistant }") +
+    part("export function createBackendClient(", "");
+}
+
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-contract-"));
 try {
   await build({
@@ -83,8 +95,13 @@ try {
     const generatedRoot = path.join(skillRoot, "references", "generated");
     fs.mkdirSync(generatedRoot, { recursive: true });
     for (const name of [validatorName, schemaName, "bridge.mjs"]) {
-      fs.copyFileSync(path.join(temporaryRoot, name), path.join(generatedRoot, name));
+      if (checkOnly) assertSameFile(path.join(generatedRoot,name),path.join(temporaryRoot,name));
+      else fs.copyFileSync(path.join(temporaryRoot,name),path.join(generatedRoot,name));
     }
+    const backendFile=path.join(skillRoot,"assets/clients/desktop/backend-sdk.mjs");
+    const backendSource=createBackendSdk(sdk.WEBAPP_BRIDGE_MODULE_SOURCE);
+    if(checkOnly){if(!fs.existsSync(backendFile)||fs.readFileSync(backendFile,"utf8")!==backendSource)throw new Error("Generated backend SDK is stale");}
+    else{fs.mkdirSync(path.dirname(backendFile),{recursive:true});fs.writeFileSync(backendFile,backendSource,"utf8");}
   }
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });

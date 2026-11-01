@@ -15,6 +15,25 @@ export class DesktopBridgeError extends Error {
   }
 }
 
+// Compose uses a generation-bound bootstrap credential and short-lived action
+// tokens. Desktop credentials retain their existing direct transport on macOS
+// and Windows; only the explicit cloud credential prefix selects this protocol.
+async function refreshCloudBackendToken(transport) {
+  if (!transport?.bootstrapToken || transport.expiresAt > Date.now() + 30000) return;
+  if (!transport.refresh) transport.refresh = (async () => {
+    const target = new URL(transport.url); target.pathname = "/webapps/session";
+    const response = await fetch(target.href, { method: "POST", redirect: "error", credentials: "omit",
+      headers: { Authorization: "Bearer " + transport.bootstrapToken }, signal: AbortSignal.timeout(5000) });
+    const value = await response.json();
+    if (!response.ok || typeof value.token !== "string" || !value.token.startsWith("wba_") ||
+        !Number.isSafeInteger(value.expiresAt) || value.expiresAt <= Date.now()) {
+      throw new DesktopBridgeError("backend.session", "app_grant_required", "Application authorization is unavailable.");
+    }
+    transport.token = value.token; transport.expiresAt = value.expiresAt;
+  })().finally(() => { transport.refresh = undefined; });
+  await transport.refresh;
+}
+
 async function call(action, args = {}, transport, signal) {
   let body;
   try {
@@ -24,6 +43,9 @@ async function call(action, args = {}, transport, signal) {
   }
   let response;
   try {
+    signal?.throwIfAborted();
+    await refreshCloudBackendToken(transport);
+    signal?.throwIfAborted();
     response = await fetch(transport?.url || ACTION_PATH, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(transport ? { Authorization: "Bearer " + transport.token } : {}) },
@@ -31,6 +53,7 @@ async function call(action, args = {}, transport, signal) {
       body
     });
   } catch (error) {
+    if (error instanceof DesktopBridgeError) throw error;
     throw new DesktopBridgeError(
       action,
       "bridge_unavailable",
@@ -353,6 +376,7 @@ function executeJson(value, seen = new Set(), depth = 0) {
 }
 
 async function executeNodeRequest(transport, body, signal) {
+  await refreshCloudBackendToken(transport);
   // Only the managed backend loads Node; page SDK clients never resolve this import.
   const { request } = await import("node:http");
   signal.throwIfAborted();
@@ -487,7 +511,8 @@ export function createBackendClient({ url, token }) {
       typeof token !== "string" || !token) {
     throw new DesktopBridgeError("backend.init", "invalid_args", "Use Desktop's injected backend bridge configuration.");
   }
-  const transport = { url: target.href.replace(/\/$/u, "") + "/actions/call", token };
+  const transport = { url: target.href.replace(/\/$/u, "") + "/actions/call", token,
+    ...(token.startsWith("wbb_") ? { bootstrapToken: token, expiresAt: 0 } : {}) };
   const client = createDataClient((action, args, signal) => call(action, args, transport, signal), reserved("assistant.image"), (input, options) => executeAssistant(input, options, transport));
   return Object.freeze({ ...client, artifact: Object.freeze({
     list: client.artifact.list, get: client.artifact.get, read: client.artifact.read,
