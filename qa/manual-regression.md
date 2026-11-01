@@ -1045,6 +1045,9 @@
 
 ## WebApp 统一能力桥
 
+- macOS / Windows：页面与受管后端的 `skill.list/describe` 在请求未完成时撤销应用 token，确认上游请求被取消并返回 `app_grant_required`；应用资格有效时的普通网络失败仍返回 `connector_unavailable`，不自动重发请求。
+- macOS / Windows 分别在未声明固定 Copilot / skill 引用的 Bridge Lab 中加载技能：前端与受管后端均返回 Platform 的实际目录，选择技能后自动带入 describe 的 skillId，挂载状态随 Desktop 设置中的测试 Agent 变化。空目录直接显示空列表，服务/Agent 不可用直接显示错误，不能静默禁用加载按钮；元数据不包含安装路径、正文或凭据，聊天附加技能仍受包内引用限制。
+- Bridge Lab 所有方法的成功结果、错误和事件流直接显示，不需要展开；连接器执行保留 stdout/stderr/exitCode。分别手动修改 issue.get 的 issueId、后端调用参数后再查询 issue.list 或切换问题，确认真实 ID 自动带入并用于请求，空列表清空旧 ID。仅更新 ZIP 不更新旧宿主，使用本次 Desktop 构建并重启后再导入 0.3.1 验收。
 - macOS / Windows：在本机 WebApp 主区与独立窗口调用 SDK 的主题和语言 get/set，切换 light/dark/system、zh-CN/en-US 后回读一致，Desktop 界面、原生菜单和窗口明暗沿用设置页行为；重启 Desktop 后保留。system 跟随系统变化时偏好仍为 system，不重载 guest 或丢失应用草稿。非法参数和保存失败返回错误。
 - 主题与语言 capability 显示 available/not_required；无需 Manifest 权限声明或额外确认。后端 token、缺失/撤销的 page token、伪造外站 Origin、局域网和发布页面均不能修改这些设置，拒绝请求不产生 Desktop 状态变化；其他未开放的 Desktop 动作继续被拒绝。
 - macOS / Windows：页面从同源加载 SDK，托管 Node 后端使用注入的 `/webapps` token；后端调用认证、权限确认、预览/另存为被拒绝，普通 Website/Tunnel 无法调用页面能力。

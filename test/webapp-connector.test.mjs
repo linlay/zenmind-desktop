@@ -102,16 +102,68 @@ test('artifacts require the owning app runtime and explicit chat context',async(
  assert.equal(calls,0);
 });
 
-test('skills expose only declared IDs and safe metadata',async()=>{
+test('skills expose catalog metadata beyond package references without private fields',async()=>{
  const options=fixture();options.webs.webappManager.list()[0].copilot={agentKey:'writer',references: (['writing']).map(id=>({type:"skill",id}))};
+ options.webs.webappManager.readUserConfig=()=>({});
  fetcher=async(url)=>{
   assert.equal(new URL(url).searchParams.get('agentKey'),'writer');
   return response({skills:[{id:'writing',displayName:'Writing',description:'Write',configured:true,path:'/private/skills',token:'secret'},{id:'private',name:'Hidden'}]});
  };
  const result=await api.executeWebappConnector(options,'skill.list',{}, {kind:'webappBackend',webappId:'one'});
- assert.deepEqual(result.result,{items:[{skillId:'writing',name:'Writing',description:'Write',agentHasSkill:true}]});
- const hidden=await api.executeWebappConnector(options,'skill.describe',{skillId:'private'},{kind:'webappBackend',webappId:'one'});
- assert.equal(hidden.error.code,'skill_not_found');
+ assert.deepEqual(result.result,{items:[{skillId:'writing',name:'Writing',description:'Write',agentHasSkill:true},{skillId:'private',name:'Hidden',agentHasSkill:false}]});
+ const detail=await api.executeWebappConnector(options,'skill.describe',{skillId:'private'},{kind:'webappBackend',webappId:'one'});
+ assert.deepEqual(detail.result,{skillId:'private',name:'Hidden',agentHasSkill:false});
+ assert.equal(JSON.stringify(result).includes('/private/skills'),false);assert.equal(JSON.stringify(result).includes('secret'),false);
+});
+
+for (const kind of ['webappPage','webappBackend']) test(`${kind}: default packages read real skills and user-selected Agent mount flags`,async()=>{
+ const options=fixture();const item=options.webs.webappManager.list()[0];
+ item.userConfig={fields:[{type:'select',name:'agent',source:'desktop.agents'}]};
+ options.getAssistantSettings=()=>({desktopHelperAgentKey:'helper'});
+ options.webs.webappManager.readUserConfig=()=>({agent:'selected'});
+ options.assistantBridge={listAgents:async()=>[{agentKey:'selected'}]};
+ fetcher=async(url)=>{assert.equal(new URL(url).searchParams.get('agentKey'),'selected');return response({skills:[{id:'actual-skill',displayName:'Actual',configured:true,path:'/private',token:'secret'}]})};
+ const invocation={kind,webappId:'one'};
+ assert.deepEqual((await api.executeWebappConnector(options,'skill.list',{},invocation)).result,{items:[{skillId:'actual-skill',name:'Actual',agentHasSkill:true}]});
+ assert.equal((await api.executeWebappConnector(options,'skill.describe',{skillId:'actual-skill'},invocation)).result.skillId,'actual-skill');
+ assert.equal((await api.executeWebappConnector(options,'skill.list',{agentKey:'other'},invocation)).error.code,'invalid_arguments');
+ assert.equal((await api.executeWebappConnector(options,'skill.describe',{skillId:''},invocation)).error.code,'invalid_arguments');
+ assert.equal((await api.executeWebappConnector(options,'skill.describe',{skillId:'missing'},invocation)).error.code,'skill_not_found');
+});
+
+test('skills use Desktop default Agent without Copilot and reject malformed or revoked responses',async()=>{
+ const options=fixture();options.getAssistantSettings=()=>({desktopHelperAgentKey:'helper'});
+ options.webs.webappManager.readUserConfig=()=>({});
+ const invocation={kind:'webappPage',webappId:'one'};
+ fetcher=async(url)=>{assert.equal(new URL(url).searchParams.get('agentKey'),'helper');return response({skills:[]})};
+ assert.deepEqual((await api.executeWebappConnector(options,'skill.list',{},invocation)).result,{items:[]});
+ fetcher=async()=>response({skills:[{id:'broken',description:{token:'secret'}}]});
+ const invalid=await api.executeWebappConnector(options,'skill.list',{},invocation);assert.equal(invalid.error.code,'invalid_platform_response');assert.equal(JSON.stringify(invalid).includes('secret'),false);
+ const controller=new AbortController();fetcher=async()=>{controller.abort();return response({skills:[{id:'late'}]})};
+ assert.equal((await api.executeWebappConnector(options,'skill.list',{}, {...invocation,signal:controller.signal})).error.code,'app_grant_required');
+});
+
+for (const kind of ['webappPage','webappBackend']) for (const action of ['skill.list','skill.describe']) test(`${kind}: ${action} reports grant revocation when fetch aborts`,async()=>{
+ const options=fixture();options.getAssistantSettings=()=>({desktopHelperAgentKey:'helper'});
+ options.webs.webappManager.readUserConfig=()=>({});
+ const controller=new AbortController();let calls=0;
+ fetcher=async(_url,{signal})=>{
+  calls++;assert.ok(signal instanceof AbortSignal);
+  return new Promise((_resolve,reject)=>{
+   signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+   controller.abort();
+  });
+ };
+ const result=await api.executeWebappConnector(options,action,action==='skill.describe'?{skillId:'writing'}:{},{kind,webappId:'one',signal:controller.signal});
+ assert.equal(result.error.code,'app_grant_required');assert.equal(calls,1);
+});
+
+test('skills preserve transport failures while the application grant remains valid',async()=>{
+ const options=fixture();options.getAssistantSettings=()=>({desktopHelperAgentKey:'helper'});
+ options.webs.webappManager.readUserConfig=()=>({});let calls=0;
+ fetcher=async()=>{calls++;throw new TypeError('fetch failed')};
+ const result=await api.executeWebappConnector(options,'skill.list',{}, {kind:'webappPage',webappId:'one'});
+ assert.equal(result.error.code,'connector_unavailable');assert.equal(calls,1);
 });
 
 test('background runs expose bounded safe events and cannot be stopped by another app',async()=>{

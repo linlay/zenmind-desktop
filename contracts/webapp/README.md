@@ -46,7 +46,7 @@ const { connector, assistant, skill, artifact, kanban } = createBackendClient({
 | Agent | `assistant.chat(message)` 或 `assistant.chat({message,skillIds?,background?})`；默认返回 `{text,agentKey,chatId,runId}`，后台返回 `{accepted,chatId,runId}` |
 | 结构化执行 | `assistant.execute({message,input?,outputSchema},{signal?})`；页面/后端共用，同步返回 `{chatId,status,output|reason}` |
 | 运行 | `assistant.subscribe({runId,cursor?},{signal?})` 异步迭代精简事件；`assistant.stop({runId})`，只操作本应用后台运行 |
-| 技能 | `skill.list()`、`skill.describe({skillId})`；只返回固定 Copilot 声明的技能元数据，使用技能经 Agent chat，不直接执行任意技能脚本 |
+| 技能 | `skill.list()`、`skill.describe({skillId})`；读取 Platform 实际技能目录的安全元数据，`agentHasSkill` 按当前宿主选定 Agent 返回；不要求固定 Copilot 或包内技能声明 |
 | 产物 | `artifact.list({chatId,runId?,cursor?,limit?})`；`get/read/open/saveAs({chatId,runId?,artifactId})`；只允许当前应用实例发起的 Chat |
 | 看板 | 安装后直接调用；`kanban.boards.list()`、`kanban.issues.list({projectId?,cursor?,limit?})`、`kanban.issues.get({issueId})` |
 | 宿主 | `desktop.capabilities.list/has`、`desktop.app.getConfig/getUserConfig`、`desktop.theme.get/set`、`desktop.locale.get/set`、browser、dialog、microphone、clipboard.writeText、notification |
@@ -78,6 +78,8 @@ if (items.length) await artifact.open({ chatId, runId, artifactId: items[0].arti
 ```
 
 技能 id 必须在应用固定 `copilot.references` 的 `type:"skill"` 引用中，未传时使用声明的技能集；Agent 由固定 Copilot、用户配置或 Desktop 默认助手选择，页面不能传 agentKey。事件含单调 `cursor`；当前缓存最多 256 条、128 个运行、保留 30 分钟。游标过期返回 `event_cursor_expired`，不要据此重新提交 Agent 请求。订阅停止不等于停止运行。当前产物 Chat 归属只保留当前应用实例，尚不恢复历史 Chat。
+
+上述技能引用限制仅针对 `assistant.chat` 的附加 `skillIds`，不限制 `skill.list/describe` 的目录读取。技能目录对本机页面与受管后端同样开放，只返回 `skillId/name/description?/agentHasSkill`；不返回安装路径、正文、凭据或任意执行入口。挂载状态与 chat/execute 共用现有用户配置、固定 Copilot、Desktop 默认助手的选择机制；调用方不能传 Agent key。列表为空是正常结果，非法目录响应或实例/身份在读取期间失效时拒绝交付。
 
 `artifact.read()` 返回 `ReadableStream<Uint8Array>`，内部是最多 1 MiB 的有界缓冲；`saveAs` 同样受此上限约束。超限返回 `artifact_too_large`。预览成功为 `{opened:true}`；另存为返回 `{saved:true}` 或 `{cancelled:true}`，不返回绝对文件路径。Platform 不存在全局产物列表时，SDK 不模拟全局列表。
 
