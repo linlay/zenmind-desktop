@@ -137,7 +137,12 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
       // Resource Viewer then places that URL inside a query parameter, adding another
       // encoding layer. URLSearchParams removes the outer layer; remove the artifact
       // URL layer here before resolving the existing file on disk.
-      rawPath = decodeURIComponent(encodedArtifactPath);
+      // Current WebClient routes keep @chat/ references literal (including
+      // percent signs in filenames); only legacy URL paths have an inner
+      // encoding layer after URLSearchParams has decoded the query.
+      rawPath = /^@chat\//iu.test(encodedArtifactPath)
+        ? encodedArtifactPath.slice(6)
+        : decodeURIComponent(encodedArtifactPath);
     } catch {
       return "";
     }

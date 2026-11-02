@@ -173,7 +173,7 @@ const mouseDrag=async(dx,verifyReveal=false)=>{
  await input({type:'mouseMoved',x,y,buttons:0});await delay(60);
  assert.equal(await js('window.pointerTrace.some(e=>e.x==='+x+'&&e.y==='+y+'&&e.separator&&e.hover)'),true,'Chromium must deliver pointer hover to the separator');
  await input({type:'mousePressed',button:'left',buttons:1,clickCount:1,x,y});await delay(30);
- if(verifyReveal)for(const [distance,width,alpha] of [[1,7,0],[24,30,.25],[48,54,.5],[72,78,.75],[96,102,1]]){
+ if(verifyReveal)for(const [distance,width,alpha] of [[1,7,.2],[24,30,.4],[48,54,.6],[72,78,.8],[96,102,1]]){
   await input({type:'mouseMoved',button:'left',buttons:1,x:x+distance,y});await delay(80);
   const preview=await js('(()=>{const main=document.querySelector(".app-main"),r=document.querySelector(".chat-work-panel-resizer").getBoundingClientRect();return {width:Math.round(main.getBoundingClientRect().width),guestWidth:Math.round(document.querySelector("#main-chat-guest").getBoundingClientRect().width),line:r.left+r.width/2,opacity:Number(getComputedStyle(main).opacity),hint:document.querySelector(".main-chat-resize-guide")?.textContent}})()');
   assert.equal(preview.width,width,'only the uncovered viewport changes width');
@@ -221,7 +221,7 @@ app.whenReady().then(async()=>{
   }
   await finishDrag();await js('window.qa.split()');await delay(50);
   await beginDrag();
-  for(const [extra,alpha] of [[0,1],[23,1],[24,.75],[48,.5],[72,.25],[95,.25],[96,0]]){
+  for(const [extra,alpha] of [[0,1],[23,1],[24,.8],[48,.6],[72,.4],[95,.4],[96,.2]]){
    await moveDrag(-20-extra);assert.equal(await opacity(),alpha);
    const preview=await js('(()=>{const m=document.querySelector(".app-content").getBoundingClientRect(),r=document.querySelector(".chat-work-panel-resizer").getBoundingClientRect();return {line:r.left+r.width/2-m.left,guest:Math.round(document.querySelector("#main-chat-guest").getBoundingClientRect().width),hint:document.querySelector(".main-chat-resize-guide")?.textContent}})()');
    assert.equal(preview.line,420-extra,'separator must follow the closing pointer at '+extra+'px: '+JSON.stringify({windows,theme,sidebarWidth,...preview}));
@@ -238,14 +238,14 @@ app.whenReady().then(async()=>{
   assert.equal(await js('!!document.querySelector(".main-chat-resize-guide")'),false);
   await until('document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")');
   await beginDrag();
-  for(const [distance,alpha] of [[0,0],[23,0],[24,.25],[48,.5],[72,.75],[95,.75],[96,1],[120,1],[414,1],[450,1],[120,1],[48,.5],[0,0]]){
+  for(const [distance,alpha] of [[0,.2],[23,.2],[24,.4],[48,.6],[72,.8],[95,.8],[96,1],[120,1],[414,1],[450,1],[120,1],[48,.6],[0,.2]]){
    await moveDrag(distance);assert.equal(await opacity(),alpha);
    if(distance>0&&distance<414)await assertGuide(102,'展开对话区');
    if(distance>=414)assert.equal(await js('!!document.querySelector(".main-chat-resize-guide")'),false,'expand guide must disappear once Main Chat reaches 420px');
   }
   await finishDrag();
   for(const type of ['pointerup','pointercancel','blur']){
-   await beginDrag();await moveDrag(48);assert.equal(await opacity(),.5);await finishDrag(type);
+   await beginDrag();await moveDrag(48);assert.equal(await opacity(),.6);await finishDrag(type);
    assert.equal(await js('document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")'),true);
   }
   await drag(96);assert.equal(await opacity(),1);await drag(-96);
@@ -288,9 +288,9 @@ app.whenReady().then(async()=>{
  // Verify the rendered guest pixels over real bundled skin backgrounds.
  // Computed opacity alone cannot catch transparent-WebView composition failures.
  win.setContentSize(1160,720);await js('window.qa.sidebar(160)');await delay(250);
- const samplePixel=async()=>{
+ const samplePixel=async(pointExpression='(()=>{const r=document.querySelector("#main-chat-guest").getBoundingClientRect();return {x:r.left+12,y:r.top+100,width:innerWidth}})()')=>{
   await delay(60);
-  const point=await js('(()=>{const r=document.querySelector("#main-chat-guest").getBoundingClientRect();return {x:r.left+12,y:r.top+100,width:innerWidth}})()');
+  const point=await js(pointExpression);
   const shot=await loadImage((await win.webContents.capturePage()).toPNG());
   const canvas=createCanvas(shot.width,shot.height),ctx=canvas.getContext('2d');ctx.drawImage(shot,0,0);
   const scale=shot.width/point.width;
@@ -303,16 +303,38 @@ app.whenReady().then(async()=>{
   await guest.executeJavaScript('document.body.style.background='+JSON.stringify(skin==='default'?'#e9f1fc':'transparent'));
   await beginDrag();const pixels=[];
   for(const extra of [0,24,48,72,96]){await moveDrag(-20-extra);pixels.push(await samplePixel());}
+  // The endpoint still contains 20% chat; interpolate across the remaining 80%.
   const full=pixels[0],empty=pixels[4];
   assert.ok(full.some((v,i)=>Math.abs(v-empty[i])>60),'guest probe must visibly contrast with '+skin);
   for(let index=0;index<5;index++)for(let c=0;c<3;c++){
    const alpha=1-index/4,expected=empty[c]+(full[c]-empty[c])*alpha;
-   assert.ok(Math.abs(pixels[index][c]-expected)<12,'rendered skin fade mismatch '+JSON.stringify({windows,theme,skin,index,pixels,expected}));
+   // Entering the translucent WebView compositor can shift endpoint channels;
+   // allow <16 levels, still below half the probe's smallest fade interval.
+   assert.ok(Math.abs(pixels[index][c]-expected)<16,'rendered skin fade mismatch '+JSON.stringify({windows,theme,skin,index,pixels,expected}));
   }
-  await finishDrag();await beginDrag();
+  await finishDrag();
+  const gapPoint='(()=>{const r=document.querySelector(".app-content").getBoundingClientRect();return {x:r.left+3,y:r.top+100,width:innerWidth}})()';
+  const expectedGap=theme==='dark'?24:255;
+  for(const channel of await samplePixel(gapPoint))assert.ok(Math.abs(channel-expectedGap)<3,'collapsed separator gap must be neutral '+JSON.stringify({windows,theme,skin,channel}));
+  await js('document.querySelector(".chat-work-panel.is-visible .chat-work-panel-add-button").click()');
+  await until('!!document.querySelector(".chat-work-panel.is-visible.is-new-tab-active .work-panel-new-tab")');
+  if(skin!=='default'){
+   const surfaces=await js('(()=>{const p=document.querySelector(".chat-work-panel.is-visible"),n=p.querySelector(".work-panel-new-tab");return {panel:getComputedStyle(p).backgroundColor,page:getComputedStyle(n).backgroundColor,veil:getComputedStyle(n).getPropertyValue("--shell-sidebar-bg").trim(),content:getComputedStyle(document.querySelector(".app-content")).backgroundColor}})()');
+   assert.equal(surfaces.panel,'rgba(0, 0, 0, 0)');assert.equal(surfaces.content,'rgba(0, 0, 0, 0)');
+   assert.ok(surfaces.page.startsWith('rgba('),'launcher must have a translucent reading surface');
+   const launcherPoint='(()=>{const r=document.querySelector(".work-panel-new-tab").getBoundingClientRect();return {x:r.left+r.width/2,y:r.bottom-24,width:innerWidth}})()';
+   const before=await samplePixel(launcherPoint);
+   await js('document.querySelector(".desktop-background").style.filter="invert(1)"');
+   const after=await samplePixel(launcherPoint);
+   await js('document.querySelector(".desktop-background").style.filter=""');
+   assert.ok(before.some((v,i)=>Math.abs(v-after[i])>15),'wallpaper must be visible through the new-tab page '+JSON.stringify({windows,theme,skin,before,after}));
+   await captureGuide((windows?'windows':'mac')+'-'+theme+'-'+skin+'-new-tab');
+  }
+  for(const channel of await samplePixel(gapPoint))assert.ok(Math.abs(channel-expectedGap)<3,'new-tab background must not leak into gap');
+  await clickTab('Draft');await beginDrag();
   for(const distance of [24,48,72,96]){
    await moveDrag(distance);const pixel=await samplePixel(),alpha=distance/96;
-   for(let c=0;c<3;c++)assert.ok(Math.abs(pixel[c]-(empty[c]+(full[c]-empty[c])*alpha))<12,'rendered skin fade-in mismatch '+JSON.stringify({windows,theme,skin,distance,pixel,full,empty}));
+   for(let c=0;c<3;c++)assert.ok(Math.abs(pixel[c]-(empty[c]+(full[c]-empty[c])*alpha))<16,'rendered skin fade-in mismatch '+JSON.stringify({windows,theme,skin,distance,pixel,full,empty}));
   }
   await finishDrag();
  }

@@ -2176,7 +2176,7 @@ export function WorkPanelHost({
         return (
           <aside
             key={workspace.workspaceId}
-            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}${hasBackgroundWeb ? " has-background-web" : ""}`}
+            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}${hasBackgroundWeb ? " has-background-web" : ""}${newTabActive ? " is-new-tab-active" : ""}`}
             style={backgroundSize ? { width: backgroundSize.width, height: backgroundSize.height } : undefined}
             hidden={!visible}
             aria-hidden={!visible}

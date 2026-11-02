@@ -1020,6 +1020,21 @@
 }
 
 /* Keep both separators reachable when WorkPanel consumes the chat column. */
+.app-shell.is-main-chat-collapsed-by-work-panel .app-content::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--work-panel-collapsed-main-gap);
+  z-index: 14;
+  background: #fff;
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .app-shell.is-main-chat-collapsed-by-work-panel .app-content::before {
+  background: #181818;
+}
+
 .app-shell.is-main-chat-collapsed-by-work-panel .app-content>.app-main {
   flex: 0 0 0;
   width: 0;

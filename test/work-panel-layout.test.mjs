@@ -88,7 +88,7 @@ test("Main Chat fades in four steps through the collapse buffer and recovers whe
       initialWidth, startClientX: 500, currentClientX: 500 - 20 - extra, availableWidth,
     });
     assert.equal(drag(-20).mainChatOpacity, 1);
-    for (const [extra, opacity] of [[0, 1], [1, 1], [23, 1], [24, 0.75], [47, 0.75], [48, 0.5], [71, 0.5], [72, 0.25], [95, 0.25], [96, 0], [120, 0], [48, 0.5], [0, 1], [-20, 1]]) {
+    for (const [extra, opacity] of [[0, 1], [1, 1], [23, 1], [24, 0.8], [47, 0.8], [48, 0.6], [71, 0.6], [72, 0.4], [95, 0.4], [96, 0.2], [120, 0.2], [48, 0.6], [0, 1], [-20, 1]]) {
       const state = drag(extra);
       const collapsedWidth = availableWidth - WORK_PANEL_COLLAPSED_MAIN_GAP;
       assert.equal(state.width, expandedMax + extra);
@@ -110,7 +110,7 @@ test("a fully collapsed Main Chat restores through the same four steps before co
     const drag = distance => resolveWorkPanelDragState({
       initialWidth: collapsedWidth, startClientX: 10, currentClientX: 10 + distance, availableWidth,
     });
-    for (const [distance, opacity] of [[-24, 0], [0, 0], [1, 0], [23, 0], [24, 0.25], [47, 0.25], [48, 0.5], [71, 0.5], [72, 0.75], [95, 0.75], [96, 1], [120, 1], [48, 0.5], [0, 0]]) {
+    for (const [distance, opacity] of [[-24, 0.2], [0, 0.2], [1, 0.2], [23, 0.2], [24, 0.4], [47, 0.4], [48, 0.6], [71, 0.6], [72, 0.8], [95, 0.8], [96, 1], [120, 1], [48, 0.6], [0, 0.2]]) {
       const result = drag(distance);
       assert.equal(result.mainChatOpacity, opacity);
       assert.equal(result.width, collapsedWidth - Math.max(0, distance));
