@@ -113,6 +113,7 @@ import {
 } from "../../shared/sidebar-layout";
 import {
   WORK_PANEL_COLLAPSED_MAIN_GAP,
+  WORK_PANEL_COLLAPSE_DRAG_BUFFER,
   WORK_PANEL_MAIN_MIN_WIDTH,
   WORK_PANEL_MIN_WIDTH,
   WORK_PANEL_RESIZE_STEP,
@@ -186,7 +187,7 @@ import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../shared/web-ent
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { WorkPanelHost } from "../work-panel/WorkPanelHost";
-import { WorkPanelResizeHint } from "../work-panel/WorkPanelResizeHint";
+import { WorkPanelResizeGuide } from "../work-panel/WorkPanelResizeGuide";
 import { resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "../work-panel/new-tab-selection";
 import {
   ProjectFloatingWebviews,
@@ -818,7 +819,7 @@ export function AppShell() {
   const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
   const [workPanelDragMainChatOpacity, setWorkPanelDragMainChatOpacity] = useState(1);
   const [workPanelDragPreviewWidth, setWorkPanelDragPreviewWidth] = useState<number | null>(null);
-  const [workPanelDragHint, setWorkPanelDragHint] = useState<"expand" | "collapse" | null>(null);
+  const [workPanelDragGuide, setWorkPanelDragGuide] = useState<{ direction: "expand" | "collapse"; left: number } | null>(null);
   const [isCopilotDockResizing, setIsCopilotDockResizing] = useState(false);
   const [appShellWidth, setAppShellWidth] = useState(() =>
     typeof window === "undefined" ? 1440 : window.innerWidth
@@ -3062,7 +3063,7 @@ export function AppShell() {
       mainChatOwnerKey: isWorkPanelMainChatActive ? activeChatWorkPanelOwnerKey : null,
       pointerId: event.pointerId,
       startClientX: event.clientX,
-      lastClientX: event.clientX,
+      direction: null as "expand" | "collapse" | null,
     };
     workPanelResizeStateRef.current = dragState;
     try {
@@ -3074,6 +3075,16 @@ export function AppShell() {
     const handlePointerMove = (pointerEvent: PointerEvent) => {
       if (pointerEvent.pointerId !== dragState.pointerId) return;
       if (pointerEvent.cancelable) pointerEvent.preventDefault();
+      if (!dragState.direction && pointerEvent.clientX !== dragState.startClientX) {
+        dragState.direction = pointerEvent.clientX > dragState.startClientX ? "expand" : "collapse";
+        if (appContentWidth >= WORK_PANEL_MAIN_MIN_WIDTH + WORK_PANEL_MIN_WIDTH) {
+          const target = dragState.direction === "expand"
+            ? appContentWidth - dragState.initialWidth + WORK_PANEL_COLLAPSE_DRAG_BUFFER
+            : WORK_PANEL_MAIN_MIN_WIDTH - WORK_PANEL_COLLAPSE_DRAG_BUFFER;
+          setWorkPanelDragGuide({ direction: dragState.direction,
+            left: Math.max(WORK_PANEL_COLLAPSED_MAIN_GAP, Math.min(appContentWidth - WORK_PANEL_MIN_WIDTH, target)) });
+        }
+      }
       const nextState = resolveWorkPanelDragState({
         initialWidth: dragState.initialWidth,
         startClientX: dragState.startClientX,
@@ -3084,13 +3095,6 @@ export function AppShell() {
       setPreferredWorkPanelWidth(nextState.settledWidth);
       setWorkPanelDragPreviewWidth(nextState.width);
       setWorkPanelDragMainChatOpacity(nextState.mainChatOpacity);
-      const inBuffer = appContentWidth > 0 && nextState.width > appContentWidth - WORK_PANEL_MAIN_MIN_WIDTH &&
-        nextState.width < workPanelMaxWidth;
-      if (!inBuffer) setWorkPanelDragHint(null);
-      else if (pointerEvent.clientX !== dragState.lastClientX) {
-        setWorkPanelDragHint(pointerEvent.clientX > dragState.lastClientX ? "expand" : "collapse");
-      }
-      dragState.lastClientX = pointerEvent.clientX;
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", handlePointerMove, true);
@@ -3105,7 +3109,7 @@ export function AppShell() {
       }
       setIsWorkPanelResizing(false);
       setWorkPanelDragPreviewWidth(null);
-      setWorkPanelDragHint(null);
+      setWorkPanelDragGuide(null);
       setPreferredWorkPanelWidth(dragState.settledWidth);
       if (dragState.mainChatOwnerKey && dragState.settledWidth >= workPanelMaxWidth) {
         setWorkPanelMainChatOwnerKey(dragState.mainChatOwnerKey);
@@ -5185,7 +5189,8 @@ export function AppShell() {
             />
           ) : null}
         </main>
-        {activeChatWorkPanelVisible && isWorkPanelResizing && <WorkPanelResizeHint direction={workPanelDragHint} />}
+        {activeChatWorkPanelVisible && isWorkPanelResizing && workPanelDragGuide &&
+          <WorkPanelResizeGuide direction={workPanelDragGuide.direction} left={workPanelDragGuide.left} />}
         {activeChatWorkPanelVisible ? (
           <div
             className={`chat-work-panel-resizer${isWorkPanelResizing ? " is-active" : ""}`}
