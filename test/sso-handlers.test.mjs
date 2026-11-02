@@ -118,7 +118,6 @@ function createHarness(startResult, options = {}) {
     clearWebSessionCookies: [],
     localLogouts: 0,
     broadcasts: [],
-    kanbanRefreshes: 0,
     tunnelHubStops: 0,
   };
   registerSsoIpcHandlers({
@@ -171,7 +170,6 @@ function createHarness(startResult, options = {}) {
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
-    refreshKanbanConnection: () => { calls.kanbanRefreshes += 1; },
     stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; return options.stopTunnelHubRuntime?.(); },
 
   });
@@ -240,7 +238,7 @@ test("desktop sso login exchanges the canonical token after the web session is r
   assert.equal(result.ok, true);
   assert.equal(calls.webSessionExchanges, 1);
   assert.equal(calls.canonicalTokenExchanges, 1);
-  assert.equal(calls.kanbanRefreshes, 1);
+  // Downstream services start from the single identity dispatcher, not from the login IPC.
   assert.equal(calls.openSystemBrowserUrl.length, 0);
   assert.equal(calls.openEmbeddedLoginDialog.length, 0);
 });
@@ -1250,7 +1248,7 @@ for (const mode of ["cookie", "bearer"]) {
 }
 
 for (const platform of ["darwin", "win32"]) {
-  test(`${platform}: enterprise chat 401 with temporary Bearer renewal failure preserves the Desktop account after repeated sign-ins`, async (t) => {
+  test(`${platform}: enterprise chat 401 never renews or revokes the Desktop account after repeated sign-ins`, async (t) => {
     let expectedToken;
     const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-enterprise-chat-renewal-", async (url, init) => {
       assert.equal(url, "https://ai.example.test/authorization");
@@ -1259,7 +1257,7 @@ for (const platform of ["darwin", "win32"]) {
       const headers = new Headers(init.headers);
       assert.equal(headers.has("Cookie"), false);
       assert.equal(headers.get("Authorization"), `Bearer ${expectedToken}`);
-      return new Response("SSO temporarily unavailable", { status: 503 });
+      assert.fail("An IM rejection must not send any Desktop SSO renewal request");
     }, {
       sessionRestore: { authMode: "bearer" },
       userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" }
@@ -1271,7 +1269,6 @@ for (const platform of ["darwin", "win32"]) {
       initialEnabled: true,
       serverUrl: "https://im.example.test",
       getIdentityToken: getDesktopSsoBusinessToken,
-      refreshIdentityToken: () => controller.ensureBusinessToken(true),
       getDeviceInfo: () => ({ deviceId: "test-desktop", deviceName: "Test Desktop" }),
       fetchImpl: async (url, init) => {
         assert.equal(url, "https://im.example.test/api/v1/session/exchange");
@@ -1305,10 +1302,10 @@ for (const platform of ["darwin", "win32"]) {
       const snapshot = await runtime.refresh();
       assert.equal(snapshot.enabled, true);
       assert.equal(snapshot.connectionState, "error");
-      assert.match(snapshot.message, /503/u);
+      assert.match(snapshot.message, /IM rejected the identity token/u);
       assert.equal(snapshot.currentUser, null);
       assert.equal(imRequests.length, attempt);
-      assert.equal(calls.fetches.length, attempt);
+      assert.equal(calls.fetches.length, 0);
       assert.deepEqual(getDesktopSsoStatus(app), signedInStatus);
       assert.equal(getDesktopSsoBusinessToken(), expectedToken);
       assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
@@ -1317,7 +1314,10 @@ for (const platform of ["darwin", "win32"]) {
       assert.equal(calls.defaultRemoves.length, 0);
       assert.equal(calls.defaultSets.length, 0);
       assert.equal(await controller.ensureBusinessToken(), expectedToken);
-      assert.equal(calls.fetches.length, attempt, "Reading a still-valid Desktop session must not retry IM or SSO");
+      assert.equal(calls.fetches.length, 0, "Reading a still-valid Desktop session must not retry IM or SSO");
+      // The same rejected token never wakes IM again; only a different committed token would.
+      runtime.handleCredentialChanged();
+      assert.equal(imRequests.length, attempt);
       const tokenPath = __testInternals.getDesktopSsoIdTokenFilePath(app);
       assert.equal(fs.readFileSync(tokenPath, "utf8").trim(), expectedToken);
     }

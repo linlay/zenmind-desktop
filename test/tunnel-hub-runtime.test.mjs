@@ -1671,6 +1671,63 @@ test("Tunnel enable waits for trusted SSO, reconnects after login and respects e
   assert.equal(runtime.getStatus().phase, "disabled");
 });
 
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: Hub credential rejection backs off and retries only after Desktop commits another token`, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-credential-rejected-"));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    writeDesktopSsoAccessToken(homePath, "rejected-desktop-jwt");
+    saveTunnelHubSettings(app, { enabled: true, relayUrl: "wss://relay.example.test/tunnel" });
+    const authorizations = [];
+    let connections = 0;
+    configureTunnelHubRegistrationController({
+      fetch: async (_url, init) => {
+        authorizations.push(init.headers.Authorization);
+        if (init.headers.Authorization === "Bearer rejected-desktop-jwt") {
+          return { ok: false, status: 401, statusText: "Unauthorized", text: async () => JSON.stringify({ code: "public_key_mismatch" }) };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify({ accountId: "account", deviceId: readTunnelHubSettings(app).deviceId }) };
+      }
+    });
+    const runtime = new TunnelHubRuntime({
+      app,
+      desktopWsServerOptions: createDesktopWsServerOptions(app),
+      canUseDesktopSsoCredentials: () => true,
+      readNetworkSignature: () => "network",
+      createTunnelClient: () => ({ connect: async () => { connections++; }, close() {}, on() {} }),
+      logger: { log() {}, warn() {}, error() {} }
+    });
+    t.after(async () => { await runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+
+    const first = await runtime.start();
+    assert.equal(first.ok, false);
+    assert.equal(runtime.getStatus().phase, "error");
+    assert.match(runtime.getStatus().lastError, /rejected the Desktop credential \(401\): public_key_mismatch/u);
+
+    // The ordinary reconnect interval no longer re-registers a rejected credential.
+    t.mock.timers.tick(runtime.getStatus().reconnectSeconds * 1000 * 5);
+    await flushPromises();
+    assert.equal(authorizations.length, 1);
+
+    // The same token never wakes it; a backoff retry still happens eventually.
+    runtime.handleCredentialChanged();
+    await flushPromises();
+    assert.equal(authorizations.length, 1);
+    t.mock.timers.tick(30_000);
+    await flushPromises();
+    assert.equal(authorizations.length, 2);
+
+    // Desktop's own renewal commits another token: retry immediately and connect.
+    writeDesktopSsoAccessToken(homePath, "renewed-desktop-jwt");
+    runtime.handleCredentialChanged();
+    for (let turn = 0; turn < 50 && connections === 0; turn++) await flushPromises();
+    assert.equal(connections, 1, "tunnel reconnects after Desktop renewal");
+    assert.equal(authorizations.at(-1), "Bearer renewed-desktop-jwt");
+    assert.equal(runtime.getStatus().phase, "connected");
+  });
+}
+
 for (const pendingStage of ["registration", "connection"]) {
   test(`Tunnel logout cancels pending ${pendingStage} without reconnecting`, async (t) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tunnel-logout-race-"));

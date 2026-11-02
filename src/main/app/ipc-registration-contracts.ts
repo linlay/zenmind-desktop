@@ -18,7 +18,6 @@ export type MainIpcRegistrationOptions = {
   cancelLocalDocumentDraftPromotion(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): void;
   promoteLocalDocumentDraft(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): boolean;
   resetRuntimeEnv: (action?: "reinstall" | "rollback") => Promise<import("../infrastructure/filesystem/runtime-env-contracts").RuntimeEnvResetResult & { restartScheduled: true }>;
-  refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
   appearanceRuntime: AppearanceRuntime;
   app: App;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<any>;

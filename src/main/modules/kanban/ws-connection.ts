@@ -93,8 +93,10 @@ export class KanbanDesktopWsClient {
       this.setState("disabled");
       return;
     }
-    const previousUrl = this.config ? createWsUrl(this.config) : "";
-    const nextUrl = createWsUrl(normalizedConfig);
+    // Same-account renewal only replaces the token used by the next connect. Account changes and
+    // sign-in arrive through explicit forceReconnect requests from the identity dispatcher.
+    const previousUrl = this.config ? createWsUrl({ ...this.config, token: "" }) : "";
+    const nextUrl = createWsUrl({ ...normalizedConfig, token: "" });
     const previousProjectId = this.config?.selectedProjectId ?? "";
     this.config = normalizedConfig;
     if (this.ws && previousUrl === nextUrl && previousProjectId === normalizedConfig.selectedProjectId) {

@@ -7,46 +7,50 @@ import ts from "typescript";
 const filename = "src/main/app/assembly/identity.ts";
 const source = ts.createSourceFile(filename, fs.readFileSync(filename, "utf8"), ts.ScriptTarget.Latest, true);
 const implementation = source.statements.find(node =>
-  ts.isFunctionDeclaration(node) && node.name?.text === "createDesktopSsoTokenRefresher");
+  ts.isFunctionDeclaration(node) && node.name?.text === "createDesktopSsoMaintenance");
 assert.ok(implementation);
 const compiled = ts.transpileModule(implementation.getText(source), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText;
 
 for (const platform of ["darwin", "win32"]) {
-  test(`${platform}: repeated business 401 renewals preserve the healthy IM connection and conversation`, async () => {
-    const context = {
-      exports: {}, app: { platform },
-      desktopSsoIdTokenNeedsRefresh: () => false,
-      safeConsoleError: (...args) => assert.fail(String(args))
-    };
+  test(`${platform}: scheduled SSO maintenance renews only Identity and never rebuilds IM or Kanban`, async () => {
+    const context = { exports: {}, app: { platform } };
     vm.runInNewContext(compiled, context);
-    const chat = { connectionState: "connected", activeConversationId: "direct-employee", draft: "hello" };
+    const forces = [];
     let renewals = 0;
-    let kanbanRefreshes = 0;
-    let chatRefreshes = 0;
-    const refresh = context.exports.createDesktopSsoTokenRefresher({
+    const maintain = context.exports.createDesktopSsoMaintenance({
       desktopSsoController: {
         retryDesktopSsoSessionRestoreIfNeeded: async () => ({ state: "authenticated" }),
         ensureBusinessToken: async force => {
-          assert.equal(force, true);
+          forces.push(force);
           return `renewed-${++renewals}`;
         }
       },
       desktopSsoRestoreState: "authenticated",
       applyDesktopSsoRestoreResult: result => assert.equal(result.state, "authenticated"),
-      assistantBridgeRuntime: { refreshKanbanDeviceInfo: () => kanbanRefreshes++ },
-      enterpriseChatRuntime: { refresh: async () => {
-        chatRefreshes++;
-        chat.connectionState = "connecting";
-        chat.activeConversationId = "";
-      } }
+      // Downstream runtimes are not dependencies of maintenance at all; touching them fails.
+      get assistantBridgeRuntime() { return assert.fail("maintenance must not reach Kanban"); },
+      get enterpriseChatRuntime() { return assert.fail("maintenance must not reach enterprise chat"); }
     });
     for (let attempt = 1; attempt <= 3; attempt++) {
-      assert.equal(await refresh(true), `renewed-${attempt}`);
+      assert.equal(await maintain(), `renewed-${attempt}`);
     }
-    assert.equal(kanbanRefreshes, 3);
-    assert.equal(chatRefreshes, 0);
-    assert.deepEqual(chat, { connectionState: "connected", activeConversationId: "direct-employee", draft: "hello" });
+    // Maintenance follows Identity's schedule; it never forces a renewal on a consumer's behalf.
+    assert.deepEqual(forces, [false, false, false]);
+  });
+
+  test(`${platform}: maintenance skips renewal while Desktop sign-in is temporarily unavailable`, async () => {
+    const context = { exports: {}, app: { platform } };
+    vm.runInNewContext(compiled, context);
+    const dependencies = {
+      desktopSsoController: {
+        retryDesktopSsoSessionRestoreIfNeeded: async () => ({ state: "temporarily_unavailable" }),
+        ensureBusinessToken: async () => assert.fail("unavailable sign-in must not renew")
+      },
+      desktopSsoRestoreState: "authenticated",
+      applyDesktopSsoRestoreResult: result => { dependencies.desktopSsoRestoreState = result.state; }
+    };
+    assert.equal(await context.exports.createDesktopSsoMaintenance(dependencies)(), "");
   });
 }

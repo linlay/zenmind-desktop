@@ -41,8 +41,7 @@ function fixture(t, platform = "darwin") {
     ] }
   };
   const options = {
-    platform, now: new Date("2026-10-21T01:00:00Z"), peekAccessToken: () => token,
-    getAccessToken: async () => token,
+    platform, now: new Date("2026-10-21T01:00:00Z"), readAccessToken: () => token,
     fetchImpl: async (url, init) => {
       calls.push({ url: String(url), init });
       const pathname = new URL(url).pathname;
@@ -61,7 +60,7 @@ for (const platform of ["darwin", "win32"]) {
   test(`${platform}: explicit API key source preserves Credits and never reads login token`, async (t) => {
     const f = fixture(t, platform); f.config(); f.provider();
     f.provider("openai", { origin: "https://unrelated.invalid", key: "dk_unrelated" });
-    f.options.getAccessToken = async () => { throw new Error("must not read SSO"); };
+    f.options.readAccessToken = () => { throw new Error("must not read SSO"); };
     const result = await f.run();
     assert.equal(result.ok, true);
     assert.equal(result.provider.providerKey, "grant-hub");
@@ -133,19 +132,31 @@ test("signed out employee mode never falls back to a grant key", async (t) => {
   assert.equal(f.calls.length, 0);
 });
 
-test("employee 401 refreshes once and queries with renewed credentials", async (t) => {
+test("employee 401 reports unauthorized without any Desktop renewal", async (t) => {
   const f = fixture(t); f.config({ mode: "access-token" });
-  const forces = [];
-  f.options.getAccessToken = async (force) => { forces.push(force); if (force) f.setToken("renewed"); return forces.includes(true) ? "renewed" : "employee-fixture"; };
-  f.overrides.set("/api/me", (_url, init) => init.headers.Authorization === "Bearer renewed" ? Response.json(f.payloads["/api/me"]) : Response.json({ error: "no" }, { status: 401 }));
-  assert.equal((await f.run()).ok, true);
-  assert.deepEqual(forces, [false, true, false]);
-  assert.equal(f.calls.length, 8);
+  // Transit Hub rejecting every token (for example a wrong public key) stays a usage-page failure.
+  f.overrides.set("/api/me", () => Response.json({ error: "invalid signature" }, { status: 401 }));
+  const result = await f.run();
+  assert.equal(result.reason, "unauthorized");
+  assert.equal(f.calls.length, 1);
+});
+
+test("employee 401 reruns once with a token Identity committed during the query", async (t) => {
+  const f = fixture(t); f.config({ mode: "access-token" });
+  f.overrides.set("/api/me", (_url, init) => {
+    if (init.headers.Authorization === "Bearer renewed") return Response.json(f.payloads["/api/me"]);
+    f.setToken("renewed"); // Identity's own schedule renewed while this request was in flight.
+    return Response.json({ error: "expired" }, { status: 401 });
+  });
+  const result = await f.run();
+  assert.equal(result.ok, true);
+  assert.equal(f.calls.filter((c) => new URL(c.url).pathname === "/api/me").length, 2);
+  assert.ok(f.calls.slice(1).every((c) => c.init.headers.Authorization === "Bearer renewed"));
 });
 
 test("expired grant key does not refresh SSO, probe other keys or echo remote errors", async (t) => {
   const f = fixture(t); f.config(); f.provider();
-  f.options.getAccessToken = async () => { throw new Error("must not refresh"); };
+  f.options.readAccessToken = () => { throw new Error("must not read SSO"); };
   f.overrides.set("/api/me", () => Response.json({ error: "dk_secret_should_not_escape" }, { status: 401 }));
   const result = await f.run();
   assert.equal(result.reason, "unauthorized");
@@ -177,13 +188,21 @@ test("old balance or malformed string money is unavailable rather than zero or u
   }
 });
 
-for (const replacement of ["", "another-account"]) {
-  test(`late employee results are discarded after identity changes to ${replacement || "signed-out"}`, async (t) => {
-    const f = fixture(t); f.config({ mode: "access-token" });
-    f.overrides.set("/api/me/logs", () => { f.setToken(replacement); return Response.json({ items: [] }); });
-    assert.equal((await f.run()).reason, "unauthorized");
-  });
-}
+test("late employee results are discarded after sign-out", async (t) => {
+  const f = fixture(t); f.config({ mode: "access-token" });
+  f.overrides.set("/api/me/logs", () => { f.setToken(""); return Response.json({ items: [] }); });
+  assert.equal((await f.run()).reason, "unauthorized");
+});
+
+test("late employee results are replaced by one query with the newly committed token", async (t) => {
+  const f = fixture(t); f.config({ mode: "access-token" });
+  f.overrides.set("/api/me/logs", () => { f.setToken("another-account"); return Response.json({ items: [] }); });
+  const result = await f.run();
+  assert.equal(result.ok, true);
+  const rerun = f.calls.slice(f.calls.findLastIndex((c) => new URL(c.url).pathname === "/api/me"));
+  assert.equal(rerun.length, 7);
+  assert.ok(rerun.every((c) => c.init.headers.Authorization === "Bearer another-account"));
+});
 
 test("configuration replacement discards in-flight usage data", async (t) => {
   const f = fixture(t); f.config(); f.provider();
@@ -209,29 +228,33 @@ test("Credits formatting preserves six decimals, negative balance and unsafe int
   assert.equal(usageLimitProgress({ ...windowUsage, quota_microcredits: "0", tokens: 90 }, Date.parse("2026-10-21T01:00:00Z")).usedPercent, 90);
 });
 
-test("employee metadata 401 refreshes the entire snapshot once", async (t) => {
+test("employee metadata 401 with an unchanged token keeps a partial snapshot", async (t) => {
   const f = fixture(t); f.config({ mode: "access-token" });
-  let refreshes = 0;
-  let token = "employee-fixture";
-  f.options.getAccessToken = async (force) => {
-    if (force) { ++refreshes; token = "renewed"; f.setToken(token); }
-    return token;
-  };
-  f.overrides.set("/api/me/balance", (_url, init) => init.headers.Authorization === "Bearer renewed" ? Response.json(balance) : Response.json({}, { status: 401 }));
+  f.overrides.set("/api/me/balance", () => Response.json({}, { status: 401 }));
+  const result = await f.run();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.unavailableSections, ["balance"]);
+  assert.equal(f.calls.filter((c) => new URL(c.url).pathname === "/api/me").length, 1);
+});
+
+test("employee metadata 401 reruns the snapshot once after Identity renewed", async (t) => {
+  const f = fixture(t); f.config({ mode: "access-token" });
+  f.overrides.set("/api/me/balance", (_url, init) => {
+    if (init.headers.Authorization === "Bearer renewed") return Response.json(balance);
+    f.setToken("renewed");
+    return Response.json({}, { status: 401 });
+  });
   const result = await f.run();
   assert.equal(result.ok, true);
   assert.equal(result.balance.remaining_microcredits, "-1000000");
-  assert.equal(refreshes, 1);
   assert.equal(f.calls.filter((c) => new URL(c.url).pathname === "/api/me").length, 2);
 });
 
-test("repeated employee 401 has a single refresh attempt", async (t) => {
+test("token churn during repeated employee 401 reruns at most once", async (t) => {
   const f = fixture(t); f.config({ mode: "access-token" });
-  let refreshes = 0;
-  f.options.getAccessToken = async (force) => { if (force) ++refreshes; return "employee-fixture"; };
-  f.overrides.set("/api/me", () => Response.json({}, { status: 401 }));
+  let renewals = 0;
+  f.overrides.set("/api/me", () => { f.setToken(`renewed-${++renewals}`); return Response.json({}, { status: 401 }); });
   assert.equal((await f.run()).reason, "unauthorized");
-  assert.equal(refreshes, 1);
   assert.equal(f.calls.length, 2);
 });
 

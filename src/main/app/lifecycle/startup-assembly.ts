@@ -175,7 +175,7 @@ export function runNonCoreStartupTask(label: string, task: () => void) {
 
 export interface StartNonCoreDesktopRuntimeDependencies {
   nonCoreDesktopRuntimeStarted: boolean;
-  readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
+  readonly maintainDesktopSsoSession: () => Promise<string>;
   readonly runNonCoreStartupTask: (label: string, task: () => void) => void;
   readonly petRuntime: Pick<DesktopPetRuntime, "getSettings">;
   readonly startupPlatform: NodeJS.Platform;
@@ -194,20 +194,20 @@ export function startNonCoreDesktopRuntime(dependencies: StartNonCoreDesktopRunt
     return;
   }
   dependencies.nonCoreDesktopRuntimeStarted = true;
-  void dependencies.refreshDesktopSsoIdentityToken().catch((error: unknown) => {
+  void dependencies.maintainDesktopSsoSession().catch((error: unknown) => {
     safeConsoleError("failed to refresh desktop sso token during startup", {
       error: error instanceof Error ? error.message : String(error)
     });
   });
   const desktopSsoRefreshTimer = setInterval(() => {
-    void dependencies.refreshDesktopSsoIdentityToken().catch((error: unknown) => {
+    void dependencies.maintainDesktopSsoSession().catch((error: unknown) => {
       safeConsoleError("failed to refresh desktop sso token before expiry", {
         error: error instanceof Error ? error.message : String(error)
       });
     });
   }, 5 * 60000);
   desktopSsoRefreshTimer.unref();
-  const resumeSso = () => { void dependencies.refreshDesktopSsoIdentityToken().catch(() => {}); };
+  const resumeSso = () => { void dependencies.maintainDesktopSsoSession().catch(() => {}); };
   powerMonitor?.on("resume", resumeSso);
   app.once("before-quit", () => {
     clearInterval(desktopSsoRefreshTimer);

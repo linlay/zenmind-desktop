@@ -74,6 +74,10 @@ export type MarketplaceOptions = MarketListOptions & {
   >;
 };
 
+/**
+ * "missing" reads the current canonical token; "unauthorized" re-reads it after Market returned 401.
+ * Neither reason may renew Desktop sign-in: a downstream rejection only fails the Market request.
+ */
 export type MarketAccessTokenReason = "missing" | "unauthorized";
 
 export type MarketAccessTokenIssuer = (

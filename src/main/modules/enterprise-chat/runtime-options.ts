@@ -15,7 +15,6 @@ export type EnterpriseChatRuntimeOptions = {
   fetchImpl?: FetchLike;
   createWebSocket?: (url: string) => WebSocketLike;
   getIdentityToken?: () => string | null;
-  refreshIdentityToken?: () => Promise<string | null>;
   getDeviceInfo?: () => { deviceId: string; deviceName: string };
   platform?: NodeJS.Platform;
   selectFiles?: () => Promise<string[]>;

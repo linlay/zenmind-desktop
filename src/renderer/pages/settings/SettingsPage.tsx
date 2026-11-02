@@ -2404,6 +2404,12 @@ function AboutAppCard({
   );
 }
 
+function usageSsoIdentityKey(status: DesktopSsoStatus) {
+  return status.authenticated && !status.pending
+    ? JSON.stringify([status.user?.issuer, status.user?.sub, status.user?.audience, status.completedSteps.accessToken])
+    : "anonymous";
+}
+
 export function SettingsPage({
   themeMode,
   onThemeModeChange,
@@ -2898,7 +2904,20 @@ export function SettingsPage({
       setUsageProfile(null);
       void refreshUsageProfile();
     };
-    const unsubscribeSso = window.electronAPI.sso.onStatusChanged(invalidate);
+    // Same-account renewals also publish status. Re-query only when the account or token
+    // availability changes, so a Transit Hub rejection can never pace itself on SSO events.
+    let usageIdentity: string | undefined;
+    let receivedSsoEvent = false;
+    const unsubscribeSso = window.electronAPI.sso.onStatusChanged((status) => {
+      receivedSsoEvent = true;
+      const next = usageSsoIdentityKey(status);
+      if (next === usageIdentity) return;
+      usageIdentity = next;
+      invalidate();
+    });
+    void window.electronAPI.sso.getStatus().then((status) => {
+      if (!receivedSsoEvent) usageIdentity = usageSsoIdentityKey(status);
+    }).catch(() => undefined);
     const unsubscribeConfig = window.electronAPI.settings.onDesktopConfigChanged(invalidate);
     return () => { ++usageRequestGeneration.current; unsubscribeSso(); unsubscribeConfig(); };
   }, [shouldReadUsageProfile]);

@@ -191,13 +191,11 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
       return mergeMarketMcpStatuses(result);
     },
     toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
-      issueAgentAccessToken: async (_app, reason) => {
-        let token = isDesktopSsoCredentialRuntimeReady()
+      // Favorites read the published token only; a Market 401 never renews Desktop sign-in.
+      issueAgentAccessToken: () => {
+        const token = isDesktopSsoCredentialRuntimeReady()
           ? getDesktopSsoBusinessToken() || ""
           : "";
-        if (reason === "unauthorized" || !token) {
-          token = await options.desktopSsoController.ensureBusinessToken?.(true) || "";
-        }
         return {
           ok: Boolean(token),
           token,

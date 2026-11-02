@@ -37,7 +37,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,
     issueAgentAccessToken: options.issueAgentAccessToken,
-    refreshKanbanConnection: assistantBridgeRuntime.refreshKanbanDeviceInfo,
     stopTunnelHubRuntime: async () => {
       try {
         await stopTunnelHubRuntime();
@@ -45,7 +44,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
         clearTunnelHubRegistrationCache(app);
       }
     },
-    refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
     stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
   });
 
@@ -189,7 +187,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
   registerAppearanceIpcHandlers(ipcMain, { runtime: options.appearanceRuntime, app, platform: options.platform, getMainWindow: options.getMainWindow });
 
   registerSettingsIpcHandlers(ipcMain, {
-    refreshUsageAccessToken: (force) => options.refreshDesktopSsoIdentityToken(force),
     app,
     listWebEntryKeys: () => listWebEntries(app, options.websFacade.webappManager).items.map((item) => item.entryKey),
     onNavigationPreferencesChanged: (preferences) => {

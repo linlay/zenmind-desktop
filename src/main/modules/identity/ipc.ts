@@ -9,8 +9,6 @@ export interface SsoIpcHandlerOptions {
     retrySession?: () => Promise<any>;
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
-    ensureBusinessToken?: (force?: boolean) => Promise<string>;
-    retryDesktopSsoSessionRestoreIfNeeded?: () => Promise<any>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
     exchangeWebSessionTicket?: (ticket: string) => Promise<any>;
     logoutWebSession?: () => Promise<boolean>;
@@ -46,9 +44,7 @@ export interface SsoIpcHandlerOptions {
   failDesktopSsoFlow: (message: string) => any;
   cancelDesktopSsoLogin: (app: any) => any;
   issueAgentAccessToken: (app: any, reason: any) => Promise<any> | any;
-  refreshKanbanConnection?: () => void;
   stopTunnelHubRuntime?: () => Promise<unknown> | unknown;
-  refreshEnterpriseChat?: () => Promise<unknown> | unknown;
   stopEnterpriseChat?: () => Promise<unknown> | unknown;
 }
 
@@ -65,15 +61,9 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
   } = options;
 
   ipcMain.handle("sso.retrySession", async () => desktopSsoController.retrySession?.() || getDesktopSsoStatus(app));
-  ipcMain.handle("sso.getStatus", async () => {
-    try {
-      await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded?.();
-      await desktopSsoController.ensureBusinessToken?.();
-    } catch (error) {
-      safeConsoleError("failed to refresh desktop sso token while reading status", error);
-    }
-    return getDesktopSsoStatus(app);
-  });
+  // Reading status never drives Identity network work; renderer status listeners would otherwise
+  // turn every published status into another renewal. Identity's own schedule owns recovery.
+  ipcMain.handle("sso.getStatus", async () => getDesktopSsoStatus(app));
 
   ipcMain.handle("agentAuth.issueAccessToken", async (_event: any, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
@@ -92,12 +82,9 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
         return undefined;
       },
       onAfterStatusChanged: async (status: any) => {
+        // Downstream services start from the single identity dispatcher once login is published.
         if (status.authenticated) {
           await desktopSsoController.exchangeBrowserCookieAccessToken();
-          options.refreshKanbanConnection?.();
-          void Promise.resolve(options.refreshEnterpriseChat?.()).catch((error) => {
-            safeConsoleError("failed to refresh enterprise chat after desktop sso login", error);
-          });
         }
       },
       onStatusChanged: desktopSsoController.broadcastStatus,

@@ -117,7 +117,7 @@ function writeGatewayConfig(app) {
 }
 
 for (const marketStatus of [401, 502]) {
-  test(`market HTTP ${marketStatus} after login cannot bring the window forward or publish an incomplete identity`, async t => {
+  test(`market HTTP ${marketStatus} after login never renews sign-in, brings the window forward or publishes identity`, async t => {
     let tokenRequests = 0;
     const f = fixture(t, "darwin", async url => {
       if (url === `${origin}/userinfo`) return response(200, { user: { id: "user" } });
@@ -133,23 +133,16 @@ for (const marketStatus of [401, 502]) {
     let marketRequests = 0;
     for (let attempt = 0; attempt < 2; attempt++) {
       await assert.rejects(requestMarket(f.app, "https://market.example.test/catalog", {}, {
-        issueMarketAccessToken: (_app, reason) => reason === "missing"
-          ? sso.getDesktopSsoBusinessToken()
-          : f.controller.ensureBusinessToken(true),
+        // Production issuer contract: read the published token for both reasons, never renew.
+        issueMarketAccessToken: () => sso.getDesktopSsoBusinessToken(),
         fetchImpl: async () => { marketRequests++; return response(marketStatus, {}); }
       }));
     }
-    assert.equal(marketRequests, marketStatus === 401 ? 4 : 2);
-    assert.equal(tokenRequests, marketStatus === 401 ? 3 : 1);
+    assert.equal(marketRequests, 2);
+    assert.equal(tokenRequests, 1, "a Market rejection must not send any SSO request");
     assertBackground(f);
-    if (marketStatus === 401) assert.ok(f.calls.events.length > 0);
-    for (const event of f.calls.events) {
-      assert.equal(event.channel, "sso.statusChanged");
-      assert.equal(event.status.authenticated, true);
-      assert.equal(event.status.pending, false);
-      assert.deepEqual(event.status.user, initialIdentity);
-      assert.deepEqual(event.status.completedSteps, { session: true, userInfo: true, accessToken: true });
-    }
+    assert.deepEqual(f.calls.events, []);
+    assert.deepEqual(sso.getDesktopSsoStatus(f.app).user, initialIdentity);
   });
 }
 

@@ -112,6 +112,27 @@ for (const moduleName of moduleDirectories) {
   }
 }
 
+// Desktop sign-in renewal is owned by Identity and its single app-level dispatcher. Downstream
+// services (Tunnel, enterprise chat, Market, usage, website exchange, Kanban) only read the
+// published token; letting them renew turned one misconfigured service into account-wide loops.
+const SSO_RENEWAL_MEMBERS = new Set([
+  "ensureBusinessToken",
+  "retrySession",
+  "retryDesktopSsoSessionRestoreIfNeeded",
+  "exchangeOidcTokens"
+]);
+const RETIRED_DOWNSTREAM_SSO_REFRESH_HOOKS = new Set([
+  "refreshIdentityToken",
+  "refreshDesktopSsoIdentityToken",
+  "refreshDesktopSsoAccessToken",
+  "refreshUsageAccessToken",
+  "createDesktopSsoTokenRefresher"
+]);
+function mayRenewDesktopSso(file) {
+  const rel = relative(file);
+  return rel.startsWith("src/main/modules/identity/") || rel === "src/main/app/assembly/identity.ts";
+}
+
 const fileEdges = new Map(files.map((file) => [file, new Set()]));
 const areaEdges = new Map();
 for (const file of files) {
@@ -171,6 +192,15 @@ for (const file of files) {
             errors.push(`${relative(file)} deep-imports module ${targetModule} via ${specifier}`);
           }
         }
+      }
+    }
+    if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) {
+      const name = node.text;
+      if (SSO_RENEWAL_MEMBERS.has(name) && !mayRenewDesktopSso(file)) {
+        errors.push(`${relative(file)} references Desktop SSO renewal (${name}); downstream services must only read the published token`);
+      }
+      if (RETIRED_DOWNSTREAM_SSO_REFRESH_HOOKS.has(name)) {
+        errors.push(`${relative(file)} reintroduces a downstream SSO refresh hook (${name})`);
       }
     }
     ts.forEachChild(node, visit);

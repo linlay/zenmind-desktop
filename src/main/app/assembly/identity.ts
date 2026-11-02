@@ -15,7 +15,6 @@ import { EnterpriseChatRuntime } from "../../modules/enterprise-chat";
 import {
   completeDesktopSsoCookieLogin,
   createDesktopSsoController,
-  desktopSsoIdTokenNeedsRefresh,
   failDesktopSsoFlow,
   failDesktopSsoStep,
   finalizeDesktopSsoLoginAttempt,
@@ -29,6 +28,7 @@ import {
 import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../../modules/marketplace";
 import { stopBrowserWebclient } from "../../modules/services";
 import {
+  notifyTunnelHubCredentialChanged,
   stopTunnelHubRuntime
 } from "../../modules/tunnel";
 import { createWebSurfaceRuntime } from "../../modules/webs";
@@ -73,44 +73,33 @@ export function assembleDesktopSsoController(dependencies: AssembleDesktopSsoCon
   });
 }
 
-export interface ConfigureMarketTokenIssuerDependencies {
-  readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "ensureBusinessToken">;
+/** Market reads the published canonical token; it never renews or revokes Desktop sign-in. */
+export function configureMarketTokenIssuer(): void {
+  configureMarketAccessTokenIssuer(() => readPublishedDesktopSsoToken());
 }
 
-export function configureMarketTokenIssuer(dependencies: ConfigureMarketTokenIssuerDependencies): void {
-  configureMarketAccessTokenIssuer(async (_marketApp, reason) => {
-    const currentToken = isDesktopSsoCredentialRuntimeReady()
-      ? getDesktopSsoBusinessToken() || ""
-      : "";
-    if (currentToken && reason === "missing") {
-      return currentToken;
-    }
-    return dependencies.desktopSsoController.ensureBusinessToken(true);
-  });
+export function readPublishedDesktopSsoToken() {
+  return isDesktopSsoCredentialRuntimeReady() ? getDesktopSsoBusinessToken() || "" : "";
 }
 
-export interface CreateDesktopSsoTokenRefresherDependencies {
+export interface CreateDesktopSsoMaintenanceDependencies {
   readonly desktopSsoController: Pick<ReturnType<typeof createDesktopSsoController>, "retryDesktopSsoSessionRestoreIfNeeded" | "ensureBusinessToken">;
   readonly applyDesktopSsoRestoreResult: (result: DesktopSsoRestoreResult) => void;
   readonly desktopSsoRestoreState: DesktopSsoRestoreResult["state"];
-  readonly assistantBridgeRuntime: Pick<AssistantBridgeRuntime, "refreshKanbanDeviceInfo">;
 }
 
-export function createDesktopSsoTokenRefresher(dependencies: CreateDesktopSsoTokenRefresherDependencies) {
-  return async (force = false) => {
+/**
+ * Identity's own schedule (startup, periodic check, wake). Downstream services never receive
+ * this function: their failures stay local and they react to committed credential changes.
+ */
+export function createDesktopSsoMaintenance(dependencies: CreateDesktopSsoMaintenanceDependencies) {
+  return async () => {
     const restoreResult = await dependencies.desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded();
     dependencies.applyDesktopSsoRestoreResult(restoreResult);
     if (dependencies.desktopSsoRestoreState === "temporarily_unavailable") {
       return "";
     }
-    const needsRefresh = force || desktopSsoIdTokenNeedsRefresh(app);
-    const accessToken = await dependencies.desktopSsoController.ensureBusinessToken(force);
-    // IM owns its derived session lifetime. Another service's 401 must not
-    // disconnect a healthy chat or clear its active conversation on renewal.
-    if (needsRefresh && accessToken) {
-      dependencies.assistantBridgeRuntime?.refreshKanbanDeviceInfo();
-    }
-    return accessToken;
+    return dependencies.desktopSsoController.ensureBusinessToken(false);
   };
 }
 
@@ -201,12 +190,23 @@ export async function handleDesktopSsoWebviewNavigation(dependencies: HandleDesk
 export interface ApplyDesktopSsoRestoreResultDependencies {
   desktopSsoRestoreState: DesktopSsoRestoreResult["state"];
   ssoCredentialDependentRuntimesStarted: boolean;
+  /** Account the downstream runtimes were last started for; kept across temporary unavailability. */
+  ssoCredentialDependentIdentity: string | null;
   readonly nonCoreDesktopRuntimeStarted: boolean;
   readonly startSsoCredentialDependentRuntimes: () => void;
-  readonly assistantBridgeRuntime: Pick<AssistantBridgeRuntime, "refreshKanbanDeviceInfo">;
-  readonly enterpriseChatRuntime: Pick<InstanceType<typeof EnterpriseChatRuntime>, "refresh">;
+  readonly assistantBridgeRuntime: Pick<AssistantBridgeRuntime, "refreshKanbanDeviceInfo" | "refreshKanbanCredentials">;
+  readonly enterpriseChatRuntime: Pick<InstanceType<typeof EnterpriseChatRuntime>, "refresh" | "handleSignedOut" | "handleCredentialChanged">;
 }
 
+export function readDesktopSsoDependentIdentity() {
+  const user = getDesktopSsoStatus(app).user;
+  return user?.sub ? JSON.stringify([user.issuer || "", user.sub, user.audience || ""]) : null;
+}
+
+/**
+ * The single identity-to-downstream dispatcher. Downstream services consume the canonical token
+ * read-only; only an account change rebuilds them, and same-account recovery only resumes Tunnel.
+ */
 export function applyDesktopSsoRestoreResult(dependencies: ApplyDesktopSsoRestoreResultDependencies, result: DesktopSsoRestoreResult) {
   if (result.state !== "authenticated") void stopBrowserWebclient();
   // Login-identity providers follow the SSO token file inside Platform; no Provider Key changes here.
@@ -216,14 +216,24 @@ export function applyDesktopSsoRestoreResult(dependencies: ApplyDesktopSsoRestor
     if (dependencies.nonCoreDesktopRuntimeStarted) {
       void stopTunnelHubRuntime().catch(error => safeConsoleError("failed to stop Tunnel after SSO became unavailable", error));
     }
+    if (result.state === "signed_out") {
+      // Background revocation clears IM like an explicit sign-out. A temporary outage keeps
+      // IM's own derived session; its next exchange finds no published token and parks.
+      dependencies.ssoCredentialDependentIdentity = null;
+      dependencies.enterpriseChatRuntime.handleSignedOut();
+    }
     return;
   }
-  if (result.state !== "authenticated" ||
-    dependencies.ssoCredentialDependentRuntimesStarted ||
-    !isDesktopSsoCredentialRuntimeReady()) {
+  if (dependencies.ssoCredentialDependentRuntimesStarted || !isDesktopSsoCredentialRuntimeReady()) {
     return;
   }
+  const identity = readDesktopSsoDependentIdentity();
+  const sameIdentity = identity !== null && identity === dependencies.ssoCredentialDependentIdentity;
+  dependencies.ssoCredentialDependentIdentity = identity;
   dependencies.startSsoCredentialDependentRuntimes();
+  if (sameIdentity) {
+    return;
+  }
   dependencies.assistantBridgeRuntime?.refreshKanbanDeviceInfo();
   void refreshMarketCatalog(app).catch((error) => {
     safeConsoleError("failed to refresh Market after desktop sso restore", {
@@ -235,5 +245,29 @@ export function applyDesktopSsoRestoreResult(dependencies: ApplyDesktopSsoRestor
       error: error instanceof Error ? error.message : String(error)
     });
   });
+}
+
+/**
+ * Identity committed a different canonical token. A first token or another account goes through
+ * the restore dispatcher; a same-account renewal only wakes services parked on a rejected token.
+ */
+export function handleDesktopSsoCredentialChanged(dependencies: ApplyDesktopSsoRestoreResultDependencies) {
+  // A disk candidate loaded before startup restore is not a sign-in; only act after Identity
+  // has published a verified authenticated result in this process.
+  if (dependencies.desktopSsoRestoreState !== "authenticated" || !isDesktopSsoCredentialRuntimeReady()) {
+    return;
+  }
+  if (!dependencies.ssoCredentialDependentRuntimesStarted ||
+    readDesktopSsoDependentIdentity() !== dependencies.ssoCredentialDependentIdentity) {
+    if (dependencies.ssoCredentialDependentRuntimesStarted) {
+      // An account change without an intervening sign-out still rebuilds every consumer once.
+      dependencies.ssoCredentialDependentRuntimesStarted = false;
+    }
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated", status: getDesktopSsoStatus(app) });
+    return;
+  }
+  dependencies.assistantBridgeRuntime?.refreshKanbanCredentials();
+  notifyTunnelHubCredentialChanged();
+  dependencies.enterpriseChatRuntime.handleCredentialChanged();
 }
 

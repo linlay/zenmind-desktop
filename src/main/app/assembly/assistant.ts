@@ -123,7 +123,6 @@ export interface AssembleAssistantRuntimeDependencies {
     reason: Parameters<typeof issueAgentAccessToken>[1]
   ) => ReturnType<typeof issueAgentAccessToken>;
   readonly realtimeBroker: InstanceType<typeof RealtimeBroker>;
-  readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
   readonly showMainWindow: AppShellRuntime["showMainWindow"];
   readonly showFileDialog: AppShellRuntime["showFileDialog"];
   readonly showSaveDialog: AppShellRuntime["showSaveDialog"];
@@ -156,7 +155,6 @@ export function assembleAssistantRuntime(dependencies: AssembleAssistantRuntimeD
       readNavigationAgents: readAssistantNavigationAgentsFromPlatform,
       readCopilotAgents: readAssistantCopilotAgentsFromPlatform
     },
-    refreshDesktopSsoAccessToken: () => dependencies.refreshDesktopSsoIdentityToken(true),
     canUseDesktopSsoCredentials: isDesktopSsoCredentialRuntimeReady,
     callAgentPlatform: (targetApp, targetPath, requestOptions) => callAgentPlatform(targetApp, targetPath, {
       ...requestOptions,

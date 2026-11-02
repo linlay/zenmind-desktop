@@ -12,7 +12,7 @@ import type {
 } from "../../../shared/contracts";
 import { verifyDesktopAccessToken, type DesktopWsServerOptions } from "../desktop-protocol";
 import {
-  updateTunnelPlatformCredential, ensureTunnelHubRegistrationReady
+  updateTunnelPlatformCredential, ensureTunnelHubRegistrationReady, TunnelHubCredentialRejectedError
 } from "./registration";
 import {
   clearLegacyTunnelHubSecrets,
@@ -58,6 +58,9 @@ const LOG_PATH = "memory://desktop-tunnel-hub";
 const DEFAULT_NETWORK_MONITOR_INTERVAL_MS = 5_000;
 const MIN_NETWORK_MONITOR_INTERVAL_MS = 10;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
+// A rejected credential cannot be fixed by retrying it every few seconds; a renewed token retries at once.
+const CREDENTIAL_REJECTED_RETRY_BASE_MS = 30_000;
+const CREDENTIAL_REJECTED_RETRY_MAX_MS = 10 * 60_000;
 
 function buildNetworkInterfaceSignature(platformLabel: string, interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>) {
   const entries: string[] = [];
@@ -132,6 +135,8 @@ export class TunnelHubRuntime {
   private stopping = false;
   private generation = 0;
   private logs = "";
+  private rejectedIdentityToken = "";
+  private credentialRejectedAttempts = 0;
 
   constructor(private readonly options: TunnelHubRuntimeOptions) {}
 
@@ -188,6 +193,7 @@ export class TunnelHubRuntime {
     previousClient?.close();
     this.stopping = false;
     this.lastError = "";
+    this.clearCredentialRejection();
     const settings = readTunnelHubSettings(this.options.app);
     this.setPhase(settings.enabled ? "stopped" : "disabled");
     this.log("stopped");
@@ -228,6 +234,30 @@ export class TunnelHubRuntime {
     };
   }
 
+  /** Identity committed a different canonical token; retry only if Hub rejected the previous one. */
+  handleCredentialChanged() {
+    if (!this.rejectedIdentityToken || this.startPromise || this.stopping) {
+      return;
+    }
+    if (!readTunnelHubSettings(this.options.app).enabled || !this.canConnect()) {
+      return;
+    }
+    if (readTunnelHubRegistrationBearerToken(this.options.app) === this.rejectedIdentityToken) {
+      return;
+    }
+    this.log("Desktop credential changed; retrying rejected Tunnel registration");
+    this.clearReconnectTimer();
+    void this.start().catch((error) => {
+      this.lastError = messageFromError(error);
+      this.scheduleReconnect();
+    });
+  }
+
+  private clearCredentialRejection() {
+    this.rejectedIdentityToken = "";
+    this.credentialRejectedAttempts = 0;
+  }
+
   private canConnect() {
     return this.options.canUseDesktopSsoCredentials?.() !== false &&
       Boolean(readTunnelHubRegistrationBearerToken(this.options.app));
@@ -251,6 +281,7 @@ export class TunnelHubRuntime {
     previousClient?.close();
     this.lastError = "";
     this.setPhase("starting");
+    const attemptIdentityToken = readTunnelHubRegistrationBearerToken(this.options.app);
     try {
       const registration = new AbortController();
       this.registrationController = registration;
@@ -282,6 +313,7 @@ export class TunnelHubRuntime {
         return this.commandResult(true, "Tunnel Hub is enabled and waiting for sign-in.");
       }
       this.lastConnectedAt = new Date().toISOString();
+      this.clearCredentialRejection();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
       void Promise.resolve(this.options.onConnected?.()).catch((error) => {
@@ -293,7 +325,11 @@ export class TunnelHubRuntime {
       this.lastError = messageFromError(error);
       this.setPhase("error");
       this.log(`start failed: ${this.lastError}`);
-      this.scheduleReconnect();
+      if (error instanceof TunnelHubCredentialRejectedError) {
+        this.scheduleCredentialRejectedRetry(attemptIdentityToken);
+      } else {
+        this.scheduleReconnect();
+      }
       return this.commandResult(false, this.lastError);
     }
   }
@@ -526,6 +562,33 @@ export class TunnelHubRuntime {
     }, delayMs);
   }
 
+  private scheduleCredentialRejectedRetry(rejectedIdentityToken: string) {
+    this.clearCredentialSync();
+    this.clearReconnectTimer();
+    if (!readTunnelHubSettings(this.options.app).enabled || this.stopping) {
+      return;
+    }
+    if (!this.canConnect()) {
+      void this.stop();
+      return;
+    }
+    this.rejectedIdentityToken = rejectedIdentityToken;
+    // Desktop may have committed another token while this registration was in flight.
+    const renewedDuringAttempt = readTunnelHubRegistrationBearerToken(this.options.app) !== rejectedIdentityToken;
+    const delayMs = renewedDuringAttempt ? 0 : Math.min(CREDENTIAL_REJECTED_RETRY_MAX_MS,
+      CREDENTIAL_REJECTED_RETRY_BASE_MS * 2 ** Math.min(this.credentialRejectedAttempts, 5));
+    this.credentialRejectedAttempts += 1;
+    this.log(`credential rejected; retrying in ${Math.round(delayMs / 1000)}s or after Desktop renews it`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.start().catch((error) => {
+        this.lastError = messageFromError(error);
+        this.scheduleReconnect();
+      });
+    }, delayMs);
+    this.reconnectTimer.unref?.();
+  }
+
   private clearReconnectTimer() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -590,6 +653,10 @@ export function startTunnelHubRuntime() {
 
 export function stopTunnelHubRuntime() {
   return getTunnelHubRuntime().stop();
+}
+
+export function notifyTunnelHubCredentialChanged() {
+  runtime?.handleCredentialChanged();
 }
 
 export function restartTunnelHubRuntime() {

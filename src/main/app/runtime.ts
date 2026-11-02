@@ -13,7 +13,7 @@ import { createDesktopAppearanceRuntime } from "../modules/settings";
 import { createArtifactRuntime, createArtifactPlatformClient } from "../modules/artifacts";
 import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, getAssistantSettings, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
-import { getDesktopDeviceId, getDesktopSsoBusinessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
+import { getDesktopDeviceId, getDesktopSsoBusinessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, subscribeDesktopSsoCredentialChange, type DesktopSsoRestoreResult } from "../modules/identity";
 import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
 import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
 import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
@@ -272,10 +272,9 @@ export function createMainProcessRuntime() {
     get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
     get webviewContextMenuController() { return webviewContextMenuController; }
   });
-  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoBusinessToken() || "";
+  let maintainDesktopSsoSession = async () => getDesktopSsoBusinessToken() || "";
   const enterpriseChatRuntime = enterpriseChat.assembleEnterpriseChat({
     get startupPlatform() { return startupPlatform; },
-    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
     get showFileDialog() { return showFileDialog; },
     get showSaveDialog() { return showSaveDialog; },
     get captureEnterpriseChatScreenshot() { return captureEnterpriseChatScreenshot; },
@@ -309,6 +308,7 @@ export function createMainProcessRuntime() {
   let startupEnvImportFailureMessage: string | null = null;
   let nonCoreDesktopRuntimeStarted = false;
   let ssoCredentialDependentRuntimesStarted = false;
+  let ssoCredentialDependentIdentity: string | null = null;
   let desktopSsoRestoreState: DesktopSsoRestoreResult["state"] = "signed_out";
   let focusedWebviewDevToolsShortcutRegistered = false;
   function setStartupPhase(phase: StartupPhase) {
@@ -405,21 +405,19 @@ export function createMainProcessRuntime() {
     get webSurfaceRuntime() { return webSurfaceRuntime; },
     get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; }
   });
-  identity.configureMarketTokenIssuer({
-    get desktopSsoController() { return desktopSsoController; }
-  });
-  refreshDesktopSsoIdentityToken = identity.createDesktopSsoTokenRefresher({
+  identity.configureMarketTokenIssuer();
+  subscribeDesktopSsoCredentialChange(() => identity.handleDesktopSsoCredentialChanged(ssoDispatcherDependencies()));
+  maintainDesktopSsoSession = identity.createDesktopSsoMaintenance({
     get desktopSsoController() { return desktopSsoController; },
     get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
-    get desktopSsoRestoreState() { return desktopSsoRestoreState; },
-    get assistantBridgeRuntime() { return assistantBridgeRuntime; }
+    get desktopSsoRestoreState() { return desktopSsoRestoreState; }
   });
 
   websFacade.webappWindowManager.setAuthPreloadPath(MAIN_PRELOAD_PATH.replace(/index\.js$/u, "webapp-auth.js"));
   registerWebappAuth({
     registry: webSurfaceRuntime.browserSurfaceRegistry,
     webs: websFacade,
-    refreshToken: (force) => refreshDesktopSsoIdentityToken(force)
+    readToken: identity.readPublishedDesktopSsoToken
   });
 
   const settingsRuntime = settings.assembleSettingsRuntime({
@@ -447,7 +445,6 @@ export function createMainProcessRuntime() {
     get cdpIntegration() { return cdpIntegration; },
     get issueAgentAccessToken() { return identityTokenProvider; },
     get realtimeBroker() { return realtimeBroker; },
-    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
     get showMainWindow() { return showMainWindow; },
     get showFileDialog() { return showFileDialog; },
     get showSaveDialog() { return showSaveDialog; },
@@ -758,24 +755,31 @@ export function createMainProcessRuntime() {
     });
   }
 
-  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
-    return identity.applyDesktopSsoRestoreResult({
+  // A function declaration keeps the dispatcher callable from hoisted wiring before this line runs.
+  function ssoDispatcherDependencies(): Parameters<typeof identity.applyDesktopSsoRestoreResult>[0] {
+    return {
       get desktopSsoRestoreState() { return desktopSsoRestoreState; },
       set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
       get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
       set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
+      get ssoCredentialDependentIdentity() { return ssoCredentialDependentIdentity; },
+      set ssoCredentialDependentIdentity(value) { ssoCredentialDependentIdentity = value; },
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
       get startSsoCredentialDependentRuntimes() { return startSsoCredentialDependentRuntimes; },
       get assistantBridgeRuntime() { return assistantBridgeRuntime; },
       get enterpriseChatRuntime() { return enterpriseChatRuntime; }
-    }, result);
+    };
+  }
+
+  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
+    return identity.applyDesktopSsoRestoreResult(ssoDispatcherDependencies(), result);
   }
 
   function startNonCoreDesktopRuntime() {
     return startupAssembly.startNonCoreDesktopRuntime({
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
       set nonCoreDesktopRuntimeStarted(value) { nonCoreDesktopRuntimeStarted = value; },
-      get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
+      get maintainDesktopSsoSession() { return maintainDesktopSsoSession; },
       get runNonCoreStartupTask() { return runNonCoreStartupTask; },
       get petRuntime() { return petRuntime; },
       get startupPlatform() { return startupPlatform; },
@@ -846,7 +850,6 @@ export function createMainProcessRuntime() {
       get startupPipeline() { return startupPipeline; },
       registerIpc: (conversationShareFacade, getUpdatesRuntime) => readyIpc.registerReadyIpc({
         artifactRuntime,
-        get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
         promoteLocalDocumentDraft: input => localDocuments.promoteDraftChat(input),

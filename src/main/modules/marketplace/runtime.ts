@@ -185,27 +185,33 @@ async function requestFavoriteUpdate(
   options: MarketFavoriteOptions
 ) {
   const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
+  const send = (bearerToken: string) => fetchImpl(url, {
+    method,
+    headers: {
+      ...getMarketDesktopDeviceHeaders(app),
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
+    }
+  });
   let token = await issueFavoriteAccessToken(app, "missing", options);
-  for (const reason of ["missing", "unauthorized"] as const) {
-    if (reason === "unauthorized") {
-      token = await issueFavoriteAccessToken(app, "unauthorized", options);
-    }
-    const response = await fetchImpl(url, {
-      method,
-      headers: {
-        ...getMarketDesktopDeviceHeaders(app),
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    });
-    const data = await readMarketApiResponse(response);
-    if (response.ok) {
-      return data;
-    }
-    if (response.status !== 401 || reason === "unauthorized" || !options.issueAgentAccessToken) {
-      throw new MarketApiRequestError(response.status, marketApiErrorMessage(response.status, data));
+  let response = await send(token);
+  if (response.status === 401 && options.issueAgentAccessToken) {
+    // Retry only with a token Identity has already renewed; a Market 401 never renews sign-in.
+    const current = await issueFavoriteAccessToken(app, "unauthorized", options);
+    if (current !== token) {
+      token = current;
+      response = await send(token);
     }
   }
-  throw new Error(t("market.main.favoriteAuthRequired"));
+  const data = await readMarketApiResponse(response);
+  if (response.ok) {
+    return data;
+  }
+  if (response.status === 401 && token) {
+    throw new MarketApiRequestError(401, t("market.main.favoriteCredentialRejected", {
+      reason: marketApiErrorMessage(response.status, data)
+    }));
+  }
+  throw new MarketApiRequestError(response.status, marketApiErrorMessage(response.status, data));
 }
 
 function combineMarketSections(
