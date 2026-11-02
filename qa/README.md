@@ -16,7 +16,7 @@
 | 网站密码与登录采集 | `website-credentials-smoke.mjs`、`website-credentials-capture-smoke.mjs` |
 | 设置、能力导航与资料库 | `web-settings-smoke.mjs`、`capability-navigation-smoke.mjs`、`library-smoke.mjs`（旧 `artifact-management-smoke.mjs` 转到此入口） |
 | WorkPanel 与本地文档 | `work-panel-browser-smoke.cjs`、`work-panel-browser-smoke.mjs`、`work-panel-local-document-smoke.mjs`、`local-document-open-native-smoke.cjs`；新标签与 WebApp 显示切换运行 `work-panel-new-tab-webapp-smoke.mjs`，验证真实 guest 保留、输入命中、草稿及跨 Chat/面板切换 |
-| 窗口与原生平台交互 | `work-panel-fullscreen-smoke.mjs`、`windows-fullscreen-smoke.cjs`、`mac-application-menu-smoke.cjs`、`screenshot-native-macos.mjs` |
+| 窗口与原生平台交互 | `work-panel-fullscreen-smoke.mjs`、`work-panel-main-chat-tab-smoke.mjs`（拖满后固定对话页签、原 Chat guest/草稿/滚动保留与分栏恢复）、`windows-fullscreen-smoke.cjs`、`mac-application-menu-smoke.cjs`、`screenshot-native-macos.mjs` |
 | 插件、连接器、企业聊天与 WebApp | 对应的 `*-smoke.cjs` / `*-smoke.mjs`，按脚本依赖准备构建产物 |
 
 从仓库根目录运行命令。独立 `.mjs` 入口使用 `node qa/<文件名>.mjs`，直接使用 Electron 的 `.cjs` 入口使用 `npx electron qa/<文件名>.cjs`；`*-checks.cjs` 是配套 runner，由对应 `.mjs` 设置夹具和环境后启动。需要 `dist-electron` 或 renderer 发布资源的脚本先按对应说明构建；不要把浏览器预览或 Windows CSS 模拟当作原生 Windows 验收。

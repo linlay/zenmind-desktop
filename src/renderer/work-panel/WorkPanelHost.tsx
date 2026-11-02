@@ -109,6 +109,7 @@ type WorkPanelHostProps = {
   fullscreenOwnerChatId: string | null;
   onFullscreenChange(ownerChatId: string | null): Promise<boolean>;
   hasPanelToggle?: boolean;
+  mainChatTab?: { active: boolean; onActivate(): void; onDeactivate(): void };
   isMac: boolean;
   isWindows: boolean;
   launcher: {
@@ -358,6 +359,7 @@ export function WorkPanelHost({
   fullscreenOwnerChatId,
   onFullscreenChange,
   hasPanelToggle,
+  mainChatTab,
   isMac,
   isWindows,
   launcher,
@@ -419,6 +421,7 @@ export function WorkPanelHost({
   };
 
   const openNewTab = (ownerChatId: string) => {
+    if (ownerChatId === activeOwnerKey) mainChatTab?.onDeactivate();
     const id = globalThis.crypto.randomUUID();
     const anchor = stateRef.current.workspaces.find(workspace => workspace.ownerChatId === ownerChatId)?.activeItemId ?? null;
     setNewTabs(current => [...current, { id, ownerChatId, urlDraft: "" }]);
@@ -2081,7 +2084,7 @@ export function WorkPanelHost({
     const visiblePanel = activeOwnerKey
       ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeOwnerKey)}"]`)
       : null;
-    const activeItemId = resolveWorkPanelActiveItemId(
+    const activeItemId = mainChatTab?.active ? null : resolveWorkPanelActiveItemId(
       state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey),
       selectedNewTabs,
     );
@@ -2119,7 +2122,7 @@ export function WorkPanelHost({
     } else if (isMac && focusedItem && !isActiveItemHost(focusedItem)) {
       (focusedItem.querySelector("webview") as Electron.WebviewTag | null)?.blur();
     }
-  }, [activeOwnerKey, isMac, isWindows, selectedNewTabs, state.workspaces]);
+  }, [activeOwnerKey, isMac, isWindows, selectedNewTabs, state.workspaces, mainChatTab?.active]);
 
   // Remember the box each workspace had while shown. A hidden workspace keeps
   // that viewport for its web pages instead of following the foreground
@@ -2171,8 +2174,9 @@ export function WorkPanelHost({
       )}
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeOwnerKey;
+        const mainChatActive = visible && Boolean(mainChatTab?.active);
         const selectedNewTab = selectedNewTabs[workspace.ownerChatId];
-        const newTabActive = isWorkPanelNewTabActive(selectedNewTab, workspace.activeItemId);
+        const newTabActive = !mainChatActive && isWorkPanelNewTabActive(selectedNewTab, workspace.activeItemId);
         const localOnly = isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId);
         // A background Run keeps operating its own Chat's web pages, so a
         // hidden workspace with web items retains a non-zero viewport.
@@ -2189,9 +2193,20 @@ export function WorkPanelHost({
             data-work-panel-chat={workspace.ownerChatId}
           >
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
+              {visible && mainChatTab && <WorkPanelTab
+                title={t("chatWorkPanel.mainChat")}
+                active={mainChatActive}
+                fixed
+                icon={<MessageOutlined />}
+                controls="desktop-main-chat-panel"
+                onActivate={() => {
+                  closeNewTabSelection(workspace.ownerChatId);
+                  mainChatTab.onActivate();
+                }}
+              />}
               {workspace.items.map((item) => {
                 if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
-                const active = !newTabActive && workspace.activeItemId === item.itemId;
+                const active = !mainChatActive && !newTabActive && workspace.activeItemId === item.itemId;
                 const closable = item.closable && !item.pinned;
                 const overview = item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
                 const itemLoading = loadingWebItems.has(itemRuntimeKey(workspace.ownerChatId, item.itemId));
@@ -2236,8 +2251,11 @@ export function WorkPanelHost({
               {newTabs.filter(tab => tab.ownerChatId === workspace.ownerChatId).map(tab => (
                 <WorkPanelTab key={tab.id} title={t("chatWorkPanel.newTab.title")}
                   active={newTabActive && selectedNewTab?.id === tab.id} icon={<GlobalOutlined />}
-                  onActivate={() => setSelectedNewTabs(current => ({ ...current,
-                    [workspace.ownerChatId]: { id: tab.id, anchor: workspace.activeItemId } }))}
+                  onActivate={() => {
+                    if (visible) mainChatTab?.onDeactivate();
+                    setSelectedNewTabs(current => ({ ...current,
+                      [workspace.ownerChatId]: { id: tab.id, anchor: workspace.activeItemId } }));
+                  }}
                   closeLabel={t("chatWorkPanel.closeTab", { title: t("chatWorkPanel.newTab.title") })}
                   closeShortcut={isMac ? "⌘W" : isWindows ? "Ctrl+W" : undefined}
                   onClose={() => closeNewTab(workspace.ownerChatId, tab.id)} />
@@ -2248,7 +2266,7 @@ export function WorkPanelHost({
                   onClick={() => openNewTab(workspace.ownerChatId)}><PlusOutlined /></button>
               </div>
             </div>
-            <div className="chat-work-panel-body">
+            <div className={`chat-work-panel-body${mainChatActive ? " is-main-chat-active" : ""}`} aria-hidden={mainChatActive || undefined}>
               {visible && newTabActive && <WorkPanelNewTab key={selectedNewTab?.id}
                 urlDraft={newTabs.find(tab => tab.id === selectedNewTab?.id)?.urlDraft ?? ""}
                 onUrlDraftChange={urlDraft => setNewTabs(current => current.map(tab =>
@@ -2272,7 +2290,7 @@ export function WorkPanelHost({
                       state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId) &&
                       !webControllers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId)) &&
                       !failedWebDialogTransfers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId))) return null;
-                  const active = visible && !newTabActive && workspace.activeItemId === item.itemId;
+                  const active = visible && !mainChatActive && !newTabActive && workspace.activeItemId === item.itemId;
                   if (item.descriptor.kind === "webclient" &&
                       (isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId))) return null;
                   // Read-only observers belong to the visible, committed Main Chat.

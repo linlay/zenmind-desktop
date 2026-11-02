@@ -118,6 +118,7 @@ import {
   clampWorkPanelWidth,
   normalizeStoredWorkPanelWidth,
   resolveDefaultWorkPanelWidth,
+  resolveWorkPanelDragState,
   resolveWorkPanelMaxWidth,
   resolveWorkPanelWidthFromDrag,
 } from "../../shared/work-panel-layout";
@@ -747,6 +748,8 @@ export function AppShell() {
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const [selectedWorkPanelNewTabs, setSelectedWorkPanelNewTabs] = useState<WorkPanelNewTabSelections>({});
+  // Presentation only: the canonical Main Chat guest stays in its original host.
+  const [workPanelMainChatOwnerKey, setWorkPanelMainChatOwnerKey] = useState<string | null>(null);
   const localDocumentState = useLocalDocumentWorkspace();
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelDialogRestoresRef = useRef(new Set<string>());
@@ -811,6 +814,8 @@ export function AppShell() {
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
+  const [workPanelDragMainChatOpacity, setWorkPanelDragMainChatOpacity] = useState(1);
+  const [workPanelDragPreviewWidth, setWorkPanelDragPreviewWidth] = useState<number | null>(null);
   const [isCopilotDockResizing, setIsCopilotDockResizing] = useState(false);
   const [appShellWidth, setAppShellWidth] = useState(() =>
     typeof window === "undefined" ? 1440 : window.innerWidth
@@ -889,12 +894,15 @@ export function AppShell() {
   );
   const showMainChatWorkPanelToggle = activeEmbeddedAgentWebclientRoute?.kind === "chat";
   const workPanelMaxWidth = resolveWorkPanelMaxWidth(appContentWidth || undefined);
-  const renderedWorkPanelWidth = clampWorkPanelWidth(
-    preferredWorkPanelWidth,
-    appContentWidth || undefined,
-  );
+  // Pointer previews intentionally pass through the range the settled layout snaps over.
+  const renderedWorkPanelWidth = workPanelDragPreviewWidth === null
+    ? clampWorkPanelWidth(preferredWorkPanelWidth, appContentWidth || undefined)
+    : Math.min(workPanelMaxWidth, Math.max(WORK_PANEL_MIN_WIDTH, workPanelDragPreviewWidth));
   const isMainChatCollapsedByWorkPanel = activeChatWorkPanelVisible && appContentWidth > 0 &&
     renderedWorkPanelWidth >= workPanelMaxWidth;
+  const showWorkPanelMainChatTab = isMainChatCollapsedByWorkPanel && !workPanelFullscreenOwnerChatId;
+  const isWorkPanelMainChatActive = showWorkPanelMainChatTab &&
+    workPanelMainChatOwnerKey === activeChatWorkPanelOwnerKey;
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
@@ -1245,7 +1253,9 @@ export function AppShell() {
   const activeWorkPanelWorkspace = workPanelState.workspaces.find(
     (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId,
   );
-  const activeWorkPanelItemId = resolveWorkPanelActiveItemId(activeWorkPanelWorkspace, selectedWorkPanelNewTabs);
+  const activeWorkPanelItemId = isWorkPanelMainChatActive
+    ? null
+    : resolveWorkPanelActiveItemId(activeWorkPanelWorkspace, selectedWorkPanelNewTabs);
   const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && Boolean(
     activeWorkPanelWorkspace?.items.some(
       (item) => item.itemId === activeWorkPanelItemId && item.descriptor.kind === "webapp-ref",
@@ -2892,6 +2902,12 @@ export function AppShell() {
   }, [activeChatWorkPanelVisible]);
 
   useEffect(() => {
+    if (!showWorkPanelMainChatTab || workPanelMainChatOwnerKey !== activeChatWorkPanelOwnerKey) {
+      setWorkPanelMainChatOwnerKey(null);
+    }
+  }, [showWorkPanelMainChatTab, activeChatWorkPanelOwnerKey, workPanelMainChatOwnerKey]);
+
+  useEffect(() => {
     const ownerChatId = workPanelFullscreenOwnerChatId;
     if (!ownerChatId) return;
     const adopted = isLocalDocumentDraftOwnerKey(ownerChatId)
@@ -3039,6 +3055,8 @@ export function AppShell() {
     const resizer = event.currentTarget;
     const dragState = {
       initialWidth: renderedWorkPanelWidth,
+      settledWidth: renderedWorkPanelWidth,
+      mainChatOwnerKey: isWorkPanelMainChatActive ? activeChatWorkPanelOwnerKey : null,
       pointerId: event.pointerId,
       startClientX: event.clientX,
     };
@@ -3052,12 +3070,16 @@ export function AppShell() {
     const handlePointerMove = (pointerEvent: PointerEvent) => {
       if (pointerEvent.pointerId !== dragState.pointerId) return;
       if (pointerEvent.cancelable) pointerEvent.preventDefault();
-      setPreferredWorkPanelWidth(resolveWorkPanelWidthFromDrag({
+      const nextState = resolveWorkPanelDragState({
         initialWidth: dragState.initialWidth,
         startClientX: dragState.startClientX,
         currentClientX: pointerEvent.clientX,
         availableWidth: appContentWidth || undefined,
-      }));
+      });
+      dragState.settledWidth = nextState.settledWidth;
+      setPreferredWorkPanelWidth(nextState.settledWidth);
+      setWorkPanelDragPreviewWidth(nextState.width);
+      setWorkPanelDragMainChatOpacity(nextState.mainChatOpacity);
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", handlePointerMove, true);
@@ -3071,6 +3093,12 @@ export function AppShell() {
         workPanelResizeStateRef.current = null;
       }
       setIsWorkPanelResizing(false);
+      setWorkPanelDragPreviewWidth(null);
+      setPreferredWorkPanelWidth(dragState.settledWidth);
+      if (dragState.mainChatOwnerKey && dragState.settledWidth >= workPanelMaxWidth) {
+        setWorkPanelMainChatOwnerKey(dragState.mainChatOwnerKey);
+      }
+      setWorkPanelDragMainChatOpacity(1);
       try {
         if (resizer.hasPointerCapture(dragState.pointerId)) {
           resizer.releasePointerCapture(dragState.pointerId);
@@ -3993,6 +4021,9 @@ export function AppShell() {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`,
     "--work-panel-collapsed-main-gap": `${WORK_PANEL_COLLAPSED_MAIN_GAP}px`,
     "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
+    "--work-panel-main-chat-opacity": activeChatWorkPanelVisible && isWorkPanelResizing
+      ? workPanelDragMainChatOpacity
+      : 1,
     "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
@@ -4076,6 +4107,10 @@ export function AppShell() {
       : command;
     const result = reduceWorkPanelCommand(currentState, normalizedCommand);
     if (result.ok) {
+      if (command.type === "openItem" || command.type === "openBlobPopup" || command.type === "activateItem" ||
+          command.type === "closeWorkspace" || command.type === "hideWorkspace" || command.type === "adoptLocalDocumentWorkspace") {
+        setWorkPanelMainChatOwnerKey(current => current === command.ownerChatId ? null : current);
+      }
       for (const dialog of previousState.dialogItems ?? []) {
         if (!result.nextState.dialogItems?.some((entry) => entry.transferId === dialog.transferId)) {
           void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId: dialog.transferId }).catch(() => undefined);
@@ -4643,6 +4678,7 @@ export function AppShell() {
         assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
         isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
+        isWorkPanelMainChatActive ? "is-main-chat-in-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-header-actions" : "",
         showSidebarHeaderNavigation ? "has-fixed-sidebar-header-navigation" : "",
@@ -4936,7 +4972,7 @@ export function AppShell() {
         {showWebappCopilotButton ? (
           <WebappCopilotButton open={assistantCopilotOpen} onToggle={toggleSystemBarAssistantDock} />
         ) : null}
-        <main className="app-main">
+        <main className="app-main" id="desktop-main-chat-panel">
           <ServiceWebviewSurfaceHost
             headerLayout={mainChatHeaderLayout}
             mainChatObserverActive={!assistantCopilotOpen}
@@ -5162,6 +5198,11 @@ export function AppShell() {
           fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}
           onFullscreenChange={changeWorkPanelFullscreen}
           hasPanelToggle={activeChatWorkPanelVisible && showMainChatWorkPanelToggle}
+          mainChatTab={showWorkPanelMainChatTab ? {
+            active: isWorkPanelMainChatActive,
+            onActivate: () => setWorkPanelMainChatOwnerKey(activeChatWorkPanelOwnerKey),
+            onDeactivate: () => setWorkPanelMainChatOwnerKey(null),
+          } : undefined}
           isMac={isMac}
           isWindows={isWindows}
           launcher={{

@@ -70,7 +70,7 @@ test("Windows 薄系统栏独立横跨主窗口并下移侧边栏与内容", () 
 test("Windows 业务表面不再重复增加标题栏高度", () => {
   assert.match(
     appShellCss,
-    /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[^}]*padding-top:\s*12px;/su,
+    /\.app-shell\.is-windows-platform:not\(\.is-main-chat-in-work-panel\):not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[^}]*padding-top:\s*12px;/su,
   );
   assert.match(
     externalWebviewCss,

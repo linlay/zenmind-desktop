@@ -875,7 +875,7 @@
   background: var(--bg-base);
 }
 
-.app-shell.is-windows-platform:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
+.app-shell.is-windows-platform:not(.is-main-chat-in-work-panel):not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
   padding-top: 12px;
 }
 
@@ -896,6 +896,10 @@
 }
 
 .app-content {
+  --chat-work-panel-tab-height: 28px;
+  --chat-work-panel-tabs-top-padding: 8px;
+  --chat-work-panel-tabs-bottom-padding: 4px;
+  --chat-work-panel-tabs-height: calc(var(--chat-work-panel-tab-height) + var(--chat-work-panel-tabs-top-padding) + var(--chat-work-panel-tabs-bottom-padding));
   position: relative;
   display: flex;
   align-items: stretch;
@@ -978,6 +982,14 @@
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
+  /* Follow pointer distance directly, including embedded guests on macOS/Windows. */
+  opacity: var(--work-panel-main-chat-opacity, 1);
+}
+
+/* The buffer previews columns narrower than the settled Main Chat minimum. */
+.app-shell.is-work-panel-resizing.has-embedded-surface.has-chat-work-panel .app-content>.app-main {
+  padding: 0;
+  overflow: hidden;
 }
 
 /* Keep both separators reachable when WorkPanel consumes the chat column. */
@@ -987,6 +999,29 @@
   margin-right: var(--work-panel-collapsed-main-gap);
   padding: 0;
   overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Present the existing Main Chat below the WorkPanel tabs without moving its DOM/guest. */
+.app-shell.is-main-chat-in-work-panel .app-content>.app-main {
+  position: absolute;
+  inset: var(--chat-work-panel-tabs-height) 0 0 var(--work-panel-collapsed-main-gap);
+  z-index: 13;
+  width: auto;
+  height: auto;
+  margin: 0;
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.app-shell.is-main-chat-in-work-panel .chat-work-panel-resizer {
+  /* The absolute Main Chat no longer supplies the leading gap in flex layout. */
+  margin-left: calc(var(--work-panel-collapsed-main-gap) - var(--work-panel-resizer-hitbox) / 2);
+}
+
+.chat-work-panel-body.is-main-chat-active {
   visibility: hidden;
   pointer-events: none;
 }
@@ -1223,10 +1258,6 @@
 
 .chat-work-panel {
   --chat-work-panel-top-inset: 0px;
-  --chat-work-panel-tab-height: 28px;
-  --chat-work-panel-tabs-top-padding: 8px;
-  --chat-work-panel-tabs-bottom-padding: 4px;
-  --chat-work-panel-tabs-height: calc(var(--chat-work-panel-tab-height) + var(--chat-work-panel-tabs-top-padding) + var(--chat-work-panel-tabs-bottom-padding));
   --work-panel-tab-strip: var(--control-tab-strip-bg);
   --work-panel-tab-active: var(--control-tab-active-bg);
   --work-panel-tab-hover: var(--control-tab-hover-bg);
@@ -3587,20 +3618,20 @@
   gap: 8px;
 }
 
-.chat-work-panel-tab.is-overview {
+.chat-work-panel-tab:is(.is-overview, .is-fixed) {
   flex: 0 0 auto;
   width: max-content;
   min-width: max-content;
   max-width: none;
 }
 
-.chat-work-panel-tab.is-overview .chat-work-panel-tab-trigger {
+.chat-work-panel-tab:is(.is-overview, .is-fixed) .chat-work-panel-tab-trigger {
   flex: 0 0 auto;
   width: max-content;
   gap: 4px;
 }
 
-.chat-work-panel-tab.is-overview .chat-work-panel-tab-title {
+.chat-work-panel-tab:is(.is-overview, .is-fixed) .chat-work-panel-tab-title {
   flex: 0 0 auto;
   overflow: visible;
   text-overflow: clip;

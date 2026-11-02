@@ -157,6 +157,43 @@ function mountedItems(activeChatId, activeItemId, isMac) {
 }
 
 for (const isMac of [true, false]) {
+  test(`${isMac ? "macOS" : "Windows"}: fixed Main Chat tab precedes Overview and deactivates content without discarding documents`, () => {
+    const scene = createLauncherScene(isMac);
+    const workspace = scene.props.state.workspaces[0];
+    workspace.items.push({ itemId: "file", title: "Draft", descriptor: {
+      kind: "webclient", module: "file", route: "/file", context: { path: "draft.md" },
+    } });
+    scene.props.mainChatTab = {
+      active: false,
+      onActivate: () => { scene.props.mainChatTab.active = true; },
+      onDeactivate: () => { scene.props.mainChatTab.active = false; },
+    };
+    const panel = () => findNodes(scene.render(), node => node.props["data-work-panel-chat"] === "a")[0];
+    const tabs = () => findNodes(panel(), node => typeof node.props.onActivate === "function");
+    assert.equal(tabs()[0].props.title, "chatWorkPanel.mainChat");
+    assert.equal(tabs()[1].props.title, "Overview");
+    assert.equal(tabs()[0].props.onClose, undefined);
+    assert.equal(tabs()[0].props.onContextMenu, undefined);
+    assert.equal(tabs()[0].props.fixed, true);
+    tabs()[0].props.onActivate();
+    assert.equal(tabs()[0].props.active, true);
+    assert.equal(tabs()[1].props.active, false);
+    assert.equal(findNodes(panel(), node => node.props["data-work-panel-item"] === "overview").length, 0);
+    assert.equal(findNodes(panel(), node => node.props["data-work-panel-item"] === "file")[0].props.hidden, true);
+    assert.equal(workspace.activeItemId, "overview", "underlying content selection is remembered");
+    assert.deepEqual(scene.commands, [], "Main Chat selection never opens another item/guest");
+    scene.add("draft.example");
+    assert.equal(scene.props.mainChatTab.active, false);
+    assert.equal(scene.launcher().props.urlDraft, "draft.example");
+    tabs()[0].props.onActivate();
+    assert.equal(scene.props.selectedNewTabs.a, undefined);
+    assert.equal(scene.launcher(), undefined);
+    scene.select(scene.tabKeys()[0]);
+    assert.equal(scene.props.mainChatTab.active, false);
+    scene.props.mainChatTab = undefined;
+    assert.equal(tabs()[0].props.title, "Overview", "split layout removes the presentation-only tab");
+  });
+
   test(`${isMac ? "macOS" : "Windows"}: hidden observers unmount and reactivation recreates their subtree while documents stay`, () => {
     assert.deepEqual(mountedItems("a", "overview", isMac), ["overview", "file"]);
     assert.deepEqual(mountedItems(null, "overview", isMac), ["file"]);

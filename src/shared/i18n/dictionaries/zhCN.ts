@@ -1193,6 +1193,7 @@ export const zhCNMessages = {
   "chatWorkPanel.image.handoff": "交给智能体",
   "chatWorkPanel.blankTab": "空白页",
   "chatWorkPanel.overview": "概览",
+  "chatWorkPanel.mainChat": "对话",
   "chatWorkPanel.newTab.title": "新标签页",
   "chatWorkPanel.newTab.address": "输入网址",
   "chatWorkPanel.newTab.tools": "工具",

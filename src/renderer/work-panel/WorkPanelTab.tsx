@@ -6,6 +6,7 @@ type WorkPanelTabProps = {
   tooltip?: string;
   active: boolean;
   overview?: boolean;
+  fixed?: boolean;
   loading?: boolean;
   icon: ReactNode;
   badge?: ReactNode;
@@ -23,12 +24,12 @@ type WorkPanelTabProps = {
 
 /** The common WorkPanel tab chrome; its owner retains activation and close state. */
 export function WorkPanelTab({
-  title, tooltip, active, overview, loading, icon, badge, onActivate, onClose,
+  title, tooltip, active, overview, fixed, loading, icon, badge, onActivate, onClose,
   closeLabel, closeShortcut, onContextMenu, onKeyDown, triggerRef, id, controls, tabIndex,
 }: WorkPanelTabProps) {
   return (
     <div
-      className={`chat-work-panel-tab${active ? " is-active" : ""}${overview ? " is-overview" : ""}${onClose ? " has-close" : ""}${badge ? " has-badge" : ""}`}
+      className={`chat-work-panel-tab${active ? " is-active" : ""}${overview ? " is-overview" : ""}${fixed ? " is-fixed" : ""}${onClose ? " has-close" : ""}${badge ? " has-badge" : ""}`}
       role="presentation"
       onContextMenu={onContextMenu}
     >

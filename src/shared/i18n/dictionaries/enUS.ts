@@ -1193,6 +1193,7 @@ export const enUSMessages = {
   "chatWorkPanel.image.handoff": "Add to Agent",
   "chatWorkPanel.blankTab": "Blank page",
   "chatWorkPanel.overview": "Overview",
+  "chatWorkPanel.mainChat": "Chat",
   "chatWorkPanel.newTab.title": "New tab",
   "chatWorkPanel.newTab.address": "Enter a URL",
   "chatWorkPanel.newTab.tools": "Tools",

@@ -11,6 +11,7 @@ const {
   clampWorkPanelWidth,
   normalizeStoredWorkPanelWidth,
   resolveDefaultWorkPanelWidth,
+  resolveWorkPanelDragState,
   resolveWorkPanelMaxWidth,
   resolveWorkPanelWidthFromDrag,
 } = require("../dist-electron/shared/work-panel-layout.js");
@@ -51,7 +52,7 @@ test("WorkPanel snaps main chat from its minimum to the separator gap", () => {
       startClientX: 0,
       currentClientX: 16,
       availableWidth,
-    }), expandedMax - 16);
+    }), expandedMax);
   }
 });
 
@@ -77,4 +78,61 @@ test("dragging the separator left grows WorkPanel and dragging right shrinks it"
     startClientX: 600,
     currentClientX: 1000,
   }), WORK_PANEL_MIN_WIDTH);
+});
+
+test("Main Chat fades in four steps through the collapse buffer and recovers when dragging back", () => {
+  for (const availableWidth of [1000, 1400, 2200]) {
+    const expandedMax = availableWidth - WORK_PANEL_MAIN_MIN_WIDTH;
+    const initialWidth = expandedMax - 20;
+    const drag = (extra) => resolveWorkPanelDragState({
+      initialWidth, startClientX: 500, currentClientX: 500 - 20 - extra, availableWidth,
+    });
+    assert.equal(drag(-20).mainChatOpacity, 1);
+    for (const [extra, opacity] of [[0, 1], [1, 1], [23, 1], [24, 0.75], [47, 0.75], [48, 0.5], [71, 0.5], [72, 0.25], [95, 0.25], [96, 0], [120, 0], [48, 0.5], [0, 1], [-20, 1]]) {
+      const state = drag(extra);
+      const collapsedWidth = availableWidth - WORK_PANEL_COLLAPSED_MAIN_GAP;
+      const progress = Math.min(1, Math.max(0, extra / WORK_PANEL_COLLAPSE_DRAG_BUFFER));
+      assert.equal(state.width, extra <= 0 ? expandedMax + extra : Math.round(expandedMax + (collapsedWidth - expandedMax) * progress));
+      assert.equal(state.mainChatOpacity, opacity);
+      assert.equal(state.settledWidth, extra < WORK_PANEL_COLLAPSE_DRAG_BUFFER ? expandedMax + Math.min(0, extra) : collapsedWidth);
+    }
+  }
+  for (const availableWidth of [undefined, 0, Number.NaN, 800]) {
+    assert.equal(resolveWorkPanelDragState({
+      initialWidth: 500, startClientX: 600, currentClientX: 0, availableWidth,
+    }).mainChatOpacity, 1);
+  }
+});
+
+test("a fully collapsed Main Chat restores through the same four steps before committing the split", () => {
+  for (const availableWidth of [1000, 1400, 2200]) {
+    const collapsedWidth = availableWidth - WORK_PANEL_COLLAPSED_MAIN_GAP;
+    const expandedMax = availableWidth - WORK_PANEL_MAIN_MIN_WIDTH;
+    const drag = distance => resolveWorkPanelDragState({
+      initialWidth: collapsedWidth, startClientX: 10, currentClientX: 10 + distance, availableWidth,
+    });
+    for (const [distance, opacity] of [[-24, 0], [0, 0], [1, 0], [23, 0], [24, 0.25], [47, 0.25], [48, 0.5], [71, 0.5], [72, 0.75], [95, 0.75], [96, 1], [120, 1], [48, 0.5], [0, 0]]) {
+      const result = drag(distance);
+      assert.equal(result.mainChatOpacity, opacity);
+      assert.equal(result.width, distance <= 0 ? collapsedWidth : distance <= 96
+        ? Math.round(collapsedWidth + (expandedMax - collapsedWidth) * distance / 96)
+        : expandedMax - (distance - 96));
+      assert.equal(result.settledWidth, distance < 96 ? collapsedWidth : result.width);
+    }
+  }
+});
+
+test("opening and closing preview the same widths in reverse, without jumping to a full chat column", () => {
+  const availableWidth = 1000;
+  for (let distance = 0; distance <= 96; distance++) {
+    const opening = resolveWorkPanelDragState({ initialWidth: 994, startClientX: 0, currentClientX: distance, availableWidth });
+    const closing = resolveWorkPanelDragState({ initialWidth: 580, startClientX: 0, currentClientX: -(96 - distance), availableWidth });
+    assert.equal(opening.width, closing.width);
+    if (distance > 0 && distance < 96) {
+      assert.ok(opening.width > 580 && opening.width < 994, "the layout must stay inside the buffer until the gesture completes");
+    }
+  }
+  for (const [distance, width] of [[1, 990], [24, 891], [48, 787], [72, 684], [96, 580]]) {
+    assert.equal(resolveWorkPanelDragState({ initialWidth: 994, startClientX: 0, currentClientX: distance, availableWidth }).width, width);
+  }
 });

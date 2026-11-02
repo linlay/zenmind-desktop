@@ -1,0 +1,243 @@
+// Real WorkPanelHost, AppShell resize/selection code and a live Main Chat guest.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
+import { build } from "esbuild";
+import { loadBrandConfig, resolveBrandId, runtimeBrandPayload } from "../scripts/lib/brand-config.mjs";
+
+const require = createRequire(import.meta.url);
+const ts = require("typescript");
+const repo = process.cwd();
+const output = fs.mkdtempSync(path.join(os.tmpdir(), "work-panel-main-chat-"));
+const source = ts.createSourceFile("AppShell.tsx", fs.readFileSync("src/renderer/app-shell/AppShell.tsx", "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const declarations = new Map();
+let pointerHandler, resetSelection, tabProps, clearSelection;
+function visit(node) {
+  if (ts.isVariableDeclaration(node)) declarations.set(node.name.getText(source), node.initializer?.getText(source));
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "handleWorkPanelResizerPointerDown") pointerHandler = node.getText(source);
+  if (ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("!showWorkPanelMainChatTab")) resetSelection = node.getText(source);
+  if (ts.isJsxAttribute(node) && node.name.getText(source) === "mainChatTab") tabProps = node.initializer.expression.getText(source);
+  if (ts.isIfStatement(node) && node.expression.getText(source).includes('command.type === "activateItem"') &&
+      node.thenStatement.getText(source).includes("setWorkPanelMainChatOwnerKey")) clearSelection = node.getText(source);
+  ts.forEachChild(node, visit);
+}
+visit(source);
+if (!pointerHandler || !resetSelection || !tabProps || !clearSelection) throw new Error("AppShell integration not found");
+const actual = name => {
+  if (!declarations.has(name)) throw new Error(`Missing AppShell declaration: ${name}`);
+  return `const ${name} = ${declarations.get(name)};`;
+};
+
+await build({
+  stdin: { resolveDir: repo, loader: "tsx", contents: `
+import React,{useState,useRef,useCallback,useEffect} from 'react';
+import {createRoot} from 'react-dom/client';
+import {MemoryRouter} from 'react-router-dom';
+import {WorkPanelHost} from './src/renderer/work-panel/WorkPanelHost';
+import {EMPTY_WORK_PANEL_STATE,reduceWorkPanelCommand} from './src/shared/work-panel';
+import {resolveWorkPanelActiveItemId} from './src/renderer/work-panel/new-tab-selection';
+import {clampWorkPanelWidth,resolveWorkPanelMaxWidth,resolveWorkPanelDragState,WORK_PANEL_COLLAPSED_MAIN_GAP,WORK_PANEL_MIN_WIDTH} from './src/shared/work-panel-layout';
+import './src/renderer/styles/theme.css';
+import './src/renderer/styles/navigation.css';
+import './src/renderer/styles/sidebar-copilot.css';
+import './src/renderer/styles/external-webview.css';
+import './src/renderer/styles/app-shell.css';
+const noop=()=>()=>{};
+window.errors=[];addEventListener('error',e=>window.errors.push(e.message));
+addEventListener('unhandledrejection',e=>window.errors.push(String(e.reason)));
+window.electronAPI={
+ onWebviewOpenTab:noop,onWorkPanelFullscreenExitShortcut:noop,
+ chatWorkPanel:{localFiles:{getReviewPreloadUrl:async()=>'',release:async()=>({ok:true})},resourceImages:{release:async()=>({ok:true})},documentHtml:{release:async()=>({ok:true})}},
+ chatWorkPanelTabContextMenu:{onWebDialogCloseRequested:noop,onWebDialogOpenRequested:noop},
+ webs:{webapps:{listOpenWindows:async()=>[]}},sso:{onStatusChanged:noop},
+ desktopActions:{onCall:noop,respond:async()=>({ok:true})},
+};
+let initial=EMPTY_WORK_PANEL_STATE;
+for(const ownerChatId of ['a','b']){
+ initial=reduceWorkPanelCommand(initial,{type:'openItem',ownerChatId,descriptor:{kind:'webclient',module:'overview',route:'/overview/'+ownerChatId,context:{chatId:ownerChatId,agentKey:'main'},title:'概览',pinned:true,closable:false}}).nextState;
+ initial=reduceWorkPanelCommand(initial,{type:'openItem',ownerChatId,descriptor:{kind:'webclient',module:'file',route:'/file/'+ownerChatId,context:{chatId:ownerChatId,agentKey:'main',path:'draft.md'},title:'Draft'}}).nextState;
+}
+function Scene(){
+ const [state,setState]=useState(initial),stateRef=useRef(state);stateRef.current=state;
+ const [owner,setOwner]=useState('a'),[shown,setShown]=useState(true),[windows,setWindows]=useState(false);
+ const [sidebarWidth,setSidebarWidth]=useState(160);
+ const [workPanelFullscreenOwnerChatId,setFullscreen]=useState(null);
+ const [workPanelMainChatOwnerKey,setWorkPanelMainChatOwnerKey]=useState(null);
+ const [selectedWorkPanelNewTabs,setSelectedWorkPanelNewTabs]=useState({});
+ const [preferredWorkPanelWidth,setPreferredWorkPanelWidth]=useState(560);
+ const [workPanelDragMainChatOpacity,setWorkPanelDragMainChatOpacity]=useState(1);
+ const [workPanelDragPreviewWidth,setWorkPanelDragPreviewWidth]=useState(null);
+ const [isWorkPanelResizing,setIsWorkPanelResizing]=useState(false);
+ const workPanelResizeStateRef=useRef(null),workPanelResizeCleanupRef=useRef(null);
+ const activeChatWorkPanelOwnerKey=owner,activeChatWorkPanelVisible=shown;
+ const appContentWidth=1000,effectiveSidebarWidth=sidebarWidth,renderedCopilotDockWidth=0,isSidebarResizing=false,isCopilotDockResizing=false;
+ ${['workPanelMaxWidth','renderedWorkPanelWidth','isMainChatCollapsedByWorkPanel','showWorkPanelMainChatTab','isWorkPanelMainChatActive'].map(actual).join('\n')}
+ ${resetSelection};
+ ${pointerHandler}
+ ${actual('appShellStyle')}
+ const dispatch=useCallback(command=>{
+  const result=reduceWorkPanelCommand(stateRef.current,command);
+  if(result.ok){
+   stateRef.current=result.nextState;setState(result.nextState);
+   ${clearSelection}
+  }return result;
+ },[]);
+ const workspace=state.workspaces.find(w=>w.ownerChatId===owner);
+ const mainChatTab=${tabProps};
+ window.qa={owner:setOwner,show:setShown,windows:setWindows,sidebar:setSidebarWidth,fullscreen:setFullscreen,split:()=>setPreferredWorkPanelWidth(560),state,
+  openDraft:()=>dispatch({type:'activateItem',ownerChatId:owner,itemId:workspace.items.find(i=>i.title==='Draft').itemId})};
+ return <MemoryRouter><div style={appShellStyle} className={'app-shell has-chat-work-panel has-embedded-surface '+(windows?'is-windows-platform':'is-mac-platform')+(isMainChatCollapsedByWorkPanel?' is-main-chat-collapsed-by-work-panel':'')+(isWorkPanelMainChatActive?' is-main-chat-in-work-panel':'')+(workPanelFullscreenOwnerChatId?' is-work-panel-fullscreen':'')+(isWorkPanelResizing?' is-work-panel-resizing':'')}>
+ <div className='app-sidebar-shell'>Sidebar</div><div className='app-sidebar-resizer'><span className='app-sidebar-resizer-line'/></div>
+ <div className='app-content'><main className='app-main' id='desktop-main-chat-panel'>
+ <section className='embedded-surface-page embedded-surface-page-embedded'><div className='embedded-surface-frame-shell'>
+ {React.createElement('webview',{id:'main-chat-guest',src:'./guest.html',style:{display:'flex',width:'100%',height:'100%'}})}
+ </div></section>
+ </main>{shown&&<div className={'chat-work-panel-resizer'+(isWorkPanelResizing?' is-active':'')} role='separator' tabIndex={0} onPointerDown={handleWorkPanelResizerPointerDown}><span className='chat-work-panel-resizer-line'/></div>}
+ <WorkPanelHost activeChatId={shown?owner:null} state={state} selectedNewTabs={selectedWorkPanelNewTabs} setSelectedNewTabs={setSelectedWorkPanelNewTabs}
+ dispatchCommand={dispatch} fullscreenOwnerChatId={workPanelFullscreenOwnerChatId} onFullscreenChange={async value=>{setFullscreen(value);return true;}}
+ mainChatTab={mainChatTab} isMac={!windows} isWindows={windows}
+ launcher={{agentKey:'main',agentMode:'GENERAL',agentLabel:'Main',chatLabel:owner,projectVisible:false,projectEnabled:false,webapps:[],onOpenWebapp:async()=>false,onFocusWebappWindow:async()=>false}}/>
+ </div>{isWorkPanelResizing&&<div className='chat-work-panel-resize-overlay'/>}</div></MemoryRouter>;
+}
+createRoot(document.getElementById('root')).render(<Scene/>);
+` },
+  bundle: true, jsx: "automatic", outfile: path.join(output, "scene.js"),
+  define: { "process.env.NODE_ENV": '"production"', "import.meta.env.DEV": "false",
+    __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(loadBrandConfig(repo, resolveBrandId()))) },
+  plugins: [{ name: "fixture-service", setup(builder) {
+    builder.onResolve({ filter: /service-webview\/ServiceWebviewSurface$/ }, () => ({ path: "service", namespace: "fixture" }));
+    builder.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({ resolveDir: repo, loader: "tsx", contents:
+      `import React from 'react';export function ServiceWebviewSurface(props){return <div className="fixture-document"><h2>{props.embedPath}</h2><textarea defaultValue="Document draft"/></div>}` }));
+  } }],
+  loader: { ".svg": "dataurl", ".png": "dataurl" },
+});
+fs.writeFileSync(path.join(output, "index.html"), '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="scene.css"><style>html,body,#root{margin:0;width:100%;height:100%;font:14px system-ui}*{box-sizing:border-box}.fixture-document{padding:30px;height:100%;background:var(--bg-base);color:var(--ink)}</style><div id="root"></div><script src="scene.js"></script></html>');
+fs.writeFileSync(path.join(output, "guest.html"), '<!doctype html><style>body{margin:0;background:#e9f1fc;color:#152238;font:20px system-ui}main{height:3000px;padding:30px}input{font:inherit}</style><main><h1>Main Chat</h1><input id="draft" value="Original"><p>Scroll and draft stay in this guest.</p></main><script>window.instance=crypto.randomUUID()</script>');
+fs.writeFileSync(path.join(output, "runner.cjs"), `
+const {app,BrowserWindow,webContents}=require('electron');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+app.setPath('userData',path.join(__dirname,'profile'));
+let win;const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const js=code=>win.webContents.executeJavaScript(code);
+async function until(code){for(let i=0;i<160;i++){try{if(await js(code))return;}catch{}await delay(30);}throw Error('Timed out: '+code)}
+const clickTab=title=>js('Array.from(document.querySelectorAll(".chat-work-panel.is-visible [role=tab]")).find(t=>t.textContent==='+JSON.stringify(title)+').click()');
+const tabs=()=>js('Array.from(document.querySelectorAll(".chat-work-panel.is-visible [role=tab]"),t=>({title:t.textContent,active:t.getAttribute("aria-selected"),close:!!t.parentElement.querySelector(".chat-work-panel-tab-close")}))');
+const beginDrag=()=>js('document.querySelector(".chat-work-panel-resizer").dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,cancelable:true,button:0,pointerId:1,clientX:440}))');
+const moveDrag=async dx=>{
+ await js('window.dispatchEvent(new PointerEvent("pointermove",{pointerId:1,clientX:'+(440+dx)+'}))');await delay(50);
+};
+const finishDrag=async(type='pointerup')=>{
+ await js('window.dispatchEvent(new '+(type==='blur'?'FocusEvent':'PointerEvent')+'('+JSON.stringify(type)+',{pointerId:1}))');await delay(50);
+};
+const drag=async(dx)=>{
+ await beginDrag();await moveDrag(dx);await finishDrag();
+};
+const opacity=()=>js('Number(getComputedStyle(document.querySelector(".app-main")).opacity)');
+const assertSeparator=()=>js('(()=>{const s=document.querySelector(".chat-work-panel-resizer"),r=s.getBoundingClientRect(),p=document.querySelector(".work-panel-host").getBoundingClientRect(),n=document.querySelector(".app-sidebar-resizer").getBoundingClientRect();return {center:r.left+r.width/2,panelLeft:p.left,separate:n.right<=r.left,hits:[.2,.5,.8].every(f=>[.5,r.width/2,r.width-.5].every(dx=>document.elementFromPoint(r.left+dx,r.top+r.height*f)?.closest(".chat-work-panel-resizer")===s)),cursor:getComputedStyle(s).cursor,x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()').then(result=>{
+ assert.equal(result.center,result.panelLeft,'separator must stay on the panel boundary after switching tabs');
+ assert.equal(result.separate,true,'navigation and WorkPanel hitboxes must stay separate');
+ assert.equal(result.hits,true,'the entire WorkPanel separator must receive real hit tests');
+ assert.equal(result.cursor,'ew-resize');return result;
+});
+const mouseDrag=async(dx,verifyReveal=false)=>{
+ win.showInactive();await delay(80);
+ const {x,y}=await assertSeparator();
+ await js('window.pointerTrace=[]');
+ const input=event=>win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',event);
+ await input({type:'mouseMoved',x:x+20,y,buttons:0});
+ await input({type:'mouseMoved',x,y,buttons:0});await delay(60);
+ assert.equal(await js('window.pointerTrace.some(e=>e.x==='+x+'&&e.y==='+y+'&&e.separator&&e.hover)'),true,'Chromium must deliver pointer hover to the separator');
+ await input({type:'mousePressed',button:'left',buttons:1,clickCount:1,x,y});await delay(30);
+ if(verifyReveal)for(const [distance,width,alpha] of [[1,10,0],[24,109,.25],[48,213,.5],[72,316,.75],[96,420,1]]){
+  await input({type:'mouseMoved',button:'left',buttons:1,x:x+distance,y});await delay(80);
+  const preview=await js('(()=>{const main=document.querySelector(".app-main");return {width:Math.round(main.getBoundingClientRect().width),opacity:Number(getComputedStyle(main).opacity)}})()');
+  assert.equal(preview.width,width,'Main Chat width must reveal gradually before the buffer completes');
+  assert.equal(preview.opacity,alpha,'Chat and Overview must use the same reveal steps');
+ }
+ await input({type:'mouseMoved',button:'left',buttons:1,x:x+dx,y});await delay(80);
+ await input({type:'mouseReleased',button:'left',buttons:0,clickCount:1,x:x+dx,y});await delay(80);
+};
+app.whenReady().then(async()=>{
+ win=new BrowserWindow({width:1160,height:720,useContentSize:true,show:false,webPreferences:{webviewTag:true,contextIsolation:true,sandbox:true}});
+ // Ignore OS pointer traffic so the user's physical mouse cannot alter this
+ // isolated window's hover/capture while Chromium coordinate input runs.
+ win.setIgnoreMouseEvents(true);
+ await win.loadFile(path.join(__dirname,'index.html'));
+ win.webContents.debugger.attach('1.3');
+ await js('window.pointerTrace=[];window.addEventListener("pointermove",e=>{const s=e.target instanceof Element?e.target.closest(".chat-work-panel-resizer"):null;window.pointerTrace.push({x:e.clientX,y:e.clientY,separator:!!s,hover:!!s&&s.matches(":hover")})},{capture:true})');
+ await until('window.qa && document.querySelector("#main-chat-guest").getWebContentsId()>0 && !document.querySelector("#main-chat-guest").isLoading()');
+ const id=await js('document.querySelector("#main-chat-guest").getWebContentsId()'),guest=webContents.fromId(id);
+ const instance=await guest.executeJavaScript('window.instance');
+ await guest.executeJavaScript('document.querySelector("#draft").value="Preserved Main Chat draft";scrollTo(0,360)');
+ for(const windows of [false,true])for(const theme of ['light','dark'])for(const sidebarWidth of [160,64]){
+  win.setContentSize(1000+sidebarWidth,720);await js('window.qa.sidebar('+sidebarWidth+')');await delay(250);
+  await js('window.qa.windows('+windows+');document.documentElement.dataset.theme='+JSON.stringify(theme));
+  await until('!!document.querySelector(".chat-work-panel-item.is-active textarea")');
+  await js('document.querySelector(".chat-work-panel-item.is-active textarea").value="Preserved document draft"');
+  assert.equal((await tabs()).some(t=>t.title==='对话'),false);
+  await beginDrag();
+  for(const [extra,alpha] of [[0,1],[23,1],[24,.75],[48,.5],[72,.25],[95,.25],[96,0]]){
+   await moveDrag(-20-extra);assert.equal(await opacity(),alpha);
+  }
+  await finishDrag();
+  await until('document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")');
+  await beginDrag();
+  for(const [distance,alpha] of [[0,0],[23,0],[24,.25],[48,.5],[72,.75],[95,.75],[96,1],[120,1],[48,.5],[0,0]]){
+   await moveDrag(distance);assert.equal(await opacity(),alpha);
+  }
+  await finishDrag();
+  for(const type of ['pointerup','pointercancel','blur']){
+   await beginDrag();await moveDrag(48);assert.equal(await opacity(),.5);await finishDrag(type);
+   assert.equal(await js('document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")'),true);
+  }
+  await drag(96);assert.equal(await opacity(),1);await drag(-96);
+  let items=await tabs();assert.equal(items[0].title,'对话');assert.equal(items[1].title,'概览');assert.equal(items[0].close,false);assert.equal(items[1].close,false);
+  await clickTab('概览');await assertSeparator();
+  await mouseDrag(112,true);await drag(-112);
+  await clickTab('对话');
+  await until('document.querySelector(".app-shell").classList.contains("is-main-chat-in-work-panel")');
+  assert.equal((await tabs()).filter(t=>t.active==='true').length,1);
+  await assertSeparator();
+  const geometry=await js('(()=>{const m=document.querySelector(".app-main"),g=document.querySelector("#main-chat-guest"),t=document.querySelector(".chat-work-panel.is-visible .chat-work-panel-tabs"),r=g.getBoundingClientRect(),tr=t.getBoundingClientRect();return {mainWidth:m.getBoundingClientRect().width,guestTop:r.top,tabsBottom:tr.bottom,visible:getComputedStyle(m).visibility,hit:document.elementFromPoint(r.left+100,r.top+100)===g}})()');
+  assert.equal(geometry.mainWidth,994);assert.equal(geometry.guestTop,geometry.tabsBottom);assert.equal(geometry.visible,'visible');assert.equal(geometry.hit,true,'Main Chat must receive input below the tabs');
+  assert.equal(await js('document.querySelectorAll("#main-chat-guest").length'),1);
+  assert.equal(await js('document.querySelector("#main-chat-guest").getWebContentsId()'),id);
+  assert.equal(await guest.executeJavaScript('window.instance'),instance);
+  assert.equal(await guest.executeJavaScript('document.querySelector("#draft").value'),'Preserved Main Chat draft');
+  assert.equal(await guest.executeJavaScript('scrollY'),360);
+  await guest.executeJavaScript('scrollTo(0,0)');await delay(120);
+  fs.writeFileSync(path.join(__dirname,(windows?'windows':'mac')+'-'+theme+'-'+sidebarWidth+'.png'),(await win.webContents.capturePage()).toPNG());
+  await guest.executeJavaScript('scrollTo(0,360)');
+  await clickTab('概览');await until('!document.querySelector(".app-shell").classList.contains("is-main-chat-in-work-panel")');
+  await clickTab('Draft');await until('!!document.querySelector(".chat-work-panel-item.is-active textarea")');
+  assert.equal(await js('document.querySelector(".chat-work-panel-item.is-active textarea").value'),'Preserved document draft');
+  await clickTab('对话');await until('document.querySelector(".app-shell").classList.contains("is-main-chat-in-work-panel")');
+  await js('document.querySelector(".chat-work-panel.is-visible .chat-work-panel-add-button").click()');
+  await until('!!document.querySelector(".work-panel-new-tab")');assert.equal((await tabs())[0].active,'false');
+  await clickTab('对话');await until('!document.querySelector(".work-panel-new-tab")');
+  await js('window.qa.openDraft()');await until('!document.querySelector(".app-shell").classList.contains("is-main-chat-in-work-panel")');
+  await clickTab('对话');await js('window.qa.show(false)');await delay(50);await js('window.qa.show(true)');await delay(50);
+  assert.equal((await tabs())[0].active,'false');
+  await clickTab('对话');await js('window.qa.owner("b")');await delay(50);assert.equal((await tabs())[0].active,'false');
+  await js('window.qa.owner("a")');await delay(50);assert.equal((await tabs())[0].active,'false');
+  await clickTab('对话');await mouseDrag(16);assert.equal((await tabs())[0].active,'true');
+  await mouseDrag(112,true);
+  await until('!document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")');
+  assert.equal((await tabs()).some(t=>t.title==='对话'),false);
+  assert.equal(await js('getComputedStyle(document.querySelector(".app-main")).visibility'),'visible');
+  await js('window.qa.split()');await delay(50);
+ }
+ assert.deepEqual(await js('window.errors'),[]);
+ console.log('PASS: progressive width/opacity on Overview and Chat, real mouse hover/drag, separate sidebar/panel hitboxes, both sidebar widths, stable guest/drafts/scroll, macOS/Windows light/dark layouts');
+ console.log('Screenshots: '+__dirname);win.destroy();app.quit();
+}).catch(error=>{console.error(error);app.exit(1)});
+`);
+const env = { ...process.env };
+delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(require("electron"), [path.join(output, "runner.cjs")], { env, stdio: "inherit" });
+process.exitCode = await new Promise((resolve, reject) => {
+  child.on("exit", code => resolve(code ?? 1));
+  child.on("error", reject);
+});
