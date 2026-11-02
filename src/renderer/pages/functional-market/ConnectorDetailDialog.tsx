@@ -31,9 +31,10 @@ export function ConnectorDetailDialog({ item, runtime, onClose, onDisconnect, on
   const error = runtime.getError(item);
   const blocked = runtime.busy || runtime.loading || !!runtime.stateError || (!installed && item.state === "incompatible");
   const fallback = ["draftLearn", "draftRead", "draftTask"].map(key => t(`market.connector.flow.${key}` as TranslationKey, { name: item.name }));
-  let suggestions = fallback;
+  const legacyHint = item.metadata?.usageHint?.trim();
+  let suggestions = legacyHint ? [legacyHint] : fallback;
   try {
-    const prompts: unknown = JSON.parse(item.metadata?.prompts || "null");
+    const prompts: unknown = JSON.parse(item.metadata?.usageHints || "null");
     if (Array.isArray(prompts)) {
       const values = prompts.filter((value): value is string => typeof value === "string" && !!value.trim()).map(value => value.trim()).slice(0, 3);
       if (values.length) suggestions = values;
