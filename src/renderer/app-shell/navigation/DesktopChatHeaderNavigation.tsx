@@ -4,7 +4,7 @@ import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
 import { SidebarActionIcon } from "../../components/BrandMark";
 import { SIDEBAR_COLLAPSED_WIDTH } from "../../../shared/sidebar-layout";
 
-export const DESKTOP_CHAT_HEADER_INITIAL_INSET = 142;
+export const DESKTOP_CHAT_HEADER_INITIAL_INSET = 132;
 export const WINDOWS_CHAT_HEADER_INITIAL_INSET = 62;
 
 export function DesktopChatHeaderNavigation(props: {

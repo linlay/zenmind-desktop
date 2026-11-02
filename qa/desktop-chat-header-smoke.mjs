@@ -32,9 +32,9 @@ function Host(){
  const [config,setConfig]=useState({collapsed:true,platform:'darwin',fullscreen:false,canGoBack:false,canGoForward:true,width:240,mainChat:true,webapp:false,copilot:false,dockOpen:false,overlay:false,sidebarMode:'primary'});
  const isMac=config.platform==='darwin',fixed=config.sidebarMode==='primary'&&(isMac||config.fullscreen);
  const collapsed=config.collapsed&&config.sidebarMode==='primary',width=collapsed?66:config.width;
- const [inset,setInset]=useState(142);const webview=useRef(null),relay=useRef(null),sequence=useRef({revision:0,signature:''});
+ const [inset,setInset]=useState(132);const webview=useRef(null),relay=useRef(null),sequence=useRef({revision:0,signature:''});
  const input=useRef(null);input.current={sidebarCollapsed:config.collapsed,headerLeftInset:collapsed&&fixed&&config.mainChat?inset:0};
- const src=useRef(location.origin+'/guest.html?chatId=fixture&desktopSidebarCollapsed=1&desktopHeaderLeftInset=142');
+ const src=useRef(location.origin+'/guest.html?chatId=fixture&desktopSidebarCollapsed=1&desktopHeaderLeftInset=132');
  window.configure=(patch)=>setConfig(old=>({...old,...patch}));
  useEffect(()=>{const target=webview.current;const host=createWebclientHeaderLayoutHost({webview:target,
   trustedUrl:()=>src.current,isCurrentGuest:()=>webview.current===target,read:()=>input.current,revisionState:sequence.current});
@@ -59,7 +59,7 @@ function Host(){
    onToggleCollapsed={toggle} onOpenGlobalSearch={search} onSidebarNavigateBack={back} onSidebarNavigateForward={forward}/></div>
   <div className="app-content">{config.webapp&&config.copilot&&config.sidebarMode==='primary'?<WebappCopilotButton open={config.dockOpen} onToggle={toggleCopilot}/>:null}<webview ref={webview} className="qa-guest" src={src.current} preload={window.preloadUrl}/></div>
   <div className="app-window-controls-layer">
-   {fixed?<DesktopChatHeaderNavigation isCollapsed={collapsed} leftInset={collapsed&&!config.mainChat?21:isMac?88:8} canGoBack={config.canGoBack} canGoForward={config.canGoForward}
+   {fixed?<DesktopChatHeaderNavigation isCollapsed={collapsed} leftInset={collapsed&&!config.mainChat?21:isMac?78:8} canGoBack={config.canGoBack} canGoForward={config.canGoForward}
      onSearch={search} onBack={back} onForward={forward} onToggle={toggle} onInsetChange={setInset}/>:null}
    {config.mainChat?<div className="main-chat-header-actions qa-right-actions"><button className="main-chat-header-action">⋯</button><button className="main-chat-header-action">↗</button><button className="main-chat-header-action main-chat-work-panel-toggle"><SidebarActionIcon kind="sidebar_left" className="main-chat-work-panel-toggle-icon"/></button></div>:null}
   </div>
@@ -103,7 +103,7 @@ await until(()=>js('!!document.querySelector("webview")?.getWebContentsId()').ca
 guest=webContents.fromId(await js('document.querySelector("webview").getWebContentsId()'));
 const gj=s=>guest.executeJavaScript(s);
 await until(()=>gj('!!document.querySelector("#search")').catch(()=>false));
-await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="142px"'));
+await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="132px"'));
 const identity=await gj('window.documentIdentity'),id=guest.id,url=guest.getURL(),src=await js('document.querySelector("webview").getAttribute("src")');
 await gj('document.querySelector("#draft").value="保留的输入草稿"');
 const activeSelector='.main-chat-header-navigation button, .app-system-bar-primary-actions button';
@@ -112,13 +112,13 @@ const clickPoint=async(point)=>{win.focus();win.webContents.focus();await pause(
 const click=async(index)=>clickPoint(await center(index));
 const cases=[];
 for(const platform of ['darwin','win32']){for(const fullscreen of [false,true]){
- const fixed=platform==='darwin'||fullscreen,expectedInset=fixed?(platform==='darwin'?142:62):0;
+ const fixed=platform==='darwin'||fullscreen,expectedInset=fixed?(platform==='darwin'?132:62):0;
  await js('window.configure('+JSON.stringify({platform,fullscreen,collapsed:true,mainChat:true,sidebarMode:'primary',copilot:false})+')');
  await until(()=>gj('document.querySelector("#guest-header").style.paddingLeft==="'+expectedInset+'px"'));
  const before=await js('({...window.actions})');await click(0);await click(1);await click(2);
  assert.deepEqual(await js('({...window.actions})'),{search:before.search+1,back:before.back,forward:before.forward+1});
  const point=await center(3);assert.equal(await js('document.querySelectorAll('+JSON.stringify(activeSelector)+')[3].getAttribute("aria-expanded")'),'false');
- if(platform==='darwin')assert.deepEqual(point,{x:184,y:22});
+ if(platform==='darwin')assert.deepEqual(point,{x:174,y:22});
  if(fixed){
   const rightCenter=await js('(()=>{const r=document.querySelector(".main-chat-work-panel-toggle-icon").getBoundingClientRect();return r.top+r.height/2})()');
   assert.equal(rightCenter,point.y,'WorkPanel icon must align with the fixed navigation');
