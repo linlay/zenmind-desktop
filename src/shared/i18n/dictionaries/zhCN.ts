@@ -1831,7 +1831,6 @@ export const zhCNMessages = {
   "settings.navigation.description": "管理左侧主导航页签的显示顺序和侧边助手显示规则。",
   "settings.desktopPet.import.zip": "导入",
   "settings.desktopPet.import.hint": "或将助理 ZIP 拖到这里",
-  "settings.desktopPet.import.pending": "正在校验并导入助理…",
   "settings.desktopPet.import.single": "请一次拖入一个助理 ZIP 包",
   "settings.desktopPet.remove.confirm": "删除这个宠物？",
   "settings.desktopPet.remove.hint": "删除后可重新导入。若正在使用，将切回内置默认宠物。",
