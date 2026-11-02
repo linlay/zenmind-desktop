@@ -67,6 +67,7 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "chats.order.changed",
   "chat.primary.changed",
   "chat.updated",
+  "chat.renamed",
   "chat.deleted",
   "chat.archived",
   "chat.unread",
@@ -79,6 +80,10 @@ export const AGENT_PLATFORM_KNOWN_PUSH_TYPES = new Set([
   "awaiting.answered",
   "resource.pushed",
   "artifact.published",
+  "mail.updated",
+  "automation.execution.created",
+  "automation.execution.updated",
+  "automation.execution.completed",
 ]);
 
 export type Deferred<T> = {
