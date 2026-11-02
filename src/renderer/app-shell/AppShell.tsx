@@ -3077,13 +3077,6 @@ export function AppShell() {
       if (pointerEvent.cancelable) pointerEvent.preventDefault();
       if (!dragState.direction && pointerEvent.clientX !== dragState.startClientX) {
         dragState.direction = pointerEvent.clientX > dragState.startClientX ? "expand" : "collapse";
-        if (appContentWidth >= WORK_PANEL_MAIN_MIN_WIDTH + WORK_PANEL_MIN_WIDTH) {
-          const target = dragState.direction === "expand"
-            ? appContentWidth - dragState.initialWidth + WORK_PANEL_COLLAPSE_DRAG_BUFFER
-            : WORK_PANEL_MAIN_MIN_WIDTH - WORK_PANEL_COLLAPSE_DRAG_BUFFER;
-          setWorkPanelDragGuide({ direction: dragState.direction,
-            left: Math.max(WORK_PANEL_COLLAPSED_MAIN_GAP, Math.min(appContentWidth - WORK_PANEL_MIN_WIDTH, target)) });
-        }
       }
       const nextState = resolveWorkPanelDragState({
         initialWidth: dragState.initialWidth,
@@ -3095,6 +3088,18 @@ export function AppShell() {
       setPreferredWorkPanelWidth(nextState.settledWidth);
       setWorkPanelDragPreviewWidth(nextState.width);
       setWorkPanelDragMainChatOpacity(nextState.mainChatOpacity);
+      const showGuide = dragState.direction &&
+        appContentWidth >= WORK_PANEL_MAIN_MIN_WIDTH + WORK_PANEL_MIN_WIDTH &&
+        (dragState.direction === "collapse" ||
+          (dragState.initialWidth >= workPanelMaxWidth &&
+            appContentWidth - nextState.width < WORK_PANEL_MAIN_MIN_WIDTH));
+      if (showGuide) {
+        const target = dragState.direction === "expand"
+          ? appContentWidth - dragState.initialWidth + WORK_PANEL_COLLAPSE_DRAG_BUFFER
+          : WORK_PANEL_MAIN_MIN_WIDTH - WORK_PANEL_COLLAPSE_DRAG_BUFFER;
+        setWorkPanelDragGuide({ direction: dragState.direction!,
+          left: Math.max(WORK_PANEL_COLLAPSED_MAIN_GAP, Math.min(appContentWidth - WORK_PANEL_MIN_WIDTH, target)) });
+      } else setWorkPanelDragGuide(null);
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", handlePointerMove, true);

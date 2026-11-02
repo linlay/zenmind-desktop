@@ -231,3 +231,95 @@ test("remote native HTML keeps the Platform revision and Reference only creates 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("large native HTML stays complete through claim, read and preview, with separate asset limits", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-large-html-"));
+  const previewSession = createHtmlTestSession();
+  const registry = new WorkPanelDocumentHtmlRegistry(() => previewSession.session);
+  const fileActions = [];
+  const fileShell = {
+    openPath: async (file) => { fileActions.push(["open-default", file]); return ""; },
+    showItemInFolder: (file) => fileActions.push(["reveal", file]),
+  };
+  configureRegistry(registry, root, { fileShell });
+  const webContents = sender();
+  const end = "<p>complete-end</p>";
+  try {
+    for (const mib of [9, 13, 32]) {
+      const filename = `${mib}.html`, filePath = path.join(root, filename);
+      const html = "<!doctype html>" + " ".repeat(mib * 1024 * 1024 - 15 - end.length) + end;
+      fs.writeFileSync(filePath, html);
+      const prepared = await registry.prepareClaim({
+        ownerChatId: "large-html", rendererWebContentsId: webContents.id,
+        source: { kind: "workspace-file", agentKey: "agent", path: filename }, workspaceFilePath: filePath,
+      });
+      assert.equal(prepared.ok, true, `${mib} MiB must use native HTML`);
+      const claimed = await registry.claim({ claimId: prepared.claimId, ownerChatId: "large-html", rendererGeneration: "large" }, webContents);
+      assert.equal(claimed.ok, true);
+      const identity = { handleId: claimed.document.handleId, ownerChatId: "large-html", rendererGeneration: "large" };
+      const read = registry.read(identity, webContents);
+      assert.equal(read.ok, true);
+      assert.equal(read.text, html);
+      const preview = await registry.preview(identity, webContents);
+      assert.equal(preview.ok, true);
+      const response = await previewSession.request(preview.url);
+      assert.equal(response.status, 200, `${mib} MiB must pass the protocol limit too`);
+      assert.equal(await response.text(), html);
+      for (const platform of ["darwin", "win32"]) {
+        configureRegistry(registry, root, { platform, fileShell });
+        for (const action of ["open-default", "reveal"]) {
+          assert.equal((await registry.fileAction({ ...identity, action }, webContents)).ok, true);
+          assert.deepEqual(fileActions.at(-1), [action, fs.realpathSync(filePath)]);
+        }
+      }
+      fs.writeFileSync(path.join(root, "large.png"), Buffer.alloc(12 * 1024 * 1024));
+      assert.equal((await previewSession.request(new URL("large.png", preview.url).href)).status, 200);
+      fs.appendFileSync(path.join(root, "large.png"), "x");
+      assert.equal((await previewSession.request(new URL("large.png", preview.url).href)).status, 413);
+      if (mib === 32) {
+        for (const [name, size] of [["second.png", 12 * 1024 * 1024], ["third.png", 8 * 1024 * 1024], ["overflow.png", 1]]) {
+          fs.writeFileSync(path.join(root, name), Buffer.alloc(size));
+          assert.equal((await previewSession.request(new URL(name, preview.url).href)).status, name === "overflow.png" ? 413 : 200);
+        }
+      }
+      registry.release({ ...identity, handleIds: [identity.handleId] }, webContents);
+    }
+    const filePath = path.join(root, "oversized.html");
+    fs.writeFileSync(filePath, "<!doctype html>");
+    fs.truncateSync(filePath, 32 * 1024 * 1024 + 1);
+    const rejected = await registry.prepareClaim({
+      ownerChatId: "large-html", rendererWebContentsId: webContents.id,
+      source: { kind: "workspace-file", agentKey: "agent", path: "oversized.html" }, workspaceFilePath: filePath,
+    });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.code, "target_unavailable", "size errors must not trigger unsupported-type fallback");
+    assert.match(rejected.message, /32 MiB/u);
+  } finally {
+    registry.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("large remote HTML references also keep their full native preview", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-large-remote-html-"));
+  const previewSession = createHtmlTestSession();
+  const registry = new WorkPanelDocumentHtmlRegistry(() => previewSession.session);
+  const html = "<!doctype html>" + " ".repeat(13 * 1024 * 1024) + "<p>remote-end</p>";
+  configureRegistry(registry, root, { fetchRemoteResource: async () => ({ bytes: Buffer.from(html), mimeType: "text/html", revision: "remote-revision" }) });
+  const webContents = sender();
+  try {
+    const prepared = await registry.prepareClaim({
+      ownerChatId: "remote-html", rendererWebContentsId: webContents.id,
+      source: { kind: "reference", agentKey: "agent", chatId: "remote-html", resourceId: "large-reference", relativePath: "references/large.html" },
+    });
+    assert.equal(prepared.ok, true);
+    const claimed = await registry.claim({ claimId: prepared.claimId, ownerChatId: "remote-html", rendererGeneration: "large" }, webContents);
+    assert.equal(claimed.ok, true);
+    const preview = await registry.preview({ handleId: claimed.document.handleId, ownerChatId: "remote-html", rendererGeneration: "large" }, webContents);
+    assert.equal(preview.ok, true);
+    assert.equal(await (await previewSession.request(preview.url)).text(), html);
+  } finally {
+    registry.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

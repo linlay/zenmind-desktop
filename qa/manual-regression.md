@@ -1661,3 +1661,12 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 - v0.5.29、未知版本、未知 DB schema、旧 schema 1 重置请求、自定义 Platform 存储根和符号链接输入明确失败，不能转换或静默跳过。磁盘不足时旧数据与备份均保留。
 
 - WebApp 后端 SDK：macOS、Windows 原注入凭证继续直接调用，不请求 Compose session；显式 Compose bootstrap 凭证只向注入的 loopback 端点兑换短期 token，业务请求不自动重放；撤销后错误可见。云端页面没有 Desktop preload 或原生能力时按实际 capabilities 处理。
+
+## WorkPanel 大 HTML 预览
+
+- macOS / Windows：从 Workspace、Artifact、Reference 打开含内嵌图片的大 HTML，覆盖 9 MiB、13 MiB、恰好 32 MiB，预览必须显示尾部内容，不出现“文件内容已截断”或协议 413；本地原件与远端缓存均检查。
+- 超过 32 MiB 的 HTML 明确显示大小上限，不回退到 WebClient 的截断文本预览。附属单资源仍限制为 12 MiB，HTML 与附属资源累计最多 64 MiB；重复请求同一资源不重复计入预算，原有相对路径、权限与 session 隔离保持。
+
+- 原生 HTML 打开后触发开发热更新／effect 重放，再执行刷新、默认应用打开和 Finder／资源管理器定位，不能出现句柄失效。关闭该页签后旧句柄必须失效；大 HTML 的系统文件操作仍指向原件。WebClient 文档右键操作遇到文件缺失、权限或系统启动失败时显示本地化错误，不能只记控制台日志。
+
+- Main Chat 已达到或超过 420px 时，继续向右拖动以加宽聊天、缩小 WorkPanel，不显示“展开对话区”虚线和文字。从完全收起位置拖出时保留展开引导，到 420px 时消失；同次回拖到小于 420px 时恢复原方向和原位置，普通分栏起拖不显示展开引导。

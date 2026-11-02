@@ -22,7 +22,7 @@ AppShell 的 command/reducer 是标签与激活状态的唯一权威。Main 先�
 
 原路径只在已有 canonical Run 授权通过后的内部 Agent Platform 动作回复中返回。公开动作自报 `source`、WebApp、预览 DTO、页面脚本及 CDP 不获得此字段。Platform 沿用原有文件工具权限，不因返回路径而提升权限；工具投影只保留所需文件元信息，不公开所有文档路径或内部身份。
 
-Main 对每个文档条目独立观察原文件变化，保存、原子替换、删除和重新出现时更新对应预览版本。同一原件在多个 Chat 中打开时，变化更新各自预览，关闭其中一个条目不释放其他条目的 watcher 或 session。文件内容变化不导航、不激活标签、不打开隐藏的面板；切换 Chat 或隐藏 WorkPanel 保留文件和已挂载 guest，关闭标签才撤销对应条目。renderer 重载保留原文件与 owner 身份并轮换预览会话，重新经过绑定后恢复。销毁主窗口或退出应用回收文件状态、watcher 与 session。
+Main 对每个文档条目独立观察原文件变化，保存、原子替换、删除和重新出现时更新对应预览版本。同一原件在多个 Chat 中打开时，变化更新各自预览，关闭其中一个条目不释放其他条目的 watcher 或 session。文件内容变化不导航、不激活标签、不打开隐藏的面板；切换 Chat 或隐藏 WorkPanel 保留文件和已挂载 guest，关闭标签才撤销对应条目。原生 HTML 句柄同样以工作区标签生命周期为准，renderer 组件 effect 清理、开发热更新或 StrictMode 重放不能提前撤销仍在标签中的句柄；Main 继续负责窗口／sender 销毁及应用退出时回收。renderer 重载保留原文件与 owner 身份并轮换预览会话，重新经过绑定后恢复。销毁主窗口或退出应用回收文件状态、watcher 与 session。
 
 Markdown 解析由按需 Worker 完成，Main 只处理文件读取与预览生命周期；解析并发、输入输出大小、时间和内存有界。刷新取消旧解析，关闭标签终止其未完成解析，文档页面不能借 beforeunload 阻止关闭或退出。
 
@@ -85,7 +85,7 @@ Document Registry 只接收语义来源，并用绑定 sender、owner Chat 与 r
 
 HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。Desktop WorkPanel 的 HTML Surface 固定使用占满内容区的直接预览，只在预览与 DOM 批注之间切换，不提供源码、分屏或源码保存入口。顶部工具条在预览态显示不含本地绝对路径的语义 URL 与批注按钮，批注态显示返回预览、选择提示和批注数量。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
 
-原生 HTML 的内容由独立 sandbox WebView 承载，而非 Desktop renderer 的 `srcDoc`。每个 opaque handle 绑定独立临时 session，使用专用协议读取原始 HTML 与相对资源，不注入 Desktop CSP 或页面级批注脚本，也不改写产物自身的 CSP。内联脚本、CDN 脚本、外部样式/图片/字体和接口请求遵循 Chromium 的正常 CORS、证书及混合内容规则；不能通过关闭 webSecurity 或使用 Main 网络代理绕过这些限制。该 session 不共享 SSO、Desktop Cookie、Token Bridge 或公开 CDP 授权。手动选择本地文件的既有离线 session 不随此变化。
+原生 HTML 的内容由独立 sandbox WebView 承载，而非 Desktop renderer 的 `srcDoc`。主 HTML 文档与附属资源使用独立的单文件大小限制，并共同受页面总预算约束；已识别 HTML 超出预览上限时明确报告大小限制，不得伪装成类型不支持而回退至截断的文本预览。每个 opaque handle 绑定独立临时 session，使用专用协议读取原始 HTML 与相对资源，不注入 Desktop CSP 或页面级批注脚本，也不改写产物自身的 CSP。内联脚本、CDN 脚本、外部样式/图片/字体和接口请求遵循 Chromium 的正常 CORS、证书及混合内容规则；不能通过关闭 webSecurity 或使用 Main 网络代理绕过这些限制。该 session 不共享 SSO、Desktop Cookie、Token Bridge 或公开 CDP 授权。手动选择本地文件的既有离线 session 不随此变化。
 
 协议请求逐次验证资源身份、方法、规范路径、realpath 与大小上限。Workspace 资源限于权威 workspace，Artifact/Reference 限于当前资源目录，远端相对资源沿用同一语义边界并由 Main 读取。Main 校验 owner renderer、session 和预加载脚本后才允许 guest attach；外部顶层导航、popup、自动下载、嵌套 webview 与设备权限均被拒绝。批注只通过隔离 preload 的窄消息通道传递，不接受页面 postMessage。隐藏、切换标签和全屏保留 guest；关闭 item、workspace 或 renderer 时撤销 handle、关闭 guest 并清理 session 与临时缓存。
 

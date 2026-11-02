@@ -214,6 +214,13 @@ app.whenReady().then(async()=>{
   await js('document.querySelector(".chat-work-panel-item.is-active textarea").value="Preserved document draft"');
   assert.equal((await tabs()).some(t=>t.title==='对话'),false);
   await beginDrag();
+  for(const distance of [1,24,120]){
+   await moveDrag(distance);
+   assert.equal(await js('!!document.querySelector(".main-chat-resize-guide")'),false,'ordinary resizing above 420px must not show an expand guide');
+   assert.equal(await opacity(),1);
+  }
+  await finishDrag();await js('window.qa.split()');await delay(50);
+  await beginDrag();
   for(const [extra,alpha] of [[0,1],[23,1],[24,.75],[48,.5],[72,.25],[95,.25],[96,0]]){
    await moveDrag(-20-extra);assert.equal(await opacity(),alpha);
    const preview=await js('(()=>{const m=document.querySelector(".app-content").getBoundingClientRect(),r=document.querySelector(".chat-work-panel-resizer").getBoundingClientRect();return {line:r.left+r.width/2-m.left,guest:Math.round(document.querySelector("#main-chat-guest").getBoundingClientRect().width),hint:document.querySelector(".main-chat-resize-guide")?.textContent}})()');
@@ -231,9 +238,10 @@ app.whenReady().then(async()=>{
   assert.equal(await js('!!document.querySelector(".main-chat-resize-guide")'),false);
   await until('document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")');
   await beginDrag();
-  for(const [distance,alpha] of [[0,0],[23,0],[24,.25],[48,.5],[72,.75],[95,.75],[96,1],[120,1],[48,.5],[0,0]]){
+  for(const [distance,alpha] of [[0,0],[23,0],[24,.25],[48,.5],[72,.75],[95,.75],[96,1],[120,1],[414,1],[450,1],[120,1],[48,.5],[0,0]]){
    await moveDrag(distance);assert.equal(await opacity(),alpha);
-   if(distance>0)await assertGuide(102,'展开对话区');
+   if(distance>0&&distance<414)await assertGuide(102,'展开对话区');
+   if(distance>=414)assert.equal(await js('!!document.querySelector(".main-chat-resize-guide")'),false,'expand guide must disappear once Main Chat reaches 420px');
   }
   await finishDrag();
   for(const type of ['pointerup','pointercancel','blur']){

@@ -1225,6 +1225,7 @@ export const zhCNMessages = {
   "dialog.localDocument.readFailed": "无法读取文档，请确认文件仍存在且有读取权限。",
   "dialog.localDocument.unsupported": "仅支持 Markdown 和 HTML 文件。",
   "dialog.localDocument.tooLarge": "Markdown 文件超过 8 MiB 的预览大小限制。",
+  "dialog.documentHtml.tooLarge": "HTML 文件超过 {limitMiB} MiB 的预览大小限制。",
   "localDocuments.title": "文件",
   "localDocuments.open": "打开文件",
   "localDocuments.returnToApp": "返回 {appName}",

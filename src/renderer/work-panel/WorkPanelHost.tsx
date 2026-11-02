@@ -1391,12 +1391,10 @@ export function WorkPanelHost({
       await window.electronAPI.clipboard.writeText(documentPath);
       return;
     }
-    if (result.actionId === "reveal-resource") {
-      await handleLocalResourceAction(ownerChatId, item, "reveal");
-      return;
-    }
-    if (result.actionId === "open-resource-default-app") {
-      await handleLocalResourceAction(ownerChatId, item, "open-default");
+    if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app") {
+      const outcome = await handleLocalResourceAction(ownerChatId, item,
+        result.actionId === "reveal-resource" ? "reveal" : "open-default");
+      if (!outcome.ok) modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
       return;
     }
     if (
@@ -1586,17 +1584,10 @@ export function WorkPanelHost({
       }).catch(() => undefined);
     }
     previousDocumentHtmlHandlesRef.current = nextHandles;
+    // Host effect cleanup also runs during Fast Refresh/StrictMode while the
+    // workspace and its handles survive. Release only removed items here;
+    // Main owns sender/window destruction and application shutdown.
   }, [state.workspaces]);
-
-  useEffect(() => () => {
-    for (const [handleId, ownerChatId] of previousDocumentHtmlHandlesRef.current) {
-      void window.electronAPI.chatWorkPanel.documentHtml.release({
-        ownerChatId,
-        rendererGeneration: rendererGenerationRef.current,
-        handleIds: [handleId],
-      }).catch(() => undefined);
-    }
-  }, []);
 
   useEffect(() => {
     const nextHandles = new Map<string, string>();

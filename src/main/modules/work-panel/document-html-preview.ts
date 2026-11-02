@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { session, type Session, type WebContents } from "electron";
 import { WORK_PANEL_DOCUMENT_HTML_PROTOCOL, type WorkPanelDocumentSource } from "../../../shared/work-panel-document-html";
+import { HTML_MAX_BYTES, HTML_ASSET_MAX_BYTES, HTML_PREVIEW_TOTAL_MAX_BYTES } from "./document-html-limits";
 
 export type HtmlPreviewDocument = {
   handleId: string;
@@ -17,8 +18,6 @@ export type FetchHtmlResource = (input: { chatId: string; relativePath: string }
   bytes: Buffer; mimeType: string; revision?: string;
 } | null>;
 
-const ASSET_MAX_BYTES = 12 * 1024 * 1024;
-const TOTAL_MAX_BYTES = 32 * 1024 * 1024;
 const mimeTypes: Record<string, string> = {
   ".html": "text/html", ".htm": "text/html", ".xhtml": "application/xhtml+xml",
   ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json",
@@ -128,11 +127,12 @@ export class DocumentHtmlPreviewSessions {
           parsed.username || parsed.password || parsed.port || !["GET", "HEAD"].includes(request.method) ||
           !isDocumentResourcePath(current.document, semanticPath)) return new Response(null, { status: 403 });
         let bytes: Buffer;
+        const maxBytes = semanticPath === current.document.semanticPath ? HTML_MAX_BYTES : HTML_ASSET_MAX_BYTES;
         let mimeType = semanticPath === current.document.semanticPath ? current.document.mimeType || "text/html" :
           mimeTypes[path.posix.extname(semanticPath).toLowerCase()] || "application/octet-stream";
         const local = resolveDocumentLocalPath(current.document, semanticPath);
         if (local) {
-          if (fs.statSync(local).size > ASSET_MAX_BYTES) return new Response(null, { status: 413 });
+          if (fs.statSync(local).size > maxBytes) return new Response(null, { status: 413 });
           bytes = await fs.promises.readFile(local);
         } else if (current.document.temporary && current.document.source.kind !== "workspace-file" && fetchRemote && semanticPath !== current.document.semanticPath) {
           const remote = await fetchRemote({ chatId: current.document.source.chatId, relativePath: semanticPath });
@@ -143,7 +143,7 @@ export class DocumentHtmlPreviewSessions {
         } else return new Response(null, { status: 404 });
         if (this.entries.get(document.handleId) !== current) return new Response(null, { status: 410 });
         const nextSize = current.bytes - (current.sizes.get(semanticPath) || 0) + bytes.length;
-        if (bytes.length > ASSET_MAX_BYTES || nextSize > TOTAL_MAX_BYTES) return new Response(null, { status: 413 });
+        if (bytes.length > maxBytes || nextSize > HTML_PREVIEW_TOTAL_MAX_BYTES) return new Response(null, { status: 413 });
         current.bytes = nextSize;
         current.sizes.set(semanticPath, bytes.length);
         // No inherited Desktop CSP, injected bootstrap or CORS wildcard. The
