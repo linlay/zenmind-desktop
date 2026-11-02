@@ -412,8 +412,7 @@ export function createMainProcessRuntime() {
     get desktopSsoController() { return desktopSsoController; },
     get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
     get desktopSsoRestoreState() { return desktopSsoRestoreState; },
-    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
-    get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; }
   });
 
   websFacade.webappWindowManager.setAuthPreloadPath(MAIN_PRELOAD_PATH.replace(/index\.js$/u, "webapp-auth.js"));

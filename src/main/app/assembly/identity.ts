@@ -94,7 +94,6 @@ export interface CreateDesktopSsoTokenRefresherDependencies {
   readonly applyDesktopSsoRestoreResult: (result: DesktopSsoRestoreResult) => void;
   readonly desktopSsoRestoreState: DesktopSsoRestoreResult["state"];
   readonly assistantBridgeRuntime: Pick<AssistantBridgeRuntime, "refreshKanbanDeviceInfo">;
-  readonly enterpriseChatRuntime: Pick<InstanceType<typeof EnterpriseChatRuntime>, "refresh">;
 }
 
 export function createDesktopSsoTokenRefresher(dependencies: CreateDesktopSsoTokenRefresherDependencies) {
@@ -106,13 +105,10 @@ export function createDesktopSsoTokenRefresher(dependencies: CreateDesktopSsoTok
     }
     const needsRefresh = force || desktopSsoIdTokenNeedsRefresh(app);
     const accessToken = await dependencies.desktopSsoController.ensureBusinessToken(force);
+    // IM owns its derived session lifetime. Another service's 401 must not
+    // disconnect a healthy chat or clear its active conversation on renewal.
     if (needsRefresh && accessToken) {
       dependencies.assistantBridgeRuntime?.refreshKanbanDeviceInfo();
-      void dependencies.enterpriseChatRuntime.refresh().catch((error) => {
-        safeConsoleError("failed to refresh enterprise chat after desktop sso token renewal", {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
     }
     return accessToken;
   };
