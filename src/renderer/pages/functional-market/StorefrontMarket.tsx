@@ -597,7 +597,7 @@ export function StorefrontMarket(props: MarketViewProps) {
   return <MarketIdentityBoundary><StorefrontMarketContent {...props} /></MarketIdentityBoundary>;
 }
 
-function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }: MarketViewProps) {
+function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange, onRequestAgentChatNavigate }: MarketViewProps) {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
@@ -1059,7 +1059,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
         composerDraft: t("market.skill.assistant.draft"),
         composerSkill: "skill-creator"
       });
-      navigate(createAgentWebclientAgentPath(agentKey, search));
+      onRequestAgentChatNavigate(createAgentWebclientAgentPath(agentKey, search));
     } catch (reason) {
       console.warn("[market-storefront] skill assistant failed", reason);
       setFeedback(normalizeError(reason) || t("market.skill.assistant.openFailed"));
@@ -1084,7 +1084,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
       const search = new URLSearchParams({ newChat: String(Date.now()),
         composerDraft: t("market.discovery.useDraft", { name: item.name }), composerSkill: item.id });
       setSelectedDetailItem(null);
-      navigate(createAgentWebclientAgentPath(agentKey, search));
+      onRequestAgentChatNavigate(createAgentWebclientAgentPath(agentKey, search));
     } catch (reason) { setFeedback(normalizeError(reason)); setFeedbackType("error"); }
     finally { skillLaunchInFlight.current = false; }
   }
@@ -1732,6 +1732,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
   if (activeTab === "mcps") {
     return <ConnectorMarketplace items={activeItems} loading={isLoadingMarket}
       onTabChange={handleMarketTabChange} onChanged={() => refreshEverything(false, true)}
+      onRequestAgentChatNavigate={onRequestAgentChatNavigate}
       onManage={() => navigate("/connectors")}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
         <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />

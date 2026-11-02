@@ -5139,7 +5139,7 @@ export function AppShell() {
                 !marketSettingsLoaded
                   ? null
                   : marketEnabled
-                    ? <RouteSuspense><FunctionalMarketPage /></RouteSuspense>
+                    ? <RouteSuspense><FunctionalMarketPage onRequestAgentChatNavigate={requestNavigationWithAgentChatFocus} /></RouteSuspense>
                     : <Navigate to="/control-center" replace />
               }
             />

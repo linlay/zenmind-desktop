@@ -25,6 +25,7 @@ import "./ConnectorLifecycle.css";
 interface ConnectorMarketplaceProps {
   items: MarketItem[]; loading: boolean; feedback: ReactNode;
   onTabChange: (tab: MarketTab) => void; onManage: () => void; onChanged?: () => void;
+  onRequestAgentChatNavigate: (targetPath: string) => void;
 }
 export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const { t } = useI18n();
@@ -37,7 +38,7 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const [disconnectItem, setDisconnectItem] = useState<MarketItem | null>(null);
   const runtime = useMarketConnectorFlow(props.onChanged, (agentKey, draft) => {
     const search = new URLSearchParams({ newChat: String(Date.now()), composerDraft: draft ?? "" });
-    navigate(createAgentWebclientAgentPath(agentKey, search));
+    props.onRequestAgentChatNavigate(createAgentWebclientAgentPath(agentKey, search));
   });
   const configureConnector = (item: MarketItem) => {
     const route = createAgentWebclientConnectorManagementPath(runtime.getConnectorId(item));

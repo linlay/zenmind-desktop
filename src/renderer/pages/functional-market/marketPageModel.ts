@@ -19,6 +19,7 @@ export interface MarketTabDefinition {
 export interface MarketViewProps {
   activeTab: MarketTab;
   onTabChange: (tab: MarketTab) => void;
+  onRequestAgentChatNavigate: (targetPath: string) => void;
   initialItemId?: string;
 }
 
