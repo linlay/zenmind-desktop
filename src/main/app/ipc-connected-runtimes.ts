@@ -179,7 +179,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     endDrag: () => petRuntime.endDrag(),
     setPreviewExpanded: (expanded: boolean) => petRuntime.setPreviewExpanded(expanded),
     dismissPreview: () => petRuntime.dismissPreview(),
-    setMouseInteractive: (interactive: boolean) => petRuntime.setMouseInteractive(Boolean(interactive)),
+    setMouseInteractive: petRuntime.setMouseInteractive,
     setWindowMode: (mode: unknown) => petRuntime.setWindowMode(mode),
     refreshState: () => petRuntime.refreshState(),
     replyMessage: (input: any) => petRuntime.replyMessage(assistantBridge, input),

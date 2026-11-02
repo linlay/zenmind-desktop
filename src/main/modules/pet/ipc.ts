@@ -145,10 +145,11 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   });
 
   ipcMain.handle("desktopPet.setMouseInteractive", async (event: any, interactive: boolean) => {
-    if (!isPetWindowSender(event)) {
+    if (typeof interactive !== "boolean" || !isPetSurfaceSender(event)) {
       return { ok: false };
     }
-    return options.setMouseInteractive(interactive);
+    // Derive the target from the real sender; a surface may only change its own window.
+    return options.setMouseInteractive(interactive, isPetWindowSender(event) ? "pet" : "panel");
   });
 
   ipcMain.handle("desktopPet.setWindowMode", async (event: any, mode: unknown) => {

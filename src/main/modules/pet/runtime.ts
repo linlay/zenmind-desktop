@@ -106,7 +106,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     desktopPetIdleResetTimer: null as ReturnType<typeof setTimeout> | null,
     desktopPetPendingProgrammaticBoundsSignature: null as string | null,
     desktopPetProgrammaticBoundsGuardTimer: null as ReturnType<typeof setTimeout> | null,
-    desktopPetMouseInteractive: true
+    desktopPetMouseInteractive: true,
+    desktopPetPanelMouseInteractive: true
   };
   const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
   const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
@@ -568,6 +569,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       }
     });
     state.desktopPetPanelWindow = win;
+    state.desktopPetPanelMouseInteractive = true;
+    setMouseInteractive(false, "panel");
     win.on("close", (event: any) => {
       if (options.isHandlingQuit() || destroyingPanelWindow) {
         return;
@@ -690,16 +693,18 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return desktopPetWindowController.hideWindow();
   }
 
-  function setMouseInteractive(interactive: boolean) {
-    if (!state.desktopPetWindow || state.desktopPetWindow.isDestroyed()) {
-      state.desktopPetMouseInteractive = true;
+  function setMouseInteractive(interactive: boolean, target: "pet" | "panel" = "pet") {
+    const win = target === "panel" ? state.desktopPetPanelWindow : state.desktopPetWindow;
+    const stateKey = target === "panel" ? "desktopPetPanelMouseInteractive" : "desktopPetMouseInteractive";
+    if (!win || win.isDestroyed()) {
+      state[stateKey] = true;
       return { ok: false };
     }
-    if (state.desktopPetMouseInteractive === interactive) {
+    if (state[stateKey] === interactive) {
       return { ok: true };
     }
-    state.desktopPetMouseInteractive = interactive;
-    applyDesktopPetMouseInteractivity(state.desktopPetWindow, options.platform, interactive);
+    state[stateKey] = interactive;
+    applyDesktopPetMouseInteractivity(win, options.platform, interactive);
     return { ok: true };
   }
 
