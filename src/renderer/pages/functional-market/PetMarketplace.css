@@ -1,17 +1,19 @@
-.pet-discovery { flex-direction: column; }
-.pet-market-card { padding: 0; overflow: hidden; cursor: pointer; }
-.pet-market-card:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
+.pet-discovery { flex-direction: column; container-type: inline-size; }
+.pet-market-card { padding: 0; overflow: hidden; }
 .pet-market-card.is-current { border-color: var(--market-control-blue); }
-.pet-market-open { border: 0; background: transparent; padding: 0; cursor: pointer; width: 100%; }
-.pet-market-card-copy { padding: 16px 18px 8px; flex: 1; }
-.pet-market-card h2 { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--market-control-text); margin: 0 0 8px; }
-.pet-market-card p { color: var(--market-control-muted); line-height: 1.65; min-height: 42px; margin: 0 0 12px; }
-.pet-market-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.pet-market-card-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 14px; }
+.pet-market-card-copy { padding: 16px 18px 8px; flex: 1; min-width: 0; }
+.pet-market-card h2 { display: flex; align-items: center; gap: 8px; min-width: 0; height: 22px; font-size: 13px; color: var(--market-control-text); margin: 0 0 8px; }
+.pet-market-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pet-market-card h2 .ant-tag { flex: none; margin-inline-end: 0; }
+.pet-market-card p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: var(--market-control-muted); font-size: 12px; line-height: 20px; height: 40px; margin: 0 0 12px; }
+.pet-market-tags { height: 18px; line-height: 18px; font-size: 11px; color: var(--market-control-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pet-market-card-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 8px; min-height: 30px; padding: 12px 14px; }
 .pet-market-card-actions .market-card-delete, .pet-market-card-actions .market-card-secondary, .pet-market-card-actions > .ant-tag { margin-inline-end: auto; }
-.pet-market-preview { width: 100%; }
-.pet-market-stage { min-height: 180px; display: flex; justify-content: center; align-items: center; background: color-mix(in srgb, var(--market-control-blue) 5%, transparent); }
+.pet-market-preview { width: 100%; flex: none; }
+.pet-market-stage { height: 180px; display: flex; justify-content: center; align-items: center; background: color-mix(in srgb, var(--market-control-blue) 5%, transparent); }
 .pet-market-sprite { display: block; width: 128px; height: 128px; flex: 0 0 auto; background-repeat: no-repeat; image-rendering: auto; }
 .pet-market-preview-fallback { color: var(--market-control-muted); font-size: 12px; }
-.pet-market-preview.is-detail .pet-market-stage { min-height: 260px; border-radius: 12px; margin-bottom: 12px; }
-.pet-market-detail-meta { color: var(--market-control-muted); }
+.pet-market-error { margin-bottom: 10px; }
+@container (max-width: 1120px) { .pet-market-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 840px) { .pet-market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 560px) { .pet-market-grid { grid-template-columns: minmax(0, 1fr); } }

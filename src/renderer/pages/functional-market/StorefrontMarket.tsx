@@ -675,7 +675,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
         ? next.items.find((item) => item.id === initialItemId && (!["pets","skins"].includes(activeTab) || item.type === itemType)) ?? null
         : null;
       if (initialItem) {
-        setSelectedDetailItem(initialItem);
+        setSelectedDetailItem(initialItem.type === "pet" || initialItem.type === "skin" ? null : initialItem);
         const initialTab = marketTabForItemType(initialItem.type);
         if (initialTab && tabDefinitions.some((tab) => tab.id === initialTab) && initialTab !== activeTab) {
           onTabChange(initialTab);
@@ -1257,7 +1257,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
   }
 
   function renderDetailDialog() {
-    if (!selectedDetailItem) {
+    if (!selectedDetailItem || selectedDetailItem.type === "pet" || selectedDetailItem.type === "skin") {
       return null;
     }
     if (selectedDetailItem.type === "skill") {
@@ -1741,7 +1741,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
   }
   if(activeTab === "skins") {
     return <SkinMarketplace items={activeItems} loading={isLoadingMarket} onTabChange={handleMarketTabChange}
-      onChanged={()=>refreshEverything(false,true)} onRefresh={()=>loadMarket(true,true)} detailItem={selectedDetailItem} onDetail={setSelectedDetailItem}
+      onChanged={()=>refreshEverything(false,true)} onRefresh={()=>loadMarket(true,true)}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
         <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"}/>
         <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined/>} size="small" type="text"
@@ -1751,7 +1751,7 @@ function StorefrontMarketContent({ activeTab, initialItemId = "", onTabChange }:
   if (activeTab === "pets") {
     return <PetMarketplace items={activeItems} loading={isLoadingMarket}
       onTabChange={handleMarketTabChange} onChanged={() => refreshEverything(false, true)}
-      onRefresh={() => loadMarket(true, true)} detailItem={selectedDetailItem} onDetail={setSelectedDetailItem}
+      onRefresh={() => loadMarket(true, true)}
       feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
         <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
         <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"

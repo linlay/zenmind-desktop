@@ -1,19 +1,34 @@
-.skin-discovery { flex-direction: column; }
+.skin-discovery { flex-direction: column; container-type: inline-size; }
 .skin-market-card {
     padding: 0;
     overflow: hidden;
-    cursor: pointer;
     background: var(--market-card-surface);
 }
-.skin-market-card:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 3px; }
-.skin-market-copy { padding: 12px 14px; flex: 1; min-width: 0; }
+.skin-market-copy {
+    padding: 12px 14px;
+    min-width: 0;
+    display: grid;
+    grid-template-rows: 22px 3.3em;
+    gap: 8px;
+    font-size: 12px;
+}
 .skin-market-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .skin-market-title h2 { display: block; flex: 1; min-width: 0; font-size: 13px; line-height: 22px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.skin-market-copy p { font-size: 12px; color: var(--market-control-muted); line-height: 1.65; }
+.skin-market-copy p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--market-control-muted);
+    line-height: 1.65;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
 .skin-market-meta { display: flex; flex: none; align-items: center; gap: 6px; white-space: nowrap; color: var(--market-control-muted); font-size: 11px; }
 .skin-market-meta .ant-tag { margin-inline-end: 0; }
-.skin-market-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 0 14px 12px; }
-.skin-market-actions .market-card-delete, .skin-market-actions .market-card-secondary { margin-inline-end: auto; }
+.skin-market-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 0 14px 12px; margin-top: auto; }
+.skin-market-actions .market-card-delete { margin-inline-end: auto; }
 .skin-market-card-preview { position: relative; }
 .skin-market-preview {
     height: 148px;
@@ -61,4 +76,7 @@
     font-weight: 600;
 }
 .skin-market-modes button:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 1px; }
-.skin-market-detail .skin-market-preview { height: 240px; margin: 12px 0; }
+
+@container (max-width: 1120px) { .skin-discovery .skill-discovery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 840px) { .skin-discovery .skill-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 560px) { .skin-discovery .skill-discovery-grid { grid-template-columns: minmax(0, 1fr); } }

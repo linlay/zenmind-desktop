@@ -33,10 +33,9 @@ export function readPetPreviewManifest(item: MarketItem) {
     return { ...manifest, states, signature } as DesktopPetAppearanceOption;
   } catch { return null; }
 }
-export function PetPreview({ item, appearance, detail = false }: {
+export function PetPreview({ item, appearance }: {
   item?: MarketItem;
   appearance?: DesktopPetAppearanceOption;
-  detail?: boolean;
 }) {
   const { t } = useI18n();
   const manifest = appearance ?? (item ? readPetPreviewManifest(item) : null);
@@ -80,7 +79,7 @@ export function PetPreview({ item, appearance, detail = false }: {
     backgroundSize: `${frames * 100}% 100%`,
     backgroundPosition: "0 0"
   } as CSSProperties;
-  return <div className={`pet-market-preview ${detail ? "is-detail" : ""}`}>
+  return <div className="pet-market-preview">
     <div className="pet-market-stage">
       {failed ? <span className="pet-market-preview-fallback">{t("market.pet.noPreview")}</span>
         : <span aria-label={t("market.pet.animationPreview")} role="img" className="pet-market-sprite" style={style} />}

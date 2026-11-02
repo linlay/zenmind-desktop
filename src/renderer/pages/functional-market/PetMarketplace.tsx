@@ -18,14 +18,11 @@ export interface PetMarketplaceProps {
   onTabChange: (tab: MarketTab) => void;
   onChanged?: () => unknown;
   onRefresh: () => unknown;
-  detailItem: MarketItem | null;
-  onDetail: (item: MarketItem | null) => void;
 }
 export function PetMarketplace(props: PetMarketplaceProps) {
   const { t } = useI18n();
   const runtime = useMarketPetFlow(props.onChanged);
   const [query, setQuery] = useState("");
-  const [localDetail, setLocalDetail] = useState<DesktopPetAppearanceOption | null>(null);
   const [remove, setRemove] = useState<DesktopPetAppearanceOption | null>(null);
   const appearances = runtime.petState?.appearanceOptions ?? [];
   const current = runtime.stateError ? undefined : runtime.petState?.appearanceId;
@@ -36,15 +33,8 @@ export function PetMarketplace(props: PetMarketplaceProps) {
     return `${pet.displayName} ${pet.description}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
       || Boolean(item && matchesMarketItemQuery(item, query, t));
   });
-  const detailsItem = props.detailItem?.type === "pet" ? props.detailItem : undefined;
-  const detailAppearance = localDetail ?? undefined;
-  const openMarket = (item: MarketItem) => { setLocalDetail(null); props.onDetail(item); };
-  const openLocal = (appearance: DesktopPetAppearanceOption) => { props.onDetail(null); setLocalDetail(appearance); };
-  const closeDetail = () => { setLocalDetail(null); props.onDetail(null); };
   const refreshButton = () => <Button onClick={() => void runtime.refresh()} loading={runtime.loading} disabled={runtime.busy}><ReloadOutlined />{t("market.pet.refresh")}</Button>;
   const stateWarning = runtime.stateError ? <Alert type="warning" showIcon message={runtime.stateError} action={refreshButton()} /> : null;
-  const detailIDs = [detailsItem?.id, detailsItem ? `user:${detailsItem.id}` : undefined, detailAppearance?.id];
-  const detailError = runtime.errorItemId && detailIDs.includes(runtime.errorItemId) ? runtime.error : "";
   const removeError = runtime.errorAction === "remove" && runtime.errorItemId === remove?.id ? runtime.error : "";
   const useButton = (appearance: DesktopPetAppearanceOption) => runtime.stateError ? refreshButton() : <Button type={current === appearance.id ? "default" : "primary"}
     className={`market-card-action market-card-primary ${current === appearance.id ? "is-current" : ""}`}
@@ -73,19 +63,17 @@ export function PetMarketplace(props: PetMarketplaceProps) {
       <PetMessages runtime={runtime} />
       {props.feedback}
       <div className="skill-discovery-scroll">
-        <div className="skill-discovery-grid pet-market-grid" aria-busy={props.loading || runtime.loading}>{marketItems.map(item => <article className="skill-discovery-card pet-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
-          onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) openMarket(item); }}
-          onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openMarket(item); } }}>
-          <button className="pet-market-open" onClick={() => openMarket(item)} aria-label={t("market.pet.detailsName", { name: item.name })}><PetPreview item={item} /></button>
-          <div className="pet-market-card-copy"><h2>{item.name}<Tag>{t("market.pet.market")}</Tag></h2><p>{item.description}</p><div className="pet-market-tags">{item.version}</div></div>
-          <div className="pet-market-card-actions"><Button type="text" className="market-card-action market-card-secondary" onClick={() => openMarket(item)}>{t("market.action.details")}</Button>{installButton(item)}</div>
+        {stateWarning}
+        {runtime.error && !remove ? <Alert className="pet-market-error" type="error" showIcon message={runtime.error} action={<Button size="small" aria-label={t("market.pet.retry")} disabled={runtime.busy} onClick={() => void runtime.retry()}>{t("market.pet.retry")}</Button>} /> : null}
+        <div className="skill-discovery-grid pet-market-grid" aria-busy={props.loading || runtime.loading}>{marketItems.map(item => <article className="skill-discovery-card pet-market-card" key={item.id} data-pet-id={item.id} aria-label={item.name}>
+          <PetPreview item={item} />
+          <div className="pet-market-card-copy"><h2><span className="pet-market-name" title={item.name}>{item.name}</span><Tag>{t("market.pet.market")}</Tag></h2><p title={item.description}>{item.description}</p><div className="pet-market-tags">{item.version}</div></div>
+          <div className="pet-market-card-actions">{installButton(item)}</div>
         </article>)}{mine.map(appearance => {
-          const update = props.items.find(item => `user:${item.id}` === appearance.id && item.state === "update-available");
-          return <article className={`skill-discovery-card pet-market-card ${current === appearance.id ? "is-current" : ""}`} key={appearance.id} tabIndex={0} aria-label={appearance.displayName} aria-haspopup="dialog"
-            onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) openLocal(appearance); }}
-            onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openLocal(appearance); } }}>
-            <button className="pet-market-open" onClick={() => openLocal(appearance)} aria-label={t("market.pet.detailsName", { name: appearance.displayName })}><PetPreview appearance={appearance} /></button>
-            <div className="pet-market-card-copy"><h2>{appearance.displayName}<Tag>{t(appearance.id.startsWith("user:") ? "market.state.installed" : "market.pet.builtin")}</Tag></h2><p>{appearance.description}</p></div>
+          const update = props.items.find(item => item.type === "pet" && `user:${item.id}` === appearance.id && item.state === "update-available");
+          return <article className={`skill-discovery-card pet-market-card ${current === appearance.id ? "is-current" : ""}`} key={appearance.id} data-pet-id={appearance.id} aria-label={appearance.displayName}>
+            <PetPreview appearance={appearance} />
+            <div className="pet-market-card-copy"><h2><span className="pet-market-name" title={appearance.displayName}>{appearance.displayName}</span><Tag>{t(appearance.id.startsWith("user:") ? "market.state.installed" : "market.pet.builtin")}</Tag></h2><p title={appearance.description}>{appearance.description}</p><div className="pet-market-tags">{appearance.assetVersion}</div></div>
             <div className="pet-market-card-actions">{appearance.id.startsWith("user:") ? <Button type="text" danger className="market-card-action market-card-delete" icon={<DeleteOutlined />} onClick={() => setRemove(appearance)} disabled={runtime.busy}>{t("common.delete")}</Button> : null}
               {update ? <Button className="market-card-action market-card-secondary" onClick={() => void runtime.install(update)} disabled={runtime.busy}>{t("market.action.update")}</Button> : null}{useButton(appearance)}</div>
           </article>;
@@ -93,11 +81,6 @@ export function PetMarketplace(props: PetMarketplaceProps) {
         {marketItems.length + mine.length === 0 ? <div className="skill-discovery-empty" role="status">{t(props.loading || runtime.loading ? "market.storefront.loading" : "market.pet.empty")}</div> : null}
       </div>
     </div>
-    <Modal destroyOnHidden open={Boolean(detailsItem || detailAppearance)} onCancel={closeDetail} title={detailsItem?.name ?? detailAppearance?.displayName} footer={detailsItem ? installButton(detailsItem) : detailAppearance ? useButton(detailAppearance) : null}>
-      {stateWarning}
-      {detailError ? <Alert type="error" showIcon message={detailError} action={<Button aria-label={t("market.pet.retry")} disabled={runtime.busy} onClick={() => void runtime.retry()}>{t("market.pet.retry")}</Button>} /> : null}
-      {detailsItem || detailAppearance ? <><PetPreview key={detailsItem?.id ?? detailAppearance?.id} item={detailsItem} appearance={detailAppearance} detail /><p>{detailsItem?.description ?? detailAppearance?.description}</p>{detailsItem ? <p className="pet-market-detail-meta">{detailsItem.author} · {detailsItem.version}</p> : null}</> : null}
-    </Modal>
     <Modal destroyOnHidden open={Boolean(remove)} title={t("settings.desktopPet.remove.confirm")} onCancel={() => { if (!runtime.busy) setRemove(null); }} maskClosable={!runtime.busy} closable={!runtime.busy} cancelButtonProps={{ disabled: runtime.busy }} okText={t("common.delete")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} confirmLoading={runtime.busy} onOk={async () => { if (remove && await runtime.remove(remove.id)) setRemove(null); }}>
       {stateWarning}
       {removeError ? <Alert type="error" showIcon message={removeError} action={<Button aria-label={t("market.pet.retry")} disabled={runtime.busy} onClick={async () => { if (await runtime.retry()) setRemove(null); }}>{t("market.pet.retry")}</Button>} /> : null}

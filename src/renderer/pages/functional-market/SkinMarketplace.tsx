@@ -28,8 +28,6 @@ interface Props {
     onTabChange: (tab: MarketTab) => void;
     onChanged?: () => unknown;
     onRefresh: () => unknown;
-    detailItem: MarketItem | null;
-    onDetail: (item: MarketItem | null) => void;
 }
 
 function SkinPreviewModes({ name, mode, onChange }: {
@@ -52,28 +50,21 @@ export function SkinMarketplace(props: Props) {
     const flow = useMarketSkinFlow(props.onChanged), appearance = flow.appearance;
     const [query, setQuery] = useState("");
     const [previewModes, setPreviewModes] = useState<Record<string, ResolvedThemeMode>>({});
-    const [localDetail, setLocalDetail] = useState<InstalledDesktopSkinSummary | null>(null);
     const [remove, setRemove] = useState<InstalledDesktopSkinSummary | null>(null);
     const installed = appearance.skinSettings.installedSkins ?? [], current = appearance.skinSettings.skinId;
     const skinItems = props.items.filter(item => item.type === "skin");
     const installedKeys = new Set(installed.map(skin => packagePreviewKey(skin.packageId, skin.version)));
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const builtins = DESKTOP_SKINS.filter(skin => `${t(builtinSkinNameKeys[skin.id])} ${skin.id}`.toLocaleLowerCase().includes(normalizedQuery));
-    const mine = installed.filter(skin => {
-        const item = skinItems.find(item => item.id === skin.packageId && item.version === skin.version);
+    const mine = installed.map(skin => ({
+        skin, item: skinItems.find(item => item.id === skin.packageId && item.version === skin.version)
+    })).filter(({ skin, item }) => {
         return `${skin.name} ${skin.packageId} ${skin.version}`.toLocaleLowerCase().includes(normalizedQuery)
             || Boolean(item && matchesMarketItemQuery(item, query, t));
     });
     const market = skinItems.filter(item => !installedKeys.has(packagePreviewKey(item.id, item.version))
         && matchesMarketItemQuery(item, query, t));
     const count = builtins.length + mine.length + market.length;
-    const detail = localDetail
-        ? skinItems.find(item => item.id === localDetail.packageId && item.version === localDetail.version)
-        : props.detailItem?.type === "skin" ? props.detailItem : undefined;
-    const selected = localDetail ?? (detail ? installed.find(skin => skin.packageId === detail.id && skin.version === detail.version) : undefined);
-    const open = (item: MarketItem) => { setLocalDetail(null); props.onDetail(item); };
-    const close = () => { props.onDetail(null); setLocalDetail(null); };
-    const openLocal = (skin: InstalledDesktopSkinSummary) => { props.onDetail(null); setLocalDetail(skin); };
     const refresh = () => { void flow.refresh(); props.onRefresh(); };
     const renderPreview = (key: string, name: string, options: Omit<ComponentProps<typeof SkinPreview>, "mode">) => {
         const mode = previewModes[key] ?? appearance.resolvedTheme;
@@ -96,10 +87,7 @@ export function SkinMarketplace(props: Props) {
             {t(item.state === "update-available" ? "market.action.update" : "market.action.install")}
         </Button>;
     };
-    const failure = flow.errorItemId && [detail?.id, selected?.id].includes(flow.errorItemId) ? flow.error : "";
     const retry = <Button aria-label={t("market.skin.retry")} disabled={flow.busy} onClick={() => void flow.retry()}>{t("market.skin.retry")}</Button>;
-    const detailPreviewKey = localDetail ? packagePreviewKey(localDetail.packageId, localDetail.version)
-        : detail ? packagePreviewKey(detail.id, detail.version) : "";
 
     return <MarketPageFrame activeTab="skins" tabs={getMarketTabDefinitions(t)} onTabChange={props.onTabChange}
         toolbar={<div className="skill-discovery-toolbar">
@@ -118,6 +106,7 @@ export function SkinMarketplace(props: Props) {
             <div className="skill-discovery-scroll">
                 {flow.stateError ? <Alert type="warning" showIcon message={flow.stateError}
                     action={<Button onClick={() => void flow.refresh()}>{t("market.skin.refresh")}</Button>}/> : null}
+                {flow.error && flow.errorItemId !== remove?.id ? <Alert type="error" showIcon message={flow.error} action={retry}/> : null}
                 <div className="skill-discovery-grid" aria-busy={props.loading || flow.loading}>
                     {builtins.map(skin => {
                         const name = t(builtinSkinNameKeys[skin.id]);
@@ -128,50 +117,35 @@ export function SkinMarketplace(props: Props) {
                             <div className="skin-market-actions">{useButton(skin.id as DesktopSkinId)}</div>
                         </article>;
                     })}
-                    {mine.map(skin => <article className={`skill-discovery-card skin-market-card ${skin.id === current ? "is-selected" : ""}`}
-                        key={skin.id} data-skin-id={skin.id} tabIndex={0} aria-label={`${skin.name} ${skin.version}`} aria-haspopup="dialog"
-                        onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button,a,input")) openLocal(skin); }}
-                        onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openLocal(skin); } }}>
+                    {mine.map(({ skin, item }) => <article className={`skill-discovery-card skin-market-card ${skin.id === current ? "is-selected" : ""}`}
+                        key={skin.id} data-skin-id={skin.id} aria-label={`${skin.name} ${skin.version}`}>
                         {renderPreview(packagePreviewKey(skin.packageId, skin.version), `${skin.name} ${skin.version}`, {
                             installedSkinId: skin.id, definition: current === skin.id ? appearance.skin : undefined, thumbnail: skin.previewDataUrl
                         })}
                         <div className="skin-market-copy"><div className="skin-market-title"><h2 title={skin.name}>{skin.name}</h2><div className="skin-market-meta">
                             <Tag>{t("market.state.installed")}</Tag><span>{skin.version}</span>
-                        </div></div></div>
+                        </div></div>{item?.description ? <p title={item.description}>{item.description}</p> : null}</div>
                         <div className="skin-market-actions"><Button type="text" danger className="market-card-action market-card-delete" icon={<DeleteOutlined />} disabled={flow.busy} onClick={() => setRemove(skin)}>{t("common.delete")}</Button>{useButton(skin.id)}</div>
                     </article>)}
                     {market.map(item => <article className="skill-discovery-card skin-market-card" key={packagePreviewKey(item.id, item.version)}
-                        data-package-id={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
-                        onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button,a,input")) open(item); }}
-                        onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open(item); } }}>
+                        data-package-id={item.id} aria-label={item.name}>
                         {renderPreview(packagePreviewKey(item.id, item.version), item.name, { item })}
                         <div className="skin-market-copy"><div className="skin-market-title"><h2 title={item.name}>{item.name}</h2><div className="skin-market-meta">
                             <Tag>{t("market.skin.market")}</Tag><span>{item.version}</span>
-                        </div></div><p>{item.description}</p></div>
-                        <div className="skin-market-actions"><Button type="text" className="market-card-action market-card-secondary" onClick={() => open(item)}>{t("market.action.details")}</Button>{installButton(item)}</div>
+                        </div></div><p title={item.description}>{item.description}</p></div>
+                        <div className="skin-market-actions">{installButton(item)}</div>
                     </article>)}
                 </div>
                 {!count ? <div className="skill-discovery-empty">{t(props.loading ? "market.storefront.loading" : "market.skin.empty")}</div> : null}
             </div>
         </div>
-        <Modal destroyOnHidden open={Boolean(detail || localDetail)} onCancel={close} title={localDetail?.name ?? detail?.name}
-            footer={selected ? useButton(selected.id) : detail ? installButton(detail) : null}>
-            {flow.stateError ? <Alert type="warning" showIcon message={flow.stateError}
-                action={<Button onClick={() => void flow.refresh()}>{t("market.skin.refresh")}</Button>}/> : null}
-            {failure ? <Alert type="error" showIcon message={failure} action={retry}/> : null}
-            <div className="skin-market-detail">{renderPreview(detailPreviewKey, localDetail?.name ?? detail?.name ?? "", {
-                item: selected ? undefined : detail, installedSkinId: selected?.id,
-                definition: selected?.id === current ? appearance.skin : undefined, thumbnail: localDetail?.previewDataUrl
-            })}</div>
-            <p>{detail?.description}</p><p>{localDetail?.version ?? detail?.version}</p>
-        </Modal>
         <Modal destroyOnHidden open={Boolean(remove)} title={t("market.skin.removeTitle")}
             onCancel={() => { if (!flow.busy) setRemove(null); }} okText={t("common.delete")} cancelText={t("common.cancel")}
             okButtonProps={{ danger: true }} confirmLoading={flow.busy}
-            onOk={async () => { if (remove && await flow.remove(remove.id)) { setRemove(null); setLocalDetail(null); } }}>
+            onOk={async () => { if (remove && await flow.remove(remove.id)) setRemove(null); }}>
             {flow.errorItemId === remove?.id && flow.error ? <Alert type="error" message={flow.error}
                 action={<Button aria-label={t("market.skin.retry")} disabled={flow.busy}
-                    onClick={async () => { if (await flow.retry()) { setRemove(null); setLocalDetail(null); } }}>{t("market.skin.retry")}</Button>}/> : null}
+                    onClick={async () => { if (await flow.retry()) setRemove(null); }}>{t("market.skin.retry")}</Button>}/> : null}
             <p>{remove?.name} · {remove?.version}</p><p>{t("market.skin.removeHint")}</p>
         </Modal>
     </MarketPageFrame>;

@@ -12,8 +12,9 @@ function Messages({ runtime }: {
 }) {
     const { t } = useI18n();
     const [api, holder] = message.useMessage({ top: 80, maxCount: 3 });
-    const progress = runtime.activity ? t(runtime.activity.action === "import" ? "settings.appearance.saving"
-        : runtime.activity.action === "remove" ? "market.action.uninstalling" : "market.action.installing") : "";
+    // Import opens the native picker first; the toolbar owns its pending state.
+    const progress = runtime.activity?.action === "install" ? t("market.action.installing")
+        : runtime.activity?.action === "remove" ? t("market.action.uninstalling") : "";
     useEffect(() => {
         if (runtime.error)
             void api.open({ key: "error", type: "error", content: runtime.error, duration: 5 });
@@ -33,11 +34,11 @@ function Messages({ runtime }: {
             api.destroy("state");
     }, [api, runtime.stateError]);
     useEffect(() => {
-        if (progress && runtime.activity?.action !== "use")
+        if (progress)
             void api.open({ key: "progress", type: "loading", content: progress, duration: 0 });
         else
             api.destroy("progress");
-    }, [api, progress, runtime.activity?.action]);
+    }, [api, progress]);
     useEffect(() => () => { api.destroy(); }, [api]);
     return holder;
 }
