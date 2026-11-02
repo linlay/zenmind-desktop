@@ -2,23 +2,6 @@ import { type App } from "electron";
 import { type BrowserSurfaceRegistry } from "../modules/web-surfaces";
 import { type AgentRealtimeDebugTarget } from "../../shared/contracts";
 
-export function sanitizeRealtimeDiagnosticUrl(value: string) {
-  const normalized = value.trim();
-  if (!normalized) return "";
-  try {
-    const parsed = new URL(normalized);
-    if (parsed.protocol === "file:") return "file:///(redacted)";
-    if (parsed.protocol === "data:" || parsed.protocol === "blob:") return `${parsed.protocol}(redacted)`;
-    parsed.username = "";
-    parsed.password = "";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString().slice(0, 512);
-  } catch {
-    return normalized.split(/[?#]/u, 1)[0].slice(0, 512);
-  }
-}
-
 export function createAgentRealtimeRuntimeDiagnostics(
   app: App,
   browserSurfaces: BrowserSurfaceRegistry,
@@ -42,7 +25,7 @@ export function createAgentRealtimeRuntimeDiagnostics(
         interaction: surface.interaction,
         ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
         ownerWebContentsId: surface.ownerWebContentsId,
-        url: sanitizeRealtimeDiagnosticUrl(surface.pageRoute || surface.url),
+        url: surface.pageRoute || surface.url,
         title: surface.label,
         active: surface.active,
         loading: false,
@@ -70,7 +53,7 @@ export function createAgentRealtimeRuntimeDiagnostics(
         ownerWebContentsId: surface.ownerWebContentsId,
         webContentsId: tab.webContentsId,
         ...(contents ? { webContentsType: contents.type, pid: contents.osProcessId } : {}),
-        url: sanitizeRealtimeDiagnosticUrl(tab.currentUrl || surface.pageRoute || surface.url),
+        url: tab.currentUrl || surface.pageRoute || surface.url,
         title: tab.title || surface.label,
         active: surface.active && surface.activeTabId === tab.tabId,
         loading: contents?.loading ?? tab.isLoading,
@@ -90,7 +73,7 @@ export function createAgentRealtimeRuntimeDiagnostics(
       webContentsId: contents.webContentsId,
       webContentsType: contents.type,
       pid: contents.osProcessId,
-      url: sanitizeRealtimeDiagnosticUrl(contents.url),
+      url: contents.url,
       title: contents.title,
       active: false,
       loading: contents.loading,

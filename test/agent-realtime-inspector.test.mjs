@@ -2,8 +2,76 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const projectRoot = process.cwd();
+
+test("local realtime debug traces preserve credentials and raw routes in both directions", () => {
+  const { RealtimeDebugTraceBuffer } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
+  const buffer = new RealtimeDebugTraceBuffer(2);
+  const data = {
+    token: "debug-token",
+    nested: {
+      access_token: "debug-access-token",
+      idToken: "debug.id.token",
+      refresh_token: "debug-refresh-token",
+      authorization: "Bearer debug-authorization",
+      cookie: "session=debug-cookie",
+      "set-cookie": "session=debug-cookie; HttpOnly",
+      apiKey: "debug-key",
+      client_secret: "debug-client-secret",
+      password: "debug-password",
+    },
+    text: "Bearer debug-authorization https://example.test/?token=debug-token#id_token=debug.id.token",
+  };
+  const route = "https://user:password@example.test/path?token=debug-token#id_token=debug.id.token";
+  for (const direction of ["surface-to-desktop", "desktop-to-surface", "desktop-to-platform", "platform-to-desktop"]) {
+    const entry = buffer.append({ layer: "surface-bridge", direction, data, route });
+    assert.deepEqual(entry.data, data);
+    assert.notEqual(entry.data, data);
+    assert.equal(entry.route, route);
+  }
+  data.nested.idToken = "changed-after-recording";
+  const entries = buffer.snapshot();
+  assert.deepEqual(entries.map((entry) => entry.sequence), [3, 4]);
+  assert.equal(entries[0].data.nested.idToken, "debug.id.token");
+  buffer.clear();
+  assert.deepEqual(buffer.snapshot(), []);
+});
+
+test("raw debug serialization still bounds oversized and circular values", () => {
+  const { serializeAgentRealtimeDebugValue } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
+  const input = { token: "x".repeat(70_000) };
+  input.self = input;
+  const output = serializeAgentRealtimeDebugValue(input);
+  assert.ok(output.token.startsWith("x".repeat(64 * 1024)));
+  assert.match(output.token, /<TRUNCATED/);
+  assert.equal(output.self, "<CIRCULAR>");
+});
+
+test("runtime target snapshots preserve raw URLs for registered and orphaned guests", () => {
+  const { createAgentRealtimeRuntimeDiagnostics } = require("../dist-electron/main/app/realtime-diagnostics.js");
+  const urls = [
+    "https://user:password@example.test/path?token=debug-token#id_token=debug.id.token",
+    "file:///Users/test/Library/desktop.html?secret=debug-secret",
+    "file:///C:/Users/test/desktop.html?token=debug-token#section",
+    "data:text/html,<h1>debug</h1>",
+    "blob:https://example.test/debug-blob",
+    `/local/path?token=${"x".repeat(600)}#fragment`,
+  ];
+  const contents = urls.map((url, index) => ({ webContentsId: index + 1, url, type: "webview" }));
+  const runtime = createAgentRealtimeRuntimeDiagnostics({ getAppMetrics: () => [] }, {
+    listWebContentsDiagnostics: () => contents,
+    listDiagnosticSurfaces: () => [{
+      registrationId: "main-chat", surfaceId: "main-chat", pageRoute: urls[0], tabs: [],
+    }, {
+      registrationId: "website", surfaceId: "website", tabs: [{ tabId: "tab-1", webContentsId: 2, currentUrl: urls[1] }],
+    }],
+  });
+  assert.deepEqual(runtime.targets.map((target) => target.url), [urls[0], urls[1], urls[0], ...urls.slice(2)]);
+});
 
 function read(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
@@ -72,17 +140,16 @@ test("Desktop Runtime Observer combines targets, memory, topology, and realtime 
   assert.doesNotMatch(settings, /diagnostics\.getAgentRealtimeDebugSnapshot\(\)/);
 });
 
-test("runtime diagnostics stay main-owned and sanitize target URLs", () => {
+test("runtime debug diagnostics stay main-owned and preserve target URLs", () => {
   const register = readTypeScriptFamily("src", "main", "app", "module-registry.ts");
   const registry = read("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
   const preload = read("src", "preload", "index.ts");
   const contracts = read("src", "shared", "contracts", "desktop-api.ts");
 
   assert.match(register, /createAgentRealtimeRuntimeDiagnostics/);
-  assert.match(register, /parsed\.username = ""/);
-  assert.match(register, /parsed\.password = ""/);
-  assert.match(register, /parsed\.search = ""/);
-  assert.match(register, /parsed\.hash = ""/);
+  assert.match(register, /url: surface\.pageRoute \|\| surface\.url/);
+  assert.match(register, /url: tab\.currentUrl \|\| surface\.pageRoute \|\| surface\.url/);
+  assert.match(register, /url: contents\.url/);
   assert.match(register, /app\.getAppMetrics\(\)/);
   assert.match(register, /const orphaned = contents\.type === "webview"/);
   assert.doesNotMatch(register, /contents\.type !== "webview" \|\| claimedWebContentsIds/);

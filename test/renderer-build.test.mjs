@@ -8724,7 +8724,7 @@ test("embedded browser closing the final tab closes its webview surface", () => 
   assert.match(externalWebviewPage, /closedSurface,[\s\S]{0,100}remainingTabIds/u);
 });
 
-test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL overlay", () => {
+test("debug-unlocked Desktop WebViews show a copyable identity and raw URL overlay", () => {
   const appShell = readAppShellSource();
   const debugModeContext = readSourceFile("src", "renderer", "debug", "DebugModeContext.ts");
   const webviewDebugOverlay = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.tsx");
@@ -8746,18 +8746,8 @@ test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL
 
   assert.match(appShell, /DebugModeContext\.Provider value=\{debugSettingsUnlocked\}/u);
   assert.match(debugModeContext, /createContext\(false\)/u);
-  assert.match(webviewDebugOverlay, /redactWebviewDebugUrl/u);
+  assert.match(webviewDebugOverlay, /const displayUrl = url/u);
   assert.doesNotMatch(webviewDebugOverlay, /aria-hidden="true"/u);
-  assert.equal(
-    webviewDebugUrl.redactWebviewDebugUrl(
-      "https://example.test/path?access_token=secret&visible=1#id_token=hidden&route=overview"
-    ),
-    "https://example.test/path?access_token=REDACTED&visible=1#id_token=REDACTED&route=overview"
-  );
-  assert.equal(
-    webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
-    "https://example.test/?API-Key=REDACTED&token=REDACTED"
-  );
   const mainChatIdentity = {
     surfaceId: "main-chat",
     surfaceRole: "main-chat",
@@ -8774,8 +8764,17 @@ test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL
     mainChatIdentity
   );
   assert.match(clipboardText, /^surface: main-chat$/mu);
-  assert.match(clipboardText, /token=REDACTED/u);
-  assert.doesNotMatch(clipboardText, /secret/u);
+  assert.match(clipboardText, /url: https:\/\/example\.test\/chat\?token=secret&visible=1/u);
+  for (const url of [
+    "https://user:password@example.test/path?API-Key=secret&code=auth-code#id_token=debug.id.token",
+    "file:///Users/test/Library/desktop.html?token=debug-token#section",
+    "file:///C:/Users/test/desktop.html?token=debug-token#section",
+    "/local/path?token=debug-token#refresh_token=debug-refresh",
+  ]) {
+    assert.equal(webviewDebugUrl.buildWebviewDebugClipboardText(url), `url: ${url}`);
+  }
+  assert.match(readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx"),
+    /appendDebugLogEntry\(setEntries, "system", wsUrl\.toString\(\)\)/u);
   assert.doesNotMatch(clipboardText, /ownerChatId|chat-123/u);
   assert.match(webviewDebugOverlay, /formatWebviewDebugSurfaceLabel/u);
   assert.match(webviewDebugOverlay, /clipboard\.writeText\(copyText\)/u);

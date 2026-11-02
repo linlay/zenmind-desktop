@@ -145,6 +145,8 @@
 
 ## WebClient 调试与网站菜单入口
 
+- macOS / Windows 分别解锁 Debug：状态文件中的 ID token 显示完整原文，复制内容与文件一致；WebView 浮层显示及复制的 URL 保留查询参数、授权码和片段，WebSocket 调试控制台保留实际连接 URL。运行时观察器的目标 URL、实时帧中的 token/Cookie/secret、选中文字、批注和工作目录均按原值显示，嵌套字段与双向帧不出现 REDACTED 占位符；持久日志与对外诊断包继续脱敏。
+
 - macOS / Windows 分别让挂载 Platform Control 的 Agent 根据显示名发现 Website/WebApp 并置顶；停止的 WebApp 仍可发现，展开及收起侧栏立即出现入口，重启后保留，取消后回到原 Sites 顺序。重复置顶不改变已有排序，操作不启动应用。
 - Agent 置顶期间拖动主导航排序，确认旧快照保存冲突时回读当前偏好，不丢失新置顶；default 审阅显示目标名称和置顶前后状态，auto_approve/full_access 无 Desktop 二次确认。
 
@@ -484,10 +486,10 @@
 - macOS 与 Windows 分别模拟 query/attach 返回 `409 active_stream_exists`：聊天错误正文直接说明上一条运行流尚未释放，不必展开 Technical details；详情保留原始错误码与 409。模拟未知错误码时正文直接显示服务端原因，发送失败保留输入草稿，不自动重发 query。
 - 分别断开 Primary、BTW 和 Selection Explain，确认其他 lane 的 Inspector phase 与活动 Run 不被标记为断线；账号、endpoint 或 device identity 变化时三条 lane 一起轮换。Primary 收到旁聊或解释 runId 的 `run.finished` 后能收敛对应 RunChannel。
 - 进入 Kanban 前先在其他页面打开 Copilot Dock；进入 `/kanban` 后确认 Dock guest 立即 inactive 并卸载，Launcher、System Bar、程序化 open/toggle 和旧 Kanban session 都不能恢复 Dock。Kanban Chat、claim、run prepare、native run 与事件同步继续正常；离开 Kanban 后其他页面原有 Dock session 可以恢复。
-- 打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合；Inspector 和日志不得包含 token、Cookie、用户正文或完整业务帧。
-- 从设置的调试分类打开“桌面运行时观察器”，确认独立窗口可持续列出所有 Registry Surface、每个已打开 WebView 及未登记 WebView；Surface、WebContents ID、PID、owner、URL（不含查询参数/凭据）和 active/loading/crashed 状态与实际运行一致。
+- 打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合；日志不得包含 token、Cookie、用户正文或完整业务帧，用户主动打开的本地 Inspector 按原值展示已有调试数据。
+- 从设置的调试分类打开“桌面运行时观察器”，确认独立窗口可持续列出所有 Registry Surface、每个已打开 WebView 及未登记 WebView；Surface、WebContents ID、PID、owner、原始 URL（含查询参数、片段与已有凭据）和 active/loading/crashed 状态与实际运行一致。
 - 在观察器中按 RSS、5 分钟增量和 CPU 排序，确认多个 WebView 共享 renderer PID 时显示同一进程 RSS 并明确标记 shared，不把进程内存伪装成单 WebView 独占内存；macOS 与 Windows 都能持续刷新且冻结后数值停止变化。
-- 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
+- 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照保留 URL query、hash、用户名和密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
 - 切换 Targets、Events、Topology、System，确认Primary/BTW/Selection Explain、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
 
 - macOS 与 Windows 分别在未登录和已登录状态创建本地看板任务；登录、退出、切换账号后都能查看、编辑、移动和删除同一份本地任务。退出后由原账号创建的本地待办仍可调度并接收运行结果，云端任务仅当前账号可见。
@@ -609,7 +611,7 @@
 - 打开旧 `/service/agent-webclient` 深链，确认重定向到 `/agents`；同一进程重复命中只记录一次。分别以固定旧 surface ID 和动态旧哈希执行受支持的 Desktop Web Action，确认仍解析到 canonical surface，每类与 canonical role 组合只记录一次，日志不含旧 ID、URL、identity key 或 Chat ID。
 - 用历史 Program bundle 验证 WorkPanel bridge：v4 仅旧 item 操作，v5 额外支持 resource，v6 支持当前完整能力，其他版本返回 version mismatch；重复同一 `version + method` 只记录一次。验证 `agent-webclient v0.3.59` 被安装/恢复/升级路径升级或拒绝启动，`v0.3.60` 正常启动。
 - 在 macOS、Windows 分别执行内置服务首次安装、旧版本升级和启动恢复，确认 identity 公钥由 `auth.publicKey` capability 提供；覆盖 capability 成功、命令失败、结果文件缺失和 canonical `keys/publicKey.pem` 回退，不执行 Desktop 内旧 `.env` 解析、身份脚本或 token 构造路径。
-- 在 macOS、Windows 用 Agent Workspace 相对路径执行 `package.init → package.validate(projectPath) → package.build → package.validate(archivePath) → install(archivePath) → checkRuntime → open → site.list`；覆盖绝对路径、URI、`..`、控制字符、符号链接/Junction 越界、输出已存在、断连和十分钟超时，确认失败无临时文件且所有响应与 Debug 记录不含 Workspace 绝对根路径。
+- 在 macOS、Windows 用 Agent Workspace 相对路径执行 `package.init → package.validate(projectPath) → package.build → package.validate(archivePath) → install(archivePath) → checkRuntime → open → site.list`；覆盖绝对路径、URI、`..`、控制字符、符号链接/Junction 越界、输出已存在、断连和十分钟超时，确认失败无临时文件且公开动作响应不含 Workspace 绝对根路径；本地 Debug 记录按收到的原始值展示。
 - 检查开发态与正式安装包：Tooling Worker 存在于 `app.asar` 编译产物，`Resources/scripts/webapp-tooling.mjs` 与 `Resources/tooling/webapp-tooling.mjs` 均不存在，所有内置服务和插件均未收到 `DESKTOP_WEBAPP_TOOLING_PATH` 或运行时 `DESKTOP_ROOT`。正式 `dist:mac/dist:win` 缺少匹配当前 Desktop 版本的 `env.zip` 时失败，开发模式不带 `env.zip` 仍可启动。
 - 用 WebApp Builder `0.2.0` 验证 Skill 包没有 `scripts/`、`--desktop-root`、磁盘扫描或 Node 子进程逻辑；版本化事务同步失败时回滚，不能留下新 Skill/旧 Desktop Action 或新 Desktop/旧 Skill 的混合组合。
 - 启动、市场刷新、插件加载和升级不再根据退休 denylist 删除、过滤或拒绝任何插件；插件程序、配置、用户数据、状态和日志均保持不变，显式卸载仍遵循现有用户选择。
@@ -1612,7 +1614,7 @@ WebApp copilot.references 仅声明 {type:"skill",id}，未知清单字段即使
 
 ### OIDC 网关静默续期
 
-- [ ] Cookie 登录取得完整 JSON，业务文件只含 id_token，refresh token 仅保存在当前用户权限保护的 secrets 文件，SSO 启动和恢复不弹系统钥匙串授权；状态调试页面不显示 token 正文。
+- [ ] Cookie 登录取得完整 JSON，业务文件只含 id_token，refresh token 仅保存在当前用户权限保护的 secrets 文件，SSO 启动和恢复不弹系统钥匙串授权；隐藏状态调试页面显示完整 ID token，复制内容与业务文件一致，不显示 REDACTED。
 - [ ] 有效期前续期、并发强制续期、系统唤醒后的期限检查；Platform 下一次 Provider/oneid 调用读取新文件，无需重启。
 - [ ] 关闭后重启且 Cookie 已失效，仍可通过本地 refresh token 恢复；旧版 token 文件恢复成功后删除。
 - [ ] refresh token 轮换或未返回新值均正确；userinfo/文件发布失败后不丢失已轮换的 refresh token。

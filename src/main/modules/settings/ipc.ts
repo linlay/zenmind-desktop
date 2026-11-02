@@ -111,7 +111,7 @@ function desktopStateFileSnapshot(
         exists: true,
         size: stats.size,
         modifiedAt,
-        content: definition.name === "sso-id-token.txt" ? "[REDACTED]" : rawContent
+        content: rawContent
       };
     }
 

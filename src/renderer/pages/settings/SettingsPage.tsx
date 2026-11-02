@@ -1383,7 +1383,7 @@ function WsServerDebugDialog({
       wsUrl.searchParams.set("source", "settings-debug-ws-console");
       const socket = new WebSocket(wsUrl.toString());
       socketRef.current = socket;
-      appendDebugLogEntry(setEntries, "system", wsUrl.toString().replace(token, "token-redacted"));
+      appendDebugLogEntry(setEntries, "system", wsUrl.toString());
       socket.onopen = () => {
         setConnected(true);
         setPending(false);

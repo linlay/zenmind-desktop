@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useDebugMode } from "../debug/DebugModeContext";
 import {
   buildWebviewDebugClipboardText,
   formatWebviewDebugSurfaceLabel,
-  redactWebviewDebugUrl,
 } from "../debug/webviewDebugUrl";
 import type { SurfaceIdentity } from "../../shared/surface-identity";
 import { useI18n } from "../i18n/useI18n";
@@ -20,7 +19,7 @@ export function WebviewDebugOverlay({
   const debugMode = useDebugMode();
   const { t } = useI18n();
   const [copyState, setCopyState] = useState<CopyState>("idle");
-  const displayUrl = useMemo(() => redactWebviewDebugUrl(url), [url]);
+  const displayUrl = url;
   const displaySurfaceLabel = formatWebviewDebugSurfaceLabel(surfaceIdentity);
   const copyText = buildWebviewDebugClipboardText(url, surfaceIdentity);
 
