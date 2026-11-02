@@ -1828,7 +1828,6 @@ export const enUSMessages = {
   "settings.navigation.description": "Manage left navigation order and side assistant rules.",
   "settings.desktopPet.import.zip": "Import",
   "settings.desktopPet.import.hint": "Or drop an assistant ZIP here",
-  "settings.desktopPet.import.pending": "Validating and importing assistant…",
   "settings.desktopPet.import.single": "Drop one assistant ZIP package at a time",
   "settings.desktopPet.remove.confirm": "Delete this pet?",
   "settings.desktopPet.remove.hint": "You can import it again later. An active pet will switch to the built-in default.",
