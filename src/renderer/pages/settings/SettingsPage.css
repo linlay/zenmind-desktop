@@ -947,22 +947,6 @@
   color: #65d49b;
 }
 
-.settings-page .webapp-import-empty {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 10px;
-  padding: 28px;
-  text-align: center;
-}
-
-.settings-page .webapp-import-empty span {
-  max-width: 440px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .settings-page .webapp-catalog-import {
   flex: 0 0 auto;
 }

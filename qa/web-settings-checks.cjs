@@ -146,9 +146,9 @@ app.whenReady().then(async () => {
   await wait("!!document.querySelector('.webapp-details-modal .ant-modal-content')");
   await js("document.querySelector('.ant-modal-close').click()");
   await js("window.webSettingsPreview.setEmpty(true)");
-  await wait("!!document.querySelector('.webapp-import-empty')");
+  await wait("document.querySelector('.is-webapps .control-center-detail.control-center-empty')?.textContent.trim() === '暂无数据'");
   assert.equal(await js("[...document.querySelectorAll('.settings-section-body button')].filter(b=>b.textContent.replace(/\\s/g,'')==='导入').length"), 1);
-  assert.equal(await js("document.querySelectorAll('.webapp-import-empty button').length"), 0);
+  assert.equal(await js("document.querySelector('.is-webapps .control-center-detail.control-center-empty').childElementCount"), 0);
   await capture("webapp-empty");
   await js("window.webSettingsPreview.setEmpty(false)");
   await js("window.webSettingsPreview.setLocale('en-US')");

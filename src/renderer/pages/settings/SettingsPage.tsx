@@ -5784,10 +5784,7 @@ export function SettingsPage({
                 </article>
               ) : (
                 <article className="service-card control-center-detail control-center-empty">
-                  <div className="loading-box control-center-empty webapp-import-empty">
-                    <strong>{t("settings.webapps.empty")}</strong>
-                    <span>{t("settings.webapps.importHint")}</span>
-                  </div>
+                  {t("settings.webapps.emptyDetail")}
                 </article>
               )}
             </div>
