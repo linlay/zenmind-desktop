@@ -9072,5 +9072,5 @@ test("deprecated Desktop APIs and dead storage chains are absent while compatibi
   const webclientHost = readExactSourceFile("src", "main", "modules", "services", "agent-webclient-host.ts");
   const webclientRequests = readExactSourceFile("src", "main", "modules", "services", "webclient-request-handler.ts");
   assert.match(webclientHost, /export \* from "\.\/webclient-request-handler"/u);
-  assert.match(webclientRequests, /requestPath\.startsWith\("\/api\/voice"\)/u);
+  assert.match(webclientRequests, /requestPath !== "\/api\/voice\/ws" \|\| req\.url !== "\/api\/voice\/ws"/u);
 });

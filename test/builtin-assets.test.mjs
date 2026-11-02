@@ -187,12 +187,13 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     manifest.desktop.hosting = {
       proxyRoutes: [
         {
-          match: "prefix",
-          path: "/api/voice",
-          targetEnv: "VOICE_BASE_URL",
-          optional: true,
-          http: true,
-          websocket: true
+          match: "exact",
+          path: "/api/voice/ws",
+          targetEnv: "BASE_URL",
+          http: false,
+          websocket: true,
+          auth: "agent-platform-access-token",
+          stripRequestHeaders: ["sec-websocket-extensions"]
         },
         {
           match: "prefix",
