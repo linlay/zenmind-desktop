@@ -2393,6 +2393,7 @@ export const enUSMessages = {
   "market.main.catalogLoaded": "Loaded the specified market catalog.",
   "market.main.catalogRefreshed": "Market refreshed.",
   "market.main.catalogUnavailable": "Market is unavailable: {reason}",
+  "market.main.catalogNetworkUnavailable": "Unable to connect to the market. Check your network connection and try again.",
   "market.main.marketApiNotConfigured": "Market API is not configured. Configure the market address through the env template or settings page.",
   "market.main.skillPackagePlatformUnavailable": "Skill package management is unavailable until Agent Platform is ready.",
   "market.main.skillPackageRemovalUnconfirmed": "Agent Platform did not confirm Skill package removal.",

@@ -2393,6 +2393,7 @@ export const zhCNMessages = {
   "market.main.catalogLoaded": "已加载指定市场清单。",
   "market.main.catalogRefreshed": "市场已刷新。",
   "market.main.catalogUnavailable": "市场暂不可用：{reason}",
+  "market.main.catalogNetworkUnavailable": "暂时无法连接市场，请检查网络连接后重试。",
   "market.main.marketApiNotConfigured": "市场 API 未配置，请通过环境模板或设置页配置市场地址。",
   "market.main.skillPackagePlatformUnavailable": "智能体平台尚未就绪，暂时无法管理技能包。",
   "market.main.skillPackageRemovalUnconfirmed": "智能体平台未确认技能包已卸载。",
