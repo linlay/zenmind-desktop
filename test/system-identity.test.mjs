@@ -62,6 +62,59 @@ test("Windows packaged identity keeps each brand formal app ID", () => {
   assert.deepEqual(calls.names, ["CuteJ"]);
 });
 
+test("Windows packaged startup restores the current user's document registration once", async t => {
+  const require = createRequire(import.meta.url);
+  const registration = require("../dist-electron/main/infrastructure/electron/windows-document-registration.js");
+  const requests = [], paths = [];
+  t.mock.method(registration, "refreshWindowsDocumentRegistration", async options => {
+    requests.push(options);
+    return { status: "unchanged", registeredTypes: [], preservedTypes: [] };
+  });
+  const { app } = createFakeApp(true);
+  app.getPath = name => { paths.push(name); return "C:\\企业 应用\\CuteJ.exe"; };
+  const runtime = configureWindowsIdentity(app, "cc.cutej.desktop", "CuteJ");
+  runtime.ensureDockIdentity();
+  runtime.ensureDockIdentity();
+  assert.deepEqual(paths, [], "window activation returns before registry/path access");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(requests, [{
+    platform: "win32", isPackaged: true, appId: "cc.cutej.desktop", productName: "CuteJ",
+    executablePath: "C:\\企业 应用\\CuteJ.exe"
+  }]);
+  assert.deepEqual(paths, ["exe"]);
+  runtime.ensureDockIdentity();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 1, "ordinary activations do not repeatedly access the registry");
+});
+
+test("Windows document registration policy failures do not block activation", async t => {
+  const require = createRequire(import.meta.url);
+  const registration = require("../dist-electron/main/infrastructure/electron/windows-document-registration.js");
+  t.mock.method(registration, "refreshWindowsDocumentRegistration", () => { throw new Error("registry access denied (5)"); });
+  const errors = [];
+  const { app } = createFakeApp(true);
+  app.getPath = () => "C:\\Apps\\CuteJ.exe";
+  const runtime = configureSystemIdentity({
+    app, platform: "win32", appId: "cc.cutej.desktop", productName: "CuteJ",
+    mainProcessDir: "C:\\Apps\\resources\\app\\dist-electron", resourcesPath: "C:\\Apps\\resources",
+    nativeImage: { createFromPath: () => { assert.fail("Windows must not load a macOS dock icon"); } },
+    safeConsoleError: (...args) => errors.push(args)
+  });
+  assert.doesNotThrow(() => runtime.ensureDockIdentity());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(errors, [["failed to refresh Windows document registration", { error: "registry access denied (5)" }]]);
+});
+
+test("Windows development startup never registers the Electron executable", async t => {
+  const require = createRequire(import.meta.url);
+  const registration = require("../dist-electron/main/infrastructure/electron/windows-document-registration.js");
+  t.mock.method(registration, "refreshWindowsDocumentRegistration", () => { assert.fail("development must not register file handlers"); });
+  const { app } = createFakeApp(false);
+  app.getPath = () => { assert.fail("development must not resolve an executable for registration"); };
+  configureWindowsIdentity(app, "cc.cutej.desktop", "CuteJ").ensureDockIdentity();
+  await new Promise(resolve => setImmediate(resolve));
+});
+
 test("macOS refresh is asynchronous, coalesces window activations and retries after failure", async t => {
   const require = createRequire(import.meta.url);
   const registry = require("../dist-electron/main/infrastructure/electron/mac-system-integration.js");
