@@ -3748,6 +3748,8 @@
   border-top: 1px solid var(--line);
   background: transparent;
 }
+.settings-page .pet-gallery-heading { column-gap: 10px; }
+.settings-page .pet-gallery-heading > .settings-appearance-row-copy { flex: 1; }
 .settings-page .pet-gallery-heading .pet-import-controls { padding: 0; }
 .settings-page .pet-appearance-grid {
   display: grid;
