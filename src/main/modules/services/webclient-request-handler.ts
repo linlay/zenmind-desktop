@@ -76,7 +76,7 @@ export async function handleUpgrade(
   head: Buffer
 ) {
   const requestPath = parseRequestPath(req.url);
-  if (!requestPath.startsWith("/api/voice")) {
+  if (requestPath !== "/api/voice/ws" || req.url !== "/api/voice/ws" || req.headers.origin !== new URL(record.webUrl).origin) {
     writeDisabledWebSocketUpgrade(socket, {
       status: 404,
       json: { error: "desktop_realtime_bridge_required" },
