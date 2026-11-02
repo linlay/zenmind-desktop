@@ -354,10 +354,8 @@ function DefaultSidebarIllustration({
     case "connector":
       return (
         <svg {...iconProps}>
-          <circle cx="6" cy="12" r="3" />
-          <circle cx="18" cy="6" r="3" />
-          <circle cx="18" cy="18" r="3" />
-          <path d="M9 11l6-4M9 13l6 4" />
+          <path d="M9 3v5M15 3v5M6 8h12v6l-4 4h-4l-4-4V8Z" />
+          <path d="M12 18v3" />
         </svg>
       );
     case "service":

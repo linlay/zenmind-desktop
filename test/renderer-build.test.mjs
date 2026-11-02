@@ -5767,7 +5767,7 @@ test("native image controls keep semantic colors across interaction states and t
   );
   assert.match(
     imageStyles,
-    /\.work-panel-image-parameter-panel button\.is-primary:hover:not\(:disabled\),[\s\S]*?\.work-panel-image-parameter-panel button\.is-primary:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-primary-hover\);/u
+    /\.work-panel-image-ai-prompt button\.is-primary:hover:not\(:disabled\),[\s\S]*?\.work-panel-image-ai-prompt button\.is-primary:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-primary-hover\);/u
   );
   assert.match(
     imageStyles,
@@ -5777,10 +5777,7 @@ test("native image controls keep semantic colors across interaction states and t
     imageStyles,
     /button\.is-active:hover:not\(:disabled\),[\s\S]*?button\.is-active:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-control-active-hover\);/u
   );
-  assert.match(
-    imageStyles,
-    /button\.is-ai-tool:not\(\.is-active\):hover:not\(:disabled\),[\s\S]*?button\.is-ai-tool:not\(\.is-active\):focus-visible:not\(:disabled\)[\s\S]*?linear-gradient/u
-  );
+  assert.doesNotMatch(imageStyles, /button\.is-ai-tool/u);
   assert.match(
     imageStyles,
     /button:focus-visible:not\(:disabled\)[\s\S]*?outline:\s*2px solid var\(--control-focus-outline\);/u
@@ -5796,7 +5793,7 @@ test("native image modes keep preview actions in the floating bar and photo tool
   );
   const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
 
-  assert.match(source, /editing \? \(\s*<div className="work-panel-image-toolbar is-editing"/u);
+  assert.match(source, /editing \? \(\s*<div\s+className="work-panel-image-toolbar is-editing"/u);
   assert.doesNotMatch(source, /work-panel-image-toolbar is-preview/u);
   assert.match(
     source,
@@ -5808,13 +5805,15 @@ test("native image modes keep preview actions in the floating bar and photo tool
   assert.doesNotMatch(source, /className="work-panel-image-open-with"/u);
   assert.doesNotMatch(source, /className="work-panel-image-file"/u);
   assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?<strong>\{resource\.fileName\}<\/strong>/u);
+  assert.match(source, /className="work-panel-image-zoom-float"[\s\S]*?\{editing \? \([\s\S]*?className="work-panel-image-zoom-group"[\s\S]*?chatWorkPanel\.image\.rotateLeft[\s\S]*?chatWorkPanel\.image\.rotateRight[\s\S]*?chatWorkPanel\.image\.flipHorizontal[\s\S]*?chatWorkPanel\.image\.flipVertical/u);
+  assert.doesNotMatch(source, /work-panel-image-transform-(?:popover|flyout)/u);
   assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
   assert.match(source, /function ImageToolButton[\s\S]*?<Tooltip title=\{label\} placement="right" mouseEnterDelay=\{0\.15\}>/u);
-  assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
-  assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\} className="is-return-to-preview"[\s\S]*?<ArrowLeftOutlined \/><\/ImageToolbarButton>/u);
+  assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|lockAspect|resize|adjust|aiTools)"\)\}/u);
+  assert.match(source, /<ImageToolbarButton\s+label=\{t\("chatWorkPanel\.image\.done"\)\}\s+className="is-return-to-preview"[\s\S]*?<ArrowLeftOutlined \/>\s*<\/ImageToolbarButton>/u);
   assert.match(source, /const discardEditingDraft = useCallback[\s\S]*?setHistory\(\[\]\)[\s\S]*?setError\(""\)[\s\S]*?setAnnotations\(\[\]\)[\s\S]*?void readResource\(\)/u);
   assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?wasEditing && !editing[\s\S]*?discardEditingDraft\(\)/u);
-  assert.match(source, /label=\{t\("chatWorkPanel\.image\.save"\)\} className=\{pixelDirty && !saveBusy && !aiBusy && !sourceConflict \? "is-primary" : ""\}/u);
+  assert.match(source, /label=\{t\("chatWorkPanel\.image\.save"\)\}\s+className=\{\s*pixelDirty && !saveBusy && !aiBusy && !sourceConflict\s*\? "is-primary"\s*: ""\s*\}/u);
   assert.match(
     source,
     /className="work-panel-image-save-actions"[\s\S]*?chatWorkPanel\.image\.cancel[\s\S]*?chatWorkPanel\.image\.overwrite[\s\S]*?chatWorkPanel\.image\.saveNew/u
@@ -5827,13 +5826,11 @@ test("native image modes keep preview actions in the floating bar and photo tool
   assert.match(styles, /\.work-panel-image-editor-sidebar\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/u);
   assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
   assert.match(styles, /\.work-panel-image-tool-tooltip-anchor\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
-  assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?placement="rightTop"[\s\S]*?chatWorkPanel\.image\.transform[\s\S]*?chatWorkPanel\.image\.rotate[\s\S]*?chatWorkPanel\.image\.flipHorizontal[\s\S]*?chatWorkPanel\.image\.flipVertical[\s\S]*?chatWorkPanel\.image\.freeTransform/u);
-  assert.match(source, /classNames=\{\{ root: "work-panel-image-transform-popover" \}\}/u);
-  assert.match(styles, /\.work-panel-image-transform-popover\s*\{[^}]*--antd-arrow-background-color:\s*var\(--embedded-surface-page-bg\);/u);
-  assert.match(styles, /\.work-panel-image-transform-popover \.ant-popover-inner\s*\{[^}]*background:\s*var\(--embedded-surface-page-bg\);/u);
-  assert.match(source, /chatWorkPanel\.image\.resize[\s\S]*?chatWorkPanel\.image\.canvasSize[\s\S]*?chatWorkPanel\.image\.adjust/u);
-  assert.match(styles, /button\.is-ai-tool\s*\{[^}]*border-color:[^}]*linear-gradient\(145deg,[^}]*#7555ee[^}]*#3385f5/u);
-  assert.match(styles, /button\.is-ai-tool\.is-active\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
+  assert.match(source, /className="work-panel-image-zoom-group"[\s\S]*?aria-label=\{t\("chatWorkPanel\.image\.transform"\)\}/u);
+  assert.match(source, /chatWorkPanel\.image\.adjust/u);
+  assert.doesNotMatch(source, /chatWorkPanel\.image\.(?:lockAspect|resize|canvasSize)"|resizeAspectLocked|resizeImage|canvasSizeOpen|canvasTargetSize|applyCanvasSize/u);
+  assert.doesNotMatch(source, /is-ai-tool/u);
+  assert.doesNotMatch(styles, /button\.is-ai-tool/u);
   assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
 });
 
@@ -5847,11 +5844,11 @@ test("native image selection and annotations have distinct movable AI workflows"
   const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const contract = readSourceFile("src", "shared", "work-panel-resource-image.ts");
 
-  assert.match(source, /setGesturePreview\(\{ kind: "annotate", points: \[drawStartRef\.current, point\] \}\)/u);
-  assert.match(source, /setActiveAnnotationId\(id\)/u);
+  assert.match(source, /setGesturePreview\(\{\s*kind: "annotate",\s*points: \[drawStartRef\.current, point\],?\s*\}\)/u);
+  assert.match(source, /setAnnotationDraft\(\{\s*id,[\s\S]*?requirement: ""/u);
   assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
   assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
-  assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
+  assert.match(source, /selectionMaskBase64\(\s*annotationRegions,\s*operation === "removeObject",?\s*\)/u);
   assert.match(source, /const maskDataBase64 = requiresMask\s*\? await selectionMaskBase64[\s\S]*?: ""/u);
   assert.doesNotMatch(source, /fetch\(current\.url\)/u);
   assert.match(source, /const sourceImage = await loadImage\(current\.url\)[\s\S]*?sourceContext\.drawImage\(sourceImage[\s\S]*?canvasBlob\(sourceCanvas, current\.mimeType\)/u);
@@ -5859,26 +5856,36 @@ test("native image selection and annotations have distinct movable AI workflows"
   assert.match(source, /const aiOperationLabel[\s\S]*?chatWorkPanel\.image\.smartEdit[\s\S]*?chatWorkPanel\.image\.enhance/u);
   assert.match(source, /aiRunningOperation[\s\S]*?aiOperationLabel\(aiBusy\.operation\)/u);
   assert.match(styles, /\.work-panel-image-error,[\s\S]*?\.work-panel-image-ai-status\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*12;/u);
-  assert.match(source, /type SelectionPurpose = "general" \| "removeObject"/u);
-  assert.match(source, /chatWorkPanel\.image\.selection[\s\S]*?selectionPurpose === "general"[\s\S]*?setSelectionPurpose\("general"\)/u);
-  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?selectionPurpose === "removeObject"[\s\S]*?if \(hasSelection\)[\s\S]*?runAi\("removeObject"\)[\s\S]*?setTool\("select"\)/u);
-  assert.match(source, /is-ai-selection[\s\S]*?removeObjectSelectionHint[\s\S]*?className="is-ai-action"[\s\S]*?disabled=\{!hasSelection[\s\S]*?removeSelectedObject/u);
+  assert.doesNotMatch(source, /SelectionPurpose|selectionPurpose|selectionMaskRef/u);
+  assert.match(source, /type EraseTool = "brush" \| "rectangle"/u);
+  assert.match(source, /eraseRegions: EraseRegion\[\]/u);
+  assert.match(source, /chatWorkPanel\.image\.selection[\s\S]*?tool === "select"[\s\S]*?setTool\("select"\)/u);
+  const eraseEntry = source.slice(source.indexOf('<ImageToolButton\n                label={t("chatWorkPanel.image.removeObject")}'), source.indexOf('<ImageToolButton\n                label={t("chatWorkPanel.image.removeBackground")}'));
+  assert.match(eraseEntry, /tool === "erase"[\s\S]*?setTool\(tool === "erase" \? "pan" : "erase"\)/u);
+  assert.match(source, /const beginEraseFrameDrag[\s\S]*?resizeFrame\([\s\S]*?commitEraseRegions/u);
+  assert.match(source, /work-panel-image-erase-frame[\s\S]*?beginEraseFrameDrag\(index, "move", event\)[\s\S]*?beginEraseFrameDrag\(index, handle, event\)/u);
+  assert.doesNotMatch(eraseEntry, /hasSelection|runAi/u);
+  assert.match(source, /work-panel-image-erase-toolbar[\s\S]*?eraseRegionHint[\s\S]*?eraseTool === "brush"[\s\S]*?eraseBrushWidth[\s\S]*?eraseTool === "rectangle"[\s\S]*?disabled=\{!hasEraseRegions \|\| Boolean\(aiBusy\)\}[\s\S]*?runAi\("removeObject"\)[\s\S]*?commitEraseRegions\(\[\]\)/u);
+  assert.match(source, /for \(const region of eraseRegions\) drawEraseRegion\(context, region\)/u);
+  assert.match(source, /context\.lineCap = "round"[\s\S]*?context\.arc\(start\.x, start\.y, region\.width \/ 2/u);
+  assert.match(source, /ref=\{eraseCanvasRef\}[\s\S]*?work-panel-image-erase-layer/u);
   assert.match(styles, /\.work-panel-image-subtoolbar button\.is-ai-action\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
   assert.doesNotMatch(source, /<ImageToolButton label=\{t\("chatWorkPanel\.image\.smartEdit"\)\}/u);
   assert.match(source, /work-panel-image-annotation-actions[\s\S]*?annotations\.some[\s\S]*?runAi\("inpaint"\)[\s\S]*?chatWorkPanel\.image\.smartEdit/u);
   assert.doesNotMatch(source, /aiPromptOperation === "inpaint"|value === "inpaint" \? null : "inpaint"/u);
-  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
+  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
   assert.doesNotMatch(source, /RobotOutlined|work-panel-image-ai-panel|work-panel-image-ai-tools/u);
   assert.match(source, /beginFloatingPanelDrag[\s\S]*?setPointerCapture[\s\S]*?setFloatingControlsPosition[\s\S]*?setAnnotationsPanelPosition/u);
-  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-floating-drag-handle[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-parameter-panel[\s\S]*?work-panel-image-ai-prompt/u);
-  assert.match(styles, /\.work-panel-image-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*max-height:\s*calc\(100% - 20px\);[^}]*overflow:\s*auto;/u);
+  assert.match(source, /className=\{`work-panel-image-floating-controls[\s\S]*?work-panel-image-floating-drag-handle[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-ai-prompt/u);
+  assert.match(styles, /\.work-panel-image-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*max-height:\s*calc\(100% - 20px\);[^}]*overflow:\s*visible;/u);
   assert.match(styles, /\.work-panel-image-floating-drag-handle\s*\{[^}]*cursor:\s*move;[^}]*touch-action:\s*none;/u);
-  assert.match(source, /work-panel-image-annotation-list[\s\S]*?activeAnnotation[\s\S]*?work-panel-image-annotation-editor[\s\S]*?runAi\("inpaint"\)/u);
+  assert.match(source, /work-panel-image-annotation-list[\s\S]*?activeAnnotation[\s\S]*?value=\{annotation\.requirement\}[\s\S]*?runAi\("inpaint"\)/u);
   assert.match(styles, /\.work-panel-image-annotations\s*\{[^}]*top:\s*12px;[^}]*right:\s*12px;[^}]*max-height:\s*calc\(100% - 24px\);/u);
-  assert.match(source, /const applyCanvasSize = useCallback[\s\S]*?drawImage\(image, Math\.round\(\(width - current\.width\) \/ 2\)/u);
-  assert.match(source, /const beginSelectionTransform = async[\s\S]*?globalCompositeOperation = "destination-out"[\s\S]*?globalCompositeOperation = "destination-in"/u);
-  assert.match(source, /className="work-panel-image-selection-transform"[\s\S]*?\["nw", "ne", "sw", "se"\]/u);
-  assert.match(styles, /\.work-panel-image-selection-transform\s*\{[^}]*position:\s*absolute;[^}]*cursor:\s*move;/u);
+  assert.doesNotMatch(source, /work-panel-image-parameter-panel/u);
+  assert.doesNotMatch(styles, /work-panel-image-parameter-panel/u);
+  assert.doesNotMatch(source, /beginSelectionTransform|className="work-panel-image-selection-transform"/u);
+  assert.match(source, /operation === "rotate-right"[\s\S]*?context\.rotate\(Math\.PI \/ 2\)/u);
+  assert.match(source, /operation === "rotate-left"[\s\S]*?context\.rotate\(-Math\.PI \/ 2\)/u);
   assert.match(contract, /\| "inpaint"[\s\S]*?\| "removeObject"/u);
 });
 

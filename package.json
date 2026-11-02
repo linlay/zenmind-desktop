@@ -61,6 +61,7 @@
     "@napi-rs/canvas": "^0.1.100",
     "antd": "^5.0.0",
     "exceljs": "^4.4.0",
+    "fabric": "7.4.0",
     "fast-xml-parser": "^5.11.2",
     "js-yaml": "^4.3.2",
     "jszip": "^3.10.2",
