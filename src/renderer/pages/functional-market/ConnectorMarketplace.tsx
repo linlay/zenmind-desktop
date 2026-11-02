@@ -33,7 +33,7 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const [mcpManagerOpen, setMcpManagerOpen] = useState(false);
   const [localItems, setLocalItems] = useState<MarketItem[]>([]);
   const [query, setQuery] = useState("");
-  const [detailItem, setDetailItem] = useState<MarketItem | null>(null);
+  const [detailConnectorId, setDetailConnectorId] = useState<string | null>(null);
   const [disconnectItem, setDisconnectItem] = useState<MarketItem | null>(null);
   const runtime = useMarketConnectorFlow(props.onChanged, (agentKey, draft) => {
     const search = new URLSearchParams({ newChat: String(Date.now()), composerDraft: draft ?? "" });
@@ -41,10 +41,11 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   });
   const configureConnector = (item: MarketItem) => {
     const route = createAgentWebclientConnectorManagementPath(runtime.getConnectorId(item));
-    if (route) { setDetailItem(null); navigate(route); }
+    if (route) { setDetailConnectorId(null); navigate(route); }
   };
   const message = (value: string) => value.startsWith("market.") ? t(value as TranslationKey) : value;
   const items = [...props.items, ...localItems.filter(local => !props.items.some(item => (item.connectorId || item.id) === local.connectorId))];
+  const detailItem = items.find(item => (item.connectorId || item.id) === detailConnectorId) ?? null;
   const visible = items.filter(item => item.type === "connector" && (item.marketplaceAvailable || item.source === "local") && matchesMarketItemQuery(item, query, t));
   return <MarketPageFrame activeTab="mcps" tabs={getMarketTabDefinitions(t)} onTabChange={props.onTabChange}
     toolbar={<div className="skill-discovery-toolbar"><label className="skill-discovery-search"><SearchOutlined aria-hidden="true" />
@@ -66,29 +67,29 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
           const disabled = runtime.busy || unavailable;
           const busyLocked = runtime.busy && !unavailable || undefined;
           return <article className="skill-discovery-card connector-market-card" key={item.id} tabIndex={0} aria-label={item.name} aria-haspopup="dialog"
-            onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) setDetailItem(item); }}
-            onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailItem(item); } }}>
+            onClick={event => { if (!(event.target instanceof Element) || !event.target.closest("button, a, input, select, textarea")) setDetailConnectorId(item.connectorId || item.id); }}
+            onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailConnectorId(item.connectorId || item.id); } }}>
             <div className="skill-discovery-card-head"><span className={`skill-discovery-icon tone-${item.id.length % 6}`} aria-hidden="true"><ConnectorIcon item={item} /></span>
-              <div className="connector-card-title"><button type="button" className="skill-discovery-name" title={item.name} onClick={() => setDetailItem(item)}>{item.name}</button>
+              <div className="connector-card-title"><button type="button" className="skill-discovery-name" title={item.name} onClick={() => setDetailConnectorId(item.connectorId || item.id)}>{item.name}</button>
                 <span className={`connector-runtime-dot is-${statusTone}`} role="img" aria-label={statusLabel} title={statusLabel} /></div>
               <div className="connector-card-actions">
                 {item.state === "update-available" && <button type="button" className="skill-discovery-install connector-card-update" disabled={disabled} data-busy-locked={busyLocked} aria-label={`${item.name}: ${t("market.action.update")}`} title={t("market.action.update")} onClick={() => void runtime.mutate(item, "update")}><ReloadOutlined aria-hidden="true" /></button>}
                 {item.state !== "update-available" && <button type="button" className="skill-discovery-install" disabled={disabled} data-busy-locked={busyLocked} aria-label={`${item.name}: ${actionLabel}`}
-                  title={!installed && item.state === "incompatible" ? item.message || t("market.state.incompatible") : actionLabel} onClick={() => { if (installed && !ready && !runtime.stateError) setDetailItem(item); else void runtime.start(item, true, true); }}>
+                  title={!installed && item.state === "incompatible" ? item.message || t("market.state.incompatible") : actionLabel} onClick={() => { if (installed && !ready && !runtime.stateError) setDetailConnectorId(item.connectorId || item.id); else void runtime.start(item, true, true); }}>
                   {checking || (runtime.busy && runtime.flow?.item.id === item.id) ? <LoadingOutlined aria-hidden="true" /> : runtime.stateError ? <ReloadOutlined aria-hidden="true" /> : ready ? <MessageOutlined aria-hidden="true" /> : installed ? <CheckOutlined aria-hidden="true" /> : <PlusOutlined aria-hidden="true" />}
                 </button>}
               </div></div>
-            <MarketCardDescription text={item.description || t("market.discovery.noDescription")} onDetail={() => setDetailItem(item)} />
+            <MarketCardDescription text={item.description || t("market.discovery.noDescription")} onDetail={() => setDetailConnectorId(item.connectorId || item.id)} />
           </article>;
         })}
       </div>{!visible.length && <div className="skill-discovery-empty" role="status">{t(props.loading ? "market.storefront.loading" : "market.connector.empty")}</div>}</div>
     </div>
     <ConnectorMcpManagerDialog open={mcpManagerOpen} onClose={() => setMcpManagerOpen(false)} onSaved={() => { void runtime.refresh(); props.onChanged?.(); }} onAdvanced={() => { setMcpManagerOpen(false); setCustomOpen(true); }} />
     <ConnectorCustomDialog open={customOpen} onClose={() => setCustomOpen(false)} onManage={props.onManage} onSaved={(item, connect) => {
-      setLocalItems(previous => [...previous.filter(value => value.connectorId !== item.connectorId), item]); setDetailItem(item); props.onChanged?.(); void runtime.refresh();
+      setLocalItems(previous => [...previous.filter(value => value.connectorId !== item.connectorId), item]); setDetailConnectorId(item.connectorId || item.id); props.onChanged?.(); void runtime.refresh();
       if (connect) void runtime.start(item, true, true);
     }} />
-    <ConnectorDetailDialog item={detailItem} runtime={runtime} onClose={() => { setDetailItem(null); setDisconnectItem(null); }} onDisconnect={setDisconnectItem} onConfigure={configureConnector}>
+    <ConnectorDetailDialog item={detailItem} runtime={runtime} onClose={() => { setDetailConnectorId(null); setDisconnectItem(null); }} onDisconnect={setDisconnectItem} onConfigure={configureConnector}>
       <Modal open={!!disconnectItem} centered title={t("market.connector.flow.disconnectTitle")} okText={t("market.connector.flow.disconnect")} okButtonProps={{ danger: true }} confirmLoading={runtime.busy}
         onCancel={() => setDisconnectItem(null)} onOk={() => { if (disconnectItem) { void runtime.mutate(disconnectItem, "disconnect"); setDisconnectItem(null); } }}>
         <p>{t("market.connector.flow.disconnectDescription")}</p>

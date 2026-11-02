@@ -7,6 +7,7 @@ import { t } from "../../support/i18n/main-i18n";
 import { getMarketApiBaseUrl, getMarketplaceCatalogUrl } from "./market-settings";
 import { verifyMarketAuthentication, marketRoute, requestMarketJson, requestVisibleMarketJson } from "./market-http";
 import { asObject, asString } from "./catalog-values";
+import { marketCatalogErrorMessage } from "./market-errors";
 import {
   normalizeMarketItemType,
   normalizeAsset,
@@ -118,7 +119,7 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
     return {
       catalog: { schemaVersion: 1, items: [] },
       offline: true,
-      message: t("market.main.catalogUnavailable", { reason: error instanceof Error ? error.message : String(error) }),
+      message: marketCatalogErrorMessage(error),
       sourceUrl: catalogUrl
     };
   }
