@@ -1,5 +1,5 @@
 import http from "node:http";
-import { getHeaderValue, parseRequestUrl, writeJSON } from "./webclient-http-utils";
+import { getHeaderValue, writeJSON } from "./webclient-http-utils";
 import { type Socket } from "node:net";
 import { Logger, AgentWebclientHostRecord } from "./webclient-host-types";
 import {
@@ -18,16 +18,7 @@ export function hasBearerWebSocketProtocol(req: http.IncomingMessage) {
 }
 
 export function hasWebSocketAccessToken(req: http.IncomingMessage) {
-  try {
-    const url = parseRequestUrl(req.url);
-    return Boolean(
-      url.searchParams.get("token")?.trim() ||
-      url.searchParams.get("access_token")?.trim() ||
-      hasBearerWebSocketProtocol(req)
-    );
-  } catch {
-    return hasBearerWebSocketProtocol(req);
-  }
+  return Boolean(getHeaderValue(req.headers, "authorization").trim() || hasBearerWebSocketProtocol(req));
 }
 
 export function rejectUnauthenticatedWebSocketUpgrade(

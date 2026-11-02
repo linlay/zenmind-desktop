@@ -24,7 +24,10 @@ function getPlatformFramePortRoutesError(routes) {
   ) {
     return "requires exactly one HTTP-only authenticated /api route without SSE overrides";
   }
-  if (routes.some((route) => route?.targetEnv === "BASE_URL" && route?.websocket === true)) {
+  if (routes.some((route) => route?.websocket === true && !(
+    route.match === "exact" && route.path === "/api/voice/ws" && route.targetEnv === "BASE_URL"
+    && route.auth === "agent-platform-access-token" && route.http === false
+  ))) {
     return "must not expose an Agent Platform WebSocket route";
   }
   return null;

@@ -108,7 +108,7 @@ Identity 每提交一枚不同的 canonical token 发出一次凭据变化通知
 
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary、BTW 与 Selection Explain 三条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
+Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载等 HTTP 请求及精确 `/api/voice/ws` 媒体升级继续经过 Desktop host，由 main 注入和刷新凭据；媒体升级不进入 Frame Port，先校验浏览器同源 Origin，再转发到同一 Platform，凭据不进入 URL。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary、BTW 与 Selection Explain 三条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
 
 ```text
 页面发送 Platform request frame
@@ -194,7 +194,7 @@ Main 只把短时、一次性打开票据放入浏览器 URL fragment。打开�
 
 HTTP 请求与 WS upgrade 校验精确 Host、Origin、会话及有效期；写请求与 WS 必须来自该入口的精确 origin。API 由 Main 注入可信 provider 签发的 Platform token，并忽略浏览器提交的授权和 Cookie；WS token 仅放入上游握手子协议，响应中移除该子协议，浏览器不可见。浏览器连接强制普通 WebClient source，不能声明 Desktop 物理 lane。所有票据、请求和长连接按已签发 token 的 issuer、subject、device 绑定当前身份；claims 读取仅用于可信 token 的身份比较，不替代验证。身份不匹配、SSO 失效或服务停止时不得沿用旧会话访问新身份。
 
-浏览器版不注入 Electron、WorkPanel 或原生页面能力。浏览器内聊天、查看器与管理功能由 WebClient standalone 实现；Desktop 原生动作仍遵守既有 Run 与 Surface 授权，普通浏览器会话不产生这些授权。首版不代理独立语音服务，运行配置关闭语音入口。
+浏览器版不注入 Electron、WorkPanel 或原生页面能力。浏览器内聊天、查看器与管理功能由 WebClient standalone 实现；Desktop 原生动作仍遵守既有 Run 与 Surface 授权，普通浏览器会话不产生这些授权。实时语音与普通 API 使用同一 Platform；媒体 WS 复用浏览器 launch session、同源校验及宿主注入的 bearer 子协议，响应不向页面披露 token。部署 VOICE_ENABLED 默认关闭，仍要求 Platform capabilities.enabled。
 
 ### 本机调用示例
 

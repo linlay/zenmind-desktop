@@ -120,19 +120,12 @@ export function resolveRouteTargetFromEnv(
   return normalizeEnvUrl(getEnvValue(record, env, route.targetEnv));
 }
 
-export function isVoiceEnabled(record: AgentWebclientHostRecord, env: Map<string, string>) {
-  return record.hosting.proxyRoutes.some((route) =>
-    route.targetEnv === "VOICE_BASE_URL" && Boolean(resolveRouteTargetFromEnv(record, route, env))
-  );
-}
-
 export function readRuntimeConfig(record: AgentWebclientHostRecord) {
   const currentEnv = readEnvFile(record.layout.envPath);
   const runtimeConfig = record.hosting.runtimeConfigEnvKeys.reduce<Record<string, string>>((result, key) => {
     result[key] = String(getEnvValue(record, currentEnv, key) ?? "").trim();
     return result;
   }, {});
-  runtimeConfig.VOICE_ENABLED = String(isVoiceEnabled(record, currentEnv));
   return runtimeConfig;
 }
 
