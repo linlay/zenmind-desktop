@@ -218,6 +218,7 @@ type ShellIpcOptions = {
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
   setWebviewModalOverlayVisible?: (sourceId: string, visible: boolean) => void;
   setWorkPanelFullscreenActive?: (active: boolean) => void;
+  setMainWindowSidebarCollapsed?: (collapsed: boolean) => void;
   getTunnelHubRuntimeStatus?: () => any;
 };
 
@@ -619,6 +620,14 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       return;
     }
     options.setWebviewModalOverlayVisible?.(normalizedSourceId, visible === true);
+  });
+
+  ipcMain.on("desktopShell.setMainWindowSidebarCollapsed", (event: IpcMainEvent, collapsed: unknown) => {
+    if ((options.platform ?? process.platform) !== "darwin" || typeof collapsed !== "boolean") return;
+    const ownerWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (!ownerWindow || ownerWindow.isDestroyed() || event.sender !== ownerWindow.webContents ||
+        event.senderFrame !== ownerWindow.webContents.mainFrame) return;
+    options.setMainWindowSidebarCollapsed?.(collapsed);
   });
 
   ipcMain.on("desktopShell.setWorkPanelFullscreenActive", (event: IpcMainEvent, active: unknown) => {

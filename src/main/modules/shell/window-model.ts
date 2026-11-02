@@ -11,6 +11,9 @@ export const MAC_TRAFFIC_LIGHT_POSITION = { x: 3, y: 15 };
 
 // Keep native button sizes; center the compact group in the collapsed sidebar.
 export const MAC_TRAFFIC_LIGHT_LAYOUT = { gap: 5, centerX: 33 };
+// Widen only the two gaps; shifting the group center by 4 keeps the red button
+// at the same left edge for any native button sizes.
+export const MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT = { gap: 9, centerX: 37 };
 
 export const WINDOWS_BACKGROUND_LIGHT = "#FFFFFF";
 

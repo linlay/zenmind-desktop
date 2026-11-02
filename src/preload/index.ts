@@ -207,6 +207,8 @@ const api: DesktopApi = {
       ipcRenderer.send("desktopShell.setWebviewModalOverlayVisible", sourceId, visible),
     setWorkPanelFullscreenActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
+    setMainWindowSidebarCollapsed: (collapsed: boolean) =>
+      ipcRenderer.send("desktopShell.setMainWindowSidebarCollapsed", collapsed),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
     minimizeWindow: () => ipcRenderer.invoke("desktopShell.minimizeWindow"),
     popupApplicationMenu: (request) => ipcRenderer.invoke("desktopShell.popupApplicationMenu", request),

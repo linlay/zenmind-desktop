@@ -69,7 +69,7 @@ export interface ReadyIpcDependencies {
   readonly servicesFacade: ServicesFacade;
   readonly websFacade: WebsFacade;
   readonly getMainWindow: () => BrowserWindow | null;
-  readonly appShellRuntime: Pick<AppShellRuntime, "setWorkPanelFullscreenActive" | "refreshTrayContextMenu" | "refreshMainWindowAppearance" | "setGlobalSearchOverlayVisible" | "setWebviewModalOverlayVisible">;
+  readonly appShellRuntime: Pick<AppShellRuntime, "setWorkPanelFullscreenActive" | "setMainWindowSidebarCollapsed" | "refreshTrayContextMenu" | "refreshMainWindowAppearance" | "setGlobalSearchOverlayVisible" | "setWebviewModalOverlayVisible">;
   readonly assistantRunWakeLock: ReturnType<typeof createAssistantRunWakeLock>;
   readonly petRuntime: DesktopPetRuntime;
   readonly enterpriseChatRuntime: InstanceType<typeof EnterpriseChatRuntime>;
@@ -131,6 +131,7 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     setCopilotDevToolsTarget: dependencies.webSurfaceRuntime.setCopilotDevToolsTarget,
     getWebContentsById: (id) => webContents.fromId(id) ?? undefined,
     setWorkPanelFullscreenActive: dependencies.appShellRuntime.setWorkPanelFullscreenActive,
+    setMainWindowSidebarCollapsed: dependencies.appShellRuntime.setMainWindowSidebarCollapsed,
     assistantBridgeRuntime: dependencies.assistantBridgeRuntime,
     assistantRunWakeLock: dependencies.assistantRunWakeLock,
     logsRuntime: dependencies.logsRuntime,

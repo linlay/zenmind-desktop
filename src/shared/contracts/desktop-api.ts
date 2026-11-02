@@ -959,6 +959,7 @@ export interface DesktopApi {
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
     setWorkPanelFullscreenActive: (active: boolean) => void;
+    setMainWindowSidebarCollapsed: (collapsed: boolean) => void;
     requestWindowClose: () => void;
     minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;
     popupApplicationMenu: (request: { menu: "file" | "edit" | "view" | "help"; x: number; y: number }) => Promise<{ ok: boolean }>;

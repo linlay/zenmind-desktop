@@ -1288,6 +1288,9 @@ export function AppShell() {
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const effectiveSidebarCollapsed = sidebarCollapsed && !isSecondarySidebarMode;
+  useLayoutEffect(() => {
+    if (isMac) window.electronAPI.desktopShell.setMainWindowSidebarCollapsed(effectiveSidebarCollapsed);
+  }, [effectiveSidebarCollapsed, isMac]);
   // macOS shares one window-anchored group across both sidebar states. Windows
   // keeps its system-bar group, switching to the fixed group only in fullscreen.
   const showSidebarHeaderNavigation = sidebarMode === "primary" && !workPanelFullscreenOwnerChatId && (

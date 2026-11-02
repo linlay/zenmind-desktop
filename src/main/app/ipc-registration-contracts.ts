@@ -37,6 +37,7 @@ export type MainIpcRegistrationOptions = {
   setCopilotDevToolsTarget: (target: CopilotDevToolsTarget | null) => void;
   getWebContentsById: (id: number) => WebContents | undefined;
   setWorkPanelFullscreenActive: (active: boolean) => void;
+  setMainWindowSidebarCollapsed: (collapsed: boolean) => void;
   assistantBridgeRuntime: AssistantBridgeRuntime;
   assistantRunWakeLock: AssistantRunWakeLock;
   logsRuntime: LogsRuntime;
