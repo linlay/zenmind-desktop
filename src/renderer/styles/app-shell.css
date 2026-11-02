@@ -986,10 +986,37 @@
   opacity: var(--work-panel-main-chat-opacity, 1);
 }
 
-/* The buffer previews columns narrower than the settled Main Chat minimum. */
-.app-shell.is-work-panel-resizing.has-embedded-surface.has-chat-work-panel .app-content>.app-main {
+/* Clip the chat behind the panel while keeping the guest's layout width stable. */
+.app-shell.has-embedded-surface.has-chat-work-panel .app-content>.app-main {
   padding: 0;
   overflow: hidden;
+}
+
+.app-shell.has-chat-work-panel .app-content>.app-main>.embedded-surface-page {
+  min-width: var(--work-panel-main-min-width);
+}
+
+.main-chat-resize-hint {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: max(0px, calc(100% - var(--chat-work-panel-width)));
+  container-type: inline-size;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.main-chat-resize-hint>span {
+  max-width: 100%;
+  padding: 12px 8px;
+  color: var(--ink-muted);
+  font-size: clamp(24px, 10cqw, 32px);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 /* Keep both separators reachable when WorkPanel consumes the chat column. */

@@ -69,14 +69,14 @@ export function resolveWorkPanelDragState(input: {
   if (availableWidth !== null && expandedMaxWidth >= WORK_PANEL_MIN_WIDTH &&
       input.initialWidth >= resolveWorkPanelMaxWidth(availableWidth)) {
     const restoreDistance = Math.max(0, -delta);
-    const restoredWidth = clampWorkPanelWidth(
-      expandedMaxWidth - Math.max(0, restoreDistance - WORK_PANEL_COLLAPSE_DRAG_BUFFER), availableWidth,
-    );
     const collapsedWidth = resolveWorkPanelMaxWidth(availableWidth);
-    const progress = Math.min(1, restoreDistance / WORK_PANEL_COLLAPSE_DRAG_BUFFER);
+    const width = Math.min(collapsedWidth, Math.max(WORK_PANEL_MIN_WIDTH, Math.round(input.initialWidth + delta)));
+    const restoredWidth = clampWorkPanelWidth(
+      Math.min(width, expandedMaxWidth), availableWidth,
+    );
     return {
-      // Reveal the column gradually; do not jump straight to its minimum width.
-      width: Math.round(collapsedWidth + (restoredWidth - collapsedWidth) * progress),
+      // The panel edge follows the pointer one pixel for one pixel.
+      width,
       settledWidth: restoreDistance >= WORK_PANEL_COLLAPSE_DRAG_BUFFER ? restoredWidth : collapsedWidth,
       mainChatOpacity: fadeStep(restoreDistance),
     };
@@ -88,10 +88,7 @@ export function resolveWorkPanelDragState(input: {
     ? fadeStep(collapseDistance)
     : 0;
   const settledWidth = clampWorkPanelWidth(requestedWidth, input.availableWidth);
-  const progress = Math.min(1, Math.max(0, collapseDistance / WORK_PANEL_COLLAPSE_DRAG_BUFFER));
-  const width = canPreviewCollapse && collapseDistance > 0
-    ? Math.round(expandedMaxWidth + (resolveWorkPanelMaxWidth(availableWidth) - expandedMaxWidth) * progress)
-    : settledWidth;
+  const width = Math.min(resolveWorkPanelMaxWidth(input.availableWidth), Math.max(WORK_PANEL_MIN_WIDTH, Math.round(requestedWidth)));
   return {
     width,
     settledWidth,

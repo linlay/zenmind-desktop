@@ -1050,6 +1050,8 @@ export const enUSMessages = {
   "chatWorkPanel.closeTab": "Close {title}",
   "chatWorkPanel.openNotReady": "This chat is not ready to open the Work Panel. Try again.",
   "chatWorkPanel.resize": "Resize Work Panel",
+  "chatWorkPanel.resize.expandChat": "Expand chat",
+  "chatWorkPanel.resize.collapseChat": "Collapse chat",
   "chatWorkPanel.tabContextMenu.enterFullscreen": "Enter Full Screen",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "Exit Full Screen",
   "chatWorkPanel.fullscreen.hint": "Full screen · Press {shortcut} to exit, or move the pointer to the top",

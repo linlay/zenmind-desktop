@@ -36,9 +36,12 @@ import React,{useState,useRef,useCallback,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {MemoryRouter} from 'react-router-dom';
 import {WorkPanelHost} from './src/renderer/work-panel/WorkPanelHost';
+import {WorkPanelResizeHint} from './src/renderer/work-panel/WorkPanelResizeHint';
+import {RendererI18nContext} from './src/renderer/i18n/i18n-context';
+import {createTranslator} from './src/shared/i18n';
 import {EMPTY_WORK_PANEL_STATE,reduceWorkPanelCommand} from './src/shared/work-panel';
 import {resolveWorkPanelActiveItemId} from './src/renderer/work-panel/new-tab-selection';
-import {clampWorkPanelWidth,resolveWorkPanelMaxWidth,resolveWorkPanelDragState,WORK_PANEL_COLLAPSED_MAIN_GAP,WORK_PANEL_MIN_WIDTH} from './src/shared/work-panel-layout';
+import {clampWorkPanelWidth,resolveWorkPanelMaxWidth,resolveWorkPanelDragState,WORK_PANEL_COLLAPSED_MAIN_GAP,WORK_PANEL_MIN_WIDTH,WORK_PANEL_MAIN_MIN_WIDTH} from './src/shared/work-panel-layout';
 import './src/renderer/styles/theme.css';
 import './src/renderer/styles/navigation.css';
 import './src/renderer/styles/sidebar-copilot.css';
@@ -63,12 +66,14 @@ function Scene(){
  const [state,setState]=useState(initial),stateRef=useRef(state);stateRef.current=state;
  const [owner,setOwner]=useState('a'),[shown,setShown]=useState(true),[windows,setWindows]=useState(false);
  const [sidebarWidth,setSidebarWidth]=useState(160);
+ const [locale,setLocale]=useState('zh-CN');
  const [workPanelFullscreenOwnerChatId,setFullscreen]=useState(null);
  const [workPanelMainChatOwnerKey,setWorkPanelMainChatOwnerKey]=useState(null);
  const [selectedWorkPanelNewTabs,setSelectedWorkPanelNewTabs]=useState({});
  const [preferredWorkPanelWidth,setPreferredWorkPanelWidth]=useState(560);
  const [workPanelDragMainChatOpacity,setWorkPanelDragMainChatOpacity]=useState(1);
  const [workPanelDragPreviewWidth,setWorkPanelDragPreviewWidth]=useState(null);
+ const [workPanelDragHint,setWorkPanelDragHint]=useState(null);
  const [isWorkPanelResizing,setIsWorkPanelResizing]=useState(false);
  const workPanelResizeStateRef=useRef(null),workPanelResizeCleanupRef=useRef(null);
  const activeChatWorkPanelOwnerKey=owner,activeChatWorkPanelVisible=shown;
@@ -86,20 +91,21 @@ function Scene(){
  },[]);
  const workspace=state.workspaces.find(w=>w.ownerChatId===owner);
  const mainChatTab=${tabProps};
- window.qa={owner:setOwner,show:setShown,windows:setWindows,sidebar:setSidebarWidth,fullscreen:setFullscreen,split:()=>setPreferredWorkPanelWidth(560),state,
+ window.qa={owner:setOwner,show:setShown,windows:setWindows,sidebar:setSidebarWidth,locale:setLocale,fullscreen:setFullscreen,split:()=>setPreferredWorkPanelWidth(560),state,
   openDraft:()=>dispatch({type:'activateItem',ownerChatId:owner,itemId:workspace.items.find(i=>i.title==='Draft').itemId})};
- return <MemoryRouter><div style={appShellStyle} className={'app-shell has-chat-work-panel has-embedded-surface '+(windows?'is-windows-platform':'is-mac-platform')+(isMainChatCollapsedByWorkPanel?' is-main-chat-collapsed-by-work-panel':'')+(isWorkPanelMainChatActive?' is-main-chat-in-work-panel':'')+(workPanelFullscreenOwnerChatId?' is-work-panel-fullscreen':'')+(isWorkPanelResizing?' is-work-panel-resizing':'')}>
+ return <RendererI18nContext.Provider value={{locale,source:'user',t:createTranslator(locale),setLocale:async value=>setLocale(value)}}><MemoryRouter><div style={appShellStyle} className={'app-shell has-chat-work-panel has-embedded-surface '+(windows?'is-windows-platform':'is-mac-platform')+(isMainChatCollapsedByWorkPanel?' is-main-chat-collapsed-by-work-panel':'')+(isWorkPanelMainChatActive?' is-main-chat-in-work-panel':'')+(workPanelFullscreenOwnerChatId?' is-work-panel-fullscreen':'')+(isWorkPanelResizing?' is-work-panel-resizing':'')}>
  <div className='app-sidebar-shell'>Sidebar</div><div className='app-sidebar-resizer'><span className='app-sidebar-resizer-line'/></div>
  <div className='app-content'><main className='app-main' id='desktop-main-chat-panel'>
  <section className='embedded-surface-page embedded-surface-page-embedded'><div className='embedded-surface-frame-shell'>
  {React.createElement('webview',{id:'main-chat-guest',src:'./guest.html',style:{display:'flex',width:'100%',height:'100%'}})}
  </div></section>
- </main>{shown&&<div className={'chat-work-panel-resizer'+(isWorkPanelResizing?' is-active':'')} role='separator' tabIndex={0} onPointerDown={handleWorkPanelResizerPointerDown}><span className='chat-work-panel-resizer-line'/></div>}
+ </main>{shown&&isWorkPanelResizing&&<WorkPanelResizeHint direction={workPanelDragHint}/>}
+ {shown&&<div className={'chat-work-panel-resizer'+(isWorkPanelResizing?' is-active':'')} role='separator' tabIndex={0} onPointerDown={handleWorkPanelResizerPointerDown}><span className='chat-work-panel-resizer-line'/></div>}
  <WorkPanelHost activeChatId={shown?owner:null} state={state} selectedNewTabs={selectedWorkPanelNewTabs} setSelectedNewTabs={setSelectedWorkPanelNewTabs}
  dispatchCommand={dispatch} fullscreenOwnerChatId={workPanelFullscreenOwnerChatId} onFullscreenChange={async value=>{setFullscreen(value);return true;}}
  mainChatTab={mainChatTab} isMac={!windows} isWindows={windows}
  launcher={{agentKey:'main',agentMode:'GENERAL',agentLabel:'Main',chatLabel:owner,projectVisible:false,projectEnabled:false,webapps:[],onOpenWebapp:async()=>false,onFocusWebappWindow:async()=>false}}/>
- </div>{isWorkPanelResizing&&<div className='chat-work-panel-resize-overlay'/>}</div></MemoryRouter>;
+ </div>{isWorkPanelResizing&&<div className='chat-work-panel-resize-overlay'/>}</div></MemoryRouter></RendererI18nContext.Provider>;
 }
 createRoot(document.getElementById('root')).render(<Scene/>);
 ` },
@@ -135,6 +141,17 @@ const drag=async(dx)=>{
  await beginDrag();await moveDrag(dx);await finishDrag();
 };
 const opacity=()=>js('Number(getComputedStyle(document.querySelector(".app-main")).opacity)');
+const captureHint=async name=>{
+ const filename=path.join(__dirname,name+'.png');
+ if(fs.existsSync(filename))return;
+ await delay(80);fs.writeFileSync(filename,(await win.webContents.capturePage()).toPNG());
+};
+const assertHintPresentation=async()=>{
+ const value=await js('(()=>{const h=document.querySelector(".main-chat-resize-hint"),s=h.querySelector("span"),r=s.getBoundingClientRect(),m=document.querySelector(".app-main").getBoundingClientRect(),css=getComputedStyle(s);return {fontSize:parseFloat(css.fontSize),dx:Math.abs(r.left+r.width/2-m.left-m.width/2),dy:Math.abs(r.top+r.height/2-m.top-m.height/2),border:parseFloat(css.borderTopWidth)}})()');
+ assert.ok(value.fontSize>=24,'resize hint must use large text');
+ assert.ok(value.dx<1&&value.dy<1,'resize hint must be centered in the chat viewport');
+ assert.equal(value.border,0,'resize hint must not look like a small button');
+};
 const assertSeparator=()=>js('(()=>{const s=document.querySelector(".chat-work-panel-resizer"),r=s.getBoundingClientRect(),p=document.querySelector(".work-panel-host").getBoundingClientRect(),n=document.querySelector(".app-sidebar-resizer").getBoundingClientRect();return {center:r.left+r.width/2,panelLeft:p.left,separate:n.right<=r.left,hits:[.2,.5,.8].every(f=>[.5,r.width/2,r.width-.5].every(dx=>document.elementFromPoint(r.left+dx,r.top+r.height*f)?.closest(".chat-work-panel-resizer")===s)),cursor:getComputedStyle(s).cursor,x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()').then(result=>{
  assert.equal(result.center,result.panelLeft,'separator must stay on the panel boundary after switching tabs');
  assert.equal(result.separate,true,'navigation and WorkPanel hitboxes must stay separate');
@@ -142,7 +159,7 @@ const assertSeparator=()=>js('(()=>{const s=document.querySelector(".chat-work-p
  assert.equal(result.cursor,'ew-resize');return result;
 });
 const mouseDrag=async(dx,verifyReveal=false)=>{
- win.showInactive();await delay(80);
+ await delay(80);
  const {x,y}=await assertSeparator();
  await js('window.pointerTrace=[]');
  const input=event=>win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',event);
@@ -150,11 +167,21 @@ const mouseDrag=async(dx,verifyReveal=false)=>{
  await input({type:'mouseMoved',x,y,buttons:0});await delay(60);
  assert.equal(await js('window.pointerTrace.some(e=>e.x==='+x+'&&e.y==='+y+'&&e.separator&&e.hover)'),true,'Chromium must deliver pointer hover to the separator');
  await input({type:'mousePressed',button:'left',buttons:1,clickCount:1,x,y});await delay(30);
- if(verifyReveal)for(const [distance,width,alpha] of [[1,10,0],[24,109,.25],[48,213,.5],[72,316,.75],[96,420,1]]){
+ if(verifyReveal)for(const [distance,width,alpha] of [[1,7,0],[24,30,.25],[48,54,.5],[72,78,.75],[96,102,1]]){
   await input({type:'mouseMoved',button:'left',buttons:1,x:x+distance,y});await delay(80);
-  const preview=await js('(()=>{const main=document.querySelector(".app-main");return {width:Math.round(main.getBoundingClientRect().width),opacity:Number(getComputedStyle(main).opacity)}})()');
-  assert.equal(preview.width,width,'Main Chat width must reveal gradually before the buffer completes');
+  const preview=await js('(()=>{const main=document.querySelector(".app-main"),r=document.querySelector(".chat-work-panel-resizer").getBoundingClientRect();return {width:Math.round(main.getBoundingClientRect().width),guestWidth:Math.round(document.querySelector("#main-chat-guest").getBoundingClientRect().width),line:r.left+r.width/2,opacity:Number(getComputedStyle(main).opacity),hint:document.querySelector(".main-chat-resize-hint")?.textContent}})()');
+  assert.equal(preview.width,width,'only the uncovered viewport changes width');
+  assert.equal(preview.guestWidth,420,'Main Chat layout must keep its minimum width');
+  assert.equal(preview.line,x+distance,'the separator must stay under the pointer at every step');
   assert.equal(preview.opacity,alpha,'Chat and Overview must use the same reveal steps');
+  assert.equal(preview.hint,'开展对话区');
+  if(distance===96){
+   await assertHintPresentation();
+   await captureHint('expand-hint-zh');
+   await js('window.qa.locale("en-US")');await until('document.querySelector(".main-chat-resize-hint")?.textContent==="Expand chat"');
+   await captureHint('expand-hint-en');
+   await js('window.qa.locale("zh-CN")');await until('document.querySelector(".main-chat-resize-hint")?.textContent==="开展对话区"');
+  }
  }
  await input({type:'mouseMoved',button:'left',buttons:1,x:x+dx,y});await delay(80);
  await input({type:'mouseReleased',button:'left',buttons:0,clickCount:1,x:x+dx,y});await delay(80);
@@ -166,6 +193,7 @@ app.whenReady().then(async()=>{
  win.setIgnoreMouseEvents(true);
  await win.loadFile(path.join(__dirname,'index.html'));
  win.webContents.debugger.attach('1.3');
+ await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
  await js('window.pointerTrace=[];window.addEventListener("pointermove",e=>{const s=e.target instanceof Element?e.target.closest(".chat-work-panel-resizer"):null;window.pointerTrace.push({x:e.clientX,y:e.clientY,separator:!!s,hover:!!s&&s.matches(":hover")})},{capture:true})');
  await until('window.qa && document.querySelector("#main-chat-guest").getWebContentsId()>0 && !document.querySelector("#main-chat-guest").isLoading()');
  const id=await js('document.querySelector("#main-chat-guest").getWebContentsId()'),guest=webContents.fromId(id);
@@ -180,7 +208,15 @@ app.whenReady().then(async()=>{
   await beginDrag();
   for(const [extra,alpha] of [[0,1],[23,1],[24,.75],[48,.5],[72,.25],[95,.25],[96,0]]){
    await moveDrag(-20-extra);assert.equal(await opacity(),alpha);
+   const preview=await js('(()=>{const m=document.querySelector(".app-content").getBoundingClientRect(),r=document.querySelector(".chat-work-panel-resizer").getBoundingClientRect();return {line:r.left+r.width/2-m.left,guest:Math.round(document.querySelector("#main-chat-guest").getBoundingClientRect().width),hint:document.querySelector(".main-chat-resize-hint")?.textContent}})()');
+   assert.equal(preview.line,420-extra,'separator must follow the closing pointer at '+extra+'px: '+JSON.stringify(preview));
+   assert.equal(preview.guest,420,'chat guest must keep its minimum width at '+extra+'px: '+JSON.stringify(preview));
+   if(extra>0)assert.equal(preview.hint,'收起对话区');
   }
+  await assertHintPresentation();await captureHint('collapse-hint-zh');
+  await js('window.qa.locale("en-US")');await until('document.querySelector(".main-chat-resize-hint")?.textContent==="Collapse chat"');
+  await captureHint('collapse-hint-en');
+  await js('window.qa.locale("zh-CN")');await until('document.querySelector(".main-chat-resize-hint")?.textContent==="收起对话区"');
   await finishDrag();
   await until('document.querySelector(".app-shell").classList.contains("is-main-chat-collapsed-by-work-panel")');
   await beginDrag();
@@ -230,7 +266,7 @@ app.whenReady().then(async()=>{
   await js('window.qa.split()');await delay(50);
  }
  assert.deepEqual(await js('window.errors'),[]);
- console.log('PASS: progressive width/opacity on Overview and Chat, real mouse hover/drag, separate sidebar/panel hitboxes, both sidebar widths, stable guest/drafts/scroll, macOS/Windows light/dark layouts');
+ console.log('PASS: pointer and separator move one-to-one, chat guest stays at 420px, overlay clipping and fade, Chinese/English resize hints, both tabs/sidebar widths, stable guest/drafts/scroll, macOS/Windows layouts');
  console.log('Screenshots: '+__dirname);win.destroy();app.quit();
 }).catch(error=>{console.error(error);app.exit(1)});
 `);

@@ -1050,6 +1050,8 @@ export const zhCNMessages = {
   "chatWorkPanel.closeTab": "关闭 {title}",
   "chatWorkPanel.openNotReady": "当前对话尚未准备完成，无法打开工作面板，请重试。",
   "chatWorkPanel.resize": "调整工作面板宽度",
+  "chatWorkPanel.resize.expandChat": "开展对话区",
+  "chatWorkPanel.resize.collapseChat": "收起对话区",
   "chatWorkPanel.tabContextMenu.enterFullscreen": "进入全屏",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "退出全屏",
   "chatWorkPanel.fullscreen.hint": "已进入全屏 · 按 {shortcut} 退出，或将鼠标移到顶部",

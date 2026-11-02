@@ -91,8 +91,7 @@ test("Main Chat fades in four steps through the collapse buffer and recovers whe
     for (const [extra, opacity] of [[0, 1], [1, 1], [23, 1], [24, 0.75], [47, 0.75], [48, 0.5], [71, 0.5], [72, 0.25], [95, 0.25], [96, 0], [120, 0], [48, 0.5], [0, 1], [-20, 1]]) {
       const state = drag(extra);
       const collapsedWidth = availableWidth - WORK_PANEL_COLLAPSED_MAIN_GAP;
-      const progress = Math.min(1, Math.max(0, extra / WORK_PANEL_COLLAPSE_DRAG_BUFFER));
-      assert.equal(state.width, extra <= 0 ? expandedMax + extra : Math.round(expandedMax + (collapsedWidth - expandedMax) * progress));
+      assert.equal(state.width, expandedMax + extra);
       assert.equal(state.mainChatOpacity, opacity);
       assert.equal(state.settledWidth, extra < WORK_PANEL_COLLAPSE_DRAG_BUFFER ? expandedMax + Math.min(0, extra) : collapsedWidth);
     }
@@ -114,25 +113,25 @@ test("a fully collapsed Main Chat restores through the same four steps before co
     for (const [distance, opacity] of [[-24, 0], [0, 0], [1, 0], [23, 0], [24, 0.25], [47, 0.25], [48, 0.5], [71, 0.5], [72, 0.75], [95, 0.75], [96, 1], [120, 1], [48, 0.5], [0, 0]]) {
       const result = drag(distance);
       assert.equal(result.mainChatOpacity, opacity);
-      assert.equal(result.width, distance <= 0 ? collapsedWidth : distance <= 96
-        ? Math.round(collapsedWidth + (expandedMax - collapsedWidth) * distance / 96)
-        : expandedMax - (distance - 96));
-      assert.equal(result.settledWidth, distance < 96 ? collapsedWidth : result.width);
+      assert.equal(result.width, collapsedWidth - Math.max(0, distance));
+      assert.equal(result.settledWidth, distance < 96 ? collapsedWidth : expandedMax);
     }
   }
 });
 
-test("opening and closing preview the same widths in reverse, without jumping to a full chat column", () => {
-  const availableWidth = 1000;
-  for (let distance = 0; distance <= 96; distance++) {
-    const opening = resolveWorkPanelDragState({ initialWidth: 994, startClientX: 0, currentClientX: distance, availableWidth });
-    const closing = resolveWorkPanelDragState({ initialWidth: 580, startClientX: 0, currentClientX: -(96 - distance), availableWidth });
-    assert.equal(opening.width, closing.width);
-    if (distance > 0 && distance < 96) {
-      assert.ok(opening.width > 580 && opening.width < 994, "the layout must stay inside the buffer until the gesture completes");
+test("the panel boundary follows pointer movement one-to-one throughout covering and uncovering", () => {
+  for (const availableWidth of [1000, 1400, 2200]) {
+    const expandedWidth = availableWidth - WORK_PANEL_MAIN_MIN_WIDTH;
+    const collapsedWidth = availableWidth - WORK_PANEL_COLLAPSED_MAIN_GAP;
+    const travel = collapsedWidth - expandedWidth;
+    for (let distance = 0; distance <= travel; distance++) {
+      const opening = resolveWorkPanelDragState({ initialWidth: collapsedWidth, startClientX: 10, currentClientX: 10 + distance, availableWidth });
+      const closing = resolveWorkPanelDragState({ initialWidth: expandedWidth, startClientX: 10, currentClientX: 10 - distance, availableWidth });
+      assert.equal(opening.width, collapsedWidth - distance);
+      assert.equal(closing.width, expandedWidth + distance);
     }
   }
-  for (const [distance, width] of [[1, 990], [24, 891], [48, 787], [72, 684], [96, 580]]) {
-    assert.equal(resolveWorkPanelDragState({ initialWidth: 994, startClientX: 0, currentClientX: distance, availableWidth }).width, width);
+  for (const [distance, width] of [[1, 993], [24, 970], [48, 946], [72, 922], [96, 898]]) {
+    assert.equal(resolveWorkPanelDragState({ initialWidth: 994, startClientX: 0, currentClientX: distance, availableWidth: 1000 }).width, width);
   }
 });
