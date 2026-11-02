@@ -83,6 +83,8 @@ test("Frame Port rejects missing API routes and forbidden proxy routes", () => {
     [apiRoute, { ...voiceRoute, match: "prefix" }],
     [apiRoute, { ...voiceRoute, auth: undefined }],
     [apiRoute, { ...voiceRoute, targetEnv: "OLD_VOICE_URL" }],
+    // The released pre-v1 bundle routed every voice path to a separate service.
+    [apiRoute, { match: "prefix", path: "/api/voice", targetEnv: "VOICE_BASE_URL", optional: true, websocket: true }],
     [apiRoute, { ...voiceRoute, http: true }],
     [apiRoute, { match: "exact", path: "/realtime", targetEnv: "BASE_URL", websocket: true }],
   ]) {
