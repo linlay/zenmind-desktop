@@ -9,8 +9,8 @@ export function PetMessages({ runtime }: { runtime: MarketPetFlowRuntime }) {
 function Messages({ runtime }: { runtime: MarketPetFlowRuntime }) {
   const { t } = useI18n();
   const [api, holder] = message.useMessage({ top: 80, maxCount: 3 });
-  const progress = runtime.activity ? t(runtime.activity.action === "import" ? "settings.desktopPet.import.pending"
-    : runtime.activity.action === "remove" ? "market.action.uninstalling" : "market.action.installing") : "";
+  const progress = runtime.activity?.action === "install" ? t("market.action.installing")
+    : runtime.activity?.action === "remove" ? t("market.action.uninstalling") : "";
   useEffect(() => {
     if (runtime.error) void api.open({ key: "error", type: "error", content: runtime.error, duration: 5 });
     else api.destroy("error");
@@ -24,9 +24,9 @@ function Messages({ runtime }: { runtime: MarketPetFlowRuntime }) {
     else api.destroy("state");
   }, [api, runtime.stateError]);
   useEffect(() => {
-    if (progress && runtime.activity?.action !== "use") void api.open({ key: "progress", type: "loading", content: progress, duration: 0 });
+    if (progress) void api.open({ key: "progress", type: "loading", content: progress, duration: 0 });
     else api.destroy("progress");
-  }, [api, progress, runtime.activity?.action]);
+  }, [api, progress]);
   useEffect(() => () => { api.destroy(); }, [api]);
   return holder;
 }
