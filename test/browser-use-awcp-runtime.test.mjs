@@ -31,7 +31,7 @@ async function fixture(t, overrides = {}) {
         async request(method, params, pageId) {
           this.calls.push({ method, params, pageId });
           if (method === 'list') return this.pages;
-          if (method === 'connect' || method === 'state') return { connected: true, pages: this.pages };
+          if (method === 'connect' || method === 'state' || method === 'health') return { connected: true, pages: this.pages };
           if (method === 'observe') return { observationId: 'fresh-observation', elements: [{ ref: 'e1' }], text: 'Current page' };
           if (method === 'awcp-manual') return { ok: true, method: 'AWCP.getManual', revision: 'revision-1',
             site: { name: 'Forum', description: 'Local fixture' }, sections: [{ section: 'forum.posts.list', title: 'Read posts' }] };

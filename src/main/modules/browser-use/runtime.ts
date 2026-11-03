@@ -95,7 +95,7 @@ export class BrowserUseRuntime {
     if (!this.preferences().rememberChromeConnection || session.backend !== "chrome" || session.workspace.client || session.workspace.owner) return;
     const workspace = this.availableWorkspace(); if (!workspace || workspace === session.workspace) return;
     const previous = session.workspace; workspace.shared = true; session.workspace = workspace;
-    if (!previous.client && !previous.owner && ![...this.sessions.values()].some(other => other.workspace === previous)) this.workspaces.delete(previous.id);
+    this.discardUnusedWorkspace(previous);
   }
   private workspaceFor(chatId: string, backend: BrowserUseBackend): ChromeWorkspace {
     const shared = backend === "chrome" && this.preferences().rememberChromeConnection;
@@ -112,16 +112,15 @@ export class BrowserUseRuntime {
     // Never reorder here: state() runs while changedWorkspace iterates this Map.
     let session = this.sessions.get(chatId);
     if (session) return session;
-    const backend = this.preferences().defaultBackend;
+    const backend: BrowserUseBackend = "workpanel";
     session = { chatId, backend, workspace: this.workspaceFor(chatId, backend) };
     this.sessions.set(chatId, session);
     this.pruneIdleSessions(chatId);
     return session;
   }
   /**
-   * Viewing a Chat registers a session. Without a bound, a long-running Desktop keeps one per Chat ever viewed.
-   * The oldest Chats with no Run, no connection request and no live, connecting or owned workspace are released;
-   * a later view simply recreates them from current preferences.
+   * Retain active/waiting Chats and private live connections. Idle Chat metadata
+   * may be evicted independently of the shared connection it used previously.
    */
   private pruneIdleSessions(keep: string) {
     if (this.sessions.size <= MAX_IDLE_SESSIONS) return;
@@ -130,13 +129,24 @@ export class BrowserUseRuntime {
       if (this.sessions.size <= MAX_IDLE_SESSIONS) break;
       const workspace = session.workspace;
       if (chatId === keep || busyChats.has(chatId) || session.connectionRequest
-        || workspace.client || workspace.connecting || workspace.owner || workspace.drain) continue;
+        || workspace.connecting || workspace.owner?.chatId === chatId) continue;
+      if (!workspace.shared && (workspace.client || workspace.owner || workspace.drain)) continue;
       this.sessions.delete(chatId);
-      if (!workspace.shared && ![...this.sessions.values()].some(other => other.workspace === workspace)) this.workspaces.delete(workspace.id);
+      this.discardUnusedWorkspace(workspace);
+      try { this.options.onChanged?.(this.state(chatId)); } catch { /* A closed UI cannot retain idle metadata. */ }
     }
   }
+  private discardUnusedWorkspace(workspace: ChromeWorkspace) {
+    if (workspace.client || workspace.connecting || workspace.owner || workspace.drain || workspace.pages.size) return;
+    if ([...this.sessions.values()].some(session => session.workspace === workspace)) return;
+    if ([...this.runs.values()].some(run => run.workspaceId === workspace.id)) return;
+    this.workspaces.delete(workspace.id);
+  }
   state(chatId: string): BrowserUseState {
-    const session = this.session(chatId), workspace = session.workspace;
+    if (!chatId.trim() || chatId.length > 256) throw failure("invalid_args", "A canonical Chat is required.");
+    const session = this.sessions.get(chatId);
+    if (!session) return { chatId, backend: "workpanel", connection: "disconnected", pages: [], activeRunIds: [] };
+    const workspace = session.workspace;
     return {
       chatId, backend: session.backend, connection: workspace.connection,
       pages: [...workspace.pages.values()].map(({ pageId: _pageId, ...page }) => page),
@@ -174,7 +184,9 @@ export class BrowserUseRuntime {
     return !!run && run.connectionRequested === true && run.workspaceGeneration === undefined && !run.pending.size && !run.controller.signal.aborted;
   }
   async refreshState(chatId: string): Promise<BrowserUseState> {
-    const session = this.session(chatId), workspace = session.workspace;
+    const session = this.sessions.get(chatId);
+    if (!session) return this.state(chatId);
+    const workspace = session.workspace;
     // UI reads must not queue behind or interrupt another Chat's owned operation.
     const owner = workspace.owner;
     if (owner?.draining || (owner && this.runs.get(owner.runId)?.pending.size)) return this.state(chatId);
@@ -184,13 +196,22 @@ export class BrowserUseRuntime {
       const current = () => this.sessions.get(chatId) === session && session.workspace === workspace && workspace.client === client
         && workspace.generation === generation && workspace.activityRevision === activity && workspace.owner === owner;
       try {
-        const health = record(await client.request("state"));
+        const health = record(await client.request("health"));
         if (!current()) return this.state(chatId);
         if (health.connected === false) { if (!workspace.owner) await this.disconnectWorkspace(workspace); }
-        else await this.refreshWorkspacePages(workspace, undefined, undefined, current);
+        else if (health.connected === true) {
+          try {
+            await this.refreshWorkspacePages(workspace, undefined, undefined, current);
+            if (current()) workspace.error = undefined;
+          } catch (error) {
+            // Page metadata can be slow while the transport remains healthy.
+            // Preserve the connection and its identities; this is not a health failure.
+            if (current()) { workspace.error = browserUseError(error); this.changed(session); }
+          }
+        } else throw failure("browser_connection_health_invalid", "Chrome did not provide a valid connection state.");
       } catch (error) {
         if (!current() || workspace.owner) return this.state(chatId);
-        await this.disconnectWorkspace(workspace);
+        if (text(record(error).code) === "browser_disconnected") await this.disconnectWorkspace(workspace);
         workspace.error = browserUseError(error);
         this.changed(session);
       }
@@ -208,8 +229,10 @@ export class BrowserUseRuntime {
     this.assertIdle(chatId);
     const session = this.session(chatId);
     this.assertWorkspaceIdle(session.workspace);
+    const previous = session.workspace;
     if (backend === "chrome" && session.backend !== "chrome" && !session.workspace.client) session.workspace = this.workspaceFor(chatId, backend);
     session.backend = backend;
+    this.discardUnusedWorkspace(previous);
     this.changed(session);
     return this.state(chatId);
   }
@@ -239,7 +262,10 @@ export class BrowserUseRuntime {
     run.connectionHealth = undefined;
     run.connectionRequested = false;
     if (session.connectionRequest?.runId === run.runId) session.connectionRequest = undefined;
-    if (previous !== session.workspace) this.changedWorkspace(previous);
+    if (previous !== session.workspace) {
+      this.discardUnusedWorkspace(previous);
+      this.changedWorkspace(previous);
+    }
     this.changed(session);
     return reply();
   }
@@ -258,9 +284,11 @@ export class BrowserUseRuntime {
     // A suspended Chrome Run waits for exactly this user action; it has dispatched nothing yet.
     this.assertIdle(chatId, true);
     const session = this.session(chatId);
+    const previous = session.workspace;
     if (session.backend !== "chrome" && !session.workspace.client) session.workspace = this.workspaceFor(chatId, "chrome");
     session.backend = "chrome";
     this.attachAvailableWorkspace(session);
+    this.discardUnusedWorkspace(previous);
     const workspace = session.workspace;
     this.assertWorkspaceIdle(workspace, true);
     if (workspace.connection === "connecting") throw failure("browser_connecting", "Chrome is waiting for connection approval.");
@@ -390,14 +418,14 @@ export class BrowserUseRuntime {
     if (run.workspaceGeneration !== undefined && run.workspaceGeneration !== session.workspace.generation)
       return Promise.reject(failure("browser_run_unavailable", "The Chrome connection changed after this task began. Start a new task and observe its current pages."));
     const raw = client.request(method, params, pageId, signal); run.pending.add(raw);
-    const finished = () => {
+    const finished = (error?: unknown) => {
       run.pending.delete(raw);
-      if (signal.aborted && client.drain) {
+      if ((signal.aborted || record(error).code === "browser_action_timeout") && client.drain) {
         const drain = client.drain(); run.pending.add(drain);
         void drain.then(() => run.pending.delete(drain), () => run.pending.delete(drain));
       }
     };
-    void raw.then(finished, finished);
+    void raw.then(() => finished(), finished);
     return this.waitForRun(raw, run, signal);
   }
   releaseRun(runId: string) {
@@ -420,6 +448,7 @@ export class BrowserUseRuntime {
         const drain = Promise.allSettled(pending).then(async () => { await client?.drain?.(); }).then(() => {
           if (workspace.generation !== generation || workspace.owner?.runId !== runId) return;
           workspace.owner = undefined; workspace.drain = undefined;
+          this.pruneIdleSessions(run.chatId);
           this.changedWorkspace(workspace); this.settingsChanged();
         });
         workspace.drain = drain; void drain.catch(() => undefined);
@@ -427,6 +456,7 @@ export class BrowserUseRuntime {
     }
     const session = this.sessions.get(run.chatId);
     if (session?.connectionRequest?.runId === runId) session.connectionRequest = undefined;
+    this.pruneIdleSessions(run.chatId);
     if (workspace) this.changedWorkspace(workspace); this.settingsChanged();
   }
   async takeover(chatId: string) {
@@ -434,10 +464,10 @@ export class BrowserUseRuntime {
     const lease = workspace.owner, owner = lease ? this.runs.get(lease.runId) : undefined;
     const runs = lease ? (owner ? [owner] : []) : [...this.runs.values()].filter(run => run.chatId === chatId && !run.controller.signal.aborted);
     for (const run of runs) run.controller.abort();
-    // A remembered workspace can serve other Chats. Taking over stops its task and drains in-flight
-    // requests through releaseRun, but must not drop the connection those Chats still use.
-    const usedByOtherChats = [...this.sessions.values()].some(other => other.chatId !== chatId && other.workspace === workspace);
-    if (!usedByOtherChats) await this.disconnectWorkspace(workspace);
+    // Takeover revokes the task and drains its requests; disconnect is a separate
+    // explicit recovery action. Metadata eviction must not change this behavior.
+    const hasWaitingRun = [...this.runs.values()].some(run => run.workspaceId === workspace.id && !run.controller.signal.aborted);
+    if (workspace.connecting && !hasWaitingRun) await this.disconnectWorkspace(workspace);
     const results = await Promise.allSettled(runs.map(async run => {
       const response = await this.options.stopRun?.(run.runId, run.agentKey);
       if (record(response).ok === false) throw failure("run_interrupt_failed", "The task could not be interrupted.");
@@ -575,11 +605,12 @@ export class BrowserUseRuntime {
     const promise = Promise.resolve().then(async () => {
       try {
         if (signal.aborted) throw failure("browser_run_unavailable", "The browser task was stopped.");
-        const health = record(await Promise.race([this.runRequest(session, run, "state", {}, undefined, signal), interrupted]));
+        const health = record(await Promise.race([this.runRequest(session, run, "health", {}, undefined, signal), interrupted]));
         if (signal.aborted || this.runs.get(run.runId) !== run || this.sessions.get(run.chatId) !== session)
           throw failure("browser_run_unavailable", "The browser task was stopped.");
         if (session.workspace.client !== client) throw failure("browser_connection_changed", "Chrome's connection changed before the task began.");
-        if (health.connected !== false) { run.checkedClient = client; return true; }
+        if (health.connected === true) { run.checkedClient = client; return true; }
+        if (health.connected !== false) throw failure("browser_connection_health_invalid", "Chrome did not provide a valid connection state.");
         this.retireConnection(session, client);
         run.observations.clear();
         return false;

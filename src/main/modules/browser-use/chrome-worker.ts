@@ -52,7 +52,7 @@ export function chromeWorkerResponseError(error: unknown, method: ChromeWorkerMe
 
 /** The fixture uses the same transport with an owned, isolated Chrome factory; production uses the extension factory. */
 export function startChromeWorker(engine: ChromeWorkerEngine): void {
-  const methods = new Set<ChromeWorkerMethod>(["connect", "list", "state", "open", "navigate", "back", "reload", "activate", "close", "observe", "click", "interact", "dialog", "upload", "downloads", "screenshot", "disconnect", "cancel", "awcp-manual", "awcp-invoke", "awcp-release-run", "awcp-refresh", "cancel-request", "release-transfers"]);
+  const methods = new Set<ChromeWorkerMethod>(["connect", "list", "state", "open", "navigate", "back", "reload", "activate", "close", "observe", "click", "interact", "dialog", "upload", "downloads", "screenshot", "disconnect", "cancel", "awcp-manual", "awcp-invoke", "awcp-release-run", "awcp-refresh", "cancel-request", "release-transfers", "health"]);
   const utilityPort = (process as typeof process & { parentPort?: { on(event: "message", callback: (event: { data: unknown }) => void): void; postMessage(message: unknown): void } }).parentPort;
 
   function reply(value: ChromeWorkerReply): void {
@@ -71,7 +71,7 @@ export function startChromeWorker(engine: ChromeWorkerEngine): void {
       reply({ id: request.id, error: { code: "invalid_params", message: "Browser parameters must be an object" } });
       return;
     }
-    try { reply({ id: request.id, result: await engine.request(request) }); }
+    try { reply({ id: request.id, result: await engine.request(request, () => reply({ id: request.id, started: true })) }); }
     catch (error) {
       reply({ id: request.id, error: chromeWorkerResponseError(error, request.method) });
     }

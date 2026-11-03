@@ -19,6 +19,28 @@ type ControllerOptions = {
 };
 export type ChromeControllerFactory = (options: ControllerOptions) => Promise<ChromeWorkerController>;
 
+/** Local benchmark/diagnostic counters only; no page identity, field values or snapshots. */
+export type ChromeObservationMetrics = {
+  snapshotMs: number;
+  stateMs: number;
+  viewportMs: number;
+  metadataMs: number;
+  projectionMs: number;
+  totalMs: number;
+  referenceCount: number;
+  fieldCount: number;
+  fieldReadCount: number;
+  fieldResolvedCount: number;
+  completed: number;
+};
+type ObservationPhase = "snapshotMs" | "stateMs" | "viewportMs" | "metadataMs" | "projectionMs";
+type ObservationMeasurement = {
+  values: ChromeObservationMetrics;
+  started: number;
+  active?: { phase: ObservationPhase; started: number };
+};
+export type ChromeWorkerEngineOptions = { onObservationMetrics?: (metrics: Readonly<ChromeObservationMetrics>) => void };
+
 export const chromeObservationFailureMessages = {
   observation_snapshot_failed: "Chrome could not capture the page's semantic snapshot.",
   observation_state_failed: "Chrome could not read the selected page's state.",
@@ -41,7 +63,7 @@ function defaultFactory(options: ControllerOptions): Promise<ChromeWorkerControl
   const packaged = path.join(__dirname, "browser-use-runtime", "playwright-core", "lib", "coreBundle.js");
   const coreBundle = fs.existsSync(packaged) ? packaged : path.join(path.dirname(runtimeRequire.resolve("playwright-core/package.json")), "lib", "coreBundle.js");
   const api = runtimeRequire(coreBundle).__desktopBrowserUse as { patchVersion?: number; create?: ChromeControllerFactory } | undefined;
-  if (api?.patchVersion !== 1 || !api.create) throw chromeWorkerError("browser_runtime_unavailable", "The reviewed Chrome runtime patch is missing. Rebuild Desktop before connecting.");
+  if (api?.patchVersion !== 2 || !api.create) throw chromeWorkerError("browser_runtime_unavailable", "The reviewed Chrome runtime patch is missing. Rebuild Desktop before connecting.");
   return api.create(options);
 }
 
@@ -68,7 +90,7 @@ export class ChromeWorkerEngine {
   private controller?: ChromeWorkerController;
   private readonly abort = new AbortController();
   private queue: Promise<unknown> = Promise.resolve();
-  private readonly requests = new Map<string, { cancelled: boolean; running: boolean }>();
+  private readonly requests = new Map<string, { cancelled: boolean; running: boolean; cancelQueued(): void }>();
   private closed = false;
   private transferEpoch = 0;
   private outputDir?: string;
@@ -83,13 +105,25 @@ export class ChromeWorkerEngine {
   /** A timed-out pointer input whose effects are unknown; only this page waits for it, never the connection. */
   private readonly unsettledInput = new Map<string, Promise<void>>();
 
-  constructor(private readonly factory: ChromeControllerFactory = defaultFactory) {}
+  constructor(private readonly factory: ChromeControllerFactory = defaultFactory, private readonly options: ChromeWorkerEngineOptions = {}) {}
 
-  request(request: ChromeWorkerRequest): Promise<unknown> {
-    if (request.method === "cancel" || request.method === "disconnect") return this.disconnect();
+  request(request: ChromeWorkerRequest, onStarted?: () => void): Promise<unknown> {
+    if (request.method === "health") {
+      if (Object.keys(request.params ?? {}).length || request.pageId)
+        return Promise.reject(chromeWorkerError("invalid_params", "Worker health takes no page or parameters."));
+      onStarted?.();
+      // This cached transport state must remain available while page work occupies the queue.
+      const connected = !this.closed && !!this.controller?.browserContext.browser()?.isConnected();
+      return Promise.resolve({ healthy: true, connected });
+    }
+    if (request.method === "cancel" || request.method === "disconnect") {
+      onStarted?.();
+      return this.disconnect();
+    }
     if (request.method === "release-transfers") {
       if (Object.keys(request.params ?? {}).length || request.pageId)
         return Promise.reject(chromeWorkerError("invalid_params", "Transfer release takes no page or parameters."));
+      onStarted?.();
       this.transferEpoch++;
       // Revoke immediately, even while a click is running; reply only after the original response drains.
       return this.transfers.endRun().then(() => ({ released: true }));
@@ -98,29 +132,40 @@ export class ChromeWorkerEngine {
       const params = request.params;
       if (!params || Object.keys(params).join(",") !== "requestId" || typeof params.requestId !== "string" || !params.requestId || params.requestId.length > 128)
         return Promise.reject(chromeWorkerError("invalid_params", "A private pending request identity is required."));
+      onStarted?.();
       const entry = this.requests.get(params.requestId);
-      if (entry && !entry.running) entry.cancelled = true;
+      if (entry && !entry.running) {
+        entry.cancelled = true;
+        entry.cancelQueued();
+      }
       return Promise.resolve({ cancelled: !!entry && !entry.running, running: entry?.running === true });
     }
-    if (request.method === "awcp-release-run") return this.awcp.releaseRun(request.params);
-    if (request.method === "awcp-refresh") return this.awcp.refresh(request.params);
+    if (request.method === "awcp-release-run") { onStarted?.(); return this.awcp.releaseRun(request.params); }
+    if (request.method === "awcp-refresh") { onStarted?.(); return this.awcp.refresh(request.params); }
     if (this.requests.has(request.id)) return Promise.reject(chromeWorkerError("invalid_params", "The private request identity is already pending."));
     let awcpRun: ChromeAwcpRunLease | undefined;
     try {
       if (request.method === "awcp-manual" || request.method === "awcp-invoke") awcpRun = this.awcp.retainRun(request.params);
     } catch (error) { return Promise.reject(error); }
-    const entry = { cancelled: false, running: false }; this.requests.set(request.id, entry);
+    let cancelQueued!: () => void;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancelQueued = () => reject(chromeWorkerError("cancelled", "The browser request was cancelled before execution."));
+    });
+    const entry = { cancelled: false, running: false, cancelQueued };
+    this.requests.set(request.id, entry);
     const awcpGeneration = this.awcp.generation();
     const transferEpoch = this.transferEpoch;
     const result = this.queue.then(() => {
       if (entry.cancelled) throw chromeWorkerError("cancelled", "The browser request was cancelled before execution.");
-      entry.running = true; return this.dispatch(request, awcpGeneration, awcpRun, transferEpoch);
+      entry.running = true;
+      onStarted?.();
+      return this.dispatch(request, awcpGeneration, awcpRun, transferEpoch);
     }).finally(() => {
       if (this.requests.get(request.id) === entry) this.requests.delete(request.id);
       if (awcpRun) this.awcp.releaseRequest(awcpRun);
     });
     this.queue = result.catch(() => undefined);
-    return result;
+    return Promise.race([result, cancelled]);
   }
 
   async disconnect(): Promise<{ connected: false; pages: [] }> {
@@ -345,20 +390,46 @@ export class ChromeWorkerEngine {
     const timeout = new AbortController();
     const signal = AbortSignal.any([this.abort.signal, timeout.signal]);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const work = this.captureObservation(controller, tab, params, epoch, signal).catch(error => {
+    const metrics: ObservationMeasurement | undefined = this.options.onObservationMetrics ? {
+      started: performance.now(),
+      values: { snapshotMs: 0, stateMs: 0, viewportMs: 0, metadataMs: 0, projectionMs: 0,
+        totalMs: 0, referenceCount: 0, fieldCount: 0, fieldReadCount: 0, fieldResolvedCount: 0, completed: 0 },
+    } : undefined;
+    const work = this.captureObservation(controller, tab, params, epoch, signal, metrics).catch(error => {
       if (!signal.aborted && !this.closed && this.pendingModal(tab))
-        return this.captureObservation(controller, tab, params, this.invalidate(tab.desktopPageId), signal);
+        return this.captureObservation(controller, tab, params, this.invalidate(tab.desktopPageId), signal, metrics);
       throw error;
     });
     // A timed-out read cannot publish a late observation or overwrite a later reference map.
     try {
-      return await Promise.race([work, new Promise<never>((_resolve, reject) => {
+      const observation = await Promise.race([work, new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => { timeout.abort(); reject(chromeWorkerError("observation_timeout", "The page observation was not ready in time.")); }, timeoutMs);
       })]);
-    } finally { clearTimeout(timer); }
+      if (metrics) metrics.values.completed = 1;
+      return observation;
+    } finally {
+      clearTimeout(timer);
+      if (metrics) {
+        const now = performance.now(), values = { ...metrics.values, totalMs: now - metrics.started };
+        if (metrics.active) values[metrics.active.phase] += now - metrics.active.started;
+        try { this.options.onObservationMetrics?.(Object.freeze(values)); }
+        catch { /* Diagnostics cannot change the observation or action result. */ }
+      }
+    }
   }
 
-  private async captureObservation(controller: ChromeWorkerController, tab: ChromeWorkerTab, params: Record<string, unknown>, epoch: number, signal: AbortSignal): Promise<ChromeWorkerObservation> {
+  private async measureObservation<T>(metrics: ObservationMeasurement | undefined, phase: ObservationPhase, read: () => T | Promise<T>): Promise<T> {
+    if (!metrics) return read();
+    const active = { phase, started: performance.now() };
+    metrics.active = active;
+    try { return await read(); }
+    finally {
+      metrics.values[phase] += performance.now() - active.started;
+      if (metrics.active === active) metrics.active = undefined;
+    }
+  }
+
+  private async captureObservation(controller: ChromeWorkerController, tab: ChromeWorkerTab, params: Record<string, unknown>, epoch: number, signal: AbortSignal, metrics?: ObservationMeasurement): Promise<ChromeWorkerObservation> {
     const options = chromeObserveOptions(params);
     const live = () => {
       if (this.abort.signal.aborted || this.closed) throw chromeWorkerError("cancelled", "Browser control has been released");
@@ -368,30 +439,40 @@ export class ChromeWorkerEngine {
     let modals = this.modalState(tab);
     let snapshot: unknown = [];
     if (!modals.dialogs.length && !modals.fileChoosers.length) {
-      const captured = await this.observationStage("observation_snapshot_failed", () => tab.captureSnapshot(undefined, options.depth, options.viewportOnly, undefined, "json", false));
+      const captured = await this.measureObservation(metrics, "snapshotMs", () =>
+        this.observationStage("observation_snapshot_failed", () => tab.captureSnapshot(undefined, options.depth, options.viewportOnly, undefined, "json", false)));
       live(); modals = this.modalState(tab);
       if (!modals.dialogs.length && !modals.fileChoosers.length) {
         if (!Array.isArray(captured.ariaSnapshotJSON)) throw chromeWorkerError("observation_unavailable", "The page did not provide an observation.");
         snapshot = captured.ariaSnapshotJSON;
       }
     }
-    const state = await this.observationStage("observation_state_failed", () => this.describe(controller, tab)); live();
+    const state = await this.measureObservation(metrics, "stateMs", () =>
+      this.observationStage("observation_state_failed", () => this.describe(controller, tab)));
+    live();
     let viewportTruncated = false;
     if (options.viewportOnly && !modals.dialogs.length && !modals.fileChoosers.length) {
-      const viewport = await this.observationStage("observation_viewport_failed", () => this.readViewport(tab, signal));
+      const viewport = await this.measureObservation(metrics, "viewportMs", () =>
+        this.observationStage("observation_viewport_failed", () => this.readViewport(tab, signal)));
       live();
-      const projected = await this.observationStage("observation_projection_failed", () => viewportChromeSnapshot(snapshot, viewport.width, viewport.height));
+      const projected = await this.measureObservation(metrics, "projectionMs", () =>
+        this.observationStage("observation_projection_failed", () => viewportChromeSnapshot(snapshot, viewport.width, viewport.height)));
       snapshot = projected.nodes; viewportTruncated = projected.truncated;
     }
-    const scan = await this.observationStage("observation_projection_failed", () => scanChromeSnapshot(snapshot)); scan.truncated ||= viewportTruncated;
+    const scan = await this.measureObservation(metrics, "projectionMs", () =>
+      this.observationStage("observation_projection_failed", () => scanChromeSnapshot(snapshot)));
+    scan.truncated ||= viewportTruncated;
+    if (metrics) metrics.values.referenceCount = scan.entries.filter(entry => typeof entry.node !== "string" && typeof entry.node.ref === "string").length;
     const fields = new Map<string, ChromeFieldMetadata>();
     const editable = scan.entries.flatMap(entry => typeof entry.node !== "string" && typeof entry.node.ref === "string"
       && ["textbox", "searchbox", "combobox", "listbox", "spinbutton", "checkbox", "radio", "button"].includes(entry.node.role ?? "") ? [entry.node.ref] : []);
+    if (metrics) metrics.values.fieldCount = editable.length;
     for (const ref of editable) fields.set(ref, { sensitive: true, truncated: true });
     let index = 0;
-    await Promise.all(Array.from({ length: Math.min(16, editable.length) }, async () => {
+    await this.measureObservation(metrics, "metadataMs", () => Promise.all(Array.from({ length: Math.min(16, editable.length) }, async () => {
       while (index < Math.min(256, editable.length)) {
         const ref = editable[index++]; live();
+        if (metrics) metrics.values.fieldReadCount++;
         try {
           const { locator } = await tab.targetLocator({ target: ref });
           live();
@@ -429,13 +510,15 @@ export class ChromeWorkerEngine {
             return metadata;
           }, undefined, { timeout: 750, signal });
           live(); fields.set(ref, field);
+          if (metrics) metrics.values.fieldResolvedCount++;
         } catch { live(); /* Unknown editable values remain masked. */ }
       }
-    }));
+    })));
     live();
     const observationId = randomUUID();
-    const projected = await this.observationStage("observation_projection_failed", () => projectChromeObservation({ scan, fields, state, options, observationId,
-      dialogs: modals.dialogs, fileChoosers: modals.fileChoosers, downloads: this.transfers.list(tab.desktopPageId), redactions: this.knownSecrets.get(tab.desktopPageId) }));
+    const projected = await this.measureObservation(metrics, "projectionMs", () =>
+      this.observationStage("observation_projection_failed", () => projectChromeObservation({ scan, fields, state, options, observationId,
+        dialogs: modals.dialogs, fileChoosers: modals.fileChoosers, downloads: this.transfers.list(tab.desktopPageId), redactions: this.knownSecrets.get(tab.desktopPageId) })));
     live();
     this.observations.set(tab.desktopPageId, { id: observationId, refs: projected.refs, dialogs: modals.dialogRefs, choosers: modals.chooserRefs });
     this.knownSecrets.set(tab.desktopPageId, projected.secrets);

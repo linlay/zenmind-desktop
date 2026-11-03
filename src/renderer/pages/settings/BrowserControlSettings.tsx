@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Input, Select, Spin, Switch } from "antd";
-import type { BrowserUseBackend, BrowserUseSettingsRequest, BrowserUseSettingsState } from "../../../shared/browser-use";
+import { Button, Input, Spin, Switch } from "antd";
+import type { BrowserUseSettingsRequest, BrowserUseSettingsState } from "../../../shared/browser-use";
 import { useI18n } from "../../i18n/useI18n";
 import "./BrowserControlSettings.css";
 
@@ -8,7 +8,6 @@ import "./BrowserControlSettings.css";
 export function BrowserControlSettings() {
   const { t } = useI18n();
   const [state, setState] = useState<BrowserUseSettingsState>();
-  const [defaultBackend, setDefaultBackend] = useState<BrowserUseBackend>("workpanel");
   const [remember, setRemember] = useState(false);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,7 +21,6 @@ export function BrowserControlSettings() {
   const receive = useCallback((next: BrowserUseSettingsState, resetDraft = false) => {
     setState(next);
     if (resetDraft || !dirty.current) {
-      setDefaultBackend(next.defaultBackend);
       setRemember(next.rememberChromeConnection);
       setToken("");
       dirty.current = false;
@@ -57,10 +55,15 @@ export function BrowserControlSettings() {
     const unsubscribe = window.electronAPI.browserUse.onSettingsChanged(next => {
       if (alive.current) receive(next);
     });
-    return () => { alive.current = false; operation.current++; locked.current = false; };
+    return () => {
+      alive.current = false;
+      operation.current++;
+      locked.current = false;
+      unsubscribe();
+    };
   }, [perform, receive]);
 
-  const changed = Boolean(state && (defaultBackend !== state.defaultBackend || remember !== state.rememberChromeConnection || token.trim()));
+  const changed = Boolean(state && (remember !== state.rememberChromeConnection || token.trim()));
   const active = Boolean(state?.activeRuns);
   const error = errorCode === "browser_workspace_draining"
     ? t("browserUse.workspaceDraining")
@@ -76,7 +79,7 @@ export function BrowserControlSettings() {
 
   function edit() { dirty.current = true; setErrorCode(""); setNotice(""); }
   function save() {
-    void perform({ action: "save", defaultBackend, rememberChromeConnection: remember,
+    void perform({ action: "save", defaultBackend: "workpanel", rememberChromeConnection: remember,
       ...(remember && token.trim() ? { extensionToken: token.trim() } : {}) });
   }
 
@@ -85,13 +88,7 @@ export function BrowserControlSettings() {
     {notice && <p className="browser-use-settings-notice" role="status">{t(`settings.browser.${notice}`)}</p>}
     {!state && busy && <div className="browser-use-settings-loading" role="status"><Spin size="small" />{t("common.loading")}</div>}
     <div className="settings-appearance-panel">
-      <div className="settings-appearance-row">
-        <div className="settings-appearance-row-copy"><strong id="browser-default-label">{t("settings.browser.defaultBrowser")}</strong><span>{t("settings.browser.defaultHelp")}</span></div>
-        <Select aria-labelledby="browser-default-label" className="browser-use-default-select" value={state ? defaultBackend : undefined} disabled={busy || !state}
-          placeholder={t(busy ? "common.loading" : "settings.browser.statusUnavailable")}
-          options={[{ value: "workpanel", label: t("browserUse.workpanel") }, { value: "chrome", label: "Chrome" }]}
-          onChange={value => { edit(); setDefaultBackend(value); }} />
-      </div>
+      <p className="browser-use-help">{t("browserUse.taskTargetHelp")}</p>
       <div className="settings-appearance-row">
         <div className="settings-appearance-row-copy"><strong id="browser-remember-label">{t("settings.browser.remember")}</strong><span>{t("settings.browser.rememberHelp")}</span></div>
         <Switch aria-labelledby="browser-remember-label" checked={remember}

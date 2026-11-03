@@ -46,7 +46,7 @@ function harness(options = {}) {
             if (options.operation) { const value = await options.operation({ method, params, pageId, client, index }); if (value !== undefined) return value; }
             if (method === "connect") return { connected: true, pages: this.pages };
             if (method === "list") return this.pages;
-            if (method === "state") return { connected: true, pages: this.pages };
+            if (method === "state" || method === "health") return { connected: true, pages: this.pages };
             if (method === "open") { const page = { pageId: `opened-${index}-${++this.serial}`, url: params.url, title: "New page" }; this.pages.push(page); return page; }
             if (method === "observe") return { observationId: `fresh-${++this.serial}`, text: "Page", elements: [{ ref: "e1", role: "button", name: "Go", tag: "button" }],
               dialogs: [{ dialogId: "modal-a", type: "confirm", message: "Confirm" }], fileChoosers: [{ chooserId: "chooser-a", multiple: false }], downloads: [{ downloadId: "download-a", fileName: "owned.txt", status: "complete" }] };
@@ -152,7 +152,7 @@ test("a draining private workspace survives promotion and a new Chat attaching d
 
 test("state changes reach all attached Chats and settings refresh runs once per physical workspace", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); const a = source(); await registerBrowserTask(f.runtime, a); await f.cdp(a, "Surface.list"); await releaseBrowserTask(f.runtime, a.runId);
-  f.runtime.state("chat-b"); const start = f.events.length; await registerBrowserTask(f.runtime, a);
+  f.runtime.select("chat-b", "chrome"); const start = f.events.length; await registerBrowserTask(f.runtime, a);
   await f.cdp(a, "Surface.openChrome", undefined, { url: "https://fixture.test/new" });
   const changes = f.events.slice(start); assert.equal(changes.some(state => state.chatId === "chat-b" && state.pages.some(page => page.url.endsWith("/new"))), true);
   f.runtime.refreshWebsiteBridges(); await flush(); assert.equal(f.clients[0].calls.filter(call => call.method === "awcp-refresh").length, 1);
@@ -160,7 +160,7 @@ test("state changes reach all attached Chats and settings refresh runs once per 
 
 test("workspace takeover targets the actual owner even when invoked from a different Chat", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); const a = source("chat-a", "owner", "root-team"); await registerBrowserTask(f.runtime, a); await f.cdp(a, "Surface.list");
-  f.runtime.state("chat-b"); await f.runtime.takeover("chat-b");
+  f.runtime.select("chat-b", "chrome"); await f.runtime.takeover("chat-b");
   assert.deepEqual(f.stopped, [{ runId: "owner", agentKey: "root-team" }]);
   // The remembered workspace still serves chat-a and chat-b; takeover stops the task, not their connection.
   assert.equal(f.clients[0].killed, false);
@@ -172,21 +172,70 @@ test("workspace takeover targets the actual owner even when invoked from a diffe
   assert.equal(f.clients.length, 1);
 });
 
-test("takeover of a Chat-private workspace still disconnects it", async t => {
+test("a backend deadline retains the physical drain even when the Run signal was not cancelled", async t => {
+  const f = harness(); t.after(() => f.runtime.dispose());
+  const identity = source("chat-a", "timeout-owner");
+  await registerBrowserTask(f.runtime, identity, "chrome");
+  const page = (await f.cdp(identity, "Surface.list")).result.surfaces[0];
+  const originalRequest = f.clients[0].request.bind(f.clients[0]);
+  const drain = deferred();
+  f.clients[0].request = (method, ...args) => method === "observe"
+    ? Promise.reject(Object.assign(new Error("fixture execution deadline"), { code: "browser_action_timeout" }))
+    : originalRequest(method, ...args);
+  f.clients[0].drain = () => drain.promise;
+  await assert.rejects(f.cdp(identity, "Surface.observe", page.surfaceId), { code: "browser_action_timeout" });
+  assert.equal(f.runtime.runs.get(identity.runId).controller.signal.aborted, false);
+  assert.ok(f.runtime.runs.get(identity.runId).pending.size > 0);
+  const healthReads = f.clients[0].calls.filter(call => call.method === "health").length;
+  await f.runtime.refreshState("chat-a");
+  assert.equal(f.clients[0].calls.filter(call => call.method === "health").length, healthReads);
+  f.runtime.releaseRun(identity.runId);
+  assert.equal(f.runtime.state("chat-a").workspaceOwner.draining, true);
+  drain.resolve();
+  await f.runtime.workspaces.get(f.runtime.state("chat-a").workspaceId).drain;
+  assert.equal(f.runtime.state("chat-a").workspaceOwner, undefined);
+  assert.equal(f.clients[0].killed, false);
+});
+
+test("takeover keeps a private connection and explicit disconnect releases it", async t => {
   const f = harness({ preferences: { rememberChromeConnection: false } }); t.after(() => f.runtime.dispose());
   await f.runtime.connect("chat-a"); await f.runtime.takeover("chat-a");
+  assert.equal(f.clients[0].killed, false); assert.equal(f.runtime.state("chat-a").connection, "connected");
+  await f.runtime.disconnect("chat-a");
   assert.equal(f.clients[0].killed, true); assert.equal(f.runtime.state("chat-a").connection, "disconnected");
 });
 
 test("a late old exit after explicit disconnect cannot clear the replacement workspace", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); await f.runtime.connect("chat-a"); const old = f.clients[0];
-  await f.runtime.disconnect("chat-a"); await f.runtime.connect("chat-a"); const b = f.runtime.state("chat-b"); const pages = b.pages;
+  await f.runtime.disconnect("chat-a"); await f.runtime.connect("chat-a"); f.runtime.select("chat-b", "chrome"); const b = f.runtime.state("chat-b"); const pages = b.pages;
   old.onExit(); assert.equal(f.runtime.state("chat-b").connection, "connected"); assert.deepEqual(f.runtime.state("chat-b").pages, pages); assert.equal(f.clients[1].killed, false);
+});
+
+test("page metadata failures do not retire a healthy connection, and Run preflight uses priority health", async t => {
+  let failList = false;
+  const f = harness({ operation: ({ method }) => {
+    if (method === "state") throw new Error("Page state must not be used as a transport probe");
+    if (method === "list" && failList) throw Object.assign(new Error("Slow fixture page metadata"), { code: "browser_action_timeout" });
+  } });
+  t.after(() => f.runtime.dispose());
+  await f.runtime.connect("chat-a");
+  const before = f.runtime.state("chat-a");
+  failList = true;
+  const status = await f.runtime.refreshState("chat-a");
+  assert.equal(status.connection, "connected");
+  assert.deepEqual(status.pages, before.pages);
+  assert.equal(f.clients[0].killed, false);
+  failList = false;
+  const next = source("chat-a", "fresh-run");
+  await registerBrowserTask(f.runtime, next, "chrome");
+  assert.deepEqual((await f.cdp(next, "Surface.list")).result.surfaces, before.pages);
+  assert.equal(f.clients.length, 1);
+  assert.equal(f.clients[0].calls.some(call => call.method === "state"), false);
 });
 
 test("a delayed UI health result cannot disconnect a Run that started while the UI was waiting", async t => {
   const gate = deferred(); let hold = false;
-  const f = harness({ operation: ({ method }) => { if (method === "state" && hold) { hold = false; return gate.promise; } } });
+  const f = harness({ operation: ({ method }) => { if (method === "health" && hold) { hold = false; return gate.promise; } } });
   t.after(() => f.runtime.dispose()); await f.runtime.connect("chat-a"); hold = true;
   const refreshing = f.runtime.refreshState("chat-a"); await flush();
   const b = source("chat-b", "run-b"); await registerBrowserTask(f.runtime, b); await f.cdp(b, "Surface.list"); f.runtime.releaseRun(b.runId);

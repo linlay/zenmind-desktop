@@ -114,7 +114,7 @@ test("new Chat state, Run preparation and status broadcasts never initialize OS 
       createClient: () => { throw new Error("metadata must not start Chrome"); },
     });
     t.after(() => runtime.dispose());
-    assert.equal(runtime.state("new-chat").backend, "chrome");
+    assert.equal(runtime.state("new-chat").backend, "workpanel");
     runtime.prepareRun({ chatId: "new-chat", runId: "run-1", agentKey: "cutej" });
     runtime.registerRun({ chatId: "new-chat", runId: "run-1", agentKey: "cutej" });
     runtime.releaseRun("run-1");
@@ -180,9 +180,11 @@ test("authorization survives reopening as OS ciphertext and never appears in pub
     assert.equal(value.includes("PLAYWRIGHT_MCP_EXTENSION_TOKEN"), false);
   }
   assert.equal(f.files().length, 1);
-  assert.equal(fs.statSync(f.settingsFile).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(f.credentialRoot).mode & 0o777, 0o700);
-  assert.equal(fs.statSync(path.join(f.credentialRoot, f.files()[0])).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(f.settingsFile).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(f.credentialRoot).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(path.join(f.credentialRoot, f.files()[0])).mode & 0o777, 0o600);
+  }
 });
 
 test("token normalization accepts only bounded URL-safe values and known quoted assignment syntax", async t => {
@@ -322,7 +324,15 @@ test("symlinked metadata, credential files and managed parents cannot escape the
   const target = path.join(external, "original.json");
   fs.writeFileSync(target, "untouched");
   fs.mkdirSync(f.configRoot, { recursive: true });
-  fs.symlinkSync(target, f.settingsFile);
+  try {
+    fs.symlinkSync(target, f.settingsFile);
+  } catch (error) {
+    if (process.platform === "win32" && ["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
+      t.skip("Windows symlink creation requires Developer Mode or an elevated test process");
+      return;
+    }
+    throw error;
+  }
   await rejectsSafely(() => f.store.update({ defaultBackend: "chrome" }), "browser_settings_unavailable", f);
   await rejectsSafely(() => f.store.forget(), "browser_settings_unavailable", f);
   assert.equal(fs.readFileSync(target, "utf8"), "untouched");

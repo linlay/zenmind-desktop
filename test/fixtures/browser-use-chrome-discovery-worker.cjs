@@ -32,6 +32,16 @@ childProcess.spawn = (executable, args, options) => {
     profileDirectoryArg: args.some(value => String(value).startsWith('--profile-directory=')),
     tokenAbsent: !url.searchParams.has('token'),
   }));
+  if (config.headlessEndpoint) {
+    // Headless CfT does not forward a second open-URL process. Redirect only this
+    // OS launch into the existing fixture browser, after recording the unchanged
+    // production arguments. The factory, profile discovery, relay and approval UI stay real.
+    void fetch(config.headlessEndpoint + '/json/new?' + encodeURIComponent(connect), { method: 'PUT' })
+      .catch(() => fs.writeFileSync(path.join(__dirname, 'fixture-worker-error.json'), JSON.stringify({
+        name: 'FixtureOpenError', message: 'The isolated headless browser could not open its approval target.',
+      })));
+    return { unref() {} };
+  }
   // Redirect the production Chrome open-URL process to our already running owned CfT profile.
   const injected = [`--user-data-dir=${config.profile}`];
   if (process.platform === 'darwin') injected.unshift('--use-mock-keychain');

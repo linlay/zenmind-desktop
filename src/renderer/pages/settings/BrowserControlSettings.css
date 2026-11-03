@@ -1,5 +1,4 @@
 .browser-control-settings { display: flex; flex-direction: column; gap: 12px; }
-.browser-use-default-select { flex: 0 0 150px; }
 .browser-use-authorization-row { align-items: flex-start; flex-wrap: wrap; }
 .browser-use-authorization-row .settings-appearance-row-copy { flex: 1 1 260px; }
 .browser-use-authorization-input { flex: 1 1 260px; max-width: 420px; }

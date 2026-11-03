@@ -5,12 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
-import { patchBrowserUseUpstream, supportedPlaywrightCore } from '../scripts/browser-use-patch.mjs';
+import { patchBrowserUseUpstream, supportedPlaywrightCore, browserUseUpstream } from '../scripts/browser-use-patch.mjs';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, '..');
 patchBrowserUseUpstream(root);
 const adapterSource = fs.readFileSync(path.join(root, 'scripts/browser-use-upstream-adapter.cjs'), 'utf8');
+const coreDir = path.dirname(require.resolve('playwright-core/package.json'));
+const originalCore = fs.readFileSync(path.join(coreDir, 'lib/coreBundle.js.desktop-original'), 'utf8');
 
 function connection(profile, options = {}) {
   const calls = [];
@@ -59,20 +61,23 @@ test('cancelling while the user approves the connection stops the relay', async 
   assert.equal(f.calls.some(call => call[0] === 'connected'), false);
 });
 
-function fixturePackage(t, version, source) {
+function fixturePackage(t, version = browserUseUpstream.core, source = originalCore) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-use-integrity-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.writeFileSync(path.join(directory, 'package.json'), '{"name":"fixture"}');
   const target = path.join(directory, 'node_modules/playwright-core');
-  fs.mkdirSync(path.join(target, 'lib'), { recursive: true });
-  fs.writeFileSync(path.join(target, 'package.json'), JSON.stringify({ name: 'playwright-core', version }));
+  fs.cpSync(coreDir, target, { recursive: true });
+  const manifestFile = path.join(target, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, version }));
   fs.writeFileSync(path.join(target, 'lib/coreBundle.js'), source);
-  return { directory, filename: path.join(target, 'lib/coreBundle.js') };
+  fs.rmSync(path.join(target, 'lib/coreBundle.js.desktop-original'));
+  return { directory, target, filename: path.join(target, 'lib/coreBundle.js') };
 }
 
-test('the adapter accepts only stable releases in the supported major line', () => {
-  for (const version of ['1.64.1', '1.64.2', '1.65.0', '1.99.10']) assert.equal(supportedPlaywrightCore(version), true, version);
-  for (const version of ['1.64.0', '1.63.9', '2.0.0', '1.65.0-alpha-2026-11-03', '1.64.1-beta-1793483565000', '1.64.0-alpha-1790635538000'])
+test('the adapter accepts the reviewed stable release only, including rejecting unreviewed patch releases', () => {
+  assert.equal(supportedPlaywrightCore('1.64.1'), true);
+  for (const version of ['1.64.0', '1.64.2', '1.65.0', '1.99.10', '1.63.9', '2.0.0', '1.65.0-alpha-2026-11-03', '1.64.1-beta-1793483565000', '1.64.0-alpha-1790635538000'])
     assert.equal(supportedPlaywrightCore(version), false, version);
 });
 
@@ -82,9 +87,57 @@ test('a prerelease is rejected before its bundle is modified', t => {
   assert.equal(fs.readFileSync(filename, 'utf8'), '"use strict";\n');
 });
 
-test('a stable release missing an upstream binding fails the build instead of being packaged', t => {
-  const { directory } = fixturePackage(t, '1.70.0', '"use strict";\n');
-  assert.throws(() => patchBrowserUseUpstream(directory), /lacks what Browser Use needs \(.*CDPRelayServer/);
+test('an unreviewed stable release is rejected before its bundle is modified', t => {
+  const { directory, filename } = fixturePackage(t, '1.70.0', '"use strict";\n');
+  assert.throws(() => patchBrowserUseUpstream(directory), /reviewed stable playwright-core/);
+  assert.equal(fs.readFileSync(filename, 'utf8'), '"use strict";\n');
+});
+
+test('a changed original bundle is rejected before it can execute or create an accepted backup', t => {
+  const changed = originalCore + '\nthrow new Error("unreviewed source executed");\n';
+  const { directory, filename } = fixturePackage(t, undefined, changed);
+  assert.throws(() => patchBrowserUseUpstream(directory), /upstream source checksum differs/);
+  assert.equal(fs.readFileSync(filename, 'utf8'), changed);
+  assert.equal(fs.existsSync(filename + '.desktop-original'), false);
+});
+
+test('the project dependency context resolves a hoisted package without a local node_modules directory', t => {
+  const { directory, target } = fixturePackage(t);
+  const project = path.join(directory, 'packages', 'desktop');
+  fs.mkdirSync(project, { recursive: true });
+  fs.writeFileSync(path.join(project, 'package.json'), '{"name":"fixture-desktop"}');
+  assert.equal(fs.existsSync(path.join(project, 'node_modules')), false);
+  assert.equal(patchBrowserUseUpstream(project), fs.realpathSync(target));
+  const api = require(path.join(target, 'lib/coreBundle.js')).__desktopBrowserUse;
+  assert.deepEqual(api.missing(), []);
+});
+
+test('the project-owned reviewed package is selected ahead of an unrelated ancestor version', t => {
+  const { directory, target } = fixturePackage(t);
+  const project = path.join(directory, 'packages', 'desktop');
+  const nested = path.join(project, 'node_modules', 'playwright-core');
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.renameSync(target, nested);
+  fs.writeFileSync(path.join(project, 'package.json'), '{"name":"fixture-desktop"}');
+  fs.mkdirSync(target, { recursive: true });
+  const unrelated = JSON.stringify({ name: 'playwright-core', version: '1.63.0' });
+  fs.writeFileSync(path.join(target, 'package.json'), unrelated);
+  assert.equal(patchBrowserUseUpstream(project), fs.realpathSync(nested));
+  assert.equal(fs.readFileSync(path.join(target, 'package.json'), 'utf8'), unrelated);
+});
+
+test('reapplying the adapter is deterministic and never trusts an unchanged marker with a modified suffix', t => {
+  const { directory, filename } = fixturePackage(t);
+  patchBrowserUseUpstream(directory);
+  const patched = fs.readFileSync(filename, 'utf8');
+  patchBrowserUseUpstream(directory);
+  assert.equal(fs.readFileSync(filename, 'utf8'), patched);
+  fs.appendFileSync(filename, '\nthrow new Error("modified adapter executed");\n');
+  patchBrowserUseUpstream(directory);
+  assert.equal(fs.readFileSync(filename, 'utf8'), patched);
+  fs.appendFileSync(filename + '.desktop-original', '\n// corrupted backup\n');
+  assert.throws(() => patchBrowserUseUpstream(directory), /upstream source checksum differs/);
+  assert.equal(fs.readFileSync(filename, 'utf8'), patched);
 });
 
 test('connection failure categories redact upstream URLs and credentials without assuming an extension is missing', () => {

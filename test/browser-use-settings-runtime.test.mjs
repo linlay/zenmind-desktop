@@ -36,7 +36,7 @@ function harness(options = {}) {
           this.calls.push({ method, params, pageId, signal });
           if (method === "connect") { await options.connect?.(client, index); return { connected: true, pages: this.pages }; }
           if (method === "list") return this.pages;
-          if (method === "state") return options.health ? options.health(client, index) : { connected: !client.engineClosed, pages: this.pages };
+          if (method === "state" || method === "health") return options.health ? options.health(client, index) : { connected: !client.engineClosed, pages: this.pages };
           if (method === "open") { const page = { pageId: `opened-${index}`, url: params.url, title: "Opened" }; this.pages.push(page); return page; }
           if (method === "observe") return { observationId: `obs-${index}`, text: "Fixture", elements: [] };
           return { status: "done" };
@@ -173,12 +173,12 @@ test("a transient transport handshake error is recoverable by a new Run without 
   assert.deepEqual(h.clients[1].calls.filter(call => call.method === "open").map(call => call.params.url), ["https://fixture.test/new-task"]);
 });
 
-test("new Chats inherit defaults, and copied Chrome IDs do not request connection for a WorkPanel task", async t => {
+test("new Chats default to WorkPanel despite legacy preferences, and copied Chrome IDs never request connection", async t => {
   const h = harness({ preferences: { defaultBackend: "workpanel" } }); t.after(() => h.runtime.dispose());
   await registerBrowserTask(h.runtime, source());
   h.preferences.defaultBackend = "chrome";
   assert.equal(h.runtime.state("chat-a").backend, "workpanel");
-  assert.equal(h.runtime.state("chat-b").backend, "chrome");
+  assert.equal(h.runtime.state("chat-b").backend, "workpanel");
   await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test" }), { code: "browser_backend_mismatch" });
   await assert.rejects(h.cdp("Surface.observe", {}, source(), "chrome:copied"), { code: "browser_backend_mismatch" });
   assert.equal(h.clients.length, 0);
@@ -261,14 +261,14 @@ test("concurrent first calls share pending health and the replacement handshake 
     connect: (_client, index) => index === 1 ? connect.promise : undefined }); t.after(() => h.runtime.dispose());
   await h.runtime.connect("chat-a"); await registerBrowserTask(h.runtime, source());
   const first = h.cdp("Surface.openChrome", { url: "https://fixture.test/one" }), second = h.cdp("Surface.list"); await flush();
-  assert.equal(h.clients[0].calls.filter(call => call.method === "state").length, 1);
+  assert.equal(h.clients[0].calls.filter(call => call.method === "health").length, 1);
   assert.equal(h.clients[0].calls.some(call => call.method === "open"), false);
   health.resolve({ connected: false }); await flush();
   assert.equal(h.clients.length, 2); assert.equal(h.clients[1].calls.filter(call => call.method === "connect").length, 1);
   assert.equal(h.clients[1].calls.some(call => call.method === "open"), false);
   connect.resolve(); await Promise.all([first, second]);
   assert.equal(h.clients[1].calls.filter(call => call.method === "open").length, 1);
-  await h.cdp("Surface.list"); assert.equal(h.clients[1].calls.some(call => call.method === "state"), false, "later actions in this Run do not repeat the health check");
+  await h.cdp("Surface.list"); assert.equal(h.clients[1].calls.some(call => call.method === "health"), false, "later actions in this Run do not repeat the health check");
 });
 
 test("cancelled health drains before the next owner without killing the shared connection", async t => {

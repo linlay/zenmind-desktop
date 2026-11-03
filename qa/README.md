@@ -11,6 +11,7 @@
 | 性能与首装诊断 | [Windows / macOS 对照采集](windows-performance.md) |
 | Desktop / Platform 连接器联调 | [真实接口验收](connector-platform-bridge.md)；`test/connector-platform-bridge.test.mjs` 与 `test/fixtures/platform-connector-bridge.go` |
 | WebApp execute 连接池与长请求 | 构建 Main 后运行 `npx electron qa/webapp-execute-electron-smoke.cjs --hold-ms 310000`；真实 Chromium 页面、受管 electron-node 后端和 Broker WS v2 夹具；额外加 `--verify-timeout` 实际等待十分钟并验证两种入口的 assistant_timeout、精确 interrupt 与连接回收。结果输出至 build/qa/webapp-execute-electron.json，十分钟结果单独输出为 webapp-execute-electron-timeout.json |
+| 浏览器观察性能 | `BROWSER_USE_TEST_CHROME_FOR_TESTING=/path/to/chrome node qa/browser-use-observation-benchmark.mjs --samples=5 --warmups=1`；官方扩展隔离 profile，分别记录 0/32/128/256 控件的观察和动作后观察指标，结果不包含页面内容或授权码 |
 | Provider 环境交付 | [登记样例](provider-registration/README.md) |
 | 网站桥制作与加载 | [桥包验收](website-bridge-package.md)、`website-bridges-smoke.mjs` |
 | 网站密码与登录采集 | `website-credentials-smoke.mjs`、`website-credentials-capture-smoke.mjs` |

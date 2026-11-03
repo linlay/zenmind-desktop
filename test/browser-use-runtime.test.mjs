@@ -23,7 +23,7 @@ function harness() {
           this.calls.push({ method, params, pageId, signal });
           if (signal?.aborted) throw new Error("aborted");
           if (method === "connect") return { connected: true, pages: this.pages };
-          if (method === "state") return { connected: !this.disconnected, pages: this.pages };
+          if (method === "state" || method === "health") return { connected: !this.disconnected, pages: this.pages };
           if (method === "list") return this.pages;
           if (method === "observe") return { observationId: `obs-${pageId}`, elements: [], text: "Page" };
           if (method === "open") {
@@ -125,7 +125,7 @@ test("WorkPanel refs are restricted to the observing Run, even when the Chat is 
   }), undefined, fallback), { code: "stale_observation" });
 });
 
-test("takeover aborts queued browser operations, disconnects the worker, and interrupts the task", async () => {
+test("takeover aborts browser operations and interrupts the task while keeping the connection", async () => {
   const { runtime, clients, stopped } = harness();
   await runtime.connect("chat-a");
   await registerBrowserTask(runtime, source());
@@ -134,8 +134,8 @@ test("takeover aborts queued browser operations, disconnects the worker, and int
   const leaseSignal = clients[0].calls.at(-1).signal;
   await runtime.takeover("chat-a");
   assert.equal(leaseSignal.aborted, true);
-  assert.equal(clients[0].disconnected, true);
-  assert.equal(clients[0].killed, true);
+  assert.notEqual(clients[0].disconnected, true);
+  assert.notEqual(clients[0].killed, true);
   assert.deepEqual(stopped, [{ runId: "run-a", agentKey: source().agentKey }]);
   await assert.rejects(runtime.cdp(request("Surface.list"), undefined, noFallback), { code: "browser_run_unavailable" });
 });

@@ -19,7 +19,7 @@ function fixture() {
         async request(method, params, pageId) {
           this.calls.push({ method, params, pageId });
           if (method === "list") return this.pages;
-          if (method === "connect" || method === "state") return { connected: true, pages: this.pages };
+          if (method === "connect" || method === "state" || method === "health") return { connected: true, pages: this.pages };
           if (method === "open") {
             this.pages.push({ pageId: "new", title: "New", url: params.url, active: true });
             pageId = "new";
@@ -123,7 +123,7 @@ test("late health results from a released worker cannot disconnect a replacement
     const previous = clients[0];
     const original = previous.request.bind(previous);
     let resolve, reject;
-    previous.request = (method, ...args) => method === "state"
+    previous.request = (method, ...args) => method === "health"
       ? new Promise((ok, fail) => { resolve = ok; reject = fail; })
       : original(method, ...args);
     const pending = runtime.refreshState("chat-a");

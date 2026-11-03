@@ -1,7 +1,7 @@
 import type { BrowserObservedDialog, BrowserObservedDownload, BrowserObservedElement, BrowserObservedFileChooser } from "../../../shared/browser-use";
 
 export type ChromeWorkerMethod = "connect" | "list" | "state" | "open" | "navigate" | "back" | "reload" | "activate" | "close" | "observe" | "click" | "interact" | "dialog" | "upload" | "downloads" | "screenshot" | "disconnect" | "cancel"
-  | "awcp-manual" | "awcp-invoke" | "awcp-release-run" | "awcp-refresh" | "cancel-request" | "release-transfers";
+  | "awcp-manual" | "awcp-invoke" | "awcp-release-run" | "awcp-refresh" | "cancel-request" | "release-transfers" | "health";
 
 export type ChromeWorkerRequest = {
   id: string;
@@ -12,6 +12,8 @@ export type ChromeWorkerRequest = {
 
 export type ChromeWorkerReply = {
   id: string;
+  /** Non-terminal acknowledgement from the actual execution boundary, not queue admission. */
+  started?: true;
   result?: unknown;
   error?: { code: string; message: string; statusCode?: number; details?: Record<string, unknown> };
 };

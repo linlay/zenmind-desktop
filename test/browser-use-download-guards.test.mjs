@@ -112,7 +112,7 @@ test('Chrome ACK needs a download observed in this Run and preserves its history
   const calls = [];
   const client = { async request(method, params, pageId) {
     calls.push({ method, params, pageId });
-    if (method === 'connect') return { connected: true };
+    if (method === 'connect' || method === 'health') return { connected: true };
     if (method === 'list') return [{ pageId: 'p1', url: 'https://ack.example/', title: 'ACK' }];
     if (method === 'observe') return { observationId: 'fresh', elements: [] };
     if (method === 'downloads') return params.action === 'list' ? { downloads: listed } : { released: true };

@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { fork, spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { patchBrowserUseUpstream, stageBrowserUseRuntime } from "../scripts/browser-use-patch.mjs";
+import { patchBrowserUseUpstream, stageBrowserUseRuntime, browserUseUpstream } from "../scripts/browser-use-patch.mjs";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "..");
@@ -63,9 +63,10 @@ test("reviewed upstream patch is deterministic and packaged with its own runtime
   assert.equal(typeof stagedApi.create, "function");
   assert.deepEqual(stagedApi.missing(), []);
   const manifest = JSON.parse(fs.readFileSync(path.join(temp, "browser-use-runtime/upstream.json"), "utf8"));
-  // The packaged runtime records the stable release actually installed, not a pinned prerelease.
+  assert.equal(manifest.core, browserUseUpstream.core);
   assert.equal(manifest.core, require("playwright-core/package.json").version);
-  assert.match(manifest.core, /^1\.\d+\.\d+$/);
+  assert.equal(manifest.sourceSha256, browserUseUpstream.sourceSha256);
+  assert.equal(manifest.packages["playwright-core"].integrity, browserUseUpstream.packages["playwright-core"].integrity);
   assert.equal(fs.existsSync(path.join(staged, "lib/coreBundle.js.desktop-original")), false);
 });
 
@@ -73,10 +74,20 @@ test("worker accepts only the private IPC protocol; production connect cannot ac
   const entry = path.join(root, "dist-electron/main/chrome-worker.js");
   const child = fork(entry, [], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
   t.after(() => child.kill());
-  const reply = async message => {
-    const received = once(child, "message"); child.send(message); return (await received)[0];
-  };
+  const started = [];
+  const reply = message => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); reject(new Error(`No terminal reply for ${message.id}`)); }, 5000);
+    const cleanup = () => { clearTimeout(timer); child.off("message", receive); };
+    const receive = response => {
+      if (response.id !== message.id) return;
+      if (response.started) { started.push(response.id); return; }
+      cleanup(); resolve(response);
+    };
+    child.on("message", receive);
+    child.send(message);
+  });
   assert.deepEqual(await reply({ id: "state", method: "state" }), { id: "state", result: { connected: false, pages: [] } });
+  assert.deepEqual(started, ["state"], "started is a non-terminal execution boundary, not the result");
   assert.equal((await reply({ id: "bad", method: "evaluate", params: { expression: "process.exit()" } })).error.code, "invalid_params");
   assert.equal((await reply({ id: "endpoint", method: "connect", params: { cdpEndpoint: "http://127.0.0.1:9222" } })).error.code, "invalid_params");
   assert.equal((await reply({ id: "invalid", method: "connect", params: { profileDirName: "../Default" } })).error.code, "invalid_params");

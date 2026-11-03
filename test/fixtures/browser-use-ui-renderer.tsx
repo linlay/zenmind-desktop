@@ -39,6 +39,7 @@ function Fixture() {
   (window as any).browserUseUiFixture = {
     setTheme(next: 'light' | 'dark') { document.documentElement.dataset.theme = next; setMode(next); },
     setLocale, setChatId, navigate,
+    settingsListenerCount: () => ipcRenderer.listenerCount('fixture.browserSettingsChanged'),
   };
   return <RendererI18nContext.Provider value={{ locale, source: 'stored', t: createTranslator(locale), setLocale: async next => setLocale(next) }}>
     <ConfigProvider theme={readDocumentAntAppearanceTheme(mode)}>

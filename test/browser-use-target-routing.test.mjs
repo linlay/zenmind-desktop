@@ -26,7 +26,7 @@ function harness(defaultBackend = "workpanel") {
       const client = { calls: [], pages: [{ pageId: `private-${clients.length}`, url: "https://fixture.test/", title: "Authorized page", active: true }],
         async request(method, params = {}) {
           this.calls.push({ method, params });
-          if (method === "connect" || method === "state") return { connected: true, pages: this.pages };
+          if (method === "connect" || method === "state" || method === "health") return { connected: true, pages: this.pages };
           if (method === "list") return this.pages;
           if (method === "open") { const page = { pageId: `opened-${clients.length}`, url: params.url, title: "Opened" }; this.pages.push(page); return page; }
           return { action: { outcome: "unknown" } };
@@ -203,13 +203,45 @@ test("a WorkPanel Run reads only downloads it has seen on that page", async t =>
   await assert.rejects(call("Surface.releaseDownload", { downloadId: "d-1", sha256: "0".repeat(64) }, source("chat-a", "next")), { code: "stale_observation" });
 });
 
-test("viewing many Chats does not retain an unbounded set of idle browser sessions", async t => {
+test("passive Chat state and refresh queries allocate no sessions or Chrome workspaces", async t => {
   const h = harness(); t.after(() => h.runtime.dispose());
+  for (let index = 0; index < 260; index++) {
+    assert.equal(h.runtime.state(`viewed-${index}`).backend, "workpanel");
+    await h.runtime.refreshState(`viewed-${index}`);
+  }
+  assert.equal(h.runtime.sessions.size, 0);
+  assert.equal(h.runtime.workspaces.size, 0);
+  assert.equal(h.clients.length, 0);
+});
+
+test("idle session eviction preserves a live shared connection, exact pages and the active owner", async t => {
+  const h = harness("chrome"); t.after(() => h.runtime.dispose());
   h.runtime.registerRun(source("busy-chat", "busy-run"));
-  for (let index = 0; index < 260; index++) h.runtime.state(`viewed-${index}`);
+  await h.select("chrome", source("busy-chat", "busy-run"));
+  const surfaces = (await h.cdp("Surface.list", {}, source("busy-chat", "busy-run"))).result.surfaces;
+  const workspaceId = h.runtime.state("busy-chat").workspaceId;
+  for (let index = 0; index < 260; index++) h.runtime.select(`viewed-${index}`, "chrome");
   assert.equal(h.runtime.sessions.size <= 200, true, `sessions=${h.runtime.sessions.size}`);
   assert.equal(h.runtime.sessions.has("busy-chat"), true, "a Chat with a Run is never pruned");
-  assert.equal(h.runtime.sessions.has("viewed-259"), true, "the Chat being viewed is kept");
-  assert.equal(h.runtime.workspaces.size <= h.runtime.sessions.size, true);
-  assert.equal(h.runtime.state("viewed-0").backend, "workpanel", "a pruned Chat is recreated on its next view");
+  assert.equal(h.runtime.sessions.has("viewed-259"), true);
+  assert.equal(h.runtime.workspaces.size, 1, "discard superseded empty WorkPanel workspaces");
+  assert.equal(h.runtime.state("busy-chat").workspaceOwner.runId, "busy-run");
+  assert.deepEqual(h.runtime.state("busy-chat").pages, surfaces);
+  assert.equal(h.runtime.state("viewed-0").backend, "workpanel", "an evicted entry has a passive default projection");
+  assert.ok(h.changes.some(state => state.chatId === "viewed-0" && state.backend === "workpanel" && !state.workspaceId),
+    "a mounted toolbar cannot keep stale controls for an evicted session");
+  h.runtime.select("viewed-0", "chrome");
+  assert.equal(h.runtime.state("viewed-0").workspaceId, workspaceId);
+  assert.deepEqual(h.runtime.state("viewed-0").pages, surfaces);
+  assert.equal(h.clients.length, 1);
+});
+
+test("finishing a burst of Runs reclaims idle metadata without requiring another Chat to be opened", t => {
+  const h = harness(); t.after(() => h.runtime.dispose());
+  for (let index = 0; index < 260; index++) h.runtime.registerRun(source(`burst-${index}`, `run-${index}`));
+  assert.equal(h.runtime.sessions.size, 260, "active Runs remain protected");
+  for (let index = 0; index < 260; index++) h.runtime.releaseRun(`run-${index}`);
+  assert.equal(h.runtime.runs.size, 0);
+  assert.ok(h.runtime.sessions.size <= 200);
+  assert.ok(h.runtime.workspaces.size <= 200);
 });

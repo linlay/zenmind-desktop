@@ -110,7 +110,7 @@ export function BrowserUseControl({ chatId }: { chatId: string | null }) {
             </button>)}
             {!state?.pages.length && <p className="browser-use-help">{t("browserUse.noBusinessPages")}</p>}
             <Button size="small" disabled={busy || locked} onClick={() => void apply({ action: "connect", chatId, interactive: true })}>{t("browserUse.selectExisting")}</Button>
-            <Button size="small" disabled={busy || locked} onClick={() => void apply({ action: "disconnect", chatId })}>{t(workspaceShared ? "browserUse.disconnectWorkspace" : "browserUse.disconnect")}</Button>
+            <Button size="small" disabled={busy || (locked && !workspaceDraining)} onClick={() => void apply({ action: "disconnect", chatId })}>{t(workspaceShared ? "browserUse.disconnectWorkspace" : "browserUse.disconnect")}</Button>
             {workspaceShared && !locked && <p className="browser-use-help">{t("browserUse.sharedDisconnectHelp")}</p>}
           </div>}
         </>}

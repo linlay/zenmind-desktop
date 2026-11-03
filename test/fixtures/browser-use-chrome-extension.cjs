@@ -77,6 +77,7 @@ app.whenReady().then(async () => {
     if (productionDiscovery) {
       fs.writeFileSync(path.join(mainDir, 'fixture-production-discovery.json'), JSON.stringify({
         home: path.join(root, 'empty-discovery-home'), executable: chromePath, profile, evidenceFile,
+        ...(headless ? { headlessEndpoint: endpoint } : {}),
       }));
     } else fs.writeFileSync(path.join(mainDir, "fixture-extension-browser.json"), JSON.stringify({ executablePath: launcher, userDataDir: profile, ...(headless ? { headlessEndpoint: endpoint } : {}) }));
     backend = new ChromeBackend({ workerPath: path.join(mainDir, productionDiscovery ? 'chrome-discovery-worker.cjs' : "chrome-extension-worker.cjs") });

@@ -12,6 +12,7 @@ function harness() {
   const client = {
     async request(method, params, pageId, signal) {
       calls.push({ method, params, pageId, signal });
+      if (method === 'health') return { healthy: true, connected: true };
       if (method === 'list') return [{ pageId: 'p1', title: 'Fixture', url: 'https://fixture.test', active: true }];
       if (method === 'observe') return { observationId: 'previous-observation', elements: [{ ref: 'e1' }] };
       return { status: 'done' };
