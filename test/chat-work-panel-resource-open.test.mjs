@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   resolveChatWorkPanelLocalResourcePath,
+  resolveChatWorkPanelLocalResourceProfile,
   shouldShowChatWorkPanelLocalResourceActions,
 } = require("../dist-electron/shared/chat-work-panel-tab-context-menu.js");
 const {
@@ -130,6 +131,140 @@ test("Resource Viewer route yields only a chat-scoped artifact/reference path", 
   }
 });
 
+test("current Resource Viewer @chat routes resolve the previewed artifact", () => {
+  assert.equal(resolveChatWorkPanelLocalResourcePath({
+    ownerChatId: "chat-72",
+    profile: "artifact",
+    route: "/resource-viewer/cutej?lang=zh-CN&chatId=chat-72&file=%40chat%2Fartifacts%2Fmvykcs0c%2F%E6%9C%AB%E4%BD%8D.md&sourceKind=artifact&resourceId=artifact-72&relativePath=artifacts%2Fmvykcs0c%2F%E6%9C%AB%E4%BD%8D.md&hostTheme=light",
+  }), "artifacts/mvykcs0c/末位.md");
+});
+
+test("@chat routes preserve literal Unicode, spaces, URL delimiters and percent filenames", () => {
+  for (const [profile, directory] of [
+    ["artifact", "artifacts/run-1/"],
+    ["reference", "references/"],
+    ["reference", ""],
+  ]) {
+    for (const filename of ["末位.md", "申请 表.docx", "notes#draft?.md", "100%.txt", "%20%23%3F.md", "%E6%9C%AB.md"]) {
+      const relativePath = `${directory}${filename}`;
+      const query = new URLSearchParams({ chatId: "chat-72", file: `@chat/${relativePath}` });
+      assert.equal(resolveChatWorkPanelLocalResourcePath({
+        ownerChatId: "chat-72", profile, route: `/resource-viewer/agent?${query}`,
+      }), relativePath, `${profile}: ${filename}`);
+    }
+  }
+});
+
+test("legacy resource URLs retain their additional filename encoding layer", () => {
+  for (const profile of ["artifact", "reference"]) {
+    const directory = profile === "artifact" ? "artifacts/run-1/" : "references/";
+    const filename = "申请 表 100% #?.docx";
+    const query = new URLSearchParams({
+      chatId: "chat-72", file: `${directory}${encodeURIComponent(filename)}`,
+    });
+    assert.equal(resolveChatWorkPanelLocalResourcePath({
+      ownerChatId: "chat-72", profile, route: `/resource-viewer/agent?${query}`,
+    }), `${directory}${filename}`);
+  }
+});
+
+test("@chat resource routes keep owner, profile and local path boundaries", () => {
+  const routeFor = (file, chatId = "chat-72") => `/resource-viewer/agent?${new URLSearchParams({
+    chatId, file, relativePath: "artifacts/run-1/allowed.md", sourceKind: "artifact",
+  })}`;
+  for (const file of [
+    "@chatty/artifacts/run-1/report.md",
+    "@chat//artifacts/run-1/report.md",
+    "@chat/../other-chat/artifacts/report.md",
+    "@chat/artifacts/run-1/../../../secret.md",
+    "@chat/references/source.md",
+    "@chat/C:/private.md",
+    "@chat/artifacts/run-1/../secret.md",
+    "@chat/artifacts/run-1/folder\\report.md",
+    "@chat/artifacts/run-1/invalid\u0000.md",
+    "%40chat%2Fartifacts%2Frun-1%2Freport.md",
+  ]) {
+    assert.equal(resolveChatWorkPanelLocalResourcePath({
+      ownerChatId: "chat-72", profile: "artifact", route: routeFor(file),
+    }), "", file);
+  }
+  assert.equal(resolveChatWorkPanelLocalResourcePath({
+    ownerChatId: "chat-72", profile: "artifact",
+    route: routeFor("@chat/artifacts/run-1/report.md", "other-chat"),
+  }), "");
+  assert.equal(resolveChatWorkPanelLocalResourcePath({
+    ownerChatId: "chat-72", profile: "reference",
+    route: routeFor("@chat/artifacts/run-1/report.md"),
+  }), "");
+  for (const encodedPath of ["%2e%2e", "%252e%252e", "folder%2freport.md", "folder%5creport.md"]) {
+    const relativePath = resolveChatWorkPanelLocalResourcePath({
+      ownerChatId: "chat-72", profile: "artifact",
+      route: routeFor(`@chat/artifacts/${encodedPath}`),
+    });
+    assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({
+      ownerChatId: "chat-72", profile: "artifact", relativePath,
+    }), null, encodedPath);
+  }
+});
+
+test("file actions correct only generic artifact descriptors for existing Reference paths", () => {
+  const chromeDownload = "chrome-download-8ca640016a93003d4253272a-browser-review-report.txt";
+  const genericId = "resource:80:1abc";
+  const chatFileId = `chat-file:${"a".repeat(32)}`;
+  const routeFor = (file, source = {}) => `/resource-viewer/cutej?${new URLSearchParams({
+    chatId: "chat-72", file, ...source,
+  })}`;
+  for (const scenario of [
+    { file: `@chat/${chromeDownload}`, resourceId: genericId, expected: "reference" },
+    { file: `@chat/${chromeDownload}`, resourceId: chatFileId, expected: "reference" },
+    { file: `@CHAT/${chromeDownload}`, resourceId: genericId, expected: "reference" },
+    { file: "@chat/references/申请 表 50%.txt", resourceId: genericId, expected: "reference" },
+    { file: "@chat/artifacts/run-1/notes.md", resourceId: genericId, expected: "artifact" },
+    { file: encodeURIComponent("申请 表 50%.txt"), resourceId: chatFileId, expected: "reference" },
+    { file: "@chat/artifacts/run-1/a%20b.md", resourceId: "artifact-72", expected: "artifact",
+      source: { sourceKind: "artifact", resourceId: "artifact-72", relativePath: "artifacts/run-1/a%20b.md" } },
+    { profile: "reference", file: "@chat/references/source.txt", resourceId: "reference-72", expected: "reference",
+      source: { sourceKind: "reference", resourceId: "reference-72", relativePath: "references/source.txt" } },
+    { profile: "reference", file: `@chat/${chromeDownload}`, resourceId: "reference-72", expected: "reference",
+      source: { sourceKind: "reference", resourceId: "reference-72", relativePath: chromeDownload } },
+    { file: "@chat/artifacts/run-1/notes.md", resourceId: "unknown-typed-id", expected: "artifact" },
+    { file: `@chat/${chromeDownload}`, resourceId: "artifact-72", expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: "resource:filename", expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: "resource:0:hash", expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: "chat-file:unknown", expected: null },
+    { file: `@chat/${chromeDownload}`, expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: genericId, source: { sourceKind: "artifact" }, expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: genericId, source: { sourceKind: "reference" }, expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: genericId, source: { resourceId: genericId }, expected: null },
+    { file: `@chat/${chromeDownload}`, resourceId: genericId, source: { relativePath: chromeDownload }, expected: null },
+    { file: "@chat/artifacts/run-1/notes.md", resourceId: genericId, source: { sourceKind: "reference" }, expected: null },
+    { file: "@chat/artifacts/run-1/notes.md", resourceId: "artifact-72", source: { resourceId: "another-artifact" }, expected: null },
+    { file: "@chat/artifacts/run-1/notes.md", resourceId: "artifact-72", source: { relativePath: "artifacts/run-1/other.md" }, expected: null },
+    { file: "@chat/artifacts/run-1/a%20b.md", resourceId: "artifact-72", source: { relativePath: "artifacts/run-1/a b.md" }, expected: null },
+    { profile: "reference", file: "@chat/artifacts/run-1/notes.md", resourceId: "reference-72", expected: null },
+    { file: "@chat/nested/report.txt", resourceId: genericId, expected: null },
+    { file: "@chat/../another-chat/report.txt", resourceId: genericId, expected: null },
+    { file: "/etc/hosts", resourceId: genericId, expected: null },
+    { file: "https://example.com/report.txt", resourceId: genericId, expected: null },
+  ]) {
+    assert.equal(resolveChatWorkPanelLocalResourceProfile({
+      ownerChatId: "chat-72", profile: scenario.profile || "artifact", resourceId: scenario.resourceId,
+      route: routeFor(scenario.file, scenario.source),
+    }), scenario.expected, JSON.stringify(scenario));
+  }
+
+  for (const suffix of ["&chatId=another-chat", "&file=artifacts%2Frun-1%2Fother.md", "&sourceKind=artifact&sourceKind=reference"]) {
+    assert.equal(resolveChatWorkPanelLocalResourceProfile({
+      ownerChatId: "chat-72", profile: "artifact", resourceId: genericId,
+      route: `${routeFor(`@chat/${chromeDownload}`)}${suffix}`,
+    }), null, suffix);
+  }
+  assert.equal(resolveChatWorkPanelLocalResourceProfile({
+    ownerChatId: "another-chat", profile: "artifact", resourceId: genericId,
+    route: routeFor(`@chat/${chromeDownload}`),
+  }), null);
+});
+
 test("local resource actions appear only for formats Resource Viewer cannot preview", () => {
   const routeFor = (filename) =>
     `/resource-viewer/agent-72?chatId=chat-72&file=${encodeURIComponent(`artifacts/run-1/${filename}`)}`;
@@ -237,6 +372,61 @@ for (const scenario of [
     assert.equal(result.ok, true);
     assert.equal("path" in result, false);
     assert.deepEqual(revealedPaths, [scenario.expectedPath]);
+  });
+
+  test(`current @chat artifact route reaches the ${scenario.name} file manager with the exact local path`, async () => {
+    const relativePath = "artifacts/mvykcs0c/末位.md";
+    const query = new URLSearchParams({ chatId: "chat-72", file: `@chat/${relativePath}` });
+    const resolvedPath = resolveChatWorkPanelLocalResourcePath({
+      ownerChatId: "chat-72", profile: "artifact", route: `/resource-viewer/cutej?${query}`,
+    });
+    assert.equal(resolvedPath, relativePath);
+    const expectedPath = scenario.platform === "win32"
+      ? `${scenario.expectedChatRoot}\\${relativePath.replace(/\//gu, "\\")}`
+      : `${scenario.expectedChatRoot}/${relativePath}`;
+    const revealedPaths = [];
+    const result = await revealChatWorkPanelResourceInFileManager({
+      ownerChatId: "chat-72", profile: "artifact", relativePath: resolvedPath,
+    }, {
+      app: {}, platform: scenario.platform, resolveRuntimeRoot: () => scenario.runtimeRoot,
+      existsSync: (value) => value === scenario.expectedChatRoot || value === expectedPath,
+      realpathSync: (value) => value, statSync: () => ({ isFile: () => true }),
+      showItemInFolder: (value) => revealedPaths.push(value),
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(revealedPaths, [expectedPath]);
+  });
+
+  test(`generic Chat previews reveal and open the exact ${scenario.name} file with the validated profile`, async () => {
+    for (const [relativePath, expectedProfile] of [
+      ["chrome-download-8ca640016a93003d4253272a-browser-review-report.txt", "reference"],
+      ["references/申请 表 50%.txt", "reference"],
+      ["artifacts/run-1/a%20b.md", "artifact"],
+    ]) {
+      const query = new URLSearchParams({ chatId: "chat-72", file: `@chat/${relativePath}` });
+      const route = `/resource-viewer/cutej?${query}`;
+      const profile = resolveChatWorkPanelLocalResourceProfile({
+        ownerChatId: "chat-72", profile: "artifact", resourceId: "resource:80:1abc", route,
+      });
+      assert.equal(profile, expectedProfile);
+      const resolvedPath = resolveChatWorkPanelLocalResourcePath({ ownerChatId: "chat-72", profile, route });
+      assert.equal(resolvedPath, relativePath);
+      const expectedPath = scenario.platform === "win32"
+        ? `${scenario.expectedChatRoot}\\${relativePath.replace(/\//gu, "\\")}`
+        : `${scenario.expectedChatRoot}/${relativePath}`;
+      const calls = [];
+      const dependencies = {
+        app: {}, platform: scenario.platform, resolveRuntimeRoot: () => scenario.runtimeRoot,
+        existsSync: (value) => value === scenario.expectedChatRoot || value === expectedPath,
+        realpathSync: (value) => value, statSync: () => ({ isFile: () => true }),
+        showItemInFolder: (value) => calls.push(["reveal", value]),
+        openPath: async (value) => { calls.push(["open", value]); return ""; },
+      };
+      const request = { ownerChatId: "chat-72", profile, relativePath: resolvedPath };
+      assert.equal((await revealChatWorkPanelResourceInFileManager(request, dependencies)).ok, true);
+      assert.equal((await openChatWorkPanelResourceInDefaultApp(request, dependencies)).ok, true);
+      assert.deepEqual(calls, [["reveal", expectedPath], ["open", expectedPath]]);
+    }
   });
 }
 

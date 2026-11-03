@@ -130,19 +130,15 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
     ) {
       return "";
     }
-    const encodedArtifactPath = url.searchParams.get("file")?.replace(/\\/gu, "/") ?? "";
+    const resourcePath = url.searchParams.get("file") ?? "";
     let rawPath = "";
     try {
-      // artifact_publish returns a URL whose individual filename segments are encoded.
-      // Resource Viewer then places that URL inside a query parameter, adding another
-      // encoding layer. URLSearchParams removes the outer layer; remove the artifact
-      // URL layer here before resolving the existing file on disk.
-      // Current WebClient routes keep @chat/ references literal (including
-      // percent signs in filenames); only legacy URL paths have an inner
-      // encoding layer after URLSearchParams has decoded the query.
-      rawPath = /^@chat\//iu.test(encodedArtifactPath)
-        ? encodedArtifactPath.slice(6)
-        : decodeURIComponent(encodedArtifactPath);
+      // @chat/ is a literal Chat-relative path after URLSearchParams removes the
+      // query encoding. Decoding it again could select a different local file.
+      // Legacy artifact URLs still have one encoded filename layer to remove.
+      rawPath = /^@chat\//iu.test(resourcePath)
+        ? resourcePath.slice("@chat/".length)
+        : decodeURIComponent(resourcePath.replace(/\\/gu, "/"));
     } catch {
       return "";
     }
@@ -150,6 +146,7 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
       !rawPath ||
       rawPath.length > 2_048 ||
       rawPath.startsWith("/") ||
+      rawPath.includes("\\") ||
       /^[a-z]:\//iu.test(rawPath) ||
       /[\u0000-\u001f\u007f]/u.test(rawPath)
     ) {
@@ -164,5 +161,40 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
     return parts.join("/");
   } catch {
     return "";
+  }
+}
+
+export function resolveChatWorkPanelLocalResourceProfile(input: {
+  ownerChatId: string;
+  profile: ChatWorkPanelLocalResourceProfile;
+  route: string;
+  resourceId?: string;
+}): ChatWorkPanelLocalResourceProfile | null {
+  try {
+    const url = new URL(input.route, "https://desktop.invalid");
+    const sourceKeys = ["sourceKind", "resourceId", "relativePath"];
+    if (
+      url.searchParams.getAll("chatId").length !== 1 ||
+      url.searchParams.getAll("file").length !== 1 ||
+      sourceKeys.some((key) => url.searchParams.getAll(key).length > 1) ||
+      (url.searchParams.has("sourceKind") && url.searchParams.get("sourceKind") !== input.profile) ||
+      (url.searchParams.has("resourceId") &&
+        (!input.resourceId || url.searchParams.get("resourceId") !== input.resourceId))
+    ) return null;
+
+    const relativePath = resolveChatWorkPanelLocalResourcePath(input);
+    if (url.searchParams.has("relativePath") && url.searchParams.get("relativePath") !== relativePath) return null;
+    if (relativePath) return input.profile;
+
+    // Generic Chat-file previews historically used an artifact module even for
+    // References and root downloads. Correct only those synthetic identities;
+    // an explicit published source must keep its declared profile and path.
+    const genericResource = /^(?:resource:[1-9]\d*:[a-z0-9]+|chat-file:[a-f0-9]{32})$/u.test(input.resourceId || "");
+    if (input.profile !== "artifact" || !genericResource || sourceKeys.some((key) => url.searchParams.has(key))) return null;
+    return resolveChatWorkPanelLocalResourcePath({ ...input, profile: "reference" })
+      ? "reference"
+      : null;
+  } catch {
+    return null;
   }
 }

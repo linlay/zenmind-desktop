@@ -30,6 +30,7 @@ import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../shared/sso";
 import { normalizeWebviewBlobPopupUrl } from "../../shared/webview-popup";
 import {
   resolveChatWorkPanelLocalResourcePath,
+  resolveChatWorkPanelLocalResourceProfile,
   shouldShowChatWorkPanelLocalResourceActions,
   type ChatWorkPanelOpenLocalResourceResult,
   type ChatWorkPanelTabContextMenuProfile,
@@ -144,12 +145,19 @@ type WebclientDocumentState = {
   targetKey: string;
 };
 
-function localResourceProfile(item: WorkPanelItem) {
+function localResourceProfile(ownerChatId: string, item: WorkPanelItem) {
   if (
     item.descriptor.kind === "webclient" &&
     (item.descriptor.module === "artifact" || item.descriptor.module === "reference")
   ) {
-    return item.descriptor.module;
+    return resolveChatWorkPanelLocalResourceProfile({
+      ownerChatId,
+      profile: item.descriptor.module,
+      route: item.descriptor.route,
+      resourceId: item.descriptor.module === "artifact"
+        ? item.descriptor.context.artifactId
+        : item.descriptor.context.referenceId,
+    });
   }
   return null;
 }
@@ -159,7 +167,7 @@ function matchesLocalResourceIdentity(
   item: WorkPanelItem,
   resource: AgentWebclientCurrentResourceIdentity,
 ) {
-  const profile = localResourceProfile(item);
+  const profile = localResourceProfile(ownerChatId, item);
   if (!profile || item.descriptor.kind !== "webclient") return false;
   const relativePath = resolveChatWorkPanelLocalResourcePath({
     ownerChatId,
@@ -171,17 +179,15 @@ function matchesLocalResourceIdentity(
     resource.relativePath === relativePath;
 }
 
-function tabContextMenuProfile(item: WorkPanelItem): ChatWorkPanelTabContextMenuProfile {
+function tabContextMenuProfile(ownerChatId: string, item: WorkPanelItem): ChatWorkPanelTabContextMenuProfile {
   if (item.descriptor.kind === "web") return "web";
   if (item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html") {
     const source = item.descriptor.context.sourceKind;
     if (source === "artifact" || source === "reference") return source;
   }
-  if (item.descriptor.kind === "webclient" && item.descriptor.module === "artifact") {
-    return "artifact";
-  }
-  if (item.descriptor.kind === "webclient" && item.descriptor.module === "reference") {
-    return "reference";
+  if (item.descriptor.kind === "webclient" &&
+      (item.descriptor.module === "artifact" || item.descriptor.module === "reference")) {
+    return localResourceProfile(ownerChatId, item) || item.descriptor.module;
   }
   return "default";
 }
@@ -192,12 +198,14 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
       return item.descriptor.context.path.trim();
     }
     if (item.descriptor.module === "artifact" || item.descriptor.module === "reference") {
-      const relativePath = item.descriptor.context.relativePath?.trim() || resolveChatWorkPanelLocalResourcePath({
+      const profile = localResourceProfile(ownerChatId, item);
+      if (!profile) return "";
+      const relativePath = resolveChatWorkPanelLocalResourcePath({
         ownerChatId,
-        profile: item.descriptor.module,
+        profile,
         route: item.descriptor.route,
       });
-      return relativePath ? `${item.descriptor.module}:///${relativePath}` : "";
+      return relativePath ? `${profile}:///${relativePath}` : "";
     }
   }
   if (item.descriptor.kind === "local-file") {
@@ -1230,7 +1238,7 @@ export function WorkPanelHost({
     item: WorkPanelItem,
     action: "reveal" | "open-default",
   ): Promise<ChatWorkPanelOpenLocalResourceResult> => {
-    const profile = localResourceProfile(item);
+    const profile = localResourceProfile(ownerChatId, item);
     if (!profile || item.descriptor.kind !== "webclient") {
       return {
         ok: false,
@@ -1304,7 +1312,7 @@ export function WorkPanelHost({
       mode: "work-panel",
       x: event.clientX,
       y: event.clientY,
-      profile: tabContextMenuProfile(item),
+      profile: tabContextMenuProfile(ownerChatId, item),
       isFullscreen: fullscreenOwnerChatId === ownerChatId,
       reviewMode: htmlController ? (htmlController.isAnnotating() ? "active" : "inactive") : reviewSource ? (reviewActive ? "active" : "inactive") : "unavailable",
       ...(nativeImage ? { nativeImage: { localOriginal: nativeImage.localOriginal === true } } : {}),
@@ -1397,9 +1405,14 @@ export function WorkPanelHost({
       return;
     }
     if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app") {
-      const outcome = await handleLocalResourceAction(ownerChatId, item,
-        result.actionId === "reveal-resource" ? "reveal" : "open-default");
-      if (!outcome.ok) modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
+      const outcome = await handleLocalResourceAction(
+        ownerChatId,
+        currentItem,
+        result.actionId === "reveal-resource" ? "reveal" : "open-default",
+      );
+      if (!outcome.ok) {
+        modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
+      }
       return;
     }
     if (
@@ -2295,7 +2308,7 @@ export function WorkPanelHost({
                   // Recreate these guests on activation; keep editable items alive.
                   if (!active && item.descriptor.kind === "webclient" &&
                     (item.descriptor.module === "overview" || item.descriptor.module === "debug")) return null;
-                  const resourceProfile = localResourceProfile(item);
+                  const resourceProfile = localResourceProfile(workspace.ownerChatId, item);
                   const supportsLocalResourceActions = Boolean(
                     resourceProfile &&
                     item.descriptor.kind === "webclient" &&
