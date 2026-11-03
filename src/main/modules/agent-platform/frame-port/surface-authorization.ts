@@ -95,6 +95,14 @@ export function sameOrigin(left: string, right: string) {
   }
 }
 
+function urlOrigin(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+}
+
 export function mayAwaitSurfaceRegistration(
   sender: WebContents,
   isTrustedSession: (sender: WebContents) => boolean,
@@ -347,16 +355,18 @@ export function mainChatQueryTargetIsTransitional(
 
 export function createSurfaceAuthorization(deps: SurfaceAuthorizationPort) {
   // Capture values, not a mutable Registry record, across asynchronous work.
+  // A logical Session only binds the registered surface identity and its lane.
+  // Route, owner Chat and active state legitimately change while the guest
+  // navigates in place; every live, Kanban and View request re-checks them.
   function captureSurfaceAuthorization(context: SurfaceContext) {
-    const { registrationId, surfaceId, ownerWebContentsId, ownerChatId, pageRouteIdentity, pageRoute, currentUrl } = context.target;
-    const senderUrl = context.sender.getURL();
+    const { registrationId, surfaceId, surfaceType, surfaceRole, ownerWebContentsId } = context.target;
+    const senderOrigin = urlOrigin(context.sender.getURL());
     return () => {
       const current = authorizeSurface(context.sender, deps.options.browserSurfaces, deps.options.isTrustedAgentWebclientSession);
       if ("ok" in current || current.target.registrationId !== registrationId ||
-        current.target.surfaceId !== surfaceId || current.target.ownerWebContentsId !== ownerWebContentsId ||
-        current.target.ownerChatId !== ownerChatId || current.target.pageRouteIdentity !== pageRouteIdentity ||
-        current.target.currentUrl !== currentUrl || current.target.pageRoute !== pageRoute ||
-        context.sender.getURL() !== senderUrl) {
+        current.target.surfaceId !== surfaceId || current.target.surfaceType !== surfaceType ||
+        current.target.surfaceRole !== surfaceRole || current.target.ownerWebContentsId !== ownerWebContentsId ||
+        !senderOrigin || urlOrigin(context.sender.getURL()) !== senderOrigin) {
         throw protocolError("Surface changed while opening the Platform Frame Port");
       }
       return current;

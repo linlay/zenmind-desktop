@@ -44,6 +44,11 @@ export const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
 
 export const SURFACE_REGISTRATION_WAIT_MS = 1_500;
 
+// A Frame Port open is cancellable (close, replacement, guest destruction), so it
+// waits for the host's first registration instead of failing a slow cold start.
+// The ceiling only bounds a trusted guest that is never registered.
+export const FRAME_PORT_OPEN_REGISTRATION_WAIT_MS = 10_000;
+
 export const LIVE_CHAT_SURFACE_IDS = new Set([
   MAIN_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID,

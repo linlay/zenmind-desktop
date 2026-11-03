@@ -2008,7 +2008,13 @@ test("FramePort close evidence survives sender destruction without logging crede
   const sender = createSender(target.webContentsId, target.currentUrl);
   await openSession(runtime, sender, "diagnostic-session");
   sender.destroy();
-  const closed = logs.filter(([label]) => label === "[platform-frame-port]");
+  const entries = logs.filter(([label]) => label === "[platform-frame-port]");
+  const opened = entries.filter(([, entry]) => entry.event === "opened");
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0][1].logicalSessionId, "diagnostic-session");
+  assert.equal(opened[0][1].openOrdinal, 1);
+  assert.equal(opened[0][1].logicalGeneration, 1);
+  const closed = entries.filter(([, entry]) => entry.event === "closed");
   assert.equal(closed.length, 1);
   assert.equal(closed[0][1].logicalSessionId, "diagnostic-session");
   assert.equal(closed[0][1].closeReason, "surface_inactive");
@@ -2018,6 +2024,104 @@ test("FramePort close evidence survives sender destruction without logging crede
   assert.equal(closed[0][1].physicalGeneration, 1);
   assert.doesNotMatch(JSON.stringify(logs), /do-not-log|currentUrl|pageRoute|error|payload/);
 });
+
+test("FramePort open logs count reopens on the same guest", async (t) => {
+  const logs = [];
+  t.mock.method(console, "info", (...args) => logs.push(args));
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "first-open");
+  await openSession(runtime, sender, "reopened");
+  const opened = logs
+    .filter(([label, entry]) => label === "[platform-frame-port]" && entry.event === "opened")
+    .map(([, entry]) => [entry.logicalSessionId, entry.openOrdinal]);
+  assert.deepEqual(opened, [["first-open", 1], ["reopened", 2]]);
+});
+
+test("FramePort open waits for registration longer than the query transitional window", async () => {
+  const { FRAME_PORT_OPEN_REGISTRATION_WAIT_MS, SURFACE_REGISTRATION_WAIT_MS } =
+    require("../dist-electron/main/modules/agent-platform/ipc.shared.js");
+  const target = mainTarget();
+  const targets = new Map();
+  const registration = deferred();
+  const waits = [];
+  const runtime = createRuntime(targets, {
+    browserSurfaces: {
+      waitForWebviewSurfaceTarget: (_id, timeoutMs) => { waits.push(timeoutMs); return registration.promise; },
+    },
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "slow-registration" });
+  await flush();
+  assert.deepEqual(waits, [FRAME_PORT_OPEN_REGISTRATION_WAIT_MS]);
+  assert.ok(FRAME_PORT_OPEN_REGISTRATION_WAIT_MS > SURFACE_REGISTRATION_WAIT_MS);
+  assert.equal(runtime.calls.connections.length, 0);
+  targets.set(target.webContentsId, target);
+  registration.resolve(target);
+  await flush();
+  assert.equal(runtime.calls.connections.length, 1);
+  assert.equal(sender.messages.some(({ message }) => message.type === "close"), false);
+});
+
+for (const boundary of ["retirement", "service-state", "access-token"]) {
+  test(`FramePort open survives an in-place Chat navigation during ${boundary}`, async () => {
+    const target = mainTarget();
+    const targets = new Map([[target.webContentsId, target]]);
+    let completeWait;
+    const runtime = createRuntime(targets, {
+      realtimeBroker: {
+        getConnectionState: () => ({ phase: "idle", generation: 0, physicalConnectionCount: 0, reconnectCount: 0 }),
+      },
+      getServiceState: boundary === "service-state"
+        ? () => new Promise((resolve) => { completeWait = resolve; })
+        : async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
+      issueAccessToken: () => boundary === "access-token"
+        ? new Promise((resolve) => { completeWait = resolve; })
+        : Promise.resolve({ ok: true, token: "token", message: "" }),
+    });
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "navigating-open" });
+    if (boundary !== "retirement") await flush();
+    // Same registration generation, new Chat: route, owner Chat and guest URL all change.
+    const navigated = mainTarget(target.webContentsId, { ownerChatId: "chat-2" });
+    targets.set(target.webContentsId, navigated);
+    sender.setURL(navigated.currentUrl);
+    if (boundary === "service-state") completeWait({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } });
+    if (boundary === "access-token") completeWait({ ok: true, token: "token", message: "" });
+    await flush();
+    assert.equal(runtime.calls.connections.length, 1);
+    assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 1);
+    assert.equal(sender.messages.some(({ message }) => message.type === "close"), false);
+  });
+
+  test(`FramePort open still closes when the guest leaves its origin during ${boundary}`, async () => {
+    const target = mainTarget();
+    const targets = new Map([[target.webContentsId, target]]);
+    let completeWait;
+    const runtime = createRuntime(targets, {
+      realtimeBroker: {
+        getConnectionState: () => ({ phase: "idle", generation: 0, physicalConnectionCount: 0, reconnectCount: 0 }),
+      },
+      getServiceState: boundary === "service-state"
+        ? () => new Promise((resolve) => { completeWait = resolve; })
+        : async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
+      issueAccessToken: () => boundary === "access-token"
+        ? new Promise((resolve) => { completeWait = resolve; })
+        : Promise.resolve({ ok: true, token: "token", message: "" }),
+    });
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "leaving-open" });
+    if (boundary !== "retirement") await flush();
+    sender.setURL("https://elsewhere.test/agent/agent-1?chatId=chat-1");
+    if (boundary === "service-state") completeWait({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } });
+    if (boundary === "access-token") completeWait({ ok: true, token: "token", message: "" });
+    await flush();
+    assert.equal(runtime.calls.connections.length, 0);
+    assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+    assert.ok(sender.messages.some(({ message }) => message.type === "close" && message.event.reason === "surface_inactive"));
+  });
+}
 
 for (const boundary of ["retirement", "service-state", "access-token"]) {
   test(`FramePort revalidates its surface after ${boundary} before advancing authorization`, async () => {

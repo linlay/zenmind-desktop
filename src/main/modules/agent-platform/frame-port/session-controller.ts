@@ -14,8 +14,8 @@ import type { FramePortOptions } from "../ipc.shared";
 import {
   AGENT_PLATFORM_SERVICE_ID,
   ClosedLogicalSessionDiagnostic,
+  FRAME_PORT_OPEN_REGISTRATION_WAIT_MS,
   LogicalSession,
-  SURFACE_REGISTRATION_WAIT_MS,
   StreamBinding,
   SurfaceContext,
   readText,
@@ -102,6 +102,20 @@ export function createSessionController(options: FramePortOptions) {
       closeReason: reason, trigger, openingStage: opening?.stage,
       pendingRequestCount: session?.requestIds.size ?? 0,
       activeStreamCount: session?.streams.size ?? 0,
+    });
+  }
+
+  function reportSessionOpen(session: LogicalSession, context: SurfaceContext, registrationWaitMs: number): void {
+    const openOrdinal = (senderOpenCounts.get(session.sender.id) ?? 0) + 1;
+    senderOpenCounts.set(session.sender.id, openOrdinal);
+    // An ordinal above one on the same guest is a page reload or a WebClient
+    // reopen after a retired Session; frequent reopens point at a close loop.
+    console.info("[platform-frame-port]", {
+      event: "opened", platform: process.platform, logicalSessionId: session.sessionId.slice(0, 200),
+      webContentsId: session.sender.id, surfaceId: context.target.surfaceId,
+      surfaceGeneration: context.target.registrationId,
+      logicalGeneration: session.logicalGeneration,
+      openOrdinal, registrationWaitMs,
     });
   }
 
@@ -231,6 +245,7 @@ export function createSessionController(options: FramePortOptions) {
         closeSession(session, "surface_inactive", undefined, trigger);
     }
     installedCleanup.delete(senderId);
+    senderOpenCounts.delete(senderId);
   }
 
   function installSenderCleanup(sender: WebContents): void {
@@ -296,11 +311,14 @@ export function createSessionController(options: FramePortOptions) {
     const initialTarget = options.browserSurfaces.resolveWebviewSurfaceTarget(event.sender.id);
     let context = authorizeSurface(event.sender, options.browserSurfaces, options.isTrustedAgentWebclientSession);
     let waitedForRegistration = false;
+    let registrationWaitMs = 0;
     if ("ok" in context &&
       !initialTarget &&
       mayAwaitSurfaceRegistration(event.sender, options.isTrustedAgentWebclientSession)) {
       waitedForRegistration = true;
-      await options.browserSurfaces.waitForWebviewSurfaceTarget(event.sender.id, SURFACE_REGISTRATION_WAIT_MS, opening.abortController.signal);
+      const waitStartedAt = Date.now();
+      await options.browserSurfaces.waitForWebviewSurfaceTarget(event.sender.id, FRAME_PORT_OPEN_REGISTRATION_WAIT_MS, opening.abortController.signal);
+      registrationWaitMs = Date.now() - waitStartedAt;
       if (!isCurrentOpening(opening)) return;
       context = authorizeSurface(event.sender, options.browserSurfaces, options.isTrustedAgentWebclientSession);
     }
@@ -374,6 +392,7 @@ export function createSessionController(options: FramePortOptions) {
     keys.add(key);
     senderSessionKeys.set(event.sender.id, keys);
     installSenderCleanup(event.sender);
+    reportSessionOpen(session, context, registrationWaitMs);
     try {
       const connectionLane = context.kind === "agent-selection-explain" ? "selection-explain" : "primary";
       const unsubscribeConnection = options.realtimeBroker.subscribeConnection({
@@ -490,6 +509,7 @@ export function createSessionController(options: FramePortOptions) {
   const handleWorkPanelInvoke = workpanelInvoke.handleWorkPanelInvoke;
   const sessions = new Map<string, LogicalSession>();
   const openingSessions = new Map<number, OpeningSession>();
+  const senderOpenCounts = new Map<number, number>();
   const senderSessionKeys = new Map<number, Set<string>>();
   const closedLogicalSessions: ClosedLogicalSessionDiagnostic[] = [];
   const installedCleanup = new Set<number>();
