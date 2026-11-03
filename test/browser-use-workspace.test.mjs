@@ -161,8 +161,21 @@ test("state changes reach all attached Chats and settings refresh runs once per 
 test("workspace takeover targets the actual owner even when invoked from a different Chat", async t => {
   const f = harness(); t.after(() => f.runtime.dispose()); const a = source("chat-a", "owner", "root-team"); await registerBrowserTask(f.runtime, a); await f.cdp(a, "Surface.list");
   f.runtime.state("chat-b"); await f.runtime.takeover("chat-b");
-  assert.deepEqual(f.stopped, [{ runId: "owner", agentKey: "root-team" }]); assert.equal(f.clients[0].killed, true);
-  assert.equal(f.runtime.state("chat-a").connection, "disconnected"); assert.equal(f.runtime.state("chat-b").connection, "disconnected");
+  assert.deepEqual(f.stopped, [{ runId: "owner", agentKey: "root-team" }]);
+  // The remembered workspace still serves chat-a and chat-b; takeover stops the task, not their connection.
+  assert.equal(f.clients[0].killed, false);
+  assert.equal(f.runtime.state("chat-a").connection, "connected"); assert.equal(f.runtime.state("chat-b").connection, "connected");
+  await f.runtime.workspaces.get(f.runtime.state("chat-b").workspaceId)?.drain;
+  assert.equal(f.runtime.state("chat-b").workspaceOwner, undefined);
+  const b = source("chat-b", "run-b"); await registerBrowserTask(f.runtime, b, "chrome");
+  assert.equal(Array.isArray((await f.cdp(b, "Surface.list")).result.surfaces), true);
+  assert.equal(f.clients.length, 1);
+});
+
+test("takeover of a Chat-private workspace still disconnects it", async t => {
+  const f = harness({ preferences: { rememberChromeConnection: false } }); t.after(() => f.runtime.dispose());
+  await f.runtime.connect("chat-a"); await f.runtime.takeover("chat-a");
+  assert.equal(f.clients[0].killed, true); assert.equal(f.runtime.state("chat-a").connection, "disconnected");
 });
 
 test("a late old exit after explicit disconnect cannot clear the replacement workspace", async t => {

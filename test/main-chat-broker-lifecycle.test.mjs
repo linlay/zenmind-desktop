@@ -331,8 +331,9 @@ test('real WebClient FramePort query acceptance registers the browser Run before
   assert.deepEqual(browser.lifecycle, [['prepared', source], ['ready', source]], 'accepted.then must not mark run.start processed before its browser grant exists');
   assert.throws(() => browser.runtime.select('browser-chat', 'chrome'), { code: 'browser_busy' });
   const unselected = await browser.reverse('browser-before-selection', 'desktop.cdp.call', undefined, { method: 'Surface.list', source });
-  assert.equal(unselected.type, 'browser_selection_required', JSON.stringify(unselected));
-  assert.equal(browser.actions.length, 0, 'grant readiness alone never chooses the task browser');
+  // Without an explicit choice the Run uses the WorkPanel; it never connects Chrome.
+  assert.equal(unselected.frame, 'response', JSON.stringify(unselected));
+  assert.equal(browser.actions.length, 0);
   const selected = await browser.reverse('browser-task-target', 'desktop.cdp.call', undefined, { method: 'Browser.select', params: { browser: 'workpanel' }, source });
   assert.equal(selected.frame, 'response', JSON.stringify(selected));
   const open = await browser.reverse('browser-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });

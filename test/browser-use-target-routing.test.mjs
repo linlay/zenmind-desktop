@@ -62,7 +62,6 @@ test("explicit Chrome overrides WorkPanel and lazily reuses saved authorization"
 test("viewport emulation obeys the task gate and never connects or falls back from Chrome", async t => {
   const chrome = harness("chrome"); t.after(() => chrome.runtime.dispose()); chrome.runtime.registerRun(source());
   const viewport = { width: 390, height: 844, mobile: true };
-  await assert.rejects(chrome.cdp("Surface.setViewport", viewport), { code: "browser_selection_required" });
   await chrome.select("chrome");
   await assert.rejects(chrome.cdp("Surface.setViewport", viewport), error => error.code === "capability_unavailable" && /WorkPanel pages only/.test(error.message));
   assert.equal(chrome.clients.length, 0);
@@ -131,23 +130,28 @@ test("AWCP and legacy WorkPanel open freeze task routing too", async t => {
   }
 });
 
-test("every new ordinary Run must choose before page or AWCP work, with no connection or dispatch on rejection", async t => {
+test("an ordinary Run without a browser choice uses the WorkPanel and never connects Chrome", async t => {
   const h = harness("chrome"); t.after(() => h.runtime.dispose());
   h.runtime.select("chat-a", "chrome"); h.runtime.registerRun(source());
-  for (const method of ["Surface.list", "Surface.openChrome", "Surface.observe", "Surface.getState"]) {
-    await assert.rejects(h.cdp(method, { url: "https://fixture.test" }), error => error.code === "browser_selection_required" && /ask_user_question/.test(error.message));
-  }
-  await assert.rejects(h.runtime.awcp("manual-1", "AWCP.getManual", {}, source(), new AbortController().signal, "chrome:copied"), { code: "browser_selection_required" });
-  let actionCalls = 0;
-  await assert.rejects(h.runtime.action({ action: "desktop.workpanel.openWeb", args: { url: "https://fixture.test" }, source: source() }, undefined, async () => { actionCalls++; }), { code: "browser_selection_required" });
-  assert.equal(h.clients.length, 0); assert.equal(h.fallbacks.length, 0); assert.equal(actionCalls, 0);
-  assert.equal(h.runtime.state("chat-a").connectionRequest, undefined);
-  assert.equal((await h.select("workpanel")).result.locked, false, "rejected requests do not freeze the candidate");
+  // A Chrome default and an earlier Chat selection are not a task choice.
   assert.equal((await h.cdp("Surface.list")).result.provider, "workpanel");
+  assert.equal(h.runtime.state("chat-a").backend, "workpanel");
+  await assert.rejects(h.cdp("Surface.openChrome", { url: "https://fixture.test" }), { code: "browser_backend_mismatch" });
+  await assert.rejects(h.runtime.awcp("manual-1", "AWCP.getManual", {}, source(), new AbortController().signal, "chrome:copied"), { code: "browser_run_unavailable" });
+  let actionCalls = 0;
+  await h.runtime.action({ action: "desktop.workpanel.openWeb", args: { url: "https://fixture.test" }, source: source() }, undefined, async () => { actionCalls++; return { ok: true }; });
+  assert.equal(actionCalls, 1); assert.equal(h.clients.length, 0);
+  assert.equal(h.runtime.state("chat-a").connectionRequest, undefined);
+  await assert.rejects(h.select("chrome"), { code: "browser_target_locked" }, "the implicit WorkPanel binding freezes after page work");
+});
+
+test("an explicit Chrome choice before page work still routes a new Run to Chrome", async t => {
+  const h = harness("workpanel"); t.after(() => h.runtime.dispose());
+  h.runtime.registerRun(source()); assert.equal((await h.cdp("Surface.list")).result.provider, "workpanel");
   h.runtime.releaseRun("run-a"); h.runtime.registerRun(source("chat-a", "followup"));
-  await assert.rejects(h.cdp("Surface.list", {}, source("chat-a", "followup")), { code: "browser_selection_required" });
-  await h.select("workpanel", source("chat-a", "followup"));
-  assert.equal((await h.cdp("Surface.list", {}, source("chat-a", "followup"))).result.provider, "workpanel");
+  await h.select("chrome", source("chat-a", "followup"));
+  assert.equal((await h.cdp("Surface.list", {}, source("chat-a", "followup"))).result.provider, "chrome");
+  assert.equal(h.clients.length, 1);
 });
 
 test("selection cannot forge source, resurrect a released Run, or provide browser connection fields", async t => {
@@ -181,4 +185,31 @@ test("Website and WebApp captured grants reject Browser.select before runtime or
   assert.equal(runtimeCalls, 0); assert.equal(fallbackCalls, 0);
   await context.invoke({ method: "Surface.list" }, { kind: "website" }); assert.equal(fallbackCalls, 1);
   await context.invoke({ method: "Browser.select", params: { browser: "workpanel" } }); assert.equal(runtimeCalls, 1);
+});
+
+test("a WorkPanel Run reads only downloads it has seen on that page", async t => {
+  const h = harness(); t.after(() => h.runtime.dispose()); h.runtime.registerRun(source());
+  const calls = [];
+  const call = (method, params, identity = source()) => h.runtime.cdp({ method, params, source: identity, surfaceId: "web:owned" }, undefined, async () => {
+    calls.push(method);
+    if (method === "Surface.getDownloads") return { ok: true, result: { downloads: [{ downloadId: "d-1", fileName: "a.txt", status: "complete" }] } };
+    return { ok: true, result: { downloadId: params.downloadId, released: true } };
+  });
+  await assert.rejects(call("Surface.readDownload", { downloadId: "d-1" }), { code: "stale_observation" });
+  assert.deepEqual(calls, [], "an unseen download is never read");
+  await call("Surface.getDownloads", {});
+  assert.equal((await call("Surface.readDownload", { downloadId: "d-1" })).result.downloadId, "d-1");
+  h.runtime.releaseRun("run-a"); h.runtime.registerRun(source("chat-a", "next"));
+  await assert.rejects(call("Surface.releaseDownload", { downloadId: "d-1", sha256: "0".repeat(64) }, source("chat-a", "next")), { code: "stale_observation" });
+});
+
+test("viewing many Chats does not retain an unbounded set of idle browser sessions", async t => {
+  const h = harness(); t.after(() => h.runtime.dispose());
+  h.runtime.registerRun(source("busy-chat", "busy-run"));
+  for (let index = 0; index < 260; index++) h.runtime.state(`viewed-${index}`);
+  assert.equal(h.runtime.sessions.size <= 200, true, `sessions=${h.runtime.sessions.size}`);
+  assert.equal(h.runtime.sessions.has("busy-chat"), true, "a Chat with a Run is never pruned");
+  assert.equal(h.runtime.sessions.has("viewed-259"), true, "the Chat being viewed is kept");
+  assert.equal(h.runtime.workspaces.size <= h.runtime.sessions.size, true);
+  assert.equal(h.runtime.state("viewed-0").backend, "workpanel", "a pruned Chat is recreated on its next view");
 });

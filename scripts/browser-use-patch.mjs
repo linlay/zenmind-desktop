@@ -70,5 +70,13 @@ export function stageBrowserUseRuntime(rootDir, mainDir) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  patchBrowserUseUpstream(process.cwd());
+  try {
+    patchBrowserUseUpstream(process.cwd());
+  } catch (error) {
+    // npm install must not fail for every contributor because of this optional runtime. Building Desktop
+    // calls patchBrowserUseUpstream again and still refuses to package an unreviewed or unpatched upstream.
+    if (!process.argv.includes("--postinstall")) throw error;
+    console.warn(`[browser-use] Chrome runtime patch was not applied: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn("[browser-use] Desktop builds will fail until the reviewed Playwright versions are installed (npm run browser-use:patch).");
+  }
 }
