@@ -11,7 +11,7 @@
   -webkit-app-region: no-drag;
 }
 
-.conversation-share-dialog-layer[data-phase="done"] {
+.conversation-share-dialog-layer[data-phase="done"]:not(:has(.conversation-share-dialog)) {
   background: transparent;
   pointer-events: none;
 }
