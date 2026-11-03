@@ -101,8 +101,13 @@ async function importValidatedEnvBuffer(
   for (const relativePath of ENV_IMPORT_METADATA_PATHS) inspectEnvImportTarget(targetRoot, relativePath, false);
   if (!entries.some((entry) => !entry.directory)) throw new Error(t("envBootstrap.emptyImport"));
 
-  fs.mkdirSync(path.dirname(targetRoot), { recursive: true });
-  const stageRoot = fs.mkdtempSync(path.join(path.dirname(targetRoot), ".desktop-env-import-"));
+  const parentRoot = path.dirname(targetRoot);
+  // Windows rejects mkdir on a volume root even with recursive: true.
+  // mkdtemp below still reports missing drives or staging permission errors.
+  if (platform !== "win32" || parentRoot !== path.parse(parentRoot).root) {
+    fs.mkdirSync(parentRoot, { recursive: true });
+  }
+  const stageRoot = fs.mkdtempSync(path.join(parentRoot, ".desktop-env-import-"));
   if (platform !== "win32") fs.chmodSync(stageRoot, 0o700);
   const result: EnvZipImportResult = { targetRoot, copiedFiles: 0, skippedFiles: 0, overwrittenFiles: 0, createdDirectories: 0 };
   try {
