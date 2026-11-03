@@ -126,11 +126,14 @@ export class ChromeBackend {
   private timedOut(id: string): void {
     const pending = this.pending.get(id);
     if (!pending) return;
-    const connectionFailed = pending.method === "connect" || connectionControls.has(pending.method);
-    const error = Object.assign(new Error(connectionFailed
-      ? "The Chrome worker did not respond to its connection control deadline."
-      : "The Chrome request timed out. Its execution is being reconciled; check the page before repeating an action."), {
-      code: connectionFailed ? "browser_disconnected" : "browser_action_timeout",
+    const connecting = pending.method === "connect";
+    const connectionFailed = connecting || connectionControls.has(pending.method);
+    const error = Object.assign(new Error(connecting
+      ? "Chrome did not finish connecting in time. Check the selected Chrome profile and Playwright Extension, then connect again."
+      : connectionFailed
+        ? "The Chrome worker did not respond to its connection control deadline."
+        : "The Chrome request timed out. Its execution is being reconciled; check the page before repeating an action."), {
+      code: connecting ? "chrome_connection_timeout" : connectionFailed ? "browser_disconnected" : "browser_action_timeout",
       // Lack of a started message is not proof that input was never dispatched.
       details: { phase: pending.started ? "execution" : "queue", outcome: "unknown" },
     });

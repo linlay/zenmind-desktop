@@ -56,7 +56,10 @@ async function fixture(t, options = {}) {
     async createDownloadSession() { sessions++; sessionStarted.resolve(); return options.prepare ? await options.prepare.promise : session; },
   };
   const describe = async () => ({ pageId: tab.desktopPageId, url: page.url(), title: 'Owned fixture', active: true, isLoading: false });
-  const controller = { browserContext: { once() {} }, list: async () => [await describe()], describe, async disconnect() {},
+  let connected = true;
+  const controller = {
+    browserContext: { once() {}, browser: () => ({ isConnected: () => connected }) },
+    list: async () => [await describe()], describe, async disconnect() { connected = false; },
     async run(pageId, operation) {
       assert.equal(pageId, tab.desktopPageId);
       if (options.initialize) { initialized.resolve(); await options.initialize.promise; }

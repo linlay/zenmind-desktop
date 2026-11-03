@@ -121,6 +121,37 @@ test("queue expiry cancels an unstarted write and acknowledges it before precedi
   assert.deepEqual(await f.backend.request("list"), [page]);
 });
 
+test("initial connection timeout reports chrome_connection_timeout and still releases the unresponsive Worker", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const connecting = deferred();
+  const f = pair(t, () => connecting.promise);
+  f.setIgnore(request => request.method === "disconnect");
+  const connect = f.backend.request("connect");
+  let finished = false;
+  void connect.then(() => { finished = true; }, () => { finished = true; });
+  const rejected = assert.rejects(connect, error => {
+    assert.equal(error.code, "chrome_connection_timeout");
+    assert.match(error.message, /connecting in time/);
+    assert.match(error.message, /Playwright Extension/);
+    return true;
+  });
+  await flush();
+  await f.advance(179_999);
+  assert.equal(finished, false);
+  assert.equal(f.kills, 0);
+  await f.advance(1); await rejected;
+  assert.ok(f.messages.some(message => message.method === "disconnect"));
+  let drained = false;
+  const drain = f.backend.drain().then(() => { drained = true; });
+  await f.advance(1_499);
+  assert.equal(drained, false);
+  assert.equal(f.kills, 0);
+  await f.advance(1);
+  await drain;
+  assert.equal(f.kills, 1);
+  assert.deepEqual(f.exits, [-1]);
+});
+
 test("an executing timeout keeps real drain, ignores its late result and never replays the write", async t => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
   const opening = deferred();
