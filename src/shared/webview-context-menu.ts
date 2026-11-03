@@ -107,6 +107,8 @@ export type WebviewContextMenuResolveRequest = {
   action: typeof WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION;
   version: typeof WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION;
   requestId: string;
+  /** Resolve the owning message/code for selected inline link text. */
+  purpose?: "selection";
   x: number;
   y: number;
 };

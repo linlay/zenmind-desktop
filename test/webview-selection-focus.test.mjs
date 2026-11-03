@@ -27,8 +27,9 @@ const menu = require("../dist-electron/shared/webview-context-menu.js");
 const bridge = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
 
 for (const platform of ["darwin", "win32"]) {
-  test(`${platform}: focus the original guest before opening its annotation, reject stale selections`, async () => {
+  test(`${platform}: select inline file text, focus its guest for annotation and reject stale selections`, async () => {
     const operations = [];
+    const probes = [];
     let shown;
     const target = {
       webContentsId: 2, ownerWebContentsId: 1, registrationId: "registration",
@@ -40,9 +41,12 @@ for (const platform of ["darwin", "win32"]) {
       focus: () => operations.push("focus"),
       send: (_channel, payload) => {
         if (payload.action === menu.WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION) {
+          probes.push(payload);
           listeners.get(menu.WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL)({ sender: guest }, {
             version: menu.WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION, requestId: payload.requestId,
-            target: { version: menu.WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION, targetId: "message:1", kind: "message", capabilities: ["content.copy"] },
+            target: payload.purpose === "selection"
+              ? { version: menu.WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION, targetId: "message:1", kind: "message", capabilities: ["content.copy"] }
+              : { version: menu.WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION, targetId: "file:1", kind: "workspace-file", capabilities: ["workspace.preview"] },
           });
         } else if (payload.action === bridge.AGENT_WEBCLIENT_SELECTION_ACTION) {
           operations.push(payload.operation);
@@ -72,6 +76,8 @@ for (const platform of ["darwin", "win32"]) {
       { sender: { id: owner } }, { version: toolbar.WEBVIEW_SELECTION_TOOLBAR_VERSION, selectionId: shown.selectionId, action },
     );
     await show();
+    assert.equal(probes.length, 2);
+    assert.deepEqual(probes.map(probe => probe.purpose), ["selection", "selection"]);
     assert.deepEqual(await execute("add-to-chat", 9), { ok: false, code: "stale_selection" });
     assert.deepEqual(operations, []);
     assert.deepEqual(await execute("add-to-chat"), { ok: true });
