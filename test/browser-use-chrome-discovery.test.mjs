@@ -5,41 +5,39 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
-import { patchBrowserUseUpstream } from '../scripts/browser-use-patch.mjs';
+import { patchBrowserUseUpstream, supportedPlaywrightCore } from '../scripts/browser-use-patch.mjs';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, '..');
 patchBrowserUseUpstream(root);
-const source = fs.readFileSync(path.join(root, 'node_modules/playwright-core/lib/coreBundle.js'), 'utf8');
-const start = source.indexOf('async function createExtensionBrowser(');
-const end = source.indexOf('\nvar import_path60,', start);
-assert.ok(start >= 0 && end > start);
+const adapterSource = fs.readFileSync(path.join(root, 'scripts/browser-use-upstream-adapter.cjs'), 'utf8');
 
-function connection(profile) {
+function connection(profile, options = {}) {
   const calls = [];
   const browser = { on: () => undefined };
-  const context = vm.createContext({ process: { env: {} }, import_path60: { default: path },
+  const module = { exports: {} };
+  const context = vm.createContext({ module, process: { env: {} }, require,
     defaultUserDataDirForChannel(channel) { calls.push(['root', channel]); return '/owned-fixture-root'; },
     async findPlaywrightExtensionProfile(directory) { calls.push(['discover', directory]); return profile; },
     async isExtensionInstalledInProfile() { throw new Error('Disk preflight must not authorize or veto a connection'); },
     CDPRelayServer: class {
       constructor(...args) { calls.push(['relay', ...args]); }
       async start() { calls.push(['start']); }
-      async establishExtensionConnection(client) { calls.push(['official-handshake', client]); }
+      async establishExtensionConnection(client) { calls.push(['official-handshake', client]); await options.handshake?.(); }
       cdpEndpoint() { return 'http://127.0.0.1/owned-fixture'; }
       extensionEndpoint() { return 'http://127.0.0.1/owned-fixture-extension'; }
       stop() { calls.push(['stop']); }
     },
     playwright: { chromium: { async connectOverCDP() { calls.push(['connected']); return browser; } } },
-    debugLogger3() {},
   });
-  vm.runInContext(source.slice(start, end) + '\nglobalThis.connect = createExtensionBrowser;', context);
-  return { calls, connect: context.connect };
+  vm.runInContext(adapterSource, context);
+  const api = module.exports.__desktopBrowserUse;
+  return { calls, connect: (...args) => api.connectExtension(...args) };
 }
 
 test('production default parameters treat a discovery miss as no profile hint and still require the official handshake', async () => {
   const f = connection(undefined);
-  await f.connect('chrome', undefined, undefined, undefined, 'Desktop');
+  await f.connect(undefined, undefined, undefined, 'Desktop');
   assert.deepEqual(f.calls, [
     ['root', 'chrome'], ['discover', '/owned-fixture-root'], ['relay', 'chrome', undefined, undefined, undefined],
     ['start'], ['official-handshake', 'Desktop'], ['connected'],
@@ -48,25 +46,45 @@ test('production default parameters treat a discovery miss as no profile hint an
 
 test('successful auto discovery remains a profile hint and does not replace official approval', async () => {
   const f = connection('Profile 2');
-  await f.connect('chrome', undefined, undefined, undefined, 'Desktop');
+  await f.connect(undefined, undefined, undefined, 'Desktop');
   assert.deepEqual(f.calls.find(call => call[0] === 'relay'), ['relay', 'chrome', undefined, undefined, 'Profile 2']);
   assert.equal(f.calls.filter(call => call[0] === 'official-handshake').length, 1);
 });
 
-test('upstream patch rejects a changed original source checksum before modifying it', t => {
+test('cancelling while the user approves the connection stops the relay', async () => {
+  const controller = new AbortController();
+  const f = connection(undefined, { handshake: async () => controller.abort() });
+  await assert.rejects(f.connect(undefined, undefined, undefined, 'Desktop', controller.signal), { code: 'cancelled' });
+  assert.equal(f.calls.some(call => call[0] === 'stop'), true);
+  assert.equal(f.calls.some(call => call[0] === 'connected'), false);
+});
+
+function fixturePackage(t, version, source) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-use-integrity-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  for (const name of ['playwright-core', 'playwright', '@playwright/mcp']) {
-    const target = path.join(directory, 'node_modules', name);
-    fs.mkdirSync(target, { recursive: true });
-    fs.copyFileSync(path.join(root, 'node_modules', name, 'package.json'), path.join(target, 'package.json'));
-  }
-  const filename = path.join(directory, 'node_modules/playwright-core/lib/coreBundle.js');
-  fs.mkdirSync(path.dirname(filename), { recursive: true });
-  const tampered = fs.readFileSync(path.join(root, 'node_modules/playwright-core/lib/coreBundle.js.desktop-original'), 'utf8') + '\n// modified source\n';
-  fs.writeFileSync(filename, tampered);
-  assert.throws(() => patchBrowserUseUpstream(directory), /source checksum differs/);
-  assert.equal(fs.readFileSync(filename, 'utf8'), tampered);
+  fs.writeFileSync(path.join(directory, 'package.json'), '{"name":"fixture"}');
+  const target = path.join(directory, 'node_modules/playwright-core');
+  fs.mkdirSync(path.join(target, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'package.json'), JSON.stringify({ name: 'playwright-core', version }));
+  fs.writeFileSync(path.join(target, 'lib/coreBundle.js'), source);
+  return { directory, filename: path.join(target, 'lib/coreBundle.js') };
+}
+
+test('the adapter accepts only stable releases in the supported major line', () => {
+  for (const version of ['1.64.1', '1.64.2', '1.65.0', '1.99.10']) assert.equal(supportedPlaywrightCore(version), true, version);
+  for (const version of ['1.64.0', '1.63.9', '2.0.0', '1.65.0-alpha-2026-11-03', '1.64.1-beta-1793483565000', '1.64.0-alpha-1790635538000'])
+    assert.equal(supportedPlaywrightCore(version), false, version);
+});
+
+test('a prerelease is rejected before its bundle is modified', t => {
+  const { directory, filename } = fixturePackage(t, '1.65.0-alpha-2026-11-03', '"use strict";\n');
+  assert.throws(() => patchBrowserUseUpstream(directory), /stable playwright-core/);
+  assert.equal(fs.readFileSync(filename, 'utf8'), '"use strict";\n');
+});
+
+test('a stable release missing an upstream binding fails the build instead of being packaged', t => {
+  const { directory } = fixturePackage(t, '1.70.0', '"use strict";\n');
+  assert.throws(() => patchBrowserUseUpstream(directory), /lacks what Browser Use needs \(.*CDPRelayServer/);
 });
 
 test('connection failure categories redact upstream URLs and credentials without assuming an extension is missing', () => {

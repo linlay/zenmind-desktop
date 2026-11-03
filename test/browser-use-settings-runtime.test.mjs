@@ -447,7 +447,12 @@ test("adapter rejects inherited authorization and removes explicit credentials a
     const browser = { contexts: () => [{}] };
     const sandbox = { module: { exports: {} }, process: { env: environment }, init_mcp() {},
       resolveConfig: async () => { assert.equal(environment.PLAYWRIGHT_MCP_EXTENSION_TOKEN, undefined); return {}; },
-      filteredTools: () => [], createExtensionBrowser: async () => { captured.push(environment.PLAYWRIGHT_MCP_EXTENSION_TOKEN); if (reject) throw new Error("fixture handshake failed"); return browser; },
+      filteredTools: () => [], defaultUserDataDirForChannel: () => "/owned-fixture-root",
+      CDPRelayServer: class {
+        async start() {} stop() {} cdpEndpoint() { return "http://127.0.0.1/owned-fixture"; }
+        async establishExtensionConnection() { captured.push(environment.PLAYWRIGHT_MCP_EXTENSION_TOKEN); if (reject) throw new Error("fixture handshake failed"); }
+      },
+      playwright: { chromium: { connectOverCDP: async () => ({ ...browser, on() {} }) } },
       BrowserBackend: class { constructor() { this._context = context; } async initialize() {} },
     };
     vm.runInNewContext(adapter, sandbox);

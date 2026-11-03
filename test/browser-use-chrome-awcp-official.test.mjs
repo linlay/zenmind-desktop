@@ -49,11 +49,7 @@ test("official Chrome Worker supports mixed typed and AWCP tools with the unchan
     const { ChromeWorkerEngine, readWebsiteBridgeArchive, buildWebsiteBridgeScript } = require(path.join(working, "host.cjs"));
     const pkg = await readWebsiteBridgeArchive(archivePath); assert.equal(pkg.manifest.id, "1024forum"); assert.equal(pkg.scripts.size, 12);
     checks.unchangedProductionValidatedZip = true;
-    for (const name of ["playwright-core", "playwright", "@playwright/mcp"]) {
-      const target = path.join(working, "node_modules", name); fs.mkdirSync(path.dirname(target), { recursive: true });
-      if (name === "playwright-core") fs.cpSync(path.join(root, "node_modules", name), target, { recursive: true });
-      else { fs.mkdirSync(target, { recursive: true }); fs.copyFileSync(path.join(root, "node_modules", name, "package.json"), path.join(target, "package.json")); }
-    }
+    fs.cpSync(path.join(root, "node_modules/playwright-core"), path.join(working, "node_modules/playwright-core"), { recursive: true });
     const packageDir = patchBrowserUseUpstream(working), api = require(path.join(packageDir, "lib/coreBundle.js")).__desktopBrowserUse;
     const profile = path.join(working, "owned-profile"); fs.mkdirSync(profile);
     browserProcess = originalSpawn(chrome, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--use-mock-keychain", "--remote-debugging-port=0", `--user-data-dir=${profile}`, `--disable-extensions-except=${extension}`, `--load-extension=${extension}`, "about:blank"], { stdio: "ignore" });
@@ -144,6 +140,7 @@ test("official Chrome Worker supports mixed typed and AWCP tools with the unchan
     assert.equal(network.every(request => request.method === "GET" && request.origin === origin), true);
     assert.equal(crypto.createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex"), archiveSha); checks.originalArchiveUnchanged = true;
     await engine.disconnect(); assert.equal(browserProcess.exitCode, null); checks.chromePreservedUntilFixtureCleanup = true;
+    fs.mkdirSync(path.join(root, "build/qa/browser-use"), { recursive: true });
     fs.writeFileSync(path.join(root, "build/qa/browser-use/chrome-awcp-official-evidence.json"), JSON.stringify({ status: "PASS", checkedAt: new Date().toISOString(), archiveSha256: archiveSha,
       transport: "Production ChromeWorkerEngine AWCP methods and official Extension 0.4.0; owned CfT profile; offline route owns Fetch so fixture download hook is disabled", checks, requests: network }, null, 2) + "\n");
     t.diagnostic(`Production AWCP Worker with official extension: ${Object.keys(checks).length} checks passed; forum requests were offline GET mocks only.`);

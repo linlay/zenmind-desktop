@@ -39,12 +39,7 @@ test("official extension copies explicit downloads and preserves ordinary browse
   const originalSpawn = childProcess.spawn;
   try {
     // Test the production adapter using private copies, never the user's Chrome profile or shared build output.
-    for (const packageName of ["playwright-core", "playwright", "@playwright/mcp"]) {
-      const target = path.join(directory, "node_modules", packageName);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      if (packageName === "playwright-core") fs.cpSync(path.join(root, "node_modules", packageName), target, { recursive: true });
-      else { fs.mkdirSync(target, { recursive: true }); fs.copyFileSync(path.join(root, "node_modules", packageName, "package.json"), path.join(target, "package.json")); }
-    }
+    fs.cpSync(path.join(root, "node_modules/playwright-core"), path.join(directory, "node_modules/playwright-core"), { recursive: true });
     const packageDir = patchBrowserUseUpstream(directory);
     const { chromium } = require(packageDir);
     const api = require(path.join(packageDir, "lib/coreBundle.js")).__desktopBrowserUse;

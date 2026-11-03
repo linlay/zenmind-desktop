@@ -59,11 +59,14 @@ test("reviewed upstream patch is deterministic and packaged with its own runtime
   assert.ok(fs.existsSync(path.join(staged, "LICENSE")));
   assert.ok(fs.existsSync(path.join(staged, "NOTICE")));
   const stagedApi = require(path.join(staged, "lib/coreBundle.js")).__desktopBrowserUse;
-  assert.equal(stagedApi.patchVersion, 1);
+  assert.equal(stagedApi.patchVersion, 2);
   assert.equal(typeof stagedApi.create, "function");
+  assert.deepEqual(stagedApi.missing(), []);
   const manifest = JSON.parse(fs.readFileSync(path.join(temp, "browser-use-runtime/upstream.json"), "utf8"));
-  assert.equal(manifest.mcp, "0.0.83");
-  assert.equal(manifest.commit, "e8149b8257d32dcf8f72573ecc43e72439da7080");
+  // The packaged runtime records the stable release actually installed, not a pinned prerelease.
+  assert.equal(manifest.core, require("playwright-core/package.json").version);
+  assert.match(manifest.core, /^1\.\d+\.\d+$/);
+  assert.equal(fs.existsSync(path.join(staged, "lib/coreBundle.js.desktop-original")), false);
 });
 
 test("worker accepts only the private IPC protocol; production connect cannot accept arbitrary CDP endpoints", async t => {

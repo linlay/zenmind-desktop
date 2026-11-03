@@ -47,11 +47,7 @@ test("official saved authorization connects independent Chat groups without Allo
   try {
     // Replay the production patch only in a private dependency copy. Never stage
     // or mutate the application's shared coreBundle while another build may run.
-    for (const name of ["playwright-core", "playwright", "@playwright/mcp"]) {
-      const target = path.join(directory, "node_modules", name); fs.mkdirSync(path.dirname(target), { recursive: true });
-      if (name === "playwright-core") fs.cpSync(path.join(root, "node_modules", name), target, { recursive: true });
-      else { fs.mkdirSync(target, { recursive: true }); fs.copyFileSync(path.join(root, "node_modules", name, "package.json"), path.join(target, "package.json")); }
-    }
+    fs.cpSync(path.join(root, "node_modules/playwright-core"), path.join(directory, "node_modules/playwright-core"), { recursive: true });
     const packageDir = patchBrowserUseUpstream(directory);
     const api = require(path.join(packageDir, "lib/coreBundle.js")).__desktopBrowserUse;
     const modules = path.join(directory, "modules"); fs.mkdirSync(modules);
