@@ -19,6 +19,7 @@ import {
   readInstalledRecords,
   readResponseBytesWithLimit,
   removeInstalledRecord,
+  assertMarketLinkViewer,
   requestMarket,
   requestMarketJson,
   upsertInstalledRecord,
@@ -354,11 +355,16 @@ export async function installMcpMarketItem(
     throw new Error(t("market.main.mcpGatewayServerCodeRequired"));
   }
   const requiresDesktopIdentity = gatewayTagged || Boolean(gatewayServerCode);
+  if (requiresDesktopIdentity && options.linkSource && (!options.linkSource.trusted || !options.linkSource.viewer)) {
+    throw new Error(t(options.linkSource.trusted ? "market.main.marketAuthRequired" : "market.main.linkSourceAuthRequired"));
+  }
   const installedRecord = readInstalledRecords(app).find((record) => record.type === "mcp" && record.id === item.id);
   const { installPath, runtimeRoot, targetPath } = mcpRegistryLocation(app, item.id);
   const apiBaseUrl = getMarketApiBaseUrl(app, options).replace(/\/+$/u, "");
   if (!apiBaseUrl) throw new Error(t("market.main.marketApiNotConfigured"));
-  await requestMarketJson(app, `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`, options, "MCP market authentication request");
+  if (!options.linkSource || (options.linkSource.trusted && options.linkSource.viewer)) {
+    await requestMarketJson(app, `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`, options, "MCP market authentication request");
+  }
   const platform = "universal";
   const resolveQuery = new URLSearchParams({ version: item.version, platform });
   const resolved = asObject(await requestMarketJson(
@@ -390,6 +396,7 @@ export async function installMcpMarketItem(
     "MCP market download"
   );
   const bytes = await readResponseBytesWithLimit(response, MAX_MCP_CONFIG_BYTES);
+  assertMarketLinkViewer(app, options);
   if (bytes.length === 0) {
     throw new Error(t("market.main.mcpInvalidConfig"));
   }

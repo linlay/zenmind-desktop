@@ -11,6 +11,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   registerAssistantRuntimeIpc(options);
   registerPlatformFrameIpc(options);
   registerHelpIpcHandlers(options.ipcMain, options.app);
-  registerServiceMarketIpc(options);
+  const marketLinks = registerServiceMarketIpc(options);
   registerConnectedRuntimeIpc(options);
+  return marketLinks;
 }

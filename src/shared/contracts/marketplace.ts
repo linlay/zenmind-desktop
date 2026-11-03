@@ -232,6 +232,10 @@ export interface MarketFavoriteResult {
   message: string;
 }
 
+export type MarketLinkDetail = Pick<MarketItem, "id" | "type" | "version" | "name" | "description" | "author" | "tags"> & {
+  source: string;
+};
+
 export interface MarketCommandResult {
   canceled?: boolean;
   connectorId?: string;

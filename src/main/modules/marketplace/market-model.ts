@@ -41,6 +41,8 @@ export type InstalledRecord = {
 
 export type MarketplaceOptions = MarketListOptions & {
   expectedVersion?: string;
+  expectedType?: MarketItemType;
+  linkSource?: { base: string; trusted: boolean; viewer: string | null; assertCurrent(): void };
   petPackages?: Pick<PetPackageService, "installMarketPackage" | "removePackage">;
   assertPetOwner?: () => void;
   skinPackages?: {

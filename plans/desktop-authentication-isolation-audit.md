@@ -140,7 +140,7 @@ app 层将该回调绑定到公共 `refreshDesktopSsoIdentityToken(force)`，所
 
 本次没有复现分享或发布失败直接清除 Desktop 总登录的路径。
 
-来源：[对话分享客户端](../src/main/modules/conversation-share/tunnel-client.ts)、[分享控制器](../src/main/modules/conversation-share/controller.ts)、[Tunnel 运行时](../src/main/modules/tunnel/runtime.ts)。
+当前实现见[分享 HTTP 客户端](../src/main/modules/shares/http-client.ts)、[分享控制器](../src/main/modules/conversation-share/controller.ts)、[Tunnel 运行时](../src/main/modules/tunnel/runtime.ts)。
 
 ### 4.8 本地 Platform 与员工身份模型请求
 

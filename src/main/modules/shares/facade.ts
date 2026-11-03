@@ -1,9 +1,10 @@
 import type { App } from "electron";
-import type { ShareCreateResult, ShareLimits, ShareListResult, ShareRevokeResult } from "../../../shared/contracts/shares";
+import { SHARE_PUBLIC_PATH, type ShareCreateResult, type ShareLimits, type ShareListResult, type ShareRevokeResult } from "../../../shared/contracts/shares";
 import { getDesktopSsoStatus, isDesktopSsoCredentialRuntimeReady, subscribeDesktopSsoCredentialRevocation } from "../identity";
 import { t } from "../../support/i18n/main-i18n";
 import { ShareHttpClient, type PreparedShare } from "./http-client";
-import { ShareHttpError, type ShareTarget } from "./http-transport";
+import { isTunnelHubLoopbackHostname } from "../tunnel";
+import { isValidTunnelApiOrigin, ShareHttpError, type ShareTarget } from "./http-transport";
 import { resolveShareOrigin } from "./target";
 import { createShareReceiverRouter } from "./receiver";
 
@@ -48,6 +49,18 @@ export function createShareFacade(options: { app: App; readToken: () => string; 
   return {
     registerReceiver: receivers.register,
     receive: receivers.receive,
+    receivePublicLink(params: ReadonlyMap<string, string>) {
+      const value = params.get("url");
+      if (params.size !== 1 || !value?.trim()) throw new Error("Invalid share link parameters");
+      const url = new URL(value);
+      const id = url.pathname.slice(SHARE_PUBLIC_PATH.length);
+      if (url.protocol !== "https:" || !isValidTunnelApiOrigin(url.origin) || isTunnelHubLoopbackHostname(url.hostname) ||
+          value !== url.origin + SHARE_PUBLIC_PATH + id || !/^[A-Za-z0-9_-]{1,80}$/u.test(id)) {
+        throw new Error("Invalid public share address");
+      }
+      const origin = url.origin;
+      return receivers.receive(id, undefined, (id, signal) => client.resolve(origin, id, signal));
+    },
     dispose: receivers.dispose,
     async publish(prepare: (limits: ShareLimits) => Promise<PreparedShare | { ok: false; message: string }>): Promise<ShareCreateResult> {
       try {

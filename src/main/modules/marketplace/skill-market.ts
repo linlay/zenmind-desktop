@@ -26,6 +26,7 @@ import {
   readInstalledRecords,
   readResponseBytesWithLimit,
   replaceInstalledRecords,
+  assertMarketLinkViewer,
   requestMarket,
   requestMarketJson,
   resolveMarketAsset,
@@ -284,7 +285,9 @@ async function installSkillPackageMarketItem(
   if (!apiBaseUrl) {
     throw new Error(t("market.main.marketApiNotConfigured"));
   }
-  await requestMarketJson(app, `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`, options, "skill package authentication request");
+  if (!options.linkSource || (options.linkSource.trusted && options.linkSource.viewer)) {
+    await requestMarketJson(app, `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`, options, "skill package authentication request");
+  }
   const platform = platformCandidates().find((candidate) => Boolean(item.targets?.[candidate]))
     || "universal";
   const query = new URLSearchParams({ version: item.version, platform });
@@ -316,6 +319,7 @@ async function installSkillPackageMarketItem(
     "skill package download"
   );
   const bytes = await readResponseBytesWithLimit(response, MAX_SKILL_PACKAGE_BYTES);
+  assertMarketLinkViewer(app, options);
   const installed = await skillMarketPlatformCall(
     `/api/admin/skill-packages/import?${new URLSearchParams({ id: item.id, version: item.version }).toString()}`,
     { method: "POST", rawBody: bytes, contentType: "application/zip" }

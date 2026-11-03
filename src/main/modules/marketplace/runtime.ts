@@ -435,7 +435,9 @@ export async function installMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const catalog = await loadMarketplaceCatalog(app, options, "market install catalog request");
-  const item = catalog.catalog.items.find((entry) => entry.id === itemId);
+  const matches = catalog.catalog.items.filter(entry => entry.id === itemId && (!options.expectedType || entry.type === options.expectedType));
+  const item = options.linkSource && matches.length !== 1 ? undefined : matches[0];
+  if (options.linkSource && catalog.offline) throw new Error(catalog.message);
   if (options.expectedVersion !== undefined && (typeof options.expectedVersion !== "string" ||
       !options.expectedVersion || options.expectedVersion.trim() !== options.expectedVersion || item?.version !== options.expectedVersion)) {
     throw new Error(t("market.share.versionChanged"));

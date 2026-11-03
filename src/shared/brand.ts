@@ -40,6 +40,7 @@ export type AppBrand = {
   productName: string;
   appId: string;
   description: string;
+  marketApiBaseUrl?: string;
   protocols: {
     open: {
       scheme: string;

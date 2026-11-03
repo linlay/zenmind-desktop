@@ -2401,6 +2401,7 @@ export const zhCNMessages = {
   "market.main.downloadChecksumFailed": "下载包哈希校验失败。",
   "market.main.downloadTooLarge": "市场下载超过允许上限（{maxBytes} 字节）。",
   "market.main.platformUnavailable": "当前平台暂无可安装资源。",
+  "market.main.linkSourceAuthRequired": "此市场要求登录。请使用 Desktop 已信任的市场来源。",
   "market.main.marketAuthRequired": "Desktop 尚未登录或登录凭据暂不可用，请登录后重试。",
   "market.main.marketCredentialRejected": "市场服务拒绝了当前 Desktop 登录凭据（{reason}）。Desktop 登录状态不受影响，请稍后重试，或请管理员检查市场服务的认证配置。",
   "market.main.desktopVersionTooOld": "当前 Desktop 版本 {current} 过低，需要升级到 {required} 或更高版本。",

@@ -11,3 +11,5 @@ export { registerMarketShareReceiver } from "./share-receiver";
 export { installPetMarketItem } from "./pet-market";
 
 export { installSkinMarketItem } from "./skin-market";
+
+export { registerMarketBusinessLinks } from "./business-link";

@@ -331,6 +331,7 @@ export async function executeAction(
       return item ? ok(action, item) : fail(action, "not_found", `market item not found: ${itemId}`);
     }
     case "desktop.market.installItem":
+      if (invocation.kind === "desktop" && invocation.marketLinkInstall) return ok(action, await invocation.marketLinkInstall());
       return ok(action, await installMarketItem(options.app, readItemId(args), {
         createContainerHubClient: options.createContainerHubClient,
         services: options.services

@@ -2401,6 +2401,7 @@ export const enUSMessages = {
   "market.main.downloadChecksumFailed": "Downloaded package sha256 verification failed.",
   "market.main.downloadTooLarge": "The Market download exceeds the allowed limit ({maxBytes} bytes).",
   "market.main.platformUnavailable": "No installable asset is available for the current platform.",
+  "market.main.linkSourceAuthRequired": "This market requires sign-in. Use a market already trusted by Desktop.",
   "market.main.marketAuthRequired": "Desktop is not signed in or its sign-in credential is temporarily unavailable. Sign in and retry.",
   "market.main.marketCredentialRejected": "Market rejected the current Desktop sign-in credential ({reason}). Desktop sign-in is not affected. Retry later, or ask an administrator to check Market authentication settings.",
   "market.main.desktopVersionTooOld": "Desktop {current} is too old. Upgrade to {required} or later.",

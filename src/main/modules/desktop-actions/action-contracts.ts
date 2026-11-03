@@ -1,4 +1,4 @@
-import type { DesktopPetImportResult, WorkPanelDocumentSource } from "../../../shared/contracts";
+import type { DesktopPetImportResult, MarketCommandResult, WorkPanelDocumentSource } from "../../../shared/contracts";
 import type { DesktopAppearancePort } from "./appearance-port";
 import { type App, type BrowserWindow, type WebContents, type OpenDialogOptions, type SaveDialogOptions } from "electron";
 import {
@@ -124,7 +124,7 @@ export type DesktopActionBridgeOptions = {
 };
 
 export type DesktopActionInvocationContext =
-  | { kind: "desktop" }
+  | { kind: "desktop"; marketLinkInstall?: () => Promise<MarketCommandResult> }
   | { kind: "agentPlatform" }
   | { kind: "agentWebclientWorkPanel" }
   | { kind: "webappPage"; webappId: string; signal?: AbortSignal; requestSignal?: AbortSignal }

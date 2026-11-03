@@ -6,7 +6,7 @@ import type { MarketAsset, MarketCatalogItem } from "../../../shared/contracts";
 import type { App } from "electron";
 import type { MarketplaceOptions } from "./market-model";
 import { MAX_MARKET_DOWNLOAD_BYTES } from "./market-model";
-import { requestMarket } from "./market-http";
+import { assertMarketLinkViewer, requestMarket } from "./market-http";
 import path from "node:path";
 import { downloadsRoot } from "./market-paths";
 
@@ -84,6 +84,7 @@ export async function downloadAsset(
   if (asset.sizeBytes > 0 && bytes.length !== asset.sizeBytes) {
     throw new Error(t("market.main.downloadSizeMismatch", { expected: asset.sizeBytes, actual: bytes.length }));
   }
+  assertMarketLinkViewer(app, options);
   const downloadPath = path.join(downloadsRoot(app), `${item.id}-${Date.now()}${extensionForAsset(asset)}`);
   fs.writeFileSync(downloadPath, bytes);
   if (asset.sha256 && sha256(downloadPath) !== asset.sha256) {

@@ -106,7 +106,7 @@ export interface ReadyIpcDependencies {
   readonly captureAssistantScreenshot: (chatId: string | null | undefined) => ReturnType<typeof captureCopilotScreenshot>;
 }
 export function registerReadyIpc(dependencies: ReadyIpcDependencies, sharesFacade: ShareFacade, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) {
-  registerMainIpcHandlers({
+  return registerMainIpcHandlers({
     artifactRuntime: dependencies.artifactRuntime,
     beginLocalDocumentDraftPromotion: dependencies.beginLocalDocumentDraftPromotion,
     cancelLocalDocumentDraftPromotion: dependencies.cancelLocalDocumentDraftPromotion,

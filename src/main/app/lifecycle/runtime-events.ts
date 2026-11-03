@@ -37,7 +37,7 @@ export interface StartRuntimeEventsDependencies {
   readonly showMainWindow: AppShellRuntime["showMainWindow"];
   readonly openLocalDocument: (filePath: string) => Promise<void> | void;
   readonly openNativeShare?: (batchId: string, transfer?: NativeShareTransfer) => Promise<void> | void;
-  readonly openShareShortlink?: (shareId: string) => Promise<void> | void;
+  readonly openBusinessLink?: (url: string) => Promise<void> | void;
   readonly beginAppQuitWithoutConfirmation: () => void;
   readonly beginInstallerShutdown: (commandLine: string[]) => void;
   readonly appShellRuntime: Pick<AppShellRuntime, "isNativeDialogOpen">;
@@ -76,7 +76,7 @@ export function startRuntimeEvents(dependencies: StartRuntimeEventsDependencies)
     showMainWindow: dependencies.showMainWindow,
     openLocalDocument: dependencies.openLocalDocument,
     openNativeShare: dependencies.openNativeShare,
-    openShareShortlink: dependencies.openShareShortlink,
+    openBusinessLink: dependencies.openBusinessLink,
     beginAppQuitWithoutConfirmation: dependencies.beginAppQuitWithoutConfirmation,
     beginInstallerShutdown: dependencies.beginInstallerShutdown,
     isNativeDialogOpen: () => dependencies.appShellRuntime.isNativeDialogOpen(),

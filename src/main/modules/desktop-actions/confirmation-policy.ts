@@ -50,18 +50,18 @@ export function buildActionConfirmationRequest(
   };
 }
 
-// Asks the user once when the confirmation switch is on and the request did not grant full_access.
-// The caller decides whether the action and entry need confirmation at all.
+// A market URL installation requires confirmation even when action preferences grant an exemption.
 export async function confirmDesktopActionIfNeeded(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
-  buildConfirmation: () => DesktopActionConfirmationRequest
+  buildConfirmation: () => DesktopActionConfirmationRequest,
+  force = false,
 ): Promise<DesktopActionCallResponse | null> {
   const { general } = readDesktopProfileFromRoot(getDesktopConfigRoot(options.app));
-  if (!general.desktopActionConfirmationEnabled || general.desktopActionConfirmationExemptActions.includes(request.action)) {
+  if (!force && (!general.desktopActionConfirmationEnabled || general.desktopActionConfirmationExemptActions.includes(request.action))) {
     return null;
   }
-  if (readRequestPermissionMode(request) === "full_access") {
+  if (!force && readRequestPermissionMode(request) === "full_access") {
     return null;
   }
   const decision = await requestDesktopActionConfirmation(options, buildConfirmation(), options.getMainWindow());

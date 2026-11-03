@@ -41,7 +41,8 @@ import {
 } from "../infrastructure/filesystem/runtime-environment";
 import { openPluginSettingsPage, readPluginSettingsSnapshot, writePluginSettingsValues } from "../modules/plugins";
 import { t } from "../support/i18n/main-i18n";
-import { registerMarketplaceIpcHandlers } from "../modules/marketplace";
+import { handleDesktopActionRequest } from "../modules/desktop-actions";
+import { registerMarketBusinessLinks, registerMarketplaceIpcHandlers } from "../modules/marketplace";
 import { registerServicesIpcHandlers } from "../modules/services";
 import { MainIpcRegistrationOptions } from "./ipc-registration-contracts";
 
@@ -223,6 +224,30 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
         options.notifyServicesChanged();
       }
     }
+  });
+
+  return registerMarketBusinessLinks({
+    app, ipc: ipcMain, getMainWindow: options.getMainWindow,
+    async install(itemId, target) {
+      return options.runServiceMutation(async () => {
+        const result = await installMarketItem(app, itemId, withMarketplacePorts({ ...target }));
+        if (result.type === "pet") petRuntime.refreshState();
+        if (result.type === "website-app") options.notifyServicesChanged();
+        return result;
+      });
+    },
+    async confirmInstall(detail, install) {
+      const action = "desktop.market.installItem";
+      const result = await handleDesktopActionRequest(assistantBridgeRuntime.desktopActionOptions, {
+        action,
+        args: { version: detail.version, name: detail.name, itemId: detail.id, resourceType: detail.type, apiBaseUrl: detail.source },
+      }, install);
+      if (!result.ok) {
+        if (result.error?.code === "user_cancelled") return null;
+        throw new Error(result.error?.message || t("market.main.marketApiInvalidUrl"));
+      }
+      return result.result as import("../../shared/contracts").MarketCommandResult;
+    },
   });
 
 }

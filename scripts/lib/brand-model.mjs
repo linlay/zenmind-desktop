@@ -175,6 +175,13 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
   if (!URI_SCHEME_PATTERN.test(openProtocolScheme)) {
     throw new Error(`Brand manifest field "protocols.open.scheme" is invalid: ${openProtocolScheme}`);
   }
+  const marketApiBaseUrl = manifest.marketApiBaseUrl === undefined ? undefined : requireString(manifest, "marketApiBaseUrl");
+  if (marketApiBaseUrl) {
+    const url = new URL(marketApiBaseUrl);
+    if (url.protocol !== "https:" || url.origin + url.pathname !== marketApiBaseUrl || !url.pathname.endsWith("/api/v1")) {
+      throw new Error('Brand manifest field "marketApiBaseUrl" must be a canonical HTTPS Market API base.');
+    }
+  }
   const runtimeRootDirName = `.${id}`;
   const configuredRuntimeRootDirName = optionalNestedString(manifest, "paths", "runtimeRootDirName");
   if (configuredRuntimeRootDirName && configuredRuntimeRootDirName !== runtimeRootDirName) {
@@ -198,6 +205,7 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
     productName,
     appId,
     description,
+    ...(marketApiBaseUrl ? { marketApiBaseUrl } : {}),
     protocols: {
       open: {
         scheme: openProtocolScheme
@@ -448,6 +456,7 @@ export function runtimeBrandPayload(brand) {
     productName: brand.productName,
     appId: brand.appId,
     description: brand.description,
+    ...(brand.marketApiBaseUrl ? { marketApiBaseUrl: brand.marketApiBaseUrl } : {}),
     protocols: brand.protocols,
     paths: brand.paths,
     installer: brand.installer,

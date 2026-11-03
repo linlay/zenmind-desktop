@@ -69,7 +69,7 @@ POST 使用 multipart：第一部分为唯一的 `manifest` JSON，之后为 `re
 | `?action=service` | 复验已有发布绑定，303 到原公网 Host |
 | `/share/{id}/preview/{path}` | 显式预览包的隔离资源 |
 
-receiver、context、版本、owner、token、在线绑定均不能通过 query 覆盖。只使用服务端返回的 canonical URL；Desktop 系统入口为 `<品牌scheme>://share/<id>?action=desktop`，不携带 origin、凭据、上下文或动作序列。
+receiver、context、版本、owner、token、在线绑定均不能通过 query 覆盖。只使用服务端返回的 canonical URL；Desktop 系统入口为 `<品牌scheme>://share/open?v=1&url=<编码后的公开 HTTPS 分享地址>`。Desktop 按该地址的来源匿名解析，并在接收端就绪后从同一来源复核。
 
 旧 `/api/desktop/shares` 仅兼容当前发布 Desktop 的永久对话请求，返回旧七键响应；新业务使用 v2，不伪造 conversationId。新 Desktop 访问不支持 v2 的旧 Hub 时明确提示升级，不自动降级。
 

@@ -188,10 +188,6 @@ export function hasOnlyKeys(
     expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
-export function readTrimmedString(value: unknown): string {
-  return typeof value === "string" && value.trim() === value ? value : "";
-}
-
 function isAbortError(error: unknown): boolean {
   return error instanceof Error &&
     (error.name === "AbortError" || error.name === "TimeoutError");

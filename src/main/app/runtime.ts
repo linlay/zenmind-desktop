@@ -54,10 +54,12 @@ import * as rendererDiagnostics from "./renderer-diagnostics";
 import * as resourceWatching from "./resource-directory-watcher";
 import { type ResourceDirectoryWatcher } from "./resource-directory-watcher";
 import * as runtimeNotifications from "./runtime-notifications";
+import { dispatchDesktopBusinessLink } from "./business-link";
 import { createMainAppState } from "./state";
 
 export function createMainProcessRuntime() {
   let sharedLinks: ShareFacade | undefined;
+  let marketLinks: ReturnType<typeof readyIpc.registerReadyIpc> | undefined;
   let shareOpenGeneration = 0;
   // Assembly ports intentionally read live bindings: several callbacks run only after
   // the receiving runtime has been constructed. Do not eagerly snapshot these getters.
@@ -871,7 +873,7 @@ export function createMainProcessRuntime() {
         } catch {
           console.error("[main] market share receiver registration failed");
         }
-        return readyIpc.registerReadyIpc({
+        marketLinks = readyIpc.registerReadyIpc({
         artifactRuntime,
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
@@ -929,6 +931,30 @@ export function createMainProcessRuntime() {
     });
   }
 
+  async function openMarketLink(params: ReadonlyMap<string, string>, install: boolean) {
+    if (!marketLinks) throw new Error("Market startup is incomplete");
+    try {
+      await marketLinks(params, install, route => appShellRuntime.navigateMainWindow(route));
+    } catch (error) {
+      dialog.showErrorBox(t("market.action.details"), error instanceof Error ? error.message : t("market.main.marketApiInvalidUrl"));
+    }
+  }
+
+  const businessLinks = new Map<string, (params: ReadonlyMap<string, string>) => Promise<void>>([
+    ["market/open", params => openMarketLink(params, false)],
+    ["market/install", params => openMarketLink(params, true)],
+    ["share/open", async (params) => {
+      const operation = sharedLinks?.receivePublicLink(params);
+      const generation = ++shareOpenGeneration;
+      showMainWindow();
+      const result = await operation ?? { status: "unavailable" };
+      if (generation !== shareOpenGeneration || result.status === "received") return;
+      dialog.showErrorBox(t("share.receiveFailedTitle"), t(result.status === "unsupported"
+        ? "share.receiveUnsupported" : result.status === "invalid_context"
+          ? "share.receiveInvalidContext" : "share.receiveUnavailable"));
+    }],
+  ]);
+
   function start() {
     return runtimeEvents.startRuntimeEvents({
       get startupPlatform() { return startupPlatform; },
@@ -945,14 +971,13 @@ export function createMainProcessRuntime() {
           dialog.showErrorBox(t("dialog.localDocument.openFailed"), error instanceof Error ? error.message : String(error));
         }
       },
-      async openShareShortlink(shareId) {
-        const generation = ++shareOpenGeneration;
-        showMainWindow();
-        const result = await sharedLinks?.receive(shareId) ?? { status: "unavailable" };
-        if (generation !== shareOpenGeneration || result.status === "received") return;
-        dialog.showErrorBox(t("share.receiveFailedTitle"), t(result.status === "unsupported"
-          ? "share.receiveUnsupported" : result.status === "invalid_context"
-            ? "share.receiveInvalidContext" : "share.receiveUnavailable"));
+      async openBusinessLink(url) {
+        try {
+          await dispatchDesktopBusinessLink(url, businessLinks);
+        } catch {
+          console.error("[main] desktop business link rejected");
+          dialog.showErrorBox(t("share.receiveFailedTitle"), t("share.receiveUnavailable"));
+        }
       },
       async openNativeShare(batchId, transfer) {
         try {

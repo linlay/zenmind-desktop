@@ -100,19 +100,43 @@ export async function requestMarket(
   options: MarketplaceOptions = {},
   label = "market request"
 ) {
-  const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
-  const send = (bearerToken: string) => fetchImpl(url, {
-    ...init,
-    credentials: "include",
-    redirect: "error",
-    headers: {
-      ...getMarketDesktopDeviceHeaders(app),
-      ...Object.fromEntries(new Headers(init.headers).entries()),
-      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
+  const scope = options.linkSource;
+  if (scope) {
+    const target = new URL(url);
+    const base = new URL(scope.base);
+    if (target.origin !== base.origin || !target.pathname.startsWith(base.pathname + "/") ||
+        target.username || target.password) throw new Error("Market request left the linked API");
+    assertMarketLinkViewer(app, options);
+    if (!scope.trusted || !scope.viewer) {
+      const response = await resolveMarketFetchImpl(options.fetchImpl)(url, {
+        method: init.method, signal: init.signal, cache: "no-store", credentials: "omit", redirect: "error",
+      });
+      assertMarketLinkViewer(app, options);
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(t(scope.trusted ? "market.main.marketAuthRequired" : "market.main.linkSourceAuthRequired"));
+      }
+      if (!response.ok) throw new Error(`${label} failed: ${response.status}`);
+      return response;
     }
-  });
+  }
+  const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
+  const send = (bearerToken: string) => {
+    assertMarketLinkViewer(app, options);
+    if (scope && !bearerToken) throw new Error(t("market.main.marketAuthRequired"));
+    return fetchImpl(url, {
+      ...init,
+      credentials: "include",
+      redirect: "error",
+      headers: {
+        ...getMarketDesktopDeviceHeaders(app),
+        ...Object.fromEntries(new Headers(init.headers).entries()),
+        ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
+      }
+    });
+  };
   let token = await issueMarketAccessToken(app, "missing", options);
   let response = await send(token);
+  assertMarketLinkViewer(app, options);
   if (response.status === 401 && (options.issueMarketAccessToken || configuredMarketAccessTokenIssuer)) {
     // Identity may have committed its own renewal while this request was in flight. Use that
     // newer token once, but never ask Identity to renew because Market rejected a credential.
@@ -122,6 +146,7 @@ export async function requestMarket(
       response = await send(token);
     }
   }
+  assertMarketLinkViewer(app, options);
   if (response.status === 401) {
     if (!token) {
       throw new Error(t("market.main.marketAuthRequired"));
@@ -155,9 +180,20 @@ export function readMarketViewer(app: App, options: MarketplaceOptions = {}): st
     ? JSON.stringify([status.user.issuer, status.user.sub, status.user.audience]) : null;
 }
 
+export function assertMarketLinkViewer(app: App, options: MarketplaceOptions) {
+  options.linkSource?.assertCurrent();
+  if (options.linkSource && readMarketViewer(app, options) !== options.linkSource.viewer) {
+    throw new Error("Market identity changed; reopen the link.");
+  }
+}
+
 export async function requestVisibleMarketJson(
   app: App, url: string, options: MarketplaceOptions = {}, label = "market visibility request"
 ) {
+  if (options.linkSource) {
+    await verifyMarketAuthentication(app, options.linkSource.base, options);
+    return requestMarketJson(app, url, options, label, { cache: "no-store" });
+  }
   const viewer = readMarketViewer(app, options);
   if (!viewer) {
     const result = await requestPublicMarketJson(app, url, options, label);
@@ -209,6 +245,7 @@ export async function verifyMarketAuthentication(
   apiBaseUrl: string,
   options: MarketplaceOptions
 ) {
+  if (options.linkSource && (!options.linkSource.trusted || !options.linkSource.viewer)) return;
   const response = asObject(await requestMarketJson(
     app,
     `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`,

@@ -1142,6 +1142,8 @@ export interface DesktopApi {
     onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
+    linkDetail(id: string): Promise<(import("./marketplace").MarketLinkDetail & { install: boolean }) | null>;
+    installLinkedItem(id: string): Promise<MarketCommandResult | null>;
     shareItem(input: import("../market-share").MarketShareCreateInput): Promise<import("./shares").ShareCreateResult>;
     shareReady(input: { activationId: string; instanceId: string }): Promise<{ generation: string } | null>;
     shareAck(input: { activationId: string; generation: string; intentId: string; status: "received" | "invalid_context" | "unavailable" }): Promise<boolean>;

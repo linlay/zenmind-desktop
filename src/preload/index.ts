@@ -508,6 +508,8 @@ const api: DesktopApi = {
     },
   },
   market: {
+    linkDetail: id => ipcRenderer.invoke("market.linkDetail", id),
+    installLinkedItem: id => ipcRenderer.invoke("market.installLinkedItem", id),
     shareItem: (input) => ipcRenderer.invoke("market.shareItem", input),
     shareReady: (input) => ipcRenderer.invoke("market.shareReady", input),
     shareAck: (input) => ipcRenderer.invoke("market.shareAck", input),

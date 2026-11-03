@@ -113,7 +113,8 @@ export async function handleActionCallRaw(
         normalizedRequest,
         () => preparedCredentialFill
           ? buildCredentialFillConfirmationRequest(normalizedRequest, preparedCredentialFill)
-          : buildActionConfirmationRequest(normalizedRequest, confirmationArgs, options.getCurrentPageSnapshot())
+          : buildActionConfirmationRequest(normalizedRequest, confirmationArgs, options.getCurrentPageSnapshot()),
+        invocation.kind === "desktop" && Boolean(invocation.marketLinkInstall)
       );
       if (confirmationResponse) {
         return confirmationResponse;
@@ -210,9 +211,10 @@ async function handleWebappPageMethod(
 
 export async function handleDesktopActionRequest(
   options: DesktopActionBridgeOptions,
-  request: DesktopActionCallRequest
+  request: DesktopActionCallRequest,
+  marketLinkInstall?: Extract<DesktopActionInvocationContext, { kind: "desktop" }>["marketLinkInstall"],
 ) {
-  return handleActionCall(options, request);
+  return handleActionCall(options, request, { kind: "desktop", marketLinkInstall });
 }
 
 export async function handleAgentPlatformDesktopActionRequest(

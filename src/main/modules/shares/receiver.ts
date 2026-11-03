@@ -29,7 +29,7 @@ export function createShareReceiverRouter(options: {
       };
     },
 
-    async receive(id: string, intentId: string = randomUUID()): Promise<ShareReceiveResult> {
+    async receive(id: string, intentId: string = randomUUID(), resolve = options.resolve): Promise<ShareReceiveResult> {
       if (disposed || typeof id !== "string" || id.trim() !== id || !/^[A-Za-z0-9_-]{1,80}$/u.test(id)) return { status: "unavailable" };
       active?.controller.abort();
       const operation = { controller: new AbortController(), receiver: undefined as ShareReceiverRegistration | undefined };
@@ -37,7 +37,7 @@ export function createShareReceiverRouter(options: {
       const { signal } = operation.controller;
       const timer = setTimeout(() => operation.controller.abort(), options.timeoutMs ?? 15_000);
       try {
-        const description = await untilAborted(options.resolve(id, signal), signal);
+        const description = await untilAborted(resolve(id, signal), signal);
         const handoff = description.desktop;
         if (description.id !== id || description.protocolVersion !== 1 || !description.actions.includes("desktop") || !handoff) return { status: "unsupported" };
         const receiver = receivers.get(handoff.receiverId);
@@ -51,7 +51,7 @@ export function createShareReceiverRouter(options: {
         if (!current()) return { status: "unavailable" };
         // Immutable content still shares the live revocation state. Check again
         // after activation/ready, immediately before delivering any context.
-        const confirmed = await untilAborted(options.resolve(id, signal), signal);
+        const confirmed = await untilAborted(resolve(id, signal), signal);
         if (!current() || confirmed.id !== id || confirmed.protocolVersion !== 1 ||
             !confirmed.actions.includes("desktop") || JSON.stringify(confirmed.desktop) !== JSON.stringify(handoff)) return { status: "unavailable" };
         const result = await untilAborted(endpoint.receive({ ...handoff, intentId, shareId: id }, signal), signal);
