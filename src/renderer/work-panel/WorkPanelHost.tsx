@@ -192,11 +192,12 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
       return item.descriptor.context.path.trim();
     }
     if (item.descriptor.module === "artifact" || item.descriptor.module === "reference") {
-      return item.descriptor.context.relativePath?.trim() || resolveChatWorkPanelLocalResourcePath({
+      const relativePath = item.descriptor.context.relativePath?.trim() || resolveChatWorkPanelLocalResourcePath({
         ownerChatId,
         profile: item.descriptor.module,
         route: item.descriptor.route,
       });
+      return relativePath ? `${item.descriptor.module}:///${relativePath}` : "";
     }
   }
   if (item.descriptor.kind === "local-file") {
@@ -205,6 +206,10 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
   if (item.descriptor.kind === "native") {
     if (item.descriptor.surfaceKey === "document-html") return String(item.descriptor.context.displayUrl || "");
     const relativePath = item.descriptor.context.relativePath;
+    const profile = item.descriptor.context.profile;
+    if (typeof relativePath === "string" && relativePath.trim() && (profile === "artifact" || profile === "reference")) {
+      return `${profile}:///${relativePath.trim()}`;
+    }
     return typeof relativePath === "string" ? relativePath.trim() : "";
   }
   return "";
