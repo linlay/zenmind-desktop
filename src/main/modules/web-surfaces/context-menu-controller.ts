@@ -8,6 +8,7 @@ import {
   WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION,
   type WebviewContextMenuActionId,
   type WebviewContextMenuExecuteCommand,
+  type WebviewContextMenuResolveRequest,
   type WebviewContextMenuSemanticCapability,
   type WebviewContextMenuSemanticTarget,
   type WebviewContextMenuSurfaceType
@@ -377,7 +378,12 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
     if (requestId) finishPending(requestId, null);
   }
 
-  function resolveSemantic(contents: WebContents, x: number, y: number) {
+  function resolveSemantic(
+    contents: WebContents,
+    x: number,
+    y: number,
+    purpose?: WebviewContextMenuResolveRequest["purpose"],
+  ) {
     cancelGuestRequests(contents.id);
     const requestId = `webview-context-${contents.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     return new Promise<WebviewContextMenuSemanticTarget | null>((resolve) => {
@@ -389,6 +395,7 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
           action: WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
           version: WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION,
           requestId,
+          ...(purpose ? { purpose } : {}),
           x,
           y
         });
@@ -599,13 +606,15 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
     const startTarget = await resolveSemantic(
       contents,
       change.start.x,
-      change.start.y
+      change.start.y,
+      "selection",
     );
     if (selectionSequenceByGuest.get(guestId) !== selectionSequence) return;
     const endTarget = await resolveSemantic(
       contents,
       change.end.x,
       change.end.y,
+      "selection",
     );
     if (selectionSequenceByGuest.get(guestId) !== selectionSequence) return;
     if (
