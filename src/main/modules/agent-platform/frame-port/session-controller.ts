@@ -37,6 +37,18 @@ import {
 } from "./surface-authorization";
 import { createWorkpanelInvoke } from "./workpanel-invoke";
 
+type OpeningSession = {
+  key: string;
+  sessionId: string;
+  sender: WebContents;
+  abortController: AbortController;
+  stage: "registration" | "retirement" | "availability" | "connection";
+};
+
+type SessionCloseTrigger = "client_close" | "sender_destroyed" | "render_process_gone" |
+  "session_replaced" | "surface_changed" | "surface_registration_unavailable" |
+  "authorization_rejected" | "protocol_mismatch";
+
 /** Owns logical sessions and assembles purpose-specific Frame Port dependencies. */
 export function createSessionController(options: FramePortOptions) {
   async function availability(revalidate?: () => void): Promise<{ baseUrl: string; token: string; }> {
@@ -76,9 +88,29 @@ export function createSessionController(options: FramePortOptions) {
     }
   }
 
-  function closeSession(session: LogicalSession, reason: DesktopPlatformSessionClose["reason"], error?: DesktopPlatformSessionClose["error"]): void {
+  function reportSessionClose(sender: WebContents, sessionId: string, reason: DesktopPlatformSessionClose["reason"], trigger: SessionCloseTrigger, session?: LogicalSession, opening?: OpeningSession): void {
+    const target = options.browserSurfaces.resolveWebviewSurfaceTarget(sender.id);
+    // Keep close evidence across app restarts without persisting routes, tokens,
+    // request bodies, Run contents or arbitrary error messages.
+    console.info("[platform-frame-port]", {
+      event: "closed", platform: process.platform, logicalSessionId: sessionId.slice(0, 200),
+      webContentsId: sender.id, surfaceId: target?.surfaceId || session?.surfaceId,
+      surfaceGeneration: target?.registrationId,
+      logicalGeneration: session?.logicalGeneration,
+      physicalGeneration: session?.physicalGeneration,
+      reconnectCount: session?.reconnectCount,
+      closeReason: reason, trigger, openingStage: opening?.stage,
+      pendingRequestCount: session?.requestIds.size ?? 0,
+      activeStreamCount: session?.streams.size ?? 0,
+    });
+  }
+
+  function closeSession(session: LogicalSession, reason: DesktopPlatformSessionClose["reason"], error?: DesktopPlatformSessionClose["error"], trigger: SessionCloseTrigger = "client_close"): void {
     if (session.closed)
       return;
+    const opening = openingSessions.get(session.sender.id);
+    reportSessionClose(session.sender, session.sessionId, reason, trigger, session,
+      opening?.key === session.key ? opening : undefined);
     const target = options.browserSurfaces.resolveWebviewSurfaceTarget(session.sender.id);
     closedLogicalSessions.push({
       logicalSessionId: session.sessionId,
@@ -175,11 +207,28 @@ export function createSessionController(options: FramePortOptions) {
     }
   }
 
-  function cleanupSender(senderId: number): void {
+  function cancelOpening(opening: OpeningSession, reason: DesktopPlatformSessionClose["reason"], trigger: SessionCloseTrigger): void {
+    if (openingSessions.get(opening.sender.id) !== opening) return;
+    openingSessions.delete(opening.sender.id);
+    opening.abortController.abort();
+    // Registered sessions still go through normal close/retirement so their
+    // consumers and upstream observation are released in the established order.
+    if (sessions.has(opening.key)) return;
+    reportSessionClose(opening.sender, opening.sessionId, reason, trigger, undefined, opening);
+    if (!opening.sender.isDestroyed()) {
+      opening.sender.send(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL, {
+        sessionId: opening.sessionId, type: "close", event: { reason },
+      } satisfies AgentWebclientPlatformFramePortEvent);
+    }
+  }
+
+  function cleanupSender(senderId: number, trigger: SessionCloseTrigger = "sender_destroyed"): void {
+    const opening = openingSessions.get(senderId);
+    if (opening) cancelOpening(opening, "surface_inactive", trigger);
     for (const key of [...(senderSessionKeys.get(senderId) ?? [])]) {
       const session = sessions.get(key);
       if (session)
-        closeSession(session, "surface_inactive");
+        closeSession(session, "surface_inactive", undefined, trigger);
     }
     installedCleanup.delete(senderId);
   }
@@ -189,13 +238,13 @@ export function createSessionController(options: FramePortOptions) {
       return;
     installedCleanup.add(sender.id);
     sender.once("destroyed", () => cleanupSender(sender.id));
-    sender.once("render-process-gone", () => cleanupSender(sender.id));
+    sender.once("render-process-gone", () => cleanupSender(sender.id, "render_process_gone"));
   }
 
   function finishRetiringSession(session: LogicalSession): void {
     if (!session.retiring || session.streams.size > 0)
       return;
-    closeSession(session, "surface_inactive");
+    closeSession(session, "surface_inactive", undefined, "session_replaced");
   }
 
   async function retireSession(session: LogicalSession): Promise<void> {
@@ -219,49 +268,79 @@ export function createSessionController(options: FramePortOptions) {
 
   async function handleOpen(event: { sender: WebContents }, input: AgentWebclientPlatformFramePortOpenInput): Promise<void> {
     const sessionId = readText(input?.sessionId);
-    if (!sessionId)
+    if (!sessionId || event.sender.isDestroyed())
       return;
+    const key = sessionKey(event.sender.id, sessionId);
+    const previousOpening = openingSessions.get(event.sender.id);
+    if (previousOpening?.key === key || sessions.has(key)) return;
+    if (previousOpening) cancelOpening(previousOpening, "surface_inactive", "session_replaced");
+    const opening: OpeningSession = {
+      key, sessionId, sender: event.sender, abortController: new AbortController(), stage: "registration",
+    };
+    openingSessions.set(event.sender.id, opening);
+    installSenderCleanup(event.sender);
+    try {
+      await openSession(event, opening);
+    } finally {
+      if (openingSessions.get(event.sender.id) === opening) openingSessions.delete(event.sender.id);
+    }
+  }
+
+  function isCurrentOpening(opening: OpeningSession): boolean {
+    return openingSessions.get(opening.sender.id) === opening &&
+      !opening.abortController.signal.aborted && !opening.sender.isDestroyed();
+  }
+
+  async function openSession(event: { sender: WebContents }, opening: OpeningSession): Promise<void> {
+    const { sessionId, key } = opening;
     const initialTarget = options.browserSurfaces.resolveWebviewSurfaceTarget(event.sender.id);
     let context = authorizeSurface(event.sender, options.browserSurfaces, options.isTrustedAgentWebclientSession);
+    let waitedForRegistration = false;
     if ("ok" in context &&
       !initialTarget &&
       mayAwaitSurfaceRegistration(event.sender, options.isTrustedAgentWebclientSession)) {
-      const abortController = new AbortController();
-      const abortWait = () => abortController.abort();
-      event.sender.once("destroyed", abortWait);
-      event.sender.once("render-process-gone", abortWait);
-      try {
-        await options.browserSurfaces.waitForWebviewSurfaceTarget(event.sender.id, SURFACE_REGISTRATION_WAIT_MS, abortController.signal);
-      }
-      finally {
-        event.sender.removeListener("destroyed", abortWait);
-        event.sender.removeListener("render-process-gone", abortWait);
-      }
+      waitedForRegistration = true;
+      await options.browserSurfaces.waitForWebviewSurfaceTarget(event.sender.id, SURFACE_REGISTRATION_WAIT_MS, opening.abortController.signal);
+      if (!isCurrentOpening(opening)) return;
       context = authorizeSurface(event.sender, options.browserSurfaces, options.isTrustedAgentWebclientSession);
     }
     if ("ok" in context) {
       if (event.sender.isDestroyed())
         return;
+      const registrationUnavailable = waitedForRegistration &&
+        !options.browserSurfaces.resolveWebviewSurfaceTarget(event.sender.id) &&
+        mayAwaitSurfaceRegistration(event.sender, options.isTrustedAgentWebclientSession);
+      const reason = registrationUnavailable ? "surface_inactive" : "protocol_mismatch";
+      reportSessionClose(event.sender, sessionId, reason,
+        registrationUnavailable ? "surface_registration_unavailable" : "authorization_rejected", undefined, opening);
       event.sender.send(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL, {
         sessionId,
         type: "close",
         event: {
-          reason: "protocol_mismatch",
-          error: { code: "DESKTOP_BRIDGE_INCOMPATIBLE", message: context.error.message },
+          reason,
+          error: registrationUnavailable
+            ? { code: "DESKTOP_FRAME_PORT_SURFACE_UNAVAILABLE", message: "Agent WebClient surface registration is unavailable" }
+            : { code: "DESKTOP_BRIDGE_INCOMPATIBLE", message: context.error.message },
         },
       } satisfies AgentWebclientPlatformFramePortEvent);
       return;
     }
-    const revalidate = surfaceAuthorization.captureSurfaceAuthorization(context);
-    const key = sessionKey(event.sender.id, sessionId);
+    const revalidateSurface = surfaceAuthorization.captureSurfaceAuthorization(context);
+    const revalidate = () => {
+      if (!isCurrentOpening(opening)) throw new Error("Frame Port open was cancelled");
+      return revalidateSurface();
+    };
+    opening.stage = "retirement";
     const previousSessions = [...(senderSessionKeys.get(event.sender.id) ?? [])]
       .map((previousKey) => sessions.get(previousKey))
       .filter((previous): previous is LogicalSession => Boolean(previous));
     await Promise.all(previousSessions.map(retireSession));
+    if (!isCurrentOpening(opening)) return;
     try {
       context = revalidate();
     } catch {
       if (!event.sender.isDestroyed()) {
+        reportSessionClose(event.sender, sessionId, "surface_inactive", "surface_changed", undefined, opening);
         event.sender.send(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL, {
           sessionId, type: "close", event: { reason: "surface_inactive" },
         } satisfies AgentWebclientPlatformFramePortEvent);
@@ -306,7 +385,7 @@ export function createSessionController(options: FramePortOptions) {
             closeSession(session, "protocol_mismatch", {
               code: "PLATFORM_WS_PROTOCOL_MISMATCH",
               message: state.lastError,
-            });
+            }, "protocol_mismatch");
             return;
           }
           sendEvent(session, {
@@ -337,20 +416,23 @@ export function createSessionController(options: FramePortOptions) {
           },
         });
       }
+      opening.stage = "availability";
       const { baseUrl, token } = await availability(() => {
         if (session.closed) throw new Error("Frame Port session closed");
         revalidate();
       });
-      if (session.closed || session.sender.isDestroyed()) return;
+      if (session.closed || !isCurrentOpening(opening)) return;
       revalidate();
+      opening.stage = "connection";
       await options.realtimeBroker.ensureConnected(baseUrl, token, connectionLane);
-      if (!session.closed) revalidate();
+      if (!session.closed && isCurrentOpening(opening)) revalidate();
     }
     catch (error) {
       // Authorization failures are permanent for this logical Session; transient
       // physical connection failures continue to be retried by the Broker.
+      if (session.closed || !isCurrentOpening(opening)) return;
       try { revalidate(); } catch {
-        closeSession(session, "surface_inactive");
+        closeSession(session, "surface_inactive", undefined, "surface_changed");
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -358,7 +440,7 @@ export function createSessionController(options: FramePortOptions) {
         closeSession(session, "protocol_mismatch", {
           code: "PLATFORM_WS_PROTOCOL_MISMATCH",
           message,
-        });
+        }, "protocol_mismatch");
       }
       // Transient connection failures are owned by the physical client retry
       // loop. The logical Frame Port remains open and observes reconnecting.
@@ -366,14 +448,18 @@ export function createSessionController(options: FramePortOptions) {
   }
 
   function handleClose(event: { sender: WebContents }, input: AgentWebclientPlatformFramePortCloseInput): void {
-    const session = resolveSession(event.sender, readText(input?.sessionId));
+    const sessionId = readText(input?.sessionId);
+    const reason = input?.reason === "surface_inactive" ? "surface_inactive" : "disposed";
+    const opening = openingSessions.get(event.sender.id);
+    if (opening?.sessionId === sessionId) cancelOpening(opening, reason, "client_close");
+    const session = resolveSession(event.sender, sessionId);
     if (!session)
       return;
     for (const binding of session.streams.values()) {
       binding.suppressed = true;
       void detachBinding(session, binding).catch(() => undefined);
     }
-    closeSession(session, input?.reason === "surface_inactive" ? "surface_inactive" : "disposed");
+    closeSession(session, reason);
   }
 
   const surfaceAuthorization = createSurfaceAuthorization({
@@ -403,6 +489,7 @@ export function createSessionController(options: FramePortOptions) {
   });
   const handleWorkPanelInvoke = workpanelInvoke.handleWorkPanelInvoke;
   const sessions = new Map<string, LogicalSession>();
+  const openingSessions = new Map<number, OpeningSession>();
   const senderSessionKeys = new Map<number, Set<string>>();
   const closedLogicalSessions: ClosedLogicalSessionDiagnostic[] = [];
   const installedCleanup = new Set<number>();
