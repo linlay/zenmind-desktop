@@ -2421,13 +2421,13 @@ test("upstream requests follow the Agent's detail level unless a Run asks for on
   assert.equal(requestOfType(h.socket("primary"), "/api/agents")[0].detail, undefined);
 });
 
-test("a Run that reads tool events asks for the full detail level explicitly", async (t) => {
+test("a Run that reads tool events asks for detailed process events explicitly", async (t) => {
   const h = createHarness(t);
-  const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, payload: {}, onEvent() {}, id: "detail-full", detail: "full" });
+  const query = h.broker.query({ baseUrl: "http://127.0.0.1:8080", token: h.token, payload: {}, onEvent() {}, id: "detail-detailed", detail: "detailed" });
   query.accepted.catch(() => {});
   query.completed.catch(() => {});
   await waitUntil(() => h.socket("primary")?.sent.some((frame) => frame.type === "/api/query"));
-  assert.equal(requestOfType(h.socket("primary"), "/api/query")[0].detail, "full");
+  assert.equal(requestOfType(h.socket("primary"), "/api/query")[0].detail, "detailed");
 });
 
 

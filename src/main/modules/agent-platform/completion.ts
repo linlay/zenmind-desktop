@@ -29,11 +29,11 @@ export class ImageCompletion {
       artifacts: []
     };
     // The outcome is read from image_generate's tool events, which only the
-    // full detail level delivers.
+    // detailed process view delivers.
     const completion = await this.completeText({
       ...request,
       message: buildZenmiImageGenerateMessage(request)
-    }, (event: Record<string, unknown>) => observeImageGenerateEvent(event, outcome), true, "full");
+    }, (event: Record<string, unknown>) => observeImageGenerateEvent(event, outcome), true, "detailed");
     if (outcome.message && !outcome.ok) {
       return { ok: false, runId: completion.runId, chatId: completion.chatId, message: outcome.message, images: [] };
     }
