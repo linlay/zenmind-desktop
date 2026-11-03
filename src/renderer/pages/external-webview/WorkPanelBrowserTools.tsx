@@ -263,7 +263,7 @@ export function WorkPanelBrowserTools({
           title={t("externalWebview.more")}
           aria-expanded={open}
         >
-          <MaterialIcon name="more_vert" style={{ stroke: "none" }} />
+          <MaterialIcon name="more_horiz" style={{ stroke: "none", transform: "rotate(90deg)" }} />
         </button>
       </Popover>
       {finding && active ? (
