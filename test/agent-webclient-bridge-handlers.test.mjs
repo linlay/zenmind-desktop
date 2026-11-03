@@ -1868,6 +1868,157 @@ test("document opening requires a registered child and owner Chat", async () => 
 });
 
 
+test("a trusted registration timeout fails closed and permits a later fully authorized open", async () => {
+  const target = mainTarget();
+  const targets = new Map();
+  let tokenCalls = 0;
+  const runtime = createRuntime(targets, {
+    issueAccessToken: async () => { tokenCalls += 1; return { ok: true, token: "token" }; },
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "before-registration" });
+  await flush();
+  const closed = sender.messages.find(({ message }) => message.sessionId === "before-registration" && message.type === "close");
+  assert.equal(closed.message.event.reason, "surface_inactive");
+  assert.equal(closed.message.event.error.code, "DESKTOP_FRAME_PORT_SURFACE_UNAVAILABLE");
+  assert.equal(tokenCalls, 0);
+  assert.equal(runtime.calls.connections.length, 0);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+  targets.set(target.webContentsId, target);
+  await openSession(runtime, sender, "after-registration");
+  assert.equal(tokenCalls, 1);
+  assert.equal(runtime.calls.connections.length, 1);
+});
+
+test("untrusted FramePort senders keep a terminal authorization failure", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, "https://untrusted.test/agent/agent-1");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "untrusted-open" });
+  await flush();
+  const closed = sender.messages.find(({ message }) => message.type === "close");
+  assert.equal(closed.message.event.reason, "protocol_mismatch");
+  assert.equal(closed.message.event.error.code, "DESKTOP_BRIDGE_INCOMPATIBLE");
+  assert.equal(runtime.calls.connections.length, 0);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+});
+
+for (const boundary of ["registration", "retirement"]) {
+  test(`closing a FramePort during ${boundary} cancels its pending open`, async () => {
+    const target = mainTarget();
+    const targets = new Map(boundary === "registration" ? [] : [[target.webContentsId, target]]);
+    const registration = deferred();
+    let tokenCalls = 0;
+    const runtime = createRuntime(targets, {
+      browserSurfaces: { waitForWebviewSurfaceTarget: () => registration.promise },
+      issueAccessToken: async () => { tokenCalls += 1; return { ok: true, token: "token" }; },
+    });
+    const sender = createSender(target.webContentsId, target.currentUrl);
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "cancelled-open" });
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL)({ sender }, { sessionId: "cancelled-open", reason: "disposed" });
+    targets.set(target.webContentsId, target);
+    registration.resolve(target);
+    await flush();
+    assert.equal(tokenCalls, 0);
+    assert.equal(runtime.calls.connections.length, 0);
+    assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+    assert.ok(sender.messages.some(({ message }) => message.sessionId === "cancelled-open" &&
+      message.type === "close" && message.event.reason === "disposed"));
+  });
+}
+
+test("a late registration result cannot retire a newer FramePort", async () => {
+  const target = mainTarget();
+  const targets = new Map();
+  const registration = deferred();
+  const runtime = createRuntime(targets, {
+    browserSurfaces: { waitForWebviewSurfaceTarget: () => registration.promise },
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "old-open" });
+  targets.set(target.webContentsId, target);
+  await openSession(runtime, sender, "current-open");
+  registration.resolve(target);
+  await flush();
+  const diagnostics = runtime.registration.getDiagnostics();
+  assert.equal(diagnostics.logicalSessionCount, 1);
+  assert.equal(diagnostics.logicalSessions.find((session) => session.phase !== "closed").logicalSessionId, "current-open");
+  assert.equal(runtime.calls.connections.length, 1);
+  assert.equal(sender.messages.some(({ message }) => message.sessionId === "current-open" && message.type === "close"), false);
+  assert.equal(sender.messages.some(({ message }) => message.sessionId === "old-open" && message.type === "state"), false);
+});
+
+test("parallel FramePort opens on one sender keep only the latest session", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  for (const sessionId of ["parallel-old", "parallel-current"]) {
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId });
+  }
+  await flush();
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 1);
+  assert.equal(runtime.calls.connections.length, 1);
+  assert.equal(sender.messages.some(({ message }) => message.sessionId === "parallel-old" && message.type === "state"), false);
+  assert.ok(sender.messages.some(({ message }) => message.sessionId === "parallel-current" && message.type === "state"));
+});
+
+test("a crashed guest cancels FramePort open before surface registration", async () => {
+  const target = mainTarget();
+  const targets = new Map();
+  const registration = deferred();
+  const runtime = createRuntime(targets, {
+    browserSurfaces: { waitForWebviewSurfaceTarget: () => registration.promise },
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId: "crashed-open" });
+  sender.emit("render-process-gone", {}, { reason: "crashed" });
+  targets.set(target.webContentsId, target);
+  registration.resolve(target);
+  await flush();
+  assert.equal(runtime.calls.connections.length, 0);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+});
+
+test("a replaced FramePort cannot reconnect after its old token lookup finishes", async () => {
+  const target = mainTarget();
+  const oldToken = deferred();
+  let tokenCalls = 0;
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+    issueAccessToken: () => ++tokenCalls === 1 ? oldToken.promise : Promise.resolve({ ok: true, token: "new-token" }),
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "old-token-open");
+  await openSession(runtime, sender, "new-token-open");
+  const currentMessages = sender.messages.filter(({ message }) => message.sessionId === "new-token-open");
+  oldToken.resolve({ ok: true, token: "old-token" });
+  await flush();
+  assert.equal(runtime.calls.connections.length, 1);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 1);
+  assert.deepEqual(sender.messages.filter(({ message }) => message.sessionId === "new-token-open"), currentMessages);
+});
+
+test("FramePort close evidence survives sender destruction without logging credentials or routes", async (t) => {
+  const logs = [];
+  t.mock.method(console, "info", (...args) => logs.push(args));
+  const target = mainTarget();
+  target.currentUrl += "&private=do-not-log-route";
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+    issueAccessToken: async () => ({ ok: true, token: "do-not-log-token" }),
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "diagnostic-session");
+  sender.destroy();
+  const closed = logs.filter(([label]) => label === "[platform-frame-port]");
+  assert.equal(closed.length, 1);
+  assert.equal(closed[0][1].logicalSessionId, "diagnostic-session");
+  assert.equal(closed[0][1].closeReason, "surface_inactive");
+  assert.equal(closed[0][1].trigger, "sender_destroyed");
+  assert.equal(closed[0][1].webContentsId, sender.id);
+  assert.equal(closed[0][1].logicalGeneration, 1);
+  assert.equal(closed[0][1].physicalGeneration, 1);
+  assert.doesNotMatch(JSON.stringify(logs), /do-not-log|currentUrl|pageRoute|error|payload/);
+});
+
 for (const boundary of ["retirement", "service-state", "access-token"]) {
   test(`FramePort revalidates its surface after ${boundary} before advancing authorization`, async () => {
     const target = mainTarget();
