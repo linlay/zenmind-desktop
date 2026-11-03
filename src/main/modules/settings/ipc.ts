@@ -42,7 +42,7 @@ export interface SettingsIpcHandlerOptions {
   platform?: NodeJS.Platform;
   nativeTheme: { themeSource: string };
   getDataRoot: (app: any) => string;
-  resetRuntimeEnv?: (app: any, platform: string) => Promise<{
+  resetRuntimeEnv?: (action?: "reinstall" | "rollback") => Promise<{
     targetRoot: string;
     restartScheduled?: boolean;
     backupPath?: string;
@@ -58,7 +58,6 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
-  refreshUsageAccessToken?: (force: boolean) => Promise<string>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
   onEnterpriseImSettingsChanged?: (settings: EnterpriseImSettings) => void;
@@ -111,7 +110,7 @@ function desktopStateFileSnapshot(
         exists: true,
         size: stats.size,
         modifiedAt,
-        content: definition.name === "sso-id-token.txt" ? "[REDACTED]" : rawContent
+        content: rawContent
       };
     }
 
@@ -248,7 +247,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     getDesktopStateSnapshot(app, platform)
   );
   ipcMain.handle("settings.getUsageProfile", async () =>
-    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app, { platform: options.platform, getAccessToken: options.refreshUsageAccessToken })
+    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app, { platform: options.platform })
   );
   ipcMain.handle("settings.getDesktopDeviceInfo", async () => getDesktopDeviceInfo(app));
   ipcMain.handle("settings.getGeneralSettings", async () =>
@@ -340,7 +339,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   ipcMain.handle("settings.saveTunnelHubSettings", async (_event: any, input: TunnelHubSettingsInput) =>
     applyTunnelHubSettings ? applyTunnelHubSettings(input) : saveTunnelHubSettings(app, input)
   );
-  ipcMain.handle("settings.resetRuntimeEnv", async () => {
+  ipcMain.handle("settings.resetRuntimeEnv", async (_event: unknown, action: unknown = "reinstall") => {
     if (!resetRuntimeEnv) {
       return {
         ok: false,
@@ -353,7 +352,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     }
 
     try {
-      const result = await resetRuntimeEnv(app, platform);
+      if (action !== "reinstall" && action !== "rollback") throw new Error("Invalid runtime recovery action.");
+      const result = await resetRuntimeEnv(action);
       return {
         ok: true,
         restartRequired: true,

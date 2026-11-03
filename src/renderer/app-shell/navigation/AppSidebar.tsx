@@ -1317,6 +1317,8 @@ export function AppSidebar({
   const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
+  const webItemRemoveInFlightRef = useRef(false);
+  const [webappRemovalModal, webappRemovalModalContext] = Modal.useModal();
   const [webItemExportPendingId, setWebItemExportPendingId] = useState("");
   const [webappShareFeedback, setWebappShareFeedback] =
     useState<Omit<PageFeedbackItem, "onDismiss"> | null>(null);
@@ -3416,38 +3418,46 @@ export function AppSidebar({
   }
 
   async function removeWebappItem(item: WebEntry) {
-    if (item.kind !== "webapp" || webItemRemovePendingId) {
+    if (item.kind !== "webapp" || webItemRemovePendingId || webItemRemoveInFlightRef.current) {
       return;
     }
-    if (item.removable === false) {
-      window.alert(
-        t("sidebar.webapp.managedNotRemovable", { name: item.label }),
-      );
-      return;
-    }
-    if (
-      !window.confirm(t("sidebar.webapp.removeConfirm", { name: item.label }))
-    ) {
-      return;
-    }
-    if (!onRemoveWebappItem) {
-      window.alert(t("sidebar.webapp.removeFailed"));
-      return;
-    }
-
-    setWebItemRemovePendingId(item.id);
+    // Keep confirmation in the renderer: native confirm/alert can strand
+    // Windows keyboard focus when the WebApp guest is removed afterwards.
+    webItemRemoveInFlightRef.current = true;
     try {
+      if (item.removable === false) {
+        throw new Error(t("sidebar.webapp.managedNotRemovable", { name: item.label }));
+      }
+      const confirmed = await webappRemovalModal.confirm({
+        centered: true,
+        title: t("sidebar.webapp.remove"),
+        content: t("sidebar.webapp.removeConfirm", { name: item.label }),
+        okText: t("sidebar.webapp.remove"),
+        cancelText: t("common.cancel"),
+        okButtonProps: { danger: true },
+        autoFocusButton: "cancel",
+      });
+      if (!confirmed) return;
+      if (!onRemoveWebappItem) {
+        throw new Error(t("sidebar.webapp.removeFailed"));
+      }
+
+      setWebItemRemovePendingId(item.id);
       const result = await onRemoveWebappItem(item);
       if (!result.ok) {
-        window.alert(result.message || t("sidebar.webapp.removeFailed"));
+        throw new Error(result.message || t("sidebar.webapp.removeFailed"));
       }
     } catch (error) {
-      window.alert(
-        error instanceof Error
+      await webappRemovalModal.error({
+        centered: true,
+        title: t("sidebar.webapp.remove"),
+        content: error instanceof Error
           ? error.message
           : t("sidebar.webapp.removeFailed"),
-      );
+        okText: t("common.close"),
+      });
     } finally {
+      webItemRemoveInFlightRef.current = false;
       setWebItemRemovePendingId("");
     }
   }
@@ -6949,6 +6959,7 @@ export function AppSidebar({
 
   return (
     <>
+      {webappRemovalModalContext}
       <SidebarFileDropTarget
         enabled={isPrimaryMode}
         projectDisabled={creatingProject || Boolean(createProjectDialog)}
@@ -6973,15 +6984,6 @@ export function AppSidebar({
                   >
                     <SettingsSidebarIcon kind="search" />
                   </button>
-                ) : null}
-                {isPrimaryMode ? (
-                  <SidebarCollapseToggle
-                    className="sidebar-collapsed-toggle-button"
-                    isCollapsed={isCollapsed}
-                    variant="compact"
-                    onToggleCollapsed={onToggleCollapsed}
-                    t={t}
-                  />
                 ) : null}
                 <div className="sidebar-history-controls">
                   <button
@@ -7037,6 +7039,15 @@ export function AppSidebar({
                       <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
                     </span>
                   </button>
+                ) : null}
+                {isPrimaryMode ? (
+                  <SidebarCollapseToggle
+                    className="sidebar-collapsed-toggle-button"
+                    isCollapsed={isCollapsed}
+                    variant="compact"
+                    onToggleCollapsed={onToggleCollapsed}
+                    t={t}
+                  />
                 ) : null}
               </div>
             </div>

@@ -109,6 +109,7 @@ export interface ManifestDesktopHosting {
 }
 
 export interface ManifestDesktop {
+  runtimeRecovery?: "v1";
   ssoIdTokenFile?: "v1";
   runtimeResources?: "v1";
   assetFileName?: string;
@@ -295,11 +296,7 @@ export const DEFAULT_AGENT_WEBCLIENT_RUNTIME_CONFIG_ENV_KEYS = [
   "QUICK_ACTIONS_ENABLED",
   "CONVERSATION_EXPORT_ASSET_ORIGIN",
   "BRAND_ID",
-  "VOICE_ASR_CLIENT_GATE_ENABLED",
-  "VOICE_ASR_CLIENT_GATE_RMS_THRESHOLD",
-  "VOICE_ASR_CLIENT_GATE_OPEN_HOLD_MS",
-  "VOICE_ASR_CLIENT_GATE_CLOSE_HOLD_MS",
-  "VOICE_ASR_CLIENT_GATE_PRE_ROLL_MS"
+  "VOICE_ENABLED",
 ];
 
 export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
@@ -334,16 +331,13 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
   ],
   proxyRoutes: [
     {
-      match: "prefix",
-      path: "/api/voice",
-      targetEnv: "VOICE_BASE_URL",
-      optional: true,
+      match: "exact",
+      path: "/api/voice/ws",
+      targetEnv: "BASE_URL",
+      http: false,
       websocket: true,
+      auth: "agent-platform-access-token",
       stripRequestHeaders: ["sec-websocket-extensions"],
-      disabledResponse: {
-        status: 404,
-        json: { error: "voice disabled" }
-      }
     },
     {
       match: "prefix",

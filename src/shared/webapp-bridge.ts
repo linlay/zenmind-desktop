@@ -3,6 +3,7 @@ export const WEBAPP_BRIDGE_VERSION = 2 as const;
 export const WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES = [
   "auth.session",
   "assistant.chat",
+  "assistant.execute",
   "assistant.image",
   "connector.execute",
   "skill.read",
@@ -69,6 +70,7 @@ export const WEBAPP_BRIDGE_ACTIONS = Object.freeze({
   connectorInvoke: "connector.invoke",
   connectorAuthenticate: "desktop.authenticateConnector",
   assistantChat: "desktop.assistant.chat",
+  assistantExecute: "assistant.execute",
   assistantImage: "desktop.assistant.image",
   assistantImageCancel: "desktop.assistant.image.cancel",
   browserOpenExternal: "desktop.native.browser.openExternal",
@@ -94,6 +96,7 @@ export const WEBAPP_BRIDGE_CAPABILITY_ACTIONS: Readonly<Record<WebappBridgeCapab
     "connector.execute": Object.freeze([WEBAPP_BRIDGE_ACTIONS.connectorList,WEBAPP_BRIDGE_ACTIONS.connectorDescribe,WEBAPP_BRIDGE_ACTIONS.connectorInvoke]),
     "desktop.connector.authenticate": Object.freeze([WEBAPP_BRIDGE_ACTIONS.connectorAuthenticate]),
     "assistant.chat": Object.freeze([WEBAPP_BRIDGE_ACTIONS.assistantChat, "assistant.events", "assistant.stop"]),
+    "assistant.execute": Object.freeze([WEBAPP_BRIDGE_ACTIONS.assistantExecute]),
     "assistant.image": Object.freeze([
       WEBAPP_BRIDGE_ACTIONS.assistantImage,
       WEBAPP_BRIDGE_ACTIONS.assistantImageCancel

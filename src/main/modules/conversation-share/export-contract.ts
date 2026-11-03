@@ -1,3 +1,5 @@
+import type { ConversationShareOmittedResource } from "../../../shared/contracts";
+
 export type ConversationShareLimits = { maxSnapshotBytes: number; maxResourceBytes: number };
 
 export const MAX_CONVERSATION_TEMPLATE_BYTES = 256 * 1024;
@@ -23,7 +25,7 @@ export type ConversationHtmlRenderResult =
   | { ok: false; message: string };
 
 export type ConversationSnapshotReadResult =
-  | { ok: true; bytes: Buffer; attachments: Array<{ id: string; name: string; mimeType: string; bytes: Buffer }>; attachmentsOmitted: boolean; attachmentUnauthorized: boolean }
+  | { ok: true; bytes: Buffer; attachments: Array<{ id: string; name: string; mimeType: string; bytes: Buffer }>; omittedResources: ConversationShareOmittedResource[] }
   | { ok: false; message: string };
 
 export type ConversationSnapshotReader = {
@@ -72,8 +74,7 @@ export type ReadConversationSnapshotSuccess = {
   requestId: string;
   snapshot: ArrayBuffer;
   attachments: Array<{ id: string; name: string; mimeType: string; bytes: ArrayBuffer }>;
-  attachmentsOmitted: boolean;
-  attachmentUnauthorized: boolean;
+  omittedResources: ConversationShareOmittedResource[];
 };
 
 export type RenderConversationHtmlFailure = {

@@ -763,7 +763,8 @@ test("agent platform assistant bridge releases wake lock when stopRun interrupt 
   }
 });
 
-test("agent platform assistant bridge forwards startRun accessLevel and emits aggregated completion message", async () => {
+for (const accessLevel of ["default", "ask_for_approval", "auto_approve", "full_access"]) {
+test(`agent platform assistant bridge forwards ${accessLevel} unchanged and emits aggregated completion message`, async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   const ws = createWsHarness({
@@ -774,7 +775,7 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
       assert.equal(body.requestId, "request-stable-1");
       assert.equal(body.chatId, "chat-stable-1");
       assert.equal(body.agentKey, "codeAssistant");
-      assert.equal(body.accessLevel, "auto_approve");
+      assert.equal(body.accessLevel, accessLevel);
       assert.equal(body.stream, true);
       assert.equal(body.params.desktop.source, "copilot");
       assert.equal(Object.hasOwn(body.params.desktop, "permissionMode"), false);
@@ -794,7 +795,7 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     const result = await bridge.startRun({
       message: "hello platform",
       agentKey: "codeAssistant",
-      accessLevel: "auto_approve",
+      accessLevel: accessLevel,
       chatId: "chat-stable-1",
       runId: "run-stable-1",
       requestId: "request-stable-1"
@@ -817,6 +818,8 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     globalThis.fetch = originalFetch;
   }
 });
+
+}
 
 test("agent platform assistant bridge accepts a query only after matching run.start and buffers earlier events", async () => {
   const originalFetch = globalThis.fetch;
@@ -1581,7 +1584,7 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
   }
 });
 
-test("agent platform assistant bridge returns no agents when platform is installed but stopped", async () => {
+test("agent platform assistant bridge reports an unavailable directory when platform is installed but stopped", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge({
     getServiceState: async () => ({
@@ -1595,9 +1598,8 @@ test("agent platform assistant bridge returns no agents when platform is install
   };
 
   try {
-    const agents = await bridge.listAgents();
-
-    assert.deepEqual(agents, []);
+    // listAgents distinguishes an unavailable service from a valid empty catalog.
+    await assert.rejects(bridge.listAgents(), /服务已安装，可手动启动/u);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -2230,4 +2232,26 @@ test("background runs that ended during a Primary outage are released on reconne
     bridge.dispose();
     globalThis.fetch = originalFetch;
   }
+});
+
+test('execute observer accepts only its request and root Agent, then releases on cancellation',async()=>{
+ const bridge=Object.create(AgentPlatformAssistantBridge.prototype);let callback;let releases=0;let connected=0;
+ bridge.platform={resolvePlatform:async()=>({ok:true,baseUrl:'http://127.0.0.1:1234',token:'host-token'})};
+ bridge.realtimeBroker={subscribePush:input=>{assert.deepEqual(input.types,['run.started']);callback=input.onPush;return()=>{releases++;return true}},ensureConnected:async()=>{connected++}};
+ const controller=new AbortController();const runs=[];
+ const release=await bridge.observeExecuteRun('request-1','agent-1',run=>runs.push(run),controller.signal);
+ callback({data:{requestId:'request-other',runId:'run-1',chatId:'chat-1',agentKey:'agent-1'}});
+ callback({data:{requestId:'request-1',runId:'run-1',chatId:'chat-1',agentKey:'other'}});
+ callback({data:{requestId:'request-1',runId:'run-1',chatId:'chat-1',agentKey:'agent-1'}});
+ assert.deepEqual(runs,[{runId:'run-1',chatId:'chat-1',agentKey:'agent-1'}]);assert.equal(connected,1);
+ controller.abort();callback({data:{requestId:'request-1',runId:'run-1',chatId:'chat-1',agentKey:'agent-1'}});assert.equal(runs.length,1);assert.ok(releases);release();
+});
+
+test('execute Push observer returns immediately while Primary reconnection is pending',async()=>{
+ const bridge=Object.create(AgentPlatformAssistantBridge.prototype);let releaseCount=0;let connecting=false;
+ bridge.platform={resolvePlatform:async()=>({ok:true,baseUrl:'http://127.0.0.1:1234',token:'host-token'})};
+ bridge.realtimeBroker={subscribePush:()=>()=>{releaseCount++},ensureConnected:()=>{connecting=true;return new Promise(()=>{})}};
+ const controller=new AbortController();const release=bridge.observeExecuteRun('request-nonblocking','agent-1',()=>{},controller.signal);
+ assert.equal(typeof release,'function');await new Promise(resolve=>setImmediate(resolve));assert.equal(connecting,true);
+ release();controller.abort();assert.equal(releaseCount,1);
 });

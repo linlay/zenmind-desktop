@@ -14,12 +14,20 @@ import { DEFAULT_STARTUP_SERVICE_IDS } from "./state-files";
 import { ensureEmbeddedNodeRuntime } from "./embedded-node-runtime";
 import { recordDesktopServiceConfigCoreHealthFailure, completeDesktopServiceConfigUpgrade } from "./desktop-config-upgrade";
 import { flushStartupTimingSummary } from "../../../support/logging/startup-timing";
+import { installBuiltinService } from "./installation";
 
 export async function runStartupPreparation(
   app: App,
   options: StartupPreparationOptions = {}
 ): Promise<StartupPreparationResult> {
   try {
+    if (options.reinstallBuiltinServices) {
+      for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+        options.onProgress?.(serviceId, "installing", "");
+        await installBuiltinService(app, serviceId, { force: true, skipInitialize: true,
+          source: "runtime-reinstall", integrationPorts: options.integrationPorts });
+      }
+    }
     let modeResolved = false;
     const resolveMode = (mode: StartupRestoreMode) => {
       if (modeResolved) {
@@ -32,7 +40,9 @@ export async function runStartupPreparation(
       ? await runDesktopServiceConfigUpgradePreparation(
           app,
           options.desktopVersion,
-          options,
+          // Service configuration is freshly deployed during reinstall, while
+          // the restored Desktop remains an existing user workspace.
+          { ...options, isFirstDesktopInstall: options.reinstallBuiltinServices || options.isFirstDesktopInstall },
           () => resolveMode("bootstrap")
         )
       : null;

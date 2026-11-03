@@ -1,8 +1,9 @@
 import path from "node:path";
-import type { App } from "electron";
+import { shell, type App } from "electron";
 import type { DesktopPetImportResult, DesktopPetState } from "../../../shared/contracts";
 import { getDesktopPetsDataRoot } from "../../infrastructure/filesystem/user-paths";
-import { installLocalPetPackage, PetPackageError } from "./pet-package";
+import { installLocalPetPackage, installPetPackage, PetPackageError, type PetMarketIdentity } from "./pet-package";
+import { resolveRemovablePetPath } from "./remove-package";
 
 export function isDesktopPetArchivePath(value: unknown, platform: NodeJS.Platform): value is string {
   if (typeof value !== "string" || !value || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value)) return false;
@@ -12,7 +13,13 @@ export function isDesktopPetArchivePath(value: unknown, platform: NodeJS.Platfor
 }
 
 // One runtime-owned queue for picker/drop/action imports and IPC removal.
-export function createPetPackageService(options: { app: App; platform: NodeJS.Platform; refreshState: () => DesktopPetState }) {
+export function createPetPackageService(options: {
+  app: App;
+  platform: NodeJS.Platform;
+  refreshState: () => DesktopPetState;
+  onRemoved?: (appearanceId: string) => void;
+  trashItem?: (path: string) => Promise<void>;
+}) {
   let queue: Promise<unknown> = Promise.resolve();
   function run<T>(operation: () => Promise<T>): Promise<T> {
     const result = queue.then(operation, operation);
@@ -21,6 +28,26 @@ export function createPetPackageService(options: { app: App; platform: NodeJS.Pl
   }
   return {
     run,
+    installMarketPackage(source: string, identity: PetMarketIdentity, onCommitted: (appearanceId: string) => void, assertOwner = () => {}) {
+      return run(async () => {
+        assertOwner();
+        if (!isDesktopPetArchivePath(source, options.platform)) throw new PetPackageError("invalidPackage");
+        const id = await installPetPackage(source, getDesktopPetsDataRoot(options.app, options.platform), { market: identity, onCommitted, assertOwner });
+        options.refreshState();
+        return id;
+      });
+    },
+    removePackage(appearanceId: string, assertOwner = () => {}, onRemoved = options.onRemoved) {
+      return run(async () => {
+        assertOwner();
+        if (options.platform !== "darwin" && options.platform !== "win32") throw new PetPackageError("invalidPackage");
+        const target = resolveRemovablePetPath(options.app, appearanceId);
+        // macOS Trash and Windows Recycle Bin are both provided by Electron.
+        await (options.trashItem ?? shell.trashItem)(target);
+        onRemoved?.(appearanceId);
+        return options.refreshState();
+      });
+    },
     importPackage(source: unknown, assertOwner = () => {}): Promise<DesktopPetImportResult> {
       return run(async () => {
         assertOwner();

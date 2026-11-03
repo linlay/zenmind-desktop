@@ -524,7 +524,7 @@
   padding: 0 10px;
   border: 1px solid var(--control-center-border);
   border-radius: 8px;
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-muted);
   cursor: pointer;
   font-size: 12px;
@@ -892,7 +892,7 @@
   padding: 0;
   border: 1px solid var(--control-center-border);
   border-radius: 6px;
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-subtle);
   cursor: pointer;
   box-shadow: none;
@@ -971,7 +971,7 @@
 .service-title-text-button.service-action-button.is-warning,
 .service-title-text-button.service-action-button.is-danger {
   border-color: var(--control-center-border);
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-subtle);
 }
 
@@ -1115,7 +1115,7 @@
   padding: 0;
   border: 1px solid var(--control-center-border);
   border-radius: 6px;
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-subtle);
   cursor: pointer;
   text-decoration: none;
@@ -1582,7 +1582,7 @@
   padding: 0;
   border: 1px solid var(--control-center-border);
   border-radius: 6px;
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-subtle);
   cursor: pointer;
   font-size: 16px;

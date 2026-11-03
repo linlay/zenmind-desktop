@@ -6,6 +6,7 @@ export type StartupPipelineOptions = {
   app: App;
   desktopVersion: string;
   isFirstDesktopInstall: boolean;
+  reinstallBuiltinServices?: boolean;
   getEnvImportFailureMessage: () => string | null;
   startupRestoreController: any;
   loadBuiltinServices: (app: App) => void;
@@ -18,6 +19,7 @@ export type StartupPipelineOptions = {
   runStartupPreparation: (app: App, callbacks: {
     desktopVersion?: string;
     isFirstDesktopInstall?: boolean;
+    reinstallBuiltinServices?: boolean;
     onModeResolved: (mode: string) => void;
     onStarting: (serviceId: string) => void;
     onProgress: (serviceId: string, phase: any, message: string) => void;
@@ -48,6 +50,7 @@ export function createStartupPipeline(options: StartupPipelineOptions) {
       await options.runServiceMutation(() => options.runStartupPreparation(options.app, {
         desktopVersion: options.desktopVersion,
         isFirstDesktopInstall: options.isFirstDesktopInstall,
+        reinstallBuiltinServices: options.reinstallBuiltinServices,
         onModeResolved: (mode) => {
           options.startupRestoreController.beginSession(mode);
         },

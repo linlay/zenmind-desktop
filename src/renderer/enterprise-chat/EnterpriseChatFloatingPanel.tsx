@@ -164,16 +164,15 @@ function newClientMessageId() {
 
 function clampLauncherPosition(
   position: LauncherPosition,
-  viewport = { width: window.innerWidth, height: window.innerHeight },
-  panelSize?: { width: number; height: number }
+  viewport = { width: window.innerWidth, height: window.innerHeight }
 ) {
   return {
     x: Math.max(
-      panelSize ? panelSize.width - CHAT_LAUNCHER_SIZE + CHAT_LAUNCHER_MARGIN : CHAT_LAUNCHER_MARGIN,
+      CHAT_LAUNCHER_MARGIN,
       Math.min(position.x, viewport.width - CHAT_LAUNCHER_SIZE - CHAT_LAUNCHER_MARGIN)
     ),
     y: Math.max(
-      panelSize ? panelSize.height + 12 + CHAT_LAUNCHER_MARGIN : CHAT_LAUNCHER_MARGIN,
+      CHAT_LAUNCHER_MARGIN,
       Math.min(position.y, viewport.height - CHAT_LAUNCHER_SIZE - CHAT_LAUNCHER_MARGIN)
     )
   };
@@ -702,18 +701,30 @@ export function EnterpriseChatFloatingPanel({
     };
   }, [launcherMenuAnchor]);
 
+  const floatingPosition = clampLauncherPosition(launcherPosition, viewport);
   const panelWidth = Math.min(CHAT_PANEL_WIDTH, viewport.width - 24);
-  const panelHeight = Math.min(CHAT_PANEL_HEIGHT, viewport.height - 82);
-  const floatingPosition = clampLauncherPosition(
-    launcherPosition, viewport, open ? { width: panelWidth, height: panelHeight } : undefined
+  const panelMaxHeight = Math.min(CHAT_PANEL_HEIGHT, viewport.height - 82);
+  // Fit the panel around the saved launcher position; opening must never move the button.
+  const spaceAbove = floatingPosition.y - 24;
+  const spaceBelow = viewport.height - floatingPosition.y - CHAT_LAUNCHER_SIZE - 24;
+  const panelAbove = spaceAbove >= panelMaxHeight || spaceAbove >= spaceBelow;
+  const panelHeight = Math.min(panelMaxHeight, panelAbove ? spaceAbove : spaceBelow);
+  const panelLeft = Math.max(
+    12,
+    Math.min(
+      floatingPosition.x + CHAT_LAUNCHER_SIZE - panelWidth,
+      viewport.width - panelWidth - 12
+    )
   );
   const floatingStyle = {
     left: floatingPosition.x,
     top: floatingPosition.y
   } satisfies CSSProperties;
   const panelStyle = {
-    left: floatingPosition.x + CHAT_LAUNCHER_SIZE - panelWidth,
-    top: floatingPosition.y - panelHeight - 12,
+    left: panelLeft,
+    top: panelAbove
+      ? floatingPosition.y - panelHeight - 12
+      : floatingPosition.y + CHAT_LAUNCHER_SIZE + 12,
     width: panelWidth,
     height: panelHeight
   } satisfies CSSProperties;
@@ -1288,7 +1299,7 @@ export function EnterpriseChatFloatingPanel({
       setLauncherPosition(clampLauncherPosition({
         x: drag.originX + deltaX,
         y: drag.originY + deltaY
-      }, viewport, open ? { width: panelWidth, height: panelHeight } : undefined));
+      }, viewport));
     }
   }
 

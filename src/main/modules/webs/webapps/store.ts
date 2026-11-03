@@ -45,6 +45,7 @@ export const WEBAPP_TARGETS = [
   "darwin-arm64",
   "darwin-x64",
   "darwin-universal",
+  "linux-x64",
   "win32-arm64",
   "win32-x64"
 ] as const satisfies readonly WebappTarget[];
@@ -87,6 +88,10 @@ export function webappTargetMatchesCurrentPlatform(
 ) {
   if (target === "any") {
     return true;
+  }
+  if (target === "linux-x64") {
+    // The shared package contract includes Compose targets; Desktop cannot run them.
+    return false;
   }
   if (target === "darwin-universal") {
     return platform === "darwin" && (arch === "arm64" || arch === "x64");

@@ -1,8 +1,12 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { app, BrowserWindow, nativeTheme } = require("electron");
+app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-traffic-lights-")));
 const koffi = require("koffi");
 const { attachMacTrafficLightLayout } = require("../../dist-electron/main/infrastructure/electron/mac-traffic-lights.js");
-const { MAC_TRAFFIC_LIGHT_POSITION, MAC_TRAFFIC_LIGHT_LAYOUT } = require("../../dist-electron/main/modules/shell/window-model.js");
+const { MAC_TRAFFIC_LIGHT_POSITION, MAC_TRAFFIC_LIGHT_LAYOUT, MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT } = require("../../dist-electron/main/modules/shell/window-model.js");
 const objc = koffi.load("/usr/lib/libobjc.A.dylib");
 const sel = objc.func("void *sel_registerName(const char *name)");
 const object = objc.func("objc_msgSend", "void *", ["void *", "void *"]);
@@ -51,9 +55,11 @@ app.whenReady().then(async () => {
   const testMinimize = process.env.RUN_MAC_TRAFFIC_LIGHTS_MINIMIZE === "1";
   const original = snapshot(window);
   const errors = [];
-  const dispose = attachMacTrafficLightLayout(window, {
+  const controller = attachMacTrafficLightLayout(window, {
     platform: "darwin", ...MAC_TRAFFIC_LIGHT_LAYOUT, onError: (error) => errors.push(String(error))
   });
+  const dispose = controller.dispose;
+  let activeLayout = MAC_TRAFFIC_LIGHT_LAYOUT;
   const cases = [];
   async function check(name) {
     await delay(400);
@@ -66,9 +72,9 @@ app.whenReady().then(async () => {
       assert.equal(frames[index].height, original[index].frame.height, `${name}: native height`);
       assert.equal(frames[index].y, original[index].frame.y, `${name}: vertical position`);
       if (index) assert.equal(frames[index].x - frames[index - 1].x - frames[index - 1].width,
-        MAC_TRAFFIC_LIGHT_LAYOUT.gap, `${name}: gap`);
+        activeLayout.gap, `${name}: gap`);
     }
-    assert.equal((frames[0].x + frames[2].x + frames[2].width) / 2, MAC_TRAFFIC_LIGHT_LAYOUT.centerX, `${name}: center`);
+    assert.equal((frames[0].x + frames[2].x + frames[2].width) / 2, activeLayout.centerX, `${name}: center`);
     assert.equal(errors.length, 0, errors.join("\n"));
     cases.push({ name, frames });
     console.log("MAC_TRAFFIC_LIGHTS_CASE " + name);
@@ -77,6 +83,15 @@ app.whenReady().then(async () => {
   window.show();
   app.focus({ steal: true });
   await check("show");
+  const compactLeft = snapshot(window)[0].frame.x;
+  for (const [name, layout] of [["sidebar-expanded", MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT], ["sidebar-collapsed", MAC_TRAFFIC_LIGHT_LAYOUT], ["sidebar-expanded-again", MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT]]) {
+    activeLayout = layout;
+    controller.setLayout(layout);
+    await check(name);
+    const current = snapshot(window);
+    assert.equal(current[0].frame.x, compactLeft, "red button does not move when sidebar mode changes");
+    assert.ok(current[2].frame.x + current[2].frame.width < 78, "native buttons do not encroach on navigation");
+  }
   window.setSize(850, 500);
   await check("resize");
   window.maximize();

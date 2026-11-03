@@ -28,7 +28,7 @@ const errorKeys: Record<string, TranslationKey> = {
   tooManySkins: "settings.appearance.tooManySkins"
 };
 
-export function SkinSettings() {
+export function SkinSettings({ onOpenMarket }: { onOpenMarket?: () => void } = {}) {
   const { t } = useI18n();
   const appearance = useAppearance();
   const { skinSettings, skinLoadState, skinSaving, resolvedTheme } = appearance;
@@ -98,6 +98,7 @@ export function SkinSettings() {
           </span>
         </div>
         <div className="desktop-skin-import-actions">
+          {onOpenMarket ? <Button onClick={onOpenMarket}>{t("market.tab.skins.title")}</Button> : null}
           <Button disabled={importDisabled} onClick={() => void importPackage()}
             onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "none"; } }}
             onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }}>

@@ -1,3 +1,4 @@
+import {listSkinMarketItems, installSkinMarketItem} from "./skin-market";
 import type { App } from "electron";
 import { installConnectorMarketItem, listConnectorMarketItems, uninstallConnectorMarketItem } from "./connector-market";
 import type {
@@ -109,6 +110,7 @@ const MARKET_SECTIONS: readonly MarketSection[] = [
   "agents",
   "sandboxImages",
   "pets",
+  "skins",
   "cli",
   "mcps",
   "connectors",
@@ -183,27 +185,33 @@ async function requestFavoriteUpdate(
   options: MarketFavoriteOptions
 ) {
   const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
+  const send = (bearerToken: string) => fetchImpl(url, {
+    method,
+    headers: {
+      ...getMarketDesktopDeviceHeaders(app),
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
+    }
+  });
   let token = await issueFavoriteAccessToken(app, "missing", options);
-  for (const reason of ["missing", "unauthorized"] as const) {
-    if (reason === "unauthorized") {
-      token = await issueFavoriteAccessToken(app, "unauthorized", options);
-    }
-    const response = await fetchImpl(url, {
-      method,
-      headers: {
-        ...getMarketDesktopDeviceHeaders(app),
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    });
-    const data = await readMarketApiResponse(response);
-    if (response.ok) {
-      return data;
-    }
-    if (response.status !== 401 || reason === "unauthorized" || !options.issueAgentAccessToken) {
-      throw new MarketApiRequestError(response.status, marketApiErrorMessage(response.status, data));
+  let response = await send(token);
+  if (response.status === 401 && options.issueAgentAccessToken) {
+    // Retry only with a token Identity has already renewed; a Market 401 never renews sign-in.
+    const current = await issueFavoriteAccessToken(app, "unauthorized", options);
+    if (current !== token) {
+      token = current;
+      response = await send(token);
     }
   }
-  throw new Error(t("market.main.favoriteAuthRequired"));
+  const data = await readMarketApiResponse(response);
+  if (response.ok) {
+    return data;
+  }
+  if (response.status === 401 && token) {
+    throw new MarketApiRequestError(401, t("market.main.favoriteCredentialRejected", {
+      reason: marketApiErrorMessage(response.status, data)
+    }));
+  }
+  throw new MarketApiRequestError(response.status, marketApiErrorMessage(response.status, data));
 }
 
 function combineMarketSections(
@@ -216,7 +224,8 @@ function combineMarketSections(
   mcpMarket: MarketSectionResult,
   connectorMarket: MarketSectionResult,
   websiteAppMarket: MarketSectionResult,
-  softwarePackageMarket: MarketSectionResult
+  softwarePackageMarket: MarketSectionResult,
+  skinMarket: MarketSectionResult
 ): MarketListResult {
   const message = [...new Set([
     pluginMarket.message,
@@ -228,12 +237,13 @@ function combineMarketSections(
     mcpMarket.message,
     connectorMarket.message,
     websiteAppMarket.message,
-    softwarePackageMarket.message
+    softwarePackageMarket.message,
+    skinMarket.message
   ].filter(Boolean))].join(" ");
   return {
     ok: true,
-    sourceUrl: softwarePackageMarket.sourceUrl || websiteAppMarket.sourceUrl || connectorMarket.sourceUrl || mcpMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
-    offline: pluginMarket.offline || skillMarket.offline || agentMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline || mcpMarket.offline || connectorMarket.offline || websiteAppMarket.offline || softwarePackageMarket.offline,
+    sourceUrl: skinMarket.sourceUrl || softwarePackageMarket.sourceUrl || websiteAppMarket.sourceUrl || connectorMarket.sourceUrl || mcpMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
+    offline: pluginMarket.offline || skillMarket.offline || agentMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline || mcpMarket.offline || connectorMarket.offline || websiteAppMarket.offline || softwarePackageMarket.offline || skinMarket.offline,
     message,
     items: [
       ...pluginMarket.items,
@@ -245,7 +255,8 @@ function combineMarketSections(
       ...mcpMarket.items,
       ...connectorMarket.items,
       ...websiteAppMarket.items,
-      ...softwarePackageMarket.items
+      ...softwarePackageMarket.items,
+      ...skinMarket.items
     ],
     pluginMessage: pluginMarket.message,
     pluginOffline: pluginMarket.offline,
@@ -266,7 +277,9 @@ function combineMarketSections(
     websiteAppMessage: websiteAppMarket.message,
     websiteAppOffline: websiteAppMarket.offline,
     softwarePackageMessage: softwarePackageMarket.message,
-    softwarePackageOffline: softwarePackageMarket.offline
+    softwarePackageOffline: softwarePackageMarket.offline,
+    skinMessage: skinMarket.message,
+    skinOffline: skinMarket.offline
   };
 }
 
@@ -278,7 +291,7 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
   const sections = new Set((options.sections ?? MARKET_SECTIONS).filter((section) =>
     MARKET_SECTIONS.includes(section)
   ));
-  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket] = await Promise.all([
+  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket, skinMarket] = await Promise.all([
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "plugins")
       ? listPluginMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
@@ -308,9 +321,11 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
       : EMPTY_MARKET_SECTION,
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "softwarePackages")
       ? listSoftwarePackageMarketItems(app, options)
-      : EMPTY_MARKET_SECTION
+      : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "skins")
+      ? listSkinMarketItems(app,options) : EMPTY_MARKET_SECTION
   ]);
-  return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket };
+  return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket, skinMarket };
 }
 
 async function resolveInstalledItemType(
@@ -333,8 +348,8 @@ async function resolveInstalledItemType(
 }
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
-  const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket } = await loadMarketSections(app, options);
-  const result = combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket);
+  const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket, skinMarket } = await loadMarketSections(app, options);
+  const result = combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, connectorMarket, websiteAppMarket, softwarePackageMarket, skinMarket);
   if (!options.includeFavorites) {
     return result;
   }
@@ -434,6 +449,8 @@ export async function installMarketItem(
       return installPluginMarketItem(app, itemId, installOptions);
     case "sandbox-image":
       return installSandboxTemplateMarketItem(app, itemId, installOptions);
+    case "skin":
+      return installSkinMarketItem(app,itemId,installOptions);
     case "pet":
       return installPetMarketItem(app, itemId, installOptions);
     case "cli":
@@ -478,13 +495,14 @@ export async function uninstallMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const type = await resolveInstalledItemType(app, itemId, options);
+  if (type === "skin") throw new Error(t("market.skin.removeVersion"));
   if (type === "connector") {
     return uninstallConnectorMarketItem(app, itemId);
   }
   const result = type === "plugin"
     ? await uninstallPluginMarketItem(app, itemId, options)
     : type === "pet"
-      ? await uninstallPetMarketItem(app, itemId)
+      ? await uninstallPetMarketItem(app, itemId, options)
       : type === "agent"
         ? await uninstallAgentMarketItem(app, itemId)
       : type === "website-app"

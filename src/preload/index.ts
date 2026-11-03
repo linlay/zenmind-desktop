@@ -223,6 +223,8 @@ const api: DesktopApi = {
       ipcRenderer.send("desktopShell.setWebviewModalOverlayVisible", sourceId, visible),
     setWorkPanelFullscreenActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
+    setMainWindowSidebarCollapsed: (collapsed: boolean) =>
+      ipcRenderer.send("desktopShell.setMainWindowSidebarCollapsed", collapsed),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
     minimizeWindow: () => ipcRenderer.invoke("desktopShell.minimizeWindow"),
     popupApplicationMenu: (request) => ipcRenderer.invoke("desktopShell.popupApplicationMenu", request),
@@ -535,6 +537,10 @@ const api: DesktopApi = {
     getConnectorAgent: key => ipcRenderer.invoke("market.getConnectorAgent", key),
     getConnectorAgentTools: input => ipcRenderer.invoke("market.getConnectorAgentTools", input),
     readSkillContent: (id: string) => ipcRenderer.invoke("market.readSkillContent", id),
+    installSkin: (id: string) => ipcRenderer.invoke("market.installSkin", id),
+    readSkinAsset: (input: { id: string; version: string; path: string }) => ipcRenderer.invoke("market.readSkinAsset", input),
+    installPet: (id: string) => ipcRenderer.invoke("market.installPet", id),
+    readPetAsset: (input: { id: string; version: string; path: string }) => ipcRenderer.invoke("market.readPetAsset", input),
     getSkillPins: () => ipcRenderer.invoke("market.getSkillPins"),
     saveSkillPins: (pins) => ipcRenderer.invoke("market.saveSkillPins", pins),
     getSettings: () => ipcRenderer.invoke("market.getSettings"),
@@ -708,9 +714,15 @@ const api: DesktopApi = {
     setEnterpriseImEnabled: (enabled) => ipcRenderer.invoke("settings.setEnterpriseImEnabled", enabled),
     getTunnelHubSettings: () => ipcRenderer.invoke("settings.getTunnelHubSettings"),
     saveTunnelHubSettings: (input) => ipcRenderer.invoke("settings.saveTunnelHubSettings", input),
-    resetRuntimeEnv: () => ipcRenderer.invoke("settings.resetRuntimeEnv"),
+    resetRuntimeEnv: (action) => ipcRenderer.invoke("settings.resetRuntimeEnv", action),
+    onRuntimeResetProgress: (listener) => {
+      const handler = (_event: unknown, stage: "preparing" | "stopping" | "restoring" | "restarting" | "failed") => listener(stage);
+      ipcRenderer.on("settings.runtimeResetProgress", handler);
+      return () => { ipcRenderer.off("settings.runtimeResetProgress", handler); };
+    },
     getThemePreference: () => ipcRenderer.invoke("settings.getThemePreference"),
     getDesktopSkin: () => ipcRenderer.invoke("settings.getDesktopSkin"),
+    getDesktopSkinPreview: (id, mode) => ipcRenderer.invoke("settings.getDesktopSkinPreview", id, mode),
     setDesktopSkin: (skinId, options) => ipcRenderer.invoke("settings.setDesktopSkin", options === undefined ? skinId : { id: skinId, options }),
     importDesktopSkinPackage: () => ipcRenderer.invoke("settings.importDesktopSkinPackage"),
     importDroppedDesktopSkinPackage: (file: File) => ipcRenderer.invoke("settings.importDroppedDesktopSkinPackage", webUtils.getPathForFile(file)),
@@ -828,6 +840,7 @@ const api: DesktopApi = {
       read: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.read", input),
       release: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.release", input),
       reveal: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.reveal", input),
+      saveCopy: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.saveCopy", input),
       openExternal: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.openExternal", input),
       ai: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.ai", input),
       cancelAi: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.cancelAi", input),

@@ -19,7 +19,7 @@ import {
   RobotOutlined,
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction, type MouseEvent as ReactMouseEvent } from "react";
 import { flushSync } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
@@ -89,6 +89,7 @@ import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 import { WorkPanelNewTab } from "./WorkPanelNewTab";
 import { WorkPanelTab } from "./WorkPanelTab";
+import { isWorkPanelNewTabActive, resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "./new-tab-selection";
 import { WorkPanelLocalDocument, type WorkPanelLocalDocumentData } from "./WorkPanelLocalDocument";
 
 const ExternalWebviewPage = lazy(() =>
@@ -102,10 +103,13 @@ type WorkPanelHostProps = {
   activeChatId: string | null;
   activeOwnerKey?: string | null;
   state: WorkPanelState;
+  selectedNewTabs: WorkPanelNewTabSelections;
+  setSelectedNewTabs: Dispatch<SetStateAction<WorkPanelNewTabSelections>>;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
   fullscreenOwnerChatId: string | null;
   onFullscreenChange(ownerChatId: string | null): Promise<boolean>;
   hasPanelToggle?: boolean;
+  mainChatTab?: { active: boolean; onActivate(): void; onDeactivate(): void };
   isMac: boolean;
   isWindows: boolean;
   launcher: {
@@ -118,8 +122,8 @@ type WorkPanelHostProps = {
     projectDisabledReason?: string;
     lastRunId?: string;
     webapps: Array<{ id: string; label: string }>;
-    onOpenWebapp(ownerChatId: string, webapp: { id: string; label: string }): void;
-    onFocusWebappWindow(webappId: string): void;
+    onOpenWebapp(ownerChatId: string, webapp: { id: string; label: string }): Promise<boolean>;
+    onFocusWebappWindow(webappId: string): Promise<boolean>;
   };
 };
 
@@ -188,11 +192,12 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
       return item.descriptor.context.path.trim();
     }
     if (item.descriptor.module === "artifact" || item.descriptor.module === "reference") {
-      return item.descriptor.context.relativePath?.trim() || resolveChatWorkPanelLocalResourcePath({
+      const relativePath = item.descriptor.context.relativePath?.trim() || resolveChatWorkPanelLocalResourcePath({
         ownerChatId,
         profile: item.descriptor.module,
         route: item.descriptor.route,
       });
+      return relativePath ? `${item.descriptor.module}:///${relativePath}` : "";
     }
   }
   if (item.descriptor.kind === "local-file") {
@@ -201,6 +206,10 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
   if (item.descriptor.kind === "native") {
     if (item.descriptor.surfaceKey === "document-html") return String(item.descriptor.context.displayUrl || "");
     const relativePath = item.descriptor.context.relativePath;
+    const profile = item.descriptor.context.profile;
+    if (typeof relativePath === "string" && relativePath.trim() && (profile === "artifact" || profile === "reference")) {
+      return `${profile}:///${relativePath.trim()}`;
+    }
     return typeof relativePath === "string" ? relativePath.trim() : "";
   }
   return "";
@@ -349,10 +358,13 @@ export function WorkPanelHost({
   activeChatId,
   activeOwnerKey = activeChatId,
   state,
+  selectedNewTabs,
+  setSelectedNewTabs,
   dispatchCommand,
   fullscreenOwnerChatId,
   onFullscreenChange,
   hasPanelToggle,
+  mainChatTab,
   isMac,
   isWindows,
   launcher,
@@ -370,7 +382,6 @@ export function WorkPanelHost({
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
   // Launchers are renderer-only tabs: they never create a guest or acquire Run permissions.
   const [newTabs, setNewTabs] = useState<Array<{ id: string; ownerChatId: string; urlDraft: string }>>([]);
-  const [selectedNewTabs, setSelectedNewTabs] = useState<Record<string, { id: string; anchor: string | null }>>({});
   const selectedNewTabsRef = useRef(selectedNewTabs);
   selectedNewTabsRef.current = selectedNewTabs;
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
@@ -406,10 +417,16 @@ export function WorkPanelHost({
 
   const closeNewTab = (ownerChatId: string, id: string) => {
     setNewTabs(current => current.filter(tab => tab.id !== id));
-    if (selectedNewTabsRef.current[ownerChatId]?.id === id) closeNewTabSelection(ownerChatId);
+    setSelectedNewTabs(current => {
+      if (current[ownerChatId]?.id !== id) return current;
+      const next = { ...current };
+      delete next[ownerChatId];
+      return next;
+    });
   };
 
   const openNewTab = (ownerChatId: string) => {
+    if (ownerChatId === activeOwnerKey) mainChatTab?.onDeactivate();
     const id = globalThis.crypto.randomUUID();
     const anchor = stateRef.current.workspaces.find(workspace => workspace.ownerChatId === ownerChatId)?.activeItemId ?? null;
     setNewTabs(current => [...current, { id, ownerChatId, urlDraft: "" }]);
@@ -430,7 +447,8 @@ export function WorkPanelHost({
     const agentKey = launcher.agentKey.trim();
     const route = createAgentWebclientBtwPath({ chatId: ownerChatId });
     if (!agentKey || !route) return;
-    dispatchCommand({
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const result = dispatchCommand({
       type: "openItem",
       ownerChatId,
       descriptor: {
@@ -441,7 +459,7 @@ export function WorkPanelHost({
         title: t("chatWorkPanel.add.sideChat"),
       },
     });
-    closeNewTabSelection(ownerChatId);
+    if (result.ok && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const openProjectFromMenu = (ownerChatId: string) => {
@@ -453,7 +471,8 @@ export function WorkPanelHost({
       runId: launcher.lastRunId,
     });
     if (!route) return;
-    dispatchCommand({
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const result = dispatchCommand({
       type: "openItem",
       ownerChatId,
       descriptor: {
@@ -468,16 +487,22 @@ export function WorkPanelHost({
         title: t("chatWorkPanel.add.project"),
       },
     });
-    closeNewTabSelection(ownerChatId);
+    if (result.ok && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const openFilesFromMenu = async (ownerChatId: string) => {
+    // A native picker can finish after the user has selected another launcher.
+    const selected = selectedNewTabsRef.current[ownerChatId];
     const originalFiles = stateRef.current.workspaces.find(workspace => workspace.ownerChatId === ownerChatId)?.items
       .some(item => item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document");
     if (isLocalDocumentDraftOwnerKey(ownerChatId) || originalFiles) {
       // Main reads the trusted current nonce/Chat; a UI draft key is never an API Chat ID.
-      await window.electronAPI.localDocuments.select();
-      closeNewTabSelection(ownerChatId);
+      const before = await window.electronAPI.localDocuments.getState();
+      const result = await window.electronAPI.localDocuments.select();
+      if (result.ok && selected) {
+        const after = await window.electronAPI.localDocuments.getState();
+        if (after.openRevision !== before.openRevision) closeNewTab(ownerChatId, selected.id);
+      }
       return;
     }
     const result = await window.electronAPI.chatWorkPanel.localFiles.select({
@@ -485,8 +510,9 @@ export function WorkPanelHost({
       rendererGeneration: rendererGenerationRef.current,
     });
     if (!result.ok) return;
+    let opened = false;
     for (const file of result.files) {
-      dispatchCommand({
+      const openedFile = dispatchCommand({
         type: "openItem",
         ownerChatId,
         descriptor: {
@@ -497,15 +523,24 @@ export function WorkPanelHost({
           title: file.fileName,
         },
       });
+      opened ||= openedFile.ok;
     }
-    closeNewTabSelection(ownerChatId);
+    if (opened && selected) closeNewTab(ownerChatId, selected.id);
+  };
+
+  const openWebappFromNewTab = async (ownerChatId: string, webapp: { id: string; label: string }) => {
+    const selected = selectedNewTabsRef.current[ownerChatId];
+    const opened = await (openWebappWindowIds.has(webapp.id)
+      ? launcher.onFocusWebappWindow(webapp.id)
+      : launcher.onOpenWebapp(ownerChatId, webapp)).catch(() => false);
+    if (opened && selected) closeNewTab(ownerChatId, selected.id);
   };
 
   const closeWorkPanelStep = (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
     if (!workspace) return false;
     const selected = selectedNewTabsRef.current[ownerChatId];
-    if (selected && selected.anchor === workspace.activeItemId) {
+    if (selected && isWorkPanelNewTabActive(selected, workspace.activeItemId)) {
       closeNewTab(ownerChatId, selected.id);
       return true;
     }
@@ -1284,12 +1319,14 @@ export function WorkPanelHost({
     if (!currentItem) return;
     if (nativeImage) {
       if (currentItem.descriptor.kind !== "native" || currentItem.descriptor.context.handleId !== nativeImage.handleId) return;
-      if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app") {
+      if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app" || result.actionId === "download-resource") {
         const request = { ownerChatId, rendererGeneration: rendererGenerationRef.current, handleId: String(nativeImage.handleId) };
         try {
           const outcome = result.actionId === "reveal-resource"
             ? await window.electronAPI.chatWorkPanel.resourceImages.reveal(request)
-            : await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...request, mode: "default" });
+            : result.actionId === "download-resource"
+              ? await window.electronAPI.chatWorkPanel.resourceImages.saveCopy(request)
+              : await window.electronAPI.chatWorkPanel.resourceImages.openExternal({ ...request, mode: "default" });
           if (!outcome.ok && outcome.message) modal.error({ content: outcome.message });
         } catch { modal.error({ content: t("chatWorkPanel.resourceActions.failed") }); }
         return;
@@ -1359,12 +1396,10 @@ export function WorkPanelHost({
       await window.electronAPI.clipboard.writeText(documentPath);
       return;
     }
-    if (result.actionId === "reveal-resource") {
-      await handleLocalResourceAction(ownerChatId, item, "reveal");
-      return;
-    }
-    if (result.actionId === "open-resource-default-app") {
-      await handleLocalResourceAction(ownerChatId, item, "open-default");
+    if (result.actionId === "reveal-resource" || result.actionId === "open-resource-default-app") {
+      const outcome = await handleLocalResourceAction(ownerChatId, item,
+        result.actionId === "reveal-resource" ? "reveal" : "open-default");
+      if (!outcome.ok) modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
       return;
     }
     if (
@@ -1554,17 +1589,10 @@ export function WorkPanelHost({
       }).catch(() => undefined);
     }
     previousDocumentHtmlHandlesRef.current = nextHandles;
+    // Host effect cleanup also runs during Fast Refresh/StrictMode while the
+    // workspace and its handles survive. Release only removed items here;
+    // Main owns sender/window destruction and application shutdown.
   }, [state.workspaces]);
-
-  useEffect(() => () => {
-    for (const [handleId, ownerChatId] of previousDocumentHtmlHandlesRef.current) {
-      void window.electronAPI.chatWorkPanel.documentHtml.release({
-        ownerChatId,
-        rendererGeneration: rendererGenerationRef.current,
-        handleIds: [handleId],
-      }).catch(() => undefined);
-    }
-  }, []);
 
   useEffect(() => {
     const nextHandles = new Map<string, string>();
@@ -2052,9 +2080,10 @@ export function WorkPanelHost({
     const visiblePanel = activeOwnerKey
       ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeOwnerKey)}"]`)
       : null;
-    const activeItemId = activeOwnerKey
-      ? state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey)?.activeItemId ?? null
-      : null;
+    const activeItemId = mainChatTab?.active ? null : resolveWorkPanelActiveItemId(
+      state.workspaces.find((workspace) => workspace.ownerChatId === activeOwnerKey),
+      selectedNewTabs,
+    );
     const isActiveItemHost = (element: HTMLElement | null) => Boolean(
       element &&
       activeOwnerKey &&
@@ -2089,7 +2118,7 @@ export function WorkPanelHost({
     } else if (isMac && focusedItem && !isActiveItemHost(focusedItem)) {
       (focusedItem.querySelector("webview") as Electron.WebviewTag | null)?.blur();
     }
-  }, [activeOwnerKey, isMac, isWindows, state.workspaces]);
+  }, [activeOwnerKey, isMac, isWindows, selectedNewTabs, state.workspaces, mainChatTab?.active]);
 
   // Remember the box each workspace had while shown. A hidden workspace keeps
   // that viewport for its web pages instead of following the foreground
@@ -2141,8 +2170,9 @@ export function WorkPanelHost({
       )}
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeOwnerKey;
+        const mainChatActive = visible && Boolean(mainChatTab?.active);
         const selectedNewTab = selectedNewTabs[workspace.ownerChatId];
-        const newTabActive = Boolean(selectedNewTab && selectedNewTab.anchor === workspace.activeItemId);
+        const newTabActive = !mainChatActive && isWorkPanelNewTabActive(selectedNewTab, workspace.activeItemId);
         const localOnly = isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId);
         // A background Run keeps operating its own Chat's web pages, so a
         // hidden workspace with web items retains a non-zero viewport.
@@ -2151,7 +2181,7 @@ export function WorkPanelHost({
         return (
           <aside
             key={workspace.workspaceId}
-            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}${hasBackgroundWeb ? " has-background-web" : ""}`}
+            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}${hasBackgroundWeb ? " has-background-web" : ""}${newTabActive ? " is-new-tab-active" : ""}`}
             style={backgroundSize ? { width: backgroundSize.width, height: backgroundSize.height } : undefined}
             hidden={!visible}
             aria-hidden={!visible}
@@ -2159,9 +2189,20 @@ export function WorkPanelHost({
             data-work-panel-chat={workspace.ownerChatId}
           >
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
+              {visible && mainChatTab && <WorkPanelTab
+                title={t("chatWorkPanel.mainChat")}
+                active={mainChatActive}
+                fixed
+                icon={<MessageOutlined />}
+                controls="desktop-main-chat-panel"
+                onActivate={() => {
+                  closeNewTabSelection(workspace.ownerChatId);
+                  mainChatTab.onActivate();
+                }}
+              />}
               {workspace.items.map((item) => {
                 if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
-                const active = !newTabActive && workspace.activeItemId === item.itemId;
+                const active = !mainChatActive && !newTabActive && workspace.activeItemId === item.itemId;
                 const closable = item.closable && !item.pinned;
                 const overview = item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
                 const itemLoading = loadingWebItems.has(itemRuntimeKey(workspace.ownerChatId, item.itemId));
@@ -2206,8 +2247,11 @@ export function WorkPanelHost({
               {newTabs.filter(tab => tab.ownerChatId === workspace.ownerChatId).map(tab => (
                 <WorkPanelTab key={tab.id} title={t("chatWorkPanel.newTab.title")}
                   active={newTabActive && selectedNewTab?.id === tab.id} icon={<GlobalOutlined />}
-                  onActivate={() => setSelectedNewTabs(current => ({ ...current,
-                    [workspace.ownerChatId]: { id: tab.id, anchor: workspace.activeItemId } }))}
+                  onActivate={() => {
+                    if (visible) mainChatTab?.onDeactivate();
+                    setSelectedNewTabs(current => ({ ...current,
+                      [workspace.ownerChatId]: { id: tab.id, anchor: workspace.activeItemId } }));
+                  }}
                   closeLabel={t("chatWorkPanel.closeTab", { title: t("chatWorkPanel.newTab.title") })}
                   closeShortcut={isMac ? "⌘W" : isWindows ? "Ctrl+W" : undefined}
                   onClose={() => closeNewTab(workspace.ownerChatId, tab.id)} />
@@ -2218,7 +2262,7 @@ export function WorkPanelHost({
                   onClick={() => openNewTab(workspace.ownerChatId)}><PlusOutlined /></button>
               </div>
             </div>
-            <div className="chat-work-panel-body">
+            <div className={`chat-work-panel-body${mainChatActive ? " is-main-chat-active" : ""}`} aria-hidden={mainChatActive || undefined}>
               {visible && newTabActive && <WorkPanelNewTab key={selectedNewTab?.id}
                 urlDraft={newTabs.find(tab => tab.id === selectedNewTab?.id)?.urlDraft ?? ""}
                 onUrlDraftChange={urlDraft => setNewTabs(current => current.map(tab =>
@@ -2232,11 +2276,7 @@ export function WorkPanelHost({
                 onOpenFiles={() => openFilesFromMenu(workspace.ownerChatId)}
                 onOpenSideChat={() => openSideChatFromMenu(workspace.ownerChatId)}
                 onOpenProject={() => openProjectFromMenu(workspace.ownerChatId)}
-                onOpenWebapp={webapp => {
-                  if (openWebappWindowIds.has(webapp.id)) launcher.onFocusWebappWindow(webapp.id);
-                  else launcher.onOpenWebapp(workspace.ownerChatId, webapp);
-                  closeNewTabSelection(workspace.ownerChatId);
-                }} />}
+                onOpenWebapp={webapp => { void openWebappFromNewTab(workspace.ownerChatId, webapp); }} />}
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
                   if (state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId && dialog.itemId === item.itemId)) return null;
@@ -2246,7 +2286,7 @@ export function WorkPanelHost({
                       state.dialogItems?.some((dialog) => dialog.ownerChatId === workspace.ownerChatId) &&
                       !webControllers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId)) &&
                       !failedWebDialogTransfers.current.has(itemRuntimeKey(workspace.ownerChatId, item.itemId))) return null;
-                  const active = visible && !newTabActive && workspace.activeItemId === item.itemId;
+                  const active = visible && !mainChatActive && !newTabActive && workspace.activeItemId === item.itemId;
                   if (item.descriptor.kind === "webclient" &&
                       (isLocalDocumentDraftOwnerKey(workspace.ownerChatId) || (visible && !activeChatId))) return null;
                   // Read-only observers belong to the visible, committed Main Chat.

@@ -6,4 +6,5 @@ export { createDesktopPetRuntime } from "./runtime";
 export type { DesktopPetRuntime } from "./runtime";
 
 export { isDesktopPetArchivePath } from "./package-service";
+export type { PetPackageService } from "./package-service";
 export { PetPackageError } from "./pet-package";

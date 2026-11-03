@@ -33,14 +33,33 @@ type TunnelHubRegistrationResponse = {
 
 type TunnelHubRegistrationControllerOptions = {
   fetch?: FetchLike;
-  refreshIdentityToken?: () => Promise<string>;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
+
+/** Hub refused the canonical Desktop credential; only Tunnel is affected, never Desktop sign-in. */
+export class TunnelHubCredentialRejectedError extends Error {
+  constructor(readonly status: number, readonly reason: string) {
+    super(`Tunnel Hub rejected the Desktop credential (${status})${reason ? `: ${reason}` : ""}`);
+    this.name = "TunnelHubCredentialRejectedError";
+  }
+}
 
 let controllerOptions: TunnelHubRegistrationControllerOptions | null = null;
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+// Keep the Hub's verification category (signature, issuer, audience, expiry) diagnosable
+// without echoing arbitrary bodies, which could contain credentials, into logs or UI.
+function readRegistrationRejectionReason(raw: string) {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return ""; }
+  const record = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  const nested = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : {};
+  const reason = [nested.code, nested.message, record.code, record.error, record.message, record.msg]
+    .map(readText).find(Boolean) || "";
+  return reason.replace(/[^\x20-\x7e\u4e00-\u9fff]+/gu, " ").replace(/[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}/gu, "[redacted]").trim().slice(0, 160);
 }
 
 function parseRegistrationResponse(raw: string): TunnelHubRegistrationResponse {
@@ -124,20 +143,19 @@ export async function ensureTunnelHubRegistrationReady(app: App, signal?: AbortS
       raw: await response.text()
     };
   };
-  let identityToken = canonicalToken;
-  let { response, raw } = await requestRegistration(identityToken);
-  if (response.status === 401 && !signal?.aborted && controllerOptions.refreshIdentityToken) {
-    const refreshedIdentityToken = (await controllerOptions.refreshIdentityToken()).trim();
-    if (refreshedIdentityToken) {
-      identityToken = refreshedIdentityToken;
-      ({ response, raw } = await requestRegistration(identityToken));
-    }
-  }
+  // A Hub rejection never asks Identity to renew: Desktop already renews before expiry, and a
+  // misconfigured Hub would turn every retry into another account-wide renewal.
+  const identityToken = canonicalToken;
+  const { response, raw } = await requestRegistration(identityToken);
   if (!response.ok) {
     if (response.status === 405) {
       throw new Error(t("tunnelHub.registrationApiUnavailable"));
     }
-    throw new Error(`Tunnel Hub registration failed (${response.status} ${response.statusText})`);
+    const reason = readRegistrationRejectionReason(raw);
+    if (response.status === 401 || response.status === 403) {
+      throw new TunnelHubCredentialRejectedError(response.status, reason);
+    }
+    throw new Error(`Tunnel Hub registration failed (${response.status} ${response.statusText})${reason ? `: ${reason}` : ""}`);
   }
   const current = readTunnelHubSettings(app);
   if (signal?.aborted || identityToken !== readTunnelHubRegistrationBearerToken(app) || current.deviceId !== deviceId || current.relayUrl !== settings.relayUrl) {
@@ -174,7 +192,8 @@ export async function ensureTunnelHubRegistrationReady(app: App, signal?: AbortS
 }
 
 export const __testInternals = {
-  parseRegistrationResponse
+  parseRegistrationResponse,
+  readRegistrationRejectionReason
 };
 
 export async function updateTunnelPlatformCredential(

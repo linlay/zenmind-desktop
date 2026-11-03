@@ -2,6 +2,8 @@ import type { BrowserWindow } from "electron";
 
 type NativePointer = bigint | null;
 type Frame = { x: number; y: number; width: number; height: number };
+type TrafficLightLayout = { gap: number; centerX: number };
+type TrafficLightLayoutController = { setLayout(layout: TrafficLightLayout): void; dispose(): void };
 type NativeWindow = Pick<BrowserWindow, "getNativeWindowHandle" | "getWindowButtonPosition" | "setWindowButtonPosition" |
   "isDestroyed" | "isFullScreen" | "isResizable"> &
   Pick<NodeJS.EventEmitter, "on" | "off" | "once">;
@@ -67,26 +69,27 @@ export function attachMacTrafficLightLayout(window: NativeWindow, options: {
   gap: number;
   centerX: number;
   onError(error: unknown): void;
-}): () => void {
+}): TrafficLightLayoutController {
   // Windows keeps renderer-owned controls and must never load AppKit bindings.
-  if (options.platform !== "darwin") return () => {};
+  if (options.platform !== "darwin") return { setLayout() {}, dispose() {} };
   const { nativeTheme } = require("electron") as typeof import("electron");
   let disposed = false;
   let reportedError = false;
   let pending: ReturnType<typeof setTimeout> | undefined;
+  let currentLayout = { gap: options.gap, centerX: options.centerX };
   function apply() {
     // Electron reports isResizable() false during native fullscreen transitions,
     // including the interval before isFullScreen() reflects the new state.
     if (disposed || window.isDestroyed() || window.isFullScreen() || !window.isResizable()) return;
     try {
       const layout = getNativeLayout();
-      const left = layout(window.getNativeWindowHandle(), options.gap, options.centerX);
+      const left = layout(window.getNativeWindowHandle(), currentLayout.gap, currentLayout.centerX);
       const position = window.getWindowButtonPosition();
       // Electron's theme redraw restores its configured margin. Keep that
       // margin aligned with our measured group, preserving its vertical inset.
       if (left !== undefined && position && position.x !== left) {
         window.setWindowButtonPosition({ x: left, y: position.y });
-        layout(window.getNativeWindowHandle(), options.gap, options.centerX);
+        layout(window.getNativeWindowHandle(), currentLayout.gap, currentLayout.centerX);
       }
     } catch (error) {
       // A cosmetic failure leaves the system controls usable at native spacing.
@@ -118,5 +121,12 @@ export function attachMacTrafficLightLayout(window: NativeWindow, options: {
   }
   window.once("closed", dispose);
   refresh();
-  return dispose;
+  return {
+    setLayout(layout) {
+      if (disposed) return;
+      currentLayout = { ...layout };
+      refresh();
+    },
+    dispose,
+  };
 }

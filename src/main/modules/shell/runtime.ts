@@ -28,7 +28,7 @@ import {
 } from "./window-manager";
 import { getRendererEntry } from "../../infrastructure/electron/renderer-route";
 import { attachMacTrafficLightLayout } from "../../infrastructure/electron/mac-traffic-lights";
-import { MAC_TRAFFIC_LIGHT_LAYOUT } from "./window-model";
+import { MAC_TRAFFIC_LIGHT_LAYOUT, MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT } from "./window-model";
 import { getArchiveExtensions } from "../../infrastructure/electron/platform-adapter";
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "../web-surfaces";
 import {
@@ -105,9 +105,12 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   const state = {
     mainWindow: null as BrowserWindow | null,
     mainWindowSidebarTranslucencyEnabled: true,
+    // Stay inside the narrow rail until the renderer projects its actual state.
+    mainWindowSidebarCollapsed: true,
     workPanelFullscreenActive: false,
     focusedWebviewDevToolsTargetId: null as number | null
   };
+  let mainWindowTrafficLights: ReturnType<typeof attachMacTrafficLightLayout> | null = null;
   const taskbarUnreadController = createTaskbarUnreadController({
     platform: options.platform,
     getWindow: () => state.mainWindow,
@@ -275,9 +278,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
 
     mainWindowLifecycle.applyAppearance(targetWindow);
     if (options.platform === "darwin") {
-      attachMacTrafficLightLayout(targetWindow, {
+      mainWindowTrafficLights?.dispose();
+      mainWindowTrafficLights = attachMacTrafficLightLayout(targetWindow, {
         platform: options.platform,
-        ...MAC_TRAFFIC_LIGHT_LAYOUT,
+        ...(state.mainWindowSidebarCollapsed ? MAC_TRAFFIC_LIGHT_LAYOUT : MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT),
         onError: (error) => options.safeConsoleError("mac-traffic-lights", { error: String(error) })
       });
     }
@@ -458,6 +462,11 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     getWorkPanelFullscreenActive: () => state.workPanelFullscreenActive,
     setWorkPanelFullscreenActive: (active: boolean) => {
       state.workPanelFullscreenActive = active;
+    },
+    setMainWindowSidebarCollapsed: (collapsed: boolean) => {
+      if (options.platform !== "darwin") return;
+      state.mainWindowSidebarCollapsed = collapsed;
+      mainWindowTrafficLights?.setLayout(collapsed ? MAC_TRAFFIC_LIGHT_LAYOUT : MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT);
     },
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,

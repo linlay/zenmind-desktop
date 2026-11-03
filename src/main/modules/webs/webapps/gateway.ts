@@ -1,3 +1,6 @@
+import { postNodeJson } from "../../../infrastructure/network/node-json-request";
+import { createHttpRequestLifetime } from "../../../infrastructure/network/http-request-lifetime";
+import { WEBAPP_EXECUTE_TRANSPORT_TIMEOUT_MS } from "../../../../shared/webapp-execute";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -485,6 +488,9 @@ async function handleDesktopBridgeRequest(
     return;
   }
   let action = "";
+  const lifetime = createHttpRequestLifetime(req, res);
+  const deadline = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const parsed = JSON.parse(await readRequestBody(req, DESKTOP_ACTION_BODY_LIMIT)) as {
       action?: unknown;
@@ -501,9 +507,11 @@ async function handleDesktopBridgeRequest(
       );
       return;
     }
-    const response = await fetch(
-      `http://${HOST}:${requireWebsIntegrationPorts(options.integrationPorts).getConfiguredDesktopActionBridgePort(options.app)}/webapps/pages/actions/call`,
-      {
+    const execute = action === WEBAPP_BRIDGE_ACTIONS.assistantExecute;
+    timer = setTimeout(() => deadline.abort(), execute ? WEBAPP_EXECUTE_TRANSPORT_TIMEOUT_MS : 120_000);
+    timer.unref();
+    const actionUrl = `http://${HOST}:${requireWebsIntegrationPorts(options.integrationPorts).getConfiguredDesktopActionBridgePort(options.app)}/webapps/pages/actions/call`;
+    const upstream = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -513,10 +521,13 @@ async function handleDesktopBridgeRequest(
           action,
           args: parsed.args && typeof parsed.args === "object" ? parsed.args : {}
         }),
-        signal: AbortSignal.timeout(120_000)
-      }
-    );
+        signal: AbortSignal.any([lifetime.signal, deadline.signal])
+    };
+    const response = execute
+      ? await postNodeJson(actionUrl, { ...upstream, maxResponseBytes: 1024 * 1024 + 4096 })
+      : await fetch(actionUrl, upstream);
     const body = await response.text();
+    if (lifetime.signal.aborted || res.destroyed) return;
     res.writeHead(response.status, {
       "Content-Type": response.headers.get("content-type") || "application/json; charset=utf-8",
       "Cache-Control": "no-store",
@@ -524,18 +535,19 @@ async function handleDesktopBridgeRequest(
     });
     res.end(body);
   } catch (error) {
+    if (lifetime.signal.aborted || res.destroyed) return;
     const isInputError = error instanceof SyntaxError ||
       (error instanceof Error && error.message === "request body too large");
     writeBridgeError(
       res,
       isInputError ? 400 : 502,
       action,
-      isInputError ? "invalid_request" : "bridge_unavailable",
+      isInputError ? "invalid_request" : deadline.signal.aborted && action === WEBAPP_BRIDGE_ACTIONS.assistantExecute ? "assistant_timeout" : "bridge_unavailable",
       isInputError
         ? "Desktop Bridge request body is invalid."
         : "Desktop Action Bridge is unavailable."
     );
-  }
+  } finally { clearTimeout(timer); lifetime.dispose(); }
 }
 
 function listen(server: http.Server) {

@@ -162,5 +162,5 @@ export function normalizeStartRunPayload(payload: unknown, env: KanbanEnvelope):
 
 export function normalizeAccessLevel(value: unknown): AssistantStartRunRequest["accessLevel"] | undefined {
   const text = readText(value);
-  return text === "default" || text === "auto_approve" || text === "full_access" ? text : undefined;
+  return text === "default" || text === "ask_for_approval" || text === "auto_approve" || text === "full_access" ? text : undefined;
 }

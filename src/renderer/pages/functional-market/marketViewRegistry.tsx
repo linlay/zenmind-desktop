@@ -8,6 +8,7 @@ const MARKET_VIEWS = {
   agents: StorefrontMarket,
   sandboxImages: StorefrontMarket,
   pets: StorefrontMarket,
+  skins: StorefrontMarket,
   cli: StorefrontMarket,
   mcps: StorefrontMarket,
   websiteApps: StorefrontMarket,

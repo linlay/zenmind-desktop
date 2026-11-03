@@ -129,6 +129,9 @@ export class KanbanRuntime {
 
   refreshDeviceInfo() { return runtimeSettings.refreshDeviceInfo(this.runtimeSettingsDependencies); }
 
+  /** Same-account renewal: keep the open socket and use the new token on the next connect. */
+  refreshCredentials() { return this.refreshConnection(); }
+
   listIssues(): KanbanListResult { return cloudProjection.listIssues(this.cloudProjectionDependencies); }
 
   getCloudConfig(): KanbanCloudConfigResult { return runtimeSettings.getCloudConfig(this.runtimeSettingsDependencies); }

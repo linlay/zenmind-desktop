@@ -28,6 +28,7 @@ export interface StartupRestoreServiceState {
 }
 
 export interface StartupRestoreState {
+  recoveryBackupPath?: string;
   mode: StartupRestoreMode;
   phase: StartupRestorePhase;
   serviceOrder: ServiceId[];

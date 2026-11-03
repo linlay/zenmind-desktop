@@ -50,6 +50,8 @@ export function marketRoute(type: MarketItemType) {
       return "sandbox-images";
     case "pet":
       return "pets";
+    case "skin":
+      return "skins";
     case "cli":
       return "cli-tools";
     case "mcp":
@@ -99,33 +101,39 @@ export async function requestMarket(
   label = "market request"
 ) {
   const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
+  const send = (bearerToken: string) => fetchImpl(url, {
+    ...init,
+    credentials: "include",
+    redirect: "error",
+    headers: {
+      ...getMarketDesktopDeviceHeaders(app),
+      ...Object.fromEntries(new Headers(init.headers).entries()),
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
+    }
+  });
   let token = await issueMarketAccessToken(app, "missing", options);
-  for (const reason of ["missing", "unauthorized"] as const) {
-    if (reason === "unauthorized") {
-      token = await issueMarketAccessToken(app, "unauthorized", options);
+  let response = await send(token);
+  if (response.status === 401 && (options.issueMarketAccessToken || configuredMarketAccessTokenIssuer)) {
+    // Identity may have committed its own renewal while this request was in flight. Use that
+    // newer token once, but never ask Identity to renew because Market rejected a credential.
+    const current = await issueMarketAccessToken(app, "unauthorized", options);
+    if (current && current !== token) {
+      token = current;
+      response = await send(token);
     }
-    const response = await fetchImpl(url, {
-      ...init,
-      credentials: "include",
-      redirect: "error",
-      headers: {
-        ...getMarketDesktopDeviceHeaders(app),
-        ...Object.fromEntries(new Headers(init.headers).entries()),
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    });
-    if (response.status === 401 && reason === "missing" && (options.issueMarketAccessToken || configuredMarketAccessTokenIssuer)) {
-      continue;
-    }
-    if (response.status === 401) {
+  }
+  if (response.status === 401) {
+    if (!token) {
       throw new Error(t("market.main.marketAuthRequired"));
     }
-    if (!response.ok) {
-      throw new Error(await readMarketErrorMessage(response, label));
-    }
-    return response;
+    throw new Error(t("market.main.marketCredentialRejected", {
+      reason: await readMarketErrorMessage(response, label)
+    }));
   }
-  throw new Error(t("market.main.marketAuthRequired"));
+  if (!response.ok) {
+    throw new Error(await readMarketErrorMessage(response, label));
+  }
+  return response;
 }
 
 export async function requestMarketJson(

@@ -35,6 +35,7 @@ export type StartupPreparationResult = {
 };
 
 export type StartupPreparationOptions = {
+  reinstallBuiltinServices?: boolean;
   integrationPorts?: ServicesIntegrationPorts;
   desktopVersion?: string;
   desktopVersionUpgradeEnvZipPath?: string;

@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
-const { prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset, consumeRuntimeEnvReset } =
+const { prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset, consumeRuntimeEnvReset, completeRuntimeEnvReset, resumeRuntimeEnvReset, requestRuntimeEnvRollback } =
   require("../dist-electron/main/infrastructure/filesystem/runtime-env-reset-transaction.js");
 const { resolveRuntimeRoot } = require("../dist-electron/main/infrastructure/filesystem/runtime-env-paths.js");
 const { createRuntimeResetCoordinator } = require("../dist-electron/main/app/lifecycle/runtime-reset.js");
@@ -45,7 +45,7 @@ async function fixture(t, platform) {
 }
 
 for (const platform of ["darwin", "win32"]) {
-  test(`${platform}: reset restores bundled Agents and preserves current user Agents`, async (t) => {
+  test(`${platform}: reset publishes Platform-prepared resources without Desktop interpreting Agents`, async (t) => {
     const { app, runtimeRoot } = await fixture(t, platform);
     const seed = path.join(runtimeRoot, "agents", platform === "win32" ? "SEED" : "seed");
     fs.mkdirSync(seed, { recursive: true });
@@ -57,6 +57,8 @@ for (const platform of ["darwin", "win32"]) {
     fs.mkdirSync(path.join(custom, "assets"), { recursive: true });
     fs.writeFileSync(path.join(custom, "agent.yml"), "user definition");
     fs.writeFileSync(path.join(custom, "assets", "data.bin"), Buffer.from([0, 1, 255]));
+    // Platform recovery supplies the candidate; Desktop only publishes it.
+    fs.cpSync(custom, path.join(prepared.candidateRoot, "agents/my-agent"), { recursive: true });
     armRuntimeEnvReset(app, platform, prepared.id);
     assert.equal(consumeRuntimeEnvReset(app, platform), true);
     assert.equal(fs.readFileSync(path.join(runtimeRoot, "agents/seed/agent.yml"), "utf8"), "key: seed");
@@ -69,9 +71,9 @@ for (const platform of ["darwin", "win32"]) {
     assert.equal(fs.readFileSync(path.join(prepared.result.backupPath, "agents", path.basename(seed), "agent.yml"), "utf8"), "modified seed");
   });
 
-  test(`${platform}: failure to preserve a user Agent aborts before moving the old root`, async (t) => {
+  test(`${platform}: failure to restore Desktop data aborts before moving the old root`, async (t) => {
     const { app, runtimeRoot } = await fixture(t, platform);
-    const custom = path.join(runtimeRoot, "agents/custom");
+    const custom = path.join(runtimeRoot, ".desktop/config/desktop");
     fs.mkdirSync(custom, { recursive: true });
     fs.writeFileSync(path.join(custom, "agent.yml"), "user definition");
     const prepared = await prepareRuntimeEnvReset(app, platform);
@@ -99,6 +101,7 @@ for (const platform of ["darwin", "win32"]) {
     assert.equal(fs.readFileSync(path.join(runtimeRoot, "skills-center/demo/SKILL.md"), "utf8"), "# Demo\n");
     assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-market")), false);
     assert.equal(fs.existsSync(path.join(runtimeRoot, ".desktop/state/desktop/env-resource-sync.json")), false);
+    completeRuntimeEnvReset(app, platform);
     assert.equal(consumeRuntimeEnvReset(app, platform), false);
   });
 
@@ -227,4 +230,110 @@ test("reset does not interrupt unfinished startup", async () => {
   const reset = createRuntimeResetCoordinator({ state: createMainAppState(),
     prepare: () => assert.fail("must not prepare during startup") });
   await assert.rejects(reset(), /startup to finish/);
+});
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: health completion owns reset commit and persistent Desktop data survives`, async (t) => {
+    const { app, runtimeRoot } = await fixture(t, platform);
+    for (const [relative, content] of Object.entries({
+      '.desktop/config/desktop/device-identity.json': '{"deviceId":"stable"}',
+      '.desktop/data/artifacts.db': 'artifact-index',
+      '.desktop/state/desktop/pet-state.json': '{"selectedPetId":"user-pet"}',
+      '.desktop/secrets/vault': 'encrypted',
+      '.desktop/config/services/agent-platform/.env': 'broken-config',
+      '.desktop/state/chromium/Cookies': 'old-profile',
+      '.desktop/state/services/agent-platform/agent-platform.pid': '123'
+    })) {
+      const file = path.join(runtimeRoot, relative);
+      fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content);
+    }
+    const prepared = await prepareRuntimeEnvReset(app, platform);
+    armRuntimeEnvReset(app, platform, prepared.id);
+    consumeRuntimeEnvReset(app, platform);
+    const requestPath = `${runtimeRoot}.desktop-reset/request.json`;
+    assert.equal(JSON.parse(fs.readFileSync(requestPath)).status, 'verifying');
+    assert.equal(fs.existsSync(path.join(runtimeRoot, 'desktop-init.json')), false, 'one-shot defaults must not overwrite restored settings');
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, '.desktop/data/artifacts.db'), 'utf8'), 'artifact-index');
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, '.desktop/state/desktop/pet-state.json'), 'utf8'), '{"selectedPetId":"user-pet"}');
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, '.desktop/secrets/vault'), 'utf8'), 'encrypted');
+    for (const relative of ['.desktop/config/services', '.desktop/state/chromium', '.desktop/state/services']) {
+      assert.equal(fs.existsSync(path.join(runtimeRoot, relative)), false);
+      assert.equal(fs.existsSync(path.join(prepared.result.backupPath, relative)), true);
+    }
+    completeRuntimeEnvReset(app, platform);
+    assert.equal(fs.existsSync(requestPath), false);
+    assert.equal(fs.existsSync(prepared.result.backupPath), true);
+  });
+
+  test(`${platform}: explicit retry resumes publication without replacing the original backup`, async (t) => {
+    const { app, runtimeRoot } = await fixture(t, platform);
+    const prepared = await prepareRuntimeEnvReset(app, platform);
+    armRuntimeEnvReset(app, platform, prepared.id);
+    const originalRename = fs.renameSync;
+    const rename = t.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === runtimeRoot) throw new Error('publication failed');
+      return originalRename(from, to);
+    });
+    assert.throws(() => consumeRuntimeEnvReset(app, platform), /Runtime reset failed/);
+    rename.mock.restore();
+    resumeRuntimeEnvReset(app, platform);
+    assert.equal(consumeRuntimeEnvReset(app, platform), true);
+    assert.equal(fs.readFileSync(path.join(prepared.result.backupPath, 'user-data.txt'), 'utf8'), 'preserve me');
+    completeRuntimeEnvReset(app, platform);
+  });
+
+  test(`${platform}: rollback keeps the failed environment and restores the original root`, async (t) => {
+    const { app, runtimeRoot } = await fixture(t, platform);
+    const prepared = await prepareRuntimeEnvReset(app, platform);
+    armRuntimeEnvReset(app, platform, prepared.id); consumeRuntimeEnvReset(app, platform);
+    fs.writeFileSync(path.join(runtimeRoot, 'failed.txt'), 'failed environment');
+    requestRuntimeEnvRollback(app, platform);
+    assert.equal(consumeRuntimeEnvReset(app, platform), false);
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, 'user-data.txt'), 'utf8'), 'preserve me');
+    assert.equal(fs.readFileSync(path.join(prepared.transactionRoot, 'failed-runtime/failed.txt'), 'utf8'), 'failed environment');
+    assert.equal(fs.existsSync(`${runtimeRoot}.desktop-reset/request.json`), false);
+  });
+}
+
+test('failed startup can reinstall after the startup mutation queue is drained', async () => {
+  const state = createMainAppState({ startupPhase: 'degraded' });
+  const events = [];
+  const reset = createRuntimeResetCoordinator({ state,
+    prepare: async () => ({ id: 'request', result: {}, restore: async () => events.push('restore') }),
+    arm: () => events.push('arm'), cancel: () => {}, beginShutdown: () => {},
+    cleanup: async () => { events.push('cleanup'); return { ok: true, survivors: [] }; },
+    flushLogs: async () => {}, relaunch: () => events.push('relaunch'), quit: () => {}, scheduleQuit: () => {} });
+  await reset();
+  assert.deepEqual(events, ['cleanup', 'restore', 'arm', 'relaunch']);
+});
+
+for (const platform of ['darwin', 'win32']) {
+  test(`${platform}: transaction privacy is applied before package import`, async t => {
+    const { app } = await fixture(t, platform);
+    const secured = [];
+    const prepared = await prepareRuntimeEnvReset(app, platform, directory => secured.push(directory));
+    assert.deepEqual(secured, [path.dirname(prepared.transactionRoot), prepared.transactionRoot]);
+  });
+  test(`${platform}: interrupted rollback resumes without replacing either environment`, async t => {
+    const { app, runtimeRoot } = await fixture(t, platform);
+    const prepared = await prepareRuntimeEnvReset(app, platform);
+    armRuntimeEnvReset(app, platform, prepared.id); consumeRuntimeEnvReset(app, platform);
+    fs.writeFileSync(path.join(runtimeRoot, 'failed.txt'), 'failed');
+    requestRuntimeEnvRollback(app, platform);
+    fs.renameSync(runtimeRoot, path.join(prepared.transactionRoot, 'failed-runtime'));
+    resumeRuntimeEnvReset(app, platform);
+    assert.equal(consumeRuntimeEnvReset(app, platform), false);
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, 'user-data.txt'), 'utf8'), 'preserve me');
+    assert.equal(fs.readFileSync(path.join(prepared.transactionRoot, 'failed-runtime/failed.txt'), 'utf8'), 'failed');
+  });
+}
+
+test('offline command timeout invokes owned process-tree cleanup before reporting failure', async () => {
+  const { runExecFile } = require('../dist-electron/main/modules/services/manager/command-runner.js');
+  let stoppedPid;
+  await assert.rejects(runExecFile(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], process.cwd(), {
+    timeoutMs: 100,
+    onTimeout(pid) { stoppedPid = pid; process.kill(pid, 'SIGKILL'); return true; }
+  }), /timed out/);
+  assert.equal(typeof stoppedPid, 'number');
 });

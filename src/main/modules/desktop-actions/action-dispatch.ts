@@ -7,7 +7,8 @@ import { executeWebSurfaceAction } from "./web-surface-actions";
 import { listCredentialAccounts } from "./credential-actions";
 import { MAX_ASSISTANT_PROMPT_CHARS } from "./webapp-image-input";
 import { type ServiceLogTarget } from "../../../shared/contracts";
-import { type AgentPlatformAssistantBridge } from "../agent-platform";
+import { selectWebappAssistantAgent } from "./webapp-assistant-agent";
+import { ConnectorError } from "./webapp-platform-client";
 import { captureWebappContext } from "./webapp-platform-client";
 import { startWebappAssistant } from "./webapp-assistant";
 import { rememberWebappChat } from "./webapp-connector";
@@ -117,29 +118,8 @@ export async function executeAction(
           }
           references = [...new Set(args.skillIds as string[])].map(id => ({type:"skill",id}));
         }
-        const agentField = item.userConfig?.fields.find((field) =>
-          field.type === "select" && "source" in field && field.source === "desktop.agents"
-        );
-        const userConfig = options.webs.webappManager.readUserConfig(options.app, item.id);
-        const configuredAgentKey = agentField && typeof userConfig[agentField.name] === "string"
-          ? String(userConfig[agentField.name])
-          : "";
-        if (configuredAgentKey) {
-          let agents: Awaited<ReturnType<AgentPlatformAssistantBridge["listAgents"]>> = [];
-          try {
-            agents = await options.assistantBridge.listAgents();
-          } catch {
-            agents = [];
-          }
-          if (!agents.some((candidate) => candidate.agentKey === configuredAgentKey)) {
-            return fail(
-              action,
-              "assistant_agent_unavailable",
-              `assistant agent is unavailable: ${configuredAgentKey}`
-            );
-          }
-          agentKey = configuredAgentKey;
-        }
+        try { agentKey = await selectWebappAssistantAgent(options, item); }
+        catch (error) { return fail(action, error instanceof ConnectorError ? error.code : "assistant_unavailable", "Assistant agent is unavailable."); }
       }
       if (message.length > MAX_ASSISTANT_PROMPT_CHARS) {
         return fail(

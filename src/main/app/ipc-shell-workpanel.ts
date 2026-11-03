@@ -36,7 +36,8 @@ export function registerShellWorkPanelIpc(options: MainIpcRegistrationOptions) {
     setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible,
     setWebviewModalOverlayVisible: options.setWebviewModalOverlayVisible,
     getTunnelHubRuntimeStatus,
-    setWorkPanelFullscreenActive: options.setWorkPanelFullscreenActive
+    setWorkPanelFullscreenActive: options.setWorkPanelFullscreenActive,
+    setMainWindowSidebarCollapsed: options.setMainWindowSidebarCollapsed,
   });
 
   registerWebsiteBridgeIpc(ipcMain, { getMainWindow: options.getMainWindow, browserSurfaces: options.browserSurfaces, platform: options.platform });

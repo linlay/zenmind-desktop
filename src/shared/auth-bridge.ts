@@ -1,3 +1,5 @@
+import type { AgentWebclientHeaderLayout } from "./contracts/agent-webclient-bridge";
+
 export type ServiceWebviewAuthProtocol = {
   requestType: string;
   responseType: string;
@@ -41,6 +43,7 @@ export function resolveServiceWebviewAuthResponseType(protocol: ServiceWebviewAu
 }
 
 type BuildServiceWebviewUrlOptions = {
+  headerLayout?: AgentWebclientHeaderLayout;
   hostTheme?: "light" | "dark";
   hostLocale?: "zh-CN" | "en-US";
   accessToken?: string;
@@ -143,6 +146,10 @@ export function buildServiceWebviewUrl(
     const embeddedUrl = new URL(embedPath.startsWith("/") ? embedPath : `/${embedPath}`, "http://agent-webclient.local");
     url.pathname = embeddedUrl.pathname;
     url.search = embeddedUrl.search;
+    if (options.headerLayout && url.pathname.startsWith("/agent/")) {
+      url.searchParams.set("desktopSidebarCollapsed", options.headerLayout.sidebarCollapsed ? "1" : "0");
+      url.searchParams.set("desktopHeaderLeftInset", String(options.headerLayout.headerLeftInset));
+    }
     if (options.hostTheme) {
       url.searchParams.set(url.pathname.startsWith("/agent/") ? "theme" : "hostTheme", options.hostTheme);
     }

@@ -11,7 +11,7 @@
   -webkit-app-region: no-drag;
 }
 
-.conversation-share-dialog-layer[data-phase="done"] {
+.conversation-share-dialog-layer[data-phase="done"]:not(:has(.conversation-share-dialog)) {
   background: transparent;
   pointer-events: none;
 }
@@ -327,4 +327,18 @@
 .conversation-share-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--desktop-ui-primary) 24%, transparent);
+}
+
+.conversation-share-resource-summary {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.conversation-share-resource-summary ul {
+  max-height: 180px;
+  overflow-y: auto;
+  padding-inline-start: 20px;
+  margin: 6px 0 0;
 }

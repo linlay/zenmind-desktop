@@ -37,7 +37,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,
     issueAgentAccessToken: options.issueAgentAccessToken,
-    refreshKanbanConnection: assistantBridgeRuntime.refreshKanbanDeviceInfo,
     stopTunnelHubRuntime: async () => {
       try {
         await stopTunnelHubRuntime();
@@ -45,7 +44,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
         clearTunnelHubRegistrationCache(app);
       }
     },
-    refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
     stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
   });
 
@@ -179,7 +177,7 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
     endDrag: () => petRuntime.endDrag(),
     setPreviewExpanded: (expanded: boolean) => petRuntime.setPreviewExpanded(expanded),
     dismissPreview: () => petRuntime.dismissPreview(),
-    setMouseInteractive: (interactive: boolean) => petRuntime.setMouseInteractive(Boolean(interactive)),
+    setMouseInteractive: petRuntime.setMouseInteractive,
     setWindowMode: (mode: unknown) => petRuntime.setWindowMode(mode),
     refreshState: () => petRuntime.refreshState(),
     replyMessage: (input: any) => petRuntime.replyMessage(assistantBridge, input),
@@ -189,7 +187,6 @@ export function registerConnectedRuntimeIpc(options: MainIpcRegistrationOptions)
   registerAppearanceIpcHandlers(ipcMain, { runtime: options.appearanceRuntime, app, platform: options.platform, getMainWindow: options.getMainWindow });
 
   registerSettingsIpcHandlers(ipcMain, {
-    refreshUsageAccessToken: (force) => options.refreshDesktopSsoIdentityToken(force),
     app,
     listWebEntryKeys: () => listWebEntries(app, options.websFacade.webappManager).items.map((item) => item.entryKey),
     onNavigationPreferencesChanged: (preferences) => {

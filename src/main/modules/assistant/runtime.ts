@@ -36,7 +36,6 @@ export type AssistantBridgeRuntimeOptions = {
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
   realtimeBroker: RealtimeBroker;
   agentPlatformPorts: AgentPlatformAssistantBridgePorts;
-  refreshDesktopSsoAccessToken?: () => Promise<string>;
   canUseDesktopSsoCredentials?: () => boolean;
   callAgentPlatform: (...args: any[]) => unknown;
   showMainWindow: (targetPath?: string) => void;
@@ -241,13 +240,21 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
   function configureRemoteRuntimes() {
     refreshDesktopActionBridge();
     integration.configureTunnelHubRegistrationController({
-      refreshIdentityToken: options.refreshDesktopSsoAccessToken,
       logger: console
     });
     integration.configureTunnelHubRuntime({
       app: options.app,
       desktopWsServerOptions,
       onConnected: options.onTunnelConnected,
+      onConnectionChanged: () => {
+        const window = options.getMainWindow();
+        if (window && !window.isDestroyed()) {
+          window.webContents.send("webs.changed", {
+            changedAt: new Date().toISOString(),
+            reason: "tunnel-status-changed"
+          });
+        }
+      },
       canUseDesktopSsoCredentials: options.canUseDesktopSsoCredentials,
       logger: console
     });
@@ -283,6 +290,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     getNavigationSnapshot: () => assistantNavigationStatusClient?.getSnapshot(),
     scheduleNavigationRefresh: (delayMs: number) => assistantNavigationStatusClient?.scheduleRefresh(delayMs),
     refreshKanbanDeviceInfo: () => kanbanRuntime?.refreshDeviceInfo(),
+    refreshKanbanCredentials: () => kanbanRuntime?.refreshCredentials(),
     desktopActionRendererRequests,
     desktopActionConfirmationRequests,
     start() {

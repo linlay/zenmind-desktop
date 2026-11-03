@@ -15,7 +15,8 @@ type CookieRecord = { partition: string; url: string; name: string };
 export function registerWebappAuth(options: {
   registry: BrowserSurfaceRegistry;
   webs: WebsFacade;
-  refreshToken(force?: boolean): Promise<string>;
+  /** Published canonical token; a website 401 never renews or revokes Desktop sign-in. */
+  readToken(): string;
 }) {
   let epoch = 0;
   let cookies: CookieRecord[] = [];
@@ -112,7 +113,7 @@ export function registerWebappAuth(options: {
       const consent = owner ? await dialog.showMessageBox(owner, messageOptions) : await dialog.showMessageBox(messageOptions);
       validate();
       if (consent.response !== 1) throw new WebappAuthError("cancelled", "Sign-in was cancelled.");
-      let token = await options.refreshToken();
+      let token = options.readToken();
       validate();
       const status = getDesktopSsoStatus(app);
       if (!token || !status.authenticated || !status.user?.sub) throw new WebappAuthError("sign_in_required", "Sign in to Desktop first.");
@@ -133,11 +134,12 @@ export function registerWebappAuth(options: {
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]), bypassCustomProtocolHandlers: true
       });
       let response = await exchange();
-      if (response.status === 401) {
+      const current = options.readToken();
+      if (response.status === 401 && current && current !== token) {
+        // Desktop renewed on its own schedule while this request was in flight; use that token once.
         await response.body?.cancel();
-        token = await options.refreshToken(true);
+        token = current;
         validateIdentity();
-        if (!token) throw new WebappAuthError("sign_in_required", "Sign in to Desktop first.");
         response = await exchange();
       }
       validateIdentity();

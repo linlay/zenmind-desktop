@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { DEFAULT_MARKET_TAB, type MarketTab } from "./marketPageModel";
+import { parseMarketTab, type MarketTab, type MarketViewProps } from "./marketPageModel";
 import { getMarketView } from "./marketViewRegistry";
 
-export function FunctionalMarketPage() {
+export function FunctionalMarketPage({ onRequestAgentChatNavigate }: Pick<MarketViewProps, "onRequestAgentChatNavigate">) {
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<MarketTab>(DEFAULT_MARKET_TAB);
+  const [activeTab, setActiveTab] = useState<MarketTab>(parseMarketTab(searchParams.get("tab")));
   const ActiveMarket = getMarketView(activeTab);
 
-  return <ActiveMarket activeTab={activeTab} initialItemId={searchParams.get("itemId")?.trim() ?? ""} onTabChange={setActiveTab} />;
+  return <ActiveMarket activeTab={activeTab} initialItemId={searchParams.get("itemId")?.trim() ?? ""}
+    onTabChange={setActiveTab} onRequestAgentChatNavigate={onRequestAgentChatNavigate} />;
 }

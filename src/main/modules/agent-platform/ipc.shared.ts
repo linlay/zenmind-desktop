@@ -154,26 +154,6 @@ export function sessionKey(senderId: number, sessionId: string) {
 
 export type PlatformFrameRecord = Record<string, unknown>;
 
-export function redactSelectionReferencesForTrace(value: unknown) {
-  if (!isPlainBridgeRecord(value)) return value;
-  const payload = isPlainBridgeRecord(value.payload) ? value.payload : null;
-  const references = Array.isArray(payload?.references) ? payload.references : null;
-  if (!payload || !references) return value;
-  let changed = false;
-  const nextReferences = references.map((reference) => {
-    if (!isPlainBridgeRecord(reference) || reference.type !== "selection") return reference;
-    changed = true;
-    return {
-      ...reference,
-      ...(typeof reference.text === "string" ? { text: "<REDACTED_SELECTION>" } : {}),
-      ...(typeof reference.annotation === "string" ? { annotation: "<REDACTED_SELECTION>" } : {}),
-    };
-  });
-  return changed
-    ? { ...value, payload: { ...payload, references: nextReferences } }
-    : value;
-}
-
 export type FrameErrorOptions = {
   retryable?: boolean;
   details?: Record<string, unknown>;

@@ -105,3 +105,23 @@ test('pet import path validation uses the explicit Desktop host platform',()=>{
  for(const p of ['relative.zip','@chat/pet.zip','https://example.test/pet.zip','file:///tmp/pet.zip','//host/pet.zip','/tmp/pet.zip\0']) assert.equal(isDesktopPetArchivePath(p,'darwin'),false,p);
  assert.equal(isDesktopPetArchivePath('/tmp/pet.zip','linux'),false);
 });
+test('Finder metadata paths match Market rules and are not installed',async t=>{
+ const h=fixture(t);
+ await h.zip(z=>{
+  z.file('__mAcOsX/._idle.png','Finder sidecar');
+  z.file('metadata/.dS_sToRe','Finder directory metadata');
+  z.file('._idle.png','root Finder sidecar');
+  z.file('.DS_Store','Finder metadata');
+ });
+ const dest=path.join(h.root,'installed');await installLocalPetPackage(h.source,dest);
+ const installed=path.join(dest,h.manifest.id);
+ assert.deepEqual(fs.readdirSync(installed).sort(),['pet.json',...keys.map(key=>key+'.png')].sort());
+});
+test('ignored Finder metadata still counts toward decompressed file size limits',async t=>{
+ const h=fixture(t);await h.zip(z=>z.file('._idle.png',Buffer.alloc(17*1024*1024)));
+ await assert.rejects(readPetPackage(h.source),error=>error.code==='packageTooLarge');
+});
+test('ignored Finder metadata does not bypass symlink validation',async t=>{
+ const h=fixture(t);await h.zip(z=>z.file('__MACOSX/._idle.png','outside',{unixPermissions:0o120777}));
+ await assert.rejects(readPetPackage(h.source),error=>error.code==='invalidPackage');
+});

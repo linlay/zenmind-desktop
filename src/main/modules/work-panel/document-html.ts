@@ -21,9 +21,10 @@ import {
 import { resolveChatWorkPanelResourceFile } from "./resource-open";
 import { DocumentHtmlPreviewSessions, resolveDocumentLocalPath } from "./document-html-preview";
 import { performHtmlFileAction, type HtmlFileActionRuntime } from "./document-html-file-actions";
+import { HTML_MAX_BYTES } from "./document-html-limits";
+import { t } from "../../support/i18n/main-i18n";
 
 const CLAIM_TTL_MS = 30_000;
-const HTML_MAX_BYTES = 8 * 1024 * 1024;
 
 type DocumentHandle = Omit<WorkPanelDocumentHtmlSelection, "displayUrl"> & {
   source: WorkPanelDocumentSource;
@@ -310,6 +311,16 @@ export class WorkPanelDocumentHtmlRegistry {
     }
     const source = await this.resolveSource(input);
     if (!source) return { ok: false, code: "target_unavailable", message: "The HTML document is unavailable." };
+    // Size is a preview limit, not a type mismatch: do not send valid HTML to
+    // WebClient's truncated text fallback when it exceeds the native limit.
+    if (htmlMime(sourcePath(input.source)) || htmlMime(source.filePath)) {
+      try {
+        if (fs.statSync(source.filePath).size > HTML_MAX_BYTES) {
+          if (source.temporary) removeTemporary(source.filePath);
+          return { ok: false, code: "target_unavailable", message: t("dialog.documentHtml.tooLarge", { limitMiB: HTML_MAX_BYTES / (1024 * 1024) }) };
+        }
+      } catch { /* inspectHtml below handles unavailable files. */ }
+    }
     const inspection = inspectHtml(source.filePath);
     if (!inspection) {
       if (source.temporary) removeTemporary(source.filePath);

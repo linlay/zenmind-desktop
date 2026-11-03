@@ -10,6 +10,7 @@ import {
 import { restorePublishedWebapps } from "./webapps/publication-runtime";
 import {
   getWebappPublishStatus,
+  inspectPublishInfo,
   publishWebapp,
   unpublishWebapp
 } from "./webapps/publisher";
@@ -30,6 +31,7 @@ export function createWebsFacade(ports: WebsIntegrationPorts) {
       restorePublishedWebapps(app, ports, webappRuntime),
     getWebappPublishStatus: (app: App, id: string) =>
       getWebappPublishStatus(app, id, ports),
+    getWebappPublishInfo: (app: App) => inspectPublishInfo(app, ports),
     publishWebapp: (app: App, id: string, runtime: WebappRuntimeState | null) =>
       publishWebapp(app, id, runtime, ports),
     unpublishWebapp: (app: App, id: string) => unpublishWebapp(app, id, ports),

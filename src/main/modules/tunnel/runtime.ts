@@ -12,7 +12,7 @@ import type {
 } from "../../../shared/contracts";
 import { verifyDesktopAccessToken, type DesktopWsServerOptions } from "../desktop-protocol";
 import {
-  updateTunnelPlatformCredential, ensureTunnelHubRegistrationReady
+  updateTunnelPlatformCredential, ensureTunnelHubRegistrationReady, TunnelHubCredentialRejectedError
 } from "./registration";
 import {
   clearLegacyTunnelHubSecrets,
@@ -46,6 +46,7 @@ type TunnelHubRuntimeOptions = {
   desktopWsServerOptions: DesktopWsServerOptions;
   logger?: Logger;
   onConnected?: () => Promise<unknown> | unknown;
+  onConnectionChanged?: () => void;
   createTunnelClient?: (input: TunnelClientFactoryInput) => TunnelClient;
   readNetworkSignature?: () => string;
   networkMonitorIntervalMs?: number;
@@ -56,6 +57,10 @@ const LOG_LIMIT_BYTES = 128 * 1024;
 const LOG_PATH = "memory://desktop-tunnel-hub";
 const DEFAULT_NETWORK_MONITOR_INTERVAL_MS = 5_000;
 const MIN_NETWORK_MONITOR_INTERVAL_MS = 10;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+// A rejected credential cannot be fixed by retrying it every few seconds; a renewed token retries at once.
+const CREDENTIAL_REJECTED_RETRY_BASE_MS = 30_000;
+const CREDENTIAL_REJECTED_RETRY_MAX_MS = 10 * 60_000;
 
 function buildNetworkInterfaceSignature(platformLabel: string, interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>) {
   const entries: string[] = [];
@@ -130,6 +135,8 @@ export class TunnelHubRuntime {
   private stopping = false;
   private generation = 0;
   private logs = "";
+  private rejectedIdentityToken = "";
+  private credentialRejectedAttempts = 0;
 
   constructor(private readonly options: TunnelHubRuntimeOptions) {}
 
@@ -186,8 +193,9 @@ export class TunnelHubRuntime {
     previousClient?.close();
     this.stopping = false;
     this.lastError = "";
+    this.clearCredentialRejection();
     const settings = readTunnelHubSettings(this.options.app);
-    this.phase = settings.enabled ? "stopped" : "disabled";
+    this.setPhase(settings.enabled ? "stopped" : "disabled");
     this.log("stopped");
     return this.commandResult(true, "Tunnel Hub stopped.");
   }
@@ -226,6 +234,30 @@ export class TunnelHubRuntime {
     };
   }
 
+  /** Identity committed a different canonical token; retry only if Hub rejected the previous one. */
+  handleCredentialChanged() {
+    if (!this.rejectedIdentityToken || this.startPromise || this.stopping) {
+      return;
+    }
+    if (!readTunnelHubSettings(this.options.app).enabled || !this.canConnect()) {
+      return;
+    }
+    if (readTunnelHubRegistrationBearerToken(this.options.app) === this.rejectedIdentityToken) {
+      return;
+    }
+    this.log("Desktop credential changed; retrying rejected Tunnel registration");
+    this.clearReconnectTimer();
+    void this.start().catch((error) => {
+      this.lastError = messageFromError(error);
+      this.scheduleReconnect();
+    });
+  }
+
+  private clearCredentialRejection() {
+    this.rejectedIdentityToken = "";
+    this.credentialRejectedAttempts = 0;
+  }
+
   private canConnect() {
     return this.options.canUseDesktopSsoCredentials?.() !== false &&
       Boolean(readTunnelHubRegistrationBearerToken(this.options.app));
@@ -249,6 +281,7 @@ export class TunnelHubRuntime {
     previousClient?.close();
     this.lastError = "";
     this.setPhase("starting");
+    const attemptIdentityToken = readTunnelHubRegistrationBearerToken(this.options.app);
     try {
       const registration = new AbortController();
       this.registrationController = registration;
@@ -280,6 +313,7 @@ export class TunnelHubRuntime {
         return this.commandResult(true, "Tunnel Hub is enabled and waiting for sign-in.");
       }
       this.lastConnectedAt = new Date().toISOString();
+      this.clearCredentialRejection();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
       void Promise.resolve(this.options.onConnected?.()).catch((error) => {
@@ -291,7 +325,11 @@ export class TunnelHubRuntime {
       this.lastError = messageFromError(error);
       this.setPhase("error");
       this.log(`start failed: ${this.lastError}`);
-      this.scheduleReconnect();
+      if (error instanceof TunnelHubCredentialRejectedError) {
+        this.scheduleCredentialRejectedRetry(attemptIdentityToken);
+      } else {
+        this.scheduleReconnect();
+      }
       return this.commandResult(false, this.lastError);
     }
   }
@@ -369,6 +407,7 @@ export class TunnelHubRuntime {
       this.canConnect() && relayUrl === readTunnelHubSettings(this.options.app).relayUrl;
     const expire = () => {
       if (!ownsSession()) return;
+      if (Date.now() < expiresAt) return scheduleExpiry();
       this.clearCredentialSync();
       this.client = null;
       this.lastError = "Platform credential expired";
@@ -376,12 +415,21 @@ export class TunnelHubRuntime {
       client.close();
       this.scheduleReconnect();
     };
-    const scheduleRefresh = (delayMs: number) => {
-      this.credentialRefreshTimer = setTimeout(refresh, delayMs);
+    const scheduleExpiry = () => {
+      this.credentialExpiryTimer = setTimeout(expire,
+        Math.max(0, Math.min(MAX_TIMER_DELAY_MS, expiresAt - Date.now())));
+      this.credentialExpiryTimer.unref?.();
+    };
+    const scheduleRefresh = (refreshAt: number) => {
+      this.credentialRefreshTimer = setTimeout(() => {
+        if (!current()) return;
+        this.credentialRefreshTimer = null;
+        if (Date.now() < refreshAt) return scheduleRefresh(refreshAt);
+        void refresh();
+      }, Math.max(0, Math.min(MAX_TIMER_DELAY_MS, refreshAt - Date.now())));
       this.credentialRefreshTimer.unref?.();
     };
     const refresh = async () => {
-      this.credentialRefreshTimer = null;
       if (!current()) return;
       if (Date.now() >= expiresAt) return expire();
       try {
@@ -399,13 +447,12 @@ export class TunnelHubRuntime {
         if (Date.now() >= expiresAt) return expire();
         this.lastError = "Platform credential synchronization failed";
         this.log(this.lastError);
-        scheduleRefresh(5_000);
+        scheduleRefresh(Date.now() + 5_000);
       }
     };
     // Only credentials acknowledged by the Hub may extend the session deadline.
-    this.credentialExpiryTimer = setTimeout(expire, Math.max(0, expiresAt - Date.now()));
-    this.credentialExpiryTimer.unref?.();
-    scheduleRefresh(Math.max(0, expiresAt - Date.now() - 50_000));
+    scheduleExpiry();
+    scheduleRefresh(expiresAt - 50_000);
   }
 
   private createTunnelClient(input: TunnelClientFactoryInput) {
@@ -422,7 +469,7 @@ export class TunnelHubRuntime {
     }
     this.client = null;
     if (!readTunnelHubSettings(this.options.app).enabled) {
-      this.phase = "disabled";
+      this.setPhase("disabled");
       return;
     }
     this.setPhase("reconnecting");
@@ -504,7 +551,7 @@ export class TunnelHubRuntime {
       void this.stop();
       return;
     }
-    this.phase = "reconnecting";
+    this.setPhase("reconnecting");
     const delayMs = Math.max(1, settings.reconnectSeconds) * 1000;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -513,6 +560,33 @@ export class TunnelHubRuntime {
         this.scheduleReconnect();
       });
     }, delayMs);
+  }
+
+  private scheduleCredentialRejectedRetry(rejectedIdentityToken: string) {
+    this.clearCredentialSync();
+    this.clearReconnectTimer();
+    if (!readTunnelHubSettings(this.options.app).enabled || this.stopping) {
+      return;
+    }
+    if (!this.canConnect()) {
+      void this.stop();
+      return;
+    }
+    this.rejectedIdentityToken = rejectedIdentityToken;
+    // Desktop may have committed another token while this registration was in flight.
+    const renewedDuringAttempt = readTunnelHubRegistrationBearerToken(this.options.app) !== rejectedIdentityToken;
+    const delayMs = renewedDuringAttempt ? 0 : Math.min(CREDENTIAL_REJECTED_RETRY_MAX_MS,
+      CREDENTIAL_REJECTED_RETRY_BASE_MS * 2 ** Math.min(this.credentialRejectedAttempts, 5));
+    this.credentialRejectedAttempts += 1;
+    this.log(`credential rejected; retrying in ${Math.round(delayMs / 1000)}s or after Desktop renews it`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.start().catch((error) => {
+        this.lastError = messageFromError(error);
+        this.scheduleReconnect();
+      });
+    }, delayMs);
+    this.reconnectTimer.unref?.();
   }
 
   private clearReconnectTimer() {
@@ -532,8 +606,16 @@ export class TunnelHubRuntime {
   }
 
   private setPhase(phase: TunnelHubRuntimePhase) {
+    const wasConnected = this.phase === "connected";
     this.phase = phase;
     this.log(`phase=${phase}`);
+    if (wasConnected !== (phase === "connected")) {
+      try {
+        this.options.onConnectionChanged?.();
+      } catch (error) {
+        this.options.logger?.warn?.(`[tunnel-hub] connection notification failed: ${messageFromError(error)}`);
+      }
+    }
   }
 
   private log(message: string) {
@@ -571,6 +653,10 @@ export function startTunnelHubRuntime() {
 
 export function stopTunnelHubRuntime() {
   return getTunnelHubRuntime().stop();
+}
+
+export function notifyTunnelHubCredentialChanged() {
+  runtime?.handleCredentialChanged();
 }
 
 export function restartTunnelHubRuntime() {

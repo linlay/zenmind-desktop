@@ -101,7 +101,7 @@ test('page SDK routes all four settings actions through the gateway and existing
 
   assert.equal(Object.isFrozen(desktop.theme), true);
   assert.equal(Object.isFrozen(desktop.locale), true);
-  for (const capability of ['desktop.theme', 'desktop.locale']) {
+  for (const capability of ['desktop.theme', 'desktop.locale', 'skill.read']) {
     assert.equal(await desktop.capabilities.has(capability), true);
     const state = (await desktop.capabilities.list()).capabilities.find(entry => entry.id === capability);
     assert.deepEqual(state, { id: capability, status: 'available', declared: true, permission: 'not_required' });

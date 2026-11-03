@@ -9,6 +9,11 @@ import { isDesktopCloseShortcut } from "../dist-electron/main/infrastructure/ele
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
+const selectionHelpers = {};
+vm.runInNewContext(ts.transpileModule(
+  fs.readFileSync(new URL("../src/renderer/work-panel/new-tab-selection.ts", import.meta.url), "utf8"),
+  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+).outputText, { exports: selectionHelpers });
 const source = fs.readFileSync(new URL("../src/renderer/work-panel/WorkPanelHost.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("WorkPanelHost.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const closures = new Map();
@@ -45,6 +50,7 @@ function host(state, { dirty = false, busy = false, confirm = true, launcherTab 
   const stateRef = { current: state };
   const commands = [];
   const context = vm.createContext({
+    isWorkPanelNewTabActive: selectionHelpers.isWorkPanelNewTabActive,
     stateRef,
     selectedNewTabsRef: { current: launcherTab ? { "chat-a": { id: "new-tab", anchor: state.workspaces[0].activeItemId } } : {} },
     closeNewTab: (ownerChatId, id) => commands.push({ type: "closeNewTab", ownerChatId, id }),

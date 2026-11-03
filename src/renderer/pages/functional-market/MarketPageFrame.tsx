@@ -7,6 +7,7 @@ import {
   HddOutlined,
   LinkOutlined,
   RobotOutlined,
+  BgColorsOutlined,
   SmileOutlined
 } from "@ant-design/icons";
 import type { MarketTab, MarketTabDefinition } from "./marketPageModel";
@@ -33,6 +34,7 @@ function marketTabIcon(tab: MarketTab) {
       return <RobotOutlined />;
     case "sandboxImages":
       return <ApiOutlined />;
+    case "skins": return <BgColorsOutlined />;
     case "pets":
       return <SmileOutlined />;
     case "cli":

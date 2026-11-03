@@ -23,7 +23,7 @@ for (const [name, file] of [
 }
 const { ChromeTransferStore, decodeBrowserUploadFiles, BROWSER_FILE_MAX_BYTES } = require(path.join(temporary, "chrome-file-transfer.js"));
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
-const { sanitizeAgentRealtimeDebugValue } =
+const { RealtimeDebugTraceBuffer } =
   require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
 
 function download(name, bytes, overrides = {}) {
@@ -145,8 +145,12 @@ test("realtime diagnostics preserve file metadata but never retain upload, downl
   const frame = { method: "Surface.uploadFiles", params: { files: [{ name: "fixture.txt", mimeType: "text/plain", data: marker }] },
     response: { result: { fileName: "fixture.txt", mimeType: "text/plain", data: marker, sha256: "fixture-hash" } },
     event: { type: "desktop.cdp.response.delta", chunk: marker } };
-  const sanitized = sanitizeAgentRealtimeDebugValue(frame);
+  const buffer = new RealtimeDebugTraceBuffer();
+  const sanitized = buffer.append({ layer: "surface-bridge", direction: "desktop-to-platform", data: frame }).data;
   assert.equal(JSON.stringify(sanitized).includes(marker), false);
   assert.equal(sanitized.params.files[0].name, "fixture.txt");
   assert.equal(sanitized.method, "Surface.uploadFiles");
+  assert.equal(JSON.stringify(buffer.snapshot()).includes(marker), false);
+  assert.equal(frame.params.files[0].data, marker);
+  assert.equal(frame.event.chunk, marker);
 });

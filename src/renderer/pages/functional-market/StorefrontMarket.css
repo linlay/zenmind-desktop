@@ -438,6 +438,7 @@
 /* ---------- item ---------- */
 
 .market-store-card.ant-card {
+  --market-store-muted: var(--market-card-muted);
   --card-accent: #2563eb;
   --card-tint: rgba(37, 99, 235, 0.08);
   position: relative;
@@ -447,14 +448,14 @@
   overflow: hidden;
   border: 1px solid var(--market-store-line);
   border-radius: 14px;
-  background: var(--market-store-surface);
+  background: var(--market-card-surface);
   box-shadow: var(--market-store-shadow);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .market-store-card.ant-card-hoverable:hover {
   border-color: var(--market-store-line-strong);
-  background: var(--market-store-surface-hover);
+  background: var(--market-card-hover-surface);
   box-shadow: var(--market-store-shadow-hover);
   transform: translateY(-1px);
 }
@@ -1550,13 +1551,18 @@
 }
 
 :root[data-theme="dark"] .market-store-search.ant-input-affix-wrapper,
-:root[data-theme="dark"] .market-store-card.ant-card,
 :root[data-theme="dark"] .market-store-empty.ant-empty,
 :root[data-theme="dark"] .market-store-detail-modal .ant-modal-content,
 :root[data-theme="dark"] .market-store-search-filter-menu {
   border-color: var(--market-store-line);
   background: var(--market-store-surface);
 }
+
+:root[data-theme="dark"] .market-store-card.ant-card {
+  border-color: var(--market-store-line);
+  background: var(--market-card-surface);
+}
+:root[data-theme="dark"] .market-store-card.ant-card-hoverable:hover { background: var(--market-card-hover-surface); }
 
 :root[data-theme="dark"] .market-store-search .ant-input,
 :root[data-theme="dark"] .market-store-title-line h2,

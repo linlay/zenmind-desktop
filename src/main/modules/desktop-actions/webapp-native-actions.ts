@@ -127,7 +127,7 @@ export function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: id === "skill.read" ? !!item.copilot?.agentKey : true,
+          declared: true,
           permission: id === "auth.session" ? "prompt" as const : id === "desktop.microphone"
             ? microphonePermission
             : id === "desktop.notification" && !notificationAvailable

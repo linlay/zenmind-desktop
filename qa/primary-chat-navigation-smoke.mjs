@@ -58,7 +58,7 @@ const errors=[];
 const server=http.createServer((request,response)=>{const name=path.basename(new URL(request.url,'http://localhost').pathname)||'index.html';const file=path.join(output,name);response.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.svg')?'image/svg+xml':'text/html');if(!fs.existsSync(file)){response.writeHead(404);response.end();return;}response.end(fs.readFileSync(file));});
 let win;const js=code=>win.webContents.executeJavaScript(code);
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function until(code){for(let n=0;n<150;n++){try{if(await js(code))return;}catch{}await delay(20);}throw Error('Timed out: '+code);}
+async function until(code,attempts=150){for(let n=0;n<attempts;n++){try{if(await js(code))return;}catch{}await delay(20);}throw Error('Timed out: '+code);}
 const click=selector=>js('document.querySelector('+JSON.stringify(selector)+').click()');
 (async()=>{await app.whenReady();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 win=new BrowserWindow({show:false,width:1280,height:800,useContentSize:true,webPreferences:{contextIsolation:true,nodeIntegration:false}});
@@ -81,13 +81,17 @@ await until('!!document.querySelector(".assistant-worker-header")');
 const expanded=await js('document.querySelector("[data-sidebar-group-id=assistants]").getAttribute("aria-expanded")');
 // The real header and name are the interaction region, not just the SVG.
 await until('document.querySelector(".assistant-worker-header [data-pointer-resting]")!==null');
-const clocks=await js('[...document.querySelectorAll(".assistant-worker-header [data-pointer-resting]")].slice(0,4).map(root=>({period:parseFloat(root.style.getPropertyValue("--agent-idle-period")),delay:parseFloat(root.style.getPropertyValue("--agent-idle-delay"))}))');
-assert.equal(clocks.length,4);for(const clock of clocks){assert.ok(clock.period>=22&&clock.period<32);assert.ok(clock.delay>=0&&clock.delay<7);}assert.ok(new Set(clocks.map(clock=>clock.period)).size>1);
-assert.equal(await js('(()=>{const motion=document.querySelector(".assistant-worker-header [data-agent-motion]");const animation=motion.getAnimations()[0];if(!animation)return false;animation.pause();const timing=animation.effect.getTiming();animation.currentTime=timing.delay+timing.duration*.9;return getComputedStyle(motion).transform!=="none"&&getComputedStyle(motion).transform!=="matrix(1, 0, 0, 1, 0, 0)";})()'),true);
+// Wait for the real shared scheduler: avatars now use finite WAAPI actions.
+await until('!!document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.agentAction',1000);
+assert.ok(['turn','look','stretch'].includes(await js('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.agentAction')));
+assert.equal(await js('(()=>{const motion=document.querySelector(".assistant-worker-header [data-agent-motion]");const animation=motion.getAnimations()[0];if(!animation)return false;const timing=animation.effect.getTiming();if(timing.iterations!==1||timing.fill!=="none")return false;animation.pause();animation.currentTime=timing.duration*.5;return getComputedStyle(motion).transform!=="none"&&getComputedStyle(motion).transform!=="matrix(1, 0, 0, 1, 0, 0)";})()'),true);
 await js('(()=>{const name=document.querySelector(".assistant-worker-name");const r=name.getBoundingClientRect();name.dispatchEvent(new PointerEvent("pointermove",{bubbles:true,pointerType:"mouse",clientX:r.left+30,clientY:r.top+5}));})()');
 await until('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.pointerMood!=="rest"');
 assert.equal(await js('document.querySelectorAll(".assistant-worker-header [data-agent-avatar]")[1].dataset.pointerMood'), 'rest');
 assert.ok(await js('document.querySelector(".assistant-worker-header [data-agent-motion]").style.transform'));
+assert.equal(await js('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.agentAction'),undefined);
+// A stationary pointer returns to rest without leaving the row.
+await until('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.pointerResting==="true"');
 await js('window.dispatchEvent(new Event("blur"))');
 assert.equal(await js('document.querySelector(".assistant-worker-header [data-agent-avatar]").dataset.pointerResting'),'true');
 await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
@@ -208,7 +212,7 @@ await click('[role="switch"][aria-labelledby="primary-chat-navigation-label"]');
 assert.equal(await js('document.querySelector(".sidebar-new-chat-button").getBoundingClientRect().height>0'),true);
 assert.deepEqual(errors,[]);
 fs.writeFileSync(path.join(output,'passed'),'ok');
-console.log(JSON.stringify({ok:true,checks:['standard default','primary open and create intent','primary list survives Main Chat routes and Copilot hiding','utility entries retain their position','history','collapsed navigation','original expanded state and scroll','draft and guest retained','no main-nav order writes','primary keyboard and pointer sorting','failed save rollback','native Agent settings menu in both widths','light/dark','Windows/fullscreen branches','Debug-only switch','independent idle clocks','row hover and pointer reset','reduced motion'],output},null,2));
+console.log(JSON.stringify({ok:true,checks:['standard default','primary open and create intent','primary list survives Main Chat routes and Copilot hiding','utility entries retain their position','history','collapsed navigation','original expanded state and scroll','draft and guest retained','no main-nav order writes','primary keyboard and pointer sorting','failed save rollback','native Agent settings menu in both widths','light/dark','Windows/fullscreen branches','Debug-only switch','finite idle actions','row hover interrupts idle','stationary pointer reset','reduced motion'],output},null,2));
 win.destroy();server.close();app.quit();})().catch(error=>{console.error(error);if(win)win.destroy();server.close();app.exit(1);});
 `;
 fs.writeFileSync(path.join(output,"checks.cjs"), checker);

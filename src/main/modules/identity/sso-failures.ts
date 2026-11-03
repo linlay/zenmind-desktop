@@ -1,7 +1,7 @@
 import { t } from "../../support/i18n/main-i18n";
 
 export type SsoFailureStage = "readCredentials" | "readCookie" | "tokenRequest" | "accountRequest" | "accountParse" | "saveCredentials" | "syncCookies" | "publishSession";
-export type SsoFailureCode = "requestFailed" | "responseJson" | "responseObject" | "missingIdToken" | "invalidIdClaims" | "identityChanged" | "invalidRefreshToken" | "idValidation" | "encryptionUnavailable" | "credentialRead" | "credentialMismatch" | "credentialEncrypt" | "credentialSave" | "accountHttp" | "accountJson" | "accountMissing" | "accountChanged" | "unexpected";
+export type SsoFailureCode = "requestFailed" | "responseJson" | "responseObject" | "missingIdToken" | "invalidIdClaims" | "identityChanged" | "invalidRefreshToken" | "idValidation" | "credentialRead" | "credentialMismatch" | "credentialSave" | "accountHttp" | "accountJson" | "accountMissing" | "accountChanged" | "unexpected";
 
 /** Only fixed, translated reasons cross the credential boundary. Never include
  * native exception messages, response bodies, arbitrary JSON keys or token values. */

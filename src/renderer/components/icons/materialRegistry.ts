@@ -82,6 +82,7 @@ export const materialIconSymbolIds = {
   match_word: "material-symbol-match-word",
   mic: "material-symbol-mic",
   more_horiz: "material-symbol-more-horiz",
+  more_vert: "material-symbol-more-vert",
   open_in_new: "material-symbol-open-in-new",
   pause_circle: "material-symbol-pause-circle",
   person: "material-symbol-person",

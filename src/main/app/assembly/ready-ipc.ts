@@ -53,7 +53,6 @@ export interface ReadyIpcDependencies {
   cancelLocalDocumentDraftPromotion: import("../ipc-registration-contracts").MainIpcRegistrationOptions["cancelLocalDocumentDraftPromotion"];
   promoteLocalDocumentDraft: import("../ipc-registration-contracts").MainIpcRegistrationOptions["promoteLocalDocumentDraft"];
   resetRuntimeEnv: import("../ipc-registration-contracts").MainIpcRegistrationOptions["resetRuntimeEnv"];
-  refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
   appearanceRuntime: AppearanceRuntime;
   readonly setStartupPhase: (phase: StartupPhase) => void;
   readonly startupRestoreController: ReturnType<typeof createStartupRestoreController>;
@@ -69,7 +68,7 @@ export interface ReadyIpcDependencies {
   readonly servicesFacade: ServicesFacade;
   readonly websFacade: WebsFacade;
   readonly getMainWindow: () => BrowserWindow | null;
-  readonly appShellRuntime: Pick<AppShellRuntime, "setWorkPanelFullscreenActive" | "refreshTrayContextMenu" | "refreshMainWindowAppearance" | "setGlobalSearchOverlayVisible" | "setWebviewModalOverlayVisible">;
+  readonly appShellRuntime: Pick<AppShellRuntime, "setWorkPanelFullscreenActive" | "setMainWindowSidebarCollapsed" | "refreshTrayContextMenu" | "refreshMainWindowAppearance" | "setGlobalSearchOverlayVisible" | "setWebviewModalOverlayVisible">;
   readonly assistantRunWakeLock: ReturnType<typeof createAssistantRunWakeLock>;
   readonly petRuntime: DesktopPetRuntime;
   readonly enterpriseChatRuntime: InstanceType<typeof EnterpriseChatRuntime>;
@@ -113,7 +112,6 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     promoteLocalDocumentDraft: dependencies.promoteLocalDocumentDraft,
     resetRuntimeEnv: dependencies.resetRuntimeEnv,
     appearanceRuntime: dependencies.appearanceRuntime,
-    refreshDesktopSsoIdentityToken: dependencies.refreshDesktopSsoIdentityToken,
     app,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
     servicesFacade: dependencies.servicesFacade,
@@ -131,6 +129,7 @@ export function registerReadyIpc(dependencies: ReadyIpcDependencies, conversatio
     setCopilotDevToolsTarget: dependencies.webSurfaceRuntime.setCopilotDevToolsTarget,
     getWebContentsById: (id) => webContents.fromId(id) ?? undefined,
     setWorkPanelFullscreenActive: dependencies.appShellRuntime.setWorkPanelFullscreenActive,
+    setMainWindowSidebarCollapsed: dependencies.appShellRuntime.setMainWindowSidebarCollapsed,
     assistantBridgeRuntime: dependencies.assistantBridgeRuntime,
     assistantRunWakeLock: dependencies.assistantRunWakeLock,
     logsRuntime: dependencies.logsRuntime,

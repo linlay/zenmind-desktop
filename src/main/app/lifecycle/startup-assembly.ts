@@ -50,11 +50,13 @@ import {
 import { createStartupRestoreController } from "../lifecycle/startup-restore";
 import { createMainAppState } from "../state";
 export interface AssembleStartupRestoreDependencies {
+  readonly getRecoveryBackupPath?: () => string | undefined;
   readonly getMainWindow: () => BrowserWindow | null;
 }
 
 export function assembleStartupRestore(dependencies: AssembleStartupRestoreDependencies) {
   return createStartupRestoreController({
+    getRecoveryBackupPath: dependencies.getRecoveryBackupPath,
     onChange: (state) => {
       const mainWindow = dependencies.getMainWindow();
       if (!mainWindow || mainWindow.isDestroyed()) {
@@ -91,6 +93,7 @@ export function assembleStartupEnvironment(dependencies: AssembleStartupEnvironm
 }
 
 export interface AssembleStartupPipelineDependencies {
+  readonly reinstallBuiltinServices?: boolean;
   readonly desktopAppInfo: Pick<DesktopAppInfo, "version">;
   readonly isFirstDesktopInstall: boolean;
   readonly startupEnvImportFailureMessage: string | null;
@@ -108,6 +111,7 @@ export function assembleStartupPipeline(dependencies: AssembleStartupPipelineDep
   return createStartupPipeline({
     app,
     desktopVersion: dependencies.desktopAppInfo.version,
+    reinstallBuiltinServices: dependencies.reinstallBuiltinServices,
     isFirstDesktopInstall: dependencies.isFirstDesktopInstall,
     getEnvImportFailureMessage: () => dependencies.startupEnvImportFailureMessage,
     startupRestoreController: dependencies.startupRestoreController,
@@ -171,7 +175,7 @@ export function runNonCoreStartupTask(label: string, task: () => void) {
 
 export interface StartNonCoreDesktopRuntimeDependencies {
   nonCoreDesktopRuntimeStarted: boolean;
-  readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
+  readonly maintainDesktopSsoSession: () => Promise<string>;
   readonly runNonCoreStartupTask: (label: string, task: () => void) => void;
   readonly petRuntime: Pick<DesktopPetRuntime, "getSettings">;
   readonly startupPlatform: NodeJS.Platform;
@@ -190,20 +194,20 @@ export function startNonCoreDesktopRuntime(dependencies: StartNonCoreDesktopRunt
     return;
   }
   dependencies.nonCoreDesktopRuntimeStarted = true;
-  void dependencies.refreshDesktopSsoIdentityToken().catch((error: unknown) => {
+  void dependencies.maintainDesktopSsoSession().catch((error: unknown) => {
     safeConsoleError("failed to refresh desktop sso token during startup", {
       error: error instanceof Error ? error.message : String(error)
     });
   });
   const desktopSsoRefreshTimer = setInterval(() => {
-    void dependencies.refreshDesktopSsoIdentityToken().catch((error: unknown) => {
+    void dependencies.maintainDesktopSsoSession().catch((error: unknown) => {
       safeConsoleError("failed to refresh desktop sso token before expiry", {
         error: error instanceof Error ? error.message : String(error)
       });
     });
   }, 5 * 60000);
   desktopSsoRefreshTimer.unref();
-  const resumeSso = () => { void dependencies.refreshDesktopSsoIdentityToken().catch(() => {}); };
+  const resumeSso = () => { void dependencies.maintainDesktopSsoSession().catch(() => {}); };
   powerMonitor?.on("resume", resumeSso);
   app.once("before-quit", () => {
     clearInterval(desktopSsoRefreshTimer);

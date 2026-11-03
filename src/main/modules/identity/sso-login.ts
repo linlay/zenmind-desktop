@@ -29,6 +29,7 @@ import {
 import { buildDesktopSsoProxyUrl } from "./sso-proxy-urls";
 
 export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): DesktopSsoStatus {
+  desktopSsoRuntimeState.credentialGeneration++;
   closeCallbackServer(undefined, true);
   desktopSsoRuntimeState.pendingLogin = null;
   desktopSsoRuntimeState.currentBusinessToken = "";

@@ -13,6 +13,7 @@ import {
   resolveEffectiveAppId
 } from "../infrastructure/electron/development-runtime";
 import { refreshMacSystemIntegration } from "../infrastructure/electron/mac-system-integration";
+import { refreshWindowsDocumentRegistration } from "../infrastructure/electron/windows-document-registration";
 
 export type SystemIdentityRuntimeOptions = {
   app: App;
@@ -51,6 +52,24 @@ export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
   configureNativeAboutPanel(options.platform, options.app, desktopAppInfo);
   let systemIntegrationPending = false;
   let lastSystemIntegrationRefresh = -Infinity;
+  let windowsDocumentRegistrationStarted = false;
+
+  function ensureWindowsDocumentRegistration() {
+    if (!options.app.isPackaged || effectiveAppId !== options.appId || windowsDocumentRegistrationStarted) return;
+    windowsDocumentRegistrationStarted = true;
+    // A cloud image can contain the app without the logged-in user's HKCU
+    // entries. Check once per process; a restored profile needs a fresh check.
+    void Promise.resolve().then(() => refreshWindowsDocumentRegistration({
+      platform: options.platform, isPackaged: options.app.isPackaged, appId: options.appId,
+      productName: options.productName, executablePath: options.app.getPath("exe")
+    })).then(result => {
+      if (result.status === "registered") console.info("[system-integration] Windows document registration restored", result);
+    }).catch(error => {
+      options.safeConsoleError("failed to refresh Windows document registration", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }
 
   function refreshSystemIntegration() {
     if (options.platform !== "darwin" || !options.app.isPackaged || effectiveAppId !== options.appId ||
@@ -130,6 +149,7 @@ export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
 
   function ensureDockIdentity() {
     if (options.platform === "win32") {
+      ensureWindowsDocumentRegistration();
       return;
     }
     if (options.platform !== "darwin") {

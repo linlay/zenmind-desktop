@@ -573,6 +573,29 @@ export class WorkPanelResourceImageRegistry {
     } catch { return fail(); }
   }
 
+  async saveCopy(
+    request: WorkPanelResourceImageHandleRequest,
+    sender: WebContents,
+  ): Promise<WorkPanelResourceImageActionResult> {
+    const handle = this.ownedHandle(request, sender);
+    const runtime = this.runtime;
+    const fail = () => ({ ok: false, message: t("chatWorkPanel.resourceActions.failed") });
+    if (!handle || !runtime) return fail();
+    try {
+      const selected = await runtime.showSaveDialog({
+        title: t("chatWorkPanel.image.downloadCopy"),
+        defaultPath: path.join(runtime.app.getPath("downloads"), handle.fileName),
+      }, runtime.getMainWindow());
+      if (selected.canceled || !selected.filePath) return { ok: true };
+      if (path.resolve(selected.filePath) !== path.resolve(handle.filePath)) {
+        await fs.promises.copyFile(handle.filePath, selected.filePath);
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   async openExternal(
     request: WorkPanelResourceImageExternalOpenRequest,
     sender: WebContents,
@@ -882,6 +905,11 @@ export function registerChatWorkPanelResourceImageIpcHandlers(
   ipcMain.handle("chatWorkPanel.resourceImages.reveal", (event, request) =>
     isMainRenderer(event.sender)
       ? workPanelResourceImageRegistry.reveal(request, event.sender)
+      : { ok: false, message: "Unauthorized renderer." },
+  );
+  ipcMain.handle("chatWorkPanel.resourceImages.saveCopy", (event, request) =>
+    isMainRenderer(event.sender)
+      ? workPanelResourceImageRegistry.saveCopy(request, event.sender)
       : { ok: false, message: "Unauthorized renderer." },
   );
   ipcMain.handle("chatWorkPanel.resourceImages.openExternal", (event, request) =>

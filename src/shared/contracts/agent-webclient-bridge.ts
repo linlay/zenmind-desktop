@@ -319,7 +319,7 @@ export type AgentPlatformRequestFrame = {
   /** Platform event detail level of /api/query, /api/attach and /api/chat.
    * Omitted follows the Agent's default; Desktop sets it only for its own
    * main-process Runs that read tool events (the image studio asks for full). */
-  detail?: "summary" | "full" | "none";
+  detail?: "summary" | "full";
   payload?: unknown;
 };
 
@@ -790,4 +790,36 @@ export function isSkinVisualDataUrl(value: unknown): value is string {
     const width = integer(16), height = integer(20);
     return integer(8) === 13 && width > 0 && height > 0 && width <= SKIN_VISUAL_LIMITS.maxDimension && height <= SKIN_VISUAL_LIMITS.maxDimension;
   } catch { return false; }
+}
+// Presentation-only state for the Desktop controls above Main Chat. This is
+// independent of business navigation, appearance and Platform transport.
+export const AGENT_WEBCLIENT_HEADER_LAYOUT_GLOBAL = "__AGENT_WEBCLIENT_HEADER_LAYOUT__" as const;
+export const AGENT_WEBCLIENT_HEADER_LAYOUT_REQUEST_CHANNEL = "desktop:service-webview:header-layout:request" as const;
+export const AGENT_WEBCLIENT_HEADER_LAYOUT_SNAPSHOT_CHANNEL = "desktop:service-webview:header-layout:snapshot" as const;
+export type AgentWebclientHeaderLayout = { sidebarCollapsed: boolean; headerLeftInset: number };
+export type AgentWebclientHeaderLayoutSnapshot = AgentWebclientHeaderLayout & { schemaVersion: "1.0"; revision: number };
+export type AgentWebclientHeaderLayoutBridge = {
+  version: "1.0";
+  getSnapshot(): AgentWebclientHeaderLayoutSnapshot | null;
+  subscribe(listener: (snapshot: AgentWebclientHeaderLayoutSnapshot | null) => void): () => void;
+};
+export function parseAgentWebclientHeaderLayoutSnapshot(value: unknown): AgentWebclientHeaderLayoutSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const data = value as Record<string, unknown>;
+  if (Object.keys(data).length !== 4 || data.schemaVersion !== "1.0" ||
+    !Number.isSafeInteger(data.revision) || Number(data.revision) < 0 ||
+    typeof data.sidebarCollapsed !== "boolean" || !Number.isSafeInteger(data.headerLeftInset) ||
+    Number(data.headerLeftInset) < 0 || Number(data.headerLeftInset) > 256 ||
+    (!data.sidebarCollapsed && data.headerLeftInset !== 0)) return null;
+  return { schemaVersion: "1.0", revision: Number(data.revision), sidebarCollapsed: data.sidebarCollapsed, headerLeftInset: Number(data.headerLeftInset) };
+}
+export function readAgentWebclientHeaderLayoutBootstrap(search: string): AgentWebclientHeaderLayout | null {
+  const query = new URLSearchParams(search);
+  if (query.getAll("desktopSidebarCollapsed").length !== 1 || query.getAll("desktopHeaderLeftInset").length !== 1) return null;
+  const collapsed = query.get("desktopSidebarCollapsed");
+  const inset = query.get("desktopHeaderLeftInset") ?? "";
+  if ((collapsed !== "0" && collapsed !== "1") || !/^\d{1,3}$/.test(inset)) return null;
+  const snapshot = parseAgentWebclientHeaderLayoutSnapshot({ schemaVersion: "1.0", revision: 0,
+    sidebarCollapsed: collapsed === "1", headerLeftInset: Number(inset) });
+  return snapshot ? { sidebarCollapsed: snapshot.sidebarCollapsed, headerLeftInset: snapshot.headerLeftInset } : null;
 }

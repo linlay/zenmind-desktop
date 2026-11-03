@@ -2,10 +2,11 @@ import { isStartupPhaseAtLeast } from "./startup-phases";
 import type { MainAppState } from "../state";
 import type { ShutdownReport } from "../../../shared/shutdown";
 import type { RuntimeEnvResetResult } from "../../infrastructure/filesystem/runtime-env-contracts";
+import type { DesktopRuntimeResetStage } from "../../../shared/contracts";
 
 export function createRuntimeResetCoordinator(options: {
   state: MainAppState;
-  prepare: () => Promise<{ id: string; result: RuntimeEnvResetResult }>;
+  prepare: () => Promise<{ id: string; result: RuntimeEnvResetResult; restore?: () => Promise<void> }>;
   arm: (id: string) => void;
   cancel: (id: string) => void;
   beginShutdown: () => void;
@@ -14,6 +15,7 @@ export function createRuntimeResetCoordinator(options: {
   relaunch: () => void;
   quit: () => void;
   scheduleQuit?: (quit: () => void) => void;
+  onProgress?: (stage: DesktopRuntimeResetStage) => void;
 }) {
   return async () => {
     if (options.state.isHandlingQuit) throw new Error("Desktop is already shutting down.");
@@ -23,14 +25,21 @@ export function createRuntimeResetCoordinator(options: {
     options.state.isHandlingQuit = true;
     let prepared: Awaited<ReturnType<typeof options.prepare>> | undefined;
     try {
+      options.onProgress?.("preparing");
       prepared = await options.prepare();
+      options.onProgress?.("stopping");
       options.beginShutdown();
       // Use the full process-verification budget also used by app replacement.
       options.state.shutdownMode = "installer";
       const report = await options.cleanup();
       if (!report.ok || report.survivors.length > 0) throw new Error("Runtime reset cancelled: service cleanup failed. Restart Desktop before retrying.");
+      if (prepared.restore) {
+        options.onProgress?.("restoring");
+        await prepared.restore();
+      }
       await options.flushLogs();
       options.arm(prepared.id);
+      options.onProgress?.("restarting");
       options.relaunch();
       (options.scheduleQuit ?? ((quit) => setImmediate(quit)))(options.quit);
       return { ...prepared.result, restartScheduled: true as const };
@@ -43,6 +52,7 @@ export function createRuntimeResetCoordinator(options: {
       options.state.shutdownCleanupPromise = null;
       options.state.shutdownCleanupComplete = false;
       options.state.shutdownReport = null;
+      options.onProgress?.("failed");
       if (cancellationError) throw new AggregateError([error, cancellationError], "Runtime reset failed; the pending request requires recovery.");
       throw error;
     }

@@ -289,7 +289,8 @@ export function signMachOFile(filePath, identity, {
 } = {}) {
   const args = [
     "--force",
-    ...(shouldSkipMacTimestamp() ? [] : ["--timestamp"]),
+    // Omitting the option leaves codesign's identity-dependent default active.
+    shouldSkipMacTimestamp() ? "--timestamp=none" : "--timestamp",
     "--options",
     "runtime",
     "--sign",

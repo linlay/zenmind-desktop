@@ -104,6 +104,34 @@ export class AgentPlatformAssistantBridge {
     return this.realtimeBroker.subscribeRun({ ...input, baseUrl: available.baseUrl, token: available.token, kind: "internal", role: "internal" });
   }
 
+  observeExecuteRun(requestId: string, agentKey: string,
+    onRun: (run: { runId: string; chatId: string; agentKey: string }) => void, signal: AbortSignal): () => void {
+    signal.throwIfAborted();
+    let closed = false;
+    const startedAt = Date.now();
+    const release = this.realtimeBroker.subscribePush({ types: ["run.started"], kind: "internal", consumerId: `execute:${requestId}`,
+      onPush(frame) {
+        const data = frame.data as Record<string, unknown> | undefined;
+        if (!closed && !signal.aborted && data?.requestId === requestId && data.agentKey === agentKey &&
+            typeof data.runId === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(data.runId) &&
+            typeof data.chatId === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(data.chatId)) {
+          onRun({ runId: data.runId, chatId: data.chatId, agentKey });
+        }
+      }
+    });
+    const cleanup = () => { if (closed) return; closed = true; release(); signal.removeEventListener("abort", cleanup); };
+    signal.addEventListener("abort", cleanup, { once: true });
+    // Register synchronously; an optional Push connection must never block HTTP execute.
+    void (async () => {
+      const available = await this.platform.resolvePlatform();
+      if (!available.ok || signal.aborted || closed) return;
+      await this.realtimeBroker.ensureConnected(available.baseUrl, available.token);
+    })().catch(() => {
+      if (!closed) console.warn("[webapp-execute]", { requestId, stage: "push", elapsedMs: Date.now() - startedAt, code: "assistant_push_unavailable" });
+    });
+    return cleanup;
+  }
+
   async stopRun(runId: string): Promise<AssistantStopRunResult> { return this.runs.stopRun(runId); }
 
   /** Main-only Runs retain their immutable Primary WebSocket control identity. */

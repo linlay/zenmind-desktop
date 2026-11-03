@@ -34,6 +34,7 @@ import {
   getDesktopPetStatusAssetPath,
   isDesktopPetAnimatedAsset,
   normalizeDesktopPetAppearanceId,
+  versionedDesktopPetAssetUrl,
   resolveDesktopPetSignatureActions
 } from "../../../shared/desktop-pet";
 import {
@@ -224,11 +225,6 @@ function getDesktopPetSpriteAssetBasePath(appearanceId: string) {
     : `./desktop-pet/${appearanceId}`;
 }
 
-function joinDesktopPetAssetPath(basePath: string, relativePath: string) {
-  const normalizedBasePath = basePath.endsWith("/") ? basePath : `${basePath}/`;
-  return `${normalizedBasePath}${relativePath.replace(/^\/+/u, "")}`;
-}
-
 function resolveDesktopPetAppearanceOption(
   state: DesktopPetState,
   appearanceId: string
@@ -246,7 +242,7 @@ function resolveDesktopPetVisualAsset(
   if (stateAsset) {
     const basePath = customAppearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
     return {
-      assetPath: joinDesktopPetAssetPath(basePath, stateAsset.path),
+      assetPath: versionedDesktopPetAssetUrl(basePath, stateAsset.path, customAppearance?.assetVersion),
       asset: stateAsset
     };
   }
@@ -263,7 +259,7 @@ function resolveDesktopPetSignatureAssetPath(
 ) {
   const appearance = resolveDesktopPetAppearanceOption(state, appearanceId);
   const basePath = appearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
-  return joinDesktopPetAssetPath(basePath, variantPath);
+  return versionedDesktopPetAssetUrl(basePath, variantPath, appearance?.assetVersion);
 }
 
 function chooseDesktopPetSignatureVariant(action: DesktopPetSignatureAction): DesktopPetSignatureVariant | null {
@@ -385,9 +381,6 @@ export function DesktopPet() {
   }
 
   function setMouseInteractive(interactive: boolean) {
-    if (isPanelWindow) {
-      return;
-    }
     if (mouseInteractiveRef.current === interactive) {
       return;
     }
@@ -518,9 +511,7 @@ export function DesktopPet() {
 
   useEffect(() => {
     document.body.classList.add("desktop-pet-body");
-    if (!isPanelWindow) {
-      setMouseInteractive(false);
-    }
+    setMouseInteractive(false);
     void window.electronAPI.desktopPet.getState().then((nextState) => {
       setPetState(nextState);
       if (!nextState.enabled || shouldInterruptSignature(nextState)) {
@@ -567,29 +558,24 @@ export function DesktopPet() {
         setMouseInteractive(false);
       }
     };
-    if (!isPanelWindow) {
-      window.addEventListener("mousemove", handleWindowMouseMove);
-      window.addEventListener("mouseleave", handleWindowMouseLeave);
-      window.addEventListener("blur", handleWindowInactive);
-      document.addEventListener("visibilitychange", handleMouseVisibilityChange);
-    }
-    // The sprite can move away from a stationary cursor between mouse events.
-    const hitTestTimer = !isPanelWindow ? window.setInterval(() => {
+    window.addEventListener("mousemove", handleWindowMouseMove);
+    window.addEventListener("mouseleave", handleWindowMouseLeave);
+    window.addEventListener("blur", handleWindowInactive);
+    document.addEventListener("visibilitychange", handleMouseVisibilityChange);
+    // Animation and panel layout changes can expose transparent space under a
+    // stationary cursor. Both native windows must pass that space through.
+    const hitTestTimer = window.setInterval(() => {
       if (mousePointRef.current && !draggingRef.current) {
         updateMouseInteractivityFromPoint(mousePointRef.current);
       }
-    }, 50) : null;
+    }, 50);
     return () => {
-      if (hitTestTimer !== null) {
-        window.clearInterval(hitTestTimer);
-      }
-      if (!isPanelWindow) {
-        window.removeEventListener("mousemove", handleWindowMouseMove);
-        window.removeEventListener("mouseleave", handleWindowMouseLeave);
-        window.removeEventListener("blur", handleWindowInactive);
-        document.removeEventListener("visibilitychange", handleMouseVisibilityChange);
-        setMouseInteractive(false);
-      }
+      window.clearInterval(hitTestTimer);
+      window.removeEventListener("mousemove", handleWindowMouseMove);
+      window.removeEventListener("mouseleave", handleWindowMouseLeave);
+      window.removeEventListener("blur", handleWindowInactive);
+      document.removeEventListener("visibilitychange", handleMouseVisibilityChange);
+      setMouseInteractive(false);
       dispose();
       disposeSignatureRequested();
       clearSignatureTimer();

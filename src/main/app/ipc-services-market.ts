@@ -1,3 +1,4 @@
+import { createSkinMarketPort } from "../modules/settings";
 import type { MarketListResult } from "../../shared/contracts";
 import { getDesktopSsoBusinessToken, isDesktopSsoCredentialRuntimeReady } from "../modules/identity";
 import { loadBuiltinServices } from "../modules/services";
@@ -19,6 +20,8 @@ import {
   importSkillFromCommand,
   importSkillFromPath,
   installMarketItem,
+  installPetMarketItem,
+  installSkinMarketItem,
   listMarketItems,
   mergeMcpRuntimeStatuses,
   refreshMarketCatalog,
@@ -58,6 +61,8 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     createContainerHubClient: (config: ConstructorParameters<typeof ContainerHubClient>[0]) =>
       new ContainerHubClient(config),
     webs: options.websFacade,
+    petPackages: petRuntime.packageService,
+    skinPackages: createSkinMarketPort(options.appearanceRuntime),
     services,
     plugins
   });
@@ -186,13 +191,11 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
       return mergeMarketMcpStatuses(result);
     },
     toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
-      issueAgentAccessToken: async (_app, reason) => {
-        let token = isDesktopSsoCredentialRuntimeReady()
+      // Favorites read the published token only; a Market 401 never renews Desktop sign-in.
+      issueAgentAccessToken: () => {
+        const token = isDesktopSsoCredentialRuntimeReady()
           ? getDesktopSsoBusinessToken() || ""
           : "";
-        if (reason === "unauthorized" || !token) {
-          token = await options.desktopSsoController.ensureBusinessToken?.(true) || "";
-        }
         return {
           ok: Boolean(token),
           token,
@@ -201,6 +204,8 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
       }
     }),
     installMarketItem: (marketApp, itemId) => installMarketItem(marketApp, itemId, withMarketplacePorts()),
+    installSkinMarketItem: (marketApp, itemId, assertOwner) => installSkinMarketItem(marketApp, itemId, withMarketplacePorts({ assertSkinOwner: assertOwner })),
+    installPetMarketItem: (marketApp, itemId, assertOwner) => installPetMarketItem(marketApp, itemId, withMarketplacePorts({ assertPetOwner: assertOwner })),
     updateMarketItem: (marketApp, itemId) => updateMarketItem(marketApp, itemId, withMarketplacePorts()),
     uninstallMarketItem: (marketApp, itemId) =>
       uninstallMarketItem(marketApp, itemId, withMarketplacePorts()),

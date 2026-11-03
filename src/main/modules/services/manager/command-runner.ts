@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { buildServiceEnv, resolveNodeBin } from "./command-env";
 import { t } from "../../../support/i18n/main-i18n";
 
@@ -23,7 +23,16 @@ type PowerShellCapturePayload = ExecResult & {
 export type RunExecFileOptions = {
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  onTimeout?: (pid: number) => boolean;
 };
+
+function stopTimedOutCommand(child: ChildProcess, options: RunExecFileOptions) {
+  if (child.pid && options.onTimeout) {
+    try { if (options.onTimeout(child.pid)) return; }
+    catch (error) { console.warn("[service-command] timeout cleanup failed", error); }
+  }
+  child.kill("SIGKILL");
+}
 
 export function windowsPowerShellPath() {
   const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
@@ -227,7 +236,7 @@ function runPowerShellScript(scriptPath: string, args: string[], cwd: string, op
 
     const killTimer = setTimeout(() => {
       didTimeout = true;
-      child.kill("SIGKILL");
+      stopTimedOutCommand(child, options);
     }, timeoutMs);
     killTimer.unref?.();
 
@@ -297,7 +306,7 @@ export function runExecFile(command: string, args: string[], cwd: string, option
   const resolved = resolveExecCommand(command, args, cwd);
   const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   if (resolved.powershellScript) {
-    return runPowerShellScript(resolved.command, resolved.args, cwd, { timeoutMs, env: options.env });
+    return runPowerShellScript(resolved.command, resolved.args, cwd, { ...options, timeoutMs });
   }
 
   return new Promise<ExecResult>((resolve, reject) => {
@@ -317,7 +326,7 @@ export function runExecFile(command: string, args: string[], cwd: string, option
 
     const killTimer = setTimeout(() => {
       didTimeout = true;
-      child.kill("SIGKILL");
+      stopTimedOutCommand(child, options);
     }, timeoutMs);
     killTimer.unref?.();
 

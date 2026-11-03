@@ -14,6 +14,10 @@ Desktop 把身份能力拆成三层：
 
 主进程是凭据边界。renderer 只接收规范化用户状态、本地头像协议 URL 和经授权的短期结果；日志、URL、普通配置与页面上下文不得携带原始凭据。
 
+用户主动打开的 Desktop 本地 Debug 界面是诊断例外：已有状态文件查看、WebView URL、WebSocket 控制台与运行时观察器按原值展示和复制，不以占位符替换 token、Cookie 或其他字段。此例外不增加凭据文件读取范围，不向普通 renderer 工作流、guest 或外部服务开放凭据，也不取消日志和对外诊断包的脱敏。
+
+浏览器文件传输继续只展示元信息：上传、下载正文与编码分块不进入实时诊断缓存或预览，不因本地 Debug 的原值展示而保留文件副本。
+
 ## 登录模式
 
 Desktop 支持标准 OIDC 与基于浏览器 Cookie 的站点 SSO。两种模式共用统一的运行时状态，但保持各自的上游会话语义。
@@ -33,19 +37,31 @@ Electron 默认 session 完成登录
 
 会话、用户信息和 access token 是三个独立结果。交互式登录允许部分成功并向用户说明缺失步骤；不能用某一步的成功伪造另一步，也不能从未经验证的 token claims 推导用户身份。
 
+认证状态广播只同步身份与业务运行时，不得显示、还原、置顶或聚焦主窗口。登录步骤、后台恢复、token 续期与配置重载都遵守此边界；内嵌登录全部步骤成功、系统浏览器登录回调或显式“返回 Desktop”请求唤回主窗口，只经过独立的返回应用入口；部分失败与取消不触发返回。
+
+后台恢复与续期在上游身份验证完成后，一次发布完整身份，不复用交互式登录的分步状态。会话元数据、用户信息和业务 token 全部预写成功后依次替换，token 最后替换；同步写入或替换失败时回滚已替换文件，保留原内存身份且不发布部分成功。此流程保证进程内发布顺序及同步错误恢复，不承诺多个文件之间的断电原子性；启动仍须远端验证恢复候选。
+
+交互登录由当前登录批次独占，后台 OIDC 续期不得接管该流程；下游业务不持有任何续期能力（见“下游凭据只读消费”）。取消、退出或新登录使旧批次失效，异步会话校验、用户信息及 token 请求在提交前复验批次；迟到结果不得更新身份、关闭新监听器或唤回窗口。重复完成导航不得提前释放正在处理的完成标记。
+
 ## OIDC 网关凭据与续期
 
 启用 `tokenExchange` / `tokenRefresh` 的网关模式使用固定协议：登录后携带 Electron 默认 session 的 Cookie 获取完整 OIDC JSON，精确读取 `id_token` 和可选 `refresh_token`，不扫描 JWT 候选、不把 EIAM `access_token` 自动作为业务凭据。该模式不接受旧换票及 Bearer 恢复配置。独立 OIDC、服务端票据及其他站点原有换票模式保留自己的语义。
 
 网关在受信同源 HTTPS 端点完成上游验证；Desktop 检查 ID token 的格式、期限和身份连续性，并使用同源 Bearer userinfo 确认稳定业务账号。若配置 JWKS / discovery，还须执行本地签名验证；JWT 解码本身不证明签名有效。JWT subject 与 userinfo 的工号是不同身份字段，分别绑定，不要求字符串相同。
 
-完整恢复凭据仅由主进程使用系统保护加密存入 secrets。macOS 使用 Keychain 支持的 safeStorage，Windows 使用 DPAPI，并显式限制目录权限；系统保护不可用时拒绝明文降级。加密凭据是会话恢复事实源，`sso-id-token.txt` 是供 Platform 每次调用读取的业务投影，不含 refresh token。先原子保存轮换凭据，再同步 Cookie 和业务投影；后续发布失败保留新 refresh token，禁止重新使用旧轮换值。旧文件只作升级恢复候选，恢复成功后删除；暂时故障不得将其发布为新业务投影。
+完整恢复凭据由主进程保存在 secrets 层的 `sso-credentials.json`，是受文件权限保护的明文文件，不是加密保险库。macOS 使用目录 0700、文件 0600；Windows 显式设置当前用户 ACL。SSO 登录和启动恢复不访问 Keychain、DPAPI 或 safeStorage，不弹出系统密钥授权。相同系统用户权限的程序仍可能读取此文件，这与供业务使用的 ID token 文件采用同一本机账户信任边界。refresh token 不交给 renderer、Platform、日志或普通配置，Platform 工具对凭据文件整体脱敏。
 
-刷新使用匿名、禁止重定向的同源表单请求，不发送 Cookie、Bearer、client_id 或 client_secret。不必等待过期；按 JWT exp 提前调度，短生命周期缩小提前窗口。新 refresh token 有返回时替换，省略时保留原值，非法空值拒绝。运行期、启动恢复及业务 401 共用单飞协调器。账号退出/切换使 generation 失效并取消在途请求，迟到结果不得写入新会话。
+本地凭据是会话恢复事实源，`sso-id-token.txt` 是供 Platform 每次调用读取的业务投影，不含 refresh token。先原子保存轮换凭据，再同步 Cookie 和业务投影；后续发布失败保留新 refresh token，禁止重新使用旧轮换值。旧 `.enc` 文件启动时忽略，不为迁移读取系统密钥；只有旧密文的用户通过已有 Cookie 恢复或重新登录，成功保存新文件后清理旧密文。旧业务文件仍只作升级恢复候选，恢复成功后删除。
 
-每轮自动请求最多三次，只有网络/超时和 502 退避重试。400、404、500、非法响应及校验失败不原样循环；刷新接口 401 清理身份和全部凭据。同源 userinfo 的拒绝不等于 refresh token 被拒绝。预算耗尽后状态查询、定时器和业务强制刷新都不能重置预算；用户在使用情况页点击刷新可显式重新尝试。临时失败时有效业务 token 可继续使用，过期后撤销业务投影并进入暂不可用，保留加密恢复材料。本地 Platform App 身份及聊天不因官网登录变化而改变。
+OIDC 后台续期使用完整会话提交路径，不重走交互登录的分步骤初始化。新 token 和稳定账号验证完成后，通过上述文件提交流程替换业务投影，再更新内存快照并由控制器发布一次完整的状态与恢复结果；续期期间保留旧业务投影和用户信息，不因重新初始化短暂撤销身份或删除文件。相同账号与头像来源复用头像缓存，来源变化后才清理。业务投影替换失败时，只要旧 token 仍有效，保留旧内存身份和文件，不发布部分成功；轮换后的私有凭据仍按上文先行保存。首次交互登录继续保留分步骤反馈。
 
-退出通过配置的同源网关 logout URL 携带 Session Cookie 发起 GET，不跟随 EIAM 重定向；随后清理本地加密凭据、业务投影与已知 Cookie。
+刷新使用匿名、禁止重定向的同源表单请求，不发送 Cookie、Bearer、client_id 或 client_secret。不必等待过期；按 JWT exp 提前调度，短生命周期缩小提前窗口。新 refresh token 有返回时替换，省略时保留原值，非法空值拒绝。提前续期、周期检查、设备唤醒、启动恢复与用户显式重试共用单飞协调器；下游业务的 401 不进入该协调器。账号退出/切换使 generation 失效并取消在途请求，迟到结果不得写入新会话。
+
+到期定时器、周期兜底检查和唤醒检查共同驱动续期。上游返回相同到期时间时，不重新安排会立即触发的提前续期定时器，也不推迟原有到期撤销；后续兜底检查若仍处于续期窗口，可以再次请求。请求与完成日志仅记录换票/续期类型、交互标识、到期时间及有效期是否推进，不记录 token、Cookie 或用户信息，以便区分重复状态通知与真实认证请求。
+
+每轮自动请求最多三次，只有网络/超时和 502 退避重试。400、404、500、非法响应及校验失败不原样循环；刷新接口 401 清理身份和全部凭据。同源 userinfo 的拒绝不等于 refresh token 被拒绝。预算耗尽后定时器不能重置预算，读取登录状态本身不发起认证请求；用户在使用情况页点击刷新可显式重新尝试。临时失败时有效业务 token 可继续使用，过期后撤销业务投影并进入暂不可用，保留本地恢复材料。本地 Platform App 身份及聊天不因官网登录变化而改变。
+
+退出通过配置的同源网关 logout URL 携带 Session Cookie 发起 GET，不跟随 EIAM 重定向；随后清理本地凭据、业务投影与已知 Cookie。
 
 ## 启动恢复
 
@@ -61,7 +77,7 @@ Electron 默认 session 完成登录
 - `signed_out`：上游明确拒绝或已无会话，清除凭据、身份缓存及相关 Cookie。
 - `temporarily_unavailable`：网络、限流或服务故障不能证明会话失效；保留恢复材料但本次运行保持未认证，后台单飞重试。
 
-运行期 canonical token 刷新沿用相同的失效分类：SSO 上游明确拒绝会话时清除身份与凭据，并立即向界面及身份消费者发布未登录状态；token 已过期或无法确认有效期时，刷新遇到临时故障则撤销内存身份、保留恢复材料并进入后台恢复。业务服务返回 401 只触发一次换新尝试，不能据此认定 Desktop 全局身份失效；强制刷新只表示立即请求新 token。提前或强制刷新遇到临时故障且原 token 仍有效时，保留既有身份与凭据，但本次刷新仍向调用方报错，由对应业务 runtime 处理失败，不把旧 token 伪装成刷新成功。迟到的刷新结果不得覆盖已经切换或退出的账号。派生 access-token Cookie 使用 JWT 的到期时间，上游浏览器会话 Cookie 保持服务端自己的期限，不假设两者相同或固定为八小时。
+运行期 canonical token 刷新沿用相同的失效分类：SSO 上游明确拒绝会话时清除身份与凭据，并立即向界面及身份消费者发布未登录状态；token 已过期或无法确认有效期时，刷新遇到临时故障则撤销内存身份、保留恢复材料并进入后台恢复。业务服务返回 401 不触发 Desktop 换新或撤销，只让该业务失败，不能据此认定 Desktop 全局身份失效。提前续期遇到临时故障且原 token 仍有效时，保留既有身份与凭据，但本次续期仍报错，不把旧 token 伪装成续期成功。迟到的刷新结果不得覆盖已经切换或退出的账号。派生 access-token Cookie 使用 JWT 的到期时间，上游浏览器会话 Cookie 保持服务端自己的期限，不假设两者相同或固定为八小时。
 
 首次启动后导入 SSO 配置，只能把状态变为“可登录”，不能绕过启动恢复重新发布旧凭据。账号切换必须先完成退出清理，再发起新登录。
 
@@ -77,9 +93,24 @@ Tunnel Hub、企业聊天、云看板和市场的用户态业务继续使用 can
 
 Desktop 与 Platform 应一起发布：Platform 的宿主入口验证已签名的 app token、设备和非空本地主体，不再要求官网个人主体前缀。已有持久 Run 的控制身份不在 Desktop 中改写，服务端不因本变更放宽不同运行身份间的控制权限。
 
+### 下游凭据只读消费
+
+身份只从 Identity 流向下游。Tunnel Hub、企业聊天、Market、云看板、使用情况与网站会话交换只读取已发布的 canonical token，不持有续期、会话重试或撤销能力。下游服务拒绝 token 通常来自它自己的公钥、Issuer、Audience、scope、时钟或账号开通配置；Desktop 已按 `exp` 提前续期，换新无法修复这类拒绝。因此下游拒绝只让该功能进入自己的失败状态，不能触发 Desktop 续期、改变总登录状态或打断其他下游。否则一个配置错误的服务会经由“下游 401 → 总续期 → 状态广播 → 其他下游重建 → 再次 401”形成全局循环。
+
+Identity 只在用户登录或显式重试、启动恢复、提前续期定时器、周期检查与设备唤醒时发起认证请求。读取登录状态是纯读取。
+
+Identity 每提交一枚不同的 canonical token 发出一次凭据变化通知；续期不改变 credential generation。app 层唯一的身份分发器按账号身份（issuer、sub、audience）决定下游动作：
+
+- 首次登录或账号变化：每个下游启动或重建一次。
+- 同账号续期：不重建任何连接，只更新下游缓存的凭据，并唤醒因上一枚 token 被拒而停住的下游重试一次。
+- 同账号暂不可用：停止 Tunnel，企业聊天保留自己仍有效的派生会话；恢复后只恢复 Tunnel。
+- 退出或上游明确撤销：停止 Tunnel，并与用户退出一样清理企业聊天派生会话。
+
+下游被拒后不按固定间隔重放同一枚 token，只在 Identity 提交另一枚 token、用户在该功能内重试或较长退避到期时再次尝试。单次请求在途期间若 Identity 已提交新 token，可用新 token 重试一次，这只是读取，不是续期请求。服务端拒绝原因脱敏后保留在该功能的状态或日志中，用于定位配置问题。`npm run architecture:check` 约束续期入口只能出现在 Identity 模块与该分发器中。
+
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary、BTW 与 Selection Explain 三条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
+Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载等 HTTP 请求及精确 `/api/voice/ws` 媒体升级继续经过 Desktop host，由 main 注入和刷新凭据；媒体升级不进入 Frame Port，先校验浏览器同源 Origin，再转发到同一 Platform，凭据不进入 URL。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary、BTW 与 Selection Explain 三条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
 
 ```text
 页面发送 Platform request frame
@@ -95,7 +126,7 @@ Frame Port contract 与 Agent WebClient bundle、vendored contract hash 和 Desk
 
 ### 内置服务与 Host Bash
 
-Desktop 通过 `--sso-id-token-file` 把 `sso-id-token.txt` 的绝对路径交给 `agent-platform`；双方启动契约同批发布，不兼容旧参数。Platform 在创建普通智能体 Host Bash 时按需读取并注入，不把 token 放入 Desktop 全局环境或服务启动参数。
+Desktop 通过 `--sso-id-token-file` 把 `sso-id-token.txt` 的绝对路径交给 `agent-platform`；双方启动契约同批发布，不兼容旧参数。Platform 仅向已验证的单条直接 oneid CLI 子进程及 oneid stdio MCP 提供 `AP_ID_TOKEN`，HTTP MCP 按请求从同一文件生成 Bearer；普通 Host Bash、Terminal 和 Container 不自动获得身份。连接器模板统一为 `${AP_ID_TOKEN}`，旧身份变量名不提供兼容。token 不进入 Desktop 全局环境或服务启动参数。
 
 Platform 的第二个消费方是声明 `useSsoIdToken: true` 的模型 Provider：每次出站模型请求重新读取该文件，只发往该 Provider 的 `baseUrl`，所有协议统一使用 `Authorization: Bearer`。该 Provider 不再使用 YAML 中的 `apiKey`，也不把 token 写回 registry、日志或 Provider 摘要。KBX 与记忆 worker 只在单次调用的私有配置中携带当次读取的 token，不常驻保存。当前不维护 Provider 地址白名单：能修改该 Provider YAML 的执行面可以改写 `baseUrl` 并收到账号级 token，因此 registry 写权限必须保持受控。静态 `apiKey` 对能读取 registry 的执行面同样可见，但 SSO token 的作用范围更大；若需收紧，由 Platform 固定 `useSsoIdToken` Provider 的目标地址。
 
@@ -112,7 +143,7 @@ Workspace Terminal、容器、代理、ACP、MCP、LSP 与其他 sidecar 默认�
 
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 
-Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用同一枚 canonical token。Cookie SSO 通过官网会话换回的结果直接发布为 canonical token；Desktop 不再启动额外 site-token bridge，也不持久化 `sso-site-token.json`。各消费者可以在 401 后请求 Main 刷新 canonical token 一次，但不能自行登录、换取或保存另一枚 Desktop access token。
+Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用同一枚 canonical token。Cookie SSO 通过官网会话换回的结果直接发布为 canonical token；Desktop 不再启动额外 site-token bridge，也不持久化 `sso-site-token.json`。各消费者只读取已发布的 canonical token，不能请求 Main 刷新，也不能自行登录、换取或保存另一枚 Desktop access token。
 
 Tunnel 的开启设置表达用户意愿，与当前认证状态分离。初始化导入和设置保存只校验地址与设备配置，不要求登录；未登录或认证暂不可用时保留开启设置，停止连接与重试，正常登录或认证恢复后自动连接。退出登录不改写开启设置，用户显式关闭后登录也不得自动开启。停止连接必须使在途注册与连接失效，迟到结果不能重新建立旧身份连接。普通退出只停止 Tunnel、取消在途注册和续期并清理账号派生地址缓存，保留已持久化的设备 ID；重新登录复用同一设备记录、自定义名称和公网地址。设备 ID 属于本地安装身份，不随账号会话轮换。只有用户在移动端主动移除设备才撤销注册；Hub 根据官网签名的固定会话创建时间判断是否允许在后续重新登录时恢复原记录，令牌续期不得视为重新登录。
 
@@ -136,7 +167,7 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 - `localhost` 登录回调在 Windows 与 macOS 上同时监听 IPv4、IPv6 本机回环地址，保持回调 URL 与同一个登录状态一致，不依赖浏览器和 Node 的 DNS 地址族选择一致，也不监听通配网络接口。仅在操作系统明确不支持 IPv6 时允许 IPv4 单栈；端口冲突必须失败并释放已绑定的监听器。成功、失败、取消、等待超时与应用退出时统一关闭全部监听器；回调响应须能完整返回，旧请求的迟到清理不得关闭新一轮监听器。成功回调由宿主唤回 Desktop，成功页不再链接到已释放的本地端口。
 - 凭据写入 secrets/state 层，不进入普通 config、命令行、页面 URL 或遥测。
 - canonical 文件发布必须原子化；撤销失败应显式返回，不能假装退出完成。
-- 网关模式以加密凭据为恢复事实源、业务文件为可重建投影；其他模式的 canonical token 只有一个持久事实源；启动恢复会清理已退役的重复 site-token 文件，任何消费者都不得重新创建或读取它。
+- 网关模式以私有凭据文件为恢复事实源、业务文件为可重建投影；其他模式的 canonical token 只有一个持久事实源；启动恢复会清理已退役的重复 site-token 文件，任何消费者都不得重新创建或读取它。
 - 临时故障遵循 fail closed：当前运行不使用未经重新验证的站点身份。
 - Tunnel Hub 身份 JWT 只能由 Main 放入 WSS 首帧，不进入 URL、renderer、日志或 Tunnel 配置；Relay 应在 JWT 到期时终止对应 Desktop session，Desktop 再通过正常刷新和重连取得新 JWT。
 - `tunnel-hub-token`、`tunnel-hub-device-secret` 与旧 registration token 都是已废弃凭据；读取或保存 Tunnel Hub 设置以及 runtime 启动时必须清理，不得作为 SSO 缺失时的回退。
@@ -165,7 +196,7 @@ Main 只把短时、一次性打开票据放入浏览器 URL fragment。打开�
 
 HTTP 请求与 WS upgrade 校验精确 Host、Origin、会话及有效期；写请求与 WS 必须来自该入口的精确 origin。API 由 Main 注入可信 provider 签发的 Platform token，并忽略浏览器提交的授权和 Cookie；WS token 仅放入上游握手子协议，响应中移除该子协议，浏览器不可见。浏览器连接强制普通 WebClient source，不能声明 Desktop 物理 lane。所有票据、请求和长连接按已签发 token 的 issuer、subject、device 绑定当前身份；claims 读取仅用于可信 token 的身份比较，不替代验证。身份不匹配、SSO 失效或服务停止时不得沿用旧会话访问新身份。
 
-浏览器版不注入 Electron、WorkPanel 或原生页面能力。浏览器内聊天、查看器与管理功能由 WebClient standalone 实现；Desktop 原生动作仍遵守既有 Run 与 Surface 授权，普通浏览器会话不产生这些授权。首版不代理独立语音服务，运行配置关闭语音入口。
+浏览器版不注入 Electron、WorkPanel 或原生页面能力。浏览器内聊天、查看器与管理功能由 WebClient standalone 实现；Desktop 原生动作仍遵守既有 Run 与 Surface 授权，普通浏览器会话不产生这些授权。实时语音与普通 API 使用同一 Platform；媒体 WS 复用浏览器 launch session、同源校验及宿主注入的 bearer 子协议，响应不向页面披露 token。部署 VOICE_ENABLED 默认关闭，仍要求 Platform capabilities.enabled。
 
 ### 本机调用示例
 
@@ -187,7 +218,7 @@ Identity 清空 canonical 凭据时同步通知会话交换模块取消在途请
 
 手机邮箱登录复用官网已有会话接口，官网 JWT 仅用于 Hub 识别用户和检查电脑归属。Identity Center 继续提供原本地 App Token；其本地设备、主体、密钥与官网账号分开。Hub 注册 ID 不等于本地 Identity 设备 ID。
 
-已登录并开启 Tunnel 的 Desktop 复用既有票据签发缓存取得本地 App Token，验证后在 tunnel.open 上传给 Hub。当前连接保留握手 sessionId，到期前通过既有注册 API 更新同一在线连接的内存票据；不重注册电脑、不为票据更新重启健康 Tunnel。Runtime 串行重试续期，直到成功、取消或 Hub 已确认的票据到期；独立到期保护取消在途更新、关闭连接并进入既有重连流程，签发或 HTTP 请求挂起也不能延长在线状态。Registration 仅执行可取消且有超时的 HTTP 更新及身份校验。更新、重连和退出沿用同一 generation、客户端及会话身份校验，迟到结果不得写入新会话；停止、断线及连接替换统一清理续期、到期保护和在途请求。关闭 Tunnel 即释放 Hub 内存票据。
+已登录并开启 Tunnel 的 Desktop 复用既有票据签发缓存取得本地 App Token，验证后在 tunnel.open 上传给 Hub。当前连接保留握手 sessionId，到期前通过既有注册 API 更新同一在线连接的内存票据；不重注册电脑、不为票据更新重启健康 Tunnel。Runtime 串行重试续期，直到成功、取消或 Hub 已确认的票据到期；独立到期保护取消在途更新、关闭连接并进入既有重连流程，签发或 HTTP 请求挂起也不能延长在线状态。Registration 仅执行可取消且有超时的 HTTP 更新及身份校验。更新、重连和退出沿用同一 generation、客户端及会话身份校验，迟到结果不得写入新会话；停止、断线及连接替换统一清理续期、到期保护和在途请求。关闭 Tunnel 即释放 Hub 内存票据。 长有效期凭据按绝对截止时间分段等待，每次唤醒重新核对真实期限；定时器单段等待上限不改变凭据有效期，也不能提前触发到期回收。
 
 Hub 验证官网证明和目标归属后，手机取回所选电脑的原 App Token；业务 WS/HTTP 仍由 Desktop 验证本地 Identity 签名、scope、设备与期限。远端连接用手机新取得的票据执行 auth.refresh，Desktop 不替远端签发票据。WS、上传与资源请求同时携带独立官网证明，Hub 不把官网身份透传给 Platform。WebApp 通过受控请求取得短期、同源 HttpOnly 不透明 Cookie，业务 Token 不进入 WebView URL 或页面 header；Cookie 随在线连接消失，到期或关闭后失效。
 

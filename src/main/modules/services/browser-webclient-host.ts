@@ -119,7 +119,7 @@ export async function createBrowserWebclientHost(record: AgentWebclientHostRecor
     const grant = grantFor(req);
     if (!grant) return denied(res);
     if (url.pathname === record.hosting.runtimeConfigPath && ["GET", "HEAD"].includes(req.method || "")) {
-      const config = { ...readRuntimeConfig(record), DESKTOP_APP: "false", BACKEND_MODE: "platform", BASE_URL: origin, VOICE_ENABLED: "false" };
+      const config = { ...readRuntimeConfig(record), DESKTOP_APP: "false", BACKEND_MODE: "platform", BASE_URL: origin };
       res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
       res.end(req.method === "HEAD" ? undefined : createRuntimeConfigScript(config)); return;
     }
@@ -155,18 +155,19 @@ export async function createBrowserWebclientHost(record: AgentWebclientHostRecor
     void (async () => {
       if (!validRequest(req, true)) { reject(); return; }
       const url = new URL(req.url || "/", origin);
-      if (url.pathname !== "/ws") { reject(); return; }
+      if ((url.pathname !== "/ws" && url.pathname !== "/api/voice/ws") || (url.pathname === "/api/voice/ws" && url.search)) { reject(); return; }
       const grant = grantFor(req);
       if (!grant) { reject(); return; }
       const { token } = await issueToken(grant.identity);
       if (socket.destroyed) return;
       // Browser connections can never impersonate Desktop's privileged physical lanes.
-      const upstreamUrl = new URL("/ws", platformOrigin);
-      upstreamUrl.searchParams.set("source", "webclient");
-      if (url.searchParams.has("surfaceId")) upstreamUrl.searchParams.set("surfaceId", url.searchParams.get("surfaceId")!.slice(0, 128));
+      const upstreamUrl = new URL(url.pathname, platformOrigin);
+      if (url.pathname === "/ws") upstreamUrl.searchParams.set("source", "webclient");
+      if (url.pathname === "/ws" && url.searchParams.has("surfaceId")) upstreamUrl.searchParams.set("surfaceId", url.searchParams.get("surfaceId")!.slice(0, 128));
       const upstream = http.request(upstreamUrl, { headers: {
         Connection: "Upgrade", Upgrade: "websocket",
         "Sec-WebSocket-Key": req.headers["sec-websocket-key"], "Sec-WebSocket-Version": "13",
+        Origin: platformOrigin,
         "Sec-WebSocket-Protocol": `bearer.${token}`
       } });
       upstreamRequests.add(upstream);

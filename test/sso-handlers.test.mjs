@@ -16,6 +16,7 @@ const {
   __testInternals,
   clearDesktopSsoLocalSession,
   completeDesktopSsoRestoredBrowserSession,
+  desktopSsoRuntimeState,
   failDesktopSsoFlow,
   finalizeDesktopSsoLoginAttempt,
   getDesktopSsoBusinessToken,
@@ -117,7 +118,6 @@ function createHarness(startResult, options = {}) {
     clearWebSessionCookies: [],
     localLogouts: 0,
     broadcasts: [],
-    kanbanRefreshes: 0,
     tunnelHubStops: 0,
   };
   registerSsoIpcHandlers({
@@ -170,7 +170,6 @@ function createHarness(startResult, options = {}) {
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
-    refreshKanbanConnection: () => { calls.kanbanRefreshes += 1; },
     stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; return options.stopTunnelHubRuntime?.(); },
 
   });
@@ -239,7 +238,7 @@ test("desktop sso login exchanges the canonical token after the web session is r
   assert.equal(result.ok, true);
   assert.equal(calls.webSessionExchanges, 1);
   assert.equal(calls.canonicalTokenExchanges, 1);
-  assert.equal(calls.kanbanRefreshes, 1);
+  // Downstream services start from the single identity dispatcher, not from the login IPC.
   assert.equal(calls.openSystemBrowserUrl.length, 0);
   assert.equal(calls.openEmbeddedLoginDialog.length, 0);
 });
@@ -462,12 +461,15 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
   const calls = {
     statusEvents: [],
     restoreResults: [],
+    windowActions: [],
+    minimized: false,
     defaultSets: [],
     defaultRemoves: [],
     defaultFlushes: 0,
     defaultCookieFlushes: 0,
     fetches: []
   };
+  app.focus = (options) => calls.windowActions.push(["app.focus", options]);
   const browserCookie = {
     name: "_oauth2_proxy",
     value: "browser-session",
@@ -501,10 +503,11 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
     },
     getMainWindow: () => ({
       isDestroyed: () => false,
-      isMinimized: () => false,
-      show: () => undefined,
-      focus: () => undefined,
-      setAlwaysOnTop: () => undefined,
+      isMinimized: () => calls.minimized,
+      restore: () => { calls.windowActions.push(["restore"]); calls.minimized = false; },
+      show: () => calls.windowActions.push(["show"]),
+      focus: () => calls.windowActions.push(["focus"]),
+      setAlwaysOnTop: (value) => calls.windowActions.push(["setAlwaysOnTop", value]),
       webContents: { send: (...args) => calls.statusEvents.push(args) }
     }),
     onRestoreResult: (result) => calls.restoreResults.push(result),
@@ -512,6 +515,73 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = 
     openExternal: async () => undefined
   });
   return { app, controller, calls };
+}
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: login status broadcasts and later token renewal never activate the main window`, async (t) => {
+    const renewedToken = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + 7200 });
+    const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-background-focus-", async () =>
+      new Response(JSON.stringify({ access_token: renewedToken }), {
+        status: 200, headers: { "content-type": "application/json" }
+      }), {}, platform);
+    t.after(() => { desktopSsoRuntimeState.callbackHooks = {}; });
+    const login = await startDesktopSsoLogin(app, {
+      onStatusChanged: controller.broadcastStatus,
+      onReturnToAppRequested: controller.returnToApp
+    });
+    assert.equal(login.ok, true, login.message);
+    calls.minimized = true;
+    const token = createUnsignedJwt({ sub: "runtime-user", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const status = completeDesktopSsoRestoredBrowserSession(app, token, { sub: "runtime-user" }, { interactive: true });
+    assert.equal(status.authenticated, true);
+    assert.ok(calls.statusEvents.some(([, value]) => value.authenticated && value.pending));
+    assert.deepEqual(calls.windowActions, [], "Intermediate and completed login status must not request focus");
+    for (let i = 0; i < 3; i += 1) controller.broadcastStatus(getDesktopSsoStatus(app));
+    assert.equal(await controller.ensureBusinessToken(true), renewedToken);
+    assert.equal(calls.fetches.length, 1);
+    assert.equal(calls.statusEvents.at(-1)[0], "sso.statusChanged");
+    assert.equal(calls.restoreResults.at(-1).state, "authenticated");
+    assert.deepEqual(calls.windowActions, [], "Retained login hooks and repeated config broadcasts must stay silent");
+    assert.equal(calls.minimized, true);
+  });
+
+  test(`${platform}: an explicit return from SSO restores and activates the main window`, (t) => {
+    const { controller, calls } = createCookieSsoRestoreFixture(t, "sso-return-focus-", async () => {
+      assert.fail("Returning to Desktop must not make an auth request");
+    }, {}, platform);
+    calls.minimized = true;
+    controller.returnToApp();
+    assert.equal(calls.minimized, false);
+    assert.deepEqual(calls.windowActions, platform === "darwin"
+      ? [["restore"], ["show"], ["app.focus", { steal: true }], ["focus"]]
+      : [["restore"], ["show"], ["setAlwaysOnTop", true], ["focus"], ["setAlwaysOnTop", false]]);
+  });
+}
+
+for (const step of ['validateBrowserSession', 'fetchBrowserUserInfo', 'exchangeBrowserCookieAccessToken']) {
+  test(`late ${step} response cannot publish credentials after login cancellation`, async t => {
+    let release;
+    const { app, controller, calls } = createCookieSsoRestoreFixture(t, 'sso-late-step-', async () =>
+      new Promise(resolve => { release = resolve; }), {
+        userInfo: { url: 'https://ai.example.test/userinfo', authMode: 'cookie', subPath: 'data.id' },
+        cookieAccessTokenExchange: { url: 'https://ai.example.test/authorization', validationMode: 'remote' }
+      });
+    const started = await startDesktopSsoLogin(app);
+    assert.equal(started.ok, true, started.message);
+    const flight = controller[step]();
+    await new Promise(resolve => setImmediate(resolve));
+    const { cancelDesktopSsoLogin } = require('../dist-electron/main/modules/identity/oidc-sso.js');
+    cancelDesktopSsoLogin(app);
+    const cancelled = getDesktopSsoStatus(app);
+    const lateToken = createUnsignedJwt({ sub: 'late-user', exp: Math.floor(Date.now() / 1000) + 3600 });
+    release(new Response(JSON.stringify({ access_token: lateToken, data: { id: 'late-user' } }), {
+      status: 200, headers: { 'content-type': 'application/json', 'x-auth-request-user': 'late-user' }
+    }));
+    await flight;
+    assert.deepEqual(getDesktopSsoStatus(app), cancelled);
+    assert.equal(getDesktopSsoBusinessToken(), null);
+    assert.deepEqual(calls.windowActions, []);
+  });
 }
 
 test("desktop sso default restart validates Cookie, exchanges a fresh JWT, and flushes the default session", async (t) => {
@@ -1178,7 +1248,7 @@ for (const mode of ["cookie", "bearer"]) {
 }
 
 for (const platform of ["darwin", "win32"]) {
-  test(`${platform}: enterprise chat 401 with temporary Bearer renewal failure preserves the Desktop account after repeated sign-ins`, async (t) => {
+  test(`${platform}: enterprise chat 401 never renews or revokes the Desktop account after repeated sign-ins`, async (t) => {
     let expectedToken;
     const { app, controller, calls } = createCookieSsoRestoreFixture(t, "sso-enterprise-chat-renewal-", async (url, init) => {
       assert.equal(url, "https://ai.example.test/authorization");
@@ -1187,7 +1257,7 @@ for (const platform of ["darwin", "win32"]) {
       const headers = new Headers(init.headers);
       assert.equal(headers.has("Cookie"), false);
       assert.equal(headers.get("Authorization"), `Bearer ${expectedToken}`);
-      return new Response("SSO temporarily unavailable", { status: 503 });
+      assert.fail("An IM rejection must not send any Desktop SSO renewal request");
     }, {
       sessionRestore: { authMode: "bearer" },
       userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" }
@@ -1199,7 +1269,6 @@ for (const platform of ["darwin", "win32"]) {
       initialEnabled: true,
       serverUrl: "https://im.example.test",
       getIdentityToken: getDesktopSsoBusinessToken,
-      refreshIdentityToken: () => controller.ensureBusinessToken(true),
       getDeviceInfo: () => ({ deviceId: "test-desktop", deviceName: "Test Desktop" }),
       fetchImpl: async (url, init) => {
         assert.equal(url, "https://im.example.test/api/v1/session/exchange");
@@ -1233,10 +1302,10 @@ for (const platform of ["darwin", "win32"]) {
       const snapshot = await runtime.refresh();
       assert.equal(snapshot.enabled, true);
       assert.equal(snapshot.connectionState, "error");
-      assert.match(snapshot.message, /503/u);
+      assert.match(snapshot.message, /IM rejected the identity token/u);
       assert.equal(snapshot.currentUser, null);
       assert.equal(imRequests.length, attempt);
-      assert.equal(calls.fetches.length, attempt);
+      assert.equal(calls.fetches.length, 0);
       assert.deepEqual(getDesktopSsoStatus(app), signedInStatus);
       assert.equal(getDesktopSsoBusinessToken(), expectedToken);
       assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
@@ -1245,7 +1314,10 @@ for (const platform of ["darwin", "win32"]) {
       assert.equal(calls.defaultRemoves.length, 0);
       assert.equal(calls.defaultSets.length, 0);
       assert.equal(await controller.ensureBusinessToken(), expectedToken);
-      assert.equal(calls.fetches.length, attempt, "Reading a still-valid Desktop session must not retry IM or SSO");
+      assert.equal(calls.fetches.length, 0, "Reading a still-valid Desktop session must not retry IM or SSO");
+      // The same rejected token never wakes IM again; only a different committed token would.
+      runtime.handleCredentialChanged();
+      assert.equal(imRequests.length, attempt);
       const tokenPath = __testInternals.getDesktopSsoIdTokenFilePath(app);
       assert.equal(fs.readFileSync(tokenPath, "utf8").trim(), expectedToken);
     }

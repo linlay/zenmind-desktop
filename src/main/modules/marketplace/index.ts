@@ -6,3 +6,7 @@ export { buildSandboxImage, configureMarketAccessTokenIssuer, deleteSandboxImage
 export { configureSkillMarketPlatformCaller } from "./skill-market";
 export { configureConnectorMarketPlatformCaller } from "./connector-market";
 export { WebappInstallError, WebappInstallPolicyError, WebappRuntimeRequiredError, installWebsiteAppArchiveFromPath } from "./website-app-market";
+
+export { installPetMarketItem } from "./pet-market";
+
+export { installSkinMarketItem } from "./skin-market";

@@ -18,7 +18,6 @@ import {
   protocolError,
   readOwner,
   readText,
-  redactSelectionReferencesForTrace,
 } from "../ipc.shared";
 import { beginPlatformLoadDiagnostic } from "../load-diagnostic";
 import { resolveSelectionExplainTransport } from "../selection-explain-transport";
@@ -408,7 +407,7 @@ export function createRequestDispatch(deps: RequestDispatchPort) {
     deps.options.realtimeBroker.appendDebugTrace({
       layer: "surface-bridge",
       direction: "surface-to-desktop",
-      data: redactSelectionReferencesForTrace(frame),
+      data: frame,
       surfaceId: context.target.surfaceId,
       webContentsId: event.sender.id,
       surfaceKind: context.kind,
