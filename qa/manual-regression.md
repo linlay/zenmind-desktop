@@ -596,6 +596,8 @@
 - 多选 HTML、PDF、图片、文本、音频、视频、Office、压缩包和未知格式；支持格式内嵌预览，其他格式只显示系统定位和默认应用打开。
 - CuteJ 与 ZenMind 两个品牌分别在 macOS 与 Windows 通过“文件”打开含中文的 UTF-8 Markdown、TXT、JSON 和源码文件（含无 BOM 与带 BOM），确认中文、标点和换行正确，文本中的 HTML 标签按原文显示；带 BOM 的 UTF-16 文本也应正常。HTML 同目录 CSS/JS 仍使用原有资源 MIME。
 - 在 Main Chat RightSidebar 与 WorkPanel Artifact/Reference 中分别打开 DOCX、XLSX、PPTX、ZIP 和未知格式，确认双按钮由 WebClient 渲染在 `.content-viewer-panel` 中央，Desktop 外层没有重复操作层；操作成功保持静默，失败显示本地化错误且 guest 消息、renderer/IPC 响应均不包含绝对路径。
+- macOS / Windows 分别右键 WorkPanel 的 Markdown、文本与 Office 产物/附件标签，选择“在访达中显示”／“在文件资源管理器中显示”和“在默认应用中打开”：`@chat/artifacts/...`、`@chat/references/...`、Chat 根目录上传文件及旧相对 URL 均定位或打开同一原件；覆盖中文、空格和字面 `%` 文件名。原件已删除、路径不匹配或系统动作失败时显示错误，不得静默无响应。
+- 分别从消息中的通用文件链接、浏览器下载保存后的根目录文件、`desktop.workpanel.openLocalFile` 的 Chat 文件和显式产物/附件卡片进入；旧通用标签即使保存为 artifact 模块，其文件操作也应按真实 Reference 范围处理，菜单名称、复制路径、当前资源按钮与两种系统动作保持一致。显式来源或资源 ID 冲突、重复路径参数、跨 Chat、符号链接越界、菜单打开后关闭标签均不得定位到其他文件；原生产物仍受 `artifacts/` 边界限制。
 - 从带 canonical Chat grant 的内部 Platform Run 调用 `desktop.workpanel.openLocalFile`，确认 workspace 相对路径可打开；绝对路径、`file://`、`..`、缺失 workspace 及所有 HTTP/WS/WebApp/调试入口均失败且不弹确认。
 - 重复选择同一文件激活已有 tab；关闭 tab、关闭 workspace、移除 Chat 和退出 renderer 后句柄释放。
 - HTML 同目录相对图片/样式可加载；确认 HTTP(S)、WebSocket、FTP、外部导航和 popup 均被阻止，并且没有 Desktop SSO、Token、WebApp bridge、Node 或权限能力。用户手选与内部 Platform Agent 打开的本地文件必须使用相同隔离策略。
