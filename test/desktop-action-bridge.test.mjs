@@ -1126,7 +1126,7 @@ test("WorkPanel openLocalFile opens a Chat file without an Agent workspace", asy
   assert.deepEqual({ ...descriptor, context: { ...descriptor.context, artifactId: "" } }, {
     kind: "webclient",
     module: "artifact",
-    route: "/resource-viewer/coder?chatId=chat-owner&file=artifacts%2Frun-1%2F%25E6%259C%25AB%25E4%25BD%258D%2520%25E6%25B7%2598%25E6%25B1%25B0.md",
+    route: "/resource-viewer/coder?chatId=chat-owner&file=%40chat%2Fartifacts%2Frun-1%2F%E6%9C%AB%E4%BD%8D+%E6%B7%98%E6%B1%B0.md",
     title: "Novel",
     context: { agentKey: "coder", chatId: "chat-owner", artifactId: "", relativePath: "artifacts/run-1/末位 淘汰.md" },
   });
@@ -1189,7 +1189,7 @@ test("WorkPanel openLocalFile prefers the native preview for Chat HTML and image
   assert.deepEqual(actions(), ["desktop.workpanel.openTab"]);
   const page = rendererCalls[0].args.descriptor;
   assert.equal(page.context.artifactId, "artifact-real");
-  assert.equal(page.route, "/resource-viewer/coder?chatId=chat-owner&file=artifacts%2Frun-1%2Fnovel.md&sourceKind=artifact&resourceId=artifact-real&relativePath=artifacts%2Frun-1%2Fnovel.md");
+  assert.equal(page.route, "/resource-viewer/coder?chatId=chat-owner&file=%40chat%2Fartifacts%2Frun-1%2Fnovel.md&sourceKind=artifact&resourceId=artifact-real&relativePath=artifacts%2Frun-1%2Fnovel.md");
 
   // Other failures are reported, never masked by the fallback.
   rendererCalls.length = 0;

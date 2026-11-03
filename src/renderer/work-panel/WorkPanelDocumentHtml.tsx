@@ -3,6 +3,7 @@ import { forwardRef, useImperativeHandle, useCallback, useEffect, useMemo, useRe
 import { Button, Input, Modal, Popover } from "antd";
 import { WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL, WORK_PANEL_DOCUMENT_HTML_REVIEW_EVENT, type WorkPanelDocumentHtmlSelection, type WorkPanelDocumentHtmlPreviewResult } from "../../shared/work-panel-document-html";
 import { WORK_PANEL_REVIEW_MAX_REQUIREMENT_CHARS } from "../../shared/work-panel-review";
+import { formatWorkPanelFileAddress } from "../../shared/work-panel-file-address";
 import { createChatChildSurfaceIdentity } from "../../shared/surface-identity";
 import { useI18n } from "../i18n/useI18n";
 
@@ -58,15 +59,8 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
     if (!readyRef.current) return;
     try { frameRef.current?.send(WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL, data); } catch { /* guest closed */ }
   }, []);
-  const displayUrl = document.displayUrl || `${document.sourceKind}:///${document.fileName}`;
-  const displayPath = useMemo(() => {
-    try {
-      const url = new URL(displayUrl);
-      return `${url.pathname}${url.search}${url.hash}` || displayUrl;
-    } catch {
-      return displayUrl;
-    }
-  }, [displayUrl]);
+  // The toolbar shows and copies the same @workspace/ or @chat/ address.
+  const displayUrl = document.displayUrl || formatWorkPanelFileAddress(document.sourceKind, document.fileName);
   const handleRequest = useMemo(() => ({
     ownerChatId,
     rendererGeneration,
@@ -413,14 +407,10 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
               <input
                 readOnly
                 spellCheck={false}
-                value={displayPath}
+                value={displayUrl}
                 aria-label={displayUrl}
                 onFocus={(event) => event.currentTarget.select()}
                 onClick={(event) => event.currentTarget.select()}
-                onCopy={(event) => {
-                  event.preventDefault();
-                  event.clipboardData.setData("text/plain", displayUrl);
-                }}
               />
             </div>
             <Button

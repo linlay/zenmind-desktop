@@ -69,13 +69,21 @@ Platform 的 MIME、签名和文本探测是加载后最终事实。WebClient �
 
 Platform 分类使用来源中的语义文件名，而不是缓存名或内部存储名。`application/octet-stream` 只表示 MIME 未知，不能压过 `.md/.markdown/.mdx/.txt` 等专用扩展名与安全 UTF-8 探测；安全文本响应必须归一为声明 UTF-8 的文本 MIME。已知文本扩展名若包含 NUL 或不是 UTF-8，仍保持只读，但 UI 应明确显示“文本编码不受支持”，不把它描述成普通未知二进制。
 
+## 文件地址
+
+用户可见的文件地址与 Agent WebClient Markdown 使用同一写法：`@chat/<path>` 是所属 Chat 的文件（Artifact、Reference 与 Chat 根目录文件都在此作用域），`@workspace/<path>` 是 Agent Workspace 文件，行位置写作 `:<line>`，`:<line>:<column>` 只取行号。路径是字面值，不做百分号编解码；WorkPanel 在同一 Chat 中复制出的地址粘贴回 Markdown 后打开同一文件。地址只表达作用域与路径，不证明发布身份或写入能力，Artifact/Reference 身份、revision 与保存语义仍由 descriptor 和权威来源决定。
+
+没有 `@chat/` 或 `@workspace/` 的相对路径不是文件地址，不按目录名、扩展名或存在性猜测根目录。主机绝对路径与 file URL 由 WebClient 识别后交 Platform `/api/file` 按其主机平台规则解析为 Workspace 相对路径再打开，Workspace 之外、chats 根和 UNC 网络路径明确失败；Desktop 不扩大本机读盘授权，本机定位与默认应用打开仍由 Main 按规范路径与 realpath 复验。
+
+Tab tooltip、右键“复制路径”与原生 HTML 工具条使用同一地址，显示即复制结果；标签标题仍可只显示文件名。未确认作用域的路径不显示地址，手选本地文件与系统打开的本地 Markdown 不伪造 `@chat/` 或 `@workspace/`。系统打开的本地 Markdown 没有 owner Chat 与 Workspace，其中的 `@chat/`、`@workspace/` 链接和图片渲染为带说明的文字，不生成会被离线导航拦截而静默失效的链接，也不因此注入 Desktop 或 Platform 能力。
+
 ## 统一打开流程
 
 Main Chat 卡片、Markdown 链接、Project 文件、Artifact 和 Reference 只提交语义来源，不自行选择 Viewer。打开流程先规范化来源并获得内容类型；Desktop 的 HTML/图片调用 canonical `openDocument` 进入原生 registry，其他内容产生 WebClient descriptor。Standalone 始终进入 WebClient Document Surface。
 
 WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。WebClient WorkPanel bridge 与公开 Desktop Action 使用各自的返回契约：宿主必须在受信任调用路径保留 bridge 的成功标志、workspace 身份和当前 Chat 状态，不得把公开动作的 workspace 投影直接作为 bridge 结果，也不得透传其他 Chat 或 renderer 内部状态。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
 
-Workspace Markdown 链接可向文档入口提交绝对路径。Main 按该 Agent 的权威 workspace 和当前平台路径规则转换为相对路径，再验证文件 realpath 未越界；原生 registry 只接收相对身份。此规则不扩展 Desktop Action 的本地文件入口，后者仍只接受 workspace 相对路径。
+Markdown 中的主机绝对路径先由 Platform 解析为 Workspace 相对路径再进入文档入口；文档入口仍可接收绝对路径，由 Main 按该 Agent 的权威 workspace 和当前平台路径规则转换为相对路径，再验证文件 realpath 未越界；原生 registry 只接收相对身份。此规则不扩展 Desktop Action 的本地文件入口，后者仍只接受 workspace 相对路径。
 
 文档 Surface 不显示 Desktop 通用浏览器地址栏：文件名只出现在 Tab，完整路径进入 Tab tooltip/右键菜单；Markdown、文本和代码内容区最多保留一行自身工具栏。Markdown 打开或切换文档时始终优先预览，不提供分屏；用户只在需要修改内容时主动切换到源码。保存前必须选择方式：Workspace File 默认且只能原位覆盖，Artifact 默认创建新产物且可明确选择覆盖，Reference 只能创建新产物。重新加载权威 revision 收纳在文档工具栏的更多菜单中，有未保存修改时必须先确认。普通 Web、WebApp 与 loopback 实时网站继续使用浏览器刷新/地址栏。
 
@@ -83,7 +91,7 @@ Workspace Markdown 链接可向文档入口提交绝对路径。Main 按该 Agen
 
 Document Registry 只接收语义来源，并用绑定 sender、owner Chat 与 renderer generation 的一次性 claim 下发 opaque handle。Renderer 不获得绝对路径、Platform Token 或内部 descriptor。
 
-HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。Desktop WorkPanel 的 HTML Surface 固定使用占满内容区的直接预览，只在预览与 DOM 批注之间切换，不提供源码、分屏或源码保存入口。顶部工具条在预览态显示不含本地绝对路径的语义 URL 与批注按钮，批注态显示返回预览、选择提示和批注数量。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
+HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。Desktop WorkPanel 的 HTML Surface 固定使用占满内容区的直接预览，只在预览与 DOM 批注之间切换，不提供源码、分屏或源码保存入口。顶部工具条在预览态显示与复制结果一致、不含本地绝对路径的 `@workspace/` 或 `@chat/` 地址与批注按钮，批注态显示返回预览、选择提示和批注数量。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
 
 原生 HTML 的内容由独立 sandbox WebView 承载，而非 Desktop renderer 的 `srcDoc`。主 HTML 文档与附属资源使用独立的单文件大小限制，并共同受页面总预算约束；已识别 HTML 超出预览上限时明确报告大小限制，不得伪装成类型不支持而回退至截断的文本预览。每个 opaque handle 绑定独立临时 session，使用专用协议读取原始 HTML 与相对资源，不注入 Desktop CSP 或页面级批注脚本，也不改写产物自身的 CSP。内联脚本、CDN 脚本、外部样式/图片/字体和接口请求遵循 Chromium 的正常 CORS、证书及混合内容规则；不能通过关闭 webSecurity 或使用 Main 网络代理绕过这些限制。该 session 不共享 SSO、Desktop Cookie、Token Bridge 或公开 CDP 授权。手动选择本地文件的既有离线 session 不随此变化。
 

@@ -8,6 +8,7 @@ import type {
 } from "./contracts/agent-webclient-bridge";
 import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry";
 import { CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } from "./chat-work-panel";
+import { workPanelFileAddressPrefix, type WorkPanelFileAddressSource } from "./work-panel-file-address";
 import { isLocalDocumentNewChat, localDocumentOwnerKey, type LocalDocumentItem } from "./local-document";
 import {
   getWebviewBlobPopupHostname,
@@ -314,9 +315,7 @@ function normalizeDescriptor(
         : "";
       const stableIdentity = cleanIdentity(context.stableIdentity, 2_048);
       const displayUrl = cleanIdentity(context.displayUrl, 2_048);
-      const displayUrlPrefix = sourceKind === "workspace-file"
-        ? "workspace:///"
-        : `${sourceKind}:///`;
+      const displayUrlPrefix = workPanelFileAddressPrefix(sourceKind as WorkPanelFileAddressSource);
       const displayPath = displayUrl.startsWith(displayUrlPrefix)
         ? normalizeRelativePath(displayUrl.slice(displayUrlPrefix.length))
         : "";

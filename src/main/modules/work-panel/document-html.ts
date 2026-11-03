@@ -23,6 +23,7 @@ import { DocumentHtmlPreviewSessions, resolveDocumentLocalPath } from "./documen
 import { performHtmlFileAction, type HtmlFileActionRuntime } from "./document-html-file-actions";
 import { HTML_MAX_BYTES } from "./document-html-limits";
 import { t } from "../../support/i18n/main-i18n";
+import { formatWorkPanelFileAddress } from "../../../shared/work-panel-file-address";
 
 const CLAIM_TTL_MS = 30_000;
 
@@ -175,7 +176,7 @@ function selection(handle: DocumentHandle): WorkPanelDocumentHtmlSelection {
     handleId: handle.handleId,
     sourceKind: handle.source.kind,
     stableIdentity: handle.stableIdentity,
-    displayUrl: `${handle.source.kind === "workspace-file" ? "workspace" : handle.source.kind}:///${displayPath}`,
+    displayUrl: formatWorkPanelFileAddress(handle.source.kind, displayPath),
     fileName: handle.fileName,
     mimeType: handle.mimeType,
     sizeBytes: handle.sizeBytes,

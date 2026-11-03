@@ -25,9 +25,11 @@ test("native WorkPanel HTML stays a full-size preview with annotation-only editi
   assert.match(surface, /ReloadOutlined/u);
   assert.match(surface, /chatWorkPanel\.review\.panel/u);
   assert.match(surface, /className="work-panel-document-html-location" title=\{displayUrl\}/u);
-  assert.match(surface, /new URL\(displayUrl\)[\s\S]*?url\.pathname[\s\S]*?value=\{displayPath\}/u);
+  // The toolbar shows exactly the address that a copy yields.
+  assert.match(surface, /value=\{displayUrl\}/u);
+  assert.doesNotMatch(surface, /new URL\(displayUrl\)|url\.pathname|displayPath/u);
   assert.match(surface, /onFocus=\{\(event\) => event\.currentTarget\.select\(\)\}/u);
-  assert.match(surface, /onCopy=\{\(event\)[\s\S]*?clipboardData\.setData\("text\/plain", displayUrl\)/u);
+  assert.doesNotMatch(surface, /clipboardData\.setData\("text\/plain", displayUrl\)/u);
   assert.doesNotMatch(surface, /<span>\{displayUrl\}<\/span>/u);
   assert.match(surface, /chatWorkPanel\.review\.annotationCount[\s\S]{0,100}?annotations\.length/u);
   assert.match(surface, /<Popover[\s\S]*?className="work-panel-document-html-count"/u);

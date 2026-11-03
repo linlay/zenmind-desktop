@@ -1,3 +1,5 @@
+import { WORK_PANEL_CHAT_FILE_ALIAS } from "./work-panel-file-address";
+
 export const CHAT_WORK_PANEL_WEB_DIALOG_CHANNEL = "chatWorkPanel.webDialog";
 export const CHAT_WORK_PANEL_WEB_DIALOG_RESTORE_REQUESTED = "chatWorkPanel.webDialogRestoreRequested";
 export const CHAT_WORK_PANEL_WEB_DIALOG_CLOSE_REQUESTED = "chatWorkPanel.webDialogCloseRequested";
@@ -130,18 +132,12 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
     ) {
       return "";
     }
+    // The file is an @chat/ address: a literal Chat-relative path once
+    // URLSearchParams removes the query encoding. Decoding it again could
+    // select a different local file, and a path without @chat/ names none.
     const resourcePath = url.searchParams.get("file") ?? "";
-    let rawPath = "";
-    try {
-      // @chat/ is a literal Chat-relative path after URLSearchParams removes the
-      // query encoding. Decoding it again could select a different local file.
-      // Legacy artifact URLs still have one encoded filename layer to remove.
-      rawPath = /^@chat\//iu.test(resourcePath)
-        ? resourcePath.slice("@chat/".length)
-        : decodeURIComponent(resourcePath.replace(/\\/gu, "/"));
-    } catch {
-      return "";
-    }
+    if (!/^@chat\//iu.test(resourcePath)) return "";
+    const rawPath = resourcePath.slice(WORK_PANEL_CHAT_FILE_ALIAS.length);
     if (
       !rawPath ||
       rawPath.length > 2_048 ||

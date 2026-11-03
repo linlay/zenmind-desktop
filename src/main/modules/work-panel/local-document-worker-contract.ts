@@ -6,6 +6,8 @@ export type LocalMarkdownWorkerRequest = {
   mode: "local-markdown-render";
   bytes: Uint8Array;
   fileName: string;
+  // Localized in Main; the worker has no i18n runtime.
+  scopedFileUnsupported: string;
 };
 
 export type LocalMarkdownWorkerResponse =

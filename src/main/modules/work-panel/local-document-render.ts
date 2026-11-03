@@ -7,6 +7,7 @@ import {
   type LocalMarkdownWorkerRequest,
   type LocalMarkdownWorkerResponse,
 } from "./local-document-worker-contract";
+import { t } from "../../support/i18n/main-i18n";
 
 type RenderErrorCode = "too_large" | "render_failed" | "timeout";
 
@@ -64,7 +65,12 @@ export function createLocalMarkdownRenderer(options: { workerPath?: string; time
         started = true;
         activeWorkers += 1;
         try {
-          const request: LocalMarkdownWorkerRequest = { mode: "local-markdown-render", bytes: input, fileName };
+          const request: LocalMarkdownWorkerRequest = {
+            mode: "local-markdown-render",
+            bytes: input,
+            fileName,
+            scopedFileUnsupported: t("dialog.localDocument.scopedFileUnsupported"),
+          };
           worker = new Worker(workerPath, {
             name: "local-document-markdown",
             workerData: request,

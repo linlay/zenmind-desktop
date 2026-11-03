@@ -1225,6 +1225,7 @@ export const enUSMessages = {
   "dialog.localDocument.readFailed": "Unable to read the document. Check that the file still exists and is readable.",
   "dialog.localDocument.unsupported": "Only Markdown and HTML files are supported.",
   "dialog.localDocument.tooLarge": "The Markdown file exceeds the 8 MiB preview size limit.",
+  "dialog.localDocument.scopedFileUnsupported": "This local preview is not bound to a chat or project, so its chat and project file addresses cannot open.",
   "dialog.documentHtml.tooLarge": "The HTML file exceeds the {limitMiB} MiB preview size limit.",
   "localDocuments.title": "Files",
   "localDocuments.open": "Open files",

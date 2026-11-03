@@ -9,10 +9,24 @@ export function decodeLocalMarkdown(bytes: Uint8Array) {
   return new TextDecoder(encoding, { fatal: true }).decode(bytes);
 }
 
-export function renderLocalMarkdown(bytes: Uint8Array, fileName: string) {
+// A system-opened file has no owner Chat or Workspace, so their addresses
+// render as plain text that says why instead of a link that silently fails.
+function isScopedFileAddress(value: unknown) {
+  return typeof value === "string" && /^@(?:chat|workspace)\//iu.test(value.trim());
+}
+
+export function renderLocalMarkdown(bytes: Uint8Array, fileName: string, scopedFileUnsupported: string) {
   const body = renderToStaticMarkup(createElement(ReactMarkdown, {
     remarkPlugins: [remarkGfm],
     skipHtml: true,
+    components: {
+      a: ({ node: _node, href, children, ...props }) => isScopedFileAddress(href)
+        ? createElement("span", { className: "scoped-file-address", title: scopedFileUnsupported }, children)
+        : createElement("a", { ...props, href }, children),
+      img: ({ node: _node, src, alt, ...props }) => isScopedFileAddress(src)
+        ? createElement("span", { className: "scoped-file-address", title: scopedFileUnsupported }, alt || src)
+        : createElement("img", { ...props, src, alt }),
+    },
     children: decodeLocalMarkdown(bytes),
   }));
   const title = renderToStaticMarkup(createElement("title", null, fileName));
@@ -27,6 +41,7 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.4em 0 .65em; }
 h1, h2 { border-bottom: 1px solid var(--line); padding-bottom: .3em; }
 main > :first-child { margin-top: 0; }
 a { color: var(--link); text-underline-offset: 3px; }
+.scoped-file-address { color: var(--muted); text-decoration: underline dotted; cursor: help; }
 img { max-width: 100%; height: auto; }
 pre, code { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .9em; }
 code { padding: .15em .35em; border-radius: 4px; background: var(--surface); }

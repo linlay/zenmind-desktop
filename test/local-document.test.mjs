@@ -57,6 +57,18 @@ test("local Markdown preserves relative image URLs for the isolated file protoco
   assert.match(html, /<a href="notes\.md">Sibling<\/a>/);
 });
 
+test("local Markdown explains @chat/ and @workspace/ addresses instead of linking them", () => {
+  const html = renderLocalMarkdown(
+    Buffer.from("[报告](@chat/artifacts/run/报告.md)\n\n![图](@workspace/docs/a.png)\n\n[Sibling](notes.md)"),
+    "README.md",
+    "not bound",
+  );
+  assert.match(html, /<span class="scoped-file-address" title="not bound">报告<\/span>/);
+  assert.match(html, /<span class="scoped-file-address" title="not bound">图<\/span>/);
+  assert.doesNotMatch(html, /href="@chat|src="@workspace/);
+  assert.match(html, /<a href="notes\.md">Sibling<\/a>/);
+});
+
 test("local Markdown decodes UTF-8 with and without BOM", () => {
   const source = "# 中文与 emoji 🚀\n\n完整文本";
   for (const bytes of [Buffer.from(source), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(source)])]) {

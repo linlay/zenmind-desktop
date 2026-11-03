@@ -532,7 +532,7 @@ test("WorkPanel rejects untrusted fields and only accepts registered host native
     handleId: "opaque-html-handle",
     sourceKind: "artifact",
     stableIdentity: "artifact:agent:chat:artifact-html:artifacts/run/report.html",
-    displayUrl: "artifact:///artifacts/run/report.html",
+    displayUrl: "@chat/artifacts/run/report.html",
     fileName: "report.html",
     mimeType: "text/html",
     sizeBytes: 456,
@@ -555,7 +555,7 @@ test("WorkPanel rejects untrusted fields and only accepts registered host native
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "native",
     surfaceKey: "document-html",
-    context: { ...documentHtmlContext, displayUrl: "reference:///references/report.html" },
+    context: { ...documentHtmlContext, displayUrl: "@workspace/artifacts/run/report.html" },
   }).ok, false);
   const resourceImage = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "native",

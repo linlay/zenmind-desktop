@@ -28,6 +28,7 @@ import {
 } from "../../shared/work-panel";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../shared/sso";
 import { normalizeWebviewBlobPopupUrl } from "../../shared/webview-popup";
+import { formatWorkPanelFileAddress } from "../../shared/work-panel-file-address";
 import {
   resolveChatWorkPanelLocalResourcePath,
   resolveChatWorkPanelLocalResourceProfile,
@@ -192,10 +193,18 @@ function tabContextMenuProfile(ownerChatId: string, item: WorkPanelItem): ChatWo
   return "default";
 }
 
+// The tooltip and "copy path" show the same @chat/ or @workspace/ address that
+// Markdown accepts. A path without a confirmed root shows no address rather
+// than a guessed one.
 function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
   if (item.descriptor.kind === "webclient") {
     if (item.descriptor.module === "file") {
-      return item.descriptor.context.path.trim();
+      const path = item.descriptor.context.path.trim().replace(/\\/gu, "/");
+      // WebClient resolves host absolute paths before opening; only a
+      // Workspace-relative path is an address.
+      return path && !path.startsWith("/") && !/^[a-z]:\//iu.test(path)
+        ? formatWorkPanelFileAddress("workspace-file", path)
+        : "";
     }
     if (item.descriptor.module === "artifact" || item.descriptor.module === "reference") {
       const profile = localResourceProfile(ownerChatId, item);
@@ -205,20 +214,22 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
         profile,
         route: item.descriptor.route,
       });
-      return relativePath ? `${profile}:///${relativePath}` : "";
+      return formatWorkPanelFileAddress(profile, relativePath);
     }
   }
   if (item.descriptor.kind === "local-file") {
-    return item.descriptor.workspaceRelativePath?.trim() || "";
+    return formatWorkPanelFileAddress("workspace-file", item.descriptor.workspaceRelativePath || "");
   }
   if (item.descriptor.kind === "native") {
     if (item.descriptor.surfaceKey === "document-html") return String(item.descriptor.context.displayUrl || "");
     const relativePath = item.descriptor.context.relativePath;
     const profile = item.descriptor.context.profile;
-    if (typeof relativePath === "string" && relativePath.trim() && (profile === "artifact" || profile === "reference")) {
-      return `${profile}:///${relativePath.trim()}`;
+    if (
+      typeof relativePath === "string" &&
+      (profile === "workspace-file" || profile === "artifact" || profile === "reference")
+    ) {
+      return formatWorkPanelFileAddress(profile, relativePath);
     }
-    return typeof relativePath === "string" ? relativePath.trim() : "";
   }
   return "";
 }

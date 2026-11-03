@@ -446,7 +446,7 @@
 
 - 以显式 title、相对路径、macOS/POSIX 绝对路径、Windows 驱动器路径、UNC 路径、中文/空格、空 basename 和超长名称创建 File descriptor；Tab 标题必须为“显式 title > basename > file”，不 URL decode，且 stable key 和 `surfaceId` 不变。分别使用新旧 WebClient bundle 验证 Desktop 兜底。
 - 对 Workspace File、Artifact 和 Reference 遍历 HTML、PNG/JPEG/WebP、动画图、SVG、Markdown、TXT、代码、PDF、Office、音视频、压缩包与未知二进制；Desktop 只原生打开 HTML/图片，其他类型使用 WebClient。伪造扩展名、错误 MIME、Office ZIP、SVG 和无后缀 UTF-8 文本必须以 Platform 最终分类为准。
-- 原生 HTML 打开后直接占满 WorkPanel 内容区；header 工具条在预览态同时显示安全语义 URL 与“批注”按钮，不出现“源码/预览/分屏”、源码输入框、覆盖、保存或另存按钮。进入批注后 header 显示“返回预览”、选择提示和实时批注数量；悬停元素必须出现虚线选择框，点击后阻止页面原动作并新增批注，填写要求后可交给智能体。返回预览后页面恢复正常交互。默认窄宽度、拉宽、全屏和窗口 resize 下均不得露出底部空白背景。
+- 原生 HTML 打开后直接占满 WorkPanel 内容区；header 工具条在预览态同时显示 `@workspace/...` 或 `@chat/...` 地址与“批注”按钮，复制得到的文字与显示完全一致，不出现“源码/预览/分屏”、源码输入框、覆盖、保存或另存按钮。进入批注后 header 显示“返回预览”、选择提示和实时批注数量；悬停元素必须出现虚线选择框，点击后阻止页面原动作并新增批注，填写要求后可交给智能体。返回预览后页面恢复正常交互。默认窄宽度、拉宽、全屏和窗口 resize 下均不得露出底部空白背景。
 - 在 Markdown/TXT/代码中验证 Monaco、查找替换、选区批注和 revision 冲突。Markdown 首开及切换文档后默认显示净化预览，只有“预览 / 源码”两种模式，不出现分屏；在预览中选取文字可添加批注，源码中可直接编辑。点击保存必须先弹出“如何保存”：Workspace 主操作为“保存（覆盖）”且不能新建产物；Artifact 主操作为创建新产物且可选覆盖原产物；Reference 只能创建新产物。外部 revision 变更后批注必须失效而不漂移。
 - 发布中文/英文、UTF-8 BOM、空文件的 `.md/.markdown/.mdx/.txt` 产物，确认 Artifact manifest 与 Resource GET/HEAD 通过 `X-Document-Kind` 与 `X-Document-Revision` 返回一致的 Markdown/Text kind 和源 revision，并保持 UTF-8 MIME 与 size，WorkPanel 进入 Monaco。响应缺少 kind 时仍按 provisional 扩展名预览；UTF-16、无效 UTF-8、含 NUL 的文本扩展名文件只显示“文本编码不受支持”和下载入口。
 - 确认 Workspace File、Artifact、Reference 文档只显示 Tab 与最多一行文档工具栏；文件名不在内容区重复，完整路径只在 Tab tooltip/右键菜单。Markdown/TXT/代码等 WebClient 文档的更多菜单可重新加载权威 revision，dirty 时先确认丢弃；原生 HTML 仍只提供批注入口。普通 Web 与 loopback 仍显示地址栏和刷新。
@@ -596,7 +596,8 @@
 - 多选 HTML、PDF、图片、文本、音频、视频、Office、压缩包和未知格式；支持格式内嵌预览，其他格式只显示系统定位和默认应用打开。
 - CuteJ 与 ZenMind 两个品牌分别在 macOS 与 Windows 通过“文件”打开含中文的 UTF-8 Markdown、TXT、JSON 和源码文件（含无 BOM 与带 BOM），确认中文、标点和换行正确，文本中的 HTML 标签按原文显示；带 BOM 的 UTF-16 文本也应正常。HTML 同目录 CSS/JS 仍使用原有资源 MIME。
 - 在 Main Chat RightSidebar 与 WorkPanel Artifact/Reference 中分别打开 DOCX、XLSX、PPTX、ZIP 和未知格式，确认双按钮由 WebClient 渲染在 `.content-viewer-panel` 中央，Desktop 外层没有重复操作层；操作成功保持静默，失败显示本地化错误且 guest 消息、renderer/IPC 响应均不包含绝对路径。
-- macOS / Windows 分别右键 WorkPanel 的 Markdown、文本与 Office 产物/附件标签，选择“在访达中显示”／“在文件资源管理器中显示”和“在默认应用中打开”：`@chat/artifacts/...`、`@chat/references/...`、Chat 根目录上传文件及旧相对 URL 均定位或打开同一原件；覆盖中文、空格和字面 `%` 文件名。原件已删除、路径不匹配或系统动作失败时显示错误，不得静默无响应。
+- macOS / Windows 分别右键 WorkPanel 的 Markdown、文本与 Office 产物/附件标签，选择“在访达中显示”／“在文件资源管理器中显示”和“在默认应用中打开”：`@chat/artifacts/...`、`@chat/references/...` 与 Chat 根目录上传文件均定位或打开同一原件；覆盖中文、空格和字面 `%` 文件名。没有 `@chat/` 的旧相对 URL 标签不显示地址与系统动作。原件已删除、路径不匹配或系统动作失败时显示错误，不得静默无响应。
+- macOS / Windows 分别对 Workspace、Artifact、Reference 的 HTML、图片、Markdown 与 Office 标签检查 Tab tooltip 与右键“复制路径”：Workspace 为 `@workspace/<相对路径>`，Chat 文件为 `@chat/<相对路径>`，不出现 `artifact:///`、`reference:///`、`workspace:///` 或绝对路径；把复制结果粘贴进同一 Chat 的消息 Markdown（含空格时用 `<...>`）后点击打开同一文件。消息中的 `[第42行](@workspace/src/app.ts:42:3)` 定位第 42 行；同一绝对路径用链接与图片语法读取同一文件，Workspace 外绝对路径、`\\server\share` 与裸 `src/app.ts` 明确提示原因而不静默无响应。通过 Finder / Explorer“打开方式”打开含 `@chat/`、`@workspace/` 链接与图片的本地 Markdown，确认它们显示为带悬停说明的文字，普通相对链接与同目录图片不受影响。
 - 分别从消息中的通用文件链接、浏览器下载保存后的根目录文件、`desktop.workpanel.openLocalFile` 的 Chat 文件和显式产物/附件卡片进入；旧通用标签即使保存为 artifact 模块，其文件操作也应按真实 Reference 范围处理，菜单名称、复制路径、当前资源按钮与两种系统动作保持一致。显式来源或资源 ID 冲突、重复路径参数、跨 Chat、符号链接越界、菜单打开后关闭标签均不得定位到其他文件；原生产物仍受 `artifacts/` 边界限制。
 - 从带 canonical Chat grant 的内部 Platform Run 调用 `desktop.workpanel.openLocalFile`，确认 workspace 相对路径可打开；绝对路径、`file://`、`..`、缺失 workspace 及所有 HTTP/WS/WebApp/调试入口均失败且不弹确认。
 - 重复选择同一文件激活已有 tab；关闭 tab、关闭 workspace、移除 Chat 和退出 renderer 后句柄释放。

@@ -48,7 +48,7 @@ test("root uploads retain Reference identity across the bridge and Viewer route"
   }), { ownerChatId: "chat-72", profile: "reference", relativePath: "申请表.docx" });
   assert.equal(resolveChatWorkPanelLocalResourcePath({
     ownerChatId: "chat-72", profile: "reference",
-    route: `/resource-viewer/agent?chatId=chat-72&file=${encodeURIComponent(encodeURIComponent("申请表.docx"))}`,
+    route: `/resource-viewer/agent?chatId=chat-72&file=${encodeURIComponent("@chat/申请表.docx")}`,
   }), "申请表.docx");
   for (const relativePath of ["../secret", "%252e%252e", "uploads/file.txt", "artifacts/run/file.txt"]) {
     assert.equal(normalizeAgentWebclientCurrentResourceIdentity({ ...identity, relativePath }), null);
@@ -104,24 +104,19 @@ test("Resource Viewer route yields only a chat-scoped artifact/reference path", 
   assert.equal(resolveChatWorkPanelLocalResourcePath({
     ownerChatId: "chat-72",
     profile: "artifact",
-    route: "/resource-viewer/agent-72?chatId=chat-72&file=artifacts%2Frun-1%2Freport.docx",
+    route: "/resource-viewer/agent-72?chatId=chat-72&file=%40chat%2Fartifacts%2Frun-1%2Freport.docx",
   }), "artifacts/run-1/report.docx");
   assert.equal(resolveChatWorkPanelLocalResourcePath({
     ownerChatId: "chat-72",
     profile: "reference",
-    route: "/resource-viewer/agent-72?chatId=chat-72&file=references%2Fsource.pdf",
+    route: "/resource-viewer/agent-72?chatId=chat-72&file=%40chat%2Freferences%2Fsource.pdf",
   }), "references/source.pdf");
-  assert.equal(resolveChatWorkPanelLocalResourcePath({
-    ownerChatId: "chat-72",
-    profile: "artifact",
-    route: "/resource-viewer/agent-72?chatId=chat-72&file=artifacts%2Fmszrt6gl%2F%25E5%25B7%25A5%25E4%25BC%259A%25E6%25B4%25BB%25E5%258A%25A8%25E7%2594%25B3%25E8%25AF%25B7%25E8%25A1%25A8_%25E6%259C%2580%25E7%25BB%2588.docx",
-  }), "artifacts/mszrt6gl/工会活动申请表_最终.docx");
 
   for (const route of [
-    "/resource-viewer/agent-72?chatId=other-chat&file=artifacts%2Freport.docx",
-    "/resource-viewer/agent-72?chatId=chat-72&file=artifacts%2F..%2Freport.docx",
+    "/resource-viewer/agent-72?chatId=other-chat&file=%40chat%2Fartifacts%2Freport.docx",
+    "/resource-viewer/agent-72?chatId=chat-72&file=%40chat%2Fartifacts%2F..%2Freport.docx",
     "/resource-viewer/agent-72?chatId=chat-72&file=%2Fetc%2Fhosts",
-    "/resource-viewer/agent-72?chatId=chat-72&file=references%2Fsource.pdf",
+    "/resource-viewer/agent-72?chatId=chat-72&file=%40chat%2Freferences%2Fsource.pdf",
   ]) {
     assert.equal(resolveChatWorkPanelLocalResourcePath({
       ownerChatId: "chat-72",
@@ -155,16 +150,15 @@ test("@chat routes preserve literal Unicode, spaces, URL delimiters and percent 
   }
 });
 
-test("legacy resource URLs retain their additional filename encoding layer", () => {
+test("a route file without @chat/ names no local file", () => {
   for (const profile of ["artifact", "reference"]) {
     const directory = profile === "artifact" ? "artifacts/run-1/" : "references/";
-    const filename = "申请 表 100% #?.docx";
-    const query = new URLSearchParams({
-      chatId: "chat-72", file: `${directory}${encodeURIComponent(filename)}`,
-    });
-    assert.equal(resolveChatWorkPanelLocalResourcePath({
-      ownerChatId: "chat-72", profile, route: `/resource-viewer/agent?${query}`,
-    }), `${directory}${filename}`);
+    for (const file of [`${directory}report.docx`, `${directory}${encodeURIComponent("申请 表 100% #?.docx")}`]) {
+      const query = new URLSearchParams({ chatId: "chat-72", file });
+      assert.equal(resolveChatWorkPanelLocalResourcePath({
+        ownerChatId: "chat-72", profile, route: `/resource-viewer/agent?${query}`,
+      }), "", file);
+    }
   }
 });
 
@@ -220,7 +214,7 @@ test("file actions correct only generic artifact descriptors for existing Refere
     { file: `@CHAT/${chromeDownload}`, resourceId: genericId, expected: "reference" },
     { file: "@chat/references/申请 表 50%.txt", resourceId: genericId, expected: "reference" },
     { file: "@chat/artifacts/run-1/notes.md", resourceId: genericId, expected: "artifact" },
-    { file: encodeURIComponent("申请 表 50%.txt"), resourceId: chatFileId, expected: "reference" },
+    { file: encodeURIComponent("申请 表 50%.txt"), resourceId: chatFileId, expected: null },
     { file: "@chat/artifacts/run-1/a%20b.md", resourceId: "artifact-72", expected: "artifact",
       source: { sourceKind: "artifact", resourceId: "artifact-72", relativePath: "artifacts/run-1/a%20b.md" } },
     { profile: "reference", file: "@chat/references/source.txt", resourceId: "reference-72", expected: "reference",
@@ -253,7 +247,7 @@ test("file actions correct only generic artifact descriptors for existing Refere
     }), scenario.expected, JSON.stringify(scenario));
   }
 
-  for (const suffix of ["&chatId=another-chat", "&file=artifacts%2Frun-1%2Fother.md", "&sourceKind=artifact&sourceKind=reference"]) {
+  for (const suffix of ["&chatId=another-chat", "&file=%40chat%2Fartifacts%2Frun-1%2Fother.md", "&sourceKind=artifact&sourceKind=reference"]) {
     assert.equal(resolveChatWorkPanelLocalResourceProfile({
       ownerChatId: "chat-72", profile: "artifact", resourceId: genericId,
       route: `${routeFor(`@chat/${chromeDownload}`)}${suffix}`,
@@ -267,7 +261,7 @@ test("file actions correct only generic artifact descriptors for existing Refere
 
 test("local resource actions appear only for formats Resource Viewer cannot preview", () => {
   const routeFor = (filename) =>
-    `/resource-viewer/agent-72?chatId=chat-72&file=${encodeURIComponent(`artifacts/run-1/${filename}`)}`;
+    `/resource-viewer/agent-72?chatId=chat-72&file=${encodeURIComponent(`@chat/artifacts/run-1/${filename}`)}`;
   for (const filename of [
     "dashboard.html",
     "document.pdf",

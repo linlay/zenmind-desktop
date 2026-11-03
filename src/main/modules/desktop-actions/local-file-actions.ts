@@ -8,6 +8,7 @@ import {
   resolveWorkPanelLocalFileFromWorkspace,
 } from "../work-panel";
 import { callRendererAction, readWorkPanelWorkspace } from "./renderer-action-results";
+import { formatWorkPanelFileAddress } from "../../../shared/work-panel-file-address";
 
 export function validateOpenLocalFileArgs(
   args: Record<string, unknown>,
@@ -109,7 +110,8 @@ async function openChatFile(
       return fail(action, native.error.code, native.error.message);
     }
   }
-  const file = relativePath.split("/").map(encodeURIComponent).join("/");
+  // The viewer reads the literal @chat/ address, as a Markdown link would.
+  const file = formatWorkPanelFileAddress("artifact", relativePath);
   const route = `/resource-viewer/${encodeURIComponent(input.agentKey)}?${new URLSearchParams({
     chatId: input.ownerChatId,
     file,

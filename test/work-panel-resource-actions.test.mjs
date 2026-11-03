@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 const resourceActions = require("../dist-electron/shared/chat-work-panel-tab-context-menu.js");
+const { formatWorkPanelFileAddress } = require("../dist-electron/shared/work-panel-file-address.js");
 const source = fs.readFileSync(new URL("../src/renderer/work-panel/WorkPanelHost.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("WorkPanelHost.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const names = new Set([
@@ -56,6 +57,7 @@ function harness({ actionId = "reveal-resource", outcome = { ok: true }, source 
   };
   const context = vm.createContext({
     ...resourceActions,
+    formatWorkPanelFileAddress,
     stateRef: { current: { workspaces: [workspace], review: { activeItemIdsByOwnerChatId: {} } } },
     reviewSourceForItem: () => null, resourceReviewCapabilities: {}, itemRuntimeKey: () => "qa",
     fullscreenOwnerChatId: null, nativeHtmlControllers: { current: new Map() },
